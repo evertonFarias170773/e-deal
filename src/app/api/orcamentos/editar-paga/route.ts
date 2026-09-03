@@ -32,12 +32,12 @@ import {
   divergenciasFinanceiras,
   type SnapshotFinanceiro
 } from "@/features/orcamentos/lib/edicao-financeira";
-import { aplicarStatusRecomendadoProposta } from "@/features/orcamentos/services/status-writer.service";
 import {
   avaliarEdicaoFaturado,
   type CobrancaParaFaturado,
   type TituloParaFaturado
 } from "@/features/orcamentos/services/faturado-editavel";
+import { aplicarDiferencaFinanceira } from "@/features/cobrancas/services/diferenca-financeira-proposta";
 
 // ---------------------------------------------------------------------------
 // Configurações e Tipagens
@@ -619,194 +619,40 @@ export async function POST(request: NextRequest) {
 
   console.info(`[editar-paga] Pós-save: valor_total (retornado pelo saveProposta) = ${novoTotalRealArredondado}`);
 
-  // ── 9b. Caminho do faturado: a cobrança acompanha o novo total ────────────
-  // Reavaliação soberana com o total que o banco calculou — o `novoTotal` do
-  // cliente serviu só para escolher o caminho. Como o faturamento é lido de
-  // `pagamentos_v2`, este UPDATE é o que faz o mês fechar certo; não existe
-  // outro lugar para corrigir.
-  let faturadoAjustado: { id: string; valorAnterior: number; valorNovo: number } | null = null;
+  // ── 9b a 11. Diferença financeira ─────────────────────────────────────────
+  // Ajuste do faturado, pendência de Conta Corrente e reconciliação de status
+  // vivem em `aplicarDiferencaFinanceira`, na MESMA ordem em que rodavam aqui.
+  // Saíram deste handler para que a correção de frete pós-liberação use a mesma
+  // decisão em vez de uma segunda cópia — ver o cabeçalho do módulo.
+  const resultadoFinanceiro = await aplicarDiferencaFinanceira(supabase, {
+    idInt,
+    idCliente,
+    novoTotalRealArredondado,
+    valorPagoRealArredondado,
+    ehPropostaPaga,
+    estavaIntegralmentePaga,
+    ehCaminhoFaturado,
+    cobrancas: cobrancas as CobrancaParaFaturado[],
+    titulos,
+    motivoFinal,
+    chaveEvento,
+    ator: { uid: user.id, nome: userName ?? user.email ?? "Sistema", email: user.email ?? "" },
+    emailExibicao: userEmail ?? user.email ?? ""
+  });
 
-  if (ehCaminhoFaturado) {
-    const avaliacao = avaliarEdicaoFaturado({
-      cobrancas: cobrancas as CobrancaParaFaturado[],
-      titulos,
-      novoTotal: novoTotalRealArredondado
-    });
-
-    if (!avaliacao.elegivel) {
-      // A proposta já foi gravada e a cobrança não pode acompanhar. Nada de
-      // silêncio: o financeiro precisa saber que os dois valores divergiram.
-      console.error(`[editar-paga] Proposta #${idInt} salva, mas o faturado nao pode ser ajustado: ${avaliacao.motivo}`);
-      return NextResponse.json(
-        {
-          success: false,
-          code: avaliacao.motivo,
-          error: `A proposta foi salva, mas a cobrança faturada NÃO foi ajustada: ${avaliacao.mensagem} Acerte a cobrança manualmente na aba Pagamentos.`
-        },
-        { status: 409 }
-      );
-    }
-
-    const faturadoAtual = (cobrancas as CobrancaParaFaturado[]).find((c) => c.id === avaliacao.faturadoId);
-    const valorAnterior = Math.round((Number(faturadoAtual?.valor) || 0) * 100) / 100;
-
-    if (Math.abs(valorAnterior - avaliacao.novoValorFaturado) >= 0.01) {
-      // `boleto_enviadoo` volta a false junto com o valor: com valor novo, os
-      // títulos anteriores não servem mais e a cobrança precisa reaparecer em
-      // Registros de Recebíveis para ser registrada de novo.
-      const { error: updateFaturadoError } = await supabase
-        .from("pagamentos_v2")
-        .update({ valor: avaliacao.novoValorFaturado, boleto_enviadoo: false })
-        .eq("id", avaliacao.faturadoId);
-
-      if (updateFaturadoError) {
-        console.error("[editar-paga] Falha ao ajustar o valor do faturado:", updateFaturadoError.message);
-        return NextResponse.json(
-          {
-            success: false,
-            code: "FALHA_AJUSTE_FATURADO",
-            error: "A proposta foi salva, mas o valor da cobrança faturada não pôde ser atualizado. Acerte a cobrança manualmente na aba Pagamentos."
-          },
-          { status: 500 }
-        );
-      }
-
-      faturadoAjustado = {
-        id: avaliacao.faturadoId,
-        valorAnterior,
-        valorNovo: avaliacao.novoValorFaturado
-      };
-
-      const moeda = (v: number) => `R$ ${v.toFixed(2).replace(".", ",")}`;
-      await supabase.from("propostas_chat").insert([
-        {
-          id_int: idInt,
-          id_cliente: idCliente,
-          mensagem:
-            `Proposta alterada com cobrança faturada a vencer. ` +
-            `Valor da cobrança ajustado de ${moeda(valorAnterior)} para ${moeda(avaliacao.novoValorFaturado)}` +
-            (avaliacao.valorOutrasCobrancas > 0
-              ? ` (outras cobranças da proposta: ${moeda(avaliacao.valorOutrasCobrancas)}, sem alteração).`
-              : ".") +
-            ` A cobrança voltou para Registros de Recebíveis. Responsável: ${userEmail ?? user.email}.`,
-          tipo: "SISTEMA",
-          autor_nome: "Sistema",
-          setor: "Financeiro",
-          visivel_externo: false
-        }
-      ]);
-    }
-  }
-
-  // ── 10. Abrir/ajustar a pendência de Conta Corrente via RPC cc_abrir_pendencia ──
-  // A RPC recalcula soberanamente (dentro do banco) e reconcilia com qualquer
-  // pendência ABERTA/PARCIALMENTE_RESOLVIDA já existente para esta proposta —
-  // não há mais necessidade de recalcular diferença/reconciliação aqui.
-  let diferenca = 0;
-  let pendenciaCriada: { id: number; descricao: string } | null = null;
-
-  // Só abre/ajusta pendência de Conta Corrente quando a proposta JÁ ESTAVA
-  // integralmente paga antes desta edição (gate estavaIntegralmentePaga). Caso
-  // contrário — cobrança pendente ou saldo ainda a cobrar — o gap é da própria
-  // cobrança em pagamentos_v2, e chamar cc_abrir_pendencia criaria um débito
-  // FAVOR_EMPRESA indevido (ex.: proposta #19511: R$ 63 total, R$ 15 pago,
-  // R$ 48 PIX pendente → a RPC calcularia 63−15 = 48 de débito).
-  //
-  // REGRA (2026-07-22): diferença DEVEDORA (novo total > pago) NUNCA entra na
-  // Conta Corrente — é saldo ainda devido da própria proposta, resolvido por
-  // cobrança complementar na aba Pagamentos, abono do administrador ou
-  // E-Crédito. A proposta salva normalmente, sem modal de opções, e o status
-  // vai para AGUARDANDO pela reconciliação abaixo (cobertura parcial). A RPC
-  // só é chamada no caso devedor quando existe pendência ABERTA a reconciliar
-  // (ex.: crédito antigo que a nova edição zerou) — nunca para criar débito.
-  // Classificação DEVEDORA por comparação direta dos dois valores já
-  // arredondados a 2 casas: QUALQUER centavo devido (≥ R$ 0,01) segue o fluxo
-  // novo. A tolerância (TOLERANCIA_CC) NÃO participa desta classificação — ela
-  // serve só à cobertura (estavaIntegralmentePaga); usá-la aqui deixava
-  // débitos de R$ 0,01–0,02 no fluxo antigo (RPC → pendência → modal),
-  // regressão vista na #19514 (pago R$ 140,44 × total R$ 140,45).
-  // No caminho do faturado a Conta Corrente não entra: a diferença foi para o
-  // valor da própria cobrança, e não há dinheiro recebido para creditar ou
-  // cobrar do cliente.
-  const ehDiferencaDevedora = novoTotalRealArredondado > valorPagoRealArredondado;
-  let temPendenciaAbertaParaReconciliar = false;
-
-  if (!ehCaminhoFaturado && estavaIntegralmentePaga && ehDiferencaDevedora) {
-    const { data: pendAbertas } = await supabase
-      .from("conta_corrente_pendencias")
-      .select("id")
-      .eq("id_int", idInt)
-      .in("status", ["ABERTA", "PARCIALMENTE_RESOLVIDA"])
-      .limit(1);
-    temPendenciaAbertaParaReconciliar = Boolean(pendAbertas && pendAbertas.length > 0);
-  }
-
-  if (!ehCaminhoFaturado && estavaIntegralmentePaga && (!ehDiferencaDevedora || temPendenciaAbertaParaReconciliar)) {
-    const eventoUuid = chaveEvento && /^[0-9a-f-]{36}$/i.test(chaveEvento) ? chaveEvento : crypto.randomUUID();
-
-    const { data: idPendenciaRpc, error: rpcError } = await supabase.rpc("cc_abrir_pendencia", {
-      p_id_int: idInt,
-      p_id_cliente: idCliente,
-      p_chave_evento: eventoUuid,
-      p_motivo: motivoFinal,
-      p_total_soberano: novoTotalRealArredondado,
-      p_observacao: `Operador: ${userEmail ?? user.email}.`,
-    });
-
-    if (rpcError) {
-      const msg = rpcError.message || "Erro ao abrir/ajustar pendência de Conta Corrente.";
-      const revisaoNecessaria = msg.includes("CC_AJUSTE_ABAIXO_COMPROMETIDO") || msg.includes("CC_FLIP_COM_COMPROMETIDO");
-      console.error("[editar-paga] Erro na RPC cc_abrir_pendencia:", msg);
-      return NextResponse.json(
-        {
-          success: false,
-          error: revisaoNecessaria
-            ? "Esta proposta já teve parte da diferença anterior usada ou reservada. O Financeiro precisa revisar manualmente antes de novas alterações."
-            : msg,
-        },
-        { status: revisaoNecessaria ? 409 : 500 }
-      );
-    }
-
-    // No caso devedor a RPC foi chamada apenas para reconciliar/encerrar uma
-    // pendência antiga — nunca devolvemos diferença/pendência ao front nesse
-    // caso (nenhum modal, salvamento normal; o saldo devedor vive na proposta).
-    if (idPendenciaRpc != null && !ehDiferencaDevedora) {
-      const { data: pendRow } = await supabase
-        .from("conta_corrente_pendencias")
-        .select("id, direcao, valor_saldo, valor_reservado, motivo")
-        .eq("id", idPendenciaRpc)
-        .maybeSingle();
-
-      if (pendRow && (Number(pendRow.valor_saldo) > 0 || Number(pendRow.valor_reservado) > 0)) {
-        const valorPendente = Math.round((Number(pendRow.valor_saldo) + Number(pendRow.valor_reservado)) * 100) / 100;
-        diferenca = pendRow.direcao === "FAVOR_CLIENTE" ? -valorPendente : valorPendente;
-        pendenciaCriada = {
-          id: pendRow.id,
-          descricao: `Proposta #${idInt} alterada após pagamento confirmado. Diferença pendente: R$ ${valorPendente.toFixed(2).replace(".", ",")} (${pendRow.direcao === "FAVOR_CLIENTE" ? "a favor do cliente" : "a favor da empresa"}). Motivo: ${pendRow.motivo}.`,
-        };
-      }
-    }
-  }
-
-  // ── Reconciliar status_interno pelo fluxo oficial ──────────────────────────
-  // Roda para qualquer proposta com pagamento confirmado (ehPropostaPaga),
-  // INCLUSIVE quando não há diferença de Conta Corrente — é o que mantém
-  // #19511 em "AGUARDANDO" (pago 15 de 63, PIX 48 pendente) em vez de status
-  // congelado. status_interno nunca era recalculado ao salvar, e
-  // formState.status (vindo do cliente) era persistido às cegas; nunca confiar
-  // nele. Best-effort: nunca falha o salvamento da proposta em si.
-  if (ehPropostaPaga) {
-    const reconciliacao = await aplicarStatusRecomendadoProposta(
-      idInt,
-      { uid: user.id, nome: userName ?? user.email ?? "Sistema", email: user.email ?? "" },
-      supabase,
-      "AUTO_FINANCEIRO"
+  // Os mesmos status e as mesmas mensagens de antes — o que mudou é que a
+  // tradução para HTTP acontece aqui, e não dentro da regra.
+  if (!resultadoFinanceiro.ok) {
+    return NextResponse.json(
+      resultadoFinanceiro.code
+        ? { success: false, code: resultadoFinanceiro.code, error: resultadoFinanceiro.error }
+        : { success: false, error: resultadoFinanceiro.error },
+      { status: resultadoFinanceiro.status }
     );
-    if (!reconciliacao.success) {
-      console.warn(`[editar-paga] Reconciliação de status sem efeito para proposta #${idInt}: ${reconciliacao.errorMessage}`);
-    }
   }
+
+  const { diferenca, pendenciaCriada, faturadoAjustado } = resultadoFinanceiro;
+
 
   return NextResponse.json({
     success: true,
