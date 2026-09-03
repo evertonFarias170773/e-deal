@@ -521,6 +521,25 @@ export function ExpedicaoPage() {
       return (
         String(p.idInt).includes(q) ||
         p.cliente.toLowerCase().includes(q) ||
+        /**
+         * A FANTASIA TAMBÉM ACHA (02/09/2026).
+         *
+         * O card do Kanban passou a exibir `clienteExibicao` — o nome fantasia —
+         * enquanto a busca só casava `cliente`, a razão gravada na proposta.
+         * Digitar o nome que estava na tela não achava nada em 4 dos 21
+         * clientes com fantasia no painel: 8469 (DSEG IMPRESSOS × LISITON
+         * DOCUMENTOS SEGUROS), 12460 (ARENA DO GREMIO × GREMIO FOOTBALL), 53193
+         * (IMPACTO PRODUTORA × ANGELA BEATRIZ…) e 24957 (BOX SERVICE, onde só
+         * um espaço difere).
+         *
+         * SOMA, não troca: a razão continua achando, e é por ela que se procura
+         * um pedido a partir de nota fiscal ou contrato. Quando não há fantasia,
+         * `clienteExibicao` é a própria razão e este termo não muda nada.
+         *
+         * Vale nas DUAS visões: este `filtrados` é único, e lista e Kanban
+         * consomem o mesmo recorte.
+         */
+        p.clienteExibicao.toLowerCase().includes(q) ||
         p.codigoRastreamento.toLowerCase().includes(q) ||
         p.transportadoraNome.toLowerCase().includes(q)
       );
