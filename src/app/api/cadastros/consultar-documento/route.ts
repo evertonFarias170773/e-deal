@@ -341,10 +341,16 @@ export async function POST(request: Request) {
     );
   }
 
-  const validationResult = await validateCadastroInitialStep({
-    idCliente,
-    documentoDigits: localValidation.digits
-  });
+  // `supabaseSessao` (o client autenticado montado acima) vai JUNTO: sem ele a
+  // checagem de duplicidade consultava `clientes` como `anon`, tomava 401 desde
+  // 93e0a9b e o nulo era lido como "sem conflito".
+  const validationResult = await validateCadastroInitialStep(
+    {
+      idCliente,
+      documentoDigits: localValidation.digits
+    },
+    supabaseSessao
+  );
 
   /**
    * A TRAVA DE DUPLICIDADE E DO FLUXO DE CRIACAO, NAO DA CONSULTA (26/08/2026).

@@ -162,76 +162,11 @@ function buildRestUrl(table: string, params: Record<string, string>) {
   return url;
 }
 
-async function selectSupabaseRows<T>(table: string, params: Record<string, string>): Promise<T[] | null> {
-  const config = getSupabaseConfig();
-  if (!config) {
-    console.log("[Cadastros][Supabase] envs ausentes - fallback mock ativado.", {
-      hasSupabaseUrl: Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL),
-      hasSupabaseAnonKey: Boolean(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY),
-      table,
-      params
-    });
-    return null;
-  }
-
-  const url = buildRestUrl(table, params);
-  if (!url) {
-    console.log("[Cadastros][Supabase] URL REST invalida - fallback mock ativado.", {
-      table,
-      params
-    });
-    return null;
-  }
-
-  console.log("[Cadastros][Supabase] chamada executada.", {
-    table,
-    url: url.toString(),
-    select: params.select,
-    hasSupabaseUrl: Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL),
-    hasSupabaseAnonKey: Boolean(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY)
-  });
-
-  try {
-    const response = await fetch(url.toString(), {
-      headers: {
-        apikey: config.anonKey,
-        authorization: `Bearer ${await bearerDaSessao(config.anonKey)}`,
-        accept: "application/json",
-        "accept-profile": "public"
-      }
-    });
-
-    if (!response.ok) {
-      const body = await response.text().catch(() => "");
-      console.log("[Cadastros][Supabase] resposta HTTP nao-ok.", {
-        status: response.status,
-        statusText: response.statusText,
-        body
-      });
-      return null;
-    }
-
-    const data = (await response.json()) as T[];
-    const firstThree = Array.isArray(data)
-      ? data.slice(0, 3).map((row) => ({
-          id_cliente: (row as { id_cliente?: unknown }).id_cliente,
-          nome: (row as { nome?: unknown }).nome
-        }))
-      : [];
-
-    console.log("[Cadastros][Supabase] resposta OK recebida.", {
-      status: response.status,
-      registros: Array.isArray(data) ? data.length : 0,
-      primeirosRegistros: firstThree
-    });
-    return Array.isArray(data) ? data : null;
-  } catch (error) {
-    console.log("[Cadastros][Supabase] erro bruto retornado pelo Supabase.", {
-      error
-    });
-    return null;
-  }
-}
+// `selectSupabaseRows` foi REMOVIDA em 03/09/2026. Ela montava o header REST na
+// mao e era usada so pela checagem de duplicidade de cadastro, que agora
+// consulta pelo client (injetado no servidor, de sessao no navegador). Foi
+// justamente o header manual que deixou a trava desligada em silencio quando
+// `anon` perdeu SELECT em `clientes`. Nao a traga de volta: use o client.
 
 function fallbackDetailFromMock(idCliente: number | null): Cadastro | null {
   if (!idCliente) {
@@ -1119,58 +1054,103 @@ function mapConflictFromRow(
   };
 }
 
-async function findCadastroByExactField(field: "id_cliente" | "documento", value: string) {
-  const rows = await selectSupabaseRows<
-    Pick<SupabaseClienteRow, "id" | "id_cliente" | "nome" | "documento">
-  >("clientes", {
-    select: "id,id_cliente,nome,documento",
-    [field]: `eq.${value}`,
-    limit: "1"
-  });
+type BuscaCadastro = {
+  /** A consulta NAO pode ser respondida (sem client, sem permissao, erro de rede). */
+  falhou: boolean;
+  row: Pick<SupabaseClienteRow, "id" | "id_cliente" | "nome" | "documento"> | null;
+};
 
-  return rows?.[0] ?? null;
+/**
+ * `falhou` e `row` sao COISAS DIFERENTES, e essa distincao e o ponto.
+ *
+ * Antes esta funcao devolvia so a linha, e `null` significava as duas coisas ao
+ * mesmo tempo: "nao existe cadastro com esse valor" e "nao consegui perguntar".
+ * Quando `anon` perdeu SELECT em `clientes` (93e0a9b), a consulta no SERVIDOR
+ * passou a devolver 401 -> `null` -> e a checagem de duplicidade leu isso como
+ * "sem conflito". A trava ficou desligada em silencio, e `documento` nao tem
+ * UNIQUE no banco para segurar.
+ *
+ * Agora a falha de acesso e visivel e o chamador RECUSA em vez de seguir.
+ *
+ * Usa o client (injetado no servidor, de sessao no navegador) em vez do `fetch`
+ * com header montado na mao: os dois falam como `authenticated`.
+ */
+async function findCadastroByExactField(
+  field: "id_cliente" | "documento",
+  value: string,
+  clientePronto?: ReturnType<typeof getSupabaseClient>
+): Promise<BuscaCadastro> {
+  const client = clientePronto ?? getSupabaseClient();
+  if (!client) {
+    console.error("[CadastrosService] Sem client Supabase para conferir duplicidade.");
+    return { falhou: true, row: null };
+  }
+
+  const { data, error } = await client
+    .from("clientes")
+    .select("id,id_cliente,nome,documento")
+    .eq(field, value)
+    .limit(1);
+
+  if (error) {
+    console.error(`[CadastrosService] Falha ao conferir duplicidade por ${field}:`, error.message);
+    return { falhou: true, row: null };
+  }
+
+  return { falhou: false, row: (data?.[0] as BuscaCadastro["row"]) ?? null };
 }
 
-async function findCadastroByDocumento(documentoDigits: string) {
+async function findCadastroByDocumento(
+  documentoDigits: string,
+  clientePronto?: ReturnType<typeof getSupabaseClient>
+): Promise<BuscaCadastro> {
   const normalized = normalizeDocumento(documentoDigits);
   if (!normalized) {
-    return null;
+    return { falhou: false, row: null };
   }
 
   const variants = Array.from(new Set([normalized, formatDocumentoFromDigits(normalized)]));
 
   for (const variant of variants) {
-    const row = await findCadastroByExactField("documento", variant);
-    if (row) {
-      return row;
-    }
+    const busca = await findCadastroByExactField("documento", variant, clientePronto);
+    // Falha de acesso NAO e "documento livre": propaga para o chamador recusar.
+    if (busca.falhou) return { falhou: true, row: null };
+    if (busca.row) return busca;
   }
 
   const prefix = normalized.slice(0, Math.min(8, normalized.length));
   const suffix = normalized.slice(-4);
   if (!prefix || !suffix) {
-    return null;
+    return { falhou: false, row: null };
   }
 
-  const candidates = await selectSupabaseRows<
-    Pick<SupabaseClienteRow, "id" | "id_cliente" | "nome" | "documento">
-  >("clientes", {
-    select: "id,id_cliente,nome,documento",
-    or: `documento.ilike.*${prefix}*,documento.ilike.*${suffix}*`,
-    limit: "20"
-  });
-
-  if (!candidates?.length) {
-    return null;
+  const client = clientePronto ?? getSupabaseClient();
+  if (!client) {
+    console.error("[CadastrosService] Sem client Supabase para a varredura por documento.");
+    return { falhou: true, row: null };
   }
 
-  return (
-    candidates.find((item) => normalizeDocumento(item.documento) === normalized) ?? null
+  const { data: candidates, error } = await client
+    .from("clientes")
+    .select("id,id_cliente,nome,documento")
+    .or(`documento.ilike.*${prefix}*,documento.ilike.*${suffix}*`)
+    .limit(20);
+
+  if (error) {
+    console.error("[CadastrosService] Falha na varredura por documento:", error.message);
+    return { falhou: true, row: null };
+  }
+
+  const achado = (candidates ?? []).find(
+    (item) => normalizeDocumento((item as { documento?: string | null }).documento) === normalized
   );
+
+  return { falhou: false, row: (achado as BuscaCadastro["row"]) ?? null };
 }
 
 export async function validateCadastroInitialStep(
-  params: CadastroInitialValidationParams
+  params: CadastroInitialValidationParams,
+  clientePronto?: ReturnType<typeof getSupabaseClient>
 ): Promise<CadastroInitialValidationResult> {
   const config = getSupabaseConfig();
   if (!config) {
@@ -1182,26 +1162,44 @@ export async function validateCadastroInitialStep(
     };
   }
 
+  /**
+   * FALHA DE ACESSO RECUSA — nunca mais e lida como "sem conflito".
+   *
+   * `busca.falhou` cobre o caso que deixou esta trava desligada em silencio: no
+   * SERVIDOR a consulta ia como `anon`, tomava 401 desde 93e0a9b, devolvia nulo,
+   * e o codigo seguia como se o documento estivesse livre. `documento` nao tem
+   * UNIQUE no banco, entao nada barrava depois.
+   */
+  const falhaDeLeitura: CadastroInitialValidationResult = {
+    success: false,
+    errorMessage:
+      "Nao foi possivel conferir se este cadastro ja existe. Por seguranca a criacao foi interrompida — tente de novo.",
+    idConflict: null,
+    documentoConflict: null
+  };
+
   // Sem ID informado (modo automatico) nao ha o que consultar: montar
   // `id_cliente=eq.null` no PostgREST nao devolveria conflito nenhum e ainda
   // gastaria uma requisicao. A duplicidade de DOCUMENTO continua valendo.
   if (params.idCliente !== null) {
-    const existingId = await findCadastroByExactField("id_cliente", String(params.idCliente));
-    if (existingId) {
+    const buscaId = await findCadastroByExactField("id_cliente", String(params.idCliente), clientePronto);
+    if (buscaId.falhou) return falhaDeLeitura;
+    if (buscaId.row) {
       return {
         success: false,
-        idConflict: mapConflictFromRow(existingId, "id_cliente", params.idCliente),
+        idConflict: mapConflictFromRow(buscaId.row, "id_cliente", params.idCliente),
         documentoConflict: null
       };
     }
   }
 
-  const existingDocument = await findCadastroByDocumento(params.documentoDigits);
-  if (existingDocument) {
+  const buscaDoc = await findCadastroByDocumento(params.documentoDigits, clientePronto);
+  if (buscaDoc.falhou) return falhaDeLeitura;
+  if (buscaDoc.row) {
     return {
       success: false,
       idConflict: null,
-      documentoConflict: mapConflictFromRow(existingDocument, "documento", params.idCliente ?? 0)
+      documentoConflict: mapConflictFromRow(buscaDoc.row, "documento", params.idCliente ?? 0)
     };
   }
 
@@ -1395,7 +1393,16 @@ export async function createCadastro(
   // (atomica, nao transacional) e com o indice clientes_id_cliente_key. No modo
   // manual a checagem previa continua exatamente como era.
   if (idClienteInformado !== null) {
-    const existingId = await findCadastroByExactField("id_cliente", String(idClienteInformado));
+    const buscaId = await findCadastroByExactField("id_cliente", String(idClienteInformado));
+    // Falha de leitura RECUSA: seguir aqui criaria o duplicado que a checagem existe para impedir.
+    if (buscaId.falhou) {
+      return {
+        success: false,
+        errorMessage:
+          "Nao foi possivel conferir se este cadastro ja existe. Por seguranca a operacao foi interrompida — tente de novo."
+      };
+    }
+    const existingId = buscaId.row;
     if (existingId) {
       return {
         success: false,
@@ -1410,7 +1417,15 @@ export async function createCadastro(
     }
   }
 
-  const existingDocument = await findCadastroByExactField("documento", documento);
+  const buscaDoc = await findCadastroByExactField("documento", documento);
+  if (buscaDoc.falhou) {
+    return {
+      success: false,
+      errorMessage:
+        "Nao foi possivel conferir se este cadastro ja existe. Por seguranca a operacao foi interrompida — tente de novo."
+    };
+  }
+  const existingDocument = buscaDoc.row;
   if (existingDocument) {
     return {
       success: false,
@@ -1540,7 +1555,15 @@ export async function updateCadastro(
     };
   }
 
-  const existingDocument = await findCadastroByDocumento(documento);
+  const buscaDocAtualizacao = await findCadastroByDocumento(documento);
+  if (buscaDocAtualizacao.falhou) {
+    return {
+      success: false,
+      errorMessage:
+        "Nao foi possivel conferir se este cadastro ja existe. Por seguranca a operacao foi interrompida — tente de novo."
+    };
+  }
+  const existingDocument = buscaDocAtualizacao.row;
   if (existingDocument && Number(existingDocument.id_cliente) !== idCliente) {
     return {
       success: false,
