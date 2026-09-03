@@ -43,6 +43,36 @@ export const MODALIDADES_ORCAMENTO: ModalidadeFrete[] = ["RETIRA", "FOB", "CIF"]
 const STATUS_EDITAVEIS = ["NOVO", "AGUARDANDO"];
 
 /**
+ * Faixa em que a CORREÇÃO pós-liberação é tecnicamente segura.
+ *
+ * Esta lista NÃO foi escolhida: ela é uma cópia da guarda de status protegido de
+ * `atualizar_status_financeiro_proposta`, no banco. Só ali o trigger
+ * `trg_frete_sync_financeiro` retorna cedo e NÃO reescreve `status_interno` —
+ * que é exatamente o motivo pelo qual a trava acima existe.
+ *
+ * `LIBERADO` e `APROVADO` estão de fora de propósito: eles NÃO constam da guarda,
+ * então lá o rebaixamento para `NOVO` ainda aconteceria. Estendê-los exigiria
+ * reescrever a função do banco — outra ordem de risco, e outra conversa.
+ *
+ * Se algum dia a guarda do banco mudar, esta lista tem de mudar junto. Ela é
+ * espelho, não opinião.
+ */
+const STATUS_CORRECAO_POS_LIBERACAO = ["EXPEDICAO", "A RETIRAR", "EM TRANSITO", "ENTREGUE"];
+
+/**
+ * O status está na faixa em que a correção pós-liberação pode gravar?
+ *
+ * Responde só sobre a SEGURANÇA TÉCNICA da escrita — se o trigger vai ou não
+ * rebaixar a proposta. Não diz nada sobre ser permitido: NF autorizada, despacho
+ * confirmado, pedido entregue e permissão do usuário são barreiras da rota, no
+ * servidor. Ver `corrigir-frete-simulacao.ts`.
+ */
+export function statusPermiteCorrecaoPosLiberacao(statusInterno: string | null | undefined): boolean {
+  const base = (statusInterno ?? "").trim().split("/")[0].trim().toUpperCase();
+  return STATUS_CORRECAO_POS_LIBERACAO.includes(base);
+}
+
+/**
  * `status_interno` pode vir composto ("NOVO / EM ARTE", "AGUARDANDO / EM ARTE"),
  * e esses ainda são fase de orçamento — a barra separa o estado de arte, não o
  * estágio do pedido. Proposta nova (sem status gravado) é editável.

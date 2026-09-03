@@ -16,6 +16,7 @@ import {
   nomeTransportadoraCadastro,
   nomeTransporteEfetivo,
   podeEditarModalidade,
+  statusPermiteCorrecaoPosLiberacao,
   valorFreteEfetivo,
   type ModalidadeFrete
 } from "@/features/orcamentos/lib/modalidade-frete";
@@ -1647,6 +1648,19 @@ export async function saveProposta(
      * O chamador é responsável por verificar a permissão antes de passar force=true.
      */
     force?: boolean;
+    /**
+     * Libera a escrita de `modalidade_frete` e `transporte_categoria` DEPOIS da
+     * liberação, na faixa EXPEDICAO+. O nome é feio de propósito: ele denuncia o
+     * uso errado. Isto NÃO é uma barreira — é um interruptor.
+     *
+     * Quem decide se a correção pode acontecer é a rota
+     * `/api/expedicao/corrigir-frete`, no servidor, com o token do usuário: NF
+     * autorizada, despacho confirmado, pedido entregue, faixa de status e
+     * permissão. Passar esta opção do navegador não burla nada — só grava sem
+     * ter passado por nenhuma dessas checagens, que é justamente o que não se
+     * deve fazer.
+     */
+    __somenteServidorPermitirCorrecaoFrete?: boolean;
   }
 ): Promise<{
   success: boolean;
@@ -2189,9 +2203,28 @@ export async function saveProposta(
       propostaData.valor_frete = freteValor;
     }
 
+    /**
+     * A correção pós-liberação abre a MESMA porta, na faixa em que o trigger não
+     * rebaixa a proposta — ver `statusPermiteCorrecaoPosLiberacao`. Sem a opção,
+     * `correcaoPosLiberacao` é `false` e tudo abaixo se comporta como sempre.
+     */
+    const correcaoPosLiberacao =
+      options?.__somenteServidorPermitirCorrecaoFrete === true &&
+      statusPermiteCorrecaoPosLiberacao(statusParaGate);
+
+    if (options?.__somenteServidorPermitirCorrecaoFrete === true && !injectedClient) {
+      console.warn(
+        "[saveProposta] __somenteServidorPermitirCorrecaoFrete chegou SEM client injetado. " +
+          "Esta opcao existe para a rota /api/expedicao/corrigir-frete, que valida NF, despacho, " +
+          "status e permissao no servidor antes de grava-la. Chamada de navegador nao passa por " +
+          "nenhuma dessas barreiras — se este aviso apareceu, o caminho esta errado."
+      );
+    }
+
     // Só entram no UPDATE enquanto a proposta está na fase de orçamento. Depois
-    // de LIBERADO os campos ficam de fora e o que já está gravado permanece.
-    if (modalidadeEditavel) {
+    // de LIBERADO os campos ficam de fora e o que já está gravado permanece —
+    // salvo a correção pós-liberação, que é a exceção controlada acima.
+    if (modalidadeEditavel || correcaoPosLiberacao) {
       propostaData.modalidade_frete = modalidadeFrete;
       // Categoria do transporte: lista fechada, e NULA quando ninguem escolheu.
       // "Nao escolheu" e "escolheu retirada" sao estados diferentes — por isso
@@ -2211,6 +2244,7 @@ export async function saveProposta(
       );
       propostaData.id_transportadora_cliente = idTransportadoraCliente;
     } else if (declaracaoDivergePersistido) {
+      // Inalterado: só chega aqui quando a escrita ficou de fora de verdade.
       // A trava continua valendo — a proposta não é rebaixada e o que já estava
       // gravado permanece. O que muda é que a recusa passa a ser DITA: descartar
       // a declaração em silêncio foi o que fez o vendedor acreditar, por toda a
