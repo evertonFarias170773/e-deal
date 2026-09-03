@@ -61,8 +61,9 @@ filtrada da tabela (busca, cards, alertas, frete, empresa continuam valendo).
   inicial ele descartava `EM_TRANSITO` e `ENTREGUE` por conta própria, e clicar
   nesses cards do topo abria um Kanban vazio sem explicar por quê. Quem recorta
   agora são os cards e os filtros, e só eles. Pedido dos Correios com etiqueta
-  gerada continua na bancada ("Aguardando transportadora") até o expedidor
-  confirmar o despacho, que é quando o status vira `EM TRANSITO`.
+  gerada continua na bancada até o expedidor confirmar o despacho, que é quando
+  o status vira `EM TRANSITO` — imprimir a etiqueta não move o pedido de lugar
+  nenhum, e desde 03/09/2026 também não muda nada na tela (ver 1.3).
 - Colunas de **344 px SEM moldura** (02/09/2026), só as não-vazias:
   `Retira balcão` · `Motoboy` · `Correios` · uma por transportadora (nome
   resolvido, ordem alfabética) · `Outros / A definir` (sem custo, frete
@@ -114,14 +115,23 @@ filtrada da tabela (busca, cards, alertas, frete, empresa continuam valendo).
   - O **selo de status some quando só repete o recorte** (`p.etapa === filters.etapa`):
     com "Em trânsito" ativo, todo card dizia "Em Trânsito". Nos recortes que
     atravessam etapas (`DIA`, `ATIVOS`, `TODAS`) ele volta sozinho. Os chips
-    `ATRASADO Xd` / `HOJE` e o sub-estado "Aguardando transportadora" nunca
-    somem.
+    `ATRASADO Xd` / `HOJE` continuam sempre. Desde 03/09/2026 essa é a ÚNICA
+    condição do selo: o sub-estado "Aguardando transportadora", que o forçava a
+    ficar sempre visível, foi removido (ver 1.3), e o badge exibe
+    `p.statusInterno` — o mesmo campo que a lista sempre imprimiu.
   - Frete **sempre** ocupa o canto direito do rodapé, com `—` quando não há
     valor, para as linhas alinharem entre cards. Regra do valor inalterada:
     nulo e zero não viram `R$ 0,00`.
 - **Legenda das cores** (02/09/2026), na mesma linha do alternador de visão e à
   direita dele, só quando `visao=transportadoras` — na lista os fundos não
-  existem. Os marcadores recebem LITERALMENTE a mesma string de classe que
+  existem. Vocabulário final (03/09/2026, `983e477`), um estado por cor e sem
+  termos que se confundam: **"ainda na fábrica"** (branco) · **"na bancada, a
+  despachar"** (azul) · **"despachado, aguardando coleta"** (laranja) · **"já
+  saiu"** (verde). Azul e laranja passaram a nomear a ação e o fato que os
+  separam — os dois estão fisicamente na bancada, e antes o operador tinha de
+  adivinhar qual já fora despachado. "Rotulado" saiu do verde porque nomeava a
+  etiqueta, que não decide mais cor nenhuma. Os mesmos rótulos servem de
+  `title` no ponto de estado da lista, que lê `fase.rotulo`. Os marcadores recebem LITERALMENTE a mesma string de classe que
   pinta o card (`FASES_CARD_KANBAN` em `KanbanTransportadoras.tsx` é fonte
   única: cada tom aparece uma vez só no arquivo), então legenda e card não têm
   como divergir. Em largura reduzida a legenda desce inteira para a linha
@@ -133,9 +143,8 @@ filtrada da tabela (busca, cards, alertas, frete, empresa continuam valendo).
      possível ainda (ver abaixo);
   2. **azul** (`sky-300/50`) etapa `PRONTO` (status `EXPEDICAO`), **com ou sem
      etiqueta**;
-  3. **verde** (`emerald-300/50`) `etiquetaGerada` (prepostagem Correios OU
-     `etiqueta_impressa_em` OU rastreio) **e** etapa em `A_RETIRAR`,
-     `EM_TRANSITO` ou `ENTREGUE`;
+  3. **verde** (`emerald-300/50`) etapa em `A_RETIRAR`, `EM_TRANSITO` ou
+     `ENTREGUE` — **sem depender de etiqueta**, desde 03/09/2026 (ver abaixo);
   4. **branco** (`bg-white`, borda `slate-300`) o resto — era `slate-50/50` até
      02/09/2026. Sobre o fundo da página (`#e8edf2`) o cinza translúcido
      resolvia em `#f0f4f7`, praticamente o próprio fundo, e o card sumia desde
@@ -152,29 +161,59 @@ filtrada da tabela (busca, cards, alertas, frete, empresa continuam valendo).
   tinha deixado de ajudar a achar trabalho.
 
   **A leitura nova**: azul é o que ainda está na bancada e precisa de ação;
-  verde é o que já saiu, rotulado. Por isso o azul ignora a etiqueta —
-  imprimir etiqueta não tira o pedido da bancada, só o despacho tira — e o
-  verde exige ter saído, senão voltaria a roubar o azul. Efeito colateral
-  aceito: pedido ainda em produção com rastreio deixa de ser verde e vira
-  cinza (zero casos no painel de 02/09) — ele não saiu de lugar nenhum.
+  verde é o que já saiu. Por isso o azul ignora a etiqueta — imprimir etiqueta
+  não tira o pedido da bancada, só o despacho tira — e o verde exige ter saído,
+  senão voltaria a roubar o azul. Efeito colateral aceito: pedido ainda em
+  produção com rastreio deixa de ser verde e vira branco (zero casos no painel
+  de 02/09) — ele não saiu de lugar nenhum.
 
-  **O laranja não tem ocupante.** O estado é derivado (Desenho A da Etapa 7,
-  `613961c`): despacho confirmado + `expedicoes.coletado_em` nula + etapa
-  `PRONTO` + transporte `TRANSPORTADORA`/`MOTOBOY`. A coluna `coletado_em`
-  **não existe no banco** — a migration está escrita e não aplicada. A condição
-  fica escrita e tipada atrás da flag `COLETA_TEM_FONTE_NO_BANCO`, anotada como
-  `boolean` (e não inferida como `false`, que tornaria o corpo código morto para
-  o compilador); devolve `false` para todo pedido até a coluna existir. Ligar é
-  trocar a flag e ler `coletado_em` no service.
+  **O VERDE PAROU DE EXIGIR ETIQUETA em 03/09/2026** (`983e477`). A inversão de
+  02/09 tirou a etiqueta do azul mas a deixou no verde, e sobrou um buraco:
+  pedido que já tinha saído SEM etiqueta impressa caía na quarta linha e ficava
+  **branco**, que quer dizer "ainda na fábrica" — a cor afirmava o contrário do
+  fato. Eram 3 no painel de 03/09: 20961 (`EM TRANSITO`), 21244 e 21557
+  (`ENTREGUE`), os três sem etiqueta, sem prepostagem e sem rastreio. Passaram
+  a verde; nenhum pedido mudou de cor em qualquer outra direção (branco 19→16,
+  verde 42→45, azul 7 e laranja 1 inalterados). A constante `FASE_ROTULADO`
+  virou `FASE_SAIU` na mesma mudança — o nome guardava a etiqueta.
+
+  **O laranja está no ar** desde a migration de `613961c`, que criou
+  `expedicoes.coletado_em`. O estado é derivado (Desenho A da Etapa 7): despacho
+  confirmado + `coletado_em` nula + etapa `PRONTO` + transporte
+  `TRANSPORTADORA`/`MOTOBOY`. A flag `COLETA_TEM_FONTE_NO_BANCO` saiu junto com
+  a migration, e a condição também saiu do card: ela é derivada UMA VEZ no
+  pipeline, em `PedidoExpedicao.aguardandoColeta`. O card só lê o campo — a cor
+  e a ação primária ("Confirmar coleta") bebem da mesma fonte e não podem
+  discordar.
 
   Nesta visão a urgência fica SÓ nos chips — o fundo vermelho/âmbar da tabela
   não se aplica aos cards.
-- **Sub-estado visual "Aguardando transportadora"**: pedido `PRONTO` (status
-  oficial `EXPEDICAO`) com etiqueta gerada e que não é retira-balcão exibe esse
-  badge no lugar de "Na Expedição". NÃO é um status novo em
-  `propostas.status_interno` — o fluxo oficial segue
+- **O DESPACHO É O ÚNICO DIVISOR DE ESTADO** (03/09/2026, `983e477`). A etiqueta
+  não muda estado algum: gerá-la carimba `expedicoes.etiqueta_impressa_em` e
+  nada mais — o pedido continua exatamente onde estava, e nenhum sinal visual do
+  painel muda por causa dela. O fluxo oficial segue
   `EXPEDICAO → A RETIRAR | EM TRANSITO → ENTREGUE`, e o "Em trânsito" continua
   sendo marcado manualmente pelo expedidor no Despachar.
+
+- **O sub-estado "Aguardando transportadora" FOI REMOVIDO** (03/09/2026,
+  `983e477`) — **não recrie**. Era `PRONTO` + etiqueta gerada + não-balcão, e
+  trocava o badge "Na Expedição" por "Aguardando transportadora". Três motivos:
+
+  1. **Prometia uma mudança de estado que não existe.** O nome sugere que o
+     pedido avançou; ele não avançou. Só o despacho avança.
+  2. **Card e lista discordavam no mesmo pedido.** A lista sempre imprimiu
+     `p.statusInterno` cru e dizia "Na Expedição"; o card dizia outra coisa.
+  3. **Confundia com o laranja.** "Aguardando transportadora" e "aguardando
+     coleta" são passos CONSECUTIVOS — o selo era antes do despacho, o laranja é
+     depois — e os nomes quase idênticos os faziam parecer o mesmo estado.
+
+  Saíram junto as duas entradas que só existiam para ele: o rótulo em
+  `src/lib/formatters/status.ts` e o tom em `src/components/common/StatusBadge.tsx`,
+  ambos para uma chave com **0 linhas** em `propostas.status_interno`. Nada mais
+  lia o selo: `acaoPrimaria` sempre decidiu por `etapa` e `aguardandoColeta`, e
+  segue oferecendo "Despachar" no topo do `⋯` do card azul. `etiqueta_impressa_em`
+  e `etiquetaGerada` continuam existindo e sendo gravados — o menu usa
+  `etiquetaGerada` para oferecer reimpressão.
 
 ---
 
@@ -771,8 +810,10 @@ A mesma precedência vale para a transportadora. Quando a transportadora vem pr�
 - A rota registra a geração em `expedicoes.etiqueta_impressa_em` (migration
   `20260817_expedicoes_etiqueta_impressa.sql`) após render bem-sucedido —
   best-effort, falha no registro não bloqueia o PDF. É esse carimbo que
-  alimenta o `etiquetaGerada` e o sub-estado "Aguardando transportadora" da
-  visão por transportadora (seção 1.3).
+  alimenta o `etiquetaGerada`, hoje lido apenas pelo menu de ações (oferecer
+  reimpressão). Ele NÃO pinta nem rotula nada no painel: o sub-estado
+  "Aguardando transportadora" que ele alimentava foi removido em 03/09/2026 e a
+  cor do card não depende mais de etiqueta (seção 1.3).
 
 **Layout (redesenhado em 16/08/2026).** A versão anterior era uma lista de linhas de texto do mesmo tamanho, que deixava metade da etiqueta vazia e obrigava a ler tudo para achar a cidade. O desenho atual divide a página em blocos com moldura, hierarquizados pelo que o conferente e o transportador precisam ver de longe:
 
