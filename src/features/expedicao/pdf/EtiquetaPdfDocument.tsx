@@ -161,19 +161,19 @@ const styles = StyleSheet.create({
   pedidoNumero: {
     flexGrow: 1,
     textAlign: "center",
-    fontSize: 36,
+    fontSize: 38,
     fontFamily: "Helvetica-Bold",
     letterSpacing: -1
   },
 
   destNome: { fontSize: 12, fontFamily: "Helvetica-Bold", marginTop: 1.5 },
-  destLinha: { fontSize: 9.5, marginTop: 1 },
+  destLinha: { fontSize: 10, marginTop: 1.2 },
 
-  grande: { fontSize: 17, fontFamily: "Helvetica-Bold", marginTop: 1 },
-  envio: { fontSize: 12, fontFamily: "Helvetica-Bold", marginTop: 2 },
+  grande: { fontSize: 18, fontFamily: "Helvetica-Bold", marginTop: 1 },
+  envio: { fontSize: 12.5, fontFamily: "Helvetica-Bold", marginTop: 2 },
 
   obsTexto: {
-    fontSize: 8.5,
+    fontSize: 9,
     fontFamily: "Helvetica-Bold",
     marginTop: 2,
     lineHeight: 1.2,
@@ -183,18 +183,41 @@ const styles = StyleSheet.create({
     overflow: "hidden"
   },
 
-  remLinha: { fontSize: 8.5, marginTop: 1 },
+  remLinha: { fontSize: 9, marginTop: 1.2 },
 
   /**
-   * `marginTop: auto` encosta o rodape no pe da moldura e `flexShrink: 0`
-   * impede que ele seja espremido quando o conteudo acima cresce — sem os dois,
-   * ele e o primeiro a ceder e foi o que quebrou para a segunda pagina.
+   * `flexShrink: 0` impede que o rodape seja espremido quando o conteudo acima
+   * cresce — sem ele, e o primeiro a ceder, e foi o que quebrou para a segunda
+   * pagina. Quem o empurra para o pe e o `espacador` acima, nao mais um
+   * `marginTop: auto` que esta versao do react-pdf nao honrava.
    */
-  rodape: { flexDirection: "row", alignItems: "flex-end", marginTop: "auto", flexShrink: 0 },
+  rodape: { flexDirection: "row", alignItems: "flex-end", flexShrink: 0 },
   rodapeColuna: { flexDirection: "column" },
-  qr: { width: 38, height: 38, marginTop: 2 },
-  dataValor: { fontSize: 14, fontFamily: "Helvetica-Bold", marginTop: 2 },
-  volumeValor: { fontSize: 24, fontFamily: "Helvetica-Bold", textAlign: "right" }
+  qr: { width: 40, height: 40, marginTop: 2 },
+  dataValor: { fontSize: 15, fontFamily: "Helvetica-Bold", marginTop: 2 },
+  volumeValor: { fontSize: 26, fontFamily: "Helvetica-Bold", textAlign: "right" },
+
+  /**
+   * ESPAÇADOR — é ELE que encosta o rodapé no pé da página.
+   *
+   * `marginTop: "auto"` não segurou nesta versão do react-pdf: o rodapé ficava
+   * logo abaixo do remetente e o que sobrava da altura virava espaço morto no
+   * fim. Um `View` com `flexGrow: 1` entre o conteúdo e o rodapé é o jeito
+   * canônico e à prova de versão: ele come toda a folga disponível e some
+   * sozinho (`flexShrink`) quando o conteúdo é longo.
+   */
+  espacador: { flexGrow: 1 },
+
+  /**
+   * TETO DO BLOCO DO DESTINATÁRIO — o único que varia de verdade.
+   *
+   * Endereço de duas linhas, A/C presente, nome longo: é aqui que o conteúdo
+   * cresce. Com o teto, o excesso é recortado NESTE bloco, e não no rodapé —
+   * perder o fim de um complemento é ruim, perder o QR e o volume é pior.
+   *
+   * 80pt cobrem nome + A/C + endereço em duas linhas + bairro + telefone.
+   */
+  destBloco: { maxHeight: 80, overflow: "hidden" }
 });
 
 export function EtiquetaPdfDocument({
@@ -231,7 +254,7 @@ export function EtiquetaPdfDocument({
             </View>
             <View style={styles.regua} />
 
-            <View wrap={false}>
+            <View wrap={false} style={styles.destBloco}>
               <Text style={styles.rotulo}>DESTINATÁRIO:</Text>
               <Text style={styles.destNome}>{vm.destinatario.nome}</Text>
               {vm.destinatario.recebedor ? (
@@ -293,9 +316,13 @@ export function EtiquetaPdfDocument({
               ) : null}
             </View>
 
-            {/* RODAPÉ — SITE (QR), DATA DE ENVIO e VOLUME.
-                `marginTop: auto` encosta no fundo da moldura: sobra de altura em
-                etiqueta sem observação vira respiro, não buraco no meio. */}
+            {/* O ESPAÇADOR come a folga e encosta o rodapé no pé. Sem ele, a
+                sobra de altura — que varia de pedido para pedido, conforme o
+                endereço tenha uma ou duas linhas e haja ou não observação —
+                virava espaço morto no fim da etiqueta. */}
+            <View style={styles.espacador} />
+
+            {/* RODAPÉ — SITE (QR), DATA DE ENVIO e VOLUME. */}
             <View wrap={false} style={styles.rodape}>
               <View style={[styles.rodapeColuna, { width: 60 }]}>
                 <Text style={styles.rotulo}>SITE:</Text>
