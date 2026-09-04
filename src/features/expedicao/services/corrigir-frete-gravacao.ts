@@ -17,9 +17,10 @@
  *   E, mesmo com um formState fiel, ele não corrigiria o dinheiro: depois de
  *   LIBERADO o `usarDeclaracaoPersistida` faz `modalidadeVigente` ser a
  *   modalidade JÁ GRAVADA, e `valor_frete`/`frete_escolhido` são calculados a
- *   partir dela e escritos ANTES de a flag `__somenteServidorPermitirCorrecaoFrete`
- *   sequer ser avaliada. Uma correção CIF→FOB gravaria `modalidade_frete = FOB`
- *   com o valor e o nome do SEDEX.
+ *   partir dela e escritos ANTES do gate da modalidade. Uma correção CIF→FOB
+ *   gravaria `modalidade_frete = FOB` com o valor e o nome do SEDEX. Houve uma
+ *   opção no `saveProposta` para abrir aquele gate (8475ff3); ela foi removida
+ *   por exatamente este motivo, e não deve voltar.
  *
  * O QUE ESTE MÓDULO ESCREVE — e só isto:
  *   `propostas`: modalidade_frete, transporte_categoria, id_transportadora_cliente,

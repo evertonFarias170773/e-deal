@@ -39,38 +39,18 @@ export const MODALIDADES_ORCAMENTO: ModalidadeFrete[] = ["RETIRA", "FOB", "CIF"]
  * o trigger `trg_frete_sync_financeiro` reescreve `status_interno` a partir de
  * `pagamentos_v2` — com zero pagamentos ele força `NOVO` incondicionalmente.
  * Editar o frete de um pedido que já saiu da fase de orçamento o rebaixaria.
+ *
+ * A TRAVA NÃO É A ÚLTIMA PALAVRA sobre corrigir frete depois da liberação. Isso
+ * existe e acontece 2 a 3 vezes por dia — só que fora daqui: a rota
+ * `/api/expedicao/corrigir-frete` grava direto as cinco colunas de `propostas` e
+ * o `valor` da cotação escolhida, na faixa em que a guarda de status protegido do
+ * banco impede o rebaixamento, e com NF, despacho, status e permissão conferidos
+ * no servidor. Não abra exceção nesta trava para atender aquele caso: o
+ * `saveProposta` calcula o valor e o nome do frete pela modalidade JÁ GRAVADA
+ * antes de chegar ao gate, e a exceção gravaria a modalidade nova com o dinheiro
+ * da antiga. Foi o que aconteceu com a opção de 8475ff3, removida por isso.
  */
 const STATUS_EDITAVEIS = ["NOVO", "AGUARDANDO"];
-
-/**
- * Faixa em que a CORREÇÃO pós-liberação é tecnicamente segura.
- *
- * Esta lista NÃO foi escolhida: ela é uma cópia da guarda de status protegido de
- * `atualizar_status_financeiro_proposta`, no banco. Só ali o trigger
- * `trg_frete_sync_financeiro` retorna cedo e NÃO reescreve `status_interno` —
- * que é exatamente o motivo pelo qual a trava acima existe.
- *
- * `LIBERADO` e `APROVADO` estão de fora de propósito: eles NÃO constam da guarda,
- * então lá o rebaixamento para `NOVO` ainda aconteceria. Estendê-los exigiria
- * reescrever a função do banco — outra ordem de risco, e outra conversa.
- *
- * Se algum dia a guarda do banco mudar, esta lista tem de mudar junto. Ela é
- * espelho, não opinião.
- */
-const STATUS_CORRECAO_POS_LIBERACAO = ["EXPEDICAO", "A RETIRAR", "EM TRANSITO", "ENTREGUE"];
-
-/**
- * O status está na faixa em que a correção pós-liberação pode gravar?
- *
- * Responde só sobre a SEGURANÇA TÉCNICA da escrita — se o trigger vai ou não
- * rebaixar a proposta. Não diz nada sobre ser permitido: NF autorizada, despacho
- * confirmado, pedido entregue e permissão do usuário são barreiras da rota, no
- * servidor. Ver `corrigir-frete-simulacao.ts`.
- */
-export function statusPermiteCorrecaoPosLiberacao(statusInterno: string | null | undefined): boolean {
-  const base = (statusInterno ?? "").trim().split("/")[0].trim().toUpperCase();
-  return STATUS_CORRECAO_POS_LIBERACAO.includes(base);
-}
 
 /**
  * `status_interno` pode vir composto ("NOVO / EM ARTE", "AGUARDANDO / EM ARTE"),
