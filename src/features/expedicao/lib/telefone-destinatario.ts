@@ -24,9 +24,13 @@ import { formatPhoneBR } from "@/lib/formatters/phone";
  *   apagaria os 331 cadastros com DDI 55 na frente (12 e 13 digitos), que sao
  *   telefones de verdade.
  *
- * UMA FUNCAO, TRES CONSUMIDORES: etiqueta 10x15, contato exibido no modal
- * Despachar e — por consequencia — a previa da etiqueta, que le o mesmo
- * view model da 10x15. Os tres precisam concordar sobre qual e "o telefone".
+ * UMA FUNCAO, TRES CONSUMIDORES: a etiqueta 10x15, o box de conferencia do
+ * modal Despachar (que le o mesmo view model) e a prepostagem dos Correios.
+ * Os tres precisam concordar sobre qual e "o telefone".
+ *
+ * O TELEFONE VEM SEMPRE DO CADASTRO (04/09/2026). Houve um campo editavel por
+ * remessa, gravado em `expedicoes.telefone_etiqueta`; ele saiu por decisao do
+ * dono, e a coluna ficou no banco sem leitura nem escrita.
  */
 const MINIMO_DIGITOS_TELEFONE = 8;
 
@@ -40,16 +44,11 @@ export function telefoneDestinatario(...candidatos: Array<string | null | undefi
 /**
  * O texto tem digitos suficientes para ser telefone?
  *
- * MESMO CRITERIO de `telefoneDestinatario` — e por isso ela chama esta. Existe
- * separada porque o modal Despachar precisa RECUSAR um telefone editado
- * invalido antes de gravar (mesma guarda que o peso ja tem): sem ela, um
- * "ramal 12" digitado no campo seria aceito, gravado em
- * `expedicoes.telefone_etiqueta`, e depois silenciosamente ignorado na leitura
- * — a etiqueta sairia com o telefone do cadastro e ninguem entenderia por que.
- *
- * Vazio, nulo e so-espaco sao FALSE: sao "nao ha telefone editado", nao erro.
- * Quem chama distingue os dois casos.
+ * Privada desde 04/09/2026: era exportada para o campo de telefone editavel do
+ * modal recusar valor invalido antes de gravar, e esse campo saiu junto com
+ * `expedicoes.telefone_etiqueta` — a coluna continua no banco, sem leitura nem
+ * escrita. O criterio segue aqui porque e ELE que define a regra acima.
  */
-export function pareceTelefone(bruto: string | null | undefined): boolean {
+function pareceTelefone(bruto: string | null | undefined): boolean {
   return String(bruto ?? "").replace(/\D/g, "").length >= MINIMO_DIGITOS_TELEFONE;
 }

@@ -11,8 +11,7 @@ import {
 } from "../lib/etiqueta-apresentacao";
 
 // 100 x 150 mm em pontos (1 mm = 2.83465 pt). Os numeros vivem em
-// `lib/etiqueta-apresentacao.ts` desde 04/09/2026, compartilhados com a
-// previa HTML do modal Despachar — o papel e a tela medem o mesmo.
+// `lib/etiqueta-apresentacao.ts` desde 04/09/2026.
 const LARGURA = ETIQUETA_LARGURA_PT;
 const ALTURA = ETIQUETA_ALTURA_PT;
 
@@ -86,10 +85,10 @@ function rotuloDocumento(formatado: string): string {
 /**
  * `separarCidadeUf` e `cortarObservacao` (e o limite de 105 caracteres da
  * observacao) SAIRAM DAQUI em 04/09/2026 para `lib/etiqueta-apresentacao.ts`,
- * com o raciocinio inteiro documentado la. Motivo: a previa HTML do modal
- * Despachar precisa aplicar exatamente as mesmas regras, e este arquivo
- * importa `@react-pdf/renderer`, que nao pode ir para o bundle do browser.
- * Nada mudou nas regras — so o endereco.
+ * com o raciocinio inteiro documentado la. Motivo: o box de conferencia do
+ * modal Despachar aplica as MESMAS regras, e este arquivo importa
+ * `@react-pdf/renderer`, que nao pode ir para o bundle do browser. Nada mudou
+ * nas regras — so o endereco.
  */
 
 /**
@@ -123,14 +122,18 @@ function rotuloDocumento(formatado: string): string {
  * UMA PÁGINA POR VOLUME, como sempre: `VOLUME 1/2`, `2/2`, e assim por diante.
  *
  * REVISAO DE 04/09/2026 — duas correcoes de CONTEUDO, layout preservado:
- *   - NOTA FISCAL voltou ao lado de PEDIDO, em duas colunas na mesma linha
- *     ("—" sem nota, como CEP e cidade ja faziam);
+ *   - NOTA FISCAL voltou a etiqueta ("—" sem nota, como CEP e cidade ja
+ *     faziam). Nasceu ao lado de PEDIDO no topo e desceu, no mesmo dia, para o
+ *     RODAPE ao lado do VOLUME, em corpo menor — decisao da direcao: o topo e
+ *     do numero do pedido, que e o que se procura de longe;
  *   - Fone imprime o TELEFONE: a regra `whatsapp_1 || telefone_fixo` pegava o
  *     primeiro campo preenchido, e no cadastro 248 ele guardava o nome do
  *     cliente. Ver `lib/telefone-destinatario.ts`.
- *   Este documento passou a ter uma PREVIA em HTML no modal Despachar
- *   (`components/EtiquetaPreview.tsx`), que le o mesmo view model e as mesmas
- *   regras de apresentacao. O PDF continua sendo o artefato impresso.
+ *   O modal Despachar mostra um BOX DE CONFERENCIA
+ *   (`components/ConferenciaDespacho.tsx`) com os dados deste documento, lendo
+ *   o mesmo view model e as mesmas regras de apresentacao. Ele NAO imita o
+ *   papel: houve uma previa em formato de etiqueta, trocada por um resumo em
+ *   04/09/2026 a pedido da direcao.
  */
 const styles = StyleSheet.create({
   pagina: {
@@ -159,14 +162,16 @@ const styles = StyleSheet.create({
 
   pedidoLinha: { flexDirection: "row", alignItems: "flex-start" },
   /**
-   * PEDIDO e NOTA FISCAL lado a lado (04/09/2026): duas colunas de largura
-   * igual, o pedido a esquerda e a nota a direita. O corpo caiu de 38 para 36pt
-   * para uma NF de 7 digitos caber ao lado de um pedido de 5 na largura util
-   * (~243pt) sem estourar.
+   * PEDIDO SOZINHO NO TOPO, em 38pt (04/09/2026). A NOTA FISCAL dividiu esta
+   * linha por um dia — duas colunas e o corpo reduzido para 36pt para caber uma
+   * NF de 7 digitos ao lado de um pedido de 5 — e desceu para o rodape por
+   * decisao da direcao. Com a linha livre, o numero volta ao corpo cheio e ao
+   * centro, como era antes.
    */
-  pedidoColuna: { flexGrow: 1, flexBasis: 0 },
   pedidoNumero: {
-    fontSize: 36,
+    flexGrow: 1,
+    textAlign: "center",
+    fontSize: 38,
     fontFamily: "Helvetica-Bold",
     letterSpacing: -1
   },
@@ -200,7 +205,20 @@ const styles = StyleSheet.create({
   rodapeColuna: { flexDirection: "column" },
   qr: { width: 40, height: 40, marginTop: 2 },
   dataValor: { fontSize: 15, fontFamily: "Helvetica-Bold", marginTop: 2 },
-  volumeValor: { fontSize: 26, fontFamily: "Helvetica-Bold", textAlign: "right" },
+  /**
+   * NOTA FISCAL no rodape, ao lado do VOLUME (04/09/2026, decisao da direcao).
+   * Corpo menor que o do volume de proposito: quem procura a etiqueta na
+   * esteira procura PEDIDO e VOLUME; a nota e conferencia, e ler de perto
+   * basta.
+   */
+  nfValor: { fontSize: 13, fontFamily: "Helvetica-Bold", textAlign: "right", marginTop: 2 },
+  /**
+   * 26 -> 22pt junto com a entrada da NF no rodape. Em 26pt um "18/18" media
+   * ~65pt e nao cabia na coluna: o numero quebrava em duas linhas ("10/-" e
+   * "18"), defeito visivel no PDF de 18 volumes do 21074. Com 22pt e a coluna
+   * mais larga, cabe ate 99/99.
+   */
+  volumeValor: { fontSize: 22, fontFamily: "Helvetica-Bold", textAlign: "right" },
 
   /**
    * ESPAÇADOR — é ELE que encosta o rodapé no pé da página.
@@ -254,14 +272,8 @@ export function EtiquetaPdfDocument({
                 separa do seu valor, nem entre si nem do resto. Era exatamente o
                 sintoma do 21503 no rodape. */}
             <View wrap={false} style={styles.pedidoLinha}>
-              <View style={styles.pedidoColuna}>
-                <Text style={styles.rotulo}>PEDIDO:</Text>
-                <Text style={styles.pedidoNumero}>{vm.idInt}</Text>
-              </View>
-              <View style={[styles.pedidoColuna, { alignItems: "flex-end" }]}>
-                <Text style={styles.rotulo}>NOTA FISCAL:</Text>
-                <Text style={styles.pedidoNumero}>{a.nfExibida}</Text>
-              </View>
+              <Text style={styles.rotulo}>PEDIDO:</Text>
+              <Text style={styles.pedidoNumero}>{vm.idInt}</Text>
             </View>
             <View style={styles.regua} />
 
@@ -334,8 +346,12 @@ export function EtiquetaPdfDocument({
             <View style={styles.espacador} />
 
             {/* RODAPÉ — SITE (QR), DATA DE ENVIO e VOLUME. */}
+            {/* RODAPÉ — SITE (QR), DATA DE ENVIO, NOTA FISCAL e VOLUME.
+                As larguras somam 164pt dos ~243pt úteis; o resto sobra para a
+                data, que em 15pt mede ~75pt. Apertar mais faz o número quebrar
+                em duas linhas. */}
             <View wrap={false} style={styles.rodape}>
-              <View style={[styles.rodapeColuna, { width: 60 }]}>
+              <View style={[styles.rodapeColuna, { width: 46 }]}>
                 <Text style={styles.rotulo}>SITE:</Text>
                 {/* `Image` aqui é o do `@react-pdf/renderer`, não um `<img>`:
                     ele desenha no PDF e não aceita `alt` (nem existe leitor de
@@ -347,7 +363,15 @@ export function EtiquetaPdfDocument({
                 <Text style={styles.rotulo}>DATA DE ENVIO:</Text>
                 <Text style={styles.dataValor}>{vm.dataEnvio}</Text>
               </View>
-              <View style={[styles.rodapeColuna, { width: 62, alignItems: "flex-end" }]}>
+              <View style={[styles.rodapeColuna, { width: 54, alignItems: "flex-end" }]}>
+                {/* "NF:", nao "NOTA FISCAL:": o rotulo inteiro nao cabe nos 54pt
+                    da coluna e quebrava em duas linhas ("NOTA FIS-" / "CAL:"),
+                    visto no PDF do 21599. Alargar a coluna espremeria a data,
+                    que em 15pt ja ocupa quase toda a folga do rodape. */}
+                <Text style={styles.rotulo}>NF:</Text>
+                <Text style={styles.nfValor}>{a.nfExibida}</Text>
+              </View>
+              <View style={[styles.rodapeColuna, { width: 64, alignItems: "flex-end" }]}>
                 <Text style={styles.rotulo}>VOLUME:</Text>
                 <Text style={styles.volumeValor}>
                   {n}/{vm.volumes}

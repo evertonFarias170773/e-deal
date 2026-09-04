@@ -118,18 +118,12 @@ export interface ExpedicaoRegistro {
   /** `expedicoes.nf_numero_manual` — fallback; `notas_fiscais.numero_nf` vence. */
   nfNumeroManual: string | null;
   /**
-   * `expedicoes.telefone_etiqueta` — o telefone IMPRESSO, editado na expedição
-   * (04/09/2026). `null` = segue o cadastro pela regra de
-   * `lib/telefone-destinatario.ts`; preenchido VENCE, na 10x15, na prévia, na
-   * conferência dos Correios e na prepostagem gerada depois. Editar aqui nunca
-   * toca `public.clientes`: é dado da remessa, não do cadastro.
-   *
-   * O modal Despachar NÃO semeia o campo com este valor, de propósito: ele é a
-   * foto que a lista carregou e envelhece quando "Gerar etiqueta" salva sem
-   * recarregar. Lá o campo nasce vazio e exibe o que o servidor resolve na
-   * prévia. Este campo existe para o registro espelhar a tabela inteira.
+   * `expedicoes.telefone_etiqueta` NÃO é lida (04/09/2026). A coluna existe no
+   * banco — houve um campo de telefone editável por remessa, removido por
+   * decisão do dono — e ficou lá, sem leitura nem escrita, com todas as linhas
+   * nulas. O telefone impresso vem do cadastro, por
+   * `lib/telefone-destinatario.ts`.
    */
-  telefoneEtiqueta: string | null;
   /** Última geração da etiqueta interna 10x15 (ISO) — gravada pela rota da etiqueta. */
   etiquetaImpressaEm: string | null;
 }

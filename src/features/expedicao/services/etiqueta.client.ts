@@ -145,31 +145,20 @@ export async function abrirDeclaracaoConteudo(idInt: number): Promise<AbrirEtiqu
 export type PreviaEtiquetaResult = {
   success: boolean;
   vm?: EtiquetaViewModel;
-  qrDataUrl?: string | null;
   errorMessage?: string;
 };
 
 /**
- * Carrega o view model da etiqueta 10x15 para a PREVIA do modal Despachar
+ * Carrega o view model do despacho para o BOX DE CONFERENCIA do modal
  * (04/09/2026). Rota `GET /api/expedicao/etiqueta/previa` — o MESMO
  * `montarEtiquetaViewModel` da rota do PDF, em JSON, sem carimbar
  * `etiqueta_impressa_em`.
  *
- * `idDestinatario` e a escolha do drop "Em nome de quem sai a etiqueta" ainda
- * nao gravada; `null` deixa o servidor ler o que esta persistido.
- *
  * Bearer quando ha sessao (mesmo padrao de `gerarPrepostagem`); sem token a
  * rota ainda autentica pelo cookie, como faz na aba do PDF.
  */
-export async function carregarPreviaEtiqueta(
-  idInt: number,
-  idDestinatario: number | null
-): Promise<PreviaEtiquetaResult> {
-  const params = new URLSearchParams({ id_int: String(idInt) });
-  if (idDestinatario !== null && Number.isFinite(idDestinatario) && idDestinatario > 0) {
-    params.set("destinatario", String(idDestinatario));
-  }
-  const url = `/api/expedicao/etiqueta/previa?${params.toString()}`;
+export async function carregarPreviaEtiqueta(idInt: number): Promise<PreviaEtiquetaResult> {
+  const url = `/api/expedicao/etiqueta/previa?id_int=${idInt}`;
 
   try {
     const client = getSupabaseClient();
@@ -177,10 +166,10 @@ export async function carregarPreviaEtiqueta(
     const token = sessionResult?.data?.session?.access_token;
     const response = await fetch(url, token ? { headers: { Authorization: `Bearer ${token}` } } : undefined);
     const body = (await response.json().catch(() => null)) as
-      | { success?: boolean; vm?: EtiquetaViewModel; qrDataUrl?: string | null; message?: string }
+      | { success?: boolean; vm?: EtiquetaViewModel; message?: string }
       | null;
     if (response.ok && body?.success && body.vm) {
-      return { success: true, vm: body.vm, qrDataUrl: body.qrDataUrl ?? null };
+      return { success: true, vm: body.vm };
     }
     return { success: false, errorMessage: body?.message || `Falha ao montar a prévia (HTTP ${response.status}).` };
   } catch (e) {

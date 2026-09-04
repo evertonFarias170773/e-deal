@@ -836,133 +836,102 @@ O QR aponta para `{APP_URL}/orcamentos/:id_int` — **é conferência interna, n
 > `EtiquetaPdfDocument.tsx`. O QR codifica o site da empresa, não mais o
 > pedido no ERP.
 
-### Prévia da etiqueta no modal Despachar (04/09/2026)
+### O modal Despachar como resumo de conferência (04/09/2026)
 
-O modal Despachar passou a **exibir a etiqueta 10×15** enquanto o expedidor
-preenche — o modal parece a etiqueta. A prévia é **representação, não
-substituição**: o PDF continua sendo o artefato impresso, gerado pela mesma
-rota de sempre.
+O modal deixou de imitar a etiqueta. No lugar da prévia em formato de papel
+entrou **um box de leitura** (`components/ConferenciaDespacho.tsx`) com os
+dados do envio na ordem destinatário, endereço, bairro, Fone, CEP e cidade/UF,
+forma de envio e observações. Vale para os **três** fluxos — 10×15, Correios e
+Retira —, porque o que se confere é o despacho, não o documento que vai sair.
+Os campos editáveis que sobraram (NF, peso, volumes, tipo e observações)
+refletem no box na hora.
 
-**Uma fonte de dados.** A prévia lê o **mesmo** `montarEtiquetaViewModel` do
-PDF, servido em JSON por `GET /api/expedicao/etiqueta/previa?id_int=…[&destinatario=…]`
-(`src/app/api/expedicao/etiqueta/previa/route.ts`, permissão `expedicao.view`,
-mesma autenticação da rota do PDF). Rota própria, e não um parâmetro na do
-PDF, porque aquela carimba `etiqueta_impressa_em` a cada chamada — prévia não
-é impressão. `destinatario` é a escolha do drop "Em nome de quem sai a
-etiqueta" ainda não gravada; passa pela mesma validação do valor persistido
-(`idDestinatarioEtiquetaVigente`), então nenhum id arbitrário chega à prévia.
+**A lógica não mudou, só o desenho.** Os dados continuam vindo do mesmo
+`montarEtiquetaViewModel` do PDF, servido por
+`GET /api/expedicao/etiqueta/previa` (JSON, sem carimbar
+`etiqueta_impressa_em`), e as linhas derivadas continuam em
+`lib/etiqueta-apresentacao.ts`. **Gerar a etiqueta segue salvando o formulário
+antes de abrir o PDF**, e o layout vale também em "Editar dados de expedição".
 
-**Uma fonte de regras.** Corte da observação, cidade/UF, linha "Fone:",
-"A DEFINIR", "—" e as dimensões da página saíram de `EtiquetaPdfDocument.tsx`
-para **`lib/etiqueta-apresentacao.ts`** (`apresentacaoEtiqueta`), importado
-pelo PDF e pela prévia (`components/EtiquetaPreview.tsx`). O que se repete é
-só a marcação — `View`/`Text` do react-pdf não renderizam no DOM —, com os
-estilos espelhados um a um, em pontos, e a etiqueta escalada por `transform`
-para a largura do modal. Testes em `scripts/testes/etiqueta-apresentacao.test.mts`.
+**Três controles saíram da tela:**
 
-**O que muda na hora, sem salvar:** Nº da NF (só sem nota autorizada),
-volumes (`1/N`) e observação — sobrepostos ao view model no browser. Trocar o
-destinatário recarrega a prévia do servidor, porque o nome do pagador segue
-`nome || fantasia` lá e `fantasia || nome` na lista. **Peso não aparece na
-etiqueta** desde 26/08 e não muda a prévia. **Forma de envio segue a regra do
-papel**: antes do despacho confirmado sai a transportadora do orçamento (gate
-`expConfirmado`), não a do select — trocar a transportadora no modal só chega
-ao papel depois de confirmar o despacho.
+| Controle | O que alimentava | Quem preenche agora |
+|---|---|---|
+| "Como vai" | `expedicoes.tipo_frete` | `transporteInicial`: resíduo FOB vira transportadora, senão o gravado, senão a normalização da cotação, com a guarda por modalidade |
+| Box do endereço | nada — já era leitura | `id_endereco_entrega` continua vindo de `pedido.enderecoEntrega.id` |
+| "Em nome de quem sai a etiqueta" | `id_cliente_destinatario_etiqueta` | ninguém: a coluna **não é mais gravada** |
 
-**Gerar etiqueta salva antes.** `handleEmitirEtiqueta` grava o formulário por
-`salvarDadosExpedicao` (o caminho do "Salvar sem despachar", sem tocar
-`data_despacho`) e só então abre o PDF — mesmo desenho da prepostagem (6.2).
-Antes, editar NF ou observação e imprimir abria um PDF com os valores
-antigos. Vale para as três variantes do botão (10×15, retirada, Correios).
+O "Como vai" **nunca tocou `propostas.transporte_categoria`** — essa coluna é
+do Orçamento. Medido antes de remover: nos **7** pedidos que aguardavam
+despacho o automático acerta os 7; no histórico, **5 de 58** despachos tinham
+transporte diferente do que ele escolheria (21330 CIF indefinido, 21244
+cotação motoboy, e três legados sem modalidade).
 
-**Layout do modal**: cabeçalho com chip somente leitura `MODALIDADE DO FRETE`
-(a linha "cliente · cidade · frete cotado" saiu); "Em nome de quem sai a
-etiqueta" acima da prévia; abaixo dela "Como vai", transportadora, endereço
-(leitura), recotação, rastreio e prepostagem como antes; depois NF, peso,
-volumes e tipo numa linha, observação, e o botão **"Gerar etiqueta 10x15"**
-em largura total. Retira e Correios não têm prévia (são outros documentos): o
-lugar dela mostra um aviso. Pedido sem modalidade decidida continua com os
-botões de escolha no corpo, como única saída dos legados.
+**Por isso os campos de transportadora passaram a aparecer sempre**, em
+qualquer transporte. Antes só existiam em `TRANSPORTADORA`: sem o select, um
+pedido resolvido como Correios ou Motoboy sem nome gravado ficaria **travado**
+— `camposMinimosDespacho` exige transportadora em todo despacho de transporte
+e não haveria onde informá-la. Em Retira eles seguem ocultos, porque ali a
+validação não exige transportadora e o submit força "Retira balcão".
 
-**Correios têm CONFERÊNCIA, no mesmo desenho** (04/09/2026). Quando o
-transporte é Correios, o lugar da prévia mostra o **mesmo** `EtiquetaPreview`
-em `modo="CORREIOS"` — um desenho, dois modos, sem segundo componente. O
-enquadramento, os blocos e a tipografia são os da 10x15; o que muda é o
-aviso: cabeçalho "Conferência da prepostagem dos Correios", selo "não é a
-etiqueta" e a frase de que o rótulo impresso é o oficial deles, gerado por
-eles. Nota fiscal, volumes e observações continuam visíveis, marcados "SÓ NO
-ERP" e em cinza, coerentes com o rodapé que diz o que vai na prepostagem
-(destinatário, endereço, CEP, cidade/UF, telefone, remetente e peso) e o que
-fica só aqui. Duas escolhas conscientes: o remetente é
-`remetente.nomeCadastro` (o nome real da empresa, sem a regra "DSEG BRASIL"
-do 8469, porque a prepostagem não a aplica) e o rodapé troca o QR por PESO
-(peso vai na prepostagem, o QR não). Se já existe objeto nos Correios, um
-aviso âmbar diz que nome, endereço e telefone **congelaram** lá —
-`baixarRotuloPdf` só manda o id da prepostagem, nada é reenviado. Retira
-continua sem prévia. "Editar dados de expedição" abre o mesmo modal, então o
-layout novo vale também depois do despacho confirmado, sem tocar
-`data_despacho`.
+**Quem sai na etiqueta virou regra fixa.** `idDestinatarioEtiquetaVigente`
+perdeu o degrau do meio ("pedido já despachado imprime o cliente"): agora é
+escolha **gravada** vence › senão o **pagador** quando existir › senão o
+cliente. A base sustenta a regra: das **21** escolhas gravadas, as 21
+escolheram o pagador. **Quatro** pedidos já despachados e sem escolha mudam o
+nome impresso — 20974, 20464, 20382 e 18360; o 20464 passa de LISITON para
+TICMAIS SOLUCOES. Medido e autorizado pelo dono. O nome do pagador na lista
+passou a `nome || fantasia`, a mesma ordem do documento.
 
-**Telefone da prepostagem** (`correios/prepostagem/route.ts`, 04/09/2026):
-passou a usar `telefoneDestinatario`, a mesma função da 10x15. A regra
-anterior (`whatsapp_1 ?? telefone_fixo`) pegava o primeiro campo preenchido;
-com um nome ali, `contatoParaPayload` descartava o texto sem dígitos e a
-prepostagem **ia sem contato**, com o fixo certo ignorado ao lado — não ia
-o nome. Vale para prepostagens geradas daqui em diante; as já emitidas não
-mudam.
+**O telefone voltou a ser só do cadastro.** O campo editável e
+`expedicoes.telefone_etiqueta` saíram do código — a coluna **fica no banco**,
+sem leitura nem escrita, com todas as linhas nulas; não há migration de
+reversão. A correção da regra **permanece**: vale o primeiro campo que *é*
+telefone, não o primeiro preenchido, na 10×15 e na prepostagem dos Correios.
 
-### Telefone editável na etiqueta (04/09/2026)
+**Textos de apoio removidos** a pedido da direção: o da prévia, o do "Correios
+não entra em FOB" (sem o select, FOB nunca ofereceu Correios — era explicação,
+não trava), o do frete cotado e os das observações e da modalidade. Ficaram os
+alertas operacionais: NF-e não autorizada com o checkbox, as mensagens de erro
+e validação, o aviso de endereço ausente e o de congelamento nos Correios.
 
-O telefone impresso passou a ser editável no despacho, gravado em
-**`expedicoes.telefone_etiqueta text NULL`** (migration
-`20260904_expedicoes_telefone_etiqueta.sql`, aplicada em 04/09/2026 — sem
-default, sem backfill, asserções de entrada e saída passaram, 59 linhas
-intactas e nenhum `updated_at` tocado). Nenhuma das colunas existentes servia
-sem trocar de significado: `obs` é recado interno, `obs_etiqueta` é a
-observação impressa, `pesos_volumes` é da Revisão.
+**Ajustes de layout, no mesmo dia.** O box ganhou tipografia de conferência: os
+**valores** cresceram e os rótulos ficaram pequenos, com o **nome do
+destinatário** como maior texto (24 px), seguido de endereço, bairro, CEP e
+cidade/UF; forma de envio e observações em corpo intermediário. Conferido sem
+estouro horizontal em 1500, 900 e 420 px. No cabeçalho, o **número do pedido**
+passou a 24 px e peso extra, maior que o título.
 
-**Semântica**: `null` segue o cadastro pela regra de
-`lib/telefone-destinatario.ts`; preenchido **vence** na 10×15, na prévia, na
-conferência dos Correios e na prepostagem gerada depois. A precedência é a
-mesma função com o editado como primeiro candidato — uma regra, cinco
-consumidores. **Nunca toca `public.clientes`**: é o contato desta remessa,
-não o telefone do cliente.
+**A transportadora deixou de ser editável.** Vale a que a proposta define: o
+select do cadastro e o campo livre saíram, e ela aparece como leitura na linha
+FORMA DE ENVIO do box. **A validação não foi afrouxada** e nenhum fallback novo
+foi criado — `idTransportadoraCliente` e `transportadoraNome` continuam nascendo
+do vínculo do orçamento e do nome derivado, que é o que já ia para `expedicoes`.
 
-**Três estados, e a diferença importa.** O campo guarda `null` (ninguém editou
-nesta sessão), `""` (o expedidor limpou) ou um número. `null` **não entra no
-upsert** — mesmo contrato de `obs` —, `""` grava `NULL` e devolve o telefone
-do cadastro. Sem essa distinção, abrir o modal só para corrigir a observação
-apagaria um telefone editado antes. Não há como imprimir *sem* telefone:
-limpar o campo devolve o do cadastro.
+Medido antes de remover: dos **8** pedidos aguardando despacho, **nenhum** fica
+sem transportadora — 3 são Retira (não exige), 3 têm vínculo do orçamento e 2
+são CIF com o nome vindo do serviço cotado. Em **60** despachos confirmados,
+**um** trocou a transportadora à mão: o **21174**, orçamento EXPRESSO SÃO
+MIGUEL, despachado por TW TRANSPORTES. Esse tipo de caso — coleta trocada —
+**deixa de ter onde ser registrado na Expedição**: "Editar dados de expedição"
+abre o mesmo modal, e o único caminho restante é corrigir a proposta pela
+correção de frete, que muda o registro comercial. Risco aceito pela direção em
+04/09/2026.
 
-**O campo nasce vazio e exibe o que o servidor resolveu**, nunca semeado de
-`pedido.expedicao`. Esse detalhe custou dois ciclos de teste: o registro da
-lista é uma **foto**, e "Gerar etiqueta" salva sem recarregá-la — semeando
-dali, editar o telefone, gerar a etiqueta e reabrir o modal trazia de volta o
-valor **anterior**, com a tela contradizendo o PDF, que lê o banco. Por isso o
-view model expõe `destinatario.telefoneCadastro` ao lado de
-`destinatario.telefone`: o primeiro é o fallback de quando o campo é limpo, o
-segundo é o que vai impresso.
+Fica de pé um fallback **que já existia** no pipeline: em FOB sem vínculo,
+`nomeTransporteEfetivo` devolve `"Transportadora a definir"`, string não vazia
+que **passa** em `camposMinimosDespacho`. Antes o expedidor corrigia no campo;
+agora isso seria gravado. Hoje são **0** pedidos ativos nessa situação e **0**
+despachos históricos com esse texto gravado.
 
-**Valor inválido é recusado**, como o peso: "ramal 12" mostra aviso inline,
-bloqueia Salvar, Confirmar despacho e Gerar prepostagem, e não grava — gravar
-um texto que a leitura depois ignora deixaria a etiqueta saindo com o telefone
-do cadastro sem ninguém entender por quê. O campo carrega o mesmo aviso de
-congelamento do select "Em nome de quem": nos Correios o telefone só tem
-efeito se definido **antes** da prepostagem. Não aparece em RETIRA — a
-etiqueta de retirada (`etiqueta-retirada-viewmodel.service.ts`) não lê este
-campo e segue com a regra antiga de telefone.
+`limparRecotacao` saiu junto: seu único chamador era o select da transportadora,
+e não há mais gesto na tela que torne uma recotação obsoleta.
 
-**Duas correções de conteúdo no PDF:** `NOTA FISCAL` ao lado de `PEDIDO`
-(duas colunas, corpo 38→36 pt; "—" sem nota) e **Fone imprime o telefone**:
-`whatsapp_1 || telefone_fixo` pegava o primeiro campo *preenchido*, e no
-cadastro 248 (pagador do 21000) ele guarda o nome — 4.144 cadastros têm
-`whatsapp_1` sem dígito algum (medido em 04/09/2026). `lib/telefone-destinatario.ts`
-devolve o primeiro candidato com ≥ 8 dígitos, ou vazio (a linha some). O
-contato exibido no modal usa a mesma função. A etiqueta de retirada
-(`etiqueta-retirada-viewmodel.service.ts`) e a prepostagem dos Correios
-(`correios/prepostagem/route.ts`) **não** foram alteradas e ainda aplicam a
-regra antiga.
+**No PDF**, a nota fiscal saiu do topo e foi para o rodapé, ao lado do VOLUME,
+em corpo menor e com rótulo "NF:" (o rótulo inteiro não cabia na coluna). O
+número do pedido voltou a 38 pt e ao centro. O volume caiu de 26 para 22 pt com
+a coluna mais larga: em 26 pt um "18/18" quebrava em duas linhas, defeito real
+no PDF de 18 volumes do 21074.
 
 ## 6.2 Etiqueta oficial dos Correios (prepostagem)
 

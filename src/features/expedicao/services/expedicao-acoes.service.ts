@@ -14,6 +14,17 @@ export type ResultadoAcao = {
   aguardandoColeta?: boolean;
 };
 
+/**
+ * O que o despacho grava em `public.expedicoes`.
+ *
+ * `id_cliente_destinatario_etiqueta` NAO ESTA MAIS AQUI (04/09/2026): o select
+ * "Em nome de quem sai a etiqueta" saiu e quem recebe virou regra FIXA, em
+ * `lib/destinatario-etiqueta.ts` — o pagador quando existir, senao o cliente.
+ * As 21 escolhas ja gravadas continuam na tabela e continuam VENCENDO na
+ * leitura, e e por isso que o campo saiu tambem do upsert de `despachar`: ele
+ * gravava `?? null` a cada despacho e, sem o modal enviando nada, apagaria a
+ * escolha de quem redespachasse.
+ */
 export type DespachoInput = {
   tipoEntrega: "TRANSPORTE" | "RETIRADA";
   /** Quem paga o transporte. Null só em pedido legado que ainda não foi redespachado. */
@@ -25,12 +36,6 @@ export type DespachoInput = {
   qtdVolumes: number | null;
   tipoVolume: string | null;
   idEnderecoEntrega: string | null;
-  /**
-   * `clientes.id_cliente` em nome de quem a etiqueta sai. So existe quando ha
-   * pagador distinto do cliente; `null` mantem o cliente da proposta, que e o
-   * comportamento de sempre. Independe do endereco escolhido.
-   */
-  idClienteDestinatarioEtiqueta?: number | null;
   codigoRastreamento: string;
   /**
    * `expedicoes.obs` — observacao LOGISTICA INTERNA. Nao sai em documento.
@@ -58,21 +63,6 @@ export type DespachoInput = {
    * camada apenas grava o que foi digitado.
    */
   nfNumeroManual?: string;
-  /**
-   * `expedicoes.telefone_etiqueta` — o telefone IMPRESSO (04/09/2026).
-   *
-   * Vazio/`undefined` grava NULL, que significa "segue o cadastro" pela regra
-   * de `lib/telefone-destinatario.ts`. Preenchido VENCE, na 10x15, na previa,
-   * na conferencia dos Correios e na prepostagem gerada depois.
-   *
-   * NUNCA TOCA `public.clientes`: o numero do cadastro fica como esta. Este
-   * campo e da REMESSA — o contato que a transportadora usa para entregar
-   * ESTA caixa, que nem sempre e o telefone principal do cliente.
-   *
-   * A validacao de formato vive na tela (`pareceTelefone`), como a do peso:
-   * esta camada apenas grava o que recebe.
-   */
-  telefoneEtiqueta?: string;
 };
 
 import { camposMinimosDespacho, frasearFaltantes } from "../lib/campos-minimos-despacho";
@@ -280,7 +270,6 @@ export async function despachar(
     qtd_volumes: input.qtdVolumes,
     tipo_volume: input.tipoVolume,
     id_endereco_entrega: input.idEnderecoEntrega,
-    id_cliente_destinatario_etiqueta: input.idClienteDestinatarioEtiqueta ?? null,
     codigo_rastreamento: input.codigoRastreamento || null,
     // `undefined` NAO entra no upsert: o modal parou de enviar `obs` e escrever
     // `null` aqui apagaria o recado interno de quem ainda o tem gravado.
@@ -289,13 +278,6 @@ export async function despachar(
     // transacao implicita, mesmo tratamento de erro.
     obs_etiqueta: input.obsEtiqueta?.trim() || null,
     nf_numero_manual: input.nfNumeroManual?.trim() || null,
-    // `undefined` NAO entra no upsert, como `obs`: o modal so envia este campo
-    // quando o expedidor mexeu nele. Enviar `null` a toda gravacao APAGARIA o
-    // telefone editado de quem abriu o modal so para corrigir outra coisa.
-    // "" (limpou o campo) grava NULL de proposito: volta ao cadastro.
-    ...(input.telefoneEtiqueta !== undefined
-      ? { telefone_etiqueta: input.telefoneEtiqueta.trim() || null }
-      : {}),
     data_despacho: new Date().toISOString(),
     despachado_por: ator.nome
   });
@@ -499,12 +481,9 @@ export async function salvarDadosExpedicao(
   if (dados.qtdVolumes !== undefined) campos.qtd_volumes = dados.qtdVolumes;
   if (dados.tipoVolume !== undefined) campos.tipo_volume = dados.tipoVolume;
   if (dados.idEnderecoEntrega !== undefined) campos.id_endereco_entrega = dados.idEnderecoEntrega;
-  if (dados.idClienteDestinatarioEtiqueta !== undefined)
-    campos.id_cliente_destinatario_etiqueta = dados.idClienteDestinatarioEtiqueta;
   if (dados.codigoRastreamento !== undefined) campos.codigo_rastreamento = dados.codigoRastreamento || null;
   if (dados.obs !== undefined) campos.obs = dados.obs || null;
   if (dados.obsEtiqueta !== undefined) campos.obs_etiqueta = dados.obsEtiqueta.trim() || null;
   if (dados.nfNumeroManual !== undefined) campos.nf_numero_manual = dados.nfNumeroManual.trim() || null;
-  if (dados.telefoneEtiqueta !== undefined) campos.telefone_etiqueta = dados.telefoneEtiqueta.trim() || null;
   return upsertExpedicao(idInt, campos);
 }

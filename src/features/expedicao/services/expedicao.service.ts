@@ -166,7 +166,7 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
     client
       .from("expedicoes")
       .select(
-        "id_int, modalidade_frete, tipo_frete, transportadora_nome, id_transportadora_cliente, peso_kg, peso_bruto_kg, qtd_volumes, tipo_volume, id_endereco_entrega, id_cliente_destinatario_etiqueta, codigo_rastreamento, correios_id_prepostagem, correios_codigo_objeto, prepostagem_cancelada_em, correios_id_prepostagem_anterior, correios_codigo_objeto_anterior, data_pronto, data_despacho, coletado_em, data_entrega, despachado_por, retirado_por, obs, obs_etiqueta, nf_numero_manual, telefone_etiqueta, etiqueta_impressa_em"
+        "id_int, modalidade_frete, tipo_frete, transportadora_nome, id_transportadora_cliente, peso_kg, peso_bruto_kg, qtd_volumes, tipo_volume, id_endereco_entrega, id_cliente_destinatario_etiqueta, codigo_rastreamento, correios_id_prepostagem, correios_codigo_objeto, prepostagem_cancelada_em, correios_id_prepostagem_anterior, correios_codigo_objeto_anterior, data_pronto, data_despacho, coletado_em, data_entrega, despachado_por, retirado_por, obs, obs_etiqueta, nf_numero_manual, etiqueta_impressa_em"
       )
       .in("id_int", ids),
     idsCliente.length > 0
@@ -314,7 +314,6 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
       obs: row.obs ?? null,
       obsEtiqueta: row.obs_etiqueta ?? null,
       nfNumeroManual: row.nf_numero_manual ?? null,
-      telefoneEtiqueta: row.telefone_etiqueta ?? null,
       etiquetaImpressaEm: row.etiqueta_impressa_em ?? null
     });
   }
@@ -573,12 +572,15 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
       // Nome do pagador, SO quando ele difere do cliente do pedido. A regra de
       // "difere" e a mesma `temPagadorDistinto` que o modal Despachar e a
       // etiqueta usam — os tres precisam concordar sobre quem e o pagador.
-      // `fantasia || nome` e a mesma preferencia de rotulo do resto do cadastro.
+      // `nome || fantasia` desde 04/09/2026: a MESMA ordem do documento (razão
+      // social primeiro, fantasia como reserva). Era o inverso, e com o
+      // destinatário fixado no pagador a lista diria um nome e a etiqueta
+      // imprimiria outro no mesmo pedido.
       pagador: (() => {
         const idPagador = Number(p.id_faturado);
         if (!temPagadorDistinto(idCliente, Number.isFinite(idPagador) ? idPagador : null)) return "";
         const cadastro = clienteMap.get(idPagador);
-        return String(cadastro?.fantasia ?? "").trim() || String(cadastro?.nome ?? "").trim() || `#${idPagador}`;
+        return String(cadastro?.nome ?? "").trim() || String(cadastro?.fantasia ?? "").trim() || `#${idPagador}`;
       })(),
       // Contato dos dois destinatarios possiveis. O do pagador so existe quando
       // ele e distinto — mesma condicao do drop no modal.

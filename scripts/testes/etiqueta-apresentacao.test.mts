@@ -12,7 +12,11 @@
  * 2. `lib/etiqueta-apresentacao` — as linhas derivadas que o PDF e a previa do
  *    modal Despachar imprimem identicas. Sao puras e rodam nos dois lados.
  */
-import { pareceTelefone, telefoneDestinatario } from "@/features/expedicao/lib/telefone-destinatario";
+import { telefoneDestinatario } from "@/features/expedicao/lib/telefone-destinatario";
+import {
+  idDestinatarioEtiquetaVigente,
+  temPagadorDistinto
+} from "@/features/expedicao/lib/destinatario-etiqueta";
 import {
   LIMITE_OBSERVACAO,
   apresentacaoEtiqueta,
@@ -72,7 +76,6 @@ const vmBase: EtiquetaViewModel = {
   remetenteRodape: "DSEG BRASIL",
   remetente: {
     nome: "DSEG BRASIL",
-    nomeCadastro: "E3 Brindes",
     logradouro: "RUA FELIZARDO DE FARIAS, 81",
     bairroCidadeUf: "BAIRRO MEDIANEIRA, Porto Alegre/RS"
   },
@@ -86,8 +89,7 @@ const vmBase: EtiquetaViewModel = {
     cidadeUf: "Novo Hamburgo - RS",
     cep: "",
     documento: "",
-    telefone: "",
-    telefoneCadastro: ""
+    telefone: ""
   }
 };
 
@@ -140,98 +142,79 @@ checar(
 checar("sem telefone valido continua sem contato", contatoParaPayload(telefoneDestinatario("NULL", " ")), {});
 checar("DDI 55 (13 digitos) segue omitido, como antes", contatoParaPayload(telefoneDestinatario("5551991108552", "")), {});
 
-// ── 6. TELEFONE EDITADO NA EXPEDICAO (`expedicoes.telefone_etiqueta`) ──────
-// A precedencia que os consumidores aplicam e a MESMA funcao, com o editado
-// como primeiro candidato: `telefoneDestinatario(editado, whatsapp_1, fixo)`.
-// NULL segue o cadastro; preenchido (e valido) vence — na 10x15, na previa, na
-// conferencia e na prepostagem gerada depois.
-checar(
-  "telefone_etiqueta preenchido vence o cadastro",
-  telefoneDestinatario("(51) 3333-4444", "51991108552", "5140422222"),
-  "(51) 3333-4444"
-);
-checar(
-  "telefone_etiqueta nulo segue o cadastro",
-  telefoneDestinatario(null, "51991108552", "5140422222"),
-  "(51) 99110-8552"
-);
-checar(
-  "telefone_etiqueta vazio segue o cadastro (e o nome no whatsapp cai no fixo)",
-  telefoneDestinatario("", "FELIPE FAUTH PROBST", "5140422222"),
-  "(51) 4042-2222"
-);
-checar(
-  "editado sem digitos suficientes nao vence — o modal nem deixa gravar assim",
-  telefoneDestinatario("ramal 12", "51991108552", null),
-  "(51) 99110-8552"
-);
-checar(
-  "preenchido vence tambem na prepostagem",
-  contatoParaPayload(telefoneDestinatario("51 3333-4444", "51991108552", null)),
-  { dddTelefone: "51", telefone: "33334444" }
-);
-
-// ── 7. `pareceTelefone` — a guarda que o modal usa para RECUSAR a gravacao ──
-// Vazio/nulo e FALSE, mas nao e erro: e "nao ha telefone editado", e o modal
-// grava NULL (segue o cadastro). Erro e texto COM conteudo que nao e telefone.
-checar("celular com DDD e telefone", pareceTelefone("(51) 99110-8552"), true);
-checar("fixo sem DDD (8 digitos) e telefone", pareceTelefone("40422222"), true);
-checar("DDI 55 e telefone (13 digitos)", pareceTelefone("5551991108552"), true);
-checar("nome nao e telefone", pareceTelefone("FELIPE FAUTH PROBST"), false);
-checar("'ramal 12' nao e telefone", pareceTelefone("ramal 12"), false);
-checar("vazio nao e telefone", pareceTelefone(""), false);
-checar("nulo nao e telefone", pareceTelefone(null), false);
-checar("7 digitos nao bastam", pareceTelefone("123-4567"), false);
-// A coerencia entre as duas: o que `pareceTelefone` recusa, `telefoneDestinatario`
-// tambem pula. Se divergissem, o modal barraria um valor que a leitura aceitaria.
-for (const amostra of ["(51) 99110-8552", "40422222", "5551991108552", "FELIPE", "ramal 12", "", "123-4567"]) {
-  checar(
-    `coerencia pareceTelefone x telefoneDestinatario: ${JSON.stringify(amostra)}`,
-    telefoneDestinatario(amostra) !== "",
-    pareceTelefone(amostra)
-  );
-}
-
-// ── 8. O QUE O MODAL GRAVA: `undefined` = NAO MEXA ─────────────────────────
-// Regra do campo (`telefoneEtiquetaParaGravar`) e do upsert de `despachar`:
-// sem edicao a coluna nao entra no UPDATE, senao um modal aberto so para
-// corrigir a observacao apagaria o telefone ja gravado.
-const paraGravar = (estado: string | null) => (estado === null ? undefined : estado.trim());
-const entraNoUpsert = (v: string | undefined) => (v !== undefined ? { telefone_etiqueta: v.trim() || null } : {});
-
-checar("nao editado nao entra no upsert", entraNoUpsert(paraGravar(null)), {});
-checar("editado entra com o valor", entraNoUpsert(paraGravar(" (51) 3333-4444 ")), { telefone_etiqueta: "(51) 3333-4444" });
-checar("limpado entra como NULL (volta ao cadastro)", entraNoUpsert(paraGravar("")), { telefone_etiqueta: null });
-checar("so espacos tambem volta ao cadastro", entraNoUpsert(paraGravar("   ")), { telefone_etiqueta: null });
-
-// ── 9. O QUE A PREVIA MOSTRA ───────────────────────────────────────────────
-// Sem edicao vale o telefone que o SERVIDOR resolveu (ja inclui o gravado);
-// com edicao, o cliente sobrepoe pela mesma funcao. Recalcular sempre a partir
-// da tela mostraria o cadastro num pedido que tem telefone gravado — a previa
-// diria uma coisa e o PDF imprimiria outra.
-const previaTelefone = (estado: string | null, doServidor: string, doCadastro: string) =>
-  estado === null ? doServidor : telefoneDestinatario(estado, doCadastro);
+// ── 6. QUEM SAI NA ETIQUETA — regra FIXA desde 04/09/2026 ─────────────────
+// O select "Em nome de quem sai a etiqueta" saiu. A regra passou a ser: escolha
+// JA GRAVADA vence (sao 21 na base, e as 21 escolheram o pagador); sem escolha,
+// o PAGADOR quando existir; nao existindo, o cliente — o unico nome do cadastro.
+//
+// O DEGRAU DO MEIO CAIU: "pedido ja despachado imprime o cliente". Os testes
+// abaixo travam justamente isso — despachado e nao-despachado dao o MESMO nome.
+const CLIENTE = 8469;
+const PAGADOR = 248;
 
 checar(
-  "sem edicao: mostra o resolvido pelo servidor (gravado)",
-  previaTelefone(null, "(51) 3333-4444", "(62) 3281-9109"),
-  "(51) 3333-4444"
+  "sem escolha e sem despacho: o pagador",
+  idDestinatarioEtiquetaVigente({
+    despachoConfirmado: false,
+    idClienteProposta: CLIENTE,
+    idFaturado: PAGADOR,
+    idGravadoNoDespacho: null
+  }),
+  PAGADOR
 );
 checar(
-  "sem edicao e sem gravado: mostra o cadastro",
-  previaTelefone(null, "(62) 3281-9109", "(62) 3281-9109"),
-  "(62) 3281-9109"
+  "sem escolha e JA DESPACHADO: o pagador tambem (degrau do meio removido)",
+  idDestinatarioEtiquetaVigente({
+    despachoConfirmado: true,
+    idClienteProposta: CLIENTE,
+    idFaturado: PAGADOR,
+    idGravadoNoDespacho: null
+  }),
+  PAGADOR
 );
 checar(
-  "editando: mostra o que esta sendo digitado",
-  previaTelefone("(11) 4002-8922", "(51) 3333-4444", "(62) 3281-9109"),
-  "(11) 4002-8922"
+  "sem pagador distinto: o cliente, o unico nome do cadastro",
+  idDestinatarioEtiquetaVigente({
+    despachoConfirmado: true,
+    idClienteProposta: CLIENTE,
+    idFaturado: null,
+    idGravadoNoDespacho: null
+  }),
+  CLIENTE
 );
 checar(
-  "limpou o campo: volta ao cadastro, nao ao gravado",
-  previaTelefone("", "(51) 3333-4444", "(62) 3281-9109"),
-  "(62) 3281-9109"
+  "pagador igual ao cliente nao e pagador distinto",
+  idDestinatarioEtiquetaVigente({
+    despachoConfirmado: false,
+    idClienteProposta: CLIENTE,
+    idFaturado: CLIENTE,
+    idGravadoNoDespacho: null
+  }),
+  CLIENTE
 );
+checar(
+  "escolha gravada continua vencendo (as 21 da base)",
+  idDestinatarioEtiquetaVigente({
+    despachoConfirmado: true,
+    idClienteProposta: CLIENTE,
+    idFaturado: PAGADOR,
+    idGravadoNoDespacho: CLIENTE
+  }),
+  CLIENTE
+);
+checar(
+  "id gravado que nao e cliente nem pagador cai no cliente",
+  idDestinatarioEtiquetaVigente({
+    despachoConfirmado: false,
+    idClienteProposta: CLIENTE,
+    idFaturado: PAGADOR,
+    idGravadoNoDespacho: 99999
+  }),
+  CLIENTE
+);
+checar("temPagadorDistinto: pagador proprio", temPagadorDistinto(CLIENTE, PAGADOR), true);
+checar("temPagadorDistinto: sem pagador", temPagadorDistinto(CLIENTE, null), false);
+checar("temPagadorDistinto: pagador = cliente", temPagadorDistinto(CLIENTE, CLIENTE), false);
 
 if (falhas > 0) {
   console.log(`\n${falhas} teste(s) falharam.`);

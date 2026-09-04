@@ -12,9 +12,6 @@ import {
   normalizarTipoFrete,
   origemDaModalidadeInicial
 } from "../lib/tipo-frete";
-import { idDestinatarioEtiquetaVigente, temPagadorDistinto } from "../lib/destinatario-etiqueta";
-import { pareceTelefone, telefoneDestinatario } from "../lib/telefone-destinatario";
-import { rotuloClienteComNumero } from "../lib/cliente-rotulo";
 import { despachar, salvarDadosExpedicao, transportadoraDerivada } from "../services/expedicao-acoes.service";
 import type { AtorExpedicao, DespachoInput, ResultadoAcao } from "../services/expedicao-acoes.service";
 // `listarEnderecosCliente` NÃO é mais importada: o endereço vem resolvido em
@@ -25,13 +22,9 @@ import { correiosStatus, gerarPrepostagem } from "../services/correios.client";
 import { etiquetaDoPedido } from "../lib/etiqueta-do-pedido";
 import { carregarPreviaEtiqueta } from "../services/etiqueta.client";
 import type { EtiquetaViewModel } from "../services/etiqueta-viewmodel.service";
-import { EtiquetaPreview } from "./EtiquetaPreview";
+import { ConferenciaDespacho } from "./ConferenciaDespacho";
 import { ConfirmarAcaoModal } from "./ConfirmarAcaoModal";
-import {
-  camposMinimosDespacho,
-  frasearFaltantes,
-  TRANSPORTES_QUE_EXIGEM_TRANSPORTADORA
-} from "../lib/campos-minimos-despacho";
+import { camposMinimosDespacho, frasearFaltantes } from "../lib/campos-minimos-despacho";
 import { divergenciaFreteDoDespacho, formatarCep, frasearMotivos } from "../lib/divergencia-frete-despacho";
 import { recotarFrete, aplicarRecotacao, buscarLiberacaoAtiva } from "../services/recotacao.client";
 import type { RecotacaoResult, OpcaoRecotacao, AplicacaoRecotacao } from "../services/recotacao.client";
@@ -262,32 +255,6 @@ export function DespacharModal({
    * expedidor digita, e ai grava em `expedicoes.nf_numero_manual`.
    */
   const [nfNumeroManual, setNfNumeroManual] = useState(exp?.nfNumeroManual ?? "");
-  /**
-   * O TELEFONE QUE VAI IMPRESSO (`expedicoes.telefone_etiqueta`, 04/09/2026).
-   *
-   * `null` = NUNCA EDITADO NESTA SESSAO, e ai o campo EXIBE o que o SERVIDOR
-   * resolveu (o gravado, senao o do cadastro). String (mesmo vazia) = o
-   * expedidor mexeu, e vale o que ele digitou.
-   *
-   * OS DOIS ESTADOS SAO DIFERENTES, e por isso o tipo e `string | null`:
-   * com um `string` so, apagar o campo o faria voltar sozinho ao numero do
-   * cadastro na tecla seguinte, e o expedidor nao conseguiria limpar nada.
-   *
-   * NASCE `null`, NUNCA DE `exp?.telefoneEtiqueta` (04/09/2026). Semear do
-   * prop parece obvio e esta ERRADO: `pedido.expedicao` e a FOTO que a lista
-   * carregou, e "Gerar etiqueta" salva SEM recarregar a lista. Medido em teste:
-   * editar o telefone, gerar a etiqueta e reabrir o modal trazia de volta o
-   * valor ANTERIOR — a tela contradizia o PDF, que le o banco. Nascendo nulo, o
-   * campo sempre mostra o que o servidor acabou de resolver.
-   *
-   * O QUE GRAVA: `null` nao entra no upsert ("nao mexa"); "" grava NULL
-   * ("segue o cadastro"). Nao ha como dizer "imprima sem telefone" — limpar o
-   * campo devolve o numero do cadastro.
-   *
-   * NUNCA TOCA O CADASTRO: `clientes.whatsapp_1` e `telefone_fixo` ficam como
-   * estao. Este numero vale so para esta remessa.
-   */
-  const [telefoneEtiqueta, setTelefoneEtiqueta] = useState<string | null>(null);
   const temNotaAutorizada = pedido.nfStatus === "AUTORIZADA" && Boolean(pedido.nfNumero);
   /**
    * ENDEREÇO DE ENTREGA: EXIBIÇÃO, NÃO ESCOLHA (02/09/2026).
@@ -316,28 +283,6 @@ export function DespacharModal({
   const [emitindoEtiqueta, setEmitindoEtiqueta] = useState(false);
   /** Servico aguardando confirmacao de regeracao; null = nenhum dialogo aberto. */
   const [confirmarRegeracao, setConfirmarRegeracao] = useState<"SEDEX" | "PAC" | null>(null);
-  /**
-   * EM NOME DE QUEM A ETIQUETA SAI.
-   *
-   * So existe quando ha pagador distinto do cliente. O padrao e o PAGADOR
-   * (decisao do dono, 24/08/2026): quando os dois cadastros diferem, e ele quem
-   * costuma receber. Escolha ja gravada sempre vence o padrao — reabrir o modal
-   * nao troca o que o expedidor decidiu.
-   *
-   * Nao mexe no endereco: sao escolhas separadas, e a caixa pode ir para o
-   * endereco de um em nome do outro.
-   */
-  const [idDestinatarioEtiqueta, setIdDestinatarioEtiqueta] = useState<number | null>(
-    // A regra saiu daqui para `lib/destinatario-etiqueta.ts` em 02/09/2026: era
-    // ela que o modal aplicava e os documentos não, e a tela dizia um nome
-    // enquanto o papel imprimia outro.
-    idDestinatarioEtiquetaVigente({
-      despachoConfirmado: pedido.despachoConfirmado,
-      idClienteProposta: pedido.idCliente,
-      idFaturado: pedido.idFaturado,
-      idGravadoNoDespacho: exp?.idClienteDestinatarioEtiqueta
-    })
-  );
   /**
    * Transporte que a recotacao escolheu mas a modalidade atual nao oferece
    * (na pratica: Correios recotado num pedido FOB). A tela diz o que houve em
@@ -418,15 +363,12 @@ export function DespacharModal({
     };
   }, [pedido.idInt]);
 
-  /** Resultado velho ao lado de destino novo é pior que resultado nenhum. */
-  function limparRecotacao() {
-    setRecotacao(null);
-    setErroRecotacao(null);
-    setAplicacao(null);
-    setErroAplicacao(null);
-    setChavesPorOpcao({});
-  }
-
+  /**
+   * `limparRecotacao` SAIU em 04/09/2026 junto com os campos de transportadora,
+   * seu unico chamador: era o select que invalidava a cotacao antiga ao trocar
+   * quem leva. Endereco e transportadora deixaram de ser editaveis aqui, entao
+   * nao ha mais gesto na tela que torne um resultado de recotacao obsoleto.
+   */
   async function handleRecotar() {
     if (recotando) return;
     setRecotando(true);
@@ -518,38 +460,6 @@ export function DespacharModal({
    * da modalidade, em vez de ser um toggle próprio.
    */
   const tipoEntrega: "TRANSPORTE" | "RETIRADA" = modalidade === "RETIRA" ? "RETIRADA" : "TRANSPORTE";
-
-  /**
-   * Contato de quem RECEBE, seguindo o drop "Em nome de quem sai a etiqueta".
-   * Sem pagador distinto o drop nem existe e o contato e sempre o do cliente.
-   */
-  const contatoDestinatario =
-    idDestinatarioEtiqueta !== null && idDestinatarioEtiqueta === pedido.idFaturado && pedido.contatoPagador
-      ? pedido.contatoPagador
-      : pedido.contatoCliente;
-
-  /**
-   * Telefone digitado que NAO e telefone. Barra a gravacao, como o peso
-   * invalido ja faz — a alternativa era gravar "ramal 12" e ve-lo ser
-   * ignorado na leitura, com a etiqueta saindo com o numero do cadastro e
-   * ninguem entendendo por que.
-   */
-  const telefoneEtiquetaInvalido =
-    telefoneEtiqueta !== null && telefoneEtiqueta.trim() !== "" && !pareceTelefone(telefoneEtiqueta);
-
-  /**
-   * O QUE GRAVA — e `undefined` significa NAO MEXA (04/09/2026).
-   *
-   * Sem edicao nesta sessao (`null`), a coluna nao entra no upsert. Foi um bug
-   * de verdade em teste: `pedido.expedicao` e a FOTO que a lista carregou, e
-   * "Gerar etiqueta" salva sem recarregar a lista — reabrindo o modal, o estado
-   * nascia `null` mesmo havendo telefone gravado, e mandar "" teria APAGADO o
-   * numero de quem so quis corrigir a observacao.
-   *
-   * Mesmo contrato de `obs` em `DespachoInput`: `undefined` = nao mexa, "" =
-   * volte ao cadastro.
-   */
-  const telefoneEtiquetaParaGravar = telefoneEtiqueta === null ? undefined : telefoneEtiqueta.trim();
 
   /**
    * O que ainda falta para despachar. O botao passa a olhar isto, e nao so o
@@ -806,98 +716,49 @@ export function DespacharModal({
    * remetente, transportadora e telefone resolvidos pela mesma funcao. Nada
    * disso e recalculado aqui.
    *
-   * Recarrega quando o drop "Em nome de quem sai a etiqueta" muda, porque o
-   * NOME do pagador segue uma regra de precedencia (`nome || fantasia`) que so
-   * o servidor aplica — o `pedido.pagador` da lista usa outra
-   * (`fantasia || nome`), e a previa mostraria um nome que o papel nao imprime.
-   * A escolha viaja como override e passa pela mesma validacao do gravado.
+   * Carrega UMA VEZ por pedido: quem recebe virou regra fixa (o pagador quando
+   * existir) e nao ha mais escolha na tela para recarregar.
    *
    * O que o expedidor DIGITA e sobreposto na hora, em `vmPrevia`, sem ida ao
    * banco: NF manual, volumes e observacao. Sao exatamente os campos que
    * `salvarFormularioSemDespachar` grava antes de o PDF ser gerado — assim o
    * papel sai igual a tela.
    */
-  const [previaBase, setPreviaBase] = useState<{ vm: EtiquetaViewModel; qrDataUrl: string | null } | null>(null);
+  const [previaBase, setPreviaBase] = useState<EtiquetaViewModel | null>(null);
   const [erroPrevia, setErroPrevia] = useState<string | null>(null);
   // "Carregando" e DERIVADO, nao gravado: enquanto nao ha base nem erro, esta
-  // montando. Numa recarga (troca de destinatario) a previa anterior fica na
-  // tela ate a nova chegar — sem piscar, e sem `setState` sincrono no effect.
+  // montando — e sem `setState` sincrono dentro do effect.
   const carregandoPrevia = previaBase === null && erroPrevia === null;
 
   useEffect(() => {
     let vivo = true;
-    void carregarPreviaEtiqueta(pedido.idInt, idDestinatarioEtiqueta).then((res) => {
+    void carregarPreviaEtiqueta(pedido.idInt).then((res) => {
       if (!vivo) return;
       if (res.success && res.vm) {
-        setPreviaBase({ vm: res.vm, qrDataUrl: res.qrDataUrl ?? null });
+        setPreviaBase(res.vm);
         setErroPrevia(null);
       } else {
-        setErroPrevia(res.errorMessage || "Não foi possível montar a prévia.");
+        setErroPrevia(res.errorMessage || "Não foi possível carregar os dados do despacho.");
       }
     });
     return () => {
       vivo = false;
     };
-  }, [pedido.idInt, idDestinatarioEtiqueta]);
+  }, [pedido.idInt]);
 
   const vmPrevia = useMemo<EtiquetaViewModel | null>(() => {
     if (!previaBase) return null;
     const vol = parseQtdVolumes(qtdVolumes);
-    const pesoNum = parsePesoKg(pesoKg);
     return {
-      ...previaBase.vm,
+      ...previaBase,
       // Mesmo teto da rota do PDF (1 a 50); fora dele vale o que esta gravado.
-      volumes: vol !== null && Number.isFinite(vol) && vol > 0 && vol <= 50 ? vol : previaBase.vm.volumes,
-      // PESO: so a conferencia dos Correios o mostra (a 10x15 nao imprime peso
-      // desde 26/08). Mesma formatacao do view model; invalido cai no gravado.
-      pesoKg:
-        pesoNum !== null && Number.isFinite(pesoNum) && pesoNum > 0
-          ? pesoNum.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-          : previaBase.vm.pesoKg,
+      volumes: vol !== null && Number.isFinite(vol) && vol > 0 && vol <= 50 ? vol : previaBase.volumes,
       // Com nota autorizada o numero vem do servidor (`notas_fiscais` vence);
       // sem nota, o que esta sendo digitado — que e o que sera gravado.
-      nfNumero: temNotaAutorizada ? previaBase.vm.nfNumero : nfNumeroManual.trim(),
-      obsEtiqueta: obsEtiqueta.trim(),
-      destinatario: {
-        ...previaBase.vm.destinatario,
-        /**
-         * O TELEFONE EDITADO reflete na hora, sem ida ao banco (04/09/2026).
-         *
-         * MESMA funcao e MESMA ordem que o servidor aplica em
-         * `montarEtiquetaViewModel`: o editado primeiro, o cadastro depois.
-         * `telefoneCadastro` vem do view model justamente para este fallback —
-         * assim limpar o campo devolve o numero do cadastro na tela exatamente
-         * como devolveria no papel.
-         */
-        telefone:
-          telefoneEtiqueta === null
-            ? // NINGUEM EDITOU NESTA SESSAO: vale o que o SERVIDOR resolveu, que
-              // ja inclui `telefone_etiqueta` gravado. Recalcular aqui a partir
-              // do estado da tela sobrescreveria o numero certo pelo do cadastro
-              // sempre que a lista estivesse defasada — a previa diria uma coisa
-              // e o PDF, que le o banco, imprimiria outra.
-              previaBase.vm.destinatario.telefone
-            : telefoneDestinatario(telefoneEtiqueta, previaBase.vm.destinatario.telefoneCadastro)
-      }
+      nfNumero: temNotaAutorizada ? previaBase.nfNumero : nfNumeroManual.trim(),
+      obsEtiqueta: obsEtiqueta.trim()
     };
-  }, [previaBase, qtdVolumes, pesoKg, nfNumeroManual, obsEtiqueta, temNotaAutorizada, telefoneEtiqueta]);
-
-  /**
-   * O que o campo de telefone MOSTRA. Sem edicao nesta sessao vale o telefone
-   * que o SERVIDOR resolveu (gravado, senao o do cadastro) — a mesma fonte do
-   * PDF, e por isso campo, previa e papel dizem sempre o mesmo. Enquanto a
-   * previa nao chegou, o contato do destinatario da lista segura o lugar.
-   *
-   * Trocar o drop "Em nome de quem" recarrega a previa e troca este numero
-   * junto; uma edicao manual sobrevive a troca, que e o certo — o expedidor
-   * digitou aquele numero de proposito.
-   */
-  const telefoneEtiquetaExibido =
-    telefoneEtiqueta ?? vmPrevia?.destinatario.telefone ?? contatoDestinatario.telefone;
-
-  /** O numero exibido e o do cadastro, ou ja e uma edicao desta remessa? */
-  const telefoneVeioDoCadastro =
-    telefoneEtiquetaExibido === (previaBase?.vm.destinatario.telefoneCadastro ?? contatoDestinatario.telefone);
+  }, [previaBase, qtdVolumes, nfNumeroManual, obsEtiqueta, temNotaAutorizada]);
 
   async function handleConfirmar() {
     if (salvando) return;
@@ -947,14 +808,6 @@ export function DespacharModal({
       showToast({ type: "error", title: "Volumes inválidos", description: "Quantidade de volumes deve ser entre 1 e 50." });
       return;
     }
-    if (telefoneEtiquetaInvalido) {
-      showToast({
-        type: "error",
-        title: "Telefone inválido",
-        description: "Informe o telefone com DDD (ex.: (51) 99110-8552) ou apague o campo para usar o do cadastro."
-      });
-      return;
-    }
 
     const input: DespachoInput = {
       tipoEntrega,
@@ -966,14 +819,12 @@ export function DespacharModal({
       qtdVolumes: volNum,
       tipoVolume,
       idEnderecoEntrega,
-      idClienteDestinatarioEtiqueta: idDestinatarioEtiqueta,
       codigoRastreamento: codigoRastreamento.trim(),
       obsEtiqueta: obsEtiqueta.trim(),
       // Sem nota autorizada o expedidor digita; havendo, `notas_fiscais`
       // vence e o manual nem e enviado — nao ha como sobrescrever o
       // numero de uma nota emitida.
-      nfNumeroManual: temNotaAutorizada ? "" : nfNumeroManual.trim(),
-      telefoneEtiqueta: telefoneEtiquetaParaGravar
+      nfNumeroManual: temNotaAutorizada ? "" : nfNumeroManual.trim()
     };
 
     setSalvando(true);
@@ -1043,14 +894,6 @@ export function DespacharModal({
       showToast({ type: "error", title: "Volumes inválidos", description: "Quantidade de volumes deve ser entre 1 e 50." });
       return null;
     }
-    if (telefoneEtiquetaInvalido) {
-      showToast({
-        type: "error",
-        title: "Telefone inválido",
-        description: "Informe o telefone com DDD (ex.: (51) 99110-8552) ou apague o campo para usar o do cadastro."
-      });
-      return null;
-    }
 
     setSalvando(true);
     const res = await salvarDadosExpedicao(pedido.idInt, {
@@ -1062,14 +905,12 @@ export function DespacharModal({
       qtdVolumes: volNum,
       tipoVolume,
       idEnderecoEntrega,
-      idClienteDestinatarioEtiqueta: idDestinatarioEtiqueta,
       codigoRastreamento: codigoRastreamento.trim(),
       obsEtiqueta: obsEtiqueta.trim(),
       // Sem nota autorizada o expedidor digita; havendo, `notas_fiscais`
       // vence e o manual nem e enviado — nao ha como sobrescrever o
       // numero de uma nota emitida.
-      nfNumeroManual: temNotaAutorizada ? "" : nfNumeroManual.trim(),
-      telefoneEtiqueta: telefoneEtiquetaParaGravar
+      nfNumeroManual: temNotaAutorizada ? "" : nfNumeroManual.trim()
     });
     setSalvando(false);
     return res;
@@ -1151,16 +992,6 @@ export function DespacharModal({
       showToast({ type: "error", title: "Volumes inválidos", description: "Quantidade de volumes deve ser entre 1 e 50." });
       return;
     }
-    // Contratar transporte com telefone invalido gravado seria pior aqui do que
-    // na 10x15: e o contato que os Correios usam na entrega, e ele CONGELA.
-    if (telefoneEtiquetaInvalido) {
-      showToast({
-        type: "error",
-        title: "Telefone inválido",
-        description: "Informe o telefone com DDD (ex.: (51) 99110-8552) ou apague o campo para usar o do cadastro."
-      });
-      return;
-    }
 
     setGerandoPrepostagem(true);
     const salvo = await salvarDadosExpedicao(pedido.idInt, {
@@ -1172,16 +1003,12 @@ export function DespacharModal({
       qtdVolumes: volNum,
       tipoVolume,
       idEnderecoEntrega,
-      idClienteDestinatarioEtiqueta: idDestinatarioEtiqueta,
       codigoRastreamento: codigoRastreamento.trim(),
       obsEtiqueta: obsEtiqueta.trim(),
       // Sem nota autorizada o expedidor digita; havendo, `notas_fiscais`
       // vence e o manual nem e enviado — nao ha como sobrescrever o
       // numero de uma nota emitida.
-      nfNumeroManual: temNotaAutorizada ? "" : nfNumeroManual.trim(),
-      // A rota da prepostagem LE `telefone_etiqueta` do banco: sem isto aqui,
-      // o numero digitado agora nao chegaria aos Correios.
-      telefoneEtiqueta: telefoneEtiquetaParaGravar
+      nfNumeroManual: temNotaAutorizada ? "" : nfNumeroManual.trim()
     });
     if (!salvo.success) {
       setGerandoPrepostagem(false);
@@ -1272,8 +1099,14 @@ export function DespacharModal({
       <div className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-3xl bg-white shadow-2xl dark:bg-slate-900">
         <div className="flex items-center justify-between gap-3 border-b border-slate-100 p-5 dark:border-slate-800">
           <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5">
-            <h2 className="text-lg font-semibold text-slate-950 dark:text-slate-100">
-              {modoEdicao ? "Editar dados de expedição" : "Despachar pedido"} #{pedido.idInt}
+            {/* O NUMERO E O QUE IDENTIFICA (04/09/2026): a bancada procura o
+                pedido pelo numero, nao pelo verbo. Titulo em corpo normal, numero
+                em corpo maior e mais pesado. */}
+            <h2 className="flex flex-wrap items-baseline gap-x-2 text-slate-950 dark:text-slate-100">
+              <span className="text-lg font-semibold">
+                {modoEdicao ? "Editar dados de expedição" : "Despachar pedido"}
+              </span>
+              <span className="text-2xl font-extrabold tracking-tight">#{pedido.idInt}</span>
             </h2>
             {/* CHIP DA MODALIDADE (04/09/2026) — somente leitura. Quem paga o
                 frete se decide na proposta, nao aqui (ver `modalidadeTravada`);
@@ -1343,21 +1176,7 @@ export function DespacharModal({
                     </button>
                   ))}
                 </div>
-                <p className="mt-1.5 text-xs text-slate-500">
-                  Este pedido chegou sem modalidade declarada — o normal é ela vir da proposta. Escolher aqui é
-                  exceção, serve para destravar o despacho e não altera a proposta.
-                </p>
-                {modalidade === null && (
-                  <p className="mt-1.5 text-xs text-slate-500">
-                    Escolha a modalidade para liberar as opções de transportadora.
-                  </p>
-                )}
               </>
-              {modalidade === "CIF" && (
-                <p className="mt-1.5 text-xs text-slate-500">
-                  CIF aqui é só o registro de quem paga: não cota, não altera o valor da proposta e não lança nada na Conta Corrente.
-                </p>
-              )}
             </div>
           )}
 
@@ -1402,114 +1221,21 @@ export function DespacharModal({
             </div>
           )}
 
-          {/* EM NOME DE QUEM SAI A ETIQUETA — só quando ha pagador distinto.
-              Sem pagador distinto o campo nem aparece e nada muda: o
-              destinatario segue sendo o cliente da proposta, como sempre.
-              E escolha SEPARADA do endereco. Fica ACIMA da previa desde
-              04/09/2026: e o que ela reflete primeiro. */}
-          {mostraEnvio && temPagadorDistinto(pedido.idCliente, pedido.idFaturado) && (
-            <div>
-              <label className={labelClass}>Em nome de quem sai a etiqueta</label>
-              <select
-                value={idDestinatarioEtiqueta ?? ""}
-                onChange={(e) => setIdDestinatarioEtiqueta(e.target.value === "" ? null : Number(e.target.value))}
-                className={inputClass}
-              >
-                <option value={String(pedido.idCliente ?? "")}>
-                  {rotuloClienteComNumero(pedido.idCliente, pedido.cliente)}
-                </option>
-                {/* Mesmo padrao do dropdown de endereco: o numero do cadastro
-                    identifica o pagador sem depender do nome. O nome curto vai
-                    junto para o expedidor reconhecer quem e. */}
-                <option value={String(pedido.idFaturado ?? "")}>
-                  PAGADOR #{pedido.idFaturado}
-                  {pedido.pagador ? ` · ${pedido.pagador}` : ""}
-                </option>
-              </select>
-              <p className="mt-1 text-[11px] text-slate-500">
-                Vale para a etiqueta 10x15 e para a etiqueta oficial dos Correios. Na dos Correios só tem efeito se
-                for definido ANTES de gerar a prepostagem — depois o nome fica congelado do lado deles.
-              </p>
-            </div>
-          )}
-
-          {/* TELEFONE DA ETIQUETA (04/09/2026) — `expedicoes.telefone_etiqueta`.
-              Fica ao lado de "Em nome de quem": os dois falam de QUEM RECEBE, e
-              os dois congelam nos Correios depois da prepostagem. Não aparece em
-              RETIRA: a etiqueta de retirada não lê este campo. */}
-          {mostraEnvio && acaoEtiqueta.modelo !== "RETIRADA" && (
-            <div>
-              <label className={labelClass}>Telefone (vai na etiqueta)</label>
-              <input
-                value={telefoneEtiquetaExibido}
-                onChange={(e) => setTelefoneEtiqueta(e.target.value)}
-                inputMode="tel"
-                placeholder="Sem telefone no cadastro — digite se houver"
-                className={inputClass}
-                aria-invalid={telefoneEtiquetaInvalido}
-              />
-              {telefoneEtiquetaInvalido ? (
-                <p className="mt-1 text-[11px] font-medium text-rose-700 dark:text-rose-400">
-                  Isto não parece um telefone. Informe com DDD (ex.: (51) 99110-8552) ou apague o campo para usar o
-                  do cadastro.
-                </p>
-              ) : (
-                <p className="mt-1 text-[11px] text-slate-500">
-                  {telefoneVeioDoCadastro
-                    ? "Vem do cadastro do destinatário. Editar aqui vale só para esta remessa e não altera o cadastro do cliente."
-                    : "Editado para esta remessa — o cadastro do cliente não muda. Apague o campo para voltar ao telefone do cadastro."}
-                  {acaoEtiqueta.modelo === "CORREIOS"
-                    ? " Na etiqueta dos Correios só tem efeito se for definido ANTES de gerar a prepostagem — depois o telefone fica congelado do lado deles."
-                    : ""}
-                </p>
-              )}
-            </div>
-          )}
-
-          {/* PRÉVIA (04/09/2026) — o modal PARECE a etiqueta.
-                10x15    → a prévia do papel, bloco a bloco;
-                CORREIOS → a CONFERÊNCIA da prepostagem, no MESMO desenho
-                           (`EtiquetaPreview` em modo CORREIOS): o que muda é o
-                           aviso de que o rótulo impresso é o oficial dos
-                           Correios, e a marca "só no ERP" no que eles não
-                           recebem;
-                RETIRA   → sem prévia, como antes.
-              Os dados e as regras são os do PDF; `vmPrevia` sobrepõe o que está
-              sendo digitado, nos dois modos. */}
-          {acaoEtiqueta.modelo === "RETIRADA" ? (
-            <p className="rounded-2xl border border-dashed border-slate-300 px-4 py-3 text-xs text-slate-500 dark:border-slate-700 dark:text-slate-400">
-              Retira no balcão sai com a etiqueta de retirada — não há prévia da 10x15.
+          {/* BOX DE CONFERÊNCIA (04/09/2026) — vale para os TRÊS fluxos.
+              Substituiu a prévia que imitava a etiqueta. Os dados continuam
+              vindo do mesmo view model do PDF, e os campos editáveis abaixo
+              refletem aqui na hora. */}
+          {vmPrevia ? (
+            <ConferenciaDespacho vm={vmPrevia} objetoCorreios={objetoCorreiosVigente} />
+          ) : carregandoPrevia ? (
+            <p className="rounded-2xl border border-dashed border-slate-300 px-4 py-6 text-center text-sm text-slate-500 dark:border-slate-700">
+              Carregando os dados do despacho...
             </p>
           ) : (
-            <div>
-              {vmPrevia ? (
-                <EtiquetaPreview
-                  vm={vmPrevia}
-                  qrDataUrl={previaBase?.qrDataUrl ?? null}
-                  modo={acaoEtiqueta.modelo === "10X15" ? "10X15" : "CORREIOS"}
-                  objetoTransmitido={objetoCorreiosVigente}
-                />
-              ) : carregandoPrevia ? (
-                <div
-                  className="flex items-center justify-center rounded-lg border-2 border-dashed border-slate-300 text-sm text-slate-500 dark:border-slate-700"
-                  style={{ aspectRatio: "2 / 3" }}
-                >
-                  {acaoEtiqueta.modelo === "10X15"
-                    ? "Montando a prévia da etiqueta..."
-                    : "Montando a conferência da prepostagem..."}
-                </div>
-              ) : (
-                <p className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-medium text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
-                  Não foi possível montar a prévia ({erroPrevia}). O despacho, a prepostagem e a geração do PDF
-                  continuam funcionando.
-                </p>
-              )}
-              <p className="mt-1.5 text-[11px] text-slate-500">
-                {acaoEtiqueta.modelo === "10X15"
-                  ? "Prévia da etiqueta 10x15: os campos abaixo mudam a prévia na hora. Gerar a etiqueta salva o que está na tela antes de abrir o PDF, para o papel sair igual ao que você vê aqui."
-                  : "Conferência da prepostagem: os campos abaixo mudam a conferência na hora. Gerar a prepostagem salva o que está na tela antes de transmitir aos Correios."}
-              </p>
-            </div>
+            <p className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-medium text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+              Não foi possível carregar os dados de conferência ({erroPrevia}). O despacho, a prepostagem e a geração
+              do PDF continuam funcionando.
+            </p>
           )}
 
           {/* PASSO 2 em diante — modalidades de envio (FOB e CIF). Retira não
@@ -1517,147 +1243,67 @@ export function DespacharModal({
               fechado até o expedidor resolver a troca acima. */}
           {mostraEnvio && (
             <>
-              <div>
-                <label className={labelClass}>Como vai</label>
-                <select value={tipoFrete} onChange={(e) => setTipoFrete(e.target.value as TipoFreteNormalizado)} className={inputClass}>
-                  {TRANSPORTES_POR_MODALIDADE[modalidade].map((t) => (
-                    <option key={t} value={t}>{labelTipoFrete(t)}</option>
-                  ))}
-                </select>
-                {/* O aviso so faz sentido para quem esta escolhendo entre
-                    transportes: em MOTOBOY, Correios nao esta em jogo. */}
-                {modalidade === "FOB" && tipoFrete !== "MOTOBOY" && (
-                  <p className="mt-1.5 text-xs text-slate-500">
-                    Correios não entra em FOB: a prepostagem sai pelo cartão de postagem da empresa. Para enviar
-                    pelos Correios, o pedido precisaria ser CIF
-                    {modalidadeTravada ? " — e isso se decide na proposta." : ": marque CIF acima."}
-                  </p>
-                )}
-                {TRANSPORTES_QUE_EXIGEM_TRANSPORTADORA.includes(pedido.tipoFrete) && (
-                  <p className="mt-1.5 text-xs text-slate-500">
-                    O frete cotado deste pedido ({labelTipoFrete(pedido.tipoFrete)}) não diz por onde a mercadoria vai.
-                    Escolha o transporte e informe a transportadora — o despacho exige, como em FOB. Nada disso altera o
-                    valor do frete da proposta.
-                  </p>
-                )}
-                {transporteRecotadoForaDaModalidade && (
-                  <p className="mt-1.5 rounded-xl border border-amber-200 bg-amber-50 p-2 text-xs font-medium text-amber-900">
-                    A recotação aplicada é por {transporteRecotadoForaDaModalidade}, que esta modalidade não oferece.
-                    {modalidadeTravada
-                      ? " Escolha aqui como o pedido vai de fato — a modalidade não se troca nesta tela."
-                      : " Ajuste a modalidade antes de confirmar, ou escolha aqui como o pedido vai de fato."}
-                  </p>
-                )}
-              </div>
+              {/* O SELECT "COMO VAI" SAIU (04/09/2026, decisao da direcao).
+                  `expedicoes.tipo_frete` passa a valer o que `transporteInicial`
+                  resolve — residuo FOB vira transportadora, senao o gravado,
+                  senao a normalizacao da cotacao, com a guarda que garante uma
+                  opcao valida para a modalidade. Medido antes de remover: nos 7
+                  pedidos aguardando despacho o automatico acerta os 7.
 
-              {/* PASSO 3 — transportadora só depois de definir como vai.
-                  QUEM APARECE DEPENDE DO TRANSPORTE (24/08/2026):
-                    MOTOBOY       — nenhum dos dois. O meio ja e a resposta, e o
-                                    nome vai derivado do servidor ("Motoboy").
-                    CORREIOS      — nenhum dos dois. Quem leva e os Correios, e a
-                                    transportadora sai do cartao de postagem.
-                    TRANSPORTADORA — os dois, com o campo livre virando SERVICO.
-                  Campos OCULTOS, nao desabilitados: desabilitado ainda ocupa
-                  espaco e sugere que faltou preencher. */}
-              <div className="grid gap-3 sm:grid-cols-2">
-                {tipoFrete === "TRANSPORTADORA" && (
-                <div>
-                  <label className={labelClass}>Transportadora cadastrada</label>
-                  <select
-                    value={idTransportadoraCliente ?? ""}
-                    onChange={(e) => {
-                      const id = e.target.value === "" ? null : Number(e.target.value);
-                      setIdTransportadoraCliente(id);
-                      limparRecotacao();
-                      const t = transportadoras.find((x) => x.id_cliente === id);
-                      if (t) setTransportadoraNome(nomeExibicao(t));
-                    }}
-                    className={inputClass}
-                  >
-                    <option value="">— sem vínculo / digitar nome —</option>
-                    {transportadoras.map((t) => (
-                      <option key={t.id_cliente} value={t.id_cliente}>{nomeExibicao(t)}</option>
-                    ))}
-                  </select>
-                </div>
-                )}
-                {/* SÓ SEM VÍNCULO (27/08/2026). Este campo já foi rotulado
-                    "Serviço", com placeholder "Ex: Rodoviario, Ecomm, Aereo...",
-                    e escrevia no MESMO estado do select ao lado — digitar o
-                    serviço depois de escolher a transportadora apagava o nome
-                    dela. O pedido 21245 saiu assim: vínculo 808 (SVT
-                    TRANSPORTES) com `transportadora_nome = 'ECOMM'`, e a
-                    etiqueta imprimiu ECOMM.
+                  E POR ISSO OS CAMPOS DE TRANSPORTADORA APARECEM SEMPRE, em
+                  qualquer transporte. Antes eles so existiam em TRANSPORTADORA,
+                  e sem o select um pedido resolvido como CORREIOS ou MOTOBOY sem
+                  nome gravado ficaria travado: `camposMinimosDespacho` exige
+                  transportadora em todo despacho de transporte e nao haveria
+                  onde informa-la. Aconteceu de fato — 21330 (CIF indefinido) e
+                  21244 (cotacao motoboy) foram despachados por transportadora. */}
+              {transporteRecotadoForaDaModalidade && (
+                <p className="rounded-xl border border-amber-200 bg-amber-50 p-2 text-xs font-medium text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+                  A recotação aplicada é por {transporteRecotadoForaDaModalidade}, que esta modalidade não oferece.
+                </p>
+              )}
 
-                    Não existe coluna para o serviço do despacho, então serviço
-                    deixou de ser perguntado — em vez de continuar gravado na
-                    coluna da transportadora. O campo livre sobrevive só no que
-                    sempre foi seu papel legítimo: nomear transportadora que não
-                    tem cadastro (3 dos 8 despachos de TRANSPORTADORA da base),
-                    caso em que `camposMinimosDespacho` exige o nome. Com
-                    cadastro escolhido ele some, e o nome vem de lá. */}
-                {tipoFrete === "TRANSPORTADORA" && idTransportadoraCliente === null && (
-                <div>
-                  <label className={labelClass}>Transportadora (sem cadastro)</label>
-                  <input
-                    value={transportadoraNome}
-                    onChange={(e) => setTransportadoraNome(e.target.value)}
-                    placeholder="Nome da transportadora"
-                    className={inputClass}
-                  />
-                </div>
-                )}
-              </div>
-              {/* ENDEREÇO DE ENTREGA — TEXTO, não escolha (02/09/2026).
-                  O select listava todos os endereços do cliente E do pagador,
-                  inclusive de outras cidades, para um endereço que a proposta
-                  já tinha definido. A opção "— não informar —" saiu junto: ela
-                  gravava `null` e o próprio `camposMinimosDespacho` recusava o
-                  despacho em seguida. */}
-              <div>
-                <label className={labelClass}>Endereço de entrega (vai para a etiqueta)</label>
-                {pedido.enderecoEntrega ? (
-                  <>
-                    <p
-                      className="rounded-xl border px-3 py-2 text-sm"
-                      style={{
-                        background: "var(--card-hover)",
-                        borderColor: "var(--border)",
-                        color: "var(--foreground)"
-                      }}
-                    >
-                      {pedido.enderecoEntrega.rotulo}
-                    </p>
-                    {/* CPF/CNPJ e telefone DO DESTINATARIO RESOLVIDO (02/09/2026).
-                        Seguem o drop acima: trocar quem recebe troca o contato na
-                        hora, sem ida ao banco — os dois cadastros vem no `pedido`.
-                        Sao dados de CONFERENCIA da bancada; o endereco continua
-                        vindo da proposta e nao muda por causa deles. */}
-                    {(contatoDestinatario.documento || contatoDestinatario.telefone) && (
-                      <p className="mt-1 text-xs font-medium" style={{ color: "var(--muted)" }}>
-                        {[contatoDestinatario.documento, contatoDestinatario.telefone].filter(Boolean).join(" · ")}
-                      </p>
-                    )}
-                    <p className="mt-1 text-xs" style={{ color: "var(--muted-subtle)" }}>
-                      {pedido.enderecoEntrega.origem === "DESPACHO"
-                        ? "Endereço registrado no despacho deste pedido."
-                        : "Definido na proposta. Para trocar, altere o endereço de entrega na proposta."}
-                    </p>
-                  </>
-                ) : (
-                  <p
-                    className="rounded-xl border px-3 py-2 text-sm font-medium"
-                    style={{
-                      background: "color-mix(in srgb, var(--action-danger) 8%, transparent)",
-                      borderColor: "var(--action-danger)",
-                      color: "var(--action-danger)"
-                    }}
-                  >
-                    Esta proposta não tem endereço de entrega definido. Defina o endereço na
-                    proposta para poder despachar.
-                  </p>
-                )}
-              </div>
+              {/* OS CAMPOS DE TRANSPORTADORA SAIRAM (04/09/2026, decisao da
+                  direcao): vale a transportadora que a PROPOSTA define, e o
+                  expedidor nao a troca mais. Ela aparece como LEITURA na linha
+                  FORMA DE ENVIO do box de conferencia, acima.
+
+                  O QUE GRAVA NAO MUDOU: `idTransportadoraCliente` e
+                  `transportadoraNome` continuam nascendo do vinculo do orcamento
+                  (`propostas.id_transportadora_cliente`) e do nome derivado, e e
+                  isso que vai para `expedicoes`. `camposMinimosDespacho` segue
+                  intacta — nao foi afrouxada.
+
+                  MEDIDO ANTES DE REMOVER: dos 8 pedidos aguardando despacho,
+                  nenhum fica sem transportadora — 3 sao RETIRA (nao exige), 3 tem
+                  vinculo do orcamento e 2 sao CIF com o nome vindo do servico
+                  cotado. Em 60 despachos confirmados, UM trocou a transportadora
+                  a mao: o 21174, orcamento EXPRESSO SAO MIGUEL, despachado por TW
+                  TRANSPORTES. Esse caso deixa de ter registro na Expedicao — ver
+                  o relato ao dono em 04/09/2026. */}
+              {/* O BOX DO ENDEREÇO SAIU (04/09/2026): ficou redundante com o de
+                  conferência acima, que já mostra endereço, bairro, CEP e
+                  cidade/UF pela MESMA fonte. O valor gravado em
+                  `id_endereco_entrega` não dependia deste box — vem de
+                  `pedido.enderecoEntrega.id`, resolvido no pipeline — e não
+                  mudou.
+
+                  O ALERTA DE AUSÊNCIA FICA: sem endereço, `camposMinimosDespacho`
+                  bloqueia o despacho, e sem esta linha o expedidor veria o botão
+                  travado sem saber por quê. É alerta operacional, não explicação. */}
+              {!pedido.enderecoEntrega && (
+                <p
+                  className="rounded-xl border px-3 py-2 text-sm font-medium"
+                  style={{
+                    background: "color-mix(in srgb, var(--action-danger) 8%, transparent)",
+                    borderColor: "var(--action-danger)",
+                    color: "var(--action-danger)"
+                  }}
+                >
+                  Esta proposta não tem endereço de entrega definido. Defina o endereço na proposta para poder
+                  despachar.
+                </p>
+              )}
 
 
               {/* Recotação — SÓ CONSULTA. Fica embaixo do endereço porque é dele
@@ -1904,11 +1550,11 @@ export function DespacharModal({
                 className={inputClass}
                 style={temNotaAutorizada ? { background: "var(--card-hover)", color: "var(--muted)" } : undefined}
               />
-              <p className="mt-1 text-[11px]" style={{ color: "var(--muted-subtle)" }}>
-                {temNotaAutorizada
-                  ? "Vem da nota emitida (NF-e autorizada) — não é editável aqui."
-                  : "Este pedido não tem NF-e autorizada. O que for digitado aqui vale só para a etiqueta."}
-              </p>
+              {temNotaAutorizada ? (
+                <p className="mt-1 text-[11px]" style={{ color: "var(--muted-subtle)" }}>
+                  Vem da nota emitida — não é editável aqui.
+                </p>
+              ) : null}
             </div>
             <div>
               <label className={labelClass}>Peso aferido (kg)</label>
@@ -1964,9 +1610,6 @@ export function DespacharModal({
               placeholder="Ex.: PRODUTO FRÁGIL, RETIRA NO AEROPORTO ATÉ SEXTA"
               className={inputClass}
             />
-            <p className="mt-1 text-[11px]" style={{ color: "var(--muted-subtle)" }}>
-              Impressa no volume — lida pela transportadora e por quem recebe.
-            </p>
           </div>
 
           {/* ETIQUETA (01/09/2026): saiu do menu de acoes da lista e passou a

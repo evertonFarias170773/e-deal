@@ -1,10 +1,8 @@
 import { NextResponse } from "next/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { createClient as createServerSupabaseClient } from "@/lib/supabase/server";
-import QRCode from "qrcode";
 import { verificarPermissaoServerSide } from "@/lib/auth/verificar-permissao";
 import { montarEtiquetaViewModel } from "@/features/expedicao/services/etiqueta-viewmodel.service";
-import { SITE_QR_ETIQUETA } from "@/features/expedicao/lib/etiqueta-apresentacao";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -26,10 +24,10 @@ export const dynamic = "force-dynamic";
  * nao e impressao; e a rota do PDF e o artefato de producao — fica intocada.
  * Mesma autenticacao (Bearer ou cookie) e mesma permissao (`expedicao.view`).
  *
- * `destinatario` (opcional): o id escolhido no drop "Em nome de quem sai a
- * etiqueta" AINDA NAO GRAVADO. Passa pela mesma validacao que o valor
- * persistido — id que nao seja o cliente nem o pagador cai no cliente —, entao
- * nao ha caminho por onde um id arbitrario chegue a previa.
+ * SEM PARAMETROS ALEM DO PEDIDO (04/09/2026): houve um `destinatario` para o
+ * drop "Em nome de quem sai a etiqueta" refletir a escolha antes de gravar, e o
+ * drop saiu — quem recebe passou a ser regra fixa (o pagador quando existir).
+ * O QR tambem saiu: o box de conferencia nao desenha etiqueta.
  */
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -37,8 +35,6 @@ export async function GET(request: Request) {
   if (!Number.isInteger(idInt) || idInt <= 0) {
     return NextResponse.json({ success: false, message: "Parâmetro id_int inválido." }, { status: 400 });
   }
-  const destinatarioParam = searchParams.get("destinatario");
-  const idDestinatario = destinatarioParam !== null ? Math.trunc(Number(destinatarioParam)) : NaN;
 
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
@@ -70,24 +66,13 @@ export async function GET(request: Request) {
     );
   }
 
-  const vm = await montarEtiquetaViewModel(supabase, idInt, {
-    idDestinatarioEtiqueta: Number.isFinite(idDestinatario) && idDestinatario > 0 ? idDestinatario : null
-  });
+  const vm = await montarEtiquetaViewModel(supabase, idInt);
   if (!vm) {
     return NextResponse.json({ success: false, message: `Pedido #${idInt} não encontrado.` }, { status: 404 });
   }
 
-  // O MESMO QR da rota do PDF: mesmo conteudo, mesma biblioteca. Falha nao
-  // bloqueia — a previa sai sem QR, como o PDF sairia.
-  let qrDataUrl: string | null = null;
-  try {
-    qrDataUrl = await QRCode.toDataURL(SITE_QR_ETIQUETA, { margin: 0, width: 256 });
-  } catch {
-    qrDataUrl = null;
-  }
-
   return NextResponse.json(
-    { success: true, vm, qrDataUrl },
+    { success: true, vm },
     { headers: { "Cache-Control": "no-store" } }
   );
 }

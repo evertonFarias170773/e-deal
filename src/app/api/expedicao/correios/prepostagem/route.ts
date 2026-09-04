@@ -58,9 +58,7 @@ export async function POST(request: Request) {
       .select(
         // `data_despacho` (02/09/2026): a precedência do endereço precisa saber
         // se o despacho já foi confirmado. Mesma linha, nenhuma consulta a mais.
-        // `telefone_etiqueta` (04/09/2026): o telefone editado na expedicao
-        // vence o cadastro tambem aqui. Mesma linha, nenhuma consulta a mais.
-        "peso_kg, peso_bruto_kg, id_endereco_entrega, id_cliente_destinatario_etiqueta, correios_id_prepostagem, correios_codigo_objeto, correios_id_prepostagem_anterior, prepostagem_cancelada_em, telefone_etiqueta, data_despacho"
+        "peso_kg, peso_bruto_kg, id_endereco_entrega, id_cliente_destinatario_etiqueta, correios_id_prepostagem, correios_codigo_objeto, correios_id_prepostagem_anterior, prepostagem_cancelada_em, data_despacho"
       )
       .eq("id_int", idInt)
       .maybeSingle(),
@@ -246,19 +244,10 @@ export async function POST(request: Request) {
         // cadastros (4.144 tem `whatsapp_1` sem digito algum), com o fixo
         // certo ignorado ao lado. Mesma funcao da etiqueta 10x15 e do modal.
         //
-        // `telefone_etiqueta` VENCE quando preenchido: e o numero que o
-        // expedidor digitou para esta remessa. O modal salva o formulario
-        // ANTES de chamar esta rota (`handleGerarPrepostagem`), entao o que
-        // esta na tela ja esta persistido quando este SELECT roda.
-        //
         // O telefone CONGELA nos Correios junto com o nome: o rotulo oficial e
         // gerado por eles a partir da prepostagem, e `baixarRotuloPdf` so manda
         // o id. Esta regra vale para prepostagem gerada daqui em diante.
-        telefone: telefoneDestinatario(
-          exp?.telefone_etiqueta,
-          cliente?.whatsapp_1,
-          cliente?.telefone_fixo
-        )
+        telefone: telefoneDestinatario(cliente?.whatsapp_1, cliente?.telefone_fixo)
       },
       itensDeclaracao
     });

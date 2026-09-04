@@ -47,17 +47,24 @@ export function resolverIdDestinatarioEtiqueta(
  * e a etiqueta, a Declaração e a prepostagem imprimiam o CLIENTE. No 21503 a
  * tela dizia `PAGADOR #70004` e o papel saía com LISITON DOCUMENTOS SEGUROS.
  *
- * A PRECEDÊNCIA:
- *   1. escolha GRAVADA vence sempre, despachado ou não — é decisão explícita de
- *      quem despachou, e continua passando pela validação acima;
- *   2. sem escolha e com despacho CONFIRMADO → o cliente, que é o que aquele
- *      documento já imprimiu. Não se reescreve o que já saiu;
- *   3. sem escolha e sem despacho → o mesmo default que o modal exibe: o
- *      pagador, quando distinto.
+ * A PRECEDÊNCIA, desde 04/09/2026 com DOIS degraus:
+ *   1. escolha GRAVADA vence sempre — é decisão explícita de quem despachou, e
+ *      continua passando pela validação acima. São 21 escolhas na base;
+ *   2. sem escolha → o PAGADOR quando existir; não existindo, o cliente, que
+ *      é o único nome do cadastro.
  *
- * O degrau 2 é o que protege os já despachados — hoje 1 pedido do painel está
- * exatamente nessa situação. O 3 é o que faz tela e papel convergirem nos 5 que
- * divergiam.
+ * O DEGRAU DO MEIO SAIU (decisão do dono, 04/09/2026). Ele dizia "pedido já
+ * despachado imprime o cliente", para não reescrever o que já tinha saído no
+ * papel. Caiu junto com o select "Em nome de quem sai a etiqueta": sem o
+ * select não há mais escolha nova a gravar, e a regra precisava ser fixa.
+ *
+ * A BASE CONFIRMA A REGRA: das 21 escolhas gravadas em pedidos com pagador
+ * distinto, as 21 escolheram o PAGADOR — nenhuma escolheu o cliente. O select
+ * só confirmava o padrão.
+ *
+ * MUDA O NOME IMPRESSO EM 4 PEDIDOS já despachados e sem escolha gravada
+ * (20974, 20464, 20382 e 18360): eles imprimiam o cliente e passam a imprimir
+ * o pagador. Medido e autorizado pelo dono em 04/09/2026.
  *
  * NOME E ENDEREÇO SEGUEM INDEPENDENTES. Esta função é irmã de
  * `idEnderecoEntregaVigente` (`lib/endereco-entrega.ts`) e nenhuma consulta a
@@ -76,7 +83,6 @@ export function idDestinatarioEtiquetaVigente(entrada: {
   if (Number.isFinite(escolhido) && escolhido > 0) {
     return resolverIdDestinatarioEtiqueta(entrada.idClienteProposta, entrada.idFaturado, escolhido);
   }
-  if (entrada.despachoConfirmado) return entrada.idClienteProposta;
   return temPagadorDistinto(entrada.idClienteProposta, entrada.idFaturado)
     ? entrada.idFaturado
     : entrada.idClienteProposta;
