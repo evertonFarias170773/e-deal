@@ -174,7 +174,8 @@ export function DespacharModal({
   const modalidadeInicial = modalidadeInicialDoDespacho(
     exp?.modalidadeFrete,
     pedido.modalidadeOrcamento,
-    tipoInicial
+    tipoInicial,
+    pedido.despachoConfirmado
   );
   /**
    * A MODALIDADE VIRA LEITURA QUANDO ALGUÉM JÁ DECIDIU (03/09/2026).
@@ -199,7 +200,8 @@ export function DespacharModal({
   const origemModalidade = origemDaModalidadeInicial(
     exp?.modalidadeFrete,
     pedido.modalidadeOrcamento,
-    tipoInicial
+    tipoInicial,
+    pedido.despachoConfirmado
   );
   const [modalidade, setModalidade] = useState<ModalidadeFrete | null>(modalidadeInicial);
   const [tipoFrete, setTipoFrete] = useState<TipoFreteNormalizado>(

@@ -66,13 +66,38 @@ export function normalizarTipoFrete(
  * Modalidade com que o modal de despacho ABRE.
  *
  * PRECEDÊNCIA, e o porquê de cada degrau:
- *   1. `expedicoes.modalidade_frete` — o que o expedidor já declarou na bancada.
- *      Soberana: é o que de fato aconteceu.
+ *   1. `expedicoes.modalidade_frete` DE DESPACHO CONFIRMADO — o que o expedidor
+ *      declarou na bancada quando o volume saiu. Soberana: é o que de fato
+ *      aconteceu.
  *   2. Cotação `RETIRA_BALCAO` — a mercadoria é buscada no balcão, então não há
  *      transporte para ninguém pagar. Vence a modalidade do orçamento, EXCETO
  *      quando ela é FOB.
  *   3. `propostas.modalidade_frete` — o que o vendedor declarou.
- *   4. nada, e o modal exige escolha explícita.
+ *   4. `expedicoes.modalidade_frete` AINDA EM RASCUNHO — só como último recurso.
+ *   5. nada, e o modal exige escolha explícita.
+ *
+ * POR QUE O DEGRAU 1 EXIGE DESPACHO CONFIRMADO (04/09/2026)
+ *   A linha de `expedicoes` nasce muito antes do despacho: `marcarPronto` já a
+ *   cria, e ela vai sendo preenchida enquanto o volume está na bancada. Até o
+ *   despacho ser confirmado ela é RASCUNHO — uma pré-seleção, não um fato.
+ *
+ *   Tratá-la como soberana desde o nascimento congelava a modalidade: o pedido
+ *   21000 foi corrigido de RETIRA para FOB na proposta, com transportadora SVT
+ *   declarada, e o modal seguia abrindo em "Retira no balcão" porque o rascunho
+ *   dizia RETIRA. Pior, sem saída: a modalidade virou somente leitura no
+ *   despacho (03/09/2026), então não havia como corrigir o resíduo pela tela.
+ *   E confirmar assim não era só cosmético — `tipoEntrega` sai da modalidade, e
+ *   RETIRA força `RETIRA_BALCAO`, `transportadora_nome = "Retira balcão"`,
+ *   `id_transportadora_cliente = null` e a transição para `A RETIRAR`.
+ *
+ *   Depois do despacho confirmado NADA MUDA: ali a linha deixou de ser rascunho
+ *   e volta a ser soberana, que é o que a etiqueta, a declaração e a prepostagem
+ *   de um pedido já despachado precisam.
+ *
+ *   O rascunho não é descartado, só rebaixado ao ÚLTIMO degrau: proposta sem
+ *   modalidade e sem cotação de balcão continua abrindo com o que o rascunho
+ *   tiver, e o modal não volta a exigir escolha onde hoje não exige. Medido em
+ *   04/09/2026: ZERO pedidos nesse estado, e 6 rascunhos vivos no total.
  *
  * POR QUE O DEGRAU 2 VENCE O 3 (e como isso dispensa coluna nova)
  *   Desde 19/08/2026 o orçamento nasce em CIF por padrão. Sem o degrau 2, uma
@@ -99,11 +124,13 @@ export function normalizarTipoFrete(
 export function modalidadeInicialDoDespacho(
   doDespacho: ModalidadeFrete | null | undefined,
   doOrcamento: ModalidadeFrete | null | undefined,
-  tipoFreteCotado: TipoFreteNormalizado
+  tipoFreteCotado: TipoFreteNormalizado,
+  /** `expedicoes.data_despacho` preenchida. Sem isto a linha é rascunho. */
+  despachoConfirmado: boolean
 ): ModalidadeFrete | null {
-  if (doDespacho) return doDespacho;
+  if (despachoConfirmado && doDespacho) return doDespacho;
   if (tipoFreteCotado === "RETIRA_BALCAO" && doOrcamento !== "FOB") return "RETIRA";
-  return doOrcamento ?? null;
+  return doOrcamento ?? doDespacho ?? null;
 }
 
 /** De onde saiu a modalidade que o modal exibe. */
@@ -129,12 +156,16 @@ export type OrigemModalidade = "DESPACHO" | "COTACAO_BALCAO" | "ORCAMENTO";
 export function origemDaModalidadeInicial(
   doDespacho: ModalidadeFrete | null | undefined,
   doOrcamento: ModalidadeFrete | null | undefined,
-  tipoFreteCotado: TipoFreteNormalizado
+  tipoFreteCotado: TipoFreteNormalizado,
+  despachoConfirmado: boolean
 ): OrigemModalidade | null {
-  const escolhida = modalidadeInicialDoDespacho(doDespacho, doOrcamento, tipoFreteCotado);
+  const escolhida = modalidadeInicialDoDespacho(doDespacho, doOrcamento, tipoFreteCotado, despachoConfirmado);
   if (escolhida === null) return null;
-  if (doDespacho) return "DESPACHO";
-  return escolhida === doOrcamento ? "ORCAMENTO" : "COTACAO_BALCAO";
+  if (despachoConfirmado && doDespacho) return "DESPACHO";
+  if (escolhida === doOrcamento) return "ORCAMENTO";
+  // Sobrou o degrau do rascunho, abaixo do orçamento.
+  if (escolhida === doDespacho) return "DESPACHO";
+  return "COTACAO_BALCAO";
 }
 
 /**
