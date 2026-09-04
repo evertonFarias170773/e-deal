@@ -32,12 +32,9 @@ import {
   divergenciasFinanceiras,
   type SnapshotFinanceiro
 } from "@/features/orcamentos/lib/edicao-financeira";
-import {
-  avaliarEdicaoFaturado,
-  type CobrancaParaFaturado,
-  type TituloParaFaturado
-} from "@/features/orcamentos/services/faturado-editavel";
+import type { CobrancaParaFaturado } from "@/features/orcamentos/services/faturado-editavel";
 import { aplicarDiferencaFinanceira } from "@/features/cobrancas/services/diferenca-financeira-proposta";
+import { avaliarCoberturaFinanceira } from "@/features/cobrancas/services/cobertura-financeira-proposta";
 
 // ---------------------------------------------------------------------------
 // Configurações e Tipagens
@@ -353,78 +350,32 @@ export async function POST(request: NextRequest) {
 
   const ehPropostaPaga = temCobrancasAtivas && valorPagoRealArredondado > 0;
 
-  // ── 5a. Separar os três valores que NÃO podem ser confundidos ────────────
-  //  a) valorPagoRealArredondado  → pago confirmado (PAID / A_VENCER confirmado)
-  //  b) valorCobradoPendente      → já cobrado mas ainda NÃO pago (PIX/boleto
-  //     A_RECEBER, A_VENCER não confirmado). É saldo de uma cobrança em
-  //     pagamentos_v2 — resolve-se confirmando OU cancelando a cobrança, e
-  //     NUNCA vira pendência de Conta Corrente.
-  //  c) diferença de Conta Corrente → só existe quando a proposta já estava
-  //     INTEGRALMENTE PAGA e sofreu alteração posterior real (ver gate abaixo).
-  const TOLERANCIA_CC = 0.02;
-  const valorCobradoPendente = Math.round(
-    cobrancas
-      .filter(c => !(c.status === "PAID" || (c.status === "A_VENCER" && c.confirmado)))
-      .reduce((sum, c) => sum + (Number(c.valor) || 0), 0) * 100
-  ) / 100;
+  // ── 5a e 5a2. Cobertura financeira ────────────────────────────────────────
+  // O gate da Conta Corrente e o caminho do faturado vivem em
+  // `avaliarCoberturaFinanceira`, na MESMA ordem em que rodavam aqui — a
+  // leitura de `boletos` inclusive. Saíram deste handler para que a correção de
+  // frete pós-liberação use os mesmos três valores em vez de recalculá-los.
+  const cobertura = await avaliarCoberturaFinanceira(supabase, {
+    idInt,
+    cobrancas: cobrancas as CobrancaParaFaturado[],
+    valorPagoRealArredondado,
+    valorTotalAntesEdicao: Number(propostaBanco.valor_total) || 0,
+    novoTotalPrevisto: Number(novoTotal) || Number(propostaBanco.valor_total) || 0
+  });
 
-  // Total ANTES desta edição (lido no passo 4, antes do saveProposta).
-  const valorTotalAntesEdicao = Number(propostaBanco.valor_total) || 0;
-
-  // Conta Corrente só se aplica a diferença pós-pagamento: a proposta precisava
-  // já estar quitada (pago confirmado cobre o total anterior) E sem cobrança
-  // pendente em aberto. Se ainda há saldo a cobrar (pago < total) ou cobrança
-  // pendente (ex.: PIX A_RECEBER de R$ 48 numa proposta de R$ 63 com R$ 15 de
-  // E-Crédito), a proposta está no fluxo normal de "aguardando pagamento" — o
-  // gap pertence à cobrança em pagamentos_v2, não à Conta Corrente, e NÃO deve
-  // abrir pendência FAVOR_EMPRESA nem banner de débito nem modal de diferença.
-  const estavaIntegralmentePaga =
-    valorTotalAntesEdicao > 0 &&
-    valorPagoRealArredondado >= valorTotalAntesEdicao - TOLERANCIA_CC &&
-    valorCobradoPendente <= TOLERANCIA_CC;
-
-  // ── 5a2. Caminho do faturado a vencer ─────────────────────────────────────
-  // Faturado a vencer é receita autorizada, não dinheiro recebido: a proposta
-  // ainda pode mudar e o valor da cobrança acompanha. Sem este desvio ela cai
-  // no fluxo de proposta paga e abre pendência de Conta Corrente por um
-  // dinheiro que nunca entrou. Avaliado ANTES dos bloqueios abaixo porque
-  // muda o que cada um deles decide.
-  // Ver features/orcamentos/services/faturado-editavel.ts.
-  const { data: titulosBanco, error: titulosError } = await supabase
-    .from("boletos")
-    .select("id, id_pagamento, parcela, total_parcelas, valor, vencimento, status, paid_at, deposito_conta, id_boleto_c6, id_empresa")
-    .eq("id_int", idInt);
-
-  if (titulosError) {
-    return NextResponse.json(
-      { success: false, error: "Erro ao verificar os títulos desta proposta no Contas a Receber." },
-      { status: 500 }
-    );
+  if (!cobertura.ok) {
+    return NextResponse.json({ success: false, error: cobertura.error }, { status: cobertura.status });
   }
 
-  const titulos = (titulosBanco || []) as TituloParaFaturado[];
-  // Avaliação preliminar: usa o total que o cliente calculou apenas para
-  // decidir o caminho e barrar o que impede a edição (título quitado, título
-  // ainda ativo). O valor gravado sai da reavaliação pós-save, soberana.
-  const avaliacaoPrevia = avaliarEdicaoFaturado({
-    cobrancas: cobrancas as CobrancaParaFaturado[],
-    titulos,
-    novoTotal: Number(novoTotal) || Number(propostaBanco.valor_total) || 0
-  });
-  const ehCaminhoFaturado = avaliacaoPrevia.elegivel;
+  const { estavaIntegralmentePaga, titulos, avaliacaoPrevia, ehCaminhoFaturado } = cobertura;
 
-  // Inelegível NÃO bloqueia a rota: significa apenas que este não é o caminho
-  // do faturado, e a proposta segue pelo fluxo de sempre (Conta Corrente).
-  // Isso importa porque título quitado com cobrança ainda em A_VENCER é a
-  // situação MAIS COMUM na base — 181 das 247 propostas faturadas em
-  // 13/08/2026. Ali o dinheiro entrou de verdade (o `pagamentos_v2` é que não
-  // acompanha), então quem tem `propostas.editar_paga` deve continuar
-  // editando pela Conta Corrente, exatamente como antes. Barrar aqui seria
-  // tirar da mesa uma edição que hoje funciona.
   //
   // Rede de segurança: a tela exclui os títulos antes de salvar. Se ainda
   // houver algum ativo, o Contas a Receber ficaria com valor velho.
-  if (ehCaminhoFaturado && avaliacaoPrevia.titulosParaExcluir.length > 0) {
+  // Testa `avaliacaoPrevia.elegivel`, e não o atalho `ehCaminhoFaturado`: os dois
+  // têm sempre o mesmo valor, mas só o primeiro estreita a união e deixa
+  // `titulosParaExcluir` visível. Comportamento idêntico ao de antes.
+  if (avaliacaoPrevia.elegivel && avaliacaoPrevia.titulosParaExcluir.length > 0) {
     return NextResponse.json(
       {
         success: false,
