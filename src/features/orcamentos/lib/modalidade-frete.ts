@@ -74,17 +74,39 @@ export function motivoBloqueioModalidade(statusInterno: string | null | undefine
 }
 
 /**
+ * A modalidade cobra frete do cliente?
+ *
+ * DUAS delas não cobram, e pelo mesmo motivo de fundo: NÓS não contratamos o
+ * transporte. Em FOB quem contrata e paga é o cliente; em RETIRA não há
+ * transporte nenhum — a mercadoria é buscada no balcão. `CIF` e a ausência de
+ * modalidade (proposta anterior a 18/08/2026) cobram o valor cotado.
+ *
+ * POR QUE RETIRA ENTROU DEPOIS (04/09/2026)
+ *   A regra nasceu só com FOB, e RETIRA ficou "mantendo o valor cotado". Só que
+ *   a aba Fretes esconde os cards em RETIRA sem desmarcar o que já estava
+ *   escolhido: trocar CIF → RETIRA deixava a cotação anterior viva por baixo, e
+ *   ela seguia sendo cobrada. Foi a proposta 21699 — RETIRA no topo, SEDEX de
+ *   R$ 17,43 no total. Manter a modalidade e o dinheiro em desacordo é
+ *   exatamente o que este módulo existe para impedir.
+ *
+ * Um predicado só, usado pelas duas funções abaixo, para elas não divergirem.
+ */
+export function modalidadeCobraFrete(modalidade: ModalidadeFrete | null | undefined): boolean {
+  return modalidade !== "FOB" && modalidade !== "RETIRA";
+}
+
+/**
  * Valor do frete que a proposta cobra, dada a modalidade.
  *
- * Em FOB o transporte é contratado e pago pelo cliente: não há frete a cobrar,
- * qualquer que seja a cotação em tela. `RETIRA`, `CIF` e a ausência de
- * modalidade (proposta anterior a 18/08/2026) mantêm o valor cotado.
+ * Em FOB e em RETIRA não há frete a cobrar, qualquer que seja a cotação em tela
+ * — ver `modalidadeCobraFrete`. `CIF` e a ausência de modalidade mantêm o valor
+ * cotado.
  */
 export function valorFreteEfetivo(
   valorCotado: number | null | undefined,
   modalidade: ModalidadeFrete | null | undefined
 ): number {
-  if (modalidade === "FOB") return 0;
+  if (!modalidadeCobraFrete(modalidade)) return 0;
   const numero = Number(valorCotado);
   return Number.isFinite(numero) ? numero : 0;
 }
@@ -93,13 +115,13 @@ export function valorFreteEfetivo(
  * Lista de fretes com a modalidade já aplicada, para alimentar `calculateResumo`
  * sem que ele precise conhecer modalidade. Só a opção ESCOLHIDA é zerada — as
  * demais seguem com o valor cotado, porque continuam servindo de referência na
- * tela. Fora de FOB devolve o array original, sem cópia.
+ * tela. Quando a modalidade cobra frete devolve o array original, sem cópia.
  */
 export function aplicarModalidadeNosFretes(
   fretes: PropostaFrete[],
   modalidade: ModalidadeFrete | null | undefined
 ): PropostaFrete[] {
-  if (modalidade !== "FOB") return fretes;
+  if (modalidadeCobraFrete(modalidade)) return fretes;
   return fretes.map((frete) => (frete.escolhido ? { ...frete, valor: 0 } : frete));
 }
 

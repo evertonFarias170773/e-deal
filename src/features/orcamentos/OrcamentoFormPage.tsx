@@ -5856,8 +5856,9 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
             ) : form.modalidadeFrete === "CIF" ? (
               /* Cotacao e cards SO em CIF — e nos que contratamos e pagamos, entao
                  o preco e a decisao. Em FOB o valor e zerado por `valorFreteEfetivo`
-                 e quem leva sai do drop; em RETIRA o cliente busca. Cotar nos dois
-                 casos era o clique a mais que esta mudanca veio tirar.
+                 e quem leva sai do drop; em RETIRA o cliente busca e o valor e zerado
+                 pela mesma regra. Cotar nos dois casos era o clique a mais que esta
+                 mudanca veio tirar.
                  O estado NAO muda por esconder: `chosenFrete` continua vindo da
                  leitura da proposta (fallback `fretes[0]` em orcamentos.service),
                  entao o bloco de `cotacao_frete` no salvamento segue rodando
@@ -7582,9 +7583,9 @@ function createInitialState(proposta?: Proposta): PropostaFormState {
     // a proposta carregar — em edição ela nunca chega indefinida aqui.
     //
     // Não muda cálculo nenhum: `valorFreteEfetivo` e `aplicarModalidadeNosFretes`
-    // só agem em FOB, e `nomeTransporteEfetivo` devolve o serviço cotado para
-    // tudo que não é FOB. CIF e nulo produzem exatamente o mesmo dinheiro e o
-    // mesmo rótulo — quem zera o frete é FOB, nunca CIF.
+    // só agem em FOB e em RETIRA, e `nomeTransporteEfetivo` devolve o serviço
+    // cotado para tudo que não é FOB. CIF e nulo produzem exatamente o mesmo
+    // dinheiro e o mesmo rótulo — quem zera o frete é FOB e RETIRA, nunca CIF.
     modalidadeFrete: proposta ? (proposta.modalidadeFrete ?? null) : "CIF",
     // Sem default: proposta nova nasce SEM categoria, e proposta antiga sem
     // coluna gravada tambem. "Nao escolheu" nao vira "escolheu retirada".

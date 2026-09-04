@@ -65,8 +65,17 @@ export function CorrigirFreteModal({
    */
   onCreditoAberto: (resultado: RespostaConfirmacao) => void;
 }) {
-  const [modalidade, setModalidade] = useState<ModalidadeFrete>(pedido.modalidadeOrcamento ?? "CIF");
-  const [transportadoraId, setTransportadoraId] = useState<number | null>(pedido.idTransportadoraOrcamento);
+  /**
+   * SÓ A ESCOLHA DO USUÁRIO É ESTADO. Enquanto ele não mexer, os campos mostram
+   * o que está GRAVADO — e isso é derivado, não copiado.
+   *
+   * Guardar a modalidade inicial em `useState` a congelava no valor que o objeto
+   * do painel tinha na montagem. Se aquele objeto estivesse atrasado, o campo
+   * ficava na modalidade velha enquanto o resto da tela já mostrava a nova.
+   */
+  const [escolha, setEscolha] = useState<{ modalidade: ModalidadeFrete; transportadoraId: number | null } | null>(
+    null
+  );
   const [transportadoras, setTransportadoras] = useState<Transportadora[]>([]);
 
   /**
@@ -84,6 +93,26 @@ export function CorrigirFreteModal({
   const [salvando, setSalvando] = useState(false);
   /** Passo extra do caminho credor: o operador precisa autorizar antes. */
   const [autorizandoCredito, setAutorizandoCredito] = useState(false);
+
+  /**
+   * O QUE ESTÁ GRAVADO vem da simulação, não do objeto da lista: ela relê
+   * `propostas` a cada chamada e devolve `modalidadeAtual`/`transportadoraAtualId`
+   * — o estado do banco AGORA. Zero leitura a mais, a resposta já vinha.
+   *
+   * Lê de `resultado`, e não da resposta correspondente à escolha corrente, de
+   * propósito: durante uma nova consulta o último valor conhecido continua
+   * valendo. Sem isso os campos oscilariam entre o valor do banco e o do painel
+   * a cada troca, e a consulta se repetiria sem fim.
+   */
+  const modalidadePersistida = resultado?.dados
+    ? resultado.dados.modalidadeAtual
+    : pedido.modalidadeOrcamento;
+  const transportadoraPersistida = resultado?.dados
+    ? resultado.dados.transportadoraAtualId
+    : pedido.idTransportadoraOrcamento;
+
+  const modalidade: ModalidadeFrete = escolha?.modalidade ?? modalidadePersistida ?? "CIF";
+  const transportadoraId = escolha ? escolha.transportadoraId : transportadoraPersistida;
 
   const chave = `${modalidade}|${transportadoraId ?? ""}`;
 
@@ -126,18 +155,17 @@ export function CorrigirFreteModal({
   const simulando = atual === null;
   const erro = erroGravacao ?? atual?.erro ?? null;
 
+
   /** Trocar a escolha derruba a autorização de crédito e o erro da gravação. */
   function escolher(proximaModalidade: ModalidadeFrete, proximaTransportadora: number | null) {
-    setModalidade(proximaModalidade);
-    setTransportadoraId(proximaTransportadora);
+    setEscolha({ modalidade: proximaModalidade, transportadoraId: proximaTransportadora });
     setAutorizandoCredito(false);
     setErroGravacao(null);
   }
 
   const faltaTransportadora = faltaTransportadoraEmFob(modalidade, transportadoraId);
   const ehCredora = Boolean(simulacao && simulacao.exigeAcaoFinanceira && simulacao.diferenca < 0);
-  const semMudanca =
-    modalidade === pedido.modalidadeOrcamento && transportadoraId === pedido.idTransportadoraOrcamento;
+  const semMudanca = modalidade === modalidadePersistida && transportadoraId === transportadoraPersistida;
 
   const deltaTotal = simulacao?.deltaTotal ?? 0;
   const rotuloDelta = useMemo(() => {
@@ -218,7 +246,7 @@ export function CorrigirFreteModal({
               ))}
             </select>
             <p className="mt-1.5 text-xs text-slate-500">
-              Hoje: {pedido.modalidadeOrcamento ? LABEL_MODALIDADE[pedido.modalidadeOrcamento] : "não declarada"}.
+              Hoje: {modalidadePersistida ? LABEL_MODALIDADE[modalidadePersistida] : "não declarada"}.
             </p>
           </div>
 

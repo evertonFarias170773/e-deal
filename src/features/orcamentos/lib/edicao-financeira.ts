@@ -1,4 +1,5 @@
 import type { PropostaFormState } from "../types";
+import { valorFreteEfetivo } from "./modalidade-frete";
 
 /**
  * A edição que está chegando MEXE em dinheiro?
@@ -133,7 +134,7 @@ export function divergenciasFinanceiras(
     return out;
   }
 
-  // ── Modalidade do frete (zera o frete em FOB) ────────────────────────────
+  // ── Modalidade do frete (zera o frete em FOB e em RETIRA) ────────────────
   const modalidadeForm = formState.modalidadeFrete ?? null;
   const modalidadeBanco = snapshot.modalidadeFrete ?? null;
   if (modalidadeForm !== modalidadeBanco) {
@@ -174,10 +175,12 @@ export function divergenciasFinanceiras(
 
   // ── Frete escolhido ──────────────────────────────────────────────────────
   const freteEscolhido = (formState.fretes ?? []).find((f) => f.id === formState.freteEscolhidoId);
-  // Em FOB o frete cobrado é zero, qualquer que seja a cotação em tela — mesma
-  // regra de `valorFreteEfetivo`. Comparar o valor cru acusaria divergência num
-  // pedido que não mudou nada.
-  const freteFormEfetivo = modalidadeForm === "FOB" ? 0 : num(freteEscolhido?.valor ?? 0);
+  // Em FOB e em RETIRA o frete cobrado é zero, qualquer que seja a cotação em
+  // tela. A regra é CHAMADA, não copiada: enquanto ela morava aqui como
+  // `=== "FOB"`, incluir RETIRA em `valorFreteEfetivo` faria este gate acusar
+  // divergência de frete num pedido de balcão que não mudou nada — e mandar
+  // cancelar a cobrança à toa.
+  const freteFormEfetivo = valorFreteEfetivo(num(freteEscolhido?.valor ?? 0), modalidadeForm);
   if (difere(freteFormEfetivo, snapshot.valorFrete)) {
     out.push({ campo: "valor do frete", antes: String(snapshot.valorFrete), depois: String(freteFormEfetivo) });
   }

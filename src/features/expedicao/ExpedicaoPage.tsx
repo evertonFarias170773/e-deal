@@ -160,7 +160,24 @@ export function ExpedicaoPage() {
   const [pedidoRetirada, setPedidoRetirada] = useState<PedidoExpedicao | null>(null);
   const [pedidoVoltar, setPedidoVoltar] = useState<PedidoExpedicao | null>(null);
   const [pedidoRastreio, setPedidoRastreio] = useState<PedidoExpedicao | null>(null);
-  const [pedidoCorrigirFrete, setPedidoCorrigirFrete] = useState<PedidoExpedicao | null>(null);
+  /**
+   * O PEDIDO DA CORREÇÃO É DERIVADO DA LISTA, não uma cópia dele.
+   *
+   * Guardar o objeto congelava o que o modal lia: `recarregar()` troca o array
+   * inteiro por objetos novos, e a referência guardada continuava apontando para
+   * o estado anterior à gravação — a modalidade velha sobrevivia ali mesmo com o
+   * banco já corrigido. Guardando o `id_int` e procurando na lista viva, todo
+   * `recarregar()` atualiza também o que o modal lê, sem nenhuma leitura a mais.
+   *
+   * Some da tela se o pedido sair do painel, que é o comportamento correto: o
+   * modal não deve seguir aberto sobre um pedido que não está mais na lista.
+   */
+  const [corrigirFreteId, setCorrigirFreteId] = useState<number | null>(null);
+  const pedidoCorrigirFrete = useMemo(
+    () => (corrigirFreteId === null ? null : (pedidos.find((p) => p.idInt === corrigirFreteId) ?? null)),
+    [corrigirFreteId, pedidos]
+  );
+
   /**
    * Crédito ao cliente gerado por uma correção JÁ GRAVADA, esperando destino.
    * Alimenta o `DiferencaFinanceiraModal` de Orçamentos — ele exige a pendência
@@ -434,7 +451,7 @@ export function ExpedicaoPage() {
       // despacho foi confirmado, o pedido foi entregue ou o status saiu da
       // faixa; a rota reconfere tudo isso no servidor.
       ...(podeCorrigirFrete(p)
-        ? [{ label: "Corrigir frete", onClick: () => setPedidoCorrigirFrete(p) }]
+        ? [{ label: "Corrigir frete", onClick: () => setCorrigirFreteId(p.idInt) }]
         : []),
       // Sem retorno definido a partir de PRODUCAO/ACABAMENTO no service (voltarStatus) — affordance morta.
       ...(canOperar && p.etapa !== "PRODUCAO" && p.etapa !== "ACABAMENTO"
@@ -555,7 +572,7 @@ export function ExpedicaoPage() {
 
   /** Correção gravada com crédito: a pendência existe, falta o destino. */
   function abrirDestinoDoCredito(p: PedidoExpedicao, res: RespostaConfirmacao) {
-    setPedidoCorrigirFrete(null);
+    setCorrigirFreteId(null);
     if (!res.pendenciaAtiva || p.idCliente === null) {
       // Não abrimos o modal com dados parciais — ele recusa sem pendência, e o
       // crédito já está registrado na Conta Corrente de qualquer forma.
@@ -1286,11 +1303,16 @@ export function ExpedicaoPage() {
       )}
       {pedidoCorrigirFrete && (
         <CorrigirFreteModal
+          /* A `key` carrega o que ESTÁ GRAVADO. Se o pedido for recarregado com
+             outra modalidade enquanto o modal está aberto, ele remonta e os
+             campos renascem do valor novo — em vez de o `useState` guardar a
+             escolha antiga por baixo de um cabeçalho já atualizado. */
+          key={`${pedidoCorrigirFrete.idInt}|${pedidoCorrigirFrete.modalidadeOrcamento ?? ""}|${pedidoCorrigirFrete.idTransportadoraOrcamento ?? ""}`}
           pedido={pedidoCorrigirFrete}
-          onClose={() => setPedidoCorrigirFrete(null)}
+          onClose={() => setCorrigirFreteId(null)}
           onDone={(mensagem) => {
             const id = pedidoCorrigirFrete.idInt;
-            setPedidoCorrigirFrete(null);
+            setCorrigirFreteId(null);
             showToast({ type: "success", title: `Frete corrigido em #${id}`, description: mensagem });
             void recarregar();
           }}

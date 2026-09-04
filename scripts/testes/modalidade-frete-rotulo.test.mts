@@ -13,6 +13,7 @@
  */
 import {
   TRANSPORTADORA_FOB_INDEFINIDA,
+  modalidadeCobraFrete,
   nomeTransportadoraCadastro,
   nomeTransporteEfetivo,
   valorFreteEfetivo,
@@ -91,6 +92,33 @@ checar("CIF sem transportadora é válido — só FOB exige",
   faltaTransportadoraEmFob("CIF", null), false);
 checar("FOB sem transportadora continua bloqueando",
   faltaTransportadoraEmFob("FOB", null), true);
+
+// -- RETIRA tambem NAO cobra frete (04/09/2026 -- proposta 21699) ------------
+// O caso real: proposta cotada em CIF/SEDEX (R$ 17,43) que o vendedor trocou
+// para RETIRA. A aba Fretes esconde os cards, mas NAO desmarca o que ja estava
+// escolhido -- a cotacao seguia viva por baixo, e o total saiu R$ 212,43 sobre
+// R$ 195,00 de produtos. Retirada no balcao nao tem transporte: vale zero.
+const sobRetira = aplicarModalidadeNosFretes(fretes, "RETIRA");
+checar("valorFreteEfetivo zera em RETIRA", valorFreteEfetivo(17.43, "RETIRA"), 0);
+checar("RETIRA zera so o valor do escolhido", sobRetira.map((f) => f.valor), [0, 19.5]);
+checar("RETIRA mantem escolhido = true", sobRetira.map((f) => f.escolhido), [true, false]);
+checar("RETIRA mantem o peso cotado (memoria do calculo)", sobRetira.map((f) => f.pesoUsado), [10400, 10400]);
+checar("RETIRA e FOB produzem o mesmo dinheiro",
+  valorFreteEfetivo(17.43, "RETIRA"), valorFreteEfetivo(17.43, "FOB"));
+// O total do 21699, comparado em centavos: 195,00 de produtos + frete efetivo.
+checar("total do 21699 fecha em 195,00",
+  Math.round((195 + valorFreteEfetivo(17.43, "RETIRA")) * 100), 19500);
+
+// O predicado que as duas funcoes compartilham -- mudou ele, mudam as duas
+// juntas, que e o motivo de ele existir.
+checar("modalidadeCobraFrete: CIF cobra", modalidadeCobraFrete("CIF"), true);
+checar("modalidadeCobraFrete: nulo cobra", modalidadeCobraFrete(null), true);
+checar("modalidadeCobraFrete: FOB nao cobra", modalidadeCobraFrete("FOB"), false);
+checar("modalidadeCobraFrete: RETIRA nao cobra", modalidadeCobraFrete("RETIRA"), false);
+
+// A exigencia de transportadora continua sendo SO de FOB: zerar o frete em
+// RETIRA nao pode arrastar a regra de quem leva.
+checar("RETIRA nao exige transportadora", faltaTransportadoraEmFob("RETIRA", null), false);
 
 console.log(falhas === 0 ? "\nTUDO OK" : `\n${falhas} FALHA(S)`);
 process.exitCode = falhas === 0 ? 0 : 1;
