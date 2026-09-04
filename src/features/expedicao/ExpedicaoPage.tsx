@@ -45,6 +45,11 @@ import { RetiradaModal } from "./components/RetiradaModal";
 import { VoltarStatusModal } from "./components/VoltarStatusModal";
 import { TransportadorasModal } from "./components/TransportadorasModal";
 import { RastreioModal } from "./components/RastreioModal";
+import { CorrigirFreteModal } from "./components/CorrigirFreteModal";
+import { DiferencaFinanceiraModal } from "@/features/orcamentos/components/DiferencaFinanceiraModal";
+import type { AcaoFinanceiraDiferenca } from "@/features/cobrancas/types";
+import { STATUS_CORRIGIVEIS } from "./services/corrigir-frete-simulacao";
+import type { RespostaConfirmacao } from "./services/corrigir-frete.client";
 import { KanbanTransportadoras, LegendaCoresKanban, PontoEstadoKanban } from "./components/KanbanTransportadoras";
 import type { EtapaExpedicao, PedidoExpedicao, TipoFreteNormalizado } from "./types";
 
@@ -155,6 +160,21 @@ export function ExpedicaoPage() {
   const [pedidoRetirada, setPedidoRetirada] = useState<PedidoExpedicao | null>(null);
   const [pedidoVoltar, setPedidoVoltar] = useState<PedidoExpedicao | null>(null);
   const [pedidoRastreio, setPedidoRastreio] = useState<PedidoExpedicao | null>(null);
+  const [pedidoCorrigirFrete, setPedidoCorrigirFrete] = useState<PedidoExpedicao | null>(null);
+  /**
+   * Crédito ao cliente gerado por uma correção JÁ GRAVADA, esperando destino.
+   * Alimenta o `DiferencaFinanceiraModal` de Orçamentos — ele exige a pendência
+   * criada, e é por isso que este estado só nasce depois do confirmar.
+   */
+  const [diferencaModal, setDiferencaModal] = useState<{
+    idInt: number;
+    idCliente: number;
+    idPendencia: number;
+    nomeCliente: string;
+    valorPagoConfirmado: number;
+    novoTotal: number;
+    diferenca: number;
+  } | null>(null);
   const [transportadorasAberto, setTransportadorasAberto] = useState(false);
   const [salvandoAcao, setSalvandoAcao] = useState<number | null>(null);
   /** Pedido cuja prepostagem esta sendo marcada como cancelada (trava o item). */
@@ -407,6 +427,15 @@ export function ExpedicaoPage() {
             ]
           : [{ label: "Liberar recotação de frete", onClick: () => void handleLiberarRecotacao(p) }]
         : []),
+      // Correcao de frete pos-liberacao: trocar a modalidade (e a transportadora)
+      // de um pedido que ja saiu do orcamento. Fica ao lado da recotacao porque
+      // as duas mexem no frete, mas sao coisas diferentes — aquela recota o
+      // preco, esta corrige QUEM PAGA. Some quando a NF esta autorizada, o
+      // despacho foi confirmado, o pedido foi entregue ou o status saiu da
+      // faixa; a rota reconfere tudo isso no servidor.
+      ...(podeCorrigirFrete(p)
+        ? [{ label: "Corrigir frete", onClick: () => setPedidoCorrigirFrete(p) }]
+        : []),
       // Sem retorno definido a partir de PRODUCAO/ACABAMENTO no service (voltarStatus) — affordance morta.
       ...(canOperar && p.etapa !== "PRODUCAO" && p.etapa !== "ACABAMENTO"
         ? [{ label: "Voltar status", destructive: true, onClick: () => setPedidoVoltar(p) }]
@@ -443,6 +472,112 @@ export function ExpedicaoPage() {
    * propostas e aberta); quem tranca e POST /api/pedidos/encerrar-teste.
    */
   const canEncerrarTeste = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "propostas.release_producao");
+
+  /**
+   * Corrigir o frete de um pedido já liberado. A MESMA chave que libera a edição
+   * de proposta paga — decisão do dono, sem permissão nova. Esconder o item não
+   * protege nada: quem tranca é `/api/expedicao/corrigir-frete`, que reconfere a
+   * permissão no servidor a cada chamada, no `simular` e no `confirmar`.
+   */
+  const canCorrigirFrete = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "propostas.editar_paga");
+
+  // As opcoes de destino do credito sao as MESMAS de Orcamentos, pelas MESMAS
+  // chaves. O modal e o mesmo componente: divergir aqui daria a um operador da
+  // Expedicao uma opcao que a mesma pessoa nao tem na proposta.
+  const canBonificarCredito = Boolean(user?.isSuperAdmin || hasPermissao(user, "financeiro.bonificar"));
+  const canDevolverCredito = Boolean(user?.isSuperAdmin || hasPermissao(user, "financeiro.devolver"));
+  const canDebitoFuturo = Boolean(user?.isSuperAdmin || hasPermissao(user, "financeiro.debito_futuro"));
+
+  /**
+   * As MESMAS quatro barreiras da rota, avaliadas com o que o painel já tem em
+   * memória — nenhuma consulta a mais, e nenhuma delas é inventada aqui:
+   * `STATUS_CORRIGIVEIS` vem do próprio módulo que a rota usa.
+   *
+   * Isto é affordance, não segurança. O servidor reavalia tudo do zero no
+   * `confirmar`, porque entre abrir o menu e clicar a NF pode ter sido
+   * autorizada e o despacho pode ter sido confirmado — e aí a mensagem dele é
+   * que aparece, inclusive a orientação de voltar um passo.
+   */
+  function podeCorrigirFrete(p: PedidoExpedicao) {
+    if (!canCorrigirFrete) return false;
+    if (p.nfStatus === "AUTORIZADA") return false;
+    if (p.despachoConfirmado) return false;
+    if (p.etapa === "ENTREGUE") return false;
+    return STATUS_CORRIGIVEIS.includes(
+      p.statusInterno.trim().toUpperCase() as (typeof STATUS_CORRIGIVEIS)[number]
+    );
+  }
+
+  /**
+   * Destino do crédito, pela MESMA rota que Orçamentos usa
+   * (`/api/orcamentos/resolver-diferenca`) e sobre a pendência que a correção
+   * acabou de abrir. Nenhuma regra financeira vive aqui.
+   */
+  async function handleDiferencaConfirm(acao: AcaoFinanceiraDiferenca) {
+    if (!diferencaModal) return;
+    const { getSupabaseClient } = await import("@/lib/supabase/client");
+    const client = getSupabaseClient();
+    const sessao = client ? await client.auth.getSession() : null;
+    const token = sessao?.data?.session?.access_token ?? "";
+    if (!token) throw new Error("Sessão expirada. Faça login novamente.");
+
+    const payload: Record<string, unknown> = {
+      idPendencia: diferencaModal.idPendencia,
+      idInt: diferencaModal.idInt,
+      idCliente: diferencaModal.idCliente,
+      acao: acao.tipo,
+      valor: Math.abs(diferencaModal.diferenca),
+      observacao: acao.obs
+    };
+    if (acao.tipo === "ABATER_DEBITO") {
+      payload.idDebitoAlvo = acao.idDebitoAlvo;
+      payload.valorAbatimento = acao.valorAbatimento;
+    }
+
+    const res = await fetch("/api/orcamentos/resolver-diferenca", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify(payload)
+    });
+    const resultado = await res.json();
+    if (!res.ok || !resultado.success) {
+      throw new Error(resultado.error ?? "Erro ao registrar a resolução financeira.");
+    }
+
+    setDiferencaModal(null);
+    showToast({
+      type: "success",
+      title: "Crédito resolvido",
+      description: `#${diferencaModal.idInt}: destino do crédito registrado.`
+    });
+    void recarregar();
+  }
+
+  /** Correção gravada com crédito: a pendência existe, falta o destino. */
+  function abrirDestinoDoCredito(p: PedidoExpedicao, res: RespostaConfirmacao) {
+    setPedidoCorrigirFrete(null);
+    if (!res.pendenciaAtiva || p.idCliente === null) {
+      // Não abrimos o modal com dados parciais — ele recusa sem pendência, e o
+      // crédito já está registrado na Conta Corrente de qualquer forma.
+      showToast({
+        type: "info",
+        title: "Correção gravada",
+        description: `#${p.idInt}: o crédito ficou registrado na Conta Corrente do cliente.`
+      });
+      void recarregar();
+      return;
+    }
+    setDiferencaModal({
+      idInt: p.idInt,
+      idCliente: p.idCliente,
+      idPendencia: res.pendenciaAtiva.id,
+      nomeCliente: p.clienteExibicao || p.cliente,
+      valorPagoConfirmado: res.valorPagoConfirmado ?? 0,
+      novoTotal: res.valorTotalNovo ?? 0,
+      diferenca: res.diferenca ?? 0
+    });
+    void recarregar();
+  }
   const [encerrandoTesteId, setEncerrandoTesteId] = useState<number | null>(null);
 
   // Filtros na URL — padrão docs/technical/PADRAO-FILTROS-URL-NAVEGACAO.md
@@ -1147,6 +1282,36 @@ export function ExpedicaoPage() {
           ator={atorAtual()}
           onClose={() => setPedidoVoltar(null)}
           onDone={() => { setPedidoVoltar(null); void recarregar(); }}
+        />
+      )}
+      {pedidoCorrigirFrete && (
+        <CorrigirFreteModal
+          pedido={pedidoCorrigirFrete}
+          onClose={() => setPedidoCorrigirFrete(null)}
+          onDone={(mensagem) => {
+            const id = pedidoCorrigirFrete.idInt;
+            setPedidoCorrigirFrete(null);
+            showToast({ type: "success", title: `Frete corrigido em #${id}`, description: mensagem });
+            void recarregar();
+          }}
+          onCreditoAberto={(res) => abrirDestinoDoCredito(pedidoCorrigirFrete, res)}
+        />
+      )}
+      {diferencaModal && (
+        <DiferencaFinanceiraModal
+          isOpen
+          onConfirm={handleDiferencaConfirm}
+          onClose={() => setDiferencaModal(null)}
+          idInt={diferencaModal.idInt}
+          idCliente={diferencaModal.idCliente}
+          idPendencia={diferencaModal.idPendencia}
+          nomeCliente={diferencaModal.nomeCliente}
+          valorPagoConfirmado={diferencaModal.valorPagoConfirmado}
+          novoTotal={diferencaModal.novoTotal}
+          diferenca={diferencaModal.diferenca}
+          canBonificar={canBonificarCredito}
+          canDevolver={canDevolverCredito}
+          canDebitoFuturo={canDebitoFuturo}
         />
       )}
       {pedidoRastreio && (
