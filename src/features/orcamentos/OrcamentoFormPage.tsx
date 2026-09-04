@@ -4405,9 +4405,24 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
             ) : canEditarPropostaPaga && isPropostaPagaAtual ? (
               <>
                 <p className="text-sm font-bold text-amber-900 dark:text-amber-200">Modo Edição Autorizada — Proposta com Pagamento Confirmado</p>
+                {/*
+                  O texto anterior prometia que QUALQUER diferença exigiria
+                  escolher uma ação antes de concluir. Isso só vale para
+                  CRÉDITO. Para DÉBITO a regra de 22/07/2026 manda salvar sem
+                  modal — o saldo é da própria proposta e se resolve na aba
+                  Pagamentos.
+
+                  A promessa quebrada fez a proposta 21000 (total de R$ 260 para
+                  R$ 325, com R$ 260 já pagos) parecer uma falha do sistema
+                  quando ele tinha feito exatamente o previsto. Aqui só o texto
+                  muda: nenhuma regra financeira foi tocada.
+                */}
                 <p className="text-sm text-amber-700 dark:text-amber-300/80 mt-1">
                   Você tem permissão para editar esta proposta mesmo com cobrança ativa.
-                  Se houver diferença financeira, você precisará escolher uma ação antes de concluir a alteração.
+                  Se o novo total ficar <strong>abaixo</strong> do que já foi pago, você escolherá o destino do
+                  crédito antes de concluir. Se ficar <strong>acima</strong>, a alteração é salva direto e a
+                  diferença vira saldo a cobrar desta proposta — resolva na aba Pagamentos, por cobrança
+                  complementar ou abono.
                 </p>
               </>
             ) : canEditarPropostaPaga && !isPropostaPagaAtual ? (
