@@ -1,22 +1,25 @@
 /**
- * POST /api/expedicao/corrigir-frete — MODO SIMULAR, sem gravar nada.
+ * POST /api/expedicao/corrigir-frete — dois modos.
  *
- * Etapas 1 e 2 do plano de correção de frete pós-liberação. Responde "dá para
- * corrigir este pedido? e quanto muda no valor?" — a gravação é rodada seguinte
- * e depende da flag do `saveProposta`, que ainda NÃO existe.
+ * `simular` (Etapas 1 e 2) responde "dá para corrigir este pedido? e quanto muda
+ * no valor?" sem tocar em uma linha do banco. `confirmar` (Etapa 4) grava.
  *
- * Toda a decisão mora em `simularCorrecaoFrete`; aqui só entram JWT, permissão e
- * o transporte HTTP. Assim o mesmo código que responde ao navegador pôde ser
- * rodado contra os pedidos reais por um script antes de publicar.
+ * Toda a decisão mora nos módulos: `simularCorrecaoFrete` avalia,
+ * `confirmarCorrecaoFrete` grava e trata a diferença financeira. Aqui só entram
+ * JWT, permissão e o transporte HTTP. Assim o mesmo código que responde ao
+ * navegador pode ser rodado contra os pedidos reais por um script — foi como as
+ * barreiras, a projeção e a gravação foram conferidas antes de publicar.
  *
- * A ROTA NÃO ESCREVE. Não há `insert`, `update`, `delete` nem `rpc` neste
- * arquivo nem no módulo que ele chama — só `select`.
+ * O MODO `simular` CONTINUA SEM ESCREVER: nenhum `insert`, `update`, `delete` ou
+ * `rpc` acontece nele. A gravação existe apenas no caminho do `confirmar`, e ela
+ * reavalia as barreiras do zero em vez de confiar na simulação que a tela fez.
  */
 
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { verificarPermissaoServerSide } from "@/lib/auth/verificar-permissao";
 import { simularCorrecaoFrete } from "@/features/expedicao/services/corrigir-frete-simulacao";
+import { confirmarCorrecaoFrete } from "@/features/expedicao/services/corrigir-frete-gravacao";
 
 export const runtime = "nodejs";
 
@@ -28,6 +31,8 @@ export async function POST(request: NextRequest) {
   let modalidade = "";
   let transportadoraId: number | null = null;
   let modo = "simular";
+  let acaoFinanceira: string | null = null;
+  let chaveEvento: string | null = null;
 
   try {
     const body = (await request.json()) as {
@@ -35,6 +40,8 @@ export async function POST(request: NextRequest) {
       modalidade?: unknown;
       transportadoraId?: unknown;
       modo?: unknown;
+      acaoFinanceira?: unknown;
+      chaveEvento?: unknown;
     };
     idInt = Number(body?.idInt ?? 0);
     modalidade = String(body?.modalidade ?? "");
@@ -42,6 +49,8 @@ export async function POST(request: NextRequest) {
     transportadoraId =
       bruto === null || bruto === undefined || bruto === "" ? null : Number(bruto);
     modo = String(body?.modo ?? "simular").trim().toLowerCase();
+    acaoFinanceira = body?.acaoFinanceira ? String(body.acaoFinanceira).trim().toUpperCase() : null;
+    chaveEvento = body?.chaveEvento ? String(body.chaveEvento).trim() : null;
   } catch {
     return NextResponse.json({ success: false, message: "Corpo da requisição inválido." }, { status: 400 });
   }
@@ -54,15 +63,15 @@ export async function POST(request: NextRequest) {
   }
 
   /**
-   * Só `simular` existe. A gravação é a Etapa 3+, e recusar aqui de forma
-   * explícita é melhor do que aceitar em silêncio um modo que não faz nada —
-   * quem chamar com `modo: "confirmar"` recebe um erro que diz o porquê.
+   * Dois modos, e nada além deles. Recusar um terceiro de forma explícita é
+   * melhor do que aceitar em silêncio um nome escrito errado e devolver uma
+   * simulação para quem pediu gravação.
    */
-  if (modo !== "simular") {
+  if (modo !== "simular" && modo !== "confirmar") {
     return NextResponse.json(
       {
         success: false,
-        message: "Esta rota está apenas no modo simular: a gravação da correção de frete ainda não foi liberada."
+        message: `Modo "${modo}" nao existe nesta rota. Use "simular" ou "confirmar".`
       },
       { status: 400 }
     );
@@ -95,6 +104,45 @@ export async function POST(request: NextRequest) {
 
   // A permissão vale AQUI, no servidor. A tela apenas esconde o controle.
   const temPermissao = await verificarPermissaoServerSide(supabase, authData.user.id, PERMISSAO);
+
+  if (modo === "confirmar") {
+    // O nome do operador vai para o histórico da proposta e para a
+    // reconciliação de status. Ausente, o e-mail da sessão serve — é o que o
+    // `editar-paga` também faz quando a tela não manda nome.
+    const { data: usuarioRow } = await supabase
+      .from("usuarios")
+      .select("nome")
+      .eq("user_id", authData.user.id)
+      .maybeSingle();
+
+    const email = authData.user.email ?? "";
+    const resultado = await confirmarCorrecaoFrete(supabase, {
+      idInt,
+      modalidade,
+      transportadoraId,
+      temPermissaoEditarPaga: temPermissao,
+      acaoFinanceira,
+      chaveEvento,
+      ator: {
+        uid: authData.user.id,
+        nome: String((usuarioRow as { nome?: string | null } | null)?.nome ?? "") || email || "Sistema",
+        email
+      }
+    });
+
+    if (!resultado.ok) {
+      return NextResponse.json(
+        { success: false, motivo: resultado.motivo, message: resultado.mensagem },
+        { status: resultado.status }
+      );
+    }
+
+    // `ok` fica de fora do corpo: quem lê a resposta HTTP tem `success`, e dois
+    // campos dizendo a mesma coisa é convite para divergirem.
+    const { ok, ...corpo } = resultado;
+    void ok;
+    return NextResponse.json({ success: true, ...corpo }, { status: 200 });
+  }
 
   const simulacao = await simularCorrecaoFrete(supabase, {
     idInt,
