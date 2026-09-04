@@ -6,6 +6,7 @@ import { renderToBuffer } from "@react-pdf/renderer";
 import { verificarPermissaoServerSide } from "@/lib/auth/verificar-permissao";
 import { montarEtiquetaViewModel } from "@/features/expedicao/services/etiqueta-viewmodel.service";
 import { criarEtiquetaElement } from "@/features/expedicao/pdf/EtiquetaPdfDocument";
+import { SITE_QR_ETIQUETA } from "@/features/expedicao/lib/etiqueta-apresentacao";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -72,7 +73,9 @@ export async function GET(request: Request) {
      * Apontar para `/orcamentos/{id}` daria uma tela de login a um estranho e
      * ainda exporia o número do pedido de quem não deveria vê-lo.
      */
-    qrDataUrl = await QRCode.toDataURL("https://www.ingressoideal.com.br", { margin: 0, width: 256 });
+    // A constante e compartilhada com a rota da previa (`./previa/route.ts`):
+    // o QR da tela e o do papel codificam o mesmo endereco.
+    qrDataUrl = await QRCode.toDataURL(SITE_QR_ETIQUETA, { margin: 0, width: 256 });
   } catch {
     qrDataUrl = null; // etiqueta sai sem QR — não é bloqueante
   }

@@ -58,6 +58,21 @@ export type DespachoInput = {
    * camada apenas grava o que foi digitado.
    */
   nfNumeroManual?: string;
+  /**
+   * `expedicoes.telefone_etiqueta` — o telefone IMPRESSO (04/09/2026).
+   *
+   * Vazio/`undefined` grava NULL, que significa "segue o cadastro" pela regra
+   * de `lib/telefone-destinatario.ts`. Preenchido VENCE, na 10x15, na previa,
+   * na conferencia dos Correios e na prepostagem gerada depois.
+   *
+   * NUNCA TOCA `public.clientes`: o numero do cadastro fica como esta. Este
+   * campo e da REMESSA — o contato que a transportadora usa para entregar
+   * ESTA caixa, que nem sempre e o telefone principal do cliente.
+   *
+   * A validacao de formato vive na tela (`pareceTelefone`), como a do peso:
+   * esta camada apenas grava o que recebe.
+   */
+  telefoneEtiqueta?: string;
 };
 
 import { camposMinimosDespacho, frasearFaltantes } from "../lib/campos-minimos-despacho";
@@ -274,6 +289,13 @@ export async function despachar(
     // transacao implicita, mesmo tratamento de erro.
     obs_etiqueta: input.obsEtiqueta?.trim() || null,
     nf_numero_manual: input.nfNumeroManual?.trim() || null,
+    // `undefined` NAO entra no upsert, como `obs`: o modal so envia este campo
+    // quando o expedidor mexeu nele. Enviar `null` a toda gravacao APAGARIA o
+    // telefone editado de quem abriu o modal so para corrigir outra coisa.
+    // "" (limpou o campo) grava NULL de proposito: volta ao cadastro.
+    ...(input.telefoneEtiqueta !== undefined
+      ? { telefone_etiqueta: input.telefoneEtiqueta.trim() || null }
+      : {}),
     data_despacho: new Date().toISOString(),
     despachado_por: ator.nome
   });
@@ -483,5 +505,6 @@ export async function salvarDadosExpedicao(
   if (dados.obs !== undefined) campos.obs = dados.obs || null;
   if (dados.obsEtiqueta !== undefined) campos.obs_etiqueta = dados.obsEtiqueta.trim() || null;
   if (dados.nfNumeroManual !== undefined) campos.nf_numero_manual = dados.nfNumeroManual.trim() || null;
+  if (dados.telefoneEtiqueta !== undefined) campos.telefone_etiqueta = dados.telefoneEtiqueta.trim() || null;
   return upsertExpedicao(idInt, campos);
 }

@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { resolverPesoExpedicao } from "../lib/peso";
 import { idDestinatarioEtiquetaVigente } from "../lib/destinatario-etiqueta";
 import { idEnderecoEntregaVigente } from "../lib/endereco-entrega";
+import { telefoneDestinatario } from "../lib/telefone-destinatario";
 import { nomeTransporteEfetivo } from "@/features/orcamentos/lib/modalidade-frete";
 import type { ModalidadeFrete } from "../types";
 import { escolherNotaAutorizadaDoPedido } from "@/lib/fiscal/nota-do-pedido";
@@ -30,6 +31,13 @@ export type EtiquetaViewModel = {
   remetente: {
     /** `nome_fantasia` do cadastro — ou "DSEG BRASIL" na regra do 8469. */
     nome: string;
+    /**
+     * O nome REAL do cadastro, SEM a regra do 8469 (04/09/2026). E o que a
+     * prepostagem dos Correios e a Declaracao de Conteudo transmitem — a
+     * conferencia da prepostagem no modal Despachar mostra este, nao `nome`,
+     * porque o rotulo oficial sai com ele.
+     */
+    nomeCadastro: string;
     /** "RUA FELIZARDO DE FARIAS, 81" */
     logradouro: string;
     /** "BAIRRO MEDIANEIRA, PORTO ALEGRE/RS" */
@@ -53,7 +61,21 @@ export type EtiquetaViewModel = {
     cidadeUf: string;
     cep: string;
     documento: string;
+    /**
+     * O telefone que VAI IMPRESSO: `expedicoes.telefone_etiqueta` quando
+     * preenchido, senao o do cadastro. Regra unica em
+     * `lib/telefone-destinatario.ts`.
+     */
     telefone: string;
+    /**
+     * O telefone SO DO CADASTRO, ignorando o editado (04/09/2026).
+     *
+     * Existe para o modal Despachar poder voltar a ele quando o expedidor
+     * LIMPA o campo de telefone — sem uma segunda ida ao banco e sem o browser
+     * ter de conhecer `whatsapp_1`/`telefone_fixo`. Nenhum documento imprime
+     * este campo: quem imprime e `telefone` acima.
+     */
+    telefoneCadastro: string;
   };
 };
 
@@ -72,13 +94,6 @@ function fmtDocumento(bruto: string | null | undefined): string {
 function fmtCep(bruto: string | null | undefined): string {
   const d = String(bruto ?? "").replace(/\D/g, "");
   return d.length === 8 ? d.replace(/^(\d{5})(\d{3})$/, "$1-$2") : String(bruto ?? "").trim();
-}
-
-function fmtTelefone(bruto: string | null | undefined): string {
-  const d = String(bruto ?? "").replace(/\D/g, "");
-  if (d.length === 11) return d.replace(/^(\d{2})(\d{5})(\d{4})$/, "($1) $2-$3");
-  if (d.length === 10) return d.replace(/^(\d{2})(\d{4})(\d{4})$/, "($1) $2-$3");
-  return String(bruto ?? "").trim();
 }
 
 /**
@@ -112,9 +127,17 @@ function nomeRemetenteExibido(idCliente: number | null, nomeEmpresa: string): st
   return idCliente === CLIENTE_REMETENTE_ALTERNATIVO ? NOME_REMETENTE_ALTERNATIVO : nomeEmpresa;
 }
 
+/**
+ * `opcoes.idDestinatarioEtiqueta` (04/09/2026): o destinatario escolhido no
+ * modal Despachar e AINDA NAO GRAVADO, para a previa da etiqueta refletir o
+ * drop antes de salvar. Passa pela MESMA validacao do valor persistido
+ * (`idDestinatarioEtiquetaVigente`): id que nao seja o cliente nem o pagador
+ * cai no cliente. `null`/ausente = le o gravado, como a rota do PDF faz.
+ */
 export async function montarEtiquetaViewModel(
   supabase: SupabaseClient,
-  idInt: number
+  idInt: number,
+  opcoes?: { idDestinatarioEtiqueta?: number | null }
 ): Promise<EtiquetaViewModel | null> {
   const { data: proposta } = await supabase
     .from("propostas")
@@ -132,7 +155,7 @@ export async function montarEtiquetaViewModel(
     supabase
       .from("expedicoes")
       .select(
-        "peso_kg, peso_bruto_kg, qtd_volumes, tipo_volume, transportadora_nome, id_transportadora_cliente, codigo_rastreamento, id_endereco_entrega, id_cliente_destinatario_etiqueta, obs, obs_etiqueta, nf_numero_manual, data_despacho"
+        "peso_kg, peso_bruto_kg, qtd_volumes, tipo_volume, transportadora_nome, id_transportadora_cliente, codigo_rastreamento, id_endereco_entrega, id_cliente_destinatario_etiqueta, obs, obs_etiqueta, nf_numero_manual, telefone_etiqueta, data_despacho"
       )
       .eq("id_int", idInt)
       .maybeSingle(),
@@ -315,7 +338,8 @@ export async function montarEtiquetaViewModel(
       proposta.id_faturado !== null && proposta.id_faturado !== undefined
         ? Number(proposta.id_faturado)
         : null,
-    idGravadoNoDespacho: exp?.id_cliente_destinatario_etiqueta as number | null | undefined
+    idGravadoNoDespacho:
+      opcoes?.idDestinatarioEtiqueta ?? (exp?.id_cliente_destinatario_etiqueta as number | null | undefined)
   });
 
   const { data: cliente } = idDestinatario !== null
@@ -344,10 +368,10 @@ export async function montarEtiquetaViewModel(
   const nomeEmpresa = String(proposta.empresa ?? "").trim();
   const empresaRow = await resolverEmpresaRemetente(supabase, nomeEmpresa);
 
-  const remetenteNome = nomeRemetenteExibido(
-    idCliente,
-    empresaRow?.nome_fantasia || empresaRow?.razao_social || nomeEmpresa
-  );
+  // A MESMA expressao que a prepostagem usa para o nome do remetente
+  // (`correios/prepostagem/route.ts`): e o que vai para os Correios.
+  const nomeEmpresaCadastro = empresaRow?.nome_fantasia || empresaRow?.razao_social || nomeEmpresa;
+  const remetenteNome = nomeRemetenteExibido(idCliente, nomeEmpresaCadastro);
   const remetenteLogradouro = [empresaRow?.logradouro, empresaRow?.numero].filter(Boolean).join(", ");
   const remetenteBairroCidadeUf = [
     empresaRow?.bairro ? `BAIRRO ${empresaRow.bairro}` : "",
@@ -425,6 +449,7 @@ export async function montarEtiquetaViewModel(
     }),
     remetente: {
       nome: remetenteNome,
+      nomeCadastro: nomeEmpresaCadastro,
       logradouro: remetenteLogradouro,
       bairroCidadeUf: remetenteBairroCidadeUf
     },
@@ -461,7 +486,25 @@ export async function montarEtiquetaViewModel(
       cidadeUf,
       cep: fmtCep(endereco?.cep),
       documento: fmtDocumento(cliente?.documento),
-      telefone: fmtTelefone(cliente?.whatsapp_1 || cliente?.telefone_fixo)
+      // O PRIMEIRO CANDIDATO QUE E TELEFONE (04/09/2026), nao o primeiro
+      // preenchido: `whatsapp_1` do cadastro 248 guardava o NOME do cliente e
+      // a etiqueta do 21000 saiu com "Fone: FELIPE FAUTH PROBST". Regra unica
+      // em `lib/telefone-destinatario.ts`, a mesma do contato exibido no modal.
+      //
+      // `telefone_etiqueta` ENTRA NA FRENTE (04/09/2026): e o numero que o
+      // expedidor digitou para ESTA remessa, e ele vence o cadastro. Nulo cai
+      // no cadastro, que e como sempre foi.
+      //
+      // SEM GATE DE `expConfirmado`, pelo mesmo motivo de `obs_etiqueta` e do
+      // numero manual da NF: a etiqueta e impressa ANTES do despacho, e segurar
+      // o telefone editado ate la imprimiria o numero errado justamente na
+      // etiqueta que vai colada no volume.
+      telefone: telefoneDestinatario(
+        exp?.telefone_etiqueta,
+        cliente?.whatsapp_1,
+        cliente?.telefone_fixo
+      ),
+      telefoneCadastro: telefoneDestinatario(cliente?.whatsapp_1, cliente?.telefone_fixo)
     }
   };
 }

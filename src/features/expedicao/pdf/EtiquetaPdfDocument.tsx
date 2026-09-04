@@ -3,13 +3,21 @@ import type { ReactElement } from "react";
 import { Document, Image, Page, StyleSheet, Text, View } from "@react-pdf/renderer";
 import type { DocumentProps } from "@react-pdf/renderer";
 import type { EtiquetaViewModel } from "../services/etiqueta-viewmodel.service";
+import {
+  ETIQUETA_ALTURA_PT,
+  ETIQUETA_LARGURA_PT,
+  ETIQUETA_PADDING_PT,
+  apresentacaoEtiqueta
+} from "../lib/etiqueta-apresentacao";
 
-// 100 x 150 mm em pontos (1 mm = 2.83465 pt)
-const LARGURA = 283.46;
-const ALTURA = 425.2;
+// 100 x 150 mm em pontos (1 mm = 2.83465 pt). Os numeros vivem em
+// `lib/etiqueta-apresentacao.ts` desde 04/09/2026, compartilhados com a
+// previa HTML do modal Despachar — o papel e a tela medem o mesmo.
+const LARGURA = ETIQUETA_LARGURA_PT;
+const ALTURA = ETIQUETA_ALTURA_PT;
 
 /** Margem de impressão da página, nos quatro lados. */
-const PADDING_PAGINA = 8;
+const PADDING_PAGINA = ETIQUETA_PADDING_PT;
 
 /**
  * ALTURA EXPLÍCITA DA MOLDURA — o que garante que ela vá até o pé (03/09/2026).
@@ -76,54 +84,13 @@ function rotuloDocumento(formatado: string): string {
 }
 
 /**
- * Cidade e UF separadas a partir de `cidadeUf`.
- *
- * O view model entrega "Rio Grande - RS" (ou o `cidade_uf` cru do cadastro, no
- * fallback). O layout imprime "CIDADE / UF" em corpo grande, então a divisão
- * acontece aqui — na APRESENTAÇÃO — em vez de abrir dois campos novos no view
- * model, que a Declaração de Conteúdo também consome.
- *
- * Sem separador reconhecível, tudo vira cidade e a UF sai vazia: melhor a linha
- * inteira legível do que um pedaço arbitrário promovido a estado.
+ * `separarCidadeUf` e `cortarObservacao` (e o limite de 105 caracteres da
+ * observacao) SAIRAM DAQUI em 04/09/2026 para `lib/etiqueta-apresentacao.ts`,
+ * com o raciocinio inteiro documentado la. Motivo: a previa HTML do modal
+ * Despachar precisa aplicar exatamente as mesmas regras, e este arquivo
+ * importa `@react-pdf/renderer`, que nao pode ir para o bundle do browser.
+ * Nada mudou nas regras — so o endereco.
  */
-function separarCidadeUf(cidadeUf: string): { cidade: string; uf: string } {
-  const texto = String(cidadeUf ?? "").trim();
-  if (!texto) return { cidade: "", uf: "" };
-
-  const m = texto.match(/^(.*?)\s*[-/·]\s*([A-Za-z]{2})$/) ?? texto.match(/^(.*?)\s+([A-Za-z]{2})$/);
-  if (m) return { cidade: m[1].trim(), uf: m[2].toUpperCase() };
-  return { cidade: texto, uf: "" };
-}
-
-/**
- * Observação cortada para caber nas TRÊS LINHAS que o layout reserva.
- *
- * `maxLines` do react-pdf não existe nesta versão dos tipos, então o limite é
- * imposto aqui, em caracteres: com 8,5pt bold e ~245pt de largura útil cabem
- * ~52 caracteres por linha, e 105 é o teto de DUAS linhas.
- *
- * Caiu de 140 (três linhas) para 105 em 02/09/2026, junto do reaperto do
- * layout: o bloco do destinatário podia crescer mais do que a conta previa e a
- * etiqueta quebrava para uma segunda página. Duas linhas de observação deixam
- * folga para um endereço de duas linhas com A/C.
- *
- * POR QUE CORTAR, E NÃO DEIXAR FLUIR
- *   A moldura tem altura FIXA. Uma observação longa empurraria REMETENTE, QR,
- *   data e volume para fora do papel — e esses são os campos que fazem o volume
- *   chegar. Perder o fim de um recado é ruim; perder o remetente é pior.
- *
- * O corte cai no último espaço antes do limite, para não partir palavra ao
- * meio, e marca o que ficou de fora com reticências.
- */
-const LIMITE_OBSERVACAO = 105;
-
-function cortarObservacao(texto: string): string {
-  const limpo = texto.trim();
-  if (limpo.length <= LIMITE_OBSERVACAO) return limpo;
-  const corte = limpo.slice(0, LIMITE_OBSERVACAO);
-  const ultimoEspaco = corte.lastIndexOf(" ");
-  return `${(ultimoEspaco > LIMITE_OBSERVACAO * 0.6 ? corte.slice(0, ultimoEspaco) : corte).trimEnd()}…`;
-}
 
 /**
  * Etiqueta 10x15 — layout de 02/09/2026, conforme a referência do dono.
@@ -154,6 +121,16 @@ function cortarObservacao(texto: string): string {
  *   — que a rota já gerava e o componente descartava desde 26/08.
  *
  * UMA PÁGINA POR VOLUME, como sempre: `VOLUME 1/2`, `2/2`, e assim por diante.
+ *
+ * REVISAO DE 04/09/2026 — duas correcoes de CONTEUDO, layout preservado:
+ *   - NOTA FISCAL voltou ao lado de PEDIDO, em duas colunas na mesma linha
+ *     ("—" sem nota, como CEP e cidade ja faziam);
+ *   - Fone imprime o TELEFONE: a regra `whatsapp_1 || telefone_fixo` pegava o
+ *     primeiro campo preenchido, e no cadastro 248 ele guardava o nome do
+ *     cliente. Ver `lib/telefone-destinatario.ts`.
+ *   Este documento passou a ter uma PREVIA em HTML no modal Despachar
+ *   (`components/EtiquetaPreview.tsx`), que le o mesmo view model e as mesmas
+ *   regras de apresentacao. O PDF continua sendo o artefato impresso.
  */
 const styles = StyleSheet.create({
   pagina: {
@@ -181,10 +158,15 @@ const styles = StyleSheet.create({
   regua: { borderBottomWidth: 1.5, borderBottomColor: "#000000", marginVertical: 3.5 },
 
   pedidoLinha: { flexDirection: "row", alignItems: "flex-start" },
+  /**
+   * PEDIDO e NOTA FISCAL lado a lado (04/09/2026): duas colunas de largura
+   * igual, o pedido a esquerda e a nota a direita. O corpo caiu de 38 para 36pt
+   * para uma NF de 7 digitos caber ao lado de um pedido de 5 na largura util
+   * (~243pt) sem estourar.
+   */
+  pedidoColuna: { flexGrow: 1, flexBasis: 0 },
   pedidoNumero: {
-    flexGrow: 1,
-    textAlign: "center",
-    fontSize: 38,
+    fontSize: 36,
     fontFamily: "Helvetica-Bold",
     letterSpacing: -1
   },
@@ -251,10 +233,10 @@ export function EtiquetaPdfDocument({
   qrDataUrl?: string | null;
 }) {
   const paginas = Array.from({ length: vm.volumes }, (_, i) => i + 1);
-  const { cidade, uf } = separarCidadeUf(vm.destinatario.cidadeUf);
-  const cidadeUfLinha = [cidade, uf].filter(Boolean).join(" / ");
-  const transportadoraExibida = (vm.transportadora || "A DEFINIR").toUpperCase();
-  const telefone = vm.destinatario.telefone ? `Fone: ${vm.destinatario.telefone}` : "";
+  // As linhas derivadas vem de `lib/etiqueta-apresentacao.ts` — a MESMA funcao
+  // que a previa do modal Despachar usa. Papel e tela nao podem discordar
+  // sobre o que sai impresso.
+  const a = apresentacaoEtiqueta(vm);
 
   return (
     <Document title={`Etiqueta ${vm.idInt}`}>
@@ -272,8 +254,14 @@ export function EtiquetaPdfDocument({
                 separa do seu valor, nem entre si nem do resto. Era exatamente o
                 sintoma do 21503 no rodape. */}
             <View wrap={false} style={styles.pedidoLinha}>
-              <Text style={styles.rotulo}>PEDIDO:</Text>
-              <Text style={styles.pedidoNumero}>{vm.idInt}</Text>
+              <View style={styles.pedidoColuna}>
+                <Text style={styles.rotulo}>PEDIDO:</Text>
+                <Text style={styles.pedidoNumero}>{vm.idInt}</Text>
+              </View>
+              <View style={[styles.pedidoColuna, { alignItems: "flex-end" }]}>
+                <Text style={styles.rotulo}>NOTA FISCAL:</Text>
+                <Text style={styles.pedidoNumero}>{a.nfExibida}</Text>
+              </View>
             </View>
             <View style={styles.regua} />
 
@@ -289,25 +277,25 @@ export function EtiquetaPdfDocument({
               {vm.destinatario.bairro ? (
                 <Text style={styles.destLinha}>BAIRRO: {vm.destinatario.bairro}</Text>
               ) : null}
-              {telefone ? <Text style={styles.destLinha}>{telefone}</Text> : null}
+              {a.telefoneLinha ? <Text style={styles.destLinha}>{a.telefoneLinha}</Text> : null}
             </View>
             <View style={styles.regua} />
 
             <View wrap={false}>
               <Text style={styles.rotulo}>CEP:</Text>
-              <Text style={styles.grande}>{vm.destinatario.cep || "—"}</Text>
+              <Text style={styles.grande}>{a.cepExibido}</Text>
             </View>
             <View style={styles.regua} />
 
             <View wrap={false}>
               <Text style={styles.rotulo}>CIDADE/UF:</Text>
-              <Text style={styles.grande}>{cidadeUfLinha || "—"}</Text>
+              <Text style={styles.grande}>{a.cidadeUfLinha}</Text>
             </View>
             <View style={styles.regua} />
 
             <View wrap={false}>
               <Text style={styles.rotulo}>FORMA DE ENVIO:</Text>
-              <Text style={styles.envio}>{transportadoraExibida}</Text>
+              <Text style={styles.envio}>{a.transportadoraExibida}</Text>
             </View>
             <View style={styles.regua} />
 
@@ -318,11 +306,11 @@ export function EtiquetaPdfDocument({
                 empurraria o remetente e o rodapé para fora do papel. Três linhas
                 cobrem o caso real ("PRODUTO FRÁGIL, RETIRA NO AEROPORTO DE
                 CONGONHAS, ATÉ MEIO DIA DE SEXTA DIA 04/09") com folga. */}
-            {vm.obsEtiqueta ? (
+            {a.observacaoImpressa ? (
               <>
                 <View wrap={false}>
                   <Text style={styles.rotulo}>OBSERVAÇÕES:</Text>
-                  <Text style={styles.obsTexto}>{cortarObservacao(vm.obsEtiqueta).toUpperCase()}</Text>
+                  <Text style={styles.obsTexto}>{a.observacaoImpressa}</Text>
                 </View>
                 <View style={styles.regua} />
               </>

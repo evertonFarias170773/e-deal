@@ -36,9 +36,17 @@ export type EntradaEtiqueta = {
   prepostagemCanceladaEm: string | null;
 };
 
+/**
+ * Qual documento a acao abre. O modal Despachar so exibe a PREVIA da 10x15
+ * quando o modelo e `10X15` — a etiqueta de retirada e o rotulo oficial dos
+ * Correios sao outros documentos, e uma previa da 10x15 ali mentiria.
+ */
+export type ModeloEtiqueta = "10X15" | "CORREIOS" | "RETIRADA";
+
 export type AcaoEtiqueta = {
   /** Rótulo do botão — inclui a instrução quando está bloqueada. */
   label: string;
+  modelo: ModeloEtiqueta;
   /**
    * Correios sem prepostagem válida: o rótulo oficial ainda não existe do lado
    * deles, e a rota responde 422. Bloqueia dizendo o que fazer, em vez de sumir
@@ -58,6 +66,7 @@ export function etiquetaDoPedido(e: EntradaEtiqueta): AcaoEtiqueta {
   if (e.modalidadeFrete === "RETIRA" || e.tipoFrete === "RETIRA_BALCAO") {
     return {
       label: "Etiqueta de retirada",
+      modelo: "RETIRADA",
       bloqueada: false,
       abrir: () => abrirEtiquetaRetirada(e.idInt, e.volumes)
     };
@@ -70,19 +79,24 @@ export function etiquetaDoPedido(e: EntradaEtiqueta): AcaoEtiqueta {
     if (!e.correiosIdPrepostagem || e.prepostagemCanceladaEm) {
       return {
         label: "Etiqueta Correios — gere a prepostagem",
+        modelo: "CORREIOS",
         bloqueada: true,
         abrir: async () => ({ success: false, errorMessage: "Gere a prepostagem antes." })
       };
     }
     return {
       label: "Etiqueta Correios (oficial)",
+      modelo: "CORREIOS",
       bloqueada: false,
       abrir: () => abrirEtiquetaCorreios(e.idInt)
     };
   }
 
   return {
-    label: "Imprimir etiqueta 10x15",
+    // "Gerar", nao "Imprimir" (04/09/2026): o modal mostra a previa e o botao
+    // grava o formulario antes de abrir o PDF — e o que o rotulo diz.
+    label: "Gerar etiqueta 10x15",
+    modelo: "10X15",
     bloqueada: false,
     abrir: () => abrirEtiqueta(e.idInt, e.volumes)
   };

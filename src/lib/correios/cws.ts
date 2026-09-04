@@ -143,7 +143,9 @@ class CorreiosApiError extends Error {
  * cadastrado também chega aqui vazio — mandar "" tem boa chance de virar 400.
  * Número com tamanho fora do padrão brasileiro é omitido pelo mesmo motivo.
  */
-function contatoParaPayload(bruto: string): Record<string, string> {
+// Exportada em 04/09/2026 so para o teste da regra de telefone da prepostagem
+// (`scripts/testes/etiqueta-apresentacao.test.mts`) — nenhum outro chamador.
+export function contatoParaPayload(bruto: string): Record<string, string> {
   const limpo = bruto.replace(/\D/g, "");
   if (limpo.length < 10) return {};
   const ddd = limpo.slice(0, 2);

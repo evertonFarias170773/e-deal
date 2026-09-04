@@ -1,6 +1,6 @@
 import { getSupabaseClient } from "@/lib/supabase/client";
 import { formatDocument } from "@/lib/formatters/document";
-import { formatPhoneBR } from "@/lib/formatters/phone";
+import { telefoneDestinatario } from "../lib/telefone-destinatario";
 import {
   nomeTransportadoraCadastro,
   nomeTransporteEfetivo
@@ -75,15 +75,16 @@ function diffDias(a: string, b: string): number {
 /**
  * Contato de um cadastro de `clientes`, ja mascarado para exibicao.
  *
- * Telefone: `whatsapp_1` antes de `telefone_fixo`, a MESMA preferencia que a
- * etiqueta 10x15 aplica — as duas telas mostram o mesmo numero.
+ * Telefone: `whatsapp_1` antes de `telefone_fixo`, pela MESMA funcao que a
+ * etiqueta 10x15 usa (`lib/telefone-destinatario.ts`) — as duas telas mostram
+ * o mesmo numero, e nenhuma mostra um nome no lugar dele.
  */
 function contatoDoCadastro(
   cadastro: { documento: string | null; whatsapp_1: string | null; telefone_fixo: string | null } | undefined
 ): ContatoDestinatario {
   return {
     documento: cadastro?.documento ? formatDocument(String(cadastro.documento)) : "",
-    telefone: formatPhoneBR(cadastro?.whatsapp_1 || cadastro?.telefone_fixo)
+    telefone: telefoneDestinatario(cadastro?.whatsapp_1, cadastro?.telefone_fixo)
   };
 }
 
@@ -165,7 +166,7 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
     client
       .from("expedicoes")
       .select(
-        "id_int, modalidade_frete, tipo_frete, transportadora_nome, id_transportadora_cliente, peso_kg, peso_bruto_kg, qtd_volumes, tipo_volume, id_endereco_entrega, id_cliente_destinatario_etiqueta, codigo_rastreamento, correios_id_prepostagem, correios_codigo_objeto, prepostagem_cancelada_em, correios_id_prepostagem_anterior, correios_codigo_objeto_anterior, data_pronto, data_despacho, coletado_em, data_entrega, despachado_por, retirado_por, obs, obs_etiqueta, nf_numero_manual, etiqueta_impressa_em"
+        "id_int, modalidade_frete, tipo_frete, transportadora_nome, id_transportadora_cliente, peso_kg, peso_bruto_kg, qtd_volumes, tipo_volume, id_endereco_entrega, id_cliente_destinatario_etiqueta, codigo_rastreamento, correios_id_prepostagem, correios_codigo_objeto, prepostagem_cancelada_em, correios_id_prepostagem_anterior, correios_codigo_objeto_anterior, data_pronto, data_despacho, coletado_em, data_entrega, despachado_por, retirado_por, obs, obs_etiqueta, nf_numero_manual, telefone_etiqueta, etiqueta_impressa_em"
       )
       .in("id_int", ids),
     idsCliente.length > 0
@@ -313,6 +314,7 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
       obs: row.obs ?? null,
       obsEtiqueta: row.obs_etiqueta ?? null,
       nfNumeroManual: row.nf_numero_manual ?? null,
+      telefoneEtiqueta: row.telefone_etiqueta ?? null,
       etiquetaImpressaEm: row.etiqueta_impressa_em ?? null
     });
   }
