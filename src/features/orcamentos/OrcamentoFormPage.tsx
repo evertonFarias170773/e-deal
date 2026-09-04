@@ -7469,8 +7469,14 @@ function createInitialState(proposta?: Proposta): PropostaFormState {
   const clienteNaoCadastrado = proposta?.clienteNaoCadastrado ?? (cliente ? (cliente.idCliente === null || cliente.idCliente === undefined || Number(cliente.idCliente) === 0) : false);
 
   let fretes = proposta?.fretes ?? (endereco ? createFretesMock(endereco, proposta?.id_int ?? 0, proposta?.resumo.pesoTotal ?? 0) : []);
-  const enderecoUf = endereco?.uf ?? (clienteNaoCadastrado ? (proposta?.enderecoEntrega?.uf ?? "") : "");
-  if (enderecoUf?.toUpperCase() === "RS") {
+  {
+    // RETIRADA NAO TEM UF (04/09/2026). Este bloco so rodava com
+    // `endereco.uf === "RS"`, e a restricao deixava cliente de outro estado sem
+    // NENHUMA forma de zerar o frete pela tela: em RETIRA os cards ficam
+    // escondidos, entao o unico caminho era marcar CIF para eles voltarem. Quem
+    // busca no balcao vai ao balcao — o endereco cadastrado nao decide isso.
+    // Mesma remocao em `createFretesMock`, para as duas listas nao divergirem.
+    //
     // A deteccao e pelo QUE o card e, nao pelo id. O id `frete_retira_balcao`
     // so existe em memoria: a linha que volta de `cotacao_frete` traz o id
     // numerico da linha, entao comparar por id dava sempre falso e o card era

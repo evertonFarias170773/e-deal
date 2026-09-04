@@ -12,6 +12,7 @@ import {
   aplicarModalidadeNosFretes,
   exigeCotacaoEscolhida,
   faltaTransportadoraEmFob,
+  modalidadeCobraFrete,
   motivoBloqueioModalidade,
   nomeTransportadoraCadastro,
   nomeTransporteEfetivo,
@@ -1378,7 +1379,34 @@ export async function getPropostaDetailById(idInt: number, overrideClient?: Supa
 
     const chosenFrete = fretes.find((f) => f.escolhido) || fretes[0];
     const freteEscolhidoId = chosenFrete ? chosenFrete.id : "";
-    const freteValor = chosenFrete ? chosenFrete.valor : 0;
+
+    /**
+     * A MODALIDADE GRAVADA, lida uma vez e usada nas duas pontas: o dinheiro do
+     * resumo, logo abaixo, e o campo `modalidadeFrete` da proposta devolvida.
+     */
+    const modalidadePersistidaProposta =
+      (proposalRow.modalidade_frete as ModalidadeFrete | null) ?? null;
+
+    /**
+     * O FRETE QUE ESTA PROPOSTA COBRA, na fronteira de LEITURA.
+     *
+     * A regra ja valia na ESCRITA (`saveProposta`) desde 397cc14, mas nao aqui —
+     * e quem paga a conta e o painel de cobranca: `proposta.resumo.valorTotal`
+     * vira o saldo do formulario e, dali, o `valor` de `pagamentos_v2`. Com o
+     * valor cru, um pedido RETIRA ou FOB com cotacao viva por baixo gerava
+     * cobranca COM frete enquanto o resumo da tela ja mostrava sem — foi o que
+     * aconteceu na 21699 (cobranca de R$ 212,43 sobre R$ 195,00 de produtos).
+     *
+     * `fretes` NAO e zerado de proposito: ele alimenta o formulario, onde o
+     * valor cotado segue visivel como referencia e volta a valer se o vendedor
+     * trocar a modalidade para CIF. Zerar o array apagaria a cotacao da tela e
+     * gravaria zero num CIF — o oposto da regra. Quem zera e a fronteira de
+     * consumo, um valor de cada vez, como no resto do modulo.
+     */
+    const freteValor = valorFreteEfetivo(
+      chosenFrete ? chosenFrete.valor : 0,
+      modalidadePersistidaProposta
+    );
 
     const activeItens = mappedItens.filter((it) => it.statusItem !== "CANCELADO");
 
@@ -1420,9 +1448,24 @@ export async function getPropostaDetailById(idInt: number, overrideClient?: Supa
       ? 0
       : activeItens.reduce((sum, it) => sum + it.pesoTotal, 0);
 
+    const totalRecalculado = subtotalProdutos + freteValor - descontoGeralCalculado;
+
+    /**
+     * AVULSA lê o total PERSISTIDO — menos quando a modalidade zera o frete.
+     *
+     * A avulsa não tem item: o total dela é montado pelo trigger
+     * `tg_propostas_valor_total_avulsa`, e ler `valor_total` é o que sempre
+     * valeu. Só que esse total carrega o frete que a modalidade diz não existir
+     * (a 20891 é FOB e tem R$ 28,84 de SEDEX dentro dos R$ 128,84), e ele
+     * chegaria inteiro ao painel de cobrança. Em RETIRA e FOB o total sai de
+     * `valor` + frete efetivo — as mesmas duas parcelas do trigger, com a regra
+     * aplicada. CIF e modalidade nula seguem lendo o persistido, sem mudança.
+     */
     let valorTotal = proposalRow.is_avulso
-      ? Number(proposalRow.valor_total ?? (subtotalProdutos + freteValor - descontoGeralCalculado))
-      : (subtotalProdutos + freteValor - descontoGeralCalculado);
+      ? (modalidadeCobraFrete(modalidadePersistidaProposta)
+          ? Number(proposalRow.valor_total ?? totalRecalculado)
+          : totalRecalculado)
+      : totalRecalculado;
 
     // Guardrail: never show only freight as total if there are products
     if (valorTotal === freteValor && subtotalProdutos > 0) {
@@ -1443,7 +1486,7 @@ export async function getPropostaDetailById(idInt: number, overrideClient?: Supa
       itens: mappedItens,
       fretes,
       freteEscolhidoId,
-      modalidadeFrete: (proposalRow.modalidade_frete as ModalidadeFrete | null) ?? null,
+      modalidadeFrete: modalidadePersistidaProposta,
       idTransportadoraCliente:
         proposalRow.id_transportadora_cliente != null ? Number(proposalRow.id_transportadora_cliente) : null,
       resumo: {

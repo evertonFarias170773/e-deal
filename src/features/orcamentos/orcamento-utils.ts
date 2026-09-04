@@ -494,19 +494,25 @@ export function createFretesMock(endereco?: CadastroEndereco, id_int = 0, pesoUs
     }
   ];
 
-  if (endereco?.uf?.toUpperCase() === "RS") {
-    mocks.push({
-      id: "frete_retira_balcao",
-      id_int,
-      transportadora: "Retirada Local",
-      servico: SERVICO_RETIRA_BALCAO,
-      valor: 0.00,
-      prazo: "Imediato",
-      observacao: "Retirar pessoalmente no balcão da empresa",
-      escolhido: false,
-      pesoUsado
-    });
-  }
+  // RETIRADA NAO TEM UF. Ate 04/09/2026 este card so era oferecido com
+  // `endereco.uf === "RS"`, herdado de quando ele nasceu como conveniencia
+  // local. Quem busca no balcao vai ao balcao — o endereco cadastrado do
+  // cliente nao decide isso, e a restricao deixava cliente de fora do RS sem
+  // NENHUMA forma de zerar o frete pela tela: em RETIRA os cards ficam
+  // escondidos, e a unica saida era marcar CIF para reaparecerem.
+  //
+  // Nada mais muda: mesmo id, mesmo titulo, valor zero e prazo imediato.
+  mocks.push({
+    id: "frete_retira_balcao",
+    id_int,
+    transportadora: "Retirada Local",
+    servico: SERVICO_RETIRA_BALCAO,
+    valor: 0.00,
+    prazo: "Imediato",
+    observacao: "Retirar pessoalmente no balcão da empresa",
+    escolhido: false,
+    pesoUsado
+  });
 
   return mocks;
 }

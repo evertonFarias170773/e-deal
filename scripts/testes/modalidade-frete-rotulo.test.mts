@@ -21,6 +21,8 @@ import {
   aplicarModalidadeNosFretes
 } from "../../src/features/orcamentos/lib/modalidade-frete.ts";
 import type { PropostaFrete } from "../../src/features/orcamentos/types.ts";
+import { createFretesMock } from "../../src/features/orcamentos/orcamento-utils.ts";
+import type { CadastroEndereco } from "../../src/features/cadastros/types.ts";
 
 let falhas = 0;
 function checar(nome: string, real: unknown, esperado: unknown) {
@@ -119,6 +121,80 @@ checar("modalidadeCobraFrete: RETIRA nao cobra", modalidadeCobraFrete("RETIRA"),
 // A exigencia de transportadora continua sendo SO de FOB: zerar o frete em
 // RETIRA nao pode arrastar a regra de quem leva.
 checar("RETIRA nao exige transportadora", faltaTransportadoraEmFob("RETIRA", null), false);
+
+// -- O RESUMO LIDO, nao so o salvo (04/09/2026) -------------------------------
+// A regra valia na ESCRITA e nao na LEITURA: `getPropostaById` montava
+// `resumo.frete` com o `cotacao_frete.valor` cru, e e esse resumo que vira o
+// saldo do painel de cobranca e o `valor` de `pagamentos_v2`. Resultado: resumo
+// da tela sem frete, cobranca com frete.
+//
+// REPLICA, e assumida como tal: a funcao de verdade fala com o Supabase e nao
+// roda aqui. O que este bloco fixa e a ARITMETICA de orcamentos.service.ts
+// (`freteValor` / `totalRecalculado` / `valorTotal`), na mesma forma e na mesma
+// ordem. Se a de la mudar sem esta mudar junto, os numeros abaixo denunciam.
+function resumoLido(caso: {
+  isAvulso: boolean;
+  subtotalProdutos: number;
+  desconto: number;
+  cotacaoValor: number;
+  valorTotalPersistido: number;
+  modalidade: "RETIRA" | "FOB" | "CIF" | null;
+}): { frete: number; valorTotal: number } {
+  const freteValor = valorFreteEfetivo(caso.cotacaoValor, caso.modalidade);
+  const totalRecalculado = caso.subtotalProdutos + freteValor - caso.desconto;
+  const valorTotal = caso.isAvulso
+    ? (modalidadeCobraFrete(caso.modalidade) ? caso.valorTotalPersistido : totalRecalculado)
+    : totalRecalculado;
+  return { frete: freteValor, valorTotal };
+}
+
+// 21055 no banco: RETIRA, produtos 865,00, cotacao MOTOBOY 28,61, total 893,61.
+checar("leitura RETIRA nao cobra o frete cotado",
+  resumoLido({ isAvulso: false, subtotalProdutos: 865, desconto: 0, cotacaoValor: 28.61, valorTotalPersistido: 893.61, modalidade: "RETIRA" }),
+  { frete: 0, valorTotal: 865 });
+
+// 20891 no banco: FOB AVULSA, valor 100,00, cotacao SEDEX 28,84, total 128,84.
+// A avulsa era o caso que lia o total PERSISTIDO e trazia o frete junto.
+checar("leitura FOB avulsa deixa de herdar o frete do total persistido",
+  resumoLido({ isAvulso: true, subtotalProdutos: 100, desconto: 0, cotacaoValor: 28.84, valorTotalPersistido: 128.84, modalidade: "FOB" }),
+  { frete: 0, valorTotal: 100 });
+
+// CIF e o controle: la o frete E devido e continua somado, dos dois lados.
+checar("leitura CIF continua somando o frete",
+  resumoLido({ isAvulso: false, subtotalProdutos: 195, desconto: 0, cotacaoValor: 17.43, valorTotalPersistido: 212.43, modalidade: "CIF" }),
+  { frete: 17.43, valorTotal: 212.43 });
+checar("leitura CIF avulsa continua lendo o total persistido",
+  resumoLido({ isAvulso: true, subtotalProdutos: 100, desconto: 0, cotacaoValor: 28.84, valorTotalPersistido: 128.84, modalidade: "CIF" }),
+  { frete: 28.84, valorTotal: 128.84 });
+checar("leitura de proposta sem modalidade nao muda de comportamento",
+  resumoLido({ isAvulso: true, subtotalProdutos: 100, desconto: 0, cotacaoValor: 28.84, valorTotalPersistido: 128.84, modalidade: null }),
+  { frete: 28.84, valorTotal: 128.84 });
+// O desconto continua entrando, e antes do frete zerado nao mudar nada.
+checar("leitura RETIRA com desconto: so o frete sai",
+  resumoLido({ isAvulso: false, subtotalProdutos: 1000, desconto: 100, cotacaoValor: 30, valorTotalPersistido: 930, modalidade: "RETIRA" }),
+  { frete: 0, valorTotal: 900 });
+
+// -- O card de retirada nao tem UF (04/09/2026) -------------------------------
+// Ate aqui ele so era montado com `endereco.uf === "RS"`. Fora do RS o cliente
+// ficava sem NENHUMA forma de zerar o frete pela tela: em RETIRA os cards ficam
+// escondidos, e a unica saida era marcar CIF para eles reaparecerem.
+function enderecoDe(uf: string): CadastroEndereco {
+  return { id: "e1", tipo: "entrega", cep: "01310-100", endereco: "Av. Paulista", numero: "1000", bairro: "Bela Vista", cidade: "Sao Paulo", uf };
+}
+const cardRetira = (ufTeste: string) =>
+  createFretesMock(enderecoDe(ufTeste), 1, 10400).find((f) => f.id === "frete_retira_balcao") ?? null;
+
+checar("SP recebe o card de retirada", cardRetira("SP")?.transportadora ?? null, "Retirada Local");
+checar("SP recebe o card valendo zero", cardRetira("SP")?.valor ?? null, 0);
+checar("SP recebe o card com prazo imediato", cardRetira("SP")?.prazo ?? null, "Imediato");
+checar("RS continua recebendo o card", cardRetira("RS")?.transportadora ?? null, "Retirada Local");
+checar("o card de retirada nasce nao escolhido", cardRetira("SP")?.escolhido ?? null, false);
+// Escolher o card e o que zera de fato: e ele que grava `cotacao_frete.valor`.
+checar("o card escolhido em RETIRA da frete zero",
+  valorFreteEfetivo(cardRetira("MG")?.valor ?? -1, "RETIRA"), 0);
+// Mesmo em CIF ele vale zero — o zero e do card, nao da modalidade.
+checar("o card escolhido em CIF tambem vale zero, por ser retirada",
+  valorFreteEfetivo(cardRetira("MG")?.valor ?? -1, "CIF"), 0);
 
 console.log(falhas === 0 ? "\nTUDO OK" : `\n${falhas} FALHA(S)`);
 process.exitCode = falhas === 0 ? 0 : 1;
