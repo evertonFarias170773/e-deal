@@ -1,4 +1,5 @@
 import type { PesoOrigem as PesoOrigemInterna } from "./lib/peso";
+import type { CategoriaFrete } from "@/features/orcamentos/lib/categoria-frete";
 
 /**
  * Modalidade comercial do frete — QUEM PAGA o transporte.
@@ -67,6 +68,8 @@ export interface ExpedicaoRegistro {
   /** expedicoes.modalidade_frete — quem paga (nula em linhas anteriores a 18/08/2026). */
   modalidadeFrete: ModalidadeFrete | null;
   tipoFrete: TipoFreteNormalizado | null;
+  /** `expedicoes.categoria_frete` — o que o expedidor registrou. */
+  categoriaFrete: CategoriaFrete | null;
   transportadoraNome: string | null;
   idTransportadoraCliente: number | null;
   pesoKg: number | null;
@@ -276,6 +279,14 @@ export interface PedidoExpedicao {
    * serve para pré-selecionar o despacho e para mostrar divergência.
    */
   modalidadeOrcamento: ModalidadeFrete | null;
+  /**
+   * A CATEGORIA QUE VALE, ja resolvida por `categoriaFreteVigente` no service:
+   * o despacho confirmado vence, senao a proposta, senao o rascunho. O painel
+   * NAO reaplica precedencia — ela mora num lugar so.
+   *
+   * `null` = nao classificada, e o painel a exibe em EXTRAS.
+   */
+  categoriaFrete: CategoriaFrete | null;
   /** `propostas.id_transportadora_cliente` — transportadora definida no orçamento. */
   idTransportadoraOrcamento: number | null;
   /** Texto cru do serviço cotado (ex: "SEDEX", "FRETE INCLUSO"). */

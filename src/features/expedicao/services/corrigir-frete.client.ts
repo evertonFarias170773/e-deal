@@ -28,6 +28,8 @@ export interface SimulacaoFrete {
   valorTotalAtual: number;
   valorFreteAtual: number;
   valorFreteProjetado: number;
+  /** `cotacao_frete.servico` escolhido — a tela deriva a categoria com ele. */
+  servicoCotado: string;
   totalProjetado: number;
   valorPagoConfirmado: number;
   /** > 0 o cliente deve; < 0 há crédito a devolver. */
@@ -113,6 +115,8 @@ export async function confirmarCorrecaoFrete(params: {
   transportadoraId: number | null;
   /** `ACAO_ABRIR_PENDENCIA_CREDITO` quando a diferença é credora. */
   acaoFinanceira?: string | null;
+  /** RODOVIARIO ou AEREO, quando a derivação não resolve sozinha. */
+  categoriaFreteDeclarada?: string | null;
 }): Promise<RespostaConfirmacao> {
   try {
     const { ok, status, data } = await chamar({ ...params, modo: "confirmar" });

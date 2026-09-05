@@ -38,7 +38,12 @@ import { marcarPrepostagemCancelada } from "./services/correios.client";
 import { liberarRecotacao, revogarRecotacao } from "./services/recotacao.client";
 import { abrirDeclaracaoConteudo } from "./services/etiqueta.client";
 import { ConfirmarAcaoModal } from "./components/ConfirmarAcaoModal";
-import { labelTipoFrete, TIPOS_FRETE } from "./lib/tipo-frete";
+import {
+  avisoFiltroLegado,
+  FILTRO_FRETE_TODOS,
+  resolverFiltroCategoria
+} from "./lib/filtro-categoria";
+import { categoriaExibida, CATEGORIAS_FRETE, LABEL_CATEGORIA_FRETE } from "@/features/orcamentos/lib/categoria-frete";
 import { rotuloClienteComNumero } from "./lib/cliente-rotulo";
 import { DespacharModal } from "./components/DespacharModal";
 import { RetiradaModal } from "./components/RetiradaModal";
@@ -611,6 +616,14 @@ export function ExpedicaoPage() {
     []
   );
   const { filters, setFilter, setFilters } = useUrlFilters(filtrosSchema);
+
+  /**
+   * O `frete` da URL, traduzido. Valor antigo ou torto NUNCA vira lista vazia:
+   * o que tem equivalente e traduzido, o resto ABRE o filtro e a tela diz o que
+   * aconteceu. A regra vive em `lib/filtro-categoria.ts`, testavel sem tela.
+   */
+  const filtroCategoria = useMemo(() => resolverFiltroCategoria(filters.frete), [filters.frete]);
+  const avisoFiltro = avisoFiltroLegado(filtroCategoria);
   const [search, setSearch] = useDebouncedInput(filters.q, (valor) => setFilter("q", valor));
 
   async function recarregar() {
@@ -663,7 +676,11 @@ export function ExpedicaoPage() {
       )
         return false;
 
-      if (filters.frete !== "TODOS" && p.tipoFrete !== filters.frete) return false;
+      // Categoria VIGENTE, ja resolvida no service (despacho vence a proposta).
+      // `categoriaExibida` e o mesmo ponto unico que o kanban usa para mandar
+      // nulo em EXTRAS — filtro e coluna nunca discordam.
+      if (filtroCategoria.valor !== FILTRO_FRETE_TODOS && categoriaExibida(p.categoriaFrete) !== filtroCategoria.valor)
+        return false;
       if (
         filters.emp !== "TODOS" &&
         p.empresa.toLowerCase().replace(/\s/g, "") !== filters.emp.toLowerCase().replace(/\s/g, "")
@@ -715,7 +732,7 @@ export function ExpedicaoPage() {
         p.transportadoraNome.toLowerCase().includes(q)
       );
     });
-  }, [pedidos, filters.etapa, filters.frete, filters.emp, search]);
+  }, [pedidos, filters.etapa, filtroCategoria, filters.emp, search]);
 
   /**
    * Número de cada chip = tamanho exato da lista que clicar nele produz. Sai da
@@ -924,11 +941,18 @@ export function ExpedicaoPage() {
             />
           </label>
 
-          <select value={filters.frete} onChange={(e) => setFilter("frete", e.target.value)} className={filterClass}>
-            <option value="TODOS">Todos os fretes</option>
-            {TIPOS_FRETE.map((tipo) => (
-              <option key={tipo} value={tipo}>
-                {labelTipoFrete(tipo)}
+          {/* O `value` e o RESOLVIDO, nao o cru da URL: assim um link antigo
+              abre o select em "Todos os fretes" em vez de exibir a primeira
+              opcao enquanto filtra por outra coisa. */}
+          <select
+            value={filtroCategoria.valor}
+            onChange={(e) => setFilter("frete", e.target.value)}
+            className={filterClass}
+          >
+            <option value={FILTRO_FRETE_TODOS}>Todos os fretes</option>
+            {CATEGORIAS_FRETE.map((c) => (
+              <option key={c} value={c}>
+                {LABEL_CATEGORIA_FRETE[c]}
               </option>
             ))}
           </select>
@@ -956,6 +980,15 @@ export function ExpedicaoPage() {
             Limpar filtros
           </button>
         </div>
+
+        {/* O aviso do link antigo. Existe porque traduzir em silencio e quase
+            tao ruim quanto nao casar: quem abriu um favorito precisa saber por
+            que a lista mudou. Some assim que o filtro e tocado. */}
+        {avisoFiltro && (
+          <p className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs font-medium text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+            {avisoFiltro}
+          </p>
+        )}
       </section>
 
       {filters.visao === "transportadoras" ? (

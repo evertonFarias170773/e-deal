@@ -32,6 +32,7 @@ export async function POST(request: NextRequest) {
   let transportadoraId: number | null = null;
   let modo = "simular";
   let acaoFinanceira: string | null = null;
+  let categoriaFreteDeclarada: string | null = null;
   let chaveEvento: string | null = null;
 
   try {
@@ -41,6 +42,7 @@ export async function POST(request: NextRequest) {
       transportadoraId?: unknown;
       modo?: unknown;
       acaoFinanceira?: unknown;
+      categoriaFreteDeclarada?: unknown;
       chaveEvento?: unknown;
     };
     idInt = Number(body?.idInt ?? 0);
@@ -50,6 +52,9 @@ export async function POST(request: NextRequest) {
       bruto === null || bruto === undefined || bruto === "" ? null : Number(bruto);
     modo = String(body?.modo ?? "simular").trim().toLowerCase();
     acaoFinanceira = body?.acaoFinanceira ? String(body.acaoFinanceira).trim().toUpperCase() : null;
+    categoriaFreteDeclarada = body?.categoriaFreteDeclarada
+      ? String(body.categoriaFreteDeclarada).trim().toUpperCase()
+      : null;
     chaveEvento = body?.chaveEvento ? String(body.chaveEvento).trim() : null;
   } catch {
     return NextResponse.json({ success: false, message: "Corpo da requisição inválido." }, { status: 400 });
@@ -122,6 +127,7 @@ export async function POST(request: NextRequest) {
       transportadoraId,
       temPermissaoEditarPaga: temPermissao,
       acaoFinanceira,
+      categoriaFreteDeclarada,
       chaveEvento,
       ator: {
         uid: authData.user.id,

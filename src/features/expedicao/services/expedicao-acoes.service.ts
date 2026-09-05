@@ -1,4 +1,8 @@
 import { getSupabaseClient } from "@/lib/supabase/client";
+import {
+  categoriaDoServico,
+  categoriaPorNomeConhecido
+} from "@/features/orcamentos/lib/categoria-frete";
 import type { ModalidadeFrete, TipoFreteNormalizado } from "../types";
 
 export type AtorExpedicao = { uid: string | null; nome: string | null };
@@ -261,10 +265,35 @@ export async function despachar(
   // pedido FORA do funil logístico com os dados pela metade — o próprio código
   // admitia isso na mensagem de erro. Invertido, uma falha de escrita deixa o
   // pedido exatamente onde estava, e o expedidor tenta de novo.
+  /**
+   * A CATEGORIA DO PAINEL, derivada do que o expedidor REGISTROU — nao do que a
+   * proposta declarou.
+   *
+   * Aqui esta a resposta para a recotacao: `exp_aplicar_recotacao` troca o frete
+   * mas so escreve `valor_frete` e `valor_total` em `propostas`, e a
+   * transportadora recotada nunca chega la — ela vive no estado do modal e se
+   * materializa AQUI. Gravando a categoria no despacho, o pedido recotado entra
+   * na coluna certa sem que ninguem precise reescrever a proposta.
+   *
+   * `tipo_frete` entra como servico de proposito: CORREIOS, MOTOBOY e
+   * RETIRA_BALCAO ja sao o vocabulario que a derivacao le, e `transportadora_nome`
+   * cobre VEPPO, Azul e Sao Miguel. Transportadora sem meio conhecido devolve
+   * `null`, e a leitura cai na declaracao da proposta pela precedencia.
+   *
+   * NAO retroalimenta `propostas`: a proposta guarda o que foi vendido, a
+   * expedicao guarda o que aconteceu.
+   */
+  // Nao ha declaracao no despacho: o expedidor registra QUEM leva, nao o meio.
+  // Por isso a tabela de nomes entra logo atras da derivacao forte.
+  const categoriaFrete =
+    categoriaDoServico(input.transportadoraNome || null, input.tipoFrete, input.modalidadeFrete) ??
+    categoriaPorNomeConhecido(input.transportadoraNome || null, input.tipoFrete);
+
   const up = await upsertExpedicao(idInt, {
     modalidade_frete: input.modalidadeFrete,
     tipo_frete: input.tipoFrete,
     transportadora_nome: input.transportadoraNome || null,
+    categoria_frete: categoriaFrete,
     id_transportadora_cliente: input.idTransportadoraCliente,
     peso_kg: input.pesoKg,
     qtd_volumes: input.qtdVolumes,
@@ -476,6 +505,18 @@ export async function salvarDadosExpedicao(
     campos.id_transportadora_cliente = dados.tipoFrete
       ? vinculoTransportadoraDerivado(dados.tipoFrete, dados.idTransportadoraCliente)
       : dados.idTransportadoraCliente;
+  }
+  /**
+   * A categoria acompanha a declaracao editada. Sem isto, corrigir a
+   * transportadora depois do despacho deixaria a coluna apontando para o
+   * transporte anterior — o mesmo defeito que a rota admin da transportadora
+   * tem do lado da proposta. So recalcula quando ha o que derivar.
+   */
+  if (dados.tipoFrete !== undefined || dados.transportadoraNome !== undefined) {
+    const nomeEditado = (campos.transportadora_nome as string | null) ?? dados.transportadoraNome ?? null;
+    campos.categoria_frete =
+      categoriaDoServico(nomeEditado, dados.tipoFrete ?? null, dados.modalidadeFrete ?? null) ??
+      categoriaPorNomeConhecido(nomeEditado, dados.tipoFrete ?? null);
   }
   if (dados.pesoKg !== undefined) campos.peso_kg = dados.pesoKg;
   if (dados.qtdVolumes !== undefined) campos.qtd_volumes = dados.qtdVolumes;

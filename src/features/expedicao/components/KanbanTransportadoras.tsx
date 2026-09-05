@@ -1,12 +1,17 @@
 "use client";
 
 import { useMemo } from "react";
+import { Truck } from "lucide-react";
 import { ActionsMenu } from "@/components/common/ActionsMenu";
 import type { ActionMenuItem } from "@/components/common/ActionsMenu";
 import { EmptyState } from "@/components/common/EmptyState";
 import { StatusBadge } from "@/components/common/StatusBadge";
 import { formatCurrency } from "@/lib/formatters/currency";
-import { correiosResiduoDeCotacaoFob } from "../lib/tipo-frete";
+import {
+  categoriaExibida,
+  CATEGORIAS_FRETE,
+  LABEL_CATEGORIA_FRETE
+} from "@/features/orcamentos/lib/categoria-frete";
 import type { EtapaExpedicao, PedidoExpedicao } from "../types";
 
 /**
@@ -43,7 +48,6 @@ type ColunaKanban = {
   pedidos: PedidoExpedicao[];
 };
 
-const COLUNA_OUTROS = "OUTROS";
 
 /**
  * Data-calendário curta (`03/09`) da promessa de entrega.
@@ -220,40 +224,73 @@ export function LegendaCoresKanban() {
 }
 
 /**
- * Chave e título da coluna de um pedido, a partir do tipo normalizado + nome
- * resolvido.
+ * COLUNAS FIXAS POR CATEGORIA (05/09/2026).
  *
- * `correiosResiduoDeCotacaoFob` vem de `lib/tipo-frete.ts` — nasceu aqui em
- * `e1855ed` e subiu para lá quando o alerta do `DespacharModal` precisou do
- * mesmo critério. A regra mora num lugar só; a lógica é a mesma. Ela desviava
- * 5 pedidos da coluna Correios: 21557, 21503 e 21499 (SVT TRANSPORTES), 21174
- * (EXPRESSO SÃO MIGUEL) e 21074 (BRASPRESS).
+ * O QUE MUDOU, E POR QUE
+ *   Até aqui a coluna nascia do NOME da transportadora (`T:${nome}`), e o painel
+ *   crescia sem limite: cada transportadora nova virava uma coluna, e a bancada
+ *   passava a rolar de lado para achar o que despachar. As sete categorias são
+ *   fechadas por decisão de negócio, e o nome continua onde sempre esteve — no
+ *   card.
+ *
+ * A CATEGORIA JÁ VEM RESOLVIDA. `p.categoriaFrete` saiu de `categoriaFreteVigente`
+ * no service, com a precedência do despacho aplicada uma vez só. Este componente
+ * NÃO reaplica regra nenhuma: só agrupa.
+ *
+ * `null` cai em EXTRAS por `categoriaExibida`, que é o ponto único dessa decisão.
+ * Enquanto o histórico não for classificado (Etapa 7), é lá que quase tudo mora —
+ * e isso é esperado, não defeito.
+ *
+ * A ORDEM É A DE `CATEGORIAS_FRETE`, não alfabética: ela é a sequência que a
+ * direção pediu, e alfabética jogaria AEREO na frente de CORREIOS.
+ *
+ * COLUNA VAZIA NÃO APARECE. Sete colunas sempre visíveis, com cinco delas em
+ * branco, gastariam a largura que a bancada usa para trabalhar.
  */
-function colunaDoPedido(p: PedidoExpedicao): { chave: string; titulo: string } {
-  const residuoFob = correiosResiduoDeCotacaoFob(p);
-
-  if (p.tipoFrete === "RETIRA_BALCAO") return { chave: "RETIRA", titulo: "Retira balcão" };
-  if (p.tipoFrete === "MOTOBOY") return { chave: "MOTOBOY", titulo: "Motoboy" };
-  if (p.tipoFrete === "CORREIOS" && !residuoFob) return { chave: "CORREIOS", titulo: "Correios" };
-  if (p.tipoFrete === "TRANSPORTADORA" || residuoFob) {
-    /**
-     * FONTE ÚNICA com o rótulo da lista: `transportadoraNome` é o MESMO
-     * `nomeTransporteEfetivo(servico, modalidade, transportadoraOrcamento)` que
-     * `rotuloTransporte` usa, e sob FOB ele já devolve o nome do cadastro. Nada
-     * de regra nova aqui — o agrupamento só passou a alcançar o campo que já
-     * existia. `transportadoraNome` fica INTOCADO: a busca textual e o
-     * pré-preenchimento do DespacharModal continuam lendo exatamente o mesmo
-     * valor de antes.
-     *
-     * No resíduo FOB o texto da cotação NÃO entra como reserva: ele é
-     * justamente o "SEDEX" que não vale, e criaria uma coluna "SEDEX".
-     */
-    const nome = (residuoFob ? p.transportadoraNome : p.transportadoraNome || p.freteServico).trim();
-    if (nome === "") return { chave: COLUNA_OUTROS, titulo: "Outros / A definir" };
-    return { chave: `T:${nome.toUpperCase()}`, titulo: nome };
+function agruparPorCategoria(pedidos: PedidoExpedicao[]): ColunaKanban[] {
+  const mapa = new Map<string, ColunaKanban>();
+  for (const p of pedidos) {
+    const chave = categoriaExibida(p.categoriaFrete);
+    const coluna = mapa.get(chave) ?? { chave, titulo: LABEL_CATEGORIA_FRETE[chave], pedidos: [] };
+    coluna.pedidos.push(p);
+    mapa.set(chave, coluna);
   }
-  // SEM_CUSTO e INDEFINIDO: a transportadora real só nasce no despacho.
-  return { chave: COLUNA_OUTROS, titulo: "Outros / A definir" };
+  for (const coluna of mapa.values()) coluna.pedidos = prontosPrimeiro(coluna.pedidos);
+
+  return CATEGORIAS_FRETE.map((c) => mapa.get(c)).filter((c): c is ColunaKanban => Boolean(c));
+}
+
+/**
+ * QUEM LEVA O PEDIDO — a linha que a coluna deixou de dizer.
+ *
+ * POR QUE ELA EXISTE
+ *   Enquanto a coluna era o NOME da transportadora, o card não precisava
+ *   repeti-lo: quem olhava a coluna já sabia. Com as colunas por categoria, o
+ *   operador que separa um volume em RODOVIARIO, AEREO ou EXTRAS não tem como
+ *   saber quem leva sem abrir o pedido. A informação voltou, agora no card.
+ *
+ * DE ONDE VEM
+ *   `p.rotuloTransporte`, resolvido no service e NÃO reimplementado aqui: ele já
+ *   aplica a precedência do módulo inteiro — o que o expedidor registrou vence o
+ *   que o orçamento previa, quando o despacho está confirmado. Nenhuma consulta
+ *   nova; o campo já vinha no objeto que o card recebe.
+ *
+ * RETIRA É A EXCEÇÃO, e é deliberada. Ali não existe transportadora: a
+ *   mercadoria é buscada no balcão. O rótulo resolvido hoje já diz "Retira
+ *   balcão" ou "Retirada Local" nos 19 pedidos da coluna, mas ele PODE devolver
+ *   o serviço de uma cotação que sobrou — um "SEDEX" num pedido de balcão. Em
+ *   vez de depender de o dado estar bom, a coluna RETIRA imprime um texto fixo,
+ *   que nunca pode contradizê-la.
+ *
+ * NUNCA MUDO. Sem nome resolvido, `rotuloTransporte` cai em `labelTipoFrete`,
+ *   que devolve "A definir" — e aí o card diz "Transporte a definir", que é uma
+ *   pendência declarada, não uma transportadora inventada.
+ */
+function quemLeva(p: PedidoExpedicao, categoria: string): string {
+  if (categoria === "RETIRA") return "Retira no balcão";
+  const rotulo = p.rotuloTransporte.trim();
+  if (rotulo === "" || rotulo === "A definir") return "Transporte a definir";
+  return rotulo;
 }
 
 /**
@@ -267,28 +304,6 @@ function colunaDoPedido(p: PedidoExpedicao): { chave: string; titulo: string } {
  */
 function prontosPrimeiro(pedidos: PedidoExpedicao[]): PedidoExpedicao[] {
   return [...pedidos].sort((a, b) => Number(b.etapa === "PRONTO") - Number(a.etapa === "PRONTO"));
-}
-
-function agruparPorTransportadora(pedidos: PedidoExpedicao[]): ColunaKanban[] {
-  const mapa = new Map<string, ColunaKanban>();
-  for (const p of pedidos) {
-    const { chave, titulo } = colunaDoPedido(p);
-    const coluna = mapa.get(chave) ?? { chave, titulo, pedidos: [] };
-    coluna.pedidos.push(p);
-    mapa.set(chave, coluna);
-  }
-  for (const coluna of mapa.values()) coluna.pedidos = prontosPrimeiro(coluna.pedidos);
-
-  const ordemFixaInicio = ["RETIRA", "MOTOBOY", "CORREIOS"];
-  const inicio = ordemFixaInicio
-    .map((chave) => mapa.get(chave))
-    .filter((c): c is ColunaKanban => Boolean(c));
-  const transportadoras = Array.from(mapa.values())
-    .filter((c) => c.chave.startsWith("T:"))
-    .sort((a, b) => a.titulo.localeCompare(b.titulo, "pt-BR"));
-  const outros = mapa.get(COLUNA_OUTROS);
-
-  return [...inicio, ...transportadoras, ...(outros ? [outros] : [])];
 }
 
 export function KanbanTransportadoras({
@@ -308,7 +323,7 @@ export function KanbanTransportadoras({
    * vazio, sem explicar por quê. Quem recorta agora são os cards e os filtros,
    * e só eles.
    */
-  const colunas = useMemo(() => agruparPorTransportadora(pedidos), [pedidos]);
+  const colunas = useMemo(() => agruparPorCategoria(pedidos), [pedidos]);
 
   if (pedidos.length === 0) {
     return (
@@ -484,6 +499,30 @@ export function KanbanTransportadoras({
                       )}
                     </div>
                   )}
+                  {/* QUEM LEVA, em destaque — a informacao que a coluna deixou
+                      de dizer quando virou categoria.
+
+                      EM DESTAQUE DE VERDADE, e nao mais um cinza no rodape: e o
+                      que o operador procura ao separar o volume na bancada. Vem
+                      como chip, com contorno e icone, para se distinguir das
+                      linhas de contexto (cidade, pagador) sem competir com o
+                      nome do cliente, que continua sendo o maior texto do card.
+
+                      NADA FOI REMOVIDO NEM MOVIDO: o chip entra como uma linha
+                      nova entre o contexto e os selos. `min-w-0` + `truncate`
+                      seguram nome longo em tela estreita, e o `title` entrega o
+                      texto inteiro. */}
+                  <div className="mt-2 flex">
+                    <span
+                      className="inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-lg border border-slate-900/15 bg-white/70 px-2 py-1 dark:border-slate-100/20 dark:bg-slate-900/40"
+                      title={`Transporte: ${quemLeva(p, coluna.chave)}`}
+                    >
+                      <Truck className="h-3.5 w-3.5 shrink-0 text-slate-500 dark:text-slate-400" aria-hidden="true" />
+                      <span className="truncate text-[14px] font-bold leading-tight text-slate-800 dark:text-slate-100">
+                        {quemLeva(p, coluna.chave)}
+                      </span>
+                    </span>
+                  </div>
                   {(mostrarSelo || ehAtrasado || p.prometidoHoje || prevista) && (
                     <div className="mt-3 flex flex-wrap items-center gap-1.5">
                       {mostrarSelo && <StatusBadge status={p.statusInterno} />}

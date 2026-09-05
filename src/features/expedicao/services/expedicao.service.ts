@@ -5,6 +5,12 @@ import {
   nomeTransportadoraCadastro,
   nomeTransporteEfetivo
 } from "@/features/orcamentos/lib/modalidade-frete";
+import {
+  categoriaDoServico,
+  categoriaFreteVigente,
+  categoriaPorNomeConhecido,
+  ehCategoriaFrete
+} from "@/features/orcamentos/lib/categoria-frete";
 import { labelTipoFrete, normalizarTipoFrete } from "../lib/tipo-frete";
 import { temPagadorDistinto } from "../lib/destinatario-etiqueta";
 import { idEnderecoEntregaVigente } from "../lib/endereco-entrega";
@@ -102,7 +108,7 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
       // `id_endereco_ent` (02/09/2026): o endereço de entrega DEFINIDO NA
       // PROPOSTA. Entrou na mesma linha que já vinha — zero consulta a mais
       // aqui. É `text` na tabela, e aponta para `enderecos.id` (uuid).
-      "id_int, cliente, id_cliente, id_faturado, empresa, vendedor, status_interno, libera_nf, volume, modalidade_frete, id_transportadora_cliente, valor_frete, id_endereco_ent"
+      "id_int, cliente, id_cliente, id_faturado, empresa, vendedor, status_interno, libera_nf, volume, modalidade_frete, id_transportadora_cliente, valor_frete, id_endereco_ent, categoria_frete"
     )
     .eq("is_prd_aprovado", true)
     .in("status_interno", STATUS_FUNIL_EXPEDICAO)
@@ -166,7 +172,7 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
     client
       .from("expedicoes")
       .select(
-        "id_int, modalidade_frete, tipo_frete, transportadora_nome, id_transportadora_cliente, peso_kg, peso_bruto_kg, qtd_volumes, tipo_volume, id_endereco_entrega, id_cliente_destinatario_etiqueta, codigo_rastreamento, correios_id_prepostagem, correios_codigo_objeto, prepostagem_cancelada_em, correios_id_prepostagem_anterior, correios_codigo_objeto_anterior, data_pronto, data_despacho, coletado_em, data_entrega, despachado_por, retirado_por, obs, obs_etiqueta, nf_numero_manual, etiqueta_impressa_em"
+        "id_int, modalidade_frete, tipo_frete, categoria_frete, transportadora_nome, id_transportadora_cliente, peso_kg, peso_bruto_kg, qtd_volumes, tipo_volume, id_endereco_entrega, id_cliente_destinatario_etiqueta, codigo_rastreamento, correios_id_prepostagem, correios_codigo_objeto, prepostagem_cancelada_em, correios_id_prepostagem_anterior, correios_codigo_objeto_anterior, data_pronto, data_despacho, coletado_em, data_entrega, despachado_por, retirado_por, obs, obs_etiqueta, nf_numero_manual, etiqueta_impressa_em"
       )
       .in("id_int", ids),
     idsCliente.length > 0
@@ -288,6 +294,7 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
       idInt: Number(row.id_int),
       modalidadeFrete: (row.modalidade_frete as ModalidadeFrete | null) ?? null,
       tipoFrete: (row.tipo_frete as TipoFreteNormalizado | null) ?? null,
+      categoriaFrete: ehCategoriaFrete(row.categoria_frete) ? row.categoria_frete : null,
       transportadoraNome: row.transportadora_nome ?? null,
       idTransportadoraCliente: row.id_transportadora_cliente !== null ? Number(row.id_transportadora_cliente) : null,
       pesoKg: row.peso_kg !== null ? Number(row.peso_kg) : null,
@@ -515,6 +522,53 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
           )
         : null;
 
+    /**
+     * O DEGRAU 4 DA CATEGORIA: derivação NA LEITURA, sem gravar nada.
+     *
+     * CUSTO ZERO. Nada de join novo, nada de consulta por linha: `frete.servico`,
+     * `modalidade_frete` e a transportadora resolvida já vinham no mesmo
+     * pipeline que a lista sempre fez. Este bloco só combina o que já estava na
+     * mão.
+     *
+     * DUAS FONTES, pela mesma precedência do resto do módulo:
+     *
+     *   DESPACHADO → vale o que o expedidor registrou (`tipoFrete` e
+     *     `transportadoraNome` já vêm resolvidos com o despacho na frente).
+     *     É o que impede o degrau 4 de contradizer o degrau 1 num pedido cuja
+     *     `expedicoes.categoria_frete` ainda é nula — o caso de todo despacho
+     *     anterior a 05/09/2026.
+     *
+     *   AINDA NÃO DESPACHADO → vale o orçamento, e aí o serviço cotado só entra
+     *     FORA de FOB: sob FOB o card é resíduo (o SEDEX de valor zero que
+     *     ninguém contratou), e deixá-lo entrar classificaria como Correios um
+     *     pedido que os Correios nunca vão tocar — o mesmo cuidado que o
+     *     `saveProposta` e a correção de frete já tomam.
+     *
+     * NÃO É BACKFILL: o resultado morre nesta resposta. Some sozinho conforme as
+     * propostas forem salvas com a categoria gravada, porque os degraus 1 e 2
+     * respondem antes.
+     */
+    const nomeParaCategoria =
+      expConfirmado?.transportadoraNome ||
+      nomeTransporteEfetivo(frete?.servico, modalidadeOrcamento, transportadoraOrcamento) ||
+      "";
+    const modalidadeParaCategoria = expConfirmado?.modalidadeFrete ?? modalidadeOrcamento;
+    const servicoParaCategoria = despachoConfirmado
+      ? tipoFrete
+      : modalidadeParaCategoria === "FOB"
+        ? null
+        : (frete?.servico ?? null);
+    /**
+     * A TABELA DE NOMES entra atras da derivacao forte, e so aqui no degrau 4:
+     * nenhuma proposta com `categoria_frete` gravada passa por este calculo, e
+     * nenhuma declaracao de usuario e sobreposta — as duas ja responderam nos
+     * degraus 1 e 2. E o que faz Braspress, SVT e as demais sairem de EXTRAS no
+     * historico sem que nada seja escrito no banco.
+     */
+    const categoriaDerivadaNaLeitura =
+      categoriaDoServico(nomeParaCategoria, servicoParaCategoria, modalidadeParaCategoria) ??
+      categoriaPorNomeConhecido(nomeParaCategoria, servicoParaCategoria);
+
     // Precedência única (lib/peso.ts): aferido > bruto da revisão > cotado > teórico.
     const { pesoKg, origem: pesoOrigem } = resolverPesoExpedicao({
       pesoAferidoKg: exp?.pesoKg,
@@ -605,6 +659,18 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
       // sobrescreve nada: é a referência que o despacho pré-seleciona e contra
       // a qual a divergência do expedidor é mostrada.
       modalidadeOrcamento,
+      /**
+       * A precedencia da categoria e a MESMA da modalidade, e e resolvida AQUI,
+       * uma vez por pedido: o painel recebe a resposta pronta. `exp?.categoriaFrete`
+       * e nao `expConfirmado?`, porque a propria funcao ja decide o que fazer com
+       * o rascunho — repetir a condicao aqui seria a regra em dois lugares.
+       */
+      categoriaFrete: categoriaFreteVigente(
+        ehCategoriaFrete(p.categoria_frete) ? p.categoria_frete : null,
+        exp?.categoriaFrete ?? null,
+        despachoConfirmado,
+        categoriaDerivadaNaLeitura
+      ),
       idTransportadoraOrcamento,
       // `freteServico` continua sendo o texto CRU da cotação: é o "frete cotado"
       // que o DespacharModal mostra como referência, e mexer nele apagaria a

@@ -62,6 +62,12 @@ import {
   type ModalidadeFrete
 } from "@/features/orcamentos/lib/modalidade-frete";
 import { categoriaDerivadaDaEscolha } from "@/features/orcamentos/lib/transporte-categoria";
+import {
+  categoriaDoServico,
+  categoriaPorNomeConhecido,
+  ehCategoriaFrete,
+  type CategoriaFrete
+} from "@/features/orcamentos/lib/categoria-frete";
 import type { CobrancaParaFaturado } from "@/features/orcamentos/services/faturado-editavel";
 import { avaliarCoberturaFinanceira } from "@/features/cobrancas/services/cobertura-financeira-proposta";
 import { aplicarDiferencaFinanceira } from "@/features/cobrancas/services/diferenca-financeira-proposta";
@@ -95,6 +101,7 @@ export type ResultadoCorrecaoFrete =
       modalidadeNova: ModalidadeFrete;
       transportadoraNovaId: number | null;
       transporteCategoria: string | null;
+      categoriaFrete: CategoriaFrete | null;
       freteEscolhido: string;
       valorFreteAnterior: number;
       valorFreteNovo: number;
@@ -129,6 +136,15 @@ export async function confirmarCorrecaoFrete(
     temPermissaoEditarPaga: boolean;
     /** `ACAO_ABRIR_PENDENCIA_CREDITO` ou nada. Ver a recusa da diferença credora. */
     acaoFinanceira: string | null;
+    /**
+     * RODOVIARIO ou AEREO declarado pelo operador, e só isso.
+     *
+     * A correção cai no MESMO ponto ambíguo do drop de FOB do orçamento: quando
+     * a transportadora não é parceira, ninguém tem como saber o meio. A
+     * derivação vence esta declaração, exatamente como no `saveProposta` — quem
+     * corrigiu para RETIRA não fica com o aéreo declarado antes.
+     */
+    categoriaFreteDeclarada?: string | null;
     chaveEvento: string | null;
     ator: { uid: string; nome: string; email: string };
   }
@@ -236,6 +252,30 @@ export async function confirmarCorrecaoFrete(
   // o `saveProposta` passa quando `formState.transporteCategoria` não é MOTOBOY.
   const transporteCategoria = categoriaDerivadaDaEscolha(modalidadeNova, rotuloParaCategoria, false);
 
+  /**
+   * A CATEGORIA DO PAINEL, pela mesma derivação do orçamento.
+   *
+   * Em FOB o serviço cotado NÃO entra, pelo mesmo motivo de sempre: o card que
+   * sobra ali é resíduo. Fora de FOB vale o serviço da cotação, que não muda com
+   * a correção.
+   *
+   * A declaração do operador só é usada onde a derivação devolve `null` — a
+   * transportadora sem meio conhecido. Sem declaração fica NULL, que é "não
+   * classificada", e o painel a mostra em EXTRAS. Nada é chutado.
+   */
+  const categoriaDerivada = categoriaDoServico(
+    freteEscolhido,
+    modalidadeNova === "FOB" ? null : servicoCotado,
+    modalidadeNova
+  );
+  const categoriaDeclarada: CategoriaFrete | null = ehCategoriaFrete(params.categoriaFreteDeclarada)
+    ? params.categoriaFreteDeclarada
+    : null;
+  // Derivacao forte > declaracao do operador > tabela de nomes. Mesma ordem do
+  // `saveProposta`, pelo mesmo motivo: a lista e o degrau mais fraco.
+  const categoriaFrete =
+    categoriaDerivada ?? categoriaDeclarada ?? categoriaPorNomeConhecido(freteEscolhido, servicoCotado);
+
   // ── 4. Cobrancas e cobertura, ANTES da gravação ───────────────────────────
   // `estavaIntegralmentePaga` pergunta como a proposta estava ANTES desta
   // alteração — depois do UPDATE a resposta já seria outra. Mesma posição que
@@ -311,7 +351,11 @@ export async function confirmarCorrecaoFrete(
       transporte_categoria: transporteCategoria,
       id_transportadora_cliente: transportadoraNovaId,
       valor_frete: valorFreteProjetado,
-      frete_escolhido: freteEscolhido
+      frete_escolhido: freteEscolhido,
+      // Sexta coluna desde 05/09/2026. Entra no MESMO update das outras cinco:
+      // nenhum statement novo, nenhum trigger novo, e a correcao nao pode deixar
+      // a categoria apontando para o transporte antigo.
+      categoria_frete: categoriaFrete
     })
     .eq("id_int", idInt);
 
@@ -407,6 +451,7 @@ export async function confirmarCorrecaoFrete(
     modalidadeNova,
     transportadoraNovaId,
     transporteCategoria,
+    categoriaFrete,
     freteEscolhido,
     valorFreteAnterior: dados.valorFreteAtual,
     valorFreteNovo: valorFreteProjetado,

@@ -3,6 +3,7 @@ import type { ModalidadeFrete } from "@/features/expedicao/types";
 import type { Produto, TipoVariacao, VariacaoGlobal } from "@/features/produtos/types";
 
 import type { TransporteCategoria } from "@/features/orcamentos/lib/transporte-categoria";
+import type { CategoriaFrete } from "@/features/orcamentos/lib/categoria-frete";
 
 export type PropostaStatus = 
   | "NOVO" 
@@ -194,6 +195,13 @@ export type Proposta = {
    */
   transporteCategoria?: TransporteCategoria | null;
   /**
+   * `propostas.categoria_frete` — a coluna do painel da Expedicao, com sete
+   * valores. DIMENSAO DIFERENTE de `transporteCategoria`, que tem quatro e
+   * responde outra pergunta; ver o cabecalho de `lib/categoria-frete.ts`.
+   * Nula = nao classificada.
+   */
+  categoriaFrete?: CategoriaFrete | null;
+  /**
    * `propostas.frete_escolhido` cru — o ROTULO livre, exposto so para leitura.
    * A tela usa para mostrar o que estava registrado quando o texto nao
    * classifica em categoria nenhuma ("Frete Incluso", "A definir"). Nunca e
@@ -232,6 +240,21 @@ export type PropostaFormState = {
   modalidadeFrete: ModalidadeFrete | null;
   /** Categoria do transporte escolhida na lista fechada. Null = nao escolheu. */
   transporteCategoria: TransporteCategoria | null;
+  /**
+   * A categoria de frete DECLARADA pelo usuario, e so ela.
+   *
+   * Existe porque `categoriaDoServico` resolve sozinha Correios, Motoboy, Veppo,
+   * Sao Miguel, Azul, a retirada e os rotulos de EXTRAS — e devolve `null`
+   * justamente onde ninguem tem como saber o meio: transportadora do cadastro em
+   * FOB e frete manual. Nesses dois casos, e SO neles, a tela pergunta.
+   *
+   * A DERIVACAO VENCE ESTE CAMPO no salvamento. Quem declarou aereo e depois
+   * trocou para um card do SEDEX fica com CORREIOS, nao com a declaracao velha.
+   *
+   * Opcional de proposito: quem monta `PropostaFormState` sem ele — o Maestro —
+   * segue funcionando, e a proposta nasce sem categoria declarada.
+   */
+  categoriaFreteDeclarada?: CategoriaFrete | null;
   /** FK para clientes(id_cliente) — só transportadoras cadastradas e ativas. */
   idTransportadoraCliente: number | null;
   descontoGeralTipo: TipoDescontoProposta;

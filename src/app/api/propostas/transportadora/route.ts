@@ -1,4 +1,9 @@
 import { NextResponse } from "next/server";
+import {
+  categoriaDoServico,
+  categoriaPorNomeConhecido
+} from "@/features/orcamentos/lib/categoria-frete";
+import { nomeTransportadoraCadastro } from "@/features/orcamentos/lib/modalidade-frete";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { verificarPermissaoServerSide } from "@/lib/auth/verificar-permissao";
 import { canonizarTransportadora } from "@/features/orcamentos/lib/transportadoras-parceiras";
@@ -223,10 +228,62 @@ export async function POST(request: Request) {
       }
     }
 
-    // UMA coluna. Nada de cotacao_frete, modalidade ou valor.
+    /**
+     * A CATEGORIA NAO PODE FICAR MENTINDO SOBRE A TRANSPORTADORA TROCADA.
+     *
+     * `categoria_frete` classifica o MEIO do transporte, e o valor gravado
+     * descreve a transportadora que esta saindo. Preservar seria deixar a coluna
+     * falando de quem nao leva mais o pedido.
+     *
+     * O QUE ESTA ROTA SABE, e o que decide o comportamento:
+     *   - a modalidade gravada, entao RETIRA continua RETIRA sozinha;
+     *   - o id da transportadora NOVA, entao parceira e resolvida (Correios,
+     *     Azul, Veppo, Motoboy, Sao Miguel);
+     *   - e NAO sabe o meio de uma transportadora fora dessa lista. Ela nao tem
+     *     tela, nao tem quem perguntar, e nao recebe declaracao nenhuma.
+     *
+     * Por isso: REDERIVA, e o que a derivacao nao resolver vira NULL — "nao
+     * classificada", que o painel exibe em EXTRAS. Chutar o valor antigo seria
+     * inventar; manter o antigo seria mentir.
+     *
+     * SO QUANDO O VINCULO MUDA. Regravar o mesmo id nao e troca, e nao ha motivo
+     * para destruir uma declaracao valida feita no orcamento.
+     */
+    const transportadoraAntes =
+      (antesRow as { id_transportadora_cliente?: number | null }).id_transportadora_cliente ?? null;
+    const vinculoMudou = (transportadoraAntes ?? null) !== (idTransportadora ?? null);
+
+    const camposUpdate: Record<string, unknown> = { id_transportadora_cliente: idTransportadora };
+
+    if (vinculoMudou) {
+      let nomeNovo: string | null = null;
+      if (idTransportadora !== null) {
+        const { data: cadastro } = await supabase
+          .from("clientes")
+          .select("id_cliente, nome, fantasia")
+          .eq("id_cliente", idTransportadora)
+          .maybeSingle();
+        nomeNovo = nomeTransportadoraCadastro(
+          cadastro as { id_cliente: number; nome?: string | null; fantasia?: string | null } | null
+        );
+      }
+      const modalidadeGravada = (antesRow as { modalidade_frete?: string | null }).modalidade_frete as
+        | "RETIRA"
+        | "FOB"
+        | "CIF"
+        | null;
+      // Esta rota nao recebe declaracao nenhuma, entao a tabela de nomes entra
+      // logo atras da derivacao forte. O que nenhuma das duas resolver vira
+      // NULL, que continua sendo a resposta honesta.
+      camposUpdate.categoria_frete =
+        categoriaDoServico(nomeNovo, null, modalidadeGravada) ?? categoriaPorNomeConhecido(nomeNovo, null);
+    }
+
+    // Uma coluna, ou duas quando o vinculo muda e a categoria precisa acompanhar.
+    // Nada de cotacao_frete, modalidade, status ou valor.
     const { data: depoisRows, error: updateError } = await supabase
       .from("propostas")
-      .update({ id_transportadora_cliente: idTransportadora })
+      .update(camposUpdate)
       .eq("id_int", idInt)
       .select("id_int, status_interno, id_transportadora_cliente");
 

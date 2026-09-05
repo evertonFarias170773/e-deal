@@ -33,7 +33,12 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, ArrowRight, Truck, X } from "lucide-react";
 import { formatCurrency } from "@/lib/formatters/currency";
 import { getTransportadoras } from "@/features/nfe/services/nfe.service";
-import { faltaTransportadoraEmFob } from "@/features/orcamentos/lib/modalidade-frete";
+import { faltaTransportadoraEmFob, nomeTransportadoraCadastro } from "@/features/orcamentos/lib/modalidade-frete";
+import {
+  categoriaDoServico,
+  LABEL_CATEGORIA_FRETE,
+  type CategoriaFrete
+} from "@/features/orcamentos/lib/categoria-frete";
 import {
   ACAO_ABRIR_PENDENCIA_CREDITO,
   confirmarCorrecaoFrete,
@@ -93,6 +98,8 @@ export function CorrigirFreteModal({
   const [salvando, setSalvando] = useState(false);
   /** Passo extra do caminho credor: o operador precisa autorizar antes. */
   const [autorizandoCredito, setAutorizandoCredito] = useState(false);
+  /** RODOVIARIO ou AEREO, quando a derivacao nao resolve. Mesma pergunta do orcamento. */
+  const [categoriaDeclarada, setCategoriaDeclarada] = useState<CategoriaFrete | null>(null);
 
   /**
    * O QUE ESTÁ GRAVADO vem da simulação, não do objeto da lista: ela relê
@@ -161,9 +168,31 @@ export function CorrigirFreteModal({
     setEscolha({ modalidade: proximaModalidade, transportadoraId: proximaTransportadora });
     setAutorizandoCredito(false);
     setErroGravacao(null);
+    setCategoriaDeclarada(null);
   }
 
   const faltaTransportadora = faltaTransportadoraEmFob(modalidade, transportadoraId);
+
+  /**
+   * A categoria que o servidor vai derivar com esta escolha — MESMA funcao e
+   * MESMAS entradas que `confirmarCorrecaoFrete` usa: em FOB o servico cotado
+   * nao entra, porque o card que sobra ali e residuo.
+   *
+   * A tela nao decide categoria nenhuma; ela so descobre se o servidor tem como
+   * decidir. Quando nao tem, pergunta — exatamente onde a modalidade e escolhida,
+   * como no orcamento.
+   */
+  const categoriaDerivada = useMemo<CategoriaFrete | null>(() => {
+    const servico = simulacao?.servicoCotado ?? "";
+    if (modalidade === "FOB") {
+      const nome =
+        nomeTransportadoraCadastro(transportadoras.find((t) => t.id_cliente === transportadoraId)) ?? "";
+      return categoriaDoServico(nome, null, modalidade);
+    }
+    return categoriaDoServico(servico, servico, modalidade);
+  }, [modalidade, transportadoraId, transportadoras, simulacao?.servicoCotado]);
+
+  const precisaDeclararCategoria = Boolean(simulacao) && categoriaDerivada === null && !faltaTransportadora;
   const ehCredora = Boolean(simulacao && simulacao.exigeAcaoFinanceira && simulacao.diferenca < 0);
   const semMudanca = modalidade === modalidadePersistida && transportadoraId === transportadoraPersistida;
 
@@ -184,7 +213,8 @@ export function CorrigirFreteModal({
       idInt: pedido.idInt,
       modalidade,
       transportadoraId,
-      acaoFinanceira: comAcaoDeCredito ? ACAO_ABRIR_PENDENCIA_CREDITO : null
+      acaoFinanceira: comAcaoDeCredito ? ACAO_ABRIR_PENDENCIA_CREDITO : null,
+      categoriaFreteDeclarada: categoriaDeclarada
     });
     setSalvando(false);
 
@@ -274,6 +304,38 @@ export function CorrigirFreteModal({
                   OS ficariam sem saber por onde o pedido sai.
                 </p>
               )}
+            </div>
+          )}
+
+          {/* A MESMA pergunta do orcamento, no mesmo lugar: logo abaixo de quem
+              leva, dentro do bloco da escolha. Aparece so quando a derivacao
+              nao resolve, e nao trava a gravacao. */}
+          {precisaDeclararCategoria && (
+            <div>
+              <label className={labelClass}>Como vai o transporte?</label>
+              <div className="flex flex-col gap-2 sm:flex-row">
+                {(["RODOVIARIO", "AEREO"] as CategoriaFrete[]).map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    aria-pressed={categoriaDeclarada === c}
+                    disabled={salvando}
+                    onClick={() => setCategoriaDeclarada(categoriaDeclarada === c ? null : c)}
+                    className={`flex-1 rounded-2xl border px-4 py-2.5 text-sm font-semibold transition disabled:opacity-50 ${
+                      categoriaDeclarada === c
+                        ? "border-slate-900 bg-slate-900 text-white dark:border-slate-100 dark:bg-slate-100 dark:text-slate-900"
+                        : "border-slate-200 bg-white text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                    }`}
+                  >
+                    {LABEL_CATEGORIA_FRETE[c]}
+                  </button>
+                ))}
+              </div>
+              <p className="mt-1.5 text-xs text-slate-500">
+                Só para a Expedição saber em qual coluna o pedido entra. Correios, Motoboy, Veppo, Azul e São Miguel
+                o sistema já reconhece sozinho — esta transportadora ele não tem como classificar.{" "}
+                {categoriaDeclarada ? "Clique de novo para desmarcar." : "Deixar em branco também vale: entra em Extras."}
+              </p>
             </div>
           )}
 

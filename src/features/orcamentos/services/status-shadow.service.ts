@@ -1,6 +1,11 @@
 import { getSupabaseClient } from "@/lib/supabase/client";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { calcularStatusRecomendado, EngineStatusResult, EvidenciaStatus } from "./status-engine.service";
+import { calcularStatusRecomendado } from "./status-engine.service";
+// `import type` porque os dois SAO interfaces: nao existem em runtime. Escritos
+// como import de valor, o Next elide na compilacao e ninguem percebia, mas
+// qualquer carregador que apenas remove tipos — o `--experimental-strip-types`
+// do node, usado pelos testes .mts — tenta importa-los e quebra o modulo.
+import type { EngineStatusResult, EvidenciaStatus } from "./status-engine.service";
 import { calcularSituacaoQuitacaoProposta } from "@/features/cobrancas/services/conferencia-financeira.service";
 
 /**

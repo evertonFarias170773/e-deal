@@ -9,6 +9,12 @@ import {
 } from "@/features/orcamentos/lib/transporte-categoria";
 import { calculateResumo, calculateItemSubtotal } from "@/features/orcamentos/orcamento-utils";
 import {
+  categoriaDoServico,
+  categoriaPorNomeConhecido,
+  ehCategoriaFrete,
+  type CategoriaFrete
+} from "@/features/orcamentos/lib/categoria-frete";
+import {
   aplicarModalidadeNosFretes,
   exigeCotacaoEscolhida,
   faltaTransportadoraEmFob,
@@ -1521,6 +1527,14 @@ export async function getPropostaDetailById(idInt: number, overrideClient?: Supa
       )
         ? ((proposalRow as { transporte_categoria: TransporteCategoria }).transporte_categoria)
         : null,
+      // Mesmo criterio da linha acima: so o valor canonico entra, lixo vira
+      // null. Sem esta leitura a declaracao do usuario se perderia ao reabrir a
+      // proposta, e o salvamento seguinte gravaria null por cima dela.
+      categoriaFrete: ehCategoriaFrete(
+        (proposalRow as { categoria_frete?: unknown }).categoria_frete
+      )
+        ? ((proposalRow as { categoria_frete: CategoriaFrete }).categoria_frete)
+        : null,
       dbValorTotal: proposalRow.valor_total != null ? Number(proposalRow.valor_total) : null,
     };
 
@@ -2265,6 +2279,54 @@ export async function saveProposta(
         formState.transporteCategoria === "MOTOBOY"
       );
       propostaData.id_transportadora_cliente = idTransportadoraCliente;
+
+      /**
+       * A COLUNA DO PAINEL DA EXPEDICAO — `categoria_frete`, sete valores.
+       *
+       * Fica no MESMO gate da modalidade, e nao por comodidade: as duas sao a
+       * mesma declaracao comercial, e depois de LIBERADO o `formState` que chega
+       * aqui pode estar velho. Escrever fora deste `if` reclassificaria pedido
+       * ja liberado ou pago a partir de uma tela desatualizada.
+       *
+       * A DERIVACAO VENCE A DECLARACAO. `categoriaDoServico` responde sozinha
+       * Correios, Motoboy, Veppo, Sao Miguel, Azul, a retirada e os rotulos de
+       * EXTRAS; a escolha do usuario so entra onde ela devolve `null` — a
+       * transportadora do cadastro em FOB e o frete manual. Assim quem declarou
+       * aereo e depois trocou para um card do SEDEX fica com CORREIOS, e nao com
+       * a declaracao velha.
+       *
+       * EM FOB A COTACAO NAO DECIDE. O card que sobrou ali e resíduo — o SEDEX
+       * de valor zero que ninguem contratou, o mesmo que
+       * `correiosResiduoDeCotacaoFob` ja trata no Kanban e no despacho. Por isso
+       * o servico so entra fora de FOB; dentro dele vale `freteNome`, que a esta
+       * altura ja e a transportadora declarada (ou "Motoboy").
+       *
+       * NAO HA DEFAULT. Sem sinal e sem declaracao a coluna fica NULA, que
+       * significa "nao classificada" — o painel a exibe em EXTRAS sem confundir
+       * com quem de fato e EXTRAS. Chutar RODOVIARIO por ser o mais comum seria
+       * inventar informacao que ninguem deu.
+       */
+      const categoriaDerivada = categoriaDoServico(
+        freteNome,
+        modalidadeVigente === "FOB" ? null : (chosenFrete?.servico ?? null),
+        modalidadeVigente
+      );
+      const categoriaDeclarada = ehCategoriaFrete(formState.categoriaFreteDeclarada)
+        ? formState.categoriaFreteDeclarada
+        : null;
+      /**
+       * A ORDEM DOS TRES, e ela e a regra inteira:
+       *   1. a derivacao FORTE — Correios, Veppo, Sao Miguel, Azul, a retirada.
+       *      Sao fatos que se sustentam sozinhos e vencem ate a declaracao;
+       *   2. a DECLARACAO do usuario, feita olhando este pedido;
+       *   3. a TABELA DE NOMES, que so lembra o que decidiram sobre um nome.
+       *
+       * A tabela vem por ultimo porque quem escolheu "aereo" para uma carga da
+       * Braspress sabe algo que a lista nao sabe. Ela existe para o pedido que
+       * ninguem declarou nao cair em EXTRAS por falta de resposta.
+       */
+      propostaData.categoria_frete =
+        categoriaDerivada ?? categoriaDeclarada ?? categoriaPorNomeConhecido(freteNome, chosenFrete?.servico ?? null);
     } else if (declaracaoDivergePersistido) {
       // A trava continua valendo — a proposta não é rebaixada e o que já estava
       // gravado permanece. O que muda é que a recusa passa a ser DITA: descartar

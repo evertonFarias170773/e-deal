@@ -63,6 +63,12 @@ export type SimulacaoCorrigirFrete = {
     valorTotalAtual: number;
     valorFreteAtual: number;
     valorFreteProjetado: number;
+    /**
+     * `cotacao_frete.servico` da linha escolhida. Exposto para a TELA derivar a
+     * categoria do painel com a MESMA funcao do servidor, em vez de adivinhar
+     * quando perguntar rodoviario ou aereo. Nao participa de nenhuma barreira.
+     */
+    servicoCotado: string;
     totalProjetado: number;
     valorPagoConfirmado: number;
     /** > 0 o cliente deve; < 0 há crédito a devolver. Base do modal financeiro. */
@@ -317,6 +323,7 @@ export async function simularCorrecaoFrete(
       transportadoraNovaId: transportadoraId,
       valorTotalAtual: arredondar(Number(proposta.valor_total) || 0),
       valorFreteAtual: arredondar(Number(proposta.valor_frete) || 0),
+      servicoCotado: String(freteEscolhido?.servico ?? ""),
       valorFreteProjetado: arredondar(valorFreteProjetado),
       totalProjetado,
       valorPagoConfirmado,

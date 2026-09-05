@@ -106,6 +106,73 @@ export function categoriaExibida(categoria: CategoriaFrete | null | undefined): 
   return ehCategoriaFrete(categoria) ? categoria : "EXTRAS";
 }
 
+/**
+ * A CATEGORIA QUE VALE, entre a declarada no orçamento e a registrada no despacho.
+ *
+ * PRECEDÊNCIA — a MESMA de `modalidadeInicialDoDespacho`, de propósito:
+ *   1. `expedicoes.categoria_frete` DE DESPACHO CONFIRMADO. Ali o expedidor
+ *      declarou o que de fato saiu, e isso é soberano.
+ *   2. `propostas.categoria_frete` — a declaração comercial.
+ *   3. `expedicoes.categoria_frete` AINDA EM RASCUNHO.
+ *   4. A DERIVAÇÃO NA LEITURA, a partir do que a proposta já carrega.
+ *   5. `null` — não classificada. O painel a exibe em EXTRAS.
+ *
+ * O DEGRAU 4, E POR QUE ELE NÃO É UM BACKFILL DISFARÇADO (05/09/2026)
+ *   As 9.032 propostas do histórico nasceram sem `categoria_frete`, e o painel
+ *   as mostraria todas em EXTRAS — uma coluna só, que é o problema que as sete
+ *   vieram resolver. Classificá-las no banco está PROIBIDO: `propostas` tem dois
+ *   triggers BEFORE UPDATE sem `UPDATE OF` que carimbam `now()`
+ *   incondicionalmente, e um UPDATE em massa destruiria a ordenação por
+ *   `updated_at` sem volta.
+ *
+ *   Então a classificação acontece na LEITURA, e só ali. Nada é gravado — nem
+ *   "aproveitando" que a linha está sendo lida. O degrau some sozinho conforme
+ *   as propostas vão sendo salvas com a categoria gravada, porque os degraus 1
+ *   e 2 passam a responder antes dele. É reversível por construção: apagar o
+ *   parâmetro devolve o comportamento anterior.
+ *
+ *   QUEM DERIVA É O CHAMADOR, não esta função. Ela não conhece cotação,
+ *   modalidade nem despacho — recebe o resultado pronto e apenas o coloca na
+ *   ordem certa. É o que a mantém pura e testável, e o que garante que o degrau
+ *   4 nunca passe na frente do 1: em pedido despachado, a categoria registrada
+ *   no despacho responde antes, e a derivação nem é consultada.
+ *
+ * O DEGRAU 1 EXIGE DESPACHO CONFIRMADO pelo motivo que a modalidade já ensinou
+ * em 04/09/2026: a linha de `expedicoes` nasce em `marcarPronto`, muito antes do
+ * despacho, e tratá-la como soberana desde o nascimento congela o pedido num
+ * rascunho — foi o que prendeu o 21000 em "Retira no balcão" depois de a
+ * proposta já ter sido corrigida para FOB.
+ *
+ * É POR ISTO QUE A RECOTAÇÃO NÃO PRECISA ESCREVER EM `propostas`. Ela troca a
+ * transportadora de verdade, mas o registro disso vive no despacho; a proposta
+ * guarda o que foi vendido, a expedição guarda o que aconteceu, e esta função é
+ * quem concilia as duas na leitura. Retroalimentar a proposta apagaria a
+ * declaração comercial com um fato logístico.
+ *
+ * FUNÇÃO ÚNICA: o painel, os cards e qualquer relatório leem daqui. Espalhar a
+ * regra pelos chamadores é o que produziu as duas definições dos chips da
+ * Expedição e dos cards de Orçamentos.
+ */
+export function categoriaFreteVigente(
+  daProposta: CategoriaFrete | null | undefined,
+  daExpedicao: CategoriaFrete | null | undefined,
+  /** `expedicoes.data_despacho` preenchida. Sem isto a linha é rascunho. */
+  despachoConfirmado: boolean,
+  /**
+   * O degrau 4: a categoria DERIVADA na leitura, quando nada foi gravado.
+   *
+   * Opcional de propósito — omitir devolve exatamente o comportamento de antes
+   * de 05/09/2026, e é assim que os chamadores que não derivam nada continuam
+   * funcionando sem saber que este degrau existe.
+   */
+  derivadaDaLeitura?: CategoriaFrete | null
+): CategoriaFrete | null {
+  if (despachoConfirmado && ehCategoriaFrete(daExpedicao)) return daExpedicao;
+  if (ehCategoriaFrete(daProposta)) return daProposta;
+  if (ehCategoriaFrete(daExpedicao)) return daExpedicao;
+  return ehCategoriaFrete(derivadaDaLeitura) ? derivadaDaLeitura : null;
+}
+
 /** Sem acento, maiúsculas, espaços colapsados — mesmo critério das parceiras. */
 function normalizar(texto: string | null | undefined): string {
   return (texto ?? "")
@@ -127,6 +194,110 @@ function normalizar(texto: string | null | undefined): string {
  * "à definir" e "Transportadora a definir", que são as três grafias vivas.
  */
 const ROTULOS_EXTRAS = ["FRETE INCLUSO", "DEFINIR"];
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * A TABELA DE NOMES. ISTO NÃO É UMA REGRA — É UMA LISTA.
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * O QUE ELA É
+ *   Nove nomes de transportadora, com a categoria que o dono decidiu para cada
+ *   um em 05/09/2026. Nada aqui é derivado de coisa nenhuma: é a resposta que
+ *   alguém deu, escrita à mão.
+ *
+ * POR QUE ISSO É DIFERENTE DE `categoriaDoServico`
+ *   Aquela função RECONHECE: SEDEX é dos Correios, VEPPO é a VEPPO, retirada não
+ *   tem transporte. São fatos que se sustentam sozinhos, e por isso ela pode
+ *   vencer até a declaração do usuário.
+ *
+ *   Esta tabela apenas LEMBRA. "Braspress é rodoviário" é verdade hoje, para
+ *   esta empresa, com este contrato — e nada no código percebe quando deixar de
+ *   ser. Ela envelhece calada: a transportadora troca de modal, a empresa troca
+ *   de transportadora, e a lista continua respondendo com confiança o que já não
+ *   é verdade. É o custo que se aceita conscientemente para não deixar 40 e
+ *   poucos pedidos reais parados em EXTRAS.
+ *
+ * POR ISSO ELA É O DEGRAU MAIS FRACO
+ *   A DECLARAÇÃO DO USUÁRIO SEMPRE VENCE — o drop de FOB, o frete manual e a
+ *   correção de frete falam do pedido que está na mão; a tabela fala de um nome.
+ *   Quem escolheu "aéreo" para uma carga da Braspress sabe algo que a lista não
+ *   sabe. A ordem em cada gravação é: derivação forte, depois a declaração,
+ *   depois esta tabela.
+ *
+ *   E ela nunca reclassifica proposta que já tem `categoria_frete` gravada: na
+ *   leitura ela mora no degrau 4, atrás das duas colunas.
+ *
+ * COMO SAIR DAQUI
+ *   A saída certa é a categoria virar dado do transporte contratado, e não
+ *   texto. Enquanto isso não existe, esta lista é o menos pior — desde que
+ *   continue pequena, datada e visivelmente uma lista.
+ *
+ * CASAMENTO POR PALAVRA INTEIRA, nunca por substring solta. É a mesma disciplina
+ * que fez "AEREO EXPRESSO" ser recusado por substring de "AEREO" na derivação:
+ * substring solta transforma qualquer rótulo que contenha as letras num
+ * transporte que ele não é.
+ */
+const TRANSPORTES_CONHECIDOS: ReadonlyArray<{ categoria: CategoriaFrete; nomes: readonly string[] }> = [
+  {
+    categoria: "RODOVIARIO",
+    // As quatro grafias de Braspress vivas na base — BRASPESS é erro de
+    // digitação e entra como nome próprio, porque é assim que está gravado.
+    nomes: ["BRASPRESS", "BRAS PRESS", "BRASPESS", "TW TRANSPORTES", "TROCA TRANSPORTES", "TROCA"]
+  },
+  {
+    categoria: "AEREO",
+    nomes: ["SVT TRANSPORTES", "SVT", "UNESUL", "TRANSPORTADORA PARCEIRA", "AEREO EXPRESSO"]
+  },
+  {
+    categoria: "EXTRAS",
+    // Melhor Envio e Eccom são intermediários: o meio depende do que o cliente
+    // contratou lá dentro, e o pedido não sabe. EXTRAS é a resposta honesta.
+    nomes: ["MELHOR ENVIO", "ECCOM"]
+  }
+];
+
+/**
+ * Texto reduzido a PALAVRAS: tudo que não é letra ou dígito vira separador, e o
+ * resultado sai cercado de espaço. Assim "BRASPRESS/RS" e "BRASPRESS - SUL"
+ * casam com BRASPRESS, e "BRASPRESSAO" não casa com nada.
+ *
+ * Sem expressão regular montada a partir do nome, de propósito: escapar alias
+ * para dentro de um `RegExp` é uma fonte de erro que esta lista não precisa
+ * correr. Comparar palavras é `includes` puro, e é exato.
+ */
+function palavrasDe(texto: string): string {
+  let so = "";
+  for (const ch of texto) {
+    so += ch >= "A" && ch <= "Z" ? ch : ch >= "0" && ch <= "9" ? ch : " ";
+  }
+  return " " + so.split(" ").filter(Boolean).join(" ") + " ";
+}
+
+/**
+ * A categoria de um nome que está na tabela — ou `null` para todo o resto.
+ *
+ * SEPARADA de `categoriaDoServico` de propósito. Se as duas fossem a mesma
+ * função, a tabela herdaria a força da derivação e passaria na frente da
+ * declaração do usuário, que é exatamente o que não pode acontecer. Manter duas
+ * funções é o que deixa a precedência visível em cada chamador.
+ *
+ * Nome fora da lista continua `null`, e `null` aparece em EXTRAS. Não se inventa
+ * entrada: a lista tem os nomes que alguém decidiu, e mais nenhum.
+ */
+export function categoriaPorNomeConhecido(
+  transportadora: string | null | undefined,
+  servico: string | null | undefined
+): CategoriaFrete | null {
+  const palavras = palavrasDe(`${normalizar(transportadora)} ${normalizar(servico)}`);
+  if (palavras.trim() === "") return null;
+
+  for (const entrada of TRANSPORTES_CONHECIDOS) {
+    for (const nome of entrada.nomes) {
+      if (palavras.includes(" " + nome + " ")) return entrada.categoria;
+    }
+  }
+  return null;
+}
 
 /**
  * A categoria de um transporte, a partir do que se sabe no momento da escolha.

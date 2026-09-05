@@ -82,8 +82,14 @@ import {
   MODALIDADES_ORCAMENTO,
   motivoBloqueioModalidade,
   podeEditarModalidade,
+  nomeTransportadoraCadastro,
   valorFreteEfetivo
 } from "@/features/orcamentos/lib/modalidade-frete";
+import {
+  categoriaDoServico,
+  LABEL_CATEGORIA_FRETE,
+  type CategoriaFrete
+} from "@/features/orcamentos/lib/categoria-frete";
 import { getTransportadoras } from "@/features/nfe/services/nfe.service";
 import type { Produto } from "@/features/produtos/types";
 import { useCobrancas } from "@/features/cobrancas/CobrancasProvider";
@@ -1075,6 +1081,60 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
    * porque motoboy nao tem cadastro em `clientes` para sair do drop.
    */
   const fobPorMotoboy = form.modalidadeFrete === "FOB" && form.transporteCategoria === "MOTOBOY";
+
+  /**
+   * A categoria que o sistema resolve SOZINHO com a escolha atual — e `null`
+   * quando ele nao tem como saber.
+   *
+   * Mesma funcao que o `saveProposta` chama na hora de gravar, com as mesmas
+   * entradas: em FOB a cotacao e residuo (o SEDEX de valor zero que ninguem
+   * contratou), entao vale o nome declarado; fora de FOB vale o card escolhido.
+   * Duas leituras da mesma regra divergiriam, e a tela perguntaria justamente
+   * onde o salvamento ja sabia responder.
+   */
+  const categoriaDerivadaAtual = useMemo<CategoriaFrete | null>(() => {
+    if (form.modalidadeFrete === "FOB") {
+      const nome = fobPorMotoboy
+        ? "Motoboy"
+        : (nomeTransportadoraCadastro(
+            transportadoras.find((t) => t.id_cliente === form.idTransportadoraCliente)
+          ) ?? "");
+      return categoriaDoServico(nome, null, form.modalidadeFrete);
+    }
+    const escolhido = form.fretes.find((f) => f.id === form.freteEscolhidoId);
+    return categoriaDoServico(
+      escolhido?.transportadora ?? null,
+      escolhido?.servico ?? null,
+      form.modalidadeFrete
+    );
+  }, [
+    form.modalidadeFrete,
+    form.idTransportadoraCliente,
+    form.fretes,
+    form.freteEscolhidoId,
+    fobPorMotoboy,
+    transportadoras
+  ]);
+
+  /**
+   * HA TRANSPORTE ESCOLHIDO? Sem isto a pergunta apareceria em proposta recem
+   * aberta, antes de existir o que classificar — ruido puro.
+   */
+  const temTransporteEscolhido =
+    form.modalidadeFrete === "FOB"
+      ? fobPorMotoboy || form.idTransportadoraCliente !== null
+      : Boolean(form.fretes.find((f) => f.id === form.freteEscolhidoId));
+
+  /**
+   * A PERGUNTA APARECE SO ONDE A DERIVACAO NAO RESPONDE.
+   *
+   * Sao os dois pontos do mapeamento — transportadora do cadastro em FOB e frete
+   * manual —, mas o criterio nao e "qual controle o usuario usou": e a propria
+   * derivacao dizendo que nao sabe. Um controle so, no lugar onde a modalidade
+   * ja e declarada, em vez de dois campos soltos em pontos diferentes da tela.
+   */
+  const precisaDeclararCategoria =
+    modalidadeEditavel && temTransporteEscolhido && categoriaDerivadaAtual === null;
 
   /**
    * Liga/desliga o motoboy em FOB. Ligar zera o vinculo da transportadora: sao
@@ -5736,6 +5796,49 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                 </div>
               )}
 
+              {/* A PERGUNTA, e so quando ela e necessaria.
+                  Fica DENTRO da caixa da modalidade, logo abaixo de quem leva —
+                  e a mesma declaracao comercial, feita no mesmo lugar. Nao e
+                  campo novo solto na tela: aparece so quando `categoriaDoServico`
+                  devolve null, some assim que a escolha passa a se explicar
+                  sozinha, e nao trava salvamento nenhum. */}
+              {precisaDeclararCategoria && (
+                <div>
+                  <span className="block text-xs font-bold uppercase tracking-wide text-slate-500 mb-2">
+                    Como vai o transporte?
+                  </span>
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    {(["RODOVIARIO", "AEREO"] as CategoriaFrete[]).map((c) => (
+                      <button
+                        key={c}
+                        type="button"
+                        aria-pressed={form.categoriaFreteDeclarada === c}
+                        onClick={() =>
+                          updateField(
+                            "categoriaFreteDeclarada",
+                            form.categoriaFreteDeclarada === c ? null : c
+                          )
+                        }
+                        className={`flex-1 rounded-2xl border px-4 py-2.5 text-sm font-semibold transition ${
+                          form.categoriaFreteDeclarada === c
+                            ? "border-[#0b2f4a] bg-[#0b2f4a] text-white"
+                            : "border-slate-200 bg-white text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                        }`}
+                      >
+                        {LABEL_CATEGORIA_FRETE[c]}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="mt-1.5 text-xs text-slate-500">
+                    Só para a Expedição saber em qual coluna o pedido entra. Correios, Motoboy, Veppo, Azul e São
+                    Miguel o sistema já reconhece sozinho — esta transportadora ele não tem como classificar.{" "}
+                    {form.categoriaFreteDeclarada
+                      ? "Clique de novo para desmarcar."
+                      : "Deixar em branco também vale: o pedido entra em Extras."}
+                  </p>
+                </div>
+              )}
+
               {modalidadeEditavel && declaracaoFreteNaoSalva && (
                 <p className="rounded-2xl border border-amber-300 bg-amber-50 p-3 text-xs font-bold text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
                   Alteração pendente: a modalidade escolhida ainda NÃO está gravada. Salve o orçamento — sem isso a
@@ -7596,6 +7699,9 @@ function createInitialState(proposta?: Proposta): PropostaFormState {
     // Sem default: proposta nova nasce SEM categoria, e proposta antiga sem
     // coluna gravada tambem. "Nao escolheu" nao vira "escolheu retirada".
     transporteCategoria: proposta?.transporteCategoria ?? null,
+    // A declaracao do usuario volta do banco: sem isto, reabrir a proposta e
+    // salvar de novo gravaria null por cima do que ele ja tinha declarado.
+    categoriaFreteDeclarada: proposta?.categoriaFrete ?? null,
     idTransportadoraCliente: proposta?.idTransportadoraCliente ?? null,
     descontoGeralTipo: proposta?.descontoGeralTipo ?? "VALOR",
     descontoGeralValor: proposta?.descontoGeralValor ? proposta.descontoGeralValor.toString() : "0",
