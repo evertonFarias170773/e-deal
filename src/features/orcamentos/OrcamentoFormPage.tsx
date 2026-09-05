@@ -3,11 +3,11 @@
 import Link from "next/link";
 import Image from "next/image";
 import type { ReactNode } from "react";
-import { useMemo, useState, useEffect, useRef, useCallback, useId } from "react";
+import { useMemo, useState, useEffect, useRef, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useUrlFilters } from "@/hooks/useUrlFilters";
 import { codecs } from "@/lib/url-state";
-import { Copy, Search, Trash2, X, Edit2, AlertTriangle, AlertOctagon, ChevronDown } from "lucide-react";
+import { Copy, Search, Trash2, X, Edit2, AlertTriangle, AlertOctagon, Check, ExternalLink } from "lucide-react";
 import { useAppToast } from "@/components/common/AppToast";
 import { ContactEditModal } from "@/features/orcamentos/components/ContactEditModal";
 import { PedidoModelosTab } from "@/features/orcamentos/components/PedidoModelosTab";
@@ -29,6 +29,8 @@ import { StatusBadge } from "@/components/common/StatusBadge";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import type { Cadastro, CadastroContato, CadastroEndereco } from "@/features/cadastros/types";
+import { formatDocument } from "@/lib/formatters/document";
+import { normalizarTipoContribuinte, OPCOES_TIPO_CONTRIBUINTE } from "@/lib/fiscal/tipo-contribuinte";
 import { hasPermissao } from "@/features/auth/usuarios.service";
 import type {
   Proposta,
@@ -894,6 +896,16 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
   const [isQuotingTransp, setIsQuotingTransp] = useState(false);
   const [isQuotingVeppo, setIsQuotingVeppo] = useState(false);
   const [compradorAddresses, setCompradorAddresses] = useState<CadastroEndereco[]>([]);
+  /**
+   * Cadastro COMPLETO do pagador quando ele e um vinculo (05/09/2026).
+   *
+   * E o MESMO resultado da chamada que ja monta `compradorAddresses` no efeito
+   * abaixo — ate aqui ela guardava so `enderecos` e descartava o resto. O
+   * painel do card 4 precisa de IE, contribuinte e e-mail do pagador, entao o
+   * resultado passa a ser guardado inteiro. ZERO consultas novas: nenhuma
+   * chamada foi acrescentada nem mudou de momento.
+   */
+  const [compradorCadastro, setCompradorCadastro] = useState<Cadastro | null>(null);
   const [loadingCompradorAddresses, setLoadingCompradorAddresses] = useState(false);
   const [lastDestinationKey, setLastDestinationKey] = useState<string>(() => {
     if (!proposta) return "";
@@ -1571,12 +1583,18 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
   // Load comprador's addresses when compradorId changes
   useEffect(() => {
     if (!form.compradorId || !cliente) {
-      setTimeout(() => setCompradorAddresses([]), 0);
+      setTimeout(() => {
+        setCompradorAddresses([]);
+        setCompradorCadastro(null);
+      }, 0);
       return;
     }
     const vinculo = cliente.vinculosComerciais?.find((v) => v.id === form.compradorId);
     if (!vinculo) {
-      setTimeout(() => setCompradorAddresses([]), 0);
+      setTimeout(() => {
+        setCompradorAddresses([]);
+        setCompradorCadastro(null);
+      }, 0);
       return;
     }
 
@@ -1589,11 +1607,17 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
           const addrs = cadastro.enderecos || [];
           setTimeout(() => {
             setCompradorAddresses(addrs);
+            setCompradorCadastro(cadastro);
           }, 0);
         }
       } catch (err) {
         console.error("Erro ao carregar endereços do comprador/autorizado:", err);
-        if (active) setTimeout(() => setCompradorAddresses([]), 0);
+        if (active) {
+          setTimeout(() => {
+            setCompradorAddresses([]);
+            setCompradorCadastro(null);
+          }, 0);
+        }
       } finally {
         if (active) setLoadingCompradorAddresses(false);
       }
@@ -2000,6 +2024,44 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
 
     setForm((current) => ({ ...current, [field]: value }));
     setErrorFields((current) => current.filter((item) => item !== field));
+  }
+
+  /**
+   * Campos rotulados do painel do card 4 para o pagador `item` (05/09/2026).
+   *
+   * Cadastro principal: le de `cliente` e dos enderecos ja em `proposalAddresses`.
+   * Vinculo: le de `compradorCadastro` — o resultado inteiro da chamada que ja
+   * monta `compradorAddresses`. Enquanto essa chamada nao voltou, os campos
+   * dizem "Carregando…". Nada aqui consulta o banco.
+   */
+  function camposFiscaisDoPagador(item: { id: string; documento: string }): CampoPainel[] {
+    const ehPrincipal = cliente !== null && item.id === cliente.id.toString();
+    const vinculo = ehPrincipal ? null : cliente?.vinculosComerciais?.find((v) => v.id === item.id) ?? null;
+    const cadastro: Cadastro | null = ehPrincipal
+      ? cliente
+      : vinculo && compradorCadastro && compradorCadastro.idCliente === vinculo.idClienteRelacionado
+        ? compradorCadastro
+        : null;
+    const enderecos = ehPrincipal ? proposalAddresses : compradorAddresses;
+    const carregando = !ehPrincipal && cadastro === null && loadingCompradorAddresses;
+    const pendente = carregando ? "Carregando…" : "—";
+
+    const documento = item.documento ? formatDocument(item.documento) : "";
+    const ie = cadastro ? cadastro.inscricaoEstadual || (cadastro.isentoInscricaoEstadual ? "Isento" : "") : "";
+    const codigo = normalizarTipoContribuinte(cadastro?.tipoContribuinte);
+    const contribuinte = codigo
+      ? OPCOES_TIPO_CONTRIBUINTE.find((opcao) => opcao.valor === codigo)?.rotulo ?? codigo
+      : cadastro?.tipoContribuinte || "";
+    const email = cadastro?.email || "";
+    const fiscal = enderecoFiscalDe(enderecos);
+
+    return [
+      { rotulo: rotuloDoDocumento(item.documento), valor: documento || "—", apagado: !documento },
+      { rotulo: "Inscrição estadual", valor: ie || pendente, apagado: !ie },
+      { rotulo: "Contribuinte", valor: contribuinte || pendente, apagado: !contribuinte },
+      { rotulo: "E-mail", valor: email || pendente, apagado: !email, span: 3 },
+      { rotulo: "Endereço fiscal (principal do pagador)", valor: fiscal || pendente, apagado: !fiscal, span: 4 }
+    ];
   }
 
   function handleSelectEndereco(newEnderecoId: string) {
@@ -5197,15 +5259,28 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
               {!form.clienteNaoCadastrado && (
                   <FormSection title="3. Contato responsável" description="Contato usado para envio da proposta informal e retorno comercial.">
                     {proposalContacts.length > 0 ? (
-                      <SelectorGrid
+                      <SelectorPainel
                         items={proposalContacts}
                         selectedId={form.contatoId}
                         onSelect={(id) => updateField("contatoId", id)}
-                        render={(contato) => ({
-                          title: contato.nome,
-                          subtitle: `${contato.cargo || "Sem cargo"} - ${contato.whatsapp}`,
-                          detail: contato.email || "Sem e-mail"
+                        rotuloOutros="Outros contatos"
+                        // Sem o campo Nome na grade: a faixa ja o carrega, e repetir
+                        // e ruido (decisao do dono, 05/09/2026).
+                        painel={(contato) => ({
+                          kicker: "Contato selecionado",
+                          titulo: contato.nome,
+                          subtitulo: contato.cargo || "Sem cargo",
+                          campos: [
+                            { rotulo: "Cargo", valor: contato.cargo || "Sem cargo", apagado: !contato.cargo },
+                            { rotulo: "WhatsApp", valor: contato.whatsapp || "—", apagado: !contato.whatsapp },
+                            { rotulo: "E-mail", valor: contato.email || "Sem e-mail", apagado: !contato.email }
+                          ]
                         })}
+                        linha={(contato) => [
+                          { principal: contato.nome, secundaria: contato.cargo || "Sem cargo" },
+                          { principal: contato.whatsapp || "—", secundaria: "WhatsApp" },
+                          { principal: contato.email || "Sem e-mail", secundaria: "E-mail" }
+                        ]}
                         extraClassNameForItem={(contato) => {
                           return form.contatoId === contato.id ? "!bg-[#3d9790] !border-[#3d9790] !text-white" : "";
                         }}
@@ -5225,7 +5300,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                       <p className="text-sm text-slate-500 bg-slate-50 rounded-2xl p-4">Selecione um cliente para visualizar as opções.</p>
                     ) : (
                       <>
-                        <SelectorGrid
+                        <SelectorPainel
                           items={[
                             {
                               id: cliente.id.toString(),
@@ -5237,11 +5312,80 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                           ]}
                           selectedId={form.compradorId || cliente.id.toString()}
                           onSelect={handleSelectComprador}
-                          render={(vinculo) => ({
-                            title: vinculo.nome,
-                            subtitle: vinculo.tipoRelacao,
-                            detail: vinculo.documento
-                          })}
+                          rotuloOutros="Outras opções de pagador"
+                          painel={(vinculo) => {
+                            const ehPrincipal = vinculo.id === cliente.id.toString();
+                            // Fantasia só quando difere do nome: em pessoa física o
+                            // cadastro costuma repetir o nome nos dois campos.
+                            const fantasiaDistinta =
+                              !!cliente.fantasia && cliente.fantasia.trim().toLowerCase() !== cliente.nome.trim().toLowerCase();
+                            return {
+                              kicker: `Pagador selecionado · ${rotuloDaRelacao(vinculo.tipoRelacao)}`,
+                              titulo: vinculo.nome,
+                              subtitulo: ehPrincipal
+                                ? fantasiaDistinta
+                                  ? `Fantasia: ${cliente.fantasia}`
+                                  : undefined
+                                : `Diferente do cadastro original (${cliente.fantasia || cliente.nome})`,
+                              campos: camposFiscaisDoPagador(vinculo)
+                            };
+                          }}
+                          // Linhas dos demais vinculos: nome · documento · tipo. A
+                          // cidade fiscal NAO entra — so viria com uma consulta por
+                          // linha, e esta tela nao faz consulta nova (decisao do dono).
+                          linha={(vinculo) => [
+                            { principal: vinculo.nome },
+                            {
+                              principal: vinculo.documento ? formatDocument(vinculo.documento) : "—",
+                              secundaria: rotuloDoDocumento(vinculo.documento)
+                            },
+                            { principal: rotuloDaRelacao(vinculo.tipoRelacao) }
+                          ]}
+                          acoesDoPainel={(vinculo) => {
+                            const ehPrincipal = vinculo.id === cliente.id.toString();
+                            const relacionado = ehPrincipal
+                              ? null
+                              : cliente.vinculosComerciais?.find((v) => v.id === vinculo.id) ?? null;
+                            const idCadastro = ehPrincipal ? cliente.id : relacionado?.idClienteRelacionado ?? null;
+                            return (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={async (event) => {
+                                    event.stopPropagation();
+                                    const linhas = [`Razão social: ${vinculo.nome}`].concat(
+                                      camposFiscaisDoPagador(vinculo)
+                                        .filter((campo) => typeof campo.valor === "string")
+                                        .map((campo) => `${campo.rotulo}: ${campo.valor as string}`)
+                                    );
+                                    const ok = await copiarParaAreaDeTransferencia(linhas.join("\n"));
+                                    showToast(
+                                      ok
+                                        ? { type: "success", title: "Copiado", description: "Dados para nota fiscal copiados para a área de transferência." }
+                                        : { type: "error", title: "Erro", description: "Não foi possível copiar os dados." }
+                                    );
+                                  }}
+                                  className="inline-flex items-center gap-1.5 rounded-xl border border-white/35 bg-white/15 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-white/25"
+                                >
+                                  <Copy className="h-3.5 w-3.5" />
+                                  Copiar dados
+                                </button>
+                                {idCadastro !== null && (
+                                  <button
+                                    type="button"
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      window.open(`/cadastros/${idCadastro}/editar`, "_blank");
+                                    }}
+                                    className="inline-flex items-center gap-1.5 rounded-xl border border-white/35 bg-white/15 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-white/25"
+                                  >
+                                    <ExternalLink className="h-3.5 w-3.5" />
+                                    Abrir cadastro
+                                  </button>
+                                )}
+                              </>
+                            );
+                          }}
                           extraClassNameForItem={(vinculo) => {
                             return (form.compradorId || cliente.id.toString()) === vinculo.id ? "!bg-[#4b78b7] !border-[#4b78b7] !text-white" : "";
                           }}
@@ -5266,10 +5410,11 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                   {!form.clienteNaoCadastrado && (
                     <FormSection title="5. Endereço de entrega" description="Endereço usado para frete, PDF e expedição futura.">
                     {combinedAddresses.length > 0 ? (
-                      <SelectorGrid
+                      <SelectorPainel
                         items={combinedAddresses}
                         selectedId={form.enderecoId}
                         onSelect={handleSelectEndereco}
+                        rotuloOutros="Outras opções de entrega"
                         onEdit={(item, e) => {
                           e.stopPropagation();
                           setAddressModalMode("edit");
@@ -5341,32 +5486,48 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                             showToast({ type: "error", title: "Erro", description: "Não foi possível copiar o endereço." });
                           }
                         }}
-                        render={(endereco) => {
-                          const isSocioAddr = (endereco as any)._isSocioAddr === true;
-                          const recebedor = endereco.recebedor ? endereco.recebedor : "";
-                          const cpfStr = endereco.cpfRecebedor ? ` - CPF: ${endereco.cpfRecebedor}` : "";
-                          
-                          let primeiraLinha = "";
-                          if (recebedor) {
-                            primeiraLinha = `${recebedor}${cpfStr}`;
-                          } else {
-                            primeiraLinha = `${endereco.endereco}, ${endereco.numero}`;
-                          }
-
-                          const segundaLinha = recebedor ? `${endereco.endereco}, ${endereco.numero}` : `${endereco.cidade}/${endereco.uf} - CEP ${endereco.cep}`;
-                          
-                          const tipoExibido = endereco.tipo ? endereco.tipo : "Tipo não informado";
+                        painel={(endereco) => {
+                          const isSocioAddr = (endereco as { _isSocioAddr?: boolean })._isSocioAddr === true;
                           const donoText = isSocioAddr ? "Endereço do pagador selecionado" : "Endereço do comprador";
+                          const cidadeUf = [endereco.cidade, endereco.uf].filter(Boolean).join("/");
+                          const logradouro = [endereco.endereco, endereco.numero].filter(Boolean).join(", ");
                           return {
-                            title: primeiraLinha,
-                            subtitle: segundaLinha,
-                            detail: (
-                              <div className="flex flex-col gap-0.5 mt-0.5">
-                                <span>{tipoExibido} ({donoText})</span>
-                                {recebedor && <span>{endereco.cidade}/{endereco.uf} - CEP {endereco.cep}</span>}
-                              </div>
-                            )
+                            kicker: `Endereço de entrega selecionado · ${donoText}`,
+                            titulo: endereco.recebedor ? `${endereco.recebedor} — ${logradouro} — ${cidadeUf}` : `${logradouro} — ${cidadeUf}`,
+                            campos: [
+                              { rotulo: "Recebedor", valor: endereco.recebedor || "—", apagado: !endereco.recebedor, span: 2 },
+                              {
+                                rotulo: "CPF do recebedor",
+                                valor: endereco.cpfRecebedor ? formatDocument(endereco.cpfRecebedor) : "—",
+                                apagado: !endereco.cpfRecebedor
+                              },
+                              { rotulo: "Tipo", valor: endereco.tipo || "Tipo não informado", apagado: !endereco.tipo },
+                              { rotulo: "Endereço", valor: logradouro || "—", apagado: !logradouro, span: 2 },
+                              { rotulo: "Complemento", valor: semTraco(endereco.complemento) || "—", apagado: !semTraco(endereco.complemento) },
+                              { rotulo: "Bairro", valor: endereco.bairro || "—", apagado: !endereco.bairro },
+                              { rotulo: "Cidade / UF", valor: cidadeUf || "—", apagado: !cidadeUf },
+                              { rotulo: "CEP", valor: cepExibicao(endereco.cep) || "—", apagado: !endereco.cep },
+                              { rotulo: "Referência", valor: endereco.obs || "—", apagado: !endereco.obs, span: 2 }
+                            ]
                           };
+                        }}
+                        linha={(endereco) => {
+                          const cidadeUf = [endereco.cidade, endereco.uf].filter(Boolean).join("/");
+                          const logradouro = [endereco.endereco, endereco.numero].filter(Boolean).join(", ");
+                          const tipoExibido = endereco.tipo ? endereco.tipo : "Tipo não informado";
+                          return [
+                            endereco.recebedor
+                              ? { principal: endereco.recebedor, secundaria: logradouro }
+                              : { principal: logradouro, secundaria: semTraco(endereco.complemento) || endereco.bairro || "" },
+                            {
+                              principal: cidadeUf || "—",
+                              secundaria: [tipoExibido, endereco.cep ? `CEP ${cepExibicao(endereco.cep)}` : ""].filter(Boolean).join(" · ")
+                            },
+                            {
+                              principal: endereco.cpfRecebedor ? formatDocument(endereco.cpfRecebedor) : "—",
+                              secundaria: "CPF do recebedor"
+                            }
+                          ];
                         }}
                         extraClassNameForItem={(endereco) => {
                           const isCompradorAddress = (endereco as any)._isSocioAddr === true;
@@ -6866,347 +7027,411 @@ function ProductItemEditor({
  */
 const MAX_OPCOES_VISIVEIS = 4;
 
-type SelectorConteudo = { title: string; subtitle: string; detail: React.ReactNode };
+/** Um campo rotulado do painel do item selecionado — o mesmo visual do `InfoBox`. */
+type CampoPainel = {
+  rotulo: string;
+  valor: ReactNode;
+  /** Colunas que o campo ocupa na grade de 4 (em telas largas). */
+  span?: 1 | 2 | 3 | 4;
+  /** Valor ausente ("—", "Sem cargo"...): renderiza apagado. */
+  apagado?: boolean;
+};
 
-type SelectorGridProps<T> = {
+/** Uma coluna da linha compacta das demais opções. */
+type ColunaLinha = { principal: ReactNode; secundaria?: ReactNode };
+
+type PainelConteudo = {
+  /** Texto pequeno em caixa alta acima do título da faixa. */
+  kicker: string;
+  titulo: ReactNode;
+  subtitulo?: ReactNode;
+  campos: CampoPainel[];
+};
+
+type SelectorPainelProps<T> = {
   items: T[];
   selectedId: string;
   onSelect: (id: string) => void;
-  render: (item: T) => SelectorConteudo;
+  /** Painel do selecionado: faixa colorida + campos rotulados, sem truncar. */
+  painel: (item: T) => PainelConteudo;
+  /** Linha compacta de cada opção NÃO selecionada: até 3 colunas. */
+  linha: (item: T) => ColunaLinha[];
+  /** Cabeçalho da lista das demais opções ("Outros contatos"...). */
+  rotuloOutros: string;
+  /** Botões extras na faixa do selecionado (ex.: Copiar dados, Abrir cadastro). */
+  acoesDoPainel?: (item: T) => ReactNode;
   onEdit?: (item: T, event: React.MouseEvent) => void;
   onCopy?: (item: T, event: React.MouseEvent) => void;
+  /**
+   * Classes de cor por item — as MESMAS funções de antes, sem alteração. O
+   * selecionado pinta a faixa do painel; os demais pintam a própria linha.
+   */
   extraClassNameForItem?: (item: T) => string;
   badgeForItem?: (item: T) => React.ReactNode;
-  /** Texto do campo de pesquisa quando a lista vira combobox. */
+  /** Texto do campo de pesquisa, que aparece acima de MAX_OPCOES_VISIVEIS opções. */
   searchPlaceholder?: string;
-  /**
-   * Texto extra considerado na busca. `title` e `subtitle` já entram sempre;
-   * use isto quando houver campo pesquisável que não cabe no rótulo do card
-   * (ex.: cidade do endereço, que só aparece quando não há recebedor).
-   */
+  /** Texto extra considerado na busca, além do que o painel e a linha exibem. */
   searchTextForItem?: (item: T) => string;
 };
 
-/** Card de uma opção — o mesmo visual na grade e dentro do combobox. */
-function SelectorCard({
-  content,
-  badge,
-  isSelected,
-  extraClass,
-  onClick,
-  onEdit,
-  onCopy,
-  destacado,
-  innerRef,
-  ...rest
-}: {
-  content: SelectorConteudo;
-  badge?: React.ReactNode;
-  isSelected: boolean;
-  extraClass?: string;
-  onClick?: () => void;
-  onEdit?: (event: React.MouseEvent) => void;
-  onCopy?: (event: React.MouseEvent) => void;
-  /** Opção sob o cursor do teclado dentro do combobox. */
-  destacado?: boolean;
-  innerRef?: React.Ref<HTMLDivElement>;
-  // `content` e `onCopy` existem em HTMLAttributes (microdata e clipboard) com
-  // outro significado; ficam de fora para não colidir com os nossos.
-} & Omit<React.HTMLAttributes<HTMLDivElement>, "content" | "onCopy" | "onClick">) {
-  return (
-    <div
-      {...rest}
-      ref={innerRef}
-      data-ativo={destacado ? "1" : undefined}
-      onClick={onClick}
-      className={`relative rounded-3xl border p-4 text-left transition flex justify-between items-start cursor-pointer ${
-        isSelected
-          ? "border-[#24665d] bg-[#24665d] text-[#86e2d5]"
-          : "border-slate-200 bg-slate-50 text-slate-700 hover:bg-white"
-      } ${extraClass || ""} ${destacado ? "ring-2 ring-[#0f9f9a] ring-offset-1" : ""} ${rest.className || ""}`}
-    >
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 flex-wrap mb-1">
-          <p className="font-semibold truncate">{content.title}</p>
-          {badge}
-        </div>
-        <p className="text-sm opacity-80 truncate">{content.subtitle}</p>
-        <div className="mt-1 text-xs opacity-70 truncate">{content.detail}</div>
-      </div>
-      <div className="flex shrink-0 ml-2">
-        {onCopy && (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onCopy(e);
-            }}
-            className="p-1.5 rounded-full hover:bg-slate-200/50 text-slate-400 hover:text-slate-600 transition"
-            title="Copiar endereço"
-            aria-label="Copiar endereço"
-          >
-            <Copy className="h-3.5 w-3.5" />
-          </button>
-        )}
-        {onEdit && (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onEdit(e);
-            }}
-            className="ml-1 p-1.5 rounded-full hover:bg-slate-200/50 text-slate-400 hover:text-slate-600 transition"
-            title="Editar"
-            aria-label="Editar endereço"
-          >
-            <Edit2 className="h-3.5 w-3.5" />
-          </button>
-        )}
-      </div>
-    </div>
-  );
+/**
+ * A grade dos campos é dirigida pela LARGURA DO PAINEL (container query), não
+ * pela do viewport: com a sidebar aberta a coluna do formulário tem ~780 px
+ * mesmo em tela de 1500, e quatro colunas ali quebravam e-mail no meio da
+ * palavra. Até 3 colunas — 1 em painel estreito, 2 a partir de 28 rem, 3 a
+ * partir de 42 rem. `span` 3 ou 4 é linha inteira.
+ */
+const SPAN_CLASSE: Record<NonNullable<CampoPainel["span"]>, string> = {
+  1: "",
+  2: "@md:col-span-2",
+  3: "@md:col-span-full",
+  4: "@md:col-span-full"
+};
+
+/** Rótulo do documento pelo tamanho: 11 dígitos é CPF, o resto é CNPJ. */
+function rotuloDoDocumento(documento: string | null | undefined): string {
+  return (documento ?? "").replace(/\D/g, "").length === 11 ? "CPF" : "CNPJ";
 }
 
 /**
- * Mesma seleção do SelectorGrid, porém condensada: mostra só a opção escolhida
- * e abre a lista completa com campo de busca. Usado automaticamente quando há
- * mais de MAX_OPCOES_VISIVEIS opções, para o card não crescer sem limite.
+ * Só exibição: o código `vinculo_comercial` (gravado em
+ * `clientes_socios.tipo_relacao`) vira texto. O resto passa como está. Quem
+ * decide selo lê o `tipoRelacao` cru do cadastro, não este rótulo.
  */
-function SelectorCombobox<T extends { id: string }>({
+function rotuloDaRelacao(tipoRelacao: string): string {
+  return tipoRelacao === "vinculo_comercial" ? "Vínculo comercial" : tipoRelacao;
+}
+
+/** Campo preenchido só com um traço é vazio para exibição (ex.: complemento "-"). */
+function semTraco(valor: string | null | undefined): string {
+  const texto = (valor ?? "").trim();
+  return texto === "-" || texto === "—" ? "" : texto;
+}
+
+function cepExibicao(cep: string | null | undefined): string {
+  const digitos = (cep ?? "").replace(/\D/g, "").slice(0, 8);
+  return digitos.length === 8 ? `${digitos.slice(0, 5)}-${digitos.slice(5)}` : cep ?? "";
+}
+
+/**
+ * Endereço PRINCIPAL de uma lista, em uma linha. Mesma busca de
+ * `handleSelectEndereco`: `tipo_endereco === "Principal"` ou `tipo === "principal"`,
+ * senão o primeiro da lista.
+ */
+function enderecoFiscalDe(enderecos: CadastroEndereco[]): string {
+  const principal =
+    enderecos.find((a) => ((a as { tipo_endereco?: string | null }).tipo_endereco ?? a.tipo ?? "").trim().toLowerCase() === "principal") ??
+    enderecos[0];
+  if (!principal) return "";
+  const logradouro = [principal.endereco, principal.numero].filter(Boolean).join(", ");
+  const cidadeUf = [principal.cidade, principal.uf].filter(Boolean).join("/");
+  return [
+    [logradouro, semTraco(principal.complemento)].filter(Boolean).join(" — "),
+    principal.bairro,
+    cidadeUf,
+    principal.cep ? `CEP ${cepExibicao(principal.cep)}` : ""
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+/** Mesma estratégia do "Copiar endereço" do card 5: clipboard, senão textarea. */
+async function copiarParaAreaDeTransferencia(texto: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(texto);
+    } else {
+      const textArea = document.createElement("textarea");
+      textArea.value = texto;
+      textArea.style.position = "absolute";
+      textArea.style.left = "-999999px";
+      document.body.prepend(textArea);
+      textArea.select();
+      document.execCommand("copy");
+      textArea.remove();
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function textoDe(valor: ReactNode): string {
+  return typeof valor === "string" || typeof valor === "number" ? String(valor) : "";
+}
+
+const botaoIconeLinha =
+  "p-1.5 rounded-full hover:bg-slate-200/50 text-slate-400 hover:text-slate-600 transition";
+const botaoIconeFaixa =
+  "inline-flex h-8 w-8 items-center justify-center rounded-full bg-white/15 text-white/90 transition hover:bg-white/25";
+
+/**
+ * SELETOR EM PAINEL — cards 3, 4 e 5 da aba Geral (05/09/2026).
+ *
+ * Substitui o `SelectorGrid` (grade de cards com três linhas truncadas, que
+ * acima de 4 opções virava um combobox escondendo tudo menos o escolhido).
+ *
+ *   - o item SELECIONADO vira um painel completo, sempre à mostra: faixa com
+ *     a cor de antes + campos rotulados no visual do `InfoBox`, sem truncar;
+ *   - as demais opções viram linhas compactas, para trocar;
+ *   - acima de MAX_OPCOES_VISIVEIS opções a lista ganha busca e rola dentro
+ *     do card;
+ *   - com uma opção só, fica o painel e nada mais.
+ *
+ * Só layout. Quem seleciona, grava, valida e avisa continua sendo quem chama:
+ * `onSelect`, `onEdit`, `onCopy`, `badgeForItem` e `extraClassNameForItem`
+ * são passados como sempre foram, sem alteração.
+ */
+function SelectorPainel<T extends { id: string }>({
   items,
   selectedId,
   onSelect,
-  render,
+  painel,
+  linha,
+  rotuloOutros,
+  acoesDoPainel,
   onEdit,
   onCopy,
   extraClassNameForItem,
   badgeForItem,
   searchPlaceholder,
   searchTextForItem
-}: SelectorGridProps<T>) {
-  const [aberto, setAberto] = useState(false);
+}: SelectorPainelProps<T>) {
   const [busca, setBusca] = useState("");
-  const [indiceAtivo, setIndiceAtivo] = useState(0);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const gatilhoRef = useRef<HTMLDivElement>(null);
-  const buscaRef = useRef<HTMLInputElement>(null);
-  const listaRef = useRef<HTMLDivElement>(null);
-  const listaId = useId();
 
-  const selecionado = items.find((item) => item.id === selectedId) || null;
+  const selecionado = items.find((item) => item.id === selectedId) ?? null;
+  const outros = items.filter((item) => item.id !== selectedId);
+  const comBusca = items.length > MAX_OPCOES_VISIVEIS;
 
   const termo = busca.trim().toLowerCase();
   const filtrados = termo
-    ? items.filter((item) => {
-        const content = render(item);
-        const extra = searchTextForItem ? searchTextForItem(item) : "";
+    ? outros.filter((item) => {
+        const conteudo = painel(item);
         const alvo = [
-          content.title,
-          content.subtitle,
-          typeof content.detail === "string" ? content.detail : "",
-          extra
+          textoDe(conteudo.titulo),
+          textoDe(conteudo.subtitulo),
+          ...linha(item).flatMap((coluna) => [textoDe(coluna.principal), textoDe(coluna.secundaria)]),
+          searchTextForItem ? searchTextForItem(item) : ""
         ]
           .join(" ")
           .toLowerCase();
         return termo.split(/\s+/).every((parte) => alvo.includes(parte));
       })
-    : items;
-
-  const fechar = useCallback((devolverFoco = false) => {
-    setAberto(false);
-    setBusca("");
-    if (devolverFoco) gatilhoRef.current?.focus();
-  }, []);
-
-  const abrir = useCallback(() => {
-    const atual = items.findIndex((item) => item.id === selectedId);
-    setIndiceAtivo(atual >= 0 ? atual : 0);
-    setBusca("");
-    setAberto(true);
-  }, [items, selectedId]);
-
-  const escolher = useCallback(
-    (id: string) => {
-      onSelect(id);
-      fechar(true);
-    },
-    [onSelect, fechar]
-  );
-
-  // Clique fora fecha, como no seletor de clientes desta mesma tela.
-  useEffect(() => {
-    if (!aberto) return;
-    const handler = (event: MouseEvent) => {
-      if (!containerRef.current?.contains(event.target as Node)) fechar();
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [aberto, fechar]);
-
-  useEffect(() => {
-    if (aberto) buscaRef.current?.focus();
-  }, [aberto]);
-
-  // Mantém a opção sob o cursor do teclado visível na área rolável.
-  useEffect(() => {
-    if (!aberto) return;
-    listaRef.current?.querySelector('[data-ativo="1"]')?.scrollIntoView({ block: "nearest" });
-  }, [aberto, indiceAtivo, busca]);
-
-  const navegar = (event: React.KeyboardEvent) => {
-    if (event.key === "ArrowDown") {
-      event.preventDefault();
-      setIndiceAtivo((i) => (filtrados.length ? (i + 1) % filtrados.length : 0));
-    } else if (event.key === "ArrowUp") {
-      event.preventDefault();
-      setIndiceAtivo((i) => (filtrados.length ? (i - 1 + filtrados.length) % filtrados.length : 0));
-    } else if (event.key === "Home") {
-      event.preventDefault();
-      setIndiceAtivo(0);
-    } else if (event.key === "End") {
-      event.preventDefault();
-      setIndiceAtivo(Math.max(0, filtrados.length - 1));
-    } else if (event.key === "Enter") {
-      event.preventDefault();
-      const alvo = filtrados[indiceAtivo];
-      if (alvo) escolher(alvo.id);
-    } else if (event.key === "Escape") {
-      event.preventDefault();
-      fechar(true);
-    } else if (event.key === "Tab") {
-      fechar();
-    }
-  };
-
-  const conteudoSelecionado: SelectorConteudo = selecionado
-    ? render(selecionado)
-    : {
-        title: "Selecione uma opção",
-        subtitle: `${items.length} opções disponíveis`,
-        detail: "Clique para pesquisar e escolher"
-      };
+    : outros;
 
   return (
-    <div ref={containerRef} className="relative">
-      <SelectorCard
-        innerRef={gatilhoRef}
-        role="combobox"
-        tabIndex={0}
-        aria-expanded={aberto}
-        aria-haspopup="listbox"
-        aria-controls={listaId}
-        content={conteudoSelecionado}
-        badge={
-          <>
-            {selecionado && badgeForItem ? badgeForItem(selecionado) : null}
-            <span className="ml-auto inline-flex items-center gap-1 text-xs font-semibold opacity-70">
-              {aberto ? "Fechar" : "Trocar"}
-              <ChevronDown className={`h-3.5 w-3.5 transition-transform ${aberto ? "rotate-180" : ""}`} />
-            </span>
-          </>
-        }
-        isSelected={Boolean(selecionado)}
-        extraClass={selecionado && extraClassNameForItem ? extraClassNameForItem(selecionado) : ""}
-        className={selecionado ? "" : "!border-dashed !border-slate-300 !bg-white !text-slate-500"}
-        onClick={() => (aberto ? fechar() : abrir())}
-        onKeyDown={(event) => {
-          if (event.key === "Enter" || event.key === " " || event.key === "ArrowDown") {
-            event.preventDefault();
-            if (!aberto) abrir();
-          }
-        }}
-        onCopy={selecionado && onCopy ? (event) => onCopy(selecionado, event) : undefined}
-        onEdit={selecionado && onEdit ? (event) => onEdit(selecionado, event) : undefined}
-      />
+    <div>
+      {selecionado ? (
+        <PainelSelecionado
+          conteudo={painel(selecionado)}
+          badge={badgeForItem ? badgeForItem(selecionado) : null}
+          acoes={acoesDoPainel ? acoesDoPainel(selecionado) : null}
+          extraClass={extraClassNameForItem ? extraClassNameForItem(selecionado) : ""}
+          onCopy={onCopy ? (event) => onCopy(selecionado, event) : undefined}
+          onEdit={onEdit ? (event) => onEdit(selecionado, event) : undefined}
+        />
+      ) : (
+        <div className="rounded-3xl border border-dashed border-slate-300 bg-white px-4 py-3 text-sm text-slate-500">
+          Nenhuma opção selecionada — escolha uma abaixo.
+        </div>
+      )}
 
-      {aberto && (
-        <div className="absolute left-0 right-0 top-full z-40 mt-2 rounded-3xl border border-[#d7e5e8] bg-white p-3 shadow-xl">
-          <label className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5">
-            <Search className="h-4 w-4 shrink-0 text-[#0f9f9a]" />
-            <input
-              ref={buscaRef}
-              value={busca}
-              onChange={(event) => {
-                setBusca(event.target.value);
-                setIndiceAtivo(0);
-              }}
-              onKeyDown={navegar}
-              className="w-full bg-transparent text-sm text-slate-900 outline-none"
-              placeholder={searchPlaceholder || "Pesquisar..."}
-              aria-label={searchPlaceholder || "Pesquisar"}
-            />
-            {busca && (
-              <button
-                type="button"
-                onClick={() => {
-                  setBusca("");
-                  setIndiceAtivo(0);
-                  buscaRef.current?.focus();
-                }}
-                className="rounded-xl p-1 text-slate-400 transition hover:bg-slate-200 hover:text-slate-600"
-                aria-label="Limpar pesquisa"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            )}
-          </label>
-
-          <div
-            ref={listaRef}
-            id={listaId}
-            role="listbox"
-            className="mt-3 max-h-72 space-y-2 overflow-y-auto pr-1"
-          >
+      {outros.length > 0 && (
+        <>
+          <p className="mb-2 mt-5 text-xs font-bold uppercase tracking-wide text-slate-500">
+            {rotuloOutros} <span className="text-slate-400">({outros.length})</span>
+          </p>
+          {comBusca && (
+            <label className="mb-2 flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5">
+              <Search className="h-4 w-4 shrink-0 text-[#0f9f9a]" />
+              <input
+                value={busca}
+                onChange={(event) => setBusca(event.target.value)}
+                className="w-full bg-transparent text-sm text-slate-900 outline-none"
+                placeholder={searchPlaceholder || "Pesquisar..."}
+                aria-label={searchPlaceholder || "Pesquisar"}
+              />
+              {busca && (
+                <button
+                  type="button"
+                  onClick={() => setBusca("")}
+                  className="rounded-xl p-1 text-slate-400 transition hover:bg-slate-200 hover:text-slate-600"
+                  aria-label="Limpar pesquisa"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </label>
+          )}
+          <div role="listbox" className={`space-y-2 ${comBusca ? "max-h-72 overflow-y-auto pr-1" : ""}`}>
             {filtrados.length === 0 ? (
               <p className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-500">
                 Nenhuma opção encontrada para “{busca.trim()}”.
               </p>
             ) : (
-              filtrados.map((item, indice) => (
-                <SelectorCard
+              filtrados.map((item) => (
+                <LinhaOpcao
                   key={item.id}
-                  role="option"
-                  aria-selected={selectedId === item.id}
-                  content={render(item)}
+                  colunas={linha(item)}
                   badge={badgeForItem ? badgeForItem(item) : null}
-                  isSelected={selectedId === item.id}
                   extraClass={extraClassNameForItem ? extraClassNameForItem(item) : ""}
-                  destacado={indice === indiceAtivo}
-                  onClick={() => escolher(item.id)}
-                  onMouseEnter={() => setIndiceAtivo(indice)}
-                  onCopy={onCopy ? (event) => { fechar(); onCopy(item, event); } : undefined}
-                  onEdit={onEdit ? (event) => { fechar(); onEdit(item, event); } : undefined}
+                  onClick={() => onSelect(item.id)}
+                  onCopy={onCopy ? (event) => onCopy(item, event) : undefined}
+                  onEdit={onEdit ? (event) => onEdit(item, event) : undefined}
                 />
               ))
             )}
           </div>
-        </div>
+        </>
       )}
     </div>
   );
 }
 
-function SelectorGrid<T extends { id: string }>(props: SelectorGridProps<T>) {
-  const { items, selectedId, onSelect, render, onEdit, onCopy, extraClassNameForItem, badgeForItem } = props;
-
-  if (items.length > MAX_OPCOES_VISIVEIS) {
-    return <SelectorCombobox {...props} />;
-  }
-
+/** Painel do item selecionado: faixa com a cor de antes + campos rotulados. */
+function PainelSelecionado({
+  conteudo,
+  badge,
+  acoes,
+  extraClass,
+  onCopy,
+  onEdit
+}: {
+  conteudo: PainelConteudo;
+  badge?: React.ReactNode;
+  acoes?: React.ReactNode;
+  extraClass?: string;
+  onCopy?: (event: React.MouseEvent) => void;
+  onEdit?: (event: React.MouseEvent) => void;
+}) {
+  // A cor vem de `extraClassNameForItem`, a mesma string que pintava o card
+  // selecionado. Sem ela, o tom padrão que o SelectorCard usava.
+  const faixa = extraClass || "bg-[#24665d] text-[#86e2d5]";
   return (
-    <div className="grid gap-3 md:grid-cols-2">
-      {items.map((item) => (
-        <SelectorCard
-          key={item.id}
-          content={render(item)}
-          badge={badgeForItem ? badgeForItem(item) : null}
-          isSelected={selectedId === item.id}
-          extraClass={extraClassNameForItem ? extraClassNameForItem(item) : ""}
-          onClick={() => onSelect(item.id)}
-          onCopy={onCopy ? (event) => onCopy(item, event) : undefined}
-          onEdit={onEdit ? (event) => onEdit(item, event) : undefined}
-        />
-      ))}
+    <div className="@container overflow-hidden rounded-3xl border border-slate-200 bg-white">
+      <div className={`flex items-start gap-3 px-4 py-3 ${faixa}`}>
+        <span className="mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-white/20">
+          <Check className="h-3.5 w-3.5" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="text-[10px] font-bold uppercase tracking-wider opacity-85">{conteudo.kicker}</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="break-words text-base font-bold leading-snug">{conteudo.titulo}</p>
+            {badge}
+          </div>
+          {conteudo.subtitulo ? <p className="mt-0.5 text-xs opacity-85">{conteudo.subtitulo}</p> : null}
+        </div>
+        {(acoes || onCopy || onEdit) && (
+          <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+            {acoes}
+            {onCopy && (
+              <button type="button" onClick={onCopy} className={botaoIconeFaixa} title="Copiar endereço" aria-label="Copiar endereço">
+                <Copy className="h-3.5 w-3.5" />
+              </button>
+            )}
+            {onEdit && (
+              <button type="button" onClick={onEdit} className={botaoIconeFaixa} title="Editar" aria-label="Editar">
+                <Edit2 className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+      <div className="grid grid-cols-1 gap-3 p-4 @md:grid-cols-2 @2xl:grid-cols-3">
+        {conteudo.campos.map((campo) => (
+          <div key={campo.rotulo} className={`min-w-0 rounded-2xl bg-slate-50 px-4 py-3 ${SPAN_CLASSE[campo.span ?? 1]}`}>
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{campo.rotulo}</p>
+            <p className={`mt-1 break-words text-sm ${campo.apagado ? "font-medium text-slate-400" : "font-semibold text-slate-900"}`}>
+              {campo.valor}
+            </p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** Linha compacta de uma opção não selecionada: rádio + até 3 colunas + ações. */
+function LinhaOpcao({
+  colunas,
+  badge,
+  extraClass,
+  onClick,
+  onCopy,
+  onEdit
+}: {
+  colunas: ColunaLinha[];
+  badge?: React.ReactNode;
+  extraClass?: string;
+  onClick: () => void;
+  onCopy?: (event: React.MouseEvent) => void;
+  onEdit?: (event: React.MouseEvent) => void;
+}) {
+  const [primeira, ...demais] = colunas;
+  return (
+    <div
+      role="option"
+      aria-selected={false}
+      tabIndex={0}
+      onClick={onClick}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onClick();
+        }
+      }}
+      className={`@container flex cursor-pointer items-center gap-3 rounded-2xl border px-4 py-3 text-left transition ${
+        extraClass || "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+      }`}
+    >
+      <span className="h-4 w-4 shrink-0 rounded-full border-2 border-slate-300 bg-white" aria-hidden="true" />
+      <div className="grid min-w-0 flex-1 grid-cols-1 items-center gap-x-3 gap-y-1 @lg:grid-cols-[minmax(0,1.8fr)_minmax(0,1fr)_minmax(0,1fr)]">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="truncate text-sm font-semibold">{primeira?.principal}</p>
+            {badge}
+          </div>
+          {primeira?.secundaria ? <p className="truncate text-xs opacity-70">{primeira.secundaria}</p> : null}
+        </div>
+        {demais.map((coluna, indice) => (
+          <div key={indice} className="min-w-0">
+            <p className="truncate text-sm">{coluna.principal}</p>
+            {coluna.secundaria ? <p className="truncate text-xs opacity-70">{coluna.secundaria}</p> : null}
+          </div>
+        ))}
+      </div>
+      {(onCopy || onEdit) && (
+        <div className="flex shrink-0 items-center">
+          {onCopy && (
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                onCopy(event);
+              }}
+              className={botaoIconeLinha}
+              title="Copiar endereço"
+              aria-label="Copiar endereço"
+            >
+              <Copy className="h-3.5 w-3.5" />
+            </button>
+          )}
+          {onEdit && (
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                onEdit(event);
+              }}
+              className={`ml-1 ${botaoIconeLinha}`}
+              title="Editar"
+              aria-label="Editar"
+            >
+              <Edit2 className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }
