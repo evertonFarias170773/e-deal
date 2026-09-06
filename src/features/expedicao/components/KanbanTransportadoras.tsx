@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo } from "react";
-import { Truck } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ChevronLeft, ChevronRight, Truck } from "lucide-react";
 import { ActionsMenu } from "@/components/common/ActionsMenu";
 import type { ActionMenuItem } from "@/components/common/ActionsMenu";
 import { EmptyState } from "@/components/common/EmptyState";
@@ -325,6 +325,69 @@ export function KanbanTransportadoras({
    */
   const colunas = useMemo(() => agruparPorCategoria(pedidos), [pedidos]);
 
+  /**
+   * A BARRA-INDICE, E POR QUE ELA EXISTE (06/09/2026).
+   *
+   * Com seis ou sete colunas em tela menor, a barra de rolagem horizontal fica
+   * no rodape do CONTEUDO — e o conteudo tem a altura da coluna mais alta.
+   * Retira sozinha tem 14 cards: para alcancar a barra, o operador rolava a
+   * coluna inteira. Na pratica ele nao descobria que havia mais colunas.
+   *
+   * O PROBLEMA ERA DESCOBERTA, NAO ALCANCE. Uma barra fixa no rodape resolveria
+   * pegar nela, mas continuaria sem dizer QUE existem mais colunas, nem quais.
+   * A barra-indice diz: lista as sete pelo nome, com a contagem de cada uma,
+   * fixa no topo enquanto o Kanban estiver na tela.
+   *
+   * POR QUE NAO ROLAGEM VERTICAL DENTRO DA COLUNA. Seria um segundo eixo de
+   * rolagem para quem trabalha de pe com o volume na mao, e esconderia cards
+   * atras dele. A pagina continua com UMA rolagem vertical so, e a coluna
+   * continua inteira.
+   *
+   * Clicar num chip leva a coluna ate a vista: e o gesto que a bancada precisa,
+   * um alvo grande em vez de mira fina numa barra de 8 px.
+   */
+  const scrollerRef = useRef<HTMLDivElement | null>(null);
+  const [bordas, setBordas] = useState({ esquerda: false, direita: false });
+
+  const medirBordas = useCallback(() => {
+    const el = scrollerRef.current;
+    if (!el) return;
+    const sobra = el.scrollWidth - el.clientWidth;
+    setBordas({
+      esquerda: el.scrollLeft > 4,
+      // 4 px de folga: arredondamento de layout deixava a sombra da direita
+      // acesa mesmo com o scroll no fim.
+      direita: sobra > 4 && el.scrollLeft < sobra - 4
+    });
+  }, []);
+
+  useEffect(() => {
+    const el = scrollerRef.current;
+    if (!el) return;
+    // `requestAnimationFrame` porque medir dentro do efeito e sincrono e o
+    // React reclama de setState em cascata; um quadro depois o layout tambem ja
+    // esta estavel.
+    const quadro = requestAnimationFrame(medirBordas);
+    const observador = new ResizeObserver(medirBordas);
+    observador.observe(el);
+    return () => {
+      cancelAnimationFrame(quadro);
+      observador.disconnect();
+    };
+  }, [medirBordas, colunas.length]);
+
+  /** Rola uma coluna inteira por clique — 344 px do card mais o `gap-6`. */
+  const rolar = useCallback((direcao: 1 | -1) => {
+    scrollerRef.current?.scrollBy({ left: direcao * (344 + 24), behavior: "smooth" });
+  }, []);
+
+  const irParaColuna = useCallback((chave: string) => {
+    const el = scrollerRef.current;
+    const alvo = el?.querySelector<HTMLElement>(`[data-coluna="${chave}"]`);
+    if (!el || !alvo) return;
+    el.scrollTo({ left: alvo.offsetLeft - 4, behavior: "smooth" });
+  }, []);
+
   if (pedidos.length === 0) {
     return (
       <EmptyState
@@ -335,12 +398,70 @@ export function KanbanTransportadoras({
   }
 
   return (
-    // `pb-4` e não `pb-2`: sem a caixa da coluna, quem separa card de fundo é a
-    // sombra — e ela precisa de folga embaixo para não ser cortada pelo scroll.
-    <div className="flex items-start gap-6 overflow-x-auto pb-4">
+    <div>
+      {/* BARRA-INDICE: as colunas que existem, fixas no topo da viewport
+          enquanto o Kanban estiver em tela. Alvos grandes, para a bancada. */}
+      <div className="sticky top-0 z-20 mb-3 flex items-center gap-2 rounded-2xl border border-slate-200 bg-white/95 px-2 py-2 backdrop-blur dark:border-slate-800 dark:bg-slate-950/95">
+        <button
+          type="button"
+          onClick={() => rolar(-1)}
+          disabled={!bordas.esquerda}
+          aria-label="Ver colunas à esquerda"
+          className="shrink-0 rounded-xl p-2 text-slate-600 transition enabled:hover:bg-slate-100 disabled:opacity-25 dark:text-slate-300 dark:enabled:hover:bg-slate-800"
+        >
+          <ChevronLeft className="h-5 w-5" />
+        </button>
+
+        {/* A propria barra rola quando as sete nao couberem — em telefone ela
+            vira uma tira de chips, e nenhuma coluna some da lista. */}
+        <div className="flex min-w-0 flex-1 gap-1.5 overflow-x-auto">
+          {colunas.map((coluna) => (
+            <button
+              key={coluna.chave}
+              type="button"
+              onClick={() => irParaColuna(coluna.chave)}
+              className="flex shrink-0 items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-[13px] font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+            >
+              {coluna.titulo}
+              <span className="rounded-full bg-white px-1.5 text-[12px] font-bold text-slate-600 dark:bg-slate-900 dark:text-slate-300">
+                {coluna.pedidos.length}
+              </span>
+            </button>
+          ))}
+        </div>
+
+        <button
+          type="button"
+          onClick={() => rolar(1)}
+          disabled={!bordas.direita}
+          aria-label="Ver colunas à direita"
+          className="shrink-0 rounded-xl p-2 text-slate-600 transition enabled:hover:bg-slate-100 disabled:opacity-25 dark:text-slate-300 dark:enabled:hover:bg-slate-800"
+        >
+          <ChevronRight className="h-5 w-5" />
+        </button>
+      </div>
+
+      {/* `relative` só para as sombras de borda, que dizem "continua para cá"
+          sem ocupar espaço nem roubar clique. */}
+      <div className="relative">
+        {bordas.esquerda && (
+          <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-8 bg-gradient-to-r from-slate-200/80 to-transparent dark:from-slate-950/80" />
+        )}
+        {bordas.direita && (
+          <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-8 bg-gradient-to-l from-slate-200/80 to-transparent dark:from-slate-950/80" />
+        )}
+
+        {/* `pb-4` e não `pb-2`: sem a caixa da coluna, quem separa card de fundo é a
+            sombra — e ela precisa de folga embaixo para não ser cortada pelo scroll. */}
+        <div
+          ref={scrollerRef}
+          onScroll={medirBordas}
+          className="flex items-start gap-6 overflow-x-auto pb-4"
+        >
       {colunas.map((coluna) => (
         <section
           key={coluna.chave}
+          data-coluna={coluna.chave}
           /**
            * COLUNA SEM MOLDURA (02/09/2026).
            *
@@ -587,6 +708,8 @@ export function KanbanTransportadoras({
           </div>
         </section>
       ))}
+        </div>
+      </div>
     </div>
   );
 }

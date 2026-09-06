@@ -44,6 +44,7 @@ import {
   resolverFiltroCategoria
 } from "./lib/filtro-categoria";
 import { categoriaExibida, CATEGORIAS_FRETE, LABEL_CATEGORIA_FRETE } from "@/features/orcamentos/lib/categoria-frete";
+import { avisoEntregaCedoDemais } from "./lib/entrega-cedo";
 import { rotuloClienteComNumero } from "./lib/cliente-rotulo";
 import { DespacharModal } from "./components/DespacharModal";
 import { RetiradaModal } from "./components/RetiradaModal";
@@ -85,6 +86,23 @@ function ehAtrasado(p: PedidoExpedicao): boolean {
 /** `prometidoHoje` ja nasce false para ENTREGUE no servico, entao nao repete o corte. */
 function ehPrometidoHoje(p: PedidoExpedicao): boolean {
   return p.prometidoHoje;
+}
+
+/**
+ * O recorte do card "Entregues": entregue nos ULTIMOS 7 DIAS.
+ *
+ * PONTO UNICO. A contagem do cartao e o filtro que o clique aplica leem ESTA
+ * funcao, e so ela — se cada um tivesse a sua condicao, o numero exibido e a
+ * lista aberta divergiriam no dia em que alguem mexesse num dos dois.
+ *
+ * A JANELA NAO E A MESMA DA EXIBICAO. O painel guarda entregue por 30 dias; o
+ * cartao pergunta o que saiu na semana. As duas sao deliberadas e estao
+ * documentadas juntas no topo de `expedicao.service.ts`. `entregueNaJanelaDoCard`
+ * ja chega decidido de la, porque calcular "hoje" aqui seria chamada impura em
+ * render.
+ */
+function ehEntregueNoCard(p: PedidoExpedicao): boolean {
+  return p.entregueNaJanelaDoCard;
 }
 
 /**
@@ -202,7 +220,30 @@ export function ExpedicaoPage() {
   /** Pedido cuja prepostagem esta sendo marcada como cancelada (trava o item). */
   const [marcandoCanceladaId, setMarcandoCanceladaId] = useState<number | null>(null);
   // Confirmação de mudança de status no modal do sistema, não no confirm() do navegador.
-  const [confirmacao, setConfirmacao] = useState<{ pedido: PedidoExpedicao; tipo: "PRONTO" | "ENTREGUE" | "COLETA" } | null>(null);
+  /**
+   * `aviso` e calculado no CLIQUE, nao no render: ler o relogio durante o render
+   * e chamada impura, e o valor precisa ser o do instante em que o operador
+   * decidiu. Nulo quando nao ha o que avisar — que e o caso de tudo que nao e
+   * Correios recem-postado.
+   */
+  const [confirmacao, setConfirmacao] = useState<{
+    pedido: PedidoExpedicao;
+    tipo: "PRONTO" | "ENTREGUE" | "COLETA";
+    aviso?: string | null;
+  } | null>(null);
+
+  /**
+   * Abre a confirmacao de entrega ja com o aviso.
+   *
+   * `agora` vem de fora, do proprio manipulador do clique: ler o relogio aqui
+   * dentro faria desta funcao uma chamada impura que o eslint acusa por ser
+   * declarada no corpo do componente — a mesma regra que ja barrou `Date.now()`
+   * no render da lista de OS. No manipulador ela e legitima, e o instante e
+   * exatamente o da decisao.
+   */
+  function pedirConfirmacaoDeEntrega(p: PedidoExpedicao, agora: number) {
+    setConfirmacao({ pedido: p, tipo: "ENTREGUE", aviso: avisoEntregaCedoDemais(p, agora) });
+  }
 
   function atorAtual() {
     return {
@@ -274,7 +315,7 @@ export function ExpedicaoPage() {
           : p.etapa === "A_RETIRAR"
             ? { rotulo: "Confirmar retirada", acao: () => setPedidoRetirada(p) }
             : p.etapa === "EM_TRANSITO"
-              ? { rotulo: ocupado ? "Salvando..." : "Marcar entregue", acao: () => setConfirmacao({ pedido: p, tipo: "ENTREGUE" }) }
+              ? { rotulo: ocupado ? "Salvando..." : "Marcar entregue", acao: () => pedirConfirmacaoDeEntrega(p, Date.now()) }
               : null;
   }
 
@@ -648,7 +689,9 @@ export function ExpedicaoPage() {
       pronto: contar(["PRONTO"]),
       aRetirar: contar(["A_RETIRAR"]),
       emTransito: contar(["EM_TRANSITO"]),
-      entregues: contar(["ENTREGUE"])
+      // Nao passa por `contar`: o cartao recorta por DATA DE ENTREGA, nao so
+      // por etapa. Mesmo predicado que o clique aplica, logo abaixo.
+      entregues: pedidos.filter(ehEntregueNoCard).length
     };
   }, [pedidos]);
 
@@ -668,6 +711,11 @@ export function ExpedicaoPage() {
       // promessa, e por isso atravessa o funil inteiro. Os demais continuam
       // casando 1 para 1 com `p.etapa`.
       if (filters.etapa === ETAPA_DIA && !ehExpedicaoDoDia(p)) return false;
+      // ENTREGUE tambem nao casa 1 para 1 com a etapa: o cartao conta os dos
+      // ultimos 7 dias, e o clique tem de abrir exatamente esse conjunto. Sem
+      // esta linha a lista mostraria os 30 dias de exibicao e desmentiria o
+      // numero que foi clicado.
+      if (filters.etapa === "ENTREGUE" && !ehEntregueNoCard(p)) return false;
       if (
         filters.etapa !== "ATIVOS" &&
         filters.etapa !== "TODAS" &&
@@ -878,7 +926,9 @@ export function ExpedicaoPage() {
           <SummaryCard
             title="Entregues"
             value={porEtapa.entregues.toString()}
-            description="Últimos 30 dias"
+            /* Acompanha `DIAS_ENTREGUE_VISIVEL`, no service: e a MESMA janela,
+               e ela decide quem entra no painel, nao so o que este numero soma. */
+            description="Últimos 7 dias"
             tone="success"
             icon={CheckCircle2}
             onClick={() => selecionarEtapa("ENTREGUE")}
@@ -1374,7 +1424,14 @@ export function ExpedicaoPage() {
           pedido={pedidoRastreio}
           permitirMarcarEntregue={canOperar}
           onClose={() => setPedidoRastreio(null)}
-          onMarcarEntregue={() => { setPedidoRastreio(null); void handleMarcarEntregue(pedidoRastreio); }}
+          /* Passa pela MESMA confirmacao do botao primario. Antes ia direto ao
+             `handleMarcarEntregue`, e por ali o aviso nunca apareceria — dois
+             caminhos para a mesma acao, um deles sem a informacao. */
+          onMarcarEntregue={() => {
+            const alvo = pedidoRastreio;
+            setPedidoRastreio(null);
+            pedirConfirmacaoDeEntrega(alvo, Date.now());
+          }}
         />
       )}
       {confirmacao && (
@@ -1394,9 +1451,18 @@ export function ExpedicaoPage() {
                 : `O pedido #${confirmacao.pedido.idInt} (${confirmacao.pedido.cliente}) será concluído como ENTREGUE.`
           }
           detalhe={
-            confirmacao.tipo === "ENTREGUE"
-              ? "Último passo do fluxo. Para desfazer depois é preciso usar Voltar status, com motivo."
-              : undefined
+            confirmacao.tipo === "ENTREGUE" ? (
+              <>
+                {/* O aviso vem PRIMEIRO e destacado: e a informacao nova. A
+                    frase de sempre continua abaixo, sem competir com ela. */}
+                {confirmacao.aviso && (
+                  <span className="mb-2 block rounded-xl border border-amber-300 bg-amber-50 p-3 font-semibold text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+                    {confirmacao.aviso}
+                  </span>
+                )}
+                Último passo do fluxo. Para desfazer depois é preciso usar Voltar status, com motivo.
+              </>
+            ) : undefined
           }
           rotuloConfirmar={
             confirmacao.tipo === "PRONTO"

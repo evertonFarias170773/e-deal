@@ -50,8 +50,28 @@ export const STATUS_FUNIL_EXPEDICAO = [
   "ENTREGUE"
 ];
 
-/** Entregues somem do painel depois de 30 dias (expedicoes.data_entrega). */
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * DUAS JANELAS DIFERENTES, DE PROPOSITO. NAO UNIFICAR.
+ * ═══════════════════════════════════════════════════════════════════════════
+ *   DIAS_ENTREGUE_VISIVEL = 30  →  por quanto tempo um entregue PERMANECE NO
+ *     PAINEL. Ela decide quem ENTRA na lista: encurta-la nao mexe so num
+ *     numero, tira o pedido da visao "Todas", do Kanban e da BUSCA. Medido em
+ *     06/09/2026: 44 entregues visiveis com 30 dias, 24 com 7 — os outros 20
+ *     sumiriam de tudo.
+ *
+ *   DIAS_ENTREGUE_NO_CARD = 7   →  o recorte do CARD "Entregues": o que ele
+ *     conta e o que ele filtra ao ser clicado. E uma pergunta operacional
+ *     ("o que saiu esta semana?"), nao um corte de dados.
+ *
+ * A tentacao de unificar e real e a conta parece bater — mas encurtar a
+ * primeira para 7 apagaria pedido do painel inteiro, e alongar a segunda para
+ * 30 devolveria ao cartao a pergunta errada. Elas respondem coisas diferentes.
+ *
+ * O texto do cartao ("Ultimos 7 dias", em ExpedicaoPage) acompanha a SEGUNDA.
+ */
 const DIAS_ENTREGUE_VISIVEL = 30;
+const DIAS_ENTREGUE_NO_CARD = 7;
 
 export function hojeSaoPaulo(): string {
   // en-CA formata como YYYY-MM-DD, comparável por string.
@@ -436,9 +456,24 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
     const cli = idCliente !== null ? clienteMap.get(idCliente) : undefined;
 
     // Entregue some do painel após 30 dias (sem data_entrega registrada, mantém).
+    let entregueNaJanelaDoCard = false;
     if (etapa === "ENTREGUE" && exp?.dataEntrega) {
       const dataEntregueDia = diaSaoPaulo(exp.dataEntrega);
-      if (diffDias(dataEntregueDia, hoje) > DIAS_ENTREGUE_VISIVEL) continue;
+      const diasDesdeEntrega = diffDias(dataEntregueDia, hoje);
+      if (diasDesdeEntrega > DIAS_ENTREGUE_VISIVEL) continue;
+      /**
+       * O RECORTE DO CARD, decidido AQUI e não na tela.
+       *
+       * A tela roda em render, e calcular "hoje" ali é chamada impura no meio
+       * do React — o mesmo eslint que já barrou `Date.now()` na lista de OS. O
+       * serviço já tem `hoje` em mãos e já leu esta data para o corte acima,
+       * então o sinal sai de graça e chega pronto: a página só lê um booleano.
+       *
+       * Entregue SEM `data_entrega` fica de fora do card. Ele permanece visível
+       * no painel (o corte acima o mantém), mas não há data para afirmar que
+       * saiu nos últimos 7 dias, e contar sem saber seria chutar.
+       */
+      entregueNaJanelaDoCard = diasDesdeEntrega <= DIAS_ENTREGUE_NO_CARD;
     }
 
     const dataPromessa = os?.data_termino ?? null;
@@ -665,6 +700,8 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
        * e nao `expConfirmado?`, porque a propria funcao ja decide o que fazer com
        * o rascunho — repetir a condicao aqui seria a regra em dois lugares.
        */
+      /** Entregue dentro da janela do card. Ver as duas janelas no topo. */
+      entregueNaJanelaDoCard,
       categoriaFrete: categoriaFreteVigente(
         ehCategoriaFrete(p.categoria_frete) ? p.categoria_frete : null,
         exp?.categoriaFrete ?? null,

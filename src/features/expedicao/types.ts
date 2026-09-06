@@ -280,6 +280,15 @@ export interface PedidoExpedicao {
    */
   modalidadeOrcamento: ModalidadeFrete | null;
   /**
+   * O pedido foi entregue dentro da janela do CARD "Entregues" (7 dias).
+   *
+   * NAO se confunde com estar no painel: a permanencia e de 30 dias, e as duas
+   * janelas sao diferentes de proposito — ver o cabecalho das constantes em
+   * `expedicao.service.ts`. Falso para tudo que nao e ENTREGUE e para entregue
+   * sem `data_entrega`.
+   */
+  entregueNaJanelaDoCard: boolean;
+  /**
    * A CATEGORIA QUE VALE, ja resolvida por `categoriaFreteVigente` no service:
    * o despacho confirmado vence, senao a proposta, senao o rascunho. O painel
    * NAO reaplica precedencia — ela mora num lugar so.
