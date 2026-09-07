@@ -12,6 +12,7 @@ import {
   CATEGORIAS_FRETE,
   LABEL_CATEGORIA_FRETE
 } from "@/features/orcamentos/lib/categoria-frete";
+import { rotuloCarimbo } from "../lib/carimbo-etapa";
 import type { EtapaExpedicao, PedidoExpedicao } from "../types";
 
 /**
@@ -633,7 +634,11 @@ export function KanbanTransportadoras({
                       nova entre o contexto e os selos. `min-w-0` + `truncate`
                       seguram nome longo em tela estreita, e o `title` entrega o
                       texto inteiro. */}
-                  <div className="mt-2 flex">
+                  {/* `flex-wrap`: os dois chips nao cabem lado a lado em 344 px
+                      no pior caso ("EXPRESSO SAO MIGUEL S/A" mais "Despachado
+                      03/09 14:31"). Quebrando a linha, o segundo desce inteiro
+                      em vez de truncar o nome de quem leva. */}
+                  <div className="mt-2 flex flex-wrap items-center gap-1.5">
                     <span
                       className="inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-lg border border-slate-900/15 bg-white/70 px-2 py-1 dark:border-slate-100/20 dark:bg-slate-900/40"
                       title={`Transporte: ${quemLeva(p, coluna.chave)}`}
@@ -641,6 +646,20 @@ export function KanbanTransportadoras({
                       <Truck className="h-3.5 w-3.5 shrink-0 text-slate-500 dark:text-slate-400" aria-hidden="true" />
                       <span className="truncate text-[14px] font-bold leading-tight text-slate-800 dark:text-slate-100">
                         {quemLeva(p, coluna.chave)}
+                      </span>
+                    </span>
+
+                    {/* O QUE ACONTECEU, e quando. Mesmo nivel de destaque do chip
+                        ao lado: contorno, negrito, 14 px. E EVENTO NO PASSADO —
+                        "Despachado 03/09 14:31" —, o que o distingue do "prev",
+                        que e promessa, fica em outra linha, sem moldura e em
+                        cinza. Tempo verbal, forma e peso diferentes. */}
+                    <span
+                      className="inline-flex min-w-0 max-w-full items-center rounded-lg border border-slate-900/15 bg-white/70 px-2 py-1 dark:border-slate-100/20 dark:bg-slate-900/40"
+                      title={`Status: ${rotuloCarimbo(p)}`}
+                    >
+                      <span className="truncate text-[14px] font-bold leading-tight text-slate-800 dark:text-slate-100">
+                        {rotuloCarimbo(p)}
                       </span>
                     </span>
                   </div>
