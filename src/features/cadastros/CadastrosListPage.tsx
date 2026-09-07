@@ -288,13 +288,24 @@ export function CadastrosListPage() {
         subtitle="Busca por ID, documento, nome fantasia ou nome, com filtro de tipo, em páginas de 100 registros."
         context="Clientes"
         action={
-          <button
-            type="button"
-            onClick={() => router.push("/cadastros/novo")}
-            className="rounded-2xl bg-[#0b2f4a] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#123f61]"
-          >
-            + Novo cliente
-          </button>
+          <div className="flex flex-wrap gap-2">
+            {/* Porta de entrada da fila do cadastro online. Sem isto a tela
+                /cadastros/online existiria sem nenhum caminho ate ela. */}
+            <button
+              type="button"
+              onClick={() => router.push("/cadastros/online")}
+              className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+            >
+              Recebidos pelo link
+            </button>
+            <button
+              type="button"
+              onClick={() => router.push("/cadastros/novo")}
+              className="rounded-2xl bg-[#0b2f4a] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#123f61]"
+            >
+              + Novo cliente
+            </button>
+          </div>
         }
       />
 

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
+import { fetchJsonWithTimeout } from "@/lib/http/fetch-json-timeout";
 import { validateCadastroInitialStep } from "@/features/cadastros/services/cadastros.service";
 import { normalizeDocumentDigits, validateDocumentByTipo, type DocumentoTipo } from "@/features/cadastros/utils/documento";
 import type { CodigoTipoContribuinte } from "@/lib/fiscal/tipo-contribuinte";
@@ -146,31 +147,6 @@ function findInscricaoEstadualAtiva(inscricoes: CnpjInscricaoEstadual[] | undefi
   });
 
   return toText(found?.inscricao_estadual);
-}
-
-async function fetchJsonWithTimeout<T>(url: string, headers?: HeadersInit): Promise<{ ok: true; data: T } | { ok: false; status?: number }> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 12000);
-
-  try {
-    const response = await fetch(url, {
-      method: "GET",
-      headers,
-      signal: controller.signal,
-      cache: "no-store"
-    });
-
-    if (!response.ok) {
-      return { ok: false, status: response.status };
-    }
-
-    const data = (await response.json()) as T;
-    return { ok: true, data };
-  } catch {
-    return { ok: false };
-  } finally {
-    clearTimeout(timeout);
-  }
 }
 
 async function consultarCnpj(documentoDigits: string, idCliente: number | null): Promise<DocumentoConsultaPayload | null> {

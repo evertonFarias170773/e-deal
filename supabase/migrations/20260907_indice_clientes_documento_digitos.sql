@@ -1,0 +1,229 @@
+-- =====================================================================
+-- Indice de expressao em clientes.documento, so os digitos
+-- =====================================================================
+--
+-- APLICADA em 07/09/2026, FORA DO FLUXO NORMAL DE MIGRATION.
+--
+-- !! NAO PROCURE ESTA MIGRATION EM supabase_migrations.schema_migrations: ela NAO
+-- !! esta la, e isso e esperado. `CREATE INDEX CONCURRENTLY` nao roda dentro de
+-- !! bloco de transacao (SQLSTATE 25001), e o `apply_migration` envolve o SQL
+-- !! numa. Por isso o comando foi executado DIRETO NA CONEXAO, via `execute_sql`
+-- !! do MCP do Supabase, que — ao contrario do `apply_migration` — nao envolve o
+-- !! SQL em transacao. O repositorio e o unico registro de que ela existe.
+-- !!
+-- !! Quem for auditar o banco contra o repo vai notar a ausencia. Ela e
+-- !! deliberada, nao um esquecimento.
+--
+-- !! LEIA A SECAO "POR QUE NAO HA BLOCO DO": explica por que este arquivo nao tem
+-- !! assercao que aborta sozinha, e por que o caminho de aplicacao e outro.
+--
+-- O QUE
+-- -----
+-- Um unico indice, de expressao, sobre os digitos do documento:
+--
+--   regexp_replace(coalesce(documento,''), '\D', '', 'g')
+--
+-- Nao cria coluna, nao altera dado, nao mexe em grant, policy ou RLS.
+--
+-- POR QUE
+-- -------
+-- O cadastro online (Etapa 2) tem, no caminho publico, um passo obrigatorio:
+-- procurar o documento enviado em `clientes` para decidir entre "ja cadastrado"
+-- e "criar agora". Hoje esse passo e uma VARREDURA COMPLETA.
+--
+-- Medido em 07/09/2026:
+--
+--   linhas em public.clientes ......... 66.004
+--   tamanho da tabela ................. 80 MB
+--   indices existentes ................ 2  (clientes_pkey, clientes_id_cliente_key)
+--   indices que citam `documento` ..... 0
+--
+-- Tres consequencias, e a terceira e a que mais importa:
+--
+--   1. LENTIDAO. Seq scan de 80 MB a cada envio do formulario.
+--
+--   2. DoS BARATO. Num endpoint publico, cada requisicao custa uma varredura
+--      inteira. Rate limit ajuda, mas o custo unitario continua alto.
+--
+--   3. VAZAMENTO POR TEMPO. A Etapa 2 precisa que "ja cadastrado" e "cadastro
+--      novo" levem o MESMO tempo — senao da para descobrir se um CNPJ e cliente
+--      da Ideal so cronometrando a resposta. Um passo cuja duracao varia com o
+--      tamanho da tabela e com o cache do disco atrapalha justamente isso. Com
+--      indice, a busca vira alguns milissegundos e some do orcamento de tempo.
+--
+-- POR QUE INDICE DE EXPRESSAO, E NAO UM INDICE COMUM
+-- --------------------------------------------------
+-- `clientes.documento` guarda o CPF/CNPJ em formatos MISTOS — com e sem mascara,
+-- como o app foi gravando ao longo do tempo. Por isso o codigo compara sempre
+-- pelos digitos (`normalizeDocumentDigits`), e um indice comum sobre a coluna
+-- crua nunca seria usado por essa consulta.
+--
+-- O indice precisa ser sobre a MESMA expressao que a consulta usa, caractere por
+-- caractere, senao o planner o ignora em silencio. Quem escrever a busca na rota
+-- deve usar exatamente:
+--
+--   where regexp_replace(coalesce(documento,''), '\D', '', 'g') = :digitos
+--
+-- NAO E UNIQUE, de proposito
+-- --------------------------
+-- Ha 16 documentos repetidos em `clientes` hoje (levantamento de 31/08/2026).
+-- Um indice unique falharia na criacao, e transformar isso em unicidade e
+-- decisao de negocio separada — nao efeito colateral de um indice de desempenho.
+--
+-- POR QUE NAO HA BLOCO DO NESTE ARQUIVO
+-- -------------------------------------
+-- `CREATE INDEX CONCURRENTLY` NAO pode rodar dentro de bloco de transacao. Se
+-- rodar, o Postgres recusa com SQLSTATE 25001, "cannot run inside a transaction
+-- block".
+--
+-- Isso elimina o padrao das outras migrations deste projeto: um `do $entrada$`
+-- e um `do $saida$` cercando o comando. Bloco DO abre subtransacao, e a
+-- migration inteira roda numa transacao. Entao aqui as verificacoes ficam como
+-- SELECT, na secao abaixo, para rodar SEPARADAMENTE antes e depois — nao como
+-- assercao que aborta sozinha.
+--
+-- A troca e consciente e tem um custo: NAO ha garantia automatica. Se a
+-- verificacao posterior nao for rodada, um indice invalido passa despercebido.
+-- Por isso a secao "DEPOIS" abaixo nao e opcional.
+--
+-- ATENCAO AO APLICAR
+-- ------------------
+-- O `apply_migration` do MCP do Supabase envolve o SQL numa transacao. Se for
+-- esse o caminho, este arquivo VAI FALHAR com 25001 — sem criar nada, sem deixar
+-- indice invalido, sem tocar na tabela. A falha e limpa e diagnostica.
+--
+-- Havendo essa falha, ha duas saidas, e a escolha e do dono:
+--
+--   A) Rodar o comando fora de transacao: pelo SQL Editor do painel do Supabase,
+--      ou pelo `execute_sql` do MCP. E o caminho que preserva o CONCURRENTLY.
+--      FOI ESTE O CAMINHO USADO em 07/09/2026, pelo `execute_sql`. Anotado aqui
+--      porque a previsao original deste arquivo era de que so o painel serviria;
+--      o `execute_sql` tambem serve, e sem sair do fluxo de ferramentas.
+--
+--   B) Trocar por `create index` SEM concurrently. Constroi em transacao, mas
+--      pega ACCESS EXCLUSIVE em `clientes` durante a construcao — bloqueando
+--      leitura e escrita. Em 66 mil linhas e 80 MB, a construcao de um indice de
+--      expressao leva alguns segundos. E uma pausa curta, mas e uma pausa numa
+--      tabela que os atendentes usam o dia inteiro.
+--
+-- SE O CONCURRENTLY FALHAR NO MEIO
+-- --------------------------------
+-- Diferente da falha por transacao, uma falha durante a CONSTRUCAO deixa o
+-- indice criado e INVALIDO (`pg_index.indisvalid = false`). Indice invalido nao
+-- e usado pelo planner, mas E mantido atualizado a cada escrita — ou seja, custa
+-- sem servir. A verificacao (d) abaixo existe para pegar exatamente isso, e o
+-- conserto e o DROP do rodape seguido de nova tentativa.
+--
+-- Hoje ha ZERO indices invalidos no schema public, entao qualquer um que
+-- aparecer depois veio daqui.
+-- =====================================================================
+
+
+-- =====================================================================
+-- ANTES DE APLICAR — rodar como SELECT e conferir
+-- =====================================================================
+--
+-- (a) o indice ainda nao existe:
+--     select count(*) as ja_existe from pg_indexes
+--      where schemaname='public' and indexname='idx_clientes_documento_digitos';
+--     -- esperado: 0            (medido em 07/09/2026: 0)
+--
+-- (b) o tamanho do problema, para comparar depois:
+--     select count(*) as linhas,
+--            pg_size_pretty(pg_total_relation_size('public.clientes')) as tamanho,
+--            (select count(*) from pg_indexes
+--              where schemaname='public' and tablename='clientes') as indices
+--       from public.clientes;
+--     -- medido em 07/09/2026: 66.004 linhas | 80 MB | 2 indices
+--
+-- (c) nao ha indice invalido no schema, para que qualquer um que apareca depois
+--     seja atribuivel a esta migration:
+--     select count(*) as invalidos
+--       from pg_index i
+--       join pg_class c on c.oid = i.indexrelid
+--       join pg_namespace n on n.oid = c.relnamespace
+--      where n.nspname='public' and not i.indisvalid;
+--     -- esperado: 0            (medido em 07/09/2026: 0)
+
+
+-- ---------------------------------------------------------------------
+-- O COMANDO. Um so, e fora de qualquer transacao.
+-- ---------------------------------------------------------------------
+create index concurrently idx_clientes_documento_digitos
+  on public.clientes ((regexp_replace(coalesce(documento, ''), '\D', '', 'g')));
+
+comment on index public.idx_clientes_documento_digitos is
+  'Busca por CPF/CNPJ so pelos digitos. Existe porque clientes.documento guarda formatos mistos, com e sem mascara. A consulta precisa usar a MESMA expressao, senao o planner ignora o indice. Criado para o cadastro online: o passo de procurar duplicidade e publico e precisa ser rapido e de duracao estavel.';
+
+
+-- =====================================================================
+-- DEPOIS DE APLICAR — obrigatorio, nao opcional
+-- =====================================================================
+-- RODADAS EM 07/09/2026, logo apos a aplicacao. O resultado de cada uma esta
+-- anotado junto dela, como MEDIDO.
+--
+-- (d) O INDICE FICOU VALIDO? Esta e a verificacao que nao pode ser pulada.
+--     CONCURRENTLY que falha no meio deixa o indice criado e INVALIDO.
+--     select c.relname, i.indisvalid, i.indisready,
+--            pg_size_pretty(pg_relation_size(c.oid)) as tamanho
+--       from pg_index i
+--       join pg_class c on c.oid = i.indexrelid
+--       join pg_namespace n on n.oid = c.relnamespace
+--      where n.nspname='public' and c.relname='idx_clientes_documento_digitos';
+--     -- esperado: indisvalid = true  E  indisready = true
+--     -- indisvalid = false -> PARAR, rodar o DROP do rodape e reavaliar
+--     -- MEDIDO: indisvalid=true, indisready=true, indislive=true, 2056 kB. OK.
+--
+-- (e) nenhum indice invalido apareceu no schema:
+--     select count(*) from pg_index i
+--       join pg_class c on c.oid=i.indexrelid
+--       join pg_namespace n on n.oid=c.relnamespace
+--      where n.nspname='public' and not i.indisvalid;
+--     -- esperado: 0
+--     -- MEDIDO: 0. Igual ao de antes, entao nada invalido nasceu daqui.
+--
+-- (f) O PLANNER REALMENTE USA? Sem isto o indice e so peso morto.
+--     explain (analyze, buffers)
+--     select id_cliente from public.clientes
+--      where regexp_replace(coalesce(documento,''), '\D', '', 'g') = '33921425000192';
+--     -- esperado: Index Scan usando idx_clientes_documento_digitos
+--     -- se aparecer Seq Scan, a expressao da consulta divergiu da do indice
+--     -- MEDIDO: Bitmap Index Scan on idx_clientes_documento_digitos.
+--     --   documento EXISTENTE ..... 4 buffers, 0,121 ms
+--     --   documento INEXISTENTE ... 3 buffers, 0,108 ms
+--     --   a tabela tem 9.157 paginas, e era isso que a busca varria antes.
+--     --
+--     --   Os dois casos custam praticamente o mesmo, que e exatamente o ponto
+--     --   (3) do cabecalho: sem essa igualdade, cronometrar a resposta diria
+--     --   se o documento e cliente da Ideal.
+--
+--     RESSALVA, ESTIMATIVA AINDA GROSSA. O planner estima rows=330 onde o real
+--     e 0 ou 1. Indice de expressao so ganha estatistica propria depois de um
+--     ANALYZE, e ele nao foi rodado (nao estava autorizado). Isso NAO impede o
+--     uso do indice, como o plano acima mostra, e o autovacuum corrige sozinho.
+--     Se algum dia uma consulta com JOIN sobre esta expressao escolher um plano
+--     ruim, o conserto e um analyze em public.clientes.
+--
+-- (g) a contagem de linhas nao mudou (indice nao toca dado):
+--     select count(*) from public.clientes;   -- esperado: o mesmo de (b)
+--     -- MEDIDO: 66.004, identico ao de antes. A tabela foi de 80 MB para 82 MB,
+--     -- que e o tamanho do proprio indice (2.056 kB); nenhuma linha mudou.
+--
+--
+-- =====================================================================
+-- ROLLBACK
+-- =====================================================================
+-- Derrubar o indice nao afeta dado, FK, policy ou fluxo — so devolve a busca por
+-- documento ao seq scan. Tambem e o conserto de um CONCURRENTLY que falhou no
+-- meio e deixou o indice invalido.
+--
+-- Use CONCURRENTLY tambem no DROP, pelo mesmo motivo do CREATE: sem ele, o DROP
+-- pega ACCESS EXCLUSIVE em `clientes`.
+--
+--   drop index concurrently if exists public.idx_clientes_documento_digitos;
+--
+-- E, se o DROP CONCURRENTLY tambem esbarrar na transacao, a versao que trava a
+-- tabela por um instante:
+--
+--   drop index if exists public.idx_clientes_documento_digitos;
+-- =====================================================================
