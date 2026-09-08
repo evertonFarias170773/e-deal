@@ -17,7 +17,8 @@ import {
   Eye,
   ChevronDown,
   ExternalLink,
-  Printer
+  Printer,
+  Lock
 } from "lucide-react";
 import { ModeloMock, ArteStatus, ProducaoStatus } from "./types";
 import { getPropostaDetailById } from "@/features/orcamentos/services/orcamentos.service";
@@ -2253,14 +2254,39 @@ export function BoletimFormPage() {
                     <label className="text-sm font-bold text-blue-900 uppercase tracking-wider">Hora do Prazo</label>
                     <input
                       type="time"
+                      // Mesma trava da data: as duas sao a promessa de entrega e
+                      // andam juntas. A hora ficou de fora ate 08/09/2026, quando
+                      // a trigger do banco passou a recusar as duas — sem isto a
+                      // tela deixaria digitar para o save falhar depois.
+                      readOnly={lockDate}
+                      disabled={lockDate}
                       value={boletimHora}
                       onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBoletimHora(e.target.value)}
                       // O texto do input de hora é desenhado pelo próprio navegador e não
                       // herda o tamanho da classe: sem estilizar o ::-webkit-datetime-edit
                       // ele sai miúdo ao lado da Data Limite de Entrega.
-                      className="w-full h-11 rounded-2xl border-2 border-blue-300 bg-white px-4 text-xl font-bold font-mono text-blue-950 outline-none transition focus:border-blue-600 focus:ring-4 focus:ring-blue-100 [&::-webkit-datetime-edit]:text-xl [&::-webkit-datetime-edit]:font-bold [&::-webkit-datetime-edit]:font-mono [&::-webkit-datetime-edit]:text-blue-950 [&::-webkit-datetime-edit-fields-wrapper]:text-xl [&::-webkit-datetime-edit-hour-field]:text-blue-950 [&::-webkit-datetime-edit-minute-field]:text-blue-950 [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-70 [&::-webkit-calendar-picker-indicator]:hover:opacity-100"
+                      className={`w-full h-11 rounded-2xl border-2 px-4 text-xl font-bold font-mono outline-none transition [&::-webkit-datetime-edit]:text-xl [&::-webkit-datetime-edit]:font-bold [&::-webkit-datetime-edit]:font-mono [&::-webkit-datetime-edit-fields-wrapper]:text-xl [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-70 [&::-webkit-calendar-picker-indicator]:hover:opacity-100 ${
+                        lockDate
+                          ? "border-blue-200 bg-slate-100/80 text-slate-800 cursor-not-allowed [&::-webkit-datetime-edit]:text-slate-800"
+                          : "border-blue-300 bg-white text-blue-950 focus:border-blue-600 focus:ring-4 focus:ring-blue-100 [&::-webkit-datetime-edit]:text-blue-950 [&::-webkit-datetime-edit-hour-field]:text-blue-950 [&::-webkit-datetime-edit-minute-field]:text-blue-950"
+                      }`}
                     />
                   </div>
+
+                  {/* O MOTIVO, escrito. Campo cinza sem explicacao vira chamado
+                      de suporte: o operador acha que a tela quebrou. A trava que
+                      VALE e a do banco (trigger trg_prazo_exige_adm); esta aqui
+                      so evita digitar para o save falhar depois. */}
+                  {lockDate ? (
+                    <div className="md:col-span-2 flex items-start gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
+                      <Lock className="h-4 w-4 shrink-0 text-amber-700 mt-0.5" />
+                      <p className="text-xs font-semibold text-amber-900">
+                        Data e hora de entrega só podem ser alteradas por um administrador.
+                        Elas são a promessa feita ao cliente — peça a um ADM para ajustar,
+                        ou solicite a permissão <span className="font-mono">pedidos.edit_data</span> ao seu perfil.
+                      </p>
+                    </div>
+                  ) : null}
 
                   <div className="flex items-center gap-3 pt-8">
                     <input
