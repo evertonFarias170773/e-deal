@@ -239,6 +239,10 @@ export function mapSupabaseProdutoRowToProduto(
     valor_custo: pickNumber(raw, ["valor_custo"]) ?? 0,
     peso: pickNumber(raw, ["peso"]) ?? 0,
     prazo: pickText(raw, ["prazo"]),
+    // Sem `?? 0`, ao contrario de peso e dos valores: aqui a ausencia tem
+    // significado proprio — "sem prazo utilizavel" — e zero seria uma promessa
+    // de entrega no mesmo dia.
+    prazo_dias_uteis: pickNumber(raw, ["prazo_dias_uteis"]),
     nivelSeg: pickText(raw, ["nivelSeg"]) || "Não informado",
     fraseCons: pickText(raw, ["fraseCons"]),
     descricao: pickText(raw, ["descricao"]),

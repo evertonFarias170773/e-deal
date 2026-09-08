@@ -1155,6 +1155,8 @@ export async function getPropostaDetailById(idInt: number, overrideClient?: Supa
         valor_custo: 0,
         peso: item.peso_base ?? item.peso_uni ?? 0,
         prazo: "",
+        // Produto que nao existe mais no catalogo nao tem prazo a declarar.
+        prazo_dias_uteis: null,
         nivelSeg: "NORMAL",
         fraseCons: "",
         descricao: "",

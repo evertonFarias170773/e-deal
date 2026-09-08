@@ -126,7 +126,7 @@ export function ProdutoDetailPage({ produto: produtoInicial }: ProdutoDetailPage
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <SummaryCard title="Valor unitario" value={formatCurrency(produto.valorUnt)} description="Base para calculo de propostas." tone="success" icon={BadgeCheck} />
         <SummaryCard title="Valor fixo" value={formatCurrency(produto.valorFixo)} description="Setup ou valor minimo do produto." tone="info" icon={Package} />
-        <SummaryCard title="Prazo" value={produto.prazo} description="Prazo comercial usado em orcamentos." tone="warning" icon={Clock} />
+        <SummaryCard title="Prazo (dias uteis)" value={produto.prazo_dias_uteis?.toString() ?? "—"} description="Numero que o sistema usa para contar o prazo. Traco = nao definido." tone="warning" icon={Clock} />
         <SummaryCard title="Peso" value={formatWeightFromGrams(produto.peso)} description="Base futura para calculo de frete." tone="neutral" icon={Scale} />
       </section>
 

@@ -12,6 +12,7 @@ export type SupabaseProdutoRow = {
   valor_custo?: SupabaseValue;
   peso?: SupabaseValue;
   prazo?: SupabaseValue;
+  prazo_dias_uteis?: SupabaseValue;
   nivelSeg?: SupabaseValue;
   fraseCons?: SupabaseValue;
   descricao?: SupabaseValue;

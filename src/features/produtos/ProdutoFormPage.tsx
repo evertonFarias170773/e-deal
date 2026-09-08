@@ -572,6 +572,9 @@ export function ProdutoFormPage({ mode, produto, duplicarDe }: ProdutoFormPagePr
       nivelSeg: form.nivelSeg,
       fraseCons: form.fraseCons,
       prazo: form.prazo,
+      // Campo vazio grava NULL. `Number("")` seria 0 — uma promessa de entrega
+      // no mesmo dia que ninguem fez.
+      prazo_dias_uteis: form.prazo_dias_uteis.trim() ? Number(form.prazo_dias_uteis) : null,
       peso: parseDecimalInput(form.peso),
       valorUnt: parseDecimalInput(form.valorUnt),
       valorFixo: parseDecimalInput(form.valorFixo),
@@ -819,7 +822,7 @@ export function ProdutoFormPage({ mode, produto, duplicarDe }: ProdutoFormPagePr
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <StatusCard title="Codigo" value={`#${form.id_produto || "novo"}`} />
         <StatusCard title="Valor unitario" value={formatCurrency(Number(form.valorUnt) || 0)} />
-        <StatusCard title="Prazo" value={form.prazo || "Nao definido"} />
+        <StatusCard title="Prazo (dias uteis)" value={form.prazo_dias_uteis || "—"} />
         <StatusCard title="Fotos / variacoes" value={`${form.fotos.length} / ${form.variacoes.length}`} />
       </section>
 
@@ -970,8 +973,26 @@ export function ProdutoFormPage({ mode, produto, duplicarDe }: ProdutoFormPagePr
           <Field label="Peso (g)">
             <input type="text" inputMode="decimal" value={form.peso} onChange={(event) => updateField("peso", event.target.value)} className={getInputClass(errorFields.includes("peso"))} placeholder="177" />
           </Field>
-          <Field label="Prazo">
+          <Field label="Prazo em dias uteis">
+            <input
+              type="number"
+              min="1"
+              step="1"
+              inputMode="numeric"
+              value={form.prazo_dias_uteis}
+              onChange={(event) => updateField("prazo_dias_uteis", event.target.value)}
+              className={getInputClass(errorFields.includes("prazo_dias_uteis"))}
+              placeholder="3"
+            />
+            <span className="block text-[11px] font-normal normal-case tracking-normal text-slate-500">
+              E este que o sistema vai usar para contar o prazo. Vazio = sem prazo definido.
+            </span>
+          </Field>
+          <Field label="Prazo (texto livre)">
             <input value={form.prazo} onChange={(event) => updateField("prazo", event.target.value)} className={getInputClass(errorFields.includes("prazo"))} placeholder="3 dias uteis" />
+            <span className="block text-[11px] font-normal normal-case tracking-normal text-slate-500">
+              Descricao que aparece em orcamento. Nao e usada para calcular data.
+            </span>
           </Field>
           <Toggle label="Produto de prateleira" checked={form.is_estoque} onChange={(value) => updateField("is_estoque", value)} />
           <Toggle label="Possui variacoes" checked={form.is_variacao} onChange={(value) => updateField("is_variacao", value)} />
@@ -1497,6 +1518,9 @@ function createInitialState(produto?: Produto): ProdutoFormState {
     informacoes_fiscais: produto?.informacoes_fiscais ?? "",
     peso: produto?.peso.toString() ?? "0",
     prazo: produto?.prazo ?? "",
+    // Sem `?? "0"` como o peso: nulo no banco tem que voltar como campo VAZIO,
+    // senao editar um produto sem prazo gravaria 0 sem ninguem pedir.
+    prazo_dias_uteis: produto?.prazo_dias_uteis?.toString() ?? "",
     nivelSeg: produto?.nivelSeg ?? "medio",
     fraseCons: produto?.fraseCons ?? "",
     descricao: produto?.descricao ?? "",

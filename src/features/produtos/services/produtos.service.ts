@@ -38,6 +38,7 @@ type ProdutoWriteField =
   | "nivelSeg"
   | "fraseCons"
   | "prazo"
+  | "prazo_dias_uteis"
   | "peso"
   | "valorUnt"
   | "valorFixo"
@@ -107,6 +108,7 @@ export const PRODUTOS_INSERT_FIELD_WHITELIST = [
   "nivelSeg",
   "fraseCons",
   "prazo",
+  "prazo_dias_uteis",
   "peso",
   "valorUnt",
   "valorFixo",
@@ -146,6 +148,7 @@ export const PRODUTOS_UPDATE_FIELD_WHITELIST = [
   "nivelSeg",
   "fraseCons",
   "prazo",
+  "prazo_dias_uteis",
   "peso",
   "valorUnt",
   "valorFixo",
@@ -189,6 +192,7 @@ export const PRODUTOS_SELECT = [
   "valorFixo",
   "peso",
   "prazo",
+  "prazo_dias_uteis",
   "nivelSeg",
   "fraseCons",
   "descricao",
@@ -249,13 +253,17 @@ function normalizeProdutoWriteValue(field: ProdutoWriteField, value: ProdutoWrit
     return parseDecimalInput(String(value));
   }
 
+  // Campos INTEIROS. Ficar de fora desta lista nao da erro visivel: o valor cai
+  // no fallback de texto do fim da funcao e sobe como STRING para uma coluna
+  // integer. `prazo_dias_uteis` entrou aqui por isso.
   if (
     field === "id_produto" ||
     field === "cod_origem" ||
     field === "id_formato" ||
     field === "id_modelo_cor" ||
     field === "quantidade_minima_venda" ||
-    field === "id_gabarito"
+    field === "id_gabarito" ||
+    field === "prazo_dias_uteis"
   ) {
     if (typeof value === "string" && !value.trim()) {
       return null;

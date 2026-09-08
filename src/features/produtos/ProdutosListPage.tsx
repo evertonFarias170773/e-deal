@@ -391,8 +391,10 @@ export function ProdutosListPage() {
             align: "right"
           },
           {
-            header: "Prazo",
-            cell: (produto) => produto.prazo,
+            header: "Prazo (dias uteis)",
+            // Traco quando nulo, e nao o texto de `prazo`: cair no texto
+            // esconderia que o campo numerico esta vazio.
+            cell: (produto) => produto.prazo_dias_uteis ?? "—",
             align: "center"
           },
           {
@@ -429,7 +431,7 @@ export function ProdutosListPage() {
                 Unit.: <strong className="text-slate-900">{formatCurrency(produto.valorUnt)}</strong>
               </p>
               <p>Fixo: {formatCurrency(produto.valorFixo)}</p>
-              <p>Prazo: {produto.prazo}</p>
+              <p>Prazo: {produto.prazo_dias_uteis ?? "—"} {produto.prazo_dias_uteis ? "dias uteis" : ""}</p>
               <p>Fotos: {produto.fotos.length} | Variacoes: {produto.is_variacao ? "Sim" : "Nao"} | Prateleira: {produto.is_estoque ? "Sim" : "Nao"}</p>
             </div>
             <div className="mt-4 flex items-center justify-between gap-3">

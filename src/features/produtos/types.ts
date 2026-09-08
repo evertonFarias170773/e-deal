@@ -52,6 +52,17 @@ export type Produto = {
   valor_custo: number;
   peso: number;
   prazo: string;
+  /**
+   * Prazo de producao em DIAS UTEIS (public.produtos.prazo_dias_uteis).
+   *
+   * Nulo e valor legitimo: significa "sem prazo utilizavel", nao zero. 11 dos 79
+   * produtos estao assim em producao — 10 sem cadastro e 1 com texto ambiguo.
+   *
+   * Convive com `prazo`, que continua sendo texto livre e continua sendo a fonte
+   * de todas as leituras atuais, inclusive de prazo-producao.ts. A troca da fonte
+   * e rodada propria.
+   */
+  prazo_dias_uteis: number | null;
   nivelSeg: ProdutoNivelSeguranca;
   fraseCons: string;
   descricao: string;
@@ -116,6 +127,8 @@ export type ProdutoFormState = {
   informacoes_fiscais: string;
   peso: string;
   prazo: string;
+  /** String porque vem de `<input>`. Vazio = nulo no banco, nunca zero. */
+  prazo_dias_uteis: string;
   nivelSeg: ProdutoNivelSeguranca;
   fraseCons: string;
   descricao: string;

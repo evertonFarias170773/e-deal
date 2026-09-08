@@ -64,6 +64,7 @@ export const fotosProdutosMock: ProdutoFoto[] = [
 type ProdutoMockBase = Omit<
   Produto,
   | "created_at"
+  | "prazo_dias_uteis"
   | "is_multiplo"
   | "cod_beneficio"
   | "ncm"
@@ -232,6 +233,7 @@ const baseProdutos: ProdutoMockBase[] = [
 export const produtosMock: Produto[] = baseProdutos.map((produto) => ({
   ...produto,
   created_at: null,
+  prazo_dias_uteis: null,
   is_multiplo: false,
   cod_beneficio: "",
   ncm: "",
