@@ -2,8 +2,17 @@
 -- CANCELADO deixa de voltar ao fluxo sozinho
 -- =====================================================================
 --
--- !! ESTA MIGRATION AINDA NAO FOI APLICADA. Escrita em 08/09/2026 para
--- !! leitura e aprovacao antes de rodar.
+-- APLICADA em 08/09/2026, registrada como 20260908180726.
+--
+-- !! A PRIMEIRA TENTATIVA DE APLICAR ABORTOU, e o motivo vale ficar aqui:
+-- !! `substring(x from padrao)` com GRUPO CAPTURANTE devolve SO O GRUPO, nao o
+-- !! trecho casado. Com `(.|\n)*?` as assercoes recebiam um unico espaco — a
+-- !! de entrada passava sempre, inclusive se CANCELADO ja estivesse na lista, e
+-- !! a de saida foi quem denunciou. Os quatro recortes usam `(?:...)` desde
+-- !! entao.
+-- !!
+-- !! A assercao de entrada estava passando pelo motivo ERRADO. Quem escrever
+-- !! outra assercao com `substring`, confira o que ela recebe antes de confiar.
 --
 -- O QUE
 -- -----
@@ -169,17 +178,24 @@ begin
   --
   -- O recorte pega o bloco entre "in (" e o ") then" que o fecha — e so ali
   -- que a lista de status protegidos vive.
-  v_guarda := substring(v_ddl_int from 'in \(\s*''REVISAO ATENDENTE''(.|\n)*?\) then');
-  if v_guarda is null then
-    raise exception 'ABORTADO: nao localizei a guarda inicial na sobrecarga integer.';
+  --
+  -- O grupo e NAO CAPTURANTE `(?:...)` de proposito. `substring(x from padrao)`
+  -- com grupo capturante devolve SO O GRUPO, nao o trecho casado: com
+  -- `(.|\n)*?`
+  -- esta assercao recebia um unico espaco e passava sempre, inclusive se
+  -- CANCELADO ja estivesse na lista. Passou por acidente na primeira tentativa
+  -- de aplicar, em 08/09/2026, e a de saida foi quem denunciou.
+  v_guarda := substring(v_ddl_int from 'in \(\s*''REVISAO ATENDENTE''(?:.|\n)*?\) then');
+  if v_guarda is null or v_guarda !~ 'RECEBIDO' then
+    raise exception 'ABORTADO: nao localizei a guarda inicial completa na sobrecarga integer.';
   end if;
   if v_guarda ~ 'CANCELADO' then
     raise exception 'ABORTADO: CANCELADO JA esta na guarda inicial da sobrecarga integer. Estado inesperado.';
   end if;
 
-  v_guarda := substring(v_ddl_big from 'in \(\s*''REVISAO ATENDENTE''(.|\n)*?\) then');
-  if v_guarda is null then
-    raise exception 'ABORTADO: nao localizei a guarda inicial na sobrecarga bigint.';
+  v_guarda := substring(v_ddl_big from 'in \(\s*''REVISAO ATENDENTE''(?:.|\n)*?\) then');
+  if v_guarda is null or v_guarda !~ 'RECEBIDO' then
+    raise exception 'ABORTADO: nao localizei a guarda inicial completa na sobrecarga bigint.';
   end if;
   if v_guarda ~ 'CANCELADO' then
     raise exception 'ABORTADO: CANCELADO JA esta na guarda inicial da sobrecarga bigint. Estado inesperado.';
@@ -474,12 +490,12 @@ begin
   --     O recorte e o mesmo da assercao de entrada: o bloco entre "in (" e o
   --     ") then". Procurar CANCELADO no DDL inteiro nao serviria — ele ja
   --     aparece nas duas checagens antigas mais abaixo.
-  v_guarda := substring(v_ddl_int from 'in \(\s*''CANCELADO''(.|\n)*?\) then');
+  v_guarda := substring(v_ddl_int from 'in \(\s*''CANCELADO''(?:.|\n)*?\) then');
   if v_guarda is null or v_guarda !~ 'REVISAO ATENDENTE' or v_guarda !~ 'RECEBIDO' then
     raise exception 'ABORTADO: CANCELADO nao ficou na guarda inicial da sobrecarga integer.';
   end if;
 
-  v_guarda := substring(v_ddl_big from 'in \(\s*''CANCELADO''(.|\n)*?\) then');
+  v_guarda := substring(v_ddl_big from 'in \(\s*''CANCELADO''(?:.|\n)*?\) then');
   if v_guarda is null or v_guarda !~ 'REVISAO ATENDENTE' or v_guarda !~ 'RECEBIDO' then
     raise exception 'ABORTADO: CANCELADO nao ficou na guarda inicial da sobrecarga bigint.';
   end if;
