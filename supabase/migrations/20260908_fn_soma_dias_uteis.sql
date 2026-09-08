@@ -86,29 +86,33 @@
 -- ============================================================================
 -- ACL DA FUNCAO — para LER antes de aplicar. Nenhum comando aqui e executado.
 -- ============================================================================
---   Esta migration NAO emite GRANT nem REVOKE, por instrucao. O que segue e o
---   ACL PREVISTO, deduzido do que as funcoes vizinhas de `public` ja tem
---   (medido em 08/09/2026):
+--   Esta migration NAO emite GRANT nem REVOKE, por instrucao.
+--
+--   ACL REAL, medido DEPOIS de aplicar em 08/09/2026:
+--
+--     soma_dias_uteis -> PUBLIC, authenticated, postgres, service_role
+--
+--   E o ACL das funcoes vizinhas, medido ANTES, que serviu de previsao:
 --
 --     duplicar_produto     -> PUBLIC, anon, authenticated, postgres, service_role
 --     match_documents      -> PUBLIC, anon, authenticated, postgres, service_role
 --     link_cliente_pedido  ->         anon, authenticated, postgres, service_role
 --
---   Ou seja: funcao nova em `public` nasce executavel por todo mundo, incluindo
---   `anon` e PUBLIC. Duas fontes se somam — o default do proprio Postgres, que
---   concede EXECUTE a PUBLIC em toda funcao nova, e o `pg_default_acl` do
---   Supabase, que concede a anon/authenticated/service_role.
+--   A PREVISAO ERROU num ponto, e o erro e a favor: `anon` NAO ganhou grant
+--   explicito. As vizinhas tem porque nasceram por outro caminho — o
+--   `pg_default_acl` de `supabase_admin` concede a `anon`, o de `postgres` nao,
+--   e `apply_migration` roda como `postgres`.
 --
---   E POR ISSO QUE `REVOKE ... FROM PUBLIC` NAO BASTA: tirar de PUBLIC deixa o
---   grant EXPLICITO a `anon` de pe. Fechar de verdade exigiria os dois:
+--   Entao aqui `anon` so alcanca a funcao por ser membro de PUBLIC, e um
+--   `REVOKE ... FROM PUBLIC` sozinho JA FECHA — ao contrario do que vale para as
+--   vizinhas, onde o grant explicito a `anon` sobreviveria ao revoke:
 --
 --     revoke execute on function public.soma_dias_uteis(date, integer) from public;
---     revoke execute on function public.soma_dias_uteis(date, integer) from anon;
 --
---   NENHUM DOS DOIS FOI EXECUTADO, e a decisao e do dono. O contexto para
---   decidir: hoje `anon` que chamar a funcao ja recebe erro 42501 ao tocar em
---   `feriados`, entao o EXECUTE aberto nao vaza calendario nem prazo. O que ele
---   permite e gastar CPU do banco — a funcao e um laco.
+--   NAO FOI EXECUTADO, e a decisao e do dono. O contexto para decidir: hoje
+--   `anon` que chamar a funcao ja recebe erro 42501 ao tocar em `feriados`,
+--   entao o EXECUTE aberto nao vaza calendario nem prazo. O que ele permite e
+--   gastar CPU do banco — a funcao e um laco.
 --
 -- ============================================================================
 -- O CALENDARIO TERMINA EM 2027 — e a funcao nao avisa em runtime
@@ -138,9 +142,13 @@
 --     2026-09-04 (sexta) + 1 -> 05 e 06 fds, 07 Independencia -> 2026-09-08
 --     2027-03-25 (quinta) + 2 -> 26 Paixao, 27 e 28 fds, 29 = 1, 30 = 2
 --                             -> 2027-03-30
+--     2026-12-23 (quarta) + 3 -> 24 conta 1, 25 Natal, 26 e 27 fds,
+--                                28 = 2, 29 = 3 -> 2026-12-29
 --
---   A terceira conta de referencia esta PENDENTE DE DECISAO — ver a assercao
---   (5c) comentada la embaixo, e o motivo logo abaixo dela.
+--   A VESPERA DE NATAL CONTA. 24/12 nao esta em public.feriados, e ponto
+--   facultativo nao entra neste calendario — decisao do dono em 08/09/2026.
+--   Quem esperar 2026-12-30 esta contando a vespera como folga, e isso seria
+--   mudanca no CALENDARIO, nao nesta funcao.
 -- ============================================================================
 
 do $migration$
@@ -148,6 +156,7 @@ declare
   v_existe      bigint;
   v_a           date;
   v_b           date;
+  v_c           date;
   v_zero        date;
   v_nulo_dias   date;
   v_nulo_base   date;
@@ -293,42 +302,20 @@ begin
     raise exception 'SAIDA (5b): soma_dias_uteis(2027-03-25, 2) deveria ser 2027-03-30, veio %', v_b;
   end if;
 
-  -- ------------------------------------------------------------------------
-  -- (5c) PENDENTE DE DECISAO DO DONO — NAO ATIVAR SEM CONFIRMACAO
-  -- ------------------------------------------------------------------------
-  -- A especificacao pediu que soma_dias_uteis('2026-12-23', 3) fosse
-  -- '2026-12-30', "pulando 25/12 e fim de semana". Pela regra escrita nesta
-  -- funcao o resultado e '2026-12-29'. A diferenca esta em 24/12:
+  -- (5c) quarta + 3 uteis, atravessando o Natal. A vespera CONTA — 24/12 nao
+  --      esta em public.feriados, e ponto facultativo nao entra no calendario:
   --
   --   2026-12-23  quarta  <- base, nao conta
-  --   2026-12-24  QUINTA  <- dia util pela regra: nao e fim de semana e NAO esta
-  --                          em public.feriados. Conta como 1.
+  --   2026-12-24  quinta  <- conta 1
   --   2026-12-25  sexta   <- Natal, esta na tabela. Pula.
   --   2026-12-26  sabado  <- pula
   --   2026-12-27  domingo <- pula
   --   2026-12-28  segunda <- conta 2
-  --   2026-12-29  terca   <- conta 3  => RESULTADO 2026-12-29
-  --   2026-12-30  quarta  <- so seria o terceiro se 24/12 nao contasse
-  --
-  -- Ou seja: '2026-12-30' e a resposta certa se a vespera de Natal NAO for dia
-  -- util. Isso e plausivel como pratica da fabrica, mas hoje 24/12 nao esta em
-  -- public.feriados e a rodada que criou a tabela proibiu ponto facultativo
-  -- explicitamente. As duas coisas nao podem valer ao mesmo tempo.
-  --
-  -- Sao caminhos diferentes, e a escolha e do dono:
-  --   (i)  a conta esperada estava errada -> ativar a assercao com 2026-12-29;
-  --   (ii) 24/12 realmente nao se trabalha -> cadastrar a vespera em
-  --        public.feriados (migration propria) e ativar com 2026-12-30. Isso
-  --        muda o calendario, nao esta funcao.
-  --
-  -- Nao gravei nenhuma das duas como fato. Descomente a linha certa depois de
-  -- decidir:
-  --
-  --   v_c := public.soma_dias_uteis('2026-12-23', 3);
-  --   if v_c is distinct from date '2026-12-29' then   -- caminho (i)
-  --     raise exception 'SAIDA (5c): esperado 2026-12-29, veio %', v_c;
-  --   end if;
-  -- ------------------------------------------------------------------------
+  --   2026-12-29  terca   <- conta 3  => 2026-12-29
+  v_c := public.soma_dias_uteis('2026-12-23', 3);
+  if v_c is distinct from date '2026-12-29' then
+    raise exception 'SAIDA (5c): soma_dias_uteis(2026-12-23, 3) deveria ser 2026-12-29, veio %', v_c;
+  end if;
 
   -- (5d) zero e ausencia de prazo, nao entrega no mesmo dia.
   v_zero := public.soma_dias_uteis('2026-09-08', 0);
@@ -365,8 +352,7 @@ begin
   end if;
 
   raise notice 'SAIDA OK: public.soma_dias_uteis criada, STABLE, SECURITY INVOKER, search_path fixado';
-  raise notice 'SAIDA OK: 5a=% 5b=% / zero, nulos e negativo devolvem NULL', v_a, v_b;
-  raise notice 'PENDENTE: a assercao 5c (2026-12-23 + 3) esta comentada aguardando decisao sobre 24/12';
+  raise notice 'SAIDA OK: 5a=% 5b=% 5c=% / zero, nulos e negativo devolvem NULL', v_a, v_b, v_c;
 end
 $migration$;
 
