@@ -34,10 +34,16 @@ export interface BoletimSetor {
   hora: string | null;
   fase: FaseSetor;
   conferencia: ConferenciaSetor;
+  /**
+   * `propostas_os_setores.impresso_em` — quando o PDF deste setor saiu pela
+   * última vez. Nulo = nunca impresso, e é o que separa a primeira impressão
+   * (gera tudo direto) da reimpressão (pergunta o que gerar).
+   */
+  impressoEm: string | null;
 }
 
 const BOLETIM_SELECT =
-  "id, id_int, setor, prazo, hora, status_producao, peso_real_kg, qtd_volumes, tipo_volume, responsavel_conferencia, created_at";
+  "id, id_int, setor, prazo, hora, status_producao, peso_real_kg, qtd_volumes, tipo_volume, responsavel_conferencia, created_at, impresso_em";
 
 /** Número vindo de input: aceita vírgula decimal; vazio vira null. */
 function numeroOuNulo(valor: string | undefined): number | null {
@@ -59,6 +65,7 @@ function mapBoletim(row: Record<string, unknown>): BoletimSetor {
     prazo: row.prazo ? String(row.prazo).slice(0, 10) : null,
     hora: row.hora ? String(row.hora).slice(0, 5) : null,
     fase: normalizarFaseSetor(row.status_producao as string | null),
+    impressoEm: typeof row.impresso_em === "string" ? row.impresso_em : null,
     conferencia: {
       peso_real: textoDeNumero(row.peso_real_kg),
       qtd_volumes: textoDeNumero(row.qtd_volumes),
@@ -117,6 +124,39 @@ export interface SalvarBoletimInput {
 export type SalvarBoletimResult =
   | { success: true; boletim: BoletimSetor }
   | { success: false; error: string };
+
+/**
+ * Carimba que o PDF deste setor foi gerado agora.
+ *
+ * UPDATE PRÓPRIO, E ISSO É OBRIGATÓRIO. A trava de ADM desta tabela é
+ * `BEFORE UPDATE OF prazo, hora` — o `UPDATE OF` só dispara em instrução que
+ * MENCIONA aquelas colunas. Gravar `impresso_em` sozinho não dispara nada e não
+ * exige permissão nenhuma, que é o certo: quem imprime é a produção, e produção
+ * não é ADM.
+ *
+ * Juntar este carimbo a um update de prazo/hora faria a trigger disparar e
+ * transformaria imprimir em privilégio de administrador. Verificado no banco em
+ * 08/09/2026: com um vendedor, `set impresso_em` passa e
+ * `set impresso_em, hora` é recusado com 42501.
+ *
+ * NÃO BLOQUEIA A IMPRESSÃO se falhar. O PDF já foi gerado quando isto roda —
+ * derrubar a impressão porque o carimbo não gravou seria trocar o serviço pelo
+ * registro dele. O efeito de falhar é o modal tratar a próxima como primeira
+ * impressão, que é degradação aceitável.
+ */
+export async function registrarImpressaoDoSetor(idBoletim: string): Promise<void> {
+  const client = getSupabaseClient();
+  if (!client || !idBoletim) return;
+
+  const { error } = await client
+    .from("propostas_os_setores")
+    .update({ impresso_em: new Date().toISOString() })
+    .eq("id", idBoletim);
+
+  if (error) {
+    console.warn("[BoletimSetoresService] PDF gerado, mas o carimbo de impressao nao gravou:", error.message);
+  }
+}
 
 /**
  * Espelha prazo e hora em TODAS as linhas de setor do pedido.

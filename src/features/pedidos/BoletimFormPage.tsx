@@ -25,6 +25,7 @@ import { getPropostaDetailById } from "@/features/orcamentos/services/orcamentos
 import type { Proposta } from "@/features/orcamentos/types";
 import { calcularDataLimitePorProdutos } from "./prazo-producao";
 import { horaPorCategoriaFrete } from "./hora-entrega";
+import { GerarPdfBoletimModal } from "./components/GerarPdfBoletimModal";
 import {
   listarPropostasLiberadasParaBoletim,
   buscarPropostasLiberadasParaBoletim,
@@ -257,6 +258,14 @@ export function BoletimFormPage() {
   const [boletimId, setBoletimId] = useState<string | null>(null);
   const [boletimSetor, setBoletimSetor] = useState("");
   const [boletimHora, setBoletimHora] = useState("");
+  /**
+   * A pergunta "gerar os PDF agora?" depois de salvar. Guarda os boletins
+   * RECÉM-RECARREGADOS: `boletins` no estado ainda é o de antes do save, e é
+   * deles que sai tanto o total de setores quanto o `impresso_em` que decide
+   * entre primeira impressão e reimpressão.
+   */
+  const [modalPdf, setModalPdf] = useState<{ boletins: BoletimSetor[] } | null>(null);
+  const [gerandoPdf, setGerandoPdf] = useState(false);
   const [urgente, setUrgente] = useState(false);
   const [formaPagamento, setFormaPagamento] = useState("Pix a vista");
   
@@ -970,6 +979,48 @@ export function BoletimFormPage() {
     );
   }
 
+  /**
+   * As saídas do modal de impressão. Todas fecham o modal e levam para a lista —
+   * o destino que o save já tinha antes de a pergunta existir.
+   *
+   * `baixarPdfOs` é o mesmo caminho de `baixarTodosOsBoletins`: download em vez
+   * de aba, porque N abas seriam bloqueadas depois da primeira. O carimbo de
+   * `impresso_em` sai de dentro dele, então vale igual para os dois botões.
+   */
+  async function gerarPdfDoModal(quais: BoletimSetor[]) {
+    if (gerandoPdf || !idIntParam) return;
+    setGerandoPdf(true);
+
+    const falhas: string[] = [];
+    for (const b of quais) {
+      const r = await baixarPdfOs(Number(idIntParam), b.id, b.setor, "completo");
+      if (!r.success) falhas.push(`${b.setor || "sem setor"}: ${r.errorMessage || "erro"}`);
+    }
+
+    setGerandoPdf(false);
+    setModalPdf(null);
+    showToast(
+      falhas.length === 0
+        ? {
+            type: "success",
+            title: quais.length > 1 ? "PDFs gerados" : "PDF gerado",
+            description:
+              quais.length > 1
+                ? `${quais.length} boletins baixados, um por setor. Voltando para a lista.`
+                : "Boletim baixado. Voltando para a lista."
+          }
+        : { type: "error", title: "Falha em parte dos PDFs", description: falhas.join(" | ") }
+    );
+    window.setTimeout(() => router.push("/pedidos"), 900);
+  }
+
+  /** "Agora não": o boletim já está salvo, então isto é saída normal, não cancelamento. */
+  function fecharModalPdf() {
+    if (gerandoPdf) return;
+    setModalPdf(null);
+    router.push("/pedidos");
+  }
+
   async function handleConfirmarRevisao() {
     if (confirmandoRevisao || revisaoLiberada || !idIntParam) return;
     setConfirmandoRevisao(true);
@@ -1573,20 +1624,31 @@ export function BoletimFormPage() {
         showToast({
           type: "success",
           title: "Boletim salvo",
-          description: "Orientações e especificações técnicas gravadas. Voltando para a lista de Produção."
+          description: "Orientações e especificações técnicas gravadas."
         });
 
         // Recarrega os boletins para a aba recém-criada deixar de ser "a abrir".
+        let atualizados = boletins;
         if (idIntParam) {
-          const atualizados = await listarBoletinsDaProposta(Number(idIntParam));
+          atualizados = await listarBoletinsDaProposta(Number(idIntParam));
           setBoletins(atualizados);
           const desteSetor = atualizados.find((b) => normalizarSetor(b.setor) === normalizarSetor(setorEfetivo));
           if (desteSetor) setBoletimId(desteSetor.id);
         }
 
-        // Mesmo compasso da confirmação de revisão: o toast aparece antes de a
-        // navegação trocar a tela.
-        window.setTimeout(() => router.push("/pedidos"), 900);
+        /**
+         * A PERGUNTA VEM ANTES DA VOLTA (09/2026).
+         *
+         * Até aqui o save empurrava para `/pedidos` depois de 900ms, e imprimir
+         * era um segundo trabalho: voltar à lista, achar o pedido de novo,
+         * reabrir. Agora o modal pergunta enquanto o operador ainda está no
+         * contexto — e o "Agora não" leva para a lista, que é o destino de antes.
+         *
+         * `atualizados` e não `boletins`: o estado só recebe o valor novo no
+         * próximo render, e é do recarregado que sai o `impresso_em` que decide
+         * entre primeira impressão e reimpressão.
+         */
+        setModalPdf({ boletins: atualizados });
       } catch (error) {
         console.error("Erro ao processar atualização do boletim:", error);
         showToast({
@@ -3167,6 +3229,30 @@ export function BoletimFormPage() {
       )}
       </>
       )}
+
+      {/* A pergunta depois de salvar. Fora do bloco de edição de propósito: ela
+          vale para o formulário inteiro, e o `modalPdf` só existe depois do save. */}
+      {modalPdf ? (
+        <GerarPdfBoletimModal
+          // Reimpressão quando QUALQUER setor do pedido já saiu impresso — o
+          // pedido é um só, e reimprimir um setor de um pedido já impresso não é
+          // primeira impressão.
+          jaImpresso={modalPdf.boletins.some((b) => Boolean(b.impressoEm))}
+          setorEditado={setorEfetivo || boletimSetor || null}
+          totalSetores={modalPdf.boletins.length}
+          gerando={gerandoPdf}
+          onGerarTodos={() => void gerarPdfDoModal(modalPdf.boletins)}
+          onGerarSetorEditado={() => {
+            const doSetor = modalPdf.boletins.filter(
+              (b) => normalizarSetor(b.setor) === normalizarSetor(setorEfetivo || boletimSetor)
+            );
+            // Sem correspondência cai em todos, que é o comportamento seguro:
+            // gerar demais se vê e se descarta, gerar de menos passa batido.
+            void gerarPdfDoModal(doSetor.length > 0 ? doSetor : modalPdf.boletins);
+          }}
+          onFechar={fecharModalPdf}
+        />
+      ) : null}
     </form>
   );
 }

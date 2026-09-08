@@ -1,5 +1,6 @@
 import { getSupabaseClient } from "@/lib/supabase/client";
 import { nomeArquivoOs } from "./os-nome-arquivo";
+import { registrarImpressaoDoSetor } from "./boletim-setores.service";
 
 /**
  * Abre o PDF da OS gerado on-demand pela rota autenticada /api/pedidos/imprimir-os.
@@ -83,6 +84,9 @@ export async function baixarPdfOs(
     document.body.appendChild(anchor);
     anchor.click();
     anchor.remove();
+    // Carimba DEPOIS do PDF sair: o registro é consequência da impressão, e uma
+    // falha aqui não pode derrubar o que já foi entregue ao usuário.
+    if (idBoletim) await registrarImpressaoDoSetor(idBoletim);
     return { success: true };
   } catch (e) {
     return {
@@ -111,45 +115,51 @@ export async function abrirPdfOs(
   // Aberta de forma síncrona no gesto do usuário — não move para depois de um await.
   const win = typeof window !== "undefined" ? window.open(url, "_blank") : null;
 
-  if (!win) {
-    // Popup bloqueado: cai no download programático, que também respeita o nome.
-    try {
-      const client = getSupabaseClient();
-      const sessionResult = client ? await client.auth.getSession() : null;
-      const token = sessionResult?.data?.session?.access_token;
-      if (!token) {
-        return { success: false, errorMessage: "Sessão expirada. Faça login novamente." };
-      }
-
-      const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-      if (!response.ok) {
-        let message = `Falha ao gerar o PDF (HTTP ${response.status}).`;
-        try {
-          const body = await response.json();
-          if (body?.message) message = String(body.message);
-        } catch {
-          // resposta sem JSON — mantém a mensagem genérica
-        }
-        return { success: false, errorMessage: message };
-      }
-
-      const blob = await response.blob();
-      const objectUrl = URL.createObjectURL(blob);
-      const anchor = document.createElement("a");
-      anchor.href = objectUrl;
-      anchor.download = nomeArquivo;
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
-      URL.revokeObjectURL(objectUrl);
-      return { success: true };
-    } catch (e) {
-      return {
-        success: false,
-        errorMessage: e instanceof Error ? e.message : "Erro inesperado ao gerar o PDF da OS."
-      };
-    }
+  if (win) {
+    // A aba já está a caminho; o carimbo vai depois, sem segurar o retorno.
+    // `idBoletim` nulo é o caminho legado da lista de OS, que imprime "o boletim
+    // mais recente" sem dizer qual — sem o id não há linha para carimbar, e
+    // adivinhar marcaria o setor errado.
+    if (idBoletim) await registrarImpressaoDoSetor(idBoletim);
+    return { success: true };
   }
 
-  return { success: true };
+  // Popup bloqueado: cai no download programático, que também respeita o nome.
+  try {
+    const client = getSupabaseClient();
+    const sessionResult = client ? await client.auth.getSession() : null;
+    const token = sessionResult?.data?.session?.access_token;
+    if (!token) {
+      return { success: false, errorMessage: "Sessão expirada. Faça login novamente." };
+    }
+
+    const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    if (!response.ok) {
+      let message = `Falha ao gerar o PDF (HTTP ${response.status}).`;
+      try {
+        const body = await response.json();
+        if (body?.message) message = String(body.message);
+      } catch {
+        // resposta sem JSON — mantém a mensagem genérica
+      }
+      return { success: false, errorMessage: message };
+    }
+
+    const blob = await response.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = objectUrl;
+    anchor.download = nomeArquivo;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(objectUrl);
+    if (idBoletim) await registrarImpressaoDoSetor(idBoletim);
+    return { success: true };
+  } catch (e) {
+    return {
+      success: false,
+      errorMessage: e instanceof Error ? e.message : "Erro inesperado ao gerar o PDF da OS."
+    };
+  }
 }
