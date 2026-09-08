@@ -441,7 +441,42 @@ export async function criarPedidoParaBoletim(
   }
 
   if (pedidosData && pedidosData.length > 0) {
-    return { success: true, id: String(pedidosData[0].id) };
+    const idExistente = String(pedidosData[0].id);
+
+    /**
+     * OS JÁ EXISTE — e é aqui que o prazo se perdia.
+     *
+     * Este retorno antecipado existe porque a função é idempotente de propósito:
+     * abrir o boletim de um segundo setor não pode exigir uma segunda OS. Mas
+     * até 08/09/2026 ele devolvia sucesso sem olhar para `input.data_termino`,
+     * então a data calculada era descartada em silêncio. É metade da explicação
+     * dos 18 pedidos com `data_termino` nulo e prazo de setor preenchido.
+     *
+     * SÓ GRAVA QUANDO A DATA FOI INFORMADA. `undefined` significa "esta chamada
+     * não trata de prazo" — as ações de impressão passam `undefined` quando não
+     * há prazo derivável — e sobrescrever com null ali apagaria promessa alheia.
+     * `null` explícito continua sendo valor legítimo e chega ao banco.
+     *
+     * O erro NÃO derruba a criação: a OS existe e é ela que o chamador precisa.
+     * Um prazo que não gravou é menos grave que um boletim que não abre — e a
+     * trava de ADM recusa exatamente por aqui quando alguém sem permissão tenta
+     * mudar uma data já prometida, que é o comportamento desejado.
+     */
+    if (input.data_termino !== undefined) {
+      const { error: erroPrazo } = await client
+        .from("propostas_os")
+        .update({ data_termino: input.data_termino || null })
+        .eq("id", idExistente);
+
+      if (erroPrazo) {
+        console.warn(
+          "[BoletimPropostasService] OS existente reaproveitada, mas a data de entrega não gravou:",
+          erroPrazo.message
+        );
+      }
+    }
+
+    return { success: true, id: idExistente };
   }
 
   // (Bloqueio de modelos removido aqui para permitir criação de OS retroativa. 
@@ -929,7 +964,17 @@ export async function atualizarOrientacoesBoletim(
       // OS não existe, vamos criar usando a lógica existente
       const cleanNumStr = paramStr.replace("#", "");
       const idInt = Number(cleanNumStr);
-      const createResult = await criarPedidoParaBoletim({ id_int: idInt, descricao: `Pedido #${idInt}`, obs: obsText });
+      // `data_termino` VAI JUNTO. Até 08/09/2026 esta chamada omitia o parâmetro
+      // que a própria função tinha acabado de receber, e a OS nascia sem prazo:
+      // o `dataTermino` era usado só no caminho de baixo, o da OS existente.
+      // Como este ramo retorna logo em seguida, a data se perdia em silêncio —
+      // ninguém via erro, e o PDF saía sem prazo de entrega.
+      const createResult = await criarPedidoParaBoletim({
+        id_int: idInt,
+        descricao: `Pedido #${idInt}`,
+        obs: obsText,
+        data_termino: dataTermino
+      });
       if (!createResult.success) {
         return { success: false, error: "Falha ao criar o pedido inexistente: " + createResult.error };
       }
