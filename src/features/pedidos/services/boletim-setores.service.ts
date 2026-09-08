@@ -119,8 +119,51 @@ export type SalvarBoletimResult =
   | { success: false; error: string };
 
 /**
+ * Espelha prazo e hora em TODAS as linhas de setor do pedido.
+ *
+ * POR QUE ISSO EXISTE (09/2026)
+ *   O prazo é ÚNICO POR PEDIDO. Com dois ou três setores, todos entregam na
+ *   mesma data — quem segura a entrega é o setor mais lento, e adiantar a linha
+ *   de um setor não adianta o pedido.
+ *
+ *   Até aqui `salvarBoletimSetor` gravava só a linha do setor ABERTO, e o
+ *   resultado está no banco: o pedido 20508 tem quatro setores com TRÊS datas
+ *   diferentes (11, 13 e 14/08), e o 21694 e o 21497 têm setor com prazo nulo
+ *   ao lado de setor com data. Cada aba do boletim mostrava um prazo, e o PDF
+ *   de cada setor imprimia o seu.
+ *
+ * FILTRA POR `id_int`, não por `id`. É essa troca que alcança as outras linhas.
+ *
+ * Não bloqueia o salvamento em caso de erro: a linha do setor aberto já está
+ * gravada quando isto roda, e derrubar o save inteiro por causa do espelho
+ * perderia o trabalho do operador. O aviso vai para o console, como o espelho
+ * de status em `atualizarFaseSetor` já faz.
+ */
+async function espelharPrazoNosSetores(
+  client: NonNullable<ReturnType<typeof getSupabaseClient>>,
+  idInt: number,
+  prazo: string | null,
+  hora: string | null
+): Promise<void> {
+  const { error } = await client
+    .from("propostas_os_setores")
+    .update({ prazo, hora, updated_at: new Date().toISOString() })
+    .eq("id_int", idInt);
+
+  if (error) {
+    console.warn(
+      "[BoletimSetoresService] Prazo gravado no setor aberto, mas o espelho nos demais falhou:",
+      error.message
+    );
+  }
+}
+
+/**
  * Cria ou atualiza o boletim de um setor. A unicidade (id_int, setor) é
  * garantida por constraint no banco.
+ *
+ * Prazo e hora são do PEDIDO, não do setor: depois de gravar a linha aberta,
+ * `espelharPrazoNosSetores` os aplica a todas as linhas do `id_int`.
  */
 export async function salvarBoletimSetor(input: SalvarBoletimInput): Promise<SalvarBoletimResult> {
   const client = getSupabaseClient();
@@ -145,6 +188,7 @@ export async function salvarBoletimSetor(input: SalvarBoletimInput): Promise<Sal
       return { success: false, error: traduzirErroBoletim(error) };
     }
     if (!data) return { success: false, error: "Boletim não encontrado para atualização." };
+    await espelharPrazoNosSetores(client, input.idInt, payload.prazo, payload.hora);
     return { success: true, boletim: mapBoletim(data) };
   }
 
@@ -171,6 +215,7 @@ export async function salvarBoletimSetor(input: SalvarBoletimInput): Promise<Sal
     return { success: false, error: traduzirErroBoletim(error) };
   }
   if (!data) return { success: false, error: "O banco não retornou o boletim criado." };
+  await espelharPrazoNosSetores(client, input.idInt, payload.prazo, payload.hora);
   return { success: true, boletim: mapBoletim(data) };
 }
 

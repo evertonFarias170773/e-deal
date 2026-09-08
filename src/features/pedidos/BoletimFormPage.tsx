@@ -22,7 +22,8 @@ import {
 import { ModeloMock, ArteStatus, ProducaoStatus } from "./types";
 import { getPropostaDetailById } from "@/features/orcamentos/services/orcamentos.service";
 import type { Proposta } from "@/features/orcamentos/types";
-import { calcularDataLimitePorProdutos, dataLimitePorPrazos } from "./prazo-producao";
+import { calcularDataLimitePorProdutos } from "./prazo-producao";
+import { horaPorCategoriaFrete } from "./hora-entrega";
 import {
   listarPropostasLiberadasParaBoletim,
   buscarPropostasLiberadasParaBoletim,
@@ -36,7 +37,8 @@ import {
   serializePedidosObs,
   obterGabaritosOperacionais,
   obterFreteEscolhido,
-  avancarStatusParaEmProducao
+  avancarStatusParaEmProducao,
+  obterBaseDoPrazo
 } from "./services/boletim-propostas.service";
 import { obterPedidoOperacionalPorIdOuIdInt } from "./services/pedidos-detalhe.service";
 import { SETORES_PCP, SETOR_PADRAO, coresDoSetor, normalizarSetor } from "./setores";
@@ -347,14 +349,17 @@ export function BoletimFormPage() {
           setStatusOperacional(pedido.status_producao || "PENDENTE");
           setStatusProposta(pedido.status_producao || "");
 
-          // Data limite: o maior prazo de producao entre TODOS os produtos do
-          // pedido — util ou corrido conforme o texto do cadastro. So sugere
-          // quando ainda nao ha data PROMETIDA gravada; edicao manual e prazo ja
-          // salvo sempre prevalecem. `dataPrevistaEntrega` agora e nula quando
-          // ninguem prometeu nada, e e por isso que a sugestao finalmente roda.
-          const deadlineDate = pedido.dataPrevistaEntrega ? pedido.dataPrevistaEntrega.split("T")[0] : "";
-          const sugestao = dataLimitePorPrazos((pedido.produtos || []).map((p) => p.prazoProducao));
-          setDataPrevistaEntrega(deadlineDate || sugestao || "");
+          // CONGELA (09/2026): reabrir o boletim NAO recalcula nada. A data foi
+          // decidida quando a OS nasceu, e o que esta gravado vale — inclusive o
+          // ajuste que o ADM fez a mao, que uma sugestao por cima apagaria.
+          //
+          // Antes daqui saia `dataLimitePorPrazos`, que recalculava a partir de
+          // HOJE toda vez que a tela abria: o prazo andava para frente sozinho a
+          // cada visita, e a data que o cliente ouviu nao era mais a da tela.
+          //
+          // Vazio quando nao ha nada gravado — campo em branco e editavel, como
+          // manda a regra de ausencia.
+          setDataPrevistaEntrega(pedido.dataPrevistaEntrega ? pedido.dataPrevistaEntrega.split("T")[0] : "");
 
           // Bloco 2 vem da PROPOSTA (`propostas.obs_tecnica`), nao do texto
           // etiquetado da OS. E por isso que reabrir o boletim agora mostra o
@@ -502,8 +507,25 @@ export function BoletimFormPage() {
       if (vigente) {
         setBoletimId(vigente.id);
         setBoletimSetor(vigente.setor || "");
-        setBoletimHora(vigente.hora || "");
-        if (vigente.prazo) setDataPrevistaEntrega(vigente.prazo);
+
+        /**
+         * PRAZO E HORA SÃO DO PEDIDO, não da linha aberta — por isso o primeiro
+         * valor NÃO-NULO entre os setores, e não o de `lista[0]`.
+         *
+         * A diferença não é teórica: `lista[0]` é o primeiro setor em ordem
+         * alfabética. No pedido 21694, PVC vem antes de TEXTIL e estava com hora
+         * nula enquanto TEXTIL tinha 16:00. Carregar `lista[0]` trazia vazio, e
+         * o espelhamento — que grava o valor da tela em TODAS as linhas —
+         * apagava o 16:00 do TEXTIL ao salvar.
+         *
+         * Foi exatamente isso que aconteceu na validação de 08/09/2026, e é a
+         * razão de o carregamento ter mudado junto com o espelhamento: as duas
+         * pontas precisam concordar que o valor é único por pedido.
+         */
+        const horaDoPedido = lista.find((b) => b.hora)?.hora || "";
+        const prazoDoPedido = lista.find((b) => b.prazo)?.prazo || "";
+        setBoletimHora(horaDoPedido);
+        if (prazoDoPedido) setDataPrevistaEntrega(prazoDoPedido);
       }
     }
 
@@ -1079,9 +1101,18 @@ export function BoletimFormPage() {
         // fabrica se perder.
         setBriefingOperacional(details.obsTecnica || "");
         
-        // Prazo / Data prevista de entrega — maior prazo de produção entre os
-        // produtos do pedido (cadastro em produtos.prazo).
-        setDataPrevistaEntrega(calcularDataLimitePorProdutos(details.itens));
+        // Prazo de entrega, calculado UMA vez: maior `prazo_dias_uteis` entre os
+        // produtos, contado por `soma_dias_uteis` a partir da entrada em
+        // producao. A hora sai da categoria de frete.
+        //
+        // Os dois saem VAZIOS quando falta o insumo — proposta ainda nao
+        // liberada, produto sem prazo cadastrado, ou categoria de frete nao
+        // classificada. Campo em branco e editavel, nunca valor inventado.
+        const baseDoPrazo = await obterBaseDoPrazo(idInt);
+        setDataPrevistaEntrega(
+          (await calcularDataLimitePorProdutos(details.itens, baseDoPrazo.liberadoProducaoEm)) ?? ""
+        );
+        setBoletimHora(horaPorCategoriaFrete(baseDoPrazo.categoriaFrete) ?? "");
         
         setObsImpressao("");
         setObsAcabamento("");

@@ -48,7 +48,8 @@ export async function listarPedidosOperacionais(): Promise<PropostaOperacionalLi
       em_arte,
       is_prd_aprovado,
       libera_nf,
-      liberado_producao_em
+      liberado_producao_em,
+      categoria_frete
     `)
     .eq("is_prd_aprovado", true)
     // Filtra apenas status operacionais para evitar poluir a lista com os que já saíram da produção
@@ -162,21 +163,23 @@ export async function listarPedidosOperacionais(): Promise<PropostaOperacionalLi
   );
   const setorPorProduto = new Map<number, string>();
   const estoquePorProduto = new Map<number, boolean>();
-  // Texto CRU de `produtos.prazo` — a mesma fonte que o boletim lê. Vai para a
-  // linha da lista para as acoes de impressao poderem derivar o prazo da OS que
-  // criam, sem consulta extra: `prazo` entrou no SELECT que ja existia.
-  const prazoPorProduto = new Map<number, string>();
+  // `produtos.prazo_dias_uteis` — a mesma fonte que o boletim usa desde 09/2026.
+  // Vai para a linha da lista para as acoes de impressao poderem derivar o prazo
+  // da OS que criam, sem consulta extra: entrou no SELECT que ja existia.
+  const diasUteisPorProduto = new Map<number, number>();
   if (idsProduto.length > 0) {
     try {
       const { data: produtosRows } = await client
         .from("produtos")
-        .select("id_produto, setor_pcp, is_estoque, prazo")
+        .select("id_produto, setor_pcp, is_estoque, prazo_dias_uteis")
         .in("id_produto", idsProduto);
       for (const linha of produtosRows ?? []) {
         const id = Number(linha.id_produto);
         if (linha.setor_pcp) setorPorProduto.set(id, String(linha.setor_pcp));
         estoquePorProduto.set(id, linha.is_estoque === true);
-        if (linha.prazo) prazoPorProduto.set(id, String(linha.prazo));
+        // Menor que 1 nao entra: zero e ausencia mal preenchida no cadastro.
+        const dias = Number(linha.prazo_dias_uteis);
+        if (Number.isFinite(dias) && dias >= 1) diasUteisPorProduto.set(id, dias);
       }
     } catch (error) {
       console.warn("[pedidos-producao.service] Erro ao buscar setor dos produtos");
@@ -251,16 +254,17 @@ export async function listarPedidosOperacionais(): Promise<PropostaOperacionalLi
     });
 
     /**
-     * Textos de `produtos.prazo` dos itens ATIVOS desta proposta, na ordem em
-     * que aparecem. Cru, sem interpretar — quem interpreta e `prazo-producao.ts`.
-     * Item cancelado fora, igual ao filtro de `calcularDataLimitePorProdutos`;
-     * item sem produto de cadastro ou com prazo vazio simplesmente nao entra.
+     * `produtos.prazo_dias_uteis` dos itens ATIVOS desta proposta. Quem escolhe
+     * o maior e transforma em data e `prazo-producao.ts`, a mesma regra do
+     * boletim. Item cancelado fora, igual ao filtro de
+     * `calcularDataLimitePorProdutos`; item sem produto de cadastro ou sem prazo
+     * simplesmente nao entra.
      */
     const prazosDosProdutos = itens
       .filter((i) => i.id_int === idInt)
       .filter((i) => String(i.status_item || "PENDENTE").toUpperCase() !== "CANCELADO")
-      .map((i) => (i.id_produto !== null ? prazoPorProduto.get(Number(i.id_produto)) : undefined))
-      .filter((texto): texto is string => Boolean(texto && texto.trim()));
+      .map((i) => (i.id_produto !== null ? diasUteisPorProduto.get(Number(i.id_produto)) : undefined))
+      .filter((dias): dias is number => typeof dias === "number");
 
     const osDestaProposta = osDados.find(o => o.id_int === idInt);
     const dataTermino = osDestaProposta && osDestaProposta.data_termino
@@ -291,6 +295,8 @@ export async function listarPedidosOperacionais(): Promise<PropostaOperacionalLi
       // vazia, que virava `new Date("")` e "Invalid Date" no Kanban e no painel.
       dataPrevistaEntrega: dataTermino,
       prazosDosProdutos,
+      // De onde sai a HORA do prazo quando a acao de impressao cria a OS.
+      categoriaFrete: p.categoria_frete ? String(p.categoria_frete) : null,
       valorTotal: Number(p.valor_total) || 0,
       urgente: false,
       produto_principal: nomeEvento,

@@ -108,8 +108,15 @@ export interface ProdutoMock {
    * boletim e o PDF da OS escondem esses campos.
    */
   isEstoque?: boolean;
-  /** `produtos.prazo` (texto livre do cadastro) — base da data limite sugerida. */
+  /** `produtos.prazo` (texto livre do cadastro). Continua exibido; não calcula mais data. */
   prazoProducao?: string | null;
+  /**
+   * `produtos.prazo_dias_uteis` — o número que RESOLVE a data de entrega hoje.
+   *
+   * Nulo é legítimo: produto sem prazo cadastrado. O maior valor entre os
+   * produtos do pedido é o que segura a OS.
+   */
+  prazoDiasUteis?: number | null;
   /** produtos_proposta.peso_total, em gramas — peso estimado real do item. */
   pesoTotalGramas?: number;
   modelos: ModeloMock[];
@@ -133,6 +140,14 @@ export interface PedidoMock {
    * ausência como ausência — traço, nunca data inventada.
    */
   dataPrevistaEntrega: string | null;
+  /**
+   * `propostas.liberado_producao_em` — a DATA BASE da contagem de dias úteis.
+   *
+   * Sem ela não há prazo a calcular: o pedido ainda não entrou na produção.
+   */
+  liberadoProducaoEm?: string | null;
+  /** `propostas.categoria_frete` — de onde sai a HORA do prazo. Nula = hora em branco. */
+  categoriaFrete?: string | null;
   statusPedido: PedidoStatus;
   urgente: boolean;
   formaPagamento: string;
@@ -252,17 +267,19 @@ export interface PropostaOperacionalListItem {
    */
   hasPedidoOs: boolean;
   /**
-   * Textos crus de `produtos.prazo` dos itens ativos da proposta.
+   * `produtos.prazo_dias_uteis` dos itens ativos da proposta.
    *
    * Existe para as ações de impressão poderem derivar `propostas_os.data_termino`
-   * quando CRIAM a OS — antes ela nascia sem prazo e a coluna DATA ENTREGA ficava
-   * vazia. Vem do mesmo SELECT em lote que a lista já fazia, sem consulta a mais.
+   * quando CRIAM a OS, pela MESMA regra do boletim. Vem do mesmo SELECT em lote
+   * que a lista já fazia, sem consulta a mais.
    *
-   * Cru de propósito: quem interpreta é `prazo-producao.ts`, a mesma regra do
-   * boletim. Vazio quando nenhum item tem produto de cadastro com prazo — e aí
-   * a OS nasce sem prazo, como hoje.
+   * Era `string[]` com o texto cru de `produtos.prazo` até 09/2026, quando o
+   * cálculo passou a usar o número e o calendário de feriados. Vazio quando
+   * nenhum item tem prazo cadastrado — e aí a OS nasce sem prazo, de propósito.
    */
-  prazosDosProdutos: string[];
+  prazosDosProdutos: number[];
+  /** `propostas.categoria_frete` — a HORA do prazo sai daqui. Nula = hora em branco. */
+  categoriaFrete: string | null;
   isLegado: boolean;
   osId?: string;
   status_pedido?: PedidoStatus | string;

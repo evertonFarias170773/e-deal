@@ -1070,3 +1070,50 @@ export async function avancarStatusParaEmProducao(
  * de escrita em `libera_nf`, e um atalho para a fila que pula as guardas de
  * pagamento e arte não deve continuar disponível.
  */
+
+/** As duas entradas do prazo de entrega, lidas da proposta. */
+export interface BaseDoPrazo {
+  /** `propostas.liberado_producao_em` — a data base da contagem de dias úteis. */
+  liberadoProducaoEm: string | null;
+  /** `propostas.categoria_frete` — de onde sai a hora. */
+  categoriaFrete: string | null;
+}
+
+/**
+ * Lê da proposta o que o cálculo do prazo precisa: a data base e a categoria.
+ *
+ * POR QUE UMA CONSULTA PRÓPRIA
+ *   No modo CRIAÇÃO o boletim monta a tela a partir de `getPropostaDetailById`,
+ *   que devolve o tipo `Proposta` de Orçamentos — e esse tipo não carrega
+ *   `liberado_producao_em` nem `categoria_frete`. Ampliá-lo mexeria em
+ *   Orçamentos inteiro para servir uma tela só.
+ *
+ *   No modo EDIÇÃO os dois campos já chegam por `getPedidoDetail`, no SELECT
+ *   que ele já fazia. Esta função existe só para o outro caminho.
+ *
+ * Falha devolve os dois nulos — e nulo aqui significa campo VAZIO na tela, que
+ * o operador preenche. Nunca uma data inventada.
+ */
+export async function obterBaseDoPrazo(idInt: number): Promise<BaseDoPrazo> {
+  const vazio: BaseDoPrazo = { liberadoProducaoEm: null, categoriaFrete: null };
+
+  const client = getSupabaseClient();
+  if (!client || !Number.isFinite(idInt)) return vazio;
+
+  const { data, error } = await client
+    .from("propostas")
+    .select("liberado_producao_em, categoria_frete")
+    .eq("id_int", idInt)
+    .maybeSingle();
+
+  if (error || !data) {
+    if (error) console.warn("[BoletimPropostasService] Erro ao ler a base do prazo:", error.message);
+    return vazio;
+  }
+
+  return {
+    liberadoProducaoEm:
+      typeof data.liberado_producao_em === "string" ? data.liberado_producao_em : null,
+    categoriaFrete: data.categoria_frete ? String(data.categoria_frete) : null
+  };
+}

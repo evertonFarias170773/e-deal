@@ -178,29 +178,37 @@ export function PedidosListPage() {
      * BOLETIM_ELIGIBLE_STATUSES, e chamar sempre quebraria a impressão de
      * pedido já entregue/faturado — que hoje funciona.
      *
-     * O PRAZO PASSOU A SER DERIVÁVEL (30/08/2026). Ele saía nulo aqui, e a OS
-     * nascia sem promessa: a coluna DATA ENTREGA ficava vazia até alguém abrir o
-     * boletim. Agora vem da MESMA regra que o boletim usa — `prazo-producao.ts`,
-     * extraído de `BoletimFormPage` justamente para os dois compartilharem uma
-     * conta só, sem duplicar o regex nem a regra de dias úteis. Os textos de
-     * `produtos.prazo` chegam na própria linha da lista, do SELECT em lote que
-     * já existia: nenhuma consulta a mais por clique.
+     * O PRAZO VEM DA MESMA REGRA DO BOLETIM, e é ela que decide a data: maior
+     * `produtos.prazo_dias_uteis` entre os itens, contado por
+     * `public.soma_dias_uteis` a partir de `propostas.liberado_producao_em` —
+     * pulando sábado, domingo e FERIADO. Os dias e o carimbo chegam na própria
+     * linha da lista, do SELECT em lote que já existia: nenhuma consulta a mais
+     * por clique, só a chamada da função do banco.
      *
-     * `dataLimitePorPrazosOuNulo`, e não `dataLimitePorPrazos`: sem prazo legível
-     * em nenhum item, grava NULL. O `hoje + 7` da irmã é o default do formulário,
-     * que o operador vê e corrige antes de salvar — aqui não há ninguém para
-     * conferir, e ele viraria promessa inventada.
+     * ESTE PONTO ANDA JUNTO COM O BOLETIM DE PROPÓSITO (09/2026). Enquanto os
+     * dois tinham contas diferentes, a data do pedido dependia de por qual tela
+     * ele passou primeiro: uma OS criada aqui nascia com a regra da lista e o
+     * boletim, que congela o que está gravado, nunca mais recalculava. Agora a
+     * resposta é a mesma pelos dois caminhos.
+     *
+     * Sem prazo cadastrado em nenhum item, ou sem o carimbo de liberação, grava
+     * NULL — aqui não há ninguém para conferir, e uma data inventada viraria
+     * promessa. Ausência é ausência.
      *
      * Segue sem preencher o que continua não sendo derivável: o boletim de setor
      * (`propostas_os_setores`) e as orientações (`obs`). O PDF sai sem filtro de
      * setor e com os blocos de orientação vazios — isso o boletim preenche depois.
      */
     if (!proposta.hasPedidoOs) {
+      const dataDoPrazo = await dataLimitePorPrazosOuNulo(
+        proposta.prazosDosProdutos,
+        proposta.liberadoProducaoEm
+      );
       const criacao = await criarPedidoParaBoletim({
         id_int: proposta.id_int,
         descricao: `${proposta.clienteNome} - Boletim de entrada`,
         obs: null,
-        data_termino: dataLimitePorPrazosOuNulo(proposta.prazosDosProdutos) ?? undefined
+        data_termino: dataDoPrazo ?? undefined
       });
       if (!criacao.success) {
         setPrintingOsId(null);

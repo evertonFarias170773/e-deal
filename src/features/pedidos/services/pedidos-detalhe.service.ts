@@ -112,12 +112,20 @@ export async function obterPedidoOperacionalPorIdOuIdInt(param: string | number,
   // Orientacao tecnica: mora na PROPOSTA, nao na OS. Vem junto do mesmo
   // enriquecimento para o boletim e o PDF nao precisarem de outra consulta.
   let obsTecnica = "";
+  // Data base da contagem de dias uteis e categoria de onde sai a hora. Nulos
+  // enquanto o pedido nao foi liberado / nao foi classificado — e nulo aqui
+  // significa campo VAZIO na tela, nunca valor inventado.
+  let liberadoProducaoEm: string | null = null;
+  let categoriaFrete: string | null = null;
 
   if (row?.id_int !== null && row?.id_int !== undefined) {
     try {
       const { data: propostaRow, error: propostaError } = await client
         .from("propostas")
-        .select("cliente, vendedor, empresa, id_cliente, status_interno, is_prd_aprovado, obs_tecnica")
+        // `liberado_producao_em` e `categoria_frete` entraram em 09/2026, na
+        // mesma linha do SELECT que ja existia: sao a DATA BASE e a HORA do
+        // prazo de entrega. Nenhuma consulta a mais.
+        .select("cliente, vendedor, empresa, id_cliente, status_interno, is_prd_aprovado, obs_tecnica, liberado_producao_em, categoria_frete")
         .eq("id_int", row?.id_int)
         .maybeSingle();
 
@@ -132,6 +140,9 @@ export async function obterPedidoOperacionalPorIdOuIdInt(param: string | number,
         statusProducao =
           propostaRow.is_prd_aprovado === true && statusInterno ? statusInterno : "BLOQUEADO";
         obsTecnica = propostaRow.obs_tecnica ? String(propostaRow.obs_tecnica) : "";
+        liberadoProducaoEm =
+          typeof propostaRow.liberado_producao_em === "string" ? propostaRow.liberado_producao_em : null;
+        categoriaFrete = propostaRow.categoria_frete ? String(propostaRow.categoria_frete) : null;
       }
     } catch (e) {
       console.warn("[pedidos-detalhe.service] Falha ao enriquecer dados do pedido:", e);
@@ -159,19 +170,25 @@ export async function obterPedidoOperacionalPorIdOuIdInt(param: string | number,
         )
       );
       const setorPorProduto = new Map<number, string>();
-      // `produtos.prazo` e texto livre ("3 dias uteis"); o maior deles define a
-      // data limite sugerida para os boletins do pedido.
+      // `produtos.prazo` e texto livre ("3 dias uteis"). Continua sendo lido e
+      // exibido, mas NAO calcula mais data desde 09/2026.
       const prazoPorProduto = new Map<number, string>();
+      // `produtos.prazo_dias_uteis` e o numero que resolve a data hoje: o maior
+      // deles, contado por `soma_dias_uteis` a partir de `liberado_producao_em`.
+      const diasUteisPorProduto = new Map<number, number>();
       if (idsProduto.length > 0) {
         const { data: catalogo } = await client
           .from("produtos")
-          .select("id_produto, setor_pcp, prazo")
+          .select("id_produto, setor_pcp, prazo, prazo_dias_uteis")
           .in("id_produto", idsProduto);
         for (const linha of catalogo || []) {
           const setor = linha.setor_pcp ? String(linha.setor_pcp).trim() : "";
           if (setor) setorPorProduto.set(Number(linha.id_produto), setor);
           const prazo = linha.prazo ? String(linha.prazo).trim() : "";
           if (prazo) prazoPorProduto.set(Number(linha.id_produto), prazo);
+          // Menor que 1 nao entra: zero e ausencia mal preenchida, nao "hoje".
+          const dias = Number(linha.prazo_dias_uteis);
+          if (Number.isFinite(dias) && dias >= 1) diasUteisPorProduto.set(Number(linha.id_produto), dias);
         }
       }
 
@@ -187,6 +204,7 @@ export async function obterPedidoOperacionalPorIdOuIdInt(param: string | number,
           pesoTotalGramas: Number(p.peso_total || 0),
           setor: (idProduto !== null ? setorPorProduto.get(idProduto) : undefined) || "LASER",
           prazoProducao: idProduto !== null ? prazoPorProduto.get(idProduto) ?? null : null,
+          prazoDiasUteis: idProduto !== null ? diasUteisPorProduto.get(idProduto) ?? null : null,
           isEstoque: p.is_estoque === true,
           modelos: []
         };
@@ -302,6 +320,8 @@ export async function obterPedidoOperacionalPorIdOuIdInt(param: string | number,
     // boletim então via o campo preenchido e nunca alcançava a sugestão por
     // prazo de produto, que já existia e nunca rodou.
     dataPrevistaEntrega: row?.data_termino || null,
+    liberadoProducaoEm,
+    categoriaFrete,
     statusPedido: (row?.status_pedido || "BOLETIM_FINALIZADO") as PedidoStatus,
     status_pedido: row?.status_pedido || "BOLETIM_FINALIZADO",
     status_pagamento: row?.status_pagamento || "APROVADO",
