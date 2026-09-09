@@ -496,7 +496,19 @@ export function montarTextoConferenciaOsIdeal(
  * nunca igualdade literal: o banco guarda "E-Faturado" (173) e "E-FATURADO"
  * (109), e uma grafia nova não pode furar a checagem em silêncio.
  */
-const FAMILIA_FATURADO = new Set(["E-FATURADO", "EFATURADO", "FATURADO"]);
+const FAMILIA_FATURADO = new Set([
+  "E-FATURADO",
+  "EFATURADO",
+  "FATURADO",
+  // Subtipos de faturamento, habilitados na criação em 09/09/2026. Nascem
+  // A_VENCER com condição e parcelamento, exatamente como o E-FATURADO, e
+  // pertencem à família desde o insert — deixá-los fora era o que fazia o
+  // filtro "Faturado" da Conferência esconder cobrança que a própria tela
+  // acabara de criar como faturada.
+  "E-RETRABALHO",
+  "E-PERMUTA",
+  "E-AMOSTRA"
+]);
 
 export function isFamiliaFaturado(tipo: string | null | undefined): boolean {
   return FAMILIA_FATURADO.has(String(tipo || "").trim().toUpperCase().replace(/_/g, "-"));
@@ -509,7 +521,18 @@ export function isFamiliaFaturado(tipo: string | null | undefined): boolean {
  * Mantido ao lado de `isFamiliaFaturado` de propósito: mexer numa lista sem
  * mexer na outra foi o que produziu as definições divergentes.
  */
-export const FAMILIA_FATURADO_TIPOS = ["E-FATURADO", "E-Faturado", "EFATURADO", "FATURADO"] as const;
+export const FAMILIA_FATURADO_TIPOS = [
+  "E-FATURADO",
+  "E-Faturado",
+  "EFATURADO",
+  "FATURADO",
+  // Só a forma em caixa alta: é a única que a criação grava (o valor vem de
+  // `CobrancaTipo`, sempre maiúsculo). As grafias mistas acima existem porque
+  // o banco já as tinha; estas três nascem hoje e nascem padronizadas.
+  "E-RETRABALHO",
+  "E-PERMUTA",
+  "E-AMOSTRA"
+] as const;
 
 /**
  * Identifica cobrança E-Faturado.

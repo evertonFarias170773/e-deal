@@ -104,9 +104,30 @@ export function isCobrancaAtiva(cobranca: CobrancaParaFaturado): boolean {
   return !STATUS_COBRANCA_INATIVA.includes(normalizar(cobranca.status));
 }
 
+/**
+ * Família faturado, na mesma composição de `FAMILIA_FATURADO`
+ * (`features/cobrancas/cobrancas-utils.ts`).
+ *
+ * É uma CÓPIA de propósito, e a única do repositório que continua permitida:
+ * este módulo não importa nada, e é isso que deixa
+ * `scripts/testes/faturado-editavel.test.mts` rodar direto no Node
+ * (`--experimental-strip-types`), sem bundler para resolver o alias `@/`.
+ * Importar o predicado canônico daqui quebraria o teste — e é dinheiro.
+ *
+ * Ao mexer em uma, mexa na outra.
+ */
+const FAMILIA_FATURADO = new Set([
+  "E-FATURADO",
+  "EFATURADO",
+  "FATURADO",
+  "E-RETRABALHO",
+  "E-PERMUTA",
+  "E-AMOSTRA"
+]);
+
 /** `E-FATURADO` e `E-Faturado` convivem na base; o underline aparece em import antigo. */
 export function isTipoFaturado(tipoCobranca: unknown): boolean {
-  return normalizar(tipoCobranca).replace(/_/g, "-") === "E-FATURADO";
+  return FAMILIA_FATURADO.has(normalizar(tipoCobranca).replace(/_/g, "-"));
 }
 
 /**

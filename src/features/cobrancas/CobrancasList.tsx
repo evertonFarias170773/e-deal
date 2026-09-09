@@ -27,6 +27,7 @@ import {
   getLiberacaoPedidoStatus,
   getTipoCobrancaLabel,
   isCobrancaEFaturado,
+  isFamiliaFaturado,
   isPendenteAprovacao,
   montarTextoConferenciaOsIdeal
 } from "@/features/cobrancas/cobrancas-utils";
@@ -150,8 +151,11 @@ if (tipo === "TODOS") {
   }
 
   if (tipo === "FATURADO") {
-    const tipoNormalizado = String(cobranca.tipo_cobranca).trim().toUpperCase().replace(/_/g, "-");
-    return tipoNormalizado === "E-FATURADO" || tipoNormalizado === "EFATURADO" || tipoNormalizado === "FATURADO";
+    // Predicado canônico, o MESMO que `pagamentos-v2.service` usa no filtro de
+    // banco (`FAMILIA_FATURADO_TIPOS`). Era uma cópia literal com os três
+    // valores antigos: com os subtipos habilitados, o banco devolvia a
+    // cobrança e esta linha a escondia — o filtro se contradizia sozinho.
+    return isFamiliaFaturado(cobranca.tipo_cobranca);
   }
 
   if (tipo === "CANCELADO") {

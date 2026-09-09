@@ -117,6 +117,33 @@ function exigeCelular(tipo: CobrancaTipo): boolean {
   return tipo === "CARD_PARCELADO";
 }
 
+/**
+ * Modalidades que a criação REAL (`source === "supabase"`) já sabe gravar.
+ *
+ * Era uma cadeia de `!==` no meio de `executarSubmit`. Virou conjunto porque a
+ * lista cresceu: os três subtipos de faturamento entraram em 09/09/2026 e o
+ * caminho deles é exatamente o do E-FATURADO — nasce `A_VENCER`, com
+ * `forma_fatu`/`forma_pgto`/`id_modelo_cobranca`/`p_*`, sem link externo, e cai
+ * na janela de pendentes da Conferência.
+ *
+ * A liberação dos três é SEMPRE manual (financeiro ou ADM): a aprovação
+ * automática continua excluindo-os de propósito, em
+ * `api/cobrancas/aprovar-faturado-automatico`.
+ *
+ * `CREDIT_CARD` fica de fora — é o cartão antigo, sem botão na tela desde a
+ * chegada do `CARD_PARCELADO`, e nada deve criá-lo.
+ */
+const TIPOS_HABILITADOS_CRIACAO_REAL = new Set<CobrancaTipo>([
+  "PIX",
+  "BOLETO",
+  "CARD_PARCELADO",
+  "E-FATURADO",
+  "E-RETRABALHO",
+  "E-PERMUTA",
+  "E-AMOSTRA",
+  "E-CREDITO"
+]);
+
 /** Empresas recebedoras conhecidas, para as quais vale a regra por ID. */
 const EMPRESAS_COM_REGRA_POR_ID = new Set([1, 2, 3]);
 
@@ -991,8 +1018,8 @@ export function PropostaCobrancaPanel({
       return;
     }
 
-    if (source === "supabase" && form.tipoCobranca !== "PIX" && form.tipoCobranca !== "BOLETO" && form.tipoCobranca !== "CARD_PARCELADO" && form.tipoCobranca !== "E-FATURADO" && form.tipoCobranca !== "E-CREDITO") {
-      showToast({ type: "warning", title: "Forma de pagamento em preparação. Selecione PIX, Boleto, Cartão ou E-Crédito para testes reais." });
+    if (source === "supabase" && !TIPOS_HABILITADOS_CRIACAO_REAL.has(form.tipoCobranca)) {
+      showToast({ type: "warning", title: "Forma de pagamento em preparação. Selecione PIX, Boleto, Cartão, Faturado ou E-Crédito para testes reais." });
       return;
     }
 
