@@ -669,9 +669,21 @@ export async function updatePagamentoV2Empresa(
     };
   }
 
+  // Grafias REAIS gravadas hoje, e nada além disso.
+  //
+  // A lista anterior — `E-Faturado, E-Amostras, E-Retrabalho, E-Cortesia,
+  // E-Informe Pgto` — veio do sistema antigo e estava quebrada: o `in.()` do
+  // PostgREST é case-sensitive, então `E-Retrabalho` nunca casava com
+  // `E-RETRABALHO` (o que a tela grava) e `E-Amostras`, no plural, nunca
+  // casava com `E-AMOSTRA`. Na prática só `E-Faturado` funcionava, e trocar a
+  // empresa recebedora de um subtipo falhava em silêncio.
+  //
+  // `E-Cortesia`, `E-Informe Pgto` e `E-Amostras` saíram: conferido por
+  // SELECT em 09/09/2026, ZERO linhas de cada um em produção. `E-Faturado`
+  // fica — são 173 linhas vivas da grafia legada.
   const url = buildRestUrl("pagamentos_v2", {
     id: `eq.${id}`,
-    tipo_cobranca: "in.(E-Faturado,E-Amostras,E-Retrabalho,E-Cortesia,E-Informe Pgto)",
+    tipo_cobranca: "in.(E-FATURADO,E-Faturado,E-PERMUTA,E-AMOSTRA,E-RETRABALHO)",
     status: "eq.A_VENCER",
     or: "(confirmado.is.null,confirmado.eq.false)",
     select: "id,id_pagamento,id_int,os_ideal,id_cliente,cliente,descricao,valor,status,tipo_cobranca,created_at,paid_at,vencimento,confirmado,confirmado_por,aprovado_por,empresa,id_empresa,documento,atendente,token_publico,public_token,url_cobranca,pix_copia_cola,linha_digitavel,url_pdf,motivo_cancela,erro_pagamento,obs_v2,whats_contato,id_fatura,cod_solicitacao_inter,data_confirmacao,n_url_pdf,boleto_enviadoo"

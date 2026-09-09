@@ -55,7 +55,11 @@ export function isStatusPagoParaCancelamento(status: string | null | undefined):
   return String(status || "").trim().toUpperCase() === "PAID";
 }
 
-export type TipoCobrancaBloqueadoCancelamentoPago = "E-FATURADO" | "E-CREDITO";
+export type TipoCobrancaBloqueadoCancelamentoPago =
+  | "E-FATURADO"
+  | "E-CREDITO"
+  | "E-AMOSTRA"
+  | "E-RETRABALHO";
 
 /**
  * Tipos de cobranca que nunca podem entrar neste fluxo, mesmo com status
@@ -66,7 +70,19 @@ export type TipoCobrancaBloqueadoCancelamentoPago = "E-FATURADO" | "E-CREDITO";
  * - E-CREDITO: nasce com status PAID porque o credito ja foi debitado da
  *   conta corrente do cliente (`usar-credito/route.ts`) — cancelar aqui NAO
  *   estorna esse consumo.
+ * - E-AMOSTRA e E-RETRABALHO: sao cortesia. Viram PAID na liberacao pela
+ *   Conferencia com o valor real gravado, mas dinheiro nenhum entrou. Este
+ *   fluxo pede o DESTINO do valor recebido — e um dos destinos e lancar
+ *   credito na conta corrente do cliente. Oferecer isso aqui criaria credito
+ *   por dinheiro que nunca existiu.
+ *
+ * E-PERMUTA fica DE FORA de proposito: houve contrapartida real, entao o
+ * valor existe e escolher o destino dele faz sentido. E a mesma linha que
+ * separa `contaNoFaturamento` de `quitaNaLiberacao` — permuta e venda,
+ * cortesia nao.
+ *
  * Retorna o tipo normalizado quando bloqueia, ou null quando nao bloqueia.
+ * PIX, BOLETO e CARD_PARCELADO caem no `return null` e seguem inalterados.
  */
 export function tipoCobrancaBloqueiaCancelamentoPago(
   tipoCobranca: string | null | undefined
@@ -74,12 +90,17 @@ export function tipoCobrancaBloqueiaCancelamentoPago(
   const normalizado = String(tipoCobranca || "").trim().toUpperCase().replace(/_/g, "-");
   if (normalizado === "E-FATURADO") return "E-FATURADO";
   if (normalizado === "E-CREDITO") return "E-CREDITO";
+  if (normalizado === "E-AMOSTRA") return "E-AMOSTRA";
+  if (normalizado === "E-RETRABALHO") return "E-RETRABALHO";
   return null;
 }
 
 export function mensagemTipoCobrancaBloqueado(tipo: TipoCobrancaBloqueadoCancelamentoPago): string {
   if (tipo === "E-FATURADO") {
     return "Cobranca faturada nao entra neste fluxo: o valor pode nao ter sido recebido e o titulo em Contas a Receber continuaria ativo.";
+  }
+  if (tipo === "E-AMOSTRA" || tipo === "E-RETRABALHO") {
+    return "Cobranca de cortesia nao entra neste fluxo: nenhum dinheiro entrou, entao nao ha valor recebido para devolver nem para lancar como credito na conta corrente.";
   }
   return "Cobranca paga com credito do cliente nao entra neste fluxo: o cancelamento nao estorna o credito consumido.";
 }
