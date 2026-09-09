@@ -22,7 +22,7 @@ import { listarPedidosOperacionais } from "./services/pedidos-producao.service";
 import { atualizarFaseSetor } from "./services/boletim-setores.service";
 import { consolidarFases, type FaseSetor } from "./status-setor";
 import { SetorFaseChip } from "./components/SetorFaseChip";
-import { abrirPdfOs, type LayoutPdfOs } from "./services/imprimir-os.client";
+import { abrirPdfOs, abrirMacoOs, type LayoutPdfOs } from "./services/imprimir-os.client";
 import { encerrarTeste } from "./services/encerrar-teste.client";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import { devolverPropostaParaRevisaoAtendente } from "@/features/orcamentos/services/orcamentos.service";
@@ -224,9 +224,39 @@ export function PedidosListPage() {
       void load();
     }
 
-    const result = await abrirPdfOs(proposta.id_int, null, null, layout);
+    /**
+     * TODOS OS SETORES, num documento só (09/2026).
+     *
+     * Até aqui esta chamada passava `null` no boletim, e o view-model caía em
+     * `setoresLinhas[0]` — o boletim de setor criado mais recentemente. Num
+     * pedido de dois setores o outro simplesmente não saía, e nada na tela dizia
+     * isso: quem imprimia pela lista levava meio pedido para a bancada.
+     *
+     * A linha da lista já carrega `setores[].boletimId` do SELECT em lote que
+     * existe, então não custa consulta nenhuma. Sem nenhum boletim aberto ainda,
+     * mantém o caminho legado — aí não há setor para escolher.
+     *
+     * O layout resumido continua um por setor: ele é a lista de conferência de
+     * UM setor, e juntá-los é outra conversa.
+     */
+    const boletinsDoPedido = (proposta.setores ?? [])
+      .filter((s): s is typeof s & { boletimId: string } => Boolean(s.boletimId))
+      .map((s) => ({ id: s.boletimId, setor: s.setor }));
+
+    const result =
+      layout === "completo" && boletinsDoPedido.length > 0
+        ? await abrirMacoOs(proposta.id_int, boletinsDoPedido)
+        : await abrirPdfOs(proposta.id_int, null, null, layout);
     setPrintingOsId(null);
-    if (!result.success) {
+    if (result.bloqueadoPeloNavegador && result.urlParaAbrir) {
+      // Ação explícita em vez de baixar sozinho: o documento existe e está a um
+      // clique, e o clique tem que ser do usuário para o navegador aceitar.
+      showToast({
+        type: "error",
+        title: "O navegador bloqueou a aba",
+        description: "Libere os pop-ups para este site e clique em Imprimir OS de novo."
+      });
+    } else if (!result.success) {
       showToast({
         type: "error",
         title: "Erro ao gerar PDF da OS",

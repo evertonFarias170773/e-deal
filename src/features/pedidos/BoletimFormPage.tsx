@@ -53,7 +53,7 @@ import {
   type BoletimSetor,
   type ConferenciaSetor
 } from "./services/boletim-setores.service";
-import { abrirPdfOs, baixarPdfOs, type LayoutPdfOs } from "./services/imprimir-os.client";
+import { abrirPdfOs, baixarPdfOs, abrirMacoOs, type LayoutPdfOs } from "./services/imprimir-os.client";
 import { ActionsMenu } from "@/components/common/ActionsMenu";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import { PageHeader } from "@/components/common/PageHeader";
@@ -991,25 +991,38 @@ export function BoletimFormPage() {
     if (gerandoPdf || !idIntParam) return;
     setGerandoPdf(true);
 
-    const falhas: string[] = [];
-    for (const b of quais) {
-      const r = await baixarPdfOs(Number(idIntParam), b.id, b.setor, "completo");
-      if (!r.success) falhas.push(`${b.setor || "sem setor"}: ${r.errorMessage || "erro"}`);
-    }
+    // UM documento, aberto para visualizar — não N downloads. Com um setor só,
+    // `abrirMacoOs` cai no PDF de sempre, com a numeração de página.
+    const r = await abrirMacoOs(
+      Number(idIntParam),
+      quais.map((b) => ({ id: b.id, setor: b.setor }))
+    );
 
     setGerandoPdf(false);
+
+    if (r.bloqueadoPeloNavegador) {
+      // Fica no modal de propósito: o documento não abriu, e fechar levaria o
+      // operador embora achando que imprimiu.
+      showToast({
+        type: "error",
+        title: "O navegador bloqueou a aba",
+        description: "Libere os pop-ups para este site e escolha de novo."
+      });
+      return;
+    }
+
     setModalPdf(null);
     showToast(
-      falhas.length === 0
+      r.success
         ? {
-            type: "success",
-            title: quais.length > 1 ? "PDFs gerados" : "PDF gerado",
+            type: "info",
+            title: "Abrindo o documento",
             description:
               quais.length > 1
-                ? `${quais.length} boletins baixados, um por setor. Voltando para a lista.`
-                : "Boletim baixado. Voltando para a lista."
+                ? `${quais.length} setores num documento só, um por página. Voltando para a lista.`
+                : "O boletim abre na nova aba. Voltando para a lista."
           }
-        : { type: "error", title: "Falha em parte dos PDFs", description: falhas.join(" | ") }
+        : { type: "error", title: "Erro ao gerar o documento", description: r.errorMessage || "Erro desconhecido." }
     );
     window.setTimeout(() => router.push("/pedidos"), 900);
   }

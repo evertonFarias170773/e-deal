@@ -878,7 +878,36 @@ export function OsPdfBlocoCliente({ vm, somenteEstoque }: { vm: OsPdfViewModel; 
   );
 }
 
-export function OsPdfDocument({ vm, qrDataUrl, logoDataUrl }: OsPdfDocumentProps) {
+/**
+ * UMA PÁGINA DE BOLETIM — o miolo que antes vivia dentro de `OsPdfDocument`.
+ *
+ * POR QUE SAIU DE LÁ (09/2026)
+ *   O gerente pediu um documento ÚNICO com um setor por página, em vez de N
+ *   arquivos baixados. `<Document>` aceita várias `<Page>`, mas aqui as duas
+ *   estavam grudadas: não havia como reaproveitar a página sem levar o
+ *   documento junto. A extração é o que permite o mesmo miolo servir ao PDF de
+ *   setor único e ao maço multi-setor.
+ *
+ *   NADA foi alterado na mudança de casa. O que era calculado no início de
+ *   `OsPdfDocument` passou a ser calculado aqui, e o JSX é o mesmo — com a única
+ *   exceção do rodapé, abaixo.
+ *
+ * O RODAPÉ E A NUMERAÇÃO (decisão do dono, 08/09/2026)
+ *   `pageNumber` e `totalPages` do @react-pdf/renderer contam o DOCUMENTO
+ *   inteiro; a biblioteca não tem contador por seção. Num maço de dois setores,
+ *   o boletim do PVC diria "Página 1 de 5" contando as páginas do TEXTIL que a
+ *   bancada do PVC nunca vai ver.
+ *
+ *   Então: multi-setor sai SEM numeração, e o setor único continua exatamente
+ *   como sempre foi. Melhor sem numeração do que com uma que mente sobre o maço
+ *   da bancada.
+ */
+export function OsPdfPaginaBoletim({
+  vm,
+  qrDataUrl,
+  logoDataUrl,
+  numerarPaginas = true
+}: OsPdfDocumentProps & { numerarPaginas?: boolean }) {
   const emissao = formatarData(vm.os.emissao);
   const obsLinhas = [vm.obs.obsCriticas, vm.obs.obsImpressao, vm.obs.obsAcabamento]
     .map((t) => truncarPreservandoLinhas(t, 200))
@@ -896,11 +925,6 @@ export function OsPdfDocument({ vm, qrDataUrl, logoDataUrl }: OsPdfDocumentProps
     produtosDoBoletim.length > 0 && produtosDoBoletim.every((produto) => produto.isEstoque);
 
   return (
-    <Document
-      title={`OS ${vm.idInt}`}
-      author={vm.empresa.nome}
-      subject="Boletim de Producao / Ordem de Servico"
-    >
       <Page size="A4" style={styles.page}>
         {/* Cabeçalho — logo + Nº OS | Setor do boletim | Prazo/Hora | QR */}
         <OsPdfCabecalho vm={vm} qrDataUrl={qrDataUrl} logoDataUrl={logoDataUrl} />
@@ -959,12 +983,28 @@ export function OsPdfDocument({ vm, qrDataUrl, logoDataUrl }: OsPdfDocumentProps
         {/* Rodapé fixo em todas as páginas */}
         <View style={styles.footer} fixed>
           <Text>OS #{vm.idInt}</Text>
-          <Text
-            render={({ pageNumber, totalPages }) => `Pagina ${pageNumber} de ${totalPages}`}
-          />
+          {numerarPaginas ? (
+            <Text
+              render={({ pageNumber, totalPages }) => `Pagina ${pageNumber} de ${totalPages}`}
+            />
+          ) : null}
           <Text>Emitido em {emissao}</Text>
         </View>
       </Page>
+  );
+}
+
+/**
+ * O boletim de UM setor: um documento, uma seção. Inalterado.
+ */
+export function OsPdfDocument({ vm, qrDataUrl, logoDataUrl }: OsPdfDocumentProps) {
+  return (
+    <Document
+      title={`OS ${vm.idInt}`}
+      author={vm.empresa.nome}
+      subject="Boletim de Producao / Ordem de Servico"
+    >
+      <OsPdfPaginaBoletim vm={vm} qrDataUrl={qrDataUrl} logoDataUrl={logoDataUrl} />
     </Document>
   );
 }

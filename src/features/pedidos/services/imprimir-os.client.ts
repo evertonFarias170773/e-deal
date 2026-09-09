@@ -19,6 +19,18 @@ import { registrarImpressaoDoSetor } from "./boletim-setores.service";
 export interface AbrirPdfOsResult {
   success: boolean;
   errorMessage?: string;
+  /**
+   * O navegador recusou a aba. NÃO é erro nem sucesso: o PDF existe e está a um
+   * clique. Quem chama deve oferecer esse clique — ver `urlParaAbrir`.
+   *
+   * Substitui o download automático que havia aqui até 09/2026. Baixar no lugar
+   * de abrir resolvia o bloqueio às custas de fazer a coisa errada em silêncio:
+   * quem pediu para VER o documento recebia um arquivo na pasta de downloads,
+   * sem nada na tela dizendo por quê.
+   */
+  bloqueadoPeloNavegador?: boolean;
+  /** A URL do documento, para a tela oferecer "abrir" num gesto do usuário. */
+  urlParaAbrir?: string;
 }
 
 /**
@@ -33,6 +45,13 @@ function urlDoBoletim(idInt: number, idBoletim?: string | null, layout?: LayoutP
   if (idBoletim) params.set("boletim", idBoletim);
   // Só viaja quando é o não-padrão: a URL do caminho de sempre não muda.
   if (layout === "resumido") params.set("layout", "resumido");
+  return `/api/pedidos/imprimir-os?${params.toString()}`;
+}
+
+/** A URL do maço: um documento, um setor por página, na ordem dos uuids. */
+function urlDoMaco(idInt: number, idsBoletins: string[]): string {
+  const params = new URLSearchParams({ id_int: String(idInt) });
+  params.set("boletins", idsBoletins.join(","));
   return `/api/pedidos/imprimir-os?${params.toString()}`;
 }
 
@@ -115,51 +134,63 @@ export async function abrirPdfOs(
   // Aberta de forma síncrona no gesto do usuário — não move para depois de um await.
   const win = typeof window !== "undefined" ? window.open(url, "_blank") : null;
 
-  if (win) {
-    // A aba já está a caminho; o carimbo vai depois, sem segurar o retorno.
-    // `idBoletim` nulo é o caminho legado da lista de OS, que imprime "o boletim
-    // mais recente" sem dizer qual — sem o id não há linha para carimbar, e
-    // adivinhar marcaria o setor errado.
-    if (idBoletim) await registrarImpressaoDoSetor(idBoletim);
-    return { success: true };
-  }
-
-  // Popup bloqueado: cai no download programático, que também respeita o nome.
-  try {
-    const client = getSupabaseClient();
-    const sessionResult = client ? await client.auth.getSession() : null;
-    const token = sessionResult?.data?.session?.access_token;
-    if (!token) {
-      return { success: false, errorMessage: "Sessão expirada. Faça login novamente." };
-    }
-
-    const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-    if (!response.ok) {
-      let message = `Falha ao gerar o PDF (HTTP ${response.status}).`;
-      try {
-        const body = await response.json();
-        if (body?.message) message = String(body.message);
-      } catch {
-        // resposta sem JSON — mantém a mensagem genérica
-      }
-      return { success: false, errorMessage: message };
-    }
-
-    const blob = await response.blob();
-    const objectUrl = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = objectUrl;
-    anchor.download = nomeArquivo;
-    document.body.appendChild(anchor);
-    anchor.click();
-    anchor.remove();
-    URL.revokeObjectURL(objectUrl);
-    if (idBoletim) await registrarImpressaoDoSetor(idBoletim);
-    return { success: true };
-  } catch (e) {
+  if (!win) {
+    // Bloqueado. Devolve a URL para a tela oferecer o clique, em vez de baixar
+    // por conta própria — ver `bloqueadoPeloNavegador`.
     return {
       success: false,
-      errorMessage: e instanceof Error ? e.message : "Erro inesperado ao gerar o PDF da OS."
+      bloqueadoPeloNavegador: true,
+      urlParaAbrir: url,
+      errorMessage: "O navegador bloqueou a abertura do documento."
     };
   }
+
+  // `nomeArquivo` continua sendo calculado acima porque a rota o devolve no
+  // Content-Disposition; aqui ele não é mais usado para baixar nada.
+  void nomeArquivo;
+
+  // A aba já está a caminho; o carimbo vai depois, sem segurar o retorno.
+  // `idBoletim` nulo é o caminho legado da lista de OS, que imprime "o boletim
+  // mais recente" sem dizer qual — sem o id não há linha para carimbar, e
+  // adivinhar marcaria o setor errado.
+  if (idBoletim) await registrarImpressaoDoSetor(idBoletim);
+  return { success: true };
+}
+
+/**
+ * Abre o MAÇO: um documento com um setor por página, numa aba só.
+ *
+ * É o caminho normal de impressão a partir de 09/2026. Com um único boletim cai
+ * em `abrirPdfOs`, que produz o PDF de setor único de sempre — inclusive com a
+ * numeração de página, que o maço não tem.
+ *
+ * Carimba `impresso_em` em TODAS as linhas incluídas: o documento saiu com todas
+ * elas, então todas foram impressas.
+ */
+export async function abrirMacoOs(
+  idInt: number,
+  boletins: { id: string; setor?: string | null }[]
+): Promise<AbrirPdfOsResult> {
+  const ids = boletins.map((b) => b.id).filter(Boolean);
+  if (ids.length === 0) {
+    return { success: false, errorMessage: "Nenhum boletim de setor para imprimir." };
+  }
+  if (ids.length === 1) {
+    return abrirPdfOs(idInt, ids[0], boletins[0]?.setor ?? null, "completo");
+  }
+
+  const url = urlDoMaco(idInt, ids);
+  const win = typeof window !== "undefined" ? window.open(url, "_blank") : null;
+
+  if (!win) {
+    return {
+      success: false,
+      bloqueadoPeloNavegador: true,
+      urlParaAbrir: url,
+      errorMessage: "O navegador bloqueou a abertura do documento."
+    };
+  }
+
+  for (const id of ids) await registrarImpressaoDoSetor(id);
+  return { success: true };
 }

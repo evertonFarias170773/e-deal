@@ -11,8 +11,9 @@ import { renderToBuffer } from "@react-pdf/renderer";
 import { verificarPermissaoServerSide } from "@/lib/auth/verificar-permissao";
 import { verificarEscopoPropostaServerSide } from "@/lib/auth/verificar-escopo-proposta";
 import { montarOsPdfViewModel } from "@/features/pedidos/services/os-viewmodel.service";
-import type { OsPdfArteRef, OsPdfModelo } from "@/features/pedidos/services/os-viewmodel.service";
+import type { OsPdfArteRef, OsPdfModelo, OsPdfViewModel } from "@/features/pedidos/services/os-viewmodel.service";
 import { OsPdfDocument } from "@/features/pedidos/pdf/OsPdfDocument";
+import { OsPdfMacoDocument } from "@/features/pedidos/pdf/OsPdfMacoDocument";
 import { OsPdfResumoDocument } from "@/features/pedidos/pdf/OsPdfResumoDocument";
 import { EMPRESA_LOGO_FILES } from "@/features/pedidos/pdf/os-pdf-assets";
 import { carregarImagemComoDataUrl } from "@/features/pedidos/pdf/os-pdf-images";
@@ -171,6 +172,27 @@ export async function GET(request: Request) {
     return respostaErro(request, "Parâmetro boletim inválido.", 400);
   }
 
+  /**
+   * MAÇO MULTI-SETOR (09/2026): `boletins=uuid1,uuid2,...` devolve UM documento
+   * com um setor por página, na ordem em que os uuids chegam.
+   *
+   * Parâmetro NOVO, e não uma mudança de `boletim`: link antigo, favorito e a
+   * impressão de setor único continuam pelo caminho de sempre, byte a byte. Um
+   * único uuid aqui também cai no documento de setor único — maço de um não é
+   * maço, e não faria sentido perder a numeração de página por causa da forma
+   * como o parâmetro foi escrito.
+   *
+   * Só vale no layout completo. O resumido é a lista de conferência de UM setor
+   * e continua um arquivo por setor; juntá-los é outra conversa.
+   */
+  const idsBoletins = (searchParams.get("boletins") || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (idsBoletins.some((id) => !UUID_RE.test(id))) {
+    return respostaErro(request, "Parâmetro boletins inválido.", 400);
+  }
+
   // Layout do PDF. O completo ("OS 2027", com a imagem de cada arte) é o PADRÃO
   // e continua sendo o que sai sem parâmetro nenhum — qualquer valor
   // desconhecido cai nele de propósito, para link antigo nunca mudar de
@@ -234,24 +256,38 @@ export async function GET(request: Request) {
     return respostaErro(request, "Acesso negado a esta proposta.", 403);
   }
 
-  const resultado = await montarOsPdfViewModel(supabase, idInt, { incluirValores: false, idBoletim });
-  if (!resultado.success) {
-    return respostaErro(request, resultado.error, resultado.status);
+  // O maço monta um view-model por setor; o caminho de sempre monta um só. Em
+  // ambos os casos a RENDERIZAÇÃO é uma: `renderToBuffer` roda uma vez, no fim.
+  const macoAtivo = !layoutResumido && idsBoletins.length > 1;
+  const alvos = macoAtivo ? idsBoletins : [idsBoletins[0] ?? idBoletim];
+
+  const vms: OsPdfViewModel[] = [];
+  for (const alvo of alvos) {
+    const r = await montarOsPdfViewModel(supabase, idInt, {
+      incluirValores: false,
+      idBoletim: alvo ?? null
+    });
+    if (!r.success) {
+      return respostaErro(request, r.error, r.status);
+    }
+    vms.push(r.vm);
   }
-  const { vm } = resultado;
+  const vm = vms[0];
 
   // Imagens só quando o layout as usa. No resumido nenhuma arte é baixada — é
   // daqui que vem a diferença de tempo e de tamanho do arquivo; o nome dos
   // arquivos de arte já está no view model e não depende de download.
   if (!layoutResumido) {
-    // Miniaturas de arte (pré-fetch server-side, falha → referência textual).
-    await preencherMiniaturas([
-      vm.artesGerais,
-      ...vm.produtos.flatMap((p) => p.modelos.map((m) => m.artes)),
-    ]);
+    for (const atual of vms) {
+      // Miniaturas de arte (pré-fetch server-side, falha → referência textual).
+      await preencherMiniaturas([
+        atual.artesGerais,
+        ...atual.produtos.flatMap((p) => p.modelos.map((m) => m.artes)),
+      ]);
 
-    // Imagem grande de cada modelo (card do novo layout).
-    await preencherImagensDosModelos(vm.produtos.flatMap((p) => p.modelos));
+      // Imagem grande de cada modelo (card do novo layout).
+      await preencherImagensDosModelos(atual.produtos.flatMap((p) => p.modelos));
+    }
   }
 
   // Logo da empresa (asset estático — falha não impede a emissão).
@@ -292,14 +328,29 @@ export async function GET(request: Request) {
   }
 
   try {
-    const componente = layoutResumido ? OsPdfResumoDocument : OsPdfDocument;
-    const elemento = createElement(componente, { vm, qrDataUrl, logoDataUrl }) as unknown as ReactElement<DocumentProps>;
+    // UMA renderização, sempre — o maço entra como um documento de N páginas,
+    // não como N documentos concatenados.
+    const elemento = (
+      macoAtivo
+        ? createElement(OsPdfMacoDocument, {
+            paginas: vms.map((v) => ({ vm: v, qrDataUrl })),
+            logoDataUrl
+          })
+        : createElement(layoutResumido ? OsPdfResumoDocument : OsPdfDocument, {
+            vm,
+            qrDataUrl,
+            logoDataUrl
+          })
+    ) as unknown as ReactElement<DocumentProps>;
     const buffer = await renderToBuffer(elemento);
     // Nome distinto para o resumido: baixar os dois do mesmo pedido não pode
-    // gerar "os_20975_FLEXO(1).pdf" sem dizer qual é qual.
-    const nomeArquivo = layoutResumido
-      ? nomeArquivoOs(idInt, vm.boletim.setor).replace(/\.pdf$/i, "_resumo.pdf")
-      : nomeArquivoOs(idInt, vm.boletim.setor);
+    // gerar "os_20975_FLEXO(1).pdf" sem dizer qual é qual. O maço não leva setor
+    // no nome porque tem todos.
+    const nomeArquivo = macoAtivo
+      ? `os_${idInt}_completo.pdf`
+      : layoutResumido
+        ? nomeArquivoOs(idInt, vm.boletim.setor).replace(/\.pdf$/i, "_resumo.pdf")
+        : nomeArquivoOs(idInt, vm.boletim.setor);
     return new NextResponse(new Uint8Array(buffer), {
       status: 200,
       headers: {

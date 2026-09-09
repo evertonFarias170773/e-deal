@@ -65,7 +65,7 @@ export function GerarPdfBoletimModal({
               <Printer className="h-5 w-5" />
             </span>
             <h2 className="text-lg font-semibold text-slate-950 dark:text-slate-100">
-              {jaImpresso ? "Reimprimir o boletim?" : "Gerar os PDF agora?"}
+              {jaImpresso ? "Reimprimir o boletim?" : "Abrir para imprimir?"}
             </h2>
           </div>
           <button
@@ -83,10 +83,10 @@ export function GerarPdfBoletimModal({
           <p className="text-sm text-slate-700 dark:text-slate-300">
             <strong className="text-slate-950 dark:text-slate-100">Boletim salvo.</strong>{" "}
             {jaImpresso
-              ? "Este pedido já foi impresso antes. Escolha o que gerar agora."
+              ? "Este pedido já foi impresso antes. Escolha o que abrir agora."
               : plural
-                ? `O pedido tem ${totalSetores} setores e cada um tem o seu PDF.`
-                : "O PDF do boletim pode ser gerado agora."}
+                ? `O pedido tem ${totalSetores} setores — eles abrem juntos, num documento só.`
+                : "O boletim pode ser aberto agora para impressão."}
           </p>
 
           <div className="space-y-2">
@@ -99,12 +99,12 @@ export function GerarPdfBoletimModal({
               <FileStack className="mt-0.5 h-5 w-5 shrink-0 text-emerald-700 dark:text-emerald-400" />
               <span>
                 <span className="block text-sm font-bold text-emerald-900 dark:text-emerald-200">
-                  {plural ? `Gerar os ${totalSetores} setores` : "Gerar o PDF"}
+                  {plural ? `Abrir os ${totalSetores} setores` : "Abrir para imprimir"}
                 </span>
                 <span className="block text-xs text-emerald-800/80 dark:text-emerald-300/80">
                   {plural
-                    ? "Um arquivo por setor, baixados de uma vez."
-                    : "O arquivo é baixado direto."}
+                    ? "Um documento só, um setor por página, pronto para imprimir."
+                    : "O boletim abre numa aba, pronto para imprimir."}
                 </span>
               </span>
             </button>
@@ -119,7 +119,7 @@ export function GerarPdfBoletimModal({
                 <FileText className="mt-0.5 h-5 w-5 shrink-0 text-slate-600 dark:text-slate-300" />
                 <span>
                   <span className="block text-sm font-bold text-slate-900 dark:text-slate-100">
-                    Gerar só {setorEditado}
+                    Abrir só {setorEditado}
                   </span>
                   <span className="block text-xs text-slate-600 dark:text-slate-400">
                     O setor que você acabou de editar. Os outros ficam como estão.
@@ -137,7 +137,7 @@ export function GerarPdfBoletimModal({
             disabled={gerando}
             className="rounded-2xl px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-50 dark:text-slate-300 dark:hover:bg-slate-800"
           >
-            {gerando ? "Gerando..." : "Agora não"}
+            {gerando ? "Abrindo..." : "Agora não"}
           </button>
         </div>
       </div>
