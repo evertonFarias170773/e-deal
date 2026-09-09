@@ -735,7 +735,17 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
 
        const isFaturadoType = ["E-FATURADO", "E-RETRABALHO", "E-PERMUTA", "E-AMOSTRA"].includes(values.tipoCobranca);
 
-       if (isFaturadoType) {
+       // Cortesia (E-AMOSTRA, E-RETRABALHO) nao tem condicao a validar: nao ha
+       // prazo a cumprir onde nao ha dinheiro a receber, e os campos vem nulos
+       // de proposito. Ate 09/09/2026 esta checagem valia para a familia
+       // inteira, porque os quatro so podiam ser criados pelo select de
+       // "Subtipo do faturamento", que sempre exigia um modelo. Com os tres
+       // como forma de pagamento propria, exigir condicao aqui impediria a
+       // criacao das duas cortesias.
+       const exigeCondicao =
+         isFaturadoType && !["E-AMOSTRA", "E-RETRABALHO"].includes(values.tipoCobranca);
+
+       if (exigeCondicao) {
          if (!values.forma_fatu) {
            throw new Error("Condição de pagamento (forma_fatu) inválida ou não selecionada.");
          }

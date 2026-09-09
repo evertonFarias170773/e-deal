@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, CreditCard, Landmark, QrCode, ReceiptText, X, Copy, SlidersHorizontal, Check, Wallet } from "lucide-react";
+import { AlertTriangle, CreditCard, Gift, Landmark, QrCode, ReceiptText, Repeat, RotateCcw, X, Copy, SlidersHorizontal, Check, Wallet } from "lucide-react";
 import { useAppToast } from "@/components/common/AppToast";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { hasPermissao } from "@/features/auth/usuarios.service";
@@ -437,7 +437,23 @@ export function PropostaCobrancaPanel({
     }
   }, [saldoRestante, isUserEditingValor]);
 
+  // Família faturado: os quatro seguem juntos DEPOIS da criação — fila de
+  // pendentes, liberação manual, PAID na confirmação. Isto não muda.
   const isFaturado = ["E-FATURADO", "E-RETRABALHO", "E-PERMUTA", "E-AMOSTRA"].includes(form.tipoCobranca);
+
+  /**
+   * Cortesia: amostra e retrabalho. Não há prazo a cumprir onde não há
+   * dinheiro a receber, então não pedem condição de pagamento e gravam nulo em
+   * `forma_fatu`, `forma_pgto`, `id_modelo_cobranca` e nos `p_*`.
+   */
+  const isCortesia = form.tipoCobranca === "E-AMOSTRA" || form.tipoCobranca === "E-RETRABALHO";
+
+  /**
+   * Faturado e E-Permuta exigem condição: os dois têm contrapartida real — o
+   * cliente vai pagar, ou já pagou em mercadoria — e o prazo é parte do
+   * combinado.
+   */
+  const exigeCondicaoPagamento = isFaturado && !isCortesia;
   const idEmpresaReal = form.id_empresa ?? (source === "supabase" ? getEmpresaIdByNome(proposta.empresa) : 1);
   const empresa = EMPRESAS_RECEBEDORAS_FIXAS.find((e) => e.id === idEmpresaReal) || EMPRESAS_RECEBEDORAS_FIXAS[0];
   const [realCreditAnalysis, setRealCreditAnalysis] = useState<CreditAnalysisResult | null>(null);
@@ -1255,7 +1271,9 @@ export function PropostaCobrancaPanel({
       return;
     }
 
-    if (isFaturado && !modeloSelecionadoId) {
+    // Cortesia não passa por aqui: não há prazo a combinar onde não há
+    // dinheiro a receber.
+    if (exigeCondicaoPagamento && !modeloSelecionadoId) {
       showToast({ type: "error", title: "Selecione uma condição de pagamento." });
       return;
     }
@@ -1268,9 +1286,21 @@ export function PropostaCobrancaPanel({
     let payloadVencimento = getDefaultVencimento(3);
     let extraPayload: Partial<CriarCobrancaFormValues> = {};
 
-    if (isFaturado) {
+    if (isCortesia) {
+      // Sem condição: nada de `forma_fatu`, `forma_pgto`, `id_modelo_cobranca`
+      // nem parcelamento. Explícito em vez de omitido, para o insert gravar
+      // NULO de propósito e não por descuido.
+      extraPayload = {
+        forma_fatu: null,
+        id_modelo_cobranca: null,
+        p_qtd_parcelas: null,
+        p_dias_pra_inicio: null,
+        p_intervalo: null,
+        p_valor_entrada: null
+      };
+    } else if (exigeCondicaoPagamento) {
       const selectedModel = modelosCobranca.find(m => String(m.id) === String(modeloSelecionadoId));
-      
+
       if (!selectedModel || !selectedModel.resultado || selectedModel.qtd_parcela == null || selectedModel.inicio == null || selectedModel.intervalo == null) {
         showToast({ type: "error", title: "Selecione uma condição de pagamento válida." });
         return;
@@ -1442,7 +1472,13 @@ export function PropostaCobrancaPanel({
     { id: "BOLETO", label: "Boleto", icon: ReceiptText },
     { id: "CARD_PARCELADO", label: "Cartão de crédito", icon: CreditCard },
     { id: "CARD_ASAS", label: "Cartão Asaas", icon: CreditCard, hint: "Segunda opção de cartão" },
-    { id: "E-FATURADO", label: "Faturado", icon: Landmark }
+    { id: "E-FATURADO", label: "Faturado", icon: Landmark },
+    // Deixaram de ser "subtipo do faturamento" num select escondido: são
+    // formas de pagamento como as outras, e o vendedor escolhe direto. O
+    // comportamento depois da criação continua o da família faturado.
+    { id: "E-PERMUTA", label: "E-Permuta", icon: Repeat, hint: "Troca por mercadoria ou serviço" },
+    { id: "E-AMOSTRA", label: "E-Amostra", icon: Gift, hint: "Cortesia, sem condição" },
+    { id: "E-RETRABALHO", label: "E-Retrabalho", icon: RotateCcw, hint: "Cortesia, sem condição" }
   ];
   if (saldoCredito > 0 && canUsarCredito && saldoRestante > 0) {
     opcoesPagamento.push({ id: "E-CREDITO", label: "E-Crédito", icon: Wallet as any });
@@ -1601,7 +1637,7 @@ export function PropostaCobrancaPanel({
                 </Field>
                 
 
-            {isFaturado ? (
+            {exigeCondicaoPagamento ? (
                   <Field label="Condição de pagamento *">
                     <select
                       value={modeloSelecionadoId}
@@ -1618,12 +1654,12 @@ export function PropostaCobrancaPanel({
                   </Field>
                 ) : null}
                 <div className="md:col-span-2">
-                  <Field label={isFaturado ? "Observações (Condição comercial solicitada)" : "Observações"}>
+                  <Field label={exigeCondicaoPagamento ? "Observações (Condição comercial solicitada)" : "Observações"}>
                     <textarea
                       value={form.observacao}
                       onChange={(event) => patchForm({ observacao: event.target.value })}
                       className={`${inputClass} min-h-24 resize-y`}
-                      placeholder={isFaturado ? "Observação opcional, ex.: 14/28 dias" : "Observação opcional"}
+                      placeholder={exigeCondicaoPagamento ? "Observação opcional, ex.: 14/28 dias" : "Observação opcional"}
                     />
                   </Field>
                 </div>
@@ -1686,21 +1722,6 @@ export function PropostaCobrancaPanel({
                   );
                 })}
               </div>
-              {isFaturado && (
-                <div className="mt-4 border-t border-slate-100 pt-4 flex flex-col gap-1.5 max-w-md">
-                  <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">Subtipo do faturamento</label>
-                  <select
-                    value={form.tipoCobranca}
-                    onChange={(e) => patchForm({ tipoCobranca: e.target.value as CobrancaTipo })}
-                    className={inputClass}
-                  >
-                    <option value="E-FATURADO">E-Faturado</option>
-                    <option value="E-RETRABALHO">E-Retrabalho</option>
-                    <option value="E-PERMUTA">E-Permuta</option>
-                    <option value="E-AMOSTRA">E-Amostra</option>
-                  </select>
-                </div>
-              )}
               {!tipoDisponivel ? (
                 <p className="mt-3 text-xs text-orange-700">{indisponibilidadeMensagem || "Indisponível para esta empresa."}</p>
               ) : null}
@@ -1711,18 +1732,22 @@ export function PropostaCobrancaPanel({
             {isFaturado ? (
               <PanelCard
                 title="Campos mínimos do faturado"
-                description="Condição comercial e aviso resumido de crédito."
+                description={exigeCondicaoPagamento ? "Condição comercial e aviso resumido de crédito." : "Aviso resumido de crédito."}
               >
+                {/* Cortesia nao tem condicao comercial a combinar. O aviso de
+                    credito abaixo continua valendo para a familia inteira. */}
+                {exigeCondicaoPagamento ? (
                 <div className="max-w-md">
-                  <Field label="Condição comercial">
-                    <input
-                      value={form.condicaoPagamento}
-                      onChange={(event) => patchForm({ condicaoPagamento: event.target.value })}
-                      className={inputClass}
-                      placeholder="Ex.: Faturado 28 dias"
-                    />
-                  </Field>
-                </div>
+                    <Field label="Condição comercial">
+                      <input
+                        value={form.condicaoPagamento}
+                        onChange={(event) => patchForm({ condicaoPagamento: event.target.value })}
+                        className={inputClass}
+                        placeholder="Ex.: Faturado 28 dias"
+                      />
+                    </Field>
+                  </div>
+                ) : null}
 
                 {isLoadingCredit ? (
                   <div className="mt-4 p-4 text-center rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-center gap-2">
@@ -2161,7 +2186,7 @@ export function PropostaCobrancaPanel({
                     )}
                   </Field>
 
-            {isFaturado ? (
+            {exigeCondicaoPagamento ? (
                     <Field label="Condição de pagamento *">
                       <select
                         value={modeloSelecionadoId}
@@ -2178,12 +2203,12 @@ export function PropostaCobrancaPanel({
                     </Field>
                   ) : null}
                   <div className="md:col-span-2">
-                    <Field label={isFaturado ? "Observações (Condição comercial solicitada)" : "Observações"}>
+                    <Field label={exigeCondicaoPagamento ? "Observações (Condição comercial solicitada)" : "Observações"}>
                       <textarea
                         value={form.observacao}
                         onChange={(event) => patchForm({ observacao: event.target.value })}
                         className={`${inputClass} min-h-24 resize-y`}
-                        placeholder={isFaturado ? "Observação opcional, ex.: 14/28 dias" : "Observação opcional"}
+                        placeholder={exigeCondicaoPagamento ? "Observação opcional, ex.: 14/28 dias" : "Observação opcional"}
                       />
                     </Field>
                   </div>
@@ -2243,21 +2268,6 @@ export function PropostaCobrancaPanel({
                     );
                   })}
                 </div>
-                {isFaturado && (
-                  <div className="mt-4 border-t border-slate-100 pt-4 flex flex-col gap-1.5 max-w-md">
-                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">Subtipo do faturamento</label>
-                    <select
-                      value={form.tipoCobranca}
-                      onChange={(e) => patchForm({ tipoCobranca: e.target.value as CobrancaTipo })}
-                      className={inputClass}
-                    >
-                      <option value="E-FATURADO">E-Faturado</option>
-                      <option value="E-RETRABALHO">E-Retrabalho</option>
-                      <option value="E-PERMUTA">E-Permuta</option>
-                      <option value="E-AMOSTRA">E-Amostra</option>
-                    </select>
-                  </div>
-                )}
                 {!tipoDisponivel ? (
                   <p className="mt-3 text-xs text-orange-700">{indisponibilidadeMensagem || "Indisponível para esta empresa."}</p>
                 ) : null}
@@ -2334,18 +2344,22 @@ export function PropostaCobrancaPanel({
             {isFaturado ? (
                 <PanelCard
                   title="Campos mínimos do faturado"
-                  description="Condição comercial e aviso resumido de crédito."
+                  description={exigeCondicaoPagamento ? "Condição comercial e aviso resumido de crédito." : "Aviso resumido de crédito."}
                 >
+                  {/* Cortesia nao tem condicao comercial a combinar. O aviso de
+                      credito abaixo continua valendo para a familia inteira. */}
+                  {exigeCondicaoPagamento ? (
                   <div className="max-w-md">
-                    <Field label="Condição comercial">
-                      <input
-                        value={form.condicaoPagamento}
-                        onChange={(event) => patchForm({ condicaoPagamento: event.target.value })}
-                        className={inputClass}
-                        placeholder="Ex.: Faturado 28 dias"
-                      />
-                    </Field>
-                  </div>
+                      <Field label="Condição comercial">
+                        <input
+                          value={form.condicaoPagamento}
+                          onChange={(event) => patchForm({ condicaoPagamento: event.target.value })}
+                          className={inputClass}
+                          placeholder="Ex.: Faturado 28 dias"
+                        />
+                      </Field>
+                    </div>
+                  ) : null}
 
                   {isLoadingCredit ? (
                     <div className="mt-4 p-4 text-center rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-center gap-2">
