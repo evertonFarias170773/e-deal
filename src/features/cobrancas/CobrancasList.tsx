@@ -173,6 +173,12 @@ if (tipo === "TODOS") {
   return false;
 }
 
+/** "A", "A e B", "A, B e C" — para o rótulo do card de pendentes. */
+function formatarListaPtBr(itens: string[]): string {
+  if (itens.length <= 1) return itens[0] ?? "";
+  return `${itens.slice(0, -1).join(", ")} e ${itens[itens.length - 1]}`;
+}
+
 function getInitialDates() {
   const now = new Date();
   const year = now.getFullYear();
@@ -388,9 +394,16 @@ export function CobrancasList() {
   // Pendentes de aprovação calculados do array in-memory (não cobertos pela view)
   const pendentesResumo = useMemo(() => {
     const pendentes = cobrancasStats.filter(isPendenteAprovacao);
+    // O card é agregado, então o rótulo sai dos tipos que ESTÃO na fila. Era
+    // fixo em "E-Faturado" e mentia desde que os subtipos passaram a ser
+    // criados: uma fila só de E-Amostra continuava anunciando E-Faturado.
+    const rotulos = Array.from(
+      new Set(pendentes.map((c) => getTipoCobrancaLabel(c.tipo_cobranca)))
+    ).sort();
     return {
       count: pendentes.length,
       total: pendentes.reduce((s, c) => s + (c.valor ?? 0), 0),
+      rotulos,
     };
   }, [cobrancasStats]);
 
@@ -603,7 +616,11 @@ export function CobrancasList() {
           title="Pendentes de aprovação"
           count={pendentesResumo.count}
           total={pendentesResumo.total}
-          helper="E-Faturado aguardando validação financeira."
+          helper={
+            pendentesResumo.rotulos.length
+              ? `${formatarListaPtBr(pendentesResumo.rotulos)} aguardando validação financeira.`
+              : "Nenhum faturamento aguardando validação financeira."
+          }
           tone="warning"
           isActive={tipo === "PENDENTES_APROVACAO"}
           onClick={() => setFilters({ tipo: "PENDENTES_APROVACAO", aba: "FILA" })}

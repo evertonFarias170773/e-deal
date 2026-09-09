@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { calcularSituacaoQuitacaoProposta } from "@/features/cobrancas/services/conferencia-financeira.service";
+import { quitaNaLiberacao } from "@/features/cobrancas/cobrancas-utils";
 import { aplicarStatusRecomendadoProposta } from "@/features/orcamentos/services/status-writer.service";
 
 type UsuarioMinRow = {
@@ -118,11 +119,23 @@ export async function POST(request: NextRequest) {
       payloadUpdate.status = "A_VENCER";
       payloadUpdate.aprovado_por = confirmadoPor;
     } else {
+      const agora = new Date().toISOString();
       payloadUpdate.confirmado = true;
       payloadUpdate.confirmado_por = confirmadoPor;
-      payloadUpdate.data_confirmacao = new Date().toISOString();
+      payloadUpdate.data_confirmacao = agora;
       if (cobranca.status === "A_RECEBER") {
         payloadUpdate.status = "PAID";
+      } else if (cobranca.status === "A_VENCER" && quitaNaLiberacao(cobranca.tipo_cobranca)) {
+        // E-Permuta, E-Amostra e E-Retrabalho não geram título: a confirmação
+        // do financeiro É a quitação. Sem isto ficavam em A_VENCER para
+        // sempre, esperando um recebimento que não existe — e a proposta
+        // nunca fechava a cobertura integral.
+        //
+        // O E-FATURADO NÃO entra aqui de propósito: ele continua A_VENCER
+        // depois de conferido, porque quem liquida é o título do Registro de
+        // Recebíveis. `valor` não é tocado em nenhum dos casos.
+        payloadUpdate.status = "PAID";
+        payloadUpdate.paid_at = cobranca.paid_at ?? agora;
       }
     }
 

@@ -535,6 +535,30 @@ export const FAMILIA_FATURADO_TIPOS = [
 ] as const;
 
 /**
+ * Subtipos de faturamento em que a LIBERAÇÃO já é a quitação.
+ *
+ * O E-FATURADO fica em `A_VENCER` depois de conferido porque o dinheiro ainda
+ * vai entrar: o título nasce no Registro de Recebíveis e é ele que liquida.
+ * Estes três não têm título nenhum — a permuta já foi liquidada pela
+ * contrapartida, e amostra e retrabalho são cortesia. Sem título, `A_VENCER`
+ * não descreve nada: seria um recebimento futuro que nunca chega, e a proposta
+ * ficaria presa sem cobertura financeira para sempre.
+ *
+ * Por isso, ao serem confirmados na Conferência, vão para `PAID` com `paid_at`
+ * — exatamente como um PIX conferido à mão.
+ *
+ * O VALOR CONTINUA O REAL, nos três. Amostra e retrabalho não entram no
+ * faturamento, mas essa exclusão é assunto das SOMAS (por tipo), não do
+ * registro: zerar o campo aqui destruiria o valor da venda e quebraria a
+ * cobertura integral da proposta.
+ */
+const SUBTIPOS_QUITAM_NA_LIBERACAO = new Set(["E-RETRABALHO", "E-PERMUTA", "E-AMOSTRA"]);
+
+export function quitaNaLiberacao(tipo: string | null | undefined): boolean {
+  return SUBTIPOS_QUITAM_NA_LIBERACAO.has(String(tipo || "").trim().toUpperCase().replace(/_/g, "-"));
+}
+
+/**
  * Identifica cobrança E-Faturado.
  *
  * @deprecated Use `isFamiliaFaturado`. Mantido porque é o nome usado no
