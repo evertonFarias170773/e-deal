@@ -510,9 +510,9 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
      * numero que crescia sozinho todo dia. `data_despacho` resolveu aquilo e
      * hoje resolve menos, porque despachar deixou de significar sair.
      *
-     * `prometidoHoje` fica INTOCADO de proposito: ele responde "o que promete
-     * sair hoje", e um pedido que ja saiu hoje continua sendo verdade nesse
-     * chip. So o atraso para.
+     * `prometidoHoje` ficou INTOCADO ATE 09/09/2026: ele responde "o que promete
+     * sair hoje", e um pedido que ja saiu HOJE continua sendo verdade nesse
+     * chip. So o atraso parava. Ver a correcao logo abaixo.
      *
      * Medido em 02/09/2026 sobre o painel: as duas regras davam o MESMO
      * resultado em todos os pedidos — zero trocam de estado.
@@ -520,7 +520,57 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
     const naEtapaDeExpedicao = etapa === "PRODUCAO" || etapa === "ACABAMENTO" || etapa === "PRONTO";
     const atrasadoDias =
       naEtapaDeExpedicao && promessaDia && promessaDia < hoje ? diffDias(promessaDia, hoje) : 0;
-    const prometidoHoje = emAberto && promessaDia === hoje;
+
+    /**
+     * ═════════════════════════════════════════════════════════════════════════
+     * O "PROMETIDO HOJE" TAMBEM RECONHECE A SAIDA — MAS NAO DO MESMO JEITO QUE
+     * O ATRASO. SAO DUAS REGRAS DIFERENTES, DE PROPOSITO (09/09/2026).
+     * ═════════════════════════════════════════════════════════════════════════
+     *
+     * O QUE A ASSIMETRIA ERA
+     *   Em 25/08 e 02/09 o atraso ganhou um ponto de parada — sair da bancada —
+     *   e o `prometidoHoje` foi DELIBERADAMENTE deixado sem ele, com o argumento
+     *   registrado acima: "um pedido que ja saiu hoje continua sendo verdade
+     *   nesse chip". A intencao era manter o dia visivel enquanto ele acontece.
+     *
+     * O CASO QUE AQUELE ARGUMENTO NAO PREVIU
+     *   Sair ADIANTADO. O 21722 foi postado nos Correios em 08/09 as 13:32 para
+     *   uma promessa de 09/09, e no dia 09 aparecia no card "Expedicao do dia" —
+     *   um pedido a caminho, sem nenhuma acao de expedicao pendente, ocupando a
+     *   lista que responde "o que tem de sair hoje". O argumento falava de "saiu
+     *   HOJE"; ele saiu ontem.
+     *
+     * A REGRA NOVA, E POR QUE ELA NAO E A DO ATRASO
+     *   O atraso congela por ETAPA: fora da bancada, para. Se o `prometidoHoje`
+     *   copiasse isso, perderia justamente o que a decisao de 25/08 quis manter —
+     *   o pedido que saiu hoje sumiria do card no instante do despacho, e o dia
+     *   ficaria sem registro do que ja foi cumprido.
+     *
+     *   Por isso aqui o corte e por DIA, nao por etapa: fora da bancada, conta
+     *   enquanto a saida for de HOJE. Saiu em qualquer dia anterior, para.
+     *
+     * O CARIMBO DA SAIDA, POR ETAPA
+     *   EM_TRANSITO → `coletadoEm ?? dataDespacho`. Sao as duas entradas da
+     *     etapa: Correios chega pela postagem (a postagem e a coleta) e
+     *     transportadora/motoboy chegam pela coleta, depois de esperar o carro.
+     *     E o mesmo par que o chip de status do card ja usa.
+     *   A_RETIRAR   → `dataDespacho`. O despacho e que poe o volume no balcao.
+     *   ENTREGUE    → nao chega aqui: `emAberto` ja o exclui.
+     *
+     * SEM CARIMBO, CONTINUA CONTANDO. Sem data nao da para afirmar que saiu em
+     *   outro dia, e sumir do card e pior que sobrar nele: quem sobra e visto e
+     *   corrigido, quem some nao e procurado.
+     *
+     * A BANCADA NAO MUDA. `PRODUCAO`, `ACABAMENTO` e `PRONTO` nem chegam a este
+     *   teste. O 21594 e o exemplo: ele tem `dataDespacho` de 03/09 de uma
+     *   passagem anterior que `voltarStatus` nao limpou, esta em ACABAMENTO e
+     *   conta por ATRASO — e segue contando, porque o carimbo velho nem e lido.
+     */
+    const foraDaBancada = etapa === "A_RETIRAR" || etapa === "EM_TRANSITO" || etapa === "ENTREGUE";
+    const saidaDaBancada = etapa === "EM_TRANSITO" ? (exp?.coletadoEm ?? exp?.dataDespacho) : exp?.dataDespacho;
+    const saiuEmOutroDia = foraDaBancada && Boolean(saidaDaBancada) && diaSaoPaulo(saidaDaBancada!) !== hoje;
+
+    const prometidoHoje = emAberto && promessaDia === hoje && !saiuEmOutroDia;
 
     const expConfirmado = despachoConfirmado ? exp : null;
     const tipoFrete: TipoFreteNormalizado = expConfirmado?.tipoFrete ?? normalizarTipoFrete(frete?.servico);
