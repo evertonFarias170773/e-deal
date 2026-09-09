@@ -55,6 +55,47 @@ function urlDoMaco(idInt: number, idsBoletins: string[]): string {
   return `/api/pedidos/imprimir-os?${params.toString()}`;
 }
 
+/**
+ * Abre o documento numa aba nova DESVINCULADA da janela do sistema.
+ *
+ * O DEFEITO QUE ISTO CONSERTA (09/2026)
+ *   `window.open(url, "_blank")` sozinho deixa a aba do PDF com
+ *   `window.opener` apontando para a aba do ERP. As duas ficam no mesmo grupo de
+ *   contexto: uma pode navegar e fechar a outra, e o usuário relatou justamente
+ *   isso — fechar o visualizador depois de imprimir levava o sistema junto.
+ *
+ * POR QUE `opener = null` E NÃO A FLAG `noopener`
+ *   `window.open(url, "_blank", "noopener")` desvincula, mas devolve SEMPRE
+ *   `null` — é o que a especificação manda. Sem o objeto de retorno some a única
+ *   forma de saber se o navegador bloqueou a abertura, e o aviso de pop-up
+ *   bloqueado deixaria de funcionar.
+ *
+ *   Medido no Chrome em 09/2026:
+ *     window.open(url, "_blank")                  -> Window, e opener aponta para a pai
+ *     window.open(url, "_blank", "noopener")      -> null, sempre
+ *     window.open(url, "_blank") + opener = null  -> Window, e opener vira null
+ *
+ *   A terceira forma dá as duas coisas: detecta o bloqueio e corta o vínculo.
+ *
+ * Devolve `null` quando o navegador bloqueou — quem chama transforma isso em
+ * pedido de clique, nunca em download silencioso.
+ */
+export function abrirAbaDesvinculada(url: string): Window | null {
+  if (typeof window === "undefined") return null;
+
+  const aba = window.open(url, "_blank");
+  if (!aba) return null;
+
+  // Same-origin (a rota é do próprio app), então a atribuição é permitida.
+  try {
+    aba.opener = null;
+  } catch {
+    // Navegador que recuse a atribuição: a aba já está aberta e o PDF sai. O
+    // vínculo continuar não justifica derrubar a impressão.
+  }
+  return aba;
+}
+
 /** O resumido baixa com sufixo proprio — a rota manda o mesmo no Content-Disposition. */
 function nomeDoArquivo(idInt: number, setor: string | null | undefined, layout?: LayoutPdfOs): string {
   const base = nomeArquivoOs(idInt, setor);
@@ -131,8 +172,9 @@ export async function abrirPdfOs(
   const nomeArquivo = nomeDoArquivo(idInt, setor, layout);
   const url = urlDoBoletim(idInt, idBoletim, layout);
 
-  // Aberta de forma síncrona no gesto do usuário — não move para depois de um await.
-  const win = typeof window !== "undefined" ? window.open(url, "_blank") : null;
+  // Aberta de forma síncrona no gesto do usuário — não move para depois de um
+  // await. Desvinculada da janela do sistema: ver `abrirAbaDesvinculada`.
+  const win = abrirAbaDesvinculada(url);
 
   if (!win) {
     // Bloqueado. Devolve a URL para a tela oferecer o clique, em vez de baixar
@@ -180,7 +222,7 @@ export async function abrirMacoOs(
   }
 
   const url = urlDoMaco(idInt, ids);
-  const win = typeof window !== "undefined" ? window.open(url, "_blank") : null;
+  const win = abrirAbaDesvinculada(url);
 
   if (!win) {
     return {

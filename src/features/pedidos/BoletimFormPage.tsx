@@ -53,7 +53,13 @@ import {
   type BoletimSetor,
   type ConferenciaSetor
 } from "./services/boletim-setores.service";
-import { abrirPdfOs, baixarPdfOs, abrirMacoOs, type LayoutPdfOs } from "./services/imprimir-os.client";
+import {
+  abrirPdfOs,
+  baixarPdfOs,
+  abrirMacoOs,
+  abrirAbaDesvinculada,
+  type LayoutPdfOs
+} from "./services/imprimir-os.client";
 import { ActionsMenu } from "@/components/common/ActionsMenu";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import { PageHeader } from "@/components/common/PageHeader";
@@ -266,6 +272,8 @@ export function BoletimFormPage() {
    */
   const [modalPdf, setModalPdf] = useState<{ boletins: BoletimSetor[] } | null>(null);
   const [gerandoPdf, setGerandoPdf] = useState(false);
+  /** URL do documento quando o navegador barrou a aba — o modal oferece o clique. */
+  const [urlPdfBloqueada, setUrlPdfBloqueada] = useState<string | null>(null);
   const [urgente, setUrgente] = useState(false);
   const [formaPagamento, setFormaPagamento] = useState("Pix a vista");
   
@@ -1002,14 +1010,17 @@ export function BoletimFormPage() {
 
     if (r.bloqueadoPeloNavegador) {
       // Fica no modal de propósito: o documento não abriu, e fechar levaria o
-      // operador embora achando que imprimiu.
+      // operador embora achando que imprimiu. O modal passa a mostrar o botão
+      // que abre a URL — num clique dele, que é o que o bloqueador aceita.
+      setUrlPdfBloqueada(r.urlParaAbrir ?? null);
       showToast({
         type: "error",
         title: "O navegador bloqueou a aba",
-        description: "Libere os pop-ups para este site e escolha de novo."
+        description: "Use o botão no aviso para abrir, ou libere os pop-ups para este site."
       });
       return;
     }
+    setUrlPdfBloqueada(null);
 
     setModalPdf(null);
     showToast(
@@ -3254,6 +3265,15 @@ export function BoletimFormPage() {
           setorEditado={setorEfetivo || boletimSetor || null}
           totalSetores={modalPdf.boletins.length}
           gerando={gerandoPdf}
+          urlBloqueada={urlPdfBloqueada}
+          onAbrirBloqueada={() => {
+            // Gesto do usuário: é o que o bloqueador de pop-up aceita. Mesma
+            // abertura desvinculada do caminho normal.
+            if (urlPdfBloqueada) abrirAbaDesvinculada(urlPdfBloqueada);
+            setUrlPdfBloqueada(null);
+            setModalPdf(null);
+            router.push("/pedidos");
+          }}
           onGerarTodos={() => void gerarPdfDoModal(modalPdf.boletins)}
           onGerarSetorEditado={() => {
             const doSetor = modalPdf.boletins.filter(

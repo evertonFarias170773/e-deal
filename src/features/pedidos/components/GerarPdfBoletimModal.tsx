@@ -30,6 +30,8 @@ export function GerarPdfBoletimModal({
   setorEditado,
   totalSetores,
   gerando,
+  urlBloqueada,
+  onAbrirBloqueada,
   onGerarTodos,
   onGerarSetorEditado,
   onFechar
@@ -40,6 +42,12 @@ export function GerarPdfBoletimModal({
   setorEditado: string | null;
   totalSetores: number;
   gerando: boolean;
+  /**
+   * O navegador barrou a aba. O documento existe e está nesta URL — o botão
+   * abaixo a abre num gesto do usuário, que é o que o bloqueador aceita.
+   */
+  urlBloqueada?: string | null;
+  onAbrirBloqueada: () => void;
   onGerarTodos: () => void;
   onGerarSetorEditado: () => void;
   onFechar: () => void;
@@ -88,6 +96,22 @@ export function GerarPdfBoletimModal({
                 ? `O pedido tem ${totalSetores} setores — eles abrem juntos, num documento só.`
                 : "O boletim pode ser aberto agora para impressão."}
           </p>
+
+          {urlBloqueada ? (
+            <div className="space-y-2 rounded-2xl border-2 border-amber-300 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-950/40">
+              <p className="text-xs font-semibold text-amber-900 dark:text-amber-200">
+                O navegador bloqueou a aba. O documento já está pronto — abra por aqui,
+                ou libere os pop-ups para este site.
+              </p>
+              <button
+                type="button"
+                onClick={onAbrirBloqueada}
+                className="w-full rounded-2xl bg-amber-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-amber-700"
+              >
+                Abrir o documento em nova aba
+              </button>
+            </div>
+          ) : null}
 
           <div className="space-y-2">
             <button
