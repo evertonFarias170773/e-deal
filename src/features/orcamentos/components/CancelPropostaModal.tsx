@@ -127,6 +127,7 @@ export function CancelPropostaModal({ isOpen, onClose, idInt, onSuccess }: Cance
         isOpen
         cobrancaId={cobrancaParaCancelar}
         isCobrancaPaga={cobrancaUnica ? isCobrancaPagaParaCancelamento(cobrancaUnica) : false}
+        tipoCobranca={cobrancaUnica?.tipo_cobranca ?? null}
         mesFechadoLabel={
           cobrancaUnica && isCobrancaPagaParaCancelamento(cobrancaUnica)
             ? (isConfirmacaoDeMesAnterior(referenciaConfirmacaoParaMesFechado(cobrancaUnica))

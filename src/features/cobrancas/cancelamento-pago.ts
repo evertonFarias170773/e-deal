@@ -55,11 +55,7 @@ export function isStatusPagoParaCancelamento(status: string | null | undefined):
   return String(status || "").trim().toUpperCase() === "PAID";
 }
 
-export type TipoCobrancaBloqueadoCancelamentoPago =
-  | "E-FATURADO"
-  | "E-CREDITO"
-  | "E-AMOSTRA"
-  | "E-RETRABALHO";
+export type TipoCobrancaBloqueadoCancelamentoPago = "E-FATURADO" | "E-CREDITO";
 
 /**
  * Tipos de cobranca que nunca podem entrar neste fluxo, mesmo com status
@@ -70,19 +66,17 @@ export type TipoCobrancaBloqueadoCancelamentoPago =
  * - E-CREDITO: nasce com status PAID porque o credito ja foi debitado da
  *   conta corrente do cliente (`usar-credito/route.ts`) — cancelar aqui NAO
  *   estorna esse consumo.
- * - E-AMOSTRA e E-RETRABALHO: sao cortesia. Viram PAID na liberacao pela
- *   Conferencia com o valor real gravado, mas dinheiro nenhum entrou. Este
- *   fluxo pede o DESTINO do valor recebido — e um dos destinos e lancar
- *   credito na conta corrente do cliente. Oferecer isso aqui criaria credito
- *   por dinheiro que nunca existiu.
  *
- * E-PERMUTA fica DE FORA de proposito: houve contrapartida real, entao o
- * valor existe e escolher o destino dele faz sentido. E a mesma linha que
- * separa `contaNoFaturamento` de `quitaNaLiberacao` — permuta e venda,
- * cortesia nao.
+ * E-AMOSTRA e E-RETRABALHO NAO entram aqui. Estiveram nesta lista entre
+ * cced05f e esta correcao, e foi erro: barrar o TIPO fechou os tres caminhos
+ * de cancelamento ao mesmo tempo (o `cancelar-externo` recusa por ser PAID,
+ * este recusava por tipo, e `voltarCobrancaFilaReal` nao mexe no status), e
+ * cortesia liberada ficava presa em PAID sem saida pela tela. O problema
+ * nunca foi o cancelamento — era o DESTINO do valor. Ver
+ * `destinosPermitidosParaCancelamentoPago`, logo abaixo.
  *
  * Retorna o tipo normalizado quando bloqueia, ou null quando nao bloqueia.
- * PIX, BOLETO e CARD_PARCELADO caem no `return null` e seguem inalterados.
+ * PIX, BOLETO e CARD_PARCELADO caem no `return null`.
  */
 export function tipoCobrancaBloqueiaCancelamentoPago(
   tipoCobranca: string | null | undefined
@@ -90,8 +84,6 @@ export function tipoCobrancaBloqueiaCancelamentoPago(
   const normalizado = String(tipoCobranca || "").trim().toUpperCase().replace(/_/g, "-");
   if (normalizado === "E-FATURADO") return "E-FATURADO";
   if (normalizado === "E-CREDITO") return "E-CREDITO";
-  if (normalizado === "E-AMOSTRA") return "E-AMOSTRA";
-  if (normalizado === "E-RETRABALHO") return "E-RETRABALHO";
   return null;
 }
 
@@ -99,10 +91,58 @@ export function mensagemTipoCobrancaBloqueado(tipo: TipoCobrancaBloqueadoCancela
   if (tipo === "E-FATURADO") {
     return "Cobranca faturada nao entra neste fluxo: o valor pode nao ter sido recebido e o titulo em Contas a Receber continuaria ativo.";
   }
-  if (tipo === "E-AMOSTRA" || tipo === "E-RETRABALHO") {
-    return "Cobranca de cortesia nao entra neste fluxo: nenhum dinheiro entrou, entao nao ha valor recebido para devolver nem para lancar como credito na conta corrente.";
-  }
   return "Cobranca paga com credito do cliente nao entra neste fluxo: o cancelamento nao estorna o credito consumido.";
+}
+
+/**
+ * Cortesia: o valor esta gravado na cobranca, mas dinheiro nenhum entrou.
+ *
+ * E-AMOSTRA e E-RETRABALHO viram PAID na liberacao pela Conferencia com o
+ * valor real da venda. Cancelar PODE — o que nao pode e escolher um destino
+ * que mexa em dinheiro: devolver ao cliente um valor que ele nunca pagou, ou
+ * lancar como credito na conta corrente um valor que nunca existiu.
+ *
+ * E-PERMUTA fica de FORA: houve contrapartida real, o valor existe, e todos os
+ * destinos continuam disponiveis. E a mesma linha que separa
+ * `contaNoFaturamento` de `quitaNaLiberacao` — permuta e venda, cortesia nao.
+ */
+const TIPOS_SEM_VALOR_RECEBIDO = new Set(["E-AMOSTRA", "E-RETRABALHO"]);
+
+export function tipoCobrancaSemValorRecebido(tipoCobranca: string | null | undefined): boolean {
+  return TIPOS_SEM_VALOR_RECEBIDO.has(
+    String(tipoCobranca || "").trim().toUpperCase().replace(/_/g, "-")
+  );
+}
+
+/** Unico destino possivel quando nao houve dinheiro: manter o valor, sem movimento. */
+const DESTINO_SEM_MOVIMENTO: DestinoValorCancelado = "NENHUM";
+
+/**
+ * Destinos que este tipo de cobranca pode escolher ao ser cancelado.
+ *
+ * Fonte UNICA da regra: a rota usa para RECUSAR e a tela usa para so mostrar
+ * o que a rota aceitaria. Se divergirem, o usuario preenche o formulario
+ * inteiro para descobrir no erro do servidor — o mesmo problema que
+ * `isCobrancaPagaParaCancelamento` existe para evitar.
+ */
+export function destinosPermitidosParaCancelamentoPago(
+  tipoCobranca: string | null | undefined
+): typeof DESTINOS_VALOR_CANCELADO {
+  if (tipoCobrancaSemValorRecebido(tipoCobranca)) {
+    return DESTINOS_VALOR_CANCELADO.filter((d) => d.codigo === DESTINO_SEM_MOVIMENTO);
+  }
+  return DESTINOS_VALOR_CANCELADO;
+}
+
+export function destinoPermitidoParaCancelamentoPago(
+  tipoCobranca: string | null | undefined,
+  destino: DestinoValorCancelado
+): boolean {
+  return destinosPermitidosParaCancelamentoPago(tipoCobranca).some((d) => d.codigo === destino);
+}
+
+export function mensagemDestinoBloqueado(): string {
+  return "Cobranca de cortesia: nenhum dinheiro entrou, entao nao ha valor a devolver ao cliente nem a lancar como credito na conta corrente. O cancelamento so pode manter o valor.";
 }
 
 /**

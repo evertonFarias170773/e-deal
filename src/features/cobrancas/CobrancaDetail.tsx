@@ -431,6 +431,7 @@ export function CobrancaDetail({ cobrancaId, onClose, onRefreshProposta }: Cobra
         cobrancaId={cobrancaAtual.id}
         isCobrancaPaga={isCobrancaPaga}
         mesFechadoLabel={mesFechadoLabel}
+        tipoCobranca={cobrancaAtual.tipo_cobranca}
         onSuccess={() => {
           onClose?.();
           onRefreshProposta?.();

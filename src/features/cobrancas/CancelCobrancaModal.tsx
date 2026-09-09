@@ -8,7 +8,7 @@ import { useAppToast } from "@/components/common/AppToast";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/formatters/currency";
 import {
-  DESTINOS_VALOR_CANCELADO,
+  destinosPermitidosParaCancelamentoPago,
   MOTIVOS_CANCELAMENTO_PAGO,
   type DestinoValorCancelado,
   type MotivoCancelamentoPago
@@ -23,6 +23,12 @@ interface CancelCobrancaModalProps {
   isCobrancaPaga: boolean;
   /** "agosto/2026" quando a confirmação caiu em mês já fechado; null caso contrário. */
   mesFechadoLabel: string | null;
+  /**
+   * Tipo da cobrança — decide quais destinos do valor aparecem. Cortesia só
+   * pode manter o valor. Opcional: sem ele a lista completa é mostrada, que é
+   * o comportamento de sempre para todo o resto.
+   */
+  tipoCobranca?: string | null;
 }
 
 // Dois modos de proposito: cobranca NAO paga segue com motivo livre (fluxo de
@@ -74,7 +80,8 @@ export function CancelCobrancaModal({
   cobrancaId,
   onSuccess,
   isCobrancaPaga,
-  mesFechadoLabel
+  mesFechadoLabel,
+  tipoCobranca
 }: CancelCobrancaModalProps) {
   const { cancelCobranca } = useCobrancas();
   const { showToast } = useAppToast();
@@ -175,7 +182,14 @@ export function CancelCobrancaModal({
     setMotivoCodigo(novoMotivo);
     const catalogo = MOTIVOS_CANCELAMENTO_PAGO.find((m) => m.codigo === novoMotivo);
     if (catalogo) {
-      setDestino(catalogo.destinoSugerido);
+      // O sugerido do catálogo pode não valer para este tipo: "Desistência do
+      // cliente" sugere DEVOLVIDO, que não existe em cortesia. Cai no único
+      // permitido em vez de pré-marcar algo que a rota recusaria.
+      const permitidos = destinosPermitidosParaCancelamentoPago(tipoCobranca);
+      const sugerido = permitidos.some((d) => d.codigo === catalogo.destinoSugerido)
+        ? catalogo.destinoSugerido
+        : permitidos[0]?.codigo;
+      if (sugerido) setDestino(sugerido);
     }
   }
 
@@ -429,7 +443,9 @@ export function CancelCobrancaModal({
                   Destino do valor <span className="text-red-500">*</span>
                 </span>
                 <div className="space-y-2">
-                  {DESTINOS_VALOR_CANCELADO.map((d) => {
+                  {/* Mesma funcao que a rota usa para recusar: a tela nao pode
+                      oferecer um destino que o servidor rejeitaria. */}
+                  {destinosPermitidosParaCancelamentoPago(tipoCobranca).map((d) => {
                     const checked = destino === d.codigo;
                     return (
                       <label

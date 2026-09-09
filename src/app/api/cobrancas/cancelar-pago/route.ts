@@ -16,10 +16,12 @@ import { avaliarCancelamentoNoServidor } from "@/features/cobrancas/services/can
 import { RECUSAS_COBRANCA_PAGA } from "@/features/cobrancas/cancelamento-elegibilidade";
 import {
   DESTINOS_VALOR_CANCELADO,
+  destinoPermitidoParaCancelamentoPago,
   isConfirmacaoDeMesAnterior,
   isDestinoValorCancelado,
   isMotivoCancelamentoPago,
   isStatusPagoParaCancelamento,
+  mensagemDestinoBloqueado,
   mensagemTipoCobrancaBloqueado,
   montarMotivoCancela,
   referenciaConfirmacaoParaMesFechado,
@@ -151,6 +153,18 @@ export async function POST(request: Request) {
     const tipoBloqueado = tipoCobrancaBloqueiaCancelamentoPago(pagamento.tipo_cobranca);
     if (tipoBloqueado) {
       return erro("NAO_PAGA", mensagemTipoCobrancaBloqueado(tipoBloqueado), 409);
+    }
+
+    // 8b. Destino do valor por TIPO. Cortesia (E-AMOSTRA, E-RETRABALHO) pode
+    //     ser cancelada, mas nao pode devolver nem creditar: dinheiro nenhum
+    //     entrou. A checagem vive AQUI, no servidor, e nao so na tela — a tela
+    //     usa a mesma funcao para nao oferecer o que seria recusado, mas quem
+    //     garante e este ponto.
+    //
+    //     Vem ANTES do passo 9 de proposito: e la que o credito e criado na
+    //     conta corrente, e um destino invalido nunca pode chegar naquele RPC.
+    if (!destinoPermitidoParaCancelamentoPago(pagamento.tipo_cobranca, destino)) {
+      return erro("MOTIVO_INVALIDO", mensagemDestinoBloqueado(), 409);
     }
 
     // 9. Credito ANTES do cancelamento: se a conta corrente falhar, nada e
