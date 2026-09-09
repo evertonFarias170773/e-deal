@@ -26,6 +26,7 @@ import {
   getLiberacaoPedidoLabel,
   getLiberacaoPedidoStatus,
   getTipoCobrancaLabel,
+  contaNoFaturamento,
   isCobrancaEFaturado,
   isFamiliaFaturado,
   isPendenteAprovacao,
@@ -91,6 +92,15 @@ function isFilaPadrao(cobranca: Cobranca) {
 }
 
 // confirmado=true em pagamentos_v2 representa liberação operacional da cobrança para os próximos fluxos. Não significa criação de pedido de produção nem geração de OS física.
+/**
+ * Base dos três cards de faturamento (Confirmados do dia, Faturamento do mês e
+ * do período) e das duas quebras por empresa. Um predicado só para os cinco.
+ *
+ * A exclusão de E-Amostra e E-Retrabalho entra AQUI, e não em cada card: são
+ * cortesia, não receita. Mesmo critério de `public.fn_conta_no_faturamento`.
+ * E-Permuta continua contando. O card "Pendentes de aprovação" NÃO passa por
+ * aqui e segue mostrando os dois — ele conta o que espera decisão, não receita.
+ */
 function isBaseConfirmada(cobranca: Cobranca) {
   const status = (cobranca.status || "").trim().toUpperCase();
 
@@ -98,7 +108,8 @@ function isBaseConfirmada(cobranca: Cobranca) {
 
   return (
     (status === "PAID" || status === "A_VENCER") &&
-    cobranca.confirmado === true
+    cobranca.confirmado === true &&
+    contaNoFaturamento(cobranca.tipo_cobranca)
   );
 }
 

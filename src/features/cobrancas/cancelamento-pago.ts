@@ -103,8 +103,9 @@ export function isCobrancaPagaParaCancelamento(cobranca: {
 
 /**
  * Referencia de data para decidir se a confirmacao caiu em mes fechado.
- * Mesmo fallback que o dashboard financeiro usa para datar a receita
- * (`dashboard-financeiro.service.ts:getFaturamentoReference`): paid_at,
+ * Mesmo fallback que o dashboard financeiro usava para datar a receita
+ * (era `dashboard-financeiro.service.ts:getFaturamentoReference`, apagado em
+ * 09/09/2026 por nao ter chamador): paid_at,
  * senao data_confirmacao, senao created_at — existem 74 cobrancas
  * confirmadas com os dois primeiros campos nulos, e sem o created_at no
  * fim da cadeia elas nunca disparariam a confirmacao de mes fechado.

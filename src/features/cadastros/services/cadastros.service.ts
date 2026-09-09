@@ -11,6 +11,7 @@ import type {
 } from "@/features/cadastros/types.supabase";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import { bearerDaSessao } from "@/lib/supabase/bearer";
+import { contaNoFaturamento } from "@/features/cobrancas/cobrancas-utils";
 import {
   escolherEnderecoPrincipal,
   TIPO_ENDERECO_PRINCIPAL
@@ -503,9 +504,15 @@ export async function getCadastroDetailReadOnly(
         .select("id,id_cliente_principal,id_cliente_socio,tipo_relacao")
         .eq("id_cliente_principal", idCliente)
         .limit(100),
+      // "Valor total comprado" é faturamento do cliente: E-Amostra e
+      // E-Retrabalho são cortesia e ficam de fora (a exclusão é aplicada
+      // abaixo, em memória — ver o porquê em maestro-simple-pagamentos).
+      // O critério de status deste ponto é PAID puro, SEM `confirmado`, e
+      // continua assim: é o único do sistema que usa esse recorte, e
+      // uniformizá-lo mudaria o número por outro motivo.
       client
         .from("pagamentos_v2")
-        .select("valor")
+        .select("valor, tipo_cobranca")
         .eq("id_cliente", idCliente)
         .eq("status", "PAID")
     ]);
@@ -549,7 +556,9 @@ export async function getCadastroDetailReadOnly(
       }
     }
 
-    const pagamentosData = propostasResult?.data || [];
+    const pagamentosData = (propostasResult?.data || []).filter((row) =>
+      contaNoFaturamento((row as { tipo_cobranca?: string | null }).tipo_cobranca)
+    );
     const totalCompras = pagamentosData.length;
     const valorTotalComprado = pagamentosData.reduce((acc, curr) => acc + Number(curr.valor || 0), 0);
 

@@ -559,6 +559,33 @@ export function quitaNaLiberacao(tipo: string | null | undefined): boolean {
 }
 
 /**
+ * O valor desta cobrança entra em soma de FATURAMENTO?
+ *
+ * Espelha `public.fn_conta_no_faturamento(text)` (migration de 09/09/2026),
+ * com a mesma semântica, inclusive nas bordas: nulo, vazio e grafia
+ * desconhecida contam como VERDADEIRO. Na dúvida a receita aparece — esconder
+ * faturamento em silêncio é o dano pior.
+ *
+ * NÃO É `quitaNaLiberacao`, logo acima, e não pode ser derivado dele. Aquele
+ * inclui os TRÊS subtipos e responde "quita ao ser liberado?"; este exclui
+ * DOIS e responde "conta como receita?". E-PERMUTA é a diferença entre os
+ * dois conjuntos: permuta é venda liquidada pela contrapartida, então quita na
+ * liberação E conta no faturamento. Fundir os dois tiraria a permuta da
+ * receita.
+ *
+ * FATURAMENTO NÃO É COBERTURA. A cobertura da proposta
+ * (`calcularValorPagoConfirmado`, `calcularSituacaoQuitacaoProposta`,
+ * `avaliarCoberturaFinanceira`, `cc__valor_pago`) continua contando os dois —
+ * sem isso a proposta nunca fecha e trava em AGUARDANDO. Este predicado não
+ * tem nada a fazer lá.
+ */
+const TIPOS_FORA_DO_FATURAMENTO = new Set(["E-AMOSTRA", "E-RETRABALHO"]);
+
+export function contaNoFaturamento(tipo: string | null | undefined): boolean {
+  return !TIPOS_FORA_DO_FATURAMENTO.has(String(tipo ?? "").trim().toUpperCase());
+}
+
+/**
  * Identifica cobrança E-Faturado.
  *
  * @deprecated Use `isFamiliaFaturado`. Mantido porque é o nome usado no

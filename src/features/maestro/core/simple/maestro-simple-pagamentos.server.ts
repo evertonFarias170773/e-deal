@@ -16,6 +16,7 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { contaNoFaturamento } from '@/features/cobrancas/cobrancas-utils';
 import type { MaestroPeriodo } from './maestro-simple-intents';
 
 // Colunas seguras — sem dados sensíveis de token, url ou pix
@@ -158,7 +159,8 @@ const FATURAMENTO_LOTE_PROPOSTAS = 400;
 
 export const CRITERIO_FATURAMENTO_OFICIAL =
   'pagamentos_v2 com confirmado=true e status PAID ou A_VENCER, período por data_confirmacao; ' +
-  'faturamento = soma dos pagamentos; propostas = id_int distintos. propostas é só dimensão (vendedor/cliente).';
+  'faturamento = soma dos pagamentos; propostas = id_int distintos. propostas é só dimensão (vendedor/cliente). ' +
+  'Exclui E-AMOSTRA e E-RETRABALHO (cortesia, não receita); E-PERMUTA conta.';
 
 export async function calcularFaturamentoOficial(
   supabase: SupabaseClient,
@@ -183,9 +185,10 @@ export async function calcularFaturamentoOficial(
     source: 'public.pagamentos_v2 (fonte; empresa = id_empresa) + public.propostas (dimensão vendedor)',
   };
 
+  // `tipo_cobranca` entra no SELECT só para a exclusão de cortesia abaixo.
   let query = supabase
     .from('pagamentos_v2')
-    .select('id_int, id_cliente, valor, data_confirmacao, id_empresa, empresa')
+    .select('id_int, id_cliente, valor, data_confirmacao, id_empresa, empresa, tipo_cobranca')
     .eq('confirmado', true)
     .in('status', ['PAID', 'A_VENCER'])
     .not('id_int', 'is', null)
@@ -203,7 +206,14 @@ export async function calcularFaturamentoOficial(
     return { ...base, found: false, total_propostas: 0, faturamento: 0, truncado: false, authError: isAuthError(error), error: error.message };
   }
 
-  const pagamentos = (data ?? []).map(raw => {
+  // Cortesia não é receita. A exclusão é feita AQUI, em memória, e não como
+  // `.not('tipo_cobranca','in',...)` na consulta: no PostgREST um NOT IN sobre
+  // coluna nula devolve NULL e a linha some — e linha sem tipo TEM de contar,
+  // como em `public.fn_conta_no_faturamento`. Filtrar depois é o único jeito
+  // de as duas pontas darem o mesmo número.
+  const pagamentos = (data ?? []).filter(raw =>
+    contaNoFaturamento((raw as Record<string, unknown>).tipo_cobranca as string | null | undefined)
+  ).map(raw => {
     const r = raw as Record<string, unknown>;
     return {
       id_int: Number(r.id_int),
@@ -470,9 +480,11 @@ export async function calcularRecebimentoPeriodo(
     }
   }
 
+  // `tipo_cobranca` só para a exclusão de cortesia; o critério de status desta
+  // consulta (PAID puro) fica como estava.
   let query = supabase
     .from('pagamentos_v2')
-    .select(PAGAMENTOS_COLS)
+    .select(`${PAGAMENTOS_COLS}, tipo_cobranca`)
     .eq('id_cliente', idCliente)
     .eq('confirmado', true)
     .eq('status', 'PAID')
@@ -501,7 +513,13 @@ export async function calcularRecebimentoPeriodo(
     };
   }
 
-  if (!data || data.length === 0) {
+  // Mesma exclusão de cortesia do faturamento oficial, e pelo mesmo motivo de
+  // ser em memória (ver o comentário em calcularFaturamentoOficial).
+  const linhas = (data ?? []).filter(raw =>
+    contaNoFaturamento((raw as Record<string, unknown>).tipo_cobranca as string | null | undefined)
+  );
+
+  if (linhas.length === 0) {
     return {
       found: false,
       items: [],
@@ -512,7 +530,7 @@ export async function calcularRecebimentoPeriodo(
     };
   }
 
-  const items = data.map(mapPagamento);
+  const items = linhas.map(mapPagamento);
   const totalValor = items.reduce((sum, item) => sum + (item.valor ?? 0), 0);
 
   return {
