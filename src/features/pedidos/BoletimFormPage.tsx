@@ -23,7 +23,11 @@ import {
 import { ModeloMock, ArteStatus, ProducaoStatus } from "./types";
 import { getPropostaDetailById } from "@/features/orcamentos/services/orcamentos.service";
 import type { Proposta } from "@/features/orcamentos/types";
-import { calcularDataLimitePorProdutos } from "./prazo-producao";
+import {
+  calcularDataLimitePorProdutos,
+  calcularDataEntrega,
+  maiorPrazoDiasUteis
+} from "./prazo-producao";
 import { horaPorCategoriaFrete } from "./hora-entrega";
 import { GerarPdfBoletimModal } from "./components/GerarPdfBoletimModal";
 import {
@@ -274,6 +278,24 @@ export function BoletimFormPage() {
   const [gerandoPdf, setGerandoPdf] = useState(false);
   /** URL do documento quando o navegador barrou a aba — o modal oferece o clique. */
   const [urlPdfBloqueada, setUrlPdfBloqueada] = useState<string | null>(null);
+  /**
+   * O que o modo edição precisa para CALCULAR data e hora quando não há nada
+   * gravado. Preenchido junto com o pedido; consumido pelo efeito que fecha a
+   * lacuna da primeira abertura — ver `useEffect` de "calcular o que nunca
+   * existiu".
+   *
+   * `osExiste` distingue as duas ausências que parecem a mesma na tela: OS que
+   * nunca foi criada (calcula) de OS criada com `data_termino` nulo (respeita o
+   * nulo, que ali é decisão de alguém).
+   */
+  const [basePrazoDoPedido, setBasePrazoDoPedido] = useState<{
+    osExiste: boolean;
+    liberadoProducaoEm: string | null;
+    categoriaFrete: string | null;
+    diasUteis: number | null;
+  } | null>(null);
+  /** Trava de uma vez só: o cálculo do que nunca existiu não pode reagir a si mesmo. */
+  const calculoInicialFeito = useRef(false);
   const [urgente, setUrgente] = useState(false);
   const [formaPagamento, setFormaPagamento] = useState("Pix a vista");
   
@@ -375,9 +397,23 @@ export function BoletimFormPage() {
           // HOJE toda vez que a tela abria: o prazo andava para frente sozinho a
           // cada visita, e a data que o cliente ouviu nao era mais a da tela.
           //
-          // Vazio quando nao ha nada gravado — campo em branco e editavel, como
-          // manda a regra de ausencia.
+          // Vazio quando nao ha nada gravado. O efeito de "calcular o que nunca
+          // existiu", mais abaixo, decide se esse vazio e ausencia a preencher
+          // ou decisao a respeitar — aqui nao da para saber ainda, porque os
+          // boletins de setor carregam noutro efeito.
           setDataPrevistaEntrega(pedido.dataPrevistaEntrega ? pedido.dataPrevistaEntrega.split("T")[0] : "");
+
+          /**
+           * `pedido.id` nulo = OS que NUNCA foi criada. O service devolve um row
+           * sintetico nesse caso (pedidos-detalhe.service.ts:72), e e assim que
+           * a tela distingue "nao existe" de "existe e esta vazio".
+           */
+          setBasePrazoDoPedido({
+            osExiste: Boolean(pedido.id),
+            liberadoProducaoEm: pedido.liberadoProducaoEm ?? null,
+            categoriaFrete: pedido.categoriaFrete ?? null,
+            diasUteis: maiorPrazoDiasUteis((pedido.produtos ?? []).map((p) => p.prazoDiasUteis))
+          });
 
           // Bloco 2 vem da PROPOSTA (`propostas.obs_tecnica`), nao do texto
           // etiquetado da OS. E por isso que reabrir o boletim agora mostra o
@@ -557,6 +593,55 @@ export function BoletimFormPage() {
     loadBoletins();
     void loadRevisaoGeral();
   }, [idIntParam]);
+
+  /**
+   * CALCULAR O QUE NUNCA EXISTIU — a terceira situação, que o congelamento não
+   * cobria (09/09/2026).
+   *
+   * O congelamento resolveu duas: modo criação calcula, e reabrir um boletim
+   * gravado preserva o que está lá. Faltava a terceira — abrir pela primeira vez
+   * um pedido que ainda não tem OS nem linha de setor. Ali não havia nada para
+   * congelar, e o campo abria vazio: o pedido 21862 tinha `prazo_dias_uteis` 1,
+   * `liberado_producao_em` de hoje e `categoria_frete` RODOVIARIO, tudo o que a
+   * conta precisa, e mesmo assim a tela mostrava dois campos em branco.
+   *
+   * A REGRA: congelar o que existe, calcular o que nunca existiu.
+   *
+   * AUSÊNCIA E NULO NÃO SÃO A MESMA COISA, e é essa distinção que faz o
+   * congelamento continuar de pé:
+   *   - OS inexistente        -> calcula a data
+   *   - OS com data nula      -> respeita o nulo; alguém decidiu por ele
+   *   - nenhuma linha de setor-> calcula a hora
+   *   - linha com hora nula   -> respeita o nulo
+   *
+   * Roda UMA vez por pedido (`calculoInicialFeito`): sem essa trava o efeito
+   * reagiria às próprias escritas e sobrescreveria o que o operador digitasse.
+   *
+   * O valor calculado entra no campo como qualquer outro — editável, e gravado
+   * no save pelo caminho de sempre.
+   */
+  useEffect(() => {
+    if (!isEditing || !basePrazoDoPedido || !conferenciaCarregada) return;
+    if (calculoInicialFeito.current) return;
+    calculoInicialFeito.current = true;
+
+    async function calcularOAusente() {
+      const base = basePrazoDoPedido;
+      if (!base) return;
+
+      if (!base.osExiste) {
+        const calculada = await calcularDataEntrega(base.liberadoProducaoEm, base.diasUteis);
+        if (calculada) setDataPrevistaEntrega(calculada);
+      }
+
+      if (boletins.length === 0) {
+        const hora = horaPorCategoriaFrete(base.categoriaFrete);
+        if (hora) setBoletimHora(hora);
+      }
+    }
+
+    void calcularOAusente();
+  }, [isEditing, basePrazoDoPedido, conferenciaCarregada, boletins]);
 
   useEffect(() => {
     const handleScroll = () => {
