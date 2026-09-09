@@ -348,6 +348,12 @@ export interface CriarPedidoInput {
   descricao: string;
   obs: string | null;
   data_termino?: string;
+  /**
+   * Hora do prazo, derivada da categoria de frete pelo chamador — mesma regra do
+   * boletim. Vai para as linhas de setor criadas junto com a OS. Nula é
+   * legítima: categoria não classificada não tem hora, e o ADM preenche depois.
+   */
+  hora?: string | null;
 }
 
 export interface CriarPedidoResult {
@@ -402,10 +408,13 @@ export async function criarPedidoParaBoletim(
   }
   const idVendedor = String(idVendedorRaw).trim();
 
-  // Validar se existe ao menos 1 produto em public.produtos_proposta para esse id_int
+  // Validar se existe ao menos 1 produto em public.produtos_proposta para esse id_int.
+  // `id_produto` e `status_item` entraram em 09/09/2026, na mesma consulta que já
+  // existia: são deles que sai o setor das linhas de boletim criadas junto com a
+  // OS — ver `criarLinhasDeSetorDaOs`. Nenhuma consulta a mais.
   const { data: productsData, error: productsError } = await client
     .from("produtos_proposta")
-    .select("id")
+    .select("id, id_produto, status_item")
     .eq("id_int", idInt);
 
   if (productsError) {
@@ -417,6 +426,8 @@ export async function criarPedidoParaBoletim(
     });
     return { success: false, error: `Erro ao consultar produtos da proposta: ${productsError.message}` };
   }
+
+  const itensDaProposta = productsData ?? [];
 
   if (!productsData || productsData.length === 0) {
     return { success: false, error: "Proposta sem produtos vinculados" };
@@ -538,7 +549,97 @@ export async function criarPedidoParaBoletim(
     return { success: false, error: "O Supabase não retornou o identificador do pedido criado." };
   }
 
-  return { success: true, id: String(data.id) };
+  const idOs = String(data.id);
+  await criarLinhasDeSetorDaOs(client, idInt, idOs, itensDaProposta, input);
+  return { success: true, id: idOs };
+}
+
+/**
+ * Cria uma linha em `propostas_os_setores` por setor do pedido, junto com a OS.
+ *
+ * POR QUE PASSOU A EXISTIR (09/09/2026)
+ *   Até aqui este caminho criava só `propostas_os`, e a decisão estava escrita
+ *   em PedidosListPage: o boletim de setor "o boletim preenche depois". Só que
+ *   quem imprime pela lista imprime ANTES disso — e o PDF sai sem setor e sem
+ *   hora, porque os dois saem do mesmo `boletimRow` do view-model.
+ *
+ *   Foi o que aconteceu no pedido 21825: a OS nasceu 11:33:41, a linha de setor
+ *   só às 11:35:31 quando o boletim foi salvo, e o PDF impresso nessa janela de
+ *   1m49s saiu com a data certa e o setor "-". Havia 5 OS no mesmo estado.
+ *
+ * O SETOR É DERIVÁVEL, e é isso que torna a correção possível: sai de
+ * `produtos.setor_pcp`, que é cadastro. Não se está inventando informação — é a
+ * MESMA origem que o boletim usa quando o operador abre a tela.
+ *
+ * UMA LINHA POR SETOR. 150 pedidos têm produtos de setores diferentes (até 4), e
+ * cada um produz o seu próprio boletim e o seu próprio PDF. Prazo e hora vão
+ * iguais em todas — o prazo é do pedido, não do setor.
+ *
+ * NÃO DERRUBA A CRIAÇÃO DA OS. Produto sem `setor_pcp` não gera linha, e erro
+ * aqui vira aviso: a OS existe e é dela que o chamador precisa. O boletim
+ * continua podendo criar a linha depois, e a constraint (id_int, setor) impede
+ * duplicata.
+ *
+ * INSERT, e só INSERT — a trava de ADM é `BEFORE UPDATE OF prazo, hora` e não
+ * alcança inserção. Não há espelhamento a fazer: as linhas já nascem com o mesmo
+ * prazo e a mesma hora.
+ */
+async function criarLinhasDeSetorDaOs(
+  client: SupabaseClient,
+  idInt: number,
+  idOs: string,
+  itens: { id_produto?: number | string | null; status_item?: string | null }[],
+  input: CriarPedidoInput
+): Promise<void> {
+  try {
+    const idsProduto = Array.from(
+      new Set(
+        itens
+          .filter((i) => String(i.status_item || "PENDENTE").toUpperCase() !== "CANCELADO")
+          .map((i) => Number(i.id_produto))
+          .filter((id) => Number.isFinite(id) && id > 0)
+      )
+    );
+    if (idsProduto.length === 0) return;
+
+    const { data: catalogo } = await client
+      .from("produtos")
+      .select("id_produto, setor_pcp")
+      .in("id_produto", idsProduto);
+
+    const setores = Array.from(
+      new Set(
+        (catalogo ?? [])
+          .map((linha) => (linha.setor_pcp ? String(linha.setor_pcp).trim().toUpperCase() : ""))
+          .filter(Boolean)
+      )
+    );
+    // Nenhum produto com setor cadastrado: nada a criar, e a OS segue de pé.
+    if (setores.length === 0) return;
+
+    const { error } = await client.from("propostas_os_setores").insert(
+      setores.map((setor) => ({
+        id_int: idInt,
+        id_os: idOs,
+        setor,
+        prazo: input.data_termino || null,
+        hora: input.hora || null
+      }))
+    );
+
+    if (error) {
+      // 23505 é a unicidade (id_int, setor): a linha já existe, e existir é o
+      // resultado desejado. Qualquer outro erro vira aviso, nunca falha da OS.
+      if (error.code !== "23505") {
+        console.warn(
+          "[BoletimPropostasService] OS criada, mas as linhas de setor não:",
+          error.message
+        );
+      }
+    }
+  } catch (e) {
+    console.warn("[BoletimPropostasService] Falha ao derivar os setores da OS:", e);
+  }
 }
 
 export interface DesignerUsuario {

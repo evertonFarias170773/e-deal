@@ -251,6 +251,31 @@ export async function salvarBoletimSetor(input: SalvarBoletimInput): Promise<Sal
     .maybeSingle();
 
   if (error) {
+    /**
+     * 23505 = a linha DESTE setor já existe. Deixou de ser um erro do usuário
+     * em 09/09/2026, quando `criarPedidoParaBoletim` passou a criar as linhas de
+     * setor junto com a OS: o boletim que salva logo depois encontra a linha que
+     * a própria abertura criou, e recusar aqui derrubaria o save com
+     * "Já existe um boletim deste setor" — um erro sobre algo que o sistema
+     * acabou de fazer certo.
+     *
+     * A linha existir é o resultado desejado. Atualiza e segue.
+     */
+    if (error.code === "23505") {
+      const { data: existente, error: erroUpdate } = await client
+        .from("propostas_os_setores")
+        .update({ ...payload, updated_at: new Date().toISOString() })
+        .eq("id_int", input.idInt)
+        .eq("setor", payload.setor)
+        .select(BOLETIM_SELECT)
+        .maybeSingle();
+
+      if (!erroUpdate && existente) {
+        await espelharPrazoNosSetores(client, input.idInt, payload.prazo, payload.hora);
+        return { success: true, boletim: mapBoletim(existente) };
+      }
+    }
+
     console.error("[BoletimSetoresService] Erro ao criar boletim:", error);
     return { success: false, error: traduzirErroBoletim(error) };
   }

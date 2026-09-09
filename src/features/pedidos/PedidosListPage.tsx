@@ -22,13 +22,20 @@ import { listarPedidosOperacionais } from "./services/pedidos-producao.service";
 import { atualizarFaseSetor } from "./services/boletim-setores.service";
 import { consolidarFases, type FaseSetor } from "./status-setor";
 import { SetorFaseChip } from "./components/SetorFaseChip";
-import { abrirPdfOs, abrirMacoOs, type LayoutPdfOs } from "./services/imprimir-os.client";
+import {
+  abrirPdfOs,
+  abrirMacoOs,
+  type LayoutPdfOs,
+  type AbrirPdfOsResult
+} from "./services/imprimir-os.client";
+import { listarBoletinsDaProposta } from "./services/boletim-setores.service";
 import { encerrarTeste } from "./services/encerrar-teste.client";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import { devolverPropostaParaRevisaoAtendente } from "@/features/orcamentos/services/orcamentos.service";
 import { DevolverRevisaoModal } from "./components/DevolverRevisaoModal";
 import { criarPedidoParaBoletim } from "./services/boletim-propostas.service";
 import { dataLimitePorPrazosOuNulo } from "./prazo-producao";
+import { horaPorCategoriaFrete } from "./hora-entrega";
 
 import type { PropostaOperacionalListItem, SetorDoPedido } from "./types";
 import { useRouter } from "next/navigation";
@@ -164,6 +171,41 @@ export function PedidosListPage() {
    * a criacao da OS que falta e a revalidacao do servidor. E o que mantem o
    * reduzido se comportando igual ao padrao neste ponto.
    */
+  /**
+   * O aviso do resultado da impressão. Extraído porque agora há DOIS pontos de
+   * saída: a OS recém-criada, que já imprime com as linhas de setor que acabou
+   * de ganhar, e o caminho normal de quem já tinha OS.
+   */
+  function avisarResultadoDaImpressao(result: AbrirPdfOsResult) {
+    if (result.bloqueadoPeloNavegador && result.urlParaAbrir) {
+      // Ação explícita em vez de baixar sozinho: o documento existe e está a um
+      // clique, e o clique tem que ser do usuário para o navegador aceitar.
+      showToast({
+        type: "error",
+        title: "O navegador bloqueou a aba",
+        description: "Libere os pop-ups para este site e clique em Imprimir OS de novo."
+      });
+      return;
+    }
+    if (!result.success) {
+      showToast({
+        type: "error",
+        title: "Erro ao gerar PDF da OS",
+        description: result.errorMessage || "Erro desconhecido."
+      });
+      return;
+    }
+    // Mesmo aviso do boletim, mesma razão: `abrirPdfOs` volta assim que a aba
+    // abre e o PDF ainda está sendo montado do outro lado. Sem isto o
+    // `printingOsId` pisca por milissegundos e a aba nova fica em branco, sem
+    // nada dizendo que há trabalho em curso.
+    showToast({
+      type: "info",
+      title: "Gerando o PDF na nova aba",
+      description: "A OS abre assim que ficar pronta. Na primeira impressão do dia costuma demorar mais."
+    });
+  }
+
   async function handleImprimirOS(proposta: PropostaOperacionalListItem, layout: LayoutPdfOs = "completo") {
     if (printingOsId !== null) return;
     setPrintingOsId(proposta.id_int);
@@ -195,9 +237,14 @@ export function PedidosListPage() {
      * NULL — aqui não há ninguém para conferir, e uma data inventada viraria
      * promessa. Ausência é ausência.
      *
-     * Segue sem preencher o que continua não sendo derivável: o boletim de setor
-     * (`propostas_os_setores`) e as orientações (`obs`). O PDF sai sem filtro de
-     * setor e com os blocos de orientação vazios — isso o boletim preenche depois.
+     * DESDE 09/09/2026 A OS JÁ NASCE COM AS LINHAS DE SETOR. Antes só
+     * `propostas_os` era criada, e o boletim de setor ficava "para depois" — mas
+     * quem imprime pela lista imprime ANTES desse depois, e o PDF saía sem setor
+     * e sem hora, que vêm os dois da linha de setor. `criarPedidoParaBoletim`
+     * passou a derivá-las de `produtos.setor_pcp`.
+     *
+     * As orientações (`obs`) continuam vazias aqui: essas não são deriváveis, e
+     * é o boletim que as escreve.
      */
     if (!proposta.hasPedidoOs) {
       const dataDoPrazo = await dataLimitePorPrazosOuNulo(
@@ -208,7 +255,11 @@ export function PedidosListPage() {
         id_int: proposta.id_int,
         descricao: `${proposta.clienteNome} - Boletim de entrada`,
         obs: null,
-        data_termino: dataDoPrazo ?? undefined
+        data_termino: dataDoPrazo ?? undefined,
+        // A hora segue a mesma regra do boletim: sai da categoria de frete, e
+        // nula quando a categoria não está classificada. Vai junto para as
+        // linhas de setor que a OS passou a criar.
+        hora: horaPorCategoriaFrete(proposta.categoriaFrete)
       });
       if (!criacao.success) {
         setPrintingOsId(null);
@@ -222,6 +273,21 @@ export function PedidosListPage() {
       // A linha da lista ainda diz "sem OS": recarrega para o rótulo do menu e o
       // `hasPedidoOs` refletirem o pedido recém-criado.
       void load();
+
+      // As linhas de setor acabaram de nascer e o objeto `proposta` desta função
+      // é o de ANTES — `setores[].boletimId` ainda está nulo nele, e o `load()`
+      // acima só chega no próximo render. Sem esta leitura o maço não teria os
+      // uuids e cairia no caminho legado, que imprime um setor só.
+      const criados = await listarBoletinsDaProposta(proposta.id_int);
+      if (layout === "completo" && criados.length > 0) {
+        const r = await abrirMacoOs(
+          proposta.id_int,
+          criados.map((b) => ({ id: b.id, setor: b.setor }))
+        );
+        setPrintingOsId(null);
+        avisarResultadoDaImpressao(r);
+        return;
+      }
     }
 
     /**
@@ -248,31 +314,7 @@ export function PedidosListPage() {
         ? await abrirMacoOs(proposta.id_int, boletinsDoPedido)
         : await abrirPdfOs(proposta.id_int, null, null, layout);
     setPrintingOsId(null);
-    if (result.bloqueadoPeloNavegador && result.urlParaAbrir) {
-      // Ação explícita em vez de baixar sozinho: o documento existe e está a um
-      // clique, e o clique tem que ser do usuário para o navegador aceitar.
-      showToast({
-        type: "error",
-        title: "O navegador bloqueou a aba",
-        description: "Libere os pop-ups para este site e clique em Imprimir OS de novo."
-      });
-    } else if (!result.success) {
-      showToast({
-        type: "error",
-        title: "Erro ao gerar PDF da OS",
-        description: result.errorMessage || "Erro desconhecido."
-      });
-    } else {
-      // Mesmo aviso do boletim, mesma razão: `abrirPdfOs` volta assim que a aba
-      // abre e o PDF ainda está sendo montado do outro lado. Sem isto o
-      // `printingOsId` pisca por milissegundos e a aba nova fica em branco, sem
-      // nada dizendo que há trabalho em curso.
-      showToast({
-        type: "info",
-        title: "Gerando o PDF na nova aba",
-        description: "A OS abre assim que ficar pronta. Na primeira impressão do dia costuma demorar mais."
-      });
-    }
+    avisarResultadoDaImpressao(result);
   }
 
   async function load() {
