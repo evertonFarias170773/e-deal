@@ -7,7 +7,7 @@ import { X, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { APP_NAME } from "@/constants/brand";
 import { navigationHrefs, navigationSections, quickAccessItems } from "@/constants/navigation";
-import type { NavigationItem } from "@/lib/types";
+import type { NavigationItem, NavigationSection } from "@/lib/types";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { hasPermissao } from "@/features/auth/usuarios.service";
 
@@ -124,6 +124,18 @@ export function MobileSidebarNav({ isOpen, onClose }: MobileSidebarNavProps) {
       !(section.sellerOnly && !podeVerSecaoVendedor) &&
       !(section.hiddenForSeller && isVendedor)
   );
+
+  /**
+   * Visibilidade por ITEM (08/09/2026). Antes so a secao era filtrada.
+   * Mesma regra de `PermissionGuard`: admin e super admin passam sempre.
+   */
+  const canSeeItem = (item: NavigationItem) =>
+    !item.requiresPermissao ||
+    Boolean(user?.isSuperAdmin) ||
+    Boolean(user?.isAdmin) ||
+    hasPermissao(user, item.requiresPermissao);
+
+  const visibleItems = (section: NavigationSection) => section.items.filter(canSeeItem);
 
   const renderItem = (item: NavigationItem) => {
     const Icon = item.icon;
@@ -367,7 +379,7 @@ export function MobileSidebarNav({ isOpen, onClose }: MobileSidebarNavProps) {
                     className="ml-4 mt-1 mb-1.5 flex flex-col space-y-1 border-l pl-2"
                     style={{ borderColor: "var(--sidebar-border)" }}
                   >
-                    {section.items.map(renderItem)}
+                    {visibleItems(section).map(renderItem)}
                   </div>
                 )}
               </div>

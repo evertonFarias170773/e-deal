@@ -71,6 +71,17 @@ export type NavigationItem = {
   icon: LucideIcon;
   badge?: string;
   disabled?: boolean;
+  /**
+   * Some do menu para quem nao tem esta permissao (08/09/2026).
+   *
+   * Ate aqui a visibilidade era so por SECAO (`requiresConfigPerm`,
+   * `sellerOnly`, `hiddenForSeller`); item nenhum era filtrado. Admin e
+   * super admin passam sempre, como em `PermissionGuard`.
+   *
+   * Isto e so a entrada do menu. Quem trancar a tela continua sendo o
+   * `PermissionGuard` da rota — esconder o link nao protege nada sozinho.
+   */
+  requiresPermissao?: string;
   children?: {
     label: string;
     href: string;

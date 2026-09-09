@@ -12,6 +12,7 @@ import {
   FileText,
   Gauge,
   KeyRound,
+  Layers,
   LayoutDashboard,
   Package,
   Printer,
@@ -194,12 +195,26 @@ export const navigationSections: NavigationSection[] = [
     items: []
   },
   // 10 — era submenu de "Cadastros".
+  //
+  // Virou acordeao em 08/09/2026. Era secao-link direta para /produtos; as
+  // telas de variacao global (/produtos/variacoes) existiam e funcionavam, mas
+  // so eram alcancaveis pelo menu Acoes de um produto — quem nao sabia do
+  // caminho nao as encontrava. O destino antigo continua sendo a primeira
+  // entrada, entao nenhum link salvo muda de endereco; o que muda e que agora
+  // exige um clique para abrir a secao.
   {
     id: "produtos",
     label: "Produtos",
     icon: Package,
-    href: "/produtos",
-    items: []
+    items: [
+      { label: "Catálogo", href: "/produtos", icon: Package },
+      {
+        label: "Variações",
+        href: "/produtos/variacoes",
+        icon: Layers,
+        requiresPermissao: "variacoes.view"
+      }
+    ]
   },
   // 11
   {

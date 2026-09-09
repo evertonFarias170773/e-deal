@@ -115,6 +115,18 @@ export function SidebarNav({ isCollapsed, onToggleCollapse }: SidebarNavProps) {
       !(section.hiddenForSeller && isVendedor)
   );
 
+  /**
+   * Visibilidade por ITEM (08/09/2026). Antes so a secao era filtrada.
+   * Mesma regra de `PermissionGuard`: admin e super admin passam sempre.
+   */
+  const canSeeItem = (item: NavigationItem) =>
+    !item.requiresPermissao ||
+    Boolean(user?.isSuperAdmin) ||
+    Boolean(user?.isAdmin) ||
+    hasPermissao(user, item.requiresPermissao);
+
+  const visibleItems = (section: NavigationSection) => section.items.filter(canSeeItem);
+
   const renderItem = (item: NavigationItem) => {
     const Icon = item.icon;
     const active = isItemActive(item, activeHref);
@@ -296,7 +308,7 @@ export function SidebarNav({ isCollapsed, onToggleCollapse }: SidebarNavProps) {
         {section.label}
       </p>
       <div className="flex flex-col space-y-0.5">
-        {section.items.map((item) => {
+        {visibleItems(section).map((item) => {
           const Icon = item.icon;
           const active = isItemActive(item, activeHref);
           if (item.disabled) {
@@ -522,7 +534,7 @@ export function SidebarNav({ isCollapsed, onToggleCollapse }: SidebarNavProps) {
                     className="ml-4 mt-1 mb-1.5 flex flex-col space-y-1 border-l pl-2"
                     style={{ borderColor: "var(--sidebar-border)" }}
                   >
-                    {section.items.map(renderItem)}
+                    {visibleItems(section).map(renderItem)}
                   </div>
                 )}
               </div>
