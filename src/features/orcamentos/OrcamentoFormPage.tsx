@@ -1004,6 +1004,8 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
   const [isUnsavedModalOpen, setIsUnsavedModalOpen] = useState(false);
   const [unsavedModalMode, setUnsavedModalMode] = useState<"default" | "pagamentos">("default");
   const [carteiraWarning, setCarteiraWarning] = useState<string | null>(null);
+  /** Confirmação de "Proposta avulsa" quando já há produto configurado. */
+  const [confirmAvulsaOpen, setConfirmAvulsaOpen] = useState(false);
   const [pendingNavigation,  setPendingNavigation]  = useState<string | null>(null);
   // ─────────────────────────────────────────────────────────────────────────
 
@@ -4427,6 +4429,50 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
   // pronto. Continua bloqueada a avulsa paga de verdade (PIX, cartão, boleto
   // quitado), e continua valendo o bloqueio por título quitado.
   const temProdutosAtivos = form.itens.some((i) => (i.statusItem || "PENDENTE") !== "CANCELADO");
+  const qtdProdutosAtivos = form.itens.filter((i) => (i.statusItem || "PENDENTE") !== "CANCELADO").length;
+
+  /**
+   * Efeito de marcar/desmarcar "Proposta avulsa". Extraído do `onChange` do
+   * checkbox porque agora existem DOIS caminhos até ele: direto, quando não há
+   * produto, e depois da confirmação, quando há. O corpo é o mesmo de sempre.
+   */
+  function aplicarPropostaAvulsa(checked: boolean) {
+    updateField("isAvulso", checked);
+    if (checked) {
+      const originalResumo = calculateResumo(form.itens, aplicarModalidadeNosFretes(form.fretes, form.modalidadeFrete), Number(form.descontoGeralValor) || 0, form.descontoGeralTipo);
+      updateField("valorProdutosManual", formatCurrencyWithoutPrefix(originalResumo.valorTotal));
+      updateField("valorFreteManual", "0,00");
+      updateField("observacoesFreteManual", "Frete Incluso");
+      updateField("freteEscolhidoId", "frete_manual_unico");
+      updateField("fretes", [{
+        id: "frete_manual_unico",
+        id_int: Number(form.id_int) || 0,
+        transportadora: "Frete Incluso",
+        servico: "",
+        valor: 0,
+        prazo: "A combinar",
+        observacao: "Cadastro manual representativo",
+        escolhido: true,
+        pesoUsado: 0
+      }]);
+    } else {
+      updateField("valorProdutosManual", "");
+      updateField("valorFreteManual", "");
+      updateField("observacoesFreteManual", "");
+
+      const fretesOriginais = proposta?.fretes ?? [];
+      const isAvulsoOriginal = proposta?.is_avulso ?? false;
+
+      if (fretesOriginais.length > 0 && !isAvulsoOriginal) {
+        updateField("fretes", fretesOriginais);
+        const freteAntigoEscolhido = proposta?.freteEscolhidoId ?? (fretesOriginais.find((f: any) => f.escolhido)?.id ?? "");
+        updateField("freteEscolhidoId", freteAntigoEscolhido);
+      } else {
+        updateField("fretes", []);
+        updateField("freteEscolhidoId", "");
+      }
+    }
+  }
   const bloqueioAvulsaPaga =
     mode === "edit" &&
     isPropostaPagaAtual &&
@@ -5649,41 +5695,15 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                 checked={form.isAvulso || false}
                 onChange={(e) => {
                     const checked = e.target.checked;
-                    updateField("isAvulso", checked);
-                    if (checked) {
-                      const originalResumo = calculateResumo(form.itens, aplicarModalidadeNosFretes(form.fretes, form.modalidadeFrete), Number(form.descontoGeralValor) || 0, form.descontoGeralTipo);
-                      updateField("valorProdutosManual", formatCurrencyWithoutPrefix(originalResumo.valorTotal));
-                      updateField("valorFreteManual", "0,00");
-                      updateField("observacoesFreteManual", "Frete Incluso");
-                      updateField("freteEscolhidoId", "frete_manual_unico");
-                      updateField("fretes", [{
-                        id: "frete_manual_unico",
-                        id_int: Number(form.id_int) || 0,
-                        transportadora: "Frete Incluso",
-                        servico: "",
-                        valor: 0,
-                        prazo: "A combinar",
-                        observacao: "Cadastro manual representativo",
-                        escolhido: true,
-                        pesoUsado: 0
-                      }]);
-                    } else {
-                      updateField("valorProdutosManual", "");
-                      updateField("valorFreteManual", "");
-                      updateField("observacoesFreteManual", "");
-                      
-                      const fretesOriginais = proposta?.fretes ?? [];
-                      const isAvulsoOriginal = proposta?.is_avulso ?? false;
-                      
-                      if (fretesOriginais.length > 0 && !isAvulsoOriginal) {
-                        updateField("fretes", fretesOriginais);
-                        const freteAntigoEscolhido = proposta?.freteEscolhidoId ?? (fretesOriginais.find((f: any) => f.escolhido)?.id ?? "");
-                        updateField("freteEscolhidoId", freteAntigoEscolhido);
-                      } else {
-                        updateField("fretes", []);
-                        updateField("freteEscolhidoId", "");
-                      }
+                    // Marcar avulsa com produtos configurados apaga o trabalho
+                    // todo. Pergunta antes; o checkbox só marca depois do
+                    // "sim", porque é `form.isAvulso` que o controla.
+                    // Desmarcar segue direto, como sempre.
+                    if (checked && temProdutosAtivos) {
+                      setConfirmAvulsaOpen(true);
+                      return;
                     }
+                    aplicarPropostaAvulsa(checked);
                   }}
                 className="h-4 w-4 rounded border-slate-300 text-[#0f9f9a] focus:ring-[#0f9f9a]"
               />
@@ -6529,6 +6549,33 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
         />
       )}
 
+      {confirmAvulsaOpen && (
+        <Modal
+          title="Marcar como proposta avulsa?"
+          onClose={() => setConfirmAvulsaOpen(false)}
+          onSave={() => {
+            setConfirmAvulsaOpen(false);
+            aplicarPropostaAvulsa(true);
+          }}
+          saveLabel="Sim, remover os produtos"
+        >
+          <div className="mt-2 flex items-start gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-amber-100">
+              <AlertTriangle className="h-5 w-5 text-amber-600" />
+            </div>
+            <div className="pt-1 text-sm text-slate-600">
+              <p>
+                Esta proposta tem{" "}
+                <strong>
+                  {qtdProdutosAtivos === 1 ? "1 produto configurado" : `${qtdProdutosAtivos} produtos configurados`}
+                </strong>
+                . Na proposta avulsa o valor é digitado à mão, então os produtos e seus modelos serão removidos.
+              </p>
+              <p className="mt-2">Não dá para desfazer pelo botão de voltar.</p>
+            </div>
+          </div>
+        </Modal>
+      )}
       {carteiraWarning && (
         <Modal
           title="Atenção à Carteira"
