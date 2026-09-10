@@ -4021,8 +4021,19 @@ export async function cancelarProposta(idInt: number, motivo: string): Promise<C
   }
 }
 
-export async function liberarPropostaParaProducao(idInt: number): Promise<{ success: boolean; errorMessage?: string }> {
-  const client = getSupabaseClient();
+/**
+ * @param clientExterno Client já autenticado, para quando a chamada vem do
+ *   SERVIDOR — hoje só a liberação automática de prateleira, em
+ *   `/api/cobrancas/confirmar`. Sem ele a função usa `getSupabaseClient()`, que
+ *   é `createBrowserClient` e não funciona dentro de uma Route Handler. As
+ *   quatro validações abaixo valem igual nos dois casos: o parâmetro troca por
+ *   onde a consulta sai, não o que ela exige.
+ */
+export async function liberarPropostaParaProducao(
+  idInt: number,
+  clientExterno?: SupabaseClient
+): Promise<{ success: boolean; errorMessage?: string }> {
+  const client = clientExterno ?? getSupabaseClient();
   if (!client) return { success: false, errorMessage: "Cliente Supabase indisponível." };
 
   // 1. Validar contexto da proposta

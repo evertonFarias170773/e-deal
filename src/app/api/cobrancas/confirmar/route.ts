@@ -3,6 +3,9 @@ import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { calcularSituacaoQuitacaoProposta } from "@/features/cobrancas/services/conferencia-financeira.service";
 import { quitaNaLiberacao } from "@/features/cobrancas/cobrancas-utils";
 import { aplicarStatusRecomendadoProposta } from "@/features/orcamentos/services/status-writer.service";
+import { validarStatusProposta } from "@/features/orcamentos/services/status-shadow.service";
+import { liberarPropostaParaProducao, sendPropostaChatMessage } from "@/features/orcamentos/services/orcamentos.service";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 type UsuarioMinRow = {
   id_perfil: number | null;
@@ -217,11 +220,120 @@ export async function POST(request: NextRequest) {
       if (!reconciliacao.success) {
         console.warn(`[confirmar] Reconciliação de status sem efeito para proposta #${cobranca.id_int}: ${reconciliacao.errorMessage}`);
       }
+
+      // ── 8. Prateleira: liberação automática para Produção ─────────────────
+      await liberarPrateleiraAutomaticamente(
+        supabase,
+        cobranca.id_int,
+        { uid: userId, email: authData.user.email || "" }
+      );
     }
 
     return NextResponse.json({ success: true });
 
   } catch (err: any) {
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+  }
+}
+
+/** Autoria do carimbo automático — mesmo formato de `APROVADOR_AUTOMATICO`. */
+const LIBERADOR_AUTOMATICO = "Sistema - produto de prateleira";
+
+/**
+ * Proposta 100% de prateleira segue direto para REVISAO PRODUCAO.
+ *
+ * POR QUE EXISTE
+ *   REVISAO ATENDENTE é uma conferência: alguém olha antes de o pedido entrar
+ *   na fábrica. Em proposta só de prateleira não há arte para conferir nem
+ *   produção a preparar — a etapa vira um clique obrigatório sem decisão.
+ *
+ * POR QUE AQUI, E NÃO NA ENGINE DE STATUS
+ *   O gatilho é a CONFIRMAÇÃO da cobrança, uma vez só, no instante em que a
+ *   proposta acaba de ficar coberta. Pendurar na engine faria a avaliação
+ *   acontecer em toda passagem dela, e aí uma proposta que o gerente devolveu
+ *   da produção (`devolverPropostaParaRevisaoAtendente`) seria religada
+ *   sozinha na confirmação seguinte, desfazendo a decisão dele.
+ *
+ *   Uma trava contra isso não é construível: nas 7 devoluções reais dos
+ *   últimos 120 dias, `liberado_producao_em` está nulo em 6, `libera_nf` é
+ *   false em 6, e `is_prd_aprovado` ficou true em 4 — ou seja, há caminho de
+ *   volta que não passa pela função conhecida. E `audit.logs_v2` não tem grant
+ *   para `authenticated`, então o histórico também não está ao alcance.
+ *
+ *   Aqui o problema simplesmente não existe: não há reavaliação. Devolveu,
+ *   ficou devolvida.
+ *
+ * O CRITÉRIO NÃO É RECALCULADO
+ *   `arteDispensada` e a cobertura integral saem de `validarStatusProposta`, a
+ *   mesma engine que decide o status. `statusRecomendado === 'REVISAO
+ *   ATENDENTE'` com `arteDispensada` já significa, junto, "100% prateleira E
+ *   coberta por inteiro" — escrever de novo qualquer uma das duas regras aqui
+ *   seria a terceira cópia, e a terceira chance de divergir.
+ *
+ * NUNCA DERRUBA A CONFIRMAÇÃO
+ *   Tudo dentro de try/catch que só registra. A cobrança já está confirmada e
+ *   gravada quando chegamos aqui; qualquer falha desta função deixa a proposta
+ *   em REVISAO ATENDENTE, exatamente onde ela estaria sem automação nenhuma, e
+ *   o atendente libera pelo botão de sempre.
+ */
+async function liberarPrateleiraAutomaticamente(
+  supabase: SupabaseClient,
+  idInt: number,
+  usuario: { uid: string; email: string }
+): Promise<void> {
+  try {
+    const { data: proposta } = await supabase
+      .from("propostas")
+      .select("status_interno, is_avulso")
+      .eq("id_int", idInt)
+      .maybeSingle<{ status_interno: string | null; is_avulso: boolean | null }>();
+
+    if (!proposta) return;
+    if (proposta.is_avulso === true) return;
+
+    // Só age na janela exata. REVISAO PRODUCAO ou adiante: nada a fazer — e a
+    // própria `liberarPropostaParaProducao` recusaria de qualquer forma.
+    if (String(proposta.status_interno || "").trim().toUpperCase() !== "REVISAO ATENDENTE") return;
+
+    // `false` literal: proposta avulsa já saiu no guard acima.
+    const diagnostico = await validarStatusProposta(
+      idInt,
+      false,
+      proposta.status_interno || "",
+      supabase
+    );
+
+    if (!diagnostico) return;
+    if (diagnostico.statusRecomendado !== "REVISAO ATENDENTE") return;
+    if (diagnostico.evidenciasUsadas?.arteDispensada !== true) return;
+
+    const liberacao = await liberarPropostaParaProducao(idInt, supabase);
+
+    if (!liberacao.success) {
+      console.warn(
+        `[confirmar] Liberação automática recusada para #${idInt}: ${liberacao.errorMessage}. ` +
+        `A proposta segue em REVISAO ATENDENTE para liberação manual.`
+      );
+      return;
+    }
+
+    await sendPropostaChatMessage({
+      id_int: idInt,
+      mensagem:
+        "Liberado automaticamente para Produção: todos os itens são produtos de prateleira, " +
+        "então não há arte a aprovar nem conferência de atendente a fazer. " +
+        "Status alterado de [REVISAO ATENDENTE] para [REVISAO PRODUCAO].",
+      tipo: "SISTEMA",
+      autor_uid: usuario.uid || null,
+      autor_nome: LIBERADOR_AUTOMATICO,
+      autor_email: usuario.email || null,
+      setor: "AUTO_FINANCEIRO",
+      avatar: null,
+      visivel_externo: false,
+      anexos: null,
+      id_cliente: null
+    });
+  } catch (erro) {
+    console.warn(`[confirmar] Falha na liberação automática de prateleira em #${idInt}:`, erro);
   }
 }
