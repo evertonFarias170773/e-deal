@@ -2806,6 +2806,25 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     }));
   }
 
+  /**
+   * Escolha de uma opcao de variacao do item.
+   *
+   * O comportamento depende de `is_multiplo` do VINCULO (produto_variacoes):
+   *
+   *   is_multiplo = false  escolha unica — a opcao nova substitui a do grupo
+   *                        (comportamento de sempre, inalterado)
+   *   is_multiplo = true   alterna a opcao, preservando as demais DO MESMO
+   *                        grupo. Marcar tres acessorios grava tres linhas em
+   *                        produtos_proposta_variacao.
+   *
+   * Nos dois casos `tipoId` vazio ou desconhecido limpa o grupo inteiro — e o
+   * que o "Selecione" do select de escolha unica envia.
+   *
+   * Valor e peso nao precisaram mudar: `calculateItemSubtotal` e
+   * `calculateItemWeight` ja somavam TODAS as escolhas com reduce, e
+   * `montarDadosItemProposta` faz o mesmo antes de gravar. O que faltava era
+   * so poder ter mais de uma escolha por grupo.
+   */
   function updateItemVariation(itemId: string, id_variacao: number, tipoId: string) {
     let itemAtualizado: PropostaItem | null = null;
 
@@ -2813,19 +2832,33 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
       const vinculo = item.produto.variacoes.find((variacao) => variacao.id_variacao === id_variacao);
       const tipo = vinculo?.tipos.find((tipoVariacao) => tipoVariacao.id === tipoId);
 
+      const outrosGrupos = item.variacoesEscolhidas.filter((c) => c.id_variacao !== id_variacao);
+      const desteGrupo = item.variacoesEscolhidas.filter((c) => c.id_variacao === id_variacao);
+
       let nextVariacoes = item.variacoesEscolhidas;
 
       if (!vinculo || !tipo) {
         // If deselected or not found, remove the choice
-        nextVariacoes = item.variacoesEscolhidas.filter((c) => c.id_variacao !== id_variacao);
+        nextVariacoes = outrosGrupos;
       } else {
+        // O id inclui o tipo: em multipla escolha o grupo tem mais de uma
+        // entrada, e sem isso as duas nasceriam com a mesma chave de render.
         const newChoice = {
-          id: `pv_sel_${item.id_produto}_${id_variacao}_${Date.now()}`,
+          id: `pv_sel_${item.id_produto}_${id_variacao}_${tipoId}_${Date.now()}`,
           id_variacao,
           variacao: vinculo.variacao,
           tipo
         };
-        nextVariacoes = [...item.variacoesEscolhidas.filter((c) => c.id_variacao !== id_variacao), newChoice];
+
+        if (vinculo.is_multiplo) {
+          const jaMarcada = desteGrupo.some((c) => c.tipo.id === tipoId);
+          const doGrupo = jaMarcada
+            ? desteGrupo.filter((c) => c.tipo.id !== tipoId)
+            : [...desteGrupo, newChoice];
+          nextVariacoes = [...outrosGrupos, ...doGrupo];
+        } else {
+          nextVariacoes = [...outrosGrupos, newChoice];
+        }
       }
 
       itemAtualizado = {
@@ -7017,10 +7050,57 @@ function ProductItemEditor({
           <h5 className="text-xs font-bold uppercase tracking-wider text-slate-400">Configuração de Variações</h5>
           <div className="grid gap-4 md:grid-cols-2">
             {item.produto.variacoes.map((variacao) => {
-              const selected = item.variacoesEscolhidas.find((choice) => choice.id_variacao === variacao.id_variacao);
-              const isMissing = hasVariationError && variacao.is_obrigatorio && !selected;
+              const escolhasDoGrupo = item.variacoesEscolhidas.filter(
+                (choice) => choice.id_variacao === variacao.id_variacao
+              );
+              const isMissing = hasVariationError && variacao.is_obrigatorio && escolhasDoGrupo.length === 0;
+              const rotulo = `${variacao.variacao.nome}${variacao.is_obrigatorio ? " *" : ""}`;
+
+              // Multipla escolha (produto_variacoes.is_multiplo): caixas de
+              // marcacao, porque o usuario pode levar mais de um acessorio no
+              // mesmo pedido. Valor e peso somam todas as marcadas.
+              if (variacao.is_multiplo) {
+                return (
+                  <Field key={variacao.id} label={`${rotulo} — pode escolher mais de uma`}>
+                    <div
+                      className={`flex flex-col gap-1.5 rounded-xl border px-3 py-2.5 ${
+                        isMissing ? "border-red-300 bg-red-50" : "border-slate-200 bg-white"
+                      }`}
+                    >
+                      {variacao.tipos.map((tipo) => {
+                        const marcada = escolhasDoGrupo.some((choice) => choice.tipo.id === tipo.id);
+                        return (
+                          <label
+                            key={tipo.id}
+                            className={`flex items-center gap-2 text-sm ${
+                              podeEditarVariacoes ? "cursor-pointer" : "cursor-not-allowed opacity-60"
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={marcada}
+                              disabled={!podeEditarVariacoes}
+                              onChange={() => onVariationChange(variacao.id_variacao, tipo.id)}
+                              className="h-4 w-4 shrink-0 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+                            />
+                            <span className="truncate">
+                              {tipo.variacao} (+{formatCurrency(tipo.v_extra)} / {formatWeightFromGrams(tipo.peso, { mode: "g" })})
+                            </span>
+                          </label>
+                        );
+                      })}
+                      {!variacao.tipos.length ? (
+                        <span className="text-xs text-slate-400">Nenhuma opção ativa neste grupo.</span>
+                      ) : null}
+                    </div>
+                  </Field>
+                );
+              }
+
+              // Escolha unica: o select de sempre, sem mudanca de comportamento.
+              const selected = escolhasDoGrupo[0];
               return (
-                <Field key={variacao.id} label={`${variacao.variacao.nome}${variacao.is_obrigatorio ? " *" : ""}`}>
+                <Field key={variacao.id} label={rotulo}>
                   <select
                     value={selected?.tipo.id ?? ""}
                     onChange={(event) => onVariationChange(variacao.id_variacao, event.target.value)}
