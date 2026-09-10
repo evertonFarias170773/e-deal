@@ -4518,13 +4518,49 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     pendenciaRevisaoAberta !== null ||
     bloqueioAvulsaPaga;
 
+  /**
+   * Status exibido, em UM lugar so (10/09/2026).
+   *
+   * O cabecalho passou a mostrar o status para que ele fique visivel em todas
+   * as abas, nao so na Geral. Estes dois valores alimentam os DOIS pontos de
+   * exibicao de proposito: se cada um montasse o seu, bastaria alguem mexer em
+   * um ternario para a mesma proposta aparecer com status diferente conforme a
+   * aba aberta.
+   *
+   * A fonte e `form.status`/`form.emArte`, que o efeito da engine de status
+   * mantem atualizado (ver "Sincronizacao automatica do status via Engine
+   * Oficial"). Por isso o cabecalho acompanha mudanca feita na propria tela sem
+   * recarregar. Nao se usa `proposta.status` aqui: aquilo e o retrato do
+   * carregamento e ficaria para tras.
+   *
+   * O sufixo " / EM ARTE" nao e status proprio — `composeStatusEmArte` o
+   * acrescenta a partir do flag `propostas.em_arte`, e so para NOVO,
+   * AGUARDANDO e LIBERADO.
+   */
+  const statusExibido = composeStatusEmArte(form.status, form.emArte);
+  const statusTone =
+    form.status === "NOVO" ? "info"
+    : form.status === "APROVADO" ? "success"
+    : form.status === "AGUARDANDO" ? "warning"
+    : "neutral";
+
   return (
     <div className="space-y-6">
       <PageHeader
         title={tituloDoCabecalho}
         context="Pedidos"
         action={
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Status a esquerda das acoes, dentro do proprio slot `action`:
+                assim ele acompanha o cabecalho em todas as abas sem que
+                PageHeader — compartilhado com as outras telas — precise de
+                prop nova. O "Voltar ao detalhe" e o menu de acoes seguem na
+                ordem de antes, so deslocados para a direita. */}
+            {proposta ? (
+              <span className="mr-1 shrink-0">
+                <StatusBadge status={statusExibido} tone={statusTone} />
+              </span>
+            ) : null}
             {proposta?.id_int ? (
               <button
                 type="button"
@@ -5329,7 +5365,9 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                   </Field>
                   <Field label="Status">
                     <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                      <StatusBadge status={composeStatusEmArte(form.status, form.emArte)} tone={form.status === "NOVO" ? "info" : form.status === "APROVADO" ? "success" : form.status === "AGUARDANDO" ? "warning" : "neutral"} />
+                      {/* Mesmo par de valores do cabecalho, para os dois nunca
+                          divergirem. O bloco continua exatamente aqui. */}
+                      <StatusBadge status={statusExibido} tone={statusTone} />
                     </div>
                   </Field>
                 </div>
