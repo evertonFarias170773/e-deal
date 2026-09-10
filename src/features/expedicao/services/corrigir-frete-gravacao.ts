@@ -71,7 +71,12 @@ import {
 import type { CobrancaParaFaturado } from "@/features/orcamentos/services/faturado-editavel";
 import { avaliarCoberturaFinanceira } from "@/features/cobrancas/services/cobertura-financeira-proposta";
 import { aplicarDiferencaFinanceira } from "@/features/cobrancas/services/diferenca-financeira-proposta";
-import { simularCorrecaoFrete, type MotivoBloqueio } from "./corrigir-frete-simulacao";
+import {
+  simularCorrecaoFrete,
+  titulosAtivosBloqueiam,
+  mensagemTitulosAtivos,
+  type MotivoBloqueio
+} from "./corrigir-frete-simulacao";
 
 /**
  * A única ação financeira que o backend sabe executar para diferença CREDORA:
@@ -85,8 +90,11 @@ export const ACAO_ABRIR_PENDENCIA_CREDITO = "ABRIR_PENDENCIA_CREDITO";
 const MOTIVO_PENDENCIA = "FRETE";
 
 export type MotivoRecusaCorrecao =
+  // `TITULOS_ATIVOS` saiu daqui em 10/09/2026: virou barreira da SIMULAÇÃO e
+  // chega por `MotivoBloqueio`. Repetir o literal aqui não mudaria o tipo, mas
+  // sugeriria que ele é exclusivo da gravação — que é justamente o que deixou
+  // de ser verdade.
   | MotivoBloqueio
-  | "TITULOS_ATIVOS"
   | "AGUARDA_DECISAO_CREDITO"
   | "SEM_COTACAO_ESCOLHIDA"
   | "SEM_CLIENTE"
@@ -309,16 +317,32 @@ export async function confirmarCorrecaoFrete(
 
   const { estavaIntegralmentePaga, titulos, avaliacaoPrevia, ehCaminhoFaturado } = cobertura;
 
-  // Mesma rede de segurança do `editar-paga`: título ainda ativo no Contas a
-  // Receber ficaria com o valor velho. `avaliacaoPrevia.elegivel` e não o
-  // atalho, porque é ele que estreita a união.
-  if (avaliacaoPrevia.elegivel && avaliacaoPrevia.titulosParaExcluir.length > 0) {
-    return recusa(
-      "TITULOS_ATIVOS",
-      `Pedido #${idInt} ainda tem ${avaliacaoPrevia.titulosParaExcluir.length} titulo(s) ativo(s) no Contas a Receber. ` +
-        `Eles precisam ser excluidos antes da correcao de frete.`,
-      409
-    );
+  /**
+   * Título ainda ativo no Contas a Receber ficaria com o valor velho — MAS só
+   * quando o total muda. A regra inteira, e o porquê, estão em
+   * `titulosAtivosBloqueiam` (corrigir-frete-simulacao.ts).
+   *
+   * ESTA VERIFICAÇÃO É REDUNDANTE DE PROPÓSITO. `simularCorrecaoFrete` roda no
+   * início desta função e a recusa dela já é devolvida ao chamador, então em
+   * operação normal o fluxo nem chega aqui. Ela fica porque esta é a última
+   * porta antes do primeiro UPDATE, e porque o `avaliacaoPrevia` daqui vem da
+   * releitura de `avaliarCoberturaFinanceira` logo acima — a gravação não
+   * confia na projeção para decidir o que grava. Chamando o MESMO predicado,
+   * as duas não podem divergir como divergiram até 10/09/2026.
+   *
+   * `avaliacaoPrevia.elegivel` e não o atalho, porque é ele que estreita a união
+   * e deixa `titulosParaExcluir` visível.
+   */
+  const titulosAtivos = avaliacaoPrevia.elegivel ? avaliacaoPrevia.titulosParaExcluir.length : 0;
+
+  if (
+    titulosAtivosBloqueiam({
+      deltaTotal: dados.deltaTotal,
+      elegivel: avaliacaoPrevia.elegivel,
+      titulosAtivos
+    })
+  ) {
+    return recusa("TITULOS_ATIVOS", mensagemTitulosAtivos(idInt, titulosAtivos), 409);
   }
 
   // ── 5. Diferença CREDORA sem ação: recusa ANTES de gravar ────────────────

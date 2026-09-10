@@ -552,14 +552,26 @@ export function ExpedicaoPage() {
   const canDebitoFuturo = Boolean(user?.isSuperAdmin || hasPermissao(user, "financeiro.debito_futuro"));
 
   /**
-   * As MESMAS quatro barreiras da rota, avaliadas com o que o painel já tem em
-   * memória — nenhuma consulta a mais, e nenhuma delas é inventada aqui:
-   * `STATUS_CORRIGIVEIS` vem do próprio módulo que a rota usa.
+   * QUATRO das CINCO barreiras da rota — e a que falta, falta de propósito.
    *
-   * Isto é affordance, não segurança. O servidor reavalia tudo do zero no
-   * `confirmar`, porque entre abrir o menu e clicar a NF pode ter sido
-   * autorizada e o despacho pode ter sido confirmado — e aí a mensagem dele é
-   * que aparece, inclusive a orientação de voltar um passo.
+   * Estas quatro são avaliadas com o que o painel já tem em memória, sem
+   * nenhuma consulta a mais, e nenhuma é inventada aqui: `STATUS_CORRIGIVEIS`
+   * vem do próprio módulo que a rota usa.
+   *
+   * A QUINTA É `TITULOS_ATIVOS` (10/09/2026), e ela não cabe aqui: depende do
+   * `deltaTotal`, que só existe depois de projetar o total novo — soma dos
+   * itens, desconto e frete efetivo da modalidade —, e de ler `pagamentos_v2` e
+   * `boletos`. Nada disso está no painel, e buscar seria uma consulta por linha
+   * da lista só para decidir se um item do menu aparece.
+   *
+   * Isto é affordance, não segurança. O servidor reavalia tudo do zero, e desde
+   * 10/09/2026 a SIMULAÇÃO reavalia as cinco — antes ela via só estas quatro, e
+   * era por isso que o modal podia mostrar tudo verde e a confirmação recusar
+   * por título ativo. Hoje quem abre o modal já recebe a recusa certa.
+   *
+   * Continua valendo o motivo original de o servidor mandar: entre abrir o menu
+   * e clicar, a NF pode ter sido autorizada e o despacho confirmado — e aí a
+   * mensagem dele é que aparece, inclusive a orientação de voltar um passo.
    */
   function podeCorrigirFrete(p: PedidoExpedicao) {
     if (!canCorrigirFrete) return false;

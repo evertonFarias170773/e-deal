@@ -29,6 +29,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { valorFreteEfetivo, type ModalidadeFrete } from "@/features/orcamentos/lib/modalidade-frete";
+import { avaliarCoberturaFinanceira } from "@/features/cobrancas/services/cobertura-financeira-proposta";
 
 /** Status em que a correção é oferecida. Ver `MOTIVO_FORA_DA_FAIXA`. */
 export const STATUS_CORRIGIVEIS = ["EXPEDICAO", "A RETIRAR"] as const;
@@ -40,7 +41,13 @@ export type MotivoBloqueio =
   | "DESPACHO_CONFIRMADO"
   | "ENTREGUE"
   | "FORA_DA_FAIXA"
-  | "MODALIDADE_INVALIDA";
+  | "MODALIDADE_INVALIDA"
+  /**
+   * Entrou em 10/09/2026, e é o motivo pelo qual esta lista existe: ele já era
+   * avaliado na GRAVAÇÃO e não aqui, então o modal mostrava tudo verde e a
+   * confirmação recusava. Ver `titulosAtivosBloqueiam`.
+   */
+  | "TITULOS_ATIVOS";
 
 export type SimulacaoCorrigirFrete = {
   permitido: boolean;
@@ -98,10 +105,67 @@ function bloqueio(
 }
 
 /**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * TÍTULO ATIVO SÓ BARRA QUANDO O TOTAL MUDA (10/09/2026).
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * O QUE A TRAVA PROTEGE
+ *   Título já emitido carrega valor PRÓPRIO (`boletos.valor`, `numeric NOT
+ *   NULL`), que este fluxo só lê e nunca escreve. Se o total da proposta mudar
+ *   com título ativo, o Contas a Receber fica com o valor velho e ninguém o
+ *   reconcilia depois — vários pontos somam `boletos.valor` sem contestar.
+ *
+ * POR QUE ELA NÃO PODE SER "EXISTE TÍTULO, BARRA"
+ *   Delta zero não produz esse risco: se o total não muda, o título continua
+ *   exato. O #21778 é o caso que mostrou isso — correção de CIF para RETIRA com
+ *   frete R$ 0,00 → R$ 0,00, total R$ 835,00 → R$ 835,00, título de R$ 835,00
+ *   que seguiria correto — e mesmo assim era recusado.
+ *
+ * DE ONDE VEIO A REGRA ANTIGA
+ *   Ela nasceu em 13/08/2026 (f149548) no `editar-paga`, onde o comentário diz
+ *   "a tela exclui os títulos antes de salvar" — e lá isso é VERDADE
+ *   (`OrcamentoFormPage.tsx:3924` abre o modal que os exclui e rechama o save).
+ *   Em 04/09/2026 (4a44ba8) o gate foi copiado para a correção de frete SEM a
+ *   tela que o resolve, virando um beco sem saída: a mensagem manda excluir os
+ *   títulos e nenhuma tela da Expedição oferece isso. O `editar-paga` fica como
+ *   está, de propósito — lá a saída existe.
+ *
+ * ESTE PREDICADO É A REGRA INTEIRA, E OS DOIS PONTOS O CHAMAM
+ *   A simulação (que alimenta o modal) e a gravação. Era a divergência entre os
+ *   dois que produzia "tudo verde na tela, recusa na confirmação".
+ *
+ * SOBRE A TOLERÂNCIA
+ *   `deltaTotal` já vem de `arredondar`, então só assume múltiplos de centavo:
+ *   comparar com 0,005 ou com 0,01 dá o mesmo resultado. O modal usa 0,01 na
+ *   frase "O total não muda" (`CorrigirFreteModal.tsx:202`) e continua de acordo
+ *   com esta conta. Ao mexer numa, confira a outra.
+ */
+export function titulosAtivosBloqueiam(entrada: {
+  /** Efeito ISOLADO da correção sobre o total, já arredondado. */
+  deltaTotal: number;
+  /** `avaliacaoPrevia.elegivel` — a proposta está no caminho do faturado. */
+  elegivel: boolean;
+  /** `avaliacaoPrevia.titulosParaExcluir.length`. */
+  titulosAtivos: number;
+}): boolean {
+  if (Math.abs(entrada.deltaTotal) <= TOLERANCIA) return false;
+  return entrada.elegivel && entrada.titulosAtivos > 0;
+}
+
+/** A mensagem da recusa, idêntica nos dois pontos. */
+export function mensagemTitulosAtivos(idInt: number, titulosAtivos: number): string {
+  return (
+    `Pedido #${idInt} ainda tem ${titulosAtivos} titulo(s) ativo(s) no Contas a Receber. ` +
+    `Eles precisam ser excluidos antes da correcao de frete.`
+  );
+}
+
+/**
  * Avalia a correção. SOMENTE LEITURA — todas as consultas são `select`.
  *
  * `supabase` precisa ser o client COM a sessão do usuário: as barreiras leem
- * `propostas`, `expedicoes` e `notas_fiscais`, e a permissão já foi conferida
+ * `propostas`, `expedicoes`, `notas_fiscais` e — desde 10/09/2026, pela
+ * barreira 5 — `pagamentos_v2` e `boletos`, e a permissão já foi conferida
  * pela rota com o mesmo token. Nenhuma consulta aqui fala como `anon`.
  */
 export async function simularCorrecaoFrete(
@@ -262,9 +326,12 @@ export async function simularCorrecaoFrete(
 
   // Mesma regra de `editar-paga`: cobrança que embute abatimento de débito da
   // conta corrente não conta como pagamento DESTA proposta.
+  // As colunas são as MESMAS que a gravação lê: além do cálculo do pago, elas
+  // alimentam `avaliarCoberturaFinanceira` na barreira 5, e a avaliação do
+  // faturado precisa de `id`, `id_pagamento`, `tipo_cobranca` e `paid_at`.
   const { data: cobrancas } = await supabase
     .from("pagamentos_v2")
-    .select("status, confirmado, valor, obs_v2")
+    .select("id, id_pagamento, tipo_cobranca, status, confirmado, paid_at, valor, obs_v2")
     .eq("id_int", idInt)
     .neq("status", "CANCELADO");
 
@@ -297,6 +364,31 @@ export async function simularCorrecaoFrete(
    * banco (visto em producao nos pedidos 20960 e 20890).
    */
   const deltaTotal = arredondar(totalProjetado - (Number(proposta.valor_total) || 0));
+
+  // 5. Título ativo no Contas a Receber — a ÚNICA barreira que depende do
+  //    número, e por isso a única que não cabe junto das outras quatro lá em
+  //    cima. Ver `titulosAtivosBloqueiam`: delta zero passa.
+  //
+  //    Mesma função de cobertura que a gravação usa, e não uma segunda leitura
+  //    com regra própria: é o que garante que os dois respondam igual.
+  const cobertura = await avaliarCoberturaFinanceira(supabase, {
+    idInt,
+    cobrancas: cobrancas ?? [],
+    valorPagoRealArredondado: valorPagoConfirmado,
+    valorTotalAntesEdicao: arredondar(Number(proposta.valor_total) || 0),
+    novoTotalPrevisto: totalProjetado
+  });
+
+  if (!cobertura.ok) {
+    return bloqueio("PROPOSTA_NAO_ENCONTRADA", cobertura.error, cobertura.status);
+  }
+
+  const { avaliacaoPrevia } = cobertura;
+  const titulosAtivos = avaliacaoPrevia.elegivel ? avaliacaoPrevia.titulosParaExcluir.length : 0;
+
+  if (titulosAtivosBloqueiam({ deltaTotal, elegivel: avaliacaoPrevia.elegivel, titulosAtivos })) {
+    return bloqueio("TITULOS_ATIVOS", mensagemTitulosAtivos(idInt, titulosAtivos), 409);
+  }
 
   const avisos: string[] = [];
   if (expedicao?.etiqueta_impressa_em) {
