@@ -71,7 +71,16 @@ export type SupabaseEnderecoRow = {
 };
 
 export type SupabaseContatoRow = {
-  id: string;
+  /**
+   * `public.contatos.id` e BIGINT: o PostgREST devolve NUMERO, nao texto.
+   *
+   * Estava declarado `string` aqui, e foi essa mentira que travou o "Salvar" da
+   * edicao de cadastro em 10/09/2026 — `isTemporaryId` chamava `.startsWith()`
+   * num numero, a excecao virava unhandledrejection e o botao ficava preso em
+   * "Salvando..." para sempre. A conversao para o dominio acontece numa unica
+   * fronteira, em `mappers.ts`.
+   */
+  id: number;
   id_cliente: SupabaseNullableValue;
   nome_contato?: SupabaseNullableValue;
   nome?: SupabaseNullableValue;

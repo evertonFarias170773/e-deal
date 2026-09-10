@@ -1036,191 +1036,216 @@ export function CadastroFormPage({ mode, cadastro, categoriaInicial }: CadastroF
 
     setIsSaving(true);
 
-    const insertPayload: CadastroInsertPayload = {
-      // `null` no modo automatico: createCadastro OMITE a chave do insert e o
-      // DEFAULT da coluna gera o numero. Nunca 0 — ver resolverIdClienteParaEnvio.
-      id_cliente: idClienteParaEnvio,
-      id_vendedor: selectedVendedor?.idVendedor ?? normalizeOptionalText(form.idVendedor),
-      nome_vendedor: normalizeOptionalText(form.atendente),
-      categoria: form.categoria,
-      nome: form.nome.trim(),
-      fantasia: normalizeOptionalText(form.fantasia),
-      apelido: normalizeOptionalText(form.apelido),
-      contato: normalizeOptionalText(form.contato || contactName),
-      documento: documentoDigits,
-      tipo_pessoa: inferredTipoPessoa ?? "JURIDICA",
-      ins_estadual: normalizeOptionalText(form.inscricaoEstadual),
-      ins_municipal: normalizeOptionalText(form.inscricaoMunicipal),
-      tipo_contribuinte: normalizeOptionalText(form.tipoContribuinte),
-      data_fundacao: normalizeOptionalText(form.dataFundacao),
-      email_contato: normalizeOptionalText(contactEmail),
-      email_financeiro: normalizeOptionalText(form.emailFinanceiro),
-      email: normalizeOptionalText(contactEmail),
-      telefone_fixo: normalizeOptionalText(form.telefoneFixo),
-      whatsapp_1: normalizeOptionalText(contactWhatsApp),
-      whatsapp_2: normalizeOptionalText(form.whatsapp2),
-      site: normalizeOptionalText(form.site),
-      ativo: form.ativo,
-      restricao: form.restricao,
-      limite_credito: normalizeOptionalText(form.limiteCredito),
-      // credito NÃO é enviado: saldo de crédito é gerido só pela Conta Corrente.
-      risco_credito: normalizeOptionalText(form.riscoCredito),
-      obs: normalizeOptionalText(form.observacoes),
-      data_cadastro: normalizeOptionalText(form.dataCadastro),
-      recebe_email: form.sendMail,
-      recebe_whatsapp: form.sendWhats,
-      padrao_pagamento: normalizeOptionalText(form.padraoPagamento) || "Pix à vista 3 dias",
-      empresa_padrao: normalizeOptionalText(form.empresaPadrao),
-      cidade_uf: normalizeOptionalText(form.cidadeUf),
-      nota: form.nota,
-      verificado: form.verificado,
-      ultima_compra: normalizeOptionalText(form.ultimaCompra),
-      total_compras: normalizeOptionalText(form.totalCompras),
-      data_verificacao: normalizeOptionalText(form.dataVerificacao),
-      motivo_erro: normalizeOptionalText(form.motivoErro),
-      cpf_invalido: form.cpfInvalido,
-      cpf_erro: normalizeOptionalText(form.cpfErro),
-      is_bonus: form.bonusAtivo,
-      usa_preco_fixo: form.usaPrecoFixo,
-      percentual_bunus: normalizeOptionalText(form.percentualBonus),
-      id_modelo_cobranca: form.modeloCobrancaId || null
-    };
-
-    let result: Awaited<ReturnType<typeof createCadastro>>;
     try {
-      result = await createCadastro(insertPayload);
+      const insertPayload: CadastroInsertPayload = {
+        // `null` no modo automatico: createCadastro OMITE a chave do insert e o
+        // DEFAULT da coluna gera o numero. Nunca 0 — ver resolverIdClienteParaEnvio.
+        id_cliente: idClienteParaEnvio,
+        id_vendedor: selectedVendedor?.idVendedor ?? normalizeOptionalText(form.idVendedor),
+        nome_vendedor: normalizeOptionalText(form.atendente),
+        categoria: form.categoria,
+        nome: form.nome.trim(),
+        fantasia: normalizeOptionalText(form.fantasia),
+        apelido: normalizeOptionalText(form.apelido),
+        contato: normalizeOptionalText(form.contato || contactName),
+        documento: documentoDigits,
+        tipo_pessoa: inferredTipoPessoa ?? "JURIDICA",
+        ins_estadual: normalizeOptionalText(form.inscricaoEstadual),
+        ins_municipal: normalizeOptionalText(form.inscricaoMunicipal),
+        tipo_contribuinte: normalizeOptionalText(form.tipoContribuinte),
+        data_fundacao: normalizeOptionalText(form.dataFundacao),
+        email_contato: normalizeOptionalText(contactEmail),
+        email_financeiro: normalizeOptionalText(form.emailFinanceiro),
+        email: normalizeOptionalText(contactEmail),
+        telefone_fixo: normalizeOptionalText(form.telefoneFixo),
+        whatsapp_1: normalizeOptionalText(contactWhatsApp),
+        whatsapp_2: normalizeOptionalText(form.whatsapp2),
+        site: normalizeOptionalText(form.site),
+        ativo: form.ativo,
+        restricao: form.restricao,
+        limite_credito: normalizeOptionalText(form.limiteCredito),
+        // credito NÃO é enviado: saldo de crédito é gerido só pela Conta Corrente.
+        risco_credito: normalizeOptionalText(form.riscoCredito),
+        obs: normalizeOptionalText(form.observacoes),
+        data_cadastro: normalizeOptionalText(form.dataCadastro),
+        recebe_email: form.sendMail,
+        recebe_whatsapp: form.sendWhats,
+        padrao_pagamento: normalizeOptionalText(form.padraoPagamento) || "Pix à vista 3 dias",
+        empresa_padrao: normalizeOptionalText(form.empresaPadrao),
+        cidade_uf: normalizeOptionalText(form.cidadeUf),
+        nota: form.nota,
+        verificado: form.verificado,
+        ultima_compra: normalizeOptionalText(form.ultimaCompra),
+        total_compras: normalizeOptionalText(form.totalCompras),
+        data_verificacao: normalizeOptionalText(form.dataVerificacao),
+        motivo_erro: normalizeOptionalText(form.motivoErro),
+        cpf_invalido: form.cpfInvalido,
+        cpf_erro: normalizeOptionalText(form.cpfErro),
+        is_bonus: form.bonusAtivo,
+        usa_preco_fixo: form.usaPrecoFixo,
+        percentual_bunus: normalizeOptionalText(form.percentualBonus),
+        id_modelo_cobranca: form.modeloCobrancaId || null
+      };
+
+      let result: Awaited<ReturnType<typeof createCadastro>>;
+      try {
+        result = await createCadastro(insertPayload);
+      } catch (error) {
+        setIsSaving(false);
+        setMessage({
+          tone: "danger",
+          title: "Nao foi possivel criar o cadastro.",
+          description: error instanceof Error ? error.message : "Falha inesperada ao executar o insert."
+        });
+        showToast({
+          type: "error",
+          title: "Falha ao criar cadastro",
+          description: "Falha inesperada ao executar o insert."
+        });
+        return;
+      }
+
+      if (!result.success) {
+        setIsSaving(false);
+        setErrorFields(
+          result.conflict?.kind === "id_cliente"
+            ? ["idCliente"]
+            : result.conflict?.kind === "documento"
+              ? ["documento"]
+              : []
+        );
+        setMessage({
+          tone: "danger",
+          title: "Nao foi possivel criar o cadastro.",
+          description: result.errorMessage,
+          actionHref: result.conflict ? `/cadastros/${result.conflict.idCliente}` : undefined,
+          actionLabel: result.conflict ? "Abrir cadastro existente" : undefined
+        });
+        showToast({
+          type: "error",
+          title: "Falha ao criar cadastro",
+          description: result.errorMessage
+        });
+        return;
+      }
+
+      const relatedWarnings: string[] = [];
+
+      const enderecosPayload: CadastroEnderecoInsertPayload[] = form.enderecos.map((item) => ({
+        id_cliente: result.cadastro.idCliente,
+        cep: normalizeOptionalText(item.cep),
+        endereco: normalizeOptionalText(item.endereco),
+        numero: normalizeOptionalText(item.numero),
+        complemento: normalizeOptionalText(item.complemento),
+        bairro: normalizeOptionalText(item.bairro),
+        cidade: normalizeOptionalText(item.cidade),
+        uf: normalizeOptionalText(item.uf),
+        tipo_endereco: item.tipo.toUpperCase(),
+        obs: normalizeOptionalText(item.obs),
+        recebedor: normalizeOptionalText(item.recebedor),
+        cpf_recebedor: normalizeOptionalText(item.cpfRecebedor)
+      }));
+      if (enderecosPayload.length > 0) {
+        const enderecoResult = await createCadastroEnderecos(enderecosPayload);
+        if (!enderecoResult.success) {
+          relatedWarnings.push(
+            "Cadastro criado, mas houve erro ao salvar endereços. Adicione os endereços manualmente."
+          );
+        } else if (enderecoResult.principalAcao === "sobrescrito") {
+          // O usuario precisa SABER que aquele numero de cliente ja tinha endereco
+          // principal — quase sempre orfao da importacao de 20/12/2025. Antes o
+          // endereco antigo ficava e o do cadastro novo era o que sumia, em
+          // silencio; agora e o contrario, e o silencio tambem acaba.
+          relatedWarnings.push(
+            `O ID ${result.cadastro.idCliente} já tinha um endereço principal de outro cadastro. Ele foi substituído pelo endereço deste cadastro — nada foi apagado.`
+          );
+        }
+      }
+
+      const contatosPayload: CadastroContatoInsertPayload[] = contatosPreenchidos.map((item) => ({
+        id_cliente: result.cadastro.idCliente,
+        nome_contato: item.nome.trim(),
+        cargo: normalizeOptionalText(item.cargo),
+        whats: normalizeOptionalText(item.whatsapp),
+        e_mail: normalizeOptionalText(item.email)
+      }));
+      if (contatosPayload.length > 0) {
+        const contatosResult = await createCadastroContatos(contatosPayload);
+        if (!contatosResult.success) {
+          relatedWarnings.push(
+            "Cadastro criado, mas houve erro ao salvar contatos. Adicione os contatos manualmente."
+          );
+        }
+      }
+
+      const vinculosPayload: CadastroVinculoComercialInsertPayload[] = vinculosPreenchidos.map((item) => ({
+        id_cliente_principal: result.cadastro.idCliente,
+        id_cliente_socio: item.idClienteRelacionado,
+        tipo_relacao: normalizeOptionalText(item.tipoRelacao) || "vinculo_comercial"
+      }));
+      if (vinculosPayload.length > 0) {
+        const vinculosResult = await createCadastroVinculosComerciais(vinculosPayload);
+        if (!vinculosResult.success) {
+          relatedWarnings.push(
+            "Cadastro criado, mas houve erro ao salvar vínculos comerciais. Adicione os vínculos manualmente."
+          );
+        }
+      }
+
+      setMessage({
+        tone: relatedWarnings.length > 0 ? "warning" : "success",
+        title: relatedWarnings.length > 0 ? "Cadastro criado com ressalvas." : "Cadastro criado com sucesso.",
+        description:
+          relatedWarnings.length > 0
+            ? relatedWarnings.join(" ")
+            : `Cliente #${result.cadastro.idCliente} criado. Redirecionando para o detalhe.`
+      });
+      showToast({
+        type: relatedWarnings.length > 0 ? "warning" : "success",
+        title: relatedWarnings.length > 0 ? "Cadastro criado com ressalvas" : "Cadastro criado com sucesso.",
+        description:
+          relatedWarnings.length > 0
+            ? "Cadastro principal salvo, mas houve falha em parte dos dados relacionados."
+            : `Cliente #${result.cadastro.idCliente} salvo.`
+      });
+
+      setIsSaving(false);
+
+      // Veio do card de vínculos de outro cliente: volta para lá com o cadastro
+      // recém-criado já escolhido, em vez de cair no detalhe deste novo cadastro.
+      const destino = origemVinculo
+        ? `/cadastros/${origemVinculo}/editar?novoVinculo=${result.cadastro.idCliente}${
+            tipoRelacaoParam ? `&tipoRelacao=${encodeURIComponent(tipoRelacaoParam)}` : ""
+          }`
+        : `/cadastros/${result.cadastro.idCliente}`;
+
+      window.setTimeout(() => {
+        router.push(destino);
+      }, 1000);
     } catch (error) {
-      setIsSaving(false);
+      // Ate 10/09/2026 nao havia catch aqui: qualquer excecao no meio do
+      // salvamento virava unhandledrejection, o `setIsSaving(false)` do final
+      // nunca rodava e o botao ficava preso em "Salvando..." ate o usuario
+      // sair da pagina — sem nenhuma mensagem de erro.
+      const detalhe = error instanceof Error ? error.message : String(error);
+      console.error("[CadastroFormPage] Nao foi possivel concluir a criacao:", error);
       setMessage({
         tone: "danger",
-        title: "Nao foi possivel criar o cadastro.",
-        description: error instanceof Error ? error.message : "Falha inesperada ao executar o insert."
+        title: "Nao foi possivel concluir a criacao",
+        description:
+          `Falha inesperada durante o salvamento: ${detalhe}. ` +
+          "Parte dos dados pode nao ter sido gravada — confira o cadastro antes de tentar de novo."
       });
       showToast({
         type: "error",
         title: "Falha ao criar cadastro",
-        description: "Falha inesperada ao executar o insert."
+        description: detalhe
       });
-      return;
-    }
-
-    if (!result.success) {
+    } finally {
+      // Ponto unico que desliga o estado "salvando": vale para o sucesso, para
+      // os returns de validacao e para qualquer excecao.
       setIsSaving(false);
-      setErrorFields(
-        result.conflict?.kind === "id_cliente"
-          ? ["idCliente"]
-          : result.conflict?.kind === "documento"
-            ? ["documento"]
-            : []
-      );
-      setMessage({
-        tone: "danger",
-        title: "Nao foi possivel criar o cadastro.",
-        description: result.errorMessage,
-        actionHref: result.conflict ? `/cadastros/${result.conflict.idCliente}` : undefined,
-        actionLabel: result.conflict ? "Abrir cadastro existente" : undefined
-      });
-      showToast({
-        type: "error",
-        title: "Falha ao criar cadastro",
-        description: result.errorMessage
-      });
-      return;
     }
-
-    const relatedWarnings: string[] = [];
-
-    const enderecosPayload: CadastroEnderecoInsertPayload[] = form.enderecos.map((item) => ({
-      id_cliente: result.cadastro.idCliente,
-      cep: normalizeOptionalText(item.cep),
-      endereco: normalizeOptionalText(item.endereco),
-      numero: normalizeOptionalText(item.numero),
-      complemento: normalizeOptionalText(item.complemento),
-      bairro: normalizeOptionalText(item.bairro),
-      cidade: normalizeOptionalText(item.cidade),
-      uf: normalizeOptionalText(item.uf),
-      tipo_endereco: item.tipo.toUpperCase(),
-      obs: normalizeOptionalText(item.obs),
-      recebedor: normalizeOptionalText(item.recebedor),
-      cpf_recebedor: normalizeOptionalText(item.cpfRecebedor)
-    }));
-    if (enderecosPayload.length > 0) {
-      const enderecoResult = await createCadastroEnderecos(enderecosPayload);
-      if (!enderecoResult.success) {
-        relatedWarnings.push(
-          "Cadastro criado, mas houve erro ao salvar endereços. Adicione os endereços manualmente."
-        );
-      } else if (enderecoResult.principalAcao === "sobrescrito") {
-        // O usuario precisa SABER que aquele numero de cliente ja tinha endereco
-        // principal — quase sempre orfao da importacao de 20/12/2025. Antes o
-        // endereco antigo ficava e o do cadastro novo era o que sumia, em
-        // silencio; agora e o contrario, e o silencio tambem acaba.
-        relatedWarnings.push(
-          `O ID ${result.cadastro.idCliente} já tinha um endereço principal de outro cadastro. Ele foi substituído pelo endereço deste cadastro — nada foi apagado.`
-        );
-      }
-    }
-
-    const contatosPayload: CadastroContatoInsertPayload[] = contatosPreenchidos.map((item) => ({
-      id_cliente: result.cadastro.idCliente,
-      nome_contato: item.nome.trim(),
-      cargo: normalizeOptionalText(item.cargo),
-      whats: normalizeOptionalText(item.whatsapp),
-      e_mail: normalizeOptionalText(item.email)
-    }));
-    if (contatosPayload.length > 0) {
-      const contatosResult = await createCadastroContatos(contatosPayload);
-      if (!contatosResult.success) {
-        relatedWarnings.push(
-          "Cadastro criado, mas houve erro ao salvar contatos. Adicione os contatos manualmente."
-        );
-      }
-    }
-
-    const vinculosPayload: CadastroVinculoComercialInsertPayload[] = vinculosPreenchidos.map((item) => ({
-      id_cliente_principal: result.cadastro.idCliente,
-      id_cliente_socio: item.idClienteRelacionado,
-      tipo_relacao: normalizeOptionalText(item.tipoRelacao) || "vinculo_comercial"
-    }));
-    if (vinculosPayload.length > 0) {
-      const vinculosResult = await createCadastroVinculosComerciais(vinculosPayload);
-      if (!vinculosResult.success) {
-        relatedWarnings.push(
-          "Cadastro criado, mas houve erro ao salvar vínculos comerciais. Adicione os vínculos manualmente."
-        );
-      }
-    }
-
-    setMessage({
-      tone: relatedWarnings.length > 0 ? "warning" : "success",
-      title: relatedWarnings.length > 0 ? "Cadastro criado com ressalvas." : "Cadastro criado com sucesso.",
-      description:
-        relatedWarnings.length > 0
-          ? relatedWarnings.join(" ")
-          : `Cliente #${result.cadastro.idCliente} criado. Redirecionando para o detalhe.`
-    });
-    showToast({
-      type: relatedWarnings.length > 0 ? "warning" : "success",
-      title: relatedWarnings.length > 0 ? "Cadastro criado com ressalvas" : "Cadastro criado com sucesso.",
-      description:
-        relatedWarnings.length > 0
-          ? "Cadastro principal salvo, mas houve falha em parte dos dados relacionados."
-          : `Cliente #${result.cadastro.idCliente} salvo.`
-    });
-
-    setIsSaving(false);
-
-    // Veio do card de vínculos de outro cliente: volta para lá com o cadastro
-    // recém-criado já escolhido, em vez de cair no detalhe deste novo cadastro.
-    const destino = origemVinculo
-      ? `/cadastros/${origemVinculo}/editar?novoVinculo=${result.cadastro.idCliente}${
-          tipoRelacaoParam ? `&tipoRelacao=${encodeURIComponent(tipoRelacaoParam)}` : ""
-        }`
-      : `/cadastros/${result.cadastro.idCliente}`;
-
-    window.setTimeout(() => {
-      router.push(destino);
-    }, 1000);
   }
 
   async function handleUpdateCadastro() {
@@ -1241,185 +1266,210 @@ export function CadastroFormPage({ mode, cadastro, categoriaInicial }: CadastroF
     setErrorFields([]);
     setIsSaving(true);
 
-    const idCliente = Number(form.idCliente);
-    const documentoDigits = normalizeDocumentDigits(form.documento);
-    const inferredTipoPessoa = inferTipoPessoaFromDocumento(form.documento);
-    const selectedVendedor = vendedorOptions.find((item) => item.nome === form.atendente);
+    try {
+      const idCliente = Number(form.idCliente);
+      const documentoDigits = normalizeDocumentDigits(form.documento);
+      const inferredTipoPessoa = inferTipoPessoaFromDocumento(form.documento);
+      const selectedVendedor = vendedorOptions.find((item) => item.nome === form.atendente);
 
-    if (!Number.isInteger(idCliente) || idCliente <= 0 || !documentoDigits || !inferredTipoPessoa) {
+      if (!Number.isInteger(idCliente) || idCliente <= 0 || !documentoDigits || !inferredTipoPessoa) {
+        setIsSaving(false);
+        setMessage({
+          tone: "danger",
+          title: "Dados principais inválidos",
+          description: "Revise ID, documento e tipo de pessoa antes de salvar."
+        });
+        return;
+      }
+
+      const addrValidation = validateEnderecos(form.enderecos);
+      if (!addrValidation.isValid) {
+        setIsSaving(false);
+        setMessage({
+          tone: "danger",
+          title: "Endereço incompleto ou inválido",
+          description: addrValidation.message || ""
+        });
+        showToast({
+          type: "error",
+          title: "Falha na validação",
+          description: addrValidation.message || ""
+        });
+        return;
+      }
+
+      const updatePayload: CadastroUpdatePayload = {
+        id_vendedor: selectedVendedor?.idVendedor ?? normalizeOptionalText(form.idVendedor),
+        nome_vendedor: normalizeOptionalText(form.atendente),
+        categoria: form.categoria,
+        nome: form.nome.trim(),
+        fantasia: normalizeOptionalText(form.fantasia),
+        apelido: normalizeOptionalText(form.apelido),
+        contato: normalizeOptionalText(form.contato),
+        documento: documentoDigits,
+        tipo_pessoa: inferredTipoPessoa,
+        ins_estadual: normalizeOptionalText(form.inscricaoEstadual),
+        ins_municipal: normalizeOptionalText(form.inscricaoMunicipal),
+        tipo_contribuinte: normalizeOptionalText(form.tipoContribuinte),
+        data_fundacao: normalizeOptionalText(form.dataFundacao),
+        email_contato: normalizeOptionalText(form.email),
+        email_financeiro: normalizeOptionalText(form.emailFinanceiro),
+        email: normalizeOptionalText(form.email),
+        telefone_fixo: normalizeOptionalText(form.telefoneFixo),
+        whatsapp_1: normalizeOptionalText(form.whatsapp),
+        whatsapp_2: normalizeOptionalText(form.whatsapp2),
+        site: normalizeOptionalText(form.site),
+        ativo: form.ativo,
+        restricao: form.restricao,
+        limite_credito: normalizeOptionalText(form.limiteCredito),
+        // credito NÃO é enviado: saldo de crédito é gerido só pela Conta Corrente.
+        risco_credito: normalizeOptionalText(form.riscoCredito),
+        obs: normalizeOptionalText(form.observacoes),
+        data_cadastro: normalizeOptionalText(form.dataCadastro),
+        recebe_email: form.sendMail,
+        recebe_whatsapp: form.sendWhats,
+        padrao_pagamento: normalizeOptionalText(form.padraoPagamento),
+        empresa_padrao: normalizeOptionalText(form.empresaPadrao),
+        cidade_uf: normalizeOptionalText(form.cidadeUf),
+        nota: form.nota,
+        verificado: form.verificado,
+        ultima_compra: normalizeOptionalText(form.ultimaCompra),
+        total_compras: normalizeOptionalText(form.totalCompras),
+        data_verificacao: normalizeOptionalText(form.dataVerificacao),
+        motivo_erro: normalizeOptionalText(form.motivoErro),
+        cpf_invalido: form.cpfInvalido,
+        cpf_erro: normalizeOptionalText(form.cpfErro),
+        is_bonus: form.bonusAtivo,
+        usa_preco_fixo: form.usaPrecoFixo,
+        percentual_bunus: normalizeOptionalText(form.percentualBonus),
+        id_modelo_cobranca: form.modeloCobrancaId || null
+      };
+
+      const result = await updateCadastro(idCliente, updatePayload);
+      if (!result.success) {
+        setIsSaving(false);
+        setMessage({
+          tone: "danger",
+          title: "Não foi possível atualizar o cadastro",
+          description: result.errorMessage
+        });
+        showToast({
+          type: "error",
+          title: "Falha ao atualizar cadastro",
+          description: result.errorMessage
+        });
+        return;
+      }
+
+      const warnings: string[] = [];
+
+      for (const endereco of form.enderecos) {
+        const payload = {
+          cep: normalizeOptionalText(endereco.cep),
+          endereco: normalizeOptionalText(endereco.endereco),
+          numero: normalizeOptionalText(endereco.numero),
+          complemento: normalizeOptionalText(endereco.complemento),
+          bairro: normalizeOptionalText(endereco.bairro),
+          cidade: normalizeOptionalText(endereco.cidade),
+          uf: normalizeOptionalText(endereco.uf),
+          tipo_endereco: endereco.tipo.toUpperCase(),
+          obs: normalizeOptionalText(endereco.obs),
+          recebedor: normalizeOptionalText(endereco.recebedor),
+          cpf_recebedor: normalizeOptionalText(endereco.cpfRecebedor)
+        };
+
+        const enderecoResult = isTemporaryId(endereco.id)
+          ? await createCadastroEnderecos([{ id_cliente: idCliente, ...payload }])
+          : await updateCadastroEndereco(endereco.id, payload);
+        if (!enderecoResult.success) {
+          warnings.push("Houve falha ao salvar parte dos endereços.");
+          break;
+        }
+      }
+
+      for (const contato of form.contatos) {
+        if (!contato.nome.trim()) {
+          continue;
+        }
+        const payload = {
+          nome_contato: contato.nome.trim(),
+          cargo: normalizeOptionalText(contato.cargo),
+          whats: normalizeOptionalText(contato.whatsapp),
+          e_mail: normalizeOptionalText(contato.email)
+        };
+
+        const contatoResult = isTemporaryId(contato.id)
+          ? await createCadastroContatos([{ id_cliente: idCliente, ...payload }])
+          : await updateCadastroContato(contato.id, payload);
+        if (!contatoResult.success) {
+          warnings.push("Houve falha ao salvar parte dos contatos.");
+          break;
+        }
+      }
+
+      for (const vinculo of form.vinculosComerciais) {
+        if (!vinculo.idClienteRelacionado || vinculo.idClienteRelacionado === idCliente) {
+          continue;
+        }
+
+        const payload = {
+          tipo_relacao: normalizeOptionalText(vinculo.tipoRelacao) || "vinculo_comercial"
+        };
+
+        const vinculoResult = isTemporaryId(vinculo.id)
+          ? await createCadastroVinculosComerciais([
+              {
+                id_cliente_principal: idCliente,
+                id_cliente_socio: vinculo.idClienteRelacionado,
+                tipo_relacao: payload.tipo_relacao
+              }
+            ])
+          : await updateCadastroVinculoComercial(vinculo.id, payload);
+        if (!vinculoResult.success) {
+          warnings.push("Houve falha ao salvar parte dos vínculos comerciais.");
+          break;
+        }
+      }
+
       setIsSaving(false);
       setMessage({
-        tone: "danger",
-        title: "Dados principais inválidos",
-        description: "Revise ID, documento e tipo de pessoa antes de salvar."
-      });
-      return;
-    }
-
-    const addrValidation = validateEnderecos(form.enderecos);
-    if (!addrValidation.isValid) {
-      setIsSaving(false);
-      setMessage({
-        tone: "danger",
-        title: "Endereço incompleto ou inválido",
-        description: addrValidation.message || ""
+        tone: warnings.length ? "warning" : "success",
+        title: warnings.length ? "Cadastro atualizado com ressalvas." : "Cadastro atualizado com sucesso.",
+        description: warnings.length ? warnings.join(" ") : "Dados principais e relacionados foram salvos."
       });
       showToast({
-        type: "error",
-        title: "Falha na validação",
-        description: addrValidation.message || ""
+        type: warnings.length ? "warning" : "success",
+        title: warnings.length ? "Atualização parcial" : "Cadastro atualizado",
+        description: warnings.length ? warnings.join(" ") : "Atualização concluída."
       });
-      return;
-    }
 
-    const updatePayload: CadastroUpdatePayload = {
-      id_vendedor: selectedVendedor?.idVendedor ?? normalizeOptionalText(form.idVendedor),
-      nome_vendedor: normalizeOptionalText(form.atendente),
-      categoria: form.categoria,
-      nome: form.nome.trim(),
-      fantasia: normalizeOptionalText(form.fantasia),
-      apelido: normalizeOptionalText(form.apelido),
-      contato: normalizeOptionalText(form.contato),
-      documento: documentoDigits,
-      tipo_pessoa: inferredTipoPessoa,
-      ins_estadual: normalizeOptionalText(form.inscricaoEstadual),
-      ins_municipal: normalizeOptionalText(form.inscricaoMunicipal),
-      tipo_contribuinte: normalizeOptionalText(form.tipoContribuinte),
-      data_fundacao: normalizeOptionalText(form.dataFundacao),
-      email_contato: normalizeOptionalText(form.email),
-      email_financeiro: normalizeOptionalText(form.emailFinanceiro),
-      email: normalizeOptionalText(form.email),
-      telefone_fixo: normalizeOptionalText(form.telefoneFixo),
-      whatsapp_1: normalizeOptionalText(form.whatsapp),
-      whatsapp_2: normalizeOptionalText(form.whatsapp2),
-      site: normalizeOptionalText(form.site),
-      ativo: form.ativo,
-      restricao: form.restricao,
-      limite_credito: normalizeOptionalText(form.limiteCredito),
-      // credito NÃO é enviado: saldo de crédito é gerido só pela Conta Corrente.
-      risco_credito: normalizeOptionalText(form.riscoCredito),
-      obs: normalizeOptionalText(form.observacoes),
-      data_cadastro: normalizeOptionalText(form.dataCadastro),
-      recebe_email: form.sendMail,
-      recebe_whatsapp: form.sendWhats,
-      padrao_pagamento: normalizeOptionalText(form.padraoPagamento),
-      empresa_padrao: normalizeOptionalText(form.empresaPadrao),
-      cidade_uf: normalizeOptionalText(form.cidadeUf),
-      nota: form.nota,
-      verificado: form.verificado,
-      ultima_compra: normalizeOptionalText(form.ultimaCompra),
-      total_compras: normalizeOptionalText(form.totalCompras),
-      data_verificacao: normalizeOptionalText(form.dataVerificacao),
-      motivo_erro: normalizeOptionalText(form.motivoErro),
-      cpf_invalido: form.cpfInvalido,
-      cpf_erro: normalizeOptionalText(form.cpfErro),
-      is_bonus: form.bonusAtivo,
-      usa_preco_fixo: form.usaPrecoFixo,
-      percentual_bunus: normalizeOptionalText(form.percentualBonus),
-      id_modelo_cobranca: form.modeloCobrancaId || null
-    };
-
-    const result = await updateCadastro(idCliente, updatePayload);
-    if (!result.success) {
-      setIsSaving(false);
+      window.setTimeout(() => {
+        router.push(`/cadastros/${idCliente}`);
+      }, 1200);
+    } catch (error) {
+      // Ate 10/09/2026 nao havia catch aqui: qualquer excecao no meio do
+      // salvamento virava unhandledrejection, o `setIsSaving(false)` do final
+      // nunca rodava e o botao ficava preso em "Salvando..." ate o usuario
+      // sair da pagina — sem nenhuma mensagem de erro.
+      const detalhe = error instanceof Error ? error.message : String(error);
+      console.error("[CadastroFormPage] Nao foi possivel concluir a atualizacao:", error);
       setMessage({
         tone: "danger",
-        title: "Não foi possível atualizar o cadastro",
-        description: result.errorMessage
+        title: "Nao foi possivel concluir a atualizacao",
+        description:
+          `Falha inesperada durante o salvamento: ${detalhe}. ` +
+          "Parte dos dados pode nao ter sido gravada — confira o cadastro antes de tentar de novo."
       });
       showToast({
         type: "error",
         title: "Falha ao atualizar cadastro",
-        description: result.errorMessage
+        description: detalhe
       });
-      return;
+    } finally {
+      // Ponto unico que desliga o estado "salvando": vale para o sucesso, para
+      // os returns de validacao e para qualquer excecao.
+      setIsSaving(false);
     }
-
-    const warnings: string[] = [];
-
-    for (const endereco of form.enderecos) {
-      const payload = {
-        cep: normalizeOptionalText(endereco.cep),
-        endereco: normalizeOptionalText(endereco.endereco),
-        numero: normalizeOptionalText(endereco.numero),
-        complemento: normalizeOptionalText(endereco.complemento),
-        bairro: normalizeOptionalText(endereco.bairro),
-        cidade: normalizeOptionalText(endereco.cidade),
-        uf: normalizeOptionalText(endereco.uf),
-        tipo_endereco: endereco.tipo.toUpperCase(),
-        obs: normalizeOptionalText(endereco.obs),
-        recebedor: normalizeOptionalText(endereco.recebedor),
-        cpf_recebedor: normalizeOptionalText(endereco.cpfRecebedor)
-      };
-
-      const enderecoResult = isTemporaryId(endereco.id)
-        ? await createCadastroEnderecos([{ id_cliente: idCliente, ...payload }])
-        : await updateCadastroEndereco(endereco.id, payload);
-      if (!enderecoResult.success) {
-        warnings.push("Houve falha ao salvar parte dos endereços.");
-        break;
-      }
-    }
-
-    for (const contato of form.contatos) {
-      if (!contato.nome.trim()) {
-        continue;
-      }
-      const payload = {
-        nome_contato: contato.nome.trim(),
-        cargo: normalizeOptionalText(contato.cargo),
-        whats: normalizeOptionalText(contato.whatsapp),
-        e_mail: normalizeOptionalText(contato.email)
-      };
-
-      const contatoResult = isTemporaryId(contato.id)
-        ? await createCadastroContatos([{ id_cliente: idCliente, ...payload }])
-        : await updateCadastroContato(contato.id, payload);
-      if (!contatoResult.success) {
-        warnings.push("Houve falha ao salvar parte dos contatos.");
-        break;
-      }
-    }
-
-    for (const vinculo of form.vinculosComerciais) {
-      if (!vinculo.idClienteRelacionado || vinculo.idClienteRelacionado === idCliente) {
-        continue;
-      }
-
-      const payload = {
-        tipo_relacao: normalizeOptionalText(vinculo.tipoRelacao) || "vinculo_comercial"
-      };
-
-      const vinculoResult = isTemporaryId(vinculo.id)
-        ? await createCadastroVinculosComerciais([
-            {
-              id_cliente_principal: idCliente,
-              id_cliente_socio: vinculo.idClienteRelacionado,
-              tipo_relacao: payload.tipo_relacao
-            }
-          ])
-        : await updateCadastroVinculoComercial(vinculo.id, payload);
-      if (!vinculoResult.success) {
-        warnings.push("Houve falha ao salvar parte dos vínculos comerciais.");
-        break;
-      }
-    }
-
-    setIsSaving(false);
-    setMessage({
-      tone: warnings.length ? "warning" : "success",
-      title: warnings.length ? "Cadastro atualizado com ressalvas." : "Cadastro atualizado com sucesso.",
-      description: warnings.length ? warnings.join(" ") : "Dados principais e relacionados foram salvos."
-    });
-    showToast({
-      type: warnings.length ? "warning" : "success",
-      title: warnings.length ? "Atualização parcial" : "Cadastro atualizado",
-      description: warnings.length ? warnings.join(" ") : "Atualização concluída."
-    });
-
-    window.setTimeout(() => {
-      router.push(`/cadastros/${idCliente}`);
-    }, 1200);
   }
 
   return (

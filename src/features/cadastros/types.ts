@@ -18,6 +18,11 @@ export type CadastroEndereco = {
 };
 
 export type CadastroContato = {
+  /**
+   * Sempre texto: ou o `contatos.id` (bigint) ja convertido na fronteira do
+   * mapper, ou um id temporario do formulario ("cont_...") de um contato que
+   * ainda nao existe no banco. `isTemporaryId` distingue os dois.
+   */
   id: string;
   nome: string;
   cargo: string;

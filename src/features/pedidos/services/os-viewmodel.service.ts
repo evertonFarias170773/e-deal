@@ -3,6 +3,9 @@ import { obterPedidoOperacionalPorIdOuIdInt } from "./pedidos-detalhe.service";
 import { parsePedidosObs, obterFreteEscolhido } from "./boletim-propostas.service";
 import type { ParsedObs } from "./boletim-propostas.service";
 import { normalizarSetor } from "../setores";
+// O MESMO rotulo da lista da Expedicao e da etiqueta de retirada: o formato do
+// numero do cadastro vive num lugar so, para as tres pecas nao divergirem.
+import { rotuloClienteComNumero } from "@/features/expedicao/lib/cliente-rotulo";
 import { empresaTextoParaId, EMPRESA_NOMES } from "../pdf/os-pdf-assets";
 import type { EmpresaId } from "../pdf/os-pdf-assets";
 import {
@@ -93,7 +96,18 @@ export interface OsPdfViewModel {
     outrosSetores: { setor: string; itens: { produto: string; quantidade: number }[] }[];
   };
   empresa: { id: EmpresaId; nome: string; cnpj: string | null };
-  cliente: { nome: string; documento: string | null; contato: string | null; telefone: string | null };
+  cliente: {
+    /**
+     * "12460 - Alexandre Machado De Macedo": o número do cadastro antes do
+     * nome, pelo MESMO `rotuloClienteComNumero` que a lista da Expedição e a
+     * etiqueta de retirada usam. Sem cadastro vinculado vem só o nome — o
+     * helper não deixa separador solto.
+     */
+    nome: string;
+    documento: string | null;
+    contato: string | null;
+    telefone: string | null;
+  };
   vendedor: string;
   designer: string | null;
   obs: ParsedObs;
@@ -640,7 +654,17 @@ export async function montarOsPdfViewModel(
       },
       empresa: { id: empresaId, nome: empresaNome, cnpj: empresaCnpj },
       cliente: {
-        nome: pedido.clienteNome,
+        // O NÚMERO DO CADASTRO ANTES DO NOME (10/09/2026).
+        //
+        // A bancada casa volume com cadastro pelo número: homônimos existem, o
+        // número não. O boletim era a única peça impressa que saía só com o
+        // nome — a etiqueta de retirada já usa este mesmo helper, e é ele que
+        // impede a lista e o impresso de divergirem no formato.
+        //
+        // `idCliente` já estava lido de `propostas.id_cliente` no SELECT lá de
+        // cima: nenhuma consulta a mais. Sem cadastro vinculado o helper
+        // devolve o nome puro, sem prefixo nem traço órfão.
+        nome: rotuloClienteComNumero(idCliente, pedido.clienteNome),
         documento: cnpjCpf || documentoCliente,
         contato,
         telefone

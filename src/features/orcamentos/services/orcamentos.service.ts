@@ -1063,13 +1063,17 @@ export async function getPropostaDetailById(idInt: number, overrideClient?: Supa
     const clientObj = cadastro || fallbackCliente;
 
     // Resolve contact and address
-    let contact = proposalRow.id_contato 
-      ? clientObj.contatos.find((c) => c.id === proposalRow.id_contato)
-      : undefined;
-
-    if (!contact) {
-      contact = clientObj.contatos.find((c) => c.nome === proposalRow.contato);
-    }
+    //
+    // A resolucao por `id_contato` continua DESLIGADA de proposito (10/09/2026).
+    // Ela nunca chegou a funcionar: `contatos.id` chegava como NUMERO e
+    // `propostas.id_contato` e uma coluna text, entao `c.id === id_contato` era
+    // sempre falso e a proposta caia na busca por nome logo abaixo. Agora que o
+    // id do contato virou string de verdade (ver `cadastros/mappers.ts`) essa
+    // comparacao passaria a casar — e isso mudaria o contato exibido em 109
+    // propostas antigas, cujo `id_contato` aponta para um contato de nome
+    // diferente do gravado em `propostas.contato`. Religar e decisao do dono, em
+    // rodada separada; ate la o comportamento fica exatamente como sempre foi.
+    let contact = clientObj.contatos.find((c) => c.nome === proposalRow.contato);
 
     if (!contact) {
       contact = clientObj.contatos[0] || {

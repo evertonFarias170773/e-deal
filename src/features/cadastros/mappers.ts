@@ -141,7 +141,11 @@ export function mapSupabaseClienteRowToCadastro(row: SupabaseClienteRow): Cadast
     telefoneFixo: toText(row.telefone_fixo) || undefined,
     email: resolveEmail(row),
     emailFinanceiro: toText(row.email_financeiro) || undefined,
-    site: undefined,
+    // Ficou `undefined` fixo por engano: o formulario carregava o campo vazio e
+    // TODO salvamento gravava `clientes.site = null`, apagando o que estivesse
+    // la (28 cadastros perderam o site entre 09/06 e 10/09/2026). A coluna ja
+    // vinha no `select` do servico; so faltava ler.
+    site: toText(row.site) || undefined,
     empresaPadrao: toText(row.empresa_padrao) || "Não informado",
     observacoes: resolveObservacoes(row),
     dataCadastro: toText(row.data_cadastro) || undefined,
@@ -189,7 +193,12 @@ export function mapSupabaseEnderecoRowToCadastroEndereco(row: SupabaseEnderecoRo
 
 export function mapSupabaseContatoRowToCadastroContato(row: SupabaseContatoRow): CadastroContato {
   return {
-    id: row.id,
+    // FRONTEIRA bigint -> texto, e a UNICA do contato.
+    // `CadastroContato.id` convive com os ids temporarios que o formulario cria
+    // ("cont_..."), entao o dominio inteiro e string. Converter aqui evita
+    // espalhar String() por cada consumidor — e era a falta disto que fazia
+    // `isTemporaryId(contato.id)` estourar no salvamento.
+    id: String(row.id),
     nome: toText(row.nome_contato) || toText(row.nome),
     cargo: toText(row.cargo),
     whatsapp: toText(row.whats),
