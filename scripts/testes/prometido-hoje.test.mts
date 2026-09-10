@@ -1,13 +1,21 @@
 /**
- * O congelamento do "prometido hoje" quando o pedido JÁ SAIU EM OUTRO DIA.
+ * O congelamento do "prometido hoje" quando o pedido JÁ SAIU.
  *
  *   node --experimental-strip-types --import ./scripts/testes/_alias-hook.mjs \
  *        scripts/testes/prometido-hoje.test.mts
  *
- * Existe porque são DUAS regras de congelamento diferentes, de propósito, e a
- * diferença é sutil: o ATRASO para por ETAPA (fora da bancada, para), o
- * PROMETIDO HOJE para por DIA (fora da bancada, para se a saída foi antes de
- * hoje). Copiar uma na outra apagaria o que a decisão de 25/08 quis manter.
+ * Existe porque são TRÊS regras de congelamento diferentes, de propósito, e as
+ * diferenças são sutis:
+ *
+ *   ATRASO        para por ETAPA — fora da bancada, para.
+ *   EM TRÂNSITO   para por CARIMBO — qualquer saída registrada tira do dia,
+ *                 inclusive a de hoje (09/09/2026, 2ª decisão).
+ *   A RETIRAR     para por DIA — em retirada nada saiu, o volume está no
+ *                 balcão; só some quando o dia vira.
+ *
+ * Copiar uma na outra quebra alguma coisa: igualar A RETIRAR ao trânsito some
+ * com o que está no balcão esperando o cliente, e igualar o trânsito ao atraso
+ * ressuscita o volume que já foi embora.
  *
  * A regra vive em `expedicao.service.ts`, dentro do pipeline da lista, e por
  * isso a parte pura é reproduzida aqui com as MESMAS condições — a conferência
@@ -46,7 +54,8 @@ function prometidoHoje(entrada: {
   const foraDaBancada = etapa === "A_RETIRAR" || etapa === "EM_TRANSITO" || etapa === "ENTREGUE";
   const saida = etapa === "EM_TRANSITO" ? (entrada.coletadoEm ?? entrada.dataDespacho) : entrada.dataDespacho;
   const saiuEmOutroDia = foraDaBancada && Boolean(saida) && diaSaoPaulo(saida!) !== HOJE;
-  return emAberto && promessaDia === HOJE && !saiuEmOutroDia;
+  const jaSaiu = etapa === "EM_TRANSITO" ? Boolean(saida) : saiuEmOutroDia;
+  return emAberto && promessaDia === HOJE && !jaSaiu;
 }
 
 // 08/09 16:32 UTC = 13:32 em Sao Paulo, ontem. E o carimbo real do 21722.
@@ -55,12 +64,18 @@ const HOJE_CEDO = "2026-09-09T11:00:00Z"; // 08:00 daqui
 // 09/09 02:00 UTC = 08/09 23:00 daqui: a virada de dia tem de sair no fuso certo.
 const ONTEM_TARDE_UTC_DE_HOJE = "2026-09-09T02:00:00Z";
 
-// ── 1. SAIU HOJE CONTA — e a decisao de 25/08 preservada ────────────────────
-checar("EM_TRANSITO que saiu hoje pelo despacho conta",
-  prometidoHoje({ etapa: "EM_TRANSITO", promessaDia: HOJE, dataDespacho: HOJE_CEDO }), true);
-checar("EM_TRANSITO que saiu hoje pela coleta conta",
-  prometidoHoje({ etapa: "EM_TRANSITO", promessaDia: HOJE, coletadoEm: HOJE_CEDO, dataDespacho: ONTEM }), true);
-checar("A_RETIRAR que foi ao balcao hoje conta",
+// ── 1. EM TRANSITO COM CARIMBO NAO CONTA, nem no dia em que saiu ────────────
+// A 2a decisao de 09/09/2026. O volume ja esta com a transportadora e nao pede
+// acao de expedicao nenhuma hoje: 21862, 21789 e 21459 ocupavam 3 das 7 linhas
+// do card so por terem sido despachados de manha.
+checar("EM_TRANSITO despachado HOJE nao conta",
+  prometidoHoje({ etapa: "EM_TRANSITO", promessaDia: HOJE, dataDespacho: HOJE_CEDO }), false);
+checar("EM_TRANSITO coletado HOJE nao conta",
+  prometidoHoje({ etapa: "EM_TRANSITO", promessaDia: HOJE, coletadoEm: HOJE_CEDO, dataDespacho: ONTEM }), false);
+
+// O BALCAO NAO SEGUE ESSA REGRA: em retirada nada saiu. O volume esta no balcao
+// esperando o cliente, e continua sendo responsabilidade da casa hoje.
+checar("A_RETIRAR que foi ao balcao hoje CONTINUA contando",
   prometidoHoje({ etapa: "A_RETIRAR", promessaDia: HOJE, dataDespacho: HOJE_CEDO }), true);
 
 // ── 2. SAIU EM OUTRO DIA NAO CONTA — o caso do 21722 ────────────────────────
@@ -68,21 +83,28 @@ checar("EM_TRANSITO despachado ontem NAO conta — o 21722",
   prometidoHoje({ etapa: "EM_TRANSITO", promessaDia: HOJE, dataDespacho: ONTEM }), false);
 checar("A_RETIRAR posto no balcao ontem NAO conta",
   prometidoHoje({ etapa: "A_RETIRAR", promessaDia: HOJE, dataDespacho: ONTEM }), false);
-// A COLETA MANDA em EM_TRANSITO: despachado ontem, coletado hoje, ainda conta —
-// e o inverso tambem vale.
-checar("coleta de HOJE vence despacho de ONTEM",
-  prometidoHoje({ etapa: "EM_TRANSITO", promessaDia: HOJE, coletadoEm: HOJE_CEDO, dataDespacho: ONTEM }), true);
-checar("coleta de ONTEM nao e salva por despacho de hoje",
+// Em EM_TRANSITO os dois carimbos agora dao no mesmo: qualquer um tira do card.
+// A precedencia `coletadoEm ?? dataDespacho` segue existindo — e ela quem diz
+// QUANDO saiu, para o chip de `carimboDaEtapa` —, mas nao muda mais o resultado.
+checar("EM_TRANSITO com os dois carimbos nao conta",
+  prometidoHoje({ etapa: "EM_TRANSITO", promessaDia: HOJE, coletadoEm: HOJE_CEDO, dataDespacho: ONTEM }), false);
+checar("EM_TRANSITO coletado ontem, despachado hoje, tambem nao conta",
   prometidoHoje({ etapa: "EM_TRANSITO", promessaDia: HOJE, coletadoEm: ONTEM, dataDespacho: HOJE_CEDO }), false);
 
-// ── 3. O CORTE E POR DIA NO FUSO DAQUI, nao em UTC ──────────────────────────
+// ── 3. O CORTE POR DIA E NO FUSO DAQUI, nao em UTC ──────────────────────────
+// So vale para A_RETIRAR agora: em EM_TRANSITO o dia deixou de importar,
+// porque qualquer carimbo ja tira. O caso fica no balcao, que e onde a virada
+// de dia ainda decide.
 // 09/09 02:00 UTC ainda e 08/09 as 23:00 em Sao Paulo: saiu ONTEM.
-checar("virada de dia: 09/09 02:00 UTC e ontem daqui, entao NAO conta",
-  prometidoHoje({ etapa: "EM_TRANSITO", promessaDia: HOJE, dataDespacho: ONTEM_TARDE_UTC_DE_HOJE }), false);
+checar("A_RETIRAR na virada: 09/09 02:00 UTC e ontem daqui, entao NAO conta",
+  prometidoHoje({ etapa: "A_RETIRAR", promessaDia: HOJE, dataDespacho: ONTEM_TARDE_UTC_DE_HOJE }), false);
 
-// ── 4. SEM CARIMBO CONTINUA CONTANDO ────────────────────────────────────────
-// Sem data nao da para afirmar que saiu em outro dia, e sumir do card e pior que
-// sobrar nele.
+// ── 4. SEM CARIMBO CONTINUA CONTANDO — A REDE DE SEGURANCA ──────────────────
+// A excecao DELIBERADA da regra nova, e o motivo de ela nao ser "EM_TRANSITO
+// nunca conta": sem carimbo, "saiu e perdeu o registro" e "nao saiu" sao
+// indistinguiveis daqui, e so o segundo pede acao. Sumir do card e pior que
+// sobrar nele. Em 09/09/2026 nao havia NENHUM pedido nessa situacao no painel:
+// a excecao nao custa nada hoje e existe para o dia em que custar.
 checar("EM_TRANSITO sem carimbo nenhum continua contando",
   prometidoHoje({ etapa: "EM_TRANSITO", promessaDia: HOJE }), true);
 checar("A_RETIRAR sem carimbo continua contando",
@@ -125,17 +147,43 @@ if (!URL || !SERVICE) {
     console.log(`   #${p.idInt} ${p.etapa.padEnd(12)} ${ehAtrasado(p) ? "ATRASADO" : "PROMETIDO HOJE"}`);
   }
 
-  // NENHUM pedido fora da bancada com saida de outro dia pode estar no card por
-  // "prometido hoje" — e a garantia da regra sobre o painel inteiro.
-  const vazados = doDia.filter((p) => {
-    if (!p.prometidoHoje) return false;
-    const fora = p.etapa === "A_RETIRAR" || p.etapa === "EM_TRANSITO";
-    const saida = p.etapa === "EM_TRANSITO"
+  // A GARANTIA DA REGRA SOBRE O PAINEL INTEIRO, com as duas metades:
+  //   EM_TRANSITO — nenhum com carimbo, de qualquer dia;
+  //   A_RETIRAR   — nenhum com carimbo de OUTRO dia (o de hoje continua valendo).
+  const hojeAqui = diaSaoPaulo(new Date().toISOString());
+  const saidaDe = (p: (typeof pedidos)[number]) =>
+    p.etapa === "EM_TRANSITO"
       ? (p.expedicao?.coletadoEm ?? p.expedicao?.dataDespacho)
       : p.expedicao?.dataDespacho;
-    return fora && Boolean(saida) && diaSaoPaulo(saida!) !== diaSaoPaulo(new Date().toISOString());
+
+  const vazados = doDia.filter((p) => {
+    if (!p.prometidoHoje) return false;
+    const saida = saidaDe(p);
+    if (p.etapa === "EM_TRANSITO") return Boolean(saida);
+    if (p.etapa === "A_RETIRAR") return Boolean(saida) && diaSaoPaulo(saida!) !== hojeAqui;
+    return false;
   });
-  checar("nenhum pedido que saiu em outro dia conta como prometido hoje", vazados.length, 0);
+  checar("nenhum pedido que ja saiu conta como prometido hoje", vazados.length, 0);
+
+  // A REDE DE SEGURANCA NAO FOI LEVADA JUNTO: em transito SEM carimbo e com
+  // promessa de hoje continua no card. E o caso que o corte tem de poupar.
+  const transitoSemCarimbo = pedidos.filter((p) => p.etapa === "EM_TRANSITO" && !saidaDe(p));
+  console.log(`   em transito sem carimbo no painel: ${transitoSemCarimbo.length}`);
+  for (const p of transitoSemCarimbo) {
+    if (p.dataPromessa?.slice(0, 10) !== hojeAqui) continue;
+    checar(`#${p.idInt} em transito SEM carimbo, prometido hoje, continua no card`, ehDoDia(p), true);
+  }
+
+  // Os tres que a 2a decisao de 09/09 tirou do card, nomeados: eles ocupavam 3
+  // das 7 linhas so por terem sido despachados de manha.
+  for (const alvo of [21862, 21789, 21459]) {
+    const p = pedidos.find((x) => x.idInt === alvo);
+    if (!p) {
+      console.log(`   (#${alvo} fora do painel nesta carga)`);
+      continue;
+    }
+    checar(`#${alvo} em transito com carimbo esta FORA do card`, ehDoDia(p), false);
+  }
 
   // O clique aplica o MESMO predicado da contagem.
   checar("contagem e clique mostram o mesmo conjunto",

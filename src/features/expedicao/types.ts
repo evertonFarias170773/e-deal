@@ -270,6 +270,15 @@ export interface PedidoExpedicao {
    * transportadora, que este campo não mede.
    */
   atrasadoDias: number;
+  /**
+   * Promessa para hoje e o pedido AINDA NÃO SAIU. É o que o card "Expedição do
+   * dia" soma ao atraso, e o corte de "já saiu" muda por etapa — `EM_TRANSITO`
+   * sai com qualquer carimbo, `A_RETIRAR` só quando o dia vira, e a bancada nem
+   * é testada. Sem carimbo nenhum continua contando, de propósito.
+   *
+   * A regra inteira, com o histórico das três decisões, vive junto do cálculo em
+   * `expedicao.service.ts` — não reimplemente aqui nem na tela.
+   */
   prometidoHoje: boolean;
   /** expedicoes.tipo_frete (definido no despacho) > normalização da cotação. */
   tipoFrete: TipoFreteNormalizado;
