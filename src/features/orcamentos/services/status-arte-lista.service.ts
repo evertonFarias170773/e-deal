@@ -16,6 +16,25 @@ import { getSupabaseClient } from "@/lib/supabase/client";
 export type EstagioArte = "AGUARDANDO" | "AGUARDANDO_APROVACAO" | "EM ALTERACAO" | "APROVADO";
 
 /**
+ * Cor do selo do estagio da arte. Mesmo formato do `StatusBadge`, mas texto
+ * CRU: o estagio aparece exatamente como a regra o nomeia. Passar por
+ * `humanizeStatus` deixaria "Aguardando" e "Aprovado" traduzidos ao lado de
+ * "AGUARDANDO_APROVACAO" e "EM ALTERACAO", que nao estao no mapa dele.
+ *
+ * MORA AQUI desde 10/09/2026, junto de `EstagioArte` e `derivarEstagioArte`.
+ * Antes era const local da lista de Orcamentos; quando o cabecalho do pedido
+ * passou a exibir o mesmo selo, copiar o mapa criaria dois lugares para a
+ * mesma cor — e o segundo envelheceria calado. A lista importa daqui e
+ * renderiza exatamente como antes.
+ */
+export const ESTAGIO_ARTE_CLASSE: Record<EstagioArte, string> = {
+  AGUARDANDO: "border-sky-200 bg-sky-50 text-sky-800",
+  AGUARDANDO_APROVACAO: "border-orange-200 bg-orange-50 text-orange-700",
+  "EM ALTERACAO": "border-red-200 bg-red-50 text-red-700",
+  APROVADO: "border-teal-200 bg-teal-50 text-teal-700"
+};
+
+/**
  * Modelo com a arte fechada. Mesma lista usada pelo banco em
  * `recalcular_status_arte_briefing` e em `atualiza_flag_arte_proposta` — se as
  * duas divergirem, a coluna passa a discordar do flag `propostas.em_arte` e do

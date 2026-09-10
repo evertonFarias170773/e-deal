@@ -18,7 +18,7 @@ import { encerrarTeste, reabrirTeste } from "@/features/pedidos/services/encerra
 import { buscarRastreioDasPropostas, type RastreioDaProposta } from "@/features/orcamentos/services/rastreio-lista.service";
 import { RastreioPropostaModal } from "@/features/orcamentos/components/RastreioPropostaModal";
 import { buscarNomesDosSocios } from "@/features/orcamentos/services/socio-pagador.service";
-import { buscarEstagioArteDasPropostas, buscarLinksClienteDasPropostas, type EstagioArte } from "@/features/orcamentos/services/status-arte-lista.service";
+import { buscarEstagioArteDasPropostas, buscarLinksClienteDasPropostas, ESTAGIO_ARTE_CLASSE, type EstagioArte } from "@/features/orcamentos/services/status-arte-lista.service";
 import {
   gerarPDFProposta,
   duplicarProposta,
@@ -303,19 +303,6 @@ function ehLiberada(item: { status?: string | null }): boolean {
 function sumPropostaTotal(items: OrcamentoListItem[]) {
   return items.reduce((acc, item) => acc + (Number(item.total) || 0), 0);
 }
-
-/**
- * Cor do selo da coluna "Status Arte". Mesmo formato do `StatusBadge`, mas
- * texto CRU: o estagio aparece exatamente como a regra o nomeia. Passar por
- * `humanizeStatus` deixaria "Aguardando" e "Aprovado" traduzidos ao lado de
- * "AGUARDANDO_APROVACAO" e "EM ALTERACAO", que nao estao no mapa dele.
- */
-const ESTAGIO_ARTE_CLASSE: Record<EstagioArte, string> = {
-  AGUARDANDO: "border-sky-200 bg-sky-50 text-sky-800",
-  AGUARDANDO_APROVACAO: "border-orange-200 bg-orange-50 text-orange-700",
-  "EM ALTERACAO": "border-red-200 bg-red-50 text-red-700",
-  APROVADO: "border-teal-200 bg-teal-50 text-teal-700"
-};
 
 /**
  * O botao de link so existe onde ha alguem para cobrar: a arte esta com o

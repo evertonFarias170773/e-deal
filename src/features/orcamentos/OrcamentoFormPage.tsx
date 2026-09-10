@@ -72,6 +72,7 @@ import { useGlobalChat } from "@/features/chat/context/GlobalChatContext";
 import { salvarBriefingArtes } from "@/features/pedidos/services/pedidos-artes.service";
 import { useOrcamentoDetail } from "@/features/orcamentos/hooks/useOrcamentoDetail";
 import { composeStatusEmArte } from "@/features/orcamentos/mappers";
+import { derivarEstagioArte, ESTAGIO_ARTE_CLASSE } from "@/features/orcamentos/services/status-arte-lista.service";
 import { solicitarCotacaoSedex, solicitarCotacaoAzulCargo, solicitarCotacaoTransportadoras, solicitarCotacaoVeppo } from "@/features/orcamentos/services/frete.service";
 import { resolverTransportadoraParceira } from "@/features/orcamentos/lib/transportadoras-parceiras";
 import { PermissionGuard } from "@/components/common/PermissionGuard";
@@ -4544,6 +4545,25 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     : form.status === "AGUARDANDO" ? "warning"
     : "neutral";
 
+  /**
+   * Estagio da arte no cabecalho (10/09/2026), ao lado do status da proposta.
+   *
+   * OUTRA DIMENSAO, nao o sufixo. O " / EM ARTE" do status diz apenas que ha
+   * arte pendente; em que pe ela esta — na fila, com o cliente, ou de volta
+   * para mudanca — e este selo. Um pedido pode estar em REVISAO ATENDENTE com
+   * a arte AGUARDANDO ao mesmo tempo.
+   *
+   * SEM CONSULTA NOVA: `form.pedidosModelos` ja vem carregado por `loadModelos`
+   * no mount, com `status_arte` de cada modelo. A mesma regra da lista de
+   * Orcamentos (`derivarEstagioArte`, o estagio mais atrasado vence) roda aqui
+   * sobre esses valores, entao o cabecalho e a coluna "Status Arte" nao tem
+   * como divergir.
+   *
+   * `null` = pedido sem modelo nenhum. Nao ha arte para estagiar e NENHUM selo
+   * aparece — diferente de AGUARDANDO, que e "tem modelo e ele ainda nao andou".
+   */
+  const estagioArte = derivarEstagioArte(form.pedidosModelos.map((m) => m.status_arte));
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -4557,8 +4577,19 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                 prop nova. O "Voltar ao detalhe" e o menu de acoes seguem na
                 ordem de antes, so deslocados para a direita. */}
             {proposta ? (
-              <span className="mr-1 shrink-0">
+              <span className="mr-1 flex shrink-0 items-center gap-1.5">
                 <StatusBadge status={statusExibido} tone={statusTone} />
+                {/* Mesmo selo da coluna "Status Arte" da lista: texto cru e as
+                    classes de ESTAGIO_ARTE_CLASSE. Some por inteiro quando o
+                    pedido nao tem modelo — nada de selo vazio. */}
+                {estagioArte ? (
+                  <span
+                    title="Estágio da arte"
+                    className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold whitespace-nowrap ${ESTAGIO_ARTE_CLASSE[estagioArte]}`}
+                  >
+                    {estagioArte}
+                  </span>
+                ) : null}
               </span>
             ) : null}
             {proposta?.id_int ? (
