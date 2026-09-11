@@ -2378,81 +2378,6 @@ export async function saveProposta(
       }
     }
 
-    /**
-     * RETIRA e FOB também gravam a linha, mesmo sem card escolhido.
-     *
-     * Sem isto, dispensar a exigência acima deixaria `cotacao_frete` VAZIA nesses
-     * dois casos — e quem lê a proposta depois (a Expedição, o PDF da OS, a
-     * reconstrução dos fretes) não teria linha nenhuma para encontrar. O que
-     * entra é o que de fato foi decidido: `freteNome` (a transportadora
-     * declarada em FOB, "RETIRADA" no balcão) e `freteValor`, que é zero pelas
-     * regras que já existem.
-     *
-     * MESMO bloco DELETE + INSERT de sempre — nada de caminho novo. Os três
-     * triggers de `cotacao_frete` continuam vendo exatamente a mesma operação
-     * que já viam quando havia card.
-     */
-    const gravaCotacaoSemCard = !formState.isAvulso && !propostaSemItens && !cotacaoObrigatoria;
-
-    // Persistir o frete escolhido no banco de dados (public.cotacao_frete)
-    if (formState.isAvulso || chosenFrete || gravaCotacaoSemCard) {
-      try {
-        // Deletar os fretes antigos apenas daquela proposta
-        const { error: deleteError } = await client
-          .from("cotacao_frete")
-          .delete()
-          .eq("id_int", id_int!);
-
-        if (deleteError) {
-          console.error("Erro ao limpar cotações de frete antigas:", deleteError);
-          throw new Error(`Erro ao limpar cotações antigas de frete: ${deleteError.message}`);
-        }
-
-        // Inserir apenas o frete escolhido atual
-        const insertPayload: Record<string, unknown> = {
-          id_int: id_int!,
-          // Sem card (RETIRA/FOB), `freteNome` é a decisão real: a transportadora
-          // declarada em FOB — ou "Motoboy" — e "RETIRADA" no balcão. É o mesmo
-          // texto que vai para `propostas.frete_escolhido`, então as duas pontas
-          // não divergem.
-          servico: formState.isAvulso
-            ? formState.observacoesFreteManual || "Frete Manual"
-            : chosenFrete?.servico || freteNome || "",
-          valor: freteValor,
-          prazo: formState.isAvulso ? "A combinar" : (chosenFrete?.prazo || "A combinar"),
-          cep: cepText || null,
-          // Peso COTADO, não o peso de agora. Esta linha é a única memória de
-          // com quanto o frete foi calculado: gravar o peso atual aqui apagava
-          // a própria evidência da divergência — depois de qualquer salvamento
-          // a proposta parecia estar com o frete em dia, mesmo com a
-          // quantidade alterada, e o aviso de "frete desatualizado" nunca
-          // disparava.
-          //
-          // `||` e não `??`: os fretes sintetizados para proposta sem linha em
-          // cotacao_frete nascem com pesoUsado 0, e `??` gravaria esse zero —
-          // que é justamente o valor que desliga qualquer comparação.
-          peso: formState.isAvulso ? 0 : (chosenFrete?.pesoUsado || resumo.pesoTotal || null),
-          escolhido: true
-        };
-
-        if (!formState.isAvulso && chosenFrete?.id_cotacao !== undefined) {
-          insertPayload.id_cotacao = chosenFrete.id_cotacao;
-        }
-
-        const { error: insertFreteError } = await client
-          .from("cotacao_frete")
-          .insert(insertPayload);
-
-        if (insertFreteError) {
-          console.error("Erro ao inserir cotação de frete escolhida:", insertFreteError);
-          throw new Error(`Erro ao salvar cotação de frete escolhida: ${insertFreteError.message}`);
-        }
-      } catch (freteErr) {
-        console.error("Erro ao persistir cotação de frete no banco:", freteErr);
-        throw freteErr;
-      }
-    }
-
     // Modelos inseridos nesta gravação (tempId da tela -> id do banco).
     const modelosSincronizados: Array<{ tempId: string; id: number; idProdutoPropostaOrigem: number }> = [];
     // Itens inseridos nesta gravação (id local da tela -> produtos_proposta.id).
@@ -2780,6 +2705,104 @@ export async function saveProposta(
             throw new Error("Não foi possível excluir um ou mais produtos da proposta. Recarregue a página e tente novamente.");
           }
         }
+      }
+    }
+
+    /**
+     * A COTACAO DE FRETE E GRAVADA AQUI, DEPOIS DOS ITENS — e nao antes deles.
+     *
+     * `cotacao_frete` carrega o trigger `trg_recalc_after_frete`, que chama
+     * `recalcular_proposta_v3` e grava `propostas.valor` com a SOMA de
+     * `produtos_proposta`. Enquanto este bloco rodava ANTES da reconciliacao, na
+     * criacao ele somava uma tabela ainda VAZIA e gravava zero. Medido na
+     * proposta 22009 (10/09/2026): o app inseriu `valor` 1.100,00, o trigger
+     * zerou 280 ms depois, o item so entrou 224 ms mais tarde, e a consolidacao
+     * final do fim desta funcao recupera apenas `valor_total` — `valor` ficava
+     * em 0 para sempre. 47% das propostas com itens nasciam assim (341 de 723
+     * em 60 dias).
+     *
+     * Valia tambem no re-save que TROCA o produto (proposta 21996): o item
+     * antigo ja tinha saido e o novo ainda nao tinha entrado quando o trigger
+     * rodava. Por isso o bloco e unico e serve aos dois caminhos.
+     *
+     * Aqui embaixo `produtos_proposta` ja esta no estado final, entao o trigger
+     * soma o que a proposta realmente tem. NENHUM trigger foi alterado, e nada
+     * mais depende de a cotacao existir antes: nenhuma linha abaixo le
+     * `cotacao_frete`, e o `peso` do payload sai de `chosenFrete.pesoUsado` /
+     * `resumo.pesoTotal`, que sao memoria e nao banco.
+     */
+    /**
+     * RETIRA e FOB também gravam a linha, mesmo sem card escolhido.
+     *
+     * Sem isto, dispensar a exigência acima deixaria `cotacao_frete` VAZIA nesses
+     * dois casos — e quem lê a proposta depois (a Expedição, o PDF da OS, a
+     * reconstrução dos fretes) não teria linha nenhuma para encontrar. O que
+     * entra é o que de fato foi decidido: `freteNome` (a transportadora
+     * declarada em FOB, "RETIRADA" no balcão) e `freteValor`, que é zero pelas
+     * regras que já existem.
+     *
+     * MESMO bloco DELETE + INSERT de sempre — nada de caminho novo. Os três
+     * triggers de `cotacao_frete` continuam vendo exatamente a mesma operação
+     * que já viam quando havia card.
+     */
+    const gravaCotacaoSemCard = !formState.isAvulso && !propostaSemItens && !cotacaoObrigatoria;
+
+    // Persistir o frete escolhido no banco de dados (public.cotacao_frete)
+    if (formState.isAvulso || chosenFrete || gravaCotacaoSemCard) {
+      try {
+        // Deletar os fretes antigos apenas daquela proposta
+        const { error: deleteError } = await client
+          .from("cotacao_frete")
+          .delete()
+          .eq("id_int", id_int!);
+
+        if (deleteError) {
+          console.error("Erro ao limpar cotações de frete antigas:", deleteError);
+          throw new Error(`Erro ao limpar cotações antigas de frete: ${deleteError.message}`);
+        }
+
+        // Inserir apenas o frete escolhido atual
+        const insertPayload: Record<string, unknown> = {
+          id_int: id_int!,
+          // Sem card (RETIRA/FOB), `freteNome` é a decisão real: a transportadora
+          // declarada em FOB — ou "Motoboy" — e "RETIRADA" no balcão. É o mesmo
+          // texto que vai para `propostas.frete_escolhido`, então as duas pontas
+          // não divergem.
+          servico: formState.isAvulso
+            ? formState.observacoesFreteManual || "Frete Manual"
+            : chosenFrete?.servico || freteNome || "",
+          valor: freteValor,
+          prazo: formState.isAvulso ? "A combinar" : (chosenFrete?.prazo || "A combinar"),
+          cep: cepText || null,
+          // Peso COTADO, não o peso de agora. Esta linha é a única memória de
+          // com quanto o frete foi calculado: gravar o peso atual aqui apagava
+          // a própria evidência da divergência — depois de qualquer salvamento
+          // a proposta parecia estar com o frete em dia, mesmo com a
+          // quantidade alterada, e o aviso de "frete desatualizado" nunca
+          // disparava.
+          //
+          // `||` e não `??`: os fretes sintetizados para proposta sem linha em
+          // cotacao_frete nascem com pesoUsado 0, e `??` gravaria esse zero —
+          // que é justamente o valor que desliga qualquer comparação.
+          peso: formState.isAvulso ? 0 : (chosenFrete?.pesoUsado || resumo.pesoTotal || null),
+          escolhido: true
+        };
+
+        if (!formState.isAvulso && chosenFrete?.id_cotacao !== undefined) {
+          insertPayload.id_cotacao = chosenFrete.id_cotacao;
+        }
+
+        const { error: insertFreteError } = await client
+          .from("cotacao_frete")
+          .insert(insertPayload);
+
+        if (insertFreteError) {
+          console.error("Erro ao inserir cotação de frete escolhida:", insertFreteError);
+          throw new Error(`Erro ao salvar cotação de frete escolhida: ${insertFreteError.message}`);
+        }
+      } catch (freteErr) {
+        console.error("Erro ao persistir cotação de frete no banco:", freteErr);
+        throw freteErr;
       }
     }
 
