@@ -261,9 +261,13 @@ export function isTituloEmAberto(titulo: TituloParaElegibilidade): boolean {
 /**
  * Nota que impede o cancelamento: AUTORIZADA e de PRODUÇÃO.
  *
- * O filtro de ambiente não é detalhe: hoje as 10 notas do banco são de
- * `homologacao` (5 NF-e + 5 NFS-e AUTORIZADA). Sem ele, a regra bloquearia
- * cancelamento por nota de teste.
+ * O filtro de ambiente não é detalhe: das 30 notas do banco, 25 são de
+ * `homologacao`. Sem ele, a regra bloquearia cancelamento por nota de teste.
+ *
+ * Parente de `escolherNotaAutorizadaDoPedido` (`@/lib/fiscal/nota-do-pedido`),
+ * que desde 11/09/2026 também exige produção — mas separado de propósito: lá
+ * se escolhe UMA nota entre várias e o número é obrigatório; aqui se julga UMA
+ * nota, e autorizada de produção sem número ainda impede o cancelamento.
  */
 export function isNotaImpeditiva(nota: NotaParaElegibilidade): boolean {
   return normalizar(nota.status) === "AUTORIZADA" && normalizar(nota.ambiente) === "PRODUCAO";

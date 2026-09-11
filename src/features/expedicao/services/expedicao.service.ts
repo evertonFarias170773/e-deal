@@ -14,7 +14,11 @@ import {
 import { labelTipoFrete, normalizarTipoFrete } from "../lib/tipo-frete";
 import { temPagadorDistinto } from "../lib/destinatario-etiqueta";
 import { idEnderecoEntregaVigente } from "../lib/endereco-entrega";
-import { escolherNotaAutorizadaDoPedido, type NotaCandidata } from "@/lib/fiscal/nota-do-pedido";
+import {
+  escolherNotaAutorizadaDoPedido,
+  COLUNAS_NOTA_DO_PEDIDO,
+  type NotaCandidata
+} from "@/lib/fiscal/nota-do-pedido";
 import { resolverPesoExpedicao } from "../lib/peso";
 import type {
   ContatoDestinatario,
@@ -187,7 +191,7 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
       .in("id_int", ids),
     client
       .from("notas_fiscais")
-      .select("id_int, status, numero_nf, data_autorizacao, created_at")
+      .select(`id_int, ${COLUNAS_NOTA_DO_PEDIDO}`)
       .in("id_int", ids),
     client
       .from("expedicoes")
@@ -273,8 +277,8 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
 
   // NF: AUTORIZADA vence; senão qualquer nota não-cancelada conta como PENDENTE.
   //
-  // Um pedido pode ter VÁRIAS notas — é o desenho do faturamento parcial, e o
-  // 20370 tem duas autorizadas. Antes, entre duas autorizadas a última lida
+  // Um pedido pode ter VÁRIAS notas — é o desenho do faturamento parcial.
+  // Antes, entre duas autorizadas a última lida
   // sobrescrevia a anterior, então o número exibido dependia da ordem em que o
   // Postgres devolvesse as linhas. Agora a escolha passa pelo mesmo critério da
   // etiqueta (`escolherNotaAutorizadaDoPedido`), e as duas telas mostram a mesma

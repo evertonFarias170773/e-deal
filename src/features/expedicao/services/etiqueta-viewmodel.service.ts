@@ -5,7 +5,7 @@ import { idEnderecoEntregaVigente } from "../lib/endereco-entrega";
 import { telefoneDestinatario } from "../lib/telefone-destinatario";
 import { nomeTransporteEfetivo } from "@/features/orcamentos/lib/modalidade-frete";
 import type { ModalidadeFrete } from "../types";
-import { escolherNotaAutorizadaDoPedido } from "@/lib/fiscal/nota-do-pedido";
+import { escolherNotaAutorizadaDoPedido, COLUNAS_NOTA_DO_PEDIDO } from "@/lib/fiscal/nota-do-pedido";
 import { resolverEmpresaRemetente } from "@/lib/correios/empresa-remetente";
 
 export type EtiquetaViewModel = {
@@ -143,12 +143,15 @@ export async function montarEtiquetaViewModel(
       .eq("escolhido", true)
       .limit(1)
       .maybeSingle(),
-    // `data_autorizacao` e `created_at` entram no MESMO select que já existia —
-    // nenhuma consulta a mais, nenhum round-trip a mais. Servem ao desempate
-    // logo abaixo.
+    // As colunas vêm de `COLUNAS_NOTA_DO_PEDIDO`, não escritas à mão: o
+    // critério já cresceu duas vezes (`data_autorizacao`/`created_at` para o
+    // desempate, depois `ambiente`) e um select desatualizado entrega a nota
+    // sem o campo novo, que o filtro lê como "não é de produção" e some com a
+    // NF da etiqueta sem erro nenhum. Continua sendo o MESMO select de sempre:
+    // nenhuma consulta a mais, nenhum round-trip a mais.
     supabase
       .from("notas_fiscais")
-      .select("numero_nf, status, data_autorizacao, created_at")
+      .select(COLUNAS_NOTA_DO_PEDIDO)
       .eq("id_int", idInt)
   ]);
 

@@ -644,10 +644,10 @@ async function fetchPropostaRows(
      *
      * `notas_fiscais` e 1:N por `id_int` — o formato `NFE-{id_int}-{seq}` existe
      * para faturamento parcial —, entao quem decide qual nota vale e
-     * `escolherNotaAutorizadaDoPedido`: so AUTORIZADA, so com numero, a mais
-     * recente por `data_autorizacao`. O mesmo criterio que a etiqueta 10x15 e a
-     * conferencia ja usam, reusado sem alterar uma virgula. Ha caso real de duas
-     * autorizadas no mesmo pedido (o 20370, notas 1003 e 1005).
+     * `escolherNotaAutorizadaDoPedido`: so AUTORIZADA, so com numero, so de
+     * PRODUCAO, a mais recente por `data_autorizacao`. O mesmo criterio que a
+     * etiqueta 10x15 e a conferencia ja usam. Nota de homologacao nao conta: ela
+     * existe no banco, aparece nas telas fiscais, mas nao e nota emitida.
      *
      * `ref`, `url_danfe` e `url_xml` vem junto porque sao o que as acoes abrem;
      * pedi-las depois seria a consulta por linha que este bloco existe para

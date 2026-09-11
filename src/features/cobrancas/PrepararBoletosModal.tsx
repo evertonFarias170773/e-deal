@@ -255,8 +255,8 @@ export function PrepararBoletosModal({
         const client = getSupabaseClient();
         if (!client) return;
 
-        // Um pedido pode ter VARIAS notas — faturamento parcial e desenho, e o
-        // 20370 tem duas autorizadas. Antes isto era `order desc, limit 1` SEM
+        // Um pedido pode ter VARIAS notas — faturamento parcial e desenho.
+        // Antes isto era `order desc, limit 1` SEM
         // filtro de status: pegava a mais recente qualquer que fosse, entao um
         // rascunho ou uma nota com erro de autorizacao carimbava `n_nf` e
         // `ext_reference` do boleto. Com NFS-e de servico mais NF-e de remessa
