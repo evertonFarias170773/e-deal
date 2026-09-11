@@ -2,6 +2,10 @@ import { NextResponse } from "next/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { verificarPermissaoServerSide } from "@/lib/auth/verificar-permissao";
 import { resolverAmbienteFiscal } from "@/features/fiscal/services/ambiente-fiscal";
+import {
+  detectarNotaJaAutorizada,
+  mensagemNotaJaAutorizada
+} from "@/features/fiscal/services/ja-autorizada";
 
 /**
  * Emissão de NF-e — porta de entrada no servidor.
@@ -34,6 +38,8 @@ type NotaParaEnvio = {
   chave_nfe: string | null;
   tentativas_envio: number | null;
   id_empresa: number | null;
+  /** O retorno da Focus. É aqui que mora a verdade quando as colunas mentem. */
+  payload_retorno: unknown;
 };
 
 /** Extrai a mensagem real do webhook para que a recusa chegue à tela. */
@@ -122,7 +128,7 @@ export async function POST(request: Request) {
     // 4. Releitura da nota. Nada do corpo além da `ref` é usado.
     const { data: notaRow, error: fetchError } = await supabase
       .from("notas_fiscais")
-      .select("id, ref, status, numero_nf, chave_nfe, tentativas_envio, id_empresa")
+      .select("id, ref, status, numero_nf, chave_nfe, tentativas_envio, id_empresa, payload_retorno")
       .eq("ref", ref)
       .maybeSingle();
 
@@ -164,6 +170,36 @@ export async function POST(request: Request) {
           success: false,
           code: "NOTA_JA_EMITIDA",
           message: `Esta nota já foi emitida${numero ? ` (número ${numero})` : ""}. Nova emissão bloqueada.`,
+        },
+        { status: 409 }
+      );
+    }
+
+    // 5b. A MESMA trava, agora olhando o PAYLOAD.
+    //
+    //     A checagem acima é cega exatamente onde precisa enxergar: quando o
+    //     retorno da Focus é lido errado, `numero_nf` e `chave_nfe` ficam NULOS
+    //     numa nota que a SEFAZ já autorizou — e ela passa por aqui como se
+    //     nunca tivesse saído. Foi assim que a NFE-20370-002 ficou autorizada
+    //     como NF 1002 sem que o cadastro soubesse.
+    //
+    //     `payload_retorno` guarda o que as colunas perderam. Se ele disser que
+    //     houve autorização, a emissão para — mesmo com as colunas vazias.
+    //
+    //     É RECUSA, não correção: nada é gravado aqui. Reconciliar as colunas
+    //     de quem ficou para trás é outro assunto.
+    const jaAutorizada = detectarNotaJaAutorizada(nota.payload_retorno);
+    if (jaAutorizada.jaAutorizada) {
+      console.warn(
+        `[API][EmitirNfe] Emissao barrada pelo payload em ${nota.ref} ` +
+          `(regra ${jaAutorizada.evidencia.regra}, chave ${jaAutorizada.evidencia.chave ?? "-"}).`
+      );
+      return NextResponse.json(
+        {
+          success: false,
+          code: "NOTA_JA_AUTORIZADA_NO_PAYLOAD",
+          message: mensagemNotaJaAutorizada(jaAutorizada.evidencia),
+          evidencia: jaAutorizada.evidencia,
         },
         { status: 409 }
       );

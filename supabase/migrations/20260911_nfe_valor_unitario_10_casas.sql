@@ -100,17 +100,28 @@
 --   a `anon` toda funcao nova — as quatro funcoes de NF-e tem o mesmo ACL. Nao
 --   mexo nisso aqui; fica registrado como ponto a revisar em separado.
 --
--- AS DUAS VIEWS QUE IMPEDIAM O ALTER
+-- AS TRES VIEWS QUE IMPEDIAM O ALTER
 --   `ALTER COLUMN ... TYPE` falha com "cannot alter type of a column used by a
---   view or rule" quando ha view dependente. Ha DUAS:
+--   view or rule" quando ha view dependente. E `DROP VIEW` falha de novo quando
+--   OUTRA view depende daquela. Sao TRES, em dois niveis:
 --
---     vw_nfe_itens_conferencia_valores   (le valor_unitario e valor_unitario_tributavel)
---     vw_notas_fiscais_validacao_itens   (le valor_unitario)
+--     nivel 0  vw_nfe_itens_conferencia_valores  (le valor_unitario e o tributavel)
+--     nivel 0  vw_notas_fiscais_validacao_itens  (le valor_unitario)
+--     nivel 1     +-- vw_notas_fiscais_validacao_geral
+--                     NAO le a coluna: depende da view acima. Mesmo assim trava
+--                     o DROP, e e consumida pela aplicacao em nfe.service.ts:293.
 --
---   Elas sao derrubadas e recriadas na MESMA transacao, a partir da definicao
---   capturada do catalogo — nao de uma copia minha. Os GRANTs sao recolocados e
---   conferidos por assercao contra o ACL de antes. As duas tem hoje:
+--   A primeira tentativa de aplicar, em 11/09/2026, ABORTOU exatamente aqui —
+--   o mapeamento inicial procurou quem depende das COLUNAS e nao quem depende
+--   das VIEWS. A transacao caiu inteira e o banco ficou intocado.
+--
+--   Derrubadas na ordem da dependencia (a folha primeiro) e recriadas na ordem
+--   inversa, na MESMA transacao, a partir da definicao capturada do catalogo —
+--   nao de uma copia minha. Os GRANTs sao recolocados e conferidos por assercao
+--   contra o ACL de antes. As tres tem hoje:
 --     authenticated, postgres, service_role = ALL
+--
+--   Verificado recursivamente antes de aplicar: NAO existe quarto nivel.
 --
 --   NOTA SOBRE `vw_nfe_itens_conferencia_valores`: ela calcula
 --   `diferenca_comercial = valor_bruto - round(quantidade * valor_unitario, 2)`
@@ -179,9 +190,10 @@ begin
   -- as duas views dependentes existem (serao derrubadas e recriadas)
   select count(*) into v_views from pg_class c join pg_namespace n on n.oid=c.relnamespace
    where n.nspname='public' and c.relkind='v'
-     and c.relname in ('vw_nfe_itens_conferencia_valores','vw_notas_fiscais_validacao_itens');
-  if v_views <> 2 then
-    raise exception 'ABORTADO: esperadas 2 views dependentes, encontradas %. O roteiro de drop/recreate nao cobre o estado atual.', v_views;
+     and c.relname in ('vw_nfe_itens_conferencia_valores','vw_notas_fiscais_validacao_itens',
+                       'vw_notas_fiscais_validacao_geral');
+  if v_views <> 3 then
+    raise exception 'ABORTADO: esperadas 3 views na cadeia, encontradas %. O roteiro de drop/recreate nao cobre o estado atual.', v_views;
   end if;
 
   -- indice nas colunas impediria o ALTER sem recriacao; nao deve haver nenhum
@@ -215,13 +227,18 @@ do $$
 declare
   v_def_conf  text;
   v_def_valid text;
+  v_def_geral text;
   v_acl_conf  text[];
   v_acl_valid text[];
+  v_acl_geral text[];
   v_acl_pos   text[];
+  v_def_trg     text;
+  v_def_trg_pos text;
 begin
   -- capturar definicao e ACL das duas views
   select pg_get_viewdef('public.vw_nfe_itens_conferencia_valores'::regclass, true) into v_def_conf;
   select pg_get_viewdef('public.vw_notas_fiscais_validacao_itens'::regclass, true) into v_def_valid;
+  select pg_get_viewdef('public.vw_notas_fiscais_validacao_geral'::regclass, true) into v_def_geral;
 
   select coalesce((select array_agg(coalesce(r.rolname,'PUBLIC')||'='||x.privilege_type
                                     order by coalesce(r.rolname,'PUBLIC'), x.privilege_type)
@@ -231,28 +248,70 @@ begin
                                     order by coalesce(r.rolname,'PUBLIC'), x.privilege_type)
                      from aclexplode(c.relacl) x left join pg_roles r on r.oid=x.grantee), '{}')
     into v_acl_valid from pg_class c where c.oid='public.vw_notas_fiscais_validacao_itens'::regclass;
+  select coalesce((select array_agg(coalesce(r.rolname,'PUBLIC')||'='||x.privilege_type
+                                    order by coalesce(r.rolname,'PUBLIC'), x.privilege_type)
+                     from aclexplode(c.relacl) x left join pg_roles r on r.oid=x.grantee), '{}')
+    into v_acl_geral from pg_class c where c.oid='public.vw_notas_fiscais_validacao_geral'::regclass;
 
-  if v_def_conf is null or v_def_valid is null then
-    raise exception 'ABORTADO: nao consegui capturar a definicao de uma das views.';
+  if v_def_conf is null or v_def_valid is null or v_def_geral is null then
+    raise exception 'ABORTADO: nao consegui capturar a definicao de uma das tres views.';
   end if;
 
-  -- PASSO 1: derrubar
+  -- capturar a definicao LITERAL do trigger que bloqueia o ALTER.
+  -- A clausula `UPDATE OF quantidade, valor_unitario, ...` registra dependencia
+  -- nominal nas colunas; o Postgres nao a reescreve sozinho (erro 0A000).
+  -- A funcao fn_calcular_valor_bruto_nfe_item NAO e tocada — so o objeto trigger.
+  select pg_get_triggerdef(t.oid) into v_def_trg
+    from pg_trigger t
+   where t.tgrelid = 'public.notas_fiscais_itens'::regclass
+     and t.tgname  = 'trg_calcular_valor_bruto_nfe_item'
+     and not t.tgisinternal;
+
+  if v_def_trg is null then
+    raise exception 'ABORTADO: trigger trg_calcular_valor_bruto_nfe_item nao encontrado.';
+  end if;
+
+  -- PASSO 1: derrubar na ORDEM DA DEPENDENCIA — a folha primeiro.
+  -- `vw_notas_fiscais_validacao_geral` consome `vw_notas_fiscais_validacao_itens`.
+  -- Verificado recursivamente em 11/09/2026: nao existe quarto nivel.
+  execute 'drop view public.vw_notas_fiscais_validacao_geral';
   execute 'drop view public.vw_nfe_itens_conferencia_valores';
   execute 'drop view public.vw_notas_fiscais_validacao_itens';
 
-  -- PASSO 2: alterar as duas colunas (reescreve a tabela; 71 linhas)
+  -- PASSO 2: tirar o trigger do caminho. A tabela ja esta sob ACCESS EXCLUSIVE
+  -- desde o drop das views, entao nao existe janela em que uma escrita passe
+  -- sem ele. Autorizado pelo dono em 11/09/2026, so para esta migration.
+  execute 'drop trigger trg_calcular_valor_bruto_nfe_item on public.notas_fiscais_itens';
+
+  -- PASSO 3: alterar as duas colunas (reescreve a tabela)
   execute 'alter table public.notas_fiscais_itens
              alter column valor_unitario type numeric(16,10)';
   execute 'alter table public.notas_fiscais_itens
              alter column valor_unitario_tributavel type numeric(16,10)';
 
-  -- PASSO 3: recriar as views com a definicao capturada
+  -- PASSO 4: recriar o trigger com a definicao capturada, sem transcrever nada.
+  execute v_def_trg;
+
+  select pg_get_triggerdef(t.oid) into v_def_trg_pos
+    from pg_trigger t
+   where t.tgrelid = 'public.notas_fiscais_itens'::regclass
+     and t.tgname  = 'trg_calcular_valor_bruto_nfe_item'
+     and not t.tgisinternal;
+
+  if v_def_trg_pos is distinct from v_def_trg then
+    raise exception 'ABORTADO: definicao do trigger divergiu. Antes: %. Depois: %.', v_def_trg, v_def_trg_pos;
+  end if;
+
+  -- PASSO 5: recriar na ORDEM INVERSA — validacao_itens antes de validacao_geral,
+  -- que a consome.
   execute 'create view public.vw_nfe_itens_conferencia_valores as ' || v_def_conf;
   execute 'create view public.vw_notas_fiscais_validacao_itens as ' || v_def_valid;
+  execute 'create view public.vw_notas_fiscais_validacao_geral as ' || v_def_geral;
 
   -- devolver os GRANTs
   execute 'grant all on public.vw_nfe_itens_conferencia_valores to authenticated, service_role';
   execute 'grant all on public.vw_notas_fiscais_validacao_itens to authenticated, service_role';
+  execute 'grant all on public.vw_notas_fiscais_validacao_geral to authenticated, service_role';
 
   -- conferir que o ACL voltou identico ao de antes
   select coalesce((select array_agg(coalesce(r.rolname,'PUBLIC')||'='||x.privilege_type
@@ -271,11 +330,19 @@ begin
     raise exception 'ABORTADO: ACL de vw_notas_fiscais_validacao_itens mudou. Antes: %. Depois: %.', v_acl_valid, v_acl_pos;
   end if;
 
-  raise notice 'Colunas alteradas para numeric(16,10) e as duas views recriadas com o ACL preservado.';
+  select coalesce((select array_agg(coalesce(r.rolname,'PUBLIC')||'='||x.privilege_type
+                                    order by coalesce(r.rolname,'PUBLIC'), x.privilege_type)
+                     from aclexplode(c.relacl) x left join pg_roles r on r.oid=x.grantee), '{}')
+    into v_acl_pos from pg_class c where c.oid='public.vw_notas_fiscais_validacao_geral'::regclass;
+  if v_acl_pos is distinct from v_acl_geral then
+    raise exception 'ABORTADO: ACL de vw_notas_fiscais_validacao_geral mudou. Antes: %. Depois: %.', v_acl_geral, v_acl_pos;
+  end if;
+
+  raise notice 'Colunas em numeric(16,10); trigger recriado identico; TRES views recriadas com o ACL preservado.';
 end $$;
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- PASSO 4 — as duas mascaras do payload
+-- PASSO 6 — as duas mascaras do payload
 --
 -- Le o fonte do catalogo, troca as duas ocorrencias e reexecuta.
 -- `CREATE OR REPLACE` preserva dono, ACL e assinatura.
@@ -348,6 +415,7 @@ declare
   v_m4       int;
   v_m10      int;
   v_views    int;
+  v_trgs     int;
   v_acl      text[];
   v_autoriz  bigint;
 begin
@@ -368,8 +436,8 @@ begin
     from pg_proc p join pg_namespace n on n.oid=p.pronamespace,
          lateral regexp_matches(p.prosrc, 'FM9999999990\.0000(?!0)', 'g')
    where n.nspname='public' and p.proname='fn_montar_payload_nfe';
-  if v_m4 <> 0 then
-    raise exception 'FALHOU: ainda restam % mascara(s) de 4 casas na funcao.', v_m4;
+  if v_m4 <> 1 then
+    raise exception 'FALHOU: esperada 1 mascara de 4 casas (quantidade_comercial), encontradas %.', v_m4;
   end if;
 
   select count(*) into v_m10
@@ -380,11 +448,26 @@ begin
     raise exception 'FALHOU: esperadas 2 mascaras de 10 casas, encontradas %.', v_m10;
   end if;
 
+  -- os 9 triggers da tabela (o recriado + os 8 intocados) e todos ativos
+  select count(*) into v_trgs from pg_trigger t
+   where t.tgrelid='public.notas_fiscais_itens'::regclass and not t.tgisinternal;
+  if v_trgs <> 9 then
+    raise exception 'FALHOU: esperados 9 triggers na tabela, encontrados %.', v_trgs;
+  end if;
+
+  select count(*) into v_trgs from pg_trigger t
+   where t.tgrelid='public.notas_fiscais_itens'::regclass and not t.tgisinternal
+     and t.tgenabled <> 'O';
+  if v_trgs <> 0 then
+    raise exception 'FALHOU: % trigger(s) da tabela nao estao ativos.', v_trgs;
+  end if;
+
   select count(*) into v_views from pg_class c join pg_namespace n on n.oid=c.relnamespace
    where n.nspname='public' and c.relkind='v'
-     and c.relname in ('vw_nfe_itens_conferencia_valores','vw_notas_fiscais_validacao_itens');
-  if v_views <> 2 then
-    raise exception 'FALHOU: as duas views nao voltaram (encontradas %).', v_views;
+     and c.relname in ('vw_nfe_itens_conferencia_valores','vw_notas_fiscais_validacao_itens',
+                       'vw_notas_fiscais_validacao_geral');
+  if v_views <> 3 then
+    raise exception 'FALHOU: as tres views nao voltaram (encontradas %).', v_views;
   end if;
 
   -- o ACL da funcao tem de ter sobrevivido ao CREATE OR REPLACE

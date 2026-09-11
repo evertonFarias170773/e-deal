@@ -3008,7 +3008,7 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
                                     return {
                                       ...it,
                                       valor_bruto: value,
-                                      valor_unitario: q > 0 ? Number((value / q).toFixed(4)) : 0
+                                      valor_unitario: q > 0 ? Number((value / q).toFixed(10)) : 0
                                     };
                                   }
                                   return it;

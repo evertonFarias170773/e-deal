@@ -1100,18 +1100,19 @@ export async function createOrReuseNfeDraft(idInt: number): Promise<SupabaseNfeR
         item.subtotalBruto ?? item.subtotal ?? quantidade * item.valorUnitario
       );
 
-      // O unitario da nota e esse total diluido na quantidade. Quatro casas porque
-      // `notas_fiscais_itens.valor_unitario` e `numeric(14,4)`: mais precisao seria
-      // truncada pela propria coluna.
+      // O unitario da nota e esse total diluido na quantidade. Dez casas porque
+      // `notas_fiscais_itens.valor_unitario` e `numeric(16,10)` desde 11/09/2026 e
+      // o layout 4.00 aceita vUnCom em 11v0-10: mais que isso seria truncado pela
+      // coluna e recusado pela SEFAZ.
       const valorUnitario =
-        quantidade > 0 ? Number((subtotalItem / quantidade).toFixed(4)) : 0;
+        quantidade > 0 ? Number((subtotalItem / quantidade).toFixed(10)) : 0;
 
       // `valor_bruto` E O SUBTOTAL, mas quem da a palavra final e o banco: o trigger
       // `fn_calcular_valor_bruto_nfe_item` reescreve esta coluna como
-      // `round(quantidade * valor_unitario, 2)` em todo INSERT/UPDATE. Nos 795 itens
-      // em que a divisao fecha em 4 casas os dois numeros sao o mesmo. Nos outros 426
-      // o trigger vence e o item fica deslocado do subtotal em ate R$ 1,60 — sempre
-      // MUITO menos que o fixo inteiro que se perdia antes, mas nao zero.
+      // `round(quantidade * valor_unitario, 2)` em todo INSERT/UPDATE. Com 10 casas
+      // os dois numeros passam a coincidir: o erro por unidade e 0,5 x 10^-10, que
+      // so desloca um centavo com quantidade acima de 10^8 — a maior da base hoje e
+      // 115.830. Em 4 casas, 450 dos 1.397 itens divergiam, ate R$ 5,25 num item.
       const valorBruto = subtotalItem;
 
       // Peso vindo do rateio do peso da expedicao, nao mais o teorico do item.
