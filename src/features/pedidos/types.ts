@@ -267,6 +267,27 @@ export interface PropostaOperacionalListItem {
    */
   hasPedidoOs: boolean;
   /**
+   * A nota fiscal AUTORIZADA que representa o pedido, ou `null`.
+   *
+   * Quem escolhe e `escolherNotaAutorizadaDoPedido` (src/lib/fiscal/nota-do-pedido.ts),
+   * o criterio unico do sistema: so AUTORIZADA, so com `numero_nf`, a mais
+   * recente por `data_autorizacao`. Nota PENDENTE, PROCESSANDO, CANCELADA ou
+   * DENEGADA nao chega aqui — o campo fica nulo e a linha nao exibe nada.
+   *
+   * Carregado em LOTE por `id_int`, junto das outras consultas agregadas da
+   * lista. Nenhuma consulta por linha.
+   */
+  notaEmitida: {
+    /** `notas_fiscais.numero_nf` — o numero que a conferencia le. */
+    numero: string;
+    /** `notas_fiscais.ref` — identifica a nota no download do XML. */
+    ref: string;
+    /** `notas_fiscais.url_danfe`: o PDF. Nulo quando o provedor ainda nao devolveu. */
+    urlDanfe: string | null;
+    /** `notas_fiscais.url_xml`: presenca indica que ha XML a baixar. */
+    urlXml: string | null;
+  } | null;
+  /**
    * `produtos.prazo_dias_uteis` dos itens ativos da proposta.
    *
    * Existe para as ações de impressão poderem derivar `propostas_os.data_termino`

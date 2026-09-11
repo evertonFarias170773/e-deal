@@ -35,6 +35,7 @@ import { devolverPropostaParaRevisaoAtendente } from "@/features/orcamentos/serv
 import { DevolverRevisaoModal } from "./components/DevolverRevisaoModal";
 import { criarPedidoParaBoletim } from "./services/boletim-propostas.service";
 import { dataLimitePorPrazosOuNulo } from "./prazo-producao";
+import { urlDownloadXmlNfe } from "@/lib/fiscal/download-xml-nfe";
 import { horaPorCategoriaFrete } from "./hora-entrega";
 
 import type { PropostaOperacionalListItem, SetorDoPedido } from "./types";
@@ -767,6 +768,20 @@ export function PedidosListPage() {
                       {consolidado.total === 1 ? "setor pronto" : "setores prontos"}
                     </span>
                   )}
+                  {/* NOTA EMITIDA (11/09/2026) — texto pequeno, no molde do
+                      "x/y setores prontos" logo acima. So aparece com nota que
+                      passa no criterio unico (AUTORIZADA e com numero): pendente,
+                      processando, cancelada e denegada nao chegam ate aqui.
+
+                      Nao e badge: "Liberado para NF" abaixo e uma AUTORIZACAO
+                      pendente, e vestir os dois igual confundiria o que ja
+                      aconteceu com o que ainda falta acontecer. */}
+                  {proposta.notaEmitida && (
+                    <span className="text-[10px] font-semibold whitespace-nowrap text-slate-500">
+                      Nota emitida
+                      {proposta.notaEmitida.numero ? ` · nº ${proposta.notaEmitida.numero}` : ""}
+                    </span>
+                  )}
                   {proposta.libera_nf && (
                     <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-medium text-emerald-700 ring-1 ring-inset ring-emerald-600/20 whitespace-nowrap">
                       Liberado para NF
@@ -829,6 +844,27 @@ export function PedidosListPage() {
                   destructive: true,
                   onClick: () => { void handleRotacionarQr(proposta); }
                 }] : []),
+                // NOTA EMITIDA (11/09/2026): as duas acoes so existem quando ha
+                // nota que passa no criterio unico, e cada uma so aparece se o
+                // provedor devolveu o arquivo correspondente. Nota com mais de
+                // uma AUTORIZADA oferece a ESCOLHIDA — a mais recente por
+                // `data_autorizacao` —, a mesma que a etiqueta 10x15 imprime e a
+                // conferencia le. Duas telas apontando para notas diferentes do
+                // mesmo pedido foi o que criou `escolherNotaAutorizadaDoPedido`.
+                ...(proposta.notaEmitida?.urlDanfe
+                  ? [{
+                      label: "Abrir DANFE (PDF)",
+                      onClick: () => { window.open(proposta.notaEmitida!.urlDanfe!, "_blank"); }
+                    }]
+                  : []),
+                // `url_xml` diz que HA xml; quem entrega o arquivo e a Edge
+                // Function, pela `ref` — o mesmo caminho da tela de Notas.
+                ...(proposta.notaEmitida?.urlXml && proposta.notaEmitida.ref
+                  ? [{
+                      label: "Baixar XML",
+                      onClick: () => { window.open(urlDownloadXmlNfe(proposta.notaEmitida!.ref), "_blank"); }
+                    }]
+                  : []),
                 {
                   label: "Ver chat interno",
                   onClick: () => openChat(proposta.id_int, { clienteNome: proposta.clienteNome, idCliente: proposta.idCliente })

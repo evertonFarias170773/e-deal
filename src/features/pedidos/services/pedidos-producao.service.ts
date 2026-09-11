@@ -9,6 +9,11 @@ import { buscarNomesDosSocios } from "@/features/orcamentos/services/socio-pagad
 import { SETORES_PCP, normalizarSetor } from "../setores";
 import { normalizarFaseSetor } from "../status-setor";
 import { tituloEventoDoPedido } from "../titulo-evento";
+import {
+  COLUNAS_NOTA_DO_PEDIDO,
+  escolherNotaAutorizadaDoPedido,
+  type NotaCandidata
+} from "@/lib/fiscal/nota-do-pedido";
 /**
  * Busca a lista de pedidos em produção.
  * Retorna array vazio nesta etapa para transição segura de mock para o Supabase.
@@ -197,6 +202,48 @@ export async function listarPedidosOperacionais(): Promise<PropostaOperacionalLi
     console.warn("[pedidos-producao.service] Erro ao buscar propostas_os");
   }
 
+  /**
+   * A nota fiscal de cada pedido — UMA consulta para a pagina inteira.
+   *
+   * `notas_fiscais` e 1:N por `id_int` (o formato `NFE-{id_int}-{seq}` existe
+   * para faturamento parcial), entao a linha nao pode simplesmente pegar "a"
+   * nota: quem decide qual vale e `escolherNotaAutorizadaDoPedido`, o criterio
+   * unico do sistema — so AUTORIZADA, so com numero, a mais recente por
+   * `data_autorizacao`. O mesmo que a etiqueta 10x15 e a conferencia ja usam,
+   * reusado sem alterar uma virgula.
+   *
+   * `url_danfe` e `url_xml` vem junto porque sao o que as acoes abrem, e pedi-las
+   * depois seria uma consulta por linha — exatamente o que este bloco evita.
+   * `ref` identifica a nota no download do XML.
+   *
+   * `.in()` direto, sem paginar, como as outras seis consultas agregadas deste
+   * arquivo: o universo e a pagina ja carregada, nao a tabela inteira.
+   */
+  type NotaDoPedidoRow = NotaCandidata & {
+    id_int: number | null;
+    ref: string | null;
+    url_danfe: string | null;
+    url_xml: string | null;
+  };
+  const notasPorPedido = new Map<number, NotaDoPedidoRow[]>();
+  try {
+    const { data: notasRows } = await client
+      .from("notas_fiscais")
+      .select(`id_int, ref, url_danfe, url_xml, ${COLUNAS_NOTA_DO_PEDIDO}`)
+      .in("id_int", idInts);
+    for (const linha of (notasRows ?? []) as NotaDoPedidoRow[]) {
+      const id = Number(linha.id_int);
+      if (!Number.isFinite(id)) continue;
+      const doPedido = notasPorPedido.get(id) ?? [];
+      doPedido.push(linha);
+      notasPorPedido.set(id, doPedido);
+    }
+    // `catch` sem binding: os vizinhos deste arquivo declaram `error` e nao usam,
+    // e cada um custa um aviso de no-unused-vars. Este nao entra na conta.
+  } catch {
+    console.warn("[pedidos-producao.service] Erro ao buscar notas_fiscais");
+  }
+
   // 4. Construir a resposta agregada
   const resultados: PropostaOperacionalListItem[] = [];
 
@@ -304,6 +351,18 @@ export async function listarPedidosOperacionais(): Promise<PropostaOperacionalLi
       pendencias_operacionais: pendencias,
       hasOS: modelosDestaProposta.length > 0,
       hasPedidoOs: Boolean(osDestaProposta),
+      notaEmitida: (() => {
+        // A escolha e do criterio unico; aqui so se traduz o que a linha precisa.
+        // `numero_nf` ja veio filtrado como nao-vazio pela propria funcao.
+        const nota = escolherNotaAutorizadaDoPedido(notasPorPedido.get(idInt) ?? []);
+        if (!nota) return null;
+        return {
+          numero: String(nota.numero_nf ?? "").trim(),
+          ref: String(nota.ref ?? "").trim(),
+          urlDanfe: nota.url_danfe,
+          urlXml: nota.url_xml
+        };
+      })(),
       isLegado: false,
       osId: undefined,
       status_pedido: undefined,
