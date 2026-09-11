@@ -524,12 +524,14 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
     /**
      * ═════════════════════════════════════════════════════════════════════════
      * O "PROMETIDO HOJE" TAMBEM RECONHECE A SAIDA — MAS NAO DO MESMO JEITO QUE
-     * O ATRASO, E NEM SEQUER DO MESMO JEITO NAS DUAS ETAPAS QUE JA SAIRAM.
-     * SAO TRES REGRAS DIFERENTES, DE PROPOSITO (09/09/2026).
+     * O ATRASO. SAO DUAS REGRAS DIFERENTES, DE PROPOSITO (11/09/2026).
      *
-     *   ATRASO        para por ETAPA    — fora da bancada, para.
-     *   EM_TRANSITO   para por CARIMBO  — qualquer saida tira, inclusive a de hoje.
-     *   A_RETIRAR     para por DIA      — nada saiu; some so quando o dia vira.
+     *   ATRASO          para por ETAPA   — fora da bancada, para.
+     *   PROMETIDO HOJE  para por CARIMBO — fora da bancada, qualquer carimbo
+     *                   tira, inclusive o de hoje. Sem carimbo, continua.
+     *
+     * Eram TRES ate 11/09/2026: `A_RETIRAR` tinha uma regra por DIA, so dele.
+     * Ver "O BALCAO ENTROU NA MESMA REGRA", abaixo.
      * ═════════════════════════════════════════════════════════════════════════
      *
      * O QUE A ASSIMETRIA ERA
@@ -550,9 +552,10 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
      *   O argumento para manter o que saiu hoje era nao deixar o dia "sem
      *   registro do que ja foi cumprido".
      *
-     *   ATENCAO: so a parte "nao por etapa" foi revogada, e so para EM_TRANSITO.
-     *   O corte por DIA continua VIVO em A_RETIRAR — e `saiuEmOutroDia`, logo
-     *   abaixo, que ainda o faz.
+     *   Essa regra por DIA foi revogada em duas etapas: primeiro para
+     *   EM_TRANSITO (09/09), depois para A_RETIRAR (11/09). Hoje ela nao
+     *   sobrevive em lugar nenhum, e por isso `saiuEmOutroDia` deixou de
+     *   existir — a data da saida nao decide mais nada aqui.
      *
      * ─────────────────────────────────────────────────────────────────────────
      * REVERTIDO NO MESMO DIA, PARA EM TRANSITO (09/09/2026, 2a decisao)
@@ -566,7 +569,7 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
      *   "Em transito" e no chip de `carimboDaEtapa` ("Coletado 09/09 14:31"),
      *   que dizem QUANDO saiu — coisa que o card do dia nunca disse.
      *
-     *   O corte novo esta logo abaixo, em `jaSaiu`. Vale so para EM_TRANSITO.
+     *   O corte novo esta logo abaixo, em `jaSaiu`.
      *
      * PRECEDENTE INVERSO, E POR QUE ESTE NAO O REPETE
      *   Em 01/09 o Kanban descartava EM_TRANSITO por conta propria e esse
@@ -585,12 +588,14 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
      *     etapa: Correios chega pela postagem (a postagem e a coleta) e
      *     transportadora/motoboy chegam pela coleta, depois de esperar o carro.
      *     E o mesmo par que o chip de status do card ja usa.
-     *   A_RETIRAR   → `dataDespacho`. O despacho e que poe o volume no balcao.
+     *   A_RETIRAR   → `dataDespacho`. Aqui ele nao e "saida": e a CHEGADA AO
+     *     BALCAO, o instante em que o volume ficou disponivel para o cliente
+     *     buscar. E o mesmo campo que `carimboDaEtapa` mostra como "No balcao".
      *   ENTREGUE    → nao chega aqui: `emAberto` ja o exclui.
      *
-     * SEM CARIMBO, CONTINUA CONTANDO — nas duas regras. Sem data nao da para
-     *   afirmar que saiu (nem que saiu em outro dia), e sumir do card e pior que
-     *   sobrar nele: quem sobra e visto e corrigido, quem some nao e procurado.
+     * SEM CARIMBO, CONTINUA CONTANDO. Sem data nao da para afirmar que o pedido
+     *   saiu ou chegou ao balcao, e sumir do card e pior que sobrar nele: quem
+     *   sobra e visto e corrigido, quem some nao e procurado.
      *
      * A BANCADA NAO MUDA. `PRODUCAO`, `ACABAMENTO` e `PRONTO` nem chegam a este
      *   teste. O 21594 e o exemplo: ele tem `dataDespacho` de 03/09 de uma
@@ -599,27 +604,46 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
      */
     const foraDaBancada = etapa === "A_RETIRAR" || etapa === "EM_TRANSITO" || etapa === "ENTREGUE";
     const saidaDaBancada = etapa === "EM_TRANSITO" ? (exp?.coletadoEm ?? exp?.dataDespacho) : exp?.dataDespacho;
-    const saiuEmOutroDia = foraDaBancada && Boolean(saidaDaBancada) && diaSaoPaulo(saidaDaBancada!) !== hoje;
     /**
-     * EM TRANSITO SAI DO DIA COM QUALQUER CARIMBO. O BALCAO NAO (09/09/2026, 2a).
+     * ═════════════════════════════════════════════════════════════════════════
+     * O BALCAO ENTROU NA MESMA REGRA DO TRANSITO (11/09/2026).
+     * ═════════════════════════════════════════════════════════════════════════
      *
-     * O volume ja esta com a transportadora: nao ha acao de expedicao pendente
-     * nele hoje, e ele so ocupa a lista que responde "o que tem de sair". Sair
-     * HOJE deixou de ser motivo para ficar — ver o bloco acima.
+     * Em 09/09 EM_TRANSITO passou a sair do card com QUALQUER carimbo, e
+     * A_RETIRAR ficou de fora com o argumento de que "em retirada nada saiu: o
+     * volume esta no balcao esperando o cliente, ainda e responsabilidade da
+     * casa". O argumento descrevia a posse do volume, nao a pergunta do card.
      *
-     * `A_RETIRAR` NAO entra nesta regra e continua com `saiuEmOutroDia`: em
-     * retirada nada saiu. O volume esta no balcao esperando o cliente, ainda e
-     * responsabilidade da casa, e some do dia so quando o dia vira.
+     * O QUE O CARD PERGUNTA e "o que a Expedicao ainda tem de fazer hoje". Uma
+     * vez no balcao, a Expedicao ja fez a parte dela — o proximo passo e o
+     * cliente aparecer, e isso nao e tarefa da bancada nem tem prazo que ela
+     * controle. O 21866 e o caso: chegou ao balcao em 11/09 as 09:45 e passou o
+     * dia inteiro ocupando a lista do que tem de sair, sem nada a fazer nele.
      *
-     * A rede de seguranca do bloco acima fica inteira: sem carimbo nenhum,
-     * `saidaDaBancada` e nula, `jaSaiu` e falso e o pedido CONTINUA no card.
-     * A razao e que os dois casos sao INDISTINGUIVEIS daqui: um pedido marcado
-     * EM TRANSITO sem carimbo pode ter saido e perdido o registro, ou pode nao
-     * ter saido — e so o segundo pede acao. Medido em 09/09/2026: ZERO pedidos
-     * em transito sem carimbo no painel, ou seja a excecao nao custa nada hoje e
-     * existe para o dia em que custar.
+     * ELE NAO SOME DA TELA, muda de card: continua em "A retirar", que e
+     * exatamente onde alguem vai procurar quando o cliente chegar. O card do
+     * dia perde uma linha morta; nenhum pedido perde lugar.
+     *
+     * POR QUE ISSO COLAPSA AS TRES REGRAS EM DUAS. Com A_RETIRAR e EM_TRANSITO
+     * cortando por carimbo, e ENTREGUE excluido por `emAberto`, nao sobra etapa
+     * em que a DATA da saida decida alguma coisa. `saiuEmOutroDia` morreu junto,
+     * e nao deve voltar: se alguem precisar de novo de "saiu em outro dia", o
+     * que mudou foi a pergunta do card, nao a conta.
+     *
+     * A REDE DE SEGURANCA FICA INTEIRA, e agora vale para as duas etapas: sem
+     * carimbo nenhum `saidaDaBancada` e nula, `jaSaiu` e falso e o pedido
+     * CONTINUA no card. Os dois casos sao INDISTINGUIVEIS daqui — um pedido
+     * pode ter saido e perdido o registro, ou pode nao ter saido, e so o
+     * segundo pede acao. Medido em 11/09/2026: ZERO pedidos em transito ou no
+     * balcao sem carimbo no painel. A excecao nao custa nada hoje e existe para
+     * o dia em que custar.
+     *
+     * O ATRASO NAO MUDA. `A_RETIRAR` nunca entrou no card por atraso —
+     * `naEtapaDeExpedicao`, la em cima, e so PRODUCAO/ACABAMENTO/PRONTO —,
+     * entao nao existe pedido no balcao que este corte tire de vista por
+     * estar atrasado. A unica porta dele era `prometidoHoje`.
      */
-    const jaSaiu = etapa === "EM_TRANSITO" ? Boolean(saidaDaBancada) : saiuEmOutroDia;
+    const jaSaiu = foraDaBancada && Boolean(saidaDaBancada);
 
     const prometidoHoje = emAberto && promessaDia === hoje && !jaSaiu;
 
