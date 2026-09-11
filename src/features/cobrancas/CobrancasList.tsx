@@ -251,6 +251,20 @@ export function CobrancasList() {
   // espera a pausa é apenas a gravação na URL.
   const [search, setSearch] = useDebouncedInput(filters.q, (valor) => setFilter("q", valor));
 
+  /**
+   * Buscando um registro específico, o período atrapalha: quem digita o número
+   * do pedido já sabe o que procura, e o pedido pode ser de outro mês (caso
+   * real: 21341, confirmado em 27/08, invisível com o período em setembro).
+   *
+   * Lê `filters.q` (o valor DEBOUNCED, que já foi para a URL) e não `search`
+   * (o imediato): é isto que dispara a consulta ampla, e ela não pode sair a
+   * cada tecla. O filtro em memória continua usando `search` e respondendo na
+   * hora.
+   *
+   * Três caracteres para não disparar a base inteira com uma letra solta.
+   */
+  const buscaAtiva = filters.q.trim().length >= 3;
+
   const [mesSelecionado, setMesSelecionado] = useState(getLocalMonthKey(new Date()));
   const [empresaEmEdicao, setEmpresaEmEdicao] = useState<Cobranca | null>(null);
   const [empresaDestinoId, setEmpresaDestinoId] = useState<number | null>(null);
@@ -282,8 +296,16 @@ export function CobrancasList() {
     };
     const getTodaySPLocal = () => new Date().toLocaleDateString("sv-SE", { timeZone: "America/Sao_Paulo" });
 
-    const fetchInicio = [dataInicial, getMesRangeLocal(mesSelecionado).inicio, getTodaySPLocal()].sort()[0];
-    const fetchFim = [dataFinal, getMesRangeLocal(mesSelecionado).fim, getTodaySPLocal()].sort().reverse()[0];
+    // Com busca ativa a janela some: sem isso a linha procurada nem chega ao
+    // navegador, e filtrar em memória não adianta. Custo medido em 11/09/2026:
+    // 8.467 linhas, 6,8 MB de tabela, que o serviço já busca em lotes de 1.000
+    // — e a lista renderizada segue limitada a 500.
+    const fetchInicio = buscaAtiva
+      ? undefined
+      : [dataInicial, getMesRangeLocal(mesSelecionado).inicio, getTodaySPLocal()].sort()[0];
+    const fetchFim = buscaAtiva
+      ? undefined
+      : [dataFinal, getMesRangeLocal(mesSelecionado).fim, getTodaySPLocal()].sort().reverse()[0];
     const idEmpresa = empresa === "TODAS" ? undefined : Number(empresa);
 
     void refreshCobrancas({
@@ -293,7 +315,7 @@ export function CobrancasList() {
       atendente: vendedor,
       tipo
     });
-  }, [dataInicial, dataFinal, mesSelecionado, empresa, vendedor, tipo, refreshCobrancas]);
+  }, [dataInicial, dataFinal, mesSelecionado, empresa, vendedor, tipo, buscaAtiva, refreshCobrancas]);
 
   // Base filtrada em memória apenas pela busca por texto
   const filteredBase = useMemo(() => {
@@ -303,9 +325,12 @@ export function CobrancasList() {
   }, [cobrancasStats, search]);
 
   // 1. Confirmados do Dia (Card 2)
+  // Os cards leem `cobrancasStats`, NAO `filteredBase`: sao totais do periodo e
+  // nao podem mudar porque alguem digitou no campo de busca. O card de
+  // pendentes ja fazia assim.
   const confirmadosDia = useMemo(() => {
     const todayKey = getLocalDateInSaoPaulo(new Date());
-    const list = filteredBase.filter((c) => {
+    const list = cobrancasStats.filter((c) => {
       if (!isBaseConfirmada(c)) return false;
       const dateVal = c.data_confirmacao;
       return dateVal && getLocalDateInSaoPaulo(dateVal) === todayKey;
@@ -314,12 +339,12 @@ export function CobrancasList() {
       count: list.length,
       total: list.reduce((sum, c) => sum + (c.valor ?? 0), 0)
     };
-  }, [filteredBase]);
+  }, [cobrancasStats]);
 
   // 2. Faturamento do Mês (Card 3)
   const faturamentoMes = useMemo(() => {
     const [y, m] = mesSelecionado.split("-").map(Number);
-    const list = filteredBase.filter((c) => {
+    const list = cobrancasStats.filter((c) => {
       if (!isBaseConfirmada(c)) return false;
       const dateVal = c.data_confirmacao;
       if (!dateVal) return false;
@@ -351,11 +376,11 @@ export function CobrancasList() {
       total: list.reduce((sum, c) => sum + (c.valor ?? 0), 0),
       porEmpresa: Array.from(groups.values()).sort((a, b) => a.id_empresa - b.id_empresa)
     };
-  }, [filteredBase, mesSelecionado]);
+  }, [cobrancasStats, mesSelecionado]);
 
   // 3. Faturamento do Período (Card 4)
   const faturamentoPeriodo = useMemo(() => {
-    const list = filteredBase.filter((c) => {
+    const list = cobrancasStats.filter((c) => {
       if (!isBaseConfirmada(c)) return false;
       const dateVal = c.data_confirmacao;
       if (!dateVal) return false;
@@ -389,7 +414,7 @@ export function CobrancasList() {
       total: list.reduce((sum, c) => sum + (c.valor ?? 0), 0),
       porEmpresa: Array.from(groups.values()).sort((a, b) => a.id_empresa - b.id_empresa)
     };
-  }, [filteredBase, dataInicial, dataFinal]);
+  }, [cobrancasStats, dataInicial, dataFinal]);
 
   // Unifica viewDashboard usando os cálculos em memória
   const viewDashboard = {
@@ -473,14 +498,17 @@ export function CobrancasList() {
             : matchesTipoFiltro(cobranca, tipo, existingBoletoIdInts, hasBoletoHistoryIdInts);
         
         const dateConfirmacaoStr = getLocalDateInSaoPaulo(cobranca.data_confirmacao);
+        // Busca ativa ignora o período — ver `buscaAtiva`. Os cards NÃO passam
+        // por aqui e seguem presos ao período, como devem.
         const matchesPeriodo =
+          buscaAtiva ||
           statusFilter !== "CONFIRMADOS" ||
           ((!dataInicial || dateConfirmacaoStr >= dataInicial) && (!dataFinal || dateConfirmacaoStr <= dataFinal));
 
         return matchesTipo && matchesPeriodo;
       })
       .slice(0, 500);
-  }, [filteredBase, tipo, statusFilter, existingBoletoIdInts, hasBoletoHistoryIdInts, dataInicial, dataFinal]);
+  }, [filteredBase, tipo, statusFilter, existingBoletoIdInts, hasBoletoHistoryIdInts, dataInicial, dataFinal, buscaAtiva]);
 
   const empresaDestinoSelecionada = empresaDestinoId ? getEmpresaRecebedoraFixaById(empresaDestinoId) ?? null : null;
 
@@ -839,6 +867,18 @@ export function CobrancasList() {
           </button>
         </div>
       </section>
+
+      {/* O usuário precisa saber que o período saiu de cena nesta busca — senão
+          acha que o filtro sumiu ou que a tela está errada. */}
+      {buscaAtiva ? (
+        <p className="-mt-2 flex items-center gap-2 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-2.5 text-xs text-sky-900">
+          <Search className="h-3.5 w-3.5 shrink-0" />
+          <span>
+            Buscando <strong>{filters.q.trim()}</strong> em todo o período. Os cards acima continuam
+            somando apenas o período selecionado. Limpe a busca para voltar a filtrar por data.
+          </span>
+        </p>
+      ) : null}
 
       <ResponsiveList<Cobranca>
         items={visibleCobrancas}
