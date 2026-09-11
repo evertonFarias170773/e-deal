@@ -54,6 +54,11 @@ import type {
   PropostaStatus,
   TipoDescontoProposta
 } from "@/features/orcamentos/types";
+import {
+  COLUNAS_NOTA_DO_PEDIDO,
+  escolherNotaAutorizadaDoPedido,
+  type NotaCandidata
+} from "@/lib/fiscal/nota-do-pedido";
 
 
 /** Limite de public.propostas.id_cliente (integer / int4). */
@@ -628,10 +633,68 @@ async function fetchPropostaRows(
       }
     }
 
+    /**
+     * A NOTA FISCAL DE CADA PROPOSTA — uma consulta para a pagina inteira.
+     *
+     * Mesmo molde do `pagamentos_v2` logo acima: `.in("id_int", proposalIds)`,
+     * mapa em memoria, e o resultado entra no `enrichedRows`. `proposalIds` sai
+     * das linhas ja buscadas, entao a busca ampla nao precisa de tratamento
+     * proprio — ela so troca o RECORTE (lote unico de ate LOTE_BUSCA_AMPLA em
+     * vez da pagina), e o lote continua sendo um so.
+     *
+     * `notas_fiscais` e 1:N por `id_int` — o formato `NFE-{id_int}-{seq}` existe
+     * para faturamento parcial —, entao quem decide qual nota vale e
+     * `escolherNotaAutorizadaDoPedido`: so AUTORIZADA, so com numero, a mais
+     * recente por `data_autorizacao`. O mesmo criterio que a etiqueta 10x15 e a
+     * conferencia ja usam, reusado sem alterar uma virgula. Ha caso real de duas
+     * autorizadas no mesmo pedido (o 20370, notas 1003 e 1005).
+     *
+     * `ref`, `url_danfe` e `url_xml` vem junto porque sao o que as acoes abrem;
+     * pedi-las depois seria a consulta por linha que este bloco existe para
+     * evitar.
+     */
+    type NotaDaPropostaRow = NotaCandidata & {
+      id_int: number | string | null;
+      ref: string | null;
+      url_danfe: string | null;
+      url_xml: string | null;
+    };
+    const notasPorProposta = new Map<string, NotaDaPropostaRow[]>();
+
+    if (proposalIds.length) {
+      const { data: notasData, error: notasError } = await client
+        .from("notas_fiscais")
+        .select(`id_int, ref, url_danfe, url_xml, ${COLUNAS_NOTA_DO_PEDIDO}`)
+        .in("id_int", proposalIds)
+        .returns<NotaDaPropostaRow[]>();
+
+      if (!notasError && Array.isArray(notasData)) {
+        notasData.forEach((linha) => {
+          const idInt = linha.id_int === null || linha.id_int === undefined ? "" : String(linha.id_int);
+          if (!idInt) return;
+          const doPedido = notasPorProposta.get(idInt) ?? [];
+          doPedido.push(linha);
+          notasPorProposta.set(idInt, doPedido);
+        });
+      }
+    }
+
+    const notaEmitidaDaProposta = (idInt: string) => {
+      const nota = escolherNotaAutorizadaDoPedido(notasPorProposta.get(idInt) ?? []);
+      if (!nota) return null;
+      return {
+        numero: String(nota.numero_nf ?? "").trim(),
+        ref: String(nota.ref ?? "").trim(),
+        urlDanfe: nota.url_danfe,
+        urlXml: nota.url_xml
+      };
+    };
+
     const enrichedRows = proposalRows.map((row) => ({
       ...row,
       tipos_cobranca: paymentMap.get(String(row.id_int ?? "")) ?? [],
       pago_a_confirmar: pagoAConfirmarSet.has(String(row.id_int ?? "")),
+      nota_emitida: notaEmitidaDaProposta(String(row.id_int ?? "")),
       em_arte: row.em_arte === true
     }));
 

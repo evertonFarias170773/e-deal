@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CalendarDays, CreditCard, FileText, Search, WalletCards, MessageSquare, Paperclip, Palette, Printer, Link as LinkIcon } from "lucide-react";
 import { ActionsMenu } from "@/components/common/ActionsMenu";
+import { urlDownloadXmlNfe } from "@/lib/fiscal/download-xml-nfe";
 import { useAppToast } from "@/components/common/AppToast";
 import { PageHeader } from "@/components/common/PageHeader";
 import { ResponsiveList } from "@/components/common/ResponsiveList";
@@ -1311,6 +1312,26 @@ Ela volta a aparecer nas listas operacionais.`
         onClick: () => void handleCopiarPropostaInformal(item)
       },
       { label: "Gerar PDF da proposta", onClick: () => void handleGerarPDFForListItem(item) },
+      // NOTA EMITIDA (11/09/2026): so existem quando ha nota que passa no
+      // criterio unico, e cada uma so aparece se o provedor devolveu o arquivo.
+      // Pedido com mais de uma AUTORIZADA oferece a ESCOLHIDA — a mais recente
+      // por `data_autorizacao` —, a mesma que a etiqueta 10x15 imprime e a
+      // conferencia le. Duas telas apontando para notas diferentes do mesmo
+      // pedido foi o que criou `escolherNotaAutorizadaDoPedido`.
+      ...(item.notaEmitida?.urlDanfe
+        ? [{
+            label: "Abrir DANFE (PDF)",
+            onClick: () => { window.open(item.notaEmitida!.urlDanfe!, "_blank"); }
+          }]
+        : []),
+      // `url_xml` diz que HA xml; quem entrega o arquivo e a Edge Function, pela
+      // `ref` — o mesmo caminho da tela de Notas Fiscais.
+      ...(item.notaEmitida?.urlXml && item.notaEmitida.ref
+        ? [{
+            label: "Baixar XML",
+            onClick: () => { window.open(urlDownloadXmlNfe(item.notaEmitida!.ref), "_blank"); }
+          }]
+        : []),
       ...(!isClienteNaoCadastrado ? [{ label: "Gerar cobrança", onClick: () => void handleOpenCobrancaModal(item) }] : []),
       ...(canCancelarProposta && item.status !== "CANCELADO" ? [{
         label: "Cancelar proposta",
@@ -1595,6 +1616,15 @@ Ela volta a aparecer nas listas operacionais.`
                     financeiro confirmar" — sem este selo o vendedor lê
                     "Aguardando" e mexe na proposta com o dinheiro já em caixa. */}
                 {proposta.pagoAConfirmar ? <StatusBadge status="PAGO_A_LIBERAR" tone="info" /> : null}
+                {/* NOTA EMITIDA (11/09/2026) — texto pequeno, nao badge: os
+                    badges vizinhos sinalizam algo A FAZER, e nota emitida e fato
+                    consumado. So aparece com nota que passa no criterio unico. */}
+                {proposta.notaEmitida ? (
+                  <span className="text-[10px] font-semibold whitespace-nowrap text-slate-500">
+                    Nota emitida
+                    {proposta.notaEmitida.numero ? ` · nº ${proposta.notaEmitida.numero}` : ""}
+                  </span>
+                ) : null}
                 {/* Pedido de teste encerrado: sumiu dos paineis operacionais,
                     mas continua aqui. O badge E o caminho de volta — sem ele,
                     ninguem acha o que marcou para desfazer. */}
@@ -1753,6 +1783,15 @@ Ela volta a aparecer nas listas operacionais.`
                 <StatusBadge status={proposta.statusLabel} tone={getStatusTone(proposta.status)} />
                 {/* Mesmo sinal do layout de tabela (card do mobile). */}
                 {proposta.pagoAConfirmar ? <StatusBadge status="PAGO_A_LIBERAR" tone="info" /> : null}
+                {/* NOTA EMITIDA (11/09/2026) — texto pequeno, nao badge: os
+                    badges vizinhos sinalizam algo A FAZER, e nota emitida e fato
+                    consumado. So aparece com nota que passa no criterio unico. */}
+                {proposta.notaEmitida ? (
+                  <span className="text-[10px] font-semibold whitespace-nowrap text-slate-500">
+                    Nota emitida
+                    {proposta.notaEmitida.numero ? ` · nº ${proposta.notaEmitida.numero}` : ""}
+                  </span>
+                ) : null}
                 {/* Pedido de teste encerrado: sumiu dos paineis operacionais,
                     mas continua aqui. O badge E o caminho de volta — sem ele,
                     ninguem acha o que marcou para desfazer. */}

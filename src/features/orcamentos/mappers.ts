@@ -41,6 +41,21 @@ export type OrcamentoListItem = {
    * "não pagou" de "pagou e falta confirmar".
    */
   pagoAConfirmar: boolean;
+  /**
+   * A nota fiscal AUTORIZADA que representa a proposta, ou `null`.
+   *
+   * Escolhida por `escolherNotaAutorizadaDoPedido` — o criterio unico do
+   * sistema: so AUTORIZADA, so com `numero_nf`, a mais recente por
+   * `data_autorizacao`. PENDENTE, PROCESSANDO, CANCELADA e DENEGADA nunca
+   * chegam aqui, e a linha nao exibe nada.
+   */
+  notaEmitida: {
+    numero: string;
+    /** `notas_fiscais.ref` — identifica a nota no download do XML. */
+    ref: string;
+    urlDanfe: string | null;
+    urlXml: string | null;
+  } | null;
   modelo: "AVULSO" | "PROPOSTA";
   source: OrcamentoListSource;
   rawColumns?: string[];
@@ -363,6 +378,10 @@ function mapRowToListItem(row: SupabasePropostaRow): OrcamentoListItem | null {
     tiposCobranca,
     tipoCobrancaLabel: getTipoCobrancaLabel(tiposCobranca),
     pagoAConfirmar: (row as { pago_a_confirmar?: unknown }).pago_a_confirmar === true,
+    // Ja vem resolvido do service: a escolha entre varias notas do mesmo
+    // pedido acontece la, junto da carga em lote, e nao por linha aqui.
+    notaEmitida:
+      (row as { nota_emitida?: OrcamentoListItem["notaEmitida"] }).nota_emitida ?? null,
     modelo,
     source: "supabase",
     rawColumns: Object.keys(row),
