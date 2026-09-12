@@ -14,6 +14,11 @@ import { StatusBadge } from "@/components/common/StatusBadge";
 import { useAppToast } from "@/components/common/AppToast";
 import { formatCurrency } from "@/lib/formatters/currency";
 import { humanizeStatus } from "@/lib/formatters/status";
+import {
+  opcoesStatusDaFila,
+  statusVigenteDaFila,
+  recortarPorStatus
+} from "@/features/fiscal/lib/fila-status";
 import { useNfeReadOnlyData } from "@/features/nfe/hooks/useNfeReadOnlyData";
 import { useNfseReadOnlyData } from "@/features/nfse/hooks/useNfseReadOnlyData";
 import type { NfeReadModel } from "@/features/nfe/types";
@@ -245,6 +250,10 @@ export function NotasFiscaisPage() {
       "fila-faturadas": { codec: codecs.booleano(), default: false },
       // Fila: recorta para as cobranças do tipo faturado, que são as do Financeiro.
       "fila-so-faturados": { codec: codecs.booleano(), default: false },
+      // Fila: recorta por status do pedido. `texto` e não `enumOf` de propósito —
+      // `propostas.status_interno` é texto livre, e a lista de opções nasce do
+      // que está na fila, não de um enum que envelheceria em silêncio.
+      "fila-status": { codec: codecs.texto(), default: "" },
       "nfse-q": { codec: codecs.texto(), default: "" },
       "nfse-emp": { codec: codecs.enumOf(EMPRESAS_EMITENTES), default: "" as const },
       "nfse-status": { codec: codecs.enumOf(STATUS_NFSE), default: "" as const }
@@ -303,6 +312,7 @@ export function NotasFiscaisPage() {
   const nfseEmpresa = filters["nfse-emp"];
   const mostrarFaturadas = filters["fila-faturadas"];
   const soFaturados = filters["fila-so-faturados"];
+  const filaStatus = filters["fila-status"];
 
   const [nfeSearch, setNfeSearch] = useDebouncedInput(filters["nfe-q"], (valor) =>
     setFilter("nfe-q", valor)
@@ -1576,7 +1586,22 @@ export function NotasFiscaisPage() {
   const filaJaFaturadas = faturaveisList.filter((item) => (item.notas_vivas ?? 0) > 0).length;
   const filaFaturados = faturaveisList.filter((item) => ehFaturado(item.tipo_cobranca)).length;
 
-  const filteredFilaNfe = faturaveisList.filter((item) => {
+  /**
+   * TODOS os filtros da fila MENOS o de status do pedido.
+   *
+   * Fica separado porque o drop de status precisa contar quantos pedidos cada
+   * status teria DEPOIS dos outros filtros — senão o operador escolhe "Entregue
+   * (27)" com "Só faturados" ligado e recebe 3. A contagem é do conjunto
+   * corrente, não do total da tabela.
+   *
+   * Filtrar aqui, no cliente, e não no servidor: `getFaturaveisPropostas` traz
+   * a fila INTEIRA numa consulta só, sem `range` nem `limit` — não há paginação
+   * no servidor para acompanhar. Levar o status para o SQL custaria uma ida a
+   * mais por troca de filtro e tornaria a contagem por status impossível sem
+   * uma segunda consulta de agregação. É também como os outros quatro filtros
+   * desta aba já funcionam.
+   */
+  const filaPassaNosOutrosFiltros = (item: FaturavelOrigem) => {
     // Já virou nota viva: sai da fila, a menos que o operador peça para ver.
     if (!mostrarFaturadas && (item.notas_vivas ?? 0) > 0) return false;
 
@@ -1608,7 +1633,27 @@ export function NotasFiscaisPage() {
     }
 
     return true;
-  });
+  };
+
+  /**
+   * Os status que DE FATO existem na fila agora, com quantos pedidos cada um
+   * tem — já considerando busca, empresa e os dois checkboxes.
+   *
+   * A lista é construída do conjunto, nunca de um enum fixo: `status_interno`
+   * é texto livre e a fila mostra hoje seis valores, dois deles sem tradução em
+   * `humanizeStatus` ("EM PRODUCAO" e "REVISAO PRODUCAO", que usam espaço onde
+   * o mapa espera underscore). Um enum cravado deixaria o operador escolher
+   * opção que devolve zero, ou esconderia status que apareceu depois.
+   */
+  const statusDaFila = opcoesStatusDaFila(faturaveisList, filaPassaNosOutrosFiltros, humanizeStatus);
+
+  /** Ver `statusVigenteDaFila`: escolha que saiu da fila é ignorada, não zera a tela. */
+  const filaStatusVigente = statusVigenteDaFila(filaStatus, statusDaFila);
+
+  const filteredFilaNfe = recortarPorStatus(
+    faturaveisList.filter(filaPassaNosOutrosFiltros),
+    filaStatusVigente
+  );
 
   // Filtragem da Fila de Faturamento (NFS-e)
   const filteredFilaNfse = faturaveisList.filter((item) => {
@@ -1783,6 +1828,25 @@ export function NotasFiscaisPage() {
                 <option value="1">INGRESSO IDEAL</option>
                 <option value="2">BIRÔ IDEAL</option>
                 <option value="3">E3 BRINDES</option>
+              </select>
+            </div>
+            {/* Status do pedido. As opções e as contagens saem do conjunto que
+                os outros filtros já recortaram — nunca de um enum fixo —, para
+                não oferecer escolha que devolve zero. */}
+            <div className="sm:col-span-2">
+              <select
+                value={filaStatusVigente}
+                onChange={(e) => setFilter("fila-status", e.target.value)}
+                className="w-full rounded-2xl border border-[#d7e5e8] bg-slate-50 px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-[#0b2f4a] focus:bg-white"
+              >
+                <option value="">
+                  Todos os status do pedido ({statusDaFila.reduce((s, x) => s + x.quantidade, 0)})
+                </option>
+                {statusDaFila.map((s) => (
+                  <option key={s.valor} value={s.valor}>
+                    {s.rotulo} ({s.quantidade})
+                  </option>
+                ))}
               </select>
             </div>
             <label className="sm:col-span-2 flex items-center gap-2.5 text-sm text-slate-600 cursor-pointer select-none">
