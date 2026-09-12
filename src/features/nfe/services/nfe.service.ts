@@ -1530,6 +1530,8 @@ interface SupabasePropostaSimple {
   empresa: string;
   created_at: string;
   libera_nf?: boolean | null;
+  /** `propostas.liberado_producao_em` — quando o pedido entrou em producao. */
+  liberado_producao_em?: string | null;
 }
 
 /**
@@ -1652,7 +1654,7 @@ export async function getFaturaveisPropostas(): Promise<FaturavelOrigem[]> {
   try {
     const { data, error } = await client
       .from("propostas")
-      .select("id,id_int,id_cliente,cliente,valor,valor_total,vendedor,status_interno,empresa,created_at,libera_nf,id_faturado")
+      .select("id,id_int,id_cliente,cliente,valor,valor_total,vendedor,status_interno,empresa,created_at,libera_nf,id_faturado,liberado_producao_em")
       .eq("libera_nf", true)
       .order("id_int", { ascending: false });
 
@@ -1759,7 +1761,12 @@ export async function getFaturaveisPropostas(): Promise<FaturavelOrigem[]> {
         tipo_cobranca: cobrancaPorProposta.get(Number(row.id_int)),
         vendedor: String(row.vendedor || "").trim(),
         status_interno: String(row.status_interno || "").trim(),
-        socio_pagador_nome: socioPorProposta.get(Number(row.id_int)) ?? null
+        socio_pagador_nome: socioPorProposta.get(Number(row.id_int)) ?? null,
+        // O numero do pedido ja vinha, so era lido de volta do texto de
+        // `ref_origem` por regex quando alguem precisava dele. Sai explicito
+        // para os links nao dependerem do formato de um rotulo.
+        id_int: Number(row.id_int),
+        liberado_producao_em: row.liberado_producao_em ?? null
       };
     });
   } catch (err) {

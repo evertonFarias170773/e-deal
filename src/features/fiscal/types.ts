@@ -37,6 +37,14 @@ export interface FaturavelOrigem {
   vendedor?: string;
   /** `propostas.status_interno`. Informativo: não barra nem filtra emissão. */
   status_interno?: string;
+  /** `propostas.id_int` — o número do pedido, para o link da proposta. */
+  id_int?: number;
+  /**
+   * `propostas.liberado_producao_em`: quando o pedido ENTROU EM PRODUÇÃO.
+   * Nulo em pedido que entrou na fila por outro caminho, ou que é anterior à
+   * migration 20260827170336, que criou a coluna.
+   */
+  liberado_producao_em?: string | null;
   /**
    * Nome do sócio pagador, quando `propostas.id_faturado` aponta para OUTRO
    * cadastro que não o `id_cliente`. `id_faturado` preenchido e igual ao cliente

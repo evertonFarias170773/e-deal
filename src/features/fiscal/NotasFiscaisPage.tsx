@@ -189,19 +189,35 @@ const VOLTA_PARA_RASCUNHO = {
 function ClienteComSocio({
   socio,
   clienteNome,
-  idCliente
+  idCliente,
+  aoAbrirCadastro
 }: {
   socio?: string | null;
   clienteNome: string;
   idCliente?: number | null;
+  /**
+   * Abre a edição do cadastro. Opcional: onde não for passado — a fila de
+   * NFS-e, por exemplo — o nome continua sendo texto, como sempre foi.
+   */
+  aoAbrirCadastro?: (idCliente: number) => void;
 }) {
   const temSocio = Boolean(String(socio ?? "").trim());
+  const podeAbrir = Boolean(idCliente) && Boolean(aoAbrirCadastro);
+  const texto = `${idCliente ? `${idCliente} - ` : ""}${clienteNome}`;
   return (
     <div className="flex flex-col">
-      <span className="font-medium text-slate-950">
-        {idCliente ? `${idCliente} - ` : ""}
-        {clienteNome}
-      </span>
+      {podeAbrir ? (
+        <button
+          type="button"
+          onClick={() => aoAbrirCadastro!(Number(idCliente))}
+          className="w-fit text-left font-medium text-[#0b2f4a] underline decoration-[#0b2f4a]/30 underline-offset-2 transition hover:decoration-[#0b2f4a]"
+          title="Abrir o cadastro do cliente"
+        >
+          {texto}
+        </button>
+      ) : (
+        <span className="font-medium text-slate-950">{texto}</span>
+      )}
       {temSocio && (
         <span className="text-xs font-medium text-indigo-700">Sócio pagador: {socio}</span>
       )}
@@ -1808,7 +1824,10 @@ export function NotasFiscaisPage() {
       {/* Renderização da Fila NF-e */}
       {activeTab === "FILA_FATURAMENTO" ? (
         <div className="space-y-4">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 rounded-3xl border border-[#d7e5e8] bg-white p-4 shadow-sm">
+          {/* Os TRES campos de pesquisa lado a lado no desktop e empilhados no
+              mobile. Os dois checkboxes continuam ocupando a linha inteira
+              abaixo deles, com `lg:col-span-3` no lugar do `sm:col-span-2`. */}
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3 rounded-3xl border border-[#d7e5e8] bg-white p-4 shadow-sm">
             <div className="relative">
               <input
                 type="text"
@@ -1833,7 +1852,7 @@ export function NotasFiscaisPage() {
             {/* Status do pedido. As opções e as contagens saem do conjunto que
                 os outros filtros já recortaram — nunca de um enum fixo —, para
                 não oferecer escolha que devolve zero. */}
-            <div className="sm:col-span-2">
+            <div>
               <select
                 value={filaStatusVigente}
                 onChange={(e) => setFilter("fila-status", e.target.value)}
@@ -1849,7 +1868,7 @@ export function NotasFiscaisPage() {
                 ))}
               </select>
             </div>
-            <label className="sm:col-span-2 flex items-center gap-2.5 text-sm text-slate-600 cursor-pointer select-none">
+            <label className="lg:col-span-3 flex items-center gap-2.5 text-sm text-slate-600 cursor-pointer select-none">
               <input
                 type="checkbox"
                 checked={soFaturados}
@@ -1863,7 +1882,7 @@ export function NotasFiscaisPage() {
               </span>
             </label>
             {filaJaFaturadas > 0 && (
-              <label className="sm:col-span-2 flex items-center gap-2.5 text-sm text-slate-600 cursor-pointer select-none">
+              <label className="lg:col-span-3 flex items-center gap-2.5 text-sm text-slate-600 cursor-pointer select-none">
                 <input
                   type="checkbox"
                   checked={mostrarFaturadas}
@@ -1891,11 +1910,26 @@ export function NotasFiscaisPage() {
               {
                 header: "Pedido",
                 cell: (item) => {
-                  const idInt = item.ref_origem.match(/\d+/)?.[0] || "-";
+                  // `id_int` vem da consulta; o `ref_origem` fica de reserva para
+                  // a linha antiga que ainda não o traga. Sem número não há para
+                  // onde ir, e aí o texto não vira link.
+                  const idInt = item.id_int ?? Number(item.ref_origem.match(/\d+/)?.[0]) ?? 0;
+                  const temDestino = Number.isFinite(idInt) && idInt > 0;
                   const jaTemNota = (item.notas_vivas ?? 0) > 0;
                   return (
                     <div className="flex flex-col">
-                      <span className="font-medium text-slate-950">#{idInt}</span>
+                      {temDestino ? (
+                        <button
+                          type="button"
+                          onClick={() => router.push(`/orcamentos/${idInt}`)}
+                          className="w-fit font-medium text-[#0b2f4a] underline decoration-[#0b2f4a]/30 underline-offset-2 transition hover:decoration-[#0b2f4a]"
+                          title="Abrir a proposta"
+                        >
+                          #{idInt}
+                        </button>
+                      ) : (
+                        <span className="font-medium text-slate-950">{item.ref_origem}</span>
+                      )}
                       {item.os_ideal && (
                         <span className="text-xs text-slate-500 font-mono">OS: {item.os_ideal}</span>
                       )}
@@ -1916,8 +1950,40 @@ export function NotasFiscaisPage() {
                     socio={item.socio_pagador_nome}
                     clienteNome={item.cliente_nome}
                     idCliente={item.id_cliente}
+                    aoAbrirCadastro={(id) => router.push(`/cadastros/${id}/editar`)}
                   />
                 )
+              },
+              {
+                /**
+                 * Quando o pedido ENTROU EM PRODUÇÃO — `liberado_producao_em`,
+                 * da migration 20260827170336. Na fila de faturamento responde
+                 * há quanto tempo o pedido está rodando sem virar nota.
+                 *
+                 * Mesmo desenho da coluna "Liberado em" de PedidosListPage:
+                 * data acima, hora menor abaixo. Fuso local, e não UTC — o
+                 * carimbo é um instante real, não uma data solta como o prazo
+                 * de entrega.
+                 */
+                header: "Em produção desde",
+                cell: (item) => {
+                  const carimbo = item.liberado_producao_em;
+                  if (!carimbo) return <span className="text-xs font-medium text-slate-400">-</span>;
+                  const quando = new Date(carimbo);
+                  if (Number.isNaN(quando.getTime())) {
+                    return <span className="text-xs font-medium text-slate-400">-</span>;
+                  }
+                  return (
+                    <div className="flex flex-col">
+                      <span className="text-xs font-medium text-slate-700">
+                        {quando.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit" })}
+                      </span>
+                      <span className="text-[11px] text-slate-500">
+                        {quando.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+                      </span>
+                    </div>
+                  );
+                }
               },
               {
                 header: "Empresa Emitente",
