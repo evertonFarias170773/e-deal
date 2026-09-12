@@ -71,6 +71,13 @@ import {
 import type { SupabaseNfeRow, SupabaseNfeItemRow, SupabaseNfePagamentoRow, NfeReadModel } from "../types";
 import { OPCOES_TIPO_CONTRIBUINTE } from "@/lib/fiscal/tipo-contribuinte";
 import { escolherEnderecoPrincipal } from "@/lib/fiscal/endereco-principal";
+import {
+  ambienteExibido,
+  rotuloAmbiente,
+  textoAmbiente,
+  ambienteEhProducao,
+  avisoDaPreviaTecnica
+} from "@/features/nfe/lib/ambiente-exibido";
 import { mapSupabaseNfeRowToReadModel } from "../mappers";
 import { EmissaoNfeModal } from "@/features/fiscal/components/EmissaoNfeModal";
 import {
@@ -110,6 +117,12 @@ interface EmpresaData {
   cnpj?: string | null;
   inscricao_estadual?: string | null;
   uf?: string | null;
+  /**
+   * O ambiente VIGENTE de NF-e da emitente. Já vinha no `select("*")` que carrega
+   * a empresa; só não estava declarado aqui. É o que a tela mostra enquanto a
+   * nota não foi transmitida — ver `lib/ambiente-exibido`.
+   */
+  ambiente_nfe?: string | null;
 }
 
 interface EnderecoData {
@@ -209,6 +222,13 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
   const [events, setEvents] = useState<SupabaseNotaEventoRow[]>([]);
   const [cliente, setCliente] = useState<ClienteData | null>(null);
   const [empresa, setEmpresa] = useState<EmpresaData | null>(null);
+  /**
+   * O ambiente que a tela mostra, e sob qual tempo verbal — ver
+   * `lib/ambiente-exibido`. Enquanto a nota não foi transmitida a resposta vem
+   * da EMPRESA (para onde vai); depois, do carimbo da nota (onde saiu).
+   * Nenhuma consulta nova: `empresa` já é carregada com `select("*")`.
+   */
+  const ambienteDaTela = ambienteExibido(note ?? {}, empresa?.ambiente_nfe);
 
   // States de Validação e Payload
   const [validationData, setValidationData] = useState<ValidationData | null>(null);
@@ -2248,7 +2268,21 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
               <div className="border border-slate-100 p-5 rounded-2xl bg-slate-50/50 space-y-3">
                 <h3 className="font-bold text-slate-800 text-sm">Informações Gerais</h3>
                 <p className="text-sm text-slate-600">Empresa: <strong>{getEmpresaName(note.id_empresa)}</strong></p>
-                <p className="text-sm text-slate-600">Ambiente: <span className="font-mono text-xs uppercase px-1.5 py-0.5 bg-blue-50 text-blue-800 rounded">{note.ambiente}</span></p>
+                {/* O rótulo muda junto com o valor, de propósito: "PRODUÇÃO"
+                    sozinho não diz se já aconteceu. Produção ganha destaque —
+                    é o único caso em que clicar em emitir tem custo real. */}
+                <p className="text-sm text-slate-600">
+                  {rotuloAmbiente(ambienteDaTela)}:{" "}
+                  <span
+                    className={`font-mono text-xs uppercase px-1.5 py-0.5 rounded ${
+                      ambienteEhProducao(ambienteDaTela)
+                        ? "bg-red-50 text-red-800 font-bold"
+                        : "bg-blue-50 text-blue-800"
+                    }`}
+                  >
+                    {textoAmbiente(ambienteDaTela)}
+                  </span>
+                </p>
                 <p className="text-sm text-slate-600">Modelo Nfe: <strong>{note.modelo}</strong></p>
 
                 {/* Natureza da operacao. Ate 28/08/2026 nao havia campo: a
@@ -4009,17 +4043,33 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
               <FileCode className="h-5 w-5 text-[#0b2f4a]" /> Preview Técnico e Retorno
             </h2>
 
-            <div className="p-4 bg-amber-50 border border-amber-200 rounded-3xl flex gap-3 text-sm text-amber-900 font-medium">
-              <Info className="h-5 w-5 text-amber-600 shrink-0" />
+            {/* O texto antigo era fixo e mentia em dois casos: prometia "ambiente
+                de testes" em rascunho de empresa em produção, e afirmava que não
+                houve transmissão numa nota já autorizada — este bloco aparece
+                para qualquer nota, não só para rascunho. */}
+            <div
+              className={`p-4 border rounded-3xl flex gap-3 text-sm font-medium ${
+                ambienteEhProducao(ambienteDaTela) && ambienteDaTela.tipo === "SAIRA_EM"
+                  ? "bg-red-50 border-red-200 text-red-900"
+                  : "bg-amber-50 border-amber-200 text-amber-900"
+              }`}
+            >
+              <Info
+                className={`h-5 w-5 shrink-0 ${
+                  ambienteEhProducao(ambienteDaTela) && ambienteDaTela.tipo === "SAIRA_EM"
+                    ? "text-red-600"
+                    : "text-amber-600"
+                }`}
+              />
               <div>
                 <h4 className="font-bold flex items-center gap-2">
-                  Prévia sem validade fiscal
+                  {avisoDaPreviaTecnica(ambienteDaTela).titulo}
                   <span className="text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 bg-amber-200 text-amber-900 rounded">
-                    PENDENTE
+                    {textoAmbiente(ambienteDaTela)}
                   </span>
                 </h4>
                 <p className="text-xs text-slate-600 mt-1">
-                  Este documento representa um rascunho de nota fiscal em ambiente de testes. Não houve transmissão real para o Focus API ou SEFAZ.
+                  {avisoDaPreviaTecnica(ambienteDaTela).texto}
                 </p>
               </div>
             </div>
