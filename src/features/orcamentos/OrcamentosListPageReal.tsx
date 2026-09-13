@@ -28,6 +28,7 @@ import {
 import {
   gerarPDFProposta,
   duplicarProposta,
+  STATUS_ACEITAM_PEDIDO_COMPLEMENTAR,
   getPropostaChatResumos,
   loadChatReadInfo,
   getPropostaDetailById,
@@ -47,6 +48,7 @@ import { useDebouncedInput } from "@/hooks/useDebouncedValue";
 import { PropostaCobrancaPanel } from "@/features/cobrancas/PropostaCobrancaPanel";
 import { LiberarProducaoModal } from "@/features/orcamentos/components/LiberarProducaoModal";
 import { CancelPropostaModal } from "@/features/orcamentos/components/CancelPropostaModal";
+import { CriarComplementoModal } from "@/features/orcamentos/components/CriarComplementoModal";
 import type { Proposta } from "@/features/orcamentos/types";
 
 
@@ -350,6 +352,8 @@ export function OrcamentosListPageReal() {
 
   const [isCancelPropostaModalOpen, setIsCancelPropostaModalOpen] = useState(false);
   const [selectedPropostaForCancel, setSelectedPropostaForCancel] = useState<OrcamentoListItem | null>(null);
+
+  const [selectedPropostaForComplemento, setSelectedPropostaForComplemento] = useState<OrcamentoListItem | null>(null);
 
   // 100, e nao 200: a consulta custa menos de 1 ms, mas cada linha e DOM e
   // payload — 200 linhas eram ~96 kB e o dobro de render antes de a tela ficar
@@ -1303,6 +1307,19 @@ Ela volta a aparecer nas listas operacionais.`
         }
       },
       { label: "Duplicar proposta", onClick: () => void handleDuplicarPropostaForListItem(item) },
+      /**
+       * PEDIDO COMPLEMENTAR (docs/business/PEDIDO-COMPLEMENTAR.md). O menu so
+       * filtra o obvio: permissao, nao avulsa, nao e ela mesma complemento e
+       * status ainda antes do despacho. Pago integralmente, sem despacho
+       * registrado e sem complemento aberto sao conferidos pela funcao do
+       * banco no clique, e a recusa aparece no modal.
+       */
+      ...(hasPermissao(user, "propostas.complementar") &&
+      item.isAvulsoRaw !== true &&
+      item.idIntPedidoPrincipal == null &&
+      STATUS_ACEITAM_PEDIDO_COMPLEMENTAR.includes(String(item.statusInterno || "").trim().toUpperCase())
+        ? [{ label: "Criar pedido complementar", onClick: () => setSelectedPropostaForComplemento(item) }]
+        : []),
       {
         label: "Copiar proposta informal",
         onClick: () => void handleCopiarPropostaInformal(item)
@@ -1632,6 +1649,15 @@ Ela volta a aparecer nas listas operacionais.`
                     teste encerrado
                   </span>
                 ) : null}
+                {/* Pedido complementar: aponta o pedido principal do mesmo evento. */}
+                {proposta.idIntPedidoPrincipal ? (
+                  <span
+                    title={`Pedido complementar do #${proposta.idIntPedidoPrincipal} (mesmo evento).`}
+                    className="inline-flex items-center rounded-full bg-sky-50 px-2 py-0.5 text-[10px] font-semibold text-sky-800 ring-1 ring-inset ring-sky-600/20 whitespace-nowrap"
+                  >
+                    Compl. de #{proposta.idIntPedidoPrincipal}
+                  </span>
+                ) : null}
               </div>
             ),
             align: "center"
@@ -1797,6 +1823,15 @@ Ela volta a aparecer nas listas operacionais.`
                     teste encerrado
                   </span>
                 ) : null}
+                {/* Pedido complementar: aponta o pedido principal do mesmo evento. */}
+                {proposta.idIntPedidoPrincipal ? (
+                  <span
+                    title={`Pedido complementar do #${proposta.idIntPedidoPrincipal} (mesmo evento).`}
+                    className="inline-flex items-center rounded-full bg-sky-50 px-2 py-0.5 text-[10px] font-semibold text-sky-800 ring-1 ring-inset ring-sky-600/20 whitespace-nowrap"
+                  >
+                    Compl. de #{proposta.idIntPedidoPrincipal}
+                  </span>
+                ) : null}
               </div>
             </div>
             <div className="mt-4 space-y-2 text-sm text-slate-600">
@@ -1957,6 +1992,14 @@ Ela volta a aparecer nas listas operacionais.`
             setSelectedPropostaForCancel(null);
             triggerRefresh();
           }}
+        />
+      )}
+
+      {selectedPropostaForComplemento && (
+        <CriarComplementoModal
+          isOpen
+          idInt={selectedPropostaForComplemento.id_int}
+          onClose={() => setSelectedPropostaForComplemento(null)}
         />
       )}
 

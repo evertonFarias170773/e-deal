@@ -75,6 +75,12 @@ export type OrcamentoListItem = {
    * quando os dois diferem.
    */
   idFaturado?: number | null;
+  /**
+   * `propostas.id_int_pedido_principal`. Preenchido, esta proposta e um PEDIDO
+   * COMPLEMENTAR do pedido indicado (mesmo evento) — ver
+   * docs/business/PEDIDO-COMPLEMENTAR.md. Nulo na esmagadora maioria.
+   */
+  idIntPedidoPrincipal: number | null;
 };
 
 const EMPRESA_LABELS: Record<number, string> = {
@@ -390,7 +396,14 @@ function mapRowToListItem(row: SupabasePropostaRow): OrcamentoListItem | null {
     encerradoTestePor: typeof row.encerrado_teste_por === "string" ? row.encerrado_teste_por : null,
     idFaturado: Number.isFinite(Number(row.id_faturado)) && Number(row.id_faturado) > 0
       ? Number(row.id_faturado)
-      : null
+      : null,
+    idIntPedidoPrincipal:
+      row.id_int_pedido_principal !== null &&
+      row.id_int_pedido_principal !== undefined &&
+      Number.isFinite(Number(row.id_int_pedido_principal)) &&
+      Number(row.id_int_pedido_principal) > 0
+        ? Number(row.id_int_pedido_principal)
+        : null
   };
 }
 

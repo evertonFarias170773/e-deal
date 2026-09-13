@@ -67,6 +67,7 @@ const PERMISSOES_SUPER_ADMIN: string[] = ["*"];
 const PERMISSOES_ADMIN: string[] = [
   "propostas.view", "propostas.create", "propostas.edit", "propostas.aprovar",
   "propostas.editar_paga",                        // ✅ editar proposta com cobrança ativa
+  "propostas.complementar",                       // ✅ criar pedido complementar (docs/business/PEDIDO-COMPLEMENTAR.md)
   "cobrancas.view", "cobrancas.aprovar", "cobrancas.emitir_boleto",
   "financeiro.view", "financeiro.aprovar",
   "financeiro.resolver_credito",                  // ✅ registrar crédito/consumo/devolução
@@ -147,6 +148,7 @@ const PERMISSOES_GERENTE_COMERCIAL: string[] = [
   "propostas.view", "propostas.view_all", "propostas.create", "propostas.edit",
   "propostas.desconto_geral", "propostas.edit_vendedor", "propostas.cancel",
   "propostas.editar_paga",    // ✅ gerente pode editar proposta paga
+  "propostas.complementar",   // ✅ gerente pode criar pedido complementar
   "financeiro.bonificar",     // ✅ gerente pode bonificar diferença comercialmente
   "credito.usar",             // ✅ gerente pode usar crédito em proposta
   "pedidos.view", "pedidos.edit_data", "pedidos.edit_obs", "pedidos.admin",

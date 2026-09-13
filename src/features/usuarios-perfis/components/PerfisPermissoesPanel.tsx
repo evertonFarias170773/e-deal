@@ -91,6 +91,7 @@ const CATALOGO_PERMISSOES: Record<string, PermissionDefinition[]> = {
     { key: "propostas.devolver_revisao", label: "Devolver para Revisão",           desc: "Permite devolver a proposta para a etapa de revisão de atendente.",                  critica: true  },
     { key: "propostas.editar_paga",      label: "Editar Proposta Paga",            desc: "Permite alterar itens e valores de propostas comerciais com pagamentos confirmados.",critica: true  },
     { key: "propostas.cancelar_cobranca_nao_paga", label: "Cancelar Cobrança Não Paga", desc: "Permite cancelar cobrança emitida e comprovadamente NÃO paga da própria proposta, para corrigir o orçamento e gerar outra. Não alcança cobrança paga, confirmada, conciliada ou vinculada à Conta Corrente.", critica: true },
+    { key: "propostas.complementar",     label: "Criar Pedido Complementar",       desc: "Permite criar, a partir de proposta paga e nao expedida, um pedido complementar do mesmo evento, com frete cobrado pela diferenca do peso somado.", critica: true },
     // Permissões V1 mantidas para compatibilidade retroativa durante migração
     { key: "propostas.alterar_vendedor", label: "Alterar Vendedor",    desc: "Sera substituida por propostas.edit_vendedor na Fase 4.",     critica: true  },
     { key: "propostas.cancelar",         label: "Cancelar Propostas",  desc: "Sera substituida por propostas.cancel na Fase 4.",            critica: true  }

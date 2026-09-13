@@ -912,6 +912,21 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
    * não divergirem.
    */
   function renderBlocoGeracao() {
+    // A condição marcada pode não ser a que os campos seguem: na abertura, com
+    // as parcelas já configuradas, a pré-seleção só marca o select e não
+    // reescreve quantidade, dias e intervalo. Quando os dois discordam a tela
+    // DIZ, em vez de deixar o operador gerar 1 parcela olhando "7/14/21".
+    const condicaoMarcada = modelosCobranca.find((m) => String(m.id) === pgtoModeloId) ?? null;
+    const condicaoDivergeDosCampos = (() => {
+      if (!condicaoMarcada || pgtoParcelaUnica) return false;
+      const esperado = parcelasDoModelo(condicaoMarcada);
+      return (
+        esperado.qtdParcelas !== Number(pgtoQtdParcelas) ||
+        esperado.diasPraInicio !== Number(pgtoDiasPraInicio) ||
+        esperado.intervalo !== Number(pgtoIntervalo)
+      );
+    })();
+
     return (
       <div className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4">
         {/* Condição de pagamento — topo do bloco, como no modal */}
@@ -930,9 +945,24 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
               </option>
             ))}
           </select>
-          <p className="text-[10px] text-slate-400 mt-1">
-            Preenche parcelas, dias e intervalo abaixo (editáveis).
-          </p>
+          {condicaoDivergeDosCampos ? (
+            <p className="text-[10px] font-medium text-amber-700 mt-1">
+              Os campos abaixo seguem as parcelas já configuradas, não esta condição.{" "}
+              {/* Botão, e não "escolha de novo": reselecionar a mesma opção de um
+                  <select> não dispara onChange, e o operador ficaria preso. */}
+              <button
+                type="button"
+                onClick={() => handleSelecionarCondicao(pgtoModeloId)}
+                className="font-semibold underline underline-offset-2 hover:text-amber-900"
+              >
+                Aplicar esta condição
+              </button>
+            </p>
+          ) : (
+            <p className="text-[10px] text-slate-400 mt-1">
+              Preenche parcelas, dias e intervalo abaixo (editáveis).
+            </p>
+          )}
         </div>
 
         {/* Parcela única com vencimento específico */}
@@ -3879,20 +3909,20 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
                     <h3 className="text-sm font-bold text-slate-800">Gerar Parcelas Automaticamente</h3>
                     <div className="max-w-xs">
                       <label className="block text-xs font-semibold text-slate-500 mb-1">Forma de Pagamento</label>
-                    <select
-                      value={pgtoFormaPagamento}
-                      onChange={(e) => handleFormaPagamentoChange(e.target.value)}
-                      className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm bg-white outline-none focus:border-[#0b2f4a] font-medium"
-                    >
-                      <option value="01">01 - Dinheiro</option>
-                      <option value="02">02 - Cheque</option>
-                      <option value="03">03 - Cartão de Crédito</option>
-                      <option value="04">04 - Cartão de Débito</option>
-                      <option value="15">15 - Boleto Bancário</option>
-                      <option value="17">17 - PIX</option>
-                      <option value="90">90 - Sem Pagamento</option>
-                      <option value="99">99 - Outros</option>
-                    </select>
+                      <select
+                        value={pgtoFormaPagamento}
+                        onChange={(e) => handleFormaPagamentoChange(e.target.value)}
+                        className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm bg-white outline-none focus:border-[#0b2f4a] font-medium"
+                      >
+                        <option value="01">01 - Dinheiro</option>
+                        <option value="02">02 - Cheque</option>
+                        <option value="03">03 - Cartão de Crédito</option>
+                        <option value="04">04 - Cartão de Débito</option>
+                        <option value="15">15 - Boleto Bancário</option>
+                        <option value="17">17 - PIX</option>
+                        <option value="90">90 - Sem Pagamento</option>
+                        <option value="99">99 - Outros</option>
+                      </select>
                     </div>
                     {pgtoFormaPagamento === "15" ? (
                       renderBlocoGeracao()

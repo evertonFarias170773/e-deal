@@ -414,7 +414,7 @@ async function fetchPropostaRows(
     // `encerrado_teste_em/por` viajam para a lista de proposito: aqui o pedido de
     // teste NAO some, ganha badge. Orcamentos e o unico lugar onde ele continua
     // visivel depois de marcado — e portanto o unico de onde da para reabrir.
-    const columnsToSelect = "id, id_int, id_cliente, cliente, created_at, updated_at, vendedor, status_interno, valor_total, valor, is_avulso, empresa, valor_frete, em_arte, is_prd_aprovado, encerrado_teste_em, encerrado_teste_por, id_faturado";
+    const columnsToSelect = "id, id_int, id_cliente, cliente, created_at, updated_at, vendedor, status_interno, valor_total, valor, is_avulso, empresa, valor_frete, em_arte, is_prd_aprovado, encerrado_teste_em, encerrado_teste_por, id_faturado, id_int_pedido_principal";
 
     let query = client
       .from("propostas")
@@ -3167,6 +3167,102 @@ export async function duplicarProposta(
     return { 
       success: false, 
       errorMessage: err instanceof Error ? err.message : "Erro interno desconhecido." 
+    };
+  }
+}
+
+/**
+ * Status em que a proposta ainda NAO saiu da casa — a mesma lista do gate 6 da
+ * funcao `criar_pedido_complementar` (migration 20260914_criar_pedido_complementar.sql).
+ *
+ * Aqui ela so decide se o item "Criar pedido complementar" aparece no menu da
+ * lista. Quem tranca e o banco: pago integralmente, sem `data_despacho`, sem
+ * complemento aberto e a permissao sao conferidos la, sob `FOR UPDATE`.
+ * Mudou a lista na funcao, muda aqui.
+ */
+export const STATUS_ACEITAM_PEDIDO_COMPLEMENTAR: readonly string[] = [
+  "LIBERADO",
+  "LIBERADO / EM ARTE",
+  "REVISAO ATENDENTE",
+  "REVISAO PRODUCAO",
+  "EM PRODUCAO",
+  "EM IMPRESSAO",
+  "EM IMPRESSAO / PENDENTE",
+  "EM ACABAMENTO",
+  "EM ACABAMENTO / PENDENTE",
+  "EXPEDICAO"
+];
+
+/**
+ * Cria o PEDIDO COMPLEMENTAR de uma proposta paga e nao expedida.
+ *
+ * Regra: docs/business/PEDIDO-COMPLEMENTAR.md. A funcao do banco cria so o
+ * cabecalho (sem itens), herdando cliente, endereco, contato, pagador,
+ * modalidade e transportadora, e devolve o `id_int` novo. As duas mensagens de
+ * chat sao gravadas aqui, depois da funcao, no mesmo molde de
+ * `duplicarProposta`; falha no chat nao desfaz o complemento.
+ *
+ * A mensagem de erro da funcao comeca pelo codigo do gate (`COMPL_NAO_PAGA: ...`,
+ * `PERM: ...`); o codigo volta separado em `codigo` e o texto sem ele em
+ * `errorMessage`.
+ */
+export async function criarPedidoComplementar(
+  idIntOrigem: number
+): Promise<{ success: boolean; novoIdInt?: number; codigo?: string; errorMessage?: string }> {
+  const client = getSupabaseClient();
+  if (!client) {
+    return { success: false, errorMessage: "Cliente Supabase não configurado." };
+  }
+
+  if (!idIntOrigem || idIntOrigem <= 0) {
+    return { success: false, errorMessage: "ID de origem inválido." };
+  }
+
+  try {
+    const { data, error } = await client.rpc("criar_pedido_complementar", {
+      p_id_int_origem: idIntOrigem
+    });
+
+    if (error) {
+      console.error("[OrcamentosService] Erro ao criar pedido complementar:", error);
+      const bruto = error.message || "Erro desconhecido ao criar pedido complementar.";
+      const casamento = bruto.match(/^([A-Z_]+):\s*([\s\S]*)$/);
+      return casamento
+        ? { success: false, codigo: casamento[1], errorMessage: casamento[2] }
+        : { success: false, errorMessage: bruto };
+    }
+
+    const novoIdInt = Number(data);
+    if (!novoIdInt || isNaN(novoIdInt)) {
+      return { success: false, errorMessage: "Retorno da criação do pedido complementar inválido." };
+    }
+
+    await Promise.allSettled([
+      registrarMensagemSistemaProposta({
+        idInt: idIntOrigem,
+        mensagem: `Pedido complementar #${novoIdInt} criado a partir desta proposta (mesmo evento). O complemento herda endereço, contato, pagador, modalidade e transportadora, e cobra só a diferença de frete do peso somado. Os dois saem juntos na Expedição.`,
+        setor: "Comercial"
+      }),
+      registrarMensagemSistemaProposta({
+        idInt: novoIdInt,
+        mensagem: `Pedido complementar da proposta #${idIntOrigem}. Endereço, contato, pagador, modalidade e transportadora herdados do principal e travados. Sem itens: inclua os produtos e depois cote o frete complementar na aba Fretes.`,
+        setor: "Comercial"
+      })
+    ]).then((resultados) => {
+      resultados.forEach((resultado, indice) => {
+        const falhou = resultado.status === "rejected" || !resultado.value.success;
+        if (falhou) {
+          console.warn(`[Pedido complementar] Falha ao registrar chat ${indice === 0 ? "do original" : "do complemento"}`, resultado);
+        }
+      });
+    });
+
+    return { success: true, novoIdInt };
+  } catch (err) {
+    console.error("[OrcamentosService] Erro inesperado ao criar pedido complementar:", err);
+    return {
+      success: false,
+      errorMessage: err instanceof Error ? err.message : "Erro interno desconhecido."
     };
   }
 }
