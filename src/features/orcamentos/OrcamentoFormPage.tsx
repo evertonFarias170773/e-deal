@@ -1393,7 +1393,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
   const cotacaoDeFretePendenteRef = useRef(false);
   useEffect(() => {
     const cep = form.clienteNaoCadastrado ? form.cepLivre : currentAddress?.cep;
-    const vaiCotar = !form.isAvulso && Boolean(cep) && resumo.pesoTotal > 0;
+    const vaiCotar = !form.isAvulso && !ehComplemento && Boolean(cep) && resumo.pesoTotal > 0;
     cotacaoDeFretePendenteRef.current = isCotandoFrete || (vaiCotar && isFreightOutdated);
   });
 
@@ -3868,7 +3868,9 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     // Só onde a tela oferece cards — em RETIRA e FOB não há o que escolher, e
     // exigir aqui recusava o salvamento sem dar ao vendedor como resolver. O
     // service repete a mesma guarda: esta é a da tela, não a única.
-    if (exigeCotacaoEscolhida(form.modalidadeFrete) && !isNonEmpty(form.freteEscolhidoId)) {
+    // Pedido complementar também fica de fora, como no service: o frete dele
+    // não é escolhido em card, é o complementar.
+    if (!ehComplemento && exigeCotacaoEscolhida(form.modalidadeFrete) && !isNonEmpty(form.freteEscolhidoId)) {
       showToast({
         type: "error",
         title: "Frete não selecionado",
@@ -6310,7 +6312,9 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                  entao o bloco de `cotacao_frete` no salvamento segue rodando
                  exatamente como antes — nenhum trigger novo e disparado. */
               <>
-                {isFreightOutdated &&
+                {/* Complemento: sem o botao de atualizar, o aviso nao se aplica. */}
+                {!ehComplemento &&
+                  isFreightOutdated &&
                   hasValidCepForFreight &&
                   (form.isAvulso ? true : hasProductsAndWeight) &&
                   (form.clienteNaoCadastrado || Boolean(form.enderecoId)) && (

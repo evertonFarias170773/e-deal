@@ -412,7 +412,6 @@ export function PropostaCobrancaPanel({
         ? `Cobrança complementar da proposta #${proposta.id_int}`
         : `Cobrança da proposta #${proposta.id_int}`,
       observacao: proposta.observacoes,
-      condicaoPagamento: proposta.formaPagamento,
       vencimento: getDefaultVencimento(30),
       osIdeal: defaultOsIdeal,
       modeloFatu: "BOLETO",
@@ -889,7 +888,6 @@ export function PropostaCobrancaPanel({
       // seleção anterior de Asas não vaze para PIX/boleto/faturado.
       cartaoFluxo: tipo === "CARD_PARCELADO" ? (fluxoCartao ?? "PADRAO") : undefined,
       parcelaSelecionada: undefined,
-      condicaoPagamento: tipo === "CARD_PARCELADO" ? "Cartão de crédito" : (tipo === "E-FATURADO" ? "Faturado" : proposta.formaPagamento),
       vencimento: tipo === "BOLETO" || tipo === "E-FATURADO" ? form.vencimento || getDefaultVencimento(30) : form.vencimento
     });
   }
@@ -1716,12 +1714,12 @@ export function PropostaCobrancaPanel({
             {isFaturado ? (
               <PanelCard
                 title="Campos mínimos do faturado"
-                description={exigeCondicaoPagamento ? "Condição comercial e aviso resumido de crédito." : "Aviso resumido de crédito."}
+                description={exigeCondicaoPagamento ? "Condição de pagamento e aviso resumido de crédito." : "Aviso resumido de crédito."}
               >
                 {/* Cortesia nao tem condicao comercial a combinar. O aviso de
                     credito abaixo continua valendo para a familia inteira. */}
                 {exigeCondicaoPagamento ? (
-                <div className="max-w-md space-y-4">
+                <div className="max-w-md">
                     {/* A condicao de pagamento mora AQUI desde 14/09/2026, e so aparece para
                         cobranca faturada (fora cortesia). Continua obrigatoria: a validacao
                         "Selecione uma condição de pagamento." em executarSubmit nao mudou,
@@ -1739,14 +1737,6 @@ export function PropostaCobrancaPanel({
                           </option>
                         ))}
                       </select>
-                    </Field>
-                    <Field label="Condição comercial">
-                      <input
-                        value={form.condicaoPagamento}
-                        onChange={(event) => patchForm({ condicaoPagamento: event.target.value })}
-                        className={inputClass}
-                        placeholder="Ex.: Faturado 28 dias"
-                      />
                     </Field>
                   </div>
                 ) : null}
@@ -2330,12 +2320,12 @@ export function PropostaCobrancaPanel({
             {isFaturado ? (
                 <PanelCard
                   title="Campos mínimos do faturado"
-                  description={exigeCondicaoPagamento ? "Condição comercial e aviso resumido de crédito." : "Aviso resumido de crédito."}
+                  description={exigeCondicaoPagamento ? "Condição de pagamento e aviso resumido de crédito." : "Aviso resumido de crédito."}
                 >
                   {/* Cortesia nao tem condicao comercial a combinar. O aviso de
                       credito abaixo continua valendo para a familia inteira. */}
                   {exigeCondicaoPagamento ? (
-                  <div className="max-w-md space-y-4">
+                  <div className="max-w-md">
                       {/* A condicao de pagamento mora AQUI desde 14/09/2026, e so aparece para
                           cobranca faturada (fora cortesia). Continua obrigatoria: a validacao
                           "Selecione uma condição de pagamento." em executarSubmit nao mudou,
@@ -2353,14 +2343,6 @@ export function PropostaCobrancaPanel({
                             </option>
                           ))}
                         </select>
-                      </Field>
-                      <Field label="Condição comercial">
-                        <input
-                          value={form.condicaoPagamento}
-                          onChange={(event) => patchForm({ condicaoPagamento: event.target.value })}
-                          className={inputClass}
-                          placeholder="Ex.: Faturado 28 dias"
-                        />
                       </Field>
                     </div>
                   ) : null}

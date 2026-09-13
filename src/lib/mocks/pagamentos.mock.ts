@@ -10,7 +10,7 @@ import type {
 } from "@/features/cobrancas/types";
 import type { Proposta } from "@/features/orcamentos/types";
 import { mockCompanies } from "@/lib/mocks/empresas.mock";
-import { roundMoney } from "@/features/cobrancas/cobrancas-utils";
+import { getTipoCobrancaLabel, roundMoney } from "@/features/cobrancas/cobrancas-utils";
 
 export const empresasRecebedorasMock: EmpresaRecebedoraOption[] = mockCompanies
   .filter((company) => !company.isConsolidated)
@@ -172,7 +172,6 @@ export const criarCobrancaInitialValues: CriarCobrancaFormValues = {
   vencimento: "",
   observacao: "",
   descricao: "",
-  condicaoPagamento: "À vista",
   expiracaoPix: "",
   multaPercentual: 2,
   jurosPercentual: 1,
@@ -711,7 +710,9 @@ export function createCobrancaFromForm(values: CriarCobrancaFormValues, proposta
     forma_fatu: values.tipoCobranca === "E-FATURADO" ? (values.modeloFatu || "BOLETO") : undefined,
     saldo_pendente: Math.max(0, roundedPropostaTotal - roundedValorFinal),
     obs_v2: values.observacao,
-    condicao_pagamento: values.condicaoPagamento,
+    // Derivado do tipo, igual ao mapper real (mappers.ts). O campo do formulario
+    // que alimentava isto saiu do painel: nenhum codigo real o gravava.
+    condicao_pagamento: getTipoCobrancaLabel(values.tipoCobranca),
     creditoPendente,
     pedidoLiberadoMock: false,
     proposta: {

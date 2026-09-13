@@ -236,7 +236,6 @@ export type CriarCobrancaFormValues = {
   vencimento: string;
   observacao: string;
   descricao: string;
-  condicaoPagamento: string;
   expiracaoPix: string;
   multaPercentual: number;
   jurosPercentual: number;
