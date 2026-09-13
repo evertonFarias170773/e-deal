@@ -1,7 +1,7 @@
 # PEDIDO-COMPLEMENTAR.md
 
 Versão: 1.0
-Status: Regra aprovada — **em implementação** (E0 concluída; E1 a E10 pendentes)
+Status: Regra aprovada — **em implementação** (E0 e E1 concluídas; E2 a E10 pendentes)
 Última atualização: 13/09/2026
 Projeto: Vibe
 
@@ -10,10 +10,12 @@ Projeto: Vibe
 # Pedido Complementar
 
 > **Este documento descreve a REGRA APROVADA, não o que já está no ar.** Em
-> 13/09/2026 nada do pedido complementar existe no código nem no banco: não há
-> coluna de vínculo, ledger, RPC, rota, botão nem tela. A seção 16 diz o que
-> já foi entregue, etapa por etapa. Até lá, qualquer afirmação aqui sobre
-> comportamento do sistema é o comportamento **que será implementado**.
+> 13/09/2026 só o **schema** existe no banco — a coluna
+> `propostas.id_int_pedido_principal` e a tabela `complementos_frete`, ambas
+> vazias (E1). Não há RPC, rota, botão nem tela: nenhum complemento pode ser
+> criado ainda. A seção 16 diz o que já foi entregue, etapa por etapa.
+> Qualquer afirmação aqui sobre comportamento do sistema é o comportamento
+> **que será implementado**.
 >
 > Plano de implementação: [`docs/superpowers/plans/2026-09-13-pedido-complementar.md`](../superpowers/plans/2026-09-13-pedido-complementar.md).
 
@@ -481,7 +483,7 @@ inteiro.
 | Etapa | Entrega | Situação |
 |---|---|---|
 | E0 | Este documento de regra | **Concluída em 13/09/2026** |
-| E1 | Migration: coluna de vínculo + ledger | Pendente |
+| E1 | Migration: coluna de vínculo + ledger | **Concluída em 13/09/2026** — `supabase/migrations/20260914_pedido_complementar_vinculo_e_ledger.sql`, aplicada em produção (versão `20260913204321`) |
 | E2 | Função de criar o complemento | Pendente |
 | E3 | Serviço, item no menu de ações e modal | Pendente |
 | E4 | Leitura do vínculo, selos, travas e salvamento neutro | Pendente |
