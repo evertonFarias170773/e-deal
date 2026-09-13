@@ -1106,6 +1106,14 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
   const modalidadeEditavel = podeEditarModalidade(form.status);
 
   /**
+   * PEDIDO COMPLEMENTAR (docs/business/PEDIDO-COMPLEMENTAR.md). Endereco,
+   * contato, pagador, modalidade e transportadora sao herdados do principal e
+   * ficam travados; a tela nao cota frete — o frete do complemento e a
+   * diferenca do peso somado, aplicada por rota propria.
+   */
+  const ehComplemento = Boolean(form.idIntPedidoPrincipal);
+
+  /**
    * FOB entregue por motoboy — a outra resposta possivel para "quem leva".
    *
    * Nao existe estado novo: o proprio `transporteCategoria` guarda a escolha.
@@ -1755,17 +1763,20 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
    */
   useEffect(() => {
     if (loadingCompradorAddresses) return;
+    // Complemento: o endereco e o do principal, travado.
+    if (ehComplemento) return;
 
     const exists = combinedAddresses.some((addr) => addr.id === form.enderecoId);
     if (!exists) {
       updateField("enderecoId", "");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [combinedAddresses, form.enderecoId, loadingCompradorAddresses]);
+  }, [combinedAddresses, form.enderecoId, loadingCompradorAddresses, ehComplemento]);
 
   // Debounced auto-quote when address, weight, or volumes change
   useEffect(() => {
-    if (form.isAvulso) {
+    // Complemento nao cota pela tela: o frete dele e o complementar.
+    if (form.isAvulso || ehComplemento) {
       return;
     }
     const cep = form.clienteNaoCadastrado ? form.cepLivre : currentAddress?.cep;
@@ -2024,6 +2035,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     lastShipmentKey,
     resumo.subtotalProdutos,
     form.isAvulso,
+    ehComplemento,
     showToast
   ]);
 
@@ -2086,6 +2098,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
   }
 
   function handleSelectEndereco(newEnderecoId: string) {
+    if (ehComplemento) return;
     const isSocio = form.compradorId && form.compradorId !== form.clienteId;
     if (!isSocio) {
       updateField("enderecoId", newEnderecoId);
@@ -2101,6 +2114,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
   }
 
   function confirmEnderecoSocio() {
+    if (ehComplemento) return;
     if (!pendingEnderecoSelection) return;
     const chosenAddr = combinedAddresses.find(a => a.id === pendingEnderecoSelection);
     if (!chosenAddr?.cpfRecebedor) {
@@ -2534,7 +2548,9 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
       }
 
       setProposalAddresses((current) => [...current, data]);
-      updateField("enderecoId", data.id);
+      // Complemento: o endereco novo vai para o cadastro, mas a entrega continua
+      // sendo a do principal.
+      if (!ehComplemento) updateField("enderecoId", data.id);
       setAddressDraft({ tipo: "entrega", cep: "", endereco: "", numero: "", complemento: "", bairro: "", cidade: "", uf: "", recebedor: "", cpfRecebedor: "" });
       setIsAddressModalOpen(false);
       showToast({ type: "success", title: "Endereço adicionado à proposta." });
@@ -3028,6 +3044,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
   }
 
   async function handleCotarFretes() {
+    if (ehComplemento) return;
     const cep = form.clienteNaoCadastrado ? form.cepLivre : combinedAddresses.find((e) => e.id === form.enderecoId)?.cep;
     const cidade = form.clienteNaoCadastrado ? form.cidadeLivre : combinedAddresses.find((e) => e.id === form.enderecoId)?.cidade;
     const uf = form.clienteNaoCadastrado ? form.ufLivre : combinedAddresses.find((e) => e.id === form.enderecoId)?.uf;
@@ -4606,6 +4623,27 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                     {statusArte}
                   </span>
                 ) : null}
+                {/* Pedido complementar: o principal, no complemento, e os
+                    complementos abertos, no principal. */}
+                {proposta.idIntPedidoPrincipal ? (
+                  <Link
+                    href={`/orcamentos/${proposta.idIntPedidoPrincipal}`}
+                    title="Pedido principal do mesmo evento"
+                    className="inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs font-semibold text-sky-800 whitespace-nowrap transition hover:bg-sky-100"
+                  >
+                    Complemento do #{proposta.idIntPedidoPrincipal}
+                  </Link>
+                ) : null}
+                {proposta.complementos.map((complemento) => (
+                  <Link
+                    key={complemento.idInt}
+                    href={`/orcamentos/${complemento.idInt}`}
+                    title="Pedido complementar do mesmo evento"
+                    className="inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs font-semibold text-sky-800 whitespace-nowrap transition hover:bg-sky-100"
+                  >
+                    Complemento: #{complemento.idInt} · {complemento.statusInterno}
+                  </Link>
+                ))}
               </span>
             ) : null}
             {proposta?.id_int ? (
@@ -5427,6 +5465,8 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                         items={proposalContacts}
                         selectedId={form.contatoId}
                         onSelect={(id) => updateField("contatoId", id)}
+                        disabled={ehComplemento}
+                        avisoDesabilitado={`Herdado do pedido #${form.idIntPedidoPrincipal}`}
                         rotuloOutros="Outros contatos"
                         // Sem o campo Nome na grade: a faixa ja o carrega, e repetir
                         // e ruido (decisao do dono, 05/09/2026).
@@ -5454,7 +5494,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                     ) : (
                       <p className="text-sm text-slate-500 bg-slate-50 rounded-2xl p-4">Nenhum contato cadastrado para este cliente.</p>
                     )}
-                    <button type="button" onClick={() => setIsContactModalOpen(true)} className="mt-4 rounded-2xl border border-[#d7e5e8] bg-white px-4 py-3 text-sm font-semibold text-[#0b2f4a]">+ Adicionar novo contato</button>
+                    <button type="button" onClick={() => setIsContactModalOpen(true)} disabled={ehComplemento} className="mt-4 rounded-2xl border border-[#d7e5e8] bg-white px-4 py-3 text-sm font-semibold text-[#0b2f4a] disabled:cursor-not-allowed disabled:opacity-60">+ Adicionar novo contato</button>
                   </FormSection>
                 )}
 
@@ -5476,6 +5516,8 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                           ]}
                           selectedId={form.compradorId || cliente.id.toString()}
                           onSelect={handleSelectComprador}
+                          disabled={ehComplemento}
+                          avisoDesabilitado={`Herdado do pedido #${form.idIntPedidoPrincipal}`}
                           rotuloOutros="Outras opções de pagador"
                           painel={(vinculo) => {
                             const ehPrincipal = vinculo.id === cliente.id.toString();
@@ -5578,6 +5620,8 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                         items={combinedAddresses}
                         selectedId={form.enderecoId}
                         onSelect={handleSelectEndereco}
+                        disabled={ehComplemento}
+                        avisoDesabilitado={`Herdado do pedido #${form.idIntPedidoPrincipal}`}
                         rotuloOutros="Outras opções de entrega"
                         onEdit={(item, e) => {
                           e.stopPropagation();
@@ -5988,7 +6032,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                     <button
                       key={m}
                       type="button"
-                      disabled={!modalidadeEditavel}
+                      disabled={!modalidadeEditavel || ehComplemento}
                       onClick={() => {
                         // Sair de RETIRA com a retirada ainda escolhida embaixo
                         // deixaria o par incoerente (ex.: FOB com frete de
@@ -6056,7 +6100,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-stretch">
                     <select
                       value={form.idTransportadoraCliente ?? ""}
-                      disabled={!modalidadeEditavel || fobPorMotoboy}
+                      disabled={!modalidadeEditavel || fobPorMotoboy || ehComplemento}
                       onChange={(e) =>
                         updateField("idTransportadoraCliente", e.target.value === "" ? null : Number(e.target.value))
                       }
@@ -6075,7 +6119,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                         dispensa a transportadora e zera o vinculo. */}
                     <button
                       type="button"
-                      disabled={!modalidadeEditavel}
+                      disabled={!modalidadeEditavel || ehComplemento}
                       aria-pressed={fobPorMotoboy}
                       onClick={() => alternarMotoboyFob(!fobPorMotoboy)}
                       className={`rounded-2xl border px-4 py-2.5 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 sm:w-40 ${
@@ -6279,6 +6323,8 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                 <div className="mb-6 rounded-2xl border border-slate-100 bg-slate-50 p-4 space-y-4">
                   <div className="flex flex-wrap items-center gap-4">
                     <div className="flex-1 flex gap-2">
+                      {/* Complemento: sem cotacao pela tela nem frete manual. */}
+                      {!ehComplemento ? (<>
                       <button
                         type="button"
                         onClick={handleCotarFretes}
@@ -6314,6 +6360,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                       >
                         + Frete manual
                       </button>
+                      </>) : null}
                     </div>
                   </div>
                   <p className="text-xs text-slate-500 font-medium">
@@ -7284,6 +7331,13 @@ type SelectorPainelProps<T> = {
   searchPlaceholder?: string;
   /** Texto extra considerado na busca, além do que o painel e a linha exibem. */
   searchTextForItem?: (item: T) => string;
+  /**
+   * Travado: mostra só o selecionado, sem a lista para trocar, e com o aviso
+   * abaixo. Usado no PEDIDO COMPLEMENTAR, que herda contato, pagador e
+   * endereço do principal.
+   */
+  disabled?: boolean;
+  avisoDesabilitado?: string;
 };
 
 /**
@@ -7407,7 +7461,9 @@ function SelectorPainel<T extends { id: string }>({
   extraClassNameForItem,
   badgeForItem,
   searchPlaceholder,
-  searchTextForItem
+  searchTextForItem,
+  disabled = false,
+  avisoDesabilitado
 }: SelectorPainelProps<T>) {
   const [busca, setBusca] = useState("");
 
@@ -7448,7 +7504,13 @@ function SelectorPainel<T extends { id: string }>({
         </div>
       )}
 
-      {outros.length > 0 && (
+      {disabled && avisoDesabilitado ? (
+        <p className="mt-3 rounded-2xl bg-slate-50 px-4 py-2.5 text-xs font-semibold text-slate-600">
+          {avisoDesabilitado}
+        </p>
+      ) : null}
+
+      {!disabled && outros.length > 0 && (
         <>
           <p className="mb-2 mt-5 text-xs font-bold uppercase tracking-wide text-slate-500">
             {rotuloOutros} <span className="text-slate-400">({outros.length})</span>
@@ -8140,6 +8202,7 @@ function createInitialState(proposta?: Proposta): PropostaFormState {
     // salvar de novo gravaria null por cima do que ele ja tinha declarado.
     categoriaFreteDeclarada: proposta?.categoriaFrete ?? null,
     idTransportadoraCliente: proposta?.idTransportadoraCliente ?? null,
+    idIntPedidoPrincipal: proposta?.idIntPedidoPrincipal ?? null,
     descontoGeralTipo: proposta?.descontoGeralTipo ?? "VALOR",
     descontoGeralValor: proposta?.descontoGeralValor ? proposta.descontoGeralValor.toString() : "0",
     formaPagamento: proposta?.formaPagamento ?? "Pix a vista 3 dias",

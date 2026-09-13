@@ -209,6 +209,15 @@ export type Proposta = {
    */
   frete_escolhido?: string | null;
   dbValorTotal?: number | null;
+  /**
+   * `propostas.id_int_pedido_principal`. Preenchido, esta proposta e um PEDIDO
+   * COMPLEMENTAR do pedido indicado (mesmo evento): endereco, contato, pagador,
+   * modalidade e transportadora sao herdados e travados, e o frete nao e cotado
+   * pela tela. Regra: docs/business/PEDIDO-COMPLEMENTAR.md.
+   */
+  idIntPedidoPrincipal: number | null;
+  /** Complementos NAO cancelados desta proposta, quando ela e o principal. */
+  complementos: Array<{ idInt: number; statusInterno: string }>;
 };
 
 export type PropostaFormState = {
@@ -257,6 +266,15 @@ export type PropostaFormState = {
   categoriaFreteDeclarada?: CategoriaFrete | null;
   /** FK para clientes(id_cliente) — só transportadoras cadastradas e ativas. */
   idTransportadoraCliente: number | null;
+  /**
+   * `propostas.id_int_pedido_principal` — preenchido quando a proposta e um
+   * PEDIDO COMPLEMENTAR. Decide as travas da tela e o salvamento neutro de
+   * `saveProposta` (sem cotacao, sem colunas herdadas).
+   *
+   * Opcional pelo mesmo motivo de `categoriaFreteDeclarada`: quem monta
+   * `PropostaFormState` sem ele — o Maestro — continua salvando proposta comum.
+   */
+  idIntPedidoPrincipal?: number | null;
   descontoGeralTipo: TipoDescontoProposta;
   descontoGeralValor: string;
   formaPagamento: string;

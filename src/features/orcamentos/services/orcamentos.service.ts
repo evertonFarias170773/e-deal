@@ -1350,7 +1350,21 @@ export async function getPropostaDetailById(idInt: number, overrideClient?: Supa
       console.error("[OrcamentosService] Erro ao listar cotacoes do banco, usando fallback mock:", e);
     }
 
-    if (fretes.length === 0) {
+    /**
+     * PEDIDO COMPLEMENTAR nao ganha fretes reconstruidos. As quatro opcoes
+     * abaixo sao fabricadas quando `cotacao_frete` volta vazia, e uma delas
+     * nasce marcada: no complemento o salvamento a trataria como escolha e
+     * cobraria um frete que ninguem cotou. O frete dele e a diferenca do peso
+     * somado, aplicada por rota propria (docs/business/PEDIDO-COMPLEMENTAR.md).
+     */
+    const idIntPedidoPrincipal =
+      proposalRow.id_int_pedido_principal !== null &&
+      proposalRow.id_int_pedido_principal !== undefined &&
+      Number(proposalRow.id_int_pedido_principal) > 0
+        ? Number(proposalRow.id_int_pedido_principal)
+        : null;
+
+    if (fretes.length === 0 && idIntPedidoPrincipal === null) {
       const rawFreteValor = Number(proposalRow.valor_frete ?? 0);
       const rawFreteEscolhido = proposalRow.frete_escolhido || "RETIRADA";
 
@@ -1547,6 +1561,27 @@ export async function getPropostaDetailById(idInt: number, overrideClient?: Supa
       valorTotal = subtotalProdutos + freteValor - descontoGeralCalculado;
     }
 
+    // Complementos abertos desta proposta, para o selo do cabecalho. Uma
+    // consulta so, pelo indice parcial de `id_int_pedido_principal`.
+    let complementos: Proposta["complementos"] = [];
+    {
+      const { data: complementoRows, error: complementoError } = await client
+        .from("propostas")
+        .select("id_int, status_interno")
+        .eq("id_int_pedido_principal", idInt)
+        .neq("status_interno", "CANCELADO")
+        .order("id_int", { ascending: true });
+
+      if (complementoError) {
+        console.error("[OrcamentosService] Erro ao buscar complementos da proposta:", complementoError);
+      } else {
+        complementos = (complementoRows || []).map((row) => ({
+          idInt: Number(row.id_int),
+          statusInterno: String(row.status_interno ?? "")
+        }));
+      }
+    }
+
     const proposta: Proposta = {
       id: `prop_${idInt}`,
       id_int: idInt,
@@ -1575,7 +1610,9 @@ export async function getPropostaDetailById(idInt: number, overrideClient?: Supa
         valorTotal,
         pesoTotal,
         prazoProducao: "7 dias",
-        prazoEntrega: chosenFrete.prazo
+        // Sem cotacao nenhuma so no complemento (acima); proposta comum
+        // sempre tem ao menos as opcoes reconstruidas.
+        prazoEntrega: chosenFrete ? chosenFrete.prazo : ""
       },
       descontoGeralTipo: descontoGeralTipo,
       descontoGeralValor: descontoGeralValor,
@@ -1605,6 +1642,8 @@ export async function getPropostaDetailById(idInt: number, overrideClient?: Supa
         ? ((proposalRow as { categoria_frete: CategoriaFrete }).categoria_frete)
         : null,
       dbValorTotal: proposalRow.valor_total != null ? Number(proposalRow.valor_total) : null,
+      idIntPedidoPrincipal,
+      complementos,
     };
 
     return proposta;
@@ -2008,6 +2047,19 @@ export async function saveProposta(
       formState.itens.filter((item) => item.statusItem !== "CANCELADO").length === 0;
 
     /**
+     * PEDIDO COMPLEMENTAR (docs/business/PEDIDO-COMPLEMENTAR.md): salvamento
+     * NEUTRO quanto ao frete e ao que foi herdado do principal.
+     *   - as exigencias de frete escolhido nao valem, como em `propostaSemItens`:
+     *     quem segura a cobranca sem frete complementar e a guarda da cobranca;
+     *   - `cotacao_frete` nao e apagada nem inserida — a linha dele so e escrita
+     *     pela rota do frete complementar;
+     *   - endereco, contato, pagador, CEP, modalidade, transportadora e as
+     *     colunas de frete ficam fora do UPDATE.
+     * `valor` e `valor_total` continuam sendo gravados.
+     */
+    const ehComplemento = Boolean(formState.idIntPedidoPrincipal);
+
+    /**
      * A cotação escolhida só é exigida onde a tela oferece cards — ver
      * `exigeCotacaoEscolhida`. Mesma forma da dispensa por `propostaSemItens`
      * logo acima, e pelo mesmo motivo: exigir o que a tela não pede trava a
@@ -2019,7 +2071,7 @@ export async function saveProposta(
     const cotacaoObrigatoria = exigeCotacaoEscolhida(formState.modalidadeFrete);
 
     // Find the chosen freight option details
-    if (!formState.isAvulso && !propostaSemItens && cotacaoObrigatoria) {
+    if (!formState.isAvulso && !propostaSemItens && !ehComplemento && cotacaoObrigatoria) {
       if (!isNonEmpty(formState.freteEscolhidoId)) {
         return { success: false, errorMessage: "Selecione ou informe o frete antes de salvar o orçamento." };
       }
@@ -2033,7 +2085,7 @@ export async function saveProposta(
       if (!isNonEmpty(formState.observacoesFreteManual)) {
         return { success: false, errorMessage: "Selecione ou informe o frete antes de salvar o orçamento." };
       }
-    } else if (!propostaSemItens && cotacaoObrigatoria) {
+    } else if (!propostaSemItens && !ehComplemento && cotacaoObrigatoria) {
       if (!chosenFrete) {
         return { success: false, errorMessage: "Selecione ou informe o frete antes de salvar o orçamento." };
       }
@@ -2228,7 +2280,7 @@ export async function saveProposta(
     // dava para cotar e NÃO era para cotar — e era esta que continuava recusando
     // o salvamento depois das outras três serem afrouxadas.
     const hasWeightAndCep = !formState.isAvulso && resumo.pesoTotal > 0 && cepText && isNonEmpty(cepText);
-    if (hasWeightAndCep && cotacaoObrigatoria && !chosenFrete) {
+    if (hasWeightAndCep && cotacaoObrigatoria && !chosenFrete && !ehComplemento) {
       return { success: false, errorMessage: "Selecione ou informe o frete antes de salvar o orçamento." };
     }
 
@@ -2402,6 +2454,26 @@ export async function saveProposta(
       // a declaração em silêncio foi o que fez o vendedor acreditar, por toda a
       // 20890, que tinha marcado FOB.
       avisoModalidade = motivoBloqueioModalidade(statusParaGate);
+    }
+
+    if (ehComplemento) {
+      // Herdadas do principal e travadas: o salvamento do complemento nunca as
+      // reescreve. `valor` e `valor_total` seguem no UPDATE.
+      for (const coluna of [
+        "frete_escolhido",
+        "valor_frete",
+        "modalidade_frete",
+        "transporte_categoria",
+        "id_transportadora_cliente",
+        "categoria_frete",
+        "id_endereco_ent",
+        "contato",
+        "id_contato",
+        "id_faturado",
+        "cep"
+      ]) {
+        delete propostaData[coluna];
+      }
     }
 
     let persistedValorTotal = valorTotal;
@@ -2811,7 +2883,8 @@ export async function saveProposta(
     const gravaCotacaoSemCard = !formState.isAvulso && !propostaSemItens && !cotacaoObrigatoria;
 
     // Persistir o frete escolhido no banco de dados (public.cotacao_frete)
-    if (formState.isAvulso || chosenFrete || gravaCotacaoSemCard) {
+    // Complemento: `cotacao_frete` nao e tocada (ver `ehComplemento`).
+    if (!ehComplemento && (formState.isAvulso || chosenFrete || gravaCotacaoSemCard)) {
       try {
         // Deletar os fretes antigos apenas daquela proposta
         const { error: deleteError } = await client

@@ -1637,29 +1637,13 @@ export function PropostaCobrancaPanel({
                 </Field>
                 
 
-            {exigeCondicaoPagamento ? (
-                  <Field label="Condição de pagamento *">
-                    <select
-                      value={modeloSelecionadoId}
-                      onChange={(event) => setModeloSelecionadoId(event.target.value)}
-                      className={inputClass}
-                    >
-                      <option value="">Selecione...</option>
-                      {modelosCobranca.map((m) => (
-                        <option key={m.id} value={m.id}>
-                          {m.resultado}
-                        </option>
-                      ))}
-                    </select>
-                  </Field>
-                ) : null}
                 <div className="md:col-span-2">
-                  <Field label={exigeCondicaoPagamento ? "Observações (Condição comercial solicitada)" : "Observações"}>
+                  <Field label="Observações (opcional)">
                     <textarea
                       value={form.observacao}
                       onChange={(event) => patchForm({ observacao: event.target.value })}
                       className={`${inputClass} min-h-24 resize-y`}
-                      placeholder={exigeCondicaoPagamento ? "Observação opcional, ex.: 14/28 dias" : "Observação opcional"}
+                      placeholder="Observação opcional"
                     />
                   </Field>
                 </div>
@@ -1737,7 +1721,25 @@ export function PropostaCobrancaPanel({
                 {/* Cortesia nao tem condicao comercial a combinar. O aviso de
                     credito abaixo continua valendo para a familia inteira. */}
                 {exigeCondicaoPagamento ? (
-                <div className="max-w-md">
+                <div className="max-w-md space-y-4">
+                    {/* A condicao de pagamento mora AQUI desde 14/09/2026, e so aparece para
+                        cobranca faturada (fora cortesia). Continua obrigatoria: a validacao
+                        "Selecione uma condição de pagamento." em executarSubmit nao mudou,
+                        e grava forma_fatu, id_modelo_cobranca e os p_* como antes. */}
+                    <Field label="Condição de pagamento *">
+                      <select
+                        value={modeloSelecionadoId}
+                        onChange={(event) => setModeloSelecionadoId(event.target.value)}
+                        className={inputClass}
+                      >
+                        <option value="">Selecione...</option>
+                        {modelosCobranca.map((m) => (
+                          <option key={m.id} value={m.id}>
+                            {m.resultado}
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
                     <Field label="Condição comercial">
                       <input
                         value={form.condicaoPagamento}
@@ -2186,29 +2188,13 @@ export function PropostaCobrancaPanel({
                     )}
                   </Field>
 
-            {exigeCondicaoPagamento ? (
-                    <Field label="Condição de pagamento *">
-                      <select
-                        value={modeloSelecionadoId}
-                        onChange={(event) => setModeloSelecionadoId(event.target.value)}
-                        className={inputClass}
-                      >
-                        <option value="">Selecione...</option>
-                        {modelosCobranca.map((m) => (
-                          <option key={m.id} value={m.id}>
-                            {m.resultado}
-                          </option>
-                        ))}
-                      </select>
-                    </Field>
-                  ) : null}
                   <div className="md:col-span-2">
-                    <Field label={exigeCondicaoPagamento ? "Observações (Condição comercial solicitada)" : "Observações"}>
+                    <Field label="Observações (opcional)">
                       <textarea
                         value={form.observacao}
                         onChange={(event) => patchForm({ observacao: event.target.value })}
                         className={`${inputClass} min-h-24 resize-y`}
-                        placeholder={exigeCondicaoPagamento ? "Observação opcional, ex.: 14/28 dias" : "Observação opcional"}
+                        placeholder="Observação opcional"
                       />
                     </Field>
                   </div>
@@ -2349,7 +2335,25 @@ export function PropostaCobrancaPanel({
                   {/* Cortesia nao tem condicao comercial a combinar. O aviso de
                       credito abaixo continua valendo para a familia inteira. */}
                   {exigeCondicaoPagamento ? (
-                  <div className="max-w-md">
+                  <div className="max-w-md space-y-4">
+                      {/* A condicao de pagamento mora AQUI desde 14/09/2026, e so aparece para
+                          cobranca faturada (fora cortesia). Continua obrigatoria: a validacao
+                          "Selecione uma condição de pagamento." em executarSubmit nao mudou,
+                          e grava forma_fatu, id_modelo_cobranca e os p_* como antes. */}
+                      <Field label="Condição de pagamento *">
+                        <select
+                          value={modeloSelecionadoId}
+                          onChange={(event) => setModeloSelecionadoId(event.target.value)}
+                          className={inputClass}
+                        >
+                          <option value="">Selecione...</option>
+                          {modelosCobranca.map((m) => (
+                            <option key={m.id} value={m.id}>
+                              {m.resultado}
+                            </option>
+                          ))}
+                        </select>
+                      </Field>
                       <Field label="Condição comercial">
                         <input
                           value={form.condicaoPagamento}

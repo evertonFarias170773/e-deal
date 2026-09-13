@@ -303,6 +303,26 @@ export function OrcamentoDetailPage({ idInt }: OrcamentoDetailPageProps) {
               </button>
             )}
             <StatusBadge status={proposta.status} tone={getStatusTone(proposta.status)} />
+            {/* Pedido complementar: mesmo par de selos do cabecalho do formulario. */}
+            {proposta.idIntPedidoPrincipal ? (
+              <Link
+                href={`/orcamentos/${proposta.idIntPedidoPrincipal}`}
+                title="Pedido principal do mesmo evento"
+                className="inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs font-semibold text-sky-800 whitespace-nowrap transition hover:bg-sky-100"
+              >
+                Complemento do #{proposta.idIntPedidoPrincipal}
+              </Link>
+            ) : null}
+            {proposta.complementos.map((complemento) => (
+              <Link
+                key={complemento.idInt}
+                href={`/orcamentos/${complemento.idInt}`}
+                title="Pedido complementar do mesmo evento"
+                className="inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs font-semibold text-sky-800 whitespace-nowrap transition hover:bg-sky-100"
+              >
+                Complemento: #{complemento.idInt} · {complemento.statusInterno}
+              </Link>
+            ))}
             <ActionsMenu
               items={[
                 {
