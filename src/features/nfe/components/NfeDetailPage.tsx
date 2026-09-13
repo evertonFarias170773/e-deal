@@ -81,6 +81,12 @@ import {
 import { mapSupabaseNfeRowToReadModel } from "../mappers";
 import { EmissaoNfeModal } from "@/features/fiscal/components/EmissaoNfeModal";
 import {
+  listarModelosCobranca,
+  parcelasDoModelo,
+  buscarModeloCobrancaDaProposta
+} from "@/features/cobrancas/services/modelos-cobranca";
+import type { ModeloCobranca } from "@/features/cobrancas/types";
+import {
   levantarPendencias,
   pendenciasQueImpedem,
   campoDoItem,
@@ -406,6 +412,15 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
   const [boletosAtivos, setBoletosAtivos] = useState<BoletoAtivoDaProposta[]>([]);
   const [sugestaoAplicada, setSugestaoAplicada] = useState(false);
 
+  /**
+   * Condição de pagamento do gerador de parcelas — a mesma lista e a mesma
+   * tradução do modal Preparar Cobrança, de `cobrancas/services/modelos-cobranca`.
+   * Escolher uma condição PREENCHE quantidade, dias e intervalo, que seguem
+   * editáveis: a condição é atalho, não trava.
+   */
+  const [modelosCobranca, setModelosCobranca] = useState<ModeloCobranca[]>([]);
+  const [pgtoModeloId, setPgtoModeloId] = useState("");
+
   // New item states
   const [newItemDesc, setNewItemDesc] = useState("");
   const [newItemNcm, setNewItemNcm] = useState("49119900");
@@ -701,6 +716,37 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
       }
       setSugestaoAplicada(false);
 
+      // 4c. Condições de pagamento e a que a cobrança já tem gravada. A lista é
+      // a mesma do modal; a pré-seleção só existe quando a cobrança tem
+      // `id_modelo_cobranca` — sem ele o select abre em "Selecionar condição".
+      //
+      // A pré-seleção SÓ PREENCHE os campos quando o operador ainda não
+      // configurou as parcelas (`pgto_is_configurado` falso — a parcela que
+      // nasceu com o rascunho). Depois de configurado, ela apenas marca o
+      // select: reescrever quantidade, dias e intervalo por baixo apagaria o
+      // ajuste que o operador fez, sem ele pedir.
+      try {
+        const [modelos, modeloDaCobranca] = await Promise.all([
+          listarModelosCobranca(),
+          buscarModeloCobrancaDaProposta(Number(dbNote.id_int))
+        ]);
+        setModelosCobranca(modelos);
+        const modeloPreSelecionado = modeloDaCobranca
+          ? modelos.find((m) => String(m.id) === modeloDaCobranca) ?? null
+          : null;
+        setPgtoModeloId(modeloPreSelecionado ? String(modeloPreSelecionado.id) : "");
+        if (modeloPreSelecionado && !dbNote.pgto_is_configurado) {
+          const parcelas = parcelasDoModelo(modeloPreSelecionado);
+          setPgtoQtdParcelas(parcelas.qtdParcelas);
+          setPgtoDiasPraInicio(parcelas.diasPraInicio);
+          setPgtoIntervalo(parcelas.intervalo);
+        }
+      } catch (err) {
+        console.warn("[NfeDetail] Falha ao carregar condições de pagamento:", err);
+        setModelosCobranca([]);
+        setPgtoModeloId("");
+      }
+
       // 5. Load transportadoras list
       const transportadorasData = await getTransportadoras();
       setTransportadoras(transportadorasData);
@@ -831,14 +877,66 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
   const parcelasComTitulo = pagamentos.filter((pg) => tituloDaParcela(pg.numero_parcela)).length;
 
   /**
-   * Controles que espelham o modal Preparar Cobrança: parcela única com
-   * vencimento escolhido e arredondamento. Os dois blocos do gerador na aba
-   * renderizam o mesmo conjunto — daí a função, para não divergirem.
+   * Aplica uma condição de pagamento ao gerador. Mesma tradução do modal
+   * Preparar Cobrança (`parcelasDoModelo`): preenche quantidade, dias e
+   * intervalo, que continuam editáveis. Voltar para "Selecionar condição" não
+   * apaga nada — só desmarca.
    */
-  function renderControlesFormatoModal() {
+  function handleSelecionarCondicao(id: string) {
+    setPgtoModeloId(id);
+    const modelo = modelosCobranca.find((m) => String(m.id) === id);
+    if (!modelo) return;
+    const parcelas = parcelasDoModelo(modelo);
+    setPgtoQtdParcelas(parcelas.qtdParcelas);
+    setPgtoDiasPraInicio(parcelas.diasPraInicio);
+    setPgtoIntervalo(parcelas.intervalo);
+  }
+
+  /**
+   * O gerador de parcelas, no desenho do modal Preparar Cobrança: Condição de
+   * pagamento no topo e UM bloco só com tudo que define vencimento.
+   *
+   * Antes eram três lugares na mesma tela — a caixa de parcela única, o
+   * arredondamento solto e a grade de quantidade/dias/intervalo —, e não ficava
+   * claro qual mandava. Agora é um bloco, e a regra é a do modal: marcar parcela
+   * única desliga a condição, a entrada e a grade, porque a RPC não aceita
+   * parcela única com entrada (`PARCELA_UNICA_COM_ENTRADA`).
+   *
+   * Forma de Pagamento NÃO mora aqui: ela é exigência fiscal, decide se há
+   * gerador (só boleto parcela) e fica acima deste bloco nos dois ramos da aba.
+   *
+   * Valor de entrada fica, até a RPC aceitar forma própria para a entrada — sem
+   * ele o operador não teria como lançar uma.
+   *
+   * Os dois ramos da aba (sem parcelas / com parcelas) chamam esta função, para
+   * não divergirem.
+   */
+  function renderBlocoGeracao() {
     return (
-      <div className="space-y-3">
-        <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 md:flex-row md:items-center md:justify-between">
+      <div className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4">
+        {/* Condição de pagamento — topo do bloco, como no modal */}
+        <div className="max-w-md">
+          <label className="block text-xs font-semibold text-slate-500 mb-1 uppercase tracking-wider">Condição de pagamento</label>
+          <select
+            value={pgtoModeloId}
+            onChange={(e) => handleSelecionarCondicao(e.target.value)}
+            disabled={pgtoParcelaUnica}
+            className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm bg-white outline-none focus:border-[#0b2f4a] disabled:bg-slate-100 disabled:text-slate-400 font-medium"
+          >
+            <option value="">Selecionar condição...</option>
+            {modelosCobranca.map((modelo) => (
+              <option key={String(modelo.id)} value={String(modelo.id)}>
+                {modelo.resultado}
+              </option>
+            ))}
+          </select>
+          <p className="text-[10px] text-slate-400 mt-1">
+            Preenche parcelas, dias e intervalo abaixo (editáveis).
+          </p>
+        </div>
+
+        {/* Parcela única com vencimento específico */}
+        <div className="flex flex-col gap-3 rounded-xl border border-slate-100 bg-slate-50 p-3 md:flex-row md:items-center md:justify-between">
           <div className="flex items-center gap-2">
             <input
               type="checkbox"
@@ -866,6 +964,56 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
             </div>
           )}
         </div>
+
+        {/* Entrada e parcelas futuras */}
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+          <div>
+            <label className="block text-xs font-semibold text-slate-500 mb-1">Valor de entrada</label>
+            <input
+              type="number"
+              step="0.01"
+              value={pgtoValorEntrada}
+              onChange={(e) => setPgtoValorEntrada(Number(e.target.value))}
+              disabled={pgtoParcelaUnica}
+              className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm bg-white outline-none focus:border-[#0b2f4a] disabled:bg-slate-100 disabled:text-slate-400"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-slate-500 mb-1">Qtd de parcelas futuras</label>
+            <input
+              type="number"
+              min={1}
+              value={pgtoQtdParcelas}
+              onChange={(e) => setPgtoQtdParcelas(Number(e.target.value))}
+              disabled={pgtoParcelaUnica}
+              className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm bg-white outline-none focus:border-[#0b2f4a] disabled:bg-slate-100 disabled:text-slate-400"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-slate-500 mb-1">Dias para a primeira</label>
+            <input
+              type="number"
+              min={0}
+              value={pgtoDiasPraInicio}
+              onChange={(e) => setPgtoDiasPraInicio(Number(e.target.value))}
+              disabled={pgtoParcelaUnica}
+              className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm bg-white outline-none focus:border-[#0b2f4a] disabled:bg-slate-100 disabled:text-slate-400"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-slate-500 mb-1">Intervalo (dias)</label>
+            <input
+              type="number"
+              min={1}
+              value={pgtoIntervalo}
+              onChange={(e) => setPgtoIntervalo(Number(e.target.value))}
+              disabled={pgtoParcelaUnica}
+              className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm bg-white outline-none focus:border-[#0b2f4a] disabled:bg-slate-100 disabled:text-slate-400"
+            />
+          </div>
+        </div>
+
+        {/* Arredondamento */}
         <div className="flex items-center gap-2">
           <input
             type="checkbox"
@@ -882,9 +1030,18 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
             </span>
           </label>
         </div>
-        <p className="text-[10px] text-slate-400">
-          A contagem de dias parte de hoje.
-        </p>
+
+        <div className="flex flex-col gap-3 border-t border-slate-100 pt-3 md:flex-row md:items-center md:justify-between">
+          <p className="text-[10px] text-slate-400">A contagem de dias parte de hoje.</p>
+          <button
+            type="button"
+            onClick={handleGerarPagamentos}
+            disabled={isGeneratingPgto}
+            className="rounded-xl bg-[#0b2f4a] hover:bg-[#061d2e] px-6 py-2.5 text-sm font-semibold text-white transition disabled:opacity-50"
+          >
+            {isGeneratingPgto ? "Gerando..." : "Gerar Parcelas Fiscais"}
+          </button>
+        </div>
       </div>
     );
   }
@@ -3609,63 +3766,7 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
                 {!isReadOnly && pgtoFormaPagamento === "15" && (
                   <div className="border-t border-slate-200 pt-4 space-y-4 animate-in fade-in slide-in-from-top-1 duration-200">
                     <h3 className="text-sm font-bold text-slate-800">Gerar Parcelas Automaticamente</h3>
-                    {renderControlesFormatoModal()}
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-500 mb-1">Valor de entrada</label>
-                        <input
-                          type="number"
-                          step="0.01"
-                          value={pgtoValorEntrada}
-                          onChange={(e) => setPgtoValorEntrada(Number(e.target.value))}
-                          disabled={pgtoParcelaUnica}
-                          className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm bg-white outline-none focus:border-[#0b2f4a]"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-500 mb-1">Qtd de parcelas futuras</label>
-                        <input
-                          type="number"
-                          min={1}
-                          value={pgtoQtdParcelas}
-                          onChange={(e) => setPgtoQtdParcelas(Number(e.target.value))}
-                          disabled={pgtoParcelaUnica}
-                          className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm bg-white outline-none focus:border-[#0b2f4a]"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-500 mb-1">Dias para primeira parcela futura</label>
-                        <input
-                          type="number"
-                          min={0}
-                          value={pgtoDiasPraInicio}
-                          onChange={(e) => setPgtoDiasPraInicio(Number(e.target.value))}
-                          disabled={pgtoParcelaUnica}
-                          className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm bg-white outline-none focus:border-[#0b2f4a]"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-500 mb-1">Intervalo entre parcelas futuras (Dias)</label>
-                        <input
-                          type="number"
-                          min={1}
-                          value={pgtoIntervalo}
-                          onChange={(e) => setPgtoIntervalo(Number(e.target.value))}
-                          disabled={pgtoParcelaUnica}
-                          className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm bg-white outline-none focus:border-[#0b2f4a]"
-                        />
-                      </div>
-                      <div className="md:col-span-4 flex justify-end">
-                        <button
-                          type="button"
-                          onClick={handleGerarPagamentos}
-                          disabled={isGeneratingPgto}
-                          className="rounded-xl bg-[#0b2f4a] hover:bg-[#061d2e] px-6 py-2.5 text-sm font-semibold text-white transition disabled:opacity-50"
-                        >
-                          {isGeneratingPgto ? "Gerando..." : "Gerar Parcelas Fiscais"}
-                        </button>
-                      </div>
-                    </div>
+                    {renderBlocoGeracao()}
                   </div>
                 )}
               </div>
@@ -3776,89 +3877,30 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
                 {!isReadOnly && (
                   <div className="border-t border-slate-100 pt-6 space-y-4">
                     <h3 className="text-sm font-bold text-slate-800">Gerar Parcelas Automaticamente</h3>
-                    {renderControlesFormatoModal()}
-                    <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-500 mb-1">Forma de Pagamento</label>
-                        <select
-                          value={pgtoFormaPagamento}
-                          onChange={(e) => handleFormaPagamentoChange(e.target.value)}
-                          className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm bg-white outline-none focus:border-[#0b2f4a] font-medium"
-                        >
-                          <option value="01">01 - Dinheiro</option>
-                          <option value="02">02 - Cheque</option>
-                          <option value="03">03 - Cartão de Crédito</option>
-                          <option value="04">04 - Cartão de Débito</option>
-                          <option value="15">15 - Boleto Bancário</option>
-                          <option value="17">17 - PIX</option>
-                          <option value="90">90 - Sem Pagamento</option>
-                          <option value="99">99 - Outros</option>
-                        </select>
-                      </div>
-
-                      {pgtoFormaPagamento === "15" ? (
-                        <>
-                          <div>
-                            <label className="block text-xs font-semibold text-slate-500 mb-1">Valor de entrada</label>
-                            <input
-                              type="number"
-                              step="0.01"
-                              value={pgtoValorEntrada}
-                              onChange={(e) => setPgtoValorEntrada(Number(e.target.value))}
-                          disabled={pgtoParcelaUnica}
-                              className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm bg-white outline-none focus:border-[#0b2f4a]"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-xs font-semibold text-slate-500 mb-1">Qtd de parcelas futuras</label>
-                            <input
-                              type="number"
-                              min={1}
-                              value={pgtoQtdParcelas}
-                              onChange={(e) => setPgtoQtdParcelas(Number(e.target.value))}
-                          disabled={pgtoParcelaUnica}
-                              className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm bg-white outline-none focus:border-[#0b2f4a]"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-xs font-semibold text-slate-500 mb-1">Dias para primeira parcela futura</label>
-                            <input
-                              type="number"
-                              min={0}
-                              value={pgtoDiasPraInicio}
-                              onChange={(e) => setPgtoDiasPraInicio(Number(e.target.value))}
-                          disabled={pgtoParcelaUnica}
-                              className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm bg-white outline-none focus:border-[#0b2f4a]"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-xs font-semibold text-slate-500 mb-1">Intervalo entre parcelas futuras (Dias)</label>
-                            <input
-                              type="number"
-                              min={1}
-                              value={pgtoIntervalo}
-                              onChange={(e) => setPgtoIntervalo(Number(e.target.value))}
-                          disabled={pgtoParcelaUnica}
-                              className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm bg-white outline-none focus:border-[#0b2f4a]"
-                            />
-                          </div>
-                          <div className="md:col-span-5 flex justify-end">
-                            <button
-                              type="button"
-                              onClick={handleGerarPagamentos}
-                              disabled={isGeneratingPgto}
-                              className="rounded-xl bg-[#0b2f4a] hover:bg-[#061d2e] px-6 py-2.5 text-sm font-semibold text-white transition disabled:opacity-50"
-                            >
-                              {isGeneratingPgto ? "Gerando..." : "Gerar Parcelas Fiscais"}
-                            </button>
-                          </div>
-                        </>
-                      ) : (
-                        <div className="md:col-span-4 bg-slate-50 border border-slate-200 rounded-xl p-4 text-xs text-slate-500 flex items-center h-[46px] mt-5">
-                          ℹ️ Geração de parcelas permitida apenas para <strong>15 - Boleto Bancário</strong>. Outras formas de pagamento são tratadas como à vista.
-                        </div>
-                      )}
+                    <div className="max-w-xs">
+                      <label className="block text-xs font-semibold text-slate-500 mb-1">Forma de Pagamento</label>
+                    <select
+                      value={pgtoFormaPagamento}
+                      onChange={(e) => handleFormaPagamentoChange(e.target.value)}
+                      className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm bg-white outline-none focus:border-[#0b2f4a] font-medium"
+                    >
+                      <option value="01">01 - Dinheiro</option>
+                      <option value="02">02 - Cheque</option>
+                      <option value="03">03 - Cartão de Crédito</option>
+                      <option value="04">04 - Cartão de Débito</option>
+                      <option value="15">15 - Boleto Bancário</option>
+                      <option value="17">17 - PIX</option>
+                      <option value="90">90 - Sem Pagamento</option>
+                      <option value="99">99 - Outros</option>
+                    </select>
                     </div>
+                    {pgtoFormaPagamento === "15" ? (
+                      renderBlocoGeracao()
+                    ) : (
+                      <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-xs text-slate-500">
+                        ℹ️ Geração de parcelas permitida apenas para <strong>15 - Boleto Bancário</strong>. Outras formas de pagamento são tratadas como à vista.
+                      </div>
+                    )}
                   </div>
                 )}
               </>

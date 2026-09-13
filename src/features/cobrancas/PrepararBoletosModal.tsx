@@ -9,6 +9,7 @@ import { formatCurrency } from "@/lib/formatters/currency";
 import { useAppToast } from "@/components/common/AppToast";
 import { useAuth } from "@/features/auth/AuthProvider";
 import type { Cobranca, ModeloCobranca } from "@/features/cobrancas/types";
+import { listarModelosCobranca, parcelasDoModelo } from "@/features/cobrancas/services/modelos-cobranca";
 import {
   escolherNotaAutorizadaDoPedido,
   COLUNAS_NOTA_DO_PEDIDO,
@@ -310,17 +311,10 @@ export function PrepararBoletosModal({
   useEffect(() => {
     if (!isOpen) return;
     const fetchModelos = async () => {
-      const client = getSupabaseClient();
-      if (!client) return;
-      const { data, error } = await client
-        .from("modelos_cobranca")
-        .select("*")
-        .order("modelo", { ascending: true })
-        .order("inicio", { ascending: true })
-        .order("qtd_parcela", { ascending: true })
-        .order("intervalo", { ascending: true });
-      if (!error && data) {
-        setModelosCobranca(data as ModeloCobranca[]);
+      // Fonte unica, compartilhada com a aba Pagamentos da NF-e.
+      const modelos = await listarModelosCobranca();
+      if (modelos.length > 0) {
+        setModelosCobranca(modelos);
       }
     };
     void fetchModelos();
@@ -356,13 +350,11 @@ export function PrepararBoletosModal({
     const modelo = modelosCobranca.find((m) => String(m.id) === id);
     if (!modelo) return;
 
-    const qtd = Number(modelo.qtd_parcela);
-    const inicio = Number(modelo.inicio);
-    const intervaloModelo = Number(modelo.intervalo);
-
-    setQtdParcelas(Number.isFinite(qtd) && qtd >= 1 ? qtd : 1);
-    setDiasPraInicio(Number.isFinite(inicio) && inicio >= 0 ? inicio : 30);
-    setIntervalo(Number.isFinite(intervaloModelo) && intervaloModelo >= 0 ? intervaloModelo : 30);
+    // Traducao compartilhada com a aba Pagamentos da NF-e.
+    const parcelas = parcelasDoModelo(modelo);
+    setQtdParcelas(parcelas.qtdParcelas);
+    setDiasPraInicio(parcelas.diasPraInicio);
+    setIntervalo(parcelas.intervalo);
   };
 
   const handleToggleParcelaUnica = (ativa: boolean) => {

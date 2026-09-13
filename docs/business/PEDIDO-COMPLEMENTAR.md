@@ -1,7 +1,7 @@
 # PEDIDO-COMPLEMENTAR.md
 
 Versão: 1.0
-Status: Regra aprovada — **em implementação** (E0 e E1 concluídas; E2 a E10 pendentes)
+Status: Regra aprovada — **em implementação** (E0 a E2 concluídas; E3 a E10 pendentes)
 Última atualização: 13/09/2026
 Projeto: Vibe
 
@@ -10,12 +10,16 @@ Projeto: Vibe
 # Pedido Complementar
 
 > **Este documento descreve a REGRA APROVADA, não o que já está no ar.** Em
-> 13/09/2026 só o **schema** existe no banco — a coluna
-> `propostas.id_int_pedido_principal` e a tabela `complementos_frete`, ambas
-> vazias (E1). Não há RPC, rota, botão nem tela: nenhum complemento pode ser
-> criado ainda. A seção 16 diz o que já foi entregue, etapa por etapa.
-> Qualquer afirmação aqui sobre comportamento do sistema é o comportamento
-> **que será implementado**.
+> 13/09/2026 existem no banco a coluna `propostas.id_int_pedido_principal` e a
+> tabela `complementos_frete` (E1), e a função `criar_pedido_complementar`
+> (E2), que cria só o **cabeçalho** do complemento. Não há rota, botão, tela,
+> frete complementar nem nada na Expedição: o complemento só pode ser criado
+> chamando a função direto, e hoje ela só aceita o Super Administrador e os
+> usuários com `usuarios.is_admin = true` (a permissão ainda não foi concedida
+> a perfil nenhum, isso é da E10). O ledger continua vazio. A seção 16 diz o
+> que já foi entregue, etapa por etapa. Qualquer afirmação aqui sobre
+> comportamento do sistema além disso é o comportamento **que será
+> implementado**.
 >
 > Plano de implementação: [`docs/superpowers/plans/2026-09-13-pedido-complementar.md`](../superpowers/plans/2026-09-13-pedido-complementar.md).
 
@@ -484,7 +488,7 @@ inteiro.
 |---|---|---|
 | E0 | Este documento de regra | **Concluída em 13/09/2026** |
 | E1 | Migration: coluna de vínculo + ledger | **Concluída em 13/09/2026** — `supabase/migrations/20260914_pedido_complementar_vinculo_e_ledger.sql`, aplicada em produção (versão `20260913204321`) |
-| E2 | Função de criar o complemento | Pendente |
+| E2 | Função de criar o complemento | **Concluída em 13/09/2026** — `supabase/migrations/20260914_criar_pedido_complementar.sql`, aplicada em produção (versão `20260913211243`). Validada com o par de teste #22067 (principal, pago por E-Amostra) e #22068 (complemento, cancelado ao final) |
 | E3 | Serviço, item no menu de ações e modal | Pendente |
 | E4 | Leitura do vínculo, selos, travas e salvamento neutro | Pendente |
 | E5 | Rota de cotar frete complementar | Pendente |
