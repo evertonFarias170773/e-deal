@@ -1159,7 +1159,41 @@ export async function createOrReuseNfeDraft(idInt: number): Promise<SupabaseNfeR
     }
   }
 
-  // 7. Inserir pagamentos da nota
+  // 7. Recalcular totais no banco — ANTES da parcela, e isso e o conserto.
+  //
+  //    O cabecalho nasce com `valor_total_nf = proposta.resumo.valorTotal`, que
+  //    e `propostas.valor_total`: o valor da COBRANCA, ja com o bonus de tabela
+  //    especial descontado. Os itens, porem, entram pelo BRUTO
+  //    (`valor_sub_total`, que o trigger `trg_calcular_valor_sub_total` reescreve
+  //    com o valor cheio). O total real da nota so aparece quando
+  //    `fn_recalcular_totais_nfe` soma itens + frete - desconto.
+  //
+  //    A parcela era inserida ANTES desse recalculo, com o total velho — e por
+  //    isso nascia com o valor da cobranca. Na NFE-22066-001: parcela R$ 147,53
+  //    (a cobranca, com 10% de bonus) contra nota de R$ 162,63 (R$ 151,00 de
+  //    produtos + R$ 11,63 de frete). A validacao acusava, corretamente, R$ 15,10.
+  let totalDaNota = Number(newNfe.valor_total_nf) || 0;
+  try {
+    const { data: recalculo, error: recalculoError } = await client.rpc("fn_recalcular_totais_nfe", {
+      p_ref: newNfe.ref
+    });
+    const recalculado = Number((recalculo as { valor_total_nf?: number } | null)?.valor_total_nf);
+    if (!recalculoError && Number.isFinite(recalculado)) {
+      totalDaNota = recalculado;
+    } else if (recalculoError) {
+      console.warn("[NfeService] fn_recalcular_totais_nfe failed:", recalculoError.message);
+    }
+  } catch (err) {
+    console.warn("[NfeService] fn_recalcular_totais_nfe call failed:", err);
+  }
+
+  // 8. Inserir a parcela da nota, com o TOTAL DA NOTA.
+  //
+  //    O valor vem do recalculo acima, nunca da cobranca. A FORMA de pagamento
+  //    continua vindo da cobranca — e so o valor que nao pode vir de la.
+  //    Se o recalculo falhar, cai no total do cabecalho, como antes: a parcela
+  //    nasce, e a validacao de divergencia continua la para acusar.
+  //    A edicao manual segue livre depois, pela aba Pagamentos.
   const formaPgtoFocus = codigoFiscalDaCobranca(tipoCobranca);
 
   const paymentInsert = {
@@ -1169,7 +1203,7 @@ export async function createOrReuseNfeDraft(idInt: number): Promise<SupabaseNfeR
     numero_parcela: 1,
     total_parcelas: 1,
     data_vencimento: new Date().toISOString().split("T")[0],
-    valor: newNfe.valor_total_nf,
+    valor: totalDaNota,
     forma_pagamento: formaPgtoFocus,
     ativo: true
   };
@@ -1180,13 +1214,6 @@ export async function createOrReuseNfeDraft(idInt: number): Promise<SupabaseNfeR
 
   if (paymentError) {
     console.error("[NfeService] Error inserting payment row:", paymentError);
-  }
-
-  // 8. Recalcular totais no banco
-  try {
-    await client.rpc("fn_recalcular_totais_nfe", { p_ref: newNfe.ref });
-  } catch (err) {
-    console.warn("[NfeService] fn_recalcular_totais_nfe call failed:", err);
   }
 
   // 9. Buscar cópia atualizada
