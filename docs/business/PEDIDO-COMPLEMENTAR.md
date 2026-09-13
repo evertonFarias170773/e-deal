@@ -1,7 +1,7 @@
 # PEDIDO-COMPLEMENTAR.md
 
 Versão: 1.0
-Status: Regra aprovada — **em implementação** (E0 a E2 concluídas; E3 a E10 pendentes)
+Status: Regra aprovada — **em implementação** (E0 a E3 concluídas; E4 a E10 pendentes)
 Última atualização: 13/09/2026
 Projeto: Vibe
 
@@ -12,12 +12,15 @@ Projeto: Vibe
 > **Este documento descreve a REGRA APROVADA, não o que já está no ar.** Em
 > 13/09/2026 existem no banco a coluna `propostas.id_int_pedido_principal` e a
 > tabela `complementos_frete` (E1), e a função `criar_pedido_complementar`
-> (E2), que cria só o **cabeçalho** do complemento. Não há rota, botão, tela,
-> frete complementar nem nada na Expedição: o complemento só pode ser criado
-> chamando a função direto, e hoje ela só aceita o Super Administrador e os
-> usuários com `usuarios.is_admin = true` (a permissão ainda não foi concedida
-> a perfil nenhum, isso é da E10). O ledger continua vazio. A seção 16 diz o
-> que já foi entregue, etapa por etapa. Qualquer afirmação aqui sobre
+> (E2), que cria só o **cabeçalho** do complemento. Na lista de Orçamentos
+> existem o item "Criar pedido complementar", o modal de confirmação e o selo
+> "Compl. de #X" na linha do complemento (E3). Não há travas no formulário do
+> complemento, frete complementar nem nada na Expedição. O item do menu só
+> aparece para quem tem a chave `propostas.complementar` ou o coringa `*`, e
+> nenhum perfil tem a chave ainda (isso é da E10): hoje só o Super
+> Administrador o vê. A função do banco também aceita usuários com
+> `usuarios.is_admin = true` (seção 12). O ledger continua vazio. A seção 16
+> diz o que já foi entregue, etapa por etapa. Qualquer afirmação aqui sobre
 > comportamento do sistema além disso é o comportamento **que será
 > implementado**.
 >
@@ -426,13 +429,22 @@ mesmo código quebrariam o recebimento do evento.
 
 | Permissão | Para quê | Perfis |
 |---|---|---|
-| `propostas.complementar` | criar o complemento, cotar e aplicar o frete complementar, desvincular pela área comercial | Administrador, Vendedor (decisão 10). Super Administrador pelo coringa `*` |
+| `propostas.complementar` | criar o complemento, cotar e aplicar o frete complementar, desvincular pela área comercial | Administrador, Vendedor (decisão 10). Super Administrador pelo coringa `*`. No banco, também qualquer usuário com `usuarios.is_admin = true` (ver abaixo) |
 | `propostas.cancel` | também aceita para cancelar o complemento e carimbar o ledger (decisão 11) | os perfis que já a têm |
 | `expedicao.processar` | despachar e "Desvincular e despachar separado" | os perfis que já a têm |
 
 A permissão `propostas.complementar` é concedida aos perfis **só na última
-etapa da implementação**, para ninguém criar complemento antes de o fluxo estar
-inteiro.
+etapa da implementação**, para que vendedores não criem complemento antes de o
+fluxo estar inteiro.
+
+Até lá, a permissão **não fica sem dono**. O Super Administrador passa pelo
+coringa `*`. A função do banco confere a permissão por `cc__assert_permissao`,
+que aprova também qualquer usuário com `usuarios.is_admin = true`, mesmo que o
+perfil dele não tenha a chave. Em 13/09/2026 são 2 usuários do perfil
+Administrador nessa situação. Eles conseguem criar complemento chamando a
+função, mas não veem o item no menu, porque a tela confere só a chave e o
+coringa. O dono aceitou esse comportamento em 13/09/2026: `cc__assert_permissao`
+é compartilhada por todo o sistema e não muda.
 
 ---
 
@@ -489,7 +501,7 @@ inteiro.
 | E0 | Este documento de regra | **Concluída em 13/09/2026** |
 | E1 | Migration: coluna de vínculo + ledger | **Concluída em 13/09/2026** — `supabase/migrations/20260914_pedido_complementar_vinculo_e_ledger.sql`, aplicada em produção (versão `20260913204321`) |
 | E2 | Função de criar o complemento | **Concluída em 13/09/2026** — `supabase/migrations/20260914_criar_pedido_complementar.sql`, aplicada em produção (versão `20260913211243`). Validada com o par de teste #22067 (principal, pago por E-Amostra) e #22068 (complemento, cancelado ao final) |
-| E3 | Serviço, item no menu de ações e modal | Pendente |
+| E3 | Serviço, item no menu de ações e modal | **Concluída em 13/09/2026** — item "Criar pedido complementar" na lista de Orçamentos, `CriarComplementoModal`, selo "Compl. de #X" e a chave no catálogo de permissões. Validada com o complemento #22069 da #22067, criado pelo menu |
 | E4 | Leitura do vínculo, selos, travas e salvamento neutro | Pendente |
 | E5 | Rota de cotar frete complementar | Pendente |
 | E6 | Rota e função de aplicar frete + card no formulário | Pendente |

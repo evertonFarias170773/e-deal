@@ -83,7 +83,10 @@ import { EmissaoNfeModal } from "@/features/fiscal/components/EmissaoNfeModal";
 import {
   listarModelosCobranca,
   parcelasDoModelo,
-  buscarModeloCobrancaDaProposta
+  buscarModeloCobrancaDaProposta,
+  combinacaoDasParcelasGravadas,
+  correspondeAoModelo,
+  modeloCorrespondente
 } from "@/features/cobrancas/services/modelos-cobranca";
 import type { ModeloCobranca } from "@/features/cobrancas/types";
 import {
@@ -716,30 +719,44 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
       }
       setSugestaoAplicada(false);
 
-      // 4c. Condições de pagamento e a que a cobrança já tem gravada. A lista é
-      // a mesma do modal; a pré-seleção só existe quando a cobrança tem
-      // `id_modelo_cobranca` — sem ele o select abre em "Selecionar condição".
+      // 4c. Qual condição o select mostra ao abrir. A condição escolhida NÃO é
+      // gravada em coluna nenhuma — é deduzida das parcelas que ela gerou.
       //
-      // A pré-seleção SÓ PREENCHE os campos quando o operador ainda não
-      // configurou as parcelas (`pgto_is_configurado` falso — a parcela que
-      // nasceu com o rascunho). Depois de configurado, ela apenas marca o
-      // select: reescrever quantidade, dias e intervalo por baixo apagaria o
-      // ajuste que o operador fez, sem ele pedir.
+      // A ORDEM, e o motivo de cada degrau:
+      //   1. parcelas JÁ CONFIGURADAS que formam uma condição do catálogo:
+      //      marca essa. É o que foi gerado de fato. Até 14/09/2026 a carga
+      //      pulava direto para a condição da cobrança e apagava a escolha do
+      //      operador — na NFE-22066-001 geraram "Prazo 14 dias" e a aba voltou
+      //      em "Prazo 7/14/21 dias", oferecendo desfazer o que acabara de ser
+      //      gerado. Os campos já espelham as parcelas; nada a preencher.
+      //   2. parcelas configuradas que NÃO formam condição (parcela única, ou
+      //      editadas fora do gerador): "Selecionar condição". Forçar a da
+      //      cobrança aqui seria exatamente o defeito do degrau 1.
+      //   3. parcelas AINDA NÃO configuradas (a que nasce com o rascunho): a
+      //      condição da cobrança, se houver, preenchendo os campos — como antes.
+      //   4. nada disso: "Selecionar condição".
       try {
         const [modelos, modeloDaCobranca] = await Promise.all([
           listarModelosCobranca(),
           buscarModeloCobrancaDaProposta(Number(dbNote.id_int))
         ]);
         setModelosCobranca(modelos);
-        const modeloPreSelecionado = modeloDaCobranca
-          ? modelos.find((m) => String(m.id) === modeloDaCobranca) ?? null
-          : null;
-        setPgtoModeloId(modeloPreSelecionado ? String(modeloPreSelecionado.id) : "");
-        if (modeloPreSelecionado && !dbNote.pgto_is_configurado) {
-          const parcelas = parcelasDoModelo(modeloPreSelecionado);
-          setPgtoQtdParcelas(parcelas.qtdParcelas);
-          setPgtoDiasPraInicio(parcelas.diasPraInicio);
-          setPgtoIntervalo(parcelas.intervalo);
+
+        if (dbNote.pgto_is_configurado) {
+          const combinacaoGravada = combinacaoDasParcelasGravadas(dbPayments);
+          const modeloDasParcelas = combinacaoGravada ? modeloCorrespondente(combinacaoGravada, modelos) : null;
+          setPgtoModeloId(modeloDasParcelas ? String(modeloDasParcelas.id) : "");
+        } else {
+          const modeloPreSelecionado = modeloDaCobranca
+            ? modelos.find((m) => String(m.id) === modeloDaCobranca) ?? null
+            : null;
+          setPgtoModeloId(modeloPreSelecionado ? String(modeloPreSelecionado.id) : "");
+          if (modeloPreSelecionado) {
+            const parcelas = parcelasDoModelo(modeloPreSelecionado);
+            setPgtoQtdParcelas(parcelas.qtdParcelas);
+            setPgtoDiasPraInicio(parcelas.diasPraInicio);
+            setPgtoIntervalo(parcelas.intervalo);
+          }
         }
       } catch (err) {
         console.warn("[NfeDetail] Falha ao carregar condições de pagamento:", err);
@@ -912,20 +929,28 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
    * não divergirem.
    */
   function renderBlocoGeracao() {
-    // A condição marcada pode não ser a que os campos seguem: na abertura, com
-    // as parcelas já configuradas, a pré-seleção só marca o select e não
-    // reescreve quantidade, dias e intervalo. Quando os dois discordam a tela
-    // DIZ, em vez de deixar o operador gerar 1 parcela olhando "7/14/21".
+    // O aviso existe para UM caso: há condição marcada e os campos, editados à
+    // mão, não formam condição NENHUMA do catálogo. Aí "Aplicar" tem sentido —
+    // devolve os campos a uma condição válida.
+    //
+    // Nunca aparece quando os campos já são uma condição válida. Antes o
+    // gatilho era "campos diferentes da condição marcada", e na abertura isso
+    // disparava contra parcelas corretas — o botão oferecia desfazer "Prazo 14
+    // dias" recém-gerado para voltar à condição da cobrança.
+    //
+    // Mesmo predicado da dedução na abertura (`correspondeAoModelo`), para o
+    // aviso e o select nunca julgarem a mesma combinação de jeitos diferentes.
     const condicaoMarcada = modelosCobranca.find((m) => String(m.id) === pgtoModeloId) ?? null;
-    const condicaoDivergeDosCampos = (() => {
-      if (!condicaoMarcada || pgtoParcelaUnica) return false;
-      const esperado = parcelasDoModelo(condicaoMarcada);
-      return (
-        esperado.qtdParcelas !== Number(pgtoQtdParcelas) ||
-        esperado.diasPraInicio !== Number(pgtoDiasPraInicio) ||
-        esperado.intervalo !== Number(pgtoIntervalo)
-      );
-    })();
+    const combinacaoDosCampos = {
+      qtdParcelas: Number(pgtoQtdParcelas),
+      diasPraInicio: Number(pgtoDiasPraInicio),
+      intervalo: Number(pgtoIntervalo)
+    };
+    const condicaoDivergeDosCampos =
+      Boolean(condicaoMarcada) &&
+      !pgtoParcelaUnica &&
+      !correspondeAoModelo(combinacaoDosCampos, condicaoMarcada!) &&
+      !modeloCorrespondente(combinacaoDosCampos, modelosCobranca);
 
     return (
       <div className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4">
@@ -947,7 +972,7 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
           </select>
           {condicaoDivergeDosCampos ? (
             <p className="text-[10px] font-medium text-amber-700 mt-1">
-              Os campos abaixo seguem as parcelas já configuradas, não esta condição.{" "}
+              Os campos abaixo não correspondem a nenhuma condição do catálogo.{" "}
               {/* Botão, e não "escolha de novo": reselecionar a mesma opção de um
                   <select> não dispara onChange, e o operador ficaria preso. */}
               <button
