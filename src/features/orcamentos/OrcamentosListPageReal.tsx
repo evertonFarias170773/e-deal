@@ -19,7 +19,12 @@ import { encerrarTeste, reabrirTeste } from "@/features/pedidos/services/encerra
 import { buscarRastreioDasPropostas, type RastreioDaProposta } from "@/features/orcamentos/services/rastreio-lista.service";
 import { RastreioPropostaModal } from "@/features/orcamentos/components/RastreioPropostaModal";
 import { buscarNomesDosSocios } from "@/features/orcamentos/services/socio-pagador.service";
-import { buscarEstagioArteDasPropostas, buscarLinksClienteDasPropostas, ESTAGIO_ARTE_CLASSE, type EstagioArte } from "@/features/orcamentos/services/status-arte-lista.service";
+import {
+  buscarStatusArteDasPropostas,
+  buscarLinksClienteDasPropostas,
+  classeDoStatusArte,
+  statusArteTemLinkDoCliente
+} from "@/features/orcamentos/services/status-arte-lista.service";
 import {
   gerarPDFProposta,
   duplicarProposta,
@@ -305,15 +310,6 @@ function sumPropostaTotal(items: OrcamentoListItem[]) {
   return items.reduce((acc, item) => acc + (Number(item.total) || 0), 0);
 }
 
-/**
- * O botao de link so existe onde ha alguem para cobrar: a arte esta com o
- * cliente (AGUARDANDO_APROVACAO) ou voltou com pedido de mudanca
- * (EM ALTERACAO). Em AGUARDANDO nao ha o que abrir, e em APROVADO nao ha o que
- * fazer.
- */
-function temLinkDeArte(estagio: EstagioArte | null | undefined): boolean {
-  return estagio === "AGUARDANDO_APROVACAO" || estagio === "EM ALTERACAO";
-}
 
 function getStatusTone(status: string) {
   const normalized = normalize(status);
@@ -739,49 +735,49 @@ export function OrcamentosListPageReal() {
   }, [idsParaRastreio]);
 
   /**
-   * Estagio da arte das linhas da pagina, para a coluna "Status Arte".
+   * Status da arte das linhas da pagina, para a coluna "Status Arte".
    *
-   * Consulta a parte pelo mesmo motivo do rastreio: o estagio mora em
-   * `pedidos_modelos.status_arte` e nao ha FK para `propostas`, entao nem o
+   * `pedidos_artes.status`, CRU — ver `status-arte-lista.service`. Consulta a
+   * parte porque nao ha FK entre `pedidos_artes` e `propostas`, entao nem o
    * select da lista nem um embed do PostgREST alcancam. Uma consulta por
    * pagina, nunca por linha.
    *
    * Cobre a PAGINA INTEIRA, como `idsParaRastreio` e nao como `visibleIdInts`:
    * a coluna renderiza em toda linha, e o corte em 100 do enriquecimento de
    * chat deixaria a metade de baixo com celula vazia — que aqui significa
-   * "pedido sem modelo", uma informacao errada.
+   * "pedido sem arte registrada", uma informacao errada.
    */
-  const idsParaEstagioArte = useMemo(
+  const idsParaStatusArte = useMemo(
     () => filteredPropostas.map((p) => p.id_int),
     [filteredPropostas]
   );
-  const [estagioArtePorId, setEstagioArtePorId] = useState<Record<number, EstagioArte>>({});
-  const fetchedEstagioArteIdsRef = useRef<Set<number>>(new Set());
+  const [statusArtePorId, setStatusArtePorId] = useState<Record<number, string>>({});
+  const fetchedStatusArteIdsRef = useRef<Set<number>>(new Set());
 
   useEffect(() => {
-    const naoBuscados = idsParaEstagioArte.filter((id) => !fetchedEstagioArteIdsRef.current.has(id));
+    const naoBuscados = idsParaStatusArte.filter((id) => !fetchedStatusArteIdsRef.current.has(id));
     if (naoBuscados.length === 0) return;
     let ativo = true;
     void (async () => {
       try {
-        const dados = await buscarEstagioArteDasPropostas(naoBuscados);
+        const dados = await buscarStatusArteDasPropostas(naoBuscados);
         if (!ativo) return;
-        naoBuscados.forEach((id) => fetchedEstagioArteIdsRef.current.add(id));
-        setEstagioArtePorId((atual) => ({ ...atual, ...dados }));
+        naoBuscados.forEach((id) => fetchedStatusArteIdsRef.current.add(id));
+        setStatusArtePorId((atual) => ({ ...atual, ...dados }));
       } catch (err) {
-        console.error("[OrcamentosListPageReal] Erro ao buscar estagio da arte das propostas:", err);
+        console.error("[OrcamentosListPageReal] Erro ao buscar status da arte das propostas:", err);
       }
     })();
     return () => {
       ativo = false;
     };
-  }, [idsParaEstagioArte]);
+  }, [idsParaStatusArte]);
 
   /**
    * Link do painel do cliente das linhas da pagina, destino do botao da coluna
    * "Status Arte".
    *
-   * Consulta propria, no mesmo lote de ids do estagio: sao duas tabelas
+   * Consulta propria, no mesmo lote de ids do status da arte: sao duas tabelas
    * diferentes e `pedidos_links_cliente` tem grant so para `authenticated`,
    * entao um erro de acesso nela nao pode derrubar a coluna inteira. Uma
    * consulta por pagina, nunca por linha.
@@ -790,7 +786,7 @@ export function OrcamentosListPageReal() {
   const fetchedLinkClienteIdsRef = useRef<Set<number>>(new Set());
 
   useEffect(() => {
-    const naoBuscados = idsParaEstagioArte.filter((id) => !fetchedLinkClienteIdsRef.current.has(id));
+    const naoBuscados = idsParaStatusArte.filter((id) => !fetchedLinkClienteIdsRef.current.has(id));
     if (naoBuscados.length === 0) return;
     let ativo = true;
     void (async () => {
@@ -811,7 +807,7 @@ export function OrcamentosListPageReal() {
     return () => {
       ativo = false;
     };
-  }, [idsParaEstagioArte]);
+  }, [idsParaStatusArte]);
 
   /**
    * Socio pagador das linhas da pagina. So entra quem tem `idFaturado`
@@ -1642,35 +1638,33 @@ Ela volta a aparecer nas listas operacionais.`
           },
           {
             /**
-             * Estagio real da arte, ao lado do Status e sem substitui-lo. O
-             * sufixo " / EM ARTE" do Status diz APENAS que ha arte pendente; em
-             * que pe ela esta — na fila, com o cliente, ou voltou para mudanca
-             * — so se descobria abrindo a proposta.
+             * Status da arte ao lado do Status, sem substitui-lo. O sufixo
+             * " / EM ARTE" do Status diz APENAS que ha arte pendente; em que pe
+             * ela esta so se descobria abrindo a proposta.
              *
-             * Derivado de `pedidos_modelos.status_arte` pelo estagio mais
-             * atrasado do pedido, em `derivarEstagioArte`. NAO le
-             * `pedidos_artes.status`, que achata os tres casos num balde so.
+             * `pedidos_artes.status` CRU, desde 13/09/2026 — o mesmo valor que o
+             * cabecalho do pedido mostra. Ver `status-arte-lista.service` para
+             * o que a derivacao anterior fazia e por que saiu.
              */
             header: "Status Arte",
             cell: (proposta) => {
-              const estagio = estagioArtePorId[proposta.id_int];
-              // Pedido sem modelo nenhum: nao ha arte para estagiar. Celula
-              // vazia e nenhum botao — diferente de AGUARDANDO, que e "tem
-              // modelo e ele ainda nao andou".
-              if (!estagio) return null;
+              const statusArte = statusArtePorId[proposta.id_int];
+              // Pedido sem linha em `pedidos_artes`: nao ha arte registrada.
+              // Celula vazia e nenhum botao.
+              if (!statusArte) return null;
 
               const linkCliente = linkClientePorId[proposta.id_int];
-              // Link so aparece com estagio que o pede E linha ativa na tabela.
-              // Sem linha (ou com o link revogado) o botao SOME: um botao que
-              // nao leva a lugar nenhum custa mais que a ausencia dele.
-              const mostraLink = temLinkDeArte(estagio) && Boolean(linkCliente);
+              // Link so aparece em status que o pede E com linha ativa na
+              // tabela. Sem linha (ou com o link revogado) o botao SOME: um
+              // botao que nao leva a lugar nenhum custa mais que a ausencia dele.
+              const mostraLink = statusArteTemLinkDoCliente(statusArte) && Boolean(linkCliente);
 
               return (
                 <div className="flex items-center justify-center gap-1.5">
                   <span
-                    className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold whitespace-nowrap ${ESTAGIO_ARTE_CLASSE[estagio]}`}
+                    className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold whitespace-nowrap ${classeDoStatusArte(statusArte)}`}
                   >
-                    {estagio}
+                    {statusArte}
                   </span>
                   {mostraLink ? (
                     <a

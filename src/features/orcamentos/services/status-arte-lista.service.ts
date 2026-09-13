@@ -1,155 +1,156 @@
 import { getSupabaseClient } from "@/lib/supabase/client";
 
 /**
- * Estagio da arte exibido na coluna "Status Arte" da lista de Orcamentos.
+ * Status da arte exibido na lista de Orcamentos (coluna "Status Arte") e no
+ * cabecalho do pedido.
  *
- * NAO e `pedidos_artes.status`. Aquela coluna so sabe dizer aprovado, aprovado
- * parcial ou "EM ARTE" — ela achata num balde so tres situacoes que o
- * atendente precisa distinguir: a arte ainda nem saiu, a arte esta com o
- * cliente, e o cliente pediu mudanca. O estagio real esta um nivel abaixo, em
- * `pedidos_modelos.status_arte`, que ja carrega esse vocabulario.
+ * E `public.pedidos_artes.status`, CRU. Desde 13/09/2026 as duas telas leem o
+ * valor gravado, e nenhuma deriva nada.
  *
- * "ENVIAR ARTE" (designer terminou, falta mandar ao cliente) NAO entra: nao
- * existe hoje nenhum evento no sistema que registre a entrega do designer, e
- * derivar isso de "tem arquivo anexado" seria adivinhacao.
+ * O QUE SAIU, E POR QUE ISTO E UMA DECISAO DO DONO
+ *   Ate 13/09 o que se exibia era um ESTAGIO derivado de
+ *   `pedidos_modelos.status_arte`, com o modelo mais atrasado vencendo. A troca
+ *   foi decidida sabendo de um custo concreto: em 13/09 havia 8 pedidos com
+ *   `pedidos_artes.status = APROVADO` e modelos que o cliente reprovou ou nunca
+ *   aprovou — cinco deles em producao. A derivacao os mostrava como EM ALTERACAO
+ *   ou AGUARDANDO_APROVACAO; o valor cru os mostra como APROVADO. Quem precisar
+ *   do estagio por modelo le `pedidos_modelos` na aba do pedido.
+ *
+ * AS DUAS TELAS LEEM A MESMA COLUNA, e por isso nao tem como discordar. Esse era
+ *   o motivo de a derivacao morar num lugar so; o motivo continua valendo para a
+ *   leitura, e por isso ela tambem mora num lugar so.
+ *
+ * `pedidos_artes` TEM UMA LINHA POR PEDIDO. Medido em 13/09/2026: 110 linhas,
+ *   110 pedidos, nenhum com duas. Se um dia houver mais de uma, vale a mais
+ *   recente por `created_at` — o mesmo criterio de `check_and_promote_proposta`,
+ *   para a tela nao contradizer a promocao do banco.
+ *
+ * SOMENTE LEITURA. Nao escreve em `pedidos_artes`, `pedidos_modelos` nem
+ * `propostas`, e nao encosta em `check_and_promote_proposta` nem nos triggers.
  */
-export type EstagioArte = "AGUARDANDO" | "AGUARDANDO_APROVACAO" | "EM ALTERACAO" | "APROVADO";
 
 /**
- * Cor do selo do estagio da arte. Mesmo formato do `StatusBadge`, mas texto
- * CRU: o estagio aparece exatamente como a regra o nomeia. Passar por
- * `humanizeStatus` deixaria "Aguardando" e "Aprovado" traduzidos ao lado de
- * "AGUARDANDO_APROVACAO" e "EM ALTERACAO", que nao estao no mapa dele.
+ * A chave de comparacao: sem caixa e sem acento.
  *
- * MORA AQUI desde 10/09/2026, junto de `EstagioArte` e `derivarEstagioArte`.
- * Antes era const local da lista de Orcamentos; quando o cabecalho do pedido
- * passou a exibir o mesmo selo, copiar o mapa criaria dois lugares para a
- * mesma cor — e o segundo envelheceria calado. A lista importa daqui e
- * renderiza exatamente como antes.
+ * A tabela mistura grafias — "EM ARTE" convive com "Em Alteração" e com
+ * "Dados Pendentes". Comparar o texto como vem faria "Em Alteração" e
+ * "EM ALTERACAO" serem coisas diferentes, e a cor e o botao sumiriam na
+ * primeira vez que alguem gravasse com outra caixa.
  */
-export const ESTAGIO_ARTE_CLASSE: Record<EstagioArte, string> = {
-  AGUARDANDO: "border-sky-200 bg-sky-50 text-sky-800",
-  AGUARDANDO_APROVACAO: "border-orange-200 bg-orange-50 text-orange-700",
-  "EM ALTERACAO": "border-red-200 bg-red-50 text-red-700",
-  APROVADO: "border-teal-200 bg-teal-50 text-teal-700"
+function chave(status: string | null | undefined): string {
+  return String(status ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, " ");
+}
+
+type Tom = "verde" | "laranja" | "vermelho" | "azul" | "neutro";
+
+/** O tom de cada status conhecido, pela chave normalizada. Decisao do dono. */
+const TOM_POR_STATUS: Record<string, Tom> = {
+  APROVADO: "verde",
+  "EM APROVACAO": "laranja",
+  "APR PARCIAL": "laranja",
+  "EM ALTERACAO": "vermelho",
+  "CORRIGIR DADOS": "vermelho",
+  "EM ARTE": "azul",
+  "ENVIAR ARTE": "azul",
+  "DADOS PENDENTES": "azul"
+};
+
+/** Mesmo formato do `StatusBadge`: borda, fundo e texto. */
+const CLASSE_POR_TOM: Record<Tom, string> = {
+  verde: "border-teal-200 bg-teal-50 text-teal-700",
+  laranja: "border-orange-200 bg-orange-50 text-orange-700",
+  vermelho: "border-red-200 bg-red-50 text-red-700",
+  azul: "border-sky-200 bg-sky-50 text-sky-800",
+  neutro: "border-slate-200 bg-slate-50 text-slate-600"
 };
 
 /**
- * Modelo com a arte fechada. Mesma lista usada pelo banco em
- * `recalcular_status_arte_briefing` e em `atualiza_flag_arte_proposta` — se as
- * duas divergirem, a coluna passa a discordar do flag `propostas.em_arte` e do
- * card "Em arte", que leem a definicao do banco.
+ * A classe do selo. Vazio e valor desconhecido caem em NEUTRO — um status novo
+ * gravado por fora aparece, sem cor, em vez de sumir ou de herdar a cor errada.
  */
-const STATUS_ARTE_APROVADOS = new Set([
-  "APROVADO",
-  "APROVADA",
-  "APROVADA_CLIENTE",
-  "LIBERADA",
-  "IMPRESSA",
-  "NAO_NECESSARIA"
-]);
-
-/**
- * Todo valor que `pedidos_modelos.status_arte` sabe assumir hoje: os seis
- * vivos no banco mais os tres declarados em `StatusArteProducao` que ainda nao
- * tem linha. Serve so para o aviso abaixo — a derivacao e total e nao depende
- * desta lista, porque tudo que nao e reprovado, nem com o cliente, nem
- * aprovado, cai em AGUARDANDO.
- */
-const STATUS_ARTE_CONHECIDOS = new Set([
-  ...STATUS_ARTE_APROVADOS,
-  "PENDENTE",
-  "AGUARDANDO",
-  "AGUARDANDO_CLIENTE",
-  "REPROVADA_CLIENTE",
-  "EM_CRIACAO",
-  "EM_REVISAO_INTERNA"
-]);
-
-/**
- * O estagio do PEDIDO a partir dos estagios dos seus modelos: vence o mais
- * atrasado. Um pedido com nove modelos aprovados e um reprovado esta EM
- * ALTERACAO — porque e isso que falta fazer nele.
- *
- * PREDICADO UNICO: a celula e o botao chamam esta funcao, nunca reimplementam
- * a regra. Foi assim que o card "Em arte" e o filtro divergiram em 31/08/2026,
- * cada um com sua propria nocao do mesmo criterio.
- *
- * Devolve `null` para pedido SEM modelo nenhum — nao ha arte para estagiar, e
- * a celula fica vazia. Diferente de AGUARDANDO, que e "tem modelo e ele ainda
- * nao andou".
- */
-export function derivarEstagioArte(statusDosModelos: (string | null | undefined)[]): EstagioArte | null {
-  const valores = statusDosModelos.map((s) => String(s ?? "").trim().toUpperCase()).filter(Boolean);
-  if (valores.length === 0) return null;
-
-  if (valores.some((s) => s === "REPROVADA_CLIENTE")) return "EM ALTERACAO";
-  if (valores.some((s) => s === "AGUARDANDO_CLIENTE")) return "AGUARDANDO_APROVACAO";
-  if (valores.every((s) => STATUS_ARTE_APROVADOS.has(s))) return "APROVADO";
-  return "AGUARDANDO";
+export function classeDoStatusArte(status: string | null | undefined): string {
+  return CLASSE_POR_TOM[TOM_POR_STATUS[chave(status)] ?? "neutro"];
 }
 
 /**
- * Estagio da arte das propostas exibidas na lista de Orcamentos.
- *
- * POR QUE UMA CONSULTA A PARTE
- *   A lista le `propostas`, e o estagio mora em `pedidos_modelos`. Nao ha FK
- *   entre as duas (`pedidos_modelos.id_int` nao e chave estrangeira de
- *   `propostas.id_int`), entao o embed do PostgREST nao resolve — seria preciso
- *   criar constraint, que esta fora do escopo. Roda depois, UMA VEZ para os
- *   id_int da pagina, no mesmo padrao de `buscarRastreioDasPropostas` e do
- *   enriquecimento de chat que a tela ja faz. Nunca por linha.
- *
- * SOMENTE LEITURA. Nao escreve em `pedidos_modelos`, `pedidos_artes` nem
- * `propostas`, e nao encosta em `propostas.em_arte` nem nos triggers.
+ * Os status em que ha algo COM O CLIENTE, e so neles o botao "Abrir o painel do
+ * cliente" faz sentido. Decisao do dono. Aprovado, em arte e dados pendentes
+ * ficam de fora: nao ha nada para o cliente olhar ou decidir.
  */
-export async function buscarEstagioArteDasPropostas(
-  idInts: number[]
-): Promise<Record<number, EstagioArte>> {
+const STATUS_COM_LINK_DO_CLIENTE = new Set(["EM APROVACAO", "APR PARCIAL", "EM ALTERACAO", "CORRIGIR DADOS"]);
+
+export function statusArteTemLinkDoCliente(status: string | null | undefined): boolean {
+  return STATUS_COM_LINK_DO_CLIENTE.has(chave(status));
+}
+
+/** Texto a exibir: o gravado, so aparado. Vazio vira `null` — celula e selo vazios. */
+function textoExibido(status: string | null | undefined): string | null {
+  const texto = String(status ?? "").trim();
+  return texto ? texto : null;
+}
+
+/**
+ * Status da arte das propostas da PAGINA da lista, numa consulta so.
+ *
+ * Nunca por linha: roda uma vez com os `id_int` da pagina, no mesmo molde de
+ * `buscarLinksClienteDasPropostas` logo abaixo. Pedido sem linha em
+ * `pedidos_artes` simplesmente nao aparece no mapa — e a celula fica vazia.
+ */
+export async function buscarStatusArteDasPropostas(idInts: number[]): Promise<Record<number, string>> {
   const client = getSupabaseClient();
   const ids = Array.from(new Set(idInts.filter((n) => Number.isFinite(n) && n > 0)));
   if (!client || ids.length === 0) return {};
 
   const { data, error } = await client
-    .from("pedidos_modelos")
-    .select("id_int, status_arte")
-    .in("id_int", ids);
+    .from("pedidos_artes")
+    .select("id_int, status, created_at")
+    .in("id_int", ids)
+    .order("created_at", { ascending: true });
 
   if (error) {
-    console.warn("[status-arte-lista] Erro ao ler pedidos_modelos:", error);
+    console.warn("[status-arte-lista] Erro ao ler pedidos_artes:", error.message);
     return {};
   }
 
-  const statusPorId = new Map<number, string[]>();
-  const desconhecidos = new Set<string>();
-
+  // Ordem crescente: a ultima escrita vence, que e a linha mais recente.
+  const resultado: Record<number, string> = {};
   for (const linha of data ?? []) {
     const id = Number(linha.id_int);
-    if (!Number.isFinite(id)) continue;
-    const status = String(linha.status_arte ?? "").trim().toUpperCase();
-    if (status && !STATUS_ARTE_CONHECIDOS.has(status)) desconhecidos.add(status);
-    const atual = statusPorId.get(id);
-    if (atual) atual.push(status);
-    else statusPorId.set(id, [status]);
-  }
-
-  // Valor novo em `status_arte` nao quebra a coluna (cai em AGUARDANDO), mas
-  // significa que alguem passou a gravar um estagio que esta regra nao conhece
-  // — e ai a coluna esta mentindo em silencio. O escritor desses status esta
-  // FORA deste repositorio, entao o aviso e a unica forma de perceber.
-  if (desconhecidos.size > 0) {
-    console.warn(
-      "[status-arte-lista] status_arte fora do mapeamento conhecido:",
-      Array.from(desconhecidos).join(", ")
-    );
-  }
-
-  const resultado: Record<number, EstagioArte> = {};
-  for (const [id, statusList] of statusPorId) {
-    const estagio = derivarEstagioArte(statusList);
-    if (estagio) resultado[id] = estagio;
+    const texto = textoExibido(linha.status);
+    if (!Number.isFinite(id) || id <= 0) continue;
+    if (texto) resultado[id] = texto;
+    else delete resultado[id];
   }
   return resultado;
+}
+
+/**
+ * Status da arte de UM pedido, para o cabecalho. Uma consulta na abertura.
+ *
+ * `null` quando nao ha linha ou ela esta vazia — e nenhum selo aparece.
+ */
+export async function buscarStatusArteDaProposta(idInt: number): Promise<string | null> {
+  const client = getSupabaseClient();
+  if (!client || !Number.isFinite(idInt) || idInt <= 0) return null;
+
+  const { data, error } = await client
+    .from("pedidos_artes")
+    .select("status")
+    .eq("id_int", idInt)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    console.warn("[status-arte-lista] Erro ao ler pedidos_artes do pedido:", error.message);
+    return null;
+  }
+  return textoExibido((data as { status?: string | null } | null)?.status);
 }
 
 /**
