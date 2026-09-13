@@ -1,8 +1,8 @@
 # DOCUMENTATION_INDEX.md
 
-Versão: 3.4  
+Versão: 3.5  
 Status: Oficial  
-Última atualização: 17/08/2026  
+Última atualização: 13/09/2026  
 Projeto: Vibe
 
 ---
@@ -102,6 +102,10 @@ Timeline, anexos, menções, notificações e pendências.
 ## [`business/EXPEDICAO.md`](./business/EXPEDICAO.md)
 
 Painel do funil APROVADO→ENTREGUE, fontes de dados, transições, etiqueta 10×15, declaração de conteúdo, Correios por empresa, rastreio n8n e permissões.
+
+## [`business/PEDIDO-COMPLEMENTAR.md`](./business/PEDIDO-COMPLEMENTAR.md)
+
+Pedido complementar do mesmo evento: regra aprovada em 13/09/2026 e **em implementação** — elegibilidade (pago e não expedido), o que herda, vínculo, frete pela diferença do peso somado, guardas, despacho conjunto na Expedição, decisões do dono e pendência fiscal aberta.
 
 ---
 
@@ -224,6 +228,7 @@ A presença de um script não comprova aplicação nem constitui autorização d
 | Cancelamento financeiro | `CANCELAMENTO-COBRANCAS.md` |
 | Produção | `PEDIDOS-PRODUCAO.md` |
 | Chat e pendências | `CHAT-INTERNO.md` |
+| Pedido complementar | `PEDIDO-COMPLEMENTAR.md` |
 | Maestro — estado atual e leitura | `maestro/STATUS-MAESTRO-AGENT-LOOP.md` |
 | Maestro — escrita e princípios de negócio | `maestro/MATRIZ-PERMISSOES-ESCRITA-MAESTRO.md` |
 | Maestro — semântica canônica | `maestro/MAESTRO-KNOWLEDGE-BASE.md` |

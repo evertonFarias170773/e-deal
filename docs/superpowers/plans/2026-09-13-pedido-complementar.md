@@ -266,7 +266,7 @@ Validação comum: `npx tsc --noEmit`; `npx eslint <arquivos alterados>`; teste 
 
 - [ ] **P0 — Massa de teste (não publica).** As propostas 22009, 22021, 22022 do 58613 estão CANCELADO. Criar uma proposta CIF com 1 item pesado (~4,5 kg), SEDEX escolhido, cobrança PIX confirmada até LIBERADO e "Liberar para Produção". Guardar `id_int = X`.
 
-- [ ] **E0 — Doc de regra.** Criar `docs/business/PEDIDO-COMPLEMENTAR.md` (seções 2–9 deste plano + limitações: caso #21594, NF-e dupla, `voltarStatus` não propaga); entrada em `docs/DOCUMENTATION_INDEX.md`. Depende de: nada. Validação: revisão do dono; `git diff --stat` só em docs.
+- [x] **E0 — Doc de regra.** _(concluída em 13/09/2026)_ Criar `docs/business/PEDIDO-COMPLEMENTAR.md` (seções 2–9 deste plano + limitações: caso #21594, NF-e dupla, `voltarStatus` não propaga); entrada em `docs/DOCUMENTATION_INDEX.md`. Depende de: nada. Validação: revisão do dono; `git diff --stat` só em docs.
 
 - [ ] **E1 — Migration: coluna + ledger.** Criar `supabase/migrations/20260914_pedido_complementar_vinculo_e_ledger.sql` (3.1 e 3.2; sem grant de permissão). Depende de: E0. Validação (SQL): coluna existe e é nullable; `pg_constraint` de `complementos_frete` mostra os 8 CHECKs/UK; `pg_policy` só `r`; `count(*) where id_int_pedido_principal is not null` = 0; triggers de `cotacao_frete` inalterados.
 
