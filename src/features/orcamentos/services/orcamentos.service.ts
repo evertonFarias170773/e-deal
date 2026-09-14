@@ -2462,7 +2462,14 @@ export async function saveProposta(
       propostaData.valor = subtotalProdutos;
       propostaData.valor_total = valorTotal;
       propostaData.frete_escolhido = freteNome;
-      propostaData.valor_frete = freteValor;
+      // FRETE SO SE GRAVA NA FASE DE ORCAMENTO (14/09/2026). A partir de
+      // LIBERADO o `valor_frete` gravado permanece: e onde as correcoes feitas
+      // fora do orcamento moram, e regravar aqui o valor do card as desfazia no
+      // proximo "Salvar alteracoes". Mesmo corte da trava de modalidade e
+      // transportadora (`modalidadeEditavel`, status relido do banco acima).
+      if (modalidadeEditavel) {
+        propostaData.valor_frete = freteValor;
+      }
     }
 
     // Só entram no UPDATE enquanto a proposta está na fase de orçamento. Depois
@@ -2982,7 +2989,10 @@ export async function saveProposta(
 
     // Persistir o frete escolhido no banco de dados (public.cotacao_frete)
     // Complemento: `cotacao_frete` nao e tocada (ver `ehComplemento`).
-    if (!ehComplemento && (formState.isAvulso || chosenFrete || gravaCotacaoSemCard)) {
+    // A partir de LIBERADO `cotacao_frete` nao e tocada — nem DELETE, nem INSERT.
+    // Mesmo corte do `valor_frete` acima: a cotacao gravada fica como esta, e os
+    // triggers dela nao disparam por causa de um Salvar de pedido ja liberado.
+    if (modalidadeEditavel && !ehComplemento && (formState.isAvulso || chosenFrete || gravaCotacaoSemCard)) {
       try {
         // Deletar os fretes antigos apenas daquela proposta
         const { error: deleteError } = await client
@@ -3046,7 +3056,8 @@ export async function saveProposta(
         .update({
           is_avulso: true,
           valor: subtotalProdutos,
-          valor_frete: freteValor,
+          // Mesmo corte do frete: depois de LIBERADO o `valor_frete` gravado fica.
+          ...(modalidadeEditavel ? { valor_frete: freteValor } : {}),
           valor_total: valorTotal
         })
         .eq("id_int", id_int!)
