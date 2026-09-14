@@ -1,7 +1,7 @@
 # PEDIDO-COMPLEMENTAR.md
 
 Versão: 1.0
-Status: Regra aprovada — **em implementação** (E0 a E4 concluídas; E5 a E10 pendentes)
+Status: Regra aprovada — **em implementação** (E0 a E5 concluídas; E6 a E10 pendentes)
 Última atualização: 13/09/2026
 Projeto: Vibe
 
@@ -17,9 +17,11 @@ Projeto: Vibe
 > "Compl. de #X" na linha do complemento (E3). O formulário e o detalhe mostram
 > o vínculo nos dois lados, o complemento abre com endereço, contato, pagador,
 > modalidade e transportadora travados, a tela não cota frete para ele e o
-> salvamento não toca `cotacao_frete` nem as colunas herdadas (E4). Não há
-> frete complementar — o complemento fica com frete zero até a E6 — nem nada
-> na Expedição. O item do menu só
+> salvamento não toca `cotacao_frete` nem as colunas herdadas (E4). Existe a
+> rota que **cota** o frete do peso somado e devolve as opções com a diferença,
+> sem gravar nada (E5) — ainda não há tela que a chame nem como aplicar o
+> valor, então o complemento segue com frete zero até a E6. Nada na Expedição.
+> O item do menu só
 > aparece para quem tem a chave `propostas.complementar` ou o coringa `*`, e
 > nenhum perfil tem a chave ainda (isso é da E10): hoje só o Super
 > Administrador o vê. A função do banco também aceita usuários com
@@ -507,7 +509,7 @@ coringa. O dono aceitou esse comportamento em 13/09/2026: `cc__assert_permissao`
 | E2 | Função de criar o complemento | **Concluída em 13/09/2026** — `supabase/migrations/20260914_criar_pedido_complementar.sql`, aplicada em produção (versão `20260913211243`). Validada com o par de teste #22067 (principal, pago por E-Amostra) e #22068 (complemento, cancelado ao final) |
 | E3 | Serviço, item no menu de ações e modal | **Concluída em 13/09/2026** — item "Criar pedido complementar" na lista de Orçamentos, `CriarComplementoModal`, selo "Compl. de #X" e a chave no catálogo de permissões. Validada com o complemento #22069 da #22067, criado pelo menu |
 | E4 | Leitura do vínculo, selos, travas e salvamento neutro | **Concluída em 13/09/2026** — selos "Complemento do #X" e "Complemento: #Y" no formulário e no detalhe, travas de endereço, contato, pagador e modalidade, cotação desligada e salvamento sem `cotacao_frete` no complemento. Validada com a #22069; proposta comum sem mudança |
-| E5 | Rota de cotar frete complementar | Pendente |
+| E5 | Rota de cotar frete complementar | **Concluída em 14/09/2026** — `POST /api/orcamentos/complementar/cotar-frete` e `complementar.client.ts`, só leitura: cota o peso somado, devolve `diferenca`, `valorACobrar` e a chave por opção. Validada com a #22069 |
 | E6 | Rota e função de aplicar frete + card no formulário | Pendente |
 | E7 | Guardas de cancelamento e de cobrança | Pendente |
 | E8 | Expedição: vínculo no painel, bloqueio de despacho e desvinculação | Pendente |
