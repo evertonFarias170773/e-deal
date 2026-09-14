@@ -44,7 +44,6 @@ import {
   buildPropostaInformalText,
   propostaDispensaArte,
   resumirEnderecoDoOrcamento,
-  SERVICO_RETIRA_BALCAO,
   type DestinoDoResumo
 } from "@/features/orcamentos/orcamento-utils";
 import { formatCurrency, parseCurrencyBR, formatCurrencyWithoutPrefix } from "@/lib/formatters/currency";
@@ -76,7 +75,6 @@ import { buscarStatusArteDaProposta, classeDoStatusArte } from "@/features/orcam
 import { solicitarCotacaoSedex, solicitarCotacaoAzulCargo, solicitarCotacaoTransportadoras, solicitarCotacaoVeppo } from "@/features/orcamentos/services/frete.service";
 import { resolverTransportadoraParceira } from "@/features/orcamentos/lib/transportadoras-parceiras";
 import { PermissionGuard } from "@/components/common/PermissionGuard";
-import { RecotarFreteAdminPanel } from "@/features/orcamentos/components/RecotarFreteAdminPanel";
 import {
   aplicarModalidadeNosFretes,
   exigeCotacaoEscolhida,
@@ -1894,20 +1892,9 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
         return;
       }
 
+      // Sem o card "Retirada Local" (14/09/2026): ele duplicava o botao RETIRA
+      // da barra de modalidade. Retirada se declara la, nao escolhendo cotacao.
       const allResults = [...sedexResults, ...azulResults, ...transpResults, ...veppoResults];
-      if (uf?.toUpperCase() === "RS") {
-        allResults.push({
-          id: "frete_retira_balcao",
-          id_int: proposta?.id_int ?? 0,
-          transportadora: "Retirada Local",
-          servico: SERVICO_RETIRA_BALCAO,
-          valor: 0.00,
-          prazo: "Imediato",
-          observacao: "Retirar pessoalmente no balcão da empresa",
-          escolhido: false,
-          pesoUsado: resumo.pesoTotal
-        });
-      }
 
       setForm((prev) => {
         // Preservação de frete só vale para mudanças de peso/produto no mesmo destino. Mudança de endereço invalida a cotação anterior.
@@ -3195,20 +3182,8 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     let nextEscolhidoId = "";
     let foundMatch = false;
 
+    // Sem o card "Retirada Local" — mesma remocao da cotacao automatica acima.
     const allResults = [...sedexResults, ...azulResults, ...transpResults, ...veppoResults];
-    if (uf?.toUpperCase() === "RS") {
-      allResults.push({
-        id: "frete_retira_balcao",
-        id_int: form.id_int ? Number(form.id_int) : 0,
-        transportadora: "Retirada Local",
-        servico: SERVICO_RETIRA_BALCAO,
-        valor: 0.00,
-        prazo: "Imediato",
-        observacao: "Retirar pessoalmente no balcão da empresa",
-        escolhido: false,
-        pesoUsado: resumo.pesoTotal
-      });
-    }
 
     const updatedResults = allResults.map((newFrete) => {
       if (currentChosen && !isManual && areFreightsEqual(newFrete, currentChosen)) {
@@ -6237,27 +6212,11 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                       </p>
 
                       {/*
-                        Peça B, colada na A: a transportadora tinha destino, o
-                        VALOR do frete não. Reusa a recotação do despacho inteira
-                        — mesmas rotas, mesma RPC — só acrescenta a porta.
+                        A recotacao ("Recotar frete" / "Liberar recotacao") saiu
+                        daqui em 14/09/2026: deixou de ser o caminho de correcao
+                        de valor. Continua viva no modal de despacho da Expedicao,
+                        que tem os botoes proprios e nao usa este bloco.
                       */}
-                      <div className="border-t border-amber-200 pt-3 dark:border-amber-900">
-                        <label className="mb-2 block text-xs font-bold text-amber-900 dark:text-amber-200">
-                          Corrigir o valor do frete (admin)
-                        </label>
-                        <RecotarFreteAdminPanel
-                          idInt={proposta?.id_int ?? 0}
-                          statusInterno={form.status}
-                          modalidade={form.modalidadeFrete}
-                          onAplicado={() => {
-                            // O frete novo foi gravado direto em `propostas` pela
-                            // RPC — o formulário em memória não sabe. Recarregar
-                            // do servidor evita a tela seguir mostrando o valor
-                            // velho no Resumo.
-                            router.refresh();
-                          }}
-                        />
-                      </div>
                     </div>
                   </PermissionGuard>
                 </div>
@@ -8098,48 +8057,10 @@ function createInitialState(proposta?: Proposta): PropostaFormState {
   const clienteNaoCadastrado = proposta?.clienteNaoCadastrado ?? (cliente ? (cliente.idCliente === null || cliente.idCliente === undefined || Number(cliente.idCliente) === 0) : false);
 
   let fretes = proposta?.fretes ?? (endereco ? createFretesMock(endereco, proposta?.id_int ?? 0, proposta?.resumo.pesoTotal ?? 0) : []);
-  {
-    // RETIRADA NAO TEM UF (04/09/2026). Este bloco so rodava com
-    // `endereco.uf === "RS"`, e a restricao deixava cliente de outro estado sem
-    // NENHUMA forma de zerar o frete pela tela: em RETIRA os cards ficam
-    // escondidos, entao o unico caminho era marcar CIF para eles voltarem. Quem
-    // busca no balcao vai ao balcao — o endereco cadastrado nao decide isso.
-    // Mesma remocao em `createFretesMock`, para as duas listas nao divergirem.
-    //
-    // A deteccao e pelo QUE o card e, nao pelo id. O id `frete_retira_balcao`
-    // so existe em memoria: a linha que volta de `cotacao_frete` traz o id
-    // numerico da linha, entao comparar por id dava sempre falso e o card era
-    // acrescentado ao lado do que veio do banco — dois "Retirada Local".
-    //
-    // O criterio e o MESMO que `ehFreteDeRetirada` (na tela) e o salvamento
-    // (orcamentos.service, ao gravar `frete_escolhido = 'RETIRADA'`) ja usam,
-    // para os tres nunca discordarem sobre o que e retirada.
-    //
-    // Vale tambem para a lista reconstruida quando nao ha cotacao: o card
-    // `frete_retirada` de la tambem se chama "Retirada Local", e tambem
-    // ganhava um duplicado aqui.
-    //
-    // As 107 propostas gravadas como "Sem custo" NAO sao reconhecidas — o
-    // titulo delas nao diz retirada — e seguem exibindo o card que tem mais a
-    // opcao de retirada, exatamente como hoje. Reconhece-las exigiria tratar
-    // SEM_CUSTO como retirada, que e justamente a unificacao descartada.
-    const hasRetira = fretes.some(
-      (f) => f.id === "frete_retira_balcao" || (f.transportadora ?? "").toUpperCase().includes("RETIRA")
-    );
-    if (!hasRetira) {
-      fretes = [...fretes, {
-        id: "frete_retira_balcao",
-        id_int: proposta?.id_int ?? 0,
-        transportadora: "Retirada Local",
-        servico: SERVICO_RETIRA_BALCAO,
-        valor: 0.00,
-        prazo: "Imediato",
-        observacao: "Retirar pessoalmente no balcão da empresa",
-        escolhido: false,
-        pesoUsado: proposta?.resumo.pesoTotal ?? 0
-      }];
-    }
-  }
+  // Sem o card "Retirada Local" acrescentado aqui (14/09/2026): ele duplicava
+  // o botao RETIRA da barra de modalidade. A linha de retirada que ja esta
+  // gravada em `cotacao_frete` continua chegando por `proposta.fretes`, entao
+  // proposta que escolheu retirada segue exibindo a propria escolha.
   let chosenFrete = fretes.find((f) => f.escolhido) || fretes[0];
 
   if (isAvulso) {
