@@ -1459,7 +1459,8 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
       observacao: "",
       escolhido: true,
       pesoUsado: 0
-    } : freteEscolhido,
+    // A partir de LIBERADO a linha do frete fala do valor gravado, o mesmo do total.
+    } : (!modalidadeEditavel && freteEscolhido ? { ...freteEscolhido, valor: resumo.frete } : freteEscolhido),
     resumo,
     formaPagamento: form.formaPagamento,
     isAvulso: form.isAvulso,

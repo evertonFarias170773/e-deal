@@ -362,7 +362,12 @@ export async function gravarValorFreteNegociado(
     .update({ valor_frete: freteNovoC / 100, valor_total: totalNovoC / 100 })
     .eq("id_int", idInt);
   escrita = proposta.valor_frete === null ? escrita.is("valor_frete", null) : escrita.eq("valor_frete", proposta.valor_frete);
-  escrita = escrita.eq("valor_total", proposta.valor_total);
+  // `valor_total` é double precision: o valor guardado pode não ser o double
+  // exato do número que a API devolve (a 17974 guarda um 5864,66 que não é igual
+  // a 5864.66::float8), então igualdade exata recusaria sem ninguém ter mexido.
+  // A trava vale no MESMO CENTAVO lido — qualquer mudança real de total é de
+  // pelo menos R$ 0,01 e cai fora da faixa. `valor_frete` é numeric: exato.
+  escrita = escrita.gte("valor_total", (totalAtualC - 0.5) / 100).lt("valor_total", (totalAtualC + 0.5) / 100);
 
   const { data: gravadas, error: escritaErro } = await escrita.select("id_int, valor_frete, valor_total, status_interno");
   if (escritaErro) {

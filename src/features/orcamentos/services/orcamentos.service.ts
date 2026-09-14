@@ -2429,7 +2429,8 @@ export async function saveProposta(
         observacao: "",
         escolhido: true,
         pesoUsado: 0
-      } : chosenFrete,
+      // Travado, a linha do frete do texto fala do valor GRAVADO, o mesmo do total.
+      } : (usarFreteGravado && chosenFrete ? { ...chosenFrete, valor: freteValor } : chosenFrete),
       resumo,
       formaPagamento: formState.formaPagamento || "A combinar",
       isAvulso: formState.isAvulso,
