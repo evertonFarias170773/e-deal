@@ -25,11 +25,17 @@ import { verificarPermissaoServerSide } from "@/lib/auth/verificar-permissao";
  *   `idempotente: true`, sem linha nova na timeline.
  *
  * PERMISSÃO
- *   `propostas.release_producao` — a MESMA de "Retirar da Produção", que já
- *   existia no catálogo. Não há chave nova: as duas ações têm exatamente a mesma
- *   natureza (tirar pedido das listas operacionais) e o mesmo alcance. Vale o
- *   fallback padrão do projeto (super admin sempre passa; `is_admin` passa por
- *   fallback quando o usuário não tem perfil com permissões granulares).
+ *   `propostas.encerrar_teste`, chave própria desde 14/09/2026. Nenhum perfil a
+ *   recebe: só o Super Administrador passa, pelo curinga `*` ou por
+ *   `usuarios.is_super_adm`. Vale para as duas direções — encerrar e reabrir —
+ *   de propósito: separar criaria quem encerra e não consegue desfazer.
+ *
+ *   Até 14/09/2026 era `propostas.release_producao`, a chave de "Retirar da
+ *   Produção", que está também em Administrador, Financeiro e Vendedor. Aquela
+ *   chave continua valendo para as outras ações que a usam.
+ *
+ *   Fallback padrão de `verificarPermissaoServerSide`: usuário SEM perfil
+ *   resolvido cai em `is_admin` (zero usuários nessa situação em 14/09/2026).
  *
  * POR QUE A ROTA É A TRANCA — E ATÉ ONDE ELA TRANCA
  *   A RLS de `public.propostas` é aberta para `authenticated` (política
@@ -83,11 +89,11 @@ export async function POST(request: Request) {
   const podeMarcar = await verificarPermissaoServerSide(
     supabase,
     authData.user.id,
-    "propostas.release_producao"
+    "propostas.encerrar_teste"
   );
   if (!podeMarcar) {
     return NextResponse.json(
-      { success: false, message: "Só um administrador pode encerrar ou reabrir pedido de teste." },
+      { success: false, message: "Só o Super Administrador pode encerrar ou reabrir pedido de teste." },
       { status: 403 }
     );
   }

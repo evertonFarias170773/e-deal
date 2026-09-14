@@ -573,7 +573,7 @@ O badge em Orçamentos é o caminho de volta: o pedido marcado nunca some dessa 
 
 ## Permissão e onde ela é garantida
 
-Chave `propostas.release_producao` — a **mesma** de "Retirar da Produção". Não há chave nova: mesma natureza (tirar pedido das listas operacionais) e mesmo alcance. Vale o fallback padrão (super admin sempre; `is_admin` por fallback).
+Chave `propostas.encerrar_teste`, própria desde 14/09/2026, para **encerrar e reabrir** nas três telas. Nenhum perfil a recebe: só o Super Administrador passa, pelo curinga `*`. Não há atalho `isAdmin` na tela — quem não tem a chave não vê o item. Até 14/09/2026 era `propostas.release_producao` (a de "Retirar da Produção"), que também estava em Administrador, Financeiro e Vendedor; aquela chave segue valendo para as outras ações que a usam. Fallback padrão da rota: usuário sem perfil resolvido cai em `is_admin`.
 
 A tranca é `POST /api/pedidos/encerrar-teste`, que revalida a permissão no servidor com `verificarPermissaoServerSide`. Esconder o item do menu **não protege nada**: a RLS de `public.propostas` é aberta para `authenticated` (política `update_all_propostas`, `qual = true`).
 

@@ -528,13 +528,13 @@ export function ExpedicaoPage() {
   const canAdminExpedicao = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "expedicao.admin");
 
   /**
-   * Encerrar pedido de teste. Chave `propostas.release_producao`, a MESMA de
-   * "Retirar da Producao" — mesma natureza, tirar pedido das listas
-   * operacionais. Nao e `expedicao.admin`: a marcacao vale para todos os
-   * paineis, nao so para este. Esconder o item nao protege nada (a RLS de
-   * propostas e aberta); quem tranca e POST /api/pedidos/encerrar-teste.
+   * Encerrar pedido de teste. Chave `propostas.encerrar_teste` (14/09/2026), que
+   * so o Super Administrador tem, pelo curinga — sem o atalho `isAdmin`, quem
+   * nao tem a chave nao ve o item. Nao e `expedicao.admin`: a marcacao vale
+   * para todos os paineis, nao so para este. Esconder o item nao protege nada
+   * (a RLS de propostas e aberta); quem tranca e POST /api/pedidos/encerrar-teste.
    */
-  const canEncerrarTeste = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "propostas.release_producao");
+  const canEncerrarTeste = hasPermissao(user, "propostas.encerrar_teste");
 
   /**
    * Corrigir o frete de um pedido já liberado. A MESMA chave que libera a edição

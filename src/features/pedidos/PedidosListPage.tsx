@@ -93,14 +93,14 @@ export function PedidosListPage() {
   const canPrintOS = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "pedidos.print_os");
 
   /**
-   * Encerrar pedido de teste. Mesma permissão de "Retirar da Produção"
-   * (`propostas.release_producao`) — mesma natureza: tirar pedido das listas
-   * operacionais. Aqui só existe o "Encerrar": o pedido marcado sai desta lista
+   * Encerrar pedido de teste. Chave `propostas.encerrar_teste` (14/09/2026), que
+   * só o Super Administrador tem, pelo curinga — sem o atalho `isAdmin`, quem não
+   * tem a chave não vê o item. Aqui só existe o "Encerrar": o pedido marcado sai desta lista
    * na hora, então "Reabrir" mora em Orçamentos, onde ele continua visível com
    * badge. Esconder o item não protege nada (a RLS de propostas é aberta): quem
    * tranca é POST /api/pedidos/encerrar-teste.
    */
-  const canEncerrarTeste = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "propostas.release_producao");
+  const canEncerrarTeste = hasPermissao(user, "propostas.encerrar_teste");
   const [encerrandoTesteId, setEncerrandoTesteId] = useState<number | null>(null);
   async function handleEncerrarTeste(proposta: PropostaOperacionalListItem) {
     if (encerrandoTesteId !== null) return;

@@ -1201,10 +1201,12 @@ export function OrcamentosListPageReal() {
    *  (o pedido deixa de ser um pedido de fabrica e so volta
    * pelo fluxo oficial, que exige REVISAO ATENDENTE). Este apenas esconde das
    * filas, sem tocar em status nem em .
+   *
+   * Chave `propostas.encerrar_teste` (14/09/2026), que so o Super Administrador
+   * tem, pelo curinga. Sem o atalho `isAdmin`: quem nao tem a chave nao ve nem
+   * "Encerrar" nem "Reabrir". A rota confere a mesma chave.
    */
-  const canEncerrarTeste = Boolean(
-    user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "propostas.release_producao")
-  );
+  const canEncerrarTeste = hasPermissao(user, "propostas.encerrar_teste");
   const [encerrandoTesteId, setEncerrandoTesteId] = useState<number | null>(null);
 
   async function handleEncerrarTeste(item: OrcamentoListItem, encerrar: boolean) {
