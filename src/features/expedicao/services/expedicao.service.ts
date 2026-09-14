@@ -132,7 +132,7 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
       // `id_endereco_ent` (02/09/2026): o endereço de entrega DEFINIDO NA
       // PROPOSTA. Entrou na mesma linha que já vinha — zero consulta a mais
       // aqui. É `text` na tabela, e aponta para `enderecos.id` (uuid).
-      "id_int, cliente, id_cliente, id_faturado, empresa, vendedor, status_interno, libera_nf, volume, modalidade_frete, id_transportadora_cliente, valor_frete, id_endereco_ent, categoria_frete"
+      "id_int, cliente, id_cliente, id_faturado, empresa, vendedor, status_interno, libera_nf, volume, modalidade_frete, id_transportadora_cliente, valor_frete, id_endereco_ent, categoria_frete, id_int_pedido_principal"
     )
     .eq("is_prd_aprovado", true)
     .in("status_interno", STATUS_FUNIL_EXPEDICAO)
@@ -178,7 +178,8 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
     pesosRes,
     liberacoesRes,
     recotacoesRes,
-    setoresRes
+    setoresRes,
+    complementosRes
   ] = await Promise.all([
     client
       .from("propostas_os")
@@ -229,7 +230,15 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
     // Peso REAL por setor, medido na Revisão do boletim. A soma vira o "Peso
     // aferido" que o despacho abre preenchido — antes o expedidor tinha de
     // repetir na bancada uma pesagem que a produção já havia feito.
-    client.from("propostas_os_setores").select("id_int, setor, peso_real_kg").in("id_int", ids)
+    client.from("propostas_os_setores").select("id_int, setor, peso_real_kg").in("id_int", ids),
+    // PEDIDO COMPLEMENTAR: complementos abertos dos pedidos do painel. Consulta
+    // propria porque complemento em NOVO ou AGUARDANDO nao esta no funil — e o
+    // card do principal precisa mostrar que ele existe e ainda nao chegou.
+    client
+      .from("propostas")
+      .select("id_int, id_int_pedido_principal, status_interno")
+      .in("id_int_pedido_principal", ids)
+      .neq("status_interno", "CANCELADO")
   ]);
 
   if (fretesRes.error) {
@@ -242,9 +251,25 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
     ["clientes", clientesRes],
     ["produtos_proposta", pesosRes],
     ["expedicao_recotacao_liberacoes", liberacoesRes],
-    ["expedicao_recotacoes", recotacoesRes]
+    ["expedicao_recotacoes", recotacoesRes],
+    ["propostas (complementos)", complementosRes]
   ] as const) {
     if (res.error) console.warn(`[expedicao.service] Erro ao buscar ${nome}:`, res.error);
+  }
+
+  // Complementos por pedido principal, em ordem de numero.
+  const complementosMap = new Map<number, PedidoExpedicao["complementos"]>();
+  for (const row of [...(complementosRes.data ?? [])].sort((a, b) => Number(a.id_int) - Number(b.id_int))) {
+    const principal = Number(row.id_int_pedido_principal);
+    if (!Number.isFinite(principal)) continue;
+    const statusInterno = String(row.status_interno ?? "");
+    const lista = complementosMap.get(principal) ?? [];
+    lista.push({
+      idInt: Number(row.id_int),
+      statusInterno,
+      prontoParaSair: statusInterno.trim().toUpperCase() === "EXPEDICAO"
+    });
+    complementosMap.set(principal, lista);
   }
 
   const liberacaoMap = new Map<number, { id: number; liberadoEm: string; liberadoPorNome: string | null }>();
@@ -937,7 +962,12 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
       liberacaoRecotacao: liberacaoMap.get(idInt) ?? null,
       recotacaoVigente: recotacaoMap.get(idInt) ?? null,
       despachoConfirmado,
-      aguardandoColeta
+      aguardandoColeta,
+      pedidoPrincipal:
+        p.id_int_pedido_principal !== null && p.id_int_pedido_principal !== undefined
+          ? { idInt: Number(p.id_int_pedido_principal) }
+          : null,
+      complementos: complementosMap.get(idInt) ?? []
     });
   }
 

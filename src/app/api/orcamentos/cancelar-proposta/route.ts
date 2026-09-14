@@ -61,7 +61,7 @@ export async function POST(request: Request) {
 
   const { data: proposta, error: propostaErr } = await supabase
     .from("propostas")
-    .select("id_int, status_interno, empresa, vendedor, id_cliente")
+    .select("id_int, status_interno, empresa, vendedor, id_cliente, id_int_pedido_principal")
     .eq("id_int", idInt)
     .maybeSingle();
 
@@ -318,6 +318,24 @@ export async function POST(request: Request) {
 
   if (chatErr) {
     console.error("[API][CancelarProposta] Falha ao registrar auditoria em propostas_chat:", chatErr);
+  }
+
+  // PEDIDO COMPLEMENTAR cancelado (docs/business/PEDIDO-COMPLEMENTAR.md): com o
+  // CANCELADO ja gravado, o frete complementar aplicado deixa de valer — o
+  // ledger e carimbado e os dois pedidos recebem chat. O VINCULO FICA, como
+  // historico (`p_limpar_vinculo = false`), e o principal nao muda.
+  // Best-effort: a proposta ja esta cancelada; falhar aqui so e registrado.
+  // Proposta comum nao entra neste bloco.
+  if (proposta.id_int_pedido_principal !== null && proposta.id_int_pedido_principal !== undefined) {
+    const { error: desvinculoErr } = await supabase.rpc("desvincular_pedido_complementar", {
+      p_id_int_complemento: idInt,
+      p_motivo: `Complemento cancelado: ${motivo}`,
+      p_origem: "COMERCIAL",
+      p_limpar_vinculo: false
+    });
+    if (desvinculoErr) {
+      console.error("[API][CancelarProposta] Falha ao carimbar o ledger do complemento cancelado:", desvinculoErr);
+    }
   }
 
   return NextResponse.json({

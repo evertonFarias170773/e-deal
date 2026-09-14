@@ -37,6 +37,8 @@ import {
   liberarPropostaParaProducao,
   retirarPropostaDaProducao,
   PERIODO_ULTIMOS_15_DIAS,
+  listarPropostasDoCardEmArte,
+  statusArteEntraNoCardEmArte,
   type PropostaChatResumo
 } from "@/features/orcamentos/services/orcamentos.service";
 import { useGlobalChat } from "@/features/chat/context/GlobalChatContext";
@@ -264,27 +266,21 @@ function normalizeProposalStatus(status: string | null | undefined) {
 }
 
 /**
- * A proposta esta EM ARTE? UMA definicao, usada pelo card, pelo clique no card e
- * pelo filtro do select.
+ * A proposta entra no card EM ARTE? Usada pela lista do clique no card, com a
+ * mesma funcao que o servidor aplica. A contagem do card nao passa por aqui: ela
+ * conta sobre o periodo inteiro, ja filtrado no servidor — ver
+ * `listarPropostasDoCardEmArte`.
  *
- * Le `item.status` — o status de EXIBICAO, que ja passou por
- * `composeStatusEmArte` e carrega o sufixo " / EM ARTE" quando
- * `propostas.em_arte` e true. NAO le `item.statusInterno`, que e o texto cru do
- * banco: la o sufixo nunca existe, porque ele nasce na montagem da exibicao.
+ * Recebe `pedidos_artes.status` do pedido (o mapa da coluna "Status Arte") e
+ * decide por `statusArteEntraNoCardEmArte`. Desde 14/09/2026 o sufixo
+ * " / EM ARTE" e `propostas.em_arte` nao decidem mais a entrada no card: o sufixo
+ * segue so na exibicao do status, e pode divergir do card de proposito.
  *
- * Era exatamente essa a divergencia (31/08/2026): o filtro do select olhava
- * `item.status` e achava as propostas; o card e o clique olhavam
- * `normalizeProposalStatus(item.statusInterno)` e comparavam com
- * "NOVO / EM ARTE" e afins — combinacao que o status cru NUNCA produz. Resultado:
- * card sempre 0 e R$ 0,00, e clicar nele devolvia lista vazia, enquanto o select
- * trazia 11 propostas em Ago/26.
- *
- * `includes` em vez de lista fechada porque e o criterio do filtro, que e a
- * referencia — e ele tambem pega a proposta cujo `status_interno` ja foi gravado
- * como "AGUARDANDO / EM ARTE" no banco (existe uma, a 17823).
+ * O filtro "EM ARTE" do select de status NAO usa esta funcao e continua no
+ * sufixo — e outro filtro, fora deste criterio.
  */
-function ehEmArte(item: { status?: string | null }): boolean {
-  return (item.status ?? "").includes("EM ARTE");
+function ehEmArte(statusArte: string | null | undefined): boolean {
+  return statusArteEntraNoCardEmArte(statusArte);
 }
 
 /**
@@ -307,6 +303,58 @@ function ehEmArte(item: { status?: string | null }): boolean {
  */
 function ehLiberada(item: { status?: string | null }): boolean {
   return (item.status ?? "") === "LIBERADO";
+}
+
+/**
+ * Recorte de escopo do usuario (vendedor so ve as proprias). Saiu do `useMemo`
+ * de `propostas` sem mudar nada, para a base do card EM ARTE passar pelo mesmo.
+ */
+function filtrarPeloEscopo(lista: OrcamentoListItem[], user: Parameters<typeof getDataScope>[0]): OrcamentoListItem[] {
+  const escopo = getDataScope(user, "propostas");
+  if (escopo === "all") return lista;
+
+  const meuNome = getNomeParaEscopo(user).trim().toLowerCase();
+  if (!meuNome) return lista;
+
+  return lista.filter((p) => {
+    const vendedorProposta = (p.vendedor || "").trim().toLowerCase();
+    return vendedorProposta === meuNome;
+  });
+}
+
+/**
+ * Os recortes que TODOS os cards respeitam na contagem: modelo, vendedor e tipo
+ * de cobranca. Saiu do laco de `cardsSummary` sem mudar nada, para o card EM
+ * ARTE — que conta sobre outra base — aplicar exatamente os mesmos.
+ */
+function passaFiltrosDosCards(
+  item: OrcamentoListItem,
+  filtros: { modelo: string; vendedor: string; filterTipoCobranca: string }
+): boolean {
+  const { modelo, vendedor, filterTipoCobranca } = filtros;
+  // ENCERRADOS nao recorta por is_avulso: a consulta ja trouxe so encerrados,
+  // e cair no `else` da ternaria (item.isAvulsoRaw !== true) sumiria com as
+  // avulsas encerradas — tanto da lista quanto da contagem dos cards.
+  const matchesModelo =
+    modelo === "TODOS_MODELOS" ||
+    modelo === "ENCERRADOS" ||
+    (modelo === "AVULSO" ? item.isAvulsoRaw === true : item.isAvulsoRaw !== true);
+  if (!matchesModelo) return false;
+
+  const matchesVendedor = vendedor === "TODOS" || item.vendedor === vendedor;
+  if (!matchesVendedor) return false;
+
+  if (filterTipoCobranca !== "TODOS") {
+    const hasCartao = filterTipoCobranca === "CARTAO";
+    const ok = item.tiposCobranca.some(t => {
+      const upper = t.trim().toUpperCase();
+      return hasCartao
+        ? upper.includes("CARD") || upper.includes("CARTAO") || upper.includes("CARTÃO")
+        : upper === filterTipoCobranca;
+    });
+    if (!ok) return false;
+  }
+  return true;
 }
 
 function sumPropostaTotal(items: OrcamentoListItem[]) {
@@ -466,18 +514,40 @@ export function OrcamentosListPageReal() {
     triggerRefresh
   } = useOrcamentosReadOnlyData(periodo, pageIndex + 1, PAGE_SIZE, queryFilters);
 
-  const propostas = useMemo(() => {
-    const escopo = getDataScope(user, "propostas");
-    if (escopo === "all") return rawPropostas;
+  const propostas = useMemo(() => filtrarPeloEscopo(rawPropostas, user), [rawPropostas, user]);
 
-    const meuNome = getNomeParaEscopo(user).trim().toLowerCase();
-    if (!meuNome) return rawPropostas; 
+  /**
+   * Base da contagem e da soma do card EM ARTE: o PERIODO INTEIRO, e nao a
+   * pagina carregada — ver `listarPropostasDoCardEmArte`. Os filtros sao os que
+   * a lista tera DEPOIS do clique no card, que zera o select de status; por isso
+   * `status` sai e `ignorarPeriodo` e recalculado sem ele.
+   *
+   * Recarrega junto com a lista (`rawPropostas` muda a cada leitura, inclusive
+   * no `triggerRefresh` das acoes), para o contador nao ficar para tras.
+   */
+  const filtrosDoCardEmArte = useMemo(
+    () => ({
+      ...queryFilters,
+      status: undefined,
+      ignorarPeriodo:
+        Boolean(search.trim() || modelo !== "TODOS_MODELOS" || vendedor !== "TODOS" || filterTipoCobranca !== "TODOS") ||
+        undefined
+    }),
+    [queryFilters, search, modelo, vendedor, filterTipoCobranca]
+  );
+  const [baseCardEmArte, setBaseCardEmArte] = useState<OrcamentoListItem[]>([]);
 
-    return rawPropostas.filter((p) => {
-      const vendedorProposta = (p.vendedor || "").trim().toLowerCase();
-      return vendedorProposta === meuNome;
-    });
-  }, [rawPropostas, user]);
+  useEffect(() => {
+    let ativo = true;
+    void (async () => {
+      const itens = await listarPropostasDoCardEmArte(periodo, filtrosDoCardEmArte);
+      if (!ativo) return;
+      setBaseCardEmArte(filtrarPeloEscopo(itens ?? [], user));
+    })();
+    return () => {
+      ativo = false;
+    };
+  }, [periodo, filtrosDoCardEmArte, rawPropostas, user]);
 
   const [chatResumos, setChatResumos] = useState<Record<number, PropostaChatResumo>>({});
 
@@ -579,6 +649,13 @@ export function OrcamentosListPageReal() {
    */
   const [nomesSocios, setNomesSocios] = useState<Record<number, string>>({});
 
+  /**
+   * Status da arte por id_int (`pedidos_artes.status`). Declarado aqui, acima
+   * da lista filtrada, porque a lista do card EM ARTE consome este mapa. A busca mora mais abaixo, junto dos demais enriquecimentos.
+   */
+  const [statusArtePorId, setStatusArtePorId] = useState<Record<number, string>>({});
+  const fetchedStatusArteIdsRef = useRef<Set<number>>(new Set());
+
   const searchIndex = useMemo(() => {
     return propostas.map((item) => {
       const faturado = item.idFaturado;
@@ -612,8 +689,8 @@ export function OrcamentosListPageReal() {
       if (activeCard) {
         const s = idx.statusNorm;
         if (activeCard === "EM_ARTE") {
-          // Mesmo predicado do filtro do select — ver `ehEmArte`.
-          matchesStatus = ehEmArte(item);
+          // Mesmo criterio do servidor — ver `ehEmArte`.
+          matchesStatus = ehEmArte(statusArtePorId[item.id_int]);
         } else if (activeCard === "LIBERADAS") {
           // Mesmo predicado do filtro do select — ver `ehLiberada`.
           matchesStatus = ehLiberada(item);
@@ -692,7 +769,7 @@ export function OrcamentosListPageReal() {
       const dateB = new Date(b.updatedAt || b.createdAt).getTime();
       return dateB - dateA;
     });
-  }, [modelo, periodo, ignorarPeriodo, propostas, searchIndex, search, status, vendedor, activeCard, filterTipoCobranca]);
+  }, [modelo, periodo, ignorarPeriodo, propostas, searchIndex, search, status, vendedor, activeCard, filterTipoCobranca, statusArtePorId]);
 
   const visibleIdInts = useMemo(() => {
     return filteredPropostas.slice(0, 100).map((p) => p.id_int);
@@ -751,13 +828,15 @@ export function OrcamentosListPageReal() {
    * a coluna renderiza em toda linha, e o corte em 100 do enriquecimento de
    * chat deixaria a metade de baixo com celula vazia — que aqui significa
    * "pedido sem arte registrada", uma informacao errada.
+   *
+   * Parte de `propostas`, e nao de `filteredPropostas`: a lista do card EM ARTE
+   * filtra com este mapa, entao ele precisa existir antes do filtro — partindo da
+   * lista filtrada, o card ativo nunca buscaria nada e ficaria vazio.
    */
   const idsParaStatusArte = useMemo(
-    () => filteredPropostas.map((p) => p.id_int),
-    [filteredPropostas]
+    () => propostas.map((p) => p.id_int),
+    [propostas]
   );
-  const [statusArtePorId, setStatusArtePorId] = useState<Record<number, string>>({});
-  const fetchedStatusArteIdsRef = useRef<Set<number>>(new Set());
 
   useEffect(() => {
     const naoBuscados = idsParaStatusArte.filter((id) => !fetchedStatusArteIdsRef.current.has(id));
@@ -893,39 +972,16 @@ export function OrcamentosListPageReal() {
     let revisaoCnt = 0, revisaoTotal = 0;
     let producaoCnt = 0, producaoTotal = 0;
 
+    const filtrosDosCards = { modelo, vendedor, filterTipoCobranca };
+
     for (const item of propostas) {
-      // ENCERRADOS nao recorta por is_avulso: a consulta ja trouxe so encerrados,
-      // e cair no `else` da ternaria (item.isAvulsoRaw !== true) sumiria com as
-      // avulsas encerradas — tanto da lista quanto da contagem dos cards.
-      const matchesModelo =
-        modelo === "TODOS_MODELOS" ||
-        modelo === "ENCERRADOS" ||
-        (modelo === "AVULSO" ? item.isAvulsoRaw === true : item.isAvulsoRaw !== true);
-      if (!matchesModelo) continue;
-
-      const matchesVendedor = vendedor === "TODOS" || item.vendedor === vendedor;
-      if (!matchesVendedor) continue;
-
-      if (filterTipoCobranca !== "TODOS") {
-        const hasCartao = filterTipoCobranca === "CARTAO";
-        const ok = item.tiposCobranca.some(t => {
-          const upper = t.trim().toUpperCase();
-          return hasCartao
-            ? upper.includes("CARD") || upper.includes("CARTAO") || upper.includes("CARTÃO")
-            : upper === filterTipoCobranca;
-        });
-        if (!ok) continue;
-      }
+      if (!passaFiltrosDosCards(item, filtrosDosCards)) continue;
 
       const v = Number(item.total) || 0;
       orcCnt++;
       orcTotal += v;
 
       const s = normalizeProposalStatus(item.statusInterno);
-      // Mesmo predicado do filtro do select e do clique no card — ver `ehEmArte`.
-      if (ehEmArte(item)) {
-        emArteCnt++; emArteTotal += v;
-      }
       // Mesmo predicado do filtro do select e do clique no card — ver `ehLiberada`.
       if (ehLiberada(item)) {
         liberadasCnt++; liberadasTotal += v;
@@ -938,6 +994,15 @@ export function OrcamentosListPageReal() {
       }
     }
 
+    // EM ARTE conta sobre o periodo inteiro (`baseCardEmArte`), nao sobre a
+    // pagina: a base ja vem da mesma leitura da lista com o card ligado, e aqui
+    // so recebe os mesmos recortes dos demais cards.
+    for (const item of baseCardEmArte) {
+      if (!passaFiltrosDosCards(item, filtrosDosCards)) continue;
+      emArteCnt++;
+      emArteTotal += Number(item.total) || 0;
+    }
+
     return {
       orcamentos: { count: orcCnt,        total: orcTotal        },
       emArte:     { count: emArteCnt,      total: emArteTotal     },
@@ -945,7 +1010,7 @@ export function OrcamentosListPageReal() {
       revisao:    { count: revisaoCnt,     total: revisaoTotal    },
       producao:   { count: producaoCnt,    total: producaoTotal   }
     };
-  }, [propostas, modelo, vendedor, filterTipoCobranca]);
+  }, [propostas, baseCardEmArte, modelo, vendedor, filterTipoCobranca]);
 
   useEffect(() => {
     console.info("[Orcamentos][ReadOnly]", {

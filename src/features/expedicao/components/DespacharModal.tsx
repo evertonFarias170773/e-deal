@@ -270,6 +270,12 @@ export function DespacharModal({
   const idEnderecoEntrega = pedido.enderecoEntrega?.id ?? null;
   const [transportadoras, setTransportadoras] = useState<Transportadora[]>([]);
   const [confirmaSemNf, setConfirmaSemNf] = useState(false);
+  /**
+   * PEDIDO COMPLEMENTAR: override "Desvincular e despachar separado". Só
+   * aparece quando há complemento aberto que ainda não chegou à Expedição.
+   */
+  const [desvincularSeparado, setDesvincularSeparado] = useState(false);
+  const [motivoDesvinculo, setMotivoDesvinculo] = useState("");
   const [confirmaTrocaCorreios, setConfirmaTrocaCorreios] = useState(false);
   const [salvando, setSalvando] = useState(false);
   const [correiosOk, setCorreiosOk] = useState(false);
@@ -651,6 +657,14 @@ export function DespacharModal({
 
   const precisaAvisoNf = !modoEdicao && pedido.nfStatus !== "AUTORIZADA";
 
+  // PEDIDO COMPLEMENTAR. O despacho recusa no serviço de qualquer jeito; aqui a
+  // tela mostra o motivo antes do clique e só libera com o override + motivo.
+  const complementosForaDaExpedicao = pedido.complementos.filter((c) => !c.prontoParaSair);
+  const bloqueioPorComplemento =
+    !modoEdicao &&
+    complementosForaDaExpedicao.length > 0 &&
+    !(desvincularSeparado && motivoDesvinculo.trim() !== "");
+
   /**
    * PASSO 2 em diante so existe nas modalidades de ENVIO (FOB e CIF). Retira
    * nao tem transporte a definir, e o FOB pendente de confirmacao fica fechado
@@ -782,6 +796,16 @@ export function DespacharModal({
       showToast({ type: "warning", title: "Confirme o despacho sem NF", description: "Marque a caixa de confirmação para despachar sem nota autorizada." });
       return;
     }
+    if (bloqueioPorComplemento) {
+      showToast({
+        type: "warning",
+        title: "Complemento ainda não chegou",
+        description: desvincularSeparado
+          ? "Informe o motivo para desvincular o complemento e despachar separado."
+          : `Espere ${complementosForaDaExpedicao.map((c) => `#${c.idInt}`).join(", ")} chegar à Expedição ou marque "Desvincular e despachar separado".`
+      });
+      return;
+    }
     if (faltamParaSalvar) {
       showToast({
         type: "warning",
@@ -824,7 +848,10 @@ export function DespacharModal({
       // Sem nota autorizada o expedidor digita; havendo, `notas_fiscais`
       // vence e o manual nem e enviado — nao ha como sobrescrever o
       // numero de uma nota emitida.
-      nfNumeroManual: temNotaAutorizada ? "" : nfNumeroManual.trim()
+      nfNumeroManual: temNotaAutorizada ? "" : nfNumeroManual.trim(),
+      ...(!modoEdicao && desvincularSeparado && complementosForaDaExpedicao.length > 0
+        ? { desvincularComplementos: { motivo: motivoDesvinculo.trim() } }
+        : {})
     };
 
     setSalvando(true);
@@ -1664,6 +1691,69 @@ export function DespacharModal({
           )}
         </div>
 
+        {/* PEDIDO COMPLEMENTAR (docs/business/PEDIDO-COMPLEMENTAR.md). */}
+        {!modoEdicao && pedido.pedidoPrincipal ? (
+          <div className="mx-5 mb-1 rounded-2xl border border-sky-200 bg-sky-50 p-3 text-xs text-sky-900 dark:border-sky-900/40 dark:bg-sky-950/30 dark:text-sky-200">
+            <p className="font-semibold">Complemento do #{pedido.pedidoPrincipal.idInt}</p>
+            <p className="mt-1">O despacho é feito pelo pedido principal, e os dois saem juntos.</p>
+          </div>
+        ) : null}
+        {!modoEdicao && pedido.complementos.length > 0 ? (
+          <div
+            className={
+              complementosForaDaExpedicao.length > 0
+                ? "mx-5 mb-1 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-200"
+                : "mx-5 mb-1 rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-900 dark:border-emerald-900/40 dark:bg-emerald-950/30 dark:text-emerald-200"
+            }
+          >
+            <p className="font-semibold">Pedido complementar do mesmo evento</p>
+            <ul className="mt-1 space-y-0.5">
+              {pedido.complementos.map((c) => (
+                <li key={c.idInt}>
+                  #{c.idInt} —{" "}
+                  {c.prontoParaSair ? (
+                    <strong>em EXPEDICAO, sai junto</strong>
+                  ) : (
+                    <strong>ainda em {c.statusInterno || "sem status"}: bloqueia o despacho</strong>
+                  )}
+                </li>
+              ))}
+            </ul>
+            {complementosForaDaExpedicao.length > 0 ? (
+              <div className="mt-2 space-y-2">
+                <label className="flex items-center gap-2 font-semibold">
+                  <input
+                    type="checkbox"
+                    checked={desvincularSeparado}
+                    onChange={(e) => setDesvincularSeparado(e.target.checked)}
+                    className="h-4 w-4"
+                  />
+                  Desvincular e despachar separado
+                </label>
+                {desvincularSeparado ? (
+                  <>
+                    <p>
+                      O complemento deixa de sair junto e passa a precisar de frete próprio. O frete complementar
+                      aplicado nele deixa de valer.
+                    </p>
+                    <label className="block font-semibold" htmlFor="motivo_desvinculo_complemento">
+                      Motivo <span className="text-red-600">*</span>
+                    </label>
+                    <textarea
+                      id="motivo_desvinculo_complemento"
+                      rows={2}
+                      value={motivoDesvinculo}
+                      onChange={(e) => setMotivoDesvinculo(e.target.value)}
+                      placeholder="Por que o pedido sai sem o complemento?"
+                      className="w-full rounded-xl border border-amber-300 bg-white px-3 py-2 text-xs text-slate-900 outline-none dark:border-amber-800 dark:bg-slate-900 dark:text-slate-100"
+                    />
+                  </>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
         {divergencia.temAviso && !modoEdicao && (
           <div
             className={
@@ -1745,7 +1835,7 @@ export function DespacharModal({
               Bloqueado: {frasearMotivos(divergencia.motivosBloqueio)}
             </span>
           ) : null}
-          <button type="button" onClick={() => void handleConfirmar()} disabled={salvando || faltamParaSalvar || divergencia.bloqueia} className="rounded-2xl bg-[#0b2f4a] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[#123f61] disabled:cursor-not-allowed disabled:opacity-50">
+          <button type="button" onClick={() => void handleConfirmar()} disabled={salvando || faltamParaSalvar || divergencia.bloqueia || bloqueioPorComplemento} className="rounded-2xl bg-[#0b2f4a] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[#123f61] disabled:cursor-not-allowed disabled:opacity-50">
             {salvando ? "Salvando..." : modoEdicao ? "Salvar dados" : tipoEntrega === "RETIRADA" ? "Confirmar: aguardando retirada" : "Confirmar despacho"}
           </button>
         </div>

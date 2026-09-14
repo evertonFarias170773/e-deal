@@ -662,6 +662,8 @@ export function ExpedicaoPage() {
       etapa: { codec: codecs.texto(), default: ETAPA_INICIAL },
       frete: { codec: codecs.texto(), default: "TODOS" },
       emp: { codec: codecs.texto(), default: "TODOS" },
+      // Pedido complementar: TODOS | COMPLEMENTO (e complemento) | PRINCIPAL (tem complemento).
+      vinculo: { codec: codecs.texto(), default: "TODOS" },
       // Visão: "transportadoras" (colunas kanban) ou "lista" (tabela/cards).
       // O KANBAN É O PADRÃO desde 01/09/2026 — ver VISAO_INICIAL.
       visao: { codec: codecs.texto(), default: VISAO_INICIAL }
@@ -746,6 +748,8 @@ export function ExpedicaoPage() {
         p.empresa.toLowerCase().replace(/\s/g, "") !== filters.emp.toLowerCase().replace(/\s/g, "")
       )
         return false;
+      if (filters.vinculo === "COMPLEMENTO" && !p.pedidoPrincipal) return false;
+      if (filters.vinculo === "PRINCIPAL" && p.complementos.length === 0) return false;
 
       if (q === "") return true;
       return (
@@ -789,10 +793,13 @@ export function ExpedicaoPage() {
          */
         p.clienteExibicao.toLowerCase().includes(q) ||
         p.codigoRastreamento.toLowerCase().includes(q) ||
-        p.transportadoraNome.toLowerCase().includes(q)
+        p.transportadoraNome.toLowerCase().includes(q) ||
+        // PEDIDO COMPLEMENTAR: o numero de um acha o outro.
+        (p.pedidoPrincipal !== null && String(p.pedidoPrincipal.idInt).includes(q)) ||
+        p.complementos.some((c) => String(c.idInt).includes(q))
       );
     });
-  }, [pedidos, filters.etapa, filtroCategoria, filters.emp, search]);
+  }, [pedidos, filters.etapa, filtroCategoria, filters.emp, filters.vinculo, search]);
 
   /**
    * Número de cada chip = tamanho exato da lista que clicar nele produz. Sai da
@@ -1028,13 +1035,19 @@ export function ExpedicaoPage() {
             ))}
           </select>
 
+          <select value={filters.vinculo} onChange={(e) => setFilter("vinculo", e.target.value)} className={filterClass}>
+            <option value="TODOS">Todos os pedidos</option>
+            <option value="COMPLEMENTO">Só complementos</option>
+            <option value="PRINCIPAL">Só com complemento</option>
+          </select>
+
           <button
             type="button"
             // Limpar devolve ao ESTADO INICIAL da tela, não à lista inteira: o
             // ponto de partida é "Pronto p/ expedir". Busca, frete e empresa
             // continuam zerando como antes.
             onClick={() => {
-              setFilters({ q: "", etapa: ETAPA_INICIAL, frete: "TODOS", emp: "TODOS", visao: VISAO_INICIAL });
+              setFilters({ q: "", etapa: ETAPA_INICIAL, frete: "TODOS", emp: "TODOS", vinculo: "TODOS", visao: VISAO_INICIAL });
               setSearch("");
             }}
             className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
@@ -1082,6 +1095,21 @@ export function ExpedicaoPage() {
               <div className="flex flex-col">
                 <span className="font-semibold text-slate-950 dark:text-slate-100">#{p.idInt}</span>
                 <span className="text-[11px] text-slate-500">{p.empresa}</span>
+                {/* PEDIDO COMPLEMENTAR: o par do mesmo evento. */}
+                {p.pedidoPrincipal ? (
+                  <span className="mt-1 inline-flex items-center rounded-lg border border-sky-300 bg-sky-50 px-2 py-0.5 text-[12px] font-bold text-sky-800 dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-200 w-fit" title={`Pedido complementar do #${p.pedidoPrincipal.idInt}`}>
+                    Compl. de #{p.pedidoPrincipal.idInt}
+                  </span>
+                ) : null}
+                {p.complementos.map((c) => (
+                  <span
+                    key={c.idInt}
+                    className={`mt-1 w-fit ${c.prontoParaSair ? "inline-flex items-center rounded-lg border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-[12px] font-bold text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200" : "inline-flex items-center rounded-lg border border-amber-300 bg-amber-50 px-2 py-0.5 text-[12px] font-bold text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200"}`}
+                    title={`Complemento #${c.idInt} em ${c.statusInterno || "sem status"}`}
+                  >
+                    + compl. #{c.idInt}
+                  </span>
+                ))}
               </div>
             )
           },

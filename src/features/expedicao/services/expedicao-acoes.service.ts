@@ -16,6 +16,13 @@ export type ResultadoAcao = {
    * mandaria o expedidor parar de olhar para ele.
    */
   aguardandoColeta?: boolean;
+  /**
+   * Código da recusa, quando a tela precisa reagir a ela e não só mostrar o
+   * texto. Hoje: `COMPLEMENTO_FORA_EXPEDICAO` e `COMPLEMENTO_SEGUE_PRINCIPAL`.
+   */
+  code?: string;
+  /** Os complementos que motivaram a recusa. */
+  complementos?: Array<{ idInt: number; statusInterno: string }>;
 };
 
 /**
@@ -67,6 +74,13 @@ export type DespachoInput = {
    * camada apenas grava o que foi digitado.
    */
   nfNumeroManual?: string;
+  /**
+   * Override "Desvincular e despachar separado" (PEDIDO COMPLEMENTAR). Com ele,
+   * cada complemento que ainda não chegou à Expedição é desvinculado ANTES de
+   * qualquer gravação do despacho, pela função
+   * `desvincular_pedido_complementar`. Motivo obrigatório.
+   */
+  desvincularComplementos?: { motivo: string };
 };
 
 import { camposMinimosDespacho, frasearFaltantes } from "../lib/campos-minimos-despacho";
@@ -228,7 +242,7 @@ export async function despachar(
 
   const { data: propAtual } = await client
     .from("propostas")
-    .select("status_interno, valor_frete")
+    .select("status_interno, valor_frete, id_int_pedido_principal")
     .eq("id_int", idInt)
     .maybeSingle();
 
@@ -258,6 +272,91 @@ export async function despachar(
   // `transicionar`, preservado abaixo.
   if (propAtual && String(propAtual.status_interno ?? "").trim() !== "EXPEDICAO") {
     return { success: false, error: MSG_CONFLITO };
+  }
+
+  /**
+   * PEDIDO COMPLEMENTAR (docs/business/PEDIDO-COMPLEMENTAR.md), lido do BANCO
+   * antes de qualquer gravação. Pedido sem vínculo nenhum passa pelas duas
+   * leituras abaixo sem efeito e segue exatamente como antes.
+   *
+   * 1. ESTE pedido é complemento: quem despacha é o principal, e os dois saem
+   *    juntos. Enquanto o principal não tiver despacho, recusa.
+   */
+  const idPrincipal =
+    propAtual?.id_int_pedido_principal !== null && propAtual?.id_int_pedido_principal !== undefined
+      ? Number(propAtual.id_int_pedido_principal)
+      : null;
+  if (idPrincipal !== null) {
+    const { data: expPrincipal } = await client
+      .from("expedicoes")
+      .select("data_despacho")
+      .eq("id_int", idPrincipal)
+      .maybeSingle();
+    if (!expPrincipal?.data_despacho) {
+      return {
+        success: false,
+        code: "COMPLEMENTO_SEGUE_PRINCIPAL",
+        error: `Este pedido é complemento do #${idPrincipal}: o despacho é feito pelo pedido principal, e os dois saem juntos.`
+      };
+    }
+  }
+
+  /**
+   * 2. ESTE pedido tem complemento aberto que ainda não chegou à Expedição:
+   *    recusa, a menos que o expedidor tenha escolhido "Desvincular e despachar
+   *    separado" com motivo. Nesse caso cada um é desvinculado AQUI, antes do
+   *    upsert; falhando qualquer um, nada do despacho é gravado.
+   */
+  const { data: complementosAbertos, error: erroComplementos } = await client
+    .from("propostas")
+    .select("id_int, status_interno")
+    .eq("id_int_pedido_principal", idInt)
+    .neq("status_interno", "CANCELADO");
+  if (erroComplementos) {
+    return {
+      success: false,
+      error: `Não foi possível verificar os pedidos complementares (${erroComplementos.message}). O pedido segue em EXPEDICAO.`
+    };
+  }
+  const complementosForaDaExpedicao = (complementosAbertos ?? [])
+    .filter((c) => String(c.status_interno ?? "").trim().toUpperCase() !== "EXPEDICAO")
+    .map((c) => ({ idInt: Number(c.id_int), statusInterno: String(c.status_interno ?? "") }));
+
+  if (complementosForaDaExpedicao.length > 0) {
+    const lista = complementosForaDaExpedicao.map((c) => `#${c.idInt} (${c.statusInterno || "sem status"})`).join(", ");
+    if (!input.desvincularComplementos) {
+      return {
+        success: false,
+        code: "COMPLEMENTO_FORA_EXPEDICAO",
+        complementos: complementosForaDaExpedicao,
+        error:
+          `Este pedido tem complemento que ainda não chegou à Expedição: ${lista}. ` +
+          "Espere o complemento ou use \"Desvincular e despachar separado\"."
+      };
+    }
+    const motivo = input.desvincularComplementos.motivo.trim();
+    if (!motivo) {
+      return {
+        success: false,
+        code: "COMPLEMENTO_FORA_EXPEDICAO",
+        complementos: complementosForaDaExpedicao,
+        error: "Informe o motivo para desvincular o complemento e despachar separado."
+      };
+    }
+    for (const complemento of complementosForaDaExpedicao) {
+      const { error: erroDesvinculo } = await client.rpc("desvincular_pedido_complementar", {
+        p_id_int_complemento: complemento.idInt,
+        p_motivo: motivo,
+        p_origem: "EXPEDICAO",
+        p_limpar_vinculo: true
+      });
+      if (erroDesvinculo) {
+        return {
+          success: false,
+          error: `Não foi possível desvincular o complemento #${complemento.idInt} (${erroDesvinculo.message}). Nada do despacho foi gravado.`
+        };
+      }
+    }
   }
 
   // GRAVA PRIMEIRO, TRANSICIONA DEPOIS (invertido em 20/08/2026).

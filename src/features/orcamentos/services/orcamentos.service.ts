@@ -298,6 +298,51 @@ function buildPeriodoFilter(periodo: string): OrcamentosPeriodoFilter | null {
 }
 
 /**
+ * Os status de arte que colocam o pedido no card EM_ARTE. Decisao do dono
+ * (14/09/2026). Lista exaustiva: outro status — APROVADO inclusive — e pedido
+ * sem linha em `pedidos_artes` ficam fora.
+ *
+ * Substituiu o criterio antigo (`status_interno` com " / EM ARTE" ou
+ * `propostas.em_arte`). O sufixo continua na EXIBICAO do status e pode
+ * divergir do card; essa divergencia e autorizada.
+ */
+const STATUS_ARTE_DO_CARD_EM_ARTE = [
+  "Em Arte",
+  "Enviar Arte",
+  "Em Aprovacao",
+  "Em Alteracao",
+  "Apr Parcial",
+  "Dados Pendentes",
+  "Corrigir Dados"
+];
+
+/**
+ * A chave de comparacao, aplicada aos dois lados: pontas aparadas (quebra de
+ * linha inclusive), espacos internos colapsados, sem acento, caixa alta.
+ *
+ * A tabela grava "ENVIAR ARTE", "Em Alteração" e "Dados Pendentes\r\n"; a
+ * comparacao absorve isso sem que ninguem altere o dado gravado.
+ */
+function chaveStatusArte(status: string | null | undefined): string {
+  return String(status ?? "")
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toUpperCase();
+}
+
+const CHAVES_DO_CARD_EM_ARTE = new Set(STATUS_ARTE_DO_CARD_EM_ARTE.map(chaveStatusArte));
+
+/**
+ * O pedido entra no card EM_ARTE? UMA definicao, usada pelo filtro do servidor
+ * e pela lista e pelo contador da tela.
+ */
+export function statusArteEntraNoCardEmArte(status: string | null | undefined): boolean {
+  return CHAVES_DO_CARD_EM_ARTE.has(chaveStatusArte(status));
+}
+
+/**
  * Teto de ids de socio dobrados na busca. A condicao vai na URL do PostgREST;
  * sem limite, um termo curto como "ltda" traria milhares de ids e estouraria a
  * requisicao. 200 cobre com folga qualquer busca util — ao atingir o teto,
@@ -456,7 +501,27 @@ async function fetchPropostaRows(
     if (filters?.activeCard) {
       const card = filters.activeCard;
       if (card === "EM_ARTE") {
-        query = query.or("status_interno.eq.NOVO / EM ARTE,status_interno.eq.AGUARDANDO / EM ARTE,status_interno.eq.LIBERADO / EM ARTE,em_arte.eq.true");
+        // `pedidos_artes` decide quem entra — ver `statusArteEntraNoCardEmArte`.
+        // Sem FK ate `propostas`, entao pre-consulta os id_int e dobra no `.in`,
+        // no mesmo molde do filtro de tipo de cobranca com `pagamentos_v2`.
+        // O `.neq` so poupa trazer os aprovados, que nunca entram; a decisao e
+        // a chave normalizada, feita aqui do lado de ca.
+        const { data: arteRows, error: arteError } = await client
+          .from("pedidos_artes")
+          .select("id_int, status")
+          .neq("status", "APROVADO");
+        if (arteError) {
+          console.warn("[OrcamentosService] Falha ao ler pedidos_artes para o card EM_ARTE:", arteError.message);
+        }
+        const idsEmArte = Array.from(
+          new Set(
+            (arteRows || [])
+              .filter((linha) => statusArteEntraNoCardEmArte(linha.status))
+              .map((linha) => Number(linha.id_int))
+              .filter((id) => Number.isFinite(id) && id > 0)
+          )
+        );
+        query = query.in("id_int", idsEmArte.length > 0 ? idsEmArte : [-1]);
       } else if (card === "LIBERADAS") {
         query = query.or("status_interno.eq.LIBERADO,status_interno.eq.LIBERADO / EM ARTE");
       } else if (card === "REVISAO_ATENDENTE") {
@@ -1038,6 +1103,37 @@ export async function getOrcamentosReadOnlyData(
       fallbackReason: null
     }
   };
+}
+
+/**
+ * TODAS as propostas do card EM_ARTE no recorte vigente, base da contagem e da
+ * soma do card. O contador precisa valer para o periodo inteiro, nao so para a
+ * pagina carregada: em 14/09/2026 o periodo padrao tinha 724 propostas, os
+ * elegiveis estavam nas posicoes 219 e 547, e o card mostrava 0 enquanto o
+ * clique trazia 2.
+ *
+ * E a MESMA leitura da lista com o card ligado — mesmo `activeCard`, mesma
+ * pre-consulta a `pedidos_artes`, mesmo `statusArteEntraNoCardEmArte` — e por
+ * isso contador e lista nao tem como discordar. O total de cada linha tambem
+ * sai do mesmo recalculo da lista; uma soma direta de `propostas.valor_total`
+ * no banco daria outro numero.
+ *
+ * Percorre as paginas ate o fim. Na busca ampla o lote e unico, como na lista.
+ * `null` quando a leitura falha.
+ */
+export async function listarPropostasDoCardEmArte(
+  periodo: string,
+  filters?: OrcamentosReadFilters
+): Promise<OrcamentoListItem[] | null> {
+  const filtrosDoCard: OrcamentosReadFilters = { ...filters, activeCard: "EM_ARTE" };
+  const itens: OrcamentoListItem[] = [];
+  for (let pagina = 1; ; pagina++) {
+    const resultado = await getOrcamentosReadOnlyData(periodo, pagina, 200, filtrosDoCard);
+    if (resultado.errorMessage) return null;
+    itens.push(...resultado.propostas);
+    if (resultado.propostas.length === 0 || pagina >= (resultado.totalPages ?? 1)) break;
+  }
+  return itens;
 }
 
 export async function getPropostaDetailById(idInt: number, overrideClient?: SupabaseClient): Promise<Proposta | null> {

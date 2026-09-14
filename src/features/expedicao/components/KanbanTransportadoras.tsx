@@ -663,6 +663,26 @@ export function KanbanTransportadoras({
                       </span>
                     </span>
                   </div>
+                  {/* PEDIDO COMPLEMENTAR: o par do mesmo evento. Verde = o
+                      complemento ja esta na Expedicao; ambar = ainda nao. */}
+                  {(p.pedidoPrincipal || p.complementos.length > 0) && (
+                    <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                      {p.pedidoPrincipal ? (
+                        <span className="inline-flex items-center rounded-lg border border-sky-300 bg-sky-50 px-2 py-0.5 text-[12px] font-bold text-sky-800 dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-200" title={`Pedido complementar do #${p.pedidoPrincipal.idInt}`}>
+                          Compl. de #{p.pedidoPrincipal.idInt}
+                        </span>
+                      ) : null}
+                      {p.complementos.map((c) => (
+                        <span
+                          key={c.idInt}
+                          className={c.prontoParaSair ? "inline-flex items-center rounded-lg border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-[12px] font-bold text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200" : "inline-flex items-center rounded-lg border border-amber-300 bg-amber-50 px-2 py-0.5 text-[12px] font-bold text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200"}
+                          title={`Complemento #${c.idInt} em ${c.statusInterno || "sem status"}`}
+                        >
+                          + compl. #{c.idInt}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                   {(mostrarSelo || ehAtrasado || p.prometidoHoje || prevista) && (
                     <div className="mt-3 flex flex-wrap items-center gap-1.5">
                       {mostrarSelo && <StatusBadge status={p.statusInterno} />}

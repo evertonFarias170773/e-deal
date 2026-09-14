@@ -375,6 +375,23 @@ export interface PedidoExpedicao {
    * "Pronto p/ expedir" leem este campo, nunca recalculam a condição.
    */
   aguardandoColeta: boolean;
+  /**
+   * PEDIDO COMPLEMENTAR (docs/business/PEDIDO-COMPLEMENTAR.md): o pedido
+   * principal, quando ESTE pedido é complemento. Null na esmagadora maioria.
+   * O despacho de um complemento é feito pelo principal.
+   */
+  pedidoPrincipal: { idInt: number } | null;
+  /**
+   * Complementos NÃO cancelados deste pedido, quando ele é o principal.
+   * `prontoParaSair` = o complemento já está em `EXPEDICAO`. Complemento fora
+   * da Expedição bloqueia o despacho do principal, salvo o override
+   * "Desvincular e despachar separado".
+   *
+   * Vem de uma consulta própria, e não do funil: complemento em NOVO ou
+   * AGUARDANDO não está no painel, e ainda assim tem de aparecer no card do
+   * principal.
+   */
+  complementos: Array<{ idInt: number; statusInterno: string; prontoParaSair: boolean }>;
   volumes: number | null;
   /**
    * Liberacao ATIVA da recotacao de frete (Parte C). Null = bloqueado: o
