@@ -1,7 +1,7 @@
 # PEDIDO-COMPLEMENTAR.md
 
 Versão: 1.0
-Status: Regra aprovada — **em implementação** (E0 a E7 concluídas; E8 a E10 pendentes)
+Status: Regra aprovada — **em implementação** (E0 a E8 concluídas; E9 e E10 pendentes)
 Última atualização: 13/09/2026
 Projeto: Vibe
 
@@ -25,9 +25,14 @@ Projeto: Vibe
 > sem tocar o principal (E6). O principal não cancela com complemento aberto
 > (`COMPLEMENTO_ABERTO`), e a cobrança do complemento só sai com o frete
 > complementar aplicado (`FRETE_COMPLEMENTAR_PENDENTE`, e
-> `FRETE_COMPLEMENTAR_INVALIDADO` quando houver desvinculação) (E7). Cancelar
-> o complemento ainda não carimba o ledger — isso depende da desvinculação, na
-> E8 —, e não há nada na Expedição. O item do menu só
+> `FRETE_COMPLEMENTAR_INVALIDADO` quando houver desvinculação) (E7). No painel
+> da Expedição o par aparece com os selos "Compl. de #X" e "+ compl. #Y", há
+> filtro por vínculo, e o despacho do principal recusa enquanto houver
+> complemento fora da Expedição, salvo o override "Desvincular e despachar
+> separado" com motivo, que usa a função `desvincular_pedido_complementar`.
+> Cancelar o complemento carimba o ledger e mantém o vínculo como histórico
+> (E8). O despacho conjunto dos dois numa caixa só ainda não existe: é a E9.
+> O item do menu só
 > aparece para quem tem a chave `propostas.complementar` ou o coringa `*`, e
 > nenhum perfil tem a chave ainda (isso é da E10): hoje só o Super
 > Administrador o vê. A função do banco também aceita usuários com
@@ -518,7 +523,7 @@ coringa. O dono aceitou esse comportamento em 13/09/2026: `cc__assert_permissao`
 | E5 | Rota de cotar frete complementar | **Concluída em 14/09/2026** — `POST /api/orcamentos/complementar/cotar-frete` e `complementar.client.ts`, só leitura: cota o peso somado, devolve `diferenca`, `valorACobrar` e a chave por opção. Validada com a #22069 |
 | E6 | Rota e função de aplicar frete + card no formulário | **Concluída em 14/09/2026** — `supabase/migrations/20260915_complementar_aplicar_frete.sql`, aplicada em produção (versão `20260914125714`), `POST /api/orcamentos/complementar/aplicar-frete` e `FreteComplementarCard` na aba Fretes. Validada com a #22069 |
 | E7 | Guardas de cancelamento e de cobrança | **Concluída em 14/09/2026** — `cancelar-proposta` recusa com `COMPLEMENTO_ABERTO` e o modal avisa e desabilita o Confirmar; `frete-status` bloqueia a cobrança do complemento sem frete aplicado. O carimbo do ledger ao cancelar o complemento fica para a E8. Validada com as #22067, #22068, #22069 e #22072 |
-| E8 | Expedição: vínculo no painel, bloqueio de despacho e desvinculação | Pendente |
+| E8 | Expedição: vínculo no painel, bloqueio de despacho e desvinculação | **Concluída em 14/09/2026** — `supabase/migrations/20260915_desvincular_pedido_complementar.sql`, aplicada em produção (versão `20260914142842`), selos e filtro no painel, recusa do despacho com complemento fora da Expedição, override com motivo e carimbo do ledger no cancelamento do complemento. Validada com as #22067 e #22069 |
 | E9 | Despacho conjunto, etiqueta e declaração | Pendente |
 | E10 | Documentação final e concessão da permissão | Pendente |
 
