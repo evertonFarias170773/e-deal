@@ -4,6 +4,7 @@ import {
   categoriaPorNomeConhecido
 } from "@/features/orcamentos/lib/categoria-frete";
 import type { ModalidadeFrete, TipoFreteNormalizado } from "../types";
+import { destinoDoDespacho } from "../lib/destino-despacho";
 
 export type AtorExpedicao = { uid: string | null; nome: string | null };
 export type ResultadoAcao = {
@@ -18,11 +19,28 @@ export type ResultadoAcao = {
   aguardandoColeta?: boolean;
   /**
    * Código da recusa, quando a tela precisa reagir a ela e não só mostrar o
-   * texto. Hoje: `COMPLEMENTO_FORA_EXPEDICAO` e `COMPLEMENTO_SEGUE_PRINCIPAL`.
+   * texto. Hoje: `COMPLEMENTO_FORA_EXPEDICAO`, `COMPLEMENTO_NAO_PAGO` e
+   * `COMPLEMENTO_SEGUE_PRINCIPAL`.
    */
   code?: string;
-  /** Os complementos que motivaram a recusa. */
-  complementos?: Array<{ idInt: number; statusInterno: string }>;
+  /**
+   * Os complementos que motivaram a recusa. Em `COMPLEMENTO_NAO_PAGO` vêm
+   * também o valor pago (`cc__valor_pago`) e o total, para a tela mostrar os
+   * dois números.
+   */
+  complementos?: Array<{ idInt: number; statusInterno: string; valorPago?: number; valorTotal?: number }>;
+  /**
+   * PEDIDO COMPLEMENTAR (E9). Em `despachar` do principal: os complementos que
+   * saíram junto. Em `confirmarColeta`, `marcarEntregue` e `confirmarRetirada`:
+   * os complementos que acompanharam o passo. Só vem quando há complemento.
+   */
+  complementosDespachados?: number[];
+  /**
+   * Complementos que falharam DEPOIS de o principal já ter sido gravado. O
+   * principal não é desfeito: o complemento segue onde estava e o expedidor
+   * repete o gesto nele.
+   */
+  complementosComFalha?: Array<{ idInt: number; error: string }>;
 };
 
 /**
@@ -76,9 +94,10 @@ export type DespachoInput = {
   nfNumeroManual?: string;
   /**
    * Override "Desvincular e despachar separado" (PEDIDO COMPLEMENTAR). Com ele,
-   * cada complemento que ainda não chegou à Expedição é desvinculado ANTES de
-   * qualquer gravação do despacho, pela função
-   * `desvincular_pedido_complementar`. Motivo obrigatório.
+   * cada complemento que ainda não chegou à Expedição, ou que está nela sem
+   * pagamento integral (E9), é desvinculado ANTES de qualquer gravação do
+   * despacho, pela função `desvincular_pedido_complementar`. Motivo
+   * obrigatório.
    */
   desvincularComplementos?: { motivo: string };
 };
@@ -150,6 +169,129 @@ async function upsertExpedicao(
   return { success: true };
 }
 
+/**
+ * PEDIDO COMPLEMENTAR (E9). Campos do `expedicoes` do principal que o
+ * complemento recebe no despacho conjunto. Fora da lista, de propósito:
+ * `peso_kg` e `qtd_volumes` (o objeto é um só e eles ficam no principal) e
+ * `codigo_rastreamento` / `correios_codigo_objeto` (o webhook dos Correios casa
+ * o evento por código com `maybeSingle`, e duas linhas com o mesmo código
+ * quebrariam o evento). O rastreio do complemento vai para `propostas_os`.
+ */
+type CamposDespachoConjunto = {
+  modalidade_frete: unknown;
+  tipo_frete: unknown;
+  transportadora_nome: unknown;
+  categoria_frete: unknown;
+  id_transportadora_cliente: unknown;
+  id_endereco_entrega: unknown;
+  tipo_volume: unknown;
+};
+
+/**
+ * Grava o despacho de UM complemento junto com o principal: `expedicoes` com os
+ * campos do principal e a mesma `data_despacho`, o rastreio no espelho
+ * `propostas_os` e a transição para o mesmo destino. Usada pelo despacho
+ * conjunto e pelo caminho de repetição.
+ */
+async function despacharComplementoJunto(
+  idComplemento: number,
+  idPrincipal: number,
+  campos: CamposDespachoConjunto,
+  dataDespacho: string,
+  destino: string | null,
+  codigoRastreamento: string | null,
+  ator: AtorExpedicao
+): Promise<ResultadoAcao> {
+  const client = getSupabaseClient();
+  if (!client) return { success: false, error: "Supabase não inicializado." };
+
+  const up = await upsertExpedicao(idComplemento, {
+    modalidade_frete: campos.modalidade_frete,
+    tipo_frete: campos.tipo_frete,
+    transportadora_nome: campos.transportadora_nome,
+    categoria_frete: campos.categoria_frete,
+    id_transportadora_cliente: campos.id_transportadora_cliente,
+    id_endereco_entrega: campos.id_endereco_entrega,
+    tipo_volume: campos.tipo_volume,
+    data_despacho: dataDespacho,
+    despachado_por: ator.nome,
+    obs: `Despachado junto com #${idPrincipal}`
+  });
+  if (!up.success) {
+    return {
+      success: false,
+      error: `Não foi possível gravar o despacho do complemento #${idComplemento} (${up.error}). Ele segue em EXPEDICAO.`
+    };
+  }
+
+  if (codigoRastreamento) {
+    const { error: osError } = await client
+      .from("propostas_os")
+      .update({ codigo_rastreamento: codigoRastreamento })
+      .eq("id_int", idComplemento);
+    if (osError) console.warn("[expedicao-acoes] Falha ao espelhar rastreio na OS do complemento:", osError);
+  }
+
+  if (destino !== null) {
+    const t = await transicionar(idComplemento, "EXPEDICAO", destino, ator, `Despacho conjunto com #${idPrincipal}`, "NATURAL");
+    if (!t.success) {
+      return {
+        success: false,
+        error: `${t.error} Os dados do despacho do complemento #${idComplemento} foram gravados e ele segue em EXPEDICAO.`
+      };
+    }
+  }
+  return { success: true };
+}
+
+/**
+ * PEDIDO COMPLEMENTAR (E9). Complementos vinculados a `idPrincipal` que estão
+ * no status informado, lidos do banco. É o recorte de "mesmo status" que a
+ * coleta e a entrega propagam.
+ */
+async function complementosNoStatus(
+  idPrincipal: number,
+  status: string
+): Promise<{ ids: number[]; error?: string }> {
+  const client = getSupabaseClient();
+  if (!client) return { ids: [], error: "Supabase não inicializado." };
+  const { data, error } = await client
+    .from("propostas")
+    .select("id_int")
+    .eq("id_int_pedido_principal", idPrincipal)
+    .eq("status_interno", status);
+  if (error) return { ids: [], error: error.message };
+  return { ids: (data ?? []).map((c) => Number(c.id_int)) };
+}
+
+/**
+ * Aplica o mesmo passo do principal a cada complemento e junta o resultado. O
+ * principal já foi gravado quando isto roda: falha num complemento não o
+ * desfaz, só é devolvida para a tela.
+ */
+async function propagarAosComplementos(
+  idPrincipal: number,
+  ids: number[],
+  aplicar: (idComplemento: number) => Promise<ResultadoAcao>
+): Promise<Pick<ResultadoAcao, "complementosDespachados" | "complementosComFalha">> {
+  if (ids.length === 0) return {};
+  const complementosDespachados: number[] = [];
+  const complementosComFalha: Array<{ idInt: number; error: string }> = [];
+  for (const id of ids) {
+    const r = await aplicar(id);
+    if (r.success) complementosDespachados.push(id);
+    else {
+      console.warn(`[expedicao-acoes] Complemento #${id} do #${idPrincipal} não acompanhou o passo:`, r.error);
+      complementosComFalha.push({ idInt: id, error: r.error ?? "Falha desconhecida." });
+    }
+  }
+  return { complementosDespachados, complementosComFalha };
+}
+
+function formatarReais(valor: number): string {
+  return valor.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
+
 /** Produção/acabamento → EXPEDICAO ("chegou na bancada"). */
 export async function marcarPronto(
   idInt: number,
@@ -191,35 +333,71 @@ export async function despachar(
     )
   };
 
+  const { data: propAtual } = await client
+    .from("propostas")
+    .select("status_interno, valor_frete, id_int_pedido_principal")
+    .eq("id_int", idInt)
+    .maybeSingle();
+
+  /**
+   * PEDIDO COMPLEMENTAR (docs/business/PEDIDO-COMPLEMENTAR.md), lido do BANCO
+   * antes de qualquer gravação. Pedido sem vínculo nenhum passa por aqui sem
+   * efeito e segue exatamente como antes.
+   *
+   * 1. ESTE pedido é complemento: quem despacha é o principal, e os dois saem
+   *    juntos. Enquanto o principal não tiver despacho, recusa. Com o principal
+   *    já despachado, é o CAMINHO DE REPETIÇÃO (E9): retry do conjunto que
+   *    falhou no complemento, ou complemento que ficou pronto depois. Os campos
+   *    vêm do `expedicoes` do principal, e não do modal — por isso este ramo
+   *    roda antes da validação dos campos digitados.
+   */
+  const idPrincipal =
+    propAtual?.id_int_pedido_principal !== null && propAtual?.id_int_pedido_principal !== undefined
+      ? Number(propAtual.id_int_pedido_principal)
+      : null;
+  if (idPrincipal !== null) {
+    const { data: expPrincipal } = await client
+      .from("expedicoes")
+      .select(
+        "data_despacho, modalidade_frete, tipo_frete, transportadora_nome, categoria_frete, id_transportadora_cliente, id_endereco_entrega, tipo_volume, codigo_rastreamento"
+      )
+      .eq("id_int", idPrincipal)
+      .maybeSingle();
+    if (!expPrincipal?.data_despacho) {
+      return {
+        success: false,
+        code: "COMPLEMENTO_SEGUE_PRINCIPAL",
+        error: `Este pedido é complemento do #${idPrincipal}: o despacho é feito pelo pedido principal, e os dois saem juntos.`
+      };
+    }
+    if (propAtual && String(propAtual.status_interno ?? "").trim() !== "EXPEDICAO") {
+      return { success: false, error: MSG_CONFLITO };
+    }
+    const tipoFretePrincipal = String(expPrincipal.tipo_frete ?? "") as TipoFreteNormalizado;
+    const destinoPrincipal = destinoDoDespacho(
+      tipoFretePrincipal === "RETIRA_BALCAO" ? "RETIRADA" : "TRANSPORTE",
+      tipoFretePrincipal
+    );
+    const repeticao = await despacharComplementoJunto(
+      idInt,
+      idPrincipal,
+      expPrincipal,
+      String(expPrincipal.data_despacho),
+      destinoPrincipal,
+      expPrincipal.codigo_rastreamento ? String(expPrincipal.codigo_rastreamento) : null,
+      ator
+    );
+    if (!repeticao.success) return repeticao;
+    return { success: true, aguardandoColeta: destinoPrincipal === null };
+  }
+
   const faltantes = camposMinimosDespacho(input, "DESPACHO");
   if (faltantes.length > 0) {
     return { success: false, error: `Antes de despachar, informe ${frasearFaltantes(faltantes)}.` };
   }
 
-  /**
-   * TRÊS SAÍDAS DESDE 02/09/2026 (Etapa 7).
-   *
-   *   RETIRADA                  → `A RETIRAR`, byte a byte como antes;
-   *   TRANSPORTADORA / MOTOBOY  → NÃO TRANSICIONA. O pedido segue em
-   *                               `EXPEDICAO`, agora com `data_despacho`
-   *                               preenchida e `coletado_em` nula — é o estado
-   *                               derivado "aguardando coleta". O volume está
-   *                               rotulado, na casa, esperando o carro; dizer
-   *                               `EM TRANSITO` ali era mentira, ninguém
-   *                               transportou nada ainda. `confirmarColeta`
-   *                               fecha o passo;
-   *   demais (CORREIOS, e o que sobrar) → `EM TRANSITO`, como sempre. A
-   *                               postagem É a coleta.
-   *
-   * `null` = sem transição. Não há status novo: `EXPEDICAO` é o mesmo de
-   * sempre, e as dez funções do banco que conhecem o vocabulário não mudam.
-   */
-  const destino: string | null =
-    input.tipoEntrega === "RETIRADA"
-      ? "A RETIRAR"
-      : input.tipoFrete === "TRANSPORTADORA" || input.tipoFrete === "MOTOBOY"
-        ? null
-        : "EM TRANSITO";
+  // Regra das três saídas em `lib/destino-despacho.ts`. `null` = sem transição.
+  const destino = destinoDoDespacho(input.tipoEntrega, input.tipoFrete);
 
   // Divergência bloqueante. A UI já barra, mas ela é só a UI: o despacho é
   // PostgREST direto do browser, sem rota de API que revalide (§3.5 do
@@ -239,12 +417,6 @@ export async function despachar(
       ? client.from("enderecos").select("cep").eq("id", input.idEnderecoEntrega).maybeSingle()
       : Promise.resolve({ data: null } as { data: { cep: string | null } | null })
   ]);
-
-  const { data: propAtual } = await client
-    .from("propostas")
-    .select("status_interno, valor_frete, id_int_pedido_principal")
-    .eq("id_int", idInt)
-    .maybeSingle();
 
   const divergencia = divergenciaFreteDoDespacho({
     cotacao: {
@@ -275,41 +447,15 @@ export async function despachar(
   }
 
   /**
-   * PEDIDO COMPLEMENTAR (docs/business/PEDIDO-COMPLEMENTAR.md), lido do BANCO
-   * antes de qualquer gravação. Pedido sem vínculo nenhum passa pelas duas
-   * leituras abaixo sem efeito e segue exatamente como antes.
-   *
-   * 1. ESTE pedido é complemento: quem despacha é o principal, e os dois saem
-   *    juntos. Enquanto o principal não tiver despacho, recusa.
-   */
-  const idPrincipal =
-    propAtual?.id_int_pedido_principal !== null && propAtual?.id_int_pedido_principal !== undefined
-      ? Number(propAtual.id_int_pedido_principal)
-      : null;
-  if (idPrincipal !== null) {
-    const { data: expPrincipal } = await client
-      .from("expedicoes")
-      .select("data_despacho")
-      .eq("id_int", idPrincipal)
-      .maybeSingle();
-    if (!expPrincipal?.data_despacho) {
-      return {
-        success: false,
-        code: "COMPLEMENTO_SEGUE_PRINCIPAL",
-        error: `Este pedido é complemento do #${idPrincipal}: o despacho é feito pelo pedido principal, e os dois saem juntos.`
-      };
-    }
-  }
-
-  /**
-   * 2. ESTE pedido tem complemento aberto que ainda não chegou à Expedição:
-   *    recusa, a menos que o expedidor tenha escolhido "Desvincular e despachar
-   *    separado" com motivo. Nesse caso cada um é desvinculado AQUI, antes do
-   *    upsert; falhando qualquer um, nada do despacho é gravado.
+   * 2. ESTE pedido tem complemento aberto que ainda não chegou à Expedição
+   *    (guarda (c), E8), ou que está nela sem pagamento integral (guarda (e),
+   *    E9): recusa, a menos que o expedidor tenha escolhido "Desvincular e
+   *    despachar separado" com motivo. Nesse caso cada um é desvinculado AQUI,
+   *    antes do upsert; falhando qualquer um, nada do despacho é gravado.
    */
   const { data: complementosAbertos, error: erroComplementos } = await client
     .from("propostas")
-    .select("id_int, status_interno")
+    .select("id_int, status_interno, valor_total")
     .eq("id_int_pedido_principal", idInt)
     .neq("status_interno", "CANCELADO");
   if (erroComplementos) {
@@ -322,28 +468,74 @@ export async function despachar(
     .filter((c) => String(c.status_interno ?? "").trim().toUpperCase() !== "EXPEDICAO")
     .map((c) => ({ idInt: Number(c.id_int), statusInterno: String(c.status_interno ?? "") }));
 
-  if (complementosForaDaExpedicao.length > 0) {
+  if (complementosForaDaExpedicao.length > 0 && !input.desvincularComplementos) {
     const lista = complementosForaDaExpedicao.map((c) => `#${c.idInt} (${c.statusInterno || "sem status"})`).join(", ");
-    if (!input.desvincularComplementos) {
+    return {
+      success: false,
+      code: "COMPLEMENTO_FORA_EXPEDICAO",
+      complementos: complementosForaDaExpedicao,
+      error:
+        `Este pedido tem complemento que ainda não chegou à Expedição: ${lista}. ` +
+        "Espere o complemento ou use \"Desvincular e despachar separado\"."
+    };
+  }
+
+  /**
+   * Guarda (e), decisão 5 do dono: o despacho conjunto EXIGE complemento pago.
+   * Mesma regra de "paga integralmente" da função de criação —
+   * `cc__valor_pago(Y) >= round(valor_total, 2)` e `valor_total > 0` —,
+   * comparada em centavos.
+   */
+  const complementosEmExpedicao = (complementosAbertos ?? []).filter(
+    (c) => String(c.status_interno ?? "").trim().toUpperCase() === "EXPEDICAO"
+  );
+  const complementosNaoPagos: Array<{ idInt: number; statusInterno: string; valorPago: number; valorTotal: number }> = [];
+  for (const c of complementosEmExpedicao) {
+    const idComplemento = Number(c.id_int);
+    const { data: valorPagoBruto, error: erroPago } = await client.rpc("cc__valor_pago", { p_id_int: idComplemento });
+    if (erroPago) {
       return {
         success: false,
-        code: "COMPLEMENTO_FORA_EXPEDICAO",
-        complementos: complementosForaDaExpedicao,
-        error:
-          `Este pedido tem complemento que ainda não chegou à Expedição: ${lista}. ` +
-          "Espere o complemento ou use \"Desvincular e despachar separado\"."
+        error: `Não foi possível conferir o pagamento do complemento #${idComplemento} (${erroPago.message}). O pedido segue em EXPEDICAO.`
       };
     }
+    const totalCentavos = Math.round(Number(c.valor_total ?? 0) * 100);
+    const pagoCentavos = Math.round(Number(valorPagoBruto ?? 0) * 100);
+    if (!(totalCentavos > 0 && pagoCentavos >= totalCentavos)) {
+      complementosNaoPagos.push({
+        idInt: idComplemento,
+        statusInterno: String(c.status_interno ?? ""),
+        valorPago: pagoCentavos / 100,
+        valorTotal: totalCentavos / 100
+      });
+    }
+  }
+  if (complementosNaoPagos.length > 0 && !input.desvincularComplementos) {
+    const lista = complementosNaoPagos
+      .map((c) => `#${c.idInt} (pago ${formatarReais(c.valorPago)} de ${formatarReais(c.valorTotal)})`)
+      .join(", ");
+    return {
+      success: false,
+      code: "COMPLEMENTO_NAO_PAGO",
+      complementos: complementosNaoPagos,
+      error:
+        `Este pedido tem complemento na Expedição sem pagamento integral: ${lista}. ` +
+        "Espere o pagamento ou use \"Desvincular e despachar separado\"."
+    };
+  }
+
+  const complementosADesvincular = [...complementosForaDaExpedicao, ...complementosNaoPagos];
+  if (complementosADesvincular.length > 0 && input.desvincularComplementos) {
     const motivo = input.desvincularComplementos.motivo.trim();
     if (!motivo) {
       return {
         success: false,
-        code: "COMPLEMENTO_FORA_EXPEDICAO",
-        complementos: complementosForaDaExpedicao,
+        code: complementosForaDaExpedicao.length > 0 ? "COMPLEMENTO_FORA_EXPEDICAO" : "COMPLEMENTO_NAO_PAGO",
+        complementos: complementosADesvincular,
         error: "Informe o motivo para desvincular o complemento e despachar separado."
       };
     }
-    for (const complemento of complementosForaDaExpedicao) {
+    for (const complemento of complementosADesvincular) {
       const { error: erroDesvinculo } = await client.rpc("desvincular_pedido_complementar", {
         p_id_int_complemento: complemento.idInt,
         p_motivo: motivo,
@@ -388,6 +580,8 @@ export async function despachar(
     categoriaDoServico(input.transportadoraNome || null, input.tipoFrete, input.modalidadeFrete) ??
     categoriaPorNomeConhecido(input.transportadoraNome || null, input.tipoFrete);
 
+  // Um ISO só: o complemento que sai junto recebe exatamente a mesma data.
+  const dataDespacho = new Date().toISOString();
   const up = await upsertExpedicao(idInt, {
     modalidade_frete: input.modalidadeFrete,
     tipo_frete: input.tipoFrete,
@@ -406,7 +600,7 @@ export async function despachar(
     // transacao implicita, mesmo tratamento de erro.
     obs_etiqueta: input.obsEtiqueta?.trim() || null,
     nf_numero_manual: input.nfNumeroManual?.trim() || null,
-    data_despacho: new Date().toISOString(),
+    data_despacho: dataDespacho,
     despachado_por: ator.nome
   });
   if (!up.success) {
@@ -436,7 +630,59 @@ export async function despachar(
     if (osError) console.warn("[expedicao-acoes] Falha ao espelhar rastreio na OS:", osError);
   }
 
-  return { success: true, aguardandoColeta: destino === null };
+  /**
+   * DESPACHO CONJUNTO (E9). Principal gravado e transicionado; agora os
+   * complementos que estão em EXPEDICAO, relidos do BANCO (os desvinculados
+   * acima já não aparecem), saem na mesma caixa. Falha num complemento não
+   * desfaz o principal: volta em `complementosComFalha`, e o caminho de
+   * repetição (`despachar` no próprio complemento) fecha o passo.
+   */
+  const { data: complementosJuntos, error: erroJuntos } = await client
+    .from("propostas")
+    .select("id_int")
+    .eq("id_int_pedido_principal", idInt)
+    .eq("status_interno", "EXPEDICAO");
+  if (erroJuntos) {
+    const pendentes = complementosEmExpedicao
+      .map((c) => Number(c.id_int))
+      .filter((id) => !complementosNaoPagos.some((n) => n.idInt === id));
+    if (pendentes.length > 0) {
+      return {
+        success: true,
+        aguardandoColeta: destino === null,
+        complementosDespachados: [],
+        complementosComFalha: pendentes.map((id) => ({
+          idInt: id,
+          error: `Não foi possível reler os complementos (${erroJuntos.message}).`
+        }))
+      };
+    }
+    return { success: true, aguardandoColeta: destino === null };
+  }
+  const conjunto = await propagarAosComplementos(
+    idInt,
+    (complementosJuntos ?? []).map((c) => Number(c.id_int)),
+    (idComplemento) =>
+      despacharComplementoJunto(
+        idComplemento,
+        idInt,
+        {
+          modalidade_frete: input.modalidadeFrete,
+          tipo_frete: input.tipoFrete,
+          transportadora_nome: input.transportadoraNome || null,
+          categoria_frete: categoriaFrete,
+          id_transportadora_cliente: input.idTransportadoraCliente,
+          id_endereco_entrega: input.idEnderecoEntrega,
+          tipo_volume: input.tipoVolume
+        },
+        dataDespacho,
+        destino,
+        input.codigoRastreamento || null,
+        ator
+      )
+  );
+
+  return { success: true, aguardandoColeta: destino === null, ...conjunto };
 }
 
 /**
@@ -452,7 +698,8 @@ export async function despachar(
  * que `despachar` escolheu em 20/08/2026, e um novo clique fecha o passo.
  */
 export async function confirmarColeta(idInt: number, ator: AtorExpedicao): Promise<ResultadoAcao> {
-  const up = await upsertExpedicao(idInt, { coletado_em: new Date().toISOString() });
+  const coletadoEm = new Date().toISOString();
+  const up = await upsertExpedicao(idInt, { coletado_em: coletadoEm });
   if (!up.success) {
     return { success: false, error: `Não foi possível registrar a coleta (${up.error}). O pedido segue em EXPEDICAO.` };
   }
@@ -460,7 +707,32 @@ export async function confirmarColeta(idInt: number, ator: AtorExpedicao): Promi
   if (!t.success) {
     return { success: false, error: `${t.error} A coleta foi registrada e o pedido segue em EXPEDICAO.` };
   }
-  return { success: true };
+
+  /**
+   * PEDIDO COMPLEMENTAR (E9): a coleta propaga para o complemento no mesmo
+   * status que saiu no despacho conjunto — em EXPEDICAO, com `data_despacho` e
+   * ainda sem `coletado_em`. Complemento em EXPEDICAO que não foi despachado
+   * não foi no carro, e fica.
+   */
+  const noStatus = await complementosNoStatus(idInt, "EXPEDICAO");
+  let aguardandoColeta: number[] = [];
+  if (noStatus.error) console.warn("[expedicao-acoes] Falha ao ler complementos para a coleta:", noStatus.error);
+  else if (noStatus.ids.length > 0) {
+    const client = getSupabaseClient();
+    const { data: exps, error: erroExps } = client
+      ? await client.from("expedicoes").select("id_int, data_despacho, coletado_em").in("id_int", noStatus.ids)
+      : { data: null, error: { message: "Supabase não inicializado." } };
+    if (erroExps) console.warn("[expedicao-acoes] Falha ao ler o despacho dos complementos:", erroExps);
+    aguardandoColeta = (exps ?? [])
+      .filter((e) => Boolean(e.data_despacho) && !e.coletado_em)
+      .map((e) => Number(e.id_int));
+  }
+  const propagacao = await propagarAosComplementos(idInt, aguardandoColeta, async (idComplemento) => {
+    const upC = await upsertExpedicao(idComplemento, { coletado_em: coletadoEm });
+    if (!upC.success) return upC;
+    return transicionar(idComplemento, "EXPEDICAO", "EM TRANSITO", ator, `Coleta conjunta com #${idInt}`, "NATURAL");
+  });
+  return { success: true, ...propagacao };
 }
 
 /**
@@ -505,8 +777,9 @@ export async function confirmarRetirada(
 ): Promise<ResultadoAcao> {
   const t = await transicionar(idInt, "A RETIRAR", "ENTREGUE", ator, null, "NATURAL");
   if (!t.success) return t;
+  const dataEntrega = new Date().toISOString();
   const up = await upsertExpedicao(idInt, {
-    data_entrega: new Date().toISOString(),
+    data_entrega: dataEntrega,
     retirado_por: retiradoPor || null
   });
   if (!up.success) {
@@ -515,21 +788,40 @@ export async function confirmarRetirada(
       error: `Pedido marcado como ENTREGUE, mas a data de entrega não foi gravada (${up.error}). Use 'Editar dados de expedição'.`
     };
   }
-  return up;
+
+  // PEDIDO COMPLEMENTAR (E9): a retirada propaga para o complemento em A RETIRAR.
+  const noStatus = await complementosNoStatus(idInt, "A RETIRAR");
+  if (noStatus.error) console.warn("[expedicao-acoes] Falha ao ler complementos para a retirada:", noStatus.error);
+  const propagacao = await propagarAosComplementos(idInt, noStatus.ids, async (idComplemento) => {
+    const tC = await transicionar(idComplemento, "A RETIRAR", "ENTREGUE", ator, `Retirada conjunta com #${idInt}`, "NATURAL");
+    if (!tC.success) return tC;
+    return upsertExpedicao(idComplemento, { data_entrega: dataEntrega, retirado_por: retiradoPor || null });
+  });
+  return { ...up, ...propagacao };
 }
 
 /** EM TRANSITO → ENTREGUE. */
 export async function marcarEntregue(idInt: number, ator: AtorExpedicao): Promise<ResultadoAcao> {
   const t = await transicionar(idInt, "EM TRANSITO", "ENTREGUE", ator, null, "NATURAL");
   if (!t.success) return t;
-  const up = await upsertExpedicao(idInt, { data_entrega: new Date().toISOString() });
+  const dataEntrega = new Date().toISOString();
+  const up = await upsertExpedicao(idInt, { data_entrega: dataEntrega });
   if (!up.success) {
     return {
       success: false,
       error: `Pedido marcado como ENTREGUE, mas a data de entrega não foi gravada (${up.error}). Use 'Editar dados de expedição'.`
     };
   }
-  return up;
+
+  // PEDIDO COMPLEMENTAR (E9): a entrega propaga para o complemento em EM TRANSITO.
+  const noStatus = await complementosNoStatus(idInt, "EM TRANSITO");
+  if (noStatus.error) console.warn("[expedicao-acoes] Falha ao ler complementos para a entrega:", noStatus.error);
+  const propagacao = await propagarAosComplementos(idInt, noStatus.ids, async (idComplemento) => {
+    const tC = await transicionar(idComplemento, "EM TRANSITO", "ENTREGUE", ator, `Entrega conjunta com #${idInt}`, "NATURAL");
+    if (!tC.success) return tC;
+    return upsertExpedicao(idComplemento, { data_entrega: dataEntrega });
+  });
+  return { ...up, ...propagacao };
 }
 
 /**
@@ -537,6 +829,10 @@ export async function marcarEntregue(idInt: number, ator: AtorExpedicao): Promis
  *  ENTREGUE → EM TRANSITO se o despacho foi transporte; senão A RETIRAR;
  *  EM TRANSITO | A RETIRAR → EXPEDICAO;
  *  EXPEDICAO → EM ACABAMENTO.
+ *
+ * PEDIDO COMPLEMENTAR: NÃO propaga para os complementos, de propósito. Voltar o
+ * principal não desfaz o despacho do complemento (pendência registrada em
+ * docs/business/PEDIDO-COMPLEMENTAR.md).
  */
 export async function voltarStatus(
   idInt: number,

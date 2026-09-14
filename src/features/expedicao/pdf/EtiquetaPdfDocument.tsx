@@ -176,6 +176,9 @@ const styles = StyleSheet.create({
     letterSpacing: -1
   },
 
+  /** Dois pedidos na mesma caixa (pedido complementar): "#X + #Y" numa linha. */
+  pedidoNumeroConjunto: { fontSize: 22, letterSpacing: -0.5, marginTop: 4 },
+
   destNome: { fontSize: 12, fontFamily: "Helvetica-Bold", marginTop: 1.5 },
   destLinha: { fontSize: 10, marginTop: 1.2 },
 
@@ -273,7 +276,16 @@ export function EtiquetaPdfDocument({
                 sintoma do 21503 no rodape. */}
             <View wrap={false} style={styles.pedidoLinha}>
               <Text style={styles.rotulo}>PEDIDO:</Text>
-              <Text style={styles.pedidoNumero}>{vm.idInt}</Text>
+              {/* PEDIDO COMPLEMENTAR (E9): uma caixa, dois pedidos. O corpo
+                  desce para caber "#X + #Y" na mesma linha; pedido sozinho
+                  segue exatamente como antes. */}
+              {vm.pedidosNoVolume.length > 1 ? (
+                <Text style={[styles.pedidoNumero, styles.pedidoNumeroConjunto]}>
+                  {vm.pedidosNoVolume.map((id) => `#${id}`).join(" + ")}
+                </Text>
+              ) : (
+                <Text style={styles.pedidoNumero}>{vm.idInt}</Text>
+              )}
             </View>
             <View style={styles.regua} />
 

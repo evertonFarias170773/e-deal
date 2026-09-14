@@ -272,10 +272,19 @@ export function DespacharModal({
   const [confirmaSemNf, setConfirmaSemNf] = useState(false);
   /**
    * PEDIDO COMPLEMENTAR: override "Desvincular e despachar separado". Só
-   * aparece quando há complemento aberto que ainda não chegou à Expedição.
+   * aparece quando há complemento aberto que ainda não chegou à Expedição, ou
+   * que está nela sem pagamento integral.
    */
   const [desvincularSeparado, setDesvincularSeparado] = useState(false);
   const [motivoDesvinculo, setMotivoDesvinculo] = useState("");
+  /**
+   * Complementos em EXPEDICAO que o serviço recusou com `COMPLEMENTO_NAO_PAGO`
+   * (guarda (e), E9). O painel não traz o pagamento: quem confere é
+   * `despachar`, no clique, e a tela passa a mostrar o bloqueio a partir daí.
+   */
+  const [complementosNaoPagos, setComplementosNaoPagos] = useState<
+    Array<{ idInt: number; valorPago?: number; valorTotal?: number }>
+  >([]);
   const [confirmaTrocaCorreios, setConfirmaTrocaCorreios] = useState(false);
   const [salvando, setSalvando] = useState(false);
   const [correiosOk, setCorreiosOk] = useState(false);
@@ -660,9 +669,13 @@ export function DespacharModal({
   // PEDIDO COMPLEMENTAR. O despacho recusa no serviço de qualquer jeito; aqui a
   // tela mostra o motivo antes do clique e só libera com o override + motivo.
   const complementosForaDaExpedicao = pedido.complementos.filter((c) => !c.prontoParaSair);
+  const complementosBloqueantes = [
+    ...complementosForaDaExpedicao.map((c) => c.idInt),
+    ...complementosNaoPagos.map((c) => c.idInt).filter((id) => !complementosForaDaExpedicao.some((c) => c.idInt === id))
+  ];
   const bloqueioPorComplemento =
     !modoEdicao &&
-    complementosForaDaExpedicao.length > 0 &&
+    complementosBloqueantes.length > 0 &&
     !(desvincularSeparado && motivoDesvinculo.trim() !== "");
 
   /**
@@ -799,10 +812,12 @@ export function DespacharModal({
     if (bloqueioPorComplemento) {
       showToast({
         type: "warning",
-        title: "Complemento ainda não chegou",
+        title: complementosForaDaExpedicao.length > 0 ? "Complemento ainda não chegou" : "Complemento sem pagamento integral",
         description: desvincularSeparado
           ? "Informe o motivo para desvincular o complemento e despachar separado."
-          : `Espere ${complementosForaDaExpedicao.map((c) => `#${c.idInt}`).join(", ")} chegar à Expedição ou marque "Desvincular e despachar separado".`
+          : complementosForaDaExpedicao.length > 0
+            ? `Espere ${complementosForaDaExpedicao.map((c) => `#${c.idInt}`).join(", ")} chegar à Expedição ou marque "Desvincular e despachar separado".`
+            : `Espere o pagamento de ${complementosNaoPagos.map((c) => `#${c.idInt}`).join(", ")} ou marque "Desvincular e despachar separado".`
       });
       return;
     }
@@ -849,7 +864,7 @@ export function DespacharModal({
       // vence e o manual nem e enviado — nao ha como sobrescrever o
       // numero de uma nota emitida.
       nfNumeroManual: temNotaAutorizada ? "" : nfNumeroManual.trim(),
-      ...(!modoEdicao && desvincularSeparado && complementosForaDaExpedicao.length > 0
+      ...(!modoEdicao && desvincularSeparado && complementosBloqueantes.length > 0
         ? { desvincularComplementos: { motivo: motivoDesvinculo.trim() } }
         : {})
     };
@@ -878,12 +893,30 @@ export function DespacharModal({
             : res.aguardandoColeta
               ? "Despacho registrado — aguardando coleta"
               : "Pedido despachado",
-        description: res.aguardandoColeta
-          ? `#${pedido.idInt} · ${pedido.cliente} — confirme a coleta quando a transportadora levar o volume.`
-          : `#${pedido.idInt} · ${pedido.cliente}`
+        description:
+          (res.aguardandoColeta
+            ? `#${pedido.idInt} · ${pedido.cliente} — confirme a coleta quando a transportadora levar o volume.`
+            : `#${pedido.idInt} · ${pedido.cliente}`) +
+          (res.complementosDespachados && res.complementosDespachados.length > 0
+            ? ` Complemento ${res.complementosDespachados.map((id) => `#${id}`).join(", ")} saiu junto.`
+            : "")
       });
+      // PEDIDO COMPLEMENTAR (E9): o principal foi gravado, mas um complemento
+      // não acompanhou. Ele segue em EXPEDICAO e o despacho nele repete o passo.
+      if (res.complementosComFalha && res.complementosComFalha.length > 0) {
+        showToast({
+          type: "warning",
+          title: "Complemento não saiu junto",
+          description: res.complementosComFalha.map((c) => `#${c.idInt}: ${c.error}`).join(" ")
+        });
+      }
       onDone();
     } else {
+      if (res.code === "COMPLEMENTO_NAO_PAGO" && res.complementos) {
+        setComplementosNaoPagos(
+          res.complementos.map((c) => ({ idInt: c.idInt, valorPago: c.valorPago, valorTotal: c.valorTotal }))
+        );
+      }
       showToast({ type: "error", title: "Não foi possível salvar", description: res.error });
     }
   }
@@ -1701,25 +1734,36 @@ export function DespacharModal({
         {!modoEdicao && pedido.complementos.length > 0 ? (
           <div
             className={
-              complementosForaDaExpedicao.length > 0
+              complementosBloqueantes.length > 0
                 ? "mx-5 mb-1 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-200"
                 : "mx-5 mb-1 rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-900 dark:border-emerald-900/40 dark:bg-emerald-950/30 dark:text-emerald-200"
             }
           >
             <p className="font-semibold">Pedido complementar do mesmo evento</p>
             <ul className="mt-1 space-y-0.5">
-              {pedido.complementos.map((c) => (
-                <li key={c.idInt}>
-                  #{c.idInt} —{" "}
-                  {c.prontoParaSair ? (
-                    <strong>em EXPEDICAO, sai junto</strong>
-                  ) : (
-                    <strong>ainda em {c.statusInterno || "sem status"}: bloqueia o despacho</strong>
-                  )}
-                </li>
-              ))}
+              {pedido.complementos.map((c) => {
+                const naoPago = complementosNaoPagos.find((n) => n.idInt === c.idInt);
+                return (
+                  <li key={c.idInt}>
+                    #{c.idInt} —{" "}
+                    {!c.prontoParaSair ? (
+                      <strong>ainda em {c.statusInterno || "sem status"}: bloqueia o despacho</strong>
+                    ) : naoPago ? (
+                      <strong>
+                        em EXPEDICAO sem pagamento integral
+                        {naoPago.valorPago !== undefined && naoPago.valorTotal !== undefined
+                          ? ` (pago ${formatCurrency(naoPago.valorPago)} de ${formatCurrency(naoPago.valorTotal)})`
+                          : ""}
+                        : bloqueia o despacho
+                      </strong>
+                    ) : (
+                      <strong>em EXPEDICAO, sai junto</strong>
+                    )}
+                  </li>
+                );
+              })}
             </ul>
-            {complementosForaDaExpedicao.length > 0 ? (
+            {complementosBloqueantes.length > 0 ? (
               <div className="mt-2 space-y-2">
                 <label className="flex items-center gap-2 font-semibold">
                   <input

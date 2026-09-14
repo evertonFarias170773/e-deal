@@ -10,6 +10,12 @@ import { resolverEmpresaRemetente } from "@/lib/correios/empresa-remetente";
 
 export type EtiquetaViewModel = {
   idInt: number;
+  /**
+   * PEDIDO COMPLEMENTAR (E9). Pedidos que vão neste volume: o próprio `idInt`
+   * primeiro e, depois, os complementos que saem junto (ver
+   * `pedidosNoVolume`). Com mais de um, a etiqueta imprime "#X + #Y".
+   */
+  pedidosNoVolume: number[];
   volumes: number;
   pesoKg: string;
   transportadora: string;
@@ -111,6 +117,33 @@ function nomeRemetenteExibido(idCliente: number | null, nomeEmpresa: string): st
   return idCliente === CLIENTE_REMETENTE_ALTERNATIVO ? NOME_REMETENTE_ALTERNATIVO : nomeEmpresa;
 }
 
+/** Status em que o complemento está no fluxo logístico e vai na caixa do principal. */
+const STATUS_COMPLEMENTO_NO_VOLUME = ["EXPEDICAO", "A RETIRAR", "EM TRANSITO", "ENTREGUE"];
+
+/**
+ * PEDIDO COMPLEMENTAR (E9, docs/business/PEDIDO-COMPLEMENTAR.md). Os pedidos
+ * de um volume: o próprio `idInt` e os complementos vinculados a ele que já
+ * chegaram ao fluxo logístico. A etiqueta e a declaração de conteúdo saem
+ * SEMPRE pelo principal; aberta pelo complemento, a lista tem só ele — que
+ * não tem complemento próprio, porque a cadeia é de um nível.
+ *
+ * Complemento cancelado ou ainda em produção não entra: não vai na caixa. O
+ * desvinculado também não, porque perdeu o vínculo.
+ */
+export async function pedidosNoVolume(supabase: SupabaseClient, idInt: number): Promise<number[]> {
+  const { data, error } = await supabase
+    .from("propostas")
+    .select("id_int")
+    .eq("id_int_pedido_principal", idInt)
+    .in("status_interno", STATUS_COMPLEMENTO_NO_VOLUME)
+    .order("id_int", { ascending: true });
+  if (error) {
+    console.warn("[etiqueta-viewmodel] Falha ao ler os complementos do volume:", error);
+    return [idInt];
+  }
+  return [idInt, ...(data ?? []).map((c) => Number(c.id_int))];
+}
+
 export async function montarEtiquetaViewModel(
   supabase: SupabaseClient,
   idInt: number
@@ -127,7 +160,7 @@ export async function montarEtiquetaViewModel(
     .maybeSingle();
   if (!proposta) return null;
 
-  const [{ data: exp }, { data: os }, { data: frete }, { data: notas }] = await Promise.all([
+  const [{ data: exp }, { data: os }, { data: frete }, { data: notas }, pedidos] = await Promise.all([
     supabase
       .from("expedicoes")
       .select(
@@ -152,7 +185,9 @@ export async function montarEtiquetaViewModel(
     supabase
       .from("notas_fiscais")
       .select(COLUNAS_NOTA_DO_PEDIDO)
-      .eq("id_int", idInt)
+      .eq("id_int", idInt),
+    // PEDIDO COMPLEMENTAR (E9): os pedidos que vão neste volume.
+    pedidosNoVolume(supabase, idInt)
   ]);
 
   /**
@@ -374,6 +409,7 @@ export async function montarEtiquetaViewModel(
 
   return {
     idInt,
+    pedidosNoVolume: pedidos,
     volumes,
     pesoKg,
     /**

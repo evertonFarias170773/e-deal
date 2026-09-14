@@ -3,6 +3,7 @@ import { resolverEmpresaRemetente } from "@/lib/correios/empresa-remetente";
 import { resolverPesoExpedicao } from "../lib/peso";
 import { idDestinatarioEtiquetaVigente } from "../lib/destinatario-etiqueta";
 import { idEnderecoEntregaVigente } from "../lib/endereco-entrega";
+import { pedidosNoVolume } from "./etiqueta-viewmodel.service";
 
 export type ItemDeclaracao = {
   discriminacao: string;
@@ -77,10 +78,21 @@ export async function montarDeclaracaoViewModel(
       .eq("escolhido", true)
       .limit(1)
       .maybeSingle(),
-    supabase
-      .from("produtos_proposta")
-      .select("nome_produto, modelo_descri, qtd, valor_unt, valor_sub_total")
-      .eq("id_int", idInt)
+    // PEDIDO COMPLEMENTAR (E9): uma caixa, os itens dos pedidos que vão nela —
+    // o principal e os complementos que saem junto. Pedido sem complemento lê
+    // exatamente as mesmas linhas de antes.
+    pedidosNoVolume(supabase, idInt).then((pedidos) =>
+      supabase
+        .from("produtos_proposta")
+        .select("id_int, nome_produto, modelo_descri, qtd, valor_unt, valor_sub_total")
+        .in("id_int", pedidos)
+        .then((r) => ({
+          ...r,
+          // Principal primeiro, depois cada complemento; a ordem dentro de um
+          // mesmo pedido fica a que o banco devolveu (sort estável).
+          data: r.data ? [...r.data].sort((a, b) => pedidos.indexOf(Number(a.id_int)) - pedidos.indexOf(Number(b.id_int))) : r.data
+        }))
+    )
   ]);
 
   // Endereço de entrega: o escolhido no despacho > o que casa com o CEP cotado >

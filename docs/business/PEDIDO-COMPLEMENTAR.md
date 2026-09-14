@@ -1,7 +1,7 @@
 # PEDIDO-COMPLEMENTAR.md
 
 Versão: 1.0
-Status: Regra aprovada — **em implementação** (E0 a E8 concluídas; E9 e E10 pendentes)
+Status: Regra aprovada — **em implementação** (E0 a E9 concluídas; E10 pendente)
 Última atualização: 13/09/2026
 Projeto: Vibe
 
@@ -31,7 +31,13 @@ Projeto: Vibe
 > complemento fora da Expedição, salvo o override "Desvincular e despachar
 > separado" com motivo, que usa a função `desvincular_pedido_complementar`.
 > Cancelar o complemento carimba o ledger e mantém o vínculo como histórico
-> (E8). O despacho conjunto dos dois numa caixa só ainda não existe: é a E9.
+> (E8). Despachar o principal leva junto o complemento que está na
+> Expedição e pago integralmente: mesma `data_despacho`, mesmo destino, rastreio
+> no `propostas_os` dos dois e em `expedicoes` só do principal; complemento na
+> Expedição sem pagamento integral recusa com `COMPLEMENTO_NAO_PAGO`, com o
+> mesmo override. Coleta e entrega do principal acompanham o complemento no
+> mesmo status, e voltar status não acompanha. A etiqueta do principal imprime
+> "#X + #Y" e a declaração de conteúdo lista os itens dos dois (E9).
 > O item do menu só
 > aparece para quem tem a chave `propostas.complementar` ou o coringa `*`, e
 > nenhum perfil tem a chave ainda (isso é da E10): hoje só o Super
@@ -524,7 +530,7 @@ coringa. O dono aceitou esse comportamento em 13/09/2026: `cc__assert_permissao`
 | E6 | Rota e função de aplicar frete + card no formulário | **Concluída em 14/09/2026** — `supabase/migrations/20260915_complementar_aplicar_frete.sql`, aplicada em produção (versão `20260914125714`), `POST /api/orcamentos/complementar/aplicar-frete` e `FreteComplementarCard` na aba Fretes. Validada com a #22069 |
 | E7 | Guardas de cancelamento e de cobrança | **Concluída em 14/09/2026** — `cancelar-proposta` recusa com `COMPLEMENTO_ABERTO` e o modal avisa e desabilita o Confirmar; `frete-status` bloqueia a cobrança do complemento sem frete aplicado. O carimbo do ledger ao cancelar o complemento fica para a E8. Validada com as #22067, #22068, #22069 e #22072 |
 | E8 | Expedição: vínculo no painel, bloqueio de despacho e desvinculação | **Concluída em 14/09/2026** — `supabase/migrations/20260915_desvincular_pedido_complementar.sql`, aplicada em produção (versão `20260914142842`), selos e filtro no painel, recusa do despacho com complemento fora da Expedição, override com motivo e carimbo do ledger no cancelamento do complemento. Validada com as #22067 e #22069 |
-| E9 | Despacho conjunto, etiqueta e declaração | Pendente |
+| E9 | Despacho conjunto, etiqueta e declaração | **Concluída em 14/09/2026** — sem migration; `lib/destino-despacho.ts`, despacho conjunto e caminho de repetição em `expedicao-acoes.service.ts`, guarda `COMPLEMENTO_NAO_PAGO` com o override, coleta e entrega propagadas, etiqueta "#X + #Y" e declaração com os itens dos dois. Validada com as #22098 e #22099 |
 | E10 | Documentação final e concessão da permissão | Pendente |
 
 ---
