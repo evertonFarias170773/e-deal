@@ -677,6 +677,43 @@ export function DespacharModal({
     !modoEdicao &&
     complementosBloqueantes.length > 0 &&
     !(desvincularSeparado && motivoDesvinculo.trim() !== "");
+  // Caminho de repetição: ESTE pedido é o complemento recusado por falta de
+  // pagamento. A saída é a mesma do principal, o override com motivo.
+  const esteComplementoNaoPago = complementosNaoPagos.find((c) => c.idInt === pedido.idInt) ?? null;
+  // Override "Desvincular e despachar separado": um controle só, mostrado na
+  // faixa do principal ou na do complemento, conforme quem foi recusado.
+  const controleDesvincularSeparado = (
+    <div className="mt-2 space-y-2">
+      <label className="flex items-center gap-2 font-semibold">
+        <input
+          type="checkbox"
+          checked={desvincularSeparado}
+          onChange={(e) => setDesvincularSeparado(e.target.checked)}
+          className="h-4 w-4"
+        />
+        Desvincular e despachar separado
+      </label>
+      {desvincularSeparado ? (
+        <>
+          <p>
+            O complemento deixa de sair junto e passa a precisar de frete próprio. O frete complementar
+            aplicado nele deixa de valer.
+          </p>
+          <label className="block font-semibold" htmlFor="motivo_desvinculo_complemento">
+            Motivo <span className="text-red-600">*</span>
+          </label>
+          <textarea
+            id="motivo_desvinculo_complemento"
+            rows={2}
+            value={motivoDesvinculo}
+            onChange={(e) => setMotivoDesvinculo(e.target.value)}
+            placeholder="Por que o pedido sai sem o complemento?"
+            className="w-full rounded-xl border border-amber-300 bg-white px-3 py-2 text-xs text-slate-900 outline-none dark:border-amber-800 dark:bg-slate-900 dark:text-slate-100"
+          />
+        </>
+      ) : null}
+    </div>
+  );
 
   /**
    * PASSO 2 em diante so existe nas modalidades de ENVIO (FOB e CIF). Retira
@@ -1726,9 +1763,29 @@ export function DespacharModal({
 
         {/* PEDIDO COMPLEMENTAR (docs/business/PEDIDO-COMPLEMENTAR.md). */}
         {!modoEdicao && pedido.pedidoPrincipal ? (
-          <div className="mx-5 mb-1 rounded-2xl border border-sky-200 bg-sky-50 p-3 text-xs text-sky-900 dark:border-sky-900/40 dark:bg-sky-950/30 dark:text-sky-200">
+          <div
+            className={
+              esteComplementoNaoPago
+                ? "mx-5 mb-1 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-200"
+                : "mx-5 mb-1 rounded-2xl border border-sky-200 bg-sky-50 p-3 text-xs text-sky-900 dark:border-sky-900/40 dark:bg-sky-950/30 dark:text-sky-200"
+            }
+          >
             <p className="font-semibold">Complemento do #{pedido.pedidoPrincipal.idInt}</p>
             <p className="mt-1">O despacho é feito pelo pedido principal, e os dois saem juntos.</p>
+            {esteComplementoNaoPago ? (
+              <>
+                <p className="mt-1">
+                  <strong>
+                    Sem pagamento integral
+                    {esteComplementoNaoPago.valorPago !== undefined && esteComplementoNaoPago.valorTotal !== undefined
+                      ? ` (pago ${formatCurrency(esteComplementoNaoPago.valorPago)} de ${formatCurrency(esteComplementoNaoPago.valorTotal)})`
+                      : ""}
+                    : bloqueia o despacho
+                  </strong>
+                </p>
+                {controleDesvincularSeparado}
+              </>
+            ) : null}
           </div>
         ) : null}
         {!modoEdicao && pedido.complementos.length > 0 ? (
@@ -1763,38 +1820,7 @@ export function DespacharModal({
                 );
               })}
             </ul>
-            {complementosBloqueantes.length > 0 ? (
-              <div className="mt-2 space-y-2">
-                <label className="flex items-center gap-2 font-semibold">
-                  <input
-                    type="checkbox"
-                    checked={desvincularSeparado}
-                    onChange={(e) => setDesvincularSeparado(e.target.checked)}
-                    className="h-4 w-4"
-                  />
-                  Desvincular e despachar separado
-                </label>
-                {desvincularSeparado ? (
-                  <>
-                    <p>
-                      O complemento deixa de sair junto e passa a precisar de frete próprio. O frete complementar
-                      aplicado nele deixa de valer.
-                    </p>
-                    <label className="block font-semibold" htmlFor="motivo_desvinculo_complemento">
-                      Motivo <span className="text-red-600">*</span>
-                    </label>
-                    <textarea
-                      id="motivo_desvinculo_complemento"
-                      rows={2}
-                      value={motivoDesvinculo}
-                      onChange={(e) => setMotivoDesvinculo(e.target.value)}
-                      placeholder="Por que o pedido sai sem o complemento?"
-                      className="w-full rounded-xl border border-amber-300 bg-white px-3 py-2 text-xs text-slate-900 outline-none dark:border-amber-800 dark:bg-slate-900 dark:text-slate-100"
-                    />
-                  </>
-                ) : null}
-              </div>
-            ) : null}
+            {complementosBloqueantes.length > 0 ? controleDesvincularSeparado : null}
           </div>
         ) : null}
 

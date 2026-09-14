@@ -292,6 +292,65 @@ function formatarReais(valor: number): string {
   return valor.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
+type ComplementoNaoPago = { idInt: number; statusInterno: string; valorPago: number; valorTotal: number };
+
+/**
+ * Guarda (e), decisão 5 do dono: o despacho conjunto EXIGE complemento pago.
+ * Mesma regra de "paga integralmente" da função de criação —
+ * `cc__valor_pago(Y) >= round(valor_total, 2)` e `valor_total > 0` —,
+ * comparada em centavos.
+ *
+ * A REGRA MORA SÓ AQUI: vale no despacho pelo principal e no caminho de
+ * repetição (despachar o próprio complemento com o principal já despachado).
+ * `erro` vem quando a conferência não pôde ser feita, e aí nada é despachado.
+ */
+async function complementosSemPagamentoIntegral(
+  complementos: Array<{ id_int: unknown; status_interno: unknown; valor_total: unknown }>
+): Promise<{ naoPagos: ComplementoNaoPago[]; erro?: ResultadoAcao }> {
+  const client = getSupabaseClient();
+  if (!client) return { naoPagos: [], erro: { success: false, error: "Supabase não inicializado." } };
+  const naoPagos: ComplementoNaoPago[] = [];
+  for (const c of complementos) {
+    const idComplemento = Number(c.id_int);
+    const { data: valorPagoBruto, error: erroPago } = await client.rpc("cc__valor_pago", { p_id_int: idComplemento });
+    if (erroPago) {
+      return {
+        naoPagos: [],
+        erro: {
+          success: false,
+          error: `Não foi possível conferir o pagamento do complemento #${idComplemento} (${erroPago.message}). O pedido segue em EXPEDICAO.`
+        }
+      };
+    }
+    const totalCentavos = Math.round(Number(c.valor_total ?? 0) * 100);
+    const pagoCentavos = Math.round(Number(valorPagoBruto ?? 0) * 100);
+    if (!(totalCentavos > 0 && pagoCentavos >= totalCentavos)) {
+      naoPagos.push({
+        idInt: idComplemento,
+        statusInterno: String(c.status_interno ?? ""),
+        valorPago: pagoCentavos / 100,
+        valorTotal: totalCentavos / 100
+      });
+    }
+  }
+  return { naoPagos };
+}
+
+/** A recusa `COMPLEMENTO_NAO_PAGO`, com o mesmo texto nos dois caminhos. */
+function recusaComplementoNaoPago(naoPagos: ComplementoNaoPago[]): ResultadoAcao {
+  const lista = naoPagos
+    .map((c) => `#${c.idInt} (pago ${formatarReais(c.valorPago)} de ${formatarReais(c.valorTotal)})`)
+    .join(", ");
+  return {
+    success: false,
+    code: "COMPLEMENTO_NAO_PAGO",
+    complementos: naoPagos,
+    error:
+      `Este pedido tem complemento na Expedição sem pagamento integral: ${lista}. ` +
+      "Espere o pagamento ou use \"Desvincular e despachar separado\"."
+  };
+}
+
 /** Produção/acabamento → EXPEDICAO ("chegou na bancada"). */
 export async function marcarPronto(
   idInt: number,
@@ -335,7 +394,7 @@ export async function despachar(
 
   const { data: propAtual } = await client
     .from("propostas")
-    .select("status_interno, valor_frete, id_int_pedido_principal")
+    .select("status_interno, valor_frete, id_int_pedido_principal, valor_total")
     .eq("id_int", idInt)
     .maybeSingle();
 
@@ -350,7 +409,15 @@ export async function despachar(
    *    falhou no complemento, ou complemento que ficou pronto depois. Os campos
    *    vêm do `expedicoes` do principal, e não do modal — por isso este ramo
    *    roda antes da validação dos campos digitados.
+   *
+   *    A guarda de pagamento vale aqui também: complemento sem pagamento
+   *    integral não sai, venha pelo principal ou pela repetição. Com o override
+   *    "Desvincular e despachar separado" e motivo, este pedido deixa de ser
+   *    complemento e segue abaixo como despacho próprio, com os dados do modal
+   *    e todas as validações de um pedido comum; o desvínculo só é gravado
+   *    depois delas, junto dos demais, antes do upsert.
    */
+  let desvincularEsteComplemento = false;
   const idPrincipal =
     propAtual?.id_int_pedido_principal !== null && propAtual?.id_int_pedido_principal !== undefined
       ? Number(propAtual.id_int_pedido_principal)
@@ -373,22 +440,39 @@ export async function despachar(
     if (propAtual && String(propAtual.status_interno ?? "").trim() !== "EXPEDICAO") {
       return { success: false, error: MSG_CONFLITO };
     }
-    const tipoFretePrincipal = String(expPrincipal.tipo_frete ?? "") as TipoFreteNormalizado;
-    const destinoPrincipal = destinoDoDespacho(
-      tipoFretePrincipal === "RETIRA_BALCAO" ? "RETIRADA" : "TRANSPORTE",
-      tipoFretePrincipal
-    );
-    const repeticao = await despacharComplementoJunto(
-      idInt,
-      idPrincipal,
-      expPrincipal,
-      String(expPrincipal.data_despacho),
-      destinoPrincipal,
-      expPrincipal.codigo_rastreamento ? String(expPrincipal.codigo_rastreamento) : null,
-      ator
-    );
-    if (!repeticao.success) return repeticao;
-    return { success: true, aguardandoColeta: destinoPrincipal === null };
+    const conferencia = await complementosSemPagamentoIntegral([
+      { id_int: idInt, status_interno: propAtual?.status_interno, valor_total: propAtual?.valor_total }
+    ]);
+    if (conferencia.erro) return conferencia.erro;
+    if (conferencia.naoPagos.length > 0) {
+      if (!input.desvincularComplementos) return recusaComplementoNaoPago(conferencia.naoPagos);
+      if (!input.desvincularComplementos.motivo.trim()) {
+        return {
+          success: false,
+          code: "COMPLEMENTO_NAO_PAGO",
+          complementos: conferencia.naoPagos,
+          error: "Informe o motivo para desvincular o complemento e despachar separado."
+        };
+      }
+      desvincularEsteComplemento = true;
+    } else {
+      const tipoFretePrincipal = String(expPrincipal.tipo_frete ?? "") as TipoFreteNormalizado;
+      const destinoPrincipal = destinoDoDespacho(
+        tipoFretePrincipal === "RETIRA_BALCAO" ? "RETIRADA" : "TRANSPORTE",
+        tipoFretePrincipal
+      );
+      const repeticao = await despacharComplementoJunto(
+        idInt,
+        idPrincipal,
+        expPrincipal,
+        String(expPrincipal.data_despacho),
+        destinoPrincipal,
+        expPrincipal.codigo_rastreamento ? String(expPrincipal.codigo_rastreamento) : null,
+        ator
+      );
+      if (!repeticao.success) return repeticao;
+      return { success: true, aguardandoColeta: destinoPrincipal === null };
+    }
   }
 
   const faltantes = camposMinimosDespacho(input, "DESPACHO");
@@ -480,51 +564,26 @@ export async function despachar(
     };
   }
 
-  /**
-   * Guarda (e), decisão 5 do dono: o despacho conjunto EXIGE complemento pago.
-   * Mesma regra de "paga integralmente" da função de criação —
-   * `cc__valor_pago(Y) >= round(valor_total, 2)` e `valor_total > 0` —,
-   * comparada em centavos.
-   */
+  // Guarda (e): regra em `complementosSemPagamentoIntegral`.
   const complementosEmExpedicao = (complementosAbertos ?? []).filter(
     (c) => String(c.status_interno ?? "").trim().toUpperCase() === "EXPEDICAO"
   );
-  const complementosNaoPagos: Array<{ idInt: number; statusInterno: string; valorPago: number; valorTotal: number }> = [];
-  for (const c of complementosEmExpedicao) {
-    const idComplemento = Number(c.id_int);
-    const { data: valorPagoBruto, error: erroPago } = await client.rpc("cc__valor_pago", { p_id_int: idComplemento });
-    if (erroPago) {
-      return {
-        success: false,
-        error: `Não foi possível conferir o pagamento do complemento #${idComplemento} (${erroPago.message}). O pedido segue em EXPEDICAO.`
-      };
-    }
-    const totalCentavos = Math.round(Number(c.valor_total ?? 0) * 100);
-    const pagoCentavos = Math.round(Number(valorPagoBruto ?? 0) * 100);
-    if (!(totalCentavos > 0 && pagoCentavos >= totalCentavos)) {
-      complementosNaoPagos.push({
-        idInt: idComplemento,
-        statusInterno: String(c.status_interno ?? ""),
-        valorPago: pagoCentavos / 100,
-        valorTotal: totalCentavos / 100
-      });
-    }
-  }
+  const conferenciaPagamento = await complementosSemPagamentoIntegral(complementosEmExpedicao);
+  if (conferenciaPagamento.erro) return conferenciaPagamento.erro;
+  const complementosNaoPagos = conferenciaPagamento.naoPagos;
   if (complementosNaoPagos.length > 0 && !input.desvincularComplementos) {
-    const lista = complementosNaoPagos
-      .map((c) => `#${c.idInt} (pago ${formatarReais(c.valorPago)} de ${formatarReais(c.valorTotal)})`)
-      .join(", ");
-    return {
-      success: false,
-      code: "COMPLEMENTO_NAO_PAGO",
-      complementos: complementosNaoPagos,
-      error:
-        `Este pedido tem complemento na Expedição sem pagamento integral: ${lista}. ` +
-        "Espere o pagamento ou use \"Desvincular e despachar separado\"."
-    };
+    return recusaComplementoNaoPago(complementosNaoPagos);
   }
 
-  const complementosADesvincular = [...complementosForaDaExpedicao, ...complementosNaoPagos];
+  // O próprio pedido entra na lista quando é complemento não pago despachado
+  // separado pelo override (caminho de repetição, acima).
+  const complementosADesvincular = [
+    ...(desvincularEsteComplemento
+      ? [{ idInt, statusInterno: String(propAtual?.status_interno ?? "") }]
+      : []),
+    ...complementosForaDaExpedicao,
+    ...complementosNaoPagos
+  ];
   if (complementosADesvincular.length > 0 && input.desvincularComplementos) {
     const motivo = input.desvincularComplementos.motivo.trim();
     if (!motivo) {
