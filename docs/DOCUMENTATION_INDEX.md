@@ -105,7 +105,7 @@ Painel do funil APROVADO→ENTREGUE, fontes de dados, transições, etiqueta 10�
 
 ## [`business/PEDIDO-COMPLEMENTAR.md`](./business/PEDIDO-COMPLEMENTAR.md)
 
-Pedido complementar do mesmo evento: regra aprovada em 13/09/2026 e **em implementação** — elegibilidade (pago e não expedido), o que herda, vínculo, frete pela diferença do peso somado, guardas, despacho conjunto na Expedição, decisões do dono e pendência fiscal aberta.
+Pedido complementar do mesmo evento: regra aprovada em 13/09/2026, **implementada e disponível desde 14/09/2026** — elegibilidade (pago e não expedido), o que herda, vínculo, frete pela diferença do peso somado, guardas, despacho conjunto na Expedição, decisões do dono e pendência fiscal aberta.
 
 ---
 

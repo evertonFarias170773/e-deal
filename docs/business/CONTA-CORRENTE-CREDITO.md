@@ -1,8 +1,8 @@
 # CONTA-CORRENTE-CREDITO.md
 
-Versão: 1.3
+Versão: 1.4
 Status: Oficial
-Última atualização: 19/07/2026
+Última atualização: 14/09/2026
 Projeto: Vibe
 
 ---
@@ -66,6 +66,14 @@ O saldo deve ser sempre recalculado no servidor no momento de cada operação. N
 - novo total menor que o valor já pago → gera **crédito** para o cliente;
 - novo total maior que o valor já pago → gera **débito** ou cobrança complementar;
 - a diferença deve ser recalculada no servidor a partir de `pagamentos_v2` e `propostas.valor_total`, nunca aceita apenas do payload do cliente.
+
+**Itens a mais do mesmo evento — pedido complementar (14/09/2026).** Quando a proposta está paga integralmente e ainda não foi expedida, os itens acrescentados podem sair por **pedido complementar** em vez da edição da proposta paga:
+
+- o complemento é uma proposta nova, com **cobrança própria**, e o original **não é editado** — por isso não gera crédito nem débito nesta Conta Corrente;
+- o frete do complemento é a diferença entre a cotação do peso somado (original + complemento) e o que o original já cobrou;
+- frete somado menor que o já cobrado: o complemento cobra R$ 0,00 e a diferença negativa fica registrada **só** no ledger `complementos_frete` — **nenhum crédito automático** é gerado.
+
+Regra completa em `PEDIDO-COMPLEMENTAR.md` (§7).
 
 ## 1.4 Regra de consumo de E-Crédito
 
@@ -190,6 +198,7 @@ Nenhuma foi corrigida nesta sincronização, além das seis listadas em 4.1.
 - `./FLUXO-OFICIAL-STATUS-PROPOSTAS.md`
 - `./CHECKOUT-PAGAMENTOS.md`
 - `./CANCELAMENTO-COBRANCAS.md`
+- `./PEDIDO-COMPLEMENTAR.md` — itens a mais do mesmo evento, sem editar a proposta paga
 - `../technical/MATRIZ-SEGURANCA-ESCRITA-SUPABASE.md`
 - `../technical/PERFIS-PERMISSOES.md`
 - `../history/IMPLEMENTACAO-PROPOSTAS-PAGAS.md`

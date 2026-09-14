@@ -1590,8 +1590,16 @@ export async function getPropostaDetailById(idInt: number, overrideClient?: Supa
      * gravaria zero num CIF — o oposto da regra. Quem zera e a fronteira de
      * consumo, um valor de cada vez, como no resto do modulo.
      */
+    //
+    // A PARTIR DE LIBERADO o frete que conta e o GRAVADO, nao o do card
+    // (14/09/2026). Depois da liberacao o valor muda fora do orcamento — valor
+    // negociado do bloco admin, recotacao da Expedicao — e nenhum desses toca
+    // `cotacao_frete`. Com o card, o resumo (e o saldo da aba Pagamentos) seguia
+    // mostrando o frete antigo. Mesmo corte da trava de modalidade.
     const freteValor = valorFreteEfetivo(
-      chosenFrete ? chosenFrete.valor : 0,
+      podeEditarModalidade(proposalRow.status_interno as string | null)
+        ? (chosenFrete ? chosenFrete.valor : 0)
+        : Number(proposalRow.valor_frete ?? 0),
       modalidadePersistidaProposta
     );
 
@@ -2203,12 +2211,14 @@ export async function saveProposta(
     let statusParaGate: string = formState.status;
     let modalidadePersistida: ModalidadeFrete | null = null;
     let transportadoraPersistida: number | null = null;
+    /** `propostas.valor_frete` como estava no banco na leitura do gate — cru, para a trava. */
+    let valorFreteGravadoBruto: number | string | null = null;
     let gateLidoDoBanco = false;
 
     if (isUpdate && id_int) {
       const { data: gateRow, error: gateError } = await client
         .from("propostas")
-        .select("status_interno, modalidade_frete, id_transportadora_cliente")
+        .select("status_interno, modalidade_frete, id_transportadora_cliente, valor_frete")
         .eq("id_int", id_int)
         .maybeSingle();
 
@@ -2222,6 +2232,7 @@ export async function saveProposta(
           gateRow.id_transportadora_cliente !== null && gateRow.id_transportadora_cliente !== undefined
             ? Number(gateRow.id_transportadora_cliente)
             : null;
+        valorFreteGravadoBruto = (gateRow.valor_frete as number | string | null) ?? null;
       }
     }
 
@@ -2277,10 +2288,21 @@ export async function saveProposta(
     // FOB não cobra frete: o valor cotado continua visível na tela como
     // referência, mas o que a proposta grava é zero. Ponto único da regra —
     // `valor_frete`, `cotacao_frete.valor` e o resumo saem todos daqui.
+    //
+    // A PARTIR DE LIBERADO o frete e o GRAVADO (14/09/2026). Desde d3e0f77 este
+    // salvamento nao escreve mais `valor_frete` depois da liberacao, mas seguia
+    // somando o valor do CARD no `valor_total`. Depois de um valor negociado ou
+    // de uma recotacao — que mudam o frete sem tocar `cotacao_frete` — o Salvar
+    // devolvia o total antigo e mantinha o frete novo. Agora total e frete saem
+    // do mesmo numero. Mesmo corte de `usarDeclaracaoPersistida`: sem leitura do
+    // banco, fica o comportamento anterior.
+    const usarFreteGravado = usarDeclaracaoPersistida;
     const freteValor = valorFreteEfetivo(
-      formState.isAvulso
-        ? (parseCurrencyBR(formState.valorFreteManual) ?? 0)
-        : (chosenFrete ? chosenFrete.valor : 0),
+      usarFreteGravado
+        ? Number(valorFreteGravadoBruto ?? 0)
+        : formState.isAvulso
+          ? (parseCurrencyBR(formState.valorFreteManual) ?? 0)
+          : (chosenFrete ? chosenFrete.valor : 0),
       modalidadeVigente
     );
 
@@ -2335,7 +2357,7 @@ export async function saveProposta(
       ? (parseCurrencyBR(formState.valorProdutosManual) ?? 0)
       : (activeItens.reduce((total, item) => total + item.subtotal, 0));
 
-    const resumo = formState.isAvulso ? {
+    const resumoCalculado = formState.isAvulso ? {
       subtotalProdutos: subtotalProdutosBase,
       subtotalBrutoProdutos: subtotalProdutosBase,
       acrescimoBonus: 0,
@@ -2353,6 +2375,16 @@ export async function saveProposta(
       Number.isFinite(Number(formState.descontoGeralValor)) ? Number(formState.descontoGeralValor) : 0,
       formState.descontoGeralTipo
     );
+
+    // `calculateResumo` soma o frete do CARD escolhido. Travado, o frete e o
+    // gravado: mesma formula de `calculateResumo`, com o outro numero.
+    const resumo = usarFreteGravado && !formState.isAvulso
+      ? {
+          ...resumoCalculado,
+          frete: freteValor,
+          valorTotal: Math.max(0, resumoCalculado.subtotalProdutos - resumoCalculado.descontoGeral + freteValor)
+        }
+      : resumoCalculado;
 
     const subtotalProdutos = resumo.subtotalProdutos;
     const valorTotal = resumo.valorTotal;
@@ -2581,18 +2613,34 @@ export async function saveProposta(
       }
     }
 
+    /**
+     * TRAVA OTIMISTA do frete gravado (14/09/2026). O total acima foi calculado
+     * com o `valor_frete` lido no gate. Se outra operacao mudou o frete desde
+     * entao (valor negociado, recotacao, correcao da Expedicao), gravar este
+     * total deixaria frete e total divergentes. As escritas de `valor_total`
+     * deste salvamento so valem com o frete ainda igual ao lido; senao, recusa.
+     * Antes de LIBERADO a trava nao se aplica e nada muda.
+     */
+    const MENSAGEM_FRETE_MUDOU =
+      "O frete desta proposta foi alterado por outra operação enquanto ela estava aberta. Recarregue a página e salve de novo.";
+
     let persistedValorTotal = valorTotal;
 
     if (isUpdate) {
       // 2a. UPDATE PROPOSTA
-      const { data: updatedProp, error: updateError } = await client
-        .from("propostas")
-        .update(propostaData)
-        .eq("id_int", id_int!)
+      let atualizacaoProposta = client.from("propostas").update(propostaData).eq("id_int", id_int!);
+      if (usarFreteGravado) {
+        atualizacaoProposta = valorFreteGravadoBruto === null
+          ? atualizacaoProposta.is("valor_frete", null)
+          : atualizacaoProposta.eq("valor_frete", valorFreteGravadoBruto);
+      }
+      const { data: updatedProp, error: updateError } = await atualizacaoProposta
         .select("valor_total")
         .single();
 
       if (updateError) {
+        // PGRST116: nenhuma linha casou — com a trava, e o frete que mudou.
+        if (usarFreteGravado && updateError.code === "PGRST116") throw new Error(MENSAGEM_FRETE_MUDOU);
         throw new Error(`Erro ao atualizar proposta no banco: ${updateError.message}`);
       }
       if (updatedProp?.valor_total != null) {
@@ -3051,7 +3099,7 @@ export async function saveProposta(
     }
 
     if (formState.isAvulso) {
-      const { data: finalUpdated, error: finalUpdateError } = await client
+      let atualizacaoAvulsa = client
         .from("propostas")
         .update({
           is_avulso: true,
@@ -3060,11 +3108,18 @@ export async function saveProposta(
           ...(modalidadeEditavel ? { valor_frete: freteValor } : {}),
           valor_total: valorTotal
         })
-        .eq("id_int", id_int!)
+        .eq("id_int", id_int!);
+      if (usarFreteGravado) {
+        atualizacaoAvulsa = valorFreteGravadoBruto === null
+          ? atualizacaoAvulsa.is("valor_frete", null)
+          : atualizacaoAvulsa.eq("valor_frete", valorFreteGravadoBruto);
+      }
+      const { data: finalUpdated, error: finalUpdateError } = await atualizacaoAvulsa
         .select("valor_total")
         .single();
 
       if (finalUpdateError) {
+        if (usarFreteGravado && finalUpdateError.code === "PGRST116") throw new Error(MENSAGEM_FRETE_MUDOU);
         console.error("[OrcamentosService] Erro no update final da proposta avulsa:", finalUpdateError);
         throw new Error(`Erro ao finalizar gravação da proposta avulsa: ${finalUpdateError.message}`);
       }
@@ -3129,14 +3184,18 @@ export async function saveProposta(
     // Força o update do valor total calculado para garantir a persistência
     // caso alguma trigger de itens tenha sobrescrito como null.
     if (!formState.isAvulso) {
-      const { data: finalProp, error: finalError } = await client
-        .from("propostas")
-        .update({ valor_total: valorTotal })
-        .eq("id_int", id_int!)
+      let consolidacaoTotal = client.from("propostas").update({ valor_total: valorTotal }).eq("id_int", id_int!);
+      if (usarFreteGravado) {
+        consolidacaoTotal = valorFreteGravadoBruto === null
+          ? consolidacaoTotal.is("valor_frete", null)
+          : consolidacaoTotal.eq("valor_frete", valorFreteGravadoBruto);
+      }
+      const { data: finalProp, error: finalError } = await consolidacaoTotal
         .select("valor_total")
         .single();
         
       if (finalError) {
+        if (usarFreteGravado && finalError.code === "PGRST116") throw new Error(MENSAGEM_FRETE_MUDOU);
         console.error("[OrcamentosService] Erro ao consolidar valor_total final:", finalError);
       } else if (finalProp?.valor_total != null) {
         persistedValorTotal = Number(finalProp.valor_total);

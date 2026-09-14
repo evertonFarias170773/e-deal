@@ -81,6 +81,7 @@ import {
   faltaTransportadoraEmFob,
   LABEL_MODALIDADE,
   MODALIDADES_ORCAMENTO,
+  modalidadeCobraFrete,
   motivoBloqueioModalidade,
   podeEditarModalidade,
   nomeTransportadoraCadastro,
@@ -968,6 +969,9 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
    * justamente para o despacho reaproveitar o vínculo.
    */
   const [salvandoTransportadoraAdmin, setSalvandoTransportadoraAdmin] = useState(false);
+  // Valor negociado do frete (bloco admin). `null` = o campo mostra o gravado.
+  const [valorFreteAdminDraft, setValorFreteAdminDraft] = useState<string | null>(null);
+  const [salvandoValorFreteAdmin, setSalvandoValorFreteAdmin] = useState(false);
   const [transportadoras, setTransportadoras] = useState<
     { id_cliente: number; nome: string | null; fantasia: string | null }[]
   >([]);
@@ -1225,13 +1229,26 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     }
     // FOB não cobra frete: o resumo tem de mostrar o mesmo zero que o
     // salvamento vai gravar, senão o total na tela mente.
-    return calculateResumo(
+    const calculado = calculateResumo(
       form.itens,
       aplicarModalidadeNosFretes(form.fretes, form.modalidadeFrete),
       Number(form.descontoGeralValor) || 0,
       form.descontoGeralTipo
     );
-  }, [form.isAvulso, form.valorProdutosManual, form.valorFreteManual, form.itens, form.fretes, form.modalidadeFrete, form.descontoGeralValor, form.descontoGeralTipo]);
+    // A partir de LIBERADO o frete é o GRAVADO, não o do card (14/09/2026): é o
+    // que o `saveProposta` soma e o que a aba Pagamentos cobra. O carregamento já
+    // entrega esse valor em `proposta.resumo.frete`. Mesma fórmula de
+    // `calculateResumo`, com o outro número.
+    if (!modalidadeEditavel && proposta) {
+      const freteGravado = Number(proposta.resumo.frete) || 0;
+      return {
+        ...calculado,
+        frete: freteGravado,
+        valorTotal: Math.max(0, calculado.subtotalProdutos - calculado.descontoGeral + freteGravado)
+      };
+    }
+    return calculado;
+  }, [form.isAvulso, form.valorProdutosManual, form.valorFreteManual, form.itens, form.fretes, form.modalidadeFrete, form.descontoGeralValor, form.descontoGeralTipo, modalidadeEditavel, proposta]);
 
   const volumes = Math.max(1, Math.ceil(resumo.pesoTotal / 14500));
 
@@ -3425,6 +3442,89 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
       });
     } finally {
       setSalvandoTransportadoraAdmin(false);
+    }
+  }
+
+  /**
+   * Grava o VALOR NEGOCIADO do frete, direto, para proposta já fora do orçamento.
+   *
+   * Mesmo padrão de `gravarTransportadoraAdmin`: rota própria com o JWT, sem
+   * `saveProposta` e sem `cotacao_frete`. A rota grava `valor_frete` e
+   * `valor_total` juntos, recusa no servidor o que este bloco não resolve e
+   * entrega a diferença ao caminho oficial da aba Pagamentos.
+   */
+  async function gravarValorFreteAdmin(textoDigitado: string) {
+    if (!proposta?.id_int) return;
+    const valor = parseCurrencyBR(textoDigitado);
+    if (valor === null || valor < 0) {
+      showToast({ type: "error", title: "Informe um valor de frete válido, em reais." });
+      return;
+    }
+    if (Math.round(valor * 100) === Math.round((Number(proposta.resumo.frete) || 0) * 100)) {
+      setValorFreteAdminDraft(null);
+      return;
+    }
+    setSalvandoValorFreteAdmin(true);
+    try {
+      const { getSupabaseClient } = await import("@/lib/supabase/client");
+      const supabase = getSupabaseClient();
+      const { data: { session } } = supabase ? await supabase.auth.getSession() : { data: { session: null } };
+      const token = session?.access_token ?? "";
+      if (!token) throw new Error("Sessão expirada. Faça login novamente.");
+
+      const resposta = await fetch("/api/propostas/valor-frete", {
+        method: "POST",
+        headers: { "content-type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ idInt: proposta.id_int, valorFrete: valor, chaveEvento: crypto.randomUUID() })
+      });
+      const corpo = (await resposta.json()) as {
+        success?: boolean;
+        message?: string;
+        gravado?: boolean;
+        semAlteracao?: boolean;
+        valorFreteNovo?: number;
+        valorTotalAnterior?: number;
+        valorTotalNovo?: number;
+        statusAnterior?: string;
+        statusNovo?: string;
+        saldo?: number;
+        pendenciaAtiva?: { descricao: string } | null;
+      };
+
+      if (!resposta.ok || !corpo.success) {
+        showToast({
+          type: "error",
+          title: corpo.gravado ? "Frete gravado, mas com pendência" : "Frete não gravado",
+          description: corpo.message || "Não foi possível gravar o valor do frete."
+        });
+        if (corpo.gravado && onReload) onReload(true);
+        return;
+      }
+
+      const partes = [
+        `Total: ${formatCurrency(corpo.valorTotalAnterior ?? 0)} → ${formatCurrency(corpo.valorTotalNovo ?? 0)}.`
+      ];
+      if ((corpo.saldo ?? 0) > 0) partes.push(`Saldo a cobrar de ${formatCurrency(corpo.saldo ?? 0)} na aba Pagamentos.`);
+      if (corpo.pendenciaAtiva) partes.push(corpo.pendenciaAtiva.descricao);
+      if (corpo.statusNovo && corpo.statusNovo !== corpo.statusAnterior) {
+        partes.push(`Status: ${corpo.statusAnterior} → ${corpo.statusNovo}.`);
+      }
+      showToast({
+        type: "success",
+        title: corpo.semAlteracao ? "O frete já tinha esse valor." : `Frete gravado: ${formatCurrency(corpo.valorFreteNovo ?? valor)}`,
+        description: corpo.semAlteracao ? undefined : partes.join(" ")
+      });
+      setValorFreteAdminDraft(null);
+      // Frete e total mudaram no banco: recarregar mantém Resumo e Pagamentos
+      // falando do mesmo número.
+      if (!corpo.semAlteracao && onReload) onReload(true);
+    } catch (erro) {
+      showToast({
+        type: "error",
+        title: erro instanceof Error ? erro.message : "Falha ao gravar o valor do frete."
+      });
+    } finally {
+      setSalvandoValorFreteAdmin(false);
     }
   }
 
@@ -6204,11 +6304,42 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                             </option>
                           ))}
                         </select>
+                        {/* Valor negociado — o que o cliente paga. Grava ao sair do
+                            campo ou no Enter, pela rota própria; a validação vale
+                            no servidor. */}
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          aria-label="Valor negociado do frete (R$)"
+                          title="Valor negociado do frete, em reais"
+                          placeholder="Frete R$"
+                          disabled={salvandoValorFreteAdmin || !modalidadeCobraFrete(form.modalidadeFrete)}
+                          value={valorFreteAdminDraft ?? formatCurrencyWithoutPrefix(Number(proposta?.resumo.frete) || 0)}
+                          onChange={(e) => setValorFreteAdminDraft(e.target.value)}
+                          onBlur={() => {
+                            if (valorFreteAdminDraft !== null) void gravarValorFreteAdmin(valorFreteAdminDraft);
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              (e.target as HTMLInputElement).blur();
+                            }
+                            if (e.key === "Escape") setValorFreteAdminDraft(null);
+                          }}
+                          className="w-full rounded-xl border border-amber-300 bg-white px-3 py-2 text-right text-xs font-medium outline-none focus:border-amber-500 disabled:cursor-not-allowed disabled:opacity-60 sm:w-32 dark:border-amber-800 dark:bg-slate-900"
+                        />
                       </div>
                       <p className="text-[11px] text-amber-800 dark:text-amber-300">
                         {salvandoTransportadoraAdmin
                           ? "Gravando…"
                           : "Grava na hora, sozinha — não passa pelo Salvar do orçamento e não mexe na modalidade nem no valor do frete. A Expedição lê o valor novo no próximo carregamento da tela."}
+                      </p>
+                      <p className="text-[11px] text-amber-800 dark:text-amber-300">
+                        {salvandoValorFreteAdmin
+                          ? "Gravando o frete…"
+                          : !modalidadeCobraFrete(form.modalidadeFrete)
+                            ? `Valor do frete: em ${form.modalidadeFrete} o cliente não paga frete à empresa, então não há valor a negociar.`
+                            : "Valor do frete: o que o cliente paga. Grava ao sair do campo, junto com o total da proposta. Se a proposta já tem pagamento, a diferença vai para a aba Pagamentos."}
                       </p>
 
                       {/*

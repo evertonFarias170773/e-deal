@@ -1,8 +1,8 @@
 # EXPEDICAO.md
 
-Versão: 1.6
+Versão: 1.7
 Status: Oficial — Correios em produção (prepostagens reais emitidas em 16/08/2026)
-Última atualização: 04/09/2026
+Última atualização: 14/09/2026
 Projeto: Vibe
 
 ---
@@ -578,6 +578,23 @@ A comparação campo a campo **reduz** a janela, mas não a fecha: entre a valid
 
 Fechar de vez é o mesmo desenho das duas pendências acima: **RPC `SECURITY DEFINER` com `SELECT ... FOR UPDATE` na proposta, validação e escrita na mesma transação**. Não implementado.
 
+## 3.6 Pedido complementar (14/09/2026)
+
+Regra completa em `PEDIDO-COMPLEMENTAR.md` (§9 e §10). O que ela muda na Expedição:
+
+- **Painel.** O principal mostra o selo **"+ compl. #Y"** (verde com o complemento em `EXPEDICAO`, âmbar fora dela) e o complemento mostra **"Compl. de #X"**. Complemento em `NOVO` ou `AGUARDANDO` aparece no card do principal mesmo fora do funil. Há filtro por vínculo (todos, só complementos, só principais), e a busca acha o par pelo número do outro.
+- **Recusas no despacho do principal**, lidas do banco antes de qualquer gravação:
+  - `COMPLEMENTO_FORA_EXPEDICAO` — há complemento aberto que ainda não chegou à Expedição;
+  - `COMPLEMENTO_NAO_PAGO` — o complemento está em `EXPEDICAO` sem pagamento integral (`cc__valor_pago(Y) >= round(valor_total, 2)` e total maior que zero, comparados em centavos).
+
+  A saída nos dois casos é o override **"Desvincular e despachar separado"**, com motivo obrigatório. Ele chama `desvincular_pedido_complementar` (permissão `expedicao.processar`) antes do upsert; falhando o desvínculo, nada do despacho é gravado.
+- **Despacho conjunto.** Despachar o principal leva junto o complemento em `EXPEDICAO` e pago. A linha de `expedicoes` do complemento recebe a **mesma `data_despacho`**, o mesmo transporte, endereço e tipo de volume, e `obs` *"Despachado junto com #X"*. **Não** recebe peso, volumes, código de rastreio nem código de objeto: o webhook dos Correios casa o evento por código com `maybeSingle`, e duas linhas com o mesmo código quebrariam o recebimento. O rastreio do complemento vai para `propostas_os.codigo_rastreamento`. A transição do complemento é a mesma do principal e fica em `os_status_log` com o motivo *"Despacho conjunto com #X"*. Falha no complemento não desfaz o principal: o modal avisa, e o despacho no próprio complemento repete o passo.
+- **Despachar o complemento sozinho.** Com o principal ainda sem `data_despacho`, recusa com `COMPLEMENTO_SEGUE_PRINCIPAL`. Com o principal já despachado, é o **caminho de repetição**: copia os campos do `expedicoes` do principal e aplica a mesma guarda de pagamento. Sem pagamento integral, recusa com `COMPLEMENTO_NAO_PAGO`; com o override e motivo, o complemento é desvinculado e segue como despacho próprio, com os dados do modal.
+- **Coleta e entrega.** `confirmarColeta`, `marcarEntregue` e `confirmarRetirada` do principal propagam para o complemento que está no mesmo status. **"Voltar status" não propaga** (limitação registrada no doc da regra).
+- **Documentos.** A etiqueta 10×15 do principal imprime **"#X + #Y"**; a declaração de conteúdo lista os itens dos dois pedidos; a prepostagem continua sendo **um objeto só**, do principal.
+- **Destino do despacho.** A regra das três saídas (`A RETIRAR`, `EM TRANSITO` ou aguardando coleta) saiu de dentro de `despachar()` para `src/features/expedicao/lib/destino-despacho.ts`, a mesma para os dois pedidos da caixa.
+- **Pendente:** uma caixa com duas NF-e — decisão com a contabilidade. A etiqueta imprime a nota do principal.
+
 ---
 
 # 4. Regra de Nota Fiscal
@@ -1039,7 +1056,7 @@ v1.5.16 (leitura autenticada) em 17/08/2026.
 | Permissão | Rótulo no catálogo | Libera no código |
 |---|---|---|
 | `expedicao.view` | "Visualizar Expedição" | Ver o painel `/expedicao`, gerar as duas etiquetas (interna e Correios) e a declaração de conteúdo |
-| `expedicao.processar` | "Processar Envio / Retirada" | Marcar pronto, despachar, confirmar retirada, marcar entregue, voltar status, editar dados de expedição, gerar prepostagem Correios |
+| `expedicao.processar` | "Processar Envio / Retirada" | Marcar pronto, despachar, confirmar retirada, marcar entregue, voltar status, editar dados de expedição, gerar prepostagem Correios, e o override "Desvincular e despachar separado" do pedido complementar (§3.6) |
 
 Fallback: `user.isSuperAdmin || user.isAdmin` sempre libera visualização e operação, tanto no client (`ExpedicaoPage.tsx`) quanto no server (`verificarPermissaoServerSide`, em `src/lib/auth/verificar-permissao.ts`, retorna `true` direto se `is_super_adm`; se o perfil do usuário não tiver a permissão específica nem `"*"`, o fallback final da função ainda é `is_admin`).
 
@@ -1119,6 +1136,7 @@ Limitações que continuam valendo:
 
 - `./FLUXO-OFICIAL-STATUS-PROPOSTAS.md`
 - `./PEDIDOS-PRODUCAO.md`
+- `./PEDIDO-COMPLEMENTAR.md` — despacho conjunto do pedido complementar (§3.6)
 - `../technical/PERFIS-PERMISSOES.md`
 - `../technical/MATRIZ-SEGURANCA-ESCRITA-SUPABASE.md`
 - `../technical/PADRAO-FILTROS-URL-NAVEGACAO.md`

@@ -1,8 +1,8 @@
 # FLUXO-OFICIAL-STATUS-PROPOSTAS.md
 
-Versão: 3.3  
+Versão: 3.4  
 Status: Oficial  
-Última atualização: 17/08/2026  
+Última atualização: 14/09/2026  
 Projeto: Vibe
 
 ---
@@ -95,6 +95,7 @@ Eles não devem alterar `status_interno` automaticamente sem uma automação ofi
 ```text
 public.propostas
 public.produtos_proposta
+public.complementos_frete   (ledger do frete do pedido complementar)
 ```
 
 ## Financeiro
@@ -523,6 +524,18 @@ O próximo natural é determinado pela cotação de frete escolhida (`public.cot
 - serviço de transporte (transportadora, SEDEX, motoboy etc.) ? natural é `EM TRANSITO`;
 - sem cotação escolhida ou serviço não informativo ? nenhum dos dois é natural; ambos ficam disponíveis com confirmação.
 
+### Pedido complementar (14/09/2026)
+
+O pedido complementar é uma **proposta própria**, vinculada ao principal por `propostas.id_int_pedido_principal`. Ele nasce em `NOVO` e percorre o mesmo fluxo de qualquer proposta: cobrança própria, arte própria, liberação e produção. Nenhum status é herdado do principal.
+
+Na Expedição, os dois saem na mesma caixa:
+
+- o despacho é feito **pelo principal**, e o complemento que está em `EXPEDICAO` e pago integralmente faz a **mesma transição** (`A RETIRAR`, `EM TRANSITO` ou permanência em `EXPEDICAO` aguardando coleta), registrada em `os_status_log` com o motivo *"Despacho conjunto com #X"*;
+- a confirmação de coleta e a marcação de entregue do principal acompanham o complemento que está no mesmo status;
+- **"Voltar status" do principal não acompanha**: o complemento permanece onde está.
+
+Regra completa em `PEDIDO-COMPLEMENTAR.md`.
+
 ## 6.14 `A RETIRAR`
 
 Representa pedido pronto aguardando retirada.
@@ -900,6 +913,8 @@ Não implementar automaticamente:
 - mudança ao iniciar Produção;
 - mudança ao concluir impressão;
 - mudança por Expedição.
+
+A transição conjunta do pedido complementar na Expedição (§6.13) **não é automação nesse sentido**: é o mesmo gesto manual do expedidor sobre a caixa, aplicado aos dois pedidos que estão nela, com a mesma guarda de concorrência e a mesma trilha em `os_status_log`.
 
 Uma automação futura exige:
 
