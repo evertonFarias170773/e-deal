@@ -99,6 +99,7 @@ import { useCobrancas } from "@/features/cobrancas/CobrancasProvider";
 import { PropostaCobrancaPanel } from "@/features/cobrancas/PropostaCobrancaPanel";
 import { normalizeDocumentDigits } from "@/features/cadastros/utils/documento";
 import { DiferencaFinanceiraModal } from "@/features/orcamentos/components/DiferencaFinanceiraModal";
+import { FreteComplementarCard } from "@/features/orcamentos/components/FreteComplementarCard";
 import type { AcaoFinanceiraDiferenca } from "@/features/cobrancas/types";
 import {
   calcularValorPagoConfirmado,
@@ -6263,6 +6264,28 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
               )}
             </div>
 
+            {/* PEDIDO COMPLEMENTAR: o frete daqui e a diferenca do peso somado,
+                cotada e aplicada por rota propria. Os cards de cotacao comum nao
+                aparecem — a escolha nao e entre eles. */}
+            {ehComplemento && form.idIntPedidoPrincipal ? (
+              <FreteComplementarCard
+                idIntComplemento={Number(form.id_int)}
+                idIntPrincipal={Number(form.idIntPedidoPrincipal)}
+                modalidadeFrete={form.modalidadeFrete}
+                temItensSalvos={(proposta?.itens ?? []).some((item) => item.statusItem !== "CANCELADO")}
+                alteracoesNaoSalvas={isDirty}
+                onAplicado={(resultado) =>
+                  concluirSalvamentoERecarregar({
+                    type: "success",
+                    title: resultado.idempotente
+                      ? "Frete complementar já estava aplicado"
+                      : "Frete complementar aplicado",
+                    description: `A cobrar neste pedido: ${formatCurrency(resultado.valorACobrar ?? 0)}.`
+                  })
+                }
+              />
+            ) : null}
+
             {form.isAvulso ? (
               <div className="space-y-4 rounded-2xl bg-slate-50 p-4 border border-slate-200 dark:bg-slate-800/40 dark:border-slate-700">
                 <div className="grid gap-4 md:grid-cols-2">
@@ -6301,7 +6324,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                   </Field>
                 </div>
               </div>
-            ) : form.modalidadeFrete === "CIF" ? (
+            ) : ehComplemento ? null : form.modalidadeFrete === "CIF" ? (
               /* Cotacao e cards SO em CIF — e nos que contratamos e pagamos, entao
                  o preco e a decisao. Em FOB o valor e zerado por `valorFreteEfetivo`
                  e quem leva sai do drop; em RETIRA o cliente busca e o valor e zerado
