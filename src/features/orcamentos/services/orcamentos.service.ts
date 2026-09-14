@@ -414,7 +414,9 @@ async function fetchPropostaRows(
     // `encerrado_teste_em/por` viajam para a lista de proposito: aqui o pedido de
     // teste NAO some, ganha badge. Orcamentos e o unico lugar onde ele continua
     // visivel depois de marcado — e portanto o unico de onde da para reabrir.
-    const columnsToSelect = "id, id_int, id_cliente, cliente, created_at, updated_at, vendedor, status_interno, valor_total, valor, is_avulso, empresa, valor_frete, em_arte, is_prd_aprovado, encerrado_teste_em, encerrado_teste_por, id_faturado, id_int_pedido_principal";
+    // `faturado_fora_em/por` pelo mesmo motivo: o pedido marcado como faturado no
+    // sistema antigo some da Fila de Faturamento, e o desfazer mora aqui.
+    const columnsToSelect = "id, id_int, id_cliente, cliente, created_at, updated_at, vendedor, status_interno, valor_total, valor, is_avulso, empresa, valor_frete, em_arte, is_prd_aprovado, encerrado_teste_em, encerrado_teste_por, faturado_fora_em, faturado_fora_por, id_faturado, id_int_pedido_principal";
 
     let query = client
       .from("propostas")

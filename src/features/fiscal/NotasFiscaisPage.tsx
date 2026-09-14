@@ -34,6 +34,7 @@ import type { Cobranca } from "@/features/cobrancas/types";
 import { RevisarGeracaoBancariaModal } from "@/features/contas-a-receber/components/RevisarGeracaoBancariaModal";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { hasPermissao } from "@/features/auth/usuarios.service";
+import { marcarFaturadoNoSistemaAntigo } from "@/features/fiscal/services/faturado-fora.client";
 
 // Fase 1 MVP
 import type { FaturavelOrigem } from "./types";
@@ -253,6 +254,8 @@ export function NotasFiscaisPage() {
   const canEmitNfe = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "fiscal.emit_nfe");
   const canEmitNfse = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "fiscal.emit_nfse");
   const canCancelNf = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "fiscal.cancel_nf");
+  // Mesma chave que a rota POST /api/fiscal/faturado-fora confere no servidor.
+  const canMarcarFaturadoFora = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "propostas.release_nf");
   // Aba e filtros na URL: sobrevivem ao F5, ao histórico do navegador e a um
   // link copiado. Modais e fluxos fiscais continuam em estado local.
   const filtrosSchema = useMemo(
@@ -296,6 +299,7 @@ export function NotasFiscaisPage() {
   // State para fila faturável
   const [faturaveisList, setFaturaveisList] = useState<FaturavelOrigem[]>([]);
   const [isFilaLoading, setIsFilaLoading] = useState(true);
+  const [marcandoFaturadoForaId, setMarcandoFaturadoForaId] = useState<number | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -1549,6 +1553,69 @@ export function NotasFiscaisPage() {
   }
 
   // Faturamento de pedido: cria/recupera o rascunho e leva o operador ate ele.
+  /**
+   * "Nota emitida no sistema antigo": tira o pedido da Fila de Faturamento.
+   *
+   * Ação TEMPORÁRIA da transição entre sistemas. Grava só
+   * `propostas.faturado_fora_em/por`, pela rota do servidor que confere
+   * `propostas.release_nf`. `libera_nf`, status, produção e nota ficam como
+   * estão. O motivo vai para a linha do tempo do pedido.
+   *
+   * O DESFAZER NÃO MORA AQUI: o pedido some desta lista, então um "desfazer"
+   * nesta tela seria inalcançável. Fica no menu da linha em Orçamentos.
+   */
+  async function handleMarcarFaturadoFora(item: FaturavelOrigem) {
+    if (marcandoFaturadoForaId !== null) return;
+    const idInt = Number(item.id_int);
+    if (!Number.isInteger(idInt) || idInt <= 0) {
+      showToast({ type: "warning", title: "Referência de origem inválida." });
+      return;
+    }
+    const ok = window.confirm(
+      `Marcar o pedido #${idInt} como FATURADO NO SISTEMA ANTIGO?\n\n` +
+        `Use só quando a nota deste pedido já foi emitida no sistema antigo.\n` +
+        `O pedido sai desta fila. Liberação para nota, status e produção seguem como estão.\n\n` +
+        `Para desfazer: Orçamentos, menu da linha do pedido, "Voltar para a Fila de Faturamento".`
+    );
+    if (!ok) return;
+    setMarcandoFaturadoForaId(idInt);
+    try {
+      const res = await marcarFaturadoNoSistemaAntigo(idInt);
+      if (res.success) {
+        setFaturaveisList((lista) => lista.filter((f) => Number(f.id_int) !== idInt));
+        showToast({
+          type: "success",
+          title: `Pedido #${idInt} fora da fila`,
+          description: "Marcado como faturado no sistema antigo. Para desfazer: menu da linha em Orçamentos."
+        });
+      } else {
+        showToast({
+          type: "error",
+          title: "Não foi possível marcar",
+          description: res.errorMessage || "Tente novamente."
+        });
+      }
+    } finally {
+      setMarcandoFaturadoForaId(null);
+    }
+  }
+
+  function renderBotaoFaturadoFora(item: FaturavelOrigem) {
+    if (!canMarcarFaturadoFora) return null;
+    const marcando = marcandoFaturadoForaId === Number(item.id_int);
+    return (
+      <button
+        type="button"
+        onClick={() => void handleMarcarFaturadoFora(item)}
+        disabled={marcandoFaturadoForaId !== null || isFaturando}
+        title="A nota deste pedido já foi emitida no sistema antigo: tira o pedido da fila."
+        className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-xl border border-[#d7e5e8] bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50 transition"
+      >
+        {marcando ? "Marcando..." : "Nota emitida no sistema antigo"}
+      </button>
+    );
+  }
+
   async function handleFaturarClick(item: FaturavelOrigem) {
     // OS e CONTRATO virariam NFS-e, que ainda nao tem caminho de emissao real.
     // Antes isso abria um painel que simulava a nota com Math.random() e DANFE
@@ -2012,17 +2079,20 @@ export function NotasFiscaisPage() {
               {
                 header: "Ação",
                 cell: (item) => (
-                  canEmitNfe ? (
-                    <button
-                      type="button"
-                      onClick={() => handleFaturarClick(item)}
-                      disabled={isFaturando}
-                      className="inline-flex items-center gap-1.5 rounded-xl bg-[#0b2f4a] px-4 py-2 text-xs font-semibold text-white hover:bg-[#061d2e] disabled:opacity-50 transition"
-                    >
-                      <Play className="h-3 w-3" />
-                      Faturar
-                    </button>
-                  ) : null
+                  <div className="flex items-center justify-end gap-2">
+                    {renderBotaoFaturadoFora(item)}
+                    {canEmitNfe ? (
+                      <button
+                        type="button"
+                        onClick={() => handleFaturarClick(item)}
+                        disabled={isFaturando}
+                        className="inline-flex items-center gap-1.5 rounded-xl bg-[#0b2f4a] px-4 py-2 text-xs font-semibold text-white hover:bg-[#061d2e] disabled:opacity-50 transition"
+                      >
+                        <Play className="h-3 w-3" />
+                        Faturar
+                      </button>
+                    ) : null}
+                  </div>
                 ),
                 align: "right"
               }
@@ -2059,7 +2129,8 @@ export function NotasFiscaisPage() {
                   <p className="text-right">Valor: <strong>{formatCurrency(item.valor_total)}</strong></p>
                   <p>Data: {formatDate(item.created_at)}</p>
                 </div>
-                <div className="flex justify-end pt-2">
+                <div className="flex flex-wrap justify-end gap-2 pt-2">
+                  {renderBotaoFaturadoFora(item)}
                   {canEmitNfe && (
                     <button
                       type="button"

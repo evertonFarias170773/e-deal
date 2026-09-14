@@ -1683,6 +1683,11 @@ export async function getFaturaveisPropostas(): Promise<FaturavelOrigem[]> {
       .from("propostas")
       .select("id,id_int,id_cliente,cliente,valor,valor_total,vendedor,status_interno,empresa,created_at,libera_nf,id_faturado,liberado_producao_em")
       .eq("libera_nf", true)
+      // Pedido cuja nota foi emitida no SISTEMA ANTIGO sai da fila (migration
+      // 20260914_propostas_faturado_fora). Corte a mais, sem mexer nos outros:
+      // `libera_nf` continua sendo a porta de entrada. Marca e desfaz pela rota
+      // POST /api/fiscal/faturado-fora.
+      .is("faturado_fora_em", null)
       .order("id_int", { ascending: false });
 
     if (error) {

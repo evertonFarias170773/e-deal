@@ -16,6 +16,7 @@ import { buildPropostaInformalText } from "@/features/orcamentos/orcamento-utils
 import { useOrcamentosReadOnlyData } from "@/features/orcamentos/hooks/useOrcamentosReadOnlyData";
 import type { OrcamentoListItem } from "@/features/orcamentos/mappers";
 import { encerrarTeste, reabrirTeste } from "@/features/pedidos/services/encerrar-teste.client";
+import { desmarcarFaturadoNoSistemaAntigo } from "@/features/fiscal/services/faturado-fora.client";
 import { buscarRastreioDasPropostas, type RastreioDaProposta } from "@/features/orcamentos/services/rastreio-lista.service";
 import { RastreioPropostaModal } from "@/features/orcamentos/components/RastreioPropostaModal";
 import { buscarNomesDosSocios } from "@/features/orcamentos/services/socio-pagador.service";
@@ -1245,6 +1246,48 @@ Ela volta a aparecer nas listas operacionais.`
     }
   }
 
+  /**
+   * Desfazer "Nota emitida no sistema antigo" (Fila de Faturamento).
+   *
+   * Mora aqui pelo mesmo motivo do "Reabrir" do teste: o pedido marcado some da
+   * fila, e Orcamentos e onde ele continua visivel, com badge. Limpa
+   * `faturado_fora_em/por` pela rota do servidor, que confere
+   * `propostas.release_nf` — a mesma chave da marcacao.
+   */
+  const canDesmarcarFaturadoFora = Boolean(
+    user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "propostas.release_nf")
+  );
+  const [desmarcandoFaturadoForaId, setDesmarcandoFaturadoForaId] = useState<number | null>(null);
+
+  async function handleDesmarcarFaturadoFora(item: OrcamentoListItem) {
+    if (desmarcandoFaturadoForaId !== null) return;
+    const ok = window.confirm(
+      `Voltar o pedido #${item.id_int} para a Fila de Faturamento?\n\n` +
+        `Remove a marca de nota emitida no sistema antigo. O pedido volta a aparecer na fila.`
+    );
+    if (!ok) return;
+    setDesmarcandoFaturadoForaId(item.id_int);
+    try {
+      const res = await desmarcarFaturadoNoSistemaAntigo(item.id_int);
+      if (res.success) {
+        showToast({
+          type: "success",
+          title: "De volta à fila",
+          description: `#${item.id_int} voltou para a Fila de Faturamento.`
+        });
+        triggerRefresh();
+      } else {
+        showToast({
+          type: "error",
+          title: "Erro ao desfazer",
+          description: res.errorMessage || "Nao foi possivel concluir."
+        });
+      }
+    } finally {
+      setDesmarcandoFaturadoForaId(null);
+    }
+  }
+
   async function handleCopiarPropostaInformal(item: OrcamentoListItem) {
     showToast({
       type: "info",
@@ -1392,6 +1435,16 @@ Ela volta a aparecer nas listas operacionais.`
               onClick: () => void handleEncerrarTeste(item, true)
             }
       ] : []),
+      // Desfazer da acao "Nota emitida no sistema antigo" da Fila de Faturamento.
+      // So aparece no pedido marcado: nao ha "marcar" aqui, a marcacao e da fila.
+      ...(item.faturadoForaEm && canDesmarcarFaturadoFora
+        ? [{
+            label: desmarcandoFaturadoForaId === item.id_int
+              ? "Voltando para a fila..."
+              : "Voltar para a Fila de Faturamento (desfazer nota no sistema antigo)",
+            onClick: () => void handleDesmarcarFaturadoFora(item)
+          }]
+        : []),
       /**
        * ULTIMO item do menu, de proposito. Estava logo abaixo de "Liberar para
        * Producao" e herdava a posicao dela assim que a proposta era liberada —
@@ -1649,6 +1702,16 @@ Ela volta a aparecer nas listas operacionais.`
                     teste encerrado
                   </span>
                 ) : null}
+                {/* Nota emitida no sistema antigo: saiu da Fila de Faturamento.
+                    O badge aponta o pedido; o desfazer esta no menu da linha. */}
+                {proposta.faturadoForaEm ? (
+                  <span
+                    title={`Nota emitida no sistema antigo. Marcado em ${formatDateTime(proposta.faturadoForaEm)}${proposta.faturadoForaPor ? ` por ${proposta.faturadoForaPor}` : ""}. Fora da Fila de Faturamento; para desfazer, use o menu da linha.`}
+                    className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-800 ring-1 ring-inset ring-amber-600/20 whitespace-nowrap"
+                  >
+                    faturado no sistema antigo
+                  </span>
+                ) : null}
                 {/* Pedido complementar: aponta o pedido principal do mesmo evento. */}
                 {proposta.idIntPedidoPrincipal ? (
                   <span
@@ -1821,6 +1884,16 @@ Ela volta a aparecer nas listas operacionais.`
                     className="inline-flex items-center rounded-full bg-violet-50 px-2 py-0.5 text-[10px] font-semibold text-violet-800 ring-1 ring-inset ring-violet-600/20 whitespace-nowrap"
                   >
                     teste encerrado
+                  </span>
+                ) : null}
+                {/* Nota emitida no sistema antigo: saiu da Fila de Faturamento.
+                    O badge aponta o pedido; o desfazer esta no menu da linha. */}
+                {proposta.faturadoForaEm ? (
+                  <span
+                    title={`Nota emitida no sistema antigo. Marcado em ${formatDateTime(proposta.faturadoForaEm)}${proposta.faturadoForaPor ? ` por ${proposta.faturadoForaPor}` : ""}. Fora da Fila de Faturamento; para desfazer, use o menu da linha.`}
+                    className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-800 ring-1 ring-inset ring-amber-600/20 whitespace-nowrap"
+                  >
+                    faturado no sistema antigo
                   </span>
                 ) : null}
                 {/* Pedido complementar: aponta o pedido principal do mesmo evento. */}

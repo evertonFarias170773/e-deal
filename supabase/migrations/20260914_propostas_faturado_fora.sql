@@ -1,0 +1,142 @@
+-- Pedido faturado no SISTEMA ANTIGO: tira da Fila de Faturamento sem apagar nada
+--
+-- O QUE E
+--   Duas colunas aditivas em public.propostas, nulaveis e sem default, no mesmo
+--   desenho de encerrado_teste_em / encerrado_teste_por (20260820):
+--
+--     faturado_fora_em   timestamptz  quando alguem marcou que a nota do pedido
+--                                     foi emitida no sistema antigo
+--     faturado_fora_por  text         email de quem marcou
+--
+--   `faturado_fora_em IS NULL` e o pedido normal. Preenchida, o pedido some da
+--   Fila de Faturamento (getFaturaveisPropostas), e SO dela.
+--
+-- POR QUE
+--   A operacao roda em dois sistemas durante a transicao. As notas dos pedidos
+--   antigos foram emitidas no sistema antigo, e esses pedidos poluem a Fila de
+--   Faturamento do Vibe. E acao temporaria, de transicao.
+--
+-- POR QUE NAO DESLIGAR `libera_nf`
+--   Seria sem migration, mas:
+--   1. `liberarPropostaParaProducao` regrava `libera_nf = true` toda vez que o
+--      pedido e liberado para producao: o pedido marcado voltaria a fila sozinho.
+--   2. Apagaria a diferenca entre "nunca liberado para nota" e "faturado fora".
+--   3. Tem efeito fora da fila: o selo "Liberado para NF" da tela de Pedidos e o
+--      Maestro, que le `libera_nf` como a regra que habilita a emissao.
+--   `libera_nf` fica INTOCADA por esta migration e pelo codigo que a acompanha.
+--
+-- POR QUE NAO UM CAMPO DE OBSERVACAO
+--   obs_proposta e comercial e e copiada; obs_tecnica sai no PDF da OS;
+--   obs_pedido esta reservada para escrita do Maestro. Marca de controle em texto
+--   livre e armadilha. O MOTIVO vai para a linha do tempo (propostas_chat, tipo
+--   SISTEMA, visivel_externo false), gravado pela rota; a MARCA fica aqui.
+--
+-- ESCOPO / O QUE ESTA MIGRATION NAO FAZ
+--   Estritamente aditiva. Nao cria funcao, view, RPC, trigger, indice, RLS,
+--   politica, grant, CHECK nem default. Nao altera coluna existente. Nao toca em
+--   libera_nf, status_interno, liberado_producao_em, is_prd_aprovado,
+--   pagamentos_v2, boletos nem notas_fiscais.
+--
+--   SEM BACKFILL E SEM UPDATE. As linhas existentes nascem com as duas colunas
+--   nulas e NENHUM pedido e marcado aqui: a marcacao e manual, um a um, pela
+--   Fila de Faturamento.
+--
+--   SEM INDICE, de proposito. O corte novo e `faturado_fora_em is null`,
+--   verdadeiro para quase todas as linhas, e a consulta da fila ja parte de
+--   `libera_nf = true` (100 linhas em 14/09/2026).
+--
+--   Verificado no banco em 14/09/2026, ANTES de escrever:
+--   1. Os nomes faturado_fora_em / faturado_fora_por nao existem em nenhuma
+--      tabela, e nenhuma funcao ou view os cita. propostas tem 61 colunas.
+--   2. Os 6 triggers de propostas sao os mesmos da migration 20260820; nenhum le
+--      ou escreve as colunas novas. Num UPDATE so delas: updated_at e
+--      recarimbado (como em qualquer edicao) e trg_audit_propostas registra a
+--      mudanca em audit.logs_v2 (config enabled, ignored_columns {updated_at}).
+--   3. As funcoes que inserem em propostas (copiar_proposta_v2,
+--      duplicar_proposta, criar_pedido_complementar) usam lista explicita de
+--      colunas: copia de pedido marcado nasce com as colunas nulas.
+--   4. A permissao da rota, propostas.release_nf, ja existe no catalogo e esta
+--      nos perfis Administrador e Financeiro (Super Administrador pelo curinga).
+
+alter table public.propostas
+  add column if not exists faturado_fora_em timestamptz;
+
+alter table public.propostas
+  add column if not exists faturado_fora_por text;
+
+comment on column public.propostas.faturado_fora_em is
+  'Instante em que alguem marcou que a nota fiscal deste pedido foi emitida no SISTEMA ANTIGO, pela acao da Fila de Faturamento. Preenchida, o pedido some da Fila de Faturamento e so dela. Nula = pedido normal. Reversivel pelo menu da linha em Orcamentos, que volta as duas colunas para NULL. Nao altera libera_nf, status_interno nem liberado_producao_em. Acao temporaria da transicao entre sistemas.';
+
+comment on column public.propostas.faturado_fora_por is
+  'Email de quem marcou o pedido como faturado no sistema antigo, gravado pelo servidor na rota POST /api/fiscal/faturado-fora apos verificar a permissao propostas.release_nf. Registro de quem agiu, nao fonte de autorizacao; o motivo fica em propostas_chat e a trilha completa em audit.logs_v2. Nula quando faturado_fora_em e nula.';
+
+-- VERIFICACAO (somente leitura, depois de aplicar)
+--
+--   Banco de producao vivo: contagem absoluta de linhas nao fecha. As contagens
+--   sao ANTES = DEPOIS, medidas em volta do alter table. Absolutos so onde a
+--   operacao nao interfere: marcadas = 0, 6 triggers, 6 constraints c/f,
+--   63 colunas (61 + 2).
+--
+--   -- a) as duas colunas nasceram nulaveis e sem default
+--   select column_name, data_type, is_nullable,
+--          coalesce(column_default, '(sem default)') as padrao
+--     from information_schema.columns
+--    where table_schema = 'public' and table_name = 'propostas'
+--      and column_name in ('faturado_fora_em', 'faturado_fora_por')
+--    order by column_name;
+--   -- esperado: 2 linhas, is_nullable = YES, padrao = (sem default);
+--   --           a tabela passa a ter 63 colunas
+--
+--   -- b) SEM BACKFILL
+--   select count(faturado_fora_em) as marcadas, count(faturado_fora_por) as com_autor
+--     from public.propostas;
+--   -- esperado: 0 e 0
+--
+--   -- c) DELTA ZERO: a mesma consulta imediatamente ANTES e DEPOIS
+--   select count(*) as linhas,
+--          count(*) filter (where libera_nf) as libera_nf_true
+--     from public.propostas;
+--   -- e, so DEPOIS, a base da fila com o corte novo:
+--   select count(*) filter (where libera_nf) as base_fila_sem_corte,
+--          count(*) filter (where libera_nf and faturado_fora_em is null) as base_fila_com_corte
+--     from public.propostas;
+--   -- esperado: valores identicos antes e depois, e base_fila_com_corte =
+--   --           base_fila_sem_corte enquanto ninguem usar a acao
+--
+--   -- d) constraints c/f de propostas: mesma lista, nada com faturado_fora
+--   select conname from pg_constraint
+--    where conrelid = 'public.propostas'::regclass and contype in ('c', 'f')
+--    order by conname;
+--   -- esperado: 6 linhas, as mesmas de antes
+--
+--   -- e) os 6 triggers seguem existindo e habilitados
+--   select tgname, tgenabled from pg_trigger
+--    where tgrelid = 'public.propostas'::regclass and not tgisinternal
+--    order by tgname;
+--   -- esperado: 6 linhas, tgenabled = 'O'
+--
+--   -- f) nenhuma funcao criada (sem ACL a revisar)
+--   select p.proname from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+--    where n.nspname = 'public' and p.proname like '%faturado_fora%';
+--   -- esperado: 0 linhas
+--
+--   -- g) auditoria segue ligada para propostas
+--   select enabled, ignored_columns from audit.config_v2
+--    where schema_name = 'public' and table_name = 'propostas';
+--   -- esperado: enabled = true, ignored_columns = {updated_at}
+--
+--   -- h) PostgREST enxerga as colunas (cache de schema). Se o front receber
+--   --    "column propostas.faturado_fora_em does not exist":
+--   --    notify pgrst, 'reload schema';
+--
+-- ROLLBACK
+--   Seguro enquanto nenhum pedido estiver marcado. Se ja houver marcacoes, o DROP
+--   as descarta e os pedidos voltam para a Fila de Faturamento. Guardar antes:
+--     select id_int, faturado_fora_em, faturado_fora_por
+--       from public.propostas where faturado_fora_em is not null;
+--
+--   alter table public.propostas drop column if exists faturado_fora_por;
+--   alter table public.propostas drop column if exists faturado_fora_em;
+--
+--   O codigo que acompanha esta migration (fila, rota, Orcamentos) seleciona as
+--   colunas: reverter a migration exige reverter o codigo antes.

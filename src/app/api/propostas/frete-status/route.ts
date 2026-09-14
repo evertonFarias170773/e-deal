@@ -82,13 +82,46 @@ export async function GET(request: Request) {
   const itensAtivos = itens || [];
   const pesoAtualGramas = itensAtivos.reduce((soma, item) => soma + (Number(item.peso_total) || 0), 0);
 
+  // PEDIDO COMPLEMENTAR: o vínculo e a linha VIGENTE do ledger (a mais recente
+  // por `aplicado_em`). A linha é lida mesmo sem vínculo, porque desvincular
+  // pode limpar a coluna e o carimbo de desvinculação continua valendo.
+  const [{ data: vinculo, error: erroVinculo }, { data: freteComplementar, error: erroLedger }] = await Promise.all([
+    supabase
+      .from("propostas")
+      .select("id_int_pedido_principal")
+      .eq("id_int", idInt)
+      .maybeSingle<{ id_int_pedido_principal: number | null }>(),
+    supabase
+      .from("complementos_frete")
+      .select("id, desvinculado_em")
+      .eq("id_int_complemento", idInt)
+      .order("aplicado_em", { ascending: false })
+      .limit(1)
+      .maybeSingle<{ id: number; desvinculado_em: string | null }>()
+  ]);
+
+  if (erroVinculo || erroLedger) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: `Nao foi possivel ler o frete complementar: ${(erroVinculo ?? erroLedger)?.message}`
+      },
+      { status: 500 }
+    );
+  }
+
   const situacao = avaliarFreteParaCobranca({
     pesoCotadoGramas: cotacao?.peso ?? null,
     pesoAtualGramas,
     valorFrete: cotacao?.valor ?? null,
     servico: cotacao?.servico ?? null,
     temCotacao: Boolean(cotacao),
-    temItens: itensAtivos.length > 0
+    temItens: itensAtivos.length > 0,
+    complemento: {
+      vinculado: vinculo?.id_int_pedido_principal != null,
+      temFreteAplicado: Boolean(freteComplementar),
+      desvinculado: Boolean(freteComplementar?.desvinculado_em)
+    }
   });
 
   return NextResponse.json({

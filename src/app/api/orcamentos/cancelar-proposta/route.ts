@@ -84,6 +84,42 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: true, alreadyCancelled: true, message: "Proposta já estava cancelada." });
   }
 
+  // PEDIDO COMPLEMENTAR (docs/business/PEDIDO-COMPLEMENTAR.md): o principal não
+  // cancela enquanto tiver complemento aberto. Os dois são o mesmo evento e
+  // saem na mesma caixa; cancelar só o principal deixaria o complemento com
+  // frete calculado sobre um peso que não vai mais existir. Primeiro cancela
+  // ou desvincula o complemento. Checagem ANTES de qualquer escrita, e a tela
+  // repete o aviso — mas a tranca é esta.
+  //
+  // Proposta comum não tem linha aqui: o fluxo abaixo segue exatamente como
+  // sempre foi.
+  const { data: complementosAbertos, error: complementosErr } = await supabase
+    .from("propostas")
+    .select("id_int, status_interno")
+    .eq("id_int_pedido_principal", idInt)
+    .neq("status_interno", "CANCELADO");
+
+  if (complementosErr) {
+    return NextResponse.json(
+      { success: false, message: "Não foi possível verificar os pedidos complementares desta proposta." },
+      { status: 500 }
+    );
+  }
+  if ((complementosAbertos ?? []).length > 0) {
+    const lista = (complementosAbertos ?? []).map((c) => `#${c.id_int} (${c.status_interno ?? "sem status"})`).join(", ");
+    return NextResponse.json(
+      {
+        success: false,
+        code: "COMPLEMENTO_ABERTO",
+        message:
+          `A proposta #${idInt} tem pedido complementar aberto: ${lista}. ` +
+          "Cancele ou desvincule o complemento antes de cancelar esta proposta.",
+        complementos: (complementosAbertos ?? []).map((c) => ({ idInt: c.id_int, statusInterno: c.status_interno }))
+      },
+      { status: 409 }
+    );
+  }
+
   // 1) Reconsulta proposta (já feita acima), pagamentos, boletos e movimentos de crédito.
   const [pagamentosRes, boletosRes, movimentosRes] = await Promise.all([
     supabase.from("pagamentos_v2").select("id, status, confirmado").eq("id_int", idInt),

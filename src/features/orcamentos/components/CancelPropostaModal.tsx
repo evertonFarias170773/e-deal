@@ -14,6 +14,7 @@ import {
 } from "@/features/cobrancas/cancelamento-pago";
 import { formatMesAnoPtBr, getTipoCobrancaLabel } from "@/features/cobrancas/cobrancas-utils";
 import { formatCurrency } from "@/lib/formatters/currency";
+import { getSupabaseClient } from "@/lib/supabase/client";
 
 interface CancelPropostaModalProps {
   isOpen: boolean;
@@ -33,6 +34,13 @@ export function CancelPropostaModal({ isOpen, onClose, idInt, onSuccess }: Cance
   const [motivo, setMotivo] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [cobrancaParaCancelar, setCobrancaParaCancelar] = useState<string | null>(null);
+  /**
+   * PEDIDO COMPLEMENTAR (docs/business/PEDIDO-COMPLEMENTAR.md): complementos
+   * não cancelados desta proposta. `null` enquanto carrega. Havendo algum, o
+   * cancelamento fica bloqueado — a tela avisa, e a rota recusa com
+   * `COMPLEMENTO_ABERTO` de qualquer jeito.
+   */
+  const [complementosAbertos, setComplementosAbertos] = useState<Array<{ idInt: number; statusInterno: string }> | null>(null);
 
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
@@ -41,6 +49,36 @@ export function CancelPropostaModal({ isOpen, onClose, idInt, onSuccess }: Cance
       setCobrancaParaCancelar(null);
     }
   }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    let cancelado = false;
+    setComplementosAbertos(null);
+    const client = getSupabaseClient();
+    if (!client) {
+      setComplementosAbertos([]);
+      return;
+    }
+    void client
+      .from("propostas")
+      .select("id_int, status_interno")
+      .eq("id_int_pedido_principal", idInt)
+      .neq("status_interno", "CANCELADO")
+      .then(({ data, error }) => {
+        if (cancelado) return;
+        // Falha de leitura não inventa bloqueio: quem tranca é o servidor.
+        if (error) {
+          setComplementosAbertos([]);
+          return;
+        }
+        setComplementosAbertos(
+          (data ?? []).map((row) => ({ idInt: Number(row.id_int), statusInterno: String(row.status_interno ?? "") }))
+        );
+      });
+    return () => {
+      cancelado = true;
+    };
+  }, [isOpen, idInt]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
   useEffect(() => {
@@ -67,6 +105,7 @@ export function CancelPropostaModal({ isOpen, onClose, idInt, onSuccess }: Cance
   const temTituloAtivo = existingBoletoIdInts.has(Number(idInt));
 
   const cobrancaUnica = cobrancasAtivas.length === 1 ? cobrancasAtivas[0] : null;
+  const temComplementoAberto = (complementosAbertos ?? []).length > 0;
 
   /**
    * Atalho para quem abriu o modal errado. O texto acima já avisa; o botão
@@ -162,6 +201,22 @@ export function CancelPropostaModal({ isOpen, onClose, idInt, onSuccess }: Cance
         </div>
 
         <div className="space-y-4">
+          {temComplementoAberto ? (
+            <div className="rounded-2xl border border-amber-300 bg-amber-50 p-4 text-amber-900 flex gap-3 items-start">
+              <AlertCircle className="h-5 w-5 mt-0.5 shrink-0" />
+              <div className="text-xs">
+                <p className="font-semibold">Esta proposta tem pedido complementar aberto</p>
+                <p className="mt-1 leading-relaxed">
+                  {(complementosAbertos ?? [])
+                    .map((c) => `#${c.idInt} (${c.statusInterno || "sem status"})`)
+                    .join(", ")}{" "}
+                  é do mesmo evento e sai na mesma caixa. Cancele ou desvincule o complemento antes de cancelar
+                  esta proposta.
+                </p>
+              </div>
+            </div>
+          ) : null}
+
           <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-red-800 flex gap-3 items-start">
             <AlertCircle className="h-5 w-5 mt-0.5 shrink-0" />
             <div className="text-xs">
@@ -260,7 +315,7 @@ export function CancelPropostaModal({ isOpen, onClose, idInt, onSuccess }: Cance
           <button
             type="button"
             onClick={handleConfirm}
-            disabled={isSubmitting || !motivo.trim()}
+            disabled={isSubmitting || !motivo.trim() || temComplementoAberto}
             className="rounded-2xl bg-red-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-red-700 disabled:opacity-50"
           >
             {isSubmitting ? "Cancelando..." : "Confirmar Cancelamento"}

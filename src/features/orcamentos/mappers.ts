@@ -68,6 +68,13 @@ export type OrcamentoListItem = {
   encerradoTesteEm?: string | null;
   encerradoTestePor?: string | null;
   /**
+   * `propostas.faturado_fora_em`. Preenchido, a nota do pedido foi emitida no
+   * SISTEMA ANTIGO: saiu da Fila de Faturamento, e o desfazer mora no menu da
+   * linha aqui em Orcamentos. Nao altera libera_nf, status nem nota.
+   */
+  faturadoForaEm?: string | null;
+  faturadoForaPor?: string | null;
+  /**
    * `propostas.id_faturado` — quem paga. Quando difere de `id_cliente`, e um
    * SOCIO PAGADOR: outro cadastro, ligado ao cliente por `clientes_socios`,
    * que assume a fatura. Igual ao `id_cliente` significa que o proprio cliente
@@ -394,6 +401,8 @@ function mapRowToListItem(row: SupabasePropostaRow): OrcamentoListItem | null {
     is_prd_aprovado: row.is_prd_aprovado === true,
     encerradoTesteEm: typeof row.encerrado_teste_em === "string" ? row.encerrado_teste_em : null,
     encerradoTestePor: typeof row.encerrado_teste_por === "string" ? row.encerrado_teste_por : null,
+    faturadoForaEm: typeof row.faturado_fora_em === "string" ? row.faturado_fora_em : null,
+    faturadoForaPor: typeof row.faturado_fora_por === "string" ? row.faturado_fora_por : null,
     idFaturado: Number.isFinite(Number(row.id_faturado)) && Number(row.id_faturado) > 0
       ? Number(row.id_faturado)
       : null,

@@ -41,10 +41,17 @@ export type MotivoFreteCobranca =
   | "FRETE_SEM_CUSTO"
   | "SEM_ANCORA"
   | "SEM_ITENS"
-  | "PESO_DIVERGENTE";
+  | "PESO_DIVERGENTE"
+  /** Pedido complementar sem frete complementar aplicado. Bloqueia. */
+  | "FRETE_COMPLEMENTAR_PENDENTE"
+  /** Pedido complementar desvinculado: o frete aplicado não vale mais. Bloqueia. */
+  | "FRETE_COMPLEMENTAR_INVALIDADO";
 
 export type SituacaoFreteCobranca = {
-  /** Impede gerar cobrança? Só `PESO_DIVERGENTE` impede. */
+  /**
+   * Impede gerar cobrança? Impedem `PESO_DIVERGENTE` e, no pedido complementar,
+   * `FRETE_COMPLEMENTAR_PENDENTE` e `FRETE_COMPLEMENTAR_INVALIDADO`.
+   */
   bloqueia: boolean;
   motivo: MotivoFreteCobranca;
   /** Peso com que o frete foi cotado, em gramas. Null quando não há âncora. */
@@ -80,6 +87,19 @@ export function avaliarFreteParaCobranca(entrada: {
   temCotacao: boolean;
   /** A proposta tem ao menos um item ativo? Sem item não há peso a comparar. */
   temItens: boolean;
+  /**
+   * PEDIDO COMPLEMENTAR (docs/business/PEDIDO-COMPLEMENTAR.md). Opcional de
+   * propósito: quem não informa — toda proposta comum e os outros chamadores —
+   * segue exatamente a regra de sempre.
+   *   - `vinculado`: `propostas.id_int_pedido_principal` preenchido;
+   *   - `temFreteAplicado`: existe linha vigente em `complementos_frete`;
+   *   - `desvinculado`: a linha vigente tem `desvinculado_em` preenchido.
+   */
+  complemento?: {
+    vinculado: boolean;
+    temFreteAplicado: boolean;
+    desvinculado: boolean;
+  };
 }): SituacaoFreteCobranca {
   const pesoAtual = numero(entrada.pesoAtualGramas);
   const valorFrete = numero(entrada.valorFrete);
@@ -93,6 +113,17 @@ export function avaliarFreteParaCobranca(entrada: {
     valorFrete,
     servico: entrada.servico ?? null
   };
+
+  // PEDIDO COMPLEMENTAR, antes de qualquer outra regra. O frete dele não é
+  // escolhido em card: é a diferença do peso somado, aplicada por rota própria.
+  // Sem ela, a cotação do complemento está vazia e as regras abaixo diriam
+  // SEM_COTACAO — liberando uma cobrança sem frete nenhum.
+  if (entrada.complemento?.desvinculado) {
+    return { ...base, bloqueia: true, motivo: "FRETE_COMPLEMENTAR_INVALIDADO" };
+  }
+  if (entrada.complemento?.vinculado && !entrada.complemento.temFreteAplicado) {
+    return { ...base, bloqueia: true, motivo: "FRETE_COMPLEMENTAR_PENDENTE" };
+  }
 
   // Proposta sem frete escolhido: não há o que comparar, e o próprio fluxo de
   // salvamento já exige frete antes de fechar o orçamento.
@@ -130,6 +161,18 @@ export function avaliarFreteParaCobranca(entrada: {
 
 /** Texto do modal de bloqueio. Fala de peso e de dinheiro, não de tabela. */
 export function mensagemFreteDesatualizado(situacao: SituacaoFreteCobranca): string {
+  if (situacao.motivo === "FRETE_COMPLEMENTAR_PENDENTE") {
+    return (
+      "Este é um pedido complementar e o frete complementar ainda está pendente. " +
+      "Cote e aplique o frete complementar na aba Fretes antes de gerar a cobrança."
+    );
+  }
+  if (situacao.motivo === "FRETE_COMPLEMENTAR_INVALIDADO") {
+    return (
+      "Este pedido foi desvinculado do pedido principal, e o frete complementar aplicado não vale mais. " +
+      "Ele passou a precisar de frete próprio: refaça o frete na aba Fretes antes de gerar a cobrança."
+    );
+  }
   if (situacao.motivo !== "PESO_DIVERGENTE" || situacao.pesoCotadoGramas === null) {
     return "";
   }
