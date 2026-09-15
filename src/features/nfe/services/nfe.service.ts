@@ -6,6 +6,8 @@ import type { SupabaseBoletoRow } from "@/features/contas-a-receber/types.supaba
 import { getPropostaDetailById } from "@/features/orcamentos/services/orcamentos.service";
 import { PROPOSTA_STATUS_GROUP_NFE_ELIGIBLE } from "@/features/orcamentos/constants";
 import { resolverPesoExpedicao } from "@/features/expedicao/lib/peso";
+import { getClienteBonusPercent } from "@/features/orcamentos/orcamento-utils";
+import { valoresDosItensDaNota } from "@/features/nfe/lib/valor-item-nfe";
 import { canonizarTransportadora, ehCadastroSubstituido } from "@/features/orcamentos/lib/transportadoras-parceiras";
 import type { FaturavelOrigem } from "@/features/fiscal/types";
 import {
@@ -1074,8 +1076,14 @@ export async function createOrReuseNfeDraft(idInt: number): Promise<SupabaseNfeR
 
   // 6. Inserir itens da nota
   if (proposta.itens && proposta.itens.length > 0) {
+    // O bonus de tabela especial do cliente da proposta entra no VALOR do item —
+    // o mesmo percentual, lido do mesmo cadastro, que `getPropostaDetailById` ja
+    // aplicou para chegar a `propostas.valor_total`. Sem consulta nova. Cliente sem
+    // bonus (percentual 0, ou `usa_preco_fixo`) sai exatamente como antes.
+    const valoresDosItens = valoresDosItensDaNota(proposta.itens, getClienteBonusPercent(proposta.cliente));
+
     const itemsInsert = proposta.itens.map((item, idx) => {
-      // O TOTAL DO ITEM NA NOTA E O SUBTOTAL DA PROPOSTA — nao `qtd x unitario`.
+      // O TOTAL DO ITEM NA NOTA PARTE DO SUBTOTAL DA PROPOSTA — nao `qtd x unitario`.
       //
       // `produtos_proposta.valor_sub_total` ja e mantido correto pelo trigger
       // `calcular_valor_sub_total`, que faz `qtd * (valor_base + valor_extra) + fixo`.
@@ -1089,31 +1097,27 @@ export async function createOrReuseNfeDraft(idInt: number): Promise<SupabaseNfeR
       //
       // Partir do subtotal corrige as duas de uma vez, porque as duas ja estao nele.
       //
-      // POR QUE `subtotalBruto` E NAO `subtotal`
-      //   Os dois nascem de `valor_sub_total`, mas `subtotal` e rebaixado pelo bonus
-      //   do cliente quando ele existe (5 cadastros em 65.929). O bonus NAO entra em
-      //   `produtos_proposta.valor_sub_total` nem em `propostas.valor_total` — que e
-      //   justamente o total com que a nota precisa fechar. `subtotalBruto` e o
-      //   espelho fiel da coluna: mesma formula do trigger, sem o bonus.
+      // O BONUS ENTRA EM `propostas.valor_total`, e por isso entra aqui.
+      //   `subtotalBruto` e o espelho fiel de `valor_sub_total`: mesma formula do
+      //   trigger, SEM o bonus — o trigger reescreve a coluna com o valor cheio. Ja
+      //   `propostas.valor_total` sai COM o bonus (na 22066: produtos 151,00 brutos,
+      //   135,90 com os 10%, total 147,53). Ate 14/09/2026 este comentario dizia o
+      //   contrario, a nota partia do bruto e fechava acima da proposta.
+      //   `valoresDosItensDaNota` parte do bruto e aplica o bonus do cliente,
+      //   arredondando no centavo; sem bonus devolve o bruto, como antes.
       const quantidade = item.quantidade || 0;
-      const subtotalItem = Number(
-        item.subtotalBruto ?? item.subtotal ?? quantidade * item.valorUnitario
-      );
 
-      // O unitario da nota e esse total diluido na quantidade. Dez casas porque
+      // O unitario da nota e esse total diluido na quantidade, em DEZ casas:
       // `notas_fiscais_itens.valor_unitario` e `numeric(16,10)` desde 11/09/2026 e
-      // o layout 4.00 aceita vUnCom em 11v0-10: mais que isso seria truncado pela
-      // coluna e recusado pela SEFAZ.
-      const valorUnitario =
-        quantidade > 0 ? Number((subtotalItem / quantidade).toFixed(10)) : 0;
-
-      // `valor_bruto` E O SUBTOTAL, mas quem da a palavra final e o banco: o trigger
-      // `fn_calcular_valor_bruto_nfe_item` reescreve esta coluna como
+      // o layout 4.00 aceita vUnCom em 11v0-10.
+      //
+      // `valor_bruto` e o total do item, mas quem da a palavra final e o banco: o
+      // trigger `fn_calcular_valor_bruto_nfe_item` reescreve esta coluna como
       // `round(quantidade * valor_unitario, 2)` em todo INSERT/UPDATE. Com 10 casas
-      // os dois numeros passam a coincidir: o erro por unidade e 0,5 x 10^-10, que
-      // so desloca um centavo com quantidade acima de 10^8 — a maior da base hoje e
+      // os dois numeros coincidem: o erro por unidade e 0,5 x 10^-10, que so
+      // desloca um centavo com quantidade acima de 10^8 — a maior da base hoje e
       // 115.830. Em 4 casas, 450 dos 1.397 itens divergiam, ate R$ 5,25 num item.
-      const valorBruto = subtotalItem;
+      const { valorBruto, valorUnitario } = valoresDosItens[idx];
 
       // Peso vindo do rateio do peso da expedicao, nao mais o teorico do item.
       // `peso_total_gramas` acompanha a formula do trigger — que vai refaze-lo
@@ -1163,10 +1167,10 @@ export async function createOrReuseNfeDraft(idInt: number): Promise<SupabaseNfeR
   //
   //    O cabecalho nasce com `valor_total_nf = proposta.resumo.valorTotal`, que
   //    e `propostas.valor_total`: o valor da COBRANCA, ja com o bonus de tabela
-  //    especial descontado. Os itens, porem, entram pelo BRUTO
-  //    (`valor_sub_total`, que o trigger `trg_calcular_valor_sub_total` reescreve
-  //    com o valor cheio). O total real da nota so aparece quando
-  //    `fn_recalcular_totais_nfe` soma itens + frete - desconto.
+  //    especial descontado. O total real da nota so aparece quando
+  //    `fn_recalcular_totais_nfe` soma itens + frete - desconto. Ate 14/09/2026
+  //    os itens entravam pelo BRUTO e esse total ficava acima da cobranca; desde
+  //    entao entram com o bonus (ver `valoresDosItensDaNota`) e os dois fecham.
   //
   //    A parcela era inserida ANTES desse recalculo, com o total velho — e por
   //    isso nascia com o valor da cobranca. Na NFE-22066-001: parcela R$ 147,53
