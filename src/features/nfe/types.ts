@@ -74,6 +74,8 @@ export interface SupabaseNfeRow {
   end_entrega: boolean | null;
   /** `notas_fiscais.tipo_nota`: 'VENDA' ou 'REMESSA'. Nulo equivale a venda. */
   tipo_nota?: string | null;
+  /** `notas_fiscais.id_endereco_destinatario`: o endereco de quem recebe, na remessa. */
+  id_endereco_destinatario?: string | null;
   cond_pgto: boolean | null;
   forma_pgto: string | null;
   drop_natureza_op: string | null;

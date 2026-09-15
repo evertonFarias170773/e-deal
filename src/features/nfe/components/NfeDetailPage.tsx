@@ -31,6 +31,7 @@ import { useAppToast } from "@/components/common/AppToast";
 import { formatCurrency } from "@/lib/formatters/currency";
 import { formatDateTime } from "@/lib/formatters/date";
 import { StatusBadge } from "@/components/common/StatusBadge";
+import { buscarEnderecoDestinatario } from "@/features/nfe/services/remessa.service";
 import {
   getNfeById,
   getNfeItems,
@@ -230,6 +231,23 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
   const [pagamentos, setPagamentos] = useState<SupabaseNfePagamentoRow[]>([]);
   const [events, setEvents] = useState<SupabaseNotaEventoRow[]>([]);
   const [cliente, setCliente] = useState<ClienteData | null>(null);
+  /**
+   * Quem recebe, na nota de REMESSA: o recebedor gravado no endereço apontado
+   * por `id_endereco_destinatario`. É a mesma fonte que o payload usa, então a
+   * tela mostra exatamente o que vai para a SEFAZ.
+   */
+  const [destinatarioRemessa, setDestinatarioRemessa] = useState<{
+    id: string;
+    recebedor: string | null;
+    cpf_recebedor: string | null;
+    endereco: string | null;
+    numero: string | null;
+    complemento: string | null;
+    bairro: string | null;
+    cidade: string | null;
+    uf: string | null;
+    cep: string | null;
+  } | null>(null);
   const [empresa, setEmpresa] = useState<EmpresaData | null>(null);
   /**
    * O ambiente que a tela mostra, e sob qual tempo verbal — ver
@@ -1508,6 +1526,21 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
     }
   }
 
+  // A nota de remessa mostra quem recebe. Uma consulta, só quando há endereço.
+  useEffect(() => {
+    let ativo = true;
+    const idEndereco = note?.id_endereco_destinatario ?? null;
+    void (async () => {
+      // Sem endereço apontado, limpa — mas pelo callback, nunca no corpo do
+      // efeito: setState síncrono aqui dispara renderização em cascata.
+      const encontrado = idEndereco ? await buscarEnderecoDestinatario(idEndereco) : null;
+      if (ativo) setDestinatarioRemessa(encontrado);
+    })();
+    return () => {
+      ativo = false;
+    };
+  }, [note?.id_endereco_destinatario]);
+
   async function handleTrocarEmpresa(idEmpresa: number) {
     if (!note) return;
     if (isReadOnly) {
@@ -2279,6 +2312,14 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
           <div className="flex items-center gap-3">
             <h1 className="text-2xl font-bold text-slate-900">{note.ref}</h1>
             <StatusBadge status={getNfeDisplayStatus(note)} />
+            {String(note.tipo_nota ?? "").trim().toUpperCase() === "REMESSA" ? (
+              <span
+                title="Segunda nota do pedido: sai no nome de quem recebe, sem cobrança."
+                className="inline-flex items-center rounded-full bg-violet-50 px-3 py-1 text-xs font-bold text-violet-800 ring-1 ring-inset ring-violet-600/20 whitespace-nowrap"
+              >
+                NOTA DE REMESSA
+              </span>
+            ) : null}
           </div>
           <p className="text-sm text-slate-500">
             Origem: Proposta/Pedido <strong>#{note.id_int}</strong> • Vendedor: {note.criado_por_nome || "-"}
@@ -2761,6 +2802,55 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
               <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
                 <User className="h-5 w-5 text-[#0b2f4a]" /> Dados do Destinatário
               </h2>
+
+              {/* REMESSA: quem recebe vem do endereço de entrega, não do cadastro
+                  do cliente. Os campos abaixo continuam mostrando o cliente do
+                  pedido, que é quem paga — por isso este bloco vem antes e diz,
+                  em texto, quem vai sair na nota. */}
+              {String(note.tipo_nota ?? "").trim().toUpperCase() === "REMESSA" ? (
+                <div className="rounded-2xl border border-violet-200 bg-violet-50/60 p-4 space-y-3">
+                  <h3 className="text-sm font-bold text-violet-900">
+                    Destinatário desta remessa (vai para a SEFAZ)
+                  </h3>
+                  {destinatarioRemessa ? (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                      <div>
+                        <span className="block text-xs font-semibold text-violet-700 uppercase">Nome</span>
+                        <span className="text-slate-800 font-medium">{destinatarioRemessa.recebedor || "—"}</span>
+                      </div>
+                      <div>
+                        <span className="block text-xs font-semibold text-violet-700 uppercase">CPF</span>
+                        <span className="text-slate-800 font-mono">{destinatarioRemessa.cpf_recebedor || "—"}</span>
+                      </div>
+                      <div className="md:col-span-2">
+                        <span className="block text-xs font-semibold text-violet-700 uppercase">Endereço de entrega</span>
+                        <span className="text-slate-800">
+                          {[
+                            destinatarioRemessa.endereco,
+                            destinatarioRemessa.numero,
+                            destinatarioRemessa.complemento,
+                            destinatarioRemessa.bairro,
+                            destinatarioRemessa.cidade && destinatarioRemessa.uf
+                              ? `${destinatarioRemessa.cidade}/${destinatarioRemessa.uf}`
+                              : destinatarioRemessa.cidade,
+                            destinatarioRemessa.cep ? `CEP ${destinatarioRemessa.cep}` : null
+                          ]
+                            .filter(Boolean)
+                            .join(", ") || "—"}
+                        </span>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-violet-900">
+                      O endereço do destinatário não foi encontrado. Sem ele, a emissão será recusada.
+                    </p>
+                  )}
+                  <p className="text-[11px] text-violet-800">
+                    Os campos abaixo mostram o cliente do pedido, que é quem paga. Na remessa, a nota sai no
+                    nome acima.
+                  </p>
+                </div>
+              ) : null}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
                   <label className="block text-xs font-semibold text-slate-500 mb-1">Nome / Razão Social</label>

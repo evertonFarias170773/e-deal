@@ -35,6 +35,7 @@ import { RevisarGeracaoBancariaModal } from "@/features/contas-a-receber/compone
 import { useAuth } from "@/features/auth/AuthProvider";
 import { hasPermissao } from "@/features/auth/usuarios.service";
 import { marcarFaturadoNoSistemaAntigo } from "@/features/fiscal/services/faturado-fora.client";
+import { criarRascunhoRemessa } from "@/features/nfe/services/remessa.service";
 
 // Fase 1 MVP
 import type { FaturavelOrigem } from "./types";
@@ -300,6 +301,7 @@ export function NotasFiscaisPage() {
   const [faturaveisList, setFaturaveisList] = useState<FaturavelOrigem[]>([]);
   const [isFilaLoading, setIsFilaLoading] = useState(true);
   const [marcandoFaturadoForaId, setMarcandoFaturadoForaId] = useState<number | null>(null);
+  const [gerandoRemessaId, setGerandoRemessaId] = useState<number | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -1200,6 +1202,20 @@ export function NotasFiscaisPage() {
 
     // 5. AUTORIZADA
     if (status === "AUTORIZADA") {
+      // Nota de remessa: a segunda nota do pedido, no nome de quem RECEBE.
+      // So a VENDA autorizada oferece — e a propria remessa nunca gera outra.
+      if (
+        String(item.tipo_nota ?? "").trim().toUpperCase() !== "REMESSA" &&
+        String(item.ambiente ?? "").trim().toUpperCase() === "PRODUCAO" &&
+        !ehNotaAvulsa(item.id_int)
+      ) {
+        actions.push({
+          label: gerandoRemessaId === item.id_int ? "Gerando nota de remessa..." : "Gerar nota de remessa",
+          onClick: () => {
+            void handleGerarRemessa(item);
+          }
+        });
+      }
       if (item.url_danfe) {
         actions.push({
           label: "Abrir DANFE (PDF)",
@@ -1618,6 +1634,43 @@ export function NotasFiscaisPage() {
         {marcando ? "Marcando..." : "Nota emitida no sistema antigo"}
       </button>
     );
+  }
+
+  /**
+   * "Gerar nota de remessa": a segunda nota do pedido, no nome de quem recebe.
+   *
+   * Cria só o RASCUNHO e leva o operador até ele — nada é transmitido aqui. O
+   * destinatário sai do endereço de entrega vigente, e o serviço bloqueia,
+   * com a mensagem que aparece no toast, quando esse endereço não tem recebedor
+   * ou CPF. Nunca cai no pagador.
+   */
+  async function handleGerarRemessa(item: NfeReadModel) {
+    if (gerandoRemessaId !== null) return;
+    const idInt = Number(item.id_int);
+    if (!Number.isInteger(idInt) || idInt <= 0) {
+      showToast({ type: "warning", title: "Pedido não identificado nesta nota." });
+      return;
+    }
+    setGerandoRemessaId(idInt);
+    try {
+      showToast({ type: "info", title: "Montando a nota de remessa..." });
+      const res = await criarRascunhoRemessa(idInt);
+      if (!res.ok) {
+        showToast({ type: "error", title: "Não foi possível gerar a remessa", description: res.motivo });
+        return;
+      }
+      showToast({
+        type: "success",
+        title: res.reaproveitado ? `Rascunho de remessa ${res.ref} já existia` : `Rascunho de remessa ${res.ref} criado`,
+        description: "Revise o destinatário e os itens antes de emitir."
+      });
+      router.push(`/notas-fiscais/${res.id}`);
+    } catch (err) {
+      console.error("[NotasFiscaisPage] Erro ao gerar remessa:", err);
+      showToast({ type: "error", title: err instanceof Error ? err.message : "Erro ao gerar a nota de remessa." });
+    } finally {
+      setGerandoRemessaId(null);
+    }
   }
 
   async function handleFaturarClick(item: FaturavelOrigem) {

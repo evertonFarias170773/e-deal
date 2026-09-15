@@ -81,6 +81,9 @@ export const NFE_SELECT_COLUMNS = [
   // `tipo_nota` (15/09/2026) viaja para a tela fiscal: a nota de REMESSA aparece
   // na lista como qualquer outra, mas nao oferece "Lancar no Contas a Receber".
   "tipo_nota",
+  // O endereco de onde saem nome, CPF e endereco do destinatario da remessa: a
+  // tela da nota mostra quem vai receber.
+  "id_endereco_destinatario",
   "cond_pgto",
   "forma_pgto",
   "drop_natureza_op",
