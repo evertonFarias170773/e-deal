@@ -141,6 +141,9 @@ export function faltaTransportadoraEmFob(
  */
 export const TRANSPORTADORA_FOB_INDEFINIDA = "Transportadora a definir";
 
+/** Nome do transporte em RETIRA — o mesmo texto que o salvamento sempre usou para balcão. */
+export const NOME_TRANSPORTE_RETIRA = "RETIRADA";
+
 /**
  * Nome do transporte que vale para quem lê a proposta DEPOIS — `frete_escolhido`,
  * a "FORMA DE ENVIO" do PDF da OS e a coluna FRETE da Expedição.
@@ -156,13 +159,22 @@ export const TRANSPORTADORA_FOB_INDEFINIDA = "Transportadora a definir";
  *   A cotação continua intacta no banco, escolhida e com peso real: o que muda é
  *   o RÓTULO, na fronteira de consumo — mesma disciplina de `valorFreteEfetivo`.
  *
- * Fora de FOB devolve o serviço cotado, sem alteração de comportamento.
+ * RETIRA (15/09/2026): o nome é "RETIRADA", qualquer que seja o serviço cotado.
+ *   A cotação da tela não é descartada quando o vendedor escolhe RETIRA — o card
+ *   que estava marcado (quase sempre o SEDEX pré-selecionado) sobrevive escondido
+ *   e chegava ao banco como o transporte do pedido. A 22186 nasceu RETIRA com
+ *   "SEDEX" em `frete_escolhido` e em `cotacao_frete.servico`, e a coluna FRETE da
+ *   Expedição exibia SEDEX num pedido que o cliente busca no balcão. Mesma
+ *   disciplina do FOB: o rótulo segue a modalidade, não a cotação.
+ *
+ * CIF e modalidade nula devolvem o serviço cotado, sem alteração de comportamento.
  */
 export function nomeTransporteEfetivo(
   servicoCotado: string | null | undefined,
   modalidade: ModalidadeFrete | null | undefined,
   nomeTransportadora: string | null | undefined
 ): string {
+  if (modalidade === "RETIRA") return NOME_TRANSPORTE_RETIRA;
   if (modalidade !== "FOB") return (servicoCotado ?? "").trim();
   return (nomeTransportadora ?? "").trim() || TRANSPORTADORA_FOB_INDEFINIDA;
 }

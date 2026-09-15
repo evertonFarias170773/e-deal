@@ -3099,11 +3099,22 @@ export async function saveProposta(
           // declarada em FOB — ou "Motoboy" — e "RETIRADA" no balcão. É o mesmo
           // texto que vai para `propostas.frete_escolhido`, então as duas pontas
           // não divergem.
+          //
+          // RETIRA (15/09/2026): o card que sobrou marcado na tela NAO e o
+          // transporte. `freteNome` ja saiu "RETIRADA" de `nomeTransporteEfetivo`,
+          // e o prazo de balcao e imediato. A avulsa segue gravando o texto que o
+          // vendedor digitou: ela nao tem card, e o formulario dela rele esse texto.
           servico: formState.isAvulso
             ? formState.observacoesFreteManual || "Frete Manual"
-            : chosenFrete?.servico || freteNome || "",
+            : modalidadeVigente === "RETIRA"
+              ? freteNome
+              : chosenFrete?.servico || freteNome || "",
           valor: freteValor,
-          prazo: formState.isAvulso ? "A combinar" : (chosenFrete?.prazo || "A combinar"),
+          prazo: formState.isAvulso
+            ? "A combinar"
+            : modalidadeVigente === "RETIRA"
+              ? "Imediato"
+              : (chosenFrete?.prazo || "A combinar"),
           cep: cepText || null,
           // Peso COTADO, não o peso de agora. Esta linha é a única memória de
           // com quanto o frete foi calculado: gravar o peso atual aqui apagava
