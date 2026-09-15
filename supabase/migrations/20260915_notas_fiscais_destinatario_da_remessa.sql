@@ -1,0 +1,153 @@
+-- Nota de remessa: as duas colunas que dizem QUE nota e e PARA QUEM ela vai
+--
+-- O QUE E
+--   Duas colunas aditivas em public.notas_fiscais, nulaveis e sem default:
+--
+--     tipo_nota                 text   'VENDA' ou 'REMESSA'; nulo = venda
+--     id_endereco_destinatario  uuid   aponta public.enderecos.id
+--
+--   Nesta etapa NINGUEM le as duas. Nenhuma funcao, view, trigger ou tela muda
+--   de comportamento: sao colunas dormindo.
+--
+-- POR QUE
+--   Pedido com entrega em endereco de terceiro precisa de DUAS notas: a de venda,
+--   para o pagador, e uma de remessa no nome de quem recebe — pessoa fisica, sem
+--   cadastro em `clientes`. Hoje `notas_fiscais` so tem `id_cliente`, e o payload
+--   monta o destinatario inteiro a partir de `clientes` + endereco PRINCIPAL
+--   daquele cliente. Sem um lugar para dizer "esta nota vai para o recebedor
+--   daquele endereco", nao ha onde a remessa existir.
+--
+--   Decidido com o contador: CFOP 5949/6949, CSOSN 400 (o que o catalogo ja tem
+--   para esses CFOPs), SEM referencia a chave da nota de venda — por isso NAO se
+--   cria coluna de chave referenciada —, Simples Nacional dispensado do grupo de
+--   partilha de ICMS da UF de destino, e sem texto obrigatorio em informacoes
+--   complementares.
+--
+--   O nome e o CPF de quem recebe ja existem em `enderecos.recebedor` e
+--   `enderecos.cpf_recebedor` (32 e 36 registros em 15/09/2026, os 36 CPFs com
+--   digito verificador valido). Qual endereco vale e a regra unica de
+--   `idEnderecoEntregaVigente`: `expedicoes.id_endereco_entrega` quando o
+--   despacho esta confirmado, senao `propostas.id_endereco_ent`.
+--
+-- POR QUE `id_endereco_destinatario` SEM FOREIGN KEY
+--   1. O app APAGA endereco (cadastros.service.ts, `from("enderecos").delete()`).
+--      Com FK RESTRICT, apagar um endereco apontado por nota passaria a falhar —
+--      uma migration de nota quebrando a tela de cadastro. Com ON DELETE SET
+--      NULL, a nota perderia o destinatario em silencio.
+--   2. `public.enderecos` nao tem FK nenhuma hoje (nem `id_cliente` tem), e
+--      `public.notas_fiscais` so tem PK e o UNIQUE de `ref`. Uma FK aqui seria a
+--      primeira da regiao e mudaria o comportamento de exclusao sem aviso.
+--   3. O risco assumido e ponteiro orfao: endereco apagado depois da emissao.
+--      Ele e pequeno e tratavel na etapa em que a remessa passa a ser montada —
+--      a nota autorizada ja guarda o destinatario dentro de `payload_envio`, e a
+--      criacao/emissao vai exigir endereco existente com recebedor e CPF.
+--
+-- POR QUE SEM CHECK EM `tipo_nota`
+--   Esta etapa e so a coluna. Um CHECK e regra de dominio e entra junto com quem
+--   escreve o valor, na etapa da criacao da remessa — assim nao se cria trava
+--   para um valor que ninguem grava ainda.
+--
+-- ESCOPO / O QUE ESTA MIGRATION NAO FAZ
+--   Estritamente aditiva. Nao cria funcao, view, RPC, trigger, indice, RLS,
+--   politica, grant, FK, CHECK nem default. Nao altera coluna existente. Nao
+--   toca `endereco_entrega_observacao`, `end_entrega`, `id_cliente`,
+--   `fn_montar_payload_nfe` nem qualquer outra funcao.
+--
+--   SEM BACKFILL: as 43 notas existentes nascem com as duas colunas nulas, e
+--   `tipo_nota` nulo JA significa venda. Nenhuma linha e alterada.
+--
+--   SEM INDICE: ninguem filtra por essas colunas nesta etapa.
+--
+--   Verificado no banco em 15/09/2026, ANTES de escrever:
+--   1. `tipo_nota` e `id_endereco_destinatario` nao existem em notas_fiscais (67
+--      colunas hoje), e nenhuma coluna com "destinatario" no nome existe la.
+--   2. Os 6 triggers da tabela nao reagem a ALTER TABLE: quatro sao escopados por
+--      coluna (`trg_nfe_normalizar_destinatario_cpf`, `trg_resetar_status_nfe_ao_editar`,
+--      `trg_sync_natureza_operacao_nfe`, `tg_recalcular_totais_nfe_cabecalho`), e
+--      os outros dois sao BEFORE INSERT (`trg_defaults_rascunho_nfe`) e BEFORE
+--      UPDATE (`trg_set_updated_at_notas_fiscais`). Nenhum dispara sem DML, e
+--      esta migration nao faz DML.
+--   3. RLS e grants nao precisam de ajuste: a RLS de notas_fiscais e por linha
+--      (tres politicas para `authenticated`, com `qual = true`), nao por coluna, e
+--      nao ha NENHUM grant por coluna na tabela (0 linhas em
+--      information_schema.column_privileges). Coluna nova herda o que a tabela ja
+--      concede.
+--   4. As 6 views que leem notas_fiscais enumeram colunas — nenhuma usa `select *`
+--      —, entao nenhuma muda de forma.
+--   5. `public.notas_fiscais` nao esta em `audit.config_v2`: o ALTER nao gera
+--      linha de auditoria.
+--   6. LOCK: `add column` nulavel e sem default e so catalogo, sem reescrita da
+--      tabela (43 linhas). Medido antes: nenhuma transacao aberta
+--      (`idle in transaction` = 0, transacao mais antiga 0s), entao o
+--      ACCESS EXCLUSIVE e instantaneo e nao fica em fila.
+
+alter table public.notas_fiscais
+  add column if not exists tipo_nota text;
+
+alter table public.notas_fiscais
+  add column if not exists id_endereco_destinatario uuid;
+
+comment on column public.notas_fiscais.tipo_nota is
+  'Que nota e esta: VENDA (o padrao) ou REMESSA. NULO EQUIVALE A VENDA — as notas anteriores a 15/09/2026 ficam nulas e nada as reescreve. A remessa e a segunda nota do pedido, emitida no nome de quem RECEBE quando a entrega e em endereco de terceiro: CFOP 5949/6949, CSOSN 400, sem referencia a chave da nota de venda. Nesta etapa nenhuma funcao, view ou tela le esta coluna.';
+
+comment on column public.notas_fiscais.id_endereco_destinatario is
+  'public.enderecos.id de onde saem nome, CPF e endereco do destinatario da nota de REMESSA (enderecos.recebedor e enderecos.cpf_recebedor). Qual endereco vale segue a regra unica de idEnderecoEntregaVigente: expedicoes.id_endereco_entrega com despacho confirmado, senao propostas.id_endereco_ent. SEM foreign key de proposito — o app apaga endereco, e uma FK faria a exclusao falhar (RESTRICT) ou apagar o vinculo em silencio (SET NULL). Nulo na nota de venda, que continua usando id_cliente.';
+
+-- VERIFICACAO (somente leitura, depois de aplicar)
+--
+--   -- a) as duas colunas nasceram nulaveis, sem default, e a tabela foi de 67 para 69
+--   select column_name, data_type, is_nullable, coalesce(column_default, '(sem default)') padrao
+--     from information_schema.columns
+--    where table_schema = 'public' and table_name = 'notas_fiscais'
+--      and column_name in ('tipo_nota', 'id_endereco_destinatario')
+--    order by column_name;
+--   -- esperado: 2 linhas (text e uuid), is_nullable = YES, sem default;
+--   --           select count(*) ... = 69 colunas
+--
+--   -- b) SEM BACKFILL e sem linha alterada
+--   select count(*) linhas,
+--          count(tipo_nota) com_tipo,
+--          count(id_endereco_destinatario) com_endereco,
+--          md5(string_agg(md5(t.*::text), ',' order by t.ref)) hash
+--     from public.notas_fiscais t;
+--   -- esperado: com_tipo = 0, com_endereco = 0 e hash IGUAL ao medido antes
+--   --           (c6604631d944390cc18c6b72ae8c4f8d, 43 linhas)
+--
+--   -- c) nada de FK, CHECK ou indice novo
+--   select conname, pg_get_constraintdef(oid) from pg_constraint
+--    where conrelid = 'public.notas_fiscais'::regclass order by conname;
+--   -- esperado: so notas_fiscais_pkey e notas_fiscais_ref_key
+--   select indexname from pg_indexes where tablename = 'notas_fiscais';
+--   -- esperado: a mesma lista de antes
+--
+--   -- d) os 6 triggers seguem existindo e habilitados
+--   select tgname, tgenabled from pg_trigger
+--    where tgrelid = 'public.notas_fiscais'::regclass and not tgisinternal order by tgname;
+--   -- esperado: 6 linhas, tgenabled = 'O'
+--
+--   -- e) RLS intocada
+--   select (select relrowsecurity from pg_class where oid = 'public.notas_fiscais'::regclass) rls,
+--          (select count(*) from pg_policies where schemaname='public' and tablename='notas_fiscais') politicas,
+--          (select count(*) from information_schema.column_privileges
+--            where table_schema='public' and table_name='notas_fiscais') grants_por_coluna;
+--   -- esperado: true, 3, 0
+--
+--   -- f) o payload de nota existente sai IDENTICO (fora as datas, que sao now())
+--   select md5(prosrc) from pg_proc where proname = 'fn_montar_payload_nfe';
+--   -- esperado: a3c665d87a7d67d262e060cadb5e1505 (a funcao nao foi tocada)
+--   select md5((public.fn_montar_payload_nfe('NFE-22066-004') - 'data_emissao' - 'data_entrada_saida')::text),
+--          md5((public.fn_montar_payload_nfe('NFE-20961-001') - 'data_emissao' - 'data_entrada_saida')::text);
+--   -- esperado: e2cffdbd84669fc3dd9da9496aee3525 e 56385875c6c10697c1006ad41c347049
+--
+--   -- g) PostgREST precisa enxergar as colunas novas (cache de schema).
+--   --    Se o front receber "column notas_fiscais.tipo_nota does not exist":
+--   --    notify pgrst, 'reload schema';
+--
+-- ROLLBACK
+--   Seguro enquanto ninguem gravar nas colunas — e nesta etapa ninguem grava.
+--   Conferir (b) antes; se ja houver valor, guardar a lista:
+--     select ref, tipo_nota, id_endereco_destinatario from public.notas_fiscais
+--      where tipo_nota is not null or id_endereco_destinatario is not null;
+--
+--   alter table public.notas_fiscais drop column if exists id_endereco_destinatario;
+--   alter table public.notas_fiscais drop column if exists tipo_nota;
