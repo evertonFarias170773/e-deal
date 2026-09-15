@@ -77,17 +77,6 @@ export function classeDoStatusArte(status: string | null | undefined): string {
   return CLASSE_POR_TOM[TOM_POR_STATUS[chave(status)] ?? "neutro"];
 }
 
-/**
- * Os status em que ha algo COM O CLIENTE, e so neles o botao "Abrir o painel do
- * cliente" faz sentido. Decisao do dono. Aprovado, em arte e dados pendentes
- * ficam de fora: nao ha nada para o cliente olhar ou decidir.
- */
-const STATUS_COM_LINK_DO_CLIENTE = new Set(["EM APROVACAO", "APR PARCIAL", "EM ALTERACAO", "CORRIGIR DADOS"]);
-
-export function statusArteTemLinkDoCliente(status: string | null | undefined): boolean {
-  return STATUS_COM_LINK_DO_CLIENTE.has(chave(status));
-}
-
 /** Texto a exibir: o gravado, so aparado. Vazio vira `null` — celula e selo vazios. */
 function textoExibido(status: string | null | undefined): string | null {
   const texto = String(status ?? "").trim();

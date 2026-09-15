@@ -7,8 +7,9 @@
  * O que se prova aqui e a IGUALDADE entre as duas telas: a lista carrega em
  * lote por pagina (buscarStatusArteDasPropostas) e o cabecalho carrega um
  * pedido por vez (buscarStatusArteDaProposta). Dois caminhos de consulta
- * diferentes para o mesmo valor — o teste exige que devolvam o mesmo texto,
- * a mesma cor e a mesma decisao sobre o botao, pedido a pedido.
+ * diferentes para o mesmo valor — o teste exige que devolvam o mesmo texto e
+ * a mesma cor, pedido a pedido. O botao do painel do cliente nao depende mais
+ * do status da arte (15/09/2026): so do link ativo, decidido na tela.
  *
  * SO LEITURA; roda sem PERMITIR_ESCRITA.
  */
@@ -32,7 +33,6 @@ if (SERVICE) process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = SERVICE;
 
 const {
   classeDoStatusArte,
-  statusArteTemLinkDoCliente,
   buscarStatusArteDasPropostas,
   buscarStatusArteDaProposta
 } = await import("../../src/features/orcamentos/services/status-arte-lista.service.ts");
@@ -62,20 +62,14 @@ checar("em aprovacao minusculo = Em Aprovação", classeDoStatusArte("em aprovac
 checar("aprovado minusculo = APROVADO", classeDoStatusArte("aprovado"), VERDE);
 checar("espacos duplos e bordas nao importam", classeDoStatusArte("  Dados   Pendentes "), AZUL);
 
-// ── 3. O botao do painel do cliente, pela decisao do dono ───────────────────
-for (const s of ["Em Aprovação", "Apr Parcial", "Em Alteração", "Corrigir Dados", "EM ALTERACAO", "em aprovacao"])
-  checar(`botao aparece em "${s}"`, statusArteTemLinkDoCliente(s), true);
-for (const s of ["APROVADO", "EM ARTE", "ENVIAR ARTE", "Dados Pendentes", "", null, "QUALQUER COISA"])
-  checar(`botao NAO aparece em ${JSON.stringify(s)}`, statusArteTemLinkDoCliente(s), false);
-
-// ── 4. LISTA x CABECALHO, contra o banco ────────────────────────────────────
+// ── 3. LISTA x CABECALHO, contra o banco ────────────────────────────────────
 if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !SERVICE) {
   console.log("\n(pulando a parte do banco: .env.local sem chaves)");
 } else {
   const { createClient } = await import("@supabase/supabase-js");
   const sb = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, SERVICE);
 
-  // Um pedido por status distinto, para cobrir as cores e o botao.
+  // Um pedido por status distinto, para cobrir as cores.
   const { data: linhas } = await sb.from("pedidos_artes").select("id_int, status").order("id_int");
   const umPorStatus = new Map<string, number>();
   for (const l of linhas ?? []) {
@@ -93,20 +87,19 @@ if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !SERVICE) {
   const daLista = await buscarStatusArteDasPropostas(amostra); // o lote, como a pagina faz
 
   console.log(`\n${"=".repeat(96)}\nLISTA x CABECALHO — ${amostra.length} pedidos, um por status distinto + um sem linha\n${"=".repeat(96)}`);
-  console.log("pedido   lista                cabecalho            mesma cor  mesmo botao  igual");
+  console.log("pedido   lista                cabecalho            mesma cor  igual");
   console.log("-".repeat(96));
   let iguais = 0;
   for (const id of amostra) {
     const lista = daLista[id] ?? null;
     const cabecalho = await buscarStatusArteDaProposta(id); // um por vez, como o cabecalho faz
     const mesmaCor = classeDoStatusArte(lista) === classeDoStatusArte(cabecalho);
-    const mesmoBotao = statusArteTemLinkDoCliente(lista) === statusArteTemLinkDoCliente(cabecalho);
-    const igual = lista === cabecalho && mesmaCor && mesmoBotao;
+    const igual = lista === cabecalho && mesmaCor;
     if (igual) iguais += 1;
     else falhas += 1;
     console.log(
       `${String(id).padEnd(8)} ${String(lista ?? "(vazio)").padEnd(20)} ${String(cabecalho ?? "(vazio)").padEnd(20)} ` +
-        `${String(mesmaCor).padEnd(10)} ${String(mesmoBotao).padEnd(12)} ${igual ? "SIM" : "NAO <<<"}`
+        `${String(mesmaCor).padEnd(10)} ${igual ? "SIM" : "NAO <<<"}`
     );
   }
   checar(`as duas telas concordam nos ${amostra.length} pedidos`, iguais, amostra.length);
@@ -114,13 +107,13 @@ if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !SERVICE) {
   // Quantos status DISTINTOS existem para testar, depois de aparar. Nao e uma
   // assercao: e um dado do banco, fora do controle deste teste. Em 13/09/2026 a
   // tabela tinha 110 linhas e UM so status exibivel (APROVADO, uma delas
-  // gravada como "\r\nAPROVADO"). As cores e o botao de cada status decidido
-  // estao cobertos pelas assercoes de unidade das secoes 1 a 3.
+  // gravada como "\r\nAPROVADO"). As cores de cada status decidido estao
+  // cobertas pelas assercoes de unidade das secoes 1 e 2.
   const distintos = new Set((linhas ?? []).map((l) => String(l.status ?? "").trim()).filter(Boolean));
   console.log(`\n  status exibiveis distintos hoje em pedidos_artes: ${distintos.size} -> ${[...distintos].join(", ")}`);
   if (distintos.size < 3) {
     console.log("  AVISO: menos de 3 status distintos no banco — a igualdade entre as telas foi");
-    console.log("         provada nos valores que existem; cores e botao, nas assercoes de unidade.");
+    console.log("         provada nos valores que existem; as cores, nas assercoes de unidade.");
   }
   checar("o pedido sem linha fica vazio nas duas", semLinha ? daLista[semLinha] === undefined : true, true);
 

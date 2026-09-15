@@ -23,8 +23,7 @@ import { buscarNomesDosSocios } from "@/features/orcamentos/services/socio-pagad
 import {
   buscarStatusArteDasPropostas,
   buscarLinksClienteDasPropostas,
-  classeDoStatusArte,
-  statusArteTemLinkDoCliente
+  classeDoStatusArte
 } from "@/features/orcamentos/services/status-arte-lista.service";
 import {
   gerarPDFProposta,
@@ -1815,10 +1814,11 @@ Ela volta a aparecer nas listas operacionais.`
               if (!statusArte) return null;
 
               const linkCliente = linkClientePorId[proposta.id_int];
-              // Link so aparece em status que o pede E com linha ativa na
-              // tabela. Sem linha (ou com o link revogado) o botao SOME: um
-              // botao que nao leva a lugar nenhum custa mais que a ausencia dele.
-              const mostraLink = statusArteTemLinkDoCliente(statusArte) && Boolean(linkCliente);
+              // O botao aparece sempre que houver link ATIVO, qualquer que seja
+              // o status da arte (15/09/2026). A restricao aos quatro status com
+              // acao do cliente, decidida em be0535d, foi revogada pelo dono.
+              // Sem link ativo o botao continua sumindo: nao ha para onde levar.
+              const mostraLink = Boolean(linkCliente);
 
               return (
                 <div className="flex items-center justify-center gap-1.5">
