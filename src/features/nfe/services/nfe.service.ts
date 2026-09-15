@@ -8,6 +8,10 @@ import { PROPOSTA_STATUS_GROUP_NFE_ELIGIBLE } from "@/features/orcamentos/consta
 import { resolverPesoExpedicao } from "@/features/expedicao/lib/peso";
 import { getClienteBonusPercent } from "@/features/orcamentos/orcamento-utils";
 import { valoresDosItensDaNota } from "@/features/nfe/lib/valor-item-nfe";
+import { condicaoDaParcelaInicial, somarDiasIso } from "@/features/nfe/lib/parcela-inicial-nfe";
+import { isFamiliaFaturado } from "@/features/cobrancas/cobrancas-utils";
+import { buscarModeloCobrancaDaProposta, listarModelosCobranca } from "@/features/cobrancas/services/modelos-cobranca";
+import type { ModeloCobranca } from "@/features/cobrancas/types";
 import { canonizarTransportadora, ehCadastroSubstituido } from "@/features/orcamentos/lib/transportadoras-parceiras";
 import type { FaturavelOrigem } from "@/features/fiscal/types";
 import {
@@ -1200,24 +1204,71 @@ export async function createOrReuseNfeDraft(idInt: number): Promise<SupabaseNfeR
   //    A edicao manual segue livre depois, pela aba Pagamentos.
   const formaPgtoFocus = codigoFiscalDaCobranca(tipoCobranca);
 
-  const paymentInsert = {
-    id_int: idInt,
-    ref: newNfe.ref,
-    id_nota_fiscal: newNfe.id,
-    numero_parcela: 1,
-    total_parcelas: 1,
-    data_vencimento: new Date().toISOString().split("T")[0],
-    valor: totalDaNota,
-    forma_pagamento: formaPgtoFocus,
-    ativo: true
-  };
+  //    COBRANCA FATURADA NASCE PELA CONDICAO, NUNCA VENCENDO NO DIA.
+  //
+  //    Faturada leva duplicata, e duplicata vencendo na data de emissao e
+  //    pagamento a vista para a SEFAZ: rejeicao 853. Ate 15/09/2026 todo rascunho
+  //    nascia assim, e so passava se o operador escolhesse a condicao na aba.
+  //
+  //    Com condicao gravada na cobranca, as parcelas saem pela MESMA RPC que a
+  //    aba usa (`fn_gerar_pagamentos_nfe`, sem alteracao), com quantidade, dias e
+  //    intervalo do modelo — e a aba, ao abrir, deduz a condicao dessas parcelas.
+  //    Sem condicao gravada, prazo minimo (`condicaoDaParcelaInicial`). Qualquer
+  //    outra cobranca segue EXATAMENTE como antes, no bloco abaixo.
+  const modeloDaCobranca = isFamiliaFaturado(tipoCobranca) ? await lerModeloDaCobranca(idInt) : null;
+  const condicaoDaParcela = condicaoDaParcelaInicial(tipoCobranca, modeloDaCobranca);
 
-  const { error: paymentError } = await client
-    .from("notas_fiscais_pagamentos")
-    .insert(paymentInsert);
+  let parcelasPelaCondicao = false;
+  if (condicaoDaParcela) {
+    try {
+      const geracao = await gerarPagamentosNfe(
+        newNfe.ref,
+        0,
+        condicaoDaParcela.qtdParcelas,
+        condicaoDaParcela.diasPraInicio,
+        condicaoDaParcela.intervalo,
+        formaPgtoFocus,
+        { arredondar: false }
+      );
+      parcelasPelaCondicao = Boolean(geracao?.ok);
+      if (!parcelasPelaCondicao) {
+        console.warn("[NfeService] fn_gerar_pagamentos_nfe recusou a condicao do rascunho:", geracao?.mensagem);
+      }
+    } catch (err) {
+      console.warn("[NfeService] fn_gerar_pagamentos_nfe falhou no rascunho:", err);
+    }
+    console.log(
+      `[NfeService] Parcela do rascunho ${newNfe.ref}: ${condicaoDaParcela.origem}` +
+        `${condicaoDaParcela.condicao ? ` (${condicaoDaParcela.condicao})` : ""} — ` +
+        `${condicaoDaParcela.qtdParcelas}x, ${condicaoDaParcela.diasPraInicio} dias, intervalo ${condicaoDaParcela.intervalo}` +
+        `${parcelasPelaCondicao ? "" : "; RPC nao gerou, cai na parcela unica no primeiro vencimento"}`
+    );
+  }
 
-  if (paymentError) {
-    console.error("[NfeService] Error inserting payment row:", paymentError);
+  if (!parcelasPelaCondicao) {
+    const paymentInsert = {
+      id_int: idInt,
+      ref: newNfe.ref,
+      id_nota_fiscal: newNfe.id,
+      numero_parcela: 1,
+      total_parcelas: 1,
+      // Faturada cuja RPC falhou: uma parcela no primeiro vencimento da condicao,
+      // para nao nascer a vista. Nao faturada: o dia, como sempre.
+      data_vencimento: condicaoDaParcela
+        ? somarDiasIso(hojeLocalIso(), condicaoDaParcela.diasPraInicio)
+        : new Date().toISOString().split("T")[0],
+      valor: totalDaNota,
+      forma_pagamento: formaPgtoFocus,
+      ativo: true
+    };
+
+    const { error: paymentError } = await client
+      .from("notas_fiscais_pagamentos")
+      .insert(paymentInsert);
+
+    if (paymentError) {
+      console.error("[NfeService] Error inserting payment row:", paymentError);
+    }
   }
 
   // 9. Buscar cópia atualizada
@@ -1825,6 +1876,23 @@ export async function trocarEmpresaNfe(
   });
   if (error) throw error;
   return data;
+}
+
+/**
+ * A condicao gravada na cobranca do pedido (`pagamentos_v2.id_modelo_cobranca`),
+ * ja resolvida no catalogo — a mesma que a aba Pagamentos pre-seleciona.
+ * Falha de leitura vira `null`: o rascunho nasce pelo prazo minimo, nunca no dia.
+ */
+async function lerModeloDaCobranca(idInt: number): Promise<ModeloCobranca | null> {
+  try {
+    const idModelo = await buscarModeloCobrancaDaProposta(idInt);
+    if (!idModelo) return null;
+    const catalogo = await listarModelosCobranca();
+    return catalogo.find((modelo) => String(modelo.id) === idModelo) ?? null;
+  } catch (err) {
+    console.warn("[NfeService] Nao foi possivel ler a condicao da cobranca:", err);
+    return null;
+  }
 }
 
 /** Data de hoje no fuso local, em YYYY-MM-DD. */
