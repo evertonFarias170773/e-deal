@@ -61,6 +61,7 @@ export function mapSupabaseNfeRowToReadModel(row: SupabaseNfeRow): NfeReadModel 
     updated_at: row.updated_at,
     id_empresa: row.id_empresa,
     end_entrega: row.end_entrega,
+    tipo_nota: row.tipo_nota ?? null,
     cond_pgto: row.cond_pgto,
     forma_pgto: row.forma_pgto,
     drop_natureza_op: row.drop_natureza_op,

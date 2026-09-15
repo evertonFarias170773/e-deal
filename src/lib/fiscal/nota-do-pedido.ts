@@ -24,6 +24,8 @@ export type NotaCandidata = {
   ambiente?: string | null;
   data_autorizacao?: string | null;
   created_at?: string | null;
+  /** `notas_fiscais.tipo_nota`: 'REMESSA' não representa o pedido. Nulo é venda. */
+  tipo_nota?: string | null;
 };
 
 const emMilissegundos = (valor: unknown): number => Date.parse(String(valor ?? "")) || 0;
@@ -49,6 +51,13 @@ const emMilissegundos = (valor: unknown): number => Date.parse(String(valor ?? "
  * um campo em branco erraria no lado caro. O tipo aceita `null` por defesa; o
  * banco não tem uma linha nessa situação.
  *
+ * NUNCA A REMESSA. Pedido com entrega em endereço de terceiro ganha uma segunda
+ * nota, no nome de quem recebe (`tipo_nota = 'REMESSA'`, colunas de 15/09/2026).
+ * Ela é documento fiscal e aparece inteira na tela de Notas Fiscais, mas NÃO é a
+ * nota do pedido: emitida depois da venda, ela seria a mais recente e tomaria o
+ * lugar da venda na etiqueta, na Expedição, na conferência e no boleto. `tipo_nota`
+ * nulo é venda — é assim que as notas anteriores a essa data continuam contando.
+ *
  * MAIS RECENTE POR `data_autorizacao`, com `created_at` como desempate — nessa
  * ordem porque o que importa é quando a SEFAZ autorizou, não quando o rascunho
  * nasceu. Nota sem `data_autorizacao` cai para o fim e nunca ganha de uma que
@@ -67,7 +76,8 @@ export function escolherNotaAutorizadaDoPedido<T extends NotaCandidata>(
     (nota) =>
       String(nota.status ?? "").toUpperCase() === "AUTORIZADA" &&
       String(nota.numero_nf ?? "").trim() !== "" &&
-      String(nota.ambiente ?? "").trim().toUpperCase() === "PRODUCAO"
+      String(nota.ambiente ?? "").trim().toUpperCase() === "PRODUCAO" &&
+      String(nota.tipo_nota ?? "").trim().toUpperCase() !== "REMESSA"
   );
 
   if (candidatas.length === 0) return null;
@@ -88,4 +98,4 @@ export function escolherNotaAutorizadaDoPedido<T extends NotaCandidata>(
  * campo é lida como se não fosse de produção, o que apaga a nota da tela em
  * silêncio, sem erro nenhum.
  */
-export const COLUNAS_NOTA_DO_PEDIDO = "status, numero_nf, ambiente, data_autorizacao, created_at";
+export const COLUNAS_NOTA_DO_PEDIDO = "status, numero_nf, ambiente, data_autorizacao, created_at, tipo_nota";

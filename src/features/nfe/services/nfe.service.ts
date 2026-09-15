@@ -78,6 +78,9 @@ export const NFE_SELECT_COLUMNS = [
   "updated_at",
   "id_empresa",
   "end_entrega",
+  // `tipo_nota` (15/09/2026) viaja para a tela fiscal: a nota de REMESSA aparece
+  // na lista como qualquer outra, mas nao oferece "Lancar no Contas a Receber".
+  "tipo_nota",
   "cond_pgto",
   "forma_pgto",
   "drop_natureza_op",
@@ -1803,7 +1806,7 @@ export async function getFaturaveisPropostas(): Promise<FaturavelOrigem[]> {
     if (idsInt.length > 0) {
       const { data: notas, error: notasError } = await client
         .from("notas_fiscais")
-        .select("id_int,status")
+        .select("id_int,status,tipo_nota")
         .in("id_int", idsInt);
 
       if (notasError) {
@@ -1811,9 +1814,13 @@ export async function getFaturaveisPropostas(): Promise<FaturavelOrigem[]> {
         // demais é melhor do que esconder um pedido que ainda precisa de nota.
         console.warn("[NfeService] Nao foi possivel contar notas por proposta:", notasError.message);
       } else {
-        (notas ?? []).forEach((nota: { id_int: number | null; status: string | null }) => {
+        (notas ?? []).forEach((nota: { id_int: number | null; status: string | null; tipo_nota?: string | null }) => {
           const status = String(nota.status ?? "").toUpperCase();
           if (STATUS_QUE_NAO_TIRAM_DA_FILA.includes(status)) return;
+          // Nota de REMESSA nao e faturamento: ela nao tira o pedido da fila nem
+          // o marca como "ja tem nota". Quem fatura continua precisando emitir a
+          // venda. Mesma regra de `escolherNotaAutorizadaDoPedido`.
+          if (String(nota.tipo_nota ?? "").trim().toUpperCase() === "REMESSA") return;
           const idInt = Number(nota.id_int);
           if (!Number.isFinite(idInt)) return;
           notasVivasPorProposta.set(idInt, (notasVivasPorProposta.get(idInt) ?? 0) + 1);

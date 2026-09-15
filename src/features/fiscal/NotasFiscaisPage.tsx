@@ -1245,7 +1245,11 @@ export function NotasFiscaisPage() {
       // vista se resolvem no próprio checkout e não geram título — oferecer a
       // ação neles convidava a um lançamento sem lastro.
       const faturado = faturadoEmAbertoMap[Number(item.id_int)];
-      const vendaFaturada = Boolean(faturado && faturado.qtd > 0);
+      // Nota de REMESSA nao gera titulo: ela acompanha a mercadoria, nao cobra
+      // nada. Sem esta exclusao, a remessa de um pedido faturado ofereceria o
+      // lancamento, porque a cobranca em aberto e do pedido, nao da nota.
+      const ehRemessa = String(item.tipo_nota ?? "").trim().toUpperCase() === "REMESSA";
+      const vendaFaturada = Boolean(faturado && faturado.qtd > 0) && !ehRemessa;
 
       if (
         vendaFaturada &&

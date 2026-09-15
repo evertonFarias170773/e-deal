@@ -72,6 +72,8 @@ export interface SupabaseNfeRow {
   updated_at: string;
   id_empresa: number;
   end_entrega: boolean | null;
+  /** `notas_fiscais.tipo_nota`: 'VENDA' ou 'REMESSA'. Nulo equivale a venda. */
+  tipo_nota?: string | null;
   cond_pgto: boolean | null;
   forma_pgto: string | null;
   drop_natureza_op: string | null;
