@@ -1202,13 +1202,23 @@ export function NotasFiscaisPage() {
 
     // 5. AUTORIZADA
     if (status === "AUTORIZADA") {
-      // Nota de remessa: a segunda nota do pedido, no nome de quem RECEBE.
-      // So a VENDA autorizada oferece — e a propria remessa nunca gera outra.
+      // As duas portas de "gerar outra nota deste pedido", lado a lado: a segunda
+      // nota de VENDA (faturamento parcial, que antes so comecava pela Fila com o
+      // checkbox marcado) e a de REMESSA, no nome de quem recebe. As duas so
+      // aparecem na VENDA autorizada de producao — remessa e avulsa nao geram.
       if (
         String(item.tipo_nota ?? "").trim().toUpperCase() !== "REMESSA" &&
         String(item.ambiente ?? "").trim().toUpperCase() === "PRODUCAO" &&
         !ehNotaAvulsa(item.id_int)
       ) {
+        actions.push({
+          label: isFaturando
+            ? "Gerando outra nota de venda..."
+            : "Gerar outra nota de venda (faturamento parcial)",
+          onClick: () => {
+            void abrirRascunhoDeVenda(Number(item.id_int));
+          }
+        });
         actions.push({
           label: gerandoRemessaId === item.id_int ? "Gerando nota de remessa..." : "Gerar nota de remessa",
           onClick: () => {
@@ -1686,18 +1696,33 @@ export function NotasFiscaisPage() {
       return;
     }
 
+    const match = item.ref_origem.match(/\d+/);
+    const idInt = match ? parseInt(match[0], 10) : null;
+    if (!idInt) {
+      showToast({ type: "warning", title: "Referência de origem inválida para faturamento." });
+      return;
+    }
+    await abrirRascunhoDeVenda(idInt);
+  }
+
+  /**
+   * Conferir, criar (ou recuperar) o rascunho de VENDA e abrir a nota.
+   *
+   * É o caminho ÚNICO das duas portas: o botão Faturar da Fila e a ação
+   * "Gerar outra nota de venda (faturamento parcial)" do Histórico. Elas chegam
+   * de lugares diferentes — uma do pedido, outra da nota já autorizada — mas
+   * daqui para a frente fazem exatamente a mesma coisa, inclusive o painel de
+   * pendências quando a conferência reprova.
+   *
+   * `createOrReuseNfeDraft` REAPROVEITA rascunho PENDENTE: pedido com rascunho
+   * aberto abre aquele, em vez de acumular notas pela metade. É o que a Fila já
+   * fazia, e a segunda porta herda isso.
+   */
+  async function abrirRascunhoDeVenda(idInt: number) {
     if (isFaturando) return;
     setIsFaturando(true);
 
     try {
-      const match = item.ref_origem.match(/\d+/);
-      const idInt = match ? parseInt(match[0], 10) : null;
-      if (!idInt) {
-        showToast({ type: "warning", title: "Referência de origem inválida para faturamento." });
-        setIsFaturando(false);
-        return;
-      }
-
       // A conferência roda ANTES de criar o rascunho. Faltando dado, a nota não
       // abre: o painel diz o que está errado, quem corrige e onde.
       showToast({ type: "info", title: "Conferindo os dados do pedido..." });
@@ -1711,7 +1736,7 @@ export function NotasFiscaisPage() {
       showToast({ type: "info", title: "Criando ou recuperando rascunho de NF-e..." });
       const draft = await createOrReuseNfeDraft(idInt);
       showToast({ type: "success", title: `Rascunho ${draft.ref} carregado com sucesso!` });
-      
+
       router.push(`/notas-fiscais/${draft.id}`);
     } catch (err) {
       console.error("[NotasFiscaisPage] Erro ao faturar:", err);
