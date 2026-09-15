@@ -73,6 +73,12 @@ export type OrcamentoListItem = {
    * linha aqui em Orcamentos. Nao altera libera_nf, status nem nota.
    */
   faturadoForaEm?: string | null;
+  /**
+   * So na leitura do card EM_ARTE: os `pedidos_artes.status` que puseram a
+   * proposta no card, da mesma pre-consulta do filtro. E o que diz se o card
+   * fica laranja (`statusArteEhPendenciaDoCardEmArte`). Ausente fora do card.
+   */
+  statusArteDoCard?: string[];
   faturadoForaPor?: string | null;
   /**
    * `propostas.id_faturado` — quem paga. Quando difere de `id_cliente`, e um

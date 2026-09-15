@@ -38,6 +38,7 @@ import {
   retirarPropostaDaProducao,
   PERIODO_ULTIMOS_15_DIAS,
   listarPropostasDoCardEmArte,
+  statusArteEhPendenciaDoCardEmArte,
   statusArteEntraNoCardEmArte,
   type PropostaChatResumo
 } from "@/features/orcamentos/services/orcamentos.service";
@@ -968,6 +969,7 @@ export function OrcamentosListPageReal() {
   const cardsSummary = useMemo(() => {
     let orcCnt = 0, orcTotal = 0;
     let emArteCnt = 0, emArteTotal = 0;
+    let emArteTemPendencia = false;
     let liberadasCnt = 0, liberadasTotal = 0;
     let revisaoCnt = 0, revisaoTotal = 0;
     let producaoCnt = 0, producaoTotal = 0;
@@ -1001,11 +1003,14 @@ export function OrcamentosListPageReal() {
       if (!passaFiltrosDosCards(item, filtrosDosCards)) continue;
       emArteCnt++;
       emArteTotal += Number(item.total) || 0;
+      // Laranja com UMA proposta contada em "Pendente Informacao" ou
+      // "Corrigir Dados". Sai da mesma base do contador, sem leitura a mais.
+      if ((item.statusArteDoCard ?? []).some(statusArteEhPendenciaDoCardEmArte)) emArteTemPendencia = true;
     }
 
     return {
       orcamentos: { count: orcCnt,        total: orcTotal        },
-      emArte:     { count: emArteCnt,      total: emArteTotal     },
+      emArte:     { count: emArteCnt,      total: emArteTotal, temPendencia: emArteTemPendencia },
       liberadas:  { count: liberadasCnt,   total: liberadasTotal  },
       revisao:    { count: revisaoCnt,     total: revisaoTotal    },
       producao:   { count: producaoCnt,    total: producaoTotal   }
@@ -1573,7 +1578,7 @@ Ela volta a aparecer nas listas operacionais.`
                   <strong className="text-base font-bold text-slate-900">{formatCurrency(cardsSummary.emArte.total)}</strong>
                 </span>
               }
-              tone={activeCard === "EM_ARTE" ? "info" : "neutral"}
+              tone={cardsSummary.emArte.temPendencia ? "warning" : activeCard === "EM_ARTE" ? "info" : "neutral"}
               icon={Palette}
             />
           </div>

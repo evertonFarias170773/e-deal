@@ -299,8 +299,9 @@ function buildPeriodoFilter(periodo: string): OrcamentosPeriodoFilter | null {
 
 /**
  * Os status de arte que colocam o pedido no card EM_ARTE. Decisao do dono
- * (14/09/2026). Lista exaustiva: outro status — APROVADO inclusive — e pedido
- * sem linha em `pedidos_artes` ficam fora.
+ * (14/09/2026; "Pendente Informacao" entrou em 15/09/2026). Lista exaustiva:
+ * outro status — APROVADO inclusive — e pedido sem linha em `pedidos_artes`
+ * ficam fora.
  *
  * Substituiu o criterio antigo (`status_interno` com " / EM ARTE" ou
  * `propostas.em_arte`). O sufixo continua na EXIBICAO do status e pode
@@ -313,7 +314,8 @@ const STATUS_ARTE_DO_CARD_EM_ARTE = [
   "Em Alteracao",
   "Apr Parcial",
   "Dados Pendentes",
-  "Corrigir Dados"
+  "Corrigir Dados",
+  "Pendente Informacao"
 ];
 
 /**
@@ -340,6 +342,21 @@ const CHAVES_DO_CARD_EM_ARTE = new Set(STATUS_ARTE_DO_CARD_EM_ARTE.map(chaveStat
  */
 export function statusArteEntraNoCardEmArte(status: string | null | undefined): boolean {
   return CHAVES_DO_CARD_EM_ARTE.has(chaveStatusArte(status));
+}
+
+/**
+ * Os status que pintam o card EM_ARTE de laranja: basta UMA proposta da lista
+ * do card com um deles. Decisao do dono (15/09/2026). Os dois tambem estao em
+ * `STATUS_ARTE_DO_CARD_EM_ARTE`, entao toda proposta que acende o laranja ja
+ * esta no card.
+ */
+const STATUS_ARTE_PENDENCIA_DO_CARD_EM_ARTE = ["Pendente Informacao", "Corrigir Dados"];
+
+const CHAVES_PENDENCIA_DO_CARD_EM_ARTE = new Set(STATUS_ARTE_PENDENCIA_DO_CARD_EM_ARTE.map(chaveStatusArte));
+
+/** O status de arte e uma pendencia que pinta o card EM_ARTE de laranja? */
+export function statusArteEhPendenciaDoCardEmArte(status: string | null | undefined): boolean {
+  return CHAVES_PENDENCIA_DO_CARD_EM_ARTE.has(chaveStatusArte(status));
 }
 
 /**
@@ -498,6 +515,11 @@ async function fetchPropostaRows(
       query = query.is("encerrado_teste_em", null);
     }
 
+    // Status de arte de cada proposta do card EM_ARTE, da MESMA pre-consulta que
+    // decide quem entra. Viaja ate a lista para o card saber se ha pendencia sem
+    // uma leitura a mais. Fica `null` fora do card.
+    let statusArteDoCardPorId: Map<number, string[]> | null = null;
+
     if (filters?.activeCard) {
       const card = filters.activeCard;
       if (card === "EM_ARTE") {
@@ -521,6 +543,13 @@ async function fetchPropostaRows(
               .filter((id) => Number.isFinite(id) && id > 0)
           )
         );
+        const porId = new Map<number, string[]>();
+        for (const linha of arteRows || []) {
+          const id = Number(linha.id_int);
+          if (!Number.isFinite(id) || id <= 0 || !statusArteEntraNoCardEmArte(linha.status)) continue;
+          porId.set(id, [...(porId.get(id) ?? []), String(linha.status ?? "")]);
+        }
+        statusArteDoCardPorId = porId;
         query = query.in("id_int", idsEmArte.length > 0 ? idsEmArte : [-1]);
       } else if (card === "LIBERADAS") {
         query = query.or("status_interno.eq.LIBERADO,status_interno.eq.LIBERADO / EM ARTE");
@@ -768,6 +797,7 @@ async function fetchPropostaRows(
     return {
       rows: enrichedRows as SupabasePropostaRow[],
       totalCount,
+      statusArteDoCardPorId,
       diagnostics: {
         source: "supabase",
         hasSupabaseUrl: env.hasSupabaseUrl,
@@ -1091,8 +1121,16 @@ export async function getOrcamentosReadOnlyData(
     };
   }
 
+  // Card EM_ARTE: cada item leva os status de arte que o puseram no card — ver
+  // `statusArteDoCardPorId` em `fetchPropostaRows`. Fora do card nada muda.
+  const statusArteDoCardPorId = "statusArteDoCardPorId" in fetched ? fetched.statusArteDoCardPorId : null;
+  const propostasDaLista = statusArteDoCardPorId
+    ? real.propostas.map((item) => ({ ...item, statusArteDoCard: statusArteDoCardPorId.get(item.id_int) ?? [] }))
+    : real.propostas;
+
   return {
     ...real,
+    propostas: propostasDaLista,
     totalCount,
     page: safePage,
     pageSize: safePageSize,
