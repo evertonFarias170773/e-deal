@@ -96,7 +96,8 @@ import { getTransportadoras } from "@/features/nfe/services/nfe.service";
 import type { Produto } from "@/features/produtos/types";
 import { useCobrancas } from "@/features/cobrancas/CobrancasProvider";
 import { PropostaCobrancaPanel } from "@/features/cobrancas/PropostaCobrancaPanel";
-import { normalizeDocumentDigits } from "@/features/cadastros/utils/documento";
+import { normalizeDocumentDigits, isValidCpf } from "@/features/cadastros/utils/documento";
+import { fetchComSessao } from "@/lib/supabase/sessao";
 import { DiferencaFinanceiraModal } from "@/features/orcamentos/components/DiferencaFinanceiraModal";
 import { FreteComplementarCard } from "@/features/orcamentos/components/FreteComplementarCard";
 import type { AcaoFinanceiraDiferenca } from "@/features/cobrancas/types";
@@ -7992,6 +7993,8 @@ function ContactModal({ draft, onChange, onClose, onSave }: { draft: ContactDraf
 function AddressModal({ draft, onChange, onClose, onSave, isSaving, mode = "create" }: { draft: AddressDraft; onChange: (draft: AddressDraft) => void; onClose: () => void; onSave: () => void; isSaving?: boolean; mode?: "create" | "edit" }) {
   const { showToast } = useAppToast();
   const [isCepLoading, setIsCepLoading] = useState(false);
+  /** Consulta do CPF do recebedor em andamento. Trava o botao enquanto roda. */
+  const [validandoCpf, setValidandoCpf] = useState(false);
   const cleanCep = (draft.cep || "").replace(/\D/g, "");
 
   useEffect(() => {
@@ -8026,6 +8029,75 @@ function AddressModal({ draft, onChange, onClose, onSave, isSaving, mode = "crea
     return v.replace(/^(\d{5})(\d)/, "$1-$2").slice(0, 9);
   };
 
+  /**
+   * "Validar" do CPF do recebedor — o MESMO comportamento do Cadastro de
+   * Cliente (824213c), aqui no modal da proposta.
+   *
+   * A validacao local vem primeiro e e ela que protege a cota: `isValidCpf` e o
+   * mesmo validador que o cadastro usa, entao as duas telas nunca discordam
+   * sobre o que e um CPF valido, e digito errado nao chega a sair da maquina.
+   *
+   * A rota e `/api/verificacao/cpf`, a mesma do cadastro e da tela de
+   * Verificacao: ela nao tem a guarda de "documento ja cadastrado" que
+   * recusaria um recebedor que tambem e cliente. Token so no servidor, sessao
+   * exigida antes da chamada externa.
+   *
+   * SO POR CLIQUE, e falha nunca trava nada: o nome segue editavel a mao e o
+   * botao Adicionar nao depende disto.
+   */
+  async function validarCpfRecebedor() {
+    const digitos = normalizeDocumentDigits(draft.cpfRecebedor || "");
+
+    if (!digitos) {
+      showToast({ type: "warning", title: "Informe o CPF do recebedor", description: "Digite o CPF antes de validar." });
+      return;
+    }
+    if (!isValidCpf(digitos)) {
+      showToast({
+        type: "error",
+        title: "CPF do recebedor invalido",
+        description: "Os digitos nao conferem. Corrija o numero — nenhuma consulta foi feita."
+      });
+      return;
+    }
+
+    setValidandoCpf(true);
+    try {
+      const resposta = await fetchComSessao("/api/verificacao/cpf", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cpf: digitos })
+      });
+      const corpo = (await resposta.json().catch(() => ({}))) as {
+        success?: boolean;
+        data?: { nome?: string };
+        errorMessage?: string;
+        message?: string;
+      };
+      const nome = String(corpo?.data?.nome ?? "").trim();
+
+      if (!resposta.ok || !corpo?.success || !nome) {
+        showToast({
+          type: "error",
+          title: "Nao foi possivel validar o CPF",
+          description: corpo?.errorMessage || corpo?.message || "O servico de consulta nao respondeu. Preencha o nome a mao."
+        });
+        return;
+      }
+
+      onChange({ ...draft, recebedor: nome });
+      showToast({ type: "success", title: "CPF validado", description: "Nome do recebedor preenchido pela consulta." });
+    } catch (erro) {
+      showToast({
+        type: "error",
+        title: "Falha ao consultar o CPF",
+        description: erro instanceof Error ? erro.message : "Sem resposta do servico. Preencha o nome a mao."
+      });
+    } finally {
+      setValidandoCpf(false);
+    }
+  }
+
   const cpfMask = (value: string) => {
     let v = value.replace(/\D/g, "");
     if (v.length > 11) v = v.slice(0, 11);
@@ -8056,7 +8128,26 @@ function AddressModal({ draft, onChange, onClose, onSave, isSaving, mode = "crea
         <Field label="UF"><input value={draft.uf} onChange={(event) => onChange({ ...draft, uf: event.target.value.toUpperCase() })} className={inputClass} maxLength={2} disabled={isCepLoading} /></Field>
         <div className="md:col-span-2 border-t border-slate-100 pt-3 mt-1 grid gap-3 md:grid-cols-2">
           <Field label={isCepLoading ? "CPF do Recebedor (Consultando...)" : "CPF do Recebedor"}>
-            <input value={cpfMask(draft.cpfRecebedor || "")} onChange={(event) => onChange({ ...draft, cpfRecebedor: event.target.value })} className={inputClass} placeholder="000.000.000-00" />
+            <div className="flex items-center gap-2">
+              <input value={cpfMask(draft.cpfRecebedor || "")} onChange={(event) => onChange({ ...draft, cpfRecebedor: event.target.value })} className={`${inputClass} flex-1`} placeholder="000.000.000-00" />
+              {/* Consulta SO por clique — ver `validarCpfRecebedor`. */}
+              <button
+                type="button"
+                onClick={() => void validarCpfRecebedor()}
+                disabled={validandoCpf}
+                title="Consulta o CPF e preenche o nome do recebedor"
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-2xl border border-[#d7e5e8] bg-white px-3.5 py-3 text-xs font-bold text-[#0b2f4a] transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {validandoCpf ? (
+                  <>
+                    <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-slate-300 border-t-[#0b2f4a]" />
+                    Validando…
+                  </>
+                ) : (
+                  "Validar"
+                )}
+              </button>
+            </div>
           </Field>
           <Field label="Nome do Recebedor">
             <input value={draft.recebedor || ""} onChange={(event) => onChange({ ...draft, recebedor: event.target.value })} className={inputClass} placeholder="Nome completo" />
