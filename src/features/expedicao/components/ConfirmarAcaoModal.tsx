@@ -56,7 +56,13 @@ export function ConfirmarAcaoModal({
         </div>
 
         <div className="space-y-3 p-6">
-          <p className="text-sm text-slate-700 dark:text-slate-300">{descricao}</p>
+          {/* `whitespace-pre-wrap`: a descrição pode vir com várias linhas e com
+              indentação que significa alguma coisa — a lista de notas já
+              autorizadas do pedido, na confirmação de segunda nota, alinha os
+              itens e marca a origem da remessa com uma seta. Sem isto o
+              navegador colapsaria tudo num parágrafo corrido. Descrição de uma
+              linha só, que é o caso dos outros usos, renderiza igual. */}
+          <p className="whitespace-pre-wrap text-sm text-slate-700 dark:text-slate-300">{descricao}</p>
           {detalhe ? (
             <p className="flex items-start gap-2 rounded-2xl bg-amber-50 p-3 text-xs font-medium text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />

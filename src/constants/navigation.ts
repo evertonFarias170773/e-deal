@@ -15,7 +15,6 @@ import {
   Layers,
   LayoutDashboard,
   Package,
-  Printer,
   Receipt,
   ReceiptText,
   Settings,
@@ -232,14 +231,6 @@ export const navigationSections: NavigationSection[] = [
       // href placeholder: item desabilitado, a rota ainda não existe (não colidir com /configuracoes/usuarios).
       { label: "Usuários", href: "/configuracoes/usuarios-em-breve", icon: Users, disabled: true }
     ]
-  },
-  // 12 — era submenu de "Pedidos".
-  {
-    id: "fila-impressao",
-    label: "Fila de impressão",
-    icon: Printer,
-    href: "/pedidos/impressao",
-    items: []
   }
 ];
 

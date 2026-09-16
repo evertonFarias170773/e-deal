@@ -71,7 +71,11 @@ function linhaDaNota(nota: NotaDoPedidoParaCitar, ehOrigem: boolean): string {
 }
 
 /**
- * A pergunta inteira, pronta para o `window.confirm`.
+ * A pergunta inteira, em texto corrido.
+ *
+ * Quem exibe é o modal do sistema (`partesDaConfirmacaoDeSegundaNota` parte isto
+ * em título e corpo). As quebras de linha e a indentação da lista fazem parte do
+ * conteúdo: quem renderizar precisa preservá-las.
  *
  * `origem` — a nota de venda que a remessa herda — é escolhida por
  * `escolherNotaAutorizadaDoPedido`, a MESMA função que `criarRascunhoRemessa`
@@ -127,4 +131,23 @@ export function textoDeConfirmacaoDeSegundaNota(args: {
   ]
     .filter((linha) => linha !== null)
     .join("\n");
+}
+
+/**
+ * A MESMA confirmação, partida em título e corpo para o modal.
+ *
+ * O texto continua sendo montado por `textoDeConfirmacaoDeSegundaNota` — esta
+ * função só corta na primeira linha em branco, porque o modal do projeto tem
+ * cabeçalho e corpo separados. Nada é reescrito no caminho: o que aparece na
+ * tela é, palavra por palavra, o que aquela função devolve.
+ */
+export function partesDaConfirmacaoDeSegundaNota(args: {
+  idInt: number;
+  tipo: "VENDA" | "REMESSA";
+  notas: readonly NotaDoPedidoParaCitar[];
+}): { titulo: string; corpo: string } {
+  const texto = textoDeConfirmacaoDeSegundaNota(args);
+  const corte = texto.indexOf("\n\n");
+  if (corte < 0) return { titulo: texto, corpo: "" };
+  return { titulo: texto.slice(0, corte), corpo: texto.slice(corte + 2) };
 }

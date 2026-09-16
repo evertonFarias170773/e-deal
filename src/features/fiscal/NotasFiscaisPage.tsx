@@ -45,7 +45,8 @@ import type { FaturavelOrigem } from "./types";
 import { EmissaoNfeModal } from "./components/EmissaoNfeModal";
 import { ConferenciaFaturamentoModal } from "./components/ConferenciaFaturamentoModal";
 import { conferirFaturamento, type ResultadoConferencia } from "./services/conferencia-faturamento";
-import { textoDeConfirmacaoDeSegundaNota } from "./lib/confirmacao-segunda-nota";
+import { partesDaConfirmacaoDeSegundaNota } from "./lib/confirmacao-segunda-nota";
+import { ConfirmarAcaoModal } from "@/features/expedicao/components/ConfirmarAcaoModal";
 import { resolverAmbienteFiscal } from "./services/ambiente-fiscal";
 
 /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
@@ -289,6 +290,19 @@ export function NotasFiscaisPage() {
   const activeTab: ActiveTab = filters.aba;
   const [isFaturando, setIsFaturando] = useState(false);
   const [focusConfirmNote, setFocusConfirmNote] = useState<NfeReadModel | null>(null);
+  /**
+   * A confirmação de segunda nota que está aberta agora, ou `null`.
+   *
+   * Guarda o texto JÁ montado, e não as notas: entre abrir e confirmar não há
+   * nova leitura, então o operador decide sobre exatamente o que leu.
+   * Cancelar é `null` e mais nada — nenhuma nota é criada.
+   */
+  const [segundaNotaPendente, setSegundaNotaPendente] = useState<{
+    idInt: number;
+    tipo: "VENDA" | "REMESSA";
+    titulo: string;
+    corpo: string;
+  } | null>(null);
   // O passo em que o modal de emissao abre: IDLE pede confirmacao, QUERYING
   // ja entra consultando. Todo o resto do acompanhamento mora no componente.
   const [passoDoModal, setPassoDoModal] = useState<"IDLE" | "QUERYING">("IDLE");
@@ -1685,11 +1699,11 @@ export function NotasFiscaisPage() {
    * Só pergunta: não cria, não altera e não emite. Quem faz isso é o caminho de
    * sempre, depois do sim.
    */
-  async function confirmarSegundaNota(idInt: number, tipo: "VENDA" | "REMESSA"): Promise<boolean> {
+  async function confirmarSegundaNota(idInt: number, tipo: "VENDA" | "REMESSA"): Promise<void> {
     const client = getSupabaseClient();
     if (!client) {
       showToast({ type: "warning", title: "Sem conexão com o banco para conferir as notas deste pedido." });
-      return false;
+      return;
     }
 
     const { data, error } = await client
@@ -1703,12 +1717,33 @@ export function NotasFiscaisPage() {
         title: "Não foi possível conferir as notas deste pedido.",
         description: error.message
       });
-      return false;
+      return;
     }
 
-    return window.confirm(
-      textoDeConfirmacaoDeSegundaNota({ idInt, tipo, notas: (data ?? []) as never })
-    );
+    const { titulo, corpo } = partesDaConfirmacaoDeSegundaNota({
+      idInt,
+      tipo,
+      notas: (data ?? []) as never
+    });
+    setSegundaNotaPendente({ idInt, tipo, titulo, corpo });
+  }
+
+  /**
+   * O "sim" do modal: fecha e segue pelo caminho de sempre.
+   *
+   * Fecha ANTES de começar, para o segundo clique não achar o botão no lugar —
+   * as duas funções abaixo também se protegem sozinhas (`isFaturando` e
+   * `gerandoRemessaId`).
+   */
+  function seguirComSegundaNota() {
+    const pendente = segundaNotaPendente;
+    if (!pendente) return;
+    setSegundaNotaPendente(null);
+    if (pendente.tipo === "VENDA") {
+      void abrirRascunhoDeVenda(pendente.idInt);
+      return;
+    }
+    void criarRemessaConfirmada(pendente.idInt);
   }
 
   /**
@@ -1726,8 +1761,7 @@ export function NotasFiscaisPage() {
       showToast({ type: "warning", title: "Pedido não identificado nesta nota." });
       return;
     }
-    if (!(await confirmarSegundaNota(idInt, "VENDA"))) return;
-    await abrirRascunhoDeVenda(idInt);
+    await confirmarSegundaNota(idInt, "VENDA");
   }
 
   /**
@@ -1745,7 +1779,12 @@ export function NotasFiscaisPage() {
       showToast({ type: "warning", title: "Pedido não identificado nesta nota." });
       return;
     }
-    if (!(await confirmarSegundaNota(idInt, "REMESSA"))) return;
+    await confirmarSegundaNota(idInt, "REMESSA");
+  }
+
+  /** O que a remessa faz DEPOIS do sim: criar o rascunho e abrir a nota. */
+  async function criarRemessaConfirmada(idInt: number) {
+    if (gerandoRemessaId !== null) return;
     setGerandoRemessaId(idInt);
     try {
       showToast({ type: "info", title: "Montando a nota de remessa..." });
@@ -2804,6 +2843,22 @@ export function NotasFiscaisPage() {
           router.push(`/notas-fiscais/${idNota}`);
         }}
       />
+      )}
+
+      {/* A confirmação de segunda nota. O conteúdo é o mesmo texto de antes,
+          montado por `textoDeConfirmacaoDeSegundaNota`; o que mudou foi a
+          moldura, que deixou de ser o diálogo do navegador. */}
+      {segundaNotaPendente && (
+        <ConfirmarAcaoModal
+          titulo={segundaNotaPendente.titulo}
+          descricao={segundaNotaPendente.corpo}
+          rotuloConfirmar={
+            segundaNotaPendente.tipo === "VENDA" ? "Gerar outra nota de venda" : "Gerar nota de remessa"
+          }
+          salvando={false}
+          onConfirmar={seguirComSegundaNota}
+          onClose={() => setSegundaNotaPendente(null)}
+        />
       )}
 
       {conferenciaPendente && (

@@ -72,6 +72,18 @@ function SidebarSeparator() {
 
 const DEFAULT_SECTION_ID = navigationSections.find((sec) => sec.items.length > 0)?.id ?? "";
 
+/**
+ * FINANCEIRO NASCE FECHADO (16/09/2026).
+ *
+ * `DEFAULT_SECTION_ID` e a primeira secao COM ITENS, e ela e justamente
+ * Financeiro — entao toda pagina fora das demais secoes abria com o acordeao
+ * dele escancarado, inclusive depois de um F5. Fechar so no estado INICIAL:
+ * clicar no titulo abre como sempre, e navegar para uma tela do Financeiro
+ * continua reabrindo a secao (o ramo de troca de rota, logo abaixo, nao muda).
+ * As demais secoes, Configuracoes inclusive, seguem exatamente como estavam.
+ */
+const SECAO_FECHADA_AO_ABRIR = "financeiro";
+
 export function SidebarNav({ isCollapsed, onToggleCollapse }: SidebarNavProps) {
   const pathname = usePathname();
   const router = useRouter();
@@ -79,9 +91,10 @@ export function SidebarNav({ isCollapsed, onToggleCollapse }: SidebarNavProps) {
 
   const activeHref = resolveActiveHref(pathname);
 
-  const [openSection, setOpenSection] = useState<string>(
-    () => findActiveSectionId(activeHref) ?? DEFAULT_SECTION_ID
-  );
+  const [openSection, setOpenSection] = useState<string>(() => {
+    const inicial = findActiveSectionId(activeHref) ?? DEFAULT_SECTION_ID;
+    return inicial === SECAO_FECHADA_AO_ABRIR ? "" : inicial;
+  });
   const [openItem, setOpenItem] = useState<string | null>(() => findActiveParentHref(activeHref));
   const [hoverSection, setHoverSection] = useState<string | null>(null);
   const [prevPathname, setPrevPathname] = useState(pathname);

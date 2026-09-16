@@ -38,7 +38,7 @@ if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !SERVICE) {
   process.exit(0);
 }
 
-const { textoDeConfirmacaoDeSegundaNota } = await import("../../src/features/fiscal/lib/confirmacao-segunda-nota.ts");
+const { textoDeConfirmacaoDeSegundaNota, partesDaConfirmacaoDeSegundaNota } = await import("../../src/features/fiscal/lib/confirmacao-segunda-nota.ts");
 const { COLUNAS_NOTA_DO_PEDIDO } = await import("../../src/lib/fiscal/nota-do-pedido.ts");
 const { createClient } = await import("@supabase/supabase-js");
 const sb = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, SERVICE);
@@ -83,6 +83,22 @@ checar("os dois avisam que nada e transmitido agora",
   [textoVenda, textoRemessa].every((t) => t.includes("Nada é transmitido agora")), true);
 checar("com uma nota so, a seta de origem nao aparece",
   [textoVenda, textoRemessa].some((t) => t.includes("> NF") || t.includes("(>)")), false);
+
+// O modal mostra o mesmo texto, so partido em titulo e corpo: remontando as
+// duas partes tem de sair exatamente o que o texto unico dizia.
+const partesVenda = partesDaConfirmacaoDeSegundaNota({ idInt: comUma, tipo: "VENDA", notas: umaNota });
+const partesRemessa = partesDaConfirmacaoDeSegundaNota({ idInt: comUma, tipo: "REMESSA", notas: umaNota });
+console.log(`\n=== como o modal recebe (#${comUma}, venda) ===`);
+console.log(`titulo: ${JSON.stringify(partesVenda.titulo)}`);
+console.log(`corpo:\n${partesVenda.corpo}`);
+checar("titulo + corpo remontam o texto da venda, sem perder um caractere",
+  `${partesVenda.titulo}\n\n${partesVenda.corpo}`, textoVenda);
+checar("titulo + corpo remontam o texto da remessa",
+  `${partesRemessa.titulo}\n\n${partesRemessa.corpo}`, textoRemessa);
+checar("o titulo e a pergunta, e termina em interrogacao", partesVenda.titulo.endsWith("?"), true);
+checar("o corpo guarda a lista e o aviso",
+  [partesVenda.corpo.includes("já tem uma nota autorizada:"), partesVenda.corpo.includes("Nada é transmitido agora")],
+  [true, true]);
 
 // ── 2. Mais de uma autorizada: cita todas ───────────────────────────────────
 if (comVarias) {
