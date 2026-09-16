@@ -108,8 +108,15 @@ export async function POST(request: Request) {
       );
     }
 
-    // Prefer CPFHUB_API_KEY, fallback to CPFHUB_API_TOKEN as per guidelines
-    const token = process.env.CPFHUB_API_KEY ?? process.env.CPFHUB_API_TOKEN;
+    // OS TRES NOMES, na MESMA ordem das rotas de cadastro (16/09/2026).
+    //
+    // A separacao desta rota (0403ac6, 20/06/2026) deixou `CPFHUB_TOKEN` de
+    // fora, e e justamente esse o nome configurado: a tela de Verificacao
+    // respondia "token ausente" enquanto o cadastro de cliente consultava
+    // normalmente pelas rotas `/api/cadastros/consultar-documento` e
+    // `/consultar-cpf-simples`, que leem o trio. Mesma ordem delas, para os
+    // tres caminhos escolherem sempre o mesmo valor quando houver mais de um.
+    const token = process.env.CPFHUB_API_TOKEN ?? process.env.CPFHUB_TOKEN ?? process.env.CPFHUB_API_KEY;
     if (!token) {
       return NextResponse.json(
         { success: false, errorMessage: "Serviço de consulta de CPF não configurado no servidor (token ausente)." },
