@@ -6,7 +6,7 @@ import { useUrlFilters } from "@/hooks/useUrlFilters";
 import { useDebouncedInput } from "@/hooks/useDebouncedValue";
 import { codecs } from "@/lib/url-state";
 import { AlertTriangle, Copy, ExternalLink, FilePlus2, FileText, Play, Loader2, X } from "lucide-react";
-import { ActionsMenu } from "@/components/common/ActionsMenu";
+import { ActionsMenu, type ActionMenuItem } from "@/components/common/ActionsMenu";
 import { BotaoDanfe } from "@/components/common/BotaoDanfe";
 import { PageHeader } from "@/components/common/PageHeader";
 import { NovaNotaAvulsaModal } from "@/features/fiscal/components/NovaNotaAvulsaModal";
@@ -26,7 +26,7 @@ import type { NfeReadModel } from "@/features/nfe/types";
 import type { NfseReadModel } from "@/features/nfse/types";
 import type { SupabaseBoletoRow } from "@/features/contas-a-receber/types.supabase";
 import { useRouter } from "next/navigation";
-import { createOrReuseNfeDraft, getFaturaveisPropostas, updateNfeDraft, previewNfeRascunho, getNfeFinanceiroStatus, getFaturadoEmAbertoPorIdInt, getNfePagamentos, getNfeDisplayStatus, prepararEnvioNfe, insertNotaEvento, getNotaEventosForRefs, type FaturadoEmAberto, type SupabaseNotaEventoRow } from "@/features/nfe/services/nfe.service";
+import { createOrReuseNfeDraft, getFaturaveisPropostas, updateNfeDraft, previewNfeRascunho, getNfeFinanceiroStatus, getFaturadoEmAbertoPorIdInt, getNfePagamentos, getNfeDisplayStatus, prepararEnvioNfe, insertNotaEvento, getNotaEventosForRefs, excluirRascunhoNfe, STATUS_DESCARTAVEIS_NFE, type FaturadoEmAberto, type SupabaseNotaEventoRow } from "@/features/nfe/services/nfe.service";
 import { PrepararBoletosModal, type OrigemNfeLancamento } from "@/features/cobrancas/PrepararBoletosModal";
 import { PAGAMENTOS_V2_SELECT } from "@/features/cobrancas/services/pagamentos-v2.service";
 import { mapSupabasePagamentoV2RowToCobranca } from "@/features/cobrancas/mappers";
@@ -320,6 +320,9 @@ export function NotasFiscaisPage() {
   const [isFilaLoading, setIsFilaLoading] = useState(true);
   const [marcandoFaturadoForaId, setMarcandoFaturadoForaId] = useState<number | null>(null);
   const [gerandoRemessaId, setGerandoRemessaId] = useState<number | null>(null);
+  /** O rascunho que o operador pediu para descartar, esperando confirmação. */
+  const [descartePendente, setDescartePendente] = useState<{ ref: string; status: string } | null>(null);
+  const [descartandoRef, setDescartandoRef] = useState<string | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -1143,11 +1146,10 @@ export function NotasFiscaisPage() {
 
   function getNfeActions(item: NfeReadModel) {
     const status = (item.status || "").toUpperCase();
-    const actions: Array<{
-      label: string;
-      onClick?: () => void;
-      disabled?: boolean;
-    }> = [];
+    // `ActionMenuItem`, e não um tipo local recortado: o menu já aceita
+    // `destructive`, e o descarte de rascunho precisa dele para sair em
+    // vermelho, como toda ação que apaga.
+    const actions: ActionMenuItem[] = [];
 
     // 1. PENDENTE / RASCUNHO
     if (status === "PENDENTE" || status === "RASCUNHO") {
@@ -1410,6 +1412,21 @@ export function NotasFiscaisPage() {
           }
         });
       }
+    }
+
+    // DESCARTAR: rascunho que nunca foi transmitido não precisa ficar na lista.
+    //
+    // Só nos status que `fn_excluir_rascunho_nfe` aceita. O banco ainda pode
+    // recusar por outro motivo (número, chave, protocolo, evento) e aí o motivo
+    // dele aparece no toast — a tela não repete a checagem.
+    if ((STATUS_DESCARTAVEIS_NFE as readonly string[]).includes(status)) {
+      actions.push({
+        label: descartandoRef === item.ref ? "Descartando..." : "Descartar rascunho",
+        destructive: true,
+        onClick: () => {
+          setDescartePendente({ ref: item.ref, status });
+        }
+      });
     }
 
     // Copiar Ref (sempre disponível no final)
@@ -1804,6 +1821,43 @@ export function NotasFiscaisPage() {
       showToast({ type: "error", title: err instanceof Error ? err.message : "Erro ao gerar a nota de remessa." });
     } finally {
       setGerandoRemessaId(null);
+    }
+  }
+
+  /**
+   * O "sim" do descarte: apaga o rascunho e recarrega as duas listas.
+   *
+   * As DUAS: o rascunho segurava o pedido fora da Fila de Faturamento (ele
+   * contava como nota viva) e ocupava uma linha no Histórico. Recarregar só uma
+   * deixaria a outra mentindo até o próximo F5.
+   */
+  async function confirmarDescarteDeRascunho() {
+    const alvo = descartePendente;
+    if (!alvo || descartandoRef !== null) return;
+
+    setDescartandoRef(alvo.ref);
+    try {
+      const res = await excluirRascunhoNfe(alvo.ref);
+      if (!res.ok) {
+        showToast({
+          type: "error",
+          title: "Não foi possível descartar",
+          description: res.mensagem || "O banco recusou a exclusão."
+        });
+        return;
+      }
+
+      showToast({ type: "success", title: `Rascunho ${alvo.ref} descartado` });
+      setDescartePendente(null);
+
+      await nfeData.refresh();
+      try {
+        setFaturaveisList(await getFaturaveisPropostas());
+      } catch (err) {
+        console.error("[NotasFiscaisPage] Erro ao recarregar a fila apos o descarte:", err);
+      }
+    } finally {
+      setDescartandoRef(null);
     }
   }
 
@@ -2843,6 +2897,25 @@ export function NotasFiscaisPage() {
           router.push(`/notas-fiscais/${idNota}`);
         }}
       />
+      )}
+
+      {/* O descarte de rascunho: some das duas listas, e não dá para desfazer. */}
+      {descartePendente && (
+        <ConfirmarAcaoModal
+          titulo={`Descartar o rascunho ${descartePendente.ref}?`}
+          descricao={
+            `Este rascunho está em ${humanizeStatus(descartePendente.status)} e nunca foi transmitido.\n\n` +
+            "Ele sai do Histórico e do caminho da Fila de Faturamento, junto com os itens e a parcela. " +
+            "O pedido não é tocado: dá para faturar de novo depois, num rascunho novo."
+          }
+          detalhe="Não dá para desfazer. Nota já autorizada, cancelada ou com evento registrado o banco recusa apagar."
+          rotuloConfirmar="Descartar rascunho"
+          salvando={descartandoRef !== null}
+          onConfirmar={() => {
+            void confirmarDescarteDeRascunho();
+          }}
+          onClose={() => setDescartePendente(null)}
+        />
       )}
 
       {/* A confirmação de segunda nota. O conteúdo é o mesmo texto de antes,

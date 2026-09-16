@@ -755,16 +755,78 @@ export function ratearPesoNosItens(
   });
 }
 
+/**
+ * Os status em que um rascunho pode ser DESCARTADO.
+ *
+ * Espelha, e não substitui, o guarda de `fn_excluir_rascunho_nfe`: a palavra
+ * final é do banco, que além do status ainda recusa nota com número, chave,
+ * protocolo, XML, DANFE ou evento registrado. Esta lista existe só para a tela
+ * não oferecer uma ação que o banco vai negar.
+ *
+ * NÃO AMPLIE ESTA LISTA sem mudar a função: incluir AUTORIZADA aqui não
+ * apagaria nada, só trocaria o "não aparece" por um erro na cara do operador.
+ */
+export const STATUS_DESCARTAVEIS_NFE = [
+  "RASCUNHO",
+  "PENDENTE",
+  "ERRO_VALIDACAO",
+  "ERRO_ENVIO",
+  "PRONTA_PARA_ENVIO"
+] as const;
+
+export type ResultadoDescarte = { ok: boolean; mensagem: string; erro?: string };
+
+/**
+ * Descarta um rascunho de NF-e que nunca foi transmitido.
+ *
+ * Apaga a nota e as filhas (itens e pagamentos) por `fn_excluir_rascunho_nfe`,
+ * que existe desde antes e já trata os casos difíceis. Aqui não há regra
+ * nenhuma: a decisão de recusar é do banco, e o motivo dele é o que a tela
+ * mostra. Duplicar a checagem no cliente só criaria duas verdades.
+ */
+export async function excluirRascunhoNfe(ref: string): Promise<ResultadoDescarte> {
+  const client = getSupabaseClient();
+  if (!client) return { ok: false, mensagem: "Sem conexão com o banco.", erro: "SEM_CLIENTE" };
+
+  const { data, error } = await client.rpc("fn_excluir_rascunho_nfe", { p_ref: ref });
+  if (error) {
+    console.error("[NfeService] Erro ao descartar rascunho:", error.message);
+    return { ok: false, mensagem: error.message, erro: "RPC" };
+  }
+
+  const resposta = (data ?? {}) as { ok?: boolean; mensagem?: string; erro?: string };
+  return {
+    ok: resposta.ok === true,
+    mensagem: String(resposta.mensagem ?? ""),
+    erro: resposta.erro
+  };
+}
+
 export async function createOrReuseNfeDraft(idInt: number): Promise<SupabaseNfeRow> {
   const client = getSupabaseClient();
   if (!client) throw new Error("Supabase client not initialized");
 
-  // 1. Verificar se já existe rascunho PENDENTE
+  // 1. Já existe rascunho de VENDA em aberto? Então é ele — não nasce outro.
+  //
+  //    `tipo_nota is null` É O FILTRO QUE FALTAVA, e a falta era visível: o
+  //    pedido 22192 tinha um rascunho de venda (NFE-22192-002) e um de REMESSA
+  //    (NFE-22192-003), e esta consulta, sem filtro de tipo, devolvia a REMESSA.
+  //    Clicar em Faturar abria a remessa como se fosse a nota de venda do
+  //    pedido — outro destinatário, outro valor, outra natureza.
+  //
+  //    A remessa tem caminho próprio (`criarRascunhoRemessa`), que reaproveita o
+  //    rascunho de remessa dela. Um nunca é o outro.
+  //
+  //    A ORDEM É EXPLÍCITA porque `limit(1)` sem ordem devolve a linha que o
+  //    Postgres quiser. Com dois rascunhos de venda em aberto, o que vale é o
+  //    mais antigo: é o que o operador começou primeiro.
   const { data: existing } = await client
     .from("notas_fiscais")
     .select("*")
     .eq("id_int", idInt)
     .eq("status", "PENDENTE")
+    .is("tipo_nota", null)
+    .order("created_at", { ascending: true })
     .limit(1)
     .maybeSingle();
 
