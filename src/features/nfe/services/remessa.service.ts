@@ -1,5 +1,6 @@
 import { getSupabaseClient } from "@/lib/supabase/client";
 import { idEnderecoEntregaVigente } from "@/features/expedicao/lib/endereco-entrega";
+import { isValidCpf } from "@/features/cadastros/utils/documento";
 import { escolherNotaAutorizadaDoPedido, COLUNAS_NOTA_DO_PEDIDO } from "@/lib/fiscal/nota-do-pedido";
 import {
   cfopDaNatureza,
@@ -331,6 +332,73 @@ export async function criarRascunhoRemessa(idInt: number): Promise<RemessaResult
 }
 
 /** O endereco gravado como destinatario da remessa, para a tela mostrar quem recebe. */
+export type ResultadoRecebedor =
+  | { ok: true; recebedor: string; cpfRecebedor: string }
+  | { ok: false; motivo: string };
+
+/**
+ * Corrige NOME e CPF de quem recebe, no CADASTRO do endereço de entrega.
+ *
+ * ONDE O DADO MORA
+ *   Em `enderecos.recebedor` e `enderecos.cpf_recebedor`, e continua morando lá
+ *   — a nota não guarda cópia. Quem lê é `enderecoDaRemessa`, na criação da
+ *   remessa, e `buscarEnderecoDestinatario`, na tela. Gravar aqui conserta o
+ *   cadastro: a próxima remessa daquele endereço já nasce certa, e é por isso
+ *   que a tela avisa, em texto, que a mudança não é só desta nota.
+ *
+ * POR QUE VALIDAR AQUI TAMBÉM
+ *   A remessa é recusada sem nome ou sem CPF de 11 dígitos, e a recusa aparece
+ *   tarde, na hora de emitir. Barrar na gravação é dizer a mesma coisa no
+ *   momento em que dá para consertar. `isValidCpf` é A MESMA função do cadastro
+ *   (`@/features/cadastros/utils/documento`) — CPF válido tem de significar a
+ *   mesma coisa nas duas telas.
+ *
+ * O CPF É GRAVADO SÓ COM DÍGITOS. É o formato de 31 dos 51 endereços que têm
+ * CPF hoje, e o que `soDigitos` espera dos dois lados. Máscara é coisa de
+ * exibição.
+ *
+ * NÃO MEXE NO ENDEREÇO. Logradouro, número, bairro, cidade, UF e CEP são do
+ * cadastro do cliente e continuam somente leitura na nota — corrigi-los aqui
+ * mudaria para onde a mercadoria vai, que é outra decisão.
+ */
+export async function salvarRecebedorDoEndereco(args: {
+  idEndereco: string;
+  recebedor: string;
+  cpfRecebedor: string;
+}): Promise<ResultadoRecebedor> {
+  const client = getSupabaseClient();
+  if (!client) return { ok: false, motivo: "Sem conexão com o banco." };
+
+  const idEndereco = String(args.idEndereco ?? "").trim();
+  if (!idEndereco) return { ok: false, motivo: "Esta nota não aponta um endereço de destinatário." };
+
+  const nome = String(args.recebedor ?? "").trim().replace(/\s+/g, " ");
+  if (!nome) {
+    return { ok: false, motivo: "O nome de quem recebe é obrigatório: a remessa sai no nome dele." };
+  }
+
+  const cpf = soDigitos(args.cpfRecebedor);
+  if (cpf.length !== 11 || !isValidCpf(cpf)) {
+    return { ok: false, motivo: "CPF do recebedor inválido. Confira os 11 dígitos." };
+  }
+
+  const { data, error } = await client
+    .from("enderecos")
+    .update({ recebedor: nome, cpf_recebedor: cpf })
+    .eq("id", idEndereco)
+    .select("id");
+
+  if (error) {
+    console.error("[RemessaService] Erro ao salvar o recebedor do endereco:", error.message);
+    return { ok: false, motivo: error.message };
+  }
+  if (!data || data.length === 0) {
+    return { ok: false, motivo: "O endereço não foi encontrado no cadastro." };
+  }
+
+  return { ok: true, recebedor: nome, cpfRecebedor: cpf };
+}
+
 export async function buscarEnderecoDestinatario(id: string | null | undefined): Promise<EnderecoDaRemessa | null> {
   const client = getSupabaseClient();
   const idEndereco = String(id ?? "").trim();

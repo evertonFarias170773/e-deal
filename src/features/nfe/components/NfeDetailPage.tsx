@@ -31,7 +31,7 @@ import { useAppToast } from "@/components/common/AppToast";
 import { formatCurrency } from "@/lib/formatters/currency";
 import { formatDateTime } from "@/lib/formatters/date";
 import { StatusBadge } from "@/components/common/StatusBadge";
-import { buscarEnderecoDestinatario } from "@/features/nfe/services/remessa.service";
+import { buscarEnderecoDestinatario, salvarRecebedorDoEndereco } from "@/features/nfe/services/remessa.service";
 import {
   getNfeById,
   getNfeItems,
@@ -237,6 +237,17 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
    * por `id_endereco_destinatario`. É a mesma fonte que o payload usa, então a
    * tela mostra exatamente o que vai para a SEFAZ.
    */
+  /**
+   * O que está escrito nos dois campos do recebedor agora.
+   *
+   * Separado de `destinatarioRemessa` de propósito: aquele é o que está no
+   * cadastro, este é o que o operador digitou. A diferença entre os dois é o
+   * que habilita o botão de salvar — e é como a tela sabe que há alteração
+   * pendente.
+   */
+  const [recebedorNome, setRecebedorNome] = useState("");
+  const [recebedorCpf, setRecebedorCpf] = useState("");
+  const [salvandoRecebedor, setSalvandoRecebedor] = useState(false);
   const [destinatarioRemessa, setDestinatarioRemessa] = useState<{
     id: string;
     recebedor: string | null;
@@ -1527,6 +1538,50 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
     }
   }
 
+  /** Há alteração pendente nos campos do recebedor? */
+  const recebedorMudou =
+    destinatarioRemessa !== null &&
+    (recebedorNome.trim() !== String(destinatarioRemessa.recebedor ?? "").trim() ||
+      recebedorCpf.trim() !== String(destinatarioRemessa.cpf_recebedor ?? "").trim());
+
+  /**
+   * Grava nome e CPF do recebedor no CADASTRO do endereço.
+   *
+   * A nota não guarda cópia desses dois: o payload da remessa lê o endereço na
+   * hora de montar. Por isso salvar aqui já vale para esta nota, sem precisar
+   * mexer em nada dentro dela — e vale para a próxima remessa deste endereço.
+   *
+   * Quem recusa nome vazio e CPF inválido é o serviço, com a MESMA validação do
+   * cadastro. A tela só mostra o motivo que vier de lá.
+   */
+  async function salvarRecebedor() {
+    if (!destinatarioRemessa || salvandoRecebedor) return;
+    setSalvandoRecebedor(true);
+    try {
+      const res = await salvarRecebedorDoEndereco({
+        idEndereco: destinatarioRemessa.id,
+        recebedor: recebedorNome,
+        cpfRecebedor: recebedorCpf
+      });
+      if (!res.ok) {
+        showToast({ type: "error", title: "Não foi possível salvar o recebedor", description: res.motivo });
+        return;
+      }
+      setDestinatarioRemessa((atual) =>
+        atual ? { ...atual, recebedor: res.recebedor, cpf_recebedor: res.cpfRecebedor } : atual
+      );
+      setRecebedorNome(res.recebedor);
+      setRecebedorCpf(res.cpfRecebedor);
+      showToast({
+        type: "success",
+        title: "Recebedor salvo no cadastro do endereço",
+        description: "Vale para esta remessa e para as próximas deste endereço."
+      });
+    } finally {
+      setSalvandoRecebedor(false);
+    }
+  }
+
   // A nota de remessa mostra quem recebe. Uma consulta, só quando há endereço.
   useEffect(() => {
     let ativo = true;
@@ -1535,7 +1590,11 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
       // Sem endereço apontado, limpa — mas pelo callback, nunca no corpo do
       // efeito: setState síncrono aqui dispara renderização em cascata.
       const encontrado = idEndereco ? await buscarEnderecoDestinatario(idEndereco) : null;
-      if (ativo) setDestinatarioRemessa(encontrado);
+      if (ativo) {
+        setDestinatarioRemessa(encontrado);
+        setRecebedorNome(encontrado?.recebedor ?? "");
+        setRecebedorCpf(encontrado?.cpf_recebedor ?? "");
+      }
     })();
     return () => {
       ativo = false;
@@ -2833,13 +2892,51 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
                   {destinatarioRemessa ? (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
                       <div>
-                        <span className="block text-xs font-semibold text-violet-700 uppercase">Nome</span>
-                        <span className="text-slate-800 font-medium">{destinatarioRemessa.recebedor || "—"}</span>
+                        <label className="block text-xs font-semibold text-violet-700 uppercase mb-1">Nome</label>
+                        <input
+                          type="text"
+                          value={recebedorNome}
+                          disabled={isReadOnly || salvandoRecebedor}
+                          onChange={(e) => setRecebedorNome(e.target.value)}
+                          placeholder="Nome de quem recebe"
+                          className="w-full rounded-xl border border-violet-200 bg-white px-3 py-2 text-sm font-medium text-slate-800 outline-none focus:border-violet-400 disabled:bg-slate-50 disabled:text-slate-600"
+                        />
                       </div>
                       <div>
-                        <span className="block text-xs font-semibold text-violet-700 uppercase">CPF</span>
-                        <span className="text-slate-800 font-mono">{destinatarioRemessa.cpf_recebedor || "—"}</span>
+                        <label className="block text-xs font-semibold text-violet-700 uppercase mb-1">CPF</label>
+                        <input
+                          type="text"
+                          value={recebedorCpf}
+                          disabled={isReadOnly || salvandoRecebedor}
+                          onChange={(e) => setRecebedorCpf(e.target.value)}
+                          placeholder="Somente números"
+                          inputMode="numeric"
+                          className="w-full rounded-xl border border-violet-200 bg-white px-3 py-2 text-sm font-mono text-slate-800 outline-none focus:border-violet-400 disabled:bg-slate-50 disabled:text-slate-600"
+                        />
                       </div>
+                      {!isReadOnly && recebedorMudou && (
+                        <div className="md:col-span-2 flex flex-wrap items-center gap-3">
+                          <button
+                            type="button"
+                            onClick={() => void salvarRecebedor()}
+                            disabled={salvandoRecebedor}
+                            className="rounded-xl bg-violet-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-violet-800 disabled:opacity-50"
+                          >
+                            {salvandoRecebedor ? "Salvando..." : "Salvar no cadastro do endereço"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setRecebedorNome(destinatarioRemessa.recebedor ?? "");
+                              setRecebedorCpf(destinatarioRemessa.cpf_recebedor ?? "");
+                            }}
+                            disabled={salvandoRecebedor}
+                            className="text-sm font-medium text-violet-800 underline underline-offset-2 disabled:opacity-50"
+                          >
+                            Desfazer
+                          </button>
+                        </div>
+                      )}
                       <div className="md:col-span-2">
                         <span className="block text-xs font-semibold text-violet-700 uppercase">Endereço de entrega</span>
                         <span className="text-slate-800">
@@ -2863,6 +2960,11 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
                       O endereço do destinatário não foi encontrado. Sem ele, a emissão será recusada.
                     </p>
                   )}
+                  <p className="text-[11px] text-violet-800">
+                    <strong>Nome e CPF são do cadastro deste endereço de entrega.</strong> Salvar aqui corrige o
+                    cadastro do cliente: vale para esta nota e para as próximas remessas deste mesmo endereço.
+                    O endereço em si só muda no cadastro.
+                  </p>
                   <p className="text-[11px] text-violet-800">
                     Os campos abaixo mostram o cliente do pedido, que é quem paga. Na remessa, a nota sai no
                     nome acima.
