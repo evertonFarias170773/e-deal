@@ -33,7 +33,15 @@ type MenuPosition = {
 
 const DESKTOP_MENU_WIDTH = 240;
 const VIEWPORT_MARGIN = 12;
-const ACTIONS_MENU_OPEN_EVENT = "erp-ideal-actions-menu-open";
+
+/**
+ * "Abri um menu": quem escuta e não é o dono do evento, fecha.
+ *
+ * Exportado porque o menu de ações deixou de ser o único: o `BotaoDanfe` abre a
+ * própria lista na mesma linha, e dois menus abertos em cima um do outro é
+ * ruído. O `detail` é o id de quem abriu.
+ */
+export const ACTIONS_MENU_OPEN_EVENT = "erp-ideal-actions-menu-open";
 
 export function ActionsMenu({ items, label = "Acoes", variant = "botao" }: ActionsMenuProps) {
   /**

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Truck } from "lucide-react";
 import { ActionsMenu } from "@/components/common/ActionsMenu";
+import { BotaoDanfe } from "@/components/common/BotaoDanfe";
 import type { ActionMenuItem } from "@/components/common/ActionsMenu";
 import { EmptyState } from "@/components/common/EmptyState";
 import { StatusBadge } from "@/components/common/StatusBadge";
@@ -553,7 +554,14 @@ export function KanbanTransportadoras({
                         </span>
                       )}
                     </span>
-                    <ActionsMenu items={acoes} label="Ações" variant="icone" />
+                    <span className="flex shrink-0 items-center gap-0.5">
+                      {/* A DANFE na mão de quem embala. Antes, conferir a nota
+                          no momento de fechar a caixa era sair da Expedição,
+                          achar o pedido no Histórico e voltar. O ícone só
+                          aparece quando há nota autorizada com número. */}
+                      <BotaoDanfe danfes={p.danfes} tamanho="card" />
+                      <ActionsMenu items={acoes} label="Ações" variant="icone" />
+                    </span>
                   </div>
                   {/* Duas linhas, não uma: "LISITON DOCUMENTOS SEGUROS LTDA" e
                       "LISITON DOCUMENTOS SEGUROS ME" truncavam idênticos em uma

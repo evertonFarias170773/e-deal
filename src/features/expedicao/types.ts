@@ -1,5 +1,6 @@
 import type { PesoOrigem as PesoOrigemInterna } from "./lib/peso";
 import type { CategoriaFrete } from "@/features/orcamentos/lib/categoria-frete";
+import type { DanfeDoPedido } from "@/lib/fiscal/danfes-do-pedido";
 
 /**
  * Modalidade comercial do frete — QUEM PAGA o transporte.
@@ -402,6 +403,16 @@ export interface PedidoExpedicao {
   liberacaoRecotacao: { id: number; liberadoEm: string; liberadoPorNome: string | null } | null;
   nfStatus: NfStatusExpedicao;
   nfNumero: string | null;
+  /**
+   * O que este pedido tem de DANFE para baixar, já rotulado ("NF venda", "NF
+   * complementar", "NF remessa"). Vem do mesmo lote de `notas_fiscais` que
+   * alimenta `nfStatus` — é lista, e não um campo só, porque faturamento
+   * parcial e remessa dão mais de uma nota ao mesmo pedido.
+   *
+   * Opcional porque nem toda origem de `PedidoExpedicao` monta este campo (os
+   * mocks, por exemplo); vazio e ausente significam a mesma coisa: sem botão.
+   */
+  danfes?: DanfeDoPedido[];
   liberaNf: boolean;
   codigoRastreamento: string;
   obsOs: string;

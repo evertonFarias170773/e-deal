@@ -54,6 +54,7 @@ import type {
   PropostaStatus,
   TipoDescontoProposta
 } from "@/features/orcamentos/types";
+import { danfesDoPedido } from "@/lib/fiscal/danfes-do-pedido";
 import {
   COLUNAS_NOTA_DO_PEDIDO,
   escolherNotaAutorizadaDoPedido,
@@ -786,11 +787,22 @@ async function fetchPropostaRows(
       };
     };
 
+    /**
+     * O que a proposta tem para BAIXAR — outra pergunta, outra lista.
+     *
+     * `nota_emitida` continua sendo UMA nota, a que representa o pedido, e é
+     * dela que sai o texto "Nota emitida · nº X". Esta lista é o inventário do
+     * que existe de DANFE, com a remessa junto, para o botão da linha. Sai do
+     * MESMO lote de `notas_fiscais` que já estava carregado.
+     */
+    const danfesDaProposta = (idInt: string) => danfesDoPedido(notasPorProposta.get(idInt) ?? []);
+
     const enrichedRows = proposalRows.map((row) => ({
       ...row,
       tipos_cobranca: paymentMap.get(String(row.id_int ?? "")) ?? [],
       pago_a_confirmar: pagoAConfirmarSet.has(String(row.id_int ?? "")),
       nota_emitida: notaEmitidaDaProposta(String(row.id_int ?? "")),
+      danfes: danfesDaProposta(String(row.id_int ?? "")),
       em_arte: row.em_arte === true
     }));
 

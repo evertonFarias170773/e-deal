@@ -19,6 +19,7 @@ import {
   COLUNAS_NOTA_DO_PEDIDO,
   type NotaCandidata
 } from "@/lib/fiscal/nota-do-pedido";
+import { danfesDoPedido, COLUNAS_DANFE_DO_PEDIDO, type DanfeDoPedido } from "@/lib/fiscal/danfes-do-pedido";
 import { resolverPesoExpedicao } from "../lib/peso";
 import type {
   ContatoDestinatario,
@@ -30,8 +31,18 @@ import type {
   TipoFreteNormalizado
 } from "../types";
 
-/** Linha de `notas_fiscais` como a lista da Expedição a lê. */
-type NotaFiscalExpedicaoRow = NotaCandidata & { id_int: number | null };
+/**
+ * Linha de `notas_fiscais` como a lista da Expedição a lê.
+ *
+ * `ref` e `url_danfe` entraram em 16/09/2026 para o botão de DANFE do card: são
+ * duas colunas a mais na consulta em lote que já rodava, e nenhuma consulta
+ * nova.
+ */
+type NotaFiscalExpedicaoRow = NotaCandidata & {
+  id_int: number | null;
+  ref: string | null;
+  url_danfe: string | null;
+};
 
 /**
  * Universo do painel: tudo que está aprovado para produção (is_prd_aprovado)
@@ -192,7 +203,7 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
       .in("id_int", ids),
     client
       .from("notas_fiscais")
-      .select(`id_int, ${COLUNAS_NOTA_DO_PEDIDO}`)
+      .select(`id_int, ${COLUNAS_NOTA_DO_PEDIDO}, ${COLUNAS_DANFE_DO_PEDIDO}`)
       .in("id_int", ids),
     client
       .from("expedicoes")
@@ -335,6 +346,16 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
     if (viva) {
       nfMap.set(idInt, { status: "PENDENTE", numero: viva.numero_nf ? String(viva.numero_nf) : null });
     }
+  }
+
+  // O que dá para BAIXAR é outra pergunta, e por isso é outro mapa: `nfMap`
+  // responde "qual nota representa o pedido" (uma, nunca a remessa); este
+  // responde "o que o operador pode ter em mãos" — todas as autorizadas, com a
+  // remessa junto. Sai do MESMO lote de notas, sem consulta a mais.
+  const danfesPorPedido = new Map<number, DanfeDoPedido[]>();
+  for (const [idInt, notas] of notasPorPedido) {
+    const danfes = danfesDoPedido(notas);
+    if (danfes.length > 0) danfesPorPedido.set(idInt, danfes);
   }
 
   const expMap = new Map<number, ExpedicaoRegistro>();
@@ -940,6 +961,7 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
       volumes: exp?.qtdVolumes ?? (p.volume !== null ? Number(p.volume) : null),
       nfStatus: nf?.status ?? "SEM_NF",
       nfNumero: nf?.numero ?? null,
+      danfes: danfesPorPedido.get(idInt) ?? [],
       liberaNf: p.libera_nf === true,
       // Prepostagem marcada como cancelada: a lista passa a se comportar como
       // "sem rastreio" — some da coluna, some da busca e o item "Rastrear

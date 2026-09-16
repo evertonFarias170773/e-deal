@@ -1,4 +1,5 @@
 import type { SupabasePropostaRow } from "@/features/orcamentos/types.supabase";
+import type { DanfeDoPedido } from "@/lib/fiscal/danfes-do-pedido";
 
 export function composeStatusEmArte(baseStatus: string, emArte: boolean | undefined): string {
   if (!baseStatus) return "SEM_STATUS";
@@ -56,6 +57,16 @@ export type OrcamentoListItem = {
     urlDanfe: string | null;
     urlXml: string | null;
   } | null;
+  /**
+   * TODAS as DANFEs que este pedido tem para baixar, já rotuladas ("NF venda",
+   * "NF complementar", "NF remessa").
+   *
+   * Vizinha de `notaEmitida`, e de propósito separada: aquela responde "qual
+   * nota representa o pedido" e nunca inclui a remessa; esta é o inventário do
+   * que dá para ter em mãos. Vazia quando não há nada autorizado — e aí o botão
+   * de DANFE nem aparece na linha.
+   */
+  danfes: DanfeDoPedido[];
   modelo: "AVULSO" | "PROPOSTA";
   source: OrcamentoListSource;
   rawColumns?: string[];
@@ -401,6 +412,7 @@ function mapRowToListItem(row: SupabasePropostaRow): OrcamentoListItem | null {
     // pedido acontece la, junto da carga em lote, e nao por linha aqui.
     notaEmitida:
       (row as { nota_emitida?: OrcamentoListItem["notaEmitida"] }).nota_emitida ?? null,
+    danfes: (row as { danfes?: DanfeDoPedido[] }).danfes ?? [],
     modelo,
     source: "supabase",
     rawColumns: Object.keys(row),

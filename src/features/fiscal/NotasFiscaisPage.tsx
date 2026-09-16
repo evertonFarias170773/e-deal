@@ -7,6 +7,7 @@ import { useDebouncedInput } from "@/hooks/useDebouncedValue";
 import { codecs } from "@/lib/url-state";
 import { AlertTriangle, Copy, ExternalLink, FilePlus2, FileText, Play, Loader2, X } from "lucide-react";
 import { ActionsMenu } from "@/components/common/ActionsMenu";
+import { BotaoDanfe } from "@/components/common/BotaoDanfe";
 import { PageHeader } from "@/components/common/PageHeader";
 import { NovaNotaAvulsaModal } from "@/features/fiscal/components/NovaNotaAvulsaModal";
 import { ResponsiveList } from "@/components/common/ResponsiveList";
@@ -37,6 +38,7 @@ import { hasPermissao } from "@/features/auth/usuarios.service";
 import { marcarFaturadoNoSistemaAntigo } from "@/features/fiscal/services/faturado-fora.client";
 import { criarRascunhoRemessa } from "@/features/nfe/services/remessa.service";
 import { COLUNAS_NOTA_DO_PEDIDO } from "@/lib/fiscal/nota-do-pedido";
+import { danfesDoPedido, type DanfeDoPedido } from "@/lib/fiscal/danfes-do-pedido";
 
 // Fase 1 MVP
 import type { FaturavelOrigem } from "./types";
@@ -361,6 +363,26 @@ export function NotasFiscaisPage() {
   // Históricos adicionados localmente via simulação (Fase 1 MVP)
   // Sem lista simulada: o que a tela mostra vem do banco, e so.
   const nfeListCombined = nfeData.nfeList;
+
+  /**
+   * As DANFEs de cada pedido, calculadas UMA vez para a lista inteira.
+   *
+   * O Histórico já traz todas as notas na consulta única que ele sempre fez —
+   * então aqui não há consulta nova nenhuma, só um agrupamento por `id_int`.
+   * É o que permite a linha de uma REMESSA oferecer também a DANFE da venda do
+   * mesmo pedido: o operador raramente quer uma sem a outra.
+   */
+  const danfesPorPedido = useMemo(() => {
+    const notasPorPedido = new Map<number, NfeReadModel[]>();
+    for (const nota of nfeListCombined) {
+      const idInt = Number(nota.id_int);
+      if (!Number.isFinite(idInt)) continue;
+      notasPorPedido.set(idInt, [...(notasPorPedido.get(idInt) ?? []), nota]);
+    }
+    const porPedido = new Map<number, DanfeDoPedido[]>();
+    for (const [idInt, notas] of notasPorPedido) porPedido.set(idInt, danfesDoPedido(notas));
+    return porPedido;
+  }, [nfeListCombined]);
   const nfseListCombined = nfseData.nfseList;
 
   const [nfePaymentsCountMap, setNfePaymentsCountMap] = useState<Record<string, number>>({});
@@ -2568,7 +2590,12 @@ export function NotasFiscaisPage() {
               },
               {
                 header: "Ações",
-                cell: (item) => <ActionsMenu items={getNfeActions(item)} />,
+                cell: (item) => (
+                  <div className="flex items-center justify-end gap-1">
+                    <BotaoDanfe danfes={danfesPorPedido.get(Number(item.id_int))} />
+                    <ActionsMenu items={getNfeActions(item)} />
+                  </div>
+                ),
                 align: "right"
               }
             ]}
@@ -2618,7 +2645,8 @@ export function NotasFiscaisPage() {
                   <p className="text-right">Valor: <strong>{formatCurrency(item.valor_total_nf)}</strong></p>
                   <p>Data: {formatDate(item.created_at)} {formatTime(item.created_at)}</p>
                 </div>
-                <div className="flex justify-end pt-2">
+                <div className="flex items-center justify-end gap-1 pt-2">
+                  <BotaoDanfe danfes={danfesPorPedido.get(Number(item.id_int))} />
                   <ActionsMenu items={getNfeActions(item)} label="Ações" />
                 </div>
               </article>

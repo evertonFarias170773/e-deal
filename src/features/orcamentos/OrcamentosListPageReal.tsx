@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CalendarDays, CreditCard, FileText, Search, WalletCards, MessageSquare, Paperclip, Palette, Printer, Link as LinkIcon } from "lucide-react";
 import { ActionsMenu } from "@/components/common/ActionsMenu";
+import { BotaoDanfe } from "@/components/common/BotaoDanfe";
 import { urlDownloadXmlNfe } from "@/lib/fiscal/download-xml-nfe";
 import { useAppToast } from "@/components/common/AppToast";
 import { PageHeader } from "@/components/common/PageHeader";
@@ -1894,6 +1895,11 @@ Ela volta a aparecer nas listas operacionais.`
                       </span>
                     )}
                   </button>
+                  {/* A DANFE a um clique, na própria linha: o vendedor com o
+                      cliente ao telefone não precisa abrir o menu, nem ir ao
+                      Histórico de Notas. Com mais de uma nota no pedido, o
+                      botão abre a lista e diz qual é qual. */}
+                  <BotaoDanfe danfes={proposta.danfes} />
                   <ActionsMenu items={getActions(proposta)} />
                 </div>
               );
@@ -2037,6 +2043,7 @@ Ela volta a aparecer nas listas operacionais.`
                   );
                 })()}
               </div>
+              <BotaoDanfe danfes={proposta.danfes} />
               <ActionsMenu label="Mais" items={getActions(proposta).filter((item) => item.label !== "Ver proposta")} />
             </div>
           </article>
