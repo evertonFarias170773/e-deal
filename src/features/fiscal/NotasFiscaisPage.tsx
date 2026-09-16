@@ -36,12 +36,14 @@ import { useAuth } from "@/features/auth/AuthProvider";
 import { hasPermissao } from "@/features/auth/usuarios.service";
 import { marcarFaturadoNoSistemaAntigo } from "@/features/fiscal/services/faturado-fora.client";
 import { criarRascunhoRemessa } from "@/features/nfe/services/remessa.service";
+import { COLUNAS_NOTA_DO_PEDIDO } from "@/lib/fiscal/nota-do-pedido";
 
 // Fase 1 MVP
 import type { FaturavelOrigem } from "./types";
 import { EmissaoNfeModal } from "./components/EmissaoNfeModal";
 import { ConferenciaFaturamentoModal } from "./components/ConferenciaFaturamentoModal";
 import { conferirFaturamento, type ResultadoConferencia } from "./services/conferencia-faturamento";
+import { textoDeConfirmacaoDeSegundaNota } from "./lib/confirmacao-segunda-nota";
 import { resolverAmbienteFiscal } from "./services/ambiente-fiscal";
 
 /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
@@ -1216,7 +1218,7 @@ export function NotasFiscaisPage() {
             ? "Gerando outra nota de venda..."
             : "Gerar outra nota de venda (faturamento parcial)",
           onClick: () => {
-            void abrirRascunhoDeVenda(Number(item.id_int));
+            void handleGerarOutraVenda(item);
           }
         });
         actions.push({
@@ -1647,6 +1649,66 @@ export function NotasFiscaisPage() {
   }
 
   /**
+   * Confirma com o operador ANTES de o pedido ganhar uma segunda nota.
+   *
+   * As duas ações do menu — outra venda e remessa — criam documento fiscal novo
+   * para um pedido que JÁ tem nota. A pergunta cita o que existe, com número e
+   * ref, e diz o que vai ser criado. É o passo que separa quem sabe de quem
+   * clicou sem querer.
+   *
+   * AS NOTAS VÊM DO BANCO, não da lista da tela: a lista está filtrada pelo que
+   * o operador escolheu ver, e citar "o que existe" a partir de um recorte seria
+   * pior do que não citar nada.
+   *
+   * Só pergunta: não cria, não altera e não emite. Quem faz isso é o caminho de
+   * sempre, depois do sim.
+   */
+  async function confirmarSegundaNota(idInt: number, tipo: "VENDA" | "REMESSA"): Promise<boolean> {
+    const client = getSupabaseClient();
+    if (!client) {
+      showToast({ type: "warning", title: "Sem conexão com o banco para conferir as notas deste pedido." });
+      return false;
+    }
+
+    const { data, error } = await client
+      .from("notas_fiscais")
+      .select(`ref, ${COLUNAS_NOTA_DO_PEDIDO}`)
+      .eq("id_int", idInt);
+
+    if (error) {
+      showToast({
+        type: "error",
+        title: "Não foi possível conferir as notas deste pedido.",
+        description: error.message
+      });
+      return false;
+    }
+
+    return window.confirm(
+      textoDeConfirmacaoDeSegundaNota({ idInt, tipo, notas: (data ?? []) as never })
+    );
+  }
+
+  /**
+   * "Gerar outra nota de venda (faturamento parcial)": confirma e segue pelo
+   * caminho de sempre.
+   *
+   * A confirmação mora AQUI, e não em `abrirRascunhoDeVenda`, porque aquele
+   * caminho é compartilhado com o botão Faturar da Fila — onde o pedido ainda
+   * não tem nota e a pergunta não teria o que citar.
+   */
+  async function handleGerarOutraVenda(item: NfeReadModel) {
+    if (isFaturando) return;
+    const idInt = Number(item.id_int);
+    if (!Number.isInteger(idInt) || idInt <= 0) {
+      showToast({ type: "warning", title: "Pedido não identificado nesta nota." });
+      return;
+    }
+    if (!(await confirmarSegundaNota(idInt, "VENDA"))) return;
+    await abrirRascunhoDeVenda(idInt);
+  }
+
+  /**
    * "Gerar nota de remessa": a segunda nota do pedido, no nome de quem recebe.
    *
    * Cria só o RASCUNHO e leva o operador até ele — nada é transmitido aqui. O
@@ -1661,6 +1723,7 @@ export function NotasFiscaisPage() {
       showToast({ type: "warning", title: "Pedido não identificado nesta nota." });
       return;
     }
+    if (!(await confirmarSegundaNota(idInt, "REMESSA"))) return;
     setGerandoRemessaId(idInt);
     try {
       showToast({ type: "info", title: "Montando a nota de remessa..." });
