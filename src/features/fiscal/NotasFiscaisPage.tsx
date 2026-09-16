@@ -270,9 +270,6 @@ export function NotasFiscaisPage() {
       "nfe-q": { codec: codecs.texto(), default: "" },
       "nfe-emp": { codec: codecs.enumOf(EMPRESAS_EMITENTES), default: "" as const },
       "nfe-status": { codec: codecs.enumOf(STATUS_NFE), default: "" as const },
-      // Fila: por padrão esconde a proposta que já tem nota viva. Este filtro
-      // traz as escondidas de volta — faturamento parcial precisa do caminho.
-      "fila-faturadas": { codec: codecs.booleano(), default: false },
       // Fila: recorta para as cobranças do tipo faturado, que são as do Financeiro.
       "fila-so-faturados": { codec: codecs.booleano(), default: false },
       // Fila: recorta por status do pedido. `texto` e não `enumOf` de propósito —
@@ -353,7 +350,6 @@ export function NotasFiscaisPage() {
   const nfeEmpresa = filters["nfe-emp"];
   const nfseStatus = filters["nfse-status"];
   const nfseEmpresa = filters["nfse-emp"];
-  const mostrarFaturadas = filters["fila-faturadas"];
   const soFaturados = filters["fila-so-faturados"];
   const filaStatus = filters["fila-status"];
 
@@ -1926,7 +1922,6 @@ export function NotasFiscaisPage() {
   }
 
   // Filtragem da Fila de Faturamento (Unificada: NF-e e NFS-e)
-  const filaJaFaturadas = faturaveisList.filter((item) => (item.notas_vivas ?? 0) > 0).length;
   const filaFaturados = faturaveisList.filter((item) => ehFaturado(item.tipo_cobranca)).length;
 
   /**
@@ -1945,8 +1940,18 @@ export function NotasFiscaisPage() {
    * desta aba já funcionam.
    */
   const filaPassaNosOutrosFiltros = (item: FaturavelOrigem) => {
-    // Já virou nota viva: sai da fila, a menos que o operador peça para ver.
-    if (!mostrarFaturadas && (item.notas_vivas ?? 0) > 0) return false;
+    // JÁ TEM NOTA VIVA: sai da fila, e não há como pedir de volta.
+    //
+    // Havia um checkbox que trazia esses pedidos de volta, para o faturamento
+    // parcial começar por aqui. Ele saiu em 16/09/2026: a fila é a lista de
+    // trabalho de quem ainda precisa emitir, e pedido já faturado no meio dela
+    // só fazia a operação perguntar "este aqui já saiu ou não?".
+    //
+    // Faturar de novo continua existindo, e num lugar mais honesto: a ação
+    // "Gerar outra nota de venda (faturamento parcial)" no menu da nota, no
+    // Histórico — onde a nota que já existe está à vista e a confirmação cita o
+    // número dela.
+    if ((item.notas_vivas ?? 0) > 0) return false;
 
     if (soFaturados && !ehFaturado(item.tipo_cobranca)) return false;
 
@@ -2208,23 +2213,6 @@ export function NotasFiscaisPage() {
                 <span className="ml-1 text-xs text-slate-400">— as cobranças do Financeiro</span>
               </span>
             </label>
-            {filaJaFaturadas > 0 && (
-              <label className="lg:col-span-3 flex items-center gap-2.5 text-sm text-slate-600 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={mostrarFaturadas}
-                  onChange={(e) => setFilter("fila-faturadas", e.target.checked)}
-                  className="h-4 w-4 rounded border-[#d7e5e8] text-[#0b2f4a] focus:ring-[#0b2f4a]"
-                />
-                <span>
-                  Permitir faturar de novo pedidos que já têm nota
-                  <strong className="ml-1 font-semibold text-slate-800">({filaJaFaturadas})</strong>
-                  <span className="ml-1 text-xs text-slate-400">
-                    — para faturamento parcial, que emite mais de uma nota no mesmo pedido
-                  </span>
-                </span>
-              </label>
-            )}
           </div>
 
           <ResponsiveList<FaturavelOrigem>
@@ -2242,7 +2230,6 @@ export function NotasFiscaisPage() {
                   // onde ir, e aí o texto não vira link.
                   const idInt = item.id_int ?? Number(item.ref_origem.match(/\d+/)?.[0]) ?? 0;
                   const temDestino = Number.isFinite(idInt) && idInt > 0;
-                  const jaTemNota = (item.notas_vivas ?? 0) > 0;
                   return (
                     <div className="flex flex-col">
                       {temDestino ? (
@@ -2260,12 +2247,10 @@ export function NotasFiscaisPage() {
                       {item.os_ideal && (
                         <span className="text-xs text-slate-500 font-mono">OS: {item.os_ideal}</span>
                       )}
+                      {/* O selo "Já tem N notas" saiu junto com o checkbox: ele
+                          só era alcançável naquele modo, e agora nenhum pedido
+                          da fila tem nota viva. */}
                       <VendedorDoPedido valor={item.vendedor} />
-                      {jaTemNota && (
-                        <span className="mt-1 w-fit rounded-lg border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[11px] font-semibold text-amber-800">
-                          Já tem {item.notas_vivas} nota{(item.notas_vivas ?? 0) > 1 ? "s" : ""}
-                        </span>
-                      )}
                     </div>
                   );
                 }
