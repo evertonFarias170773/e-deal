@@ -1063,6 +1063,14 @@ export async function createOrReuseNfeDraft(idInt: number): Promise<SupabaseNfeR
     transportadora: transportadoraNota || null,
     quantidade_volumes: qtdVolumesNota,
     especie_volumes: especieVolumesNota,
+    // O NUMERO DO PEDIDO VAI NAS INFORMACOES COMPLEMENTARES.
+    //
+    // `fn_montar_payload_nfe` concatena este campo com o endereco de entrega em
+    // `informacoes_adicionais_contribuinte` — entao basta gravar aqui para o
+    // numero aparecer na nota, sem tocar na funcao do banco. O campo esta vazio
+    // em todas as notas anteriores a 16/09/2026, e nenhuma delas e reescrita:
+    // isto vale so para rascunho novo.
+    informacoes_complementares: `Pedido ${idInt}`,
     // Os dois triggers de peso reescrevem estas duas colunas a partir da soma
     // dos itens assim que eles entram. Gravamos aqui o MESMO numero que eles vao
     // impor, para que a linha nunca exista com um peso que ninguem mais defende.
@@ -1870,6 +1878,97 @@ export async function getFaturaveisPropostas(): Promise<FaturavelOrigem[]> {
     console.error("[NfeService] Exception in getFaturaveisPropostas:", err);
     return [];
   }
+}
+
+export type ReabastecimentoTransportadora =
+  | { preencheu: false; motivo: "JA_TEM" | "SEM_EXPEDICAO" | "SEM_DADO" | "ERRO" }
+  | { preencheu: true; transportadora: string | null; idTransportadora: number | null };
+
+/**
+ * Preenche a transportadora da nota a partir da EXPEDIÇÃO, quando a nota está
+ * sem ela.
+ *
+ * POR QUE EXISTE
+ *   O rascunho copia a transportadora da expedição no nascimento — mas só se a
+ *   expedição já existir. Quando a nota nasce antes do despacho, ela fica sem
+ *   transportadora e NADA a reabastece depois: a NFE-21955-001 foi criada às
+ *   14:51 e a expedição (SEDEX) só às 14:57, e a nota saiu sem transportadora
+ *   nenhuma. Medido em 16/09/2026: 17 das 45 notas estão nessa situação.
+ *
+ *   O payload lê só a nota, de propósito — ele não vai atrás da expedição. Por
+ *   isso o conserto é aqui, no momento em que o operador prepara o envio: é o
+ *   último instante em que a informação ainda pode entrar, e é uma ação dele.
+ *
+ * NUNCA SOBRESCREVE
+ *   Só age quando a nota está sem nome E sem vínculo. Escolha feita por alguém
+ *   — inclusive a de deixar vazio numa retirada — fica como está. O `UPDATE`
+ *   repete a condição no banco (`is("id_transportadora_cliente", null)`), para
+ *   duas telas ao mesmo tempo não desfazerem uma à outra.
+ *
+ *   A tradução de cadastro substituído é a MESMA da criação do rascunho
+ *   (`canonizarTransportadora`): nome do cadastro antigo com id novo seria pior
+ *   que campo vazio, então nesse caso o nome vem do cadastro canônico.
+ */
+export async function preencherTransportadoraPelaExpedicao(args: {
+  id: string;
+  idInt: number;
+  transportadoraAtual?: string | null;
+  idTransportadoraAtual?: number | null;
+}): Promise<ReabastecimentoTransportadora> {
+  const client = getSupabaseClient();
+  if (!client) return { preencheu: false, motivo: "ERRO" };
+
+  const jaTem =
+    String(args.transportadoraAtual ?? "").trim() !== "" || args.idTransportadoraAtual != null;
+  if (jaTem) return { preencheu: false, motivo: "JA_TEM" };
+
+  const { data: expedicaoRow, error: expedicaoErro } = await client
+    .from("expedicoes")
+    .select("transportadora_nome, id_transportadora_cliente")
+    .eq("id_int", args.idInt)
+    .maybeSingle();
+
+  if (expedicaoErro) {
+    console.warn("[NfeService] Nao foi possivel ler a expedicao para a transportadora:", expedicaoErro.message);
+    return { preencheu: false, motivo: "ERRO" };
+  }
+  const expedicao = expedicaoRow as {
+    transportadora_nome?: string | null;
+    id_transportadora_cliente?: number | null;
+  } | null;
+  if (!expedicao) return { preencheu: false, motivo: "SEM_EXPEDICAO" };
+
+  const idBruto = expedicao.id_transportadora_cliente ?? null;
+  const idCanonico = canonizarTransportadora(idBruto);
+  const traduzida = ehCadastroSubstituido(idBruto);
+
+  let nome = traduzida ? "" : String(expedicao.transportadora_nome ?? "").trim();
+  if (!nome && idCanonico) {
+    const { data: cadastro } = await client
+      .from("clientes")
+      .select("nome, fantasia")
+      .eq("id_cliente", idCanonico)
+      .maybeSingle();
+    const linha = cadastro as { nome?: string | null; fantasia?: string | null } | null;
+    nome = String(linha?.nome ?? linha?.fantasia ?? "").trim();
+  }
+
+  if (!nome && !idCanonico) return { preencheu: false, motivo: "SEM_DADO" };
+
+  const { data: atualizada, error: updateErro } = await client
+    .from("notas_fiscais")
+    .update({ transportadora: nome || null, id_transportadora_cliente: idCanonico })
+    .eq("id", args.id)
+    .is("id_transportadora_cliente", null)
+    .select("id");
+
+  if (updateErro) {
+    console.warn("[NfeService] Nao foi possivel preencher a transportadora da nota:", updateErro.message);
+    return { preencheu: false, motivo: "ERRO" };
+  }
+  if (!atualizada || atualizada.length === 0) return { preencheu: false, motivo: "JA_TEM" };
+
+  return { preencheu: true, transportadora: nome || null, idTransportadora: idCanonico };
 }
 
 export async function trocarEmpresaNfe(

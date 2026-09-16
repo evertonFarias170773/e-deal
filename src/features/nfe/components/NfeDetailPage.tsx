@@ -46,6 +46,7 @@ import {
   insertNfeItem,
   deleteNfeItem,
   recalcularTotaisNfe,
+  preencherTransportadoraPelaExpedicao,
   searchActiveProducts,
   updateNfeItem,
   recreateSinglePayment,
@@ -1985,6 +1986,23 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
     if (!note) return null;
     setIsSaving(true);
     try {
+      // A nota pode ter nascido ANTES do despacho e ficado sem transportadora,
+      // porque o rascunho copia da expedição no nascimento e nada a reabastece
+      // depois. Este é o último momento em que dá para corrigir, e só preenche
+      // o que está vazio — escolha de alguém nunca é sobrescrita.
+      const transporte = await preencherTransportadoraPelaExpedicao({
+        id: note.id,
+        idInt: Number(note.id_int),
+        transportadoraAtual: note.transportadora,
+        idTransportadoraAtual: note.id_transportadora_cliente
+      });
+      if (transporte.preencheu) {
+        showToast({
+          type: "info",
+          title: `Transportadora preenchida pela expedição: ${transporte.transportadora ?? "cadastro vinculado"}.`
+        });
+      }
+
       const resEmit = await prepararEnvioNfe(note.ref);
       if (!resEmit || !resEmit.ok) {
         showToast({ type: "error", title: resEmit?.mensagem || "Falha ao preparar envio da nota." });

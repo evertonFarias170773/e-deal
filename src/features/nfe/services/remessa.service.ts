@@ -252,6 +252,8 @@ export async function criarRascunhoRemessa(idInt: number): Promise<RemessaResult
     peso_liquido: venda.peso_liquido ?? 0,
     peso_bruto: venda.peso_bruto ?? 0,
     end_entrega: false,
+    // Mesmo texto da venda: quem receber a nota sabe de que pedido ela veio.
+    informacoes_complementares: `Pedido ${idInt}`,
     cond_pgto: false,
     forma_pgto: "SEM PAGAMENTO",
     pgto_is_configurado: true
