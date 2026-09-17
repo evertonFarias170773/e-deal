@@ -1,6 +1,17 @@
 import { getSupabaseClient } from "@/lib/supabase/client";
 import { idEnderecoEntregaVigente } from "@/features/expedicao/lib/endereco-entrega";
-import { isValidCpf } from "@/features/cadastros/utils/documento";
+import { isValidCpf, isValidCnpj } from "@/features/cadastros/utils/documento";
+
+/**
+ * O documento de quem recebe serve para a remessa?
+ *
+ * CPF (11 digitos) ou CNPJ (14) — a remessa pode ir para pessoa fisica ou para
+ * uma empresa. Quem decide em qual campo do payload ele entra e o TAMANHO, na
+ * propria `fn_montar_payload_nfe`; aqui so se confere se o numero e valido, com
+ * as mesmas funcoes do cadastro.
+ */
+const documentoDoRecebedorEhValido = (digitos: string) =>
+  (digitos.length === 11 && isValidCpf(digitos)) || (digitos.length === 14 && isValidCnpj(digitos));
 import { escolherNotaAutorizadaDoPedido, COLUNAS_NOTA_DO_PEDIDO } from "@/lib/fiscal/nota-do-pedido";
 import {
   cfopDaNatureza,
@@ -110,8 +121,11 @@ export async function enderecoDaRemessa(
   const nome = String(linha.recebedor ?? "").trim();
   const cpf = soDigitos(linha.cpf_recebedor);
 
-  if (!nome || cpf.length !== 11) {
-    const faltando = [!nome ? "o nome do recebedor" : null, cpf.length !== 11 ? "o CPF do recebedor" : null]
+  if (!nome || !documentoDoRecebedorEhValido(cpf)) {
+    const faltando = [
+      !nome ? "o nome do recebedor" : null,
+      !documentoDoRecebedorEhValido(cpf) ? "o CPF ou CNPJ do recebedor" : null
+    ]
       .filter(Boolean)
       .join(" e ");
     return {
@@ -378,8 +392,8 @@ export async function salvarRecebedorDoEndereco(args: {
   }
 
   const cpf = soDigitos(args.cpfRecebedor);
-  if (cpf.length !== 11 || !isValidCpf(cpf)) {
-    return { ok: false, motivo: "CPF do recebedor inválido. Confira os 11 dígitos." };
+  if (!documentoDoRecebedorEhValido(cpf)) {
+    return { ok: false, motivo: "Documento do recebedor inválido. Informe um CPF de 11 dígitos ou um CNPJ de 14." };
   }
 
   const { data, error } = await client
