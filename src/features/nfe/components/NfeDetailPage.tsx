@@ -228,6 +228,8 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
   const { user } = useAuth();
   const podeEmitirNfe = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "fiscal.emit_nfe");
   const isReadOnly = note ? ["AUTORIZADA", "CANCELADA", "DENEGADA", "PROCESSANDO", "PROCESSANDO_AUTORIZACAO"].includes((note.status || "").toUpperCase()) : false;
+  /** Nota de REMESSA: o destinatário é quem RECEBE, não o pagador. */
+  const ehRemessa = String(note?.tipo_nota ?? "").trim().toUpperCase() === "REMESSA";
   const [items, setItems] = useState<SupabaseNfeItemRow[]>([]);
   const [pagamentos, setPagamentos] = useState<SupabaseNfePagamentoRow[]>([]);
   const [events, setEvents] = useState<SupabaseNotaEventoRow[]>([]);
@@ -389,6 +391,23 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
   const [pesoBruto, setPesoBruto] = useState(0);
   const [infoComplementares, setInfoComplementares] = useState("");
   const [obsInternas, setObsInternas] = useState("");
+
+  /**
+   * O destinatário SÓ DESTA NOTA (18/09/2026).
+   *
+   * Vazio é o normal: o payload usa o cadastro. Preenchido, a nota leva esta
+   * versão e o cadastro do cliente fica intacto — é o que permite caber nos 60
+   * caracteres do layout sem renomear o cliente na proposta e na etiqueta.
+   *
+   * Guardado aparado: só espaços vira null no `headerUpdates`, para "vazio" e
+   * "espaço" serem a mesma coisa aqui e no banco, onde a RPC usa
+   * `nullif(btrim(...), '')`.
+   */
+  const [destNome, setDestNome] = useState("");
+  const [destLogradouro, setDestLogradouro] = useState("");
+  const [destNumero, setDestNumero] = useState("");
+  const [destComplemento, setDestComplemento] = useState("");
+  const [destBairro, setDestBairro] = useState("");
 
   // Editable items state
   const [editedItems, setEditedItems] = useState<Partial<SupabaseNfeItemRow>[]>([]);
@@ -579,6 +598,11 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
       setPesoBruto(dbNote.peso_bruto || 0);
       setInfoComplementares(dbNote.informacoes_complementares || "");
       setObsInternas(dbNote.observacoes_internas || "");
+      setDestNome(dbNote.dest_nome || "");
+      setDestLogradouro(dbNote.dest_logradouro || "");
+      setDestNumero(dbNote.dest_numero || "");
+      setDestComplemento(dbNote.dest_complemento || "");
+      setDestBairro(dbNote.dest_bairro || "");
       setIdTransportadoraCliente(dbNote.id_transportadora_cliente);
       // 1. Load client details, principal address and products first
       const client = getSupabaseClient();
@@ -1481,6 +1505,13 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
         peso_bruto: Number(pesoBruto),
         informacoes_complementares: infoComplementares,
         observacoes_internas: obsInternas,
+        // Aparado, e vazio vira null: assim "sem versão própria" é uma coisa só,
+        // aqui e no banco.
+        dest_nome: destNome.trim() || null,
+        dest_logradouro: destLogradouro.trim() || null,
+        dest_numero: destNumero.trim() || null,
+        dest_complemento: destComplemento.trim() || null,
+        dest_bairro: destBairro.trim() || null,
         end_entrega: hasDeliveryAddress,
         endereco_entrega_observacao: hasDeliveryAddress ? JSON.stringify(addressObj) : null
       };
@@ -2892,7 +2923,9 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
                   {destinatarioRemessa ? (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
                       <div>
-                        <label className="block text-xs font-semibold text-violet-700 uppercase mb-1">Nome</label>
+                        <label className="block text-xs font-semibold text-violet-700 uppercase mb-1">
+                          Corrigir o recebedor deste endereço (muda o cadastro)
+                        </label>
                         <input
                           type="text"
                           value={recebedorNome}
@@ -2972,15 +3005,17 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
                 </div>
               ) : null}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-500 mb-1">Nome / Razão Social</label>
-                  <input
-                    type="text"
-                    disabled
-                    value={cliente?.nome || ""}
-                    className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm bg-slate-50 outline-none text-slate-600 font-medium"
-                  />
-                </div>
+                <CampoDoDestinatarioDaNota
+                  rotulo={
+                    ehRemessa
+                      ? "Nome só nesta nota (para caber nos 60 caracteres)"
+                      : "Nome / Razão Social (só nesta nota)"
+                  }
+                  valor={destNome}
+                  aoMudar={setDestNome}
+                  doCadastro={(ehRemessa ? destinatarioRemessa?.recebedor : cliente?.nome) || ""}
+                  desabilitado={isReadOnly}
+                />
                 <div>
                   <label className="block text-xs font-semibold text-slate-500 mb-1">CPF / CNPJ</label>
                   <input
@@ -3055,6 +3090,53 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
                     Vem do cadastro do cliente. Para alterar, corrija no cadastro — o Comercial é quem edita.
                   </p>
                 </div>
+              </div>
+
+              {/* ENDEREÇO SÓ DESTA NOTA — o que sai na NF-e quando preenchido.
+                  O bloco de baixo continua mostrando o cadastro, inalterado. */}
+              <div className="border-t border-slate-100 pt-6 space-y-4">
+                <h3 className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
+                  <MapPin className="h-4 w-4 text-[#0b2f4a]" /> Endereço só nesta nota
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Preencha só o que precisar encurtar para caber nos 60 caracteres da NF-e.{" "}
+                  <strong>Vale apenas para esta nota: o cadastro do cliente não muda.</strong> Campo vazio
+                  significa que a nota usa o cadastro, como sempre.
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <CampoDoDestinatarioDaNota
+                    rotulo="Logradouro"
+                    valor={destLogradouro}
+                    aoMudar={setDestLogradouro}
+                    doCadastro={(ehRemessa ? destinatarioRemessa?.endereco : principalEndereco?.endereco) || ""}
+                    desabilitado={isReadOnly}
+                  />
+                  <CampoDoDestinatarioDaNota
+                    rotulo="Número"
+                    valor={destNumero}
+                    aoMudar={setDestNumero}
+                    doCadastro={(ehRemessa ? destinatarioRemessa?.numero : principalEndereco?.numero) || ""}
+                    desabilitado={isReadOnly}
+                  />
+                  <CampoDoDestinatarioDaNota
+                    rotulo="Complemento"
+                    valor={destComplemento}
+                    aoMudar={setDestComplemento}
+                    doCadastro={(ehRemessa ? destinatarioRemessa?.complemento : principalEndereco?.complemento) || ""}
+                    desabilitado={isReadOnly}
+                  />
+                  <CampoDoDestinatarioDaNota
+                    rotulo="Bairro"
+                    valor={destBairro}
+                    aoMudar={setDestBairro}
+                    doCadastro={(ehRemessa ? destinatarioRemessa?.bairro : principalEndereco?.bairro) || ""}
+                    desabilitado={isReadOnly}
+                  />
+                </div>
+                <p className="text-xs text-slate-400 italic">
+                  Município, UF e CEP não entram aqui: a UF decide o CFOP da nota e o município tem de casar
+                  com o nome oficial. Esses três se corrigem no cadastro.
+                </p>
               </div>
 
               {/* Endereço Principal / Faturamento */}
@@ -4495,5 +4577,75 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
         </div>
       )}
     </main>
+  );
+}
+
+/**
+ * Um campo do destinatário que vale SÓ PARA ESTA NOTA.
+ *
+ * Vazio é o estado normal: o payload usa o cadastro, e o valor dele aparece como
+ * marca-d'água. Preenchido, a nota leva o que está aqui e o cadastro não muda —
+ * é o que permite encurtar um nome de 72 caracteres sem renomear o cliente na
+ * proposta, na etiqueta e na cobrança.
+ *
+ * `maxLength` 60 é o limite do layout da NF-e: o campo existe justamente para
+ * caber nele, então não deixa passar. O contador segue o padrão do 90bf3c7.
+ *
+ * FORA do componente da página de propósito: declarado lá dentro, ele seria
+ * recriado a cada tecla e o input perderia o foco no meio da digitação.
+ */
+function CampoDoDestinatarioDaNota({
+  rotulo,
+  valor,
+  aoMudar,
+  doCadastro,
+  desabilitado
+}: {
+  rotulo: string;
+  valor: string;
+  aoMudar: (novo: string) => void;
+  doCadastro: string;
+  desabilitado: boolean;
+}) {
+  const daNota = valor.trim() !== "";
+  const tamanho = Array.from(valor).length;
+
+  return (
+    <div>
+      <div className="mb-1 flex flex-wrap items-baseline justify-between gap-2">
+        <label className="block text-xs font-semibold text-slate-500">{rotulo}</label>
+        {daNota ? (
+          <span className="rounded-lg bg-amber-50 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-800">
+            versão desta nota
+          </span>
+        ) : null}
+      </div>
+      <input
+        type="text"
+        value={valor}
+        maxLength={60}
+        disabled={desabilitado}
+        onChange={(e) => aoMudar(e.target.value)}
+        placeholder={doCadastro || "—"}
+        className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-800 outline-none focus:border-[#0b2f4a] disabled:bg-slate-50 disabled:text-slate-600"
+      />
+      <div className="mt-1 flex flex-wrap items-baseline justify-between gap-2">
+        <span className="text-[11px] text-slate-400">
+          {daNota ? `No cadastro: ${doCadastro || "—"}` : "Vazio: a nota usa o cadastro."}
+        </span>
+        <span className={`text-[11px] ${tamanho > 60 ? "font-semibold text-rose-600" : "text-slate-500"}`}>
+          {tamanho}/60
+        </span>
+      </div>
+      {daNota && !desabilitado ? (
+        <button
+          type="button"
+          onClick={() => aoMudar("")}
+          className="mt-1 text-[11px] font-medium text-[#0b2f4a] underline underline-offset-2"
+        >
+          Voltar ao cadastro
+        </button>
+      ) : null}
+    </div>
   );
 }

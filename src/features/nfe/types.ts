@@ -49,6 +49,17 @@ export interface SupabaseNfeRow {
   marca_volumes: string | null;
   numeracao_volumes: string | null;
   informacoes_complementares: string | null;
+  /**
+   * O destinatário SÓ DESTA NOTA. Nulo ou só espaços = o payload usa o cadastro
+   * (`clientes.nome` e o endereço principal; na remessa, o recebedor). Existe
+   * para caber nos 60 caracteres do layout da NF-e sem mexer no cadastro, que
+   * segue completo na proposta, na etiqueta e na cobrança.
+   */
+  dest_nome?: string | null;
+  dest_logradouro?: string | null;
+  dest_numero?: string | null;
+  dest_complemento?: string | null;
+  dest_bairro?: string | null;
   observacoes_internas: string | null;
   endereco_entrega_observacao: string | null;
   valor_produtos: number;

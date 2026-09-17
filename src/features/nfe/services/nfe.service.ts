@@ -57,6 +57,14 @@ export const NFE_SELECT_COLUMNS = [
   "informacoes_complementares",
   "observacoes_internas",
   "endereco_entrega_observacao",
+  // O destinatario SO DESTA NOTA (18/09/2026). Nulo = usa o cadastro, e e o
+  // caso de todas as notas de hoje. Existe para caber nos 60 caracteres do
+  // layout sem alterar o nome do cliente na proposta e na etiqueta.
+  "dest_nome",
+  "dest_logradouro",
+  "dest_numero",
+  "dest_complemento",
+  "dest_bairro",
   "valor_produtos",
   "valor_desconto",
   "valor_total_nf",

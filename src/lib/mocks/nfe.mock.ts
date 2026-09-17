@@ -35,6 +35,12 @@ export interface NfeMock {
   marca_volumes: string | null;
   numeracao_volumes: string | null;
   informacoes_complementares: string | null;
+  /** O destinatário só desta nota. Nulo = o payload usa o cadastro. */
+  dest_nome?: string | null;
+  dest_logradouro?: string | null;
+  dest_numero?: string | null;
+  dest_complemento?: string | null;
+  dest_bairro?: string | null;
   observacoes_internas: string | null;
   endereco_entrega_observacao: string | null;
   valor_produtos: number;
