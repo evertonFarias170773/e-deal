@@ -2,7 +2,7 @@ import type { KeyboardEvent, ReactNode } from "react";
 import { EmptyState } from "@/components/common/EmptyState";
 import { LoadingSkeleton } from "@/components/common/LoadingSkeleton";
 
-type Column<T> = {
+export type Column<T> = {
   header: string;
   align?: "left" | "center" | "right";
   cell: (item: T) => ReactNode;

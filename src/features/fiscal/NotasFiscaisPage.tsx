@@ -10,7 +10,7 @@ import { ActionsMenu, type ActionMenuItem } from "@/components/common/ActionsMen
 import { BotaoDanfe } from "@/components/common/BotaoDanfe";
 import { PageHeader } from "@/components/common/PageHeader";
 import { NovaNotaAvulsaModal } from "@/features/fiscal/components/NovaNotaAvulsaModal";
-import { ResponsiveList } from "@/components/common/ResponsiveList";
+import { ResponsiveList, type Column } from "@/components/common/ResponsiveList";
 import { StatusBadge } from "@/components/common/StatusBadge";
 import { useAppToast } from "@/components/common/AppToast";
 import { formatCurrency } from "@/lib/formatters/currency";
@@ -2031,6 +2031,167 @@ export function NotasFiscaisPage() {
   });
 
   // Filtragem Histórico NF-e
+  /**
+   * AUTORIZADA e CANCELADA sao fato consumado: tem numero, serie, chave e
+   * existem na SEFAZ. So elas ficam no Historico.
+   *
+   * A regra e por EXCLUSAO de proposito: todo o resto — pendente, em erro,
+   * processando e qualquer status que venha a existir — e nota em processo, e
+   * nasce visivel na lista de trabalho em vez de sumir das duas listas.
+   */
+  const ehNotaFinalizada = (item: NfeReadModel) =>
+    ["AUTORIZADA", "CANCELADA"].includes(String(item.status || "").toUpperCase());
+
+  /**
+   * As colunas e o cartao da lista de NOTAS, em um lugar so: o Historico e a
+   * secao "Notas em processo" da Fila mostram a MESMA coisa, com as mesmas
+   * acoes — que `getNfeActions` ja escolhe pelo status de cada nota.
+   */
+  const colunasDeNota: Column<NfeReadModel>[] = [
+              {
+                header: "Nº Nota",
+                cell: (item) => <span className="font-semibold text-slate-900">{item.numero_nf ?? "****"}</span>,
+                align: "center"
+              },
+              {
+                header: "Pedido",
+                cell: (item) => (
+                  <div className="flex flex-col">
+                    <span className="font-medium text-slate-950">
+                      {ehNotaAvulsa(item.id_int) ? "Avulsa" : `#${item.id_int}`}
+                    </span>
+                    <span className="text-xs text-slate-500 font-mono">{item.ref}</span>
+                    <VendedorDoPedido valor={item.vendedor_pedido} />
+                  </div>
+                )
+              },
+              {
+                header: "Status",
+                cell: (item) => {
+                  const displayStatus = getNfeDisplayStatus(item);
+                  return (
+                    <div className="flex flex-col items-center gap-1">
+                      <StatusBadge status={displayStatus} tone={getStatusTone(displayStatus)} />
+                      <StatusDoPedido valor={item.status_pedido} />
+                    </div>
+                  );
+                },
+                align: "center"
+              },
+              {
+                header: "Cliente",
+                cell: (item) => (
+                  <ClienteComSocio
+                    socio={item.socio_pagador_nome}
+                    clienteNome={item.cliente_principal_nome || item.nome || item.fantasia || "Sem nome cadastrado"}
+                    idCliente={item.cliente_principal_id ?? item.id_cliente}
+                  />
+                )
+              },
+              {
+                header: "Empresa Emitente",
+                cell: (item) => (
+                  <div className="flex flex-col">
+                    <span className="font-medium text-slate-900">{getEmpresaName(item.id_empresa)}</span>
+                    <span className="text-xs text-slate-400">ID: {item.id_empresa}</span>
+                  </div>
+                )
+              },
+              {
+                header: "Valor Total",
+                cell: (item) => formatCurrency(item.valor_total_nf),
+                align: "right"
+              },
+              {
+                header: "Contas a Receber",
+                cell: (item) => {
+                  // O alerta so faz sentido no faturado: nas demais formas a
+                  // cobranca ja foi paga na origem e nao ha nada a lancar.
+                  if (item.status !== "AUTORIZADA" || !ehFaturado(item.tipo_cobranca)) {
+                    return <span className="text-slate-400 font-medium">-</span>;
+                  }
+                  const count = nfePaymentsCountMap[item.ref] || 0;
+                  const bInfo = boletosMap[item.ref];
+                  const finStatus = getFinanceiroStatus(item.ref, item.valor_total_nf, count, bInfo);
+                  return <StatusBadge status={finStatus.label} tone={finStatus.tone} />;
+                },
+                align: "center"
+              },
+              {
+                header: "Data / Hora",
+                cell: (item) => (
+                  <div className="flex flex-col items-center">
+                    <span>{formatDate(item.created_at)}</span>
+                    <span className="text-xs text-slate-400">{formatTime(item.created_at)}</span>
+                  </div>
+                ),
+                align: "center"
+              },
+              {
+                header: "Ações",
+                cell: (item) => (
+                  <div className="flex items-center justify-end gap-1">
+                    <BotaoDanfe danfes={danfesPorPedido.get(Number(item.id_int))} />
+                    <ActionsMenu items={getNfeActions(item)} />
+                  </div>
+                ),
+                align: "right"
+              }
+  ];
+
+  const cartaoDeNota = (item: NfeReadModel) => (
+              <article key={`nfe-card-${item.id}`} className="rounded-3xl border border-[#d7e5e8] bg-white p-5 shadow-sm space-y-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-semibold px-2 py-0.5 bg-slate-100 rounded-lg text-slate-700">
+                        Nº {item.numero_nf ?? "****"}
+                      </span>
+                      <span className="text-xs text-slate-500 font-medium">
+                        {ehNotaAvulsa(item.id_int) ? "Avulsa" : `Pedido #${item.id_int}`} • {item.ref}
+                      </span>
+                    </div>
+                    <div className="mt-2">
+                      <ClienteComSocio
+                        socio={item.socio_pagador_nome}
+                        clienteNome={item.cliente_principal_nome || item.nome || item.fantasia || "Sem nome cadastrado"}
+                        idCliente={item.cliente_principal_id ?? item.id_cliente}
+                      />
+                    </div>
+                    <p className="mt-1 text-xs text-slate-500">
+                      Vendedor: {String(item.vendedor_pedido || "").trim() || "-"}
+                      {String(item.status_pedido || "").trim()
+                        ? ` • Pedido: ${humanizeStatus(String(item.status_pedido))}`
+                        : ""}
+                    </p>
+                  </div>
+                  <div className="flex flex-col items-end gap-1.5">
+                    {(() => {
+                      const displayStatus = getNfeDisplayStatus(item);
+                      return <StatusBadge status={displayStatus} tone={getStatusTone(displayStatus)} />;
+                    })()}
+                    {item.status === "AUTORIZADA" && ehFaturado(item.tipo_cobranca) && (
+                      (() => {
+                        const count = nfePaymentsCountMap[item.ref] || 0;
+                        const bInfo = boletosMap[item.ref];
+                        const finStatus = getFinanceiroStatus(item.ref, item.valor_total_nf, count, bInfo);
+                        return <StatusBadge status={finStatus.label} tone={finStatus.tone} />;
+                      })()
+                    )}
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-sm text-slate-600">
+                  <p>Empresa: <strong>{getEmpresaName(item.id_empresa)}</strong></p>
+                  <p className="text-right">Valor: <strong>{formatCurrency(item.valor_total_nf)}</strong></p>
+                  <p>Data: {formatDate(item.created_at)} {formatTime(item.created_at)}</p>
+                </div>
+                <div className="flex items-center justify-end gap-1 pt-2">
+                  <BotaoDanfe danfes={danfesPorPedido.get(Number(item.id_int))} />
+                  <ActionsMenu items={getNfeActions(item)} label="Ações" />
+                </div>
+              </article>
+  );
+
   const filteredNfeList = nfeListCombined.filter((item) => {
     if (nfeSearch) {
       const search = nfeSearch.toLowerCase().trim();
@@ -2069,6 +2230,20 @@ export function NotasFiscaisPage() {
 
     return true;
   });
+
+  /** O Historico: so o que ja e documento fiscal, depois dos filtros da tela. */
+  const notasDoHistorico = filteredNfeList.filter(ehNotaFinalizada);
+
+  /**
+   * A secao da Fila: tudo que ainda esta em processo.
+   *
+   * NAO passa pelos filtros da tela — ela e a lista do que travou, e esconder
+   * uma nota presa atras de uma busca e o oposto do que ela existe para fazer.
+   * Sai do MESMO array que o Historico ja carregou, sem segunda consulta, e por
+   * isso alcanca o que a lista de PEDIDOS nunca mostraria: nota avulsa, nota de
+   * pedido marcado como teste e nota de pedido faturado no sistema antigo.
+   */
+  const notasEmProcesso = nfeListCombined.filter((item) => !ehNotaFinalizada(item));
 
   // Filtragem Histórico NFS-e
   const filteredNfseList = nfseListCombined.filter((item) => {
@@ -2391,6 +2566,36 @@ export function NotasFiscaisPage() {
               </article>
             )}
           />
+
+          {/* NOTAS EM PROCESSO — sempre visivel, inclusive vazia.
+              Nota que ainda nao virou documento fiscal nao e historico: ela
+              esta em processo e precisa aparecer onde a operacao a resolve. A
+              lista de PEDIDOS acima nao serve para isso — 11 das 16 notas de
+              hoje nao tem pedido nela (avulsa, pedido de teste, pedido
+              faturado fora, pedido ja escondido pela propria nota).
+
+              Vem DEPOIS da lista de pedidos: o dia a dia do financeiro e
+              faturar, e isso continua no topo da aba. Duas tabelas separadas,
+              nunca linhas misturadas. */}
+          <section className="space-y-4">
+            <div className="flex flex-wrap items-baseline justify-between gap-2 border-b px-4 py-2">
+              <h2 className="text-xl font-bold text-slate-900">
+                Notas em processo ({notasEmProcesso.length})
+              </h2>
+              <span className="text-xs text-slate-500">
+                Pendente, em erro ou processando — ainda nao sao documento fiscal.
+              </span>
+            </div>
+            <ResponsiveList<NfeReadModel>
+              items={notasEmProcesso}
+              getKey={(item) => `nfe-processo-${item.id}`}
+              isLoading={nfeData.isLoading}
+              emptyTitle="Nenhuma nota em processo"
+              emptyDescription="Toda nota criada ja virou documento fiscal. Nada preso aqui."
+              columns={colunasDeNota}
+              renderCard={cartaoDeNota}
+            />
+          </section>
         </div>
       ) : null}
 
@@ -2581,154 +2786,13 @@ export function NotasFiscaisPage() {
           </div>
 
           <ResponsiveList<NfeReadModel>
-            items={filteredNfeList}
+            items={notasDoHistorico}
             getKey={(item) => `nfe-${item.id}`}
             isLoading={isLoading}
             emptyTitle="Nenhuma NF-e encontrada"
             emptyDescription="Nenhuma nota fiscal de produto registrada."
-            columns={[
-              {
-                header: "Nº Nota",
-                cell: (item) => <span className="font-semibold text-slate-900">{item.numero_nf ?? "****"}</span>,
-                align: "center"
-              },
-              {
-                header: "Pedido",
-                cell: (item) => (
-                  <div className="flex flex-col">
-                    <span className="font-medium text-slate-950">
-                      {ehNotaAvulsa(item.id_int) ? "Avulsa" : `#${item.id_int}`}
-                    </span>
-                    <span className="text-xs text-slate-500 font-mono">{item.ref}</span>
-                    <VendedorDoPedido valor={item.vendedor_pedido} />
-                  </div>
-                )
-              },
-              {
-                header: "Status",
-                cell: (item) => {
-                  const displayStatus = getNfeDisplayStatus(item);
-                  return (
-                    <div className="flex flex-col items-center gap-1">
-                      <StatusBadge status={displayStatus} tone={getStatusTone(displayStatus)} />
-                      <StatusDoPedido valor={item.status_pedido} />
-                    </div>
-                  );
-                },
-                align: "center"
-              },
-              {
-                header: "Cliente",
-                cell: (item) => (
-                  <ClienteComSocio
-                    socio={item.socio_pagador_nome}
-                    clienteNome={item.cliente_principal_nome || item.nome || item.fantasia || "Sem nome cadastrado"}
-                    idCliente={item.cliente_principal_id ?? item.id_cliente}
-                  />
-                )
-              },
-              {
-                header: "Empresa Emitente",
-                cell: (item) => (
-                  <div className="flex flex-col">
-                    <span className="font-medium text-slate-900">{getEmpresaName(item.id_empresa)}</span>
-                    <span className="text-xs text-slate-400">ID: {item.id_empresa}</span>
-                  </div>
-                )
-              },
-              {
-                header: "Valor Total",
-                cell: (item) => formatCurrency(item.valor_total_nf),
-                align: "right"
-              },
-              {
-                header: "Contas a Receber",
-                cell: (item) => {
-                  // O alerta so faz sentido no faturado: nas demais formas a
-                  // cobranca ja foi paga na origem e nao ha nada a lancar.
-                  if (item.status !== "AUTORIZADA" || !ehFaturado(item.tipo_cobranca)) {
-                    return <span className="text-slate-400 font-medium">-</span>;
-                  }
-                  const count = nfePaymentsCountMap[item.ref] || 0;
-                  const bInfo = boletosMap[item.ref];
-                  const finStatus = getFinanceiroStatus(item.ref, item.valor_total_nf, count, bInfo);
-                  return <StatusBadge status={finStatus.label} tone={finStatus.tone} />;
-                },
-                align: "center"
-              },
-              {
-                header: "Data / Hora",
-                cell: (item) => (
-                  <div className="flex flex-col items-center">
-                    <span>{formatDate(item.created_at)}</span>
-                    <span className="text-xs text-slate-400">{formatTime(item.created_at)}</span>
-                  </div>
-                ),
-                align: "center"
-              },
-              {
-                header: "Ações",
-                cell: (item) => (
-                  <div className="flex items-center justify-end gap-1">
-                    <BotaoDanfe danfes={danfesPorPedido.get(Number(item.id_int))} />
-                    <ActionsMenu items={getNfeActions(item)} />
-                  </div>
-                ),
-                align: "right"
-              }
-            ]}
-            renderCard={(item) => (
-              <article key={`nfe-card-${item.id}`} className="rounded-3xl border border-[#d7e5e8] bg-white p-5 shadow-sm space-y-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-semibold px-2 py-0.5 bg-slate-100 rounded-lg text-slate-700">
-                        Nº {item.numero_nf ?? "****"}
-                      </span>
-                      <span className="text-xs text-slate-500 font-medium">
-                        {ehNotaAvulsa(item.id_int) ? "Avulsa" : `Pedido #${item.id_int}`} • {item.ref}
-                      </span>
-                    </div>
-                    <div className="mt-2">
-                      <ClienteComSocio
-                        socio={item.socio_pagador_nome}
-                        clienteNome={item.cliente_principal_nome || item.nome || item.fantasia || "Sem nome cadastrado"}
-                        idCliente={item.cliente_principal_id ?? item.id_cliente}
-                      />
-                    </div>
-                    <p className="mt-1 text-xs text-slate-500">
-                      Vendedor: {String(item.vendedor_pedido || "").trim() || "-"}
-                      {String(item.status_pedido || "").trim()
-                        ? ` • Pedido: ${humanizeStatus(String(item.status_pedido))}`
-                        : ""}
-                    </p>
-                  </div>
-                  <div className="flex flex-col items-end gap-1.5">
-                    {(() => {
-                      const displayStatus = getNfeDisplayStatus(item);
-                      return <StatusBadge status={displayStatus} tone={getStatusTone(displayStatus)} />;
-                    })()}
-                    {item.status === "AUTORIZADA" && ehFaturado(item.tipo_cobranca) && (
-                      (() => {
-                        const count = nfePaymentsCountMap[item.ref] || 0;
-                        const bInfo = boletosMap[item.ref];
-                        const finStatus = getFinanceiroStatus(item.ref, item.valor_total_nf, count, bInfo);
-                        return <StatusBadge status={finStatus.label} tone={finStatus.tone} />;
-                      })()
-                    )}
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-2 text-sm text-slate-600">
-                  <p>Empresa: <strong>{getEmpresaName(item.id_empresa)}</strong></p>
-                  <p className="text-right">Valor: <strong>{formatCurrency(item.valor_total_nf)}</strong></p>
-                  <p>Data: {formatDate(item.created_at)} {formatTime(item.created_at)}</p>
-                </div>
-                <div className="flex items-center justify-end gap-1 pt-2">
-                  <BotaoDanfe danfes={danfesPorPedido.get(Number(item.id_int))} />
-                  <ActionsMenu items={getNfeActions(item)} label="Ações" />
-                </div>
-              </article>
-            )}
+            columns={colunasDeNota}
+            renderCard={cartaoDeNota}
           />
         </div>
       ) : null}
