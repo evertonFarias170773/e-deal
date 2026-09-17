@@ -104,21 +104,17 @@ type ActiveTab = "FILA_FATURAMENTO" | "HISTORICO_FISCAL";
  */
 const ABAS = ["FILA_FATURAMENTO", "HISTORICO_FISCAL"] as const;
 const EMPRESAS_EMITENTES = ["", "1", "2", "3"] as const;
-const STATUS_NFE = [
-  "",
-  "PENDENTE",
-  "PRONTA_PARA_ENVIO",
-  "PROCESSANDO",
-  "AUTORIZADA",
-  "ERRO_ENVIO",
-  "ERRO_AUTORIZACAO",
-  "REJEITADA",
-  "CANCELADA",
-  "DENEGADA",
-  "FALHA_INTEGRACAO",
-  "RETORNO_FOCUS",
-  "NAO_ENCONTRADA_FOCUS"
-] as const;
+/**
+ * Os status que o filtro do HISTORICO oferece.
+ *
+ * So os que existem la: desde o 6e8104d o Historico lista apenas AUTORIZADA e
+ * CANCELADA, e as demais moram na secao "Notas em processo", dentro da aba Fila.
+ * Oferecer "Pendente" aqui devolvia lista vazia sem explicar por que.
+ *
+ * URL antiga com um status removido (`?nfe-status=PENDENTE`) nao quebra: o
+ * `enumOf` recusa o valor desconhecido e cai no padrao, que e "todos".
+ */
+const STATUS_NFE = ["", "AUTORIZADA", "CANCELADA"] as const;
 const STATUS_NFSE = [
   "",
   "PENDENTE",
@@ -2769,18 +2765,8 @@ export function NotasFiscaisPage() {
                 className="w-full rounded-2xl border border-[#d7e5e8] bg-slate-50 px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-[#0b2f4a] focus:bg-white"
               >
                 <option value="">Todos os Status</option>
-                <option value="PENDENTE">Pendente</option>
-                <option value="PRONTA_PARA_ENVIO">Pronta para envio</option>
-                <option value="PROCESSANDO">Processando</option>
                 <option value="AUTORIZADA">Autorizada</option>
-                <option value="ERRO_ENVIO">Erro de Envio</option>
-                <option value="ERRO_AUTORIZACAO">Erro de Autorização</option>
-                <option value="REJEITADA">Rejeitada</option>
                 <option value="CANCELADA">Cancelada</option>
-                <option value="DENEGADA">Denegada</option>
-                <option value="FALHA_INTEGRACAO">Falha de Integração/Envio</option>
-                <option value="RETORNO_FOCUS">Retorno Focus</option>
-                <option value="NAO_ENCONTRADA_FOCUS">Não Encontrada no Focus</option>
               </select>
             </div>
           </div>
