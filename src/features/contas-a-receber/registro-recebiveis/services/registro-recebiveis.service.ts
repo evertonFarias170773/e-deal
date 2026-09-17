@@ -157,12 +157,19 @@ export async function getRecebiveisParaRegistro(): Promise<RecebiveisParaRegistr
     };
   }
 
-  const itens: RecebivelParaRegistro[] = mapeados.map(({ row, cobranca }) => ({
-    cobranca,
-    plano: resolvePlano(row),
-    possuiBoletos: cobranca.id_int > 0 && idIntsComBoletos.has(cobranca.id_int),
-    empresaIndefinida: isEmpresaIndefinida(cobranca)
-  }));
+  // Pedido que ja gerou titulo — boleto ou deposito, que sao a mesma linha em
+  // `boletos` e so diferem por `deposito_conta` — sai desta lista: ele passa a
+  // viver na Carteira. E o mesmo desfecho de quando o boleto e gerado aqui na
+  // tela, que some assim que a lista recarrega. `possuiBoletos` continua sendo
+  // calculado e sobrevive no item como rede de seguranca do botao.
+  const itens: RecebivelParaRegistro[] = mapeados
+    .map(({ row, cobranca }) => ({
+      cobranca,
+      plano: resolvePlano(row),
+      possuiBoletos: cobranca.id_int > 0 && idIntsComBoletos.has(cobranca.id_int),
+      empresaIndefinida: isEmpresaIndefinida(cobranca)
+    }))
+    .filter((item) => !item.possuiBoletos);
 
   return { itens, errorMessage: null };
 }

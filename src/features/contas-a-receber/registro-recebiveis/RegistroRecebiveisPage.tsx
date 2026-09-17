@@ -262,7 +262,7 @@ export function RegistroRecebiveisPage() {
         <SummaryCard
           title="Bloqueados"
           value={String(totalBloqueados)}
-          description="Com títulos existentes ou empresa a definir."
+          description="Com empresa a definir."
           tone={totalBloqueados > 0 ? "danger" : "neutral"}
           icon={AlertTriangle}
         />
