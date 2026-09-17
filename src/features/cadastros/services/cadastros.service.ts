@@ -491,7 +491,7 @@ export async function getCadastroDetailReadOnly(
     const [enderecosResult, contatosResult, sociosResult, propostasResult] = await Promise.all([
       client
         .from("enderecos")
-        .select("id,id_cliente,tipo_endereco,cep,endereco,numero,complemento,bairro,cidade,uf,obs,recebedor,cpf_recebedor")
+        .select("id,id_cliente,tipo_endereco,cep,endereco,numero,complemento,bairro,cidade,uf,obs,recebedor,cpf_recebedor,ie_recebedor")
         .eq("id_cliente", idCliente)
         .limit(100),
       client
@@ -806,6 +806,7 @@ export type CadastroEnderecoInsertPayload = {
   obs: string | null;
   recebedor?: string | null;
   cpf_recebedor?: string | null;
+  ie_recebedor?: string | null;
 };
 
 export type CadastroEnderecoCreateResult =
@@ -1967,7 +1968,8 @@ export async function createCadastroEndereco(
     tipo_endereco: toNullableText(payload.tipo_endereco) || "ENTREGA",
     obs: toNullableText(payload.obs),
     recebedor: toNullableText(payload.recebedor),
-    cpf_recebedor: toNullableText(payload.cpf_recebedor)
+    cpf_recebedor: toNullableText(payload.cpf_recebedor),
+    ie_recebedor: toNullableText(payload.ie_recebedor)
   };
 
   const { data, error } = await client
@@ -2052,7 +2054,8 @@ export async function createCadastroEnderecos(
           tipo_endereco: item.tipo_endereco,
           obs: item.obs,
           recebedor: item.recebedor ?? null,
-          cpf_recebedor: item.cpf_recebedor ?? null
+          cpf_recebedor: item.cpf_recebedor ?? null,
+          ie_recebedor: item.ie_recebedor ?? null
         }))
       })
     });
@@ -2187,7 +2190,8 @@ export async function updateCadastroEndereco(
       tipo_endereco: toNullableText(payload.tipo_endereco) || "ENTREGA",
       obs: toNullableText(payload.obs),
       recebedor: toNullableText(payload.recebedor),
-      cpf_recebedor: toNullableText(payload.cpf_recebedor)
+      cpf_recebedor: toNullableText(payload.cpf_recebedor),
+      ie_recebedor: toNullableText(payload.ie_recebedor)
     })
     .eq("id", id);
 

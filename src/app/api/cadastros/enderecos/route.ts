@@ -52,6 +52,7 @@ type EnderecoEntrada = {
   obs?: string | null;
   recebedor?: string | null;
   cpf_recebedor?: string | null;
+  ie_recebedor?: string | null;
 };
 
 type CorpoRequisicao = {
@@ -140,7 +141,8 @@ export async function POST(request: Request) {
       uf: texto(item.uf),
       obs: texto(item.obs),
       recebedor: texto(item.recebedor),
-      cpf_recebedor: texto(item.cpf_recebedor)
+      cpf_recebedor: texto(item.cpf_recebedor),
+      ie_recebedor: texto(item.ie_recebedor)
     };
   }
 

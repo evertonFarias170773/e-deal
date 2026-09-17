@@ -1,6 +1,12 @@
 import { NextResponse } from "next/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 
+import {
+  findInscricaoEstadualAtiva,
+  mapearEnderecoDoEstabelecimento,
+  tipoContribuintePelaInscricao
+} from "@/lib/documentos/cnpj-ws";
+
 function toText(value: unknown) {
   if (value === null || value === undefined) return "";
   return String(value).trim();
@@ -118,9 +124,27 @@ export async function POST(request: Request) {
 
       const socioPrincipal = data.socios && data.socios.length > 0 ? toText(data.socios[0].nome) : "";
       
-      const atividadePrincipal = data.estabelecimento?.atividade_principal 
+      const atividadePrincipal = data.estabelecimento?.atividade_principal
         ? `${data.estabelecimento.atividade_principal.id} - ${data.estabelecimento.atividade_principal.descricao}`
         : "";
+
+      /*
+        ACRESCIMO DE 17/09/2026 — o que a rota já tinha em mãos e não expunha.
+
+        A consulta sempre devolveu as inscrições estaduais e o endereço campo a
+        campo dentro de `rawPayload`, mas aqui em cima só saía o endereço
+        CONCATENADO numa string, que nenhum formulário consegue reaproveitar, e
+        a IE não saía de jeito nenhum. Quem precisava disso (o bloco "Adicionar
+        novo endereço") não tinha rota: a outra, `/api/cadastros/consultar-
+        documento`, recusa com 409 documento já cadastrado — e um recebedor pode
+        perfeitamente ser cliente da casa.
+
+        É ACRÉSCIMO: nenhum campo existente muda de nome, de tipo ou de valor, e
+        a tela de Verificação segue lendo exatamente o que lia. O mapeamento e a
+        escolha da IE ativa são os MESMOS de consultar-documento, agora
+        importados de `@/lib/documentos/cnpj-ws` em vez de copiados.
+      */
+      const insEstadual = findInscricaoEstadualAtiva(estabelecimento.inscricoes_estaduais);
 
       return NextResponse.json({
         success: true,
@@ -134,6 +158,9 @@ export async function POST(request: Request) {
           email: toText(estabelecimento.email),
           endereco: enderecoCompleto,
           cep: toText(estabelecimento.cep),
+          insEstadual,
+          tipoContribuinte: tipoContribuintePelaInscricao(insEstadual),
+          enderecoCampos: mapearEnderecoDoEstabelecimento(estabelecimento),
           capitalSocial: data.capital_social ? Number(data.capital_social) : undefined,
           naturezaJuridica: data.natureza_juridica ? `${data.natureza_juridica.id} - ${data.natureza_juridica.descricao}` : "",
           qualificacaoResponsavel: data.qualificacao_do_responsavel ? `${data.qualificacao_do_responsavel.id} - ${data.qualificacao_do_responsavel.descricao}` : "",

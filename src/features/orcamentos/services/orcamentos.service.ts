@@ -1307,7 +1307,7 @@ export async function getPropostaDetailById(idInt: number, overrideClient?: Supa
         // 2. Fetch directly from enderecos by id (handles comprador addresses or other cases)
         const { data: endData } = await client
           .from("enderecos")
-          .select("id, cep, endereco, numero, complemento, bairro, cidade, uf, tipo_endereco, recebedor, cpf_recebedor")
+          .select("id, cep, endereco, numero, complemento, bairro, cidade, uf, tipo_endereco, recebedor, cpf_recebedor, ie_recebedor")
           .eq("id", proposalRow.id_endereco_ent)
           .maybeSingle();
 
@@ -1324,6 +1324,7 @@ export async function getPropostaDetailById(idInt: number, overrideClient?: Supa
             tipo: ((endData.tipo_endereco ?? "").toLowerCase() as CadastroEndereco["tipo"]) || "entrega",
             recebedor: endData.recebedor || undefined,
             cpfRecebedor: endData.cpf_recebedor || undefined,
+            ieRecebedor: endData.ie_recebedor || undefined,
           };
         }
       }
@@ -2524,7 +2525,20 @@ export async function saveProposta(
       cliente: clienteNome,
       empresa: formState.empresa,
       vendedor: formState.vendedor,
-      status_interno: formState.status,
+      // `status_interno` NAO entra aqui (17/09/2026). Este objeto serve ao
+      // UPDATE, e o status e do servidor: `formState.status` e o que a tela
+      // leu ao abrir e nao acompanha o que outra sessao fez depois. Gravado
+      // de volta, rebaixava pedido ja liberado — 21699, 22206 e 22328 —, tirava
+      // a proposta da faixa protegida de `atualizar_status_financeiro_proposta`
+      // e a reconciliacao AUTO_FINANCEIRO so conseguia leva-la ate REVISAO
+      // ATENDENTE. O comentario em diferenca-financeira-proposta.ts ja avisava:
+      // o status vindo do cliente nao e confiavel.
+      //
+      // Trava otimista sobre o status NAO serve: registrar cobranca na propria
+      // tela move o banco para AGUARDANDO sem atualizar `form.status`, e o
+      // caminho criar-cobrar-ajustar-salvar passaria a falhar sempre.
+      //
+      // O INSERT grava o status por conta propria, logo abaixo.
       obs_proposta: formState.observacoes,
       obs_tecnica: formState.obsTecnica,
       texto_whatsapp: informalText,
@@ -2701,6 +2715,11 @@ export async function saveProposta(
       // 2b. INSERT PROPOSTA
       propostaData.user_id = userId;
       propostaData.proposta = informalText || "Orçamento conforme solicitação.";
+      // Proposta nova nasce em NOVO, fixo e nao lido da tela. A coluna nao tem
+      // default e aceita nulo: sem esta linha a proposta nasceria sem status.
+      // Os dois criadores de hoje (tela e Maestro) ja mandam NOVO; fixar aqui
+      // impede que um terceiro chamador faca nascer em outro status.
+      propostaData.status_interno = "NOVO";
       const { data: newProp, error: insertError } = await client
         .from("propostas")
         .insert(propostaData)
@@ -4315,9 +4334,10 @@ export async function insertEnderecoProposta(
         tipo_endereco: endereco.tipo || "Entrega",
         recebedor: endereco.recebedor || null,
         cpf_recebedor: endereco.cpfRecebedor || null,
+        ie_recebedor: endereco.ieRecebedor || null,
       },
     ])
-    .select("id, cep, endereco, numero, complemento, bairro, cidade, uf, tipo_endereco, recebedor, cpf_recebedor")
+    .select("id, cep, endereco, numero, complemento, bairro, cidade, uf, tipo_endereco, recebedor, cpf_recebedor, ie_recebedor")
     .single();
 
   if (error) {
@@ -4341,6 +4361,7 @@ export async function insertEnderecoProposta(
     tipo: (data.tipo_endereco?.toLowerCase() as any) || "entrega",
     recebedor: data.recebedor || "",
     cpfRecebedor: data.cpf_recebedor || "",
+    ieRecebedor: data.ie_recebedor || "",
   };
 
   return { success: true, data: mappedEndereco };
@@ -4368,9 +4389,10 @@ export async function updateEnderecoProposta(
       tipo_endereco: endereco.tipo || "Entrega",
       recebedor: endereco.recebedor || null,
       cpf_recebedor: endereco.cpfRecebedor || null,
+      ie_recebedor: endereco.ieRecebedor || null,
     })
     .eq("id", id)
-    .select("id, cep, endereco, numero, complemento, bairro, cidade, uf, tipo_endereco, recebedor, cpf_recebedor")
+    .select("id, cep, endereco, numero, complemento, bairro, cidade, uf, tipo_endereco, recebedor, cpf_recebedor, ie_recebedor")
     .single();
 
   if (error) {
@@ -4395,6 +4417,7 @@ export async function updateEnderecoProposta(
     uf: data.uf || "",
     recebedor: data.recebedor || "",
     cpfRecebedor: data.cpf_recebedor || "",
+    ieRecebedor: data.ie_recebedor || "",
     tipo: (data.tipo_endereco?.toLowerCase() as any) || "entrega",
   };
 

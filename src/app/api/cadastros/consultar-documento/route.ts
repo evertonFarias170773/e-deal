@@ -3,6 +3,12 @@ import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { fetchJsonWithTimeout } from "@/lib/http/fetch-json-timeout";
 import { validateCadastroInitialStep } from "@/features/cadastros/services/cadastros.service";
 import { normalizeDocumentDigits, validateDocumentByTipo, type DocumentoTipo } from "@/features/cadastros/utils/documento";
+import {
+  findInscricaoEstadualAtiva,
+  mapearEnderecoDoEstabelecimento,
+  tipoContribuintePelaInscricao,
+  type CnpjWsResposta
+} from "@/lib/documentos/cnpj-ws";
 import type { CodigoTipoContribuinte } from "@/lib/fiscal/tipo-contribuinte";
 
 type ConsultaDocumentoRequestBody = {
@@ -42,37 +48,6 @@ type DocumentoConsultaPayload = {
     tipo_endereco: "PRINCIPAL";
     obs: string;
   } | null;
-};
-
-type CnpjApiResponse = {
-  razao_social?: string;
-  estabelecimento?: {
-    cnpj?: string;
-    nome_fantasia?: string;
-    data_inicio_atividade?: string;
-    email?: string;
-    ddd1?: string;
-    telefone1?: string;
-    cep?: string;
-    tipo_logradouro?: string;
-    logradouro?: string;
-    numero?: string;
-    complemento?: string;
-    bairro?: string;
-    cidade?: { nome?: string };
-    estado?: { sigla?: string };
-    inscricoes_estaduais?: Array<{
-      ativo?: boolean;
-      situacao?: string;
-      inscricao_estadual?: string;
-    }>;
-  };
-};
-
-type CnpjInscricaoEstadual = {
-  ativo?: boolean;
-  situacao?: string;
-  inscricao_estadual?: string;
 };
 
 type CpfApiResponse = {
@@ -128,44 +103,21 @@ function normalizeIsoDate(value: string) {
   return "";
 }
 
-function mountLogradouro(tipoLogradouro: string, logradouro: string) {
-  const parts = [toText(tipoLogradouro), toText(logradouro)].filter(Boolean);
-  return parts.join(" ");
-}
-
-function findInscricaoEstadualAtiva(inscricoes: CnpjInscricaoEstadual[] | undefined) {
-  if (!Array.isArray(inscricoes)) {
-    return "";
-  }
-
-  const found = inscricoes.find((item) => {
-    if (item?.ativo === true) {
-      return true;
-    }
-
-    return toText(item?.situacao).toLowerCase() === "ativa";
-  });
-
-  return toText(found?.inscricao_estadual);
-}
-
 async function consultarCnpj(documentoDigits: string, idCliente: number | null): Promise<DocumentoConsultaPayload | null> {
-  const result = await fetchJsonWithTimeout<CnpjApiResponse>(`https://publica.cnpj.ws/cnpj/${documentoDigits}`);
+  const result = await fetchJsonWithTimeout<CnpjWsResposta>(`https://publica.cnpj.ws/cnpj/${documentoDigits}`);
   if (!result.ok) {
     return null;
   }
 
   const estabelecimento = result.data.estabelecimento ?? {};
-  const cidade = toText(estabelecimento.cidade?.nome);
-  const uf = toText(estabelecimento.estado?.sigla).toUpperCase();
-  const cidadeUf = cidade && uf ? `${cidade} - ${uf}` : "";
+  const enderecoConsultado = mapearEnderecoDoEstabelecimento(estabelecimento);
+  const cidadeUf =
+    enderecoConsultado.cidade && enderecoConsultado.uf
+      ? `${enderecoConsultado.cidade} - ${enderecoConsultado.uf}`
+      : "";
   const telefoneFixo = `${toText(estabelecimento.ddd1)}${toText(estabelecimento.telefone1)}`;
   const insEstadual = findInscricaoEstadualAtiva(estabelecimento.inscricoes_estaduais);
-  // Codigo da SEFAZ desde 25/08/2026, o mesmo vocabulario da NF. Com inscricao
-  // estadual ativa na Receita o CNPJ e contribuinte de ICMS (1); sem ela a
-  // consulta nao tem como distinguir isento (2) de nao contribuinte (9), e o
-  // padrao seguro e o 9 — declarar contribuinte quem nao e custa rejeicao.
-  const tipoContribuinte: CodigoTipoContribuinte = insEstadual ? "1" : "9";
+  const tipoContribuinte: CodigoTipoContribuinte = tipoContribuintePelaInscricao(insEstadual);
   const razaoSocial = toText(result.data.razao_social);
   const nomeFantasia = toText(estabelecimento.nome_fantasia) || razaoSocial;
 
@@ -182,13 +134,7 @@ async function consultarCnpj(documentoDigits: string, idCliente: number | null):
     tipoContribuinte,
     enderecoPreparado: {
       id_cliente: idCliente,
-      cep: normalizeDocumentDigits(toText(estabelecimento.cep)),
-      endereco: mountLogradouro(toText(estabelecimento.tipo_logradouro), toText(estabelecimento.logradouro)),
-      numero: toText(estabelecimento.numero),
-      complemento: toText(estabelecimento.complemento),
-      bairro: toText(estabelecimento.bairro),
-      cidade,
-      uf,
+      ...enderecoConsultado,
       tipo_endereco: "PRINCIPAL",
       obs: "Endereço importado da consulta CNPJ"
     }

@@ -68,6 +68,7 @@ export type SupabaseEnderecoRow = {
   distancia?: SupabaseNullableValue;
   recebedor?: SupabaseNullableValue;
   cpf_recebedor?: SupabaseNullableValue;
+  ie_recebedor?: SupabaseNullableValue;
 };
 
 export type SupabaseContatoRow = {

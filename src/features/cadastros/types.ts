@@ -15,6 +15,12 @@ export type CadastroEndereco = {
   obs?: string;
   recebedor?: string;
   cpfRecebedor?: string;
+  /**
+   * Inscricao Estadual do recebedor, quando ele e CNPJ. Coluna
+   * `enderecos.ie_recebedor` (migration 20260917). Sempre digitavel: a consulta
+   * preenche quando existe, mas quem decide e quem atende.
+   */
+  ieRecebedor?: string;
 };
 
 export type CadastroContato = {

@@ -51,7 +51,12 @@ import {
   type ConsultaDocumentoApiPayload,
   type ReconsultaPrevia
 } from "@/features/cadastros/lib/reconsulta-cnpj";
-import { normalizeDocumentDigits, validateDocumentByTipo, isValidCpf } from "@/features/cadastros/utils/documento";
+import { normalizeDocumentDigits, validateDocumentByTipo } from "@/features/cadastros/utils/documento";
+import {
+  DocumentoRecebedorFields,
+  documentoRecebedorValido,
+  type ResultadoValidacaoRecebedor
+} from "@/features/cadastros/components/DocumentoRecebedorFields";
 import type {
   Cadastro,
   CadastroCategoria,
@@ -1019,15 +1024,17 @@ export function CadastroFormPage({ mode, cadastro, categoriaInicial }: CadastroF
       uniqueVinculos.add(vinculo.idClienteRelacionado);
     }
 
-    // CPF Recebedor validation
+    // Documento do recebedor: CPF (11 digitos) ou CNPJ (14), cada um com o seu
+    // validador. O campo e um so, e o que vale sao os digitos — mascara colada
+    // do Word ou do site da Receita passa igual.
     for (let i = 0; i < form.enderecos.length; i++) {
       const end = form.enderecos[i];
       if (end.cpfRecebedor && end.cpfRecebedor.trim() !== "") {
-        if (!isValidCpf(end.cpfRecebedor)) {
+        if (!documentoRecebedorValido(end.cpfRecebedor)) {
           showToast({
             type: "error",
-            title: "CPF do recebedor inválido",
-            description: `O CPF do recebedor preenchido no endereço ${i + 1} está incorreto.`
+            title: "Documento do recebedor inválido",
+            description: `O CPF/CNPJ do recebedor preenchido no endereço ${i + 1} está incorreto.`
           });
           return;
         }
@@ -1143,7 +1150,8 @@ export function CadastroFormPage({ mode, cadastro, categoriaInicial }: CadastroF
         tipo_endereco: item.tipo.toUpperCase(),
         obs: normalizeOptionalText(item.obs),
         recebedor: normalizeOptionalText(item.recebedor),
-        cpf_recebedor: normalizeOptionalText(item.cpfRecebedor)
+        cpf_recebedor: normalizeOptionalText(item.cpfRecebedor),
+        ie_recebedor: normalizeOptionalText(item.ieRecebedor)
       }));
       if (enderecosPayload.length > 0) {
         const enderecoResult = await createCadastroEnderecos(enderecosPayload);
@@ -1375,7 +1383,8 @@ export function CadastroFormPage({ mode, cadastro, categoriaInicial }: CadastroF
           tipo_endereco: endereco.tipo.toUpperCase(),
           obs: normalizeOptionalText(endereco.obs),
           recebedor: normalizeOptionalText(endereco.recebedor),
-          cpf_recebedor: normalizeOptionalText(endereco.cpfRecebedor)
+          cpf_recebedor: normalizeOptionalText(endereco.cpfRecebedor),
+          ie_recebedor: normalizeOptionalText(endereco.ieRecebedor)
         };
 
         const enderecoResult = isTemporaryId(endereco.id)
@@ -1847,80 +1856,45 @@ function CompleteForm({
   }
 
   /**
-   * "Validar" do CPF do recebedor: confere os digitos AQUI e so entao consulta.
+   * O que a consulta do documento devolve, aplicado no endereco daquele indice.
    *
-   * POR QUE E BOTAO, E NAO AUTOMATICO
-   *   A consulta gasta cota da empresa. Disparar por digitacao ou por blur
-   *   queimaria uma chamada a cada tecla ou a cada saida de campo, e reescreveria
-   *   por conta propria um nome que o usuario acabou de digitar. Sendo botao, ele
-   *   tambem serve ao endereco JA CADASTRADO que esta sendo editado.
+   * CNPJ SOBRESCREVE O ENDERECO — decisao do dono. Quem clica em Validar esta
+   * pedindo os dados da Receita; manter o que estava digitado seria guardar o
+   * palpite e jogar fora a fonte. O CPF continua mexendo so no nome.
    *
-   * A VALIDACAO LOCAL VEM PRIMEIRO, e e ela que protege a cota: `isValidCpf` e o
-   *   mesmo validador que o salvamento ja usa, entao os dois nunca discordam.
-   *   CPF com digito errado nao chega a sair da maquina.
-   *
-   * QUAL ROTA, E POR QUE ESTA
-   *   `/api/verificacao/cpf` — a mesma da tela de Verificacao. A outra
-   *   (`/api/cadastros/consultar-documento`) recusa com 409 quando o documento ja
-   *   esta cadastrado, e aqui isso seria errado: o recebedor pode perfeitamente
-   *   ser um cliente da casa. O token continua lido so no servidor, e a rota
-   *   exige sessao valida antes de qualquer chamada externa.
-   *
-   * FALHA NUNCA TRAVA NADA. Qualquer desfecho ruim vira aviso na tela; o nome
-   *   segue editavel a mao e o botao Adicionar nao depende disto.
+   * Uma UNICA escrita na lista: `updateEndereco` grava um campo por vez a
+   * partir do `form` que o componente enxerga, e oito chamadas seguidas
+   * perderiam sete.
    */
-  async function validarCpfRecebedor(index: number) {
-    const cpfDigitado = form.enderecos[index]?.cpfRecebedor ?? "";
-    const digitos = normalizeDocumentDigits(cpfDigitado);
-
-    if (!digitos) {
-      onToast({ type: "warning", title: "Informe o CPF do recebedor", description: "Digite o CPF antes de validar." });
-      return;
-    }
-    if (!isValidCpf(digitos)) {
-      onToast({
-        type: "error",
-        title: "CPF do recebedor invalido",
-        description: "Os digitos nao conferem. Corrija o numero — nenhuma consulta foi feita."
-      });
-      return;
-    }
-
-    setValidandoCpfIndex(index);
-    try {
-      const resposta = await fetchComSessao("/api/verificacao/cpf", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cpf: digitos })
-      });
-      const corpo = (await resposta.json().catch(() => ({}))) as {
-        success?: boolean;
-        data?: { nome?: string };
-        errorMessage?: string;
-        message?: string;
-      };
-      const nome = String(corpo?.data?.nome ?? "").trim();
-
-      if (!resposta.ok || !corpo?.success || !nome) {
-        onToast({
-          type: "error",
-          title: "Nao foi possivel validar o CPF",
-          description: corpo?.errorMessage || corpo?.message || "O servico de consulta nao respondeu. Preencha o nome a mao."
-        });
-        return;
+  function aplicarValidacaoRecebedor(index: number, resultado: ResultadoValidacaoRecebedor) {
+    const enderecos = form.enderecos.map((endereco, currentIndex) => {
+      if (currentIndex !== index) {
+        return endereco;
       }
 
-      updateEndereco(index, "recebedor", nome);
-      onToast({ type: "success", title: "CPF validado", description: "Nome do recebedor preenchido pela consulta." });
-    } catch (erro) {
-      onToast({
-        type: "error",
-        title: "Falha ao consultar o CPF",
-        description: erro instanceof Error ? erro.message : "Sem resposta do servico. Preencha o nome a mao."
-      });
-    } finally {
-      setValidandoCpfIndex(null);
-    }
+      const base = {
+        ...endereco,
+        recebedor: resultado.nome,
+        ieRecebedor: resultado.insEstadual || endereco.ieRecebedor
+      };
+
+      if (!resultado.endereco) {
+        return base;
+      }
+
+      return {
+        ...base,
+        cep: resultado.endereco.cep || base.cep,
+        endereco: resultado.endereco.endereco || base.endereco,
+        numero: resultado.endereco.numero || base.numero,
+        complemento: resultado.endereco.complemento || base.complemento,
+        bairro: resultado.endereco.bairro || base.bairro,
+        cidade: resultado.endereco.cidade || base.cidade,
+        uf: resultado.endereco.uf || base.uf
+      };
+    });
+
+    onUpdate("enderecos", enderecos);
   }
 
   async function handleCepChange(index: number, rawCep: string) {
@@ -2196,6 +2170,24 @@ function CompleteForm({
                 )}
 
                 <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                  {/* O documento vem primeiro: e por ele que o resto se preenche. */}
+                  <DocumentoRecebedorFields
+                    documento={endereco.cpfRecebedor ?? ""}
+                    onDocumentoChange={(valor) => updateEndereco(index, "cpfRecebedor", valor)}
+                    ie={endereco.ieRecebedor ?? ""}
+                    onIeChange={(valor) => updateEndereco(index, "ieRecebedor", valor)}
+                    onValidado={(resultado) => aplicarValidacaoRecebedor(index, resultado)}
+                    inputClassName={addrInputClass}
+                    botaoClassName="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-[#d7e5e8] bg-white px-3 py-2.5 text-xs font-bold text-[#0b2f4a] transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                    bloqueado={isAddressBlocked}
+                    // Uma consulta por vez na tela inteira, como antes: cada
+                    // clique gasta cota, e o botao dos outros enderecos espera.
+                    ocupadoPorOutro={validandoCpfIndex !== null && validandoCpfIndex !== index}
+                    onOcupadoChange={(ocupado) => setValidandoCpfIndex(ocupado ? index : null)}
+                  />
+                  <Field label="Recebedor">
+                    <input value={endereco.recebedor ?? ""} readOnly={isAddressBlocked} onChange={(event) => updateEndereco(index, "recebedor", event.target.value)} className={addrInputClass} placeholder="Nome completo ou razão social" />
+                  </Field>
                   <Field label="Tipo">
                     <select value={endereco.tipo} disabled={isAddressBlocked} onChange={(event) => updateEndereco(index, "tipo", event.target.value as any)} className={addrInputClass}>
                       {endereco.tipo === "principal" && <option value="principal">Principal</option>}
@@ -2218,31 +2210,6 @@ function CompleteForm({
                   <Field label="Bairro"><input value={endereco.bairro} readOnly={isAddressBlocked} onChange={(event) => updateEndereco(index, "bairro", event.target.value)} className={addrInputClass} /></Field>
                   <Field label="Cidade"><input value={endereco.cidade} readOnly={isAddressBlocked} onChange={(event) => updateEndereco(index, "cidade", event.target.value)} className={addrInputClass} /></Field>
                   <Field label="UF"><input value={endereco.uf} readOnly={isAddressBlocked} onChange={(event) => updateEndereco(index, "uf", event.target.value.toUpperCase())} className={addrInputClass} maxLength={2} /></Field>
-                  <Field label="Recebedor">
-                    <input value={endereco.recebedor ?? ""} readOnly={isAddressBlocked} onChange={(event) => updateEndereco(index, "recebedor", event.target.value)} className={addrInputClass} placeholder="Nome do recebedor" />
-                  </Field>
-                  <Field label="CPF do Recebedor">
-                    <div className="flex items-center gap-2">
-                      <input value={endereco.cpfRecebedor ?? ""} readOnly={isAddressBlocked} onChange={(event) => updateEndereco(index, "cpfRecebedor", event.target.value)} className={`${addrInputClass} flex-1`} placeholder="Apenas números ou formatado" maxLength={14} />
-                      {/* Consulta SO por clique — ver `validarCpfRecebedor`. */}
-                      <button
-                        type="button"
-                        onClick={() => void validarCpfRecebedor(index)}
-                        disabled={isAddressBlocked || validandoCpfIndex !== null}
-                        title="Consulta o CPF e preenche o nome do recebedor"
-                        className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-[#d7e5e8] bg-white px-3 py-2.5 text-xs font-bold text-[#0b2f4a] transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        {validandoCpfIndex === index ? (
-                          <>
-                            <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-slate-300 border-t-[#0b2f4a]" />
-                            Validando…
-                          </>
-                        ) : (
-                          "Validar"
-                        )}
-                      </button>
-                    </div>
-                  </Field>
                   <div className="md:col-span-2 xl:col-span-4"><Field label="Observacao"><input value={endereco.obs ?? ""} readOnly={isAddressBlocked} onChange={(event) => updateEndereco(index, "obs", event.target.value)} className={addrInputClass} /></Field></div>
                 </div>
               </div>

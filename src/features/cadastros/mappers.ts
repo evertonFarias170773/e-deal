@@ -187,7 +187,8 @@ export function mapSupabaseEnderecoRowToCadastroEndereco(row: SupabaseEnderecoRo
     uf: toText(row.uf),
     obs: toText(row.obs) || undefined,
     recebedor: toText(row.recebedor) || undefined,
-    cpfRecebedor: toText(row.cpf_recebedor) || undefined
+    cpfRecebedor: toText(row.cpf_recebedor) || undefined,
+    ieRecebedor: toText(row.ie_recebedor) || undefined
   };
 }
 
