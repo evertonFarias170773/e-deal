@@ -2206,7 +2206,12 @@ function CompleteForm({
                   </Field>
                   <Field label="Logradouro"><input value={endereco.endereco} readOnly={isAddressBlocked} onChange={(event) => updateEndereco(index, "endereco", event.target.value)} className={addrInputClass} /></Field>
                   <Field label="Número *"><input value={endereco.numero} readOnly={isAddressBlocked} onChange={(event) => updateEndereco(index, "numero", event.target.value)} className={isAddressBlocked ? `${inputClass} bg-slate-100 text-slate-500 cursor-not-allowed` : getInputClass(errorFields.includes("enderecos-numero") && !endereco.numero.trim())} /></Field>
-                  <Field label="Complemento"><input value={endereco.complemento ?? ""} readOnly={isAddressBlocked} onChange={(event) => updateEndereco(index, "complemento", event.target.value)} className={addrInputClass} /></Field>
+                  {/* 60 e o limite do complemento no layout da NF-e (xCpl): acima
+                      disso a Focus recusa a nota antes da SEFAZ, como aconteceu
+                      com a NFE-21518-001. `maxLength` so impede digitar alem — o
+                      que ja estiver gravado maior nao e cortado, e o contador fica
+                      vermelho para avisar. */}
+                  <Field label="Complemento"><input value={endereco.complemento ?? ""} readOnly={isAddressBlocked} onChange={(event) => updateEndereco(index, "complemento", event.target.value)} className={addrInputClass} maxLength={60} /><span className={`block text-right text-xs ${(endereco.complemento ?? "").length > 60 ? "font-semibold text-rose-600" : "text-slate-500"}`}>{(endereco.complemento ?? "").length}/60</span></Field>
                   <Field label="Bairro"><input value={endereco.bairro} readOnly={isAddressBlocked} onChange={(event) => updateEndereco(index, "bairro", event.target.value)} className={addrInputClass} /></Field>
                   <Field label="Cidade"><input value={endereco.cidade} readOnly={isAddressBlocked} onChange={(event) => updateEndereco(index, "cidade", event.target.value)} className={addrInputClass} /></Field>
                   <Field label="UF"><input value={endereco.uf} readOnly={isAddressBlocked} onChange={(event) => updateEndereco(index, "uf", event.target.value.toUpperCase())} className={addrInputClass} maxLength={2} /></Field>

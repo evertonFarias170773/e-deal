@@ -8122,7 +8122,10 @@ function AddressModal({ draft, onChange, onClose, onSave, isSaving, mode = "crea
         </Field>
         <Field label="Logradouro"><input value={draft.endereco} onChange={(event) => onChange({ ...draft, endereco: event.target.value })} className={inputClass} disabled={isCepLoading} /></Field>
         <Field label="Número"><input value={draft.numero} onChange={(event) => onChange({ ...draft, numero: event.target.value })} className={inputClass} /></Field>
-        <Field label="Complemento"><input value={draft.complemento ?? ""} onChange={(event) => onChange({ ...draft, complemento: event.target.value })} className={inputClass} /></Field>
+        {/* Mesmo limite do cadastro de cliente: 60 e o do complemento no layout
+            da NF-e, e acima disso a Focus recusa a nota. O valor ja gravado maior
+            nao e cortado; o contador fica vermelho para avisar. */}
+        <Field label="Complemento"><input value={draft.complemento ?? ""} onChange={(event) => onChange({ ...draft, complemento: event.target.value })} className={inputClass} maxLength={60} /><span className={`block text-right text-xs ${(draft.complemento ?? "").length > 60 ? "font-semibold text-rose-600" : "text-slate-500"}`}>{(draft.complemento ?? "").length}/60</span></Field>
         <Field label="Bairro"><input value={draft.bairro} onChange={(event) => onChange({ ...draft, bairro: event.target.value })} className={inputClass} disabled={isCepLoading} /></Field>
         <Field label="Cidade"><input value={draft.cidade} onChange={(event) => onChange({ ...draft, cidade: event.target.value })} className={inputClass} disabled={isCepLoading} /></Field>
         <Field label="UF"><input value={draft.uf} onChange={(event) => onChange({ ...draft, uf: event.target.value.toUpperCase() })} className={inputClass} maxLength={2} disabled={isCepLoading} /></Field>

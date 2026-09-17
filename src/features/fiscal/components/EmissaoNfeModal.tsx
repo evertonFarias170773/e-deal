@@ -6,6 +6,8 @@ import { useAppToast } from "@/components/common/AppToast";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import { getSefazRejectionInfo } from "@/features/fiscal/constants/sefaz-rejeicoes";
 import { lerDesfechoDaFocus, type DesfechoFocus } from "@/features/fiscal/services/desfecho-focus";
+import { estourosDeLayoutNfe, type EstouroDeLayout } from "@/features/fiscal/lib/limites-layout-nfe";
+import { montarPayloadNfe } from "@/features/nfe/services/nfe.service";
 import type { NfeReadModel } from "@/features/nfe/types";
 
 /**
@@ -74,6 +76,10 @@ export function EmissaoNfeModal({
   // nao foi escrito - foi o caso da NFE-20481-001, autorizada na SEFAZ e ainda em
   // PROCESSANDO na tabela.
   const [danfeDoRetorno, setDanfeDoRetorno] = useState("");
+  // Campos que passam do tamanho do layout. Preenchido, a emissao nao foi
+  // disparada e a lista fica na tela ate o operador corrigir e tentar de novo.
+  const [estourosLayout, setEstourosLayout] = useState<EstouroDeLayout[]>([]);
+  const [conferindoLayout, setConferindoLayout] = useState(false);
   const jaAbriuDanfe = useRef(false);
   const jaConsultouNaAbertura = useRef(false);
 
@@ -260,6 +266,45 @@ export function EmissaoNfeModal({
       return;
     }
 
+    // OS TAMANHOS, ANTES DE TRANSMITIR.
+    //
+    // A Focus recusa campo acima do limite do layout com 422, antes da SEFAZ, e
+    // o motivo se perdia: a consulta seguinte nao achava a nota e a tela dizia
+    // "nao encontrada" (NFE-21518-001, complemento de 63 caracteres). Aqui o
+    // payload REAL e lido — o mesmo do preview tecnico, montado pela mesma
+    // funcao do banco que monta o envio — e, havendo estouro, nada e disparado.
+    //
+    // Sem conseguir conferir, tambem nao envia: mandar sem saber e exatamente o
+    // que gerou tres tentativas iguais.
+    setConferindoLayout(true);
+    let estouros: EstouroDeLayout[];
+    try {
+      const payload = (await montarPayloadNfe(notaAtual.ref)) as Record<string, unknown> | null;
+      if (!payload) {
+        setEstourosLayout([]);
+        showToast({
+          type: "error",
+          title: "Não foi possível conferir a nota antes de emitir.",
+          description: "Os dados da nota vieram vazios. Nada foi transmitido."
+        });
+        return;
+      }
+      estouros = estourosDeLayoutNfe(payload);
+    } catch (err) {
+      console.error("[EmissaoNfeModal] Erro ao conferir os tamanhos antes de emitir:", err);
+      showToast({
+        type: "error",
+        title: "Não foi possível conferir a nota antes de emitir.",
+        description: "Nada foi transmitido. Tente de novo."
+      });
+      return;
+    } finally {
+      setConferindoLayout(false);
+    }
+
+    setEstourosLayout(estouros);
+    if (estouros.length > 0) return;
+
     setPasso("SENDING");
     setErroTecnico("");
     setSefazCode("");
@@ -350,6 +395,24 @@ export function EmissaoNfeModal({
               transmitida para emissão definitiva. <strong>Esta ação não pode ser desfeita</strong> — uma
               nota autorizada só sai por cancelamento junto à SEFAZ. Deseja prosseguir?
             </div>
+            {estourosLayout.length > 0 ? (
+              <div
+                role="alert"
+                className="mx-6 mb-6 space-y-2 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-xs text-rose-900"
+              >
+                <p className="font-bold">
+                  {estourosLayout.length === 1
+                    ? "A nota não foi enviada: um campo passa do tamanho que a NF-e aceita."
+                    : `A nota não foi enviada: ${estourosLayout.length} campos passam do tamanho que a NF-e aceita.`}
+                </p>
+                <ul className="list-disc space-y-1 pl-4">
+                  {estourosLayout.map((estouro) => (
+                    <li key={estouro.chave}>{estouro.mensagem}</li>
+                  ))}
+                </ul>
+                <p className="text-rose-800">Nada foi transmitido. Depois de corrigir, emita de novo.</p>
+              </div>
+            ) : null}
             <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex justify-end items-center gap-3">
               <button
                 type="button"
@@ -361,9 +424,10 @@ export function EmissaoNfeModal({
               <button
                 type="button"
                 onClick={() => void emitir()}
-                className="px-5 py-2.5 text-xs font-bold text-white bg-[#0b2f4a] hover:bg-[#061d2e] rounded-xl shadow-sm transition flex items-center justify-center min-w-[120px]"
+                disabled={conferindoLayout}
+                className="px-5 py-2.5 text-xs font-bold text-white bg-[#0b2f4a] hover:bg-[#061d2e] rounded-xl shadow-sm transition flex items-center justify-center min-w-[120px] disabled:opacity-60"
               >
-                Emitir NF-e
+                {conferindoLayout ? "Conferindo..." : "Emitir NF-e"}
               </button>
             </div>
           </>
