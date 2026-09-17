@@ -1834,6 +1834,12 @@ export async function getFaturaveisPropostas(): Promise<FaturavelOrigem[]> {
       // `libera_nf` continua sendo a porta de entrada. Marca e desfaz pela rota
       // POST /api/fiscal/faturado-fora.
       .is("faturado_fora_em", null)
+      // Pedido de TESTE encerrado nao e faturavel, diga `libera_nf` o que disser:
+      // a marca vence. Mesmo corte do painel da Expedicao, da lista de Pedidos e
+      // de Orcamentos — a fila fiscal era a unica tela operacional sem ele, e o
+      // 22334, encerrado como teste, aparecia entre os prontos para emitir.
+      // Nada no pedido muda: e so a listagem.
+      .is("encerrado_teste_em", null)
       .order("id_int", { ascending: false });
 
     if (error) {
