@@ -954,10 +954,6 @@ export async function createOrReuseNfeDraft(idInt: number): Promise<SupabaseNfeR
 
   const isCNPJ = documentoPagador.replace(/\D/g, "").length > 11;
 
-  // `consumidor_final` continua saindo do documento: CPF e sempre consumidor
-  // final, e isso a RPC do payload reafirma na emissao.
-  const consumidorFinal = isCNPJ ? 0 : 1;
-
   // O TIPO DE CONTRIBUINTE AGORA SAI DO CADASTRO DO PAGADOR.
   //
   // Ate 25/08/2026 ele era puro palpite por documento: CNPJ virava 1
@@ -972,6 +968,23 @@ export async function createOrReuseNfeDraft(idInt: number): Promise<SupabaseNfeR
     normalizarTipoContribuinte(tipoContribuinteDoCadastro) ??
       tipoContribuintePorDocumento(documentoPagador)
   );
+
+  // `consumidor_final` SEGUE O TIPO DE CONTRIBUINTE, e nao mais o documento.
+  //
+  // A SEFAZ recusa a combinacao "nao contribuinte comprando para revenda" pela
+  // regra E16a-40 (rejeicao 696): tipo 9 com consumidor final 0 nao existe. Era
+  // exatamente o que nascia aqui, porque o tipo vinha do cadastro e o consumidor
+  // final vinha do documento — um CNPJ cadastrado como 9 saia 9 + 0.
+  //
+  // CPF CONTINUA SEMPRE 1, em qualquer cenario. Sao 31 cadastros de pessoa
+  // fisica marcados como tipo 2 na base, quase certamente erro de cadastro:
+  // segui-los faria a nota declarar que a pessoa vai revender a mercadoria.
+  // Entre repetir o erro do cadastro e ignora-lo, a nota ignora.
+  //
+  // Muda um caso so, e e o que motivou a correcao: CNPJ com cadastro tipo 9.
+  // CNPJ tipo 1 e 2 seguem em 0, e CNPJ sem tipo cai no palpite por documento
+  // (1) e tambem segue em 0 — nada mais se move.
+  const consumidorFinal = isCNPJ && tipoContribuinte !== 9 ? 0 : 1;
 
   const valorFrete = proposta.resumo?.frete || 0;
   const modalidadeFrete = codigoModalidadeFrete(proposta.modalidadeFrete, valorFrete);
@@ -1481,11 +1494,13 @@ export async function criarRascunhoNfeAvulsa(params: {
 
     const documento = String(cadastro?.documento ?? "");
     const isCNPJ = documento.replace(/\D/g, "").length > 11;
-    const consumidorFinal = isCNPJ ? 0 : 1;
     const tipoContribuinte = Number(
       normalizarTipoContribuinte(cadastro?.tipo_contribuinte ?? null) ??
         tipoContribuintePorDocumento(documento)
     );
+    // Mesma regra do caminho com proposta: o consumidor final segue o tipo de
+    // contribuinte, e CPF e sempre 1. Ver o comentario em `createOrReuseNfeDraft`.
+    const consumidorFinal = isCNPJ && tipoContribuinte !== 9 ? 0 : 1;
 
     // 4. Só agora o número. Tudo que podia falhar já falhou.
     const { data: idIntData, error: idIntError } = await client.rpc(
