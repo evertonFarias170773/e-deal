@@ -884,7 +884,6 @@ export async function createOrReuseNfeDraft(idInt: number): Promise<SupabaseNfeR
       "O pedido não aponta um endereço de destino válido. Escolha o endereço no orçamento antes de faturar."
     );
   }
-  const entregaEmEnderecoProprio = destino.ehEntrega;
 
   // 5. Determinar parametrização fiscal básica e CFOP
   const ufEmitente = await ufDaEmpresaEmitente(idEmpresa);
@@ -1109,11 +1108,6 @@ export async function createOrReuseNfeDraft(idInt: number): Promise<SupabaseNfeR
   );
 
   const pgtoConfigurado = Boolean(tipoCobranca);
-  // A nota usa o endereço principal por padrão. O bloco de entrega só entra
-  // quando a proposta aponta um endereço marcado como de entrega — antes disso
-  // `end_entrega` era sempre true, porque a resolução nunca devolve vazio.
-  const hasEndereco = entregaEmEnderecoProprio && Boolean(proposta.enderecoEntrega);
-  const enderecoStr = hasEndereco ? JSON.stringify(proposta.enderecoEntrega) : null;
 
   const nfeInsert = {
     id_int: idInt,
@@ -1132,8 +1126,26 @@ export async function createOrReuseNfeDraft(idInt: number): Promise<SupabaseNfeR
     valor_total_nf: proposta.resumo?.valorTotal || 0,
     cond_pgto: pgtoConfigurado,
     forma_pgto: tipoCobranca || "A Vista",
-    end_entrega: hasEndereco,
-    endereco_entrega_observacao: enderecoStr,
+    // O RASCUNHO NASCE SEM ENDEREÇO DE ENTREGA, sempre.
+    //
+    // Até 18/09/2026 a criação copiava o endereço de entrega do pedido para cá,
+    // e a nota abria com o checkbox "Usar endereço de entrega diferente" já
+    // marcado. A NFE-22247-001 abriu assim para apontar um endereço IGUAL ao
+    // principal — e ninguém tinha escolhido nada: a nota nasceu 0,27 segundo
+    // antes de ser lida.
+    //
+    // O endereço diferente é exceção, e quem decide é o operador. Além disso,
+    // gravar aqui apagava a distinção: `end_entrega` marcado passava a
+    // significar as duas coisas ao mesmo tempo, "o sistema copiou do pedido" e
+    // "alguém escolheu". Agora só o Salvar da tela escreve estes dois campos, e
+    // marca gravada quer dizer uma coisa só.
+    //
+    // De quebra, o texto sai certo: a tela grava o JSON com a chave
+    // `logradouro`, que é a que `fn_montar_payload_nfe` lê. Aqui a chave era
+    // `endereco`, e o nome da rua sumia das informações complementares —
+    // "4168, LOJA 101, ..." em vez de "RODOVIA RST-509, 4168, LOJA 101, ...".
+    end_entrega: false,
+    endereco_entrega_observacao: null,
     natureza_operacao: naturezaDefault,
     drop_natureza_op: dropNaturezaDefault,
     tipo_documento: 1, // Saída
