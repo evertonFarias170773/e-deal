@@ -8093,11 +8093,31 @@ function AddressModal({ draft, onChange, onClose, onSave, isSaving, mode = "crea
           <input value={cepMask(draft.cep || "")} onChange={(event) => onChange({ ...draft, cep: event.target.value })} className={inputClass} placeholder="00000-000" disabled={isCepLoading} />
         </Field>
         <Field label="Tipo">
-          <select value={draft.tipo} onChange={(event) => onChange({ ...draft, tipo: event.target.value as CadastroEndereco["tipo"] })} className={inputClass}>
-            <option value="principal">Principal</option>
-            <option value="entrega">Entrega</option>
-            <option value="cobranca">Cobrança</option>
-            <option value="fiscal">Fiscal</option>
+          {/*
+            PRINCIPAL SO NASCE NA TELA DE CLIENTES (17/09/2026).
+            Endereco novo ou nao principal: so Entrega, Cobranca e Fiscal — o
+            modal nao cria principal. Principal aberto para edicao: o TIPO fica
+            travado. Tirar a opcao sem travar mostraria "Entrega" com o rascunho
+            ainda principal, e um toque no drop reclassificaria o unico principal
+            do cliente, que e o da NF-e e da etiqueta. `draft.tipo` chega sempre
+            em minusculo (mapper do cadastro e servico de orcamentos).
+          */}
+          <select
+            value={draft.tipo}
+            onChange={(event) => onChange({ ...draft, tipo: event.target.value as CadastroEndereco["tipo"] })}
+            disabled={draft.tipo === "principal"}
+            title={draft.tipo === "principal" ? "Endereço principal: o tipo só muda na tela de Clientes." : undefined}
+            className={draft.tipo === "principal" ? `${inputClass} bg-slate-100 text-slate-500 cursor-not-allowed` : inputClass}
+          >
+            {draft.tipo === "principal" ? (
+              <option value="principal">Principal</option>
+            ) : (
+              <>
+                <option value="entrega">Entrega</option>
+                <option value="cobranca">Cobrança</option>
+                <option value="fiscal">Fiscal</option>
+              </>
+            )}
           </select>
         </Field>
         <Field label="Logradouro"><input value={draft.endereco} onChange={(event) => onChange({ ...draft, endereco: event.target.value })} className={inputClass} disabled={isCepLoading} /></Field>
