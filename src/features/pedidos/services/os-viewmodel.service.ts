@@ -13,6 +13,11 @@ import {
   nomeTransporteEfetivo,
   type ModalidadeFrete
 } from "@/features/orcamentos/lib/modalidade-frete";
+import { idEnderecoEntregaVigente } from "@/features/expedicao/lib/endereco-entrega";
+import {
+  idDestinatarioEtiquetaVigente,
+  nomeDestinatarioVigente
+} from "@/features/expedicao/lib/destinatario-etiqueta";
 
 /**
  * View-model único da OS, compartilhado entre a tela do boletim e o PDF.
@@ -120,6 +125,27 @@ export interface OsPdfViewModel {
    */
   obsTecnica: string;
   frete: { transportadora: string | null; servico: string | null } | null;
+  /**
+   * PARA ONDE O PEDIDO VAI (18/09/2026) — o bloco de entrega do boletim.
+   *
+   * MESMA ORIGEM DA EXPEDICAO: o endereco vigente sai de
+   * `idEnderecoEntregaVigente` (escolha do despacho › endereco da proposta) e o
+   * nome, de `nomeDestinatarioVigente` (escolha gravada › `enderecos.recebedor`
+   * › o nome do cadastro). Uma regra so para o papel da bancada, a etiqueta e a
+   * prepostagem — nenhuma copia.
+   *
+   * `null` quando o pedido NAO tem endereco de entrega escolhido (RETIRA, por
+   * exemplo): o boletim nao imprime o bloco e o layout fica como era. O palpite
+   * por CEP que a etiqueta ainda faz NAO entra aqui: no boletim, endereco que
+   * ninguem escolheu e pior que nenhum.
+   */
+  entrega: {
+    recebedor: string;
+    endereco: string;
+    bairro: string;
+    cep: string;
+    cidadeUf: string;
+  } | null;
   produtos: OsPdfProduto[];
   /** Arquivos do briefing de artes sem vínculo com modelo específico. */
   artesGerais: OsPdfArteRef[];
@@ -233,6 +259,8 @@ export async function montarOsPdfViewModel(
     /** Modalidade declarada pelo vendedor — decide o rótulo de FORMA DE ENVIO. */
     let modalidadeFrete: ModalidadeFrete | null = null;
     let idTransportadoraCliente: number | null = null;
+    /** `propostas.id_endereco_ent` — o endereco de entrega escolhido no pedido. */
+    let idEnderecoProposta: string | null = null;
     // As leituras abaixo sao independentes entre si: rodam juntas para o PDF nao
     // pagar ~12 idas e voltas em serie ao banco. Cada uma segue tolerante a
     // falha; o encadeamento so existe onde o dado e mesmo pre-requisito
@@ -244,7 +272,8 @@ export async function montarOsPdfViewModel(
       setoresResult,
       modelosResult,
       pesosResult,
-      freteResult
+      freteResult,
+      expedicaoResult
     ] = await Promise.all([
       (async () => {
         try {
@@ -253,7 +282,9 @@ export async function montarOsPdfViewModel(
             .select(
               // `id_faturado` (o PAGADOR) entra na MESMA linha que ja era lida:
               // custo zero. Serve a regra do 8469 logo abaixo.
-              "cliente, cnpjCpf, contato, empresa, vendedor, status_interno, id_cliente, id_faturado, modalidade_frete, id_transportadora_cliente"
+              // `id_endereco_ent` entra em 18/09/2026, na MESMA linha: e o endereco de
+              // entrega do bloco novo do boletim, e nao custa consulta alguma.
+              "cliente, cnpjCpf, contato, empresa, vendedor, status_interno, id_cliente, id_faturado, modalidade_frete, id_transportadora_cliente, id_endereco_ent"
             )
             .eq("id_int", idInt)
             .maybeSingle();
@@ -324,6 +355,20 @@ export async function montarOsPdfViewModel(
           console.warn("[os-viewmodel] Falha ao buscar frete (nao-fatal):", e);
           return null;
         }
+      })(),
+      // Escolha do despacho: endereco e destinatario. Uma leitura, no mesmo
+      // lote das outras — o bloco de entrega do boletim depende dela.
+      (async () => {
+        try {
+          return await client
+            .from("expedicoes")
+            .select("id_endereco_entrega, id_cliente_destinatario_etiqueta, data_despacho")
+            .eq("id_int", idInt)
+            .maybeSingle();
+        } catch (e) {
+          console.warn("[os-viewmodel] Falha ao ler a expedicao (nao-fatal):", e);
+          return { data: null };
+        }
       })()
     ]);
 
@@ -340,6 +385,7 @@ export async function montarOsPdfViewModel(
           idFaturado = Number(propostaRow.id_faturado);
         }
         modalidadeFrete = (propostaRow.modalidade_frete as ModalidadeFrete | null) ?? null;
+        idEnderecoProposta = propostaRow.id_endereco_ent ? String(propostaRow.id_endereco_ent) : null;
         if (
           propostaRow.id_transportadora_cliente !== null &&
           propostaRow.id_transportadora_cliente !== undefined
@@ -496,6 +542,75 @@ export async function montarOsPdfViewModel(
       for (const row of pesosRows) {
         if (row.peso_total !== null && row.peso_total !== undefined) {
           pesoPorProduto.set(Number(row.id), Number(row.peso_total));
+        }
+      }
+    }
+
+    /**
+     * BLOCO DE ENTREGA: o endereco vigente e quem recebe.
+     *
+     * Duas leituras, nao por linha: `expedicoes` (escolha do despacho) e
+     * `enderecos` (o endereco em si). Ambas toleram falha — o boletim nunca
+     * deixa de sair por causa deste bloco.
+     */
+    let entrega: OsPdfViewModel["entrega"] = null;
+    {
+      const exp = (expedicaoResult?.data ?? null) as {
+        id_endereco_entrega?: string | null;
+        id_cliente_destinatario_etiqueta?: number | null;
+        data_despacho?: string | null;
+      } | null;
+
+      const idEnderecoVigente = idEnderecoEntregaVigente({
+        despachoConfirmado: Boolean(exp?.data_despacho),
+        idGravadoNoDespacho: exp?.id_endereco_entrega,
+        idDefinidoNaProposta: idEnderecoProposta
+      });
+
+      /*
+        RETIRA NAO IMPRIME O BLOCO, e a checagem e pela MODALIDADE — nao pela
+        ausencia de endereco.
+
+        Medido em 18/09/2026: todo pedido RETIRA tem `id_endereco_ent` gravado
+        (o endereco do cadastro viaja junto do pedido de qualquer jeito), entao
+        confiar so no "sem endereco" faria o balcao imprimir um destino para
+        onde nada vai. Quem busca no balcao nao tem entrega.
+      */
+      if (modalidadeFrete !== "RETIRA" && idEnderecoVigente) {
+        try {
+          const { data: end } = await client
+            .from("enderecos")
+            .select("endereco, numero, complemento, bairro, cidade, uf, cep, recebedor")
+            .eq("id", idEnderecoVigente)
+            .maybeSingle();
+
+          if (end) {
+            const idDestinatario = idDestinatarioEtiquetaVigente({
+              despachoConfirmado: Boolean(exp?.data_despacho),
+              idClienteProposta: idCliente,
+              idFaturado,
+              idGravadoNoDespacho: exp?.id_cliente_destinatario_etiqueta
+            });
+            entrega = {
+              recebedor: nomeDestinatarioVigente({
+                idGravadoNoDespacho: exp?.id_cliente_destinatario_etiqueta,
+                idDestinatarioResolvido: idDestinatario,
+                recebedorDoEndereco: end.recebedor,
+                nomeDoCadastro: pedido.clienteNome || ""
+              }),
+              endereco: [
+                [end.endereco, end.numero].filter(Boolean).join(", "),
+                end.complemento
+              ]
+                .filter(Boolean)
+                .join(" - "),
+              bairro: String(end.bairro ?? ""),
+              cep: String(end.cep ?? ""),
+              cidadeUf: [end.cidade, end.uf].filter(Boolean).join("/")
+            };
+          }
+        } catch (e) {
+          console.warn("[os-viewmodel] Falha ao ler o endereco de entrega (nao-fatal):", e);
         }
       }
     }
@@ -674,6 +789,7 @@ export async function montarOsPdfViewModel(
       obs,
       obsTecnica: pedido.obsTecnica || "",
       frete,
+      entrega,
       produtos,
       artesGerais,
       valores: null

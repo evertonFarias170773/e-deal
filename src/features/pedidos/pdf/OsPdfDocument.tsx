@@ -497,6 +497,19 @@ const styles = StyleSheet.create({
     alignItems: "flex-end"
   },
   envioTexto: { fontSize: 9, fontFamily: "Helvetica-Bold", textTransform: "uppercase" },
+  // Bloco de entrega: mesma moldura da faixa de envio, alinhado a esquerda
+  // porque sao tres linhas de texto corrido e nao um rotulo curto.
+  entregaBloco: {
+    borderWidth: 1,
+    borderColor: "#3f3f42",
+    borderRadius: 6,
+    paddingVertical: 4,
+    paddingHorizontal: 9,
+    marginTop: 4
+  },
+  entregaTitulo: { fontSize: 7.5, fontFamily: "Helvetica-Bold", textTransform: "uppercase", color: "#52525b" },
+  entregaNome: { fontSize: 9, fontFamily: "Helvetica-Bold", textTransform: "uppercase" },
+  entregaTexto: { fontSize: 8.5 },
   // ── Assinaturas / rodapé ───────────────────────────────────────────────────
   assinaturaArea: { marginTop: "auto", paddingTop: 26, flexDirection: "row", justifyContent: "space-between" },
   assinatura: {
@@ -966,6 +979,34 @@ export function OsPdfPaginaBoletim({
         <View style={styles.envioBarra} wrap={false}>
           <Text style={styles.envioTexto}>Forma de envio: {pdfSafe(entregaFrete) || "-"}</Text>
         </View>
+
+        {/*
+          PARA ONDE O PEDIDO VAI (18/09/2026).
+
+          Quem embala tinha a forma de envio e nao tinha o destino. O bloco vem
+          pronto do view-model (`vm.entrega`), que le o endereco da MESMA origem
+          da Expedicao. Pedido sem endereco de entrega escolhido — RETIRA, por
+          exemplo — nao tem `entrega`, e o boletim fica exatamente como era.
+
+          `wrap={false}` mantem o bloco inteiro na mesma pagina, como a faixa
+          acima: endereco partido ao meio nao serve para despachar.
+        */}
+        {vm.entrega ? (
+          <View style={styles.entregaBloco} wrap={false}>
+            <Text style={styles.entregaTitulo}>Entregar para:</Text>
+            <Text style={styles.entregaNome}>{pdfSafe(vm.entrega.recebedor) || "-"}</Text>
+            <Text style={styles.entregaTexto}>{pdfSafe(vm.entrega.endereco) || "-"}</Text>
+            <Text style={styles.entregaTexto}>
+              {[
+                vm.entrega.bairro ? `Bairro: ${pdfSafe(vm.entrega.bairro)}` : null,
+                vm.entrega.cep ? `CEP: ${pdfSafe(vm.entrega.cep)}` : null,
+                pdfSafe(vm.entrega.cidadeUf) || null
+              ]
+                .filter(Boolean)
+                .join("  |  ")}
+            </Text>
+          </View>
+        ) : null}
 
         {/* Assinaturas (base da última página) */}
         <View style={styles.assinaturaArea} wrap={false}>
