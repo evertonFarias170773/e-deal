@@ -420,6 +420,63 @@ async function buscarIdsClientesPorNome(
   }
 }
 
+/**
+ * IDs de pedidos cujo NOME DO EVENTO casa com o termo (18/09/2026).
+ *
+ * O evento mora em `pedidos_artes.nome_evento`, e a lista so o lia por PAGINA —
+ * entao "HALLOWEEN" so achava o pedido se ele ja estivesse na tela. Mesma
+ * inversao que a busca por socio pagador faz com `clientes`: pre-consulta a
+ * tabela do texto e dobra os ids achados no `.or()` da consulta principal.
+ *
+ * BARATO: 153 linhas e 304 kB em 18/09/2026, sem indice em `nome_evento` — a
+ * tabela inteira cabe numa varredura, e a consulta so roda quando ha termo de
+ * busca. Nenhum indice foi criado.
+ *
+ * SOMA, nao substitui: sem ids o `.or()` fica exatamente como era, e a busca por
+ * numero, cliente, vendedor e socio segue igual. Somente leitura.
+ */
+async function buscarIdsPedidosPorEvento(
+  client: NonNullable<ReturnType<typeof getSupabaseClient>>,
+  termo: string
+): Promise<number[]> {
+  const alvo = termo.trim();
+  if (alvo.length < 2) return [];
+  try {
+    const { data, error } = await client
+      .from("pedidos_artes")
+      .select("id_int")
+      .ilike("nome_evento", `%${alvo}%`)
+      .limit(LIMITE_IDS_SOCIO_BUSCA);
+
+    if (error) {
+      console.warn("[OrcamentosService] Falha ao resolver eventos na busca:", error.message);
+      return [];
+    }
+
+    const ids = Array.from(
+      new Set(
+        (data ?? [])
+          .map((linha) => Number(linha.id_int))
+          .filter((id) => Number.isFinite(id) && id > 0)
+      )
+    );
+
+    // Mesmo teto e mesma decisao da busca por socio: no limite, desiste da
+    // ampliacao em vez de aplicar um recorte arbitrario.
+    if (ids.length >= LIMITE_IDS_SOCIO_BUSCA) {
+      console.warn(
+        `[OrcamentosService] Termo "${alvo}" casa com ${LIMITE_IDS_SOCIO_BUSCA}+ eventos; ` +
+          `a busca por NOME DO EVENTO foi desligada para este termo. Use um termo mais especifico.`
+      );
+      return [];
+    }
+    return ids;
+  } catch (e) {
+    console.warn("[OrcamentosService] Excecao ao resolver eventos na busca:", e);
+    return [];
+  }
+}
+
 async function fetchPropostaRows(
   periodo = "all",
   page = 1,
@@ -589,6 +646,12 @@ async function fetchPropostaRows(
       const idsSocio = await buscarIdsClientesPorNome(client, term);
       const condicaoSocio = idsSocio.length > 0 ? `id_faturado.in.(${idsSocio.join(",")})` : null;
 
+      // NOME DO EVENTO na busca, pela mesma inversao do socio: o texto vive em
+      // `pedidos_artes` e so o id volta para ca. Sem isto a busca so achava o
+      // evento das linhas que ja estavam na tela.
+      const idsEvento = await buscarIdsPedidosPorEvento(client, term);
+      const condicaoEvento = idsEvento.length > 0 ? `id_int.in.(${idsEvento.join(",")})` : null;
+
       if (Number.isInteger(num) && num > 0) {
         // id_int (nº da proposta) e id_cliente são colunas numéricas → comparação exata,
         // igual ao comportamento já existente do nº da proposta.
@@ -597,10 +660,12 @@ async function fetchPropostaRows(
         if (num <= MAX_INT4) condicoes.push(`id_cliente.eq.${num}`);
         condicoes.push(`cliente.ilike.%${term}%`, `vendedor.ilike.%${term}%`);
         if (condicaoSocio) condicoes.push(condicaoSocio);
+        if (condicaoEvento) condicoes.push(condicaoEvento);
         query = query.or(condicoes.join(","));
       } else {
         const condicoes = [`cliente.ilike.%${term}%`, `vendedor.ilike.%${term}%`];
         if (condicaoSocio) condicoes.push(condicaoSocio);
+        if (condicaoEvento) condicoes.push(condicaoEvento);
         query = query.or(condicoes.join(","));
       }
     }

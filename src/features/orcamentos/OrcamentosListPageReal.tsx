@@ -137,13 +137,21 @@ function onlyDigits(value: unknown) {
   return String(value ?? "").replace(/\D/g, "");
 }
 
-function getSearchableProposalText(item: OrcamentoListItem, nomeSocio?: string | null) {
+function getSearchableProposalText(
+  item: OrcamentoListItem,
+  nomeSocio?: string | null,
+  nomeEvento?: string | null
+) {
   return normalize(
     [
       // Socio pagador entra no indice da tela para a busca refinar por ele
       // depois que o servidor ja trouxe a linha. O servidor tem alcance proprio
       // (id_faturado.in), porque a tela so filtra o que ja veio.
       nomeSocio ?? "",
+      // Nome do evento, pelo mesmo motivo: o alcance na base inteira e do
+      // servidor (`buscarIdsPedidosPorEvento` -> id_int.in), e aqui ele so
+      // impede que a linha achada la seja descartada no filtro da tela.
+      nomeEvento ?? "",
       item.id_int,
       item.clienteId,
       item.clienteNome,
@@ -695,12 +703,16 @@ export function OrcamentosListPageReal() {
       const nomeSocio =
         faturado && faturado !== Number(item.clienteId) ? (nomesSocios[faturado] ?? null) : null;
       return {
-        text: getSearchableProposalText(item, nomeSocio),
+        // O NOME DO EVENTO entra no indice (18/09/2026) porque a tela filtra de
+        // novo o que o servidor mandou: sem ele, a linha que o servidor achou
+        // POR EVENTO seria descartada aqui e a busca continuaria sem achar.
+        // `eventoPorId` cobre a pagina inteira, nao so as linhas filtradas.
+        text: getSearchableProposalText(item, nomeSocio, eventoPorId[item.id_int] ?? null),
         digits: getSearchableProposalDigits(item),
         statusNorm: normalizeProposalStatus(item.statusInterno)
       };
     });
-  }, [propostas, nomesSocios]);
+  }, [propostas, nomesSocios, eventoPorId]);
 
   const filteredPropostas = useMemo(() => {
     const normalizedSearch = normalize(search.trim());
@@ -1789,6 +1801,11 @@ Ela volta a aparecer nas listas operacionais.`
                 // 240px + 40px de padding devolve a coluna ~280px sem alargar a
                 // tabela alem do que ela ja ocupava.
                 <div className="min-w-[15rem]">
+                  {/* 1. UMA linha para o cliente (18/09/2026): o NOME FANTASIA,
+                      que e como a operacao chama o cliente. Sem fantasia — ou
+                      enquanto a consulta de nomes nao volta — vale a razao
+                      social, que e o que `fantasiaDaLinha` ja devolve. Os dois
+                      juntos era o que a diretoria pediu para acabar. */}
                   <p className="font-medium text-slate-900">
                     {isClienteNaoCadastrado ? (
                       <>
@@ -1796,17 +1813,10 @@ Ela volta a aparecer nas listas operacionais.`
                         <span className="ml-2 inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-800 ring-1 ring-inset ring-amber-600/20">Sem cadastro</span>
                       </>
                     ) : (
-                      <>{proposta.clienteId} - {proposta.clienteNome}</>
+                      <>{proposta.clienteId} - {fantasiaDaLinha(proposta)}</>
                     )}
                   </p>
-                  {/* 2. Nome fantasia do cliente; sem fantasia, a razao social.
-                      Quando o fantasia E a razao social — a maioria das pessoas
-                      fisicas —, a linha some: repetir o mesmo nome logo abaixo
-                      dele nao informa nada e parece defeito. */}
-                  {fantasiaDaLinha(proposta) !== proposta.clienteNome ? (
-                    <p className="text-xs text-slate-600">{fantasiaDaLinha(proposta)}</p>
-                  ) : null}
-                  {/* 3. Nota fiscal: o fantasia de quem esta em Dados de
+                  {/* 2. Nota fiscal: o fantasia de quem esta em Dados de
                       Faturamento. Sem indicacao, a linha SOME — o proprio
                       cliente nunca aparece aqui no lugar dele. */}
                   {socioDaLinha(proposta) && (
@@ -1814,7 +1824,7 @@ Ela volta a aparecer nas listas operacionais.`
                       Nota fiscal: {socioDaLinha(proposta)}
                     </p>
                   )}
-                  {/* 4. Nome do Evento / Tema, do menu Artes (`pedidos_artes`).
+                  {/* 3. Nome do Evento / Tema, do menu Artes (`pedidos_artes`).
                       Pedido sem arte nao tem evento, e a linha some. */}
                   {eventoPorId[proposta.id_int] ? (
                     <p className="text-sm font-bold text-[#0b2f4a]">{eventoPorId[proposta.id_int]}</p>
@@ -2056,7 +2066,9 @@ Ela volta a aparecer nas listas operacionais.`
                       <span className="ml-2 inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-800 ring-1 ring-inset ring-amber-600/20">Sem cadastro</span>
                     </>
                   ) : (
-                    <>{proposta.clienteId || "—"} - {proposta.clienteNome}</>
+                    /* Mesma regra da tabela: o fantasia, com a razao social como
+                       recurso (card do mobile). */
+                    <>{proposta.clienteId || "—"} - {fantasiaDaLinha(proposta)}</>
                   )}
                 </h3>
                 {/* Mesmo subtitulo da tabela (card do mobile). */}
