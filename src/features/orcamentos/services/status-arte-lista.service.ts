@@ -91,31 +91,61 @@ function textoExibido(status: string | null | undefined): string | null {
  * `pedidos_artes` simplesmente nao aparece no mapa — e a celula fica vazia.
  */
 export async function buscarStatusArteDasPropostas(idInts: number[]): Promise<Record<number, string>> {
+  return (await buscarArtesDasPropostas(idInts)).status;
+}
+
+/**
+ * O que a lista precisa de `pedidos_artes`, na MESMA consulta que ja existia.
+ *
+ * Desde 18/09/2026 a lista mostra tambem o NOME DO EVENTO e o DESIGNER, e os
+ * dois moram na mesma linha desta tabela que ja era lida para o status. Uma
+ * consulta continua sendo uma consulta: o que mudou foi a lista de colunas.
+ *
+ * `buscarStatusArteDasPropostas` continua existindo, agora como recorte deste
+ * resultado — e o que o teste de paridade lista x cabecalho compara.
+ *
+ * UMA LINHA POR PEDIDO (151 linhas para 151 pedidos em 18/09/2026, nenhuma com
+ * dois eventos diferentes). Se um dia houver duas, vale a mais recente por
+ * `created_at`, exatamente como o status ja fazia.
+ */
+export async function buscarArtesDasPropostas(idInts: number[]): Promise<{
+  status: Record<number, string>;
+  evento: Record<number, string>;
+  designer: Record<number, string>;
+}> {
   const client = getSupabaseClient();
   const ids = Array.from(new Set(idInts.filter((n) => Number.isFinite(n) && n > 0)));
-  if (!client || ids.length === 0) return {};
+  const vazio = { status: {}, evento: {}, designer: {} };
+  if (!client || ids.length === 0) return vazio;
 
   const { data, error } = await client
     .from("pedidos_artes")
-    .select("id_int, status, created_at")
+    .select("id_int, status, nome_evento, designer_nome, created_at")
     .in("id_int", ids)
     .order("created_at", { ascending: true });
 
   if (error) {
     console.warn("[status-arte-lista] Erro ao ler pedidos_artes:", error.message);
-    return {};
+    return vazio;
   }
 
   // Ordem crescente: a ultima escrita vence, que e a linha mais recente.
-  const resultado: Record<number, string> = {};
+  const status: Record<number, string> = {};
+  const evento: Record<number, string> = {};
+  const designer: Record<number, string> = {};
+  const gravar = (mapa: Record<number, string>, id: number, valor: string | null) => {
+    if (valor) mapa[id] = valor;
+    else delete mapa[id];
+  };
+
   for (const linha of data ?? []) {
     const id = Number(linha.id_int);
-    const texto = textoExibido(linha.status);
     if (!Number.isFinite(id) || id <= 0) continue;
-    if (texto) resultado[id] = texto;
-    else delete resultado[id];
+    gravar(status, id, textoExibido(linha.status));
+    gravar(evento, id, textoExibido((linha as { nome_evento?: string | null }).nome_evento));
+    gravar(designer, id, textoExibido((linha as { designer_nome?: string | null }).designer_nome));
   }
-  return resultado;
+  return { status, evento, designer };
 }
 
 /**

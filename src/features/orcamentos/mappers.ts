@@ -1,4 +1,6 @@
 import type { SupabasePropostaRow } from "@/features/orcamentos/types.supabase";
+import { nomeTransporteEfetivo } from "@/features/orcamentos/lib/modalidade-frete";
+import type { ModalidadeFrete } from "@/features/orcamentos/lib/modalidade-frete";
 import type { DanfeDoPedido } from "@/lib/fiscal/danfes-do-pedido";
 
 export function composeStatusEmArte(baseStatus: string, emArte: boolean | undefined): string {
@@ -105,6 +107,19 @@ export type OrcamentoListItem = {
    * docs/business/PEDIDO-COMPLEMENTAR.md. Nulo na esmagadora maioria.
    */
   idIntPedidoPrincipal: number | null;
+  /**
+   * COLUNA ENVIO (18/09/2026): o transporte do pedido — SEDEX, RETIRADA, a
+   * transportadora, o motoboy. Nao e a modalidade (RETIRA/FOB/CIF), que e outra
+   * dimensao e continua fora da lista.
+   *
+   * Sai de `propostas.frete_escolhido` passado por `nomeTransporteEfetivo`, a
+   * MESMA funcao que gravou aquele rotulo no salvamento e que a Expedicao usa
+   * para a coluna FRETE. Nao existe terceira versao desta informacao: o que a
+   * lista mostra e o que a Expedicao mostra.
+   *
+   * Vazio quando a proposta nasceu antes de o rotulo existir — celula com "—".
+   */
+  envio: string;
 };
 
 const EMPRESA_LABELS: Record<number, string> = {
@@ -424,6 +439,21 @@ function mapRowToListItem(row: SupabasePropostaRow): OrcamentoListItem | null {
     idFaturado: Number.isFinite(Number(row.id_faturado)) && Number(row.id_faturado) > 0
       ? Number(row.id_faturado)
       : null,
+    /*
+      O rotulo gravado, relido pela MESMA regra que o gravou.
+
+      `frete_escolhido` entra duas vezes de proposito: depois do salvamento ele
+      JA E o resultado de `nomeTransporteEfetivo`, entao ele e tanto o "servico
+      cotado" (CIF e sem modalidade) quanto o "nome da transportadora" (FOB) do
+      ponto de vista de quem le. Passar por aqui conserta na exibicao os pedidos
+      RETIRA anteriores ao f9f3f39, que ficaram com "SEDEX" gravado — a mesma
+      correcao que a Expedicao ja faz na leitura dela.
+    */
+    envio: nomeTransporteEfetivo(
+      typeof row.frete_escolhido === "string" ? row.frete_escolhido : null,
+      typeof row.modalidade_frete === "string" ? (row.modalidade_frete as ModalidadeFrete) : null,
+      typeof row.frete_escolhido === "string" ? row.frete_escolhido : null
+    ),
     idIntPedidoPrincipal:
       row.id_int_pedido_principal !== null &&
       row.id_int_pedido_principal !== undefined &&

@@ -479,7 +479,10 @@ async function fetchPropostaRows(
     // visivel depois de marcado — e portanto o unico de onde da para reabrir.
     // `faturado_fora_em/por` pelo mesmo motivo: o pedido marcado como faturado no
     // sistema antigo some da Fila de Faturamento, e o desfazer mora aqui.
-    const columnsToSelect = "id, id_int, id_cliente, cliente, created_at, updated_at, vendedor, status_interno, valor_total, valor, is_avulso, empresa, valor_frete, em_arte, is_prd_aprovado, encerrado_teste_em, encerrado_teste_por, faturado_fora_em, faturado_fora_por, id_faturado, id_int_pedido_principal";
+    // `modalidade_frete` e `frete_escolhido` entram para a coluna ENVIO
+    // (18/09/2026): sao colunas da PROPRIA proposta, entao viajam nesta mesma
+    // consulta — a lista nao ganha nenhuma ida extra ao banco por causa delas.
+    const columnsToSelect = "id, id_int, id_cliente, cliente, created_at, updated_at, vendedor, status_interno, valor_total, valor, is_avulso, empresa, valor_frete, em_arte, is_prd_aprovado, encerrado_teste_em, encerrado_teste_por, faturado_fora_em, faturado_fora_por, id_faturado, id_int_pedido_principal, modalidade_frete, frete_escolhido";
 
     let query = client
       .from("propostas")

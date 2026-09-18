@@ -22,7 +22,7 @@ import { buscarRastreioDasPropostas, type RastreioDaProposta } from "@/features/
 import { RastreioPropostaModal } from "@/features/orcamentos/components/RastreioPropostaModal";
 import { buscarNomesDosSocios } from "@/features/orcamentos/services/socio-pagador.service";
 import {
-  buscarStatusArteDasPropostas,
+  buscarArtesDasPropostas,
   buscarLinksClienteDasPropostas,
   classeDoStatusArte
 } from "@/features/orcamentos/services/status-arte-lista.service";
@@ -655,6 +655,13 @@ export function OrcamentosListPageReal() {
    * da lista filtrada, porque a lista do card EM ARTE consome este mapa. A busca mora mais abaixo, junto dos demais enriquecimentos.
    */
   const [statusArtePorId, setStatusArtePorId] = useState<Record<number, string>>({});
+  /**
+   * Nome do evento e designer do pedido (`pedidos_artes.nome_evento` e
+   * `designer_nome`), da MESMA consulta do status da arte — nenhuma ida extra ao
+   * banco. Pedido sem arte nao aparece nos mapas, e as linhas somem da tela.
+   */
+  const [eventoPorId, setEventoPorId] = useState<Record<number, string>>({});
+  const [designerPorId, setDesignerPorId] = useState<Record<number, string>>({});
   const fetchedStatusArteIdsRef = useRef<Set<number>>(new Set());
 
   const searchIndex = useMemo(() => {
@@ -845,10 +852,12 @@ export function OrcamentosListPageReal() {
     let ativo = true;
     void (async () => {
       try {
-        const dados = await buscarStatusArteDasPropostas(naoBuscados);
+        const dados = await buscarArtesDasPropostas(naoBuscados);
         if (!ativo) return;
         naoBuscados.forEach((id) => fetchedStatusArteIdsRef.current.add(id));
-        setStatusArtePorId((atual) => ({ ...atual, ...dados }));
+        setStatusArtePorId((atual) => ({ ...atual, ...dados.status }));
+        setEventoPorId((atual) => ({ ...atual, ...dados.evento }));
+        setDesignerPorId((atual) => ({ ...atual, ...dados.designer }));
       } catch (err) {
         console.error("[OrcamentosListPageReal] Erro ao buscar status da arte das propostas:", err);
       }
@@ -895,16 +904,23 @@ export function OrcamentosListPageReal() {
   }, [idsParaStatusArte]);
 
   /**
-   * Socio pagador das linhas da pagina. So entra quem tem `idFaturado`
-   * diferente do proprio cliente — a comparacao e aqui, com os dois ids que ja
-   * vem na linha; a service so resolve nomes.
+   * Os cadastros cujo NOME a pagina precisa resolver: o pagador indicado em
+   * Dados de Faturamento (linha "Nota fiscal") e, desde 18/09/2026, o PROPRIO
+   * CLIENTE — a lista passou a mostrar o nome fantasia dele, e `propostas.cliente`
+   * guarda a razao social congelada no pedido, nao o fantasia de hoje.
+   *
+   * CONTINUA SENDO UMA CONSULTA POR PAGINA: o que mudou foi a quantidade de ids
+   * dentro dela. `buscarNomesDosSocios` ja devolve fantasia na frente da razao
+   * social, que e exatamente a regra pedida para as duas linhas.
    */
   const idsSocioDaPagina = useMemo(() => {
     const ids = new Set<number>();
     for (const p of filteredPropostas) {
+      const cliente = Number(p.clienteId);
+      if (Number.isFinite(cliente) && cliente > 0) ids.add(cliente);
       const faturado = p.idFaturado;
       if (!faturado) continue;
-      if (faturado === Number(p.clienteId)) continue;
+      if (faturado === cliente) continue;
       ids.add(faturado);
     }
     return Array.from(ids);
@@ -932,10 +948,31 @@ export function OrcamentosListPageReal() {
   }, [idsSocioDaPagina]);
 
   /** Nome do socio pagador da linha, ou null quando o proprio cliente paga. */
+  /**
+   * Linha "Nota fiscal": o nome fantasia de quem esta indicado em Dados de
+   * Faturamento. Sem indicacao — ou com o proprio cliente indicado — a linha
+   * SOME: repetir o cliente logo abaixo do nome dele nao informa nada.
+   */
   function socioDaLinha(item: OrcamentoListItem): string | null {
     const faturado = item.idFaturado;
     if (!faturado || faturado === Number(item.clienteId)) return null;
     return nomesSocios[faturado] ?? null;
+  }
+
+  /**
+   * Nome fantasia do cliente, com a razao social como reserva.
+   *
+   * `nomesSocios` ja resolve fantasia na frente de razao social. Enquanto a
+   * consulta da pagina nao volta — ou para cliente sem cadastro — vale o nome
+   * que veio na propria proposta, que e o que a lista sempre mostrou.
+   */
+  function fantasiaDaLinha(item: OrcamentoListItem): string {
+    const cliente = Number(item.clienteId);
+    if (Number.isFinite(cliente) && cliente > 0) {
+      const resolvido = nomesSocios[cliente];
+      if (resolvido) return resolvido;
+    }
+    return item.clienteNome;
   }
 
   const fetchedChatIdsRef = useRef<Set<number>>(new Set());
@@ -1713,7 +1750,9 @@ Ela volta a aparecer nas listas operacionais.`
         emptyDescription="Ajuste os filtros ou crie uma nova proposta para comecar."
         getRowHighlight={(proposta) => (ehRevisaoAtendente(proposta) ? DESTAQUE_REVISAO : null)}
         columns={[
-          { header: "N°", cell: (proposta) => <span className="font-semibold text-slate-950">{proposta.id_int}</span> },
+          // Dois pontos maior que o corpo da tabela (text-sm, 14px) e em negrito:
+          // o numero do pedido e por onde a operacao inteira se refere a linha.
+          { header: "N°", cell: (proposta) => <span className="text-base font-bold text-slate-950">{proposta.id_int}</span> },
           {
             header: "id - Cliente",
             cell: (proposta) => {
@@ -1730,21 +1769,60 @@ Ela volta a aparecer nas listas operacionais.`
                       <>{proposta.clienteId} - {proposta.clienteNome}</>
                     )}
                   </p>
-                  {/* Socio pagador: quem assume a fatura quando nao e o proprio
-                      cliente. Sem socio, a linha fica exatamente como estava. */}
+                  {/* 2. Nome fantasia do cliente; sem fantasia, a razao social.
+                      Quando o fantasia E a razao social — a maioria das pessoas
+                      fisicas —, a linha some: repetir o mesmo nome logo abaixo
+                      dele nao informa nada e parece defeito. */}
+                  {fantasiaDaLinha(proposta) !== proposta.clienteNome ? (
+                    <p className="text-xs text-slate-600">{fantasiaDaLinha(proposta)}</p>
+                  ) : null}
+                  {/* 3. Nota fiscal: o fantasia de quem esta em Dados de
+                      Faturamento. Sem indicacao, a linha SOME — o proprio
+                      cliente nunca aparece aqui no lugar dele. */}
                   {socioDaLinha(proposta) && (
                     <p className="text-xs font-medium text-indigo-700">
-                      Sócio pagador: {socioDaLinha(proposta)}
+                      Nota fiscal: {socioDaLinha(proposta)}
                     </p>
                   )}
-                  <p className="text-xs text-slate-500">{proposta.documento || ""}</p>
+                  {/* 4. Nome do Evento / Tema, do menu Artes (`pedidos_artes`).
+                      Pedido sem arte nao tem evento, e a linha some. */}
+                  {eventoPorId[proposta.id_int] ? (
+                    <p className="text-sm font-bold text-[#0b2f4a]">{eventoPorId[proposta.id_int]}</p>
+                  ) : null}
                 </div>
               );
             }
           },
-          { header: "Tipo cobrança", cell: (proposta) => proposta.tipoCobrancaLabel, align: "center" },
+          {
+            // As duas viram uma: o tipo em cima, o valor embaixo e em negrito.
+            header: "Tipo cobrança / Valor total",
+            cell: (proposta) => (
+              <div className="flex flex-col items-center">
+                <span>{proposta.tipoCobrancaLabel}</span>
+                <span className="font-bold text-slate-950">{formatCurrency(proposta.total)}</span>
+              </div>
+            ),
+            align: "center"
+          },
           { header: "Data / Hora", cell: (proposta) => <span>{(proposta.updatedAt || proposta.createdAt) ? formatDateTime(proposta.updatedAt || proposta.createdAt) : "-"}</span>, align: "center" },
-          { header: "Atendente", cell: (proposta) => proposta.vendedor },
+          {
+            // `min-w` no conteudo: a tabela e `w-full` com largura automatica, e
+            // este piso e o que da a folga de ~50% pedida — a coluna media 115px
+            // e passa a nao ficar abaixo de 176px (136px + os 40px de padding).
+            // `whitespace-nowrap` cumpre o "sem quebrar" mesmo em nome comprido,
+            // e o nome do designer, quando existe, alarga a coluna sozinho.
+            header: "Atendente",
+            cell: (proposta) => (
+              <div className="min-w-[8.5rem]">
+                <p className="whitespace-nowrap">{proposta.vendedor}</p>
+                {/* Designer do pedido (`pedidos_artes.designer_nome`), da mesma
+                    consulta do status da arte. Pedido sem arte nao tem designer. */}
+                {designerPorId[proposta.id_int] ? (
+                  <p className="whitespace-nowrap text-xs text-slate-500">{designerPorId[proposta.id_int]}</p>
+                ) : null}
+              </div>
+            )
+          },
           {
             header: "Status",
             cell: (proposta) => (
@@ -1844,8 +1922,21 @@ Ela volta a aparecer nas listas operacionais.`
             },
             align: "center"
           },
-          { header: "Valor total", cell: (proposta) => formatCurrency(proposta.total), align: "right" },
           { header: "Modelo", cell: (proposta) => proposta.modelo, align: "center" },
+          {
+            /**
+             * ENVIO: o transporte do pedido — SEDEX, RETIRADA, a transportadora,
+             * o motoboy. NAO e a modalidade (RETIRA/FOB/CIF), que e outra
+             * dimensao e continua fora desta lista.
+             *
+             * Vem de `item.envio`, ja resolvido no mapper por
+             * `nomeTransporteEfetivo` — a mesma funcao da coluna FRETE da
+             * Expedicao. Pedido antigo, sem rotulo gravado, mostra "—".
+             */
+            header: "Envio",
+            cell: (proposta) => proposta.envio || "—",
+            align: "center"
+          },
           {
             header: "Ações",
             cell: (proposta) => {
@@ -1935,7 +2026,7 @@ Ela volta a aparecer nas listas operacionais.`
                 {/* Mesmo subtitulo da tabela (card do mobile). */}
                 {socioDaLinha(proposta) && (
                   <p className="mt-1 text-xs font-medium text-indigo-700">
-                    Sócio pagador: {socioDaLinha(proposta)}
+                    Nota fiscal: {socioDaLinha(proposta)}
                   </p>
                 )}
                 <p className="mt-1 text-sm text-slate-500">{proposta.vendedor}</p>
@@ -1989,6 +2080,7 @@ Ela volta a aparecer nas listas operacionais.`
               <p>Tipo cobrança: {proposta.tipoCobrancaLabel}</p>
               <p>Data / Hora: {(proposta.updatedAt || proposta.createdAt) ? formatDateTime(proposta.updatedAt || proposta.createdAt) : "-"}</p>
               <p>Modelo: {proposta.modelo}</p>
+              <p>Envio: {proposta.envio || "—"}</p>
               <p className="font-semibold text-slate-900">Valor total: {formatCurrency(proposta.total)}</p>
             </div>
             <div className="mt-4 flex items-center justify-between gap-3">
