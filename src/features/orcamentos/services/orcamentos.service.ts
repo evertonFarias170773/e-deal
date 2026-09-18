@@ -71,6 +71,11 @@ export type OrcamentosReadFilters = {
   modelo?: string;
   vendedor?: string;
   filterTipoCobranca?: string;
+  /**
+   * `produtos.id_produto` escolhido no drop "Todos produtos". A proposta entra
+   * quando tem PELO MENOS UM item daquele produto.
+   */
+  produto?: number;
   activeCard?: "ORCAMENTOS" | "EM_ARTE" | "LIBERADAS" | "REVISAO_ATENDENTE" | "EM_PRODUCAO" | null;
   /**
    * Busca ampla: há texto na pesquisa ou dropdown específico selecionado.
@@ -477,6 +482,63 @@ async function buscarIdsPedidosPorEvento(
   }
 }
 
+/**
+ * IDs de pedidos que TEM pelo menos um item do produto escolhido (18/09/2026).
+ *
+ * `produtos_proposta.id_produto` e a referencia estruturada ao cadastro — nao
+ * texto —, entao o recorte e exato e nao depende da grafia do nome gravado no
+ * item. Mesma inversao do socio pagador e do nome do evento: pre-consulta a
+ * tabela que tem o dado e dobra os ids na consulta principal.
+ *
+ * BARATO NA ESCALA DE HOJE: 63 produtos aparecem em pedidos e o mais usado esta
+ * em 342 deles (18/09/2026), entao a lista de ids cabe folgada na URL do
+ * PostgREST. O teto existe para o dia em que nao couber: atingido, a funcao
+ * devolve `null` e quem chama RECUSA o filtro em vez de mostrar um recorte
+ * arbitrario — melhor a lista dizer "nenhum" do que mentir.
+ *
+ * Somente leitura.
+ */
+const LIMITE_IDS_PRODUTO_FILTRO = 2000;
+
+async function buscarIdsPedidosPorProduto(
+  client: NonNullable<ReturnType<typeof getSupabaseClient>>,
+  idProduto: number
+): Promise<number[] | null> {
+  if (!Number.isFinite(idProduto) || idProduto <= 0) return [];
+  try {
+    const { data, error } = await client
+      .from("produtos_proposta")
+      .select("id_int")
+      .eq("id_produto", idProduto)
+      .limit(LIMITE_IDS_PRODUTO_FILTRO);
+
+    if (error) {
+      console.warn("[OrcamentosService] Falha ao resolver o filtro de produto:", error.message);
+      return null;
+    }
+
+    const ids = Array.from(
+      new Set(
+        (data ?? [])
+          .map((linha) => Number(linha.id_int))
+          .filter((id) => Number.isFinite(id) && id > 0)
+      )
+    );
+
+    if ((data ?? []).length >= LIMITE_IDS_PRODUTO_FILTRO) {
+      console.warn(
+        `[OrcamentosService] Produto ${idProduto} tem ${LIMITE_IDS_PRODUTO_FILTRO}+ itens; ` +
+          `o filtro por produto nao foi aplicado para nao recortar de forma arbitraria.`
+      );
+      return null;
+    }
+    return ids;
+  } catch (e) {
+    console.warn("[OrcamentosService] Excecao ao resolver o filtro de produto:", e);
+    return null;
+  }
+}
+
 async function fetchPropostaRows(
   periodo = "all",
   page = 1,
@@ -668,6 +730,21 @@ async function fetchPropostaRows(
         if (condicaoEvento) condicoes.push(condicaoEvento);
         query = query.or(condicoes.join(","));
       }
+    }
+
+    /**
+     * FILTRO DE PRODUTO — recorte por `id_int`, no servidor.
+     *
+     * Vizinho do filtro de tipo de cobranca logo abaixo, e pela mesma mecanica:
+     * os dois estreitam `id_int` e o PostgREST combina as duas condicoes com E,
+     * que e o comportamento pedido para a barra inteira.
+     *
+     * Produto sem nenhum pedido — ou teto atingido — vira `[-1]`: a lista volta
+     * vazia, em vez de ignorar o filtro em silencio.
+     */
+    if (filters?.produto !== undefined && filters.produto !== null) {
+      const idsProduto = await buscarIdsPedidosPorProduto(client, Number(filters.produto));
+      query = query.in("id_int", idsProduto && idsProduto.length > 0 ? idsProduto : [-1]);
     }
 
     if (filters?.filterTipoCobranca && filters.filterTipoCobranca !== "TODOS") {

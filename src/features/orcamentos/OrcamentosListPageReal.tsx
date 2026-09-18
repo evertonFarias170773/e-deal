@@ -21,6 +21,8 @@ import { desmarcarFaturadoNoSistemaAntigo } from "@/features/fiscal/services/fat
 import { buscarRastreioDasPropostas, type RastreioDaProposta } from "@/features/orcamentos/services/rastreio-lista.service";
 import { RastreioPropostaModal } from "@/features/orcamentos/components/RastreioPropostaModal";
 import { buscarNomesDosSocios } from "@/features/orcamentos/services/socio-pagador.service";
+import { FiltroProdutoDrop, type OpcaoProduto } from "@/features/orcamentos/components/FiltroProdutoDrop";
+import { getSupabaseClient } from "@/lib/supabase/client";
 import {
   buscarArtesDasPropostas,
   buscarLinksClienteDasPropostas,
@@ -458,6 +460,10 @@ export function OrcamentosListPageReal() {
       q: { codec: codecs.texto(), default: "" },
       status: { codec: codecs.texto(), default: "TODOS" },
       modelo: { codec: codecs.texto(), default: "TODOS_MODELOS" },
+      // `prod` guarda o `produtos.id_produto` como texto, do mesmo jeito que os
+      // vizinhos: "TODOS" e o padrao e, por ser o default do schema, sai da URL
+      // e volta ao padrao no "Limpar filtros" sem tratamento proprio.
+      prod: { codec: codecs.texto(), default: "TODOS" },
       vend: { codec: codecs.texto(), default: "TODOS" },
       cob: { codec: codecs.enumOf(TIPOS_COBRANCA), default: "TODOS" as TipoCobrancaFiltro },
       card: { codec: codecs.enumOpcional(CARDS_FILTRO), default: null as CardFiltro },
@@ -485,6 +491,8 @@ export function OrcamentosListPageReal() {
   const modelo = filters.modelo;
   const vendedor = filters.vend;
   const filterTipoCobranca = filters.cob;
+  const produtoFiltro = filters.prod;
+  const idProdutoFiltro = produtoFiltro !== "TODOS" ? Number(produtoFiltro) : null;
   const activeCard = filters.card;
   /**
    * Encerrados fora da lista por padrao (20/08/2026). Duas excecoes:
@@ -511,7 +519,8 @@ export function OrcamentosListPageReal() {
     status !== "TODOS" ||
     modelo !== "TODOS_MODELOS" ||
     vendedor !== "TODOS" ||
-    filterTipoCobranca !== "TODOS"
+    filterTipoCobranca !== "TODOS" ||
+    produtoFiltro !== "TODOS"
   );
 
   const queryFilters = useMemo(() => {
@@ -525,6 +534,10 @@ export function OrcamentosListPageReal() {
       modelo: modelo !== "TODOS_MODELOS" ? modelo : undefined,
       vendedor: vendedor !== "TODOS" ? vendedor : escopoVendedor,
       filterTipoCobranca: filterTipoCobranca !== "TODOS" ? filterTipoCobranca : undefined,
+      // O recorte por produto e do SERVIDOR (`buscarIdsPedidosPorProduto`), como
+      // os vizinhos: filtrar a pagina ja carregada acharia so o que ja estava na
+      // tela.
+      produto: idProdutoFiltro !== null && Number.isFinite(idProdutoFiltro) ? idProdutoFiltro : undefined,
       activeCard: activeCard || undefined,
       ignorarPeriodo: ignorarPeriodo || undefined,
       encerradosTeste: somenteEncerrados
@@ -533,7 +546,7 @@ export function OrcamentosListPageReal() {
           ? ("INCLUIR" as const)
           : ("OCULTAR" as const)
     };
-  }, [search, status, modelo, vendedor, filterTipoCobranca, activeCard, ignorarPeriodo, somenteEncerrados, user]);
+  }, [search, status, modelo, vendedor, filterTipoCobranca, idProdutoFiltro, activeCard, ignorarPeriodo, somenteEncerrados, user]);
 
   const {
     propostas: rawPropostas,
@@ -564,10 +577,16 @@ export function OrcamentosListPageReal() {
       ...queryFilters,
       status: undefined,
       ignorarPeriodo:
-        Boolean(search.trim() || modelo !== "TODOS_MODELOS" || vendedor !== "TODOS" || filterTipoCobranca !== "TODOS") ||
+        Boolean(
+          search.trim() ||
+            modelo !== "TODOS_MODELOS" ||
+            vendedor !== "TODOS" ||
+            filterTipoCobranca !== "TODOS" ||
+            produtoFiltro !== "TODOS"
+        ) ||
         undefined
     }),
-    [queryFilters, search, modelo, vendedor, filterTipoCobranca]
+    [queryFilters, search, modelo, vendedor, filterTipoCobranca, produtoFiltro]
   );
   const [baseCardEmArte, setBaseCardEmArte] = useState<OrcamentoListItem[]>([]);
 
@@ -1011,6 +1030,50 @@ export function OrcamentosListPageReal() {
     }
     return item.clienteNome;
   }
+
+  /**
+   * Opcoes do drop "Todos produtos": UMA consulta na abertura da tela, com os
+   * inativos junto — ha orcamento antigo de produto ja desativado, e sem eles
+   * esses pedidos ficariam inalcancaveis pelo filtro.
+   */
+  const [opcoesProduto, setOpcoesProduto] = useState<OpcaoProduto[]>([]);
+  const [carregandoProdutos, setCarregandoProdutos] = useState(true);
+
+  useEffect(() => {
+    let ativo = true;
+    void (async () => {
+      try {
+        const client = getSupabaseClient();
+        if (!client) return;
+        const { data, error } = await client
+          .from("produtos")
+          .select("id_produto, nomeReal, ativo")
+          .order("id_produto", { ascending: true })
+          .returns<{ id_produto: number | null; nomeReal: string | null; ativo: boolean | null }[]>();
+        if (!ativo) return;
+        if (error) {
+          console.warn("[OrcamentosListPageReal] Falha ao carregar produtos do filtro:", error.message);
+          return;
+        }
+        setOpcoesProduto(
+          (data ?? [])
+            .map((linha) => ({
+              id: Number(linha.id_produto),
+              nome: String(linha.nomeReal ?? "").trim() || `Produto ${linha.id_produto}`,
+              ativo: linha.ativo !== false
+            }))
+            .filter((o) => Number.isFinite(o.id) && o.id > 0)
+        );
+      } catch (err) {
+        console.warn("[OrcamentosListPageReal] Erro ao carregar produtos do filtro:", err);
+      } finally {
+        if (ativo) setCarregandoProdutos(false);
+      }
+    })();
+    return () => {
+      ativo = false;
+    };
+  }, []);
 
   const fetchedChatIdsRef = useRef<Set<number>>(new Set());
 
@@ -1702,7 +1765,7 @@ Ela volta a aparecer nas listas operacionais.`
       )}
 
       <section className="rounded-3xl border border-[#d7e5e8] bg-white p-4 shadow-sm">
-        <div className="grid gap-3 xl:grid-cols-[1fr_170px_170px_170px_150px_auto]">
+        <div className="grid gap-3 xl:grid-cols-[1fr_170px_170px_190px_170px_150px_auto]">
           <label className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
             <Search className="h-4 w-4 text-[#0f9f9a]" />
             <input
@@ -1733,6 +1796,14 @@ Ela volta a aparecer nas listas operacionais.`
               </option>
             ))}
           </select>
+
+          <FiltroProdutoDrop
+            opcoes={opcoesProduto}
+            selecionado={idProdutoFiltro}
+            onSelecionar={(id) => setFilter("prod", id === null ? "TODOS" : String(id))}
+            className={filterClass}
+            carregando={carregandoProdutos}
+          />
 
           <select value={vendedor} onChange={(event) => setFilter("vend", event.target.value)} className={filterClass}>
             <option value="TODOS">Todos vendedores</option>

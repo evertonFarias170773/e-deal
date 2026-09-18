@@ -438,6 +438,27 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
   const [transportadoras, setTransportadoras] = useState<TransportadoraSimple[]>([]);
   const [idTransportadoraCliente, setIdTransportadoraCliente] = useState<number | null>(null);
 
+  /**
+   * A lista chega do banco sem ordem nenhuma — `getTransportadoras` nao pede
+   * `order`, entao o PostgREST devolve na ordem que quiser. Num select de
+   * dezenas de linhas isso vira caca ao nome. A ordem e pelo NOME EXIBIDO, o
+   * mesmo `nome || fantasia` da opcao, com `localeCompare` pt-BR para acento e
+   * caixa nao mandarem transportadora nenhuma para o fim da lista.
+   *
+   * A ordenacao vive aqui, e nao em `getTransportadoras`, porque a funcao
+   * atende mais quatro telas (despacho, correcao de frete, modal da Expedicao
+   * e o orcamento) que nao foram pedidas nesta rodada.
+   */
+  const transportadorasEmOrdem = useMemo(
+    () =>
+      [...transportadoras].sort((a, b) =>
+        (a.nome || a.fantasia || "").localeCompare(b.nome || b.fantasia || "", "pt-BR", {
+          sensitivity: "base",
+        })
+      ),
+    [transportadoras]
+  );
+
   // Installment generation states
   const [pgtoValorEntrada, setPgtoValorEntrada] = useState(0);
   const [pgtoQtdParcelas, setPgtoQtdParcelas] = useState(1);
@@ -3960,7 +3981,7 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
                   className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm bg-white outline-none focus:border-[#0b2f4a] font-medium"
                 >
                   <option value="">-- Preenchimento Manual / Sem Transportadora --</option>
-                  {transportadoras.map((t) => (
+                  {transportadorasEmOrdem.map((t) => (
                     <option key={t.id_cliente} value={t.id_cliente}>
                       {t.nome || t.fantasia} {t.documento ? `(${t.documento})` : ""} {t.cidade_uf ? `- ${t.cidade_uf}` : ""}
                     </option>
