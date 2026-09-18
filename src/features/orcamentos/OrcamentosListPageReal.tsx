@@ -1758,7 +1758,12 @@ Ela volta a aparecer nas listas operacionais.`
             cell: (proposta) => {
               const isClienteNaoCadastrado = !proposta.clienteId || proposta.clienteId === "0";
               return (
-                <div>
+                // O espaco que a coluna MODELO liberou (115px) vem para ca: esta
+                // e a celula com mais conteudo da lista — numero, nome, fantasia,
+                // "Nota fiscal" e evento — e a que mais quebrava linha. O piso de
+                // 240px + 40px de padding devolve a coluna ~280px sem alargar a
+                // tabela alem do que ela ja ocupava.
+                <div className="min-w-[15rem]">
                   <p className="font-medium text-slate-900">
                     {isClienteNaoCadastrado ? (
                       <>
@@ -1922,8 +1927,14 @@ Ela volta a aparecer nas listas operacionais.`
             },
             align: "center"
           },
-          { header: "Modelo", cell: (proposta) => proposta.modelo, align: "center" },
           {
+            /*
+              A coluna MODELO saiu da tabela em 18/09/2026, por decisao do dono.
+              O CAMPO continua vivo: `item.modelo` alimenta o drop "Todos modelos
+              / AVULSO / PROPOSTA / ENCERRADOS" e o indice de busca da tela, que
+              leem o dado e nunca dependeram da celula. O card do mobile tambem
+              segue mostrando "Modelo:", onde nao ha disputa por largura.
+            */
             /**
              * ENVIO: o transporte do pedido — SEDEX, RETIRADA, a transportadora,
              * o motoboy. NAO e a modalidade (RETIRA/FOB/CIF), que e outra
