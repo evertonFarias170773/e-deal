@@ -88,6 +88,53 @@ export function idDestinatarioEtiquetaVigente(entrada: {
     : entrada.idClienteProposta;
 }
 
+/**
+ * O NOME QUE VAI NO PAPEL — regra única dos quatro documentos (18/09/2026).
+ *
+ * A REGRA, decidida pelo dono:
+ *   1. ESCOLHA GRAVADA no despacho vence sempre. Quem despachou apontou um
+ *      cadastro, e o nome sai de lá — como era antes;
+ *   2. sem escolha, vale `enderecos.recebedor` do endereço de entrega vigente:
+ *      é quem vai receber a caixa naquele endereço, e era a informação que a
+ *      etiqueta imprimia só na linha "A/C:";
+ *   3. recebedor vazio cai no NOME DE HOJE, que cada documento já resolve pelo
+ *      cadastro do destinatário. Nenhum volume sai sem nome.
+ *
+ * O QUE ISTO SUBSTITUI
+ *   A regra fixa de 04/09/2026 ("sem escolha, sai o pagador") mandava o nome do
+ *   pagador para o papel mesmo quando o endereço de entrega dizia, na letra,
+ *   quem recebe. No 22406 a caixa ia para uma pessoa e a etiqueta saía com o
+ *   nome da igreja que paga. Medido em 18/09/2026: dos 4.329 pedidos em aberto,
+ *   47 mudam de nome; 2.340 não têm recebedor e seguem no nome de hoje.
+ *
+ * O ID NÃO MUDA. `idDestinatarioEtiquetaVigente` continua decidindo QUAL
+ * CADASTRO é lido — telefone, documento e cidade do destinatário seguem saindo
+ * de lá, e a linha "A/C:" segue sendo o recebedor. O que esta função troca é
+ * apenas o TEXTO do nome.
+ *
+ * `idDestinatarioResolvido` entra para distinguir escolha VÁLIDA de escolha
+ * descartada: um id que não é nem o cliente nem o pagador é ignorado pela
+ * validação acima, e nesse caso não há escolha para vencer o recebedor.
+ */
+export function nomeDestinatarioVigente(entrada: {
+  /** `expedicoes.id_cliente_destinatario_etiqueta`, como está gravado. */
+  idGravadoNoDespacho: number | null | undefined;
+  /** O que `idDestinatarioEtiquetaVigente` devolveu para o mesmo pedido. */
+  idDestinatarioResolvido: number | null;
+  /** `enderecos.recebedor` do endereço de entrega vigente. */
+  recebedorDoEndereco: string | null | undefined;
+  /** O nome que o documento imprimiria sem esta regra. Nunca vazio. */
+  nomeDoCadastro: string;
+}): string {
+  const escolhido = Number(entrada.idGravadoNoDespacho);
+  const escolhaValeu =
+    Number.isFinite(escolhido) && escolhido > 0 && escolhido === entrada.idDestinatarioResolvido;
+  if (escolhaValeu) return entrada.nomeDoCadastro;
+
+  const recebedor = String(entrada.recebedorDoEndereco ?? "").trim();
+  return recebedor || entrada.nomeDoCadastro;
+}
+
 /** Há pagador distinto do cliente? É a condição para a escolha existir. */
 export function temPagadorDistinto(idClienteProposta: number | null, idFaturado: number | null): boolean {
   return (

@@ -900,6 +900,20 @@ nome impresso — 20974, 20464, 20382 e 18360; o 20464 passa de LISITON para
 TICMAIS SOLUCOES. Medido e autorizado pelo dono. O nome do pagador na lista
 passou a `nome || fantasia`, a mesma ordem do documento.
 
+> **SUPERADO EM 18/09/2026 — o NOME deixou de sair do cadastro.** A regra acima
+> continua valendo para o **id** (qual cadastro é lido: telefone, documento,
+> cidade), mas o **texto do nome** passou a ser `enderecos.recebedor` do
+> endereço de entrega vigente. A precedência do nome está em
+> `nomeDestinatarioVigente`, no mesmo `lib/destinatario-etiqueta.ts`: escolha
+> **gravada** no despacho › **recebedor** do endereço › o nome de hoje (o do
+> cadastro), como fallback — nenhum volume sai sem nome. Vale nos quatro
+> documentos: modal Despachar, etiqueta 10x15, prepostagem dos Correios e
+> Declaração de Conteúdo. Motivo: no 22406 a caixa ia para uma pessoa e a
+> etiqueta saía com o nome da igreja que paga. Medido em 18/09/2026 sobre 4.329
+> pedidos em aberto: **47** mudam de nome, **2.340** não têm recebedor e seguem
+> no nome de hoje, e nenhum pedido com escolha gravada muda. A linha **"A/C:"
+> fica como está** — decisão do dono, a repetição é aceita.
+
 **O telefone voltou a ser só do cadastro.** O campo editável e
 `expedicoes.telefone_etiqueta` saíram do código — a coluna **fica no banco**,
 sem leitura nem escrita, com todas as linhas nulas; não há migration de

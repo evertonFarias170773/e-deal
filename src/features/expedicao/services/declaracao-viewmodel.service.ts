@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { resolverEmpresaRemetente } from "@/lib/correios/empresa-remetente";
 import { resolverPesoExpedicao } from "../lib/peso";
-import { idDestinatarioEtiquetaVigente } from "../lib/destinatario-etiqueta";
+import { idDestinatarioEtiquetaVigente, nomeDestinatarioVigente } from "../lib/destinatario-etiqueta";
 import { idEnderecoEntregaVigente } from "../lib/endereco-entrega";
 import { pedidosNoVolume } from "./etiqueta-viewmodel.service";
 
@@ -127,7 +127,9 @@ export async function montarDeclaracaoViewModel(
   if (idEnderecoVigente) {
     const { data } = await supabase
       .from("enderecos")
-      .select("endereco, numero, complemento, bairro, cidade, uf, cep")
+      // `recebedor` entra em 18/09/2026: mesma regra de nome dos outros tres
+      // documentos (`nomeDestinatarioVigente`).
+      .select("endereco, numero, complemento, bairro, cidade, uf, cep, recebedor")
       .eq("id", idEnderecoVigente)
       .maybeSingle();
     endereco = data ?? null;
@@ -135,7 +137,7 @@ export async function montarDeclaracaoViewModel(
   if (!endereco && idCliente !== null) {
     const { data: lista } = await supabase
       .from("enderecos")
-      .select("endereco, numero, complemento, bairro, cidade, uf, cep, data_criacao")
+      .select("endereco, numero, complemento, bairro, cidade, uf, cep, recebedor, data_criacao")
       .eq("id_cliente", idCliente)
       .order("data_criacao", { ascending: false });
     const cepAlvo = String(frete?.cep ?? proposta.cep ?? "").replace(/\D/g, "");
@@ -220,11 +222,18 @@ export async function montarDeclaracaoViewModel(
       // `proposta.cliente` e o nome do CLIENTE: so serve quando o destinatario e
       // ele. Nome e documento saem do mesmo cadastro — separa-los declararia uma
       // pessoa que nao existe.
-      nome: String(
-        idDestinatario === idCliente
-          ? proposta.cliente || cliente?.nome || cliente?.fantasia || `Pedido #${idInt}`
-          : cliente?.nome || cliente?.fantasia || `Cadastro ${idDestinatario}`
-      ),
+      nome: nomeDestinatarioVigente({
+        idGravadoNoDespacho: exp?.id_cliente_destinatario_etiqueta as number | null | undefined,
+        idDestinatarioResolvido: idDestinatario,
+        recebedorDoEndereco: (endereco as { recebedor?: string | null } | null)?.recebedor,
+        nomeDoCadastro: String(
+          idDestinatario === idCliente
+            ? proposta.cliente || cliente?.nome || cliente?.fantasia || `Pedido #${idInt}`
+            : cliente?.nome || cliente?.fantasia || `Cadastro ${idDestinatario}`
+        )
+      }),
+      // O DOCUMENTO SEGUE O CADASTRO, nao o nome: a Declaracao declara um CPF/CNPJ,
+      // e o recebedor do endereco nao tem documento proprio aqui.
       documento: formatarDocumento(cliente?.documento),
       endereco: endereco
         ? [[endereco.endereco, endereco.numero].filter(Boolean).join(", "), endereco.complemento]

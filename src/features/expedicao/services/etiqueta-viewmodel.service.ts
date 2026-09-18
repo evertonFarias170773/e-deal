@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { resolverPesoExpedicao } from "../lib/peso";
-import { idDestinatarioEtiquetaVigente } from "../lib/destinatario-etiqueta";
+import { idDestinatarioEtiquetaVigente, nomeDestinatarioVigente } from "../lib/destinatario-etiqueta";
 import { idEnderecoEntregaVigente } from "../lib/endereco-entrega";
 import { telefoneDestinatario } from "../lib/telefone-destinatario";
 import { nomeTransporteEfetivo } from "@/features/orcamentos/lib/modalidade-frete";
@@ -485,10 +485,20 @@ export async function montarEtiquetaViewModel(
       // `proposta.cliente` e o nome do CLIENTE gravado na proposta: so serve
       // quando o destinatario e ele. Escolhido o pagador, o nome tem de vir do
       // cadastro dele — usar o texto da proposta imprimiria o nome errado.
-      nome:
-        idDestinatario === idCliente
-          ? proposta.cliente || cliente?.nome || cliente?.fantasia || `Pedido #${idInt}`
-          : cliente?.nome || cliente?.fantasia || `Cadastro ${idDestinatario}`,
+      //
+      // DESDE 18/09/2026 o nome sai de `enderecos.recebedor` quando nao ha
+      // escolha gravada no despacho — regra unica em `nomeDestinatarioVigente`,
+      // a mesma da prepostagem e da Declaracao. O que esta abaixo e o NOME DE
+      // HOJE, que continua valendo como fallback e quando ha escolha.
+      nome: nomeDestinatarioVigente({
+        idGravadoNoDespacho: exp?.id_cliente_destinatario_etiqueta as number | null | undefined,
+        idDestinatarioResolvido: idDestinatario,
+        recebedorDoEndereco: endereco?.recebedor,
+        nomeDoCadastro:
+          idDestinatario === idCliente
+            ? proposta.cliente || cliente?.nome || cliente?.fantasia || `Pedido #${idInt}`
+            : cliente?.nome || cliente?.fantasia || `Cadastro ${idDestinatario}`
+      }),
       recebedor: endereco?.recebedor || "",
       endereco: endereco
         ? [[endereco.endereco, endereco.numero].filter(Boolean).join(", "), endereco.complemento]

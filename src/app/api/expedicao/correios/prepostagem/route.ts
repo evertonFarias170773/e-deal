@@ -2,7 +2,10 @@ import { NextResponse } from "next/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { createClient as createServerSupabaseClient } from "@/lib/supabase/server";
 import { verificarPermissaoServerSide } from "@/lib/auth/verificar-permissao";
-import { idDestinatarioEtiquetaVigente } from "@/features/expedicao/lib/destinatario-etiqueta";
+import {
+  idDestinatarioEtiquetaVigente,
+  nomeDestinatarioVigente
+} from "@/features/expedicao/lib/destinatario-etiqueta";
 import { idEnderecoEntregaVigente } from "@/features/expedicao/lib/endereco-entrega";
 import { criarPrepostagem, correiosConfigurado } from "@/lib/correios/cws";
 import { resolverEmpresaRemetente } from "@/lib/correios/empresa-remetente";
@@ -89,7 +92,9 @@ export async function POST(request: Request) {
   if (idEnderecoVigente) {
     const { data } = await supabase
       .from("enderecos")
-      .select("endereco, numero, complemento, bairro, cidade, uf, cep")
+      // `recebedor` entra em 18/09/2026: e ele o nome do destinatario quando
+      // nao ha escolha gravada no despacho (`nomeDestinatarioVigente`).
+      .select("endereco, numero, complemento, bairro, cidade, uf, cep, recebedor")
       .eq("id", idEnderecoVigente)
       .maybeSingle();
     endereco = data;
@@ -97,7 +102,7 @@ export async function POST(request: Request) {
   if (!endereco && idCliente !== null) {
     const { data: lista } = await supabase
       .from("enderecos")
-      .select("endereco, numero, complemento, bairro, cidade, uf, cep, data_criacao")
+      .select("endereco, numero, complemento, bairro, cidade, uf, cep, recebedor, data_criacao")
       .eq("id_cliente", idCliente)
       .order("data_criacao", { ascending: false });
     const cepAlvo = String(frete?.cep ?? proposta.cep ?? "").replace(/\D/g, "");
@@ -223,13 +228,21 @@ export async function POST(request: Request) {
         telefone: empresaRow.telefone_nfe || ""
       },
       destinatario: {
-        // Escolhido o pagador, o nome vem do cadastro dele: `proposta.cliente` e
-        // o nome do cliente e imprimiria o destinatario errado na etiqueta.
-        nome: String(
-          idDestinatario === idCliente
-            ? proposta.cliente || cliente?.nome || cliente?.fantasia || `Pedido ${idInt}`
-            : cliente?.nome || cliente?.fantasia || `Pedido ${idInt}`
-        ),
+        // MESMA REGRA DOS OUTROS TRES DOCUMENTOS (18/09/2026): escolha gravada
+        // no despacho > `enderecos.recebedor` > o nome de hoje, que e o do
+        // cadastro do destinatario (o pagador quando ele existe). Sem limite de
+        // caracteres nem sanitizacao novos: o payload nunca aplicou nenhum ao
+        // nome, e isso nao muda aqui.
+        nome: nomeDestinatarioVigente({
+          idGravadoNoDespacho: exp?.id_cliente_destinatario_etiqueta as number | null | undefined,
+          idDestinatarioResolvido: idDestinatario,
+          recebedorDoEndereco: (endereco as { recebedor?: string | null }).recebedor,
+          nomeDoCadastro: String(
+            idDestinatario === idCliente
+              ? proposta.cliente || cliente?.nome || cliente?.fantasia || `Pedido ${idInt}`
+              : cliente?.nome || cliente?.fantasia || `Pedido ${idInt}`
+          )
+        }),
         cep: String(endereco.cep),
         logradouro: String(endereco.endereco ?? ""),
         numero: String(endereco.numero ?? "S/N"),
