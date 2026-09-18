@@ -77,6 +77,31 @@ const DESTAQUE_REVISAO = { base: "#eff6ff", hover: "#dbeafe" };
 const TIPOS_COBRANCA = ["TODOS", "PIX", "BOLETO", "E-FATURADO", "CARTAO"] as const;
 type TipoCobrancaFiltro = (typeof TIPOS_COBRANCA)[number];
 
+/**
+ * O que a LISTA mostra no lugar do valor gravado. So o cartao entra (18/09/2026,
+ * pedido da diretoria): `CARD_PARCELADO` e vocabulario de banco de dados, e o
+ * drop de filtro desta mesma tela ja chama isso de CARTAO.
+ *
+ * SO EXIBICAO, e por isso a troca acontece AQUI e nao no mapper:
+ *   - `item.tipoCobrancaLabel` continua cru e e ele que alimenta o indice de
+ *     busca da tela — quem procura por "CARD" continua achando, exatamente como
+ *     antes;
+ *   - o filtro de cobranca nunca leu o rotulo: ele olha `item.tiposCobranca`, os
+ *     valores crus, e ja aceita CARD e CARTAO;
+ *   - no banco nada muda.
+ *
+ * O rotulo pode trazer mais de um tipo ("CARD_PARCELADO / PIX"), por isso a
+ * troca e por parte, e nao no texto inteiro.
+ */
+const ROTULO_COBRANCA_NA_TELA: Record<string, string> = { CARD_PARCELADO: "CARTAO" };
+
+function rotuloCobrancaNaTela(rotulo: string) {
+  return rotulo
+    .split(" / ")
+    .map((parte) => ROTULO_COBRANCA_NA_TELA[parte.trim().toUpperCase()] ?? parte)
+    .join(" / ");
+}
+
 const CARDS_FILTRO = ["ORCAMENTOS", "EM_ARTE", "LIBERADAS", "REVISAO_ATENDENTE", "EM_PRODUCAO"] as const;
 type CardFiltro = (typeof CARDS_FILTRO)[number] | null;
 const defaultStatusOrder = [
@@ -1803,7 +1828,7 @@ Ela volta a aparecer nas listas operacionais.`
             header: "Tipo cobrança / Valor total",
             cell: (proposta) => (
               <div className="flex flex-col items-center">
-                <span>{proposta.tipoCobrancaLabel}</span>
+                <span>{rotuloCobrancaNaTela(proposta.tipoCobrancaLabel)}</span>
                 <span className="font-bold text-slate-950">{formatCurrency(proposta.total)}</span>
               </div>
             ),
@@ -2088,7 +2113,7 @@ Ela volta a aparecer nas listas operacionais.`
               </div>
             </div>
             <div className="mt-4 space-y-2 text-sm text-slate-600">
-              <p>Tipo cobrança: {proposta.tipoCobrancaLabel}</p>
+              <p>Tipo cobrança: {rotuloCobrancaNaTela(proposta.tipoCobrancaLabel)}</p>
               <p>Data / Hora: {(proposta.updatedAt || proposta.createdAt) ? formatDateTime(proposta.updatedAt || proposta.createdAt) : "-"}</p>
               <p>Modelo: {proposta.modelo}</p>
               <p>Envio: {proposta.envio || "—"}</p>
