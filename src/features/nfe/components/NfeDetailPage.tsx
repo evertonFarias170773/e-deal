@@ -3952,12 +3952,26 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
                   onChange={(e) => setModalidadeFrete(Number(e.target.value))}
                   className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm bg-white outline-none focus:border-[#0b2f4a] font-medium"
                 >
-                  <option value={0}>0 - CIF (Por conta do Remetente)</option>
-                  <option value={1}>1 - FOB (Por conta do Destinatário)</option>
-                  <option value={2}>2 - Próprio por conta do Remetente</option>
-                  <option value={3}>3 - Próprio por conta do Destinatário</option>
-                  <option value={4}>4 - Por conta de Terceiros</option>
-                  <option value={9}>9 - Sem Frete</option>
+                  {/*
+                    Descrição OFICIAL de cada código — campo X02 (`modFrete`) do
+                    layout da NF-e 4.00. Até 18/09/2026 os rótulos de 2, 3 e 4
+                    estavam trocados entre si: a tela chamava o 2 de "próprio por
+                    conta do remetente" (que é o 3) e o 4 de "por conta de
+                    terceiros" (que é o 2). O código gravado sempre foi o do
+                    `value`, então nota nenhuma saiu errada por causa disso — mas
+                    quem escolhia pela descrição gravava outro código.
+
+                    O 9 ganhou o nome oficial porque ele decide mais do que
+                    parece: em "sem ocorrência de transporte" a Sefaz PROÍBE o
+                    grupo do transportador (rejeição 845), e o payload passou a
+                    omiti-lo nessa modalidade.
+                  */}
+                  <option value={0}>0 - Contratação do frete por conta do Remetente (CIF)</option>
+                  <option value={1}>1 - Contratação do frete por conta do Destinatário (FOB)</option>
+                  <option value={2}>2 - Contratação do frete por conta de Terceiros</option>
+                  <option value={3}>3 - Transporte próprio por conta do Remetente</option>
+                  <option value={4}>4 - Transporte próprio por conta do Destinatário</option>
+                  <option value={9}>9 - Sem ocorrência de transporte (sem frete)</option>
                 </select>
               </div>
 
