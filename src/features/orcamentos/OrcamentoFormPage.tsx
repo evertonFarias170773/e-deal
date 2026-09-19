@@ -896,6 +896,18 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
   const [isAddressModalOpen, setIsAddressModalOpen] = useState(false);
   const [addressModalMode, setAddressModalMode] = useState<"create" | "edit">("create");
   const [editingAddressId, setEditingAddressId] = useState<string | null>(null);
+  /**
+   * O QUE O MODAL ACABOU DE GRAVAR, por id de endereco (19/09/2026).
+   *
+   * O bloco 5 monta a lista de tres fontes — o endereco gravado na proposta
+   * (`proposta.enderecoEntrega`, uma foto tirada no carregamento da pagina),
+   * os enderecos do cliente e os do pagador. Regravar so uma delas deixava a
+   * tela mostrando o nome antigo: a foto da proposta entra primeiro e tapa a
+   * versao nova, e o endereco do pagador nem era atualizado. Sem saber de qual
+   * fonte veio o card, `combinedAddresses` aplica por cima o que a gravacao
+   * devolveu. Vale so enquanto a tela esta aberta; o banco ja tem o valor.
+   */
+  const [enderecosRegravados, setEnderecosRegravados] = useState<Record<string, CadastroEndereco>>({});
   const [pendingEnderecoSelection, setPendingEnderecoSelection] = useState<string | null>(null);
   const [contactDraft, setContactDraft] = useState<ContactDraft>({ nome: "", cargo: "", whatsapp: "", email: "" });
   const [editingContactId, setEditingContactId] = useState<string | null>(null);
@@ -1307,8 +1319,12 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
       });
     }
 
-    return list;
-  }, [proposalAddresses, compradorAddresses, proposta?.enderecoEntrega, form.compradorId, form.clienteId, form.enderecoId]);
+    // O que o modal regravou vale mais que qualquer uma das tres fontes.
+    return list.map((addr) => {
+      const regravado = enderecosRegravados[addr.id];
+      return regravado ? { ...addr, ...regravado } : addr;
+    });
+  }, [proposalAddresses, compradorAddresses, enderecosRegravados, proposta?.enderecoEntrega, form.compradorId, form.clienteId, form.enderecoId]);
 
   // isDirty: compares current form (excluding system-generated fretes) with saved snapshot
   const isDirty = useMemo(() => {
@@ -2578,9 +2594,20 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
           return;
         }
 
+        /*
+          O registro devolvido pela gravacao entra nas tres pontas: nas duas
+          listas que o bloco 5 usa (a do cliente e a do pagador, porque o card
+          editado pode ser de qualquer uma) e no mapa que vence a foto antiga
+          da proposta. O merge preserva o que o UPDATE nao escreve — a
+          Referencia (`obs`) nao volta no SELECT e sumiria do card.
+        */
         setProposalAddresses((current) =>
-          current.map((addr) => (addr.id === editingAddressId ? data : addr))
+          current.map((addr) => (addr.id === editingAddressId ? { ...addr, ...data } : addr))
         );
+        setCompradorAddresses((current) =>
+          current.map((addr) => (addr.id === editingAddressId ? { ...addr, ...data } : addr))
+        );
+        setEnderecosRegravados((current) => ({ ...current, [editingAddressId]: data }));
         setAddressDraft({ tipo: "entrega", cep: "", endereco: "", numero: "", complemento: "", bairro: "", cidade: "", uf: "", recebedor: "", cpfRecebedor: "" });
         setEditingAddressId(null);
         setAddressModalMode("create");
@@ -5790,7 +5817,10 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                             cidade: item.cidade || "",
                             uf: item.uf || "",
                             recebedor: item.recebedor || "",
-                            cpfRecebedor: item.cpfRecebedor || ""
+                            cpfRecebedor: item.cpfRecebedor || "",
+                            // Sem isto o rascunho abre sem IE e o UPDATE grava null por cima.
+                            ieRecebedor: item.ieRecebedor || "",
+                            obs: item.obs || ""
                           });
                           setIsAddressModalOpen(true);
                         }}
@@ -5976,6 +6006,9 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                               uf: linkedAddr.uf || "",
                               recebedor: linkedAddr.recebedor || "",
                               cpfRecebedor: linkedAddr.cpfRecebedor || "",
+                              // Idem: a IE precisa ir no rascunho para sobreviver ao UPDATE.
+                              ieRecebedor: linkedAddr.ieRecebedor || "",
+                              obs: linkedAddr.obs || "",
                             });
                             setIsAddressModalOpen(true);
                             return;
@@ -6805,7 +6838,8 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
           onSave={saveEditedContact}
         />
       ) : null}
-      {isAddressModalOpen ? <AddressModal draft={addressDraft} onChange={setAddressDraft} onClose={() => setIsAddressModalOpen(false)} onSave={addAddress} isSaving={isSavingAddress} /> : null}
+      {/* `mode` faltava: o modal de EDICAO se anunciava como "Adicionar novo endereço". */}
+      {isAddressModalOpen ? <AddressModal draft={addressDraft} onChange={setAddressDraft} onClose={() => setIsAddressModalOpen(false)} onSave={addAddress} isSaving={isSavingAddress} mode={addressModalMode} /> : null}
       {pendingEnderecoSelection ? (
         <Modal
           title="Atenção"
