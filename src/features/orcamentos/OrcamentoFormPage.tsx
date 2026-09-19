@@ -102,6 +102,7 @@ import {
 } from "@/features/cadastros/components/DocumentoRecebedorFields";
 import { DiferencaFinanceiraModal } from "@/features/orcamentos/components/DiferencaFinanceiraModal";
 import { FreteComplementarCard } from "@/features/orcamentos/components/FreteComplementarCard";
+import { SocioPagadorInline, type SocioConfirmado } from "@/features/orcamentos/components/SocioPagadorInline";
 import type { AcaoFinanceiraDiferenca } from "@/features/cobrancas/types";
 import {
   calcularValorPagoConfirmado,
@@ -2198,6 +2199,55 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     if (!success) {
       showToast({ type: "error", title: "Falha ao salvar pagador", description: errorMessage || "Não foi possível atualizar os dados fiscais na proposta." });
     }
+  }
+
+  /**
+   * O sócio voltou pronto da rota: pagador já gravado no banco, vínculo criado.
+   *
+   * Aqui é só alinhar a TELA, sem recarregar a página: o vínculo entra na lista
+   * "Outras opções de pagador", ele vira o selecionado e o endereço principal
+   * dele fica pré-escolhido no bloco 5 — que continua sendo gravado só no
+   * Salvar, como desde 21/08/2026.
+   */
+  function aplicarSocioPagador(socio: SocioConfirmado) {
+    setCliente((atual) => {
+      if (!atual) return atual;
+      const jaTem = (atual.vinculosComerciais ?? []).some(
+        (v) => Number(v.idClienteRelacionado) === Number(socio.idCliente)
+      );
+      if (jaTem) return atual;
+      return {
+        ...atual,
+        vinculosComerciais: [
+          ...(atual.vinculosComerciais ?? []),
+          {
+            id: String(socio.idCliente),
+            idClienteRelacionado: socio.idCliente,
+            nome: socio.fantasia || socio.nome,
+            documento: socio.documento,
+            tipoRelacao: socio.tipoRelacao
+          }
+        ]
+      };
+    });
+
+    updateField("compradorId", String(socio.idCliente));
+
+    void (async () => {
+      try {
+        const { cadastro } = await getCadastroCompleto(socio.idCliente);
+        if (!cadastro) return;
+        setCompradorAddresses(cadastro.enderecos || []);
+        // Pré-seleção do endereço: o principal do sócio, quando ele tem um. O
+        // usuário troca depois se quiser; nada é gravado até o Salvar.
+        const principal =
+          (cadastro.enderecos || []).find((e) => (e.tipo || "").trim().toLowerCase() === "principal") ||
+          (cadastro.enderecos || [])[0];
+        if (principal) updateField("enderecoId", principal.id);
+      } catch (erro) {
+        console.error("[OrcamentoFormPage] Falha ao carregar endereços do sócio novo:", erro);
+      }
+    })();
   }
 
   function recalculateItem(item: PropostaItem, nextBonusPercent = bonusPercent, nextClienteParam = cliente, preservePrice = false) {
@@ -5679,17 +5729,32 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                           }}
                           searchPlaceholder="Pesquisar por nome, relação comercial ou documento..."
                         />
-                        <button 
-                          type="button" 
-                          onClick={() => {
-                            if (cliente?.id) {
-                              window.open(`/cadastros/${cliente.id}/editar`, "_blank");
-                            }
-                          }} 
-                          className="mt-4 rounded-2xl border border-[#d7e5e8] bg-white px-4 py-3 text-sm font-semibold text-[#0b2f4a] transition hover:bg-slate-50"
-                        >
-                          + Adicionar novo sócio
-                        </button>
+                        {/*
+                          "Adicionar novo sócio" resolve AQUI desde 19/09/2026:
+                          buscar por CPF/CNPJ, vincular ou cadastrar, tudo pela
+                          rota `/api/orcamentos/socio-pagador`. Antes abria o
+                          cadastro do cliente em outra aba e exigia F5.
+
+                          A TRAVA DA PROPOSTA VALE AQUI. O bloco 4 fica fora dos
+                          `fieldset` que `isFormBloqueadoPorCobranca` desabilita —
+                          uma brecha antiga —, então o painel a aplica por conta
+                          própria, e a rota repete a checagem no servidor.
+                        */}
+                        <SocioPagadorInline
+                          idInt={Number(form.id_int)}
+                          desabilitado={
+                            isFormBloqueadoPorCobranca || ehComplemento || form.id_int === "NOVO" || !Number(form.id_int)
+                          }
+                          motivoDesabilitado={
+                            ehComplemento
+                              ? `Pagador herdado do pedido #${form.idIntPedidoPrincipal}`
+                              : form.id_int === "NOVO"
+                                ? "Salve a proposta antes de vincular um sócio"
+                                : "Proposta bloqueada para edição"
+                          }
+                          inputClassName={inputClass}
+                          onSocioPronto={aplicarSocioPagador}
+                        />
                       </>
                     )}
                   </FormSection>
