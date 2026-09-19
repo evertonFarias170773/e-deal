@@ -5741,16 +5741,22 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                           própria, e a rota repete a checagem no servidor.
                         */}
                         <SocioPagadorInline
-                          idInt={Number(form.id_int)}
-                          desabilitado={
-                            isFormBloqueadoPorCobranca || ehComplemento || form.id_int === "NOVO" || !Number(form.id_int)
-                          }
+                          /*
+                            ORÇAMENTO NOVO TAMBÉM USA O PAINEL (19/09/2026).
+                            Definir o pagador é o primeiro passo, e o Salvar
+                            exige produtos: exigir proposta aqui deixava o
+                            fluxo inútil justo no começo. Sem `id_int`, a rota
+                            cria cadastro/endereço/vínculo e NÃO grava
+                            `id_faturado` — ele sai do primeiro Salvar, junto
+                            do endereço, como já era o caminho do formulário.
+                          */
+                          idInt={form.id_int === "NOVO" ? 0 : Number(form.id_int) || 0}
+                          idClientePrincipal={Number(cliente.idCliente)}
+                          desabilitado={isFormBloqueadoPorCobranca || ehComplemento}
                           motivoDesabilitado={
                             ehComplemento
                               ? `Pagador herdado do pedido #${form.idIntPedidoPrincipal}`
-                              : form.id_int === "NOVO"
-                                ? "Salve a proposta antes de vincular um sócio"
-                                : "Proposta bloqueada para edição"
+                              : "Proposta bloqueada para edição"
                           }
                           inputClassName={inputClass}
                           onSocioPronto={aplicarSocioPagador}

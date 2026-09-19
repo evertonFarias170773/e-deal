@@ -70,7 +70,10 @@ type Estado =
   | { fase: "recado"; texto: string };
 
 type Props = {
+  /** `0` quando o orçamento ainda não foi salvo — a rota aceita e não grava pagador. */
   idInt: number;
+  /** Dono do vínculo. Indispensável no orçamento novo, onde não há proposta. */
+  idClientePrincipal: number;
   /** Trava da proposta (mesma da tela) ou pedido complementar. */
   desabilitado: boolean;
   motivoDesabilitado?: string;
@@ -80,6 +83,7 @@ type Props = {
 
 export function SocioPagadorInline({
   idInt,
+  idClientePrincipal,
   desabilitado,
   motivoDesabilitado,
   onSocioPronto,
@@ -93,6 +97,12 @@ export function SocioPagadorInline({
 
   const digitos = normalizeDocumentDigits(documento);
   const documentoValido = digitos.length === 14 ? isValidCnpj(digitos) : isValidCpf(digitos);
+
+  /**
+   * Em orçamento NOVO não há `idInt`: a rota recebe o cliente principal e faz
+   * tudo menos gravar o pagador, que sai no primeiro Salvar.
+   */
+  const alvo = idInt > 0 ? { idInt } : { idClientePrincipal };
 
   function fechar() {
     setAberto(false);
@@ -117,7 +127,7 @@ export function SocioPagadorInline({
       const resposta = await fetchComSessao("/api/orcamentos/socio-pagador", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ acao: "buscar", idInt, documento: digitos })
+        body: JSON.stringify({ acao: "buscar", ...alvo, documento: digitos })
       });
       const corpo = (await resposta.json().catch(() => ({}))) as {
         success?: boolean;
@@ -209,7 +219,7 @@ export function SocioPagadorInline({
       const resposta = await fetchComSessao("/api/orcamentos/socio-pagador", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ acao: "confirmar", idInt, documento: digitos, cadastroNovo })
+        body: JSON.stringify({ acao: "confirmar", ...alvo, documento: digitos, cadastroNovo })
       });
       const corpo = (await resposta.json().catch(() => ({}))) as {
         success?: boolean;

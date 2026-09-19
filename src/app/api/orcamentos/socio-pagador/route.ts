@@ -44,10 +44,21 @@ import type { Cobranca } from "@/features/cobrancas/types";
  *   - não toca na tela de Clientes nem em `/api/cadastros/consultar-documento`.
  */
 
-type AcaoBuscar = { acao: "buscar"; idInt: number; documento: string };
+/**
+ * `idInt` AUSENTE = orçamento ainda não salvo (19/09/2026).
+ *
+ * Definir o pagador é o PRIMEIRO passo do atendente, antes dos produtos — e o
+ * Salvar exige produtos. Exigir proposta aqui tornava o painel inútil justo
+ * onde ele mais serve. Sem proposta, a rota faz tudo menos gravar
+ * `id_faturado`: o pagador e o endereço ficam no formulário e vão para o banco
+ * no primeiro Salvar, que já monta `id_faturado` a partir de `compradorId`.
+ * Nesse modo quem manda o dono do vínculo é `idClientePrincipal`.
+ */
+type AcaoBuscar = { acao: "buscar"; idInt?: number; idClientePrincipal?: number; documento: string };
 type AcaoConfirmar = {
   acao: "confirmar";
-  idInt: number;
+  idInt?: number;
+  idClientePrincipal?: number;
   documento: string;
   /** Só no caso C: o que a prévia mostrou, para o servidor gravar o mesmo. */
   cadastroNovo?: {
@@ -270,7 +281,7 @@ export async function POST(request: Request) {
   }
 
   const idInt = Number(corpo?.idInt);
-  if (!Number.isInteger(idInt) || idInt <= 0) return respostaErro("Informe a proposta.", 400);
+  const temProposta = Number.isInteger(idInt) && idInt > 0;
 
   const digitos = normalizeDocumentDigits(texto(corpo?.documento));
   const tipoPessoa = digitos.length === 14 ? "CNPJ" : "CPF";
@@ -279,9 +290,32 @@ export async function POST(request: Request) {
     return respostaErro(validacao.message ?? "Documento invalido.", 400);
   }
 
-  const trava = await avaliarTrava(supabase, idInt, authData.user.id);
-  if (!trava.ok) return respostaErro(trava.motivo, trava.status);
-  const idClientePrincipal = trava.proposta.id_cliente;
+  /*
+    COM PROPOSTA: a trava do orçamento é revalidada aqui, como sempre.
+    SEM PROPOSTA: não há o que travar — ninguém pagou nada ainda —, então o que
+    o servidor confere é a sessão (já conferida acima) e se ESTE usuário
+    enxerga o cliente principal pela RLS. Sem essa leitura, não há vínculo a
+    criar.
+  */
+  let idClientePrincipal: number;
+  if (temProposta) {
+    const trava = await avaliarTrava(supabase, idInt, authData.user.id);
+    if (!trava.ok) return respostaErro(trava.motivo, trava.status);
+    idClientePrincipal = trava.proposta.id_cliente;
+  } else {
+    const informado = Number(corpo?.idClientePrincipal);
+    if (!Number.isInteger(informado) || informado <= 0) {
+      return respostaErro("Selecione o cliente da proposta antes de vincular um sócio.", 400);
+    }
+    const { data: clientePrincipal, error: erroCliente } = await supabase
+      .from("clientes")
+      .select("id_cliente")
+      .eq("id_cliente", informado)
+      .maybeSingle();
+    if (erroCliente) return respostaErro("Não foi possível conferir o cliente da proposta.", 500);
+    if (!clientePrincipal) return respostaErro("Cliente da proposta não encontrado.", 404);
+    idClientePrincipal = Number(clientePrincipal.id_cliente);
+  }
 
   const existente = await acharClientePorDocumento(supabase, digitos);
 
@@ -439,16 +473,20 @@ export async function POST(request: Request) {
     criouVinculo = !erroVinculo;
   }
 
-  // PAGADOR: o mesmo caminho que o bloco 4 já usa, e a mesma gravação imediata.
-  const { error: erroPagador } = await supabase
-    .from("propostas")
-    .update({ id_faturado: idSocio })
-    .eq("id_int", idInt);
-  if (erroPagador) {
-    return respostaErro(erroPagador.message || "Não foi possível gravar o pagador.", 500, {
-      idClienteCriado: criouCadastro ? idSocio : undefined,
-      vinculoCriado: criouVinculo
-    });
+  // PAGADOR: o mesmo caminho que o bloco 4 já usa, e a mesma gravação imediata
+  // — mas só quando existe proposta. Em orçamento novo não há linha para
+  // atualizar, e `id_faturado` sai do primeiro Salvar, junto do resto.
+  if (temProposta) {
+    const { error: erroPagador } = await supabase
+      .from("propostas")
+      .update({ id_faturado: idSocio })
+      .eq("id_int", idInt);
+    if (erroPagador) {
+      return respostaErro(erroPagador.message || "Não foi possível gravar o pagador.", 500, {
+        idClienteCriado: criouCadastro ? idSocio : undefined,
+        vinculoCriado: criouVinculo
+      });
+    }
   }
 
   const { data: socioRow } = await supabase
@@ -467,5 +505,5 @@ export async function POST(request: Request) {
     enderecoPrincipalId: endereco.id
   };
 
-  return NextResponse.json({ success: true, socio, criouCadastro, criouVinculo });
+  return NextResponse.json({ success: true, socio, criouCadastro, criouVinculo, pagadorGravado: temProposta });
 }
