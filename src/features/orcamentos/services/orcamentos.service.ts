@@ -8,6 +8,8 @@ import {
   type TransporteCategoria
 } from "@/features/orcamentos/lib/transporte-categoria";
 import { calculateResumo, calculateItemSubtotal } from "@/features/orcamentos/orcamento-utils";
+// O criterio de "pedido em aberto" e o da Expedicao. Nao duplicar a lista aqui.
+import { STATUS_PEDIDO_EM_ABERTO } from "@/features/expedicao/lib/pedido-em-aberto";
 import {
   categoriaDoServico,
   categoriaPorNomeConhecido,
@@ -4510,6 +4512,82 @@ export async function insertEnderecoProposta(
   };
 
   return { success: true, data: mappedEndereco };
+}
+
+/**
+ * QUANTOS OUTROS PEDIDOS EM ABERTO USAM ESTE ENDERECO (19/09/2026).
+ *
+ * `enderecos` e compartilhado: 697 enderecos servem a mais de uma proposta, um
+ * deles a 67. Editar o recebedor de um endereco muda a etiqueta de todos os
+ * pedidos que entregam nele, e ate aqui a tela nao dizia isso. O numero e so
+ * informativo — quem decide continua sendo quem atende.
+ *
+ * "EM ABERTO" E O CRITERIO DA EXPEDICAO, nao um corte novo: painel
+ * (`is_prd_aprovado`, status do funil, sem `encerrado_teste_em`) e ainda nao
+ * ENTREGUE. Pedido fora disso nao imprime etiqueta.
+ *
+ * Conta PEDIDOS distintos, nao linhas: o endereco pode chegar pelo que a
+ * proposta gravou (`propostas.id_endereco_ent`) ou pelo que o despacho gravou
+ * (`expedicoes.id_endereco_entrega`), e o mesmo pedido costuma ter os dois.
+ *
+ * Leitura com a sessao do usuario. Falha nao vira alarme: devolve 0 e a tela
+ * simplesmente nao avisa — melhor calar do que inventar um numero.
+ */
+export async function contarOutrosPedidosNoEndereco(
+  idEndereco: string,
+  idIntAtual: number | null
+): Promise<number> {
+  const client = getSupabaseClient();
+  if (!client || !idEndereco) return 0;
+
+  const pedidos = new Set<number>();
+  const somar = (linhas: { id_int: number | null }[] | null) => {
+    (linhas || []).forEach((linha) => {
+      const idInt = Number(linha.id_int);
+      if (Number.isInteger(idInt) && idInt > 0 && idInt !== idIntAtual) pedidos.add(idInt);
+    });
+  };
+
+  try {
+    const [porProposta, porDespacho] = await Promise.all([
+      client
+        .from("propostas")
+        .select("id_int")
+        .eq("id_endereco_ent", idEndereco)
+        .eq("is_prd_aprovado", true)
+        .is("encerrado_teste_em", null)
+        .in("status_interno", STATUS_PEDIDO_EM_ABERTO),
+      client.from("expedicoes").select("id_int").eq("id_endereco_entrega", idEndereco)
+    ]);
+
+    if (porProposta.error) {
+      console.error("[OrcamentosService] Erro ao contar pedidos no endereco:", porProposta.error);
+      return 0;
+    }
+    somar(porProposta.data);
+
+    // O despacho pode apontar para um endereco que a proposta nao gravou. Esses
+    // pedidos so entram se tambem estiverem em aberto — mesma regra.
+    const idsDoDespacho = (porDespacho.data || [])
+      .map((linha) => Number(linha.id_int))
+      .filter((idInt) => Number.isInteger(idInt) && idInt > 0 && idInt !== idIntAtual && !pedidos.has(idInt));
+
+    if (idsDoDespacho.length > 0) {
+      const { data: aindaAbertos } = await client
+        .from("propostas")
+        .select("id_int")
+        .in("id_int", idsDoDespacho)
+        .eq("is_prd_aprovado", true)
+        .is("encerrado_teste_em", null)
+        .in("status_interno", STATUS_PEDIDO_EM_ABERTO);
+      somar(aindaAbertos);
+    }
+
+    return pedidos.size;
+  } catch (err) {
+    console.error("[OrcamentosService] Excecao ao contar pedidos no endereco:", err);
+    return 0;
+  }
 }
 
 export async function updateEnderecoProposta(

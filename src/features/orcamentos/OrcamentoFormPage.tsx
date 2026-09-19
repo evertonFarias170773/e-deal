@@ -64,7 +64,7 @@ import {
 import { getCadastrosReadOnlyList, getCadastroCompleto } from "@/features/cadastros/services/cadastros.service";
 import { listProdutos } from "@/features/produtos/services/produtos.service";
 import { listProdutoVariacaoVinculos } from "@/features/produtos/services/produto-variacoes.service";
-import { saveProposta, listVendedoresReais, insertEnderecoProposta, updateEnderecoProposta, updatePropostaFiscalDados, registrarMensagemSistemaProposta, gerarPDFProposta, duplicarProposta, retirarPropostaDaProducao, type UsuarioVendedor } from "@/features/orcamentos/services/orcamentos.service";
+import { saveProposta, listVendedoresReais, insertEnderecoProposta, updateEnderecoProposta, contarOutrosPedidosNoEndereco, updatePropostaFiscalDados, registrarMensagemSistemaProposta, gerarPDFProposta, duplicarProposta, retirarPropostaDaProducao, type UsuarioVendedor } from "@/features/orcamentos/services/orcamentos.service";
 import { ActionsMenu } from "@/components/common/ActionsMenu";
 import { classificarTransporte } from "@/features/orcamentos/lib/transporte-categoria";
 import { useGlobalChat } from "@/features/chat/context/GlobalChatContext";
@@ -908,6 +908,15 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
    * devolveu. Vale so enquanto a tela esta aberta; o banco ja tem o valor.
    */
   const [enderecosRegravados, setEnderecosRegravados] = useState<Record<string, CadastroEndereco>>({});
+  /**
+   * Outros pedidos em aberto que entregam no endereço aberto para edição.
+   *
+   * Guarda O ENDEREÇO junto com o número. Sem isso seria preciso zerar o estado
+   * ao abrir o modal — um `setState` no corpo do efeito, que o eslint barra com
+   * razão: ele renderiza duas vezes. Com o id ao lado, contagem de outro
+   * endereço simplesmente não casa e a tela trata como "ainda contando".
+   */
+  const [usosDoEnderecoEditado, setUsosDoEnderecoEditado] = useState<{ idEndereco: string; total: number } | null>(null);
   const [pendingEnderecoSelection, setPendingEnderecoSelection] = useState<string | null>(null);
   const [contactDraft, setContactDraft] = useState<ContactDraft>({ nome: "", cargo: "", whatsapp: "", email: "" });
   const [editingContactId, setEditingContactId] = useState<string | null>(null);
@@ -1709,6 +1718,25 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     })();
     return () => { active = false; };
   }, [cliente?.idCliente]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /**
+   * ENDERECO COMPARTILHADO: quantos outros pedidos em aberto entregam nele.
+   *
+   * Conta ao ABRIR o lapis, nao a cada tecla, e so em edicao — endereco novo
+   * ainda nao serve a ninguem. O aviso e informativo e nao trava o Salvar; por
+   * isso a contagem nunca vira erro na tela: falhou, devolve 0 e nada aparece.
+   */
+  useEffect(() => {
+    if (!isAddressModalOpen || addressModalMode !== "edit" || !editingAddressId) return;
+    let active = true;
+    const idEndereco = editingAddressId;
+    const idIntAtual = form.id_int === "NOVO" ? null : Number(form.id_int) || null;
+    void (async () => {
+      const total = await contarOutrosPedidosNoEndereco(idEndereco, idIntAtual);
+      if (active) setUsosDoEnderecoEditado({ idEndereco, total });
+    })();
+    return () => { active = false; };
+  }, [isAddressModalOpen, addressModalMode, editingAddressId, form.id_int]);
 
   // Capture initial snapshot once (after mount effects settle)
   //
@@ -6839,7 +6867,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
         />
       ) : null}
       {/* `mode` faltava: o modal de EDICAO se anunciava como "Adicionar novo endereço". */}
-      {isAddressModalOpen ? <AddressModal draft={addressDraft} onChange={setAddressDraft} onClose={() => setIsAddressModalOpen(false)} onSave={addAddress} isSaving={isSavingAddress} mode={addressModalMode} /> : null}
+      {isAddressModalOpen ? <AddressModal draft={addressDraft} onChange={setAddressDraft} onClose={() => setIsAddressModalOpen(false)} onSave={addAddress} isSaving={isSavingAddress} mode={addressModalMode} outrosPedidosEmAberto={usosDoEnderecoEditado && usosDoEnderecoEditado.idEndereco === editingAddressId ? usosDoEnderecoEditado.total : null} /> : null}
       {pendingEnderecoSelection ? (
         <Modal
           title="Atenção"
@@ -8097,10 +8125,21 @@ function ContactModal({ draft, onChange, onClose, onSave }: { draft: ContactDraf
   );
 }
 
-function AddressModal({ draft, onChange, onClose, onSave, isSaving, mode = "create" }: { draft: AddressDraft; onChange: (draft: AddressDraft) => void; onClose: () => void; onSave: () => void; isSaving?: boolean; mode?: "create" | "edit" }) {
+function AddressModal({ draft, onChange, onClose, onSave, isSaving, mode = "create", outrosPedidosEmAberto = null }: { draft: AddressDraft; onChange: (draft: AddressDraft) => void; onClose: () => void; onSave: () => void; isSaving?: boolean; mode?: "create" | "edit"; outrosPedidosEmAberto?: number | null }) {
   const { showToast } = useAppToast();
   const [isCepLoading, setIsCepLoading] = useState(false);
   const cleanCep = (draft.cep || "").replace(/\D/g, "");
+  /**
+   * CEP COM QUE O MODAL ABRIU (19/09/2026).
+   *
+   * Abrir o lapis num endereco ja preenchido disparava o ViaCEP na hora e
+   * reescrevia logradouro, bairro, cidade e UF com a grafia dele — o endereco
+   * mudava sem ninguem pedir, so por ter sido aberto. A consulta agora espera o
+   * usuario ALTERAR o CEP. Digitar de volta o mesmo CEP nao consulta: nada
+   * mudou. O modal e montado do zero a cada abertura, entao este valor inicial
+   * e sempre o do endereco que acabou de abrir.
+   */
+  const cepDeAbertura = useRef(cleanCep);
   /**
    * CEP que acabou de chegar pela consulta do CNPJ. A busca do ViaCEP abaixo
    * dispara em QUALQUER troca de CEP e reescreveria logradouro, bairro, cidade e
@@ -8110,6 +8149,8 @@ function AddressModal({ draft, onChange, onClose, onSave, isSaving, mode = "crea
   const cepDaConsulta = useRef<string | null>(null);
 
   useEffect(() => {
+    // Igual ao que abriu: o usuário não alterou nada, não há o que consultar.
+    if (cleanCep === cepDeAbertura.current) return;
     if (cepDaConsulta.current !== null) {
       const veioDaConsulta = cepDaConsulta.current === cleanCep;
       cepDaConsulta.current = null;
@@ -8181,6 +8222,23 @@ function AddressModal({ draft, onChange, onClose, onSave, isSaving, mode = "crea
 
   return (
     <Modal title={mode === "create" ? "Adicionar novo endereço" : "Editar endereço"} onClose={onClose} onSave={onSave} saveLabel={isSaving ? "Salvando..." : (mode === "edit" ? "Salvar" : "Adicionar")}>
+      {/*
+        ENDERECO COMPARTILHADO. Informativo: nao trava o Salvar, so conta o que
+        a tela sabe e quem atende nao tem como adivinhar. Fica em silencio
+        enquanto conta (`null`) e quando nao ha outro uso.
+      */}
+      {mode === "edit" && (outrosPedidosEmAberto ?? 0) > 0 ? (
+        <div className="mb-4 flex gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+          <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
+          <p className="text-sm text-amber-900">
+            <span className="font-semibold">
+              Este endereço é usado em {outrosPedidosEmAberto}{" "}
+              {outrosPedidosEmAberto === 1 ? "outro pedido em aberto" : "outros pedidos em aberto"}.
+            </span>{" "}
+            Alterar recebedor ou endereço muda também as etiquetas {outrosPedidosEmAberto === 1 ? "dele" : "deles"}.
+          </p>
+        </div>
+      ) : null}
       <div className="grid gap-3 md:grid-cols-2">
         {/* O documento vem primeiro: e por ele que o resto se preenche. */}
         <DocumentoRecebedorFields

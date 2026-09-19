@@ -21,6 +21,7 @@ import {
 } from "@/lib/fiscal/nota-do-pedido";
 import { danfesDoPedido, COLUNAS_DANFE_DO_PEDIDO, type DanfeDoPedido } from "@/lib/fiscal/danfes-do-pedido";
 import { resolverPesoExpedicao } from "../lib/peso";
+import { STATUS_FUNIL_EXPEDICAO } from "../lib/pedido-em-aberto";
 import type {
   ContatoDestinatario,
   EtapaExpedicao,
@@ -45,25 +46,10 @@ type NotaFiscalExpedicaoRow = NotaCandidata & {
 };
 
 /**
- * Universo do painel: tudo que está aprovado para produção (is_prd_aprovado)
- * do APROVADO até a entrega. EXPEDICAO em diante é o fluxo oficial da doc
- * FLUXO-OFICIAL-STATUS-PROPOSTAS.md §6.13.
+ * A lista mudou de arquivo em 19/09/2026 (ver `lib/pedido-em-aberto.ts`) e
+ * continua saindo daqui para quem ja a importava.
  */
-export const STATUS_FUNIL_EXPEDICAO = [
-  "APROVADO",
-  "LIBERADO",
-  "REVISAO ATENDENTE",
-  "REVISAO PRODUCAO",
-  "EM PRODUCAO",
-  "EM IMPRESSAO",
-  "EM IMPRESSAO / PENDENTE",
-  "EM ACABAMENTO",
-  "EM ACABAMENTO / PENDENTE",
-  "EXPEDICAO",
-  "A RETIRAR",
-  "EM TRANSITO",
-  "ENTREGUE"
-];
+export { STATUS_FUNIL_EXPEDICAO };
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════
