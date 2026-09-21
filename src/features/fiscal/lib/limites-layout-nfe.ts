@@ -14,7 +14,13 @@
  * NADA E TRUNCADO. O payload e montado no banco (`fn_montar_payload_nfe`, pela
  * `fn_preparar_envio_nfe` que o n8n chama), e cortar um nome ou um logradouro
  * em silencio pode apagar o numero de um endereco ou metade de uma razao
- * social. Barrar e mandar corrigir o cadastro nao perde nada.
+ * social. Barrar e dizer onde encurtar nao perde nada — e quem encurta e o
+ * operador, quase sempre no campo "so nesta nota", sem tocar no cadastro.
+ *
+ * TRES LUGARES AVISAM, COM A MESMA FRASE
+ *   O painel de pendencias, quando a nota abre; o modal, no clique de emitir; e
+ *   a rota `/api/fiscal/emitir-nfe`, no servidor. Os tres leem `ondeCorrigir`
+ *   daqui: a orientacao nasce num lugar so.
  *
  * O QUE ENTRA NA LISTA
  *   Os campos do payload que a Focus valida e que dependem de dado digitado,
@@ -38,17 +44,68 @@ export type CampoComLimite = {
   /** Como o campo aparece na mensagem ao operador. */
   rotulo: string;
   limite: number;
-  /** Onde o dado se corrige, ja na forma da frase: "Corrija no cadastro do cliente." */
+  /**
+   * Onde o dado se corrige, ja na forma da frase — entra depois de "Corrija".
+   *
+   * E a FONTE UNICA da orientacao: o painel de pendencias, o modal de emissao e
+   * a rota `/api/fiscal/emitir-nfe` leem daqui. Mudar a saida de um campo e
+   * mudar esta linha, e mais nada.
+   */
   ondeCorrigir: string;
 };
 
+/**
+ * A SAÍDA DE CADA CAMPO — e ela é UMA SÓ, para os três lugares que avisam.
+ *
+ * Os cinco primeiros campos do destinatário têm versão "só nesta nota" na aba
+ * Destinatário: encurtam o que sai no documento sem tocar no cadastro do
+ * cliente, que segue inteiro na proposta, na etiqueta e na cobrança. É para
+ * ELES que a mensagem manda — não para o cadastro.
+ *
+ * Isto já era o que o painel de pendências dizia. A mensagem daqui, que o modal
+ * e a rota devolvem, dizia o contrário ("corrija no cadastro do cliente") e
+ * mandava o operador abreviar a razão social. Agora a frase nasce num lugar só.
+ *
+ * Município é a exceção declarada: não tem versão da nota, porque precisa casar
+ * com o nome oficial do município. Esse manda mesmo para o cadastro.
+ */
 export const CAMPOS_COM_LIMITE_NFE: readonly CampoComLimite[] = [
-  { chave: "nome_destinatario", rotulo: "Nome do destinatário", limite: 60, ondeCorrigir: "no cadastro do cliente" },
-  { chave: "logradouro_destinatario", rotulo: "Logradouro do endereço", limite: 60, ondeCorrigir: "no cadastro do cliente" },
-  { chave: "numero_destinatario", rotulo: "Número do endereço", limite: 60, ondeCorrigir: "no cadastro do cliente" },
-  { chave: "complemento_destinatario", rotulo: "Complemento do endereço", limite: 60, ondeCorrigir: "no cadastro do cliente" },
-  { chave: "bairro_destinatario", rotulo: "Bairro do endereço", limite: 60, ondeCorrigir: "no cadastro do cliente" },
-  { chave: "municipio_destinatario", rotulo: "Município do endereço", limite: 60, ondeCorrigir: "no cadastro do cliente" },
+  {
+    chave: "nome_destinatario",
+    rotulo: "Nome do destinatário",
+    limite: 60,
+    ondeCorrigir: 'no campo "Nome / Razão Social (só nesta nota)", na aba Destinatário — o cadastro do cliente não muda'
+  },
+  {
+    chave: "logradouro_destinatario",
+    rotulo: "Logradouro do endereço",
+    limite: 60,
+    ondeCorrigir: 'no campo "Logradouro (só nesta nota)", na aba Destinatário — o cadastro do cliente não muda'
+  },
+  {
+    chave: "numero_destinatario",
+    rotulo: "Número do endereço",
+    limite: 60,
+    ondeCorrigir: 'no campo "Número (só nesta nota)", na aba Destinatário — o cadastro do cliente não muda'
+  },
+  {
+    chave: "complemento_destinatario",
+    rotulo: "Complemento do endereço",
+    limite: 60,
+    ondeCorrigir: 'no campo "Complemento (só nesta nota)", na aba Destinatário — o cadastro do cliente não muda'
+  },
+  {
+    chave: "bairro_destinatario",
+    rotulo: "Bairro do endereço",
+    limite: 60,
+    ondeCorrigir: 'no campo "Bairro (só nesta nota)", na aba Destinatário — o cadastro do cliente não muda'
+  },
+  {
+    chave: "municipio_destinatario",
+    rotulo: "Município do endereço",
+    limite: 60,
+    ondeCorrigir: "no cadastro do cliente — este campo não tem versão só desta nota"
+  },
   { chave: "nome_transportador", rotulo: "Nome da transportadora", limite: 60, ondeCorrigir: "no cadastro da transportadora" },
   { chave: "endereco_transportador", rotulo: "Endereço da transportadora", limite: 60, ondeCorrigir: "no cadastro da transportadora" },
   { chave: "municipio_transportador", rotulo: "Município da transportadora", limite: 60, ondeCorrigir: "no cadastro da transportadora" },

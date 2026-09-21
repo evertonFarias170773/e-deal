@@ -406,8 +406,12 @@ export function EmissaoNfeModal({
                     : `A nota não foi enviada: ${estourosLayout.length} campos passam do tamanho que a NF-e aceita.`}
                 </p>
                 <ul className="list-disc space-y-1 pl-4">
-                  {estourosLayout.map((estouro) => (
-                    <li key={estouro.chave}>{estouro.mensagem}</li>
+                  {/* A chave se repete quando mais de um ITEM estoura a descricao:
+                      a key leva o indice junto. */}
+                  {/* A chave se repete quando mais de um ITEM estoura a
+                      descricao: a key leva o indice junto. */}
+                  {estourosLayout.map((estouro, indice) => (
+                    <li key={estouro.chave + indice}>{estouro.mensagem}</li>
                   ))}
                 </ul>
                 <p className="text-rose-800">Nada foi transmitido. Depois de corrigir, emita de novo.</p>

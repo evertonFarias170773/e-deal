@@ -46,8 +46,8 @@ checar("lista TODOS de uma vez, na ordem da lista", varios.map((e) => e.chave),
   ["nome_destinatario", "complemento_destinatario", "nome_transportador"]);
 checar("exatamente 60 nao estoura", varios.some((e) => e.chave === "logradouro_destinatario"), false);
 checar("o e-mail gigante e ignorado", varios.some((e) => /email/.test(e.chave)), false);
-checar("mensagem do destinatario", varios[0].mensagem,
-  "Nome do destinatário com 72 caracteres; o máximo da NF-e é 60. Corrija no cadastro do cliente.");
+checar("mensagem do destinatario manda ao campo da NOTA, nao ao cadastro", varios[0].mensagem,
+  'Nome do destinatário com 72 caracteres; o máximo da NF-e é 60. Corrija no campo "Nome / Razão Social (só nesta nota)", na aba Destinatário — o cadastro do cliente não muda.');
 checar("mensagem da transportadora aponta o cadastro dela", varios[2].mensagem,
   "Nome da transportadora com 61 caracteres; o máximo da NF-e é 60. Corrija no cadastro da transportadora.");
 checar("mensagem da natureza aponta a nota",
@@ -84,10 +84,11 @@ checar("item que nao e objeto nao quebra", estourosDeLayoutNfe({ items: [null, 7
 
 // ── 2c. O caso que motivou esta rodada ───────────────────────────────────────
 const NOME_65505 = "DB SERVICOS DE APOIO ADMINISTRATIVO E REPRESENTACAO COMERCIAL LTDA";
+const MENSAGEM_65505 =
+  'Nome do destinatário com 66 caracteres; o máximo da NF-e é 60. Corrija no campo "Nome / Razão Social (só nesta nota)", na aba Destinatário — o cadastro do cliente não muda.';
 checar("o nome do cliente 65505 tem 66 caracteres", NOME_65505.length, 66);
 checar("e a conferencia o barra com o motivo",
-  estourosDeLayoutNfe({ nome_destinatario: NOME_65505 })[0]?.mensagem,
-  "Nome do destinatário com 66 caracteres; o máximo da NF-e é 60. Corrija no cadastro do cliente.");
+  estourosDeLayoutNfe({ nome_destinatario: NOME_65505 })[0]?.mensagem, MENSAGEM_65505);
 
 // ── 2d. Viram pendencia da tela, apontando onde se conserta ──────────────────
 const { pendenciasDeLayout } = await import("../../src/features/nfe/pendencias.ts");
@@ -102,8 +103,7 @@ const pendencias = pendenciasDeLayout(
 console.log("\n=== como aparece no painel de pendencias ===");
 for (const p of pendencias) console.log(`  [${p.bloco}] ${p.texto}`);
 checar("todas impedem a emissao", pendencias.every((p) => p.severidade === "impede"), true);
-checar("o nome aponta o campo so desta nota", pendencias[0].texto,
-  'Nome do destinatário com 66 caracteres; o máximo da NF-e é 60. Encurte no campo "Nome / Razão Social (só nesta nota)", aqui na nota — o cadastro do cliente não muda.');
+checar("o nome aponta o campo so desta nota", pendencias[0].texto, MENSAGEM_65505);
 checar("e leva ao campo certo, na aba Destinatario", pendencias[0].destino,
   { tipo: "aba", bloco: "Destinatário", campo: "nfe-campo-dest-nome" });
 checar("municipio nao tem versao da nota: vai ao cadastro", pendencias[1].destino,
@@ -111,6 +111,24 @@ checar("municipio nao tem versao da nota: vai ao cadastro", pendencias[1].destin
 checar("o municipio explica por que", pendencias[1].texto.includes("não tem versão só desta nota"), true);
 checar("a descricao do item leva a aba Itens", pendencias[2].destino,
   { tipo: "aba", bloco: "Itens", campo: undefined });
+
+// ── 2e. A MESMA frase nos tres lugares que avisam ────────────────────────────
+//
+// O painel le `texto`; o modal renderiza `estouro.mensagem`; a rota junta as
+// mensagens em `message`. Se a frase se duplicar em algum deles, isto cai.
+const doNome = estourosDeLayoutNfe({ nome_destinatario: NOME_65505 });
+const noPainel = pendenciasDeLayout(doNome, 65505)[0].texto;
+const noModal = doNome[0].mensagem;
+const naRota = doNome.map((estouro) => estouro.mensagem).join(" ");
+console.log("\n=== a mesma frase nos tres ===");
+console.log(`  painel: ${noPainel}`);
+console.log(`  modal : ${noModal}`);
+console.log(`  rota  : ${naRota}`);
+checar("painel e modal dizem a mesma coisa", noPainel === noModal, true);
+checar("rota e modal dizem a mesma coisa", naRota === noModal, true);
+checar("e e a frase esperada", noPainel, MENSAGEM_65505);
+checar("nenhum deles manda abreviar o cadastro",
+  [noPainel, noModal, naRota].every((frase) => !frase.includes("Corrija no cadastro do cliente")), true);
 
 // ── 3. Bordas ────────────────────────────────────────────────────────────────
 checar("payload nulo nao quebra", estourosDeLayoutNfe(null), []);

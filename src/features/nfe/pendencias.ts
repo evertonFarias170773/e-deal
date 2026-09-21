@@ -703,23 +703,25 @@ export function pendenciasDoServidor(mensagens: string[]): Pendencia[] {
  * ------------------------------------------------------------------ */
 
 /**
- * Para onde cada campo estourado leva, e qual é a saída.
+ * Para onde o BOTÃO da pendência leva. Só isso.
  *
- * Os cinco campos do destinatário têm saída DENTRO da nota: os campos "só
- * nesta nota", que encurtam o que sai no documento sem tocar no cadastro do
- * cliente — é por isso que a pendência aponta para eles e não para o cadastro.
- * Município é a exceção deliberada: ele não tem versão da nota, porque precisa
- * casar com o nome oficial do IBGE.
+ * A frase — inclusive qual campo encurtar — vem pronta de `limites-layout-nfe`,
+ * que é a fonte única: o painel, o modal e a rota dizem a mesma coisa porque
+ * leem do mesmo lugar. Aqui mora o que só a tela sabe: em que bloco o campo
+ * vive e qual `id` recebe o foco.
+ *
+ * Município é o único que leva ao cadastro do cliente: ele não tem versão "só
+ * nesta nota", porque precisa casar com o nome oficial do município.
  */
 const SAIDA_DO_ESTOURO: Record<
   string,
-  { bloco: BlocoNfe; campo?: string; naNota?: string; noCadastroDoCliente?: boolean }
+  { bloco: BlocoNfe; campo?: string; noCadastroDoCliente?: boolean }
 > = {
-  nome_destinatario: { bloco: "Destinatário", campo: CAMPO_DEST_NOME, naNota: "Nome / Razão Social (só nesta nota)" },
-  logradouro_destinatario: { bloco: "Destinatário", campo: CAMPO_DEST_LOGRADOURO, naNota: "Logradouro (só nesta nota)" },
-  numero_destinatario: { bloco: "Destinatário", campo: CAMPO_DEST_NUMERO, naNota: "Número (só nesta nota)" },
-  complemento_destinatario: { bloco: "Destinatário", campo: CAMPO_DEST_COMPLEMENTO, naNota: "Complemento (só nesta nota)" },
-  bairro_destinatario: { bloco: "Destinatário", campo: CAMPO_DEST_BAIRRO, naNota: "Bairro (só nesta nota)" },
+  nome_destinatario: { bloco: "Destinatário", campo: CAMPO_DEST_NOME },
+  logradouro_destinatario: { bloco: "Destinatário", campo: CAMPO_DEST_LOGRADOURO },
+  numero_destinatario: { bloco: "Destinatário", campo: CAMPO_DEST_NUMERO },
+  complemento_destinatario: { bloco: "Destinatário", campo: CAMPO_DEST_COMPLEMENTO },
+  bairro_destinatario: { bloco: "Destinatário", campo: CAMPO_DEST_BAIRRO },
   municipio_destinatario: { bloco: "Destinatário", noCadastroDoCliente: true },
   nome_transportador: { bloco: "Transporte/Frete", campo: CAMPO_TRANSPORTADORA_NOME },
   endereco_transportador: { bloco: "Transporte/Frete" },
@@ -731,10 +733,7 @@ const SAIDA_DO_ESTOURO: Record<
 /** O mínimo que esta conferência precisa saber de um estouro de tamanho. */
 export interface EstouroParaPendencia {
   chave: string;
-  rotulo: string;
-  limite: number;
-  tamanho: number;
-  /** A frase pronta de `limites-layout-nfe`, usada quando não há saída na nota. */
+  /** A frase pronta de `limites-layout-nfe`. Não se reescreve aqui. */
   mensagem: string;
 }
 
@@ -749,42 +748,26 @@ export interface EstouroParaPendencia {
  *
  *   Todas IMPEDEM: são exatamente as que barram no momento de emitir. O que
  *   muda é a hora em que o operador fica sabendo.
+ *
+ *   E o TEXTO vem pronto: é o mesmo que o modal mostra e o mesmo que a rota
+ *   devolve. O que esta função acrescenta é só o caminho — o bloco e o campo
+ *   que recebe o foco.
  */
 export function pendenciasDeLayout(estouros: EstouroParaPendencia[], idCliente: number | null): Pendencia[] {
   return estouros.map((estouro) => {
     const saida = SAIDA_DO_ESTOURO[estouro.chave];
-    const tamanhos = `com ${estouro.tamanho} caracteres; o máximo da NF-e é ${estouro.limite}`;
-
-    if (saida?.naNota) {
-      return {
-        codigo: `LAYOUT_${estouro.chave.toUpperCase()}`,
-        bloco: saida.bloco,
-        severidade: "impede" as SeveridadePendencia,
-        texto:
-          `${estouro.rotulo} ${tamanhos}. Encurte no campo "${saida.naNota}", aqui na nota — ` +
-          `o cadastro do cliente não muda.`,
-        destino: { tipo: "aba", bloco: saida.bloco, campo: saida.campo } as DestinoPendencia
-      };
-    }
-
-    if (saida?.noCadastroDoCliente) {
-      return {
-        codigo: `LAYOUT_${estouro.chave.toUpperCase()}`,
-        bloco: saida.bloco,
-        severidade: "impede" as SeveridadePendencia,
-        texto: `${estouro.rotulo} ${tamanhos}. Este campo não tem versão só desta nota: corrija no cadastro do cliente.`,
-        destino: { tipo: "cadastro-cliente", idCliente } as DestinoPendencia
-      };
-    }
+    const destino: DestinoPendencia = !saida
+      ? { tipo: "sem-destino" }
+      : saida.noCadastroDoCliente
+        ? { tipo: "cadastro-cliente", idCliente }
+        : { tipo: "aba", bloco: saida.bloco, campo: saida.campo };
 
     return {
       codigo: `LAYOUT_${estouro.chave.toUpperCase()}`,
       bloco: saida?.bloco ?? ("Validação" as BlocoNfe),
       severidade: "impede" as SeveridadePendencia,
       texto: estouro.mensagem,
-      destino: saida
-        ? ({ tipo: "aba", bloco: saida.bloco, campo: saida.campo } as DestinoPendencia)
-        : ({ tipo: "sem-destino" } as DestinoPendencia)
+      destino
     };
   });
 }
