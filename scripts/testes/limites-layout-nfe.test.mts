@@ -54,6 +54,64 @@ checar("mensagem da natureza aponta a nota",
   estourosDeLayoutNfe({ natureza_operacao: "X".repeat(61) })[0].mensagem,
   "Natureza da operação com 61 caracteres; o máximo da NF-e é 60. Corrija no campo Natureza da operação, na nota.");
 
+// ── 2b. A descricao do item, que tem limite proprio (xProd, 120) ─────────────
+const comItens = estourosDeLayoutNfe({
+  nome_destinatario: "CLIENTE CURTO",
+  items: [
+    { numero_item: "1", codigo_produto: "A1", descricao: "D".repeat(120) },
+    { numero_item: "2", codigo_produto: "B2", descricao: "D".repeat(130) },
+    { numero_item: "3", codigo_produto: "C3", descricao: null }
+  ]
+});
+console.log("\n=== estouro de item ===");
+for (const e of comItens) console.log(`  - ${e.mensagem}`);
+checar("so o item acima de 120 estoura", comItens.map((e) => e.chave), ["descricao"]);
+checar("o limite do item e 120", comItens[0]?.limite, 120);
+checar("a mensagem diz QUAL item", comItens[0]?.mensagem,
+  "Descrição do item 2 com 130 caracteres; o máximo da NF-e é 120. Corrija na aba Itens da nota.");
+checar("a evidencia guarda numero e codigo do item", comItens[0]?.item, { numero: "2", codigo: "B2" });
+checar("item sem numero cai para o codigo",
+  estourosDeLayoutNfe({ items: [{ codigo_produto: "Z9", descricao: "D".repeat(121) }] })[0]?.mensagem,
+  "Descrição do item (código Z9) com 121 caracteres; o máximo da NF-e é 120. Corrija na aba Itens da nota.");
+checar("cabecalho vem antes dos itens",
+  estourosDeLayoutNfe({
+    nome_destinatario: "N".repeat(61),
+    items: [{ numero_item: "1", descricao: "D".repeat(121) }]
+  }).map((e) => e.chave),
+  ["nome_destinatario", "descricao"]);
+checar("items que nao e lista nao quebra", estourosDeLayoutNfe({ items: "nada" }), []);
+checar("item que nao e objeto nao quebra", estourosDeLayoutNfe({ items: [null, 7] }), []);
+
+// ── 2c. O caso que motivou esta rodada ───────────────────────────────────────
+const NOME_65505 = "DB SERVICOS DE APOIO ADMINISTRATIVO E REPRESENTACAO COMERCIAL LTDA";
+checar("o nome do cliente 65505 tem 66 caracteres", NOME_65505.length, 66);
+checar("e a conferencia o barra com o motivo",
+  estourosDeLayoutNfe({ nome_destinatario: NOME_65505 })[0]?.mensagem,
+  "Nome do destinatário com 66 caracteres; o máximo da NF-e é 60. Corrija no cadastro do cliente.");
+
+// ── 2d. Viram pendencia da tela, apontando onde se conserta ──────────────────
+const { pendenciasDeLayout } = await import("../../src/features/nfe/pendencias.ts");
+const pendencias = pendenciasDeLayout(
+  estourosDeLayoutNfe({
+    nome_destinatario: NOME_65505,
+    municipio_destinatario: "M".repeat(61),
+    items: [{ numero_item: "1", descricao: "D".repeat(121) }]
+  }),
+  65505
+);
+console.log("\n=== como aparece no painel de pendencias ===");
+for (const p of pendencias) console.log(`  [${p.bloco}] ${p.texto}`);
+checar("todas impedem a emissao", pendencias.every((p) => p.severidade === "impede"), true);
+checar("o nome aponta o campo so desta nota", pendencias[0].texto,
+  'Nome do destinatário com 66 caracteres; o máximo da NF-e é 60. Encurte no campo "Nome / Razão Social (só nesta nota)", aqui na nota — o cadastro do cliente não muda.');
+checar("e leva ao campo certo, na aba Destinatario", pendencias[0].destino,
+  { tipo: "aba", bloco: "Destinatário", campo: "nfe-campo-dest-nome" });
+checar("municipio nao tem versao da nota: vai ao cadastro", pendencias[1].destino,
+  { tipo: "cadastro-cliente", idCliente: 65505 });
+checar("o municipio explica por que", pendencias[1].texto.includes("não tem versão só desta nota"), true);
+checar("a descricao do item leva a aba Itens", pendencias[2].destino,
+  { tipo: "aba", bloco: "Itens", campo: undefined });
+
 // ── 3. Bordas ────────────────────────────────────────────────────────────────
 checar("payload nulo nao quebra", estourosDeLayoutNfe(null), []);
 checar("campo nulo e ignorado", estourosDeLayoutNfe({ complemento_destinatario: null }), []);

@@ -18,8 +18,9 @@
  *
  * O QUE ENTRA NA LISTA
  *   Os campos do payload que a Focus valida e que dependem de dado digitado,
- *   todos com limite de 60 caracteres na referencia oficial dela
- *   (campos.focusnfe.com.br/nfe/NotaFiscalXML.html).
+ *   com o limite da referencia oficial dela
+ *   (campos.focusnfe.com.br/nfe/NotaFiscalXML.html): 60 caracteres nos dez
+ *   campos do cabecalho e 120 na descricao do item, que e o `xProd`.
  *
  *   O E-MAIL FICA DE FORA de proposito: o payload o manda na chave `email`, e a
  *   Focus so conhece `email_destinatario` — ela descarta o valor, e o XML
@@ -54,17 +55,49 @@ export const CAMPOS_COM_LIMITE_NFE: readonly CampoComLimite[] = [
   { chave: "natureza_operacao", rotulo: "Natureza da operação", limite: 60, ondeCorrigir: "no campo Natureza da operação, na nota" }
 ];
 
-export type EstouroDeLayout = CampoComLimite & { tamanho: number; mensagem: string };
+/**
+ * O item tem um campo de texto com limite PRÓPRIO, e maior: a descrição é o
+ * `xProd` do layout, que vai até 120. Ela não mora no primeiro nível do
+ * payload — vive dentro de `items` —, por isso não entra na lista acima e é
+ * conferida item a item.
+ *
+ * Hoje a maior descrição em nota é de 52 caracteres e o maior `nomeReal` do
+ * catálogo tem 60, então a folga é grande. Está aqui porque a folga não é
+ * garantia: produto novo com nome longo passaria sem ninguém medir.
+ */
+export const CAMPO_DESCRICAO_ITEM: CampoComLimite = {
+  chave: "descricao",
+  rotulo: "Descrição do item",
+  limite: 120,
+  ondeCorrigir: "na aba Itens da nota"
+};
+
+export type EstouroDeLayout = CampoComLimite & {
+  tamanho: number;
+  mensagem: string;
+  /** Só nos estouros de item: qual linha da nota, para o operador achar. */
+  item?: { numero: string | null; codigo: string | null };
+};
 
 const tamanhoEmCaracteres = (valor: unknown) => Array.from(String(valor)).length;
+
+const texto = (valor: unknown): string | null => {
+  if (valor === null || valor === undefined) return null;
+  const limpo = String(valor).trim();
+  return limpo === "" ? null : limpo;
+};
 
 /**
  * Todos os campos do payload que passam do limite, na ordem da lista — de uma
  * vez, para o operador corrigir tudo numa ida so. Vazio quando nada estoura.
+ *
+ * Os campos do cabeçalho vêm primeiro, os itens depois, na ordem em que a nota
+ * os lista.
  */
 export function estourosDeLayoutNfe(payload: Record<string, unknown> | null | undefined): EstouroDeLayout[] {
   if (!payload) return [];
   const estouros: EstouroDeLayout[] = [];
+
   for (const campo of CAMPOS_COM_LIMITE_NFE) {
     const valor = payload[campo.chave];
     if (valor === null || valor === undefined) continue;
@@ -76,5 +109,26 @@ export function estourosDeLayoutNfe(payload: Record<string, unknown> | null | un
       mensagem: `${campo.rotulo} com ${tamanho} caracteres; o máximo da NF-e é ${campo.limite}. Corrija ${campo.ondeCorrigir}.`
     });
   }
+
+  const itens = Array.isArray(payload.items) ? payload.items : [];
+  for (const bruto of itens) {
+    if (!bruto || typeof bruto !== "object") continue;
+    const item = bruto as Record<string, unknown>;
+    const valor = item[CAMPO_DESCRICAO_ITEM.chave];
+    if (valor === null || valor === undefined) continue;
+    const tamanho = tamanhoEmCaracteres(valor);
+    if (tamanho <= CAMPO_DESCRICAO_ITEM.limite) continue;
+
+    const numero = texto(item.numero_item);
+    const codigo = texto(item.codigo_produto);
+    const qual = numero ? ` ${numero}` : codigo ? ` (código ${codigo})` : "";
+    estouros.push({
+      ...CAMPO_DESCRICAO_ITEM,
+      tamanho,
+      item: { numero, codigo },
+      mensagem: `${CAMPO_DESCRICAO_ITEM.rotulo}${qual} com ${tamanho} caracteres; o máximo da NF-e é ${CAMPO_DESCRICAO_ITEM.limite}. Corrija ${CAMPO_DESCRICAO_ITEM.ondeCorrigir}.`
+    });
+  }
+
   return estouros;
 }

@@ -228,6 +228,19 @@ export const CAMPO_CONSUMIDOR_FINAL = "nfe-campo-consumidor-final";
 export const CAMPO_TIPO_CONTRIBUINTE = "nfe-campo-tipo-contribuinte";
 export const CAMPO_MODALIDADE_FRETE = "nfe-campo-modalidade-frete";
 
+/**
+ * Os cinco campos "só nesta nota" da aba Destinatário. São o destino das
+ * pendências de tamanho: quando o nome ou o endereço do cadastro passa do
+ * limite da NF-e, é aqui que se encurta sem mexer no cadastro do cliente.
+ */
+export const CAMPO_DEST_NOME = "nfe-campo-dest-nome";
+export const CAMPO_DEST_LOGRADOURO = "nfe-campo-dest-logradouro";
+export const CAMPO_DEST_NUMERO = "nfe-campo-dest-numero";
+export const CAMPO_DEST_COMPLEMENTO = "nfe-campo-dest-complemento";
+export const CAMPO_DEST_BAIRRO = "nfe-campo-dest-bairro";
+export const CAMPO_NATUREZA_OPERACAO = "nfe-campo-natureza-operacao";
+export const CAMPO_TRANSPORTADORA_NOME = "nfe-campo-transportadora-nome";
+
 /** Id do input de um campo do item, na tabela da aba Itens. */
 export function campoDoItem(idItem: string | undefined, campo: string): string | undefined {
   if (!idItem) return undefined;
@@ -683,4 +696,95 @@ export function pendenciasDoServidor(mensagens: string[]): Pendencia[] {
       texto: mensagem,
       destino: { tipo: "sem-destino" } as DestinoPendencia
     }));
+}
+
+/* ------------------------------------------------------------------ *
+ * Tamanho de campo (limites do layout)
+ * ------------------------------------------------------------------ */
+
+/**
+ * Para onde cada campo estourado leva, e qual é a saída.
+ *
+ * Os cinco campos do destinatário têm saída DENTRO da nota: os campos "só
+ * nesta nota", que encurtam o que sai no documento sem tocar no cadastro do
+ * cliente — é por isso que a pendência aponta para eles e não para o cadastro.
+ * Município é a exceção deliberada: ele não tem versão da nota, porque precisa
+ * casar com o nome oficial do IBGE.
+ */
+const SAIDA_DO_ESTOURO: Record<
+  string,
+  { bloco: BlocoNfe; campo?: string; naNota?: string; noCadastroDoCliente?: boolean }
+> = {
+  nome_destinatario: { bloco: "Destinatário", campo: CAMPO_DEST_NOME, naNota: "Nome / Razão Social (só nesta nota)" },
+  logradouro_destinatario: { bloco: "Destinatário", campo: CAMPO_DEST_LOGRADOURO, naNota: "Logradouro (só nesta nota)" },
+  numero_destinatario: { bloco: "Destinatário", campo: CAMPO_DEST_NUMERO, naNota: "Número (só nesta nota)" },
+  complemento_destinatario: { bloco: "Destinatário", campo: CAMPO_DEST_COMPLEMENTO, naNota: "Complemento (só nesta nota)" },
+  bairro_destinatario: { bloco: "Destinatário", campo: CAMPO_DEST_BAIRRO, naNota: "Bairro (só nesta nota)" },
+  municipio_destinatario: { bloco: "Destinatário", noCadastroDoCliente: true },
+  nome_transportador: { bloco: "Transporte/Frete", campo: CAMPO_TRANSPORTADORA_NOME },
+  endereco_transportador: { bloco: "Transporte/Frete" },
+  municipio_transportador: { bloco: "Transporte/Frete" },
+  natureza_operacao: { bloco: "Resumo", campo: CAMPO_NATUREZA_OPERACAO },
+  descricao: { bloco: "Itens" }
+};
+
+/** O mínimo que esta conferência precisa saber de um estouro de tamanho. */
+export interface EstouroParaPendencia {
+  chave: string;
+  rotulo: string;
+  limite: number;
+  tamanho: number;
+  /** A frase pronta de `limites-layout-nfe`, usada quando não há saída na nota. */
+  mensagem: string;
+}
+
+/**
+ * Converte os estouros de tamanho do payload em pendências da tela.
+ *
+ * POR QUE VIVE AQUI E NÃO NA CONFERÊNCIA NORMAL
+ *   `levantarPendencias` é pura e recebe a nota, os itens e o cadastro. O
+ *   tamanho, porém, só existe no PAYLOAD — que é montado no banco e junta nota
+ *   e cadastro pelas mesmas regras que a Focus vai ver. Medir a tela daria uma
+ *   resposta parecida e, de vez em quando, errada.
+ *
+ *   Todas IMPEDEM: são exatamente as que barram no momento de emitir. O que
+ *   muda é a hora em que o operador fica sabendo.
+ */
+export function pendenciasDeLayout(estouros: EstouroParaPendencia[], idCliente: number | null): Pendencia[] {
+  return estouros.map((estouro) => {
+    const saida = SAIDA_DO_ESTOURO[estouro.chave];
+    const tamanhos = `com ${estouro.tamanho} caracteres; o máximo da NF-e é ${estouro.limite}`;
+
+    if (saida?.naNota) {
+      return {
+        codigo: `LAYOUT_${estouro.chave.toUpperCase()}`,
+        bloco: saida.bloco,
+        severidade: "impede" as SeveridadePendencia,
+        texto:
+          `${estouro.rotulo} ${tamanhos}. Encurte no campo "${saida.naNota}", aqui na nota — ` +
+          `o cadastro do cliente não muda.`,
+        destino: { tipo: "aba", bloco: saida.bloco, campo: saida.campo } as DestinoPendencia
+      };
+    }
+
+    if (saida?.noCadastroDoCliente) {
+      return {
+        codigo: `LAYOUT_${estouro.chave.toUpperCase()}`,
+        bloco: saida.bloco,
+        severidade: "impede" as SeveridadePendencia,
+        texto: `${estouro.rotulo} ${tamanhos}. Este campo não tem versão só desta nota: corrija no cadastro do cliente.`,
+        destino: { tipo: "cadastro-cliente", idCliente } as DestinoPendencia
+      };
+    }
+
+    return {
+      codigo: `LAYOUT_${estouro.chave.toUpperCase()}`,
+      bloco: saida?.bloco ?? ("Validação" as BlocoNfe),
+      severidade: "impede" as SeveridadePendencia,
+      texto: estouro.mensagem,
+      destino: saida
+        ? ({ tipo: "aba", bloco: saida.bloco, campo: saida.campo } as DestinoPendencia)
+        : ({ tipo: "sem-destino" } as DestinoPendencia)
+    };
+  });
 }

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { verificarPermissaoServerSide } from "@/lib/auth/verificar-permissao";
 import { resolverAmbienteFiscal } from "@/features/fiscal/services/ambiente-fiscal";
+import { estourosDeLayoutNfe } from "@/features/fiscal/lib/limites-layout-nfe";
 import {
   detectarNotaJaAutorizada,
   mensagemNotaJaAutorizada
@@ -231,6 +232,62 @@ export async function POST(request: Request) {
           success: false,
           code: "AMBIENTE_NAO_DEFINIDO",
           message: ambienteResolvido.mensagem,
+        },
+        { status: 422 }
+      );
+    }
+
+    // 6b. A conferência de tamanho, agora TAMBÉM aqui.
+    //
+    //     O modal já mede antes de chamar, e continua medindo: é lá que o
+    //     operador vê a lista inteira e conserta. Mas aquilo é tela — quem
+    //     chamasse esta rota direto passava por cima. A medida é a MESMA, do
+    //     mesmo módulo, sobre o mesmo payload que a `fn_preparar_envio_nfe`
+    //     vai remontar do outro lado.
+    //
+    //     Vem ANTES da reserva de propósito: recusa por tamanho não pode
+    //     gastar tentativa nem carimbar ambiente.
+    //
+    //     NADA É TRUNCADO. Cortar um nome ou um logradouro em silêncio pode
+    //     apagar metade de uma razão social ou o número de um endereço.
+    const { data: payloadConferencia, error: payloadError } = await supabase.rpc(
+      "fn_montar_payload_nfe",
+      { p_ref: nota.ref }
+    );
+
+    if (payloadError || !payloadConferencia) {
+      console.error(
+        "[API][EmitirNfe] Nao foi possivel montar o payload para conferir:",
+        payloadError?.message ?? "payload vazio"
+      );
+      return NextResponse.json(
+        {
+          success: false,
+          code: "CONFERENCIA_INDISPONIVEL",
+          message: "Não foi possível conferir a nota antes de emitir. Nada foi transmitido.",
+        },
+        { status: 500 }
+      );
+    }
+
+    const estouros = estourosDeLayoutNfe(payloadConferencia as Record<string, unknown>);
+    if (estouros.length > 0) {
+      console.warn(
+        `[API][EmitirNfe] Emissao barrada por tamanho em ${nota.ref}: ` +
+          estouros.map((estouro) => `${estouro.chave}=${estouro.tamanho}`).join(", ")
+      );
+      return NextResponse.json(
+        {
+          success: false,
+          code: "LAYOUT_ACIMA_DO_LIMITE",
+          message: estouros.map((estouro) => estouro.mensagem).join(" "),
+          estouros: estouros.map(({ chave, rotulo, limite, tamanho, mensagem }) => ({
+            chave,
+            rotulo,
+            limite,
+            tamanho,
+            mensagem
+          })),
         },
         { status: 422 }
       );

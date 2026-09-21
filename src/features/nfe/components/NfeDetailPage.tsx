@@ -94,13 +94,25 @@ import type { ModeloCobranca } from "@/features/cobrancas/types";
 import {
   levantarPendencias,
   pendenciasQueImpedem,
+  pendenciasDeLayout,
   campoDoItem,
   CAMPO_CONSUMIDOR_FINAL,
   CAMPO_TIPO_CONTRIBUINTE,
   CAMPO_MODALIDADE_FRETE,
+  CAMPO_DEST_NOME,
+  CAMPO_DEST_LOGRADOURO,
+  CAMPO_DEST_NUMERO,
+  CAMPO_DEST_COMPLEMENTO,
+  CAMPO_DEST_BAIRRO,
+  CAMPO_NATUREZA_OPERACAO,
+  CAMPO_TRANSPORTADORA_NOME,
   type Pendencia,
   type BlocoNfe
 } from "../pendencias";
+import {
+  estourosDeLayoutNfe,
+  type EstouroDeLayout
+} from "@/features/fiscal/lib/limites-layout-nfe";
 import {
   ConferenciaLateral,
   BlocoConferencia,
@@ -433,6 +445,23 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
   const [deliveryBairro, setDeliveryBairro] = useState("");
   const [deliveryCidade, setDeliveryCidade] = useState("");
   const [deliveryUf, setDeliveryUf] = useState("");
+
+  /**
+   * Os campos que passam do tamanho da NF-e, medidos QUANDO A NOTA ABRE.
+   *
+   * A conferencia de tamanho ja existia, mas so no clique de emitir: o
+   * operador percorria a nota inteira, mandava emitir e so ali descobria que
+   * a razao social do cliente tem 66 caracteres. Medir na abertura poe o
+   * aviso junto das outras pendencias, com o caminho de onde se conserta.
+   *
+   * O tamanho so existe no PAYLOAD — montado no banco, com as mesmas regras
+   * que a Focus vai ver. Por isso e uma ida ao banco, e nao uma conta feita
+   * com o que a tela tem em maos.
+   */
+  const [estourosDeTamanho, setEstourosDeTamanho] = useState<{
+    ref: string;
+    lista: EstouroDeLayout[];
+  } | null>(null);
 
   // Transportadoras state
   const [transportadoras, setTransportadoras] = useState<TransportadoraSimple[]>([]);
@@ -904,6 +933,39 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
     };
   }, [loadData]);
 
+  /*
+    Mede os campos com limite de layout assim que a nota abre, e de novo a cada
+    gravacao — `updated_at` muda a cada Salvar, entao a lista acompanha quem
+    acabou de encurtar o nome sem precisar recarregar a pagina.
+
+    Nota ja emitida nao entra: o documento existe, o tamanho dele nao e mais
+    decisao de ninguem, e a pendencia so faria barulho.
+
+    Falha aqui NAO derruba a tela nem trava o Emitir: a mesma conferencia roda
+    no modal, um instante antes de transmitir, e agora tambem no servidor. Este
+    aqui e o aviso adiantado, nao a trava.
+  */
+  useEffect(() => {
+    let vivo = true;
+    const ref = note?.ref;
+    if (!ref || isReadOnly) return;
+
+    void (async () => {
+      try {
+        const payload = (await montarPayloadNfe(ref)) as Record<string, unknown> | null;
+        if (!vivo) return;
+        setEstourosDeTamanho({ ref, lista: estourosDeLayoutNfe(payload) });
+      } catch (err) {
+        console.warn("[NfeDetail] Nao foi possivel medir os campos da nota:", err);
+        if (vivo) setEstourosDeTamanho({ ref, lista: [] });
+      }
+    })();
+
+    return () => {
+      vivo = false;
+    };
+  }, [note?.ref, note?.updated_at, isReadOnly]);
+
   // Recalculate totals client-side for immediate feedback
   const computedValorProdutos = editedItems.reduce((acc, curr) => {
     const qty = curr.quantidade || 0;
@@ -1287,7 +1349,7 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
     houver edição não salva, a divergência aparece — e o texto da pendência pede
     para salvar.
   */
-  const pendencias: Pendencia[] = note
+  const pendenciasDaNota: Pendencia[] = note
     ? levantarPendencias({
         nota: {
           ref: note.ref,
@@ -1328,6 +1390,26 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
         enderecoPrincipal: principalEndereco
       })
     : [];
+
+  /*
+    As de tamanho entram DEPOIS das outras impeditivas e ANTES dos avisos:
+    a lista continua sendo impeditivas primeiro, na ordem em que o operador
+    conserta. Todas elas impedem — sao exatamente as que barram na emissao.
+  */
+  /*
+    So vale a medida DESTA nota: o carimbo da `ref` evita a lista do rascunho
+    anterior aparecer por um instante quando se troca de nota. Nota ja emitida
+    nao mostra nada — o documento existe, e o tamanho nao e mais decisao.
+  */
+  const pendenciasDeTamanho: Pendencia[] =
+    note && !isReadOnly && estourosDeTamanho?.ref === note.ref
+      ? pendenciasDeLayout(estourosDeTamanho.lista, note.id_cliente ?? null)
+      : [];
+  const pendencias: Pendencia[] = [
+    ...pendenciasDaNota.filter((pendencia) => pendencia.severidade === "impede"),
+    ...pendenciasDeTamanho,
+    ...pendenciasDaNota.filter((pendencia) => pendencia.severidade !== "impede")
+  ];
   const pendenciasImpeditivas = pendenciasQueImpedem(pendencias);
   const emissaoBloqueada = pendenciasImpeditivas.length > 0;
 
@@ -2680,6 +2762,7 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
                   ) : (
                     <>
                       <select
+                        id={CAMPO_NATUREZA_OPERACAO}
                         value={dropNaturezaOp}
                         onChange={(e) => {
                           const escolhida = naturezasCatalogo.find((n) => n.descricao === e.target.value);
@@ -3027,6 +3110,7 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
               ) : null}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <CampoDoDestinatarioDaNota
+                  id={CAMPO_DEST_NOME}
                   rotulo={
                     ehRemessa
                       ? "Nome só nesta nota (para caber nos 60 caracteres)"
@@ -3126,6 +3210,7 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
                 </p>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <CampoDoDestinatarioDaNota
+                    id={CAMPO_DEST_LOGRADOURO}
                     rotulo="Logradouro"
                     valor={destLogradouro}
                     aoMudar={setDestLogradouro}
@@ -3133,6 +3218,7 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
                     desabilitado={isReadOnly}
                   />
                   <CampoDoDestinatarioDaNota
+                    id={CAMPO_DEST_NUMERO}
                     rotulo="Número"
                     valor={destNumero}
                     aoMudar={setDestNumero}
@@ -3140,6 +3226,7 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
                     desabilitado={isReadOnly}
                   />
                   <CampoDoDestinatarioDaNota
+                    id={CAMPO_DEST_COMPLEMENTO}
                     rotulo="Complemento"
                     valor={destComplemento}
                     aoMudar={setDestComplemento}
@@ -3147,6 +3234,7 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
                     desabilitado={isReadOnly}
                   />
                   <CampoDoDestinatarioDaNota
+                    id={CAMPO_DEST_BAIRRO}
                     rotulo="Bairro"
                     valor={destBairro}
                     aoMudar={setDestBairro}
@@ -4006,6 +4094,7 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
               <div>
                 <label className="block text-xs font-semibold text-slate-500 mb-1">Nome da Transportadora (Manual/Confirmado)</label>
                 <input
+                  id={CAMPO_TRANSPORTADORA_NOME}
                   type="text"
                   value={transportadora}
                   disabled={isReadOnly}
@@ -4630,12 +4719,15 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
  * recriado a cada tecla e o input perderia o foco no meio da digitação.
  */
 function CampoDoDestinatarioDaNota({
+  id,
   rotulo,
   valor,
   aoMudar,
   doCadastro,
   desabilitado
 }: {
+  /** Ancora da pendencia de tamanho: e por aqui que o painel traz o foco. */
+  id: string;
   rotulo: string;
   valor: string;
   aoMudar: (novo: string) => void;
@@ -4656,6 +4748,7 @@ function CampoDoDestinatarioDaNota({
         ) : null}
       </div>
       <input
+        id={id}
         type="text"
         value={valor}
         maxLength={60}
