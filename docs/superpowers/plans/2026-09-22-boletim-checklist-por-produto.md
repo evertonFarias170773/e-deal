@@ -1,6 +1,6 @@
 # Boletim montado por checklist do produto
 
-**Data:** 22/09/2026 · **Estado:** etapas 1 e 2 aplicadas · **Sessão:** C1
+**Data:** 22/09/2026 · **Estado:** etapas 1, 2 e 3 aplicadas · **Sessão:** C1
 
 Hoje o card do boletim imprime o mesmo conjunto de campos para todo produto que
 não é de prateleira — numeração em cordão, gabarito no campo "NUM", tipo
@@ -21,6 +21,15 @@ checklist para os 95 produtos, nada mudou no que é impresso.
 
 **Etapa 2 APLICADA em 22/09/2026** (só código, nenhuma escrita por SQL): bloco
 "Campos do boletim" no cadastro do produto — seção 8.
+
+**Etapa 3 APLICADA em 22/09/2026**, versão `20260922173058`:
+`supabase/migrations/20260922_produtos_proposta_boletim_campos.sql` — tabela do
+snapshot e a coluna `produtos_proposta.boletim_campos_congelado_em`, ambas
+vazias/nulas. Nenhuma carga: os 1.554 itens existentes seguem sem snapshot e
+imprimem como hoje. A tabela tem **só** políticas de SELECT e INSERT, e
+`authenticated` ficou com SELECT e INSERT apenas — foi preciso `revoke all ...
+from authenticated` antes do grant, porque toda tabela nova em `public` nasce
+com `ALL` para esse papel.
 
 ---
 
@@ -338,7 +347,7 @@ Cada etapa é publicável sozinha e não muda o que sai impresso até a etapa 5.
 |---|---|---|
 | 1 | Migration: `produto_boletim_campos` + RLS + ACL + carga inicial ✅ | não |
 | 2 | Tela do cadastro de produto marca o checklist ✅ | não (só cadastro) |
-| 3 | Migration: `produtos_proposta_boletim_campos` + RLS + ACL | não |
+| 3 | Migration: `produtos_proposta_boletim_campos` + RLS + ACL ✅ | não |
 | 4 | `saveProposta` grava o snapshot do checklist ao criar o item | não |
 | 5 | Boletim lê o snapshot; sem snapshot, imprime como hoje | **sim** |
 | 6 | Formulário do PCP esconde campo não marcado e para de herdar padrão | **sim** |
