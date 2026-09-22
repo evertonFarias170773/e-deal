@@ -14,8 +14,9 @@ não muda; o boletim lê o snapshot do item, nunca o cadastro vivo; item sem
 snapshot imprime exatamente como hoje. As seis decisões de 22/09 estão na
 seção 12 e já foram aplicadas ao texto.
 
-**Etapa 1 escrita e não aplicada:**
-`supabase/migrations/20260922_produto_boletim_campos.sql`.
+**Etapa 1 APLICADA em 22/09/2026**, versão `20260922153331`:
+`supabase/migrations/20260922_produto_boletim_campos.sql` — 521 linhas de
+checklist para os 95 produtos, nada mudou no que é impresso.
 
 ---
 

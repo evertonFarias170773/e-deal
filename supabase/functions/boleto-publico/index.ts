@@ -66,6 +66,18 @@ Deno.serve(async (req) => {
     const pdfUrl = `${Deno.env.get("SUPABASE_URL")}/storage/v1/object/public/boletos/${boleto.id_int}/parcela_${boleto.parcela}.pdf`;
 
 const pdfResponse = await fetch(pdfUrl);
+
+// Objeto ausente no Storage: sem isto o corpo de erro do Storage (400, ~88
+// bytes de JSON) sairia daqui como HTTP 200 `application/pdf` — arquivo
+// quebrado anunciado como PDF. 21878 e 21965 estao nesse estado: boleto
+// existe na tabela, PDF nunca foi gerado.
+if (!pdfResponse.ok) {
+  return new Response(
+    JSON.stringify({ error: "PDF do boleto ainda nao foi gerado" }),
+    { headers: corsHeaders, status: 404 }
+  );
+}
+
 const pdfBytes = await pdfResponse.arrayBuffer();
 
 return new Response(pdfBytes, {
