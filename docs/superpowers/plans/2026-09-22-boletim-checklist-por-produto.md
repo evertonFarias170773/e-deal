@@ -67,11 +67,21 @@ lote existente não leva a coluna no UPDATE. O checklist é lido antes de qualqu
 escrita e, se a leitura falhar, nada é gravado. A regra das três portas mora em
 `src/features/orcamentos/lib/checklist-lote.ts`.
 
-**Continua sem a regra:** o caminho dos CARDS da aba Pedido ("Adicionar modelo"
-e o auto-save do card), que grava por `criarModelo`/`atualizarModeloParcial`
-(`pedidos-modelos.service.ts`) direto do navegador, fora da rota. E o
-`saveProposta` (C.1 e C) também grava lote, quando a proposta é salva com
-modelos na tela.
+**Etapa 6c APLICADA em 22/09/2026** (só código): as duas portas que faltavam.
+Os cards da aba Pedido escondem os campos sem checklist; `criarModelo` anula a
+coluna escondida (o `SEQUENCIAL` fixo do card e o numerador do cadastro
+inclusive) e `atualizarModeloParcial` nunca a escreve — os dois recebem o
+checklist como parâmetro obrigatório e aplicam a regra DEPOIS dos defaults
+próprios. `validarInput` deixou de cobrar cor e faixa escondidas (sem isso, todo
+lote novo de produto sem faixa seria recusado). O `saveProposta` lê o checklist
+antes de qualquer escrita e aplica a regra no INSERT (C.2) e no UPDATE (C.1).
+Com isso, TODAS as portas de escrita de `pedidos_modelos` seguem o checklist.
+
+**O limite dessa garantia:** cards e `saveProposta` gravam do navegador, e a RLS
+de `pedidos_modelos` é permissiva — a regra vale para o sistema, não contra quem
+escrever direto no banco com uma sessão válida. Fechar isso de verdade exigiria
+um trigger em `pedidos_modelos` (que precisaria saber o produto do lote e ler o
+checklist) ou levar essas escritas para rotas de servidor.
 
 ---
 
