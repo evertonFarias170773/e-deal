@@ -145,4 +145,10 @@ export type ProdutoFormState = {
   setor_pcp: string;
   fotos: ProdutoFoto[];
   variacoes: ProdutoVariacaoDetalhada[];
+  /**
+   * Campos OPCIONAIS que o boletim imprime para este produto — as linhas de
+   * `public.produto_boletim_campos`. Nome do produto, quantidade e nome do
+   * modelo sao obrigatorios e nao entram aqui.
+   */
+  boletimCampos: string[];
 };

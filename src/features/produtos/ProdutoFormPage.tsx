@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, Eye, ImagePlus, Plus, Search, X } from "lucide-react";
 import { ActionsMenu } from "@/components/common/ActionsMenu";
@@ -34,6 +34,12 @@ import {
   saveProdutoVariacoes,
   type VariacaoGlobalJoin
 } from "@/features/produtos/services/produto-variacoes.service";
+import {
+  CAMPOS_BOLETIM,
+  checklistPadraoDoProduto,
+  listProdutoBoletimCampos,
+  saveProdutoBoletimCampos
+} from "@/features/produtos/services/produto-boletim-campos.service";
 import type {
   Produto,
   ProdutoCategoria,
@@ -133,6 +139,12 @@ export function ProdutoFormPage({ mode, produto, duplicarDe }: ProdutoFormPagePr
   const router = useRouter();
   const { showToast } = useAppToast();
   const [form, setForm] = useState<ProdutoFormState>(() => createInitialState(produto));
+  /**
+   * Vira `true` no primeiro clique nas caixas do checklist e nao volta. E ele
+   * que separa "a tela sugeriu" de "o usuario decidiu": sugestao pode ser
+   * recalculada, decisao nao.
+   */
+  const boletimCamposTocado = useRef(false);
   const [message, setMessage] = useState<FormMessage | null>(null);
   const [errorFields, setErrorFields] = useState<string[]>([]);
   const [isSaving, setIsSaving] = useState(false);
@@ -345,6 +357,55 @@ export function ProdutoFormPage({ mode, produto, duplicarDe }: ProdutoFormPagePr
     }
   }, [mode, produto?.id_produto]);
 
+  /**
+   * Checklist do boletim: em EDICAO o que vale e o que esta gravado, entao a
+   * tela le a tabela. Em CRIACAO nao ha o que ler — o produto ainda nao existe
+   * —, e a previa da regra padrao aparece pelo efeito logo abaixo.
+   */
+  useEffect(() => {
+    if (mode === "edit" && produto?.id_produto) {
+      let active = true;
+
+      void (async () => {
+        const campos = await listProdutoBoletimCampos(produto.id_produto);
+        if (!active) return;
+        boletimCamposTocado.current = false;
+        updateField("boletimCampos", campos);
+      })();
+
+      return () => {
+        active = false;
+      };
+    }
+  }, [mode, produto?.id_produto]);
+
+  /**
+   * PREVIA da regra padrao, so em criacao e so enquanto ninguem mexeu nas
+   * caixas. E o que faz o produto novo nascer com o mesmo conjunto que o
+   * trigger do banco semeia — e o que marca `variacoes` quando o produto passa
+   * a ter a primeira variacao vinculada (decisao 7, opcao (a)).
+   *
+   * Assim que o usuario marca ou desmarca qualquer caixa, `boletimCamposTocado`
+   * trava a previa: vincular outra variacao depois NAO remarca o que ele
+   * desmarcou.
+   */
+  useEffect(() => {
+    if (mode === "edit") return;
+    if (boletimCamposTocado.current) return;
+
+    const padrao = checklistPadraoDoProduto({
+      isEstoque: form.is_estoque,
+      temVariacao: form.variacoes.length > 0
+    });
+
+    setForm((atual) =>
+      atual.boletimCampos.length === padrao.length &&
+      padrao.every((campo) => atual.boletimCampos.includes(campo))
+        ? atual
+        : { ...atual, boletimCampos: [...padrao] }
+    );
+  }, [mode, form.is_estoque, form.variacoes.length]);
+
   useEffect(() => {
     let active = true;
 
@@ -498,6 +559,20 @@ export function ProdutoFormPage({ mode, produto, duplicarDe }: ProdutoFormPagePr
     setIsVariationModalOpen(true);
   }
 
+  /**
+   * Marca ou desmarca um campo do checklist. O primeiro clique aqui e o que
+   * trava a previa da regra padrao: dali em diante quem manda e o usuario.
+   */
+  function alternarCampoBoletim(campo: string, marcado: boolean) {
+    boletimCamposTocado.current = true;
+    updateField(
+      "boletimCampos",
+      marcado
+        ? Array.from(new Set([...form.boletimCampos, campo]))
+        : form.boletimCampos.filter((atual) => atual !== campo)
+    );
+  }
+
   async function linkVariationToProduct() {
     const variacao = variacoesGlobais.find((item) => item.id_variacao === selectedVariationId);
 
@@ -523,8 +598,20 @@ export function ProdutoFormPage({ mode, produto, duplicarDe }: ProdutoFormPagePr
       tipos: tipos.filter((t) => t.is_ativo !== false)
     };
 
+    /**
+     * DECISAO 7 (opcao (a)): o produto que passa de ZERO para UMA variacao
+     * ganha "Variacoes" marcado na hora, visivel e desmarcavel antes de salvar.
+     * Se ele JA tinha variacao, nao mexe — quem desmarcou de proposito nao ve
+     * a marca voltar ao vincular a proxima.
+     */
+    const ehPrimeiraVariacao = form.variacoes.length === 0;
+
     updateField("variacoes", [...form.variacoes, vinculo]);
     updateField("is_variacao", true);
+
+    if (ehPrimeiraVariacao && !form.boletimCampos.includes("variacoes")) {
+      updateField("boletimCampos", [...form.boletimCampos, "variacoes"]);
+    }
     setIsVariationModalOpen(false);
     showToast({
       type: "success",
@@ -722,6 +809,21 @@ export function ProdutoFormPage({ mode, produto, duplicarDe }: ProdutoFormPagePr
         is_obrigatorio: v.is_obrigatorio,
         is_multiplo: v.is_multiplo
       }));
+
+      const boletimResult = await saveProdutoBoletimCampos(targetIdProduto, form.boletimCampos);
+      if (!boletimResult.success) {
+        showToast({
+          type: "warning",
+          title: "Campos do boletim não sincronizados",
+          description: boletimResult.message
+        });
+      } else {
+        // Releitura: o produto novo nasce com o checklist que o trigger semeou,
+        // e a tela passa a mostrar o que esta gravado, sem recarregar a pagina.
+        const gravados = await listProdutoBoletimCampos(targetIdProduto);
+        boletimCamposTocado.current = false;
+        updateField("boletimCampos", gravados);
+      }
 
       const vinculosResult = await saveProdutoVariacoes(targetIdProduto, vinculosPayload);
       if (!vinculosResult.success) {
@@ -1204,6 +1306,39 @@ export function ProdutoFormPage({ mode, produto, duplicarDe }: ProdutoFormPagePr
         </div>
       </FormSection>
 
+      <FormSection
+        id="boletim"
+        title="Campos do boletim"
+        description="O que o card deste produto imprime na OS. Vale para pedidos novos: pedido já fechado guarda o checklist da época da venda."
+      >
+        <div className="space-y-4">
+          <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Sempre impressos
+            </p>
+            <p className="mt-1 text-sm text-slate-700">
+              Nome do produto · Quantidade · Nome do modelo
+            </p>
+            <p className="mt-1 text-xs text-slate-500">
+              São obrigatórios e não entram no checklist.
+            </p>
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-2">
+            {CAMPOS_BOLETIM.map((campo) => (
+              <div key={campo.campo} className="rounded-3xl border border-slate-200 bg-white p-4">
+                <Toggle
+                  label={campo.label}
+                  checked={form.boletimCampos.includes(campo.campo)}
+                  onChange={(value) => alternarCampoBoletim(campo.campo, value)}
+                />
+                <p className="mt-2 text-xs leading-5 text-slate-500">{campo.ajuda}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </FormSection>
+
       {isVariationModalOpen ? (
         <VariationLinkModal
           search={variationSearch}
@@ -1536,6 +1671,12 @@ function createInitialState(produto?: Produto): ProdutoFormState {
     id_gabarito: produto?.id_gabarito?.toString() ?? "",
     setor_pcp: produto?.setor_pcp ?? "",
     fotos: produto?.fotos ?? [],
-    variacoes: produto?.variacoes ?? []
+    variacoes: produto?.variacoes ?? [],
+    /**
+     * Vazio na abertura. Em edicao, o efeito le `produto_boletim_campos`; em
+     * criacao, a previa da regra padrao e calculada enquanto o usuario nao
+     * mexer nas caixas.
+     */
+    boletimCampos: []
   };
 }

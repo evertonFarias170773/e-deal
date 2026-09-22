@@ -1,6 +1,6 @@
 # Boletim montado por checklist do produto
 
-**Data:** 22/09/2026 · **Estado:** plano, nada implementado · **Sessão:** C1
+**Data:** 22/09/2026 · **Estado:** etapas 1 e 2 aplicadas · **Sessão:** C1
 
 Hoje o card do boletim imprime o mesmo conjunto de campos para todo produto que
 não é de prateleira — numeração em cordão, gabarito no campo "NUM", tipo
@@ -11,12 +11,16 @@ da venda.
 **Decisões do dono, base deste plano (não reabrir):** o que já está feito não é
 corrigido; checklist por produto, não por produto × setor; a lógica de setores
 não muda; o boletim lê o snapshot do item, nunca o cadastro vivo; item sem
-snapshot imprime exatamente como hoje. As seis decisões de 22/09 estão na
-seção 12 e já foram aplicadas ao texto.
+snapshot imprime exatamente como hoje.
+
+As sete decisões de 22/09 estão na seção 12 e já foram aplicadas ao texto.
 
 **Etapa 1 APLICADA em 22/09/2026**, versão `20260922153331`:
 `supabase/migrations/20260922_produto_boletim_campos.sql` — 521 linhas de
 checklist para os 95 produtos, nada mudou no que é impresso.
+
+**Etapa 2 APLICADA em 22/09/2026** (só código, nenhuma escrita por SQL): bloco
+"Campos do boletim" no cadastro do produto — seção 8.
 
 ---
 
@@ -207,8 +211,8 @@ prateleira depois mantém o checklist como estava.
 O campo `variacoes` fica de fora desse seed, e não por escolha: o vínculo em
 `produto_variacoes` é gravado **depois** do insert do produto, em outra
 requisição (`produto-variacoes.service.ts:702`), então no instante do trigger o
-produto ainda não tem variação nenhuma. Fechar esse buraco é a única decisão
-que sobrou (seção 12).
+produto ainda não tem variação nenhuma. Quem fecha esse buraco é a tela, não o
+banco — decisão 7, seção 12.
 
 ---
 
@@ -285,16 +289,29 @@ prateleira chama a mesma função (Decisão 3), e `criar_pedido_complementar` co
 
 ## 8. Tela do cadastro de produto
 
-`src/features/produtos/ProdutoFormPage.tsx` já tem a seção de variações, que lê e
-grava `produto_variacoes` (`:502-526`) com estado em `form.variacoes`. O checklist
-entra como um bloco irmão, logo abaixo:
+**APLICADA em 22/09/2026.** `src/features/produtos/ProdutoFormPage.tsx` ganhou a
+seção "Campos do boletim", irmã da de variações e logo abaixo dela:
 
-- sete caixas de marcação, uma por campo, com o rótulo que sai no boletim
-  ("Variações", "Cor", "NUM (gabarito)", "Nº inicial e final", "Impressão",
-  "Tipo", "Imagem do modelo");
-- um aviso curto de que os três obrigatórios sempre saem;
-- gravação no mesmo Salvar do produto, apagando e reinserindo as linhas do
-  produto — o padrão que as variações já usam.
+- caixa fixa "Sempre impressos" com os três obrigatórios (nome do produto,
+  quantidade, nome do modelo) — mostrados, não editáveis, fora do checklist;
+- sete caixas de marcação, uma por campo opcional ("Variações", "Cor", "NUM",
+  "Número inicial e final", "Impressão", "Tipo", "Imagem do modelo"), cada uma
+  com uma linha explicando o que sai impresso;
+- gravação no mesmo Salvar do produto, pela sessão do usuário
+  (`getSupabaseClient`), logo antes de `saveProdutoVariacoes` — nenhum caminho
+  de servidor, nenhum service_role;
+- releitura logo depois de gravar: o produto **novo** passa a mostrar o
+  checklist que o trigger semeou sem precisar recarregar a página.
+
+O serviço novo é
+`src/features/produtos/services/produto-boletim-campos.service.ts`. Ele grava por
+**diferença** — apaga só o que saiu, insere só o que entrou —, e não pelo
+apaga-tudo-e-reinsere das variações: salvar o produto sem mexer no checklist não
+gera escrita nenhuma na tabela.
+
+Validado em localhost com a sessão de um usuário real (produto 9001, inativo e
+sem pedidos): desmarcar NUM → salvar → a linha some do banco → remarcar →
+salvar → `SELECT` idêntico ao do começo.
 
 ---
 
@@ -319,8 +336,8 @@ Cada etapa é publicável sozinha e não muda o que sai impresso até a etapa 5.
 
 | # | Etapa | Visível? |
 |---|---|---|
-| 1 | Migration: `produto_boletim_campos` + RLS + ACL + carga inicial | não |
-| 2 | Tela do cadastro de produto marca o checklist | não (só cadastro) |
+| 1 | Migration: `produto_boletim_campos` + RLS + ACL + carga inicial ✅ | não |
+| 2 | Tela do cadastro de produto marca o checklist ✅ | não (só cadastro) |
 | 3 | Migration: `produtos_proposta_boletim_campos` + RLS + ACL | não |
 | 4 | `saveProposta` grava o snapshot do checklist ao criar o item | não |
 | 5 | Boletim lê o snapshot; sem snapshot, imprime como hoje | **sim** |
@@ -394,16 +411,18 @@ servidor, na função que já existe.
    completo nos demais, mais `variacoes` se tiver variação cadastrada.
 6. **Produto que vira prateleira depois** mantém o checklist como estava.
 
-### A decisão que ficou aberta
+7. **`variacoes` no produto novo — opção (a), decidida em 22/09.** Quando um
+   produto passa de **zero para uma** variação vinculada, a própria tela do
+   cadastro já mostra "Variações" marcado no checklist, **visível e desmarcável
+   antes de salvar**. Não há trigger no banco para isso. Se o produto **já
+   tinha** variação e o usuário desmarcou "Variações", vincular outra **não**
+   remarca.
 
-7. **`variacoes` no produto novo.** O trigger de `AFTER INSERT ON produtos` não
-   consegue marcá-lo: o vínculo em `produto_variacoes` só é gravado na
-   requisição seguinte. Para cumprir a decisão 5 por inteiro há dois caminhos, e
-   nenhum é óbvio:
-   - **trigger em `produto_variacoes`** — marca `variacoes` no checklist assim
-     que o primeiro vínculo é criado. Cobre o produto novo sozinho, mas também
-     passa a marcar **produto antigo** que ganhe uma variação depois, o que
-     mexe no checklist que você tiver ajustado à mão;
-   - **a tela do cadastro (Etapa 2)** grava o campo junto com o vínculo. Não
-     toca em produto antigo, mas deixa a regra fora do banco, então um vínculo
-     criado por script ou por outra tela não marca nada.
+   O que isso implica, de propósito: um vínculo criado por script ou por outra
+   tela não marca nada — a regra mora na tela, e produto antigo que ganhe
+   variação por fora segue com o checklist que você ajustou à mão.
+
+   Na implementação (Etapa 2) isso é um sinalizador de "o usuário mexeu"
+   (`boletimCamposTocado`): o primeiro clique em qualquer caixa congela a
+   sugestão automática. Vincular a primeira variação sugere; a decisão do
+   usuário manda.
