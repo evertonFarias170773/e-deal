@@ -2214,7 +2214,14 @@ export type NaturezaOperacaoNfe = {
   cfop: string;
   /** Rótulo com o CFOP na frente — vai inteiro para `drop_natureza_op`. */
   descricao: string;
-  /** `descricao` sem o prefixo `NNNN - ` — é o que vai para `natureza_operacao`. */
+  /**
+   * O que vai para `natureza_operacao`, ou seja, para o `natOp` da NF-e.
+   *
+   * E o `natureza_curta` do catalogo quando ele existe; senao, a `descricao`
+   * sem o prefixo `NNNN - `. O texto curto so existe nas linhas cuja
+   * descricao sem prefixo passa dos 60 caracteres do layout — hoje tres
+   * pares: 5949/6949, 5108/6108 e 1202/2202.
+   */
   natureza: string;
   /** `VENDA`, `OUTRA_SAIDA`, `DEVOLUCAO`. Metade da chave do par de CFOP. */
   tipoOperacao: string;
@@ -2251,8 +2258,9 @@ export async function getNaturezasOperacaoNfe(): Promise<NaturezaOperacaoNfe[]> 
   const { data, error } = await client
     .from("nfe_naturezas_operacao")
     // `tipo_operacao` e `destino_operacao` alimentam `cfopDaNatureza`; as três
-    // de situação tributária alimentam `tributacaoDaNatureza`.
-    .select("id, cfop, descricao, tipo_operacao, destino_operacao, icms_situacao_tributaria, pis_situacao_tributaria, cofins_situacao_tributaria")
+    // de situação tributária alimentam `tributacaoDaNatureza`; `natureza_curta`
+    // é o texto que cabe nos 60 caracteres do `natOp`.
+    .select("id, cfop, descricao, natureza_curta, tipo_operacao, destino_operacao, icms_situacao_tributaria, pis_situacao_tributaria, cofins_situacao_tributaria")
     .eq("modelo_fiscal", "NFE")
     .eq("ativo", true)
     .order("cfop", { ascending: true });
@@ -2266,7 +2274,12 @@ export async function getNaturezasOperacaoNfe(): Promise<NaturezaOperacaoNfe[]> 
     id: Number(linha.id),
     cfop: String(linha.cfop ?? ""),
     descricao: String(linha.descricao ?? ""),
-    natureza: naturezaSemPrefixoCfop(String(linha.descricao ?? "")),
+    // O texto CURTO tem preferencia — mesma regra de
+    // `fn_defaults_rascunho_nfe` e `fn_sync_natureza_operacao_nfe`, para os
+    // tres caminhos que gravam a natureza dizerem a mesma coisa.
+    natureza:
+      String(linha.natureza_curta ?? "").trim() ||
+      naturezaSemPrefixoCfop(String(linha.descricao ?? "")),
     tipoOperacao: String(linha.tipo_operacao ?? ""),
     destinoOperacao: String(linha.destino_operacao ?? ""),
     // `null` PRESERVADO: é a resposta do catálogo para a devolução de saída,
