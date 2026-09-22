@@ -15,6 +15,13 @@
  *   D. Etapa 6, prova pendente 2 — lote existente intocado pelo PCP: a
  *      abertura da OS recusa sem escrever, a edição só grava `setor`, e o
  *      formulário não tem outra porta de escrita de lote.
+ *   E. Etapa 6c — cards da aba Pedido, `criarModelo`: lote novo nasce null no
+ *      campo escondido (o SEQUENCIAL fixo do card e o numerador do cadastro
+ *      incluídos), e a validação não cobra cor nem faixa escondidas.
+ *   F. Etapa 6c — cards, `atualizarModeloParcial`: o auto-save nunca escreve
+ *      coluna escondida.
+ *   G. Etapa 6c — `saveProposta` com lotes na tela: INSERT com null, UPDATE sem
+ *      as colunas escondidas; sem checklist, idêntico à montagem antiga.
  *
  * O `@/lib/supabase/client` dos serviços é trocado pelo `_supabase-falso.mts`:
  * nenhuma requisição sai daqui.
@@ -310,6 +317,213 @@ checar(
     outras: (fonteDoPcp.match(/\b(criarModelo|atualizarModelo|excluirModelo)\(/g) || []).length
   },
   { abertura: 1, setor: 1, outras: 0 }
+);
+
+// ══ E. Etapa 6c — cards da aba Pedido: criarModelo ═════════════════════════
+console.log("\n══ E. cards: criarModelo (lote novo)");
+const modelosSvc = await import("../../src/features/orcamentos/services/pedidos-modelos.service.ts");
+
+/** O que o card manda ao criar: SEQUENCIAL fixo e os padrões do cadastro. */
+function entradaDoCard(sobre: Record<string, unknown> = {}) {
+  return {
+    id_int: 22552,
+    id_produto_proposta_origem: 2770,
+    nome_modelo: "Lote do card",
+    padrao: "Azul",
+    quantidade: 10,
+    tipo_numeracao: "SEQUENCIAL",
+    numeracao_inicio: 1,
+    numeracao_fim: 10,
+    verso_tipo: "SÓ FRENTE",
+    bloco: "50",
+    gabarito_operacional: "Numerador do cadastro",
+    variacoes_texto: null,
+    Q_CAM: null,
+    L_CAM: null,
+    C_INI: null,
+    ...sobre
+  };
+}
+
+async function criarComFalso(entrada: ReturnType<typeof entradaDoCard>, visivel: typeof COMPLETO) {
+  falso.zerar();
+  falso.responder("produtos_proposta:select", { data: { qtd: 1000 }, error: null }); // saldo do item
+  falso.responder("pedidos_modelos:select", { data: [], error: null }); // lotes e maior ordem
+  const res = await modelosSvc.criarModelo(entrada, visivel);
+  const insert = falso.chamadas.find((c) => c.tabela === "pedidos_modelos" && c.op === "insert");
+  return { res, linha: (insert?.payload ?? null) as Record<string, unknown> | null };
+}
+
+const cardEscondido = await criarComFalso(entradaDoCard(), SEM_NUMERACAO_NO_BOLETIM);
+checar("card: criou (a faixa escondida NAO e cobrada pela validacao)", cardEscondido.res.success, true);
+checar(
+  "card: tipo, faixa e gabarito nascem NULL, mesmo com SEQUENCIAL fixo e numerador do cadastro",
+  [cardEscondido.linha?.tipo_numeracao, cardEscondido.linha?.numeracao_inicio, cardEscondido.linha?.numeracao_fim, cardEscondido.linha?.gabarito_operacional],
+  [null, null, null, null]
+);
+checar(
+  "card: cor e frente/verso (impressos) passam intactos",
+  [cardEscondido.linha?.padrao, cardEscondido.linha?.verso_tipo],
+  ["Azul", "SÓ FRENTE"]
+);
+
+// Com a faixa escondida o card cria SEM faixa: antes da 6c a validacao
+// recusava ("Numeração inicial é obrigatória para tipo SEQUENCIAL").
+const cardSemFaixa = await criarComFalso(
+  entradaDoCard({ numeracao_inicio: null, numeracao_fim: null, gabarito_operacional: null }),
+  SEM_NUMERACAO_NO_BOLETIM
+);
+checar("card sem faixa, com faixa escondida: cria", cardSemFaixa.res.success, true);
+
+const cardTipoVazio = await criarComFalso(entradaDoCard({ tipo_numeracao: "" }), SEM_NUMERACAO_NO_BOLETIM);
+checar("card: tipo escondido NAO vira SEM_NUMERACAO pelo default do servico", cardTipoVazio.linha?.tipo_numeracao, null);
+
+const cardSemCorEscondida = await criarComFalso(
+  entradaDoCard({ padrao: null }),
+  regra.checklistVisivel(["imagem", "numeracao_faixa", "tipo_numeracao", "num_gabarito"])
+);
+checar("card: cor escondida NAO e cobrada — cria sem cor", cardSemCorEscondida.res.success, true);
+
+const cardSemChecklist = await criarComFalso(entradaDoCard(), SEM_CHECKLIST);
+checar(
+  "card SEM checklist: grava exatamente o que veio, como antes",
+  [cardSemChecklist.linha?.tipo_numeracao, cardSemChecklist.linha?.numeracao_inicio, cardSemChecklist.linha?.numeracao_fim, cardSemChecklist.linha?.gabarito_operacional],
+  ["SEQUENCIAL", 1, 10, "Numerador do cadastro"]
+);
+const semChecklistSemFaixa = await criarComFalso(entradaDoCard({ numeracao_inicio: null, numeracao_fim: null }), SEM_CHECKLIST);
+checar(
+  "card SEM checklist: validacao de sempre (SEQUENCIAL sem faixa continua recusado)",
+  semChecklistSemFaixa.res.success,
+  false
+);
+const semChecklistSemCor = await criarComFalso(entradaDoCard({ padrao: null }), SEM_CHECKLIST);
+checar("card SEM checklist: cor continua obrigatoria", semChecklistSemCor.res.success, false);
+
+// padroesDeNovoLote passa pela regra no startCreate: o formato do objeto que
+// ele devolve, com numerador no cadastro.
+checar(
+  "padroes do cadastro com numerador, pela regra: SEQUENCIAL, inicio 1 e numerador somem",
+  regra.anularColunasEscondidas(
+    {
+      padrao: "Azul",
+      gabarito_operacional: "Numerador do cadastro",
+      tipo_numeracao: "SEQUENCIAL",
+      numeracao_inicio: 1,
+      verso_tipo: "SÓ FRENTE",
+      bloco: "50"
+    },
+    SEM_NUMERACAO_NO_BOLETIM
+  ),
+  { padrao: "Azul", gabarito_operacional: null, tipo_numeracao: null, numeracao_inicio: null, verso_tipo: "SÓ FRENTE", bloco: "50" }
+);
+
+// ══ F. Etapa 6c — cards: salvamento parcial ════════════════════════════════
+console.log("\n══ F. cards: atualizarModeloParcial (lote existente)");
+
+async function parcialComFalso(parcial: Record<string, unknown>, visivel: typeof COMPLETO) {
+  falso.zerar();
+  const res = await modelosSvc.atualizarModeloParcial(1001234, parcial, visivel);
+  const updates = falso.chamadas.filter((c) => c.tabela === "pedidos_modelos" && c.op === "update");
+  return { res, updates };
+}
+
+const parcialMisto = await parcialComFalso(
+  { padrao: "Verde", tipo_numeracao: "SEM_NUMERACAO", numeracao_inicio: 5, numeracao_fim: 6, gabarito_operacional: "Trocado" },
+  SEM_NUMERACAO_NO_BOLETIM
+);
+checar("parcial: gravou", parcialMisto.res.success, true);
+checar(
+  "parcial: o UPDATE leva SO a cor — tipo, faixa e gabarito escondidos ficam de fora",
+  parcialMisto.updates.map((u) => Object.keys(u.payload as Record<string, unknown>)),
+  [["padrao"]]
+);
+
+const parcialSoEscondido = await parcialComFalso(
+  { numeracao_inicio: 5, numeracao_fim: 6, tipo_numeracao: "SEQUENCIAL" },
+  SEM_NUMERACAO_NO_BOLETIM
+);
+checar("parcial so com campo escondido: sucesso sem escrever nada", [parcialSoEscondido.res.success, parcialSoEscondido.updates.length], [true, 0]);
+
+const parcialSemChecklist = await parcialComFalso(
+  { padrao: "Verde", tipo_numeracao: "", numeracao_inicio: 5 },
+  SEM_CHECKLIST
+);
+checar(
+  "parcial SEM checklist: como antes, default SEM_NUMERACAO incluido",
+  parcialSemChecklist.updates.map((u) => u.payload),
+  [{ padrao: "Verde", tipo_numeracao: "SEM_NUMERACAO", numeracao_inicio: 5 }]
+);
+
+// ══ G. Etapa 6c — saveProposta com lotes na tela ═══════════════════════════
+console.log("\n══ G. saveProposta: UPDATE de lote existente e INSERT de lote novo");
+const orcamentos = await import("../../src/features/orcamentos/services/orcamentos.service.ts");
+
+const loteDaTela = {
+  id: 1001234,
+  isPersisted: true,
+  nome_modelo: "Lote da tela",
+  padrao: "Azul",
+  quantidade: 90,
+  tipo_numeracao: "SEM_NUMERACAO",
+  numeracao_inicio: 5,
+  numeracao_fim: 6,
+  verso_tipo: "FRENTE E VERSO",
+  bloco: "50",
+  gabarito_operacional: "Trocado na tela",
+  Q_CAM: null,
+  L_CAM: null,
+  C_INI: null,
+  ordem: 3,
+  status_arte: "PENDENTE",
+  status_producao: "PENDENTE"
+} as unknown as Parameters<typeof orcamentos.montarUpdateDeLoteDaProposta>[0];
+
+/** O UPDATE que o C.1 montava antes da 6c, literal. */
+const updateAntigo = {
+  nome_modelo: "Lote da tela",
+  padrao: "Azul",
+  quantidade: 90,
+  tipo_numeracao: "SEM_NUMERACAO",
+  numeracao_inicio: 5,
+  numeracao_fim: 6,
+  verso_tipo: "FRENTE E VERSO",
+  bloco: "50",
+  gabarito_operacional: "Trocado na tela",
+  Q_CAM: null,
+  L_CAM: null,
+  C_INI: null
+};
+const updateEscondidoSave = orcamentos.montarUpdateDeLoteDaProposta(loteDaTela, SEM_NUMERACAO_NO_BOLETIM);
+checar(
+  "saveProposta UPDATE: sem as colunas escondidas",
+  ["tipo_numeracao", "numeracao_inicio", "numeracao_fim", "gabarito_operacional"].filter((c) => c in updateEscondidoSave),
+  []
+);
+checar("saveProposta UPDATE: cor, verso e quantidade continuam", [updateEscondidoSave.padrao, updateEscondidoSave.verso_tipo, updateEscondidoSave.quantidade], ["Azul", "FRENTE E VERSO", 90]);
+checar("saveProposta UPDATE sem checklist: identico ao de antes", orcamentos.montarUpdateDeLoteDaProposta(loteDaTela, SEM_CHECKLIST), updateAntigo);
+
+const contexto = { idInt: 22552, idItem: 2770, variacoesTexto: null, ordem: 7 };
+/** O INSERT que o C.2 montava antes da 6c, literal. */
+const insertAntigo = {
+  id_int: 22552,
+  id_produto_proposta_origem: 2770,
+  ...updateAntigo,
+  variacoes_texto: null,
+  status_arte: "PENDENTE",
+  status_producao: "PENDENTE",
+  ordem: 3
+};
+const insertEscondidoSave = orcamentos.montarInsertDeLoteDaProposta(loteDaTela, contexto, SEM_NUMERACAO_NO_BOLETIM);
+checar(
+  "saveProposta INSERT: tipo, faixa e gabarito escondidos nascem NULL",
+  [insertEscondidoSave.tipo_numeracao, insertEscondidoSave.numeracao_inicio, insertEscondidoSave.numeracao_fim, insertEscondidoSave.gabarito_operacional],
+  [null, null, null, null]
+);
+const insertSemChecklist = orcamentos.montarInsertDeLoteDaProposta(loteDaTela, contexto, SEM_CHECKLIST);
+checar(
+  "saveProposta INSERT sem checklist: as mesmas chaves e valores de antes",
+  Object.fromEntries(Object.keys(insertAntigo).map((k) => [k, (insertSemChecklist as Record<string, unknown>)[k]])),
+  insertAntigo
 );
 
 console.log(falhas === 0 ? "\nTUDO OK" : `\n${falhas} FALHA(S)`);

@@ -1,5 +1,11 @@
 import { getSupabaseClient } from "@/lib/supabase/client";
 import { STATUS_INICIAL_MODELO } from "@/features/orcamentos/orcamento-utils";
+import {
+  anularColunasEscondidas,
+  mostraCampo,
+  omitirColunasEscondidas,
+  type ChecklistVisivel
+} from "@/features/orcamentos/lib/checklist-lote";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -84,17 +90,26 @@ function getClient() {
   return client;
 }
 
-function validarInput(input: ModeloInput): string | null {
+/**
+ * Validação do lote. Campo que o produto não imprime (checklist do boletim,
+ * `visivel`) não é cobrado: a tela nem o mostra, e o lote nasce null nele —
+ * exigir cor ou faixa escondidas trancaria a criação para sempre. O card manda
+ * `tipo_numeracao: "SEQUENCIAL"` fixo ao criar; com a faixa escondida, a regra
+ * da faixa obrigatória recusaria todo lote novo. `visivel` null = produto sem
+ * checklist: validação exatamente como sempre foi.
+ */
+function validarInput(input: ModeloInput, visivel: ChecklistVisivel): string | null {
   if (!input.nome_modelo?.trim()) {
     return "O nome do modelo é obrigatório.";
   }
-  if (!input.padrao?.trim()) {
+  if (mostraCampo(visivel, "cor") && !input.padrao?.trim()) {
     return "A cor do papel (padrão) é obrigatória.";
   }
   if (!input.quantidade || input.quantidade <= 0) {
     return "A quantidade deve ser maior que zero.";
   }
-  if (input.tipo_numeracao === "SEQUENCIAL") {
+  const cobraFaixa = mostraCampo(visivel, "numeracao_faixa") && mostraCampo(visivel, "tipo_numeracao");
+  if (cobraFaixa && input.tipo_numeracao === "SEQUENCIAL") {
     if (input.numeracao_inicio === null || input.numeracao_inicio === undefined) {
       return "Numeração inicial é obrigatória para tipo SEQUENCIAL.";
     }
@@ -298,10 +313,19 @@ export async function validarSaldoModelo(
 
 /**
  * Cria um novo modelo vinculado a um item da proposta.
+ *
+ * `visivel` é o checklist do boletim do PRODUTO do item (lib/checklist-lote).
+ * Obrigatório de propósito: quem chama decide, e `null` quer dizer "produto sem
+ * checklist, tudo como sempre". Coluna que o produto não imprime nasce NULL —
+ * a regra é aplicada DEPOIS dos defaults abaixo, senão o `|| "SEM_NUMERACAO"`
+ * devolveria um valor a um campo que o produto esconde.
  */
-export async function criarModelo(input: ModeloInput): Promise<ServiceResult<PedidoModeloRow>> {
+export async function criarModelo(
+  input: ModeloInput,
+  visivel: ChecklistVisivel
+): Promise<ServiceResult<PedidoModeloRow>> {
   try {
-    const validationError = validarInput(input);
+    const validationError = validarInput(input, visivel);
     if (validationError) {
       return { success: false, errorMessage: validationError };
     }
@@ -351,7 +375,7 @@ export async function criarModelo(input: ModeloInput): Promise<ServiceResult<Ped
 
     const { data, error } = await client
       .from("pedidos_modelos")
-      .insert(payload)
+      .insert(anularColunasEscondidas(payload, visivel))
       .select("*")
       .single();
 
@@ -372,7 +396,9 @@ export async function criarModelo(input: ModeloInput): Promise<ServiceResult<Ped
  */
 export async function atualizarModelo(id: number, input: ModeloInput): Promise<ServiceResult<PedidoModeloRow>> {
   try {
-    const validationError = validarInput(input);
+    // Sem checklist aqui: esta função não tem consumidor hoje e segue com a
+    // validação de sempre.
+    const validationError = validarInput(input, null);
     if (validationError) {
       return { success: false, errorMessage: validationError };
     }
@@ -424,8 +450,17 @@ export async function atualizarModelo(id: number, input: ModeloInput): Promise<S
 
 /**
  * Atualiza parcialmente um modelo existente (auto-save leve).
+ *
+ * `visivel`, obrigatório como em `criarModelo`: coluna que o produto não
+ * imprime SAI do UPDATE, qualquer que seja o valor recebido — o que já está
+ * gravado no lote fica como está. Aplicado depois da montagem, pelo mesmo
+ * motivo do `|| "SEM_NUMERACAO"`.
  */
-export async function atualizarModeloParcial(id: number, partialInput: Partial<ModeloInput>): Promise<ServiceResult<PedidoModeloRow>> {
+export async function atualizarModeloParcial(
+  id: number,
+  partialInput: Partial<ModeloInput>,
+  visivel: ChecklistVisivel
+): Promise<ServiceResult<PedidoModeloRow>> {
   try {
     if (Object.keys(partialInput).length === 0) {
        return { success: true };
@@ -456,13 +491,16 @@ export async function atualizarModeloParcial(id: number, partialInput: Partial<M
     if (partialInput.L_CAM !== undefined) payload.L_CAM = partialInput.L_CAM ?? null;
     if (partialInput.C_INI !== undefined) payload.C_INI = partialInput.C_INI ?? null;
 
-    if (Object.keys(payload).length === 0) {
+    // Campo que o produto não imprime nunca é escrito pelo auto-save.
+    const payloadPermitido = omitirColunasEscondidas(payload, visivel);
+
+    if (Object.keys(payloadPermitido).length === 0) {
       return { success: true };
     }
 
     const { data, error } = await client
       .from("pedidos_modelos")
-      .update(payload)
+      .update(payloadPermitido)
       .eq("id", id)
       .select("*")
       .single();

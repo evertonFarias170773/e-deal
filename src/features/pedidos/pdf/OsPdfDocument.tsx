@@ -8,7 +8,7 @@ import type { OsPdfViewModel, OsPdfProduto, OsPdfModelo } from "../services/os-v
  * Estrutura: faixa de cabeçalho (logo + Nº OS | Setor do boletim | Prazo/Hora | QR);
  * bloco de cliente/evento/vendedor/designer; um CARD por produto da proposta —
  * barra de título com quantidade e peso, seguida dos cards dos seus modelos
- * (imagem grande da arte + campos + checklist IMP/ACA/CON fixo); observações;
+ * (imagem grande da arte + campos + linha de conferência); observações;
  * forma de envio; assinaturas; rodapé fixo com paginação.
  *
  * Regra de agrupamento: modelos nunca cruzam produtos — cada card de produto
@@ -20,9 +20,6 @@ import type { OsPdfViewModel, OsPdfProduto, OsPdfModelo } from "../services/os-v
  */
 
 const OBS_MAX_CHARS = 600;
-
-/** Checklist fixo do card de modelo — literal do layout aprovado, nunca variável. */
-const CHECKLIST_CARD = ["IMP", "ACA", "CON"];
 
 /** Cards de modelo por linha (grade do layout 2027). */
 const MODELOS_POR_LINHA = 3;
@@ -413,17 +410,6 @@ const styles = StyleSheet.create({
     marginTop: 4,
     paddingTop: 4
   },
-  checklistItem: { flexDirection: "row", alignItems: "center", marginRight: 6 },
-  checklistCaixa: {
-    width: 8,
-    height: 8,
-    // Traco fino: o quadrado e so o lugar de marcar, nao um elemento de leitura.
-    borderWidth: 0.4,
-    borderColor: "#8f9daa",
-    borderRadius: 1.5,
-    marginRight: 2.5
-  },
-  checklistTexto: { fontSize: 6.5, fontFamily: "Helvetica-Bold", color: "#3f3f42" },
   checklistAssinatura: { flex: 1, borderBottomWidth: 0.4, borderBottomColor: "#cfd8e0", height: 8 },
   // ── Resumo dos demais setores ──────────────────────────────────────────────
   resumoBarra: {
@@ -615,7 +601,7 @@ const ORDEM_CAMPOS_CARD: { campo: string | null; label: string }[] = [
  * gabarito ou frente/verso. Nesse caso o card fica só com o que a produção usa
  * — lote, quantidade, cor e código —, e a imagem é a prévia da cor do papel.
  * Ele CONTINUA mandando no que nao e campo opcional, com ou sem snapshot: o
- * conteudo de "MODELO", o texto do lugar da imagem vazia e a faixa IMP/ACA/CON.
+ * conteudo de "MODELO", o texto do lugar da imagem vazia e a linha de conferência.
  */
 function ModeloCard({
   modelo,
@@ -747,16 +733,11 @@ function ModeloCard({
         <Text style={styles.modeloObs}>Obs: {truncar(modelo.obsTecnicas, 90)}</Text>
       ) : null}
 
-      {/* Checklist de etapas só faz sentido no que é produzido: produto de
-          prateleira sai do estoque pronto, sem impressão nem acabamento. */}
+      {/* Linha de conferência só faz sentido no que é produzido: produto de
+          prateleira sai do estoque pronto. As caixas IMP/ACA/CON saíram em
+          22/09/2026 — não eram mais usadas. */}
       {isEstoque ? null : (
         <View style={styles.checklistLinha}>
-          {CHECKLIST_CARD.map((etapa) => (
-            <View key={etapa} style={styles.checklistItem}>
-              <View style={styles.checklistCaixa} />
-              <Text style={styles.checklistTexto}>{etapa}</Text>
-            </View>
-          ))}
           <View style={styles.checklistAssinatura} />
         </View>
       )}

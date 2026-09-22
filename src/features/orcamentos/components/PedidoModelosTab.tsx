@@ -5,6 +5,13 @@ import { Plus, Edit2, Trash2, Package, CheckCircle, Copy, AlertOctagon, ChevronD
 import { useAppToast } from "@/components/common/AppToast";
 import { LotesGrid, type PadroesDeLote } from "@/features/orcamentos/components/LotesGrid";
 import { rotuloFaixaExtenso } from "@/features/orcamentos/services/lotes-numeracao";
+import {
+  anularColunasEscondidas,
+  checklistVisivel,
+  mostraCampo,
+  type ChecklistVisivel
+} from "@/features/orcamentos/lib/checklist-lote";
+import { listChecklistDeProdutos } from "@/features/produtos/services/produto-boletim-campos.service";
 import type { PedidoModeloRow, ModeloInput } from "@/features/orcamentos/services/pedidos-modelos.service";
 import {
   buscarArquivoCorPapel,
@@ -400,16 +407,20 @@ function montarPayloadParcial(mod: PedidoModeloState, campos: Set<CampoAutoSave>
 }
 
 /**
- * Mínimo para o modelo novo virar linha no banco — os três campos marcados com
+ * Mínimo para o modelo novo virar linha no banco — os campos marcados com
  * asterisco no formulário. Enquanto não estiverem preenchidos o modelo vive só
  * no estado local; nada é gravado pela metade.
+ *
+ * A Cor do papel só é exigida quando o produto a imprime: se o checklist do
+ * boletim a esconde, o campo nem aparece, e cobrá-lo trancaria o lote para
+ * sempre. Nome e quantidade são sempre obrigatórios.
  */
-function temDadosMinimos(mod: PedidoModeloState, idInt?: number): boolean {
+function temDadosMinimos(mod: PedidoModeloState, idInt: number | undefined, visivel: ChecklistVisivel): boolean {
   return Boolean(
     idInt &&
     mod.id_produto_proposta_origem &&
     mod.nome_modelo?.trim() &&
-    mod.padrao?.trim() &&
+    (!mostraCampo(visivel, "cor") || mod.padrao?.trim()) &&
     mod.quantidade > 0
   );
 }
@@ -429,6 +440,7 @@ function ModeloInlineCard({
   autoSaveHabilitado,
   itemPrateleira,
   simplificado,
+  visivel,
   onRemove,
   onClose,
   onUpdateParent,
@@ -457,10 +469,21 @@ function ModeloInlineCard({
    * não tem nome de modelo nem blocagem a definir.
    */
   simplificado: boolean;
+  /**
+   * Checklist do boletim do produto do item (lib/checklist-lote). O card não
+   * mostra o campo que o produto não imprime, e os serviços não o gravam: o
+   * lote novo nasce null nele e o auto-save nunca o escreve. `null` = produto
+   * sem checklist, card como sempre foi.
+   */
+  visivel: ChecklistVisivel;
   onRemove: () => void;
   onClose: () => void;
   onUpdateParent: (partial: Partial<PedidoModeloState>) => void;
 }) {
+  const mostraCor = mostraCampo(visivel, "cor");
+  const mostraFaixa = mostraCampo(visivel, "numeracao_faixa");
+  const mostraVerso = mostraCampo(visivel, "impressao_fv");
+  const mostraNumerador = mostraCampo(visivel, "num_gabarito");
   const isNew = !modelo.isPersisted;
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [erroSalvar, setErroSalvar] = useState<string | null>(null);
@@ -538,7 +561,7 @@ function ModeloInlineCard({
 
     if (!mod.isPersisted && !criandoRef.current) {
       // Sem os dados mínimos o modelo permanece só no estado local.
-      if (!temDadosMinimos(mod, idInt)) {
+      if (!temDadosMinimos(mod, idInt, visivel)) {
         setStatusSeMontado("idle");
         return;
       }
@@ -565,7 +588,9 @@ function ModeloInlineCard({
         Q_CAM: mod.Q_CAM ?? null,
         L_CAM: mod.L_CAM ?? null,
         C_INI: mod.C_INI ?? null,
-      }).catch((e) => ({ success: false as const, data: undefined, errorMessage: String(e?.message || e) }));
+        // O checklist do produto: o serviço anula o que ele não imprime — o
+        // "SEQUENCIAL" fixo acima inclusive, quando o tipo está escondido.
+      }, visivel).catch((e) => ({ success: false as const, data: undefined, errorMessage: String(e?.message || e) }));
 
       salvandoRef.current = false;
       criandoRef.current = false;
@@ -601,7 +626,8 @@ function ModeloInlineCard({
       salvandoRef.current = true;
       setStatusSeMontado("saving");
 
-      const res = await atualizarModeloParcial(mod.id, montarPayloadParcial(mod, campos))
+      // O serviço tira do UPDATE a coluna que o produto não imprime.
+      const res = await atualizarModeloParcial(mod.id, montarPayloadParcial(mod, campos), visivel)
         .catch((e) => ({ success: false as const, errorMessage: String(e?.message || e) }));
 
       salvandoRef.current = false;
@@ -670,11 +696,11 @@ function ModeloInlineCard({
   const criacaoInicialRef = useRef(false);
   useEffect(() => {
     if (criacaoInicialRef.current) return;
-    if (!isNew || !temDadosMinimos(modelo, idInt)) return;
+    if (!isNew || !temDadosMinimos(modelo, idInt, visivel)) return;
     // Só a primeira vez: depois quem agenda é o handleChange.
     criacaoInicialRef.current = true;
     agendarSave(false);
-  }, [isNew, modelo, idInt]);
+  }, [isNew, modelo, idInt, visivel]);
 
   /**
    * @param imediato true para selects e toggles (valor discreto, não existe
@@ -807,10 +833,14 @@ function ModeloInlineCard({
             ? "Proposta com cobrança: use “Salvar modelo” para gravar."
             : !hasConfig
               ? "Produto sem formato configurado: cor e numerador indisponíveis, o modelo não pode ser gravado."
-              : isNew && !temDadosMinimos(modelo, idInt)
+              : isNew && !temDadosMinimos(modelo, idInt, visivel)
                 ? simplificado
-                  ? "Preencha Qtd e Cor do papel — a gravação é automática a partir daí."
-                  : "Preencha Modelo, Qtd e Cor do papel — a gravação é automática a partir daí."
+                  ? mostraCor
+                    ? "Preencha Qtd e Cor do papel — a gravação é automática a partir daí."
+                    : "Preencha Qtd — a gravação é automática a partir daí."
+                  : mostraCor
+                    ? "Preencha Modelo, Qtd e Cor do papel — a gravação é automática a partir daí."
+                    : "Preencha Modelo e Qtd — a gravação é automática a partir daí."
                 : "As alterações são gravadas automaticamente."}
         </p>
       )}
@@ -895,7 +925,7 @@ function ModeloInlineCard({
           </>
         )}
 
-        {!simplificado && (
+        {!simplificado && mostraFaixa && (
           <>
             <div className="flex-[0.8] min-w-[70px]">
               <label className={labelClass}>Nº Inicial</label>
@@ -922,6 +952,7 @@ function ModeloInlineCard({
           </>
         )}
 
+        {mostraCor && (
         <div className={cn("flex-[1.5] min-w-[100px]", simplificado && "order-1")}>
           <label className={labelClass}>Cor papel *</label>
             <select
@@ -942,6 +973,7 @@ function ModeloInlineCard({
               )}
             </select>
         </div>
+        )}
 
         {!simplificado && (
           <div className="flex-[1.2] min-w-[90px]">
@@ -996,6 +1028,7 @@ function ModeloInlineCard({
           </div>
         )}
 
+        {mostraVerso && (
         <div className={cn("flex-[1.2] min-w-[100px]", simplificado && "order-3")}>
           <label className={labelClass}>Verso</label>
           <select
@@ -1009,7 +1042,9 @@ function ModeloInlineCard({
             <option value="VERSO VARIÁVEL">VERSO VARIÁVEL</option>
           </select>
         </div>
+        )}
 
+        {mostraNumerador && (
         <div className={cn("flex-[1.5] min-w-[100px]", simplificado && "order-4")}>
           <label className={labelClass}>Numerador</label>
           <select
@@ -1033,6 +1068,7 @@ function ModeloInlineCard({
             )}
           </select>
         </div>
+        )}
       </div>
 
       {isCamarote && (
@@ -1097,6 +1133,35 @@ export function PedidoModelosTab({
   // definir, então o formulário fica só com Cor papel, Qtd, Verso e Numerador.
   const formularioSimplificado = propostaDispensaArte(itens);
   const [loading, setLoading] = useState(false);
+
+  /**
+   * Checklist do boletim de cada produto dos itens (`produto_boletim_campos`,
+   * cadastro de hoje), por id_produto. Produto fora do mapa = sem checklist,
+   * card e criação como sempre foram.
+   */
+  const [checklistPorProduto, setChecklistPorProduto] = useState<Map<number, string[]>>(new Map());
+  const idsProdutoDosItens = itens
+    .map((it) => Number(it.id_produto))
+    .filter((id) => Number.isInteger(id) && id > 0)
+    .sort((a, b) => a - b)
+    .join(",");
+
+  useEffect(() => {
+    const ids = idsProdutoDosItens.split(",").map(Number).filter((id) => Number.isInteger(id) && id > 0);
+    if (ids.length === 0) return;
+    let ativo = true;
+    void (async () => {
+      const mapa = await listChecklistDeProdutos(ids);
+      if (ativo) setChecklistPorProduto(mapa as Map<number, string[]>);
+    })();
+    return () => {
+      ativo = false;
+    };
+  }, [idsProdutoDosItens]);
+
+  /** A regra do checklist para este item (mesma de grade, rota e PCP). */
+  const visivelDoItem = (item: PropostaItem): ChecklistVisivel =>
+    checklistVisivel(checklistPorProduto.get(Number(item.id_produto)));
   const [coresOpcoes, setCoresOpcoes] = useState<any[]>([]);
   /** Itens exibindo a lista rápida em vez da pilha de cards. */
   const [emModoGrade, setEmModoGrade] = useState<Record<string, boolean>>({});
@@ -1170,8 +1235,12 @@ export function PedidoModelosTab({
     }
 
     // Cor do papel e numerador vindos do cadastro do produto — mesma fonte
-    // que a grade da Lista rápida usa.
-    const padroes = padroesDeNovoLote(item.produto, coresOpcoes, numeracoesOpcoes);
+    // que a grade da Lista rápida usa. Passam pela regra do checklist: o que o
+    // produto não imprime nasce null (nada de SEQUENCIAL a partir do numerador).
+    const padroes = anularColunasEscondidas(
+      padroesDeNovoLote(item.produto, coresOpcoes, numeracoesOpcoes),
+      visivelDoItem(item)
+    );
 
     const newId = novoModeloTempId();
     const newModel: PedidoModeloState = {
@@ -1206,10 +1275,11 @@ export function PedidoModelosTab({
     setOpenModelos((prev) => ({ ...prev, [newId]: true }));
   }
 
-  function startCopy(modelo: PedidoModeloState) {
+  function startCopy(modelo: PedidoModeloState, item: PropostaItem) {
     const newId = novoModeloTempId();
     const newModel: PedidoModeloState = {
-      ...modelo,
+      // A cópia é lote NOVO: não leva valor em campo que o produto não imprime.
+      ...anularColunasEscondidas(modelo, visivelDoItem(item)),
       id: undefined,
       tempId: newId,
       isPersisted: false,
@@ -1481,6 +1551,7 @@ export function PedidoModelosTab({
                         coresOpcoes={coresOpcoes}
                         numeracoesOpcoes={numeracoesOpcoes}
                         formatosOpcoes={formatosOpcoes}
+                        visivel={visivelDoItem(item)}
                         onRemove={() => {
                            setDeletingModelo(m);
                            setDeleteConfirmOpen(true);
@@ -1644,7 +1715,7 @@ export function PedidoModelosTab({
                           </button>
                           <button
                             type="button"
-                            onClick={() => startCopy(m)}
+                            onClick={() => startCopy(m, item)}
                             className="flex h-8 w-8 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
                             title="Duplicar Modelo"
                           >

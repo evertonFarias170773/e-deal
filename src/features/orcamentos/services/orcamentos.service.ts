@@ -52,6 +52,7 @@ import { parseCurrencyBR } from "@/lib/formatters/currency";
 import type { Cadastro, CadastroEndereco } from "@/features/cadastros/types";
 import type { Produto } from "@/features/produtos/types";
 import type {
+  PedidoModeloState,
   Proposta,
   PropostaFormState,
   PropostaItem,
@@ -60,6 +61,12 @@ import type {
   PropostaStatus,
   TipoDescontoProposta
 } from "@/features/orcamentos/types";
+import {
+  anularColunasEscondidas,
+  checklistVisivel,
+  omitirColunasEscondidas,
+  type ChecklistVisivel
+} from "@/features/orcamentos/lib/checklist-lote";
 import { danfesDoPedido } from "@/lib/fiscal/danfes-do-pedido";
 import {
   COLUNAS_NOTA_DO_PEDIDO,
@@ -2109,6 +2116,76 @@ export async function salvarItemProposta(
   return { success: true };
 }
 
+/**
+ * UPDATE de um lote que JÁ existe, no save da proposta (C.1).
+ *
+ * A montagem é a de sempre; a coluna que o produto não imprime SAI do patch
+ * (lib/checklist-lote), então o valor gravado no lote fica como está. Sem
+ * checklist (`visivel` null), o patch é exatamente o de antes.
+ */
+export function montarUpdateDeLoteDaProposta(m: PedidoModeloState, visivel: ChecklistVisivel) {
+  return omitirColunasEscondidas(
+    {
+      nome_modelo: m.nome_modelo,
+      padrao: m.padrao || null,
+      quantidade: m.quantidade,
+      tipo_numeracao: m.tipo_numeracao || null,
+      numeracao_inicio: m.numeracao_inicio || null,
+      numeracao_fim: m.numeracao_fim || null,
+      verso_tipo: m.verso_tipo || null,
+      bloco: m.bloco || null,
+      gabarito_operacional: m.gabarito_operacional || null,
+      Q_CAM: m.Q_CAM ?? null,
+      L_CAM: m.L_CAM ?? null,
+      C_INI: m.C_INI ?? null
+      // status_arte, status_producao e amostra_arte_base64 ficam de
+      // fora de propósito: pertencem ao fluxo de arte/produção, não
+      // ao formulário da proposta.
+    },
+    visivel
+  );
+}
+
+/**
+ * INSERT de um lote NOVO, no save da proposta (C.2).
+ *
+ * A montagem é a de sempre; a coluna que o produto não imprime nasce NULL,
+ * qualquer que seja o valor que veio da tela. Sem checklist, exatamente como
+ * antes.
+ */
+export function montarInsertDeLoteDaProposta(
+  m: PedidoModeloState,
+  contexto: { idInt: number; idItem: number; variacoesTexto: string | null; ordem: number },
+  visivel: ChecklistVisivel
+) {
+  return anularColunasEscondidas(
+    {
+      id_int: contexto.idInt,
+      id_produto_proposta_origem: contexto.idItem,
+      nome_modelo: m.nome_modelo,
+      padrao: m.padrao || null,
+      quantidade: m.quantidade,
+      tipo_numeracao: m.tipo_numeracao || null,
+      numeracao_inicio: m.numeracao_inicio || null,
+      numeracao_fim: m.numeracao_fim || null,
+      verso_tipo: m.verso_tipo || null,
+      bloco: m.bloco || null,
+      gabarito_operacional: m.gabarito_operacional || null,
+      variacoes_texto: contexto.variacoesTexto,
+      Q_CAM: m.Q_CAM ?? null,
+      L_CAM: m.L_CAM ?? null,
+      C_INI: m.C_INI ?? null,
+      // Modelo novo entra no status inicial do fluxo, igual ao que o
+      // criarModelo() grava. Herdar o status do modelo copiado fazia a
+      // duplicata de um modelo aprovado nascer aprovada.
+      status_arte: STATUS_INICIAL_MODELO,
+      status_producao: STATUS_INICIAL_MODELO,
+      ordem: m.ordem || contexto.ordem
+    },
+    visivel
+  );
+}
+
 export async function saveProposta(
   formState: PropostaFormState,
   injectedClient?: import('@supabase/supabase-js').SupabaseClient,
@@ -2207,6 +2284,46 @@ export async function saveProposta(
             errorMessage: "Campos operacionais salvos. Produtos, valores, descontos e frete permanecem bloqueados porque existe cobrança gerada."
           };
         }
+      }
+    }
+  }
+
+  /**
+   * CHECKLIST DO BOLETIM DOS PRODUTOS COM LOTE NA TELA (Etapa 6c).
+   *
+   * Lido AQUI, depois do retorno do salvamento parcial (proposta com cobrança,
+   * que não toca em lote) e ANTES de qualquer escrita: se a leitura falhar,
+   * nada é gravado — gravar lote sem saber o que o produto esconde deixaria
+   * passar valor que ele não imprime. Só roda quando há lote na tela; o save
+   * de proposta sem lote não ganha nenhuma consulta.
+   */
+  const checklistDosLotes = new Map<number, string[]>();
+  if ((formState.pedidosModelos?.length ?? 0) > 0 && !formState.isAvulso) {
+    const idsProdutoComLote = Array.from(
+      new Set(
+        (formState.itens || [])
+          .map((it) => Number(it.id_produto))
+          .filter((id) => Number.isInteger(id) && id > 0)
+      )
+    );
+    if (idsProdutoComLote.length > 0) {
+      const { data: checklistRows, error: checklistError } = await client
+        .from("produto_boletim_campos")
+        .select("id_produto, campo")
+        .in("id_produto", idsProdutoComLote);
+
+      if (checklistError) {
+        return {
+          success: false,
+          errorMessage:
+            "Não foi possível ler o checklist do boletim dos produtos. Nada foi gravado — tente salvar de novo."
+        };
+      }
+      for (const linha of checklistRows || []) {
+        const id = Number((linha as { id_produto: number }).id_produto);
+        const lista = checklistDosLotes.get(id) ?? [];
+        lista.push(String((linha as { campo: string }).campo));
+        checklistDosLotes.set(id, lista);
       }
     }
   }
@@ -3015,30 +3132,19 @@ export async function saveProposta(
           const modelosNovos = modelosDoItem.filter(m => !m.isPersisted);
           const modelosExistentes = modelosDoItem.filter(m => m.isPersisted && m.id && m.id > 0);
 
+          // A regra do checklist para os lotes DESTE item — a mesma da grade,
+          // da rota de lotes, dos cards e do PCP. Produto sem checklist: null.
+          const visivelDoItem = checklistVisivel(checklistDosLotes.get(Number(item.id_produto)));
+
           // C.1 Modelos já gravados: o save da proposta precisa levar as edições
           // feitas na aba Pedido. Antes só os novos eram inseridos, então mudar
           // a cor ou a quantidade de um modelo existente e salvar a proposta não
           // gravava nada — a alteração revertia no recarregamento.
           for (const m of modelosExistentes) {
+            // Coluna que o produto não imprime fica fora do UPDATE.
             const { error: updateModeloError } = await client
               .from("pedidos_modelos")
-              .update({
-                nome_modelo: m.nome_modelo,
-                padrao: m.padrao || null,
-                quantidade: m.quantidade,
-                tipo_numeracao: m.tipo_numeracao || null,
-                numeracao_inicio: m.numeracao_inicio || null,
-                numeracao_fim: m.numeracao_fim || null,
-                verso_tipo: m.verso_tipo || null,
-                bloco: m.bloco || null,
-                gabarito_operacional: m.gabarito_operacional || null,
-                Q_CAM: m.Q_CAM ?? null,
-                L_CAM: m.L_CAM ?? null,
-                C_INI: m.C_INI ?? null,
-                // status_arte, status_producao e amostra_arte_base64 ficam de
-                // fora de propósito: pertencem ao fluxo de arte/produção, não
-                // ao formulário da proposta.
-              })
+              .update(montarUpdateDeLoteDaProposta(m, visivelDoItem))
               .eq("id", m.id!);
 
             if (updateModeloError) {
@@ -3053,31 +3159,16 @@ export async function saveProposta(
           let proximaOrdem = modelosExistentes.length;
           for (const m of modelosNovos) {
             proximaOrdem += 1;
+            // Coluna que o produto não imprime nasce NULL.
             const { data: novoModelo, error: insertModeloError } = await client
               .from("pedidos_modelos")
-              .insert({
-                id_int: id_int!,
-                id_produto_proposta_origem: dbItemId,
-                nome_modelo: m.nome_modelo,
-                padrao: m.padrao || null,
-                quantidade: m.quantidade,
-                tipo_numeracao: m.tipo_numeracao || null,
-                numeracao_inicio: m.numeracao_inicio || null,
-                numeracao_fim: m.numeracao_fim || null,
-                verso_tipo: m.verso_tipo || null,
-                bloco: m.bloco || null,
-                gabarito_operacional: m.gabarito_operacional || null,
-                variacoes_texto: variacoesTextoItem,
-                Q_CAM: m.Q_CAM ?? null,
-                L_CAM: m.L_CAM ?? null,
-                C_INI: m.C_INI ?? null,
-                // Modelo novo entra no status inicial do fluxo, igual ao que o
-                // criarModelo() grava. Herdar o status do modelo copiado fazia a
-                // duplicata de um modelo aprovado nascer aprovada.
-                status_arte: STATUS_INICIAL_MODELO,
-                status_producao: STATUS_INICIAL_MODELO,
-                ordem: m.ordem || proximaOrdem
-              })
+              .insert(
+                montarInsertDeLoteDaProposta(
+                  m,
+                  { idInt: id_int!, idItem: dbItemId, variacoesTexto: variacoesTextoItem, ordem: proximaOrdem },
+                  visivelDoItem
+                )
+              )
               .select("id")
               .single();
 
