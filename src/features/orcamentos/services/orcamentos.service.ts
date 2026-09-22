@@ -8,6 +8,10 @@ import {
   type TransporteCategoria
 } from "@/features/orcamentos/lib/transporte-categoria";
 import { calculateResumo, calculateItemSubtotal } from "@/features/orcamentos/orcamento-utils";
+import {
+  congelarChecklistDosItensNovos,
+  type ItemNovoParaCongelar
+} from "@/features/orcamentos/services/boletim-snapshot.service";
 // O criterio de "pedido em aberto" e o da Expedicao. Nao duplicar a lista aqui.
 import { STATUS_PEDIDO_EM_ABERTO } from "@/features/expedicao/lib/pedido-em-aberto";
 import {
@@ -2887,6 +2891,12 @@ export async function saveProposta(
     const modelosSincronizados: Array<{ tempId: string; id: number; idProdutoPropostaOrigem: number }> = [];
     // Itens inseridos nesta gravação (id local da tela -> produtos_proposta.id).
     const itensSincronizados: Array<{ itemId: string; id: number }> = [];
+    /**
+     * Itens CRIADOS neste save. Só eles congelam o checklist do boletim, uma
+     * vez só, depois do laço (Etapa 4 da reforma do boletim). Item que já
+     * existia não entra aqui e por isso nunca tem o snapshot reescrito.
+     */
+    const itensNovosParaCongelar: ItemNovoParaCongelar[] = [];
 
     // 3. RECONCILE ITEMS in public.produtos_proposta
     if (formState.isAvulso) {
@@ -2952,6 +2962,8 @@ export async function saveProposta(
 
           dbItemId = newItem.id;
           incomingItemIds.push(dbItemId);
+          // Item novo: entra na fila do congelamento do checklist do boletim.
+          itensNovosParaCongelar.push({ idItem: dbItemId, idProduto: item.id_produto ?? null });
           // Devolve o id real para a tela casar com a linha local. O id local
           // (item.id) não é alterado: ele continua sendo a chave de render e o
           // vínculo item_temp_id dos modelos ainda não sincronizados.
@@ -3096,6 +3108,26 @@ export async function saveProposta(
           console.error(
             `[OrcamentosService] Erro ao sincronizar variacoes_texto do item #${dbItemId}:`,
             syncVariacoesError
+          );
+        }
+      }
+
+      // 4.D CONGELA O CHECKLIST DO BOLETIM dos itens criados agora.
+      //     Uma vez só, na criação, e nunca reescrito: o boletim de um pedido
+      //     fechado não muda quando o cadastro do produto muda depois.
+      //     NÃO É FATAL — se falhar, o item fica sem carimbo e imprime como
+      //     hoje. A proposta é o que importa; o snapshot não a derruba.
+      if (itensNovosParaCongelar.length > 0) {
+        const congelamento = await congelarChecklistDosItensNovos(client, itensNovosParaCongelar);
+
+        if (congelamento.falha) {
+          console.error(
+            "[OrcamentosService] Snapshot do boletim não gravado (os itens seguem imprimindo como hoje):",
+            congelamento.falha
+          );
+        } else if (process.env.NODE_ENV === "development") {
+          console.log(
+            `[DEV][saveProposta] Checklist do boletim congelado em ${congelamento.itensCongelados} item(ns), ${congelamento.linhasGravadas} linha(s).`
           );
         }
       }

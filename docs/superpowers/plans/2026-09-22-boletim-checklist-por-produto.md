@@ -1,6 +1,6 @@
 # Boletim montado por checklist do produto
 
-**Data:** 22/09/2026 · **Estado:** etapas 1, 2 e 3 aplicadas · **Sessão:** C1
+**Data:** 22/09/2026 · **Estado:** etapas 1 a 4 aplicadas · **Sessão:** C1
 
 Hoje o card do boletim imprime o mesmo conjunto de campos para todo produto que
 não é de prateleira — numeração em cordão, gabarito no campo "NUM", tipo
@@ -30,6 +30,13 @@ imprimem como hoje. A tabela tem **só** políticas de SELECT e INSERT, e
 `authenticated` ficou com SELECT e INSERT apenas — foi preciso `revoke all ...
 from authenticated` antes do grant, porque toda tabela nova em `public` nasce
 com `ALL` para esse papel.
+
+**Etapa 4 APLICADA em 22/09/2026** (só código, nenhuma migration): o
+`saveProposta` congela o checklist no item recém-criado —
+`src/features/orcamentos/services/boletim-snapshot.service.ts`. Uma vez só, na
+criação; item que já existia nunca é reescrito. As linhas entram antes do
+carimbo de propósito: toda falha parcial cai no lado que imprime como hoje. Não
+é fatal — se o snapshot falhar, o save da proposta segue.
 
 ---
 
@@ -348,7 +355,7 @@ Cada etapa é publicável sozinha e não muda o que sai impresso até a etapa 5.
 | 1 | Migration: `produto_boletim_campos` + RLS + ACL + carga inicial ✅ | não |
 | 2 | Tela do cadastro de produto marca o checklist ✅ | não (só cadastro) |
 | 3 | Migration: `produtos_proposta_boletim_campos` + RLS + ACL ✅ | não |
-| 4 | `saveProposta` grava o snapshot do checklist ao criar o item | não |
+| 4 | `saveProposta` grava o snapshot do checklist ao criar o item ✅ | não |
 | 5 | Boletim lê o snapshot; sem snapshot, imprime como hoje | **sim** |
 | 6 | Formulário do PCP esconde campo não marcado e para de herdar padrão | **sim** |
 | 7 | Trava de quantidade na liberação para produção (+ correção do doc) | **sim** |
