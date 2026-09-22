@@ -1,0 +1,408 @@
+# Boletim montado por checklist do produto
+
+**Data:** 22/09/2026 · **Estado:** plano, nada implementado · **Sessão:** C1
+
+Hoje o card do boletim imprime o mesmo conjunto de campos para todo produto que
+não é de prateleira — numeração em cordão, gabarito no campo "NUM", tipo
+SEQUENCIAL herdado por padrão. A reforma dá a cada produto um **checklist** que
+decide quais campos opcionais aparecem, congelado no item da proposta no momento
+da venda.
+
+**Decisões do dono, base deste plano (não reabrir):** o que já está feito não é
+corrigido; checklist por produto, não por produto × setor; a lógica de setores
+não muda; o boletim lê o snapshot do item, nunca o cadastro vivo; item sem
+snapshot imprime exatamente como hoje. As seis decisões de 22/09 estão na
+seção 12 e já foram aplicadas ao texto.
+
+**Etapa 1 escrita e não aplicada:**
+`supabase/migrations/20260922_produto_boletim_campos.sql`.
+
+---
+
+## 1. De onde cada campo vem hoje
+
+Todo o card sai de `pedidos_modelos`, com duas exceções: o nome do produto e a
+quantidade da faixa, que vêm do item da proposta.
+
+| Campo no card | Origem hoje | Quem grava |
+|---|---|---|
+| Nome do produto | `produtos_proposta.nome_produto` (cópia de `produtos."nomeReal"`) | vendedor |
+| QUANT. da faixa do produto | `produtos_proposta.qtd` | vendedor |
+| QUANT. do card | `pedidos_modelos.quantidade` | PCP |
+| MODELO | `pedidos_modelos.nome_modelo` | PCP |
+| COR | `pedidos_modelos.padrao` (cai em `"Branco"`) | PCP |
+| INICIAL/FINAL | `pedidos_modelos.numeracao_inicio` / `numeracao_fim` | PCP — **o fim é sempre recalculado pela quantidade** (`services/lotes-numeracao.ts`) |
+| NUM. | `pedidos_modelos.gabarito_operacional` — **é o gabarito, não a numeração** | PCP |
+| IMPRESSAO | `pedidos_modelos.frente_verso` | PCP |
+| TIPO | `pedidos_modelos.tipo_numeracao` | PCP |
+| Imagem | `pedidos_modelos.arte_url`, senão `amostra_arte_base64`; em prateleira, `producao_cores.preview_base64` casando pelo nome da cor | arte / PCP |
+| Obs | `pedidos_modelos.descricao` | PCP |
+| Variações | **não chegam ao card** | — |
+
+Pontos de código:
+
+| O quê | Onde |
+|---|---|
+| Card do modelo | `src/features/pedidos/pdf/OsPdfDocument.tsx:596` (`ModeloCard`), campos em `:627-650` |
+| Ramo curto (prateleira) | mesmo componente, condição `isEstoque` — **não existe layout de FLEXO** |
+| View-model do card | `src/features/pedidos/services/os-viewmodel.service.ts:704-720` |
+| Prévia da cor | `os-viewmodel.service.ts:511-528` (`producao_cores.preview_base64`) |
+| Mapeamento do lote | `src/features/pedidos/services/pedidos-detalhe.service.ts:232-252` |
+
+### 1.1 As variações
+
+Três tabelas no catálogo: `variacoes` (grupo), `tipos_variacoes` (opções do
+grupo, com preço e peso) e **`produto_variacoes`** (`id_produto`, `id_variacao`,
+`nome`, `is_obrigatorio`, `is_multiplo`) — que é o precedente exato do checklist:
+tabela filha, uma linha por vínculo, editada no cadastro do produto.
+
+A escolha do vendedor grava em **`produtos_proposta_variacao`**
+(`id_produto_proposta`, `id_tipo_variacao`, `nome_variacao`, `v_extra`,
+`peso_uni`) — já é snapshot por item, escrito em
+`orcamentos.service.ts:2961-2990` (apaga as antigas do item e insere as atuais).
+
+O PCP consolida tudo em `pedidos_modelos.variacoes_texto`, no formato
+`"IMPRESSÃO: Só Frente • FURAÇÃO: E. 2 Furos (dois) • ACABAMENTO: Fosco"`
+(valor real do 22270). A aba Pedido mostra; **o PDF ignora**. Por isso a variação
+só aparece quando está embutida no nome do produto do catálogo.
+
+---
+
+## 2. Campo × origem atual × origem proposta
+
+| Campo | Obrigatório | Origem atual | Origem proposta |
+|---|---|---|---|
+| Nome do produto | sim | `produtos_proposta.nome_produto` | **igual** |
+| Quantidade | sim | `pedidos_modelos.quantidade` | **igual** |
+| Nome do modelo | sim | `pedidos_modelos.nome_modelo` | **igual** |
+| Variações | não | — (não impresso) | `produtos_proposta_variacao`, **uma linha por variação**, `"GRUPO: opção"`, quando `variacoes` estiver no snapshot |
+| Cor | não | `pedidos_modelos.padrao` | igual, condicionado a `cor` |
+| NUM | não | `pedidos_modelos.gabarito_operacional` | igual, **rótulo "NUM" mantido**, condicionado a `num_gabarito` |
+| Nº inicial/final | não | `numeracao_inicio` / `numeracao_fim` | igual, condicionado a `numeracao_faixa` |
+| Impressão | não | `frente_verso` | igual, condicionado a `impressao_fv` |
+| Tipo | não | `tipo_numeracao` | igual, condicionado a `tipo_numeracao` |
+| Imagem | não | `arte_url` → amostra → prévia da cor | **igual** (a foto de `fotosProdutos` fica fora), condicionado a `imagem` |
+
+O valor de cada campo **não muda de lugar**. O que muda é só quem decide
+imprimir: hoje é `isEstoque`, passa a ser o snapshot do item.
+
+---
+
+## 3. Estrutura de dados
+
+### 3.1 Catálogo: `public.produto_boletim_campos`
+
+No molde de `produto_variacoes` — presença da linha significa "marcado".
+
+```
+id          bigint      identity, PK
+id_produto  smallint    FK → produtos(id_produto) ON DELETE CASCADE
+campo       text        CHECK (campo IN ('variacoes','cor','num_gabarito',
+                                         'numeracao_faixa','impressao_fv',
+                                         'tipo_numeracao','imagem'))
+UNIQUE (id_produto, campo)
+INDEX (id_produto)
+```
+
+Sem coluna de ordem: a ordem dos campos é do layout do card, não do cadastro.
+Sem `is_obrigatorio`: os três obrigatórios não passam pelo checklist.
+
+### 3.2 Snapshot: `public.produtos_proposta_boletim_campos`
+
+Mesma forma, pendurada no item da proposta — molde de
+`produtos_proposta_variacao`.
+
+```
+id                   bigint  identity, PK
+id_produto_proposta  bigint  FK → produtos_proposta(id) ON DELETE CASCADE
+campo                text    mesmo CHECK
+UNIQUE (id_produto_proposta, campo)
+INDEX (id_produto_proposta)
+```
+
+Para distinguir "item anterior à virada" de "item cujo produto não tem nenhum
+campo opcional marcado" — dois estados com zero linhas aqui —, o item ganha uma
+coluna própria:
+
+```
+alter table public.produtos_proposta
+  add column boletim_campos_congelado_em timestamptz;
+```
+
+`NULL` = sem snapshot, imprime como hoje. Preenchida = snapshot válido, mesmo
+que não haja nenhuma linha filha. **Não existe linha sentinela `__nenhum__`.**
+
+O snapshot é **gravado uma vez, na criação do item, e nunca reescrito**: salvar
+o orçamento de novo não o atualiza, mesmo que o cadastro do produto tenha
+mudado. É aqui que ele se afasta do molde de `produtos_proposta_variacao`, que
+apaga e reinsere a cada save — e é o que "congelado" exige.
+
+### 3.3 RLS e ACL
+
+Medido em 22/09/2026: **toda tabela de `public` nasce com `ALL` para
+`authenticated` e `service_role`** — `GRANT` não tranca nada, só a RLS.
+`anon` saiu dos default privileges em 01/09 (migration
+`20260901161119_default_privileges_public_sem_anon`), e as tabelas criadas depois
+confirmam: `feriados` e `conta_corrente_pendencias` têm
+`{authenticated, postgres, service_role}`, sem `anon`.
+
+As duas tabelas novas devem ficar assim, e a migration precisa **provar** por
+asserção, não confiar:
+
+```sql
+-- ACL: nenhum grant para anon
+do $$
+declare v_grantees text[];
+begin
+  select array_agg(distinct pg_get_userbyid(a.grantee) order by pg_get_userbyid(a.grantee))
+    into v_grantees
+    from pg_class c
+    join pg_namespace n on n.oid = c.relnamespace,
+         aclexplode(c.relacl) a
+   where n.nspname = 'public' and c.relname = 'produto_boletim_campos';
+  if 'anon' = any(v_grantees) then
+    raise exception 'ACL: anon nao pode ter grant em produto_boletim_campos (%)', v_grantees;
+  end if;
+  if not (v_grantees @> array['authenticated','service_role']) then
+    raise exception 'ACL: faltou authenticated/service_role (%)', v_grantees;
+  end if;
+end $$;
+```
+
+RLS: ligada nas duas, com política de leitura para `authenticated` e escrita
+para `authenticated` — o mesmo alcance que `produto_variacoes` tem hoje
+(política única `geral`, permissiva para todos os comandos). O gate real de quem
+pode editar o cadastro continua sendo a tela e a permissão do perfil, como já é
+para produtos.
+
+---
+
+## 4. Carga inicial — nada muda no dia da virada
+
+Só o **catálogo** recebe carga. O snapshot não: item anterior à virada fica sem
+snapshot e imprime como hoje, por definição.
+
+| Grupo | Campos marcados na carga | Produtos em 22/09 |
+|---|---|---|
+| `produtos.is_estoque = true` | `cor`, `imagem` | 19 |
+| demais | `cor`, `num_gabarito`, `numeracao_faixa`, `impressao_fv`, `tipo_numeracao`, `imagem` | 76 |
+| tem vínculo em `produto_variacoes` | mais `variacoes` | 27 (nenhum de prateleira) |
+
+**`variacoes` entra marcado** em todo produto que já tem variação cadastrada.
+Isso muda o boletim dos **pedidos novos** desses produtos — que é a intenção. Os
+pedidos antigos não mudam, porque o item deles não tem snapshot e cai no
+comportamento de hoje.
+
+A carga roda na mesma migration da tabela, sobre **todos os 95 produtos**
+(ativos ou não — a asserção exige que nenhum fique sem checklist), e é
+idempotente (`on conflict do nothing`).
+
+### 4.1 Produto criado depois da virada
+
+Trigger `AFTER INSERT ON produtos` na mesma migration: conjunto curto se
+`is_estoque`, completo nos demais. **Só `AFTER INSERT`** — produto que vira
+prateleira depois mantém o checklist como estava.
+
+O campo `variacoes` fica de fora desse seed, e não por escolha: o vínculo em
+`produto_variacoes` é gravado **depois** do insert do produto, em outra
+requisição (`produto-variacoes.service.ts:702`), então no instante do trigger o
+produto ainda não tem variação nenhuma. Fechar esse buraco é a única decisão
+que sobrou (seção 12).
+
+---
+
+## 5. Leitura no boletim
+
+1. `montarOsPdfViewModel` passa a carregar, junto dos itens, as linhas de
+   `produtos_proposta_boletim_campos` do item (uma consulta, `in` nos ids dos
+   itens do pedido) e as de `produtos_proposta_variacao` quando `variacoes`
+   estiver marcado.
+2. `OsPdfProduto` ganha `camposBoletim: string[] | null` — `null` = sem
+   snapshot, e aí vale o comportamento de hoje (curto se `isEstoque`, completo
+   caso contrário).
+3. `ModeloCard` deixa de perguntar `isEstoque` e passa a perguntar pelo
+   conjunto. `isEstoque` continua existindo para a **imagem** (prévia da cor) e
+   para o checklist IMP/ACA/CON, que não entram nesta reforma.
+4. As variações entram como linhas próprias abaixo dos pares de campos, uma por
+   variação, `"GRUPO: opção"`, vindas do snapshot do item — não de
+   `variacoes_texto`, que é do lote e pode ter sido editado no PCP.
+
+O documento multi-setor (maço) usa o mesmo componente e acompanha sem alteração
+própria.
+
+---
+
+## 6. Formulário do PCP
+
+Campo não marcado **some do formulário do lote**, e o lote **não herda padrão**
+— nada de `SEQUENCIAL` nem de faixa recalculada.
+
+| Ponto | Arquivo | O que muda |
+|---|---|---|
+| Grade "Lista rápida" | `src/features/orcamentos/components/LotesGrid.tsx` | colunas condicionadas ao snapshot do item; `padroes` deixa de preencher campo escondido (`:157-162`) |
+| Cards do lote | `src/features/orcamentos/components/PedidoModelosTab.tsx` | mesmos campos escondidos |
+| Boletim (tela) | `src/features/pedidos/BoletimFormPage.tsx` | bloco de faixa numérica só aparece com `numeracao_faixa` |
+| Gravação em massa | `src/app/api/pedidos/lotes-em-massa/route.ts:244-246, 281-283` | campo escondido grava `null`, e não o default `"SEM_NUMERACAO"` / faixa |
+| Recalculo do nº final | `src/features/orcamentos/services/lotes-numeracao.ts` | só roda quando `numeracao_faixa` está marcado |
+
+A grade é renderizada por item, então dois produtos com checklists diferentes no
+mesmo pedido não conflitam.
+
+---
+
+## 7. Trava de quantidade na liberação
+
+**Por que a validação de hoje não barrou o 22194:** o "✓ Distribuição de lotes
+válida" (`BoletimFormPage.tsx:3040-3047`) é rótulo de tela que só reage a
+`isOverLimit`, isto é, soma **maior** que o total; soma menor — 8 de 1.250 — lê
+como válida, e nada revalida na liberação.
+
+A trava entra em `liberarPropostaParaProducao`
+(`orcamentos.service.ts:4767`), como validação 4, depois das artes e antes do
+UPDATE que liga `is_prd_aprovado` e `libera_nf`:
+
+> Para cada item de `produtos_proposta` do pedido, `sum(pedidos_modelos.quantidade
+> where id_produto_proposta_origem = item.id)` precisa ser igual a `item.qtd`.
+> Item sem lote soma zero e reprova. Vale inclusive para prateleira.
+
+A mensagem nomeia os itens divergentes, com pedido × distribuído, para o
+operador saber o que corrigir. Vale **inclusive para produto de prateleira**.
+
+**Divergência de documentação, a corrigir junto com esta etapa:** o briefing diz
+que a entrada na produção é sempre manual, mas o código tem liberação
+**automática** de prateleira — `/api/cobrancas/confirmar` chama
+`liberarPropostaParaProducao` quando a proposta é 100% de prateleira. Como as
+duas entradas passam pela mesma função, a trava vale para as duas, e o doc é
+acertado nesta etapa.
+
+Dois caminhos ficam de fora e precisam de decisão: a liberação **automática** de
+prateleira chama a mesma função (Decisão 3), e `criar_pedido_complementar` copia
+`is_prd_aprovado` do pedido principal dentro do banco, sem passar por ela
+(Decisão 4).
+
+---
+
+## 8. Tela do cadastro de produto
+
+`src/features/produtos/ProdutoFormPage.tsx` já tem a seção de variações, que lê e
+grava `produto_variacoes` (`:502-526`) com estado em `form.variacoes`. O checklist
+entra como um bloco irmão, logo abaixo:
+
+- sete caixas de marcação, uma por campo, com o rótulo que sai no boletim
+  ("Variações", "Cor", "NUM (gabarito)", "Nº inicial e final", "Impressão",
+  "Tipo", "Imagem do modelo");
+- um aviso curto de que os três obrigatórios sempre saem;
+- gravação no mesmo Salvar do produto, apagando e reinserindo as linhas do
+  produto — o padrão que as variações já usam.
+
+---
+
+## 9. Quem mais consome os mesmos campos
+
+| Consumidor | Campos | Impacto |
+|---|---|---|
+| Grade de lotes e aba Pedido | todos | esconder campo não marcado (etapa 6) |
+| Rota `lotes-em-massa` | `tipo_numeracao`, faixa, `gabarito_operacional`, `variacoes_texto` | parar de aplicar default em campo escondido |
+| `numeracao-modelo-utils`, `lotes-numeracao` | faixa | só rodar com `numeracao_faixa` |
+| Maestro (`core/knowledge/erp-relationships.ts`) | `tipo_numeracao`, faixa | texto de conhecimento; revisar a descrição |
+| Boletim / maço | todos | etapa 5 |
+
+**Etiquetas, Expedição, n8n e relatórios não leem `pedidos_modelos`** — leem
+`propostas` e `expedicoes`. Ficam fora.
+
+---
+
+## 10. Etapas
+
+Cada etapa é publicável sozinha e não muda o que sai impresso até a etapa 5.
+
+| # | Etapa | Visível? |
+|---|---|---|
+| 1 | Migration: `produto_boletim_campos` + RLS + ACL + carga inicial | não |
+| 2 | Tela do cadastro de produto marca o checklist | não (só cadastro) |
+| 3 | Migration: `produtos_proposta_boletim_campos` + RLS + ACL | não |
+| 4 | `saveProposta` grava o snapshot do checklist ao criar o item | não |
+| 5 | Boletim lê o snapshot; sem snapshot, imprime como hoje | **sim** |
+| 6 | Formulário do PCP esconde campo não marcado e para de herdar padrão | **sim** |
+| 7 | Trava de quantidade na liberação para produção (+ correção do doc) | **sim** |
+| 8 | Pedido complementar: fechar o desvio de `is_prd_aprovado` | **sim** |
+
+### Migrations (descritas, não escritas)
+
+**Etapa 1 — `produto_boletim_campos`**
+- *Cabeçalho:* por que existe (o boletim deixa de ser fixo), o que decide
+  (quais campos opcionais o produto imprime), o que **não** decide (setor,
+  campos obrigatórios, IMP/ACA/CON).
+- *Conteúdo:* tabela, CHECK do domínio, UNIQUE, índice, `alter table ... enable
+  row level security`, políticas, carga inicial idempotente.
+- *Asserções:* domínio rejeita valor fora da lista; `anon` sem grant
+  (`array_agg(grantee)`); RLS ligada; contagem da carga bate com
+  `produtos ativos` (curto para `is_estoque`, completo para os demais); nenhum
+  produto recebeu `variacoes`.
+- *Rollback:* `drop table public.produto_boletim_campos;` — nada mais depende
+  dela nesta etapa.
+
+**Etapa 3 — `produtos_proposta_boletim_campos`**
+- *Cabeçalho:* o snapshot que congela o checklist no item, e por que o boletim
+  nunca lê o cadastro vivo.
+- *Conteúdo:* tabela, FK com `ON DELETE CASCADE`, UNIQUE, índice, RLS,
+  políticas.
+- *Asserções:* mesmas de ACL e RLS; FK apaga em cascata ao remover o item;
+  tabela **vazia** ao final (nenhum backfill, por decisão).
+- *Rollback:* `drop table public.produtos_proposta_boletim_campos;`.
+
+**Etapa 8 — pedido complementar.** `criar_pedido_complementar` copia
+`is_prd_aprovado` do pedido principal dentro do banco, sem passar pela função de
+liberação, então um complementar pode nascer liberado sem a trava da Etapa 7 ter
+olhado os lotes dele. A etapa fecha esse desvio; por mexer em função do banco,
+ela exige autorização própria e migration própria, descrita quando chegar a vez.
+
+Fora isso, nenhuma outra etapa toca o banco. A trava de quantidade é código de
+servidor, na função que já existe.
+
+---
+
+## 11. Riscos
+
+1. **Produto usado em dois setores.** O checklist é por produto, e a Credencial
+   PVC (901) roda em PVC com dois lotes de gabarito igual. Como a decisão é por
+   produto, um produto que precise de campos diferentes por setor ficará com a
+   união dos campos. Aceito pela decisão do dono.
+2. **`variacoes_texto` continua existindo** no lote e seguirá sendo mostrado na
+   aba Pedido. O boletim passa a ler o snapshot do item — as duas fontes podem
+   divergir se alguém editar o texto no PCP. Não é regressão: hoje o boletim não
+   mostra nenhuma das duas.
+3. **Gabaritos com nome contraditório.** O 22270 tem
+   `gabarito_operacional = "90x140 - Frente e Verso"` com `frente_verso = false`.
+   O checklist não resolve isso: são dois campos independentes, e o nome do
+   gabarito é dado de cadastro. Continua como está.
+
+---
+
+## 12. Decisões do dono (22/09/2026)
+
+1. **Variações na carga inicial:** marcadas em todo produto que já tem variação
+   em `produto_variacoes` (27 produtos). Pedido antigo segue imprimindo como
+   hoje, pelo fallback de item sem snapshot.
+2. **Snapshot gravado uma vez**, na criação do item, e nunca reescrito. A
+   distinção "sem snapshot" usa a coluna `produtos_proposta.boletim_campos_congelado_em`,
+   não a linha sentinela.
+3. **A trava de quantidade vale também para produto de prateleira.**
+4. **Pedido complementar** entra como Etapa 8, depois da 7.
+5. **Produto novo** nasce com a mesma regra da carga: curto se for prateleira,
+   completo nos demais, mais `variacoes` se tiver variação cadastrada.
+6. **Produto que vira prateleira depois** mantém o checklist como estava.
+
+### A decisão que ficou aberta
+
+7. **`variacoes` no produto novo.** O trigger de `AFTER INSERT ON produtos` não
+   consegue marcá-lo: o vínculo em `produto_variacoes` só é gravado na
+   requisição seguinte. Para cumprir a decisão 5 por inteiro há dois caminhos, e
+   nenhum é óbvio:
+   - **trigger em `produto_variacoes`** — marca `variacoes` no checklist assim
+     que o primeiro vínculo é criado. Cobre o produto novo sozinho, mas também
+     passa a marcar **produto antigo** que ganhe uma variação depois, o que
+     mexe no checklist que você tiver ajustado à mão;
+   - **a tela do cadastro (Etapa 2)** grava o campo junto com o vínculo. Não
+     toca em produto antigo, mas deixa a regra fora do banco, então um vínculo
+     criado por script ou por outra tela não marca nada.
