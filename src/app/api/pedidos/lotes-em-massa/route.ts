@@ -27,10 +27,25 @@
  *
  *   Também não cota frete: isso é da aba Fretes. A rota apenas LÊ a cotação e
  *   devolve se o peso passou a divergir, para a tela avisar.
+ *
+ * O CHECKLIST DO BOLETIM MANDA AQUI TAMBÉM (Etapa 6b)
+ *   Campo opcional que o produto NÃO tem marcado em `produto_boletim_campos`:
+ *     - lote NOVO: gravado null, mesmo que a requisição mande valor. Não confia
+ *       na tela — a grade já esconde e anula, mas esta é a porta do banco;
+ *     - lote EXISTENTE: a coluna sai do UPDATE, e o valor gravado fica como está.
+ *   Produto sem nenhum registro de checklist segue exatamente como antes,
+ *   defaults incluídos. O checklist é lido ANTES de qualquer escrita; se a
+ *   leitura falhar, nada é gravado. A regra mora em lib/checklist-lote, a mesma
+ *   do formulário do PCP.
  */
 import { NextResponse } from "next/server";
 import { createClient as createSupabaseClient, type SupabaseClient } from "@supabase/supabase-js";
 import { avaliarFreteParaCobranca, mensagemFreteDesatualizado } from "@/features/orcamentos/services/frete-desatualizado";
+import {
+  anularColunasEscondidas,
+  checklistVisivel,
+  omitirColunasEscondidas
+} from "@/features/orcamentos/lib/checklist-lote";
 
 /** Espelha STATUS_INICIAL_MODELO de orcamento-utils: lote novo nasce pendente. */
 const STATUS_INICIAL_MODELO = "PENDENTE";
@@ -170,15 +185,41 @@ export async function POST(request: Request) {
   //    protegendo, e as policies são permissivas).
   const { data: item, error: erroItem } = await supabase
     .from("produtos_proposta")
-    .select("id, id_int, qtd, nome_produto")
+    .select("id, id_int, qtd, nome_produto, id_produto")
     .eq("id", idProdutoProposta)
-    .maybeSingle<{ id: number; id_int: number; qtd: number | null; nome_produto: string | null }>();
+    .maybeSingle<{
+      id: number;
+      id_int: number;
+      qtd: number | null;
+      nome_produto: string | null;
+      id_produto: number | null;
+    }>();
 
   if (erroItem) return erro("INTERNO", "Nao foi possivel ler o item da proposta.", 500);
   if (!item) return erro("ITEM_NAO_ENCONTRADO", "Este item nao existe mais nesta proposta. Recarregue a pagina.", 409);
   if (Number(item.id_int) !== idInt) {
     return erro("ITEM_DE_OUTRA_PROPOSTA", "Este item pertence a outra proposta.", 409);
   }
+
+  // 2b. Checklist do boletim do produto — o CADASTRO de hoje. Lido antes de
+  //     qualquer escrita: se falhar, nada e gravado, porque gravar sem saber o
+  //     que o produto esconde deixaria passar valor que ele nao imprime.
+  let camposDoProduto: string[] = [];
+  const idProdutoCatalogo = Number(item.id_produto);
+  if (Number.isInteger(idProdutoCatalogo) && idProdutoCatalogo > 0) {
+    const { data: checklistRows, error: erroChecklist } = await supabase
+      .from("produto_boletim_campos")
+      .select("campo")
+      .eq("id_produto", idProdutoCatalogo)
+      .returns<{ campo: string }[]>();
+
+    if (erroChecklist) {
+      return erro("INTERNO", "Nao foi possivel ler o checklist do boletim do produto. Nada foi gravado.", 500);
+    }
+    camposDoProduto = (checklistRows || []).map((linha) => String(linha.campo));
+  }
+  // Sem registro de checklist (ou item sem produto de catalogo) = sem regra.
+  const visivel = checklistVisivel(camposDoProduto);
 
   const qtdAtual = Number(item.qtd) || 0;
 
@@ -235,9 +276,10 @@ export async function POST(request: Request) {
   //    status de arte e produção e as amostras vivem nessas linhas.
   const agora = new Date().toISOString();
   for (const lote of lotes.filter((l) => Number.isFinite(Number(l.id)) && Number(l.id) > 0)) {
-    const { error: erroUpdate } = await supabase
-      .from("pedidos_modelos")
-      .update({
+    // Coluna que o produto nao imprime SAI do patch: o valor gravado no lote
+    // fica como esta. As demais seguem a montagem de sempre.
+    const patch = omitirColunasEscondidas(
+      {
         nome_modelo: String(lote.nome_modelo).trim(),
         quantidade: Number(lote.quantidade),
         padrao: lote.padrao?.trim() || null,
@@ -249,7 +291,13 @@ export async function POST(request: Request) {
         gabarito_operacional: lote.gabarito_operacional?.trim() || null,
         variacoes_texto: lote.variacoes_texto?.trim() || null,
         updated_at: agora
-      })
+      },
+      visivel
+    );
+
+    const { error: erroUpdate } = await supabase
+      .from("pedidos_modelos")
+      .update(patch)
       .eq("id", Number(lote.id))
       .eq("id_produto_proposta_origem", idProdutoProposta);
 
@@ -271,8 +319,11 @@ export async function POST(request: Request) {
 
     let proximaOrdem = (maiorOrdem && maiorOrdem[0] ? Number(maiorOrdem[0].ordem) || 0 : 0) + 1;
 
+    // Coluna que o produto nao imprime nasce NULL — inclusive tipo_numeracao,
+    // que nao vira "SEM_NUMERACAO" quando escondido. O valor que a requisicao
+    // mandou nessas colunas e descartado.
     const { error: erroInsert } = await supabase.from("pedidos_modelos").insert(
-      novos.map((lote) => ({
+      novos.map((lote) => anularColunasEscondidas({
         id_int: idInt,
         id_produto_proposta_origem: idProdutoProposta,
         nome_modelo: String(lote.nome_modelo).trim(),
@@ -290,7 +341,7 @@ export async function POST(request: Request) {
         ordem: proximaOrdem++,
         created_at: agora,
         updated_at: agora
-      }))
+      }, visivel))
     );
 
     if (erroInsert) {

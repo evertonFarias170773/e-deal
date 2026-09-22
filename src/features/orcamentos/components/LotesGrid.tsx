@@ -19,9 +19,17 @@
  * O RASCUNHO É LOCAL DE PROPÓSITO
  *   Nada sai daqui antes de "Fechar lote". Sair da aba é o desfazer natural, e
  *   digitar não dispara render da página inteira a cada tecla.
+ *
+ * O CHECKLIST DO BOLETIM (Etapa 6b)
+ *   Coluna de campo que o produto não tem marcado em `produto_boletim_campos`
+ *   não aparece, e lote NOVO não recebe valor nela — nem a cor do produto, nem
+ *   o "Sequencial" que o numerador do cadastro sugeriria, nem a faixa. Lote que
+ *   já existe segue com o que tem: a grade devolve o valor intacto e a rota
+ *   tira a coluna do UPDATE. A mesma regra do formulário do PCP, em
+ *   lib/checklist-lote; produto sem checklist fica como sempre foi.
  */
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Copy, Plus, Trash2 } from "lucide-react";
 import { useAppToast } from "@/components/common/AppToast";
 import { fetchComSessao, SessaoExpiradaError } from "@/lib/supabase/sessao";
@@ -33,6 +41,8 @@ import {
   type NumeracaoOpcao
 } from "@/features/orcamentos/numeracao-modelo-utils";
 import { aplicarNumeracao, rotuloFaixa, type ModoNumeracao } from "@/features/orcamentos/services/lotes-numeracao";
+import { anularColunasEscondidas, checklistVisivel, mostraCampo } from "@/features/orcamentos/lib/checklist-lote";
+import { listChecklistDeProdutos } from "@/features/produtos/services/produto-boletim-campos.service";
 
 /** Teto para a criação em lote: acima disso é engano de digitação, não pedido. */
 const MAX_LINHAS_DE_UMA_VEZ = 200;
@@ -75,6 +85,7 @@ export type PadroesDeLote = {
 
 export function LotesGrid({
   idInt,
+  idProduto,
   item,
   itemPrateleira,
   linhasIniciais,
@@ -85,6 +96,11 @@ export function LotesGrid({
   onSair
 }: {
   idInt: number;
+  /**
+   * `produtos_proposta.id_produto` do item: é por ele que a grade lê o checklist
+   * do boletim do produto. Nulo ou zero = sem produto de catálogo, sem regra.
+   */
+  idProduto: number | null;
   item: { id_produto_proposta_origem: number; nome: string; quantidade: number };
   /**
    * Produto de prateleira (`produtos_proposta.is_estoque`): vendido pronto, sem
@@ -108,6 +124,20 @@ export function LotesGrid({
   onSair: () => void;
 }) {
   const { showToast } = useAppToast();
+
+  /**
+   * Checklist do boletim do produto. `null` enquanto não carregou E para
+   * produto sem registro — nos dois casos a grade fica como sempre foi. Quem
+   * garante a regra no banco é a rota; aqui é para a tela não oferecer nem
+   * pré-preencher o que o produto não imprime.
+   *
+   * Declarado ANTES de `linhas`: o estado inicial das linhas chama
+   * `novaLinha()`, que lê `visivel`.
+   */
+  const [camposDoProduto, setCamposDoProduto] = useState<string[] | null>(null);
+  const visivel = useMemo(() => checklistVisivel(camposDoProduto), [camposDoProduto]);
+  const mostraCor = mostraCampo(visivel, "cor");
+  const mostraFaixa = mostraCampo(visivel, "numeracao_faixa");
   const [linhas, setLinhas] = useState<LinhaLote[]>(
     linhasIniciais.length > 0 ? linhasIniciais : [novaLinha()]
   );
@@ -117,21 +147,47 @@ export function LotesGrid({
   const [modoNumeracao, setModoNumeracao] = useState<ModoNumeracao | null>(null);
   const qtdVista = useRef(item.quantidade);
 
+  useEffect(() => {
+    const id = Number(idProduto);
+    if (!Number.isInteger(id) || id <= 0) return;
+
+    let ativo = true;
+    void (async () => {
+      const mapa = await listChecklistDeProdutos([id]);
+      if (!ativo) return;
+      const campos = mapa.get(id) ?? [];
+      setCamposDoProduto(campos);
+      // Linhas NOVAS criadas antes de o checklist chegar nasceram com os
+      // defaults do cadastro: limpa nelas o que o produto não imprime. Linha
+      // que já existe no banco não é tocada.
+      const regra = checklistVisivel(campos);
+      setLinhas((atual) => atual.map((l) => (l.id ? l : anularColunasEscondidas(l, regra))));
+    })();
+
+    return () => {
+      ativo = false;
+    };
+  }, [idProduto]);
+
   const soma = useMemo(() => somaQuantidades(linhas), [linhas]);
   const naoReconhecidas = linhas.filter((l) => l.corNaoReconhecida).length;
   const semNome = linhas.filter((l) => !l.nome_modelo.trim()).length;
 
   // A numeração é DERIVADA, nunca guardada em estado: assim ela nunca fica
   // velha depois de mudar uma quantidade, remover ou reordenar um lote.
+  // Faixa escondida: nenhum modo de numeração se aplica, e a linha fica como
+  // está (lote novo sem Nº inicial não ganha faixa).
+  const modoEfetivo = mostraFaixa ? modoNumeracao : null;
+
   const linhasNumeradas = useMemo(
     () =>
-      aplicarNumeracao(linhas, modoNumeracao, (inicio, qtd, linha) => {
+      aplicarNumeracao(linhas, modoEfetivo, (inicio, qtd, linha) => {
         const { multiplicador } = resolverMultiplicadorNumeracao(
           findNumeracaoByName(numeracoes, linha.gabarito_operacional)
         );
         return calcularNumeracaoFim(inicio, qtd, multiplicador);
       }),
-    [linhas, modoNumeracao, numeracoes]
+    [linhas, modoEfetivo, numeracoes]
   );
 
   const quantasCriar = Math.min(MAX_LINHAS_DE_UMA_VEZ, Math.max(1, Number(quantasLinhas) || 1));
@@ -145,7 +201,7 @@ export function LotesGrid({
     // produto e, quando não há de quem herdar, cai no cadastro do produto — é
     // o que evita lote nascendo sem numerador. A quantidade nasce em branco de
     // propósito, para ninguém gravar por engano o número da linha anterior.
-    return {
+    return anularColunasEscondidas({
       // Prateleira nasce com o nome do produto: não há arte nem lote desenhado a
       // batizar, e exigir digitação era barrar o fechamento por um vazio que a
       // própria grade tinha acabado de criar. O caminho de COLAR já fazia isto
@@ -161,7 +217,7 @@ export function LotesGrid({
       bloco: base?.bloco ?? padroes.bloco,
       gabarito_operacional: base?.gabarito_operacional ?? padroes.gabarito_operacional,
       variacoes_texto: base?.variacoes_texto ?? null
-    } as LinhaLote;
+    } as LinhaLote, visivel);
   }
 
   function acrescentar(indice?: number, quantas = 1) {
@@ -187,7 +243,11 @@ export function LotesGrid({
     if (!texto.includes("\n") && !texto.includes("\t")) return; // colagem de um valor só: comportamento normal
 
     evento.preventDefault();
-    const lidas = interpretarColagem(texto, cores);
+    // Sem coluna de cor, a cor da lista é descartada — não há onde mostrá-la e
+    // o lote não deve recebê-la.
+    const lidas = interpretarColagem(texto, cores).map((l) =>
+      mostraCor ? l : { ...l, padrao: null, corNaoReconhecida: null }
+    );
     if (lidas.length === 0) {
       showToast({
         type: "warning",
@@ -240,19 +300,24 @@ export function LotesGrid({
           qtdItemVista: qtdVista.current,
           confirmarReducao,
           removerIds: removidos,
-          lotes: linhasNumeradas.map((l) => ({
-            id: l.id ?? null,
-            nome_modelo: l.nome_modelo,
-            quantidade: Number(l.quantidade),
-            padrao: l.padrao,
-            tipo_numeracao: l.tipo_numeracao,
-            numeracao_inicio: l.numeracao_inicio,
-            numeracao_fim: l.numeracao_fim,
-            verso_tipo: l.verso_tipo,
-            bloco: l.bloco,
-            gabarito_operacional: l.gabarito_operacional,
-            variacoes_texto: l.variacoes_texto
-          }))
+          lotes: linhasNumeradas.map((l) => {
+            const lote = {
+              id: l.id ?? null,
+              nome_modelo: l.nome_modelo,
+              quantidade: Number(l.quantidade),
+              padrao: l.padrao,
+              tipo_numeracao: l.tipo_numeracao,
+              numeracao_inicio: l.numeracao_inicio,
+              numeracao_fim: l.numeracao_fim,
+              verso_tipo: l.verso_tipo,
+              bloco: l.bloco,
+              gabarito_operacional: l.gabarito_operacional,
+              variacoes_texto: l.variacoes_texto
+            };
+            // Novo: coluna escondida vai null. Existente: vai como veio do banco,
+            // e a rota a tira do UPDATE.
+            return l.id ? lote : anularColunasEscondidas(lote, visivel);
+          })
         })
       });
 
@@ -358,6 +423,7 @@ export function LotesGrid({
         </div>
       </div>
 
+      {mostraFaixa && (
       <div className="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5">
         <span className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Numeração</span>
         <label className="flex cursor-pointer items-center gap-2 text-xs font-semibold text-slate-700">
@@ -386,6 +452,7 @@ export function LotesGrid({
               : "Sem marcar, cada lote mantém o Nº inicial que já tem."}
         </span>
       </div>
+      )}
 
       <p className="px-1 text-[11px] text-slate-500">
         Cole a lista do cliente em qualquer campo (uma linha por lote, cor e quantidade).
@@ -396,16 +463,17 @@ export function LotesGrid({
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
             <tr>
-              <th className="px-3 py-2 text-left font-bold">Cor do papel</th>
+              {mostraCor && <th className="px-3 py-2 text-left font-bold">Cor do papel</th>}
               <th className="w-28 px-3 py-2 text-left font-bold">Qtd</th>
               <th className="px-3 py-2 text-left font-bold">Modelo</th>
-              <th className="w-32 px-3 py-2 text-left font-bold">Numeração</th>
+              {mostraFaixa && <th className="w-32 px-3 py-2 text-left font-bold">Numeração</th>}
               <th className="w-20 px-3 py-2" />
             </tr>
           </thead>
           <tbody>
             {linhasNumeradas.map((linha, indice) => (
               <tr key={indice} className={linha.corNaoReconhecida ? "bg-red-50" : "border-t border-slate-100"}>
+                {mostraCor && (
                 <td className="px-3 py-2">
                   <select
                     value={linha.padrao ?? ""}
@@ -421,6 +489,7 @@ export function LotesGrid({
                     ))}
                   </select>
                 </td>
+                )}
                 <td className="px-3 py-2">
                   <input
                     type="number"
@@ -447,9 +516,11 @@ export function LotesGrid({
                     placeholder={item.nome}
                   />
                 </td>
+                {mostraFaixa && (
                 <td className="px-3 py-2 text-xs font-semibold tabular-nums text-slate-600">
                   {rotuloFaixa(linha.numeracao_inicio, linha.numeracao_fim)}
                 </td>
+                )}
                 <td className="px-3 py-2">
                   <div className="flex justify-end gap-1">
                     <button

@@ -1384,6 +1384,8 @@ export function PedidoModelosTab({
                     return (
                       <LotesGrid
                         idInt={Number(idInt)}
+                        // Por ele a grade lê o checklist do boletim do produto.
+                        idProduto={Number(item.id_produto) || null}
                         item={{
                           id_produto_proposta_origem: idNoBanco,
                           nome: item.nome,

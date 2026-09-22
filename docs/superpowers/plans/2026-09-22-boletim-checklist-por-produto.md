@@ -55,11 +55,23 @@ nenhum registro: formulário completo, como sempre. Valor já gravado em lote
 existente não é tocado — o caminho de edição do boletim não reescreve esses
 campos desde 30/08.
 
-**Falta validar na Etapa 6**, e depende de um pedido de teste em status elegível
-para o PCP (`APROVADO`, `REVISAO PRODUCAO` ou `EM PRODUCAO`): o `SELECT` do lote
-novo nascido nulo e o `SELECT` antes/depois de salvar o boletim. As três
-propostas de teste estão em `NOVO`, e "Liberar para Produção" só aparece a
-partir de `REVISAO ATENDENTE`.
+As duas provas que a Etapa 6 não pôde fazer contra o banco (o lote novo do PCP
+nascendo nulo e o lote existente intocado) foram feitas na 6b por teste sem
+banco, pelo serviço de verdade: `scripts/testes/checklist-lote.test.mts`.
+
+**Etapa 6b APLICADA em 22/09/2026** (só código): a mesma regra na grade de lotes
+da aba Pedido (`LotesGrid`) e na rota `POST /api/pedidos/lotes-em-massa`. A rota
+aplica a regra NO SERVIDOR — lote novo grava null na coluna escondida mesmo com
+valor na requisição (inclusive `tipo_numeracao`, que não vira `SEM_NUMERACAO`);
+lote existente não leva a coluna no UPDATE. O checklist é lido antes de qualquer
+escrita e, se a leitura falhar, nada é gravado. A regra das três portas mora em
+`src/features/orcamentos/lib/checklist-lote.ts`.
+
+**Continua sem a regra:** o caminho dos CARDS da aba Pedido ("Adicionar modelo"
+e o auto-save do card), que grava por `criarModelo`/`atualizarModeloParcial`
+(`pedidos-modelos.service.ts`) direto do navegador, fora da rota. E o
+`saveProposta` (C.1 e C) também grava lote, quando a proposta é salva com
+modelos na tela.
 
 ---
 

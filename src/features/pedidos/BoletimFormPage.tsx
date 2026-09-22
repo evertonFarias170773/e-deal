@@ -48,6 +48,12 @@ import {
 } from "./services/boletim-propostas.service";
 import { obterPedidoOperacionalPorIdOuIdInt } from "./services/pedidos-detalhe.service";
 import { listChecklistDeProdutos } from "@/features/produtos/services/produto-boletim-campos.service";
+import {
+  camposOpcionaisDoLotePcp,
+  checklistVisivel,
+  mostraCampo as mostraCampoDoLote,
+  type ChecklistVisivel
+} from "@/features/orcamentos/lib/checklist-lote";
 import { SETORES_PCP, SETOR_PADRAO, coresDoSetor, normalizarSetor } from "./setores";
 import { tituloEventoDoPedido } from "./titulo-evento";
 import { atribuirSetorAosModelos } from "./services/pedidos-artes.service";
@@ -833,22 +839,19 @@ export function BoletimFormPage() {
    * some também não recebe valor padrão na hora de gravar o lote.
    */
   const camposDoProduto = useCallback(
-    (p: { codigo_produto?: string }): Set<string> | null => {
+    (p: { codigo_produto?: string }): ChecklistVisivel => {
       const id = Number(p.codigo_produto);
       if (!Number.isFinite(id) || id <= 0) return null;
-      const campos = checklistPorProduto.get(id);
-      if (!campos || campos.length === 0) return null;
-      return new Set(campos);
+      // A mesma regra da grade e da rota de lotes (lib/checklist-lote).
+      return checklistVisivel(checklistPorProduto.get(id));
     },
     [checklistPorProduto]
   );
 
   /** Atalho: este campo aparece para este produto? */
   const mostraCampo = useCallback(
-    (p: { codigo_produto?: string }, campo: string): boolean => {
-      const campos = camposDoProduto(p);
-      return campos === null || campos.has(campo);
-    },
+    (p: { codigo_produto?: string }, campo: string): boolean =>
+      mostraCampoDoLote(camposDoProduto(p), campo),
     [camposDoProduto]
   );
 
@@ -2006,22 +2009,17 @@ export function BoletimFormPage() {
           // nulo nele, em vez de herdar "SEM_NUMERACAO", faixa recalculada ou
           // gabarito. Vale so para o lote NOVO — este ponto e a abertura da OS,
           // que e sempre INSERT (`salvarModelosBoletim` recusa se ja houver lote
-          // no setor), entao nada gravado antes e reescrito aqui.
-          tipo_numeracao: mostraCampo(p, "tipo_numeracao")
-            ? m.configImpressao.tipoNumeracao || null
-            : null,
-          gabarito_operacional:
-            mostraCampo(p, "num_gabarito") && m.gabaritoNumeracao && m.gabaritoNumeracao !== "Sem gabarito"
-              ? m.gabaritoNumeracao
-              : null,
-          numeracao_inicio:
-            mostraCampo(p, "numeracao_faixa") && m.numeracaoInicial !== undefined && m.numeracaoInicial !== null
-              ? Number(m.numeracaoInicial)
-              : null,
-          numeracao_fim:
-            mostraCampo(p, "numeracao_faixa") && m.numeracaoFinal !== undefined && m.numeracaoFinal !== null
-              ? Number(m.numeracaoFinal)
-              : null,
+          // no setor), entao nada gravado antes e reescrito aqui. A montagem
+          // mora em lib/checklist-lote, onde e testada sem banco.
+          ...camposOpcionaisDoLotePcp(
+            {
+              tipoNumeracao: m.configImpressao.tipoNumeracao,
+              gabaritoNumeracao: m.gabaritoNumeracao,
+              numeracaoInicial: m.numeracaoInicial,
+              numeracaoFinal: m.numeracaoFinal
+            },
+            camposDoProduto(p)
+          ),
           obs_impressao: m.comentarioInterno || null,
           bloco: m.bloco || null,
           // Cada lote nasce no setor do seu produto, nao no do boletim aberto.
