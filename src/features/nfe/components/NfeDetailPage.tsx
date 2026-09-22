@@ -65,6 +65,7 @@ import {
   getNotaEventos,
   getBoletosAtivosDaProposta,
   getNaturezasOperacaoNfe,
+  rotuloDaNaturezaOperacao,
   type NaturezaOperacaoNfe,
   type BoletoAtivoDaProposta,
   type SupabaseNotaEventoRow,
@@ -334,6 +335,17 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
   // trocaria a escolha do usuário sem ele pedir.
   const naturezaGravadaForaDaLista =
     dropNaturezaOp !== "" && !naturezasDisponiveis.some((n) => n.descricao === dropNaturezaOp);
+
+  /**
+   * A gravada que a UF de hoje nao ofereceria aparece com o mesmo rotulo das
+   * outras: se a linha existe no catalogo e tem texto curto, mostra o curto.
+   * Se nem existe mais no catalogo, mostra o texto gravado, que e tudo o que
+   * se sabe dela.
+   */
+  const rotuloDaNaturezaGravada = useMemo(() => {
+    const noCatalogo = naturezasCatalogo.find((n) => n.descricao === dropNaturezaOp);
+    return noCatalogo ? rotuloDaNaturezaOperacao(noCatalogo) : dropNaturezaOp;
+  }, [dropNaturezaOp, naturezasCatalogo]);
 
   // O CFOP DOS ITENS DERIVA DA NATUREZA DA NOTA — não é mais digitado, e não é
   // mais calculado só por UF. A UF continua decidindo entre o par interno e o
@@ -2816,11 +2828,17 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
                         {/* A gravada fica, marcada como atual, ainda que a UF
                             de hoje nao a ofereceria. */}
                         {naturezaGravadaForaDaLista && (
-                          <option value={dropNaturezaOp}>{dropNaturezaOp} — atual</option>
+                          <option value={dropNaturezaOp}>{rotuloDaNaturezaGravada} — atual</option>
                         )}
+                        {/*
+                          O VALUE e a `descricao`, sempre: e a chave que casa a nota com
+                          o catalogo e de onde saem o CFOP e a tributacao. So o rotulo
+                          muda — quando ha texto curto, o operador ve o que vai mesmo
+                          para a Sefaz, e nao a frase longa que nao caberia nos 60.
+                        */}
                         {naturezasDisponiveis.map((n) => (
                           <option key={n.id} value={n.descricao}>
-                            {n.descricao}
+                            {rotuloDaNaturezaOperacao(n)}
                           </option>
                         ))}
                       </select>

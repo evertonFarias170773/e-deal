@@ -2223,6 +2223,13 @@ export type NaturezaOperacaoNfe = {
    * pares: 5949/6949, 5108/6108 e 1202/2202.
    */
   natureza: string;
+  /**
+   * O texto curto do catalogo, quando existe. Nulo na maioria das linhas.
+   *
+   * Serve para a TELA saber que o que vai para a Sefaz nao e o rotulo longo
+   * que ela exibia — ver `rotuloDaNaturezaOperacao`.
+   */
+  naturezaCurta: string | null;
   /** `VENDA`, `OUTRA_SAIDA`, `DEVOLUCAO`. Metade da chave do par de CFOP. */
   tipoOperacao: string;
   /** `INTERNA` ou `INTERESTADUAL`. A outra metade. */
@@ -2238,6 +2245,22 @@ export type NaturezaOperacaoNfe = {
 /** Tira o prefixo de CFOP do rótulo. Mesma derivação de `fn_sync_natureza_operacao_nfe`. */
 export function naturezaSemPrefixoCfop(descricao: string): string {
   return String(descricao ?? "").replace(/^\s*\d{4}\s*-\s*/, "").trim();
+}
+
+/**
+ * Como a natureza aparece PARA O OPERADOR, no drop da nota.
+ *
+ * Quando a linha tem texto curto, mostra o CFOP mais esse texto — que e
+ * exatamente o que vai no `natOp` da NF-e. Sem texto curto, mostra a
+ * `descricao` inteira, como sempre foi.
+ *
+ * SO A EXIBICAO. O valor gravado continua sendo a `descricao`, que e a chave
+ * que casa `notas_fiscais.drop_natureza_op` com o catalogo e da qual saem o
+ * CFOP e a tributacao dos itens. Trocar o `value` por este rotulo desligaria
+ * as duas derivacoes.
+ */
+export function rotuloDaNaturezaOperacao(linha: NaturezaOperacaoNfe): string {
+  return linha.naturezaCurta ? `${linha.cfop} - ${linha.naturezaCurta}` : linha.descricao;
 }
 
 /**
@@ -2280,6 +2303,7 @@ export async function getNaturezasOperacaoNfe(): Promise<NaturezaOperacaoNfe[]> 
     natureza:
       String(linha.natureza_curta ?? "").trim() ||
       naturezaSemPrefixoCfop(String(linha.descricao ?? "")),
+    naturezaCurta: String(linha.natureza_curta ?? "").trim() || null,
     tipoOperacao: String(linha.tipo_operacao ?? ""),
     destinoOperacao: String(linha.destino_operacao ?? ""),
     // `null` PRESERVADO: é a resposta do catálogo para a devolução de saída,
