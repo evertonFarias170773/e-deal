@@ -69,6 +69,24 @@ export interface OsPdfProduto {
    * cor do papel — a mesma que a aba Pedido mostra.
    */
   isEstoque: boolean;
+  /**
+   * Checklist do boletim CONGELADO na venda deste item
+   * (`produtos_proposta_boletim_campos`), quando
+   * `produtos_proposta.boletim_campos_congelado_em` está preenchida.
+   *
+   *   `null`  = item SEM snapshot: o card imprime exatamente como sempre
+   *             imprimiu, `isEstoque` incluído. É o caso de todo item anterior
+   *             à virada, e não há backfill.
+   *   `[]`    = tem snapshot e nenhum campo opcional: só os três obrigatórios.
+   *   lista   = imprime esses campos opcionais, e nada além deles.
+   */
+  boletimCampos: string[] | null;
+  /**
+   * Variações escolhidas na venda (`produtos_proposta_variacao`), já no formato
+   * "GRUPO: opção" e na ordem em que o vendedor as escolheu. Só vão ao papel
+   * quando `variacoes` está no snapshot acima.
+   */
+  variacoes: string[];
   modelos: OsPdfModelo[];
 }
 
@@ -342,7 +360,10 @@ export async function montarOsPdfViewModel(
       })(),
       (async () => {
         try {
-          return await client.from("produtos_proposta").select("id, peso_total").eq("id_int", idInt);
+          return await client
+            .from("produtos_proposta")
+            .select("id, peso_total, boletim_campos_congelado_em")
+            .eq("id_int", idInt);
         } catch (e) {
           console.warn("[os-viewmodel] Falha ao buscar peso dos produtos (nao-fatal):", e);
           return { data: null };
@@ -537,11 +558,104 @@ export async function montarOsPdfViewModel(
 
     // Peso total por produto (produtos_proposta.peso_total, em gramas).
     const pesoPorProduto = new Map<number, number>();
+    /** Itens com `boletim_campos_congelado_em` preenchida: têm snapshot. */
+    const itensComSnapshot = new Set<number>();
     {
       const pesosRows = (pesosResult?.data || []) as Record<string, unknown>[];
       for (const row of pesosRows) {
         if (row.peso_total !== null && row.peso_total !== undefined) {
           pesoPorProduto.set(Number(row.id), Number(row.peso_total));
+        }
+        if (row.boletim_campos_congelado_em) itensComSnapshot.add(Number(row.id));
+      }
+    }
+
+    /**
+     * CHECKLIST CONGELADO DO BOLETIM (Etapa 5 da reforma).
+     *
+     * Só é lido para os itens que têm carimbo — item sem carimbo não gera
+     * consulta nenhuma e continua imprimindo como sempre imprimiu. Duas leituras
+     * no máximo, ambas não-fatais: se falharem, o item cai no comportamento de
+     * hoje, que é o lado seguro.
+     */
+    const camposBoletimPorItem = new Map<number, string[]>();
+    const variacoesPorItem = new Map<number, string[]>();
+    if (itensComSnapshot.size > 0) {
+      const idsComSnapshot = Array.from(itensComSnapshot);
+
+      try {
+        const { data: camposRows } = await client
+          .from("produtos_proposta_boletim_campos")
+          .select("id_produto_proposta, campo")
+          .in("id_produto_proposta", idsComSnapshot);
+
+        // Todo item carimbado entra no mapa, inclusive com lista vazia: vazio
+        // aqui significa "nenhum opcional", que é diferente de "sem snapshot".
+        for (const id of idsComSnapshot) camposBoletimPorItem.set(id, []);
+        for (const row of camposRows || []) {
+          const id = Number(row.id_produto_proposta);
+          camposBoletimPorItem.get(id)?.push(String(row.campo));
+        }
+      } catch (e) {
+        console.warn("[os-viewmodel] Falha ao ler o checklist congelado (não-fatal):", e);
+        camposBoletimPorItem.clear();
+      }
+
+      // As variações só interessam a quem marcou `variacoes` no snapshot.
+      const itensComVariacoes = idsComSnapshot.filter((id) =>
+        (camposBoletimPorItem.get(id) || []).includes("variacoes")
+      );
+
+      if (itensComVariacoes.length > 0) {
+        try {
+          const { data: variacoesRows } = await client
+            .from("produtos_proposta_variacao")
+            .select("id, id_produto_proposta, id_variacao, nome_variacao")
+            .in("id_produto_proposta", itensComVariacoes)
+            .order("id");
+
+          const linhas = (variacoesRows || []) as unknown as {
+            id_produto_proposta: number;
+            id_variacao: number | null;
+            nome_variacao: string | null;
+          }[];
+
+          /**
+           * O nome do GRUPO sai numa segunda leitura, e não por um embed
+           * `variacoes(nome)`: `produtos_proposta_variacao.id_variacao` NÃO tem
+           * chave estrangeira para `variacoes`, então o PostgREST não consegue
+           * aninhar as duas e a consulta voltaria vazia — calada.
+           */
+          const idsGrupo = Array.from(
+            new Set(
+              linhas
+                .map((linha) => Number(linha.id_variacao))
+                .filter((id) => Number.isFinite(id) && id > 0)
+            )
+          );
+
+          const nomePorGrupo = new Map<number, string>();
+          if (idsGrupo.length > 0) {
+            const { data: gruposRows } = await client
+              .from("variacoes")
+              .select("id_variacao, nome")
+              .in("id_variacao", idsGrupo);
+            for (const grupo of gruposRows || []) {
+              nomePorGrupo.set(Number(grupo.id_variacao), String(grupo.nome ?? "").trim());
+            }
+          }
+
+          for (const linha of linhas) {
+            const opcao = String(linha.nome_variacao ?? "").trim();
+            if (!opcao) continue;
+            const grupo = nomePorGrupo.get(Number(linha.id_variacao)) ?? "";
+            const id = Number(linha.id_produto_proposta);
+            const lista = variacoesPorItem.get(id) ?? [];
+            lista.push(grupo ? `${grupo}: ${opcao}` : opcao);
+            variacoesPorItem.set(id, lista);
+          }
+        } catch (e) {
+          console.warn("[os-viewmodel] Falha ao ler as variações do snapshot (não-fatal):", e);
         }
       }
     }
@@ -693,6 +807,11 @@ export async function montarOsPdfViewModel(
       setor: prod.setor,
       pesoTotalGramas: prod.db_id !== undefined ? pesoPorProduto.get(prod.db_id) ?? null : null,
       isEstoque: prod.isEstoque === true,
+      // `null` quando o item não tem carimbo: o card mantém o comportamento de
+      // hoje, inclusive o ramo isEstoque.
+      boletimCampos:
+        prod.db_id !== undefined ? camposBoletimPorItem.get(prod.db_id) ?? null : null,
+      variacoes: prod.db_id !== undefined ? variacoesPorItem.get(prod.db_id) ?? [] : [],
       modelos: (prod.modelos || []).filter((m) => pertenceAoBoletim(String(m.id), prod.setor)).map((m) => {
         const imagens = imagemPorModelo.get(String(m.id));
         const artes: OsPdfArteRef[] = [];

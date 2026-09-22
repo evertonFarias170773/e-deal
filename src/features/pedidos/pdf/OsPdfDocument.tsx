@@ -403,6 +403,8 @@ const styles = StyleSheet.create({
   },
   modeloDivisor: { width: 0.75, backgroundColor: "#cfd8e0", alignSelf: "stretch" },
   modeloObs: { fontSize: 6, color: "#5a6b7a", marginTop: 1, marginBottom: 1 },
+  // Variacao escolhida na venda: uma linha por variacao, logo abaixo dos campos.
+  modeloVariacao: { fontSize: 6, fontFamily: "Helvetica-Bold", color: "#3d4f5e", marginTop: 1 },
   checklistLinha: {
     flexDirection: "row",
     alignItems: "center",
@@ -587,20 +589,46 @@ function LinhaCampos({ esquerda, direita }: { esquerda: React.ReactNode; direita
 }
 
 /**
+ * Ordem em que os campos OPCIONAIS entram no card, e o rotulo de cada um.
+ * E a MESMA ordem de leitura de hoje (COR, INICIAL/FINAL, NUM., MODELO,
+ * IMPRESSAO, TIPO), o que faz um item com o checklist inteiro sair com o
+ * layout identico ao de sempre. `campo: null` e obrigatorio: sai sempre.
+ */
+const ORDEM_CAMPOS_CARD: { campo: string | null; label: string }[] = [
+  { campo: "cor", label: "COR:" },
+  { campo: "numeracao_faixa", label: "INICIAL/FINAL:" },
+  { campo: "num_gabarito", label: "NUM.:" },
+  { campo: null, label: "MODELO:" },
+  { campo: "impressao_fv", label: "IMPRESSAO:" },
+  { campo: "tipo_numeracao", label: "TIPO:" }
+];
+
+/**
  * Card de um modelo: imagem grande da arte + campos + checklist fixo.
+ *
+ * QUEM DECIDE OS CAMPOS OPCIONAIS
+ *   `boletimCampos` e o checklist CONGELADO na venda do item. Quando vem
+ *   preenchido (mesmo vazio), so os campos dessa lista aparecem. Quando vem
+ *   `null` — item anterior a reforma —, o card imprime como sempre imprimiu.
  *
  * `isEstoque` marca produto de prateleira: vendido pronto, sem arte, numeração,
  * gabarito ou frente/verso. Nesse caso o card fica só com o que a produção usa
  * — lote, quantidade, cor e código —, e a imagem é a prévia da cor do papel.
+ * Ele CONTINUA mandando no que nao e campo opcional, com ou sem snapshot: o
+ * conteudo de "MODELO", o texto do lugar da imagem vazia e a faixa IMP/ACA/CON.
  */
 function ModeloCard({
   modelo,
   isEstoque,
-  nomeProduto
+  nomeProduto,
+  boletimCampos,
+  variacoes
 }: {
   modelo: OsPdfModelo;
   isEstoque?: boolean;
   nomeProduto: string;
+  boletimCampos?: string[] | null;
+  variacoes?: string[];
 }) {
   /**
    * "MODELO" e o nome do lote (pedidos_modelos.nome_modelo) — nao o id interno.
@@ -608,6 +636,44 @@ function ModeloCard({
    * proprio produto, entao o nome dele ocupa o campo.
    */
   const rotuloModelo = isEstoque ? nomeProduto : modelo.nomeModelo;
+
+  const temSnapshot = Array.isArray(boletimCampos);
+  const marcados = new Set(boletimCampos ?? []);
+
+  /** O valor de cada campo do card, na fonte que ele sempre teve. */
+  const valorDoCampo = (campo: string | null): string => {
+    switch (campo) {
+      case "cor": return modelo.corMaterial || "";
+      case "numeracao_faixa": {
+        const faixa = faixaNumeracao(modelo);
+        return faixa === "-" ? "" : faixa;
+      }
+      case "num_gabarito": return modelo.gabarito || "";
+      case "impressao_fv": return modelo.frenteVerso ? "FxV" : "Frente";
+      case "tipo_numeracao": return modelo.tipoNumeracao || "";
+      default: return rotuloModelo || "";
+    }
+  };
+
+  /**
+   * Os campos que este card imprime quando ha snapshot. Campo marcado mas sem
+   * valor no lote fica de fora — nada de linha vazia. O obrigatorio (MODELO)
+   * sai sempre, mesmo sem valor.
+   */
+  const camposDoSnapshot = temSnapshot
+    ? ORDEM_CAMPOS_CARD.filter((item) => {
+        if (item.campo === null) return true;
+        if (!marcados.has(item.campo)) return false;
+        return valorDoCampo(item.campo).trim() !== "";
+      }).map((item) => ({ label: item.label, valor: valorDoCampo(item.campo) || "-" }))
+    : [];
+
+  const linhasDeVariacao =
+    temSnapshot && marcados.has("variacoes") ? variacoes ?? [] : [];
+
+  // A imagem tambem e campo do checklist. Sem snapshot, sai sempre, como hoje.
+  const mostrarImagem = !temSnapshot || marcados.has("imagem");
+
   return (
     <View style={styles.modeloCard}>
       {/* Quantidade acima da arte: e o numero que a producao procura primeiro. */}
@@ -616,18 +682,37 @@ function ModeloCard({
         <Text style={styles.modeloQuantValor}>{formatarQuantidade(modelo.quantidade)}</Text>
       </View>
 
-      {modelo.imagemDataUrl ? (
-        // eslint-disable-next-line jsx-a11y/alt-text
-        <Image style={styles.modeloImagem} src={modelo.imagemDataUrl} />
-      ) : (
-        <View style={styles.modeloImagemVazia}>
-          <Text style={styles.modeloImagemVaziaTexto}>
-            {isEstoque ? `Sem imagem${"\n"}da cor` : `Sem imagem${"\n"}da arte`}
-          </Text>
-        </View>
-      )}
+      {mostrarImagem ? (
+        modelo.imagemDataUrl ? (
+          // eslint-disable-next-line jsx-a11y/alt-text
+          <Image style={styles.modeloImagem} src={modelo.imagemDataUrl} />
+        ) : (
+          <View style={styles.modeloImagemVazia}>
+            <Text style={styles.modeloImagemVaziaTexto}>
+              {isEstoque ? `Sem imagem${"\n"}da cor` : `Sem imagem${"\n"}da arte`}
+            </Text>
+          </View>
+        )
+      ) : null}
 
-      {isEstoque ? (
+      {temSnapshot ? (
+        // Dois campos por linha, na ordem de ORDEM_CAMPOS_CARD. Com o checklist
+        // inteiro isso reproduz exatamente as tres linhas de hoje; com um campo
+        // desmarcado, os demais sobem e a coluna vazia some.
+        emGrupos(camposDoSnapshot, 2).map((par, i) => (
+          <LinhaCampos
+            key={i}
+            esquerda={<CampoModelo label={par[0].label} valor={par[0].valor} />}
+            direita={
+              par[1] ? (
+                <CampoModelo label={par[1].label} valor={par[1].valor} />
+              ) : (
+                <View style={styles.modeloCampo} />
+              )
+            }
+          />
+        ))
+      ) : isEstoque ? (
         <LinhaCampos
           esquerda={<CampoModelo label="COR:" valor={modelo.corMaterial || "-"} />}
           direita={<CampoModelo label="MODELO:" valor={rotuloModelo || "-"} />}
@@ -648,6 +733,15 @@ function ModeloCard({
           />
         </>
       )}
+
+      {/* Variações escolhidas na venda, uma por linha, "GRUPO: opção". Nunca
+          saíram no papel antes: só aparecem para item com `variacoes` no
+          snapshot. */}
+      {linhasDeVariacao.map((linha, i) => (
+        <Text key={`var-${i}`} style={styles.modeloVariacao}>
+          {pdfSafe(linha)}
+        </Text>
+      ))}
 
       {modelo.obsTecnicas ? (
         <Text style={styles.modeloObs}>Obs: {truncar(modelo.obsTecnicas, 90)}</Text>
@@ -674,18 +768,28 @@ function ModeloCard({
 function ModelosLinha({
   modelos,
   isEstoque,
-  nomeProduto
+  nomeProduto,
+  boletimCampos,
+  variacoes
 }: {
   modelos: OsPdfModelo[];
   isEstoque?: boolean;
   nomeProduto: string;
+  boletimCampos?: string[] | null;
+  variacoes?: string[];
 }) {
   return (
     <View style={styles.modelosLinha} wrap={false}>
       {modelos.map((modelo, j) => (
         <React.Fragment key={j}>
           {j > 0 ? <View style={styles.modeloGap} /> : null}
-          <ModeloCard modelo={modelo} isEstoque={isEstoque} nomeProduto={nomeProduto} />
+          <ModeloCard
+            modelo={modelo}
+            isEstoque={isEstoque}
+            nomeProduto={nomeProduto}
+            boletimCampos={boletimCampos}
+            variacoes={variacoes}
+          />
         </React.Fragment>
       ))}
       {/* Espaçadores mantêm a largura dos cards na última linha incompleta. */}
@@ -728,10 +832,25 @@ function ProdutoCard({ produto, corSetor }: { produto: OsPdfProduto; corSetor: s
       {/* Barra + primeira linha de cards no mesmo bloco: a barra nunca fica órfã. */}
       <View wrap={false}>
         {barra}
-        {linhas.length > 0 ? <ModelosLinha modelos={linhas[0]} isEstoque={produto.isEstoque} nomeProduto={pdfSafe(produto.nome)} /> : null}
+        {linhas.length > 0 ? (
+          <ModelosLinha
+            modelos={linhas[0]}
+            isEstoque={produto.isEstoque}
+            nomeProduto={pdfSafe(produto.nome)}
+            boletimCampos={produto.boletimCampos}
+            variacoes={produto.variacoes}
+          />
+        ) : null}
       </View>
       {linhas.slice(1).map((linha, i) => (
-        <ModelosLinha key={i} modelos={linha} isEstoque={produto.isEstoque} nomeProduto={pdfSafe(produto.nome)} />
+        <ModelosLinha
+          key={i}
+          modelos={linha}
+          isEstoque={produto.isEstoque}
+          nomeProduto={pdfSafe(produto.nome)}
+          boletimCampos={produto.boletimCampos}
+          variacoes={produto.variacoes}
+        />
       ))}
     </View>
   );

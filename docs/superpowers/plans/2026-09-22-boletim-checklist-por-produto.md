@@ -1,6 +1,6 @@
 # Boletim montado por checklist do produto
 
-**Data:** 22/09/2026 · **Estado:** etapas 1 a 4 aplicadas · **Sessão:** C1
+**Data:** 22/09/2026 · **Estado:** etapas 1 a 5 aplicadas · **Sessão:** C1
 
 Hoje o card do boletim imprime o mesmo conjunto de campos para todo produto que
 não é de prateleira — numeração em cordão, gabarito no campo "NUM", tipo
@@ -37,6 +37,14 @@ com `ALL` para esse papel.
 criação; item que já existia nunca é reescrito. As linhas entram antes do
 carimbo de propósito: toda falha parcial cai no lado que imprime como hoje. Não
 é fatal — se o snapshot falhar, o save da proposta segue.
+
+**Etapa 5 APLICADA em 22/09/2026** (só código): o card do boletim passa a montar
+os campos OPCIONAIS a partir do snapshot do item, e imprime as variações, uma
+por linha. Item sem carimbo imprime exatamente como antes — provado por
+comparação de conteúdo dos PDFs das OS 22194 (TEXTIL e LASER), 22270 (PVC e
+TEXTIL), 22393 (TEXTIL) e 22450 (FLEXO): zero diferenças. `isEstoque` continua
+mandando no que não é campo opcional (conteúdo de MODELO, texto da imagem
+ausente, faixa IMP/ACA/CON e o EVENTO/DESIGNER do bloco de cliente).
 
 ---
 
@@ -356,7 +364,7 @@ Cada etapa é publicável sozinha e não muda o que sai impresso até a etapa 5.
 | 2 | Tela do cadastro de produto marca o checklist ✅ | não (só cadastro) |
 | 3 | Migration: `produtos_proposta_boletim_campos` + RLS + ACL ✅ | não |
 | 4 | `saveProposta` grava o snapshot do checklist ao criar o item ✅ | não |
-| 5 | Boletim lê o snapshot; sem snapshot, imprime como hoje | **sim** |
+| 5 | Boletim lê o snapshot; sem snapshot, imprime como hoje ✅ | **sim** |
 | 6 | Formulário do PCP esconde campo não marcado e para de herdar padrão | **sim** |
 | 7 | Trava de quantidade na liberação para produção (+ correção do doc) | **sim** |
 | 8 | Pedido complementar: fechar o desvio de `is_prd_aprovado` | **sim** |
