@@ -73,7 +73,7 @@ const pdfResponse = await fetch(pdfUrl);
 // existe na tabela, PDF nunca foi gerado.
 if (!pdfResponse.ok) {
   return new Response(
-    JSON.stringify({ error: "PDF do boleto ainda nao foi gerado" }),
+    JSON.stringify({ error: "PDF do boleto ainda não foi gerado" }),
     { headers: corsHeaders, status: 404 }
   );
 }
