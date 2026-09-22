@@ -1,6 +1,6 @@
 # Boletim montado por checklist do produto
 
-**Data:** 22/09/2026 · **Estado:** etapas 1 a 5 aplicadas · **Sessão:** C1
+**Data:** 22/09/2026 · **Estado:** etapas 1 a 6 aplicadas · **Sessão:** C1
 
 Hoje o card do boletim imprime o mesmo conjunto de campos para todo produto que
 não é de prateleira — numeração em cordão, gabarito no campo "NUM", tipo
@@ -45,6 +45,21 @@ comparação de conteúdo dos PDFs das OS 22194 (TEXTIL e LASER), 22270 (PVC e
 TEXTIL), 22393 (TEXTIL) e 22450 (FLEXO): zero diferenças. `isEstoque` continua
 mandando no que não é campo opcional (conteúdo de MODELO, texto da imagem
 ausente, faixa IMP/ACA/CON e o EVENTO/DESIGNER do bloco de cliente).
+
+**Etapa 6 APLICADA em 22/09/2026** (só código): o formulário do lote do PCP
+(BLOCO 3 & 4) esconde o campo opcional que o produto não tem marcado — Cor,
+Frente+Verso, Tipo de Numeração, Gabarito e Faixa — e o lote novo nasce **nulo**
+nesses campos, sem herdar "SEM_NUMERACAO", faixa recalculada ou gabarito. A
+fonte é o CADASTRO (`produto_boletim_campos`), não o snapshot. Produto sem
+nenhum registro: formulário completo, como sempre. Valor já gravado em lote
+existente não é tocado — o caminho de edição do boletim não reescreve esses
+campos desde 30/08.
+
+**Falta validar na Etapa 6**, e depende de um pedido de teste em status elegível
+para o PCP (`APROVADO`, `REVISAO PRODUCAO` ou `EM PRODUCAO`): o `SELECT` do lote
+novo nascido nulo e o `SELECT` antes/depois de salvar o boletim. As três
+propostas de teste estão em `NOVO`, e "Liberar para Produção" só aparece a
+partir de `REVISAO ATENDENTE`.
 
 ---
 
@@ -365,7 +380,7 @@ Cada etapa é publicável sozinha e não muda o que sai impresso até a etapa 5.
 | 3 | Migration: `produtos_proposta_boletim_campos` + RLS + ACL ✅ | não |
 | 4 | `saveProposta` grava o snapshot do checklist ao criar o item ✅ | não |
 | 5 | Boletim lê o snapshot; sem snapshot, imprime como hoje ✅ | **sim** |
-| 6 | Formulário do PCP esconde campo não marcado e para de herdar padrão | **sim** |
+| 6 | Formulário do PCP esconde campo não marcado e para de herdar padrão ✅ | **sim** |
 | 7 | Trava de quantidade na liberação para produção (+ correção do doc) | **sim** |
 | 8 | Pedido complementar: fechar o desvio de `is_prd_aprovado` | **sim** |
 

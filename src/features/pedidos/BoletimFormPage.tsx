@@ -47,6 +47,7 @@ import {
   obterBaseDoPrazo
 } from "./services/boletim-propostas.service";
 import { obterPedidoOperacionalPorIdOuIdInt } from "./services/pedidos-detalhe.service";
+import { listChecklistDeProdutos } from "@/features/produtos/services/produto-boletim-campos.service";
 import { SETORES_PCP, SETOR_PADRAO, coresDoSetor, normalizarSetor } from "./setores";
 import { tituloEventoDoPedido } from "./titulo-evento";
 import { atribuirSetorAosModelos } from "./services/pedidos-artes.service";
@@ -322,6 +323,15 @@ export function BoletimFormPage() {
   const [loadingSupportFiles, setLoadingSupportFiles] = useState(false);
   const [uploadingSupportFile, setUploadingSupportFile] = useState(false);
   const [gabaritosOptions, setGabaritosOptions] = useState<string[]>([]);
+  /**
+   * Checklist do boletim de cada produto da tela (`produto_boletim_campos`),
+   * por `id_produto`. É o CADASTRO do produto, não o snapshot da venda: o PCP
+   * trabalha com o produto de hoje.
+   *
+   * Produto que não estiver no mapa é produto sem nenhum registro de checklist,
+   * e nesse caso o formulário sai completo, como sempre foi.
+   */
+  const [checklistPorProduto, setChecklistPorProduto] = useState<Map<number, string[]>>(new Map());
   const [cotacaoFrete, setCotacaoFrete] = useState<any | null>(null);
   
   // Logistics Fields
@@ -362,6 +372,7 @@ export function BoletimFormPage() {
     }
     loadData();
   }, []);
+
 
   useEffect(() => {
     if (!isEditing || !idIntParam || hasLoadedExisting) return;
@@ -445,6 +456,9 @@ export function BoletimFormPage() {
           const mapped = pedido.produtos.map((p) => ({
             id: p.id,
             id_produto_proposta_origem: p.db_id,
+            // Codigo do catalogo. E por ele que a tela acha o checklist do
+            // boletim do produto; sem isso o formulario sairia sempre completo.
+            codigo_produto: p.idProduto ? String(p.idProduto) : "",
             nome: p.nome,
             quantidade: p.quantidade,
             quantidadeOriginal: p.quantidade,
@@ -773,6 +787,70 @@ export function BoletimFormPage() {
       ]
     }
   ]);
+
+  /**
+   * Checklist do boletim dos produtos que estão na tela. Uma leitura só, e
+   * refeita quando a lista de códigos muda. Falha aqui não é fatal: sem o mapa,
+   * o formulário sai completo — o comportamento de sempre.
+   */
+  const codigosDosProdutos = produtos
+    .map((p) => Number(p.codigo_produto))
+    .filter((id) => Number.isFinite(id) && id > 0)
+    .sort((a, b) => a - b)
+    .join(",");
+
+  useEffect(() => {
+    const ids = codigosDosProdutos
+      .split(",")
+      .map((n) => Number(n))
+      .filter((n) => Number.isFinite(n) && n > 0);
+
+    // Sem produto na tela não há o que ler — e nem o que limpar: o mapa é
+    // consultado por id_produto, então sobra de uma carga anterior nunca é
+    // encontrada por um produto que não está mais aqui.
+    if (ids.length === 0) return;
+
+    let ativo = true;
+    void (async () => {
+      try {
+        const mapa = await listChecklistDeProdutos(ids);
+        if (ativo) setChecklistPorProduto(mapa as Map<number, string[]>);
+      } catch (err) {
+        console.error("[Boletim] Falha ao ler o checklist dos produtos (não-fatal):", err);
+      }
+    })();
+
+    return () => {
+      ativo = false;
+    };
+  }, [codigosDosProdutos]);
+
+  /**
+   * Quais campos OPCIONAIS o formulário mostra para este produto.
+   *
+   * `null` significa "sem regra": produto sem nenhum registro de checklist —
+   * formulário completo. Com regra, só aparece o que estiver marcado; o que
+   * some também não recebe valor padrão na hora de gravar o lote.
+   */
+  const camposDoProduto = useCallback(
+    (p: { codigo_produto?: string }): Set<string> | null => {
+      const id = Number(p.codigo_produto);
+      if (!Number.isFinite(id) || id <= 0) return null;
+      const campos = checklistPorProduto.get(id);
+      if (!campos || campos.length === 0) return null;
+      return new Set(campos);
+    },
+    [checklistPorProduto]
+  );
+
+  /** Atalho: este campo aparece para este produto? */
+  const mostraCampo = useCallback(
+    (p: { codigo_produto?: string }, campo: string): boolean => {
+      const campos = camposDoProduto(p);
+      return campos === null || campos.has(campo);
+    },
+    [camposDoProduto]
+  );
 
   /**
    * Título do evento exibido no cabeçalho. Vem de `pedidos_artes.nome_evento`;
@@ -1477,6 +1555,15 @@ export function BoletimFormPage() {
   };
 
   const getRowValidationError = (p: FormProduto, m: ModeloMock) => {
+    /**
+     * Campo escondido nao e cobrado. Se o produto nao imprime a faixa, exigir
+     * numero inicial trancaria o save num campo que nem esta na tela — e o lote
+     * ja nasce sem tipo de numeracao, entao nao ha o que conferir.
+     */
+    if (!mostraCampo(p, "numeracao_faixa") || !mostraCampo(p, "tipo_numeracao")) {
+      return null;
+    }
+
     if (m.configImpressao.tipoNumeracao === "SEQUENCIAL") {
       const start = m.numeracaoInicial || 0;
       if (start <= 0) {
@@ -1915,10 +2002,26 @@ export function BoletimFormPage() {
           nome_modelo: m.nomeModelo || p.nome,
           descricao: m.observacoesTecnicas || null,
           quantidade: Number(m.quantidade),
-          tipo_numeracao: m.configImpressao.tipoNumeracao || null,
-          gabarito_operacional: m.gabaritoNumeracao && m.gabaritoNumeracao !== "Sem gabarito" ? m.gabaritoNumeracao : null,
-          numeracao_inicio: m.numeracaoInicial !== undefined && m.numeracaoInicial !== null ? Number(m.numeracaoInicial) : null,
-          numeracao_fim: m.numeracaoFinal !== undefined && m.numeracaoFinal !== null ? Number(m.numeracaoFinal) : null,
+          // Campo que o produto nao imprime nao recebe valor padrao: o lote nasce
+          // nulo nele, em vez de herdar "SEM_NUMERACAO", faixa recalculada ou
+          // gabarito. Vale so para o lote NOVO — este ponto e a abertura da OS,
+          // que e sempre INSERT (`salvarModelosBoletim` recusa se ja houver lote
+          // no setor), entao nada gravado antes e reescrito aqui.
+          tipo_numeracao: mostraCampo(p, "tipo_numeracao")
+            ? m.configImpressao.tipoNumeracao || null
+            : null,
+          gabarito_operacional:
+            mostraCampo(p, "num_gabarito") && m.gabaritoNumeracao && m.gabaritoNumeracao !== "Sem gabarito"
+              ? m.gabaritoNumeracao
+              : null,
+          numeracao_inicio:
+            mostraCampo(p, "numeracao_faixa") && m.numeracaoInicial !== undefined && m.numeracaoInicial !== null
+              ? Number(m.numeracaoInicial)
+              : null,
+          numeracao_fim:
+            mostraCampo(p, "numeracao_faixa") && m.numeracaoFinal !== undefined && m.numeracaoFinal !== null
+              ? Number(m.numeracaoFinal)
+              : null,
           obs_impressao: m.comentarioInterno || null,
           bloco: m.bloco || null,
           // Cada lote nasce no setor do seu produto, nao no do boletim aberto.
@@ -2716,6 +2819,7 @@ export function BoletimFormPage() {
                                 )}
                               </div>
 
+                              {mostraCampo(p, "cor") && (
                               <div className="space-y-1.5">
                                 <label className="text-xs font-semibold text-slate-500 uppercase block">Cor / Material</label>
                                 <div className="relative w-full">
@@ -2743,6 +2847,7 @@ export function BoletimFormPage() {
                                 </select>
                                 </div>
                               </div>
+                              )}
 
                               <div className="space-y-1.5">
                                 <label className="text-xs font-semibold text-slate-500 uppercase block">Quantidade *</label>
@@ -2770,6 +2875,7 @@ export function BoletimFormPage() {
                                 esta linha e a seguinte saem do card. */}
                             {!p.isEstoque && (
                             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
+                              {mostraCampo(p, "impressao_fv") && (
                               <div className="flex items-center gap-3.5 bg-slate-50 p-3 rounded-2xl border border-slate-200">
                                 <div className="flex items-center gap-2">
                                   <input
@@ -2785,6 +2891,7 @@ export function BoletimFormPage() {
                                   </label>
                                 </div>
                               </div>
+                              )}
 
                               <div className="flex items-center gap-3.5 bg-slate-50 p-3 rounded-2xl border border-slate-200">
                                 <div className="flex items-center gap-2">
@@ -2802,6 +2909,7 @@ export function BoletimFormPage() {
                                 </div>
                               </div>
 
+                              {mostraCampo(p, "tipo_numeracao") && (
                               <div className="space-y-1.5">
                                 <label className="text-xs font-semibold text-slate-500 uppercase block">Tipo de Numeração</label>
                                 {/* Definido no orçamento: na edição do boletim só se lê. */}
@@ -2823,6 +2931,7 @@ export function BoletimFormPage() {
                                   </div>
                                 )}
                               </div>
+                              )}
                             </div>
                             )}
 
@@ -2833,7 +2942,7 @@ export function BoletimFormPage() {
                                   campo "Numerador" da aba Modelos). Na edição do boletim o card não o oferece —
                                   a OS já saiu com ele definido e trocar aqui faria a produção divergir do vendido.
                                   Na ABERTURA continua editável: é onde o lote nasce. */}
-                              {!isEditing && (
+                              {!isEditing && mostraCampo(p, "num_gabarito") && (
                               <div className="space-y-1.5 relative">
                                 <label className="text-xs font-semibold text-slate-500 uppercase block">Gabarito Operacional</label>
                                 <div className="flex items-center gap-1">
@@ -2950,6 +3059,7 @@ export function BoletimFormPage() {
                               )}
 
                               {/* Faixas de Numeração ou CSV */}
+                              {mostraCampo(p, "numeracao_faixa") && (
                               <div className="space-y-1.5">
                                 {m.configImpressao.tipoNumeracao === "SEQUENCIAL" ? (
                                   <div>
@@ -3027,6 +3137,7 @@ export function BoletimFormPage() {
                                   </div>
                                 )}
                               </div>
+                              )}
                             </div>
                             )}
                           </div>

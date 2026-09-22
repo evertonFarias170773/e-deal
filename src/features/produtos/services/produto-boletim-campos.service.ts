@@ -101,6 +101,47 @@ export async function listProdutoBoletimCampos(idProduto: number): Promise<Campo
 }
 
 /**
+ * O checklist de VÁRIOS produtos de uma vez, para telas que mostram muitos
+ * produtos juntos — o formulário do PCP, por exemplo.
+ *
+ * Produto que não aparecer no mapa é produto SEM registro de checklist, e quem
+ * lê deve tratá-lo como "sem regra": formulário completo, como sempre foi.
+ */
+export async function listChecklistDeProdutos(
+  idsProduto: number[]
+): Promise<Map<number, CampoBoletim[]>> {
+  const mapa = new Map<number, CampoBoletim[]>();
+  const client = getSupabaseClient();
+
+  const ids = Array.from(
+    new Set(idsProduto.filter((id) => Number.isInteger(id) && id > 0))
+  );
+  if (!client || ids.length === 0) return mapa;
+
+  const { data, error } = await client
+    .from("produto_boletim_campos")
+    .select("id_produto, campo")
+    .in("id_produto", ids);
+
+  if (error) {
+    console.error("[ProdutoBoletimCampos] Erro ao ler o checklist dos produtos:", error.message);
+    return mapa;
+  }
+
+  for (const linha of data ?? []) {
+    const alvo = linha as { id_produto: number; campo: string };
+    const campo = String(alvo.campo);
+    if (!CAMPOS_VALIDOS.has(campo)) continue;
+    const id = Number(alvo.id_produto);
+    const lista = mapa.get(id) ?? [];
+    lista.push(campo as CampoBoletim);
+    mapa.set(id, lista);
+  }
+
+  return mapa;
+}
+
+/**
  * Sincroniza o checklist do produto com o que a tela marcou.
  *
  * Best-effort na mesma medida que `saveProdutoVariacoes`: devolve o erro para
