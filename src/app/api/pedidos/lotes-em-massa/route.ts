@@ -77,8 +77,6 @@ type LoteEmMassa = {
 type Corpo = {
   idInt?: number;
   idProdutoProposta?: number;
-  /** Quantidade do item que a tela viu ao abrir a grade — trava de concorrência. */
-  qtdItemVista?: number;
   lotes?: LoteEmMassa[];
   removerIds?: number[];
   /** Autoriza reduzir a quantidade do item; exigido quando a soma diminui. */
@@ -223,19 +221,10 @@ export async function POST(request: Request) {
 
   const qtdAtual = Number(item.qtd) || 0;
 
-  // 3. Trava de concorrência: a tela informa a quantidade que viu ao abrir a
-  //    grade. Divergiu, alguém mexeu no meio do caminho e o último a salvar
-  //    apagaria o trabalho do outro em silêncio.
-  const qtdVista = Number(corpo?.qtdItemVista);
-  if (Number.isFinite(qtdVista) && qtdVista !== qtdAtual) {
-    return erro(
-      "ITEM_MUDOU",
-      `A quantidade deste item mudou enquanto você editava (era ${qtdVista}, agora é ${qtdAtual}). Recarregue a página para não sobrescrever a alteração de outra pessoa.`,
-      409,
-      { qtdNoBanco: qtdAtual }
-    );
-  }
-
+  // 3. Sem trava de concorrência, por decisão do dono: a última gravação
+  //    vence. A trava que comparava a quantidade "vista" pela tela com a do
+  //    banco recusava a troca de quantidade do próprio usuário (22528) e o
+  //    mandava recarregar a página; quem muda a quantidade quer que ela grave.
   const soma = lotes.reduce((total, lote) => total + Number(lote.quantidade), 0);
 
   // 4. Reduzir a quantidade do item derruba subtotal e peso. Nunca em silêncio.

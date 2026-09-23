@@ -3012,42 +3012,6 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
    * desfazia alterações concorrentes (vários modelos abertos ao mesmo tempo,
    * respostas de gravação chegando depois).
    */
-  /**
-   * Quantidade de cada item que a TELA sabe estar gravada no banco — a
-   * referência que a Lista rápida manda como "quantidade que eu vi" para a
-   * trava de concorrência da rota lotes-em-massa.
-   *
-   * Não pode ser `item.quantidade` do formulário: trocar a quantidade na aba
-   * Orçamento sem salvar deixava o formulário em 29 com o banco em 27, e a
-   * rota recusava a própria edição do usuário como se fosse de outra pessoa
-   * ("era 29, agora é 27" — proposta 22528). O snapshot do guard de alterações
-   * é o formulário como está gravado: tirado depois da carga e refeito a cada
-   * salvamento. A gravação da grade não mexe nele (o item tem de continuar
-   * "alterado" até o Salvar sincronizar o cabeçalho), então o que ela gravou
-   * fica ao lado, preso ao snapshot da vez — um salvamento posterior regrava
-   * a quantidade do formulário, que já inclui a da grade, e troca o snapshot.
-   */
-  const qtdGravadaPelaGrade = useRef<{ snapshot: string; porItem: Map<number, number> }>({
-    snapshot: "",
-    porItem: new Map()
-  });
-
-  const quantidadeGravadaDoItem = useCallback((idProdutoProposta: number): number | null => {
-    const snapshot = initialFormSnapshot.current;
-    if (!snapshot) return null;
-    const grade = qtdGravadaPelaGrade.current;
-    if (grade.snapshot === snapshot && grade.porItem.has(idProdutoProposta)) {
-      return grade.porItem.get(idProdutoProposta) ?? null;
-    }
-    try {
-      const itens = (JSON.parse(snapshot) as { itens?: PropostaItem[] }).itens || [];
-      const item = itens.find((it) => Number(it.id_produto_proposta_origem) === idProdutoProposta);
-      return item ? Number(item.quantidade) || 0 : null;
-    } catch {
-      return null;
-    }
-  }, []);
-
   const aplicarPatchModelos = useCallback(
     (atualizar: (prev: PedidoModeloState[]) => PedidoModeloState[]) => {
       setForm((prev) => ({ ...prev, pedidosModelos: atualizar(prev.pedidosModelos) }));
@@ -4157,26 +4121,11 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
       return true;
     }
 
-    // Validação de quantidades dos modelos vs produtos (Ressalva 4)
-    for (const item of form.itens) {
-      const modelosDoItem = form.pedidosModelos.filter(
-        (m) => 
-          (m.id_produto_proposta_origem && item.id_produto_proposta_origem && m.id_produto_proposta_origem === item.id_produto_proposta_origem) ||
-          (m.item_temp_id && m.item_temp_id === item.id)
-      );
-      
-      if (modelosDoItem.length > 0) {
-        const somaModelos = modelosDoItem.reduce((acc, curr) => acc + curr.quantidade, 0);
-        if (somaModelos !== item.quantidade) {
-          showToast({
-            type: "error",
-            title: "Quantidades divergentes",
-            description: `As quantidades dos modelos (${somaModelos}) não correspondem à quantidade do produto "${item.nome}" (${item.quantidade}). Revise os itens antes de salvar.`
-          });
-          return false;
-        }
-      }
-    }
+    // Quantidade do item × soma dos modelos NÃO é conferida aqui, de propósito:
+    // recusar o salvamento impedia o vendedor de trocar a quantidade de um
+    // produto que já tinha lote. Quem muda a quantidade quer que ela grave. A
+    // conferência que importa é a da liberação para produção (Etapa 7,
+    // lib/divergencia-lotes), que recusa o pedido com soma divergente.
 
     // Normal proposal freight validation.
     // Só onde a tela oferece cards — em RETIRA e FOB não há o que escolher, e
@@ -5281,16 +5230,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
               modelos={form.pedidosModelos}
               autoSaveHabilitado={!hasActiveCobranca && !isFormBloqueadoPorCobranca}
               onModelosChange={aplicarPatchModelos}
-              quantidadeGravadaDoItem={quantidadeGravadaDoItem}
               onLotesGravados={(idProdutoPropostaOrigem, novaQtd, freteMensagem) => {
-                // O banco passou a ter `novaQtd`: é a referência da próxima
-                // gravação da grade, feita pela própria tela.
-                const grade = qtdGravadaPelaGrade.current;
-                if (grade.snapshot !== initialFormSnapshot.current) {
-                  grade.snapshot = initialFormSnapshot.current;
-                  grade.porItem = new Map();
-                }
-                grade.porItem.set(Number(idProdutoPropostaOrigem), novaQtd);
                 // A lista rápida já gravou item e lotes no banco. Aqui só
                 // espelhamos no formulário: o total da proposta é calculado na
                 // tela, então ele se move na hora, e o cabeçalho da proposta
@@ -6276,15 +6216,6 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
 
                     const isOpen = openItemIds[item.id] ?? false;
                     
-                    const modelosDoItem = form.pedidosModelos.filter(
-                      (m) => 
-                        (m.id_produto_proposta_origem && item.id_produto_proposta_origem && m.id_produto_proposta_origem === item.id_produto_proposta_origem) ||
-                        (m.item_temp_id && m.item_temp_id === item.id)
-                    );
-                    const somaModelos = modelosDoItem.length > 0 
-                      ? modelosDoItem.reduce((acc, curr) => acc + curr.quantidade, 0) 
-                      : undefined;
-
                     // Autorizado a editar proposta paga também pode inativar (reversível)
                     // itens em propostas APROVADO/AGUARDANDO.
                     const isRemoveAllowed = (form.status !== "APROVADO" && form.status !== "AGUARDANDO") || canEditarPropostaPaga;
@@ -6306,7 +6237,6 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                           onSave={() => void handleSaveItem(item.id)}
                           isSaving={savingItemId === item.id}
                           isCotandoFrete={isCotandoFrete}
-                          minQuantity={somaModelos}
                           // Variação é característica do produto, não valor: segue a mesma
                           // condição de edição do formulário (proposta paga/pendência bloqueiam).
                           podeEditarVariacoes={!isFormBloqueadoPorCobranca}
@@ -7432,7 +7362,6 @@ function ProductItemEditor({
   onSave,
   isSaving,
   isCotandoFrete,
-  minQuantity,
   podeEditarVariacoes,
   canEditarValoresItem,
   isRemoveAllowed,
@@ -7455,7 +7384,6 @@ function ProductItemEditor({
    * proposta" e "Salvar alterações" já têm.
    */
   isCotandoFrete?: boolean;
-  minQuantity?: number;
   podeEditarVariacoes?: boolean;
   canEditarValoresItem?: boolean;
   isRemoveAllowed?: boolean;
@@ -7464,7 +7392,6 @@ function ProductItemEditor({
   autoFocusQuantidade?: boolean;
   onQuantidadeFocada?: () => void;
 }) {
-  const { showToast } = useAppToast();
   const quantidadeRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -7514,13 +7441,6 @@ function ProductItemEditor({
               type="number"
               value={item.quantidade || ""}
               onChange={(event) => onUpdate((current) => ({ ...current, quantidade: Math.max(0, Number(event.target.value)) }))}
-              onBlur={(e) => {
-                const val = Math.max(0, Number(e.target.value));
-                if (minQuantity !== undefined && val < minQuantity) {
-                  showToast({ type: "error", title: "Quantidade inválida", description: `A quantidade não pode ser menor que a soma dos modelos (${minQuantity}).` });
-                  onUpdate((current) => ({ ...current, quantidade: minQuantity }));
-                }
-              }}
               className={inputClass}
               placeholder="Qtd"
             />
