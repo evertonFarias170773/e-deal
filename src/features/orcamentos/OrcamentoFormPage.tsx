@@ -3243,6 +3243,87 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     });
   }
 
+  /**
+   * AS OUTRAS OPÇÕES CONTINUAM À VISTA (23/09/2026).
+   *
+   * `cotacao_frete` guarda só o frete escolhido, então a proposta reaberta
+   * mostrava UM card: as parceiras de cálculo automático (Correios, Azul, VEPPO,
+   * transportadoras) só voltavam no "Atualizar fretes". Esta função busca as
+   * mesmas cotações daquele botão e SÓ ACRESCENTA as opções que faltam.
+   *
+   * NÃO REPREÇA O ESCOLHIDO — e é por isso que não chama `handleCotarFretes`.
+   * Aquele merge, ao reencontrar o card escolhido, troca o valor dele pelo
+   * recém-cotado: rodar isso sozinho na abertura mudaria o frete de toda
+   * proposta aberta e salva sem ninguém pedir. Aqui o escolhido fica intacto
+   * (mesmo id, mesmo valor), as chaves de "cotação desatualizada" não mudam e o
+   * formulário não fica sujo (`isDirty` ignora `fretes`).
+   */
+  async function completarOpcoesDeFrete() {
+    const endereco = combinedAddresses.find((e) => e.id === form.enderecoId);
+    const cep = form.clienteNaoCadastrado ? form.cepLivre : endereco?.cep;
+    const cidade = form.clienteNaoCadastrado ? form.cidadeLivre : endereco?.cidade;
+    const uf = form.clienteNaoCadastrado ? form.ufLivre : endereco?.uf;
+    if (!cep || resumo.pesoTotal <= 0 || volumes <= 0) return;
+
+    const epocaNoInicio = cotacaoEpochRef.current;
+    setIsQuotingSedex(true);
+    setIsQuotingAzul(true);
+    setIsQuotingVeppo(true);
+    if (cidade && uf) setIsQuotingTransp(true);
+
+    const [sedex, azul, transp, veppo] = await Promise.all([
+      solicitarCotacaoSedex({ peso: resumo.pesoTotal, vol: volumes, cep })
+        .catch(() => [] as PropostaFrete[])
+        .finally(() => setIsQuotingSedex(false)),
+      (uf?.toUpperCase() === "RS"
+        ? Promise.resolve([] as PropostaFrete[])
+        : solicitarCotacaoAzulCargo({ peso: resumo.pesoTotal, cep, valorTotal: resumo.subtotalProdutos }).catch(() => [] as PropostaFrete[])
+      ).finally(() => setIsQuotingAzul(false)),
+      (cidade && uf
+        ? solicitarCotacaoTransportadoras({ peso: resumo.pesoTotal, cidade, uf }).catch(() => [] as PropostaFrete[])
+        : Promise.resolve([] as PropostaFrete[])
+      ).finally(() => setIsQuotingTransp(false)),
+      (cidade && uf
+        ? solicitarCotacaoVeppo({ peso: resumo.pesoTotal, valor: resumo.subtotalProdutos, cidade, uf }).catch(() => [] as PropostaFrete[])
+        : Promise.resolve([] as PropostaFrete[])
+      ).finally(() => setIsQuotingVeppo(false))
+    ]);
+
+    // Mesma guarda da cotação automática: a vinculação de cliente mudou no meio.
+    if (cotacaoEpochRef.current !== epocaNoInicio) return;
+
+    setForm((prev) => {
+      const chavesPresentes = new Set(prev.fretes.map((f) => getStableFreightKey(f)));
+      const novas = [...sedex, ...azul, ...transp, ...veppo]
+        .filter((f) => !ehFreteDeRetirada(f) && !chavesPresentes.has(getStableFreightKey(f)))
+        .map((f) => ({ ...f, escolhido: false }));
+      if (novas.length === 0) return prev;
+      return { ...prev, fretes: [...prev.fretes, ...novas] };
+    });
+  }
+
+  /**
+   * Dispara `completarOpcoesDeFrete` uma vez por proposta, ao chegar na aba
+   * Fretes em CIF com no máximo o card gravado à vista. Proposta nova fica com a
+   * cotação automática de sempre; avulsa e complemento não cotam pela tela.
+   */
+  const opcoesCompletadasRef = useRef<string | null>(null);
+  const cardsDeFreteVisiveis = form.fretes.filter((f) => !ehFreteDeRetirada(f)).length;
+  // Sem CEP ou peso ainda (endereço carregando), espera: marcar como feito antes
+  // disso deixaria a proposta sem as opções até recarregar a página.
+  const temBaseParaCotar =
+    Boolean(form.clienteNaoCadastrado ? form.cepLivre : currentAddress?.cep) && resumo.pesoTotal > 0 && volumes > 0;
+  useEffect(() => {
+    if (activeFormTab !== "fretes" || form.modalidadeFrete !== "CIF") return;
+    if (form.id_int === "NOVO" || form.isAvulso || ehComplemento) return;
+    if (cardsDeFreteVisiveis > 1 || !temBaseParaCotar) return;
+    const chave = String(form.id_int);
+    if (opcoesCompletadasRef.current === chave) return;
+    opcoesCompletadasRef.current = chave;
+    void completarOpcoesDeFrete();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeFormTab, form.modalidadeFrete, form.id_int, form.isAvulso, ehComplemento, cardsDeFreteVisiveis, temBaseParaCotar]);
+
   async function handleCotarFretes() {
     if (ehComplemento) return;
     const cep = form.clienteNaoCadastrado ? form.cepLivre : combinedAddresses.find((e) => e.id === form.enderecoId)?.cep;
@@ -3582,9 +3663,11 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
   /**
    * Grava SÓ a transportadora, direto, para proposta já fora do orçamento.
    *
-   * Não passa pelo `saveProposta`: o salvamento reescreve `cotacao_frete` e os
-   * três triggers de lá rebaixam o pedido para NOVO. A rota faz um UPDATE mirado
-   * numa coluna de `propostas`, onde nenhum trigger escreve `status_interno`.
+   * Não passa pelo `saveProposta`: grava na hora, sem o Salvar, e alcança o
+   * pedido já despachado, que a troca pela aba Fretes recusa pela barreira da
+   * Expedição. A rota faz um UPDATE mirado numa coluna de `propostas`, onde
+   * nenhum trigger escreve `status_interno` (dos triggers de `cotacao_frete`,
+   * só um mexe em status — ver o comentário da rota).
    *
    * A permissão vale no servidor — o `PermissionGuard` da tela só esconde o
    * controle de quem não pode.
@@ -4703,8 +4786,14 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     }
   }
 
+  // Retirada fica fora: ela não aparece entre os cards, e o aviso falaria de
+  // um frete que o usuário não vê.
   const hasPreservedFreight = form.fretes.some(
-    (f) => f.id === form.freteEscolhidoId && f.observacao && (f.observacao.includes("(Preservado)") || f.observacao.includes("Frete preservado"))
+    (f) =>
+      f.id === form.freteEscolhidoId &&
+      !ehFreteDeRetirada(f) &&
+      f.observacao &&
+      (f.observacao.includes("(Preservado)") || f.observacao.includes("Frete preservado"))
   );
   const cobrancasVinculadas = proposta?.id_int ? getCobrancasByProposta(proposta.id_int) : [];
   const hasActiveCobranca = cobrancasVinculadas.some(c => c.status !== "CANCELADO");
@@ -6299,22 +6388,22 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                       type="button"
                       disabled={Boolean(bloqueioTrocaFrete) || ehComplemento}
                       onClick={() => {
-                        // Sair de RETIRA com a retirada ainda escolhida embaixo
-                        // deixaria o par incoerente (ex.: FOB com frete de
-                        // retirada). A decisao e do usuario: avisamos e ele
-                        // confirma — nada e limpo por conta propria.
+                        // RETIRADA EXISTE SÓ POR ESTE BOTÃO (23/09/2026). Não é
+                        // mais um card entre os fretes, então sair de RETIRA com a
+                        // retirada escolhida embaixo desfaz essa escolha: em CIF o
+                        // usuário escolhe um frete de verdade, em FOB vale a
+                        // transportadora do drop. Antes a tela perguntava e, se o
+                        // usuário seguisse, deixava o pedido CIF com o card
+                        // "RETIRADA R$ 0,00 — Frete preservado" escolhido. Só a
+                        // escolha na tela muda: `cotacao_frete` é regravada no
+                        // Salvar, como em qualquer troca de frete.
                         const freteAtual = form.fretes.find((f) => f.id === form.freteEscolhidoId);
                         if (m !== "RETIRA" && ehFreteDeRetirada(freteAtual)) {
-                          const seguir = window.confirm(
-                            `A cotação escolhida abaixo ainda é "${freteAtual?.transportadora ?? "Retirada Local"}".
-
-` +
-                              `Mudar a modalidade para ${LABEL_MODALIDADE[m]} deixa o pedido com retirada no frete e ${LABEL_MODALIDADE[m]} na modalidade.
-
-` +
-                              `Continuar assim mesmo? Se preferir, cancele e escolha outra cotação primeiro.`
-                          );
-                          if (!seguir) return;
+                          setForm((current) => ({
+                            ...current,
+                            fretes: current.fretes.map((f) => ({ ...f, escolhido: false })),
+                            freteEscolhidoId: ""
+                          }));
                         }
                         updateField("modalidadeFrete", m);
                         // Só FOB tem transportadora definida pelo vendedor.
@@ -6705,7 +6794,10 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                 )}
 
                 <div className="grid gap-3 md:grid-cols-2">
-                  {form.fretes.map((frete) => (
+                  {/* Retirada não é card: existe só pelo botão "Retira no balcão".
+                      O que vier dela (linha gravada, opção de cotação) fica fora
+                      da lista — no estado, mas não à escolha. */}
+                  {form.fretes.filter((frete) => !ehFreteDeRetirada(frete)).map((frete) => (
                     <div 
                       key={frete.id} 
                       className={`rounded-3xl border p-4 flex flex-col justify-between transition-all duration-200 ${
@@ -6729,6 +6821,10 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                               ? "TRANSP. UNESUL"
                               : frete.servico === "MOTOBOY"
                               ? "ENTREGA MOTOBOY"
+                              : /* A VEPPO e parceira com calculo automatico (`servico` "VEPPO",
+                                   cotada ou relida do banco), nao frete manual. */
+                                (frete.servico || "").toUpperCase() === "VEPPO" || (frete.transportadora || "").toUpperCase() === "VEPPO"
+                              ? "VEPPO"
                               : "MANUAL / TRANSP."}
                           </span>
                           <h4 className="font-bold text-slate-900 text-base mt-0.5">{frete.transportadora}</h4>
