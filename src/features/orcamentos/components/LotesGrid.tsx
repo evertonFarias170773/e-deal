@@ -86,6 +86,7 @@ export type PadroesDeLote = {
 export function LotesGrid({
   idInt,
   idProduto,
+  quantidadeGravada,
   item,
   itemPrateleira,
   linhasIniciais,
@@ -101,6 +102,12 @@ export function LotesGrid({
    * do boletim do produto. Nulo ou zero = sem produto de catálogo, sem regra.
    */
   idProduto: number | null;
+  /**
+   * Quantidade do item que a tela sabe estar gravada no banco, lida no
+   * momento de gravar — é o "era X" da trava de concorrência da rota. Null
+   * enquanto a tela ainda não sabe: vale a quantidade vista ao abrir a grade.
+   */
+  quantidadeGravada: () => number | null;
   item: { id_produto_proposta_origem: number; nome: string; quantidade: number };
   /**
    * Produto de prateleira (`produtos_proposta.is_estoque`): vendido pronto, sem
@@ -297,7 +304,9 @@ export function LotesGrid({
         body: JSON.stringify({
           idInt,
           idProdutoProposta: item.id_produto_proposta_origem,
-          qtdItemVista: qtdVista.current,
+          // O que o banco tem pelo que a tela sabe — não o formulário, que
+          // pode trazer a quantidade trocada na aba Orçamento e ainda não salva.
+          qtdItemVista: quantidadeGravada() ?? qtdVista.current,
           confirmarReducao,
           removerIds: removidos,
           lotes: linhasNumeradas.map((l) => {

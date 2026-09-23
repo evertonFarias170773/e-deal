@@ -12,19 +12,38 @@ import { canonizarTransportadora } from "@/features/orcamentos/lib/transportador
  * Corrigir QUEM TRANSPORTA numa proposta já fora da fase de orçamento.
  *
  * POR QUE EXISTE — a Peça A da Etapa 3
- *   `podeEditarModalidade` só libera modalidade e transportadora em NOVO e
- *   AGUARDANDO, e a trava é do banco: salvar o orçamento faz DELETE + INSERT em
- *   `cotacao_frete`, e os TRÊS triggers de lá (`trg_frete_sync_financeiro`,
- *   `tg_recalc_frete_v4`, `trg_recalc_after_frete`) reescrevem `status_interno`
- *   a partir de `pagamentos_v2` — com zero pagamentos, forçam NOVO. Editar o
- *   frete de um pedido em produção o rebaixaria e o tiraria do fluxo.
+ *   Nasceu quando modalidade e transportadora eram somente leitura a partir de
+ *   LIBERADO. Consequência medida em 26/08/2026: os 22 pedidos então em
+ *   EXPEDICAO, A RETIRAR e EM TRANSITO estavam TODOS com a transportadora nula
+ *   na proposta, e não havia como preenchê-la.
  *
- *   Consequência medida em 26/08/2026: os 22 pedidos hoje em EXPEDICAO,
- *   A RETIRAR e EM TRANSITO estão TODOS com a transportadora nula na proposta, e
- *   não havia como preenchê-la. Sem esta rota, mandar a Expedição "corrigir na
- *   proposta" é mandá-la para uma tela que recusa a edição.
+ *   A TRAVA SAIU EM 23/09/2026: a aba Fretes troca modalidade e transportadora
+ *   em qualquer status, com as barreiras da correção de frete da Expedição
+ *   (permissão, NF autorizada, despacho confirmado). Esta rota continua valendo
+ *   pelo que só ela faz: grava na hora, sem o Salvar do orçamento, e alcança o
+ *   pedido JÁ DESPACHADO — que a aba Fretes recusa pela barreira do despacho, e
+ *   que é justamente o caso dos pedidos em EM TRANSITO acima.
  *
- * COMO ELA ESCAPA DA TRAVA SEM DESLIGÁ-LA
+ * O QUE OS TRIGGERS FAZEM COM `status_interno` — CORRIGIDO EM 23/09/2026
+ *   Este comentário dizia que os TRÊS triggers de `cotacao_frete` reescreviam
+ *   `status_interno`. Só UM deles faz isso, e não é o único do banco:
+ *
+ *     trg_frete_sync_financeiro (cotacao_frete) ..... chama
+ *         `atualizar_status_financeiro_proposta`, que recalcula o status a partir
+ *         de `pagamentos_v2` — com zero pagamentos, NOVO;
+ *     trg_produto_sync_financeiro (produtos_proposta)  chama a MESMA função. O
+ *         `saveProposta` regrava todos os itens a cada Salvar, então o status é
+ *         recalculado em todo salvamento do orçamento, mexa ele no frete ou não;
+ *     trg_recalc_after_frete (cotacao_frete) ........ `recalcular_proposta_v3`:
+ *         grava só `valor`, `volume` e `valor_total`;
+ *     tg_recalc_frete_v4 (cotacao_frete) ............ `recalcular_proposta_v4`:
+ *         não grava nada, só devolve os números.
+ *
+ *   A função não mexe nos status de produção em diante (a lista protegida dela),
+ *   e proposta paga é reconciliada pelo `editar-paga` depois de salvar. Por isso
+ *   liberar a troca de frete não pediu mudança no banco.
+ *
+ * COMO ELA GRAVA
  *   Não passa pelo salvamento do orçamento e NÃO TOCA `cotacao_frete`. É um
  *   UPDATE mirado numa coluna só de `propostas`. Os seis triggers de `propostas`
  *   foram conferidos um a um e NENHUM escreve `status_interno`:
@@ -35,9 +54,6 @@ import { canonizarTransportadora } from "@/features/orcamentos/lib/transportador
  *     tg_registrar_paid_at ............... LÊ status_interno, escreve paid_at
  *     trg_sync_cliente_idcliente_pagamentos  UPDATE OF cliente, id_cliente — nem dispara
  *     trg_audit_propostas ................ auditoria, não altera dado
- *
- *   `podeEditarModalidade` e o gate do salvamento continuam exatamente como
- *   estavam. Esta é uma porta nova e estreita, não um afrouxamento da existente.
  *
  * O QUE ELA NÃO FAZ, DE PROPÓSITO
  *   Não altera modalidade, valor do frete, `frete_escolhido` nem

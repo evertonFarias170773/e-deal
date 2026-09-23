@@ -11,6 +11,8 @@ import { Copy, Search, Trash2, X, Edit2, AlertTriangle, AlertOctagon, Check, Ext
 import { useAppToast } from "@/components/common/AppToast";
 import { ContactEditModal } from "@/features/orcamentos/components/ContactEditModal";
 import { PedidoModelosTab } from "@/features/orcamentos/components/PedidoModelosTab";
+import { checklistVisivel, pendenciasDoLoteParaArtes } from "@/features/orcamentos/lib/checklist-lote";
+import { listChecklistDeProdutos } from "@/features/produtos/services/produto-boletim-campos.service";
 import { ArtesTab, type BriefingArtesDraft } from "@/features/orcamentos/components/ArtesTab";
 import { ProductSearchSelector } from "@/features/orcamentos/components/ProductSearchSelector";
 import { LiberarFaturadoModal } from "@/features/orcamentos/components/LiberarFaturadoModal";
@@ -82,11 +84,14 @@ import {
   LABEL_MODALIDADE,
   MODALIDADES_ORCAMENTO,
   modalidadeCobraFrete,
-  motivoBloqueioModalidade,
-  podeEditarModalidade,
+  AVISO_TROCA_FRETE_APOS_LIBERACAO,
+  estaNaFaseDeOrcamento,
+  freteSeRecalculaNaGravacao,
   nomeTransportadoraCadastro,
   valorFreteEfetivo
 } from "@/features/orcamentos/lib/modalidade-frete";
+import { barreirasDaTrocaDeFrete } from "@/features/expedicao/services/corrigir-frete-simulacao";
+import { verificarPermissaoServerSide } from "@/lib/auth/verificar-permissao";
 import {
   categoriaDoServico,
   LABEL_CATEGORIA_FRETE,
@@ -890,6 +895,31 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
   const [searchError, setSearchError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [showArtesBlockModal, setShowArtesBlockModal] = useState<{ nome: string; faltam: string[] }[] | null>(null);
+
+  /**
+   * Checklist do boletim dos produtos da proposta, para a trava "Modelos
+   * incompletos" da aba Artes não cobrar campo que o card não mostra. Produto
+   * ausente do mapa (sem checklist, ou leitura que falhou) = cobrança de sempre.
+   */
+  const [checklistPorProduto, setChecklistPorProduto] = useState<Map<number, string[]>>(new Map());
+  const idsProdutoDosItens = form.itens
+    .map((it) => Number(it.id_produto))
+    .filter((id) => Number.isInteger(id) && id > 0)
+    .sort((a, b) => a - b)
+    .join(",");
+
+  useEffect(() => {
+    const ids = idsProdutoDosItens.split(",").map(Number).filter((id) => Number.isInteger(id) && id > 0);
+    if (ids.length === 0) return;
+    let ativo = true;
+    void (async () => {
+      const mapa = await listChecklistDeProdutos(ids);
+      if (ativo) setChecklistPorProduto(mapa as Map<number, string[]>);
+    })();
+    return () => {
+      ativo = false;
+    };
+  }, [idsProdutoDosItens]);
   const [cepLivreLoading, setCepLivreLoading] = useState(false);
   const [errorFields, setErrorFields] = useState<string[]>([]);
   const [isContactModalOpen, setIsContactModalOpen] = useState(false);
@@ -1127,11 +1157,32 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
   const freteEscolhido = form.fretes.find((frete) => frete.id === form.freteEscolhidoId);
 
   /**
-   * Modalidade e transportadora só são editáveis na fase de orçamento. Depois de
-   * LIBERADO o salvamento reescreveria `cotacao_frete`, e o trigger do banco
-   * rebaixaria a proposta para NOVO — ver `lib/modalidade-frete.ts`.
+   * MODALIDADE E TRANSPORTADORA SE TROCAM EM QUALQUER STATUS (23/09/2026).
+   *
+   * A trava de "somente leitura a partir de LIBERADO" saiu. O que a fase de
+   * orçamento ainda decide é de onde vem o frete quando a declaração NÃO mudou:
+   * depois dela, do valor GRAVADO (negociado, recotado), e não do card. Quando a
+   * declaração muda nesta edição, o frete sai da declaração nova em qualquer
+   * fase. Mesma regra do `saveProposta` — `freteSeRecalculaNaGravacao`.
+   *
+   * A MUDANÇA É MEDIDA CONTRA O QUE A TELA CARREGOU (`proposta`), campo a campo,
+   * e o card pela mesma chave estável que a recotação usa para preservar a
+   * escolha. Assim um card recotado com preço novo não conta como troca — só a
+   * escolha de outro card conta.
    */
-  const modalidadeEditavel = podeEditarModalidade(form.status);
+  const faseDeOrcamento = estaNaFaseDeOrcamento(form.status);
+  const freteEscolhidoGravado = proposta
+    ? (proposta.fretes.find((f) => f.id === proposta.freteEscolhidoId) ?? proposta.fretes.find((f) => f.escolhido))
+    : undefined;
+  const freteDeclaracaoAlterada =
+    Boolean(proposta) &&
+    ((form.modalidadeFrete ?? null) !== (proposta?.modalidadeFrete ?? null) ||
+      (form.idTransportadoraCliente ?? null) !== (proposta?.idTransportadoraCliente ?? null) ||
+      (form.transporteCategoria === "MOTOBOY") !== (proposta?.transporteCategoria === "MOTOBOY") ||
+      (freteEscolhido ? normalizeFreteKey(freteEscolhido) : "") !==
+        (freteEscolhidoGravado ? normalizeFreteKey(freteEscolhidoGravado) : ""));
+  const recalculaFrete =
+    !proposta || freteSeRecalculaNaGravacao({ faseDeOrcamento, declaracaoMudou: freteDeclaracaoAlterada });
 
   /**
    * PEDIDO COMPLEMENTAR (docs/business/PEDIDO-COMPLEMENTAR.md). Endereco,
@@ -1140,6 +1191,40 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
    * diferenca do peso somado, aplicada por rota propria.
    */
   const ehComplemento = Boolean(form.idIntPedidoPrincipal);
+
+  /**
+   * AS BARREIRAS DA EXPEDIÇÃO, consultadas na abertura (23/09/2026).
+   *
+   * Depois da fase de orçamento a troca de frete respeita a MESMA guarda da
+   * correção de frete da Expedição — permissão `propostas.editar_paga`, NF
+   * autorizada e despacho confirmado. O `saveProposta` confere de novo antes de
+   * gravar; aqui ela serve para travar os campos COM o motivo, em vez de deixar
+   * o usuário trocar e só descobrir no Salvar.
+   *
+   * Guarda o id junto, pelo mesmo motivo de `usosDoEnderecoEditado`: resultado
+   * de outra proposta não casa, e não é preciso zerar o estado no efeito.
+   */
+  const [barreiraFrete, setBarreiraFrete] = useState<{ idInt: number; mensagem: string | null } | null>(null);
+  const idIntDaBarreira = !faseDeOrcamento && !ehComplemento && proposta?.id_int ? Number(proposta.id_int) : null;
+  useEffect(() => {
+    if (idIntDaBarreira === null) return;
+    let ativo = true;
+    void (async () => {
+      const client = getSupabaseClient();
+      if (!client) return;
+      const { data: { session } } = await client.auth.getSession();
+      const uid = session?.user?.id;
+      const temPermissaoEditarPaga = uid
+        ? await verificarPermissaoServerSide(client, uid, "propostas.editar_paga")
+        : false;
+      const barreira = await barreirasDaTrocaDeFrete(client, { idInt: idIntDaBarreira, temPermissaoEditarPaga });
+      if (ativo) setBarreiraFrete({ idInt: idIntDaBarreira, mensagem: barreira?.mensagem ?? null });
+    })();
+    return () => { ativo = false; };
+  }, [idIntDaBarreira]);
+  /** Motivo que trava a troca de frete, ou `null` quando ela está liberada. */
+  const bloqueioTrocaFrete =
+    idIntDaBarreira !== null && barreiraFrete?.idInt === idIntDaBarreira ? barreiraFrete.mensagem : null;
 
   /**
    * FOB entregue por motoboy — a outra resposta possivel para "quem leva".
@@ -1203,7 +1288,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
    * ja e declarada, em vez de dois campos soltos em pontos diferentes da tela.
    */
   const precisaDeclararCategoria =
-    modalidadeEditavel && temTransporteEscolhido && categoriaDerivadaAtual === null;
+    recalculaFrete && temTransporteEscolhido && categoriaDerivadaAtual === null;
 
   /**
    * Liga/desliga o motoboy em FOB. Ligar zera o vinculo da transportadora: sao
@@ -1260,11 +1345,12 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
       Number(form.descontoGeralValor) || 0,
       form.descontoGeralTipo
     );
-    // A partir de LIBERADO o frete é o GRAVADO, não o do card (14/09/2026): é o
-    // que o `saveProposta` soma e o que a aba Pagamentos cobra. O carregamento já
-    // entrega esse valor em `proposta.resumo.frete`. Mesma fórmula de
-    // `calculateResumo`, com o outro número.
-    if (!modalidadeEditavel && proposta) {
+    // A partir de LIBERADO, sem troca de frete nesta edição, o frete é o GRAVADO,
+    // não o do card (14/09/2026): é o que o `saveProposta` soma e o que a aba
+    // Pagamentos cobra. O carregamento já entrega esse valor em
+    // `proposta.resumo.frete`. Com a troca (23/09/2026), vale o card, como no
+    // salvamento — `recalculaFrete`.
+    if (!recalculaFrete && proposta) {
       const freteGravado = Number(proposta.resumo.frete) || 0;
       return {
         ...calculado,
@@ -1273,7 +1359,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
       };
     }
     return calculado;
-  }, [form.isAvulso, form.valorProdutosManual, form.valorFreteManual, form.itens, form.fretes, form.modalidadeFrete, form.descontoGeralValor, form.descontoGeralTipo, modalidadeEditavel, proposta]);
+  }, [form.isAvulso, form.valorProdutosManual, form.valorFreteManual, form.itens, form.fretes, form.modalidadeFrete, form.descontoGeralValor, form.descontoGeralTipo, recalculaFrete, proposta]);
 
   const volumes = Math.max(1, Math.ceil(resumo.pesoTotal / 14500));
 
@@ -1488,8 +1574,8 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
       observacao: "",
       escolhido: true,
       pesoUsado: 0
-    // A partir de LIBERADO a linha do frete fala do valor gravado, o mesmo do total.
-    } : (!modalidadeEditavel && freteEscolhido ? { ...freteEscolhido, valor: resumo.frete } : freteEscolhido),
+    // A partir de LIBERADO, sem troca, a linha do frete fala do valor gravado, o mesmo do total.
+    } : (!recalculaFrete && freteEscolhido ? { ...freteEscolhido, valor: resumo.frete } : freteEscolhido),
     resumo,
     formaPagamento: form.formaPagamento,
     isAvulso: form.isAvulso,
@@ -2926,6 +3012,42 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
    * desfazia alterações concorrentes (vários modelos abertos ao mesmo tempo,
    * respostas de gravação chegando depois).
    */
+  /**
+   * Quantidade de cada item que a TELA sabe estar gravada no banco — a
+   * referência que a Lista rápida manda como "quantidade que eu vi" para a
+   * trava de concorrência da rota lotes-em-massa.
+   *
+   * Não pode ser `item.quantidade` do formulário: trocar a quantidade na aba
+   * Orçamento sem salvar deixava o formulário em 29 com o banco em 27, e a
+   * rota recusava a própria edição do usuário como se fosse de outra pessoa
+   * ("era 29, agora é 27" — proposta 22528). O snapshot do guard de alterações
+   * é o formulário como está gravado: tirado depois da carga e refeito a cada
+   * salvamento. A gravação da grade não mexe nele (o item tem de continuar
+   * "alterado" até o Salvar sincronizar o cabeçalho), então o que ela gravou
+   * fica ao lado, preso ao snapshot da vez — um salvamento posterior regrava
+   * a quantidade do formulário, que já inclui a da grade, e troca o snapshot.
+   */
+  const qtdGravadaPelaGrade = useRef<{ snapshot: string; porItem: Map<number, number> }>({
+    snapshot: "",
+    porItem: new Map()
+  });
+
+  const quantidadeGravadaDoItem = useCallback((idProdutoProposta: number): number | null => {
+    const snapshot = initialFormSnapshot.current;
+    if (!snapshot) return null;
+    const grade = qtdGravadaPelaGrade.current;
+    if (grade.snapshot === snapshot && grade.porItem.has(idProdutoProposta)) {
+      return grade.porItem.get(idProdutoProposta) ?? null;
+    }
+    try {
+      const itens = (JSON.parse(snapshot) as { itens?: PropostaItem[] }).itens || [];
+      const item = itens.find((it) => Number(it.id_produto_proposta_origem) === idProdutoProposta);
+      return item ? Number(item.quantidade) || 0 : null;
+    } catch {
+      return null;
+    }
+  }, []);
+
   const aplicarPatchModelos = useCallback(
     (atualizar: (prev: PedidoModeloState[]) => PedidoModeloState[]) => {
       setForm((prev) => ({ ...prev, pedidosModelos: atualizar(prev.pedidosModelos) }));
@@ -3638,6 +3760,12 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
   }
 
   async function selectFrete(freteId: string) {
+    // Trocar o card é trocar o frete: com a barreira da Expedição ativa (NF,
+    // despacho, permissão), a escolha não muda e o motivo aparece.
+    if (bloqueioTrocaFrete && freteId !== form.freteEscolhidoId) {
+      showToast({ type: "warning", title: "Troca de frete bloqueada", description: bloqueioTrocaFrete });
+      return;
+    }
     const updatedFretes = form.fretes.map((frete) => ({ ...frete, escolhido: frete.id === freteId }));
     // Sincronia (nao substituicao): escolher retirada embaixo marca RETIRA no
     // topo. Os dois campos continuam existindo — `frete_escolhido` guarda a
@@ -3645,7 +3773,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     // pontos que mexem em `freteEscolhidoId` sao carga inicial, reset e
     // recalculo, nao escolha do usuario, e nao sincronizam nada.
     const escolhido = updatedFretes.find((f) => f.id === freteId);
-    const viraRetira = modalidadeEditavel && ehFreteDeRetirada(escolhido) && form.modalidadeFrete !== "RETIRA";
+    const viraRetira = ehFreteDeRetirada(escolhido) && form.modalidadeFrete !== "RETIRA";
     if (viraRetira) {
       showToast({
         type: "info",
@@ -3976,14 +4104,15 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     }
 
     // FOB sem transportadora não fecha: é justamente o dado que a Expedição vai
-    // usar no despacho. Só cobra enquanto os campos estão editáveis — proposta
-    // já liberada não fica refém de uma regra criada depois dela.
+    // usar no despacho. Só cobra quando a declaração vai ser gravada
+    // (`recalculaFrete`) — proposta já liberada que não mexeu no frete não fica
+    // refém de uma regra criada depois dela.
     // A regra de `faltaTransportadoraEmFob` segue intacta. O que se acrescenta e
     // a UNICA excecao: motoboy responde a mesma pergunta ("quem leva") sem ter
     // cadastro para vincular. Exigir o drop nesse caso seria pedir um dado que
     // nao existe.
     if (
-      modalidadeEditavel &&
+      recalculaFrete &&
       !fobPorMotoboy &&
       faltaTransportadoraEmFob(form.modalidadeFrete, form.idTransportadoraCliente)
     ) {
@@ -4115,7 +4244,9 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     const formToSave = {
       ...form,
       vendedor: vendedorParaSalvar,
-      contatoNome: contatoSelecionado?.nome?.trim() ?? ""
+      contatoNome: contatoSelecionado?.nome?.trim() ?? "",
+      // Diz ao `saveProposta` se o frete desta gravação é o da tela ou o gravado.
+      freteDeclaracaoAlterada
     };
 
     if (process.env.NODE_ENV === "development") {
@@ -4236,7 +4367,8 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
 
         // Atualizar snapshot e URL (adiado se houver diferença)
         const updateSnapshotAndUrl = () => {
-          const { fretes: _f, ...savedSnap } = { ...formToSave, deletedProdutoPropostaIds: [] };
+          // `freteDeclaracaoAlterada: undefined` some no JSON: o snapshot fica igual ao `form`.
+          const { fretes: _f, ...savedSnap } = { ...formToSave, deletedProdutoPropostaIds: [], freteDeclaracaoAlterada: undefined };
           initialFormSnapshot.current = JSON.stringify(savedSnap);
           setForm(prev => ({ ...prev, deletedProdutoPropostaIds: [] }));
         };
@@ -4381,7 +4513,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
         // O snapshot precisa refletir o estado já sincronizado, senão a tela
         // ficaria marcada como "alterações não salvas" logo após salvar.
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        const { fretes: _f, ...savedSnap } = {
+        const { fretes: _f, freteDeclaracaoAlterada: _fd, ...savedSnap } = {
           ...formToSave,
           itens: aplicarSyncItens(formToSave.itens),
           pedidosModelos: aplicarSync(formToSave.pedidosModelos),
@@ -4409,23 +4541,15 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
           if (onReload) onReload(true);
         }
 
-        // A trava de status recusou a modalidade/transportadora declarada. O
-        // resto foi gravado, mas a recusa precisa ser DITA: descartá-la em
-        // silêncio foi o que fez o vendedor atravessar toda a proposta 20890
-        // acreditando ter marcado FOB. Vai no PRÓPRIO aviso pós-salvamento
-        // porque a página recarrega em seguida — um segundo toast disparado
-        // agora morreria no reload.
-        const avisoSalvamento: AvisoPosSalvamento = res.avisoModalidade
-          ? {
-              type: "warning",
-              title: "Modalidade do frete NÃO foi salva",
-              description: res.avisoModalidade
-            }
-          : {
-              type: res.errorMessage ? "info" : "success",
-              title: res.errorMessage ? "Salvamento Parcial" : (mode === "edit" ? "Orçamento atualizado com sucesso." : "Orçamento criado com sucesso."),
-              description: res.errorMessage || undefined
-            };
+        // Vai no PRÓPRIO aviso pós-salvamento porque a página recarrega em
+        // seguida — um segundo toast disparado agora morreria no reload. (O
+        // aviso de "modalidade NÃO salva" saiu com a trava, em 23/09/2026: a
+        // troca de frete ou grava ou é recusada inteira pelas barreiras.)
+        const avisoSalvamento: AvisoPosSalvamento = {
+          type: res.errorMessage ? "info" : "success",
+          title: res.errorMessage ? "Salvamento Parcial" : (mode === "edit" ? "Orçamento atualizado com sucesso." : "Orçamento criado com sucesso."),
+          description: res.errorMessage || undefined
+        };
 
         if (formToSave.briefingArtesDraft) {
           try {
@@ -4581,25 +4705,17 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     const formToSave = {
       ...form,
       vendedor: vendedorParaSalvar,
-      contatoNome: contatoSelecionado?.nome?.trim() ?? ""
+      contatoNome: contatoSelecionado?.nome?.trim() ?? "",
+      // Diz ao `saveProposta` se o frete desta gravação é o da tela ou o gravado.
+      freteDeclaracaoAlterada
     };
 
     try {
       const res = await saveProposta(formToSave);
       if (res.success) {
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        const { fretes: _f, ...savedSnap } = formToSave;
+        const { fretes: _f, freteDeclaracaoAlterada: _fd, ...savedSnap } = formToSave;
         initialFormSnapshot.current = JSON.stringify(savedSnap);
-
-        // Mesma recusa do caminho normal de salvamento: aqui não há reload, então
-        // o aviso vai direto como toast.
-        if (res.avisoModalidade) {
-          showToast({
-            type: "warning",
-            title: "Modalidade do frete NÃO foi salva",
-            description: res.avisoModalidade
-          });
-        }
 
         const finalIdInt = res.id_int || formToSave.id_int;
         if (form.id_int === "NOVO") {
@@ -5093,25 +5209,21 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
               onClick={() => {
                 if (tab.id === "artes") {
                   const errosPorModelo: Record<string, Set<string>> = {};
-                  const isMissing = (val: any) => val === null || val === undefined || val === "";
                   for (const m of form.pedidosModelos) {
                     // Ignora modelos órfãos (cujo item foi removido)
-                    const hasItem = form.itens.some(
+                    const itemDoModelo = form.itens.find(
                       (item) =>
                         (m.id_produto_proposta_origem && item.id_produto_proposta_origem === m.id_produto_proposta_origem) ||
                         (m.item_temp_id && m.item_temp_id === item.id)
                     );
-                    if (!hasItem) continue;
+                    if (!itemDoModelo) continue;
 
-                    const faltam: string[] = [];
-                    if (!m.nome_modelo) faltam.push("Modelo");
-                    if (!m.quantidade || m.quantidade <= 0) faltam.push("Qtd");
-                    if (isMissing(m.padrao)) faltam.push("Cor Papel");
-                    if (isMissing(m.gabarito_operacional)) faltam.push("Numerador");
-                    if (isMissing(m.numeracao_inicio)) faltam.push("Nº Inicial");
-                    if (isMissing(m.numeracao_fim)) faltam.push("Nº Final");
-                    if (!isMissing(m.numeracao_inicio) && !isMissing(m.numeracao_fim) && Number(m.numeracao_fim) < Number(m.numeracao_inicio)) faltam.push("Nº Final < Inicial");
-                    if (isMissing(m.verso_tipo)) faltam.push("Verso");
+                    // Campo que o produto não imprime não é cobrado — o card
+                    // nem o mostra (mesma regra de lib/checklist-lote).
+                    const faltam = pendenciasDoLoteParaArtes(
+                      m,
+                      checklistVisivel(checklistPorProduto.get(Number(itemDoModelo.id_produto)))
+                    );
 
                     if (faltam.length > 0) {
                       const nome = m.nome_modelo || "Sem nome";
@@ -5169,7 +5281,16 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
               modelos={form.pedidosModelos}
               autoSaveHabilitado={!hasActiveCobranca && !isFormBloqueadoPorCobranca}
               onModelosChange={aplicarPatchModelos}
+              quantidadeGravadaDoItem={quantidadeGravadaDoItem}
               onLotesGravados={(idProdutoPropostaOrigem, novaQtd, freteMensagem) => {
+                // O banco passou a ter `novaQtd`: é a referência da próxima
+                // gravação da grade, feita pela própria tela.
+                const grade = qtdGravadaPelaGrade.current;
+                if (grade.snapshot !== initialFormSnapshot.current) {
+                  grade.snapshot = initialFormSnapshot.current;
+                  grade.porItem = new Map();
+                }
+                grade.porItem.set(Number(idProdutoPropostaOrigem), novaQtd);
                 // A lista rápida já gravou item e lotes no banco. Aqui só
                 // espelhamos no formulário: o total da proposta é calculado na
                 // tela, então ele se move na hora, e o cabeçalho da proposta
@@ -6246,7 +6367,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                     <button
                       key={m}
                       type="button"
-                      disabled={!modalidadeEditavel || ehComplemento}
+                      disabled={Boolean(bloqueioTrocaFrete) || ehComplemento}
                       onClick={() => {
                         // Sair de RETIRA com a retirada ainda escolhida embaixo
                         // deixaria o par incoerente (ex.: FOB com frete de
@@ -6314,7 +6435,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-stretch">
                     <select
                       value={form.idTransportadoraCliente ?? ""}
-                      disabled={!modalidadeEditavel || fobPorMotoboy || ehComplemento}
+                      disabled={Boolean(bloqueioTrocaFrete) || fobPorMotoboy || ehComplemento}
                       onChange={(e) =>
                         updateField("idTransportadoraCliente", e.target.value === "" ? null : Number(e.target.value))
                       }
@@ -6333,7 +6454,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                         dispensa a transportadora e zera o vinculo. */}
                     <button
                       type="button"
-                      disabled={!modalidadeEditavel || ehComplemento}
+                      disabled={Boolean(bloqueioTrocaFrete) || ehComplemento}
                       aria-pressed={fobPorMotoboy}
                       onClick={() => alternarMotoboyFob(!fobPorMotoboy)}
                       className={`rounded-2xl border px-4 py-2.5 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 sm:w-40 ${
@@ -6396,26 +6517,44 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                 </div>
               )}
 
-              {modalidadeEditavel && declaracaoFreteNaoSalva && (
+              {declaracaoFreteNaoSalva && (
                 <p className="rounded-2xl border border-amber-300 bg-amber-50 p-3 text-xs font-bold text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
                   Alteração pendente: a modalidade escolhida ainda NÃO está gravada. Salve o orçamento — sem isso a
                   OS e a Expedição continuam com o frete cotado, e a declaração se perde ao sair da página.
                 </p>
               )}
 
-              {!modalidadeEditavel && (
-                <div className="space-y-3 rounded-2xl border border-amber-200 bg-amber-50 p-3 dark:border-amber-900 dark:bg-amber-950/40">
-                  <p className="text-xs font-medium text-amber-900 dark:text-amber-200">
-                    {motivoBloqueioModalidade(form.status)}
-                  </p>
+              {!faseDeOrcamento && (
+                <div
+                  className={`space-y-3 rounded-2xl border p-3 ${
+                    bloqueioTrocaFrete
+                      ? "border-amber-200 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/40"
+                      : "border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800/40"
+                  }`}
+                >
+                  {/*
+                    Não é mais aviso de somente leitura (23/09/2026). Com a
+                    barreira da Expedição ativa, diz o motivo e o que fazer; sem
+                    ela, diz o que a troca faz com o dinheiro. No complemento os
+                    campos são herdados do principal, e não há o que dizer.
+                  */}
+                  {ehComplemento ? null : (
+                    <p
+                      className={`text-xs font-medium ${
+                        bloqueioTrocaFrete ? "text-amber-900 dark:text-amber-200" : "text-slate-600 dark:text-slate-300"
+                      }`}
+                    >
+                      {bloqueioTrocaFrete ?? AVISO_TROCA_FRETE_APOS_LIBERACAO}
+                    </p>
+                  )}
 
                   {/*
                     A porta estreita do admin, no lugar onde ele JÁ chega.
-                    Quem vem consertar um pedido parado na Expedição abre a
-                    proposta e cai neste aviso — que até aqui dizia "não dá" e
-                    parava. O controle fica colado nele para a resposta vir junto
-                    com o problema, em vez de num menu que ninguém procura.
-                    Corrige SÓ quem transporta: modalidade e valor seguem travados.
+                    Nasceu quando a modalidade e a transportadora eram somente
+                    leitura depois de LIBERADO; a trava saiu em 23/09/2026, mas a
+                    porta fica: grava na hora, sem o Salvar, e cobre o pedido já
+                    despachado — que a troca pelos campos acima recusa pela
+                    barreira da Expedição. Continua mexendo SÓ em quem transporta.
                   */}
                   <PermissionGuard permission="expedicao.admin" fallback={null}>
                     <div className="space-y-2 border-t border-amber-200 pt-3 dark:border-amber-900">

@@ -1105,6 +1105,7 @@ export function PedidoModelosTab({
   autoSaveHabilitado = true,
   onModelosChange,
   onLotesGravados,
+  quantidadeGravadaDoItem,
 }: {
   idInt?: number;
   /** propostas.id_cliente — filtra as numerações exclusivas de cliente. */
@@ -1126,6 +1127,13 @@ export function PedidoModelosTab({
   onModelosChange: (atualizar: (prev: PedidoModeloState[]) => PedidoModeloState[]) => void;
   /** Lotes gravados em massa: o pai acerta a quantidade do item e relê os lotes. */
   onLotesGravados?: (idProdutoPropostaOrigem: number, novaQtd: number, freteMensagem: string | null) => void;
+  /**
+   * Quantidade do item que a tela sabe estar gravada no banco (por
+   * `produtos_proposta.id`), ou null se ainda não sabe. É a referência da
+   * trava de concorrência da Lista rápida — não a quantidade do formulário,
+   * que pode ter edição da aba Orçamento ainda por salvar.
+   */
+  quantidadeGravadaDoItem?: (idProdutoProposta: number) => number | null;
 }) {
   const { showToast } = useAppToast();
   // Proposta 100% de prateleira: mesma definição usada para dispensar a arte.
@@ -1456,6 +1464,7 @@ export function PedidoModelosTab({
                         idInt={Number(idInt)}
                         // Por ele a grade lê o checklist do boletim do produto.
                         idProduto={Number(item.id_produto) || null}
+                        quantidadeGravada={() => quantidadeGravadaDoItem?.(idNoBanco) ?? null}
                         item={{
                           id_produto_proposta_origem: idNoBanco,
                           nome: item.nome,

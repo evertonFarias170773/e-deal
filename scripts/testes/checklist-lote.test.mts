@@ -22,6 +22,8 @@
  *      coluna escondida.
  *   G. Etapa 6c — `saveProposta` com lotes na tela: INSERT com null, UPDATE sem
  *      as colunas escondidas; sem checklist, idêntico à montagem antiga.
+ *   H. Trava "Modelos incompletos" da aba Artes: campo escondido não é
+ *      cobrado (22563, Triband sem Impressão); sem checklist, cobra tudo.
  *
  * O `@/lib/supabase/client` dos serviços é trocado pelo `_supabase-falso.mts`:
  * nenhuma requisição sai daqui.
@@ -524,6 +526,38 @@ checar(
   "saveProposta INSERT sem checklist: as mesmas chaves e valores de antes",
   Object.fromEntries(Object.keys(insertAntigo).map((k) => [k, (insertSemChecklist as Record<string, unknown>)[k]])),
   insertAntigo
+);
+
+// ── H. Trava "Modelos incompletos" da aba Artes ─────────────────────────────
+console.log("\n══ H. aba Artes: pendências do lote seguem o checklist");
+const loteTriband = {
+  nome_modelo: "Reino",
+  quantidade: 180,
+  padrao: "Pink Fluor",
+  gabarito_operacional: "001 - Padrão Ideal",
+  numeracao_inicio: 1,
+  numeracao_fim: 180,
+  verso_tipo: null
+};
+checar(
+  "22563: Triband sem Impressão no checklist não é cobrada por Verso",
+  regra.pendenciasDoLoteParaArtes(loteTriband, regra.checklistVisivel(["cor", "imagem", "num_gabarito", "numeracao_faixa"])),
+  []
+);
+checar(
+  "com Impressão marcada, Verso vazio segue cobrado",
+  regra.pendenciasDoLoteParaArtes(loteTriband, COMPLETO),
+  ["Verso"]
+);
+checar(
+  "sem checklist: cobrança de sempre, campo por campo",
+  regra.pendenciasDoLoteParaArtes({ nome_modelo: "", quantidade: 0, numeracao_inicio: 10, numeracao_fim: 5 }, SEM_CHECKLIST),
+  ["Modelo", "Qtd", "Cor Papel", "Numerador", "Nº Final < Inicial", "Verso"]
+);
+checar(
+  "campo escondido não é cobrado; nome e quantidade sempre são",
+  regra.pendenciasDoLoteParaArtes({ nome_modelo: "", quantidade: 0 }, regra.checklistVisivel(["imagem"])),
+  ["Modelo", "Qtd"]
 );
 
 console.log(falhas === 0 ? "\nTUDO OK" : `\n${falhas} FALHA(S)`);

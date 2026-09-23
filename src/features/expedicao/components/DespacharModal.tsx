@@ -186,8 +186,10 @@ export function DespacharModal({
    * o pedido ficaria impossível de despachar. Medido em 03/09/2026: 4 pedidos
    * abertos no painel (20413, 20517, 20678, 20890) e 8.233 propostas no
    * histórico não têm modalidade em lugar nenhum, e nenhum dos 4 cai no degrau
-   * da cotação de balcão. A proposta também não os resolve:
-   * `podeEditarModalidade` congela o campo a partir de LIBERADO.
+   * da cotação de balcão. Na época a proposta também não os resolvia — a
+   * modalidade congelava a partir de LIBERADO. Desde 23/09/2026 ela se troca na
+   * aba Fretes em qualquer status até o despacho, mas os botões daqui continuam:
+   * são o caminho de quem já está na bancada.
    *
    * LÊ `modalidadeInicial`, NÃO `modalidade`: precisa ser constante durante a
    * vida do modal. Com o estado vivo, os botões sumiriam no primeiro clique e
@@ -1295,12 +1297,12 @@ export function DespacharModal({
                   : ""}{" "}
                 {/* A saída "escolha CIF" só existe enquanto a modalidade for
                     escolhível AQUI. Travada, mandar escolher CIF orientaria um
-                    clique que não existe mais — e a proposta também não resolve
-                    depois de LIBERADO (`podeEditarModalidade`), então o texto diz
-                    a verdade inteira em vez de empurrar o expedidor para uma
-                    tela que vai recusar. */}
+                    clique que não existe mais. Desde 23/09/2026 a proposta troca
+                    a modalidade em qualquer status — mas com as barreiras da
+                    correção de frete, e a do despacho confirmado recusa o pedido
+                    que já saiu. Por isso confirmar aqui continua sendo um caminho. */}
                 {modalidadeTravada
-                  ? "Se o envio realmente vai pelos Correios, quem está errada é a modalidade — e ela se corrige na proposta, só até o status LIBERADO. Passado esse ponto, confirmar aqui é o caminho, e a diferença fica registrada nas duas pontas."
+                  ? "Se o envio realmente vai pelos Correios, quem está errada é a modalidade — e ela se corrige na aba Fretes da proposta, antes do despacho. Confirmar aqui também é um caminho, e a diferença fica registrada nas duas pontas."
                   : "Se o envio realmente vai pelos Correios, escolha CIF."}
               </p>
               <label className="mt-2 flex items-center gap-2 font-semibold">

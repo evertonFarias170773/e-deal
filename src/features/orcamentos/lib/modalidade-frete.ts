@@ -32,46 +32,68 @@ export { LABEL_MODALIDADE };
 export const MODALIDADES_ORCAMENTO: ModalidadeFrete[] = ["RETIRA", "FOB", "CIF"];
 
 /**
- * Status em que a modalidade ainda pode ser declarada ou corrigida.
+ * FASE DE ORÇAMENTO — antes de a proposta ser liberada.
  *
- * A partir de `LIBERADO` os campos ficam somente leitura. O motivo é do banco,
- * não de processo: salvar o orçamento faz DELETE + INSERT em `cotacao_frete`, e
- * o trigger `trg_frete_sync_financeiro` reescreve `status_interno` a partir de
- * `pagamentos_v2` — com zero pagamentos ele força `NOVO` incondicionalmente.
- * Editar o frete de um pedido que já saiu da fase de orçamento o rebaixaria.
+ * Até 23/09/2026 isto se chamava `podeEditarModalidade` e TRAVAVA a modalidade
+ * e a transportadora a partir de LIBERADO. A trava saiu: modalidade e
+ * transportadora se trocam em qualquer status (decisão do dono). O que a fase
+ * ainda decide é outra coisa — DE ONDE VEM O FRETE quando a declaração NÃO
+ * mudou nesta edição:
  *
- * A TRAVA NÃO É A ÚLTIMA PALAVRA sobre corrigir frete depois da liberação. Isso
- * existe e acontece 2 a 3 vezes por dia — só que fora daqui: a rota
- * `/api/expedicao/corrigir-frete` grava direto as cinco colunas de `propostas` e
- * o `valor` da cotação escolhida, na faixa em que a guarda de status protegido do
- * banco impede o rebaixamento, e com NF, despacho, status e permissão conferidos
- * no servidor. Não abra exceção nesta trava para atender aquele caso: o
- * `saveProposta` calcula o valor e o nome do frete pela modalidade JÁ GRAVADA
- * antes de chegar ao gate, e a exceção gravaria a modalidade nova com o dinheiro
- * da antiga. Foi o que aconteceu com a opção de 8475ff3, removida por isso.
+ *   - na fase de orçamento, do card cotado, como sempre;
+ *   - depois dela, do `valor_frete` GRAVADO. É onde moram o valor negociado e a
+ *     recotação da Expedição, que mudam o frete sem tocar `cotacao_frete`.
+ *     Regravar o card a cada Salvar desfazia essas correções.
+ *
+ * Quando a declaração MUDA, o frete sai da declaração nova em qualquer fase —
+ * ver `freteSeRecalculaNaGravacao`.
+ *
+ * `status_interno` pode vir composto de dois jeitos, e os dois ainda são fase de
+ * orçamento: com barra ("NOVO / EM ARTE") e com sublinhado
+ * ("NOVO_ARTE_APROVADA", "AGUARDANDO_ARTE_APROVADA", gravados pelo motor de
+ * status). O sublinhado não era reconhecido — era o que travava a 22448.
+ * Proposta nova (sem status gravado) está na fase de orçamento.
  */
-const STATUS_EDITAVEIS = ["NOVO", "AGUARDANDO"];
+const STATUS_FASE_ORCAMENTO = ["NOVO", "AGUARDANDO"];
 
-/**
- * `status_interno` pode vir composto ("NOVO / EM ARTE", "AGUARDANDO / EM ARTE"),
- * e esses ainda são fase de orçamento — a barra separa o estado de arte, não o
- * estágio do pedido. Proposta nova (sem status gravado) é editável.
- */
-export function podeEditarModalidade(statusInterno: string | null | undefined): boolean {
+export function estaNaFaseDeOrcamento(statusInterno: string | null | undefined): boolean {
   const bruto = (statusInterno ?? "").trim();
   if (bruto === "") return true;
-  const base = bruto.split("/")[0].trim().toUpperCase();
-  return STATUS_EDITAVEIS.includes(base);
+  const base = bruto.split("/")[0].trim().toUpperCase().replace(/_ARTE_APROVADA$/, "");
+  return STATUS_FASE_ORCAMENTO.includes(base);
 }
 
-/** Mensagem única do aviso de somente leitura, para tela e toast falarem igual. */
-export function motivoBloqueioModalidade(statusInterno: string | null | undefined): string {
-  return (
-    `A modalidade e a transportadora ficam somente leitura a partir de LIBERADO ` +
-    `(status atual: ${statusInterno || "—"}). Alterar o frete depois dessa fase reabre a ` +
-    `proposta como NOVO e a tira do fluxo de produção.`
-  );
+/**
+ * Esta gravação recalcula o frete a partir da declaração da tela?
+ *
+ * Sim na fase de orçamento, e sim em qualquer fase quando a declaração MUDOU
+ * nesta edição — modalidade, transportadora, motoboy ou card escolhido. Fora
+ * disso o frete gravado fica. Um predicado só, usado pela tela (resumo) e pelo
+ * `saveProposta` (o que grava), para os dois não divergirem.
+ *
+ * POR QUE A MUDANÇA É DITA PELA TELA E NÃO DEDUZIDA NO SERVIÇO
+ *   A tela sabe o que carregou e o que o usuário trocou. O serviço só veria o
+ *   banco e o formulário, e compararia um card recotado ou uma correção feita
+ *   pela Expedição com o que a tela ainda mostra — um falso "mudou" regravaria
+ *   o frete negociado com o valor do card, que é o defeito da 8475ff3.
+ *   Formulário velho que não mexeu no frete manda "não mudou", e nada é
+ *   regravado.
+ */
+export function freteSeRecalculaNaGravacao(entrada: {
+  faseDeOrcamento: boolean;
+  declaracaoMudou: boolean;
+}): boolean {
+  return entrada.faseDeOrcamento || entrada.declaracaoMudou;
 }
+
+/**
+ * Texto da aba Fretes depois da liberação, para tela e serviço falarem igual.
+ * Não é trava: explica o que a troca faz.
+ */
+export const AVISO_TROCA_FRETE_APOS_LIBERACAO =
+  "Trocar a modalidade, a transportadora ou o frete escolhido recalcula o frete e o total. " +
+  "Se a proposta já tem pagamento e o total subir, a diferença aparece na aba Pagamentos para " +
+  "cobrança manual, e a proposta fica aguardando essa cobrança. Pedido em produção continua na produção.";
 
 /**
  * A modalidade cobra frete do cliente?

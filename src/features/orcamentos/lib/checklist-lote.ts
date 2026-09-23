@@ -132,3 +132,45 @@ export function camposOpcionaisDoLotePcp(
         : null
   };
 }
+
+/**
+ * O que falta no lote para a aba Artes abrir — a trava "Modelos incompletos".
+ *
+ * Campo que o produto não imprime não é cobrado: desde a Etapa 6c o card nem
+ * mostra o campo, e cobrá-lo trancava a aba sem o usuário ter onde preencher
+ * (22563: Triband sem Impressão no checklist, barrada por "Verso"). Nome e
+ * quantidade são sempre cobrados; produto sem checklist segue a cobrança de
+ * sempre, campo por campo.
+ */
+export function pendenciasDoLoteParaArtes(
+  lote: {
+    nome_modelo?: string | null;
+    quantidade?: number | null;
+    padrao?: string | null;
+    gabarito_operacional?: string | null;
+    numeracao_inicio?: number | string | null;
+    numeracao_fim?: number | string | null;
+    verso_tipo?: string | null;
+  },
+  visivel: ChecklistVisivel
+): string[] {
+  const falta = (valor: unknown) => valor === null || valor === undefined || valor === "";
+  const faltam: string[] = [];
+  if (!lote.nome_modelo) faltam.push("Modelo");
+  if (!lote.quantidade || lote.quantidade <= 0) faltam.push("Qtd");
+  if (mostraCampo(visivel, "cor") && falta(lote.padrao)) faltam.push("Cor Papel");
+  if (mostraCampo(visivel, "num_gabarito") && falta(lote.gabarito_operacional)) faltam.push("Numerador");
+  if (mostraCampo(visivel, "numeracao_faixa")) {
+    if (falta(lote.numeracao_inicio)) faltam.push("Nº Inicial");
+    if (falta(lote.numeracao_fim)) faltam.push("Nº Final");
+    if (
+      !falta(lote.numeracao_inicio) &&
+      !falta(lote.numeracao_fim) &&
+      Number(lote.numeracao_fim) < Number(lote.numeracao_inicio)
+    ) {
+      faltam.push("Nº Final < Inicial");
+    }
+  }
+  if (mostraCampo(visivel, "impressao_fv") && falta(lote.verso_tipo)) faltam.push("Verso");
+  return faltam;
+}

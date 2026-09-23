@@ -14,12 +14,12 @@ import {
  * Recotar o frete a partir da PROPOSTA — Peça B da Etapa 3.
  *
  * POR QUE EXISTE
- *   A Peça A deu destino à transportadora; faltava o VALOR do frete. Depois de
- *   LIBERADO a proposta é somente leitura para frete, e a trava é do banco:
- *   salvar o orçamento reescreve `cotacao_frete` e os três triggers de lá
- *   rebaixam o pedido para NOVO. A recotação é o único mecanismo que altera o
- *   frete de um pedido em produção sem derrubá-lo — ela escreve direto em
- *   `propostas.valor_frete` e `valor_total`, por RPC, sem tocar `cotacao_frete`.
+ *   A Peça A deu destino à transportadora; faltava o VALOR do frete. Na época,
+ *   depois de LIBERADO a proposta era somente leitura para frete. (A trava saiu
+ *   em 23/09/2026; e dos três triggers de `cotacao_frete` só UM mexe em status —
+ *   ver o comentário de `/api/propostas/transportadora`.) A recotação escreve
+ *   direto em `propostas.valor_frete` e `valor_total`, por RPC, sem tocar
+ *   `cotacao_frete`.
  *
  *   Até aqui esse mecanismo só tinha entrada pelo modal de Despachar. Quem abria
  *   a proposta para consertar via o aviso de somente-leitura e parava.

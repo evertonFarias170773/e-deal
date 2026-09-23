@@ -24,14 +24,17 @@ import {
   aplicarModalidadeNosFretes,
   exigeCotacaoEscolhida,
   faltaTransportadoraEmFob,
+  estaNaFaseDeOrcamento,
+  freteSeRecalculaNaGravacao,
   modalidadeCobraFrete,
-  motivoBloqueioModalidade,
   nomeTransportadoraCadastro,
   nomeTransporteEfetivo,
-  podeEditarModalidade,
   valorFreteEfetivo,
   type ModalidadeFrete
 } from "@/features/orcamentos/lib/modalidade-frete";
+// As MESMAS barreiras da correção de frete da Expedição — ver `barreirasDaTrocaDeFrete`.
+import { barreirasDaTrocaDeFrete } from "@/features/expedicao/services/corrigir-frete-simulacao";
+import { verificarPermissaoServerSide } from "@/lib/auth/verificar-permissao";
 import type {
   SupabasePagamentoTipoCobrancaRow,
   SupabasePropostaRow,
@@ -1811,7 +1814,7 @@ export async function getPropostaDetailById(idInt: number, overrideClient?: Supa
     // `cotacao_frete`. Com o card, o resumo (e o saldo da aba Pagamentos) seguia
     // mostrando o frete antigo. Mesmo corte da trava de modalidade.
     const freteValor = valorFreteEfetivo(
-      podeEditarModalidade(proposalRow.status_interno as string | null)
+      estaNaFaseDeOrcamento(proposalRow.status_interno as string | null)
         ? (chosenFrete ? chosenFrete.valor : 0)
         : Number(proposalRow.valor_frete ?? 0),
       modalidadePersistidaProposta
@@ -2223,13 +2226,6 @@ export async function saveProposta(
    * original (FK com ON DELETE CASCADE, levando modelos e variações junto).
    */
   itensSincronizados?: Array<{ itemId: string; id: number }>;
-  /**
-   * Preenchido quando o salvamento deu certo MAS a modalidade/transportadora
-   * declarada na tela foi recusada pela trava de status — o resto foi gravado e
-   * o que já estava em `propostas` permanece. Campo aditivo e opcional: quem não
-   * lê (rota `editar-paga`, Maestro) segue igual.
-   */
-  avisoModalidade?: string;
 }> {
   const client = injectedClient ?? getSupabaseClient();
   if (!client) {
@@ -2560,14 +2556,54 @@ export async function saveProposta(
       }
     }
 
-    const modalidadeEditavel = podeEditarModalidade(statusParaGate);
+    /**
+     * O FRETE DESTA GRAVAÇÃO SAI DA TELA OU DO BANCO? (23/09/2026)
+     *
+     * A trava que deixava modalidade e transportadora somente leitura a partir de
+     * LIBERADO saiu. Elas se trocam em qualquer status; o que sobrou da fase de
+     * orçamento é a origem do frete quando a declaração NÃO mudou — depois da
+     * liberação vale o `valor_frete` gravado (negociado, recotado). Quando a tela
+     * diz que a declaração mudou, o frete sai dela em qualquer fase.
+     *
+     * `regravaFrete` substitui o antigo `modalidadeEditavel` em todos os pontos
+     * abaixo com o mesmo papel: gravar a declaração, `valor_frete` e
+     * `cotacao_frete`. Sem releitura do banco cai na tela, como antes.
+     */
+    const faseDeOrcamento = estaNaFaseDeOrcamento(statusParaGate);
+    const regravaFrete =
+      !gateLidoDoBanco ||
+      freteSeRecalculaNaGravacao({
+        faseDeOrcamento,
+        declaracaoMudou: formState.freteDeclaracaoAlterada === true
+      });
     const modalidadeFrete: ModalidadeFrete | null = formState.modalidadeFrete ?? null;
     const idTransportadoraCliente = formState.idTransportadoraCliente ?? null;
 
-    // Declaração que a tela traz e o banco ainda não tem. Só ela vira aviso de
-    // recusa: reenviar o que já está gravado não é alteração descartada.
-    const declaracaoDivergePersistido =
-      modalidadeFrete !== modalidadePersistida || idTransportadoraCliente !== transportadoraPersistida;
+    /**
+     * AS BARREIRAS DA EXPEDIÇÃO, e só fora da fase de orçamento.
+     *
+     * Trocar o frete de um pedido já liberado respeita a MESMA guarda da correção
+     * de frete da Expedição: permissão `propostas.editar_paga`, NF autorizada e
+     * despacho confirmado (decisão do dono, 23/09/2026). Na fase de orçamento não
+     * há nota nem despacho, e exigir a permissão ali tiraria do vendedor o próprio
+     * orçamento — por isso a guarda só entra quando a troca é depois dela.
+     *
+     * Roda ANTES de qualquer escrita: recusada, a proposta não é tocada.
+     */
+    if (!faseDeOrcamento && gateLidoDoBanco && formState.freteDeclaracaoAlterada === true && id_int) {
+      let usuarioDaGravacao: string | undefined = injectedUserId;
+      if (!usuarioDaGravacao) {
+        const { data: { session } } = await client.auth.getSession();
+        usuarioDaGravacao = session?.user?.id;
+      }
+      const temPermissaoEditarPaga = usuarioDaGravacao
+        ? await verificarPermissaoServerSide(client, usuarioDaGravacao, "propostas.editar_paga")
+        : false;
+      const barreira = await barreirasDaTrocaDeFrete(client, { idInt: Number(id_int), temPermissaoEditarPaga });
+      if (barreira) {
+        return { success: false, errorMessage: barreira.mensagem ?? "A troca de frete deste pedido nao e permitida agora." };
+      }
+    }
 
     /**
      * A modalidade que governa o DINHEIRO e o RÓTULO desta gravação.
@@ -2583,14 +2619,11 @@ export async function saveProposta(
      * Se a releitura falhou não há valor persistido confiável para usar: cai na
      * tela, que é o comportamento anterior.
      */
-    const usarDeclaracaoPersistida = !modalidadeEditavel && gateLidoDoBanco;
+    const usarDeclaracaoPersistida = !regravaFrete && gateLidoDoBanco;
     const modalidadeVigente = usarDeclaracaoPersistida ? modalidadePersistida : modalidadeFrete;
     const transportadoraVigente = usarDeclaracaoPersistida
       ? transportadoraPersistida
       : idTransportadoraCliente;
-
-    /** Preenchido quando a trava recusa uma declaração nova — a tela avisa. */
-    let avisoModalidade: string | undefined;
 
     // Motoboy é a exceção declarada: responde a mesma pergunta ("quem leva") sem
     // ter cadastro em `clientes` para vincular. A tela já abre essa exceção desde
@@ -2599,7 +2632,7 @@ export async function saveProposta(
     // intacta — a exceção é do chamador, como na tela.
     const fobPorMotoboy = modalidadeFrete === "FOB" && formState.transporteCategoria === "MOTOBOY";
     if (
-      modalidadeEditavel &&
+      regravaFrete &&
       !fobPorMotoboy &&
       faltaTransportadoraEmFob(modalidadeFrete, idTransportadoraCliente)
     ) {
@@ -2835,28 +2868,25 @@ export async function saveProposta(
       // FRETE SO SE GRAVA NA FASE DE ORCAMENTO (14/09/2026). A partir de
       // LIBERADO o `valor_frete` gravado permanece: e onde as correcoes feitas
       // fora do orcamento moram, e regravar aqui o valor do card as desfazia no
-      // proximo "Salvar alteracoes". Mesmo corte da trava de modalidade e
-      // transportadora (`modalidadeEditavel`, status relido do banco acima).
-      if (modalidadeEditavel) {
+      // proximo "Salvar alteracoes". Desde 23/09/2026 a excecao e a troca de
+      // frete: com a declaracao alterada nesta edicao o frete e o novo, em
+      // qualquer fase (`regravaFrete`, status relido do banco acima).
+      if (regravaFrete) {
         propostaData.valor_frete = freteValor;
       }
     }
 
-    // Só entram no UPDATE enquanto a proposta está na fase de orçamento. Depois
-    // de LIBERADO os campos ficam de fora e o que já está gravado permanece.
+    // Entram no UPDATE na fase de orçamento e, depois dela, quando a tela trocou
+    // a declaração nesta edição (`regravaFrete`). Sem troca, depois de LIBERADO,
+    // o que já está gravado permanece.
     //
-    // A CORREÇÃO DE FRETE PÓS-LIBERAÇÃO NÃO PASSA POR AQUI, e não deve passar.
-    // Ela existe, mora em `/api/expedicao/corrigir-frete` e grava direto as cinco
-    // colunas de `propostas` mais o `valor` da cotação escolhida, com as barreiras
-    // de NF, despacho, status e permissão no servidor.
-    //
-    // Já houve uma opção neste `saveProposta` para abrir este gate (8475ff3,
-    // removida). Ela não funcionava: `freteValor` e `freteNome` saem de
-    // `modalidadeVigente`, que depois de LIBERADO é a modalidade JÁ GRAVADA, e são
-    // escritos acima — antes de qualquer opção ser avaliada. Uma correção CIF→FOB
-    // gravaria `modalidade_frete = FOB` com o valor e o nome do SEDEX. Recriar a
-    // opção é recriar esse defeito.
-    if (modalidadeEditavel) {
+    // POR QUE ISTO NÃO REPETE A 8475ff3. Aquela opção abria o gate DEPOIS de
+    // `freteValor` e `freteNome` já terem saído de `modalidadeVigente` — que,
+    // travada, era a modalidade JÁ GRAVADA —, e uma correção CIF→FOB gravava
+    // `modalidade_frete = FOB` com o valor e o nome do SEDEX. Aqui `regravaFrete`
+    // é decidido ANTES: com a troca, `modalidadeVigente` já é a da tela quando o
+    // dinheiro e o nome são calculados.
+    if (regravaFrete) {
       propostaData.modalidade_frete = modalidadeFrete;
       // Categoria do transporte: lista fechada, e NULA quando ninguem escolheu.
       // "Nao escolheu" e "escolheu retirada" sao estados diferentes — por isso
@@ -2923,12 +2953,6 @@ export async function saveProposta(
        */
       propostaData.categoria_frete =
         categoriaDerivada ?? categoriaDeclarada ?? categoriaPorNomeConhecido(freteNome, chosenFrete?.servico ?? null);
-    } else if (declaracaoDivergePersistido) {
-      // A trava continua valendo — a proposta não é rebaixada e o que já estava
-      // gravado permanece. O que muda é que a recusa passa a ser DITA: descartar
-      // a declaração em silêncio foi o que fez o vendedor acreditar, por toda a
-      // 20890, que tinha marcado FOB.
-      avisoModalidade = motivoBloqueioModalidade(statusParaGate);
     }
 
     if (ehComplemento) {
@@ -3385,7 +3409,7 @@ export async function saveProposta(
     // A partir de LIBERADO `cotacao_frete` nao e tocada — nem DELETE, nem INSERT.
     // Mesmo corte do `valor_frete` acima: a cotacao gravada fica como esta, e os
     // triggers dela nao disparam por causa de um Salvar de pedido ja liberado.
-    if (modalidadeEditavel && !ehComplemento && (formState.isAvulso || chosenFrete || gravaCotacaoSemCard)) {
+    if (regravaFrete && !ehComplemento && (formState.isAvulso || chosenFrete || gravaCotacaoSemCard)) {
       try {
         // Deletar os fretes antigos apenas daquela proposta
         const { error: deleteError } = await client
@@ -3461,7 +3485,7 @@ export async function saveProposta(
           is_avulso: true,
           valor: subtotalProdutos,
           // Mesmo corte do frete: depois de LIBERADO o `valor_frete` gravado fica.
-          ...(modalidadeEditavel ? { valor_frete: freteValor } : {}),
+          ...(regravaFrete ? { valor_frete: freteValor } : {}),
           valor_total: valorTotal
         })
         .eq("id_int", id_int!);
@@ -3563,8 +3587,7 @@ export async function saveProposta(
       id_int: id_int!,
       valor_total: persistedValorTotal,
       modelosSincronizados,
-      itensSincronizados,
-      avisoModalidade
+      itensSincronizados
     };
   } catch (err) {
     console.error("[OrcamentosService] Falha ao salvar proposta:", err);

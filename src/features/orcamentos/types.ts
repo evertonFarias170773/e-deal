@@ -245,6 +245,13 @@ export type PropostaFormState = {
   briefingArtesDraft?: any;
   fretes: PropostaFrete[];
   freteEscolhidoId: string;
+  /**
+   * A tela trocou, nesta edição, a modalidade, a transportadora, o motoboy ou o
+   * card escolhido. Depois da fase de orçamento é o que autoriza o
+   * `saveProposta` a recalcular e regravar o frete — sem isto, fica o gravado.
+   * Ver `freteSeRecalculaNaGravacao`. Ausente conta como "não mudou".
+   */
+  freteDeclaracaoAlterada?: boolean;
   /** Quem paga o transporte. Null em proposta anterior a 18/08/2026 ou ainda não declarada. */
   modalidadeFrete: ModalidadeFrete | null;
   /** Categoria do transporte escolhida na lista fechada. Null = nao escolheu. */

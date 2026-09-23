@@ -51,7 +51,7 @@
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { modalidadeCobraFrete, podeEditarModalidade, type ModalidadeFrete } from "@/features/orcamentos/lib/modalidade-frete";
+import { estaNaFaseDeOrcamento, modalidadeCobraFrete, type ModalidadeFrete } from "@/features/orcamentos/lib/modalidade-frete";
 import { avaliarCoberturaFinanceira } from "@/features/cobrancas/services/cobertura-financeira-proposta";
 import { aplicarDiferencaFinanceira } from "@/features/cobrancas/services/diferenca-financeira-proposta";
 import type { CobrancaParaFaturado } from "@/features/orcamentos/services/faturado-editavel";
@@ -139,7 +139,7 @@ export async function gravarValorFreteNegociado(
   const statusBase = statusAnterior.split("/")[0].trim().toUpperCase();
 
   // ── 3. Onde este bloco vale ───────────────────────────────────────────────
-  if (podeEditarModalidade(proposta.status_interno)) {
+  if (estaNaFaseDeOrcamento(proposta.status_interno)) {
     return recusa(
       409,
       "ANTES_DE_LIBERADO",

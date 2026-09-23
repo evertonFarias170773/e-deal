@@ -106,6 +106,118 @@ function bloqueio(
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════
+ * AS TRÊS BARREIRAS QUE VALEM PARA QUALQUER TROCA DE FRETE (23/09/2026).
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * Permissão, NF autorizada e despacho confirmado moravam só dentro de
+ * `simularCorrecaoFrete`. Saíram para cá SEM MUDAR UMA LINHA de consulta ou de
+ * mensagem, porque a aba Fretes do orçamento passou a trocar modalidade e
+ * transportadora em qualquer status e o dono decidiu que ela respeita as MESMAS
+ * barreiras — não uma cópia delas. `simularCorrecaoFrete` continua chamando as
+ * três, na mesma ordem de antes, entre as barreiras que são só dela (entregue,
+ * faixa de status, títulos ativos).
+ *
+ * Cada uma devolve o bloqueio pronto, ou `null` quando libera.
+ */
+export function barreiraPermissaoTrocaFrete(temPermissaoEditarPaga: boolean): SimulacaoCorrigirFrete | null {
+  if (temPermissaoEditarPaga) return null;
+  return bloqueio(
+    "SEM_PERMISSAO",
+    "Voce nao tem permissao para corrigir o frete de um pedido ja liberado.",
+    403
+  );
+}
+
+/** NF autorizada: a nota ja foi transmitida e o valor dela e o da proposta. */
+export async function barreiraNfAutorizada(
+  supabase: SupabaseClient,
+  idInt: number
+): Promise<SimulacaoCorrigirFrete | null> {
+  const { data: notas, error: notasErro } = await supabase
+    .from("notas_fiscais")
+    .select("numero_nf, status")
+    .eq("id_int", idInt);
+
+  if (notasErro) {
+    return bloqueio("PROPOSTA_NAO_ENCONTRADA", "Nao foi possivel conferir as notas fiscais deste pedido.", 500);
+  }
+
+  const nfAutorizada = (notas ?? []).find(
+    (n) =>
+      String((n as { status?: string | null }).status ?? "").trim().toUpperCase() === "AUTORIZADA" &&
+      String((n as { numero_nf?: string | null }).numero_nf ?? "").trim() !== ""
+  );
+
+  if (nfAutorizada) {
+    const numero = String((nfAutorizada as { numero_nf?: string | null }).numero_nf ?? "").trim();
+    return bloqueio(
+      "NF_AUTORIZADA",
+      `Pedido #${idInt} tem a NF-e ${numero} autorizada. Mudar o frete mudaria o valor total, e o valor da nota ja foi transmitido. ` +
+        `Cancele a nota antes de corrigir o frete.`,
+      409
+    );
+  }
+  return null;
+}
+
+/**
+ * Despacho confirmado: a caixa saiu, e `expedicoes` guarda o que de fato levou.
+ *
+ * Devolve também `etiquetaImpressaEm`, lido na MESMA consulta: a simulação da
+ * Expedição usa esse dado para um aviso, e ler de novo só para isso seria uma
+ * ida ao banco a mais.
+ */
+export async function barreiraDespachoConfirmado(
+  supabase: SupabaseClient,
+  idInt: number
+): Promise<{ bloqueio: SimulacaoCorrigirFrete | null; etiquetaImpressaEm: string | null }> {
+  const { data: expedicao, error: expedicaoErro } = await supabase
+    .from("expedicoes")
+    .select("data_despacho, etiqueta_impressa_em")
+    .eq("id_int", idInt)
+    .maybeSingle();
+
+  if (expedicaoErro) {
+    return {
+      bloqueio: bloqueio("PROPOSTA_NAO_ENCONTRADA", "Nao foi possivel conferir a expedicao deste pedido.", 500),
+      etiquetaImpressaEm: null
+    };
+  }
+
+  const etiquetaImpressaEm = (expedicao?.etiqueta_impressa_em as string | null | undefined) ?? null;
+
+  if (expedicao?.data_despacho) {
+    return {
+      bloqueio: bloqueio(
+        "DESPACHO_CONFIRMADO",
+        `Pedido #${idInt} ja foi despachado. Para corrigir o frete, volte um passo pelo menu Acoes do painel da Expedicao ` +
+          `e tente de novo.`,
+        409
+      ),
+      etiquetaImpressaEm
+    };
+  }
+  return { bloqueio: null, etiquetaImpressaEm };
+}
+
+/**
+ * As três, na ordem em que o usuário consegue agir: permissão, nota, despacho.
+ * É o que a aba Fretes do orçamento consulta — na tela, para travar os campos
+ * com o motivo, e no `saveProposta`, que é quem de fato grava.
+ */
+export async function barreirasDaTrocaDeFrete(
+  supabase: SupabaseClient,
+  params: { idInt: number; temPermissaoEditarPaga: boolean }
+): Promise<SimulacaoCorrigirFrete | null> {
+  return (
+    barreiraPermissaoTrocaFrete(params.temPermissaoEditarPaga) ??
+    (await barreiraNfAutorizada(supabase, params.idInt)) ??
+    (await barreiraDespachoConfirmado(supabase, params.idInt)).bloqueio
+  );
+}
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
  * TÍTULO ATIVO SÓ BARRA QUANDO O TOTAL MUDA (10/09/2026).
  * ═══════════════════════════════════════════════════════════════════════════
  *
@@ -179,13 +291,8 @@ export async function simularCorrecaoFrete(
 ): Promise<SimulacaoCorrigirFrete> {
   const { idInt, transportadoraId, temPermissaoEditarPaga } = params;
 
-  if (!temPermissaoEditarPaga) {
-    return bloqueio(
-      "SEM_PERMISSAO",
-      "Voce nao tem permissao para corrigir o frete de um pedido ja liberado.",
-      403
-    );
-  }
+  const semPermissao = barreiraPermissaoTrocaFrete(temPermissaoEditarPaga);
+  if (semPermissao) return semPermissao;
 
   const modalidadeNova = String(params.modalidade ?? "").trim().toUpperCase() as ModalidadeFrete;
   if (!MODALIDADES_VALIDAS.includes(modalidadeNova)) {
@@ -216,30 +323,8 @@ export async function simularCorrecaoFrete(
 
   // 1. NF autorizada: a nota ja foi transmitida e o valor dela e o da proposta.
   //    So o cancelamento da nota reabre a correcao.
-  const { data: notas, error: notasErro } = await supabase
-    .from("notas_fiscais")
-    .select("numero_nf, status")
-    .eq("id_int", idInt);
-
-  if (notasErro) {
-    return bloqueio("PROPOSTA_NAO_ENCONTRADA", "Nao foi possivel conferir as notas fiscais deste pedido.", 500);
-  }
-
-  const nfAutorizada = (notas ?? []).find(
-    (n) =>
-      String((n as { status?: string | null }).status ?? "").trim().toUpperCase() === "AUTORIZADA" &&
-      String((n as { numero_nf?: string | null }).numero_nf ?? "").trim() !== ""
-  );
-
-  if (nfAutorizada) {
-    const numero = String((nfAutorizada as { numero_nf?: string | null }).numero_nf ?? "").trim();
-    return bloqueio(
-      "NF_AUTORIZADA",
-      `Pedido #${idInt} tem a NF-e ${numero} autorizada. Mudar o frete mudaria o valor total, e o valor da nota ja foi transmitido. ` +
-        `Cancele a nota antes de corrigir o frete.`,
-      409
-    );
-  }
+  const nfBloqueia = await barreiraNfAutorizada(supabase, idInt);
+  if (nfBloqueia) return nfBloqueia;
 
   // 2. ENTREGUE: o transporte terminou.
   if (statusInterno === "ENTREGUE") {
@@ -252,24 +337,8 @@ export async function simularCorrecaoFrete(
 
   // 3. Despacho confirmado: a caixa saiu, e `expedicoes` guarda o que de fato
   //    levou. Voltar um passo desfaz o despacho e reabre a correcao.
-  const { data: expedicao, error: expedicaoErro } = await supabase
-    .from("expedicoes")
-    .select("data_despacho, etiqueta_impressa_em")
-    .eq("id_int", idInt)
-    .maybeSingle();
-
-  if (expedicaoErro) {
-    return bloqueio("PROPOSTA_NAO_ENCONTRADA", "Nao foi possivel conferir a expedicao deste pedido.", 500);
-  }
-
-  if (expedicao?.data_despacho) {
-    return bloqueio(
-      "DESPACHO_CONFIRMADO",
-      `Pedido #${idInt} ja foi despachado. Para corrigir o frete, volte um passo pelo menu Acoes do painel da Expedicao ` +
-        `e tente de novo.`,
-      409
-    );
-  }
+  const despacho = await barreiraDespachoConfirmado(supabase, idInt);
+  if (despacho.bloqueio) return despacho.bloqueio;
 
   // 4. Faixa. Fica por ultimo entre os bloqueios porque as mensagens acima sao
   //    mais acionaveis: dizem O QUE FAZER, e esta so diz que nao da.
@@ -391,7 +460,7 @@ export async function simularCorrecaoFrete(
   }
 
   const avisos: string[] = [];
-  if (expedicao?.etiqueta_impressa_em) {
+  if (despacho.etiquetaImpressaEm) {
     avisos.push(
       "A etiqueta ja foi impressa e segue valida: ela le a expedicao, que nao muda com esta correcao."
     );
