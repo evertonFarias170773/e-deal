@@ -1006,13 +1006,11 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     const v = Math.max(1, Math.ceil(w / 14500));
     return getShipmentKey(w, v, proposta.itens);
   });
-  const [isManualFreteModalOpen, setIsManualFreteModalOpen] = useState(false);
-  const [manualFreteDraft, setManualFreteDraft] = useState({
-    servico: "",
-    prazo: "",
-    valor: "",
-    escolhido: true
-  });
+  /**
+   * Valor cobrado em CIF, enquanto digitado. `null` = o campo mostra o frete
+   * efetivo. Substitui o modal do "+ Frete manual" (23/09/2026).
+   */
+  const [valorCobradoCifDraft, setValorCobradoCifDraft] = useState<string | null>(null);
 
   const [dbVendedores, setDbVendedores] = useState<UsuarioVendedor[]>([]);
   const [loadingVendedores, setLoadingVendedores] = useState(true);
@@ -3598,56 +3596,79 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     }
   }
 
-  async function handleSaveManualFrete() {
-    if (!manualFreteDraft.servico || !manualFreteDraft.prazo || !manualFreteDraft.valor) {
-      showToast({
-        type: "warning",
-        title: "Campos incompletos",
-        description: "Preencha o transportador/serviço, prazo e valor do frete."
-      });
+  /**
+   * TRANSPORTADORA EM CIF, PELO DROPDOWN (23/09/2026).
+   *
+   * Substitui o "+ Frete manual". Parceira que tem card na lista é o card dela:
+   * a escolha passa por `selectFrete`, com a mesma barreira e o mesmo vínculo.
+   * Transportadora sem card vira um frete manual dela — o MESMO registro que o
+   * modal criava (`manual_<ts>`, "Cadastro manual"), que a recotação preserva
+   * como manual. Um frete manual anterior é substituído, não empilhado.
+   *
+   * O VALOR VEM JUNTO: o frete manual nasce com o frete efetivo de agora, e o
+   * usuário ajusta no campo "Valor cobrado". Nascer com zero faria um Salvar
+   * distraído tirar o frete do total — e, em proposta paga, virar crédito.
+   */
+  function escolherTransportadoraCif(idTransportadora: number | null) {
+    if (bloqueioTrocaFrete) {
+      showToast({ type: "warning", title: "Troca de frete bloqueada", description: bloqueioTrocaFrete });
       return;
     }
-
-    const newManualFrete: PropostaFrete = {
+    if (idTransportadora === null) {
+      updateField("idTransportadoraCliente", null);
+      return;
+    }
+    const cardDaParceira = form.fretes.find(
+      (f) => !ehFreteDeRetirada(f) && resolverTransportadoraParceira(f) === idTransportadora
+    );
+    if (cardDaParceira) {
+      void selectFrete(cardDaParceira.id);
+      return;
+    }
+    const cadastro = transportadoras.find((t) => t.id_cliente === idTransportadora);
+    const nome = (cadastro ? nomeTransportadoraCadastro(cadastro) : null) ?? `Transportadora #${idTransportadora}`;
+    const freteManual: PropostaFrete = {
       id: `manual_${Date.now()}`,
       id_int: Number(form.id_int) || 0,
-      transportadora: manualFreteDraft.servico,
-      servico: manualFreteDraft.servico,
-      valor: Number(manualFreteDraft.valor),
-      prazo: manualFreteDraft.prazo,
+      transportadora: nome,
+      servico: nome,
+      valor: resumo.frete,
+      prazo: "A combinar",
       observacao: "Cadastro manual",
-      escolhido: manualFreteDraft.escolhido,
+      escolhido: true,
       pesoUsado: resumo.pesoTotal
     };
-
-    const updatedFretes = form.fretes.map((f) => ({
-      ...f,
-      escolhido: manualFreteDraft.escolhido ? false : f.escolhido
+    setValorCobradoCifDraft(null);
+    setForm((current) => ({
+      ...current,
+      fretes: [
+        ...current.fretes
+          .filter((f) => !(f.id.startsWith("manual_") || f.observacao === "Cadastro manual"))
+          .map((f) => ({ ...f, escolhido: false })),
+        freteManual
+      ],
+      freteEscolhidoId: freteManual.id,
+      idTransportadoraCliente: idTransportadora
     }));
+  }
 
-    if (manualFreteDraft.escolhido) {
-      updatedFretes.push(newManualFrete);
-      setForm((current) => ({
-        ...current,
-        fretes: updatedFretes,
-        freteEscolhidoId: newManualFrete.id
-      }));
-    } else {
-      updatedFretes.push(newManualFrete);
-      setForm((current) => ({
-        ...current,
-        fretes: updatedFretes
-      }));
-    }
-
-    showToast({
-      type: "success",
-      title: "Frete manual adicionado",
-      description: "Cotação manual gravada temporariamente em memória."
-    });
-
-    setIsManualFreteModalOpen(false);
-    setManualFreteDraft({ servico: "", prazo: "", valor: "", escolhido: true });
+  /**
+   * VALOR COBRADO EM CIF — sobrepõe o valor do frete escolhido, inclusive de
+   * card de parceira (decisão do dono, 23/09/2026). "Atualizar fretes" volta a
+   * pôr o valor cotado no card da parceira; no frete manual o valor fica.
+   *
+   * Só na fase de orçamento. Depois dela o valor muda pelo valor negociado, e a
+   * troca de frete não olha valor (`freteDeclaracaoAlterada`): editar aqui seria
+   * descartado em silêncio no Salvar.
+   */
+  function aplicarValorCobradoCif(texto: string) {
+    setValorCobradoCifDraft(null);
+    const valor = parseCurrencyBR(texto);
+    if (valor === null || valor < 0) return;
+    setForm((current) => ({
+      ...current,
+      fretes: current.fretes.map((f) => (f.id === current.freteEscolhidoId ? { ...f, valor } : f))
+    }));
   }
 
   /**
@@ -6406,7 +6427,9 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                           }));
                         }
                         updateField("modalidadeFrete", m);
-                        // Só FOB tem transportadora definida pelo vendedor.
+                        // Trocar de modalidade zera quem leva: em FOB vem do drop,
+                        // em CIF do card escolhido ou do drop de CIF, em RETIRA não
+                        // há transportadora.
                         if (m !== "FOB") updateField("idTransportadoraCliente", null);
                         // Trocar de modalidade troca o RAMO da escolha, entao a
                         // categoria anterior nao vale mais: o motoboy marcado num
@@ -6452,21 +6475,12 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                     Transportadora definida *
                   </label>
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-stretch">
-                    <select
-                      value={form.idTransportadoraCliente ?? ""}
+                    <SelectTransportadora
+                      value={form.idTransportadoraCliente}
+                      transportadoras={transportadoras}
                       disabled={Boolean(bloqueioTrocaFrete) || fobPorMotoboy || ehComplemento}
-                      onChange={(e) =>
-                        updateField("idTransportadoraCliente", e.target.value === "" ? null : Number(e.target.value))
-                      }
-                      className={`${inputClass} flex-1 disabled:cursor-not-allowed disabled:opacity-60`}
-                    >
-                      <option value="">— escolha a transportadora —</option>
-                      {transportadoras.map((t) => (
-                        <option key={t.id_cliente} value={t.id_cliente}>
-                          {t.fantasia || t.nome || `#${t.id_cliente}`}
-                        </option>
-                      ))}
-                    </select>
+                      onChange={(id) => updateField("idTransportadoraCliente", id)}
+                    />
                     {/* Motoboy nao tem cadastro em `clientes` (as 24 transportadoras
                         sao empresas de carga), entao ele nunca poderia sair do drop.
                         Fica ao lado como a outra resposta possivel para "quem leva",
@@ -6489,6 +6503,63 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                     {fobPorMotoboy
                       ? "Motoboy leva: não há transportadora a vincular. O total da proposta sai sem frete."
                       : "Em FOB o cliente contrata e paga o transporte: a cotação vale zero e o total da proposta sai sem frete. A transportadora é obrigatória e vai pré-preenchida para a Expedição."}
+                  </p>
+                </div>
+              )}
+
+              {/*
+                CIF: QUEM LEVA E QUANTO SE COBRA (23/09/2026).
+                O mesmo dropdown do FOB, mais o valor cobrado. Escolher um card
+                abaixo preenche os dois; escolher aqui uma transportadora sem
+                card cria o frete manual dela (o que o "+ Frete manual" fazia).
+                O valor sobrepõe o do frete escolhido na fase de orçamento;
+                depois dela é só leitura — o valor muda pelo valor negociado.
+              */}
+              {form.modalidadeFrete === "CIF" && !ehComplemento && !form.isAvulso && (
+                <div>
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+                    <div className="flex-1">
+                      <label className="block text-xs font-bold uppercase tracking-wide text-slate-500 mb-1">
+                        Transportadora
+                      </label>
+                      <SelectTransportadora
+                        value={form.idTransportadoraCliente}
+                        transportadoras={transportadoras}
+                        disabled={Boolean(bloqueioTrocaFrete)}
+                        onChange={escolherTransportadoraCif}
+                      />
+                    </div>
+                    <div className="sm:w-44">
+                      <label className="block text-xs font-bold uppercase tracking-wide text-slate-500 mb-1">
+                        Valor cobrado (R$)
+                      </label>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        aria-label="Valor cobrado do frete (R$)"
+                        disabled={!faseDeOrcamento || !freteEscolhido || Boolean(bloqueioTrocaFrete)}
+                        value={valorCobradoCifDraft ?? formatCurrencyWithoutPrefix(resumo.frete)}
+                        onChange={(e) => setValorCobradoCifDraft(e.target.value)}
+                        onBlur={() => {
+                          if (valorCobradoCifDraft !== null) aplicarValorCobradoCif(valorCobradoCifDraft);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            (e.target as HTMLInputElement).blur();
+                          }
+                          if (e.key === "Escape") setValorCobradoCifDraft(null);
+                        }}
+                        className={`${inputClass} text-right disabled:cursor-not-allowed disabled:opacity-60`}
+                      />
+                    </div>
+                  </div>
+                  <p className="mt-1.5 text-xs text-slate-500">
+                    {!faseDeOrcamento
+                      ? "Depois da liberação o valor cobrado muda pelo valor negociado. Trocar a transportadora ou o frete escolhido segue valendo aqui."
+                      : !freteEscolhido
+                        ? "Escolha um frete abaixo ou uma transportadora aqui para definir o valor cobrado."
+                        : "Em CIF a empresa contrata e paga o transporte. O valor cobrado substitui o cotado; \"Atualizar fretes\" volta a pôr o cotado nos cards das parceiras."}
                   </p>
                 </div>
               )}
@@ -6764,13 +6835,9 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                           "Atualizar fretes"
                         )}
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => setIsManualFreteModalOpen(true)}
-                        className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl border border-[#d7e5e8] bg-white px-5 text-sm font-semibold text-[#0b2f4a] shadow-sm hover:bg-slate-50 transition"
-                      >
-                        + Frete manual
-                      </button>
+                      {/* "+ Frete manual" saiu em 23/09/2026: o frete de uma
+                          transportadora sem cotação se define pelo dropdown e pelo
+                          "Valor cobrado", acima, na caixa da modalidade CIF. */}
                       </>) : null}
                     </div>
                   </div>
@@ -7046,14 +7113,6 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
             </p>
           </div>
         </Modal>
-      ) : null}
-      {isManualFreteModalOpen ? (
-        <ManualFreteModal
-          draft={manualFreteDraft}
-          onChange={setManualFreteDraft}
-          onClose={() => setIsManualFreteModalOpen(false)}
-          onSave={handleSaveManualFrete}
-        />
       ) : null}
         {showArtesBlockModal && (
           <ArtesBlockModal
@@ -8197,62 +8256,41 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   return <label className="block space-y-2"><span className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</span>{children}</label>;
 }
 
-function InfoBox({ label, value }: { label: string; value: string }) {
-  return <div className="rounded-2xl bg-slate-50 p-4"><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</p><p className="mt-1 text-sm font-semibold text-slate-900">{value}</p></div>;
-}
-
-function ManualFreteModal({
-  draft,
-  onChange,
-  onClose,
-  onSave
+/**
+ * O dropdown de transportadora da aba Fretes — o mesmo em FOB e em CIF
+ * (23/09/2026). Saiu do bloco FOB sem mudar marcação nem rótulo; quem decide o
+ * que a escolha faz é o `onChange` de cada modalidade.
+ */
+function SelectTransportadora({
+  value,
+  transportadoras,
+  disabled,
+  onChange
 }: {
-  draft: { servico: string; prazo: string; valor: string; escolhido: boolean };
-  onChange: (d: { servico: string; prazo: string; valor: string; escolhido: boolean }) => void;
-  onClose: () => void;
-  onSave: () => void;
+  value: number | null | undefined;
+  transportadoras: { id_cliente: number; nome: string | null; fantasia: string | null }[];
+  disabled: boolean;
+  onChange: (idTransportadora: number | null) => void;
 }) {
   return (
-    <Modal title="Adicionar Frete Manual" onClose={onClose} onSave={onSave}>
-      <div className="grid gap-3 md:grid-cols-2">
-        <Field label="Transportador / Serviço">
-          <input
-            value={draft.servico}
-            onChange={(event) => onChange({ ...draft, servico: event.target.value })}
-            className={inputClass}
-            placeholder="Ex: Correios SEDEX, Jamef, Azul..."
-          />
-        </Field>
-        <Field label="Prazo (Ex: 4 dias úteis)">
-          <input
-            value={draft.prazo}
-            onChange={(event) => onChange({ ...draft, prazo: event.target.value })}
-            className={inputClass}
-            placeholder="Ex: 5 dias úteis"
-          />
-        </Field>
-        <Field label="Valor (R$)">
-          <input
-            type="number"
-            value={draft.valor}
-            onChange={(event) => onChange({ ...draft, valor: event.target.value })}
-            className={inputClass}
-            placeholder="0.00"
-            step="0.01"
-          />
-        </Field>
-        <label className="flex items-center gap-3 pt-6 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={draft.escolhido}
-            onChange={(event) => onChange({ ...draft, escolhido: event.target.checked })}
-            className="h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
-          />
-          <span className="text-sm font-semibold text-slate-700">Usar como frete escolhido</span>
-        </label>
-      </div>
-    </Modal>
+    <select
+      value={value ?? ""}
+      disabled={disabled}
+      onChange={(e) => onChange(e.target.value === "" ? null : Number(e.target.value))}
+      className={`${inputClass} flex-1 disabled:cursor-not-allowed disabled:opacity-60`}
+    >
+      <option value="">— escolha a transportadora —</option>
+      {transportadoras.map((t) => (
+        <option key={t.id_cliente} value={t.id_cliente}>
+          {t.fantasia || t.nome || `#${t.id_cliente}`}
+        </option>
+      ))}
+    </select>
   );
+}
+
+function InfoBox({ label, value }: { label: string; value: string }) {
+  return <div className="rounded-2xl bg-slate-50 p-4"><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</p><p className="mt-1 text-sm font-semibold text-slate-900">{value}</p></div>;
 }
 
 function ContactModal({ draft, onChange, onClose, onSave }: { draft: ContactDraft; onChange: (draft: ContactDraft) => void; onClose: () => void; onSave: () => void }) {
