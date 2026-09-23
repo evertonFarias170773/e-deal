@@ -5,6 +5,7 @@ import { quitaNaLiberacao } from "@/features/cobrancas/cobrancas-utils";
 import { aplicarStatusRecomendadoProposta } from "@/features/orcamentos/services/status-writer.service";
 import { validarStatusProposta } from "@/features/orcamentos/services/status-shadow.service";
 import { liberarPropostaParaProducao, sendPropostaChatMessage } from "@/features/orcamentos/services/orcamentos.service";
+import { linhaDaDivergencia } from "@/features/orcamentos/lib/divergencia-lotes";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 type UsuarioMinRow = {
@@ -314,6 +315,29 @@ async function liberarPrateleiraAutomaticamente(
         `[confirmar] Liberação automática recusada para #${idInt}: ${liberacao.errorMessage}. ` +
         `A proposta segue em REVISAO ATENDENTE para liberação manual.`
       );
+
+      // Trava de quantidade (Etapa 7): a recusa não pode ficar só no log do
+      // servidor, senão o atendente vê a proposta parada sem saber por quê. O
+      // status NÃO muda — a proposta fica em REVISAO ATENDENTE, como sempre que
+      // a automação não libera — e o chat diz o que acertar.
+      if (liberacao.code === "LOTES_DIVERGENTES") {
+        await sendPropostaChatMessage({
+          id_int: idInt,
+          mensagem:
+            "Liberação automática para Produção RECUSADA: a quantidade vendida não bate com a soma dos lotes.\n" +
+            (liberacao.divergencias || []).map(linhaDaDivergencia).join("\n") +
+            "\nA proposta segue em [REVISAO ATENDENTE]. Acerte os lotes na aba Pedido e libere pelo botão de sempre.",
+          tipo: "SISTEMA",
+          autor_uid: usuario.uid || null,
+          autor_nome: LIBERADOR_AUTOMATICO,
+          autor_email: usuario.email || null,
+          setor: "AUTO_FINANCEIRO",
+          avatar: null,
+          visivel_externo: false,
+          anexos: null,
+          id_cliente: null
+        });
+      }
       return;
     }
 

@@ -108,7 +108,11 @@ Regra vigente:
 public.propostas.is_prd_aprovado = true
 ```
 
-A liberação é manual e deve ocorrer pelo fluxo oficial.
+A liberação ocorre pelo fluxo oficial, por uma de duas entradas: a manual
+(botão "Liberar para Produção") ou a automática, para pedido 100% de prateleira
+que acaba de ficar coberto. As duas passam pela mesma função, no servidor, com
+as mesmas validações — inclusive a de que cada item tenha a quantidade vendida
+igual à soma dos seus lotes. Detalhe em `FLUXO-OFICIAL-STATUS-PROPOSTAS.md` §9.1.
 
 `status_interno = APROVADO` sozinho não comprova entrada na Produção.
 
@@ -141,7 +145,8 @@ Isso permite:
 
 Esse início antecipado não significa que o pedido esteja liberado para fabricação.
 
-A entrada oficial na fila produtiva depende da liberação manual:
+A entrada oficial na fila produtiva depende da liberação (manual, ou automática
+para pedido 100% de prateleira):
 
 ```text
 is_prd_aprovado = true
@@ -157,7 +162,8 @@ Impressão e execução produtiva dependem da liberação oficial.
 
 O sistema pode exibir alerta financeiro sem bloquear o trabalho preliminar de arte.
 
-Ele não deve iniciar fabricação automaticamente.
+Nada entra na fila produtiva sem passar pela liberação — a automática de
+prateleira inclusive, com as mesmas validações.
 
 ---
 

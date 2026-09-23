@@ -1,6 +1,6 @@
 # Boletim montado por checklist do produto
 
-**Data:** 22/09/2026 · **Estado:** etapas 1 a 6 aplicadas · **Sessão:** C1
+**Data:** 22/09/2026 · **Estado:** etapas 1 a 7 aplicadas (6b e 6c inclusive) · **Sessão:** C1
 
 Hoje o card do boletim imprime o mesmo conjunto de campos para todo produto que
 não é de prateleira — numeração em cordão, gabarito no campo "NUM", tipo
@@ -346,6 +346,29 @@ prateleira chama a mesma função (Decisão 3), e `criar_pedido_complementar` co
 `is_prd_aprovado` do pedido principal dentro do banco, sem passar por ela
 (Decisão 4).
 
+**APLICADA em 22/09/2026.** A trava entrou como validação 4 de
+`liberarPropostaParaProducao`, pela regra pura `lib/divergencia-lotes.ts`: item
+ativo com `qtd` diferente da soma dos seus lotes reprova (soma maior, menor e
+sem lote; prateleira inclusive; item `CANCELADO` fora). A recusa lista cada
+divergência ("Produto X: vendido N, lotes somam M") e não toca na proposta.
+
+NO SERVIDOR: o botão manual chamava a função direto do navegador; passou a
+chamar a rota nova `POST /api/orcamentos/liberar-producao`, que roda a mesma
+função com a sessão do usuário. A automática de prateleira já rodava no
+servidor; recusada, a proposta fica em `REVISAO ATENDENTE` e o chat recebe as
+divergências. O doc de fluxo (§9.1) e os que diziam "a entrada é sempre manual"
+foram corrigidos.
+
+Mapeado antes: no sistema, só essa função liga `is_prd_aprovado` — nenhum
+workflow do n8n toca a flag, e nos últimos 60 dias o `audit.logs_v2` mostra os
+170 eventos da função e 4 intervenções manuais no banco (SQL editor e API de
+gestão). Fica de fora, por decisão, `criar_pedido_complementar` (Etapa 8). E a
+RLS de `propostas` é permissiva: contra escrita direta no banco, só um trigger
+fecharia — mudança de banco não autorizada nesta etapa.
+
+Impacto medido: dos 137 pedidos liberados nos últimos 30 dias, 9 teriam sido
+barrados (4 só de prateleira); dos 50 só de prateleira, 46 já batiam.
+
 ---
 
 ## 8. Tela do cadastro de produto
@@ -403,7 +426,7 @@ Cada etapa é publicável sozinha e não muda o que sai impresso até a etapa 5.
 | 4 | `saveProposta` grava o snapshot do checklist ao criar o item ✅ | não |
 | 5 | Boletim lê o snapshot; sem snapshot, imprime como hoje ✅ | **sim** |
 | 6 | Formulário do PCP esconde campo não marcado e para de herdar padrão ✅ | **sim** |
-| 7 | Trava de quantidade na liberação para produção (+ correção do doc) | **sim** |
+| 7 | Trava de quantidade na liberação para produção (+ correção do doc) ✅ | **sim** |
 | 8 | Pedido complementar: fechar o desvio de `is_prd_aprovado` | **sim** |
 
 ### Migrations (descritas, não escritas)

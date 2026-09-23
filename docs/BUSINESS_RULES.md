@@ -87,7 +87,11 @@ Nunca substituir essas informações pelos dados do pedido.
 
 ## Pedidos
 
-O pedido produtivo é uma proposta liberada manualmente para Produção.
+O pedido produtivo é uma proposta liberada para Produção — pelo botão do
+atendente ou, para pedido 100% de prateleira, automaticamente na confirmação da
+cobrança. As duas entradas passam pelas mesmas validações, entre elas a de que a
+quantidade vendida de cada item seja igual à soma dos seus lotes
+(`business/FLUXO-OFICIAL-STATUS-PROPOSTAS.md` §9.1).
 
 Critério operacional:
 

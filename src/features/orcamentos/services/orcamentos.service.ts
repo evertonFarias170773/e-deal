@@ -67,6 +67,11 @@ import {
   omitirColunasEscondidas,
   type ChecklistVisivel
 } from "@/features/orcamentos/lib/checklist-lote";
+import {
+  divergenciasDeLotes,
+  mensagemDasDivergencias,
+  type DivergenciaDeLote
+} from "@/features/orcamentos/lib/divergencia-lotes";
 import { danfesDoPedido } from "@/lib/fiscal/danfes-do-pedido";
 import {
   COLUNAS_NOTA_DO_PEDIDO,
@@ -4879,18 +4884,36 @@ export async function cancelarProposta(idInt: number, motivo: string): Promise<C
   }
 }
 
+export type ResultadoLiberacao = {
+  success: boolean;
+  errorMessage?: string;
+  /** `LOTES_DIVERGENTES` quando a recusa veio da trava de quantidade. */
+  code?: "LOTES_DIVERGENTES";
+  /** Cada item cuja quantidade vendida não bate com a soma dos lotes. */
+  divergencias?: DivergenciaDeLote[];
+};
+
 /**
- * @param clientExterno Client já autenticado, para quando a chamada vem do
- *   SERVIDOR — hoje só a liberação automática de prateleira, em
- *   `/api/cobrancas/confirmar`. Sem ele a função usa `getSupabaseClient()`, que
- *   é `createBrowserClient` e não funciona dentro de uma Route Handler. As
- *   quatro validações abaixo valem igual nos dois casos: o parâmetro troca por
- *   onde a consulta sai, não o que ela exige.
+ * A ÚNICA porta que liga `is_prd_aprovado` no sistema. Os dois caminhos passam
+ * por aqui, e os dois rodam NO SERVIDOR:
+ *   - o botão "Liberar para Produção" da lista de orçamentos, pela rota
+ *     `POST /api/orcamentos/liberar-producao` (Etapa 7 — antes chamava esta
+ *     função direto do navegador);
+ *   - a liberação AUTOMÁTICA de prateleira, em `/api/cobrancas/confirmar`,
+ *     quando a proposta é 100% de prateleira e fica coberta.
+ * O que fica de fora, por decisão: `criar_pedido_complementar` copia a flag do
+ * pedido principal dentro do banco (Etapa 8).
+ *
+ * @param clientExterno Client já autenticado com a sessão do usuário, para a
+ *   chamada que vem do servidor. Sem ele a função usa `getSupabaseClient()`,
+ *   que é `createBrowserClient` e não funciona dentro de uma Route Handler. As
+ *   validações abaixo valem igual nos dois casos: o parâmetro troca por onde a
+ *   consulta sai, não o que ela exige.
  */
 export async function liberarPropostaParaProducao(
   idInt: number,
   clientExterno?: SupabaseClient
-): Promise<{ success: boolean; errorMessage?: string }> {
+): Promise<ResultadoLiberacao> {
   const client = clientExterno ?? getSupabaseClient();
   if (!client) return { success: false, errorMessage: "Cliente Supabase indisponível." };
 
@@ -4934,7 +4957,44 @@ export async function liberarPropostaParaProducao(
     return { success: false, errorMessage: "Pendências de arte. Todas as artes devem estar com status APROVADO." };
   }
 
-  // 4. Efetivar liberação
+  // 4. Quantidade vendida × soma dos lotes (Etapa 7).
+  //    Vale a soma dos modelos: cada item ativo precisa ter `qtd` igual à soma
+  //    dos seus lotes — soma maior, menor e item sem lote nenhum reprovam,
+  //    prateleira inclusive. Só a rota lotes-em-massa sincroniza a quantidade
+  //    do item; o saveProposta e os cards não, então é aqui que se confere.
+  //    Item CANCELADO (inativação lógica de proposta paga) não é produzido e
+  //    não entra. Se a leitura falhar, recusa: liberar sem conferir é o que
+  //    deixou o 22194 entrar com a Triband sem lote.
+  const { data: itensAtivos, error: itensErr } = await client
+    .from("produtos_proposta")
+    .select("id, nome_produto, qtd")
+    .eq("id_int", idInt)
+    .or("status_item.is.null,status_item.neq.CANCELADO");
+
+  if (itensErr) return { success: false, errorMessage: "Erro ao conferir os itens da proposta." };
+
+  const { data: lotesDaProposta, error: lotesErr } = await client
+    .from("pedidos_modelos")
+    .select("id_produto_proposta_origem, quantidade")
+    .eq("id_int", idInt);
+
+  if (lotesErr) return { success: false, errorMessage: "Erro ao conferir os lotes da proposta." };
+
+  const divergencias = divergenciasDeLotes(
+    (itensAtivos || []).map((i) => ({ id: Number(i.id), nome: i.nome_produto, qtd: i.qtd })),
+    lotesDaProposta || []
+  );
+
+  if (divergencias.length > 0) {
+    return {
+      success: false,
+      code: "LOTES_DIVERGENTES",
+      divergencias,
+      errorMessage: mensagemDasDivergencias(divergencias)
+    };
+  }
+
+  // 5. Efetivar liberação
   /**
    * `libera_nf` entra AQUI, no mesmo UPDATE da liberação.
    *
@@ -4964,9 +5024,9 @@ export async function liberarPropostaParaProducao(
    * O carimbo NÃO é apagado por `retirarPropostaDaProducao` nem por
    * `devolverPropostaParaRevisaoAtendente` — ver o comentário nas duas.
    *
-   * A hora vem do RELÓGIO DO NAVEGADOR, e não do banco. Toda esta função é
-   * PostgREST direto do cliente: não há servidor no caminho para chamar `now()`,
-   * e criar uma RPC só para o carimbo custaria mais do que o campo vale. O desvio
+   * A hora vem do RELÓGIO DE QUEM CHAMA, e não do banco — desde a Etapa 7, o
+   * do servidor nos dois caminhos (antes o botão manual rodava no navegador).
+   * Criar uma RPC só para o carimbo custaria mais do que o campo vale. O desvio
    * é detectável quando importar — `audit.logs_v2.occurred_at` registra o mesmo
    * evento com o relógio do banco, e as 41 linhas do backfill vieram de lá.
    */
@@ -4982,6 +5042,42 @@ export async function liberarPropostaParaProducao(
 
   if (updateErr) return { success: false, errorMessage: "Erro ao atualizar chave de liberação." };
   return { success: true };
+}
+
+/**
+ * O botão "Liberar para Produção" chama ISTO, e não a função acima: a
+ * liberação é conferida NO SERVIDOR, pela rota `/api/orcamentos/liberar-producao`,
+ * que roda `liberarPropostaParaProducao` com a sessão do usuário. Assim a trava
+ * de quantidade (e as outras validações) não dependem do código que roda no
+ * navegador.
+ */
+export async function liberarPropostaParaProducaoPeloServidor(idInt: number): Promise<ResultadoLiberacao> {
+  const client = getSupabaseClient();
+  if (!client) return { success: false, errorMessage: "Cliente Supabase indisponível." };
+
+  const sessionResponse = await client.auth.getSession();
+  const token = sessionResponse.data.session?.access_token || "";
+  if (!token) return { success: false, errorMessage: "Sessão não encontrada. Faça login novamente." };
+
+  try {
+    const response = await fetch("/api/orcamentos/liberar-producao", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ id_int: idInt })
+    });
+    const data = await response.json().catch(() => null);
+    if (!response.ok || !data?.success) {
+      return {
+        success: false,
+        code: data?.code,
+        divergencias: data?.divergencias,
+        errorMessage: data?.message || "Não foi possível liberar a proposta para produção."
+      };
+    }
+    return { success: true };
+  } catch (err) {
+    return { success: false, errorMessage: err instanceof Error ? err.message : "Falha na comunicação com o servidor." };
+  }
 }
 
 /**

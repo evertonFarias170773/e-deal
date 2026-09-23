@@ -36,7 +36,7 @@ import {
   loadChatReadInfo,
   getPropostaDetailById,
   updatePropostaStatusInterno,
-  liberarPropostaParaProducao,
+  liberarPropostaParaProducaoPeloServidor,
   retirarPropostaDaProducao,
   PERIODO_ULTIMOS_15_DIAS,
   listarPropostasDoCardEmArte,
@@ -1327,7 +1327,9 @@ export function OrcamentosListPageReal() {
     });
 
     try {
-      const res = await liberarPropostaParaProducao(selectedPropostaForLiberar.id_int);
+      // Conferido no servidor: a trava de quantidade × lotes e as demais
+      // validações rodam na rota, não no navegador.
+      const res = await liberarPropostaParaProducaoPeloServidor(selectedPropostaForLiberar.id_int);
       if (res.success) {
         showToast({
           type: "success",

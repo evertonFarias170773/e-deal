@@ -207,7 +207,8 @@ Não ampliar integrações para outras empresas ou provedores apenas por semelha
 9. Cliente acessa a página pública ou checkout quando aplicável.
 10. Webhook ou confirmação financeira atualiza pagamentos_v2.
 11. O status financeiro da proposta é recalculado.
-12. A entrada na Produção continua dependendo da liberação operacional manual.
+12. A entrada na Produção depende da liberação (§9.1 do fluxo oficial): manual,
+    ou automática quando a proposta é 100% de prateleira e ficou coberta.
 ```
 
 ---
@@ -513,9 +514,12 @@ public.propostas.is_prd_aprovado = true
 
 Regras:
 
-- a liberação para Produção é manual;
-- deve ocorrer pela ação oficial da interface;
-- deve validar pagamentos, artes e contexto operacional;
+- a liberação para Produção é manual, pela ação oficial da interface, EXCETO
+  para proposta 100% de prateleira, que é liberada automaticamente quando a
+  confirmação da cobrança a deixa coberta por inteiro;
+- as duas entradas rodam a mesma função, no servidor;
+- deve validar pagamentos, artes, contexto operacional e a quantidade vendida
+  de cada item contra a soma dos seus lotes;
 - `status_interno` não deve ser usado isoladamente como substituto dessa flag;
 - pagamento aprovado não significa, sozinho, pedido já inserido na fila de Produção.
 

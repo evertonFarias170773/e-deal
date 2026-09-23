@@ -60,7 +60,7 @@ Ele não substitui:
 - status de arte por modelo;
 - status de Produção por item;
 - liberação para Fiscal;
-- entrada manual na fila de Produção.
+- entrada na fila de Produção (manual, ou automática para pedido 100% de prateleira — §9.1).
 
 ## 1.3 Entrada na Produção
 
@@ -433,7 +433,7 @@ Nesse estágio, validar:
 - materiais;
 - capacidade;
 - prazo;
-- liberação manual.
+- liberação para Produção (§9.1).
 
 Transição esperada:
 
@@ -709,7 +709,8 @@ A dispensa **não** altera:
 
 - a exigência financeira (cobertura integral pela regra oficial de quitação);
 - a revisão do atendente;
-- a liberação manual para Produção (`is_prd_aprovado`, §9.1).
+- a liberação para Produção (`is_prd_aprovado`, §9.1) — que, para pedido
+  100% de prateleira, pode ser automática, mas passa pelas mesmas validações.
 
 Aplicada em três pontos, para não depender da interface:
 
@@ -855,16 +856,40 @@ para:
 true
 ```
 
-A liberação deve ser:
+**A entrada na Produção NÃO é sempre manual.** Existem duas entradas, e as
+duas passam pela mesma função, `liberarPropostaParaProducao`
+(`src/features/orcamentos/services/orcamentos.service.ts`), executada NO
+SERVIDOR:
 
-- manual;
-- explícita;
-- autorizada;
-- auditável;
-- executada pelo fluxo oficial;
-- confirmada pelo banco.
+| Entrada | Quando | Onde |
+|---|---|---|
+| Manual | o atendente usa "Liberar para Produção" na lista de orçamentos | rota `POST /api/orcamentos/liberar-producao` |
+| Automática de prateleira | a confirmação de uma cobrança deixa coberta, por inteiro, uma proposta 100% de prateleira em `REVISAO ATENDENTE` | `/api/cobrancas/confirmar` |
 
-Não existem autorizações neste documento para trigger ou sincronização automática dessa flag.
+A liberação só acontece se TODAS as validações passarem:
+
+1. a proposta não está liberada, não é avulsa e está em `REVISAO ATENDENTE`;
+2. há pagamento válido e nenhum pendente (confirmados, `PAID`/`A_VENCER`);
+3. todas as artes estão `APROVADO`;
+4. **cada item ativo tem quantidade vendida IGUAL à soma dos seus lotes**
+   (`produtos_proposta.qtd` = soma de `pedidos_modelos.quantidade`). Soma
+   maior, menor e item sem lote nenhum reprovam, produto de prateleira
+   inclusive. Item `CANCELADO` não entra. A recusa lista cada divergência:
+   "Produto X: vendido N, lotes somam M" (Etapa 7, 22/09/2026 — o 22194
+   entrou em produção com a Triband vendida em 500 e sem lote).
+
+Recusada na entrada automática, a proposta **fica em `REVISAO ATENDENTE`** e o
+chat da proposta recebe a lista de divergências; o atendente acerta os lotes e
+libera pelo botão.
+
+Fora das duas entradas, `criar_pedido_complementar` copia `is_prd_aprovado` do
+pedido principal dentro do banco, sem passar pela função (pendente, Etapa 8 do
+plano do boletim). E a RLS de `propostas` é permissiva: a regra vale para o
+sistema, não contra quem escrever direto no banco — fechar isso exigiria um
+trigger, não autorizado até aqui.
+
+A liberação continua explícita, auditável (`audit.logs_v2`) e confirmada pelo
+banco.
 
 ## 9.2 Consulta da fila
 
@@ -1143,7 +1168,7 @@ conforme permissões.
 
 `public.propostas.status_interno` representa o estado operacional global da proposta.
 
-`public.propostas.is_prd_aprovado` controla a entrada manual na fila de Produção.
+`public.propostas.is_prd_aprovado` controla a entrada na fila de Produção (manual ou automática de prateleira, §9.1).
 
 `public.pagamentos_v2` representa pagamentos e recebimentos.
 
