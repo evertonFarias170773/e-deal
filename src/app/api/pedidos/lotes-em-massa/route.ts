@@ -72,6 +72,10 @@ type LoteEmMassa = {
   bloco?: string | null;
   gabarito_operacional?: string | null;
   variacoes_texto?: string | null;
+  /** Camarote (numerador tipo CAMAROTE): os mesmos campos que o card grava. */
+  Q_CAM?: number | null;
+  L_CAM?: number | null;
+  C_INI?: number | null;
 };
 
 type Corpo = {
@@ -238,14 +242,20 @@ export async function POST(request: Request) {
   }
 
   // 5. Quantidade do item PRIMEIRO — é o que abre o saldo para os lotes.
-  const { error: erroQtd } = await supabase
-    .from("produtos_proposta")
-    .update({ qtd: soma })
-    .eq("id", idProdutoProposta)
-    .eq("id_int", idInt);
+  //    SÓ QUANDO A SOMA MUDOU DE FATO (decisão do dono, 23/09/2026): a lista
+  //    rápida grava a cada campo, e regravar a mesma quantidade a cada troca
+  //    de cor, bloco ou numerador dispararia os triggers de produtos_proposta
+  //    (status financeiro, totais) sem nada ter mudado.
+  if (soma !== qtdAtual) {
+    const { error: erroQtd } = await supabase
+      .from("produtos_proposta")
+      .update({ qtd: soma })
+      .eq("id", idProdutoProposta)
+      .eq("id_int", idInt);
 
-  if (erroQtd) {
-    return erro("INTERNO", `Nao foi possivel gravar a quantidade do item: ${erroQtd.message}`, 500);
+    if (erroQtd) {
+      return erro("INTERNO", `Nao foi possivel gravar a quantidade do item: ${erroQtd.message}`, 500);
+    }
   }
 
   // 6. Lotes removidos.
@@ -279,6 +289,9 @@ export async function POST(request: Request) {
         bloco: lote.bloco?.trim() || null,
         gabarito_operacional: lote.gabarito_operacional?.trim() || null,
         variacoes_texto: lote.variacoes_texto?.trim() || null,
+        Q_CAM: lote.Q_CAM ?? null,
+        L_CAM: lote.L_CAM ?? null,
+        C_INI: lote.C_INI ?? null,
         updated_at: agora
       },
       visivel
@@ -325,6 +338,9 @@ export async function POST(request: Request) {
         bloco: lote.bloco?.trim() || null,
         gabarito_operacional: lote.gabarito_operacional?.trim() || null,
         variacoes_texto: lote.variacoes_texto?.trim() || null,
+        Q_CAM: lote.Q_CAM ?? null,
+        L_CAM: lote.L_CAM ?? null,
+        C_INI: lote.C_INI ?? null,
         status_arte: STATUS_INICIAL_MODELO,
         status_producao: STATUS_INICIAL_MODELO,
         ordem: proximaOrdem++,
@@ -348,7 +364,7 @@ export async function POST(request: Request) {
     .from("pedidos_modelos")
     .select(
       "id, nome_modelo, padrao, quantidade, tipo_numeracao, numeracao_inicio, numeracao_fim, " +
-      "verso_tipo, bloco, gabarito_operacional, variacoes_texto, status_arte, status_producao, ordem"
+      "verso_tipo, bloco, gabarito_operacional, variacoes_texto, Q_CAM, L_CAM, C_INI, status_arte, status_producao, ordem"
     )
     .eq("id_produto_proposta_origem", idProdutoProposta)
     .order("ordem", { ascending: true });
