@@ -882,11 +882,15 @@ Recusada na entrada automática, a proposta **fica em `REVISAO ATENDENTE`** e o
 chat da proposta recebe a lista de divergências; o atendente acerta os lotes e
 libera pelo botão.
 
-Fora das duas entradas, `criar_pedido_complementar` copia `is_prd_aprovado` do
-pedido principal dentro do banco, sem passar pela função (pendente, Etapa 8 do
-plano do boletim). E a RLS de `propostas` é permissiva: a regra vale para o
-sistema, não contra quem escrever direto no banco — fechar isso exigiria um
-trigger, não autorizado até aqui.
+O pedido complementar não é uma terceira entrada: `criar_pedido_complementar` NÃO copia `is_prd_aprovado`: o complementar nasce
+com `is_prd_aprovado = false`, `status_interno = 'NOVO'`, `libera_nf = false` e
+`liberado_producao_em` nulo — valores literais no INSERT, iguais no banco e em
+`20260914_criar_pedido_complementar.sql` (conferido em 22/09/2026: corpo vivo e
+arquivo com o mesmo md5). Ele entra em produção pelo mesmo botão, com a trava.
+
+A RLS de `propostas` é permissiva: a regra vale para o sistema, não contra quem
+escrever direto no banco — fechar isso exigiria um trigger, não autorizado até
+aqui.
 
 A liberação continua explícita, auditável (`audit.logs_v2`) e confirmada pelo
 banco.

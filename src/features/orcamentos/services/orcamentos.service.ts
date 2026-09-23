@@ -4901,8 +4901,9 @@ export type ResultadoLiberacao = {
  *     função direto do navegador);
  *   - a liberação AUTOMÁTICA de prateleira, em `/api/cobrancas/confirmar`,
  *     quando a proposta é 100% de prateleira e fica coberta.
- * O que fica de fora, por decisão: `criar_pedido_complementar` copia a flag do
- * pedido principal dentro do banco (Etapa 8).
+ * O pedido complementar não é uma terceira entrada: `criar_pedido_complementar`
+ * cria o cabeçalho com `is_prd_aprovado = false` e `status_interno = 'NOVO'`
+ * (literais no INSERT), e ele entra em produção por aqui, como qualquer outro.
  *
  * @param clientExterno Client já autenticado com a sessão do usuário, para a
  *   chamada que vem do servidor. Sem ele a função usa `getSupabaseClient()`,

@@ -341,10 +341,10 @@ que a entrada na produção é sempre manual, mas o código tem liberação
 duas entradas passam pela mesma função, a trava vale para as duas, e o doc é
 acertado nesta etapa.
 
-Dois caminhos ficam de fora e precisam de decisão: a liberação **automática** de
-prateleira chama a mesma função (Decisão 3), e `criar_pedido_complementar` copia
-`is_prd_aprovado` do pedido principal dentro do banco, sem passar por ela
-(Decisão 4).
+Dois caminhos pareciam ficar de fora: a liberação **automática** de prateleira
+chama a mesma função (Decisão 3), e `criar_pedido_complementar` foi lido como se
+copiasse `is_prd_aprovado` do principal (Decisão 4). **A segunda leitura estava
+errada** — ver a Etapa 8 abaixo.
 
 **APLICADA em 22/09/2026.** A trava entrou como validação 4 de
 `liberarPropostaParaProducao`, pela regra pura `lib/divergencia-lotes.ts`: item
@@ -362,7 +362,7 @@ foram corrigidos.
 Mapeado antes: no sistema, só essa função liga `is_prd_aprovado` — nenhum
 workflow do n8n toca a flag, e nos últimos 60 dias o `audit.logs_v2` mostra os
 170 eventos da função e 4 intervenções manuais no banco (SQL editor e API de
-gestão). Fica de fora, por decisão, `criar_pedido_complementar` (Etapa 8). E a
+gestão). O `criar_pedido_complementar` não liga a flag (Etapa 8). E a
 RLS de `propostas` é permissiva: contra escrita direta no banco, só um trigger
 fecharia — mudança de banco não autorizada nesta etapa.
 
@@ -427,7 +427,7 @@ Cada etapa é publicável sozinha e não muda o que sai impresso até a etapa 5.
 | 5 | Boletim lê o snapshot; sem snapshot, imprime como hoje ✅ | **sim** |
 | 6 | Formulário do PCP esconde campo não marcado e para de herdar padrão ✅ | **sim** |
 | 7 | Trava de quantidade na liberação para produção (+ correção do doc) ✅ | **sim** |
-| 8 | Pedido complementar: fechar o desvio de `is_prd_aprovado` | **sim** |
+| 8 | Pedido complementar: fechar o desvio de `is_prd_aprovado` — **não havia desvio**, encerrada sem migration ✅ | não |
 
 ### Migrations (descritas, não escritas)
 
@@ -453,11 +453,20 @@ Cada etapa é publicável sozinha e não muda o que sai impresso até a etapa 5.
   tabela **vazia** ao final (nenhum backfill, por decisão).
 - *Rollback:* `drop table public.produtos_proposta_boletim_campos;`.
 
-**Etapa 8 — pedido complementar.** `criar_pedido_complementar` copia
-`is_prd_aprovado` do pedido principal dentro do banco, sem passar pela função de
-liberação, então um complementar pode nascer liberado sem a trava da Etapa 7 ter
-olhado os lotes dele. A etapa fecha esse desvio; por mexer em função do banco,
-ela exige autorização própria e migration própria, descrita quando chegar a vez.
+**Etapa 8 — pedido complementar. ENCERRADA SEM MIGRATION em 22/09/2026: o
+desvio não existe.** A premissa — de que `criar_pedido_complementar` copia
+`is_prd_aprovado` do principal — veio de uma leitura errada deste levantamento,
+que olhou a LISTA de colunas do INSERT (onde `is_prd_aprovado` aparece) e não os
+VALORES. `criar_pedido_complementar` NÃO copia `is_prd_aprovado`: o complementar nasce
+com `is_prd_aprovado = false`, `status_interno = 'NOVO'`, `libera_nf = false` e
+`liberado_producao_em` nulo — valores literais no INSERT, iguais no banco e em
+`20260914_criar_pedido_complementar.sql` (conferido em 22/09/2026: corpo vivo e
+arquivo com o mesmo md5). Ele entra em produção pelo mesmo botão, com a trava.
+
+Conferido também: o app só chama a função e grava duas mensagens de chat; e dos
+3 complementares que existem, o único liberado (22099, em 14/09) passou pela
+função oficial (usuário logado, `REVISAO PRODUCAO`, com carimbo). Uma migration
+aqui seria um `CREATE OR REPLACE` com o corpo idêntico, e não foi aplicada.
 
 Fora isso, nenhuma outra etapa toca o banco. A trava de quantidade é código de
 servidor, na função que já existe.
@@ -490,7 +499,9 @@ servidor, na função que já existe.
    distinção "sem snapshot" usa a coluna `produtos_proposta.boletim_campos_congelado_em`,
    não a linha sentinela.
 3. **A trava de quantidade vale também para produto de prateleira.**
-4. **Pedido complementar** entra como Etapa 8, depois da 7.
+4. **Pedido complementar** entra como Etapa 8, depois da 7. *(Encerrada sem
+   migration: o complementar já nasce com `is_prd_aprovado = false` — ver a
+   Etapa 8 na seção 10.)*
 5. **Produto novo** nasce com a mesma regra da carga: curto se for prateleira,
    completo nos demais, mais `variacoes` se tiver variação cadastrada.
 6. **Produto que vira prateleira depois** mantém o checklist como estava.
