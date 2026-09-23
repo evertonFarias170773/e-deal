@@ -104,11 +104,17 @@ export async function listarPedidosOperacionais(): Promise<PropostaOperacionalLi
   const nomesPagador = idsPagador.length > 0 ? await buscarNomesDosSocios(idsPagador) : {};
 
   // 3. Buscar Modelos (necessário para calcular produto principal e quantidade total)
-  let modelos: { id_int: number; status_arte: string; nome_modelo: string; quantidade: number }[] = [];
+  let modelos: {
+    id_int: number;
+    id_produto_proposta_origem: number | null;
+    status_arte: string;
+    nome_modelo: string;
+    quantidade: number;
+  }[] = [];
   try {
     const { data: modelosRows } = await client
       .from("pedidos_modelos")
-      .select("id_int, status_arte, nome_modelo, quantidade")
+      .select("id_int, id_produto_proposta_origem, status_arte, nome_modelo, quantidade")
       .in("id_int", idInts);
     if (modelosRows) modelos = modelosRows;
   } catch (e) {
@@ -143,24 +149,38 @@ export async function listarPedidosOperacionais(): Promise<PropostaOperacionalLi
 
   // Itens do pedido + cadastro do produto: o setor de produção é do cadastro
   // (produtos.setor_pcp), e é ele que diz quantos setores a OS tem.
-  let itens: {
+  const itens: {
+    id: number;
     id_int: number;
     id_produto: number | null;
     nome_produto: string | null;
     is_estoque: boolean | null;
     status_item: string | null;
   }[] = [];
+  const idsItensRemovidos = new Set<number>();
   try {
     const { data: itensRows } = await client
       .from("produtos_proposta")
       // `status_item` entrou junto com o prazo (30/08/2026): o cálculo do prazo
       // descarta item CANCELADO, exatamente como `calcularDataLimitePorProdutos`
       // faz no boletim. Mesma consulta, nenhuma a mais.
-      .select("id_int, id_produto, nome_produto, is_estoque, status_item")
+      .select("id, id_int, id_produto, nome_produto, is_estoque, status_item")
       .in("id_int", idInts);
-    if (itensRows) itens = itensRows;
+    // Item removido (CANCELADO, inativação lógica) não é produzido: fora dos
+    // setores, do título e — pelos lotes dele — da soma de unidades.
+    for (const linha of itensRows ?? []) {
+      if (String(linha.status_item || "PENDENTE").toUpperCase() === "CANCELADO") {
+        idsItensRemovidos.add(Number(linha.id));
+      } else {
+        itens.push(linha);
+      }
+    }
   } catch (error) {
     console.warn("[pedidos-producao.service] Erro ao buscar itens da proposta");
+  }
+  // Lote de item removido não conta na quantidade total do pedido.
+  if (idsItensRemovidos.size > 0) {
+    modelos = modelos.filter((m) => !idsItensRemovidos.has(Number(m.id_produto_proposta_origem)));
   }
 
   const idsProduto = Array.from(

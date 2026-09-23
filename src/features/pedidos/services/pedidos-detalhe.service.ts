@@ -151,11 +151,20 @@ export async function obterPedidoOperacionalPorIdOuIdInt(param: string | number,
 
   // 3. Buscar os produtos reais associados ao pedido de public.produtos_proposta
   let produtos: (ProdutoMock & { db_id?: number })[] = [];
+  // Itens removidos da proposta (status_item CANCELADO, inativação lógica) não
+  // são produzidos: ficam fora do boletim, do PDF e das contagens — e os lotes
+  // pendurados neles também, senão o passo 7 os jogaria no primeiro produto.
+  const idsItensRemovidos = new Set<number>();
   try {
-    const { data: produtosRows, error: produtosError } = await client
+    const { data: todosOsItens, error: produtosError } = await client
       .from("produtos_proposta")
       .select("*")
       .eq("id_int", row?.id_int);
+    const produtosRows = todosOsItens?.filter((p) => {
+      const removido = String(p.status_item || "PENDENTE").toUpperCase() === "CANCELADO";
+      if (removido) idsItensRemovidos.add(Number(p.id));
+      return !removido;
+    });
 
     if (produtosError) {
       console.warn("[pedidos-detalhe.service] Erro ao buscar produtos da proposta:", produtosError.message);
@@ -226,7 +235,9 @@ export async function obterPedidoOperacionalPorIdOuIdInt(param: string | number,
     if (modelosError) {
       console.warn("[pedidos-detalhe.service] Erro ao buscar modelos do pedido:", modelosError.message);
     } else if (modelosRows) {
-      modelos = modelosRows.map((m) => ({
+      modelos = modelosRows
+        .filter((m) => !idsItensRemovidos.has(Number(m.id_produto_proposta_origem)))
+        .map((m) => ({
         id: m.id,
         id_produto_proposta_origem: m.id_produto_proposta_origem,
         nomeModelo: m.nome_modelo || "Lote Principal",

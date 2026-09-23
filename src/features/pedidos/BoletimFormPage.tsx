@@ -1350,9 +1350,14 @@ export function BoletimFormPage() {
         // Os dois saem VAZIOS quando falta o insumo — proposta ainda nao
         // liberada, produto sem prazo cadastrado, ou categoria de frete nao
         // classificada. Campo em branco e editavel, nunca valor inventado.
+        // Item removido da proposta (status_item CANCELADO, inativacao logica)
+        // nao e produzido: fica fora dos Blocos 3 e 4, da contagem do setor e do
+        // prazo. So os ativos seguem daqui para baixo.
+        const itensAtivos = details.itens.filter((it) => it.statusItem !== "CANCELADO");
+
         const baseDoPrazo = await obterBaseDoPrazo(idInt);
         setDataPrevistaEntrega(
-          (await calcularDataLimitePorProdutos(details.itens, baseDoPrazo.liberadoProducaoEm)) ?? ""
+          (await calcularDataLimitePorProdutos(itensAtivos, baseDoPrazo.liberadoProducaoEm)) ?? ""
         );
         setBoletimHora(horaPorCategoriaFrete(baseDoPrazo.categoriaFrete) ?? "");
         
@@ -1360,7 +1365,7 @@ export function BoletimFormPage() {
         setObsAcabamento("");
 
         // Mapear produtos
-        const mapped = details.itens.map((item, index) => {
+        const mapped = itensAtivos.map((item, index) => {
           // Setor PCP é cadastro do produto. A adivinhação por nome/categoria
           // continua só como rede quando o produto não tem setor definido.
           const setorCadastrado = (item.produto?.setor_pcp || "").trim().toUpperCase();

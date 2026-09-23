@@ -895,6 +895,14 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
   const [searchError, setSearchError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [showArtesBlockModal, setShowArtesBlockModal] = useState<{ nome: string; faltam: string[] }[] | null>(null);
+  /** Aba Orçamento: exibe os itens removidos (inativos), com o Restaurar. */
+  const [mostrarRemovidos, setMostrarRemovidos] = useState(false);
+  const qtdItensRemovidos = form.itens.filter((it) => it.statusItem === "CANCELADO").length;
+  /**
+   * Itens a produzir: o removido (`status_item = CANCELADO`, inativação lógica)
+   * não vai para a aba Pedido nem para a trava "Modelos incompletos" da aba Artes.
+   */
+  const itensAtivos = useMemo(() => form.itens.filter((it) => it.statusItem !== "CANCELADO"), [form.itens]);
 
   /**
    * Checklist do boletim dos produtos da proposta, para a trava "Modelos
@@ -5272,8 +5280,8 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                 if (tab.id === "artes") {
                   const errosPorModelo: Record<string, Set<string>> = {};
                   for (const m of form.pedidosModelos) {
-                    // Ignora modelos órfãos (cujo item foi removido)
-                    const itemDoModelo = form.itens.find(
+                    // Ignora modelos órfãos (item apagado) e os de item removido (inativo)
+                    const itemDoModelo = itensAtivos.find(
                       (item) =>
                         (m.id_produto_proposta_origem && item.id_produto_proposta_origem === m.id_produto_proposta_origem) ||
                         (m.item_temp_id && m.item_temp_id === item.id)
@@ -5339,7 +5347,8 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
             <PedidoModelosTab
               idInt={Number(form.id_int)}
               idCliente={Number(form.clienteId) || undefined}
-              itens={form.itens}
+              // Item removido (inativo) não é produzido: fica fora da aba.
+              itens={itensAtivos}
               modelos={form.pedidosModelos}
               autoSaveHabilitado={!hasActiveCobranca && !isFormBloqueadoPorCobranca}
               onModelosChange={aplicarPatchModelos}
@@ -6293,8 +6302,11 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                 <div className="space-y-4">
                   {form.itens.map((item) => {
                     const isCancelled = item.statusItem === "CANCELADO";
-                    
+
                     if (isCancelled) {
+                      // Removido fica atrás do "Mostrar removidos (N)": na lista
+                      // principal ele parecia mais um produto a produzir.
+                      if (!mostrarRemovidos) return null;
                       return (
                         <div key={item.id} className="rounded-3xl border border-red-200/50 bg-red-50/20 p-5 shadow-sm opacity-60 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                           <div className="space-y-1">
@@ -6375,6 +6387,15 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                       );
                     }
                   })}
+                  {qtdItensRemovidos > 0 ? (
+                    <button
+                      type="button"
+                      onClick={() => setMostrarRemovidos((atual) => !atual)}
+                      className="text-xs font-semibold text-slate-500 underline-offset-2 hover:text-slate-700 hover:underline"
+                    >
+                      {mostrarRemovidos ? "Ocultar removidos" : `Mostrar removidos (${qtdItensRemovidos})`}
+                    </button>
+                  ) : null}
                   {!form.itens.length ? (
                     <div
                       className={`rounded-3xl border border-dashed p-5 text-sm ${
