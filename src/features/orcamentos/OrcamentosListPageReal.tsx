@@ -1518,7 +1518,8 @@ Ela volta a aparecer nas listas operacionais.`
           resumo: data.resumo,
           formaPagamento: data.formaPagamento,
           cidade: data.enderecoEntrega?.cidade,
-          uf: data.enderecoEntrega?.uf
+          uf: data.enderecoEntrega?.uf,
+          modalidade: data.modalidadeFrete
         });
 
         await navigator.clipboard?.writeText(text);

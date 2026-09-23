@@ -1580,7 +1580,10 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     contatoNome,
     cidade: form.clienteNaoCadastrado ? form.cidadeLivre : currentAddress?.cidade,
     uf: form.clienteNaoCadastrado ? form.ufLivre : currentAddress?.uf,
-    bonusPercent: bonusPercent
+    bonusPercent: bonusPercent,
+    // Ao vivo: clicar em RETIRA ou FOB muda o texto na hora, sem esperar o
+    // Salvar — antes ele seguia anunciando o valor do card escolhido embaixo.
+    modalidade: form.modalidadeFrete
   });
 
   // Fetch products catalog
@@ -6609,8 +6612,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
 
               {declaracaoFreteNaoSalva && (
                 <p className="rounded-2xl border border-amber-300 bg-amber-50 p-3 text-xs font-bold text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
-                  Alteração pendente: a modalidade escolhida ainda NÃO está gravada. Salve o orçamento — sem isso a
-                  OS e a Expedição continuam com o frete cotado, e a declaração se perde ao sair da página.
+                  Modalidade ainda não gravada: salve o orçamento para ela valer na OS e na Expedição.
                 </p>
               )}
 

@@ -161,7 +161,8 @@ export function buildPropostaInformalText({
   contatoNome,
   cidade,
   uf,
-  bonusPercent = 0
+  bonusPercent = 0,
+  modalidade = null
 }: {
   id_int: number | string;
   clienteNome: string;
@@ -174,6 +175,15 @@ export function buildPropostaInformalText({
   cidade?: string;
   uf?: string;
   bonusPercent?: number;
+  /**
+   * Quem paga o transporte (23/09/2026). Opcional: sem ele o texto segue como
+   * sempre, pelo card. Com ele, RETIRA e FOB deixam de anunciar o valor do card
+   * que sobrou escolhido embaixo — o texto dizia "Frete via Correios SEDEX:
+   * R$ 108,32" num pedido FOB, cobrando do cliente um frete que ele não paga
+   * à empresa. Medido: das propostas RETIRA e FOB com texto gravado, várias
+   * estavam assim (22574, 22419, 22388, 22305).
+   */
+  modalidade?: "RETIRA" | "FOB" | "CIF" | null;
 }) {
   const contactName = contatoNome || clienteNome || "cliente";
 
@@ -190,9 +200,13 @@ export function buildPropostaInformalText({
   }
 
   let freteMsg = "";
-  const isRetirada = frete && (frete.transportadora === "Retirada Local" || frete.id === "frete_retira_balcao");
+  const isRetirada =
+    modalidade === "RETIRA" ||
+    (frete && (frete.transportadora === "Retirada Local" || frete.id === "frete_retira_balcao"));
   const freteEscolhido = frete && frete.transportadora && frete.transportadora !== "Frete nao definido" && !isRetirada;
-  if (freteEscolhido) {
+  if (modalidade === "FOB") {
+    freteMsg = `Frete *por conta do cliente (FOB)*`;
+  } else if (freteEscolhido) {
     const transportadoraLower = frete.transportadora.toLowerCase();
     const servicoLower = frete.servico?.toLowerCase() ?? "";
     const isDuplicate = servicoLower && (transportadoraLower.includes(servicoLower) || servicoLower.includes(transportadoraLower));

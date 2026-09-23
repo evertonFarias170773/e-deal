@@ -2792,7 +2792,9 @@ export async function saveProposta(
       formaPagamento: formState.formaPagamento || "A combinar",
       isAvulso: formState.isAvulso,
       contatoNome: contatoNome,
-      bonusPercent: cadastro ? getClienteBonusPercent(cadastro as any) : 0
+      bonusPercent: cadastro ? getClienteBonusPercent(cadastro as any) : 0,
+      // O texto gravado fala da modalidade que vai ser gravada, não do card.
+      modalidade: modalidadeVigente
     });
 
     if (!isNonEmpty(informalText)) {
