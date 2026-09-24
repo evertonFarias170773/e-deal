@@ -14,6 +14,7 @@ import {
   avaliarEdicaoFaturado,
   avaliarElegibilidadeFaturado,
   isFaturadoAjustavel,
+  permiteAcrescimoSemCancelar,
   isTituloQuitado,
   tituloExigeCancelamentoBancario
 } from "../../src/features/orcamentos/services/faturado-editavel.ts";
@@ -77,6 +78,18 @@ checar(
   })(),
   ["F1", 1300, 200]
 );
+
+// — Acréscimo sobre cobrança autorizada sem ajuste (24/09/2026) —
+const ret = (over: Record<string, unknown> = {}) => fat({ id: "R1", tipo_cobranca: "E-RETRABALHO", valor: 245.55, ...over });
+checar("E-Retrabalho nao confirmada: total sobe sem cancelar", permiteAcrescimoSemCancelar({ cobrancas: [ret()], totalAntes: 245.55, novoTotal: 300 }), true);
+checar("E-Retrabalho paga: total sobe sem cancelar", permiteAcrescimoSemCancelar({ cobrancas: [ret({ status: "PAID", paid_at: "2026-09-18" })], totalAntes: 56, novoTotal: 116.59 }), true);
+checar("E-Permuta e E-Amostra tambem", permiteAcrescimoSemCancelar({ cobrancas: [ret({ tipo_cobranca: "E-PERMUTA" }), ret({ id: "A1", tipo_cobranca: "E-AMOSTRA" })], totalAntes: 100, novoTotal: 150 }), true);
+checar("total que desce NAO entra", permiteAcrescimoSemCancelar({ cobrancas: [ret()], totalAntes: 245.55, novoTotal: 200 }), false);
+checar("total igual NAO entra", permiteAcrescimoSemCancelar({ cobrancas: [ret()], totalAntes: 245.55, novoTotal: 245.55 }), false);
+checar("PIX enviado junto: trava continua", permiteAcrescimoSemCancelar({ cobrancas: [ret(), pix({ status: "A_VENCER", paid_at: null })], totalAntes: 245.55, novoTotal: 300 }), false);
+checar("so boleto/PIX: trava continua", permiteAcrescimoSemCancelar({ cobrancas: [pix({ status: "A_VENCER", paid_at: null })], totalAntes: 100, novoTotal: 150 }), false);
+checar("E-Faturado nao entra (tem caminho proprio)", permiteAcrescimoSemCancelar({ cobrancas: [fat()], totalAntes: 1000, novoTotal: 1500 }), false);
+checar("cobranca cancelada nao conta", permiteAcrescimoSemCancelar({ cobrancas: [ret(), pix({ status: "CANCELADO" })], totalAntes: 245.55, novoTotal: 300 }), true);
 
 // — Título —
 checar("titulo PAID esta quitado", isTituloQuitado(titulo({ status: "PAID" })), true);

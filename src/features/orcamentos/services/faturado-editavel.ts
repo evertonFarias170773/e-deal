@@ -143,6 +143,34 @@ export function isTipoFaturado(tipoCobranca: unknown): boolean {
  */
 const TIPOS_COM_VALOR_AJUSTAVEL = new Set(["E-FATURADO", "EFATURADO", "FATURADO"]);
 
+/** Cobranças autorizadas pelo administrador cujo valor nunca muda. */
+const TIPOS_AUTORIZADOS_SEM_AJUSTE = new Set(["E-RETRABALHO", "E-PERMUTA", "E-AMOSTRA"]);
+
+export function isAutorizadaSemAjuste(tipoCobranca: unknown): boolean {
+  return TIPOS_AUTORIZADOS_SEM_AJUSTE.has(normalizar(tipoCobranca).replace(/_/g, "-"));
+}
+
+/**
+ * O total da proposta pode SUBIR sem cancelar a cobrança? (24/09/2026)
+ *
+ * Sim quando toda cobrança ativa é E-Retrabalho, E-Permuta ou E-Amostra —
+ * paga ou não. A cobrança fica como está e a diferença vira saldo a cobrar,
+ * resolvido por uma segunda cobrança na aba Pagamentos (com autorização).
+ * Havendo qualquer outra cobrança ativa (PIX, boleto, cartão enviados), a
+ * trava de sempre continua: o link está com o cliente e tem valor fixo.
+ * Redução não entra aqui: segue a regra de cada caminho.
+ */
+export function permiteAcrescimoSemCancelar(entrada: {
+  cobrancas: CobrancaParaFaturado[];
+  totalAntes: number;
+  novoTotal: number;
+}): boolean {
+  const ativas = entrada.cobrancas.filter(isCobrancaAtiva);
+  if (ativas.length === 0) return false;
+  if (!ativas.every((c) => isAutorizadaSemAjuste(c.tipo_cobranca))) return false;
+  return centavos(entrada.novoTotal) > centavos(entrada.totalAntes);
+}
+
 /**
  * Faturado que ainda pode absorver mudança: E-Faturado, a vencer e sem
  * liquidação. `confirmado` NÃO entra — confirmar é conferência, não

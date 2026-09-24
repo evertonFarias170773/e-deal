@@ -4521,7 +4521,21 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
           }
         }
 
-        if (pendingNavigation === "?tab=pagamentos") {
+        // Total subiu com cobrança E-Retrabalho, E-Permuta ou E-Amostra: a
+        // cobrança autorizada fica como está e a diferença é saldo a cobrar.
+        // Leva à aba Pagamentos já abrindo a segunda cobrança — o mesmo
+        // caminho do débito pendente, com autorização como qualquer outra.
+        const saldoACobrar = Number(apiResult.saldoACobrar) || 0;
+        if (saldoACobrar >= 0.01) {
+          setActiveFormTab("pagamentos");
+          setAutoAbrirCobranca(true);
+          setPendingNavigation(null);
+          showToast({
+            type: "success",
+            title: "Proposta atualizada",
+            description: `A cobrança autorizada não muda. Saldo a cobrar: ${formatCurrency(saldoACobrar)} — gere a segunda cobrança.`
+          });
+        } else if (pendingNavigation === "?tab=pagamentos") {
           setActiveFormTab("pagamentos");
           setPendingNavigation(null);
           showToast({ type: "success", title: "Proposta atualizada", description: "Redirecionado para Pagamentos." });

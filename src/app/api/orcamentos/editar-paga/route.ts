@@ -32,7 +32,12 @@ import {
   divergenciasFinanceiras,
   type SnapshotFinanceiro
 } from "@/features/orcamentos/lib/edicao-financeira";
-import type { CobrancaParaFaturado } from "@/features/orcamentos/services/faturado-editavel";
+import {
+  isAutorizadaSemAjuste,
+  isCobrancaAtiva,
+  permiteAcrescimoSemCancelar,
+  type CobrancaParaFaturado
+} from "@/features/orcamentos/services/faturado-editavel";
 import { aplicarDiferencaFinanceira } from "@/features/cobrancas/services/diferenca-financeira-proposta";
 import { avaliarCoberturaFinanceira } from "@/features/cobrancas/services/cobertura-financeira-proposta";
 
@@ -369,6 +374,21 @@ export async function POST(request: NextRequest) {
 
   const { estavaIntegralmentePaga, titulos, avaliacaoPrevia, ehCaminhoFaturado } = cobertura;
 
+  // ── 5a3. Acréscimo sobre cobrança autorizada sem ajuste (24/09/2026) ──────
+  // E-Retrabalho, E-Permuta e E-Amostra: o valor autorizado não muda, e o total
+  // pode SUBIR sem cancelar a cobrança — paga ou não. A diferença vira saldo a
+  // cobrar da proposta e a tela leva o usuário à aba Pagamentos para a segunda
+  // cobrança, que passa pela autorização como qualquer outra. Só vale quando
+  // TODAS as cobranças ativas são desses tipos: com PIX ou boleto enviados a
+  // trava abaixo continua. Redução segue a regra de sempre. O total do client
+  // serve para escolher o caminho, como no faturado.
+  const totalAntesEdicao = Number(propostaBanco.valor_total) || 0;
+  const ehAcrescimoSobreAutorizada = permiteAcrescimoSemCancelar({
+    cobrancas: cobrancas as CobrancaParaFaturado[],
+    totalAntes: totalAntesEdicao,
+    novoTotal: Number(novoTotal) || totalAntesEdicao
+  });
+
   //
   // Rede de segurança: a tela exclui os títulos antes de salvar. Se ainda
   // houver algum ativo, o Contas a Receber ficaria com valor velho.
@@ -404,7 +424,7 @@ export async function POST(request: NextRequest) {
   // abaixo que ele "serviu só para escolher o caminho" — quem decide o valor
   // gravado é o banco, depois dos triggers. Ver `lib/edicao-financeira.ts`,
   // inclusive a dívida técnica da checagem transacional que falta.
-  if (temCobrancasAtivas && valorPagoRealArredondado <= 0 && !ehCaminhoFaturado) {
+  if (temCobrancasAtivas && valorPagoRealArredondado <= 0 && !ehCaminhoFaturado && !ehAcrescimoSobreAutorizada) {
     const snapshot = await lerSnapshotFinanceiro(supabase, idInt, propostaBanco);
     if (!snapshot) {
       return NextResponse.json(
@@ -502,7 +522,9 @@ export async function POST(request: NextRequest) {
   // O faturado a vencer entra aqui mesmo quando `ehPropostaPaga` é falso
   // (cobrança ainda não confirmada): existe cobrança ativa, então a edição
   // continua sendo operação com permissão.
-  if (ehPropostaPaga || ehCaminhoFaturado) {
+  // O acréscimo sobre cobrança autorizada ainda não confirmada também é edição
+  // com cobrança ativa: exige a mesma permissão da proposta paga.
+  if (ehPropostaPaga || ehCaminhoFaturado || ehAcrescimoSobreAutorizada) {
     const permissoesAceitas = ehCaminhoFaturado
       ? [PERMISSAO_PROPOSTA_PAGA, PERMISSAO_FATURADO]
       : [PERMISSAO_PROPOSTA_PAGA];
@@ -537,7 +559,7 @@ export async function POST(request: NextRequest) {
     formState,
     supabase as unknown as import("@supabase/supabase-js").SupabaseClient,
     user.id,
-    { force: ehPropostaPaga || ehCaminhoFaturado }
+    { force: ehPropostaPaga || ehCaminhoFaturado || ehAcrescimoSobreAutorizada }
   );
 
   if (!saveResult.success) {
@@ -604,6 +626,16 @@ export async function POST(request: NextRequest) {
 
   const { diferenca, pendenciaCriada, faturadoAjustado } = resultadoFinanceiro;
 
+  // Saldo a cobrar com cobrança autorizada sem ajuste (E-Retrabalho, E-Permuta,
+  // E-Amostra): a tela abre a aba Pagamentos para a segunda cobrança. Leitura
+  // só; nada em pagamentos_v2 é escrito aqui.
+  const ativasDepois = (cobrancas as CobrancaParaFaturado[]).filter(isCobrancaAtiva);
+  const somaCobrancasAtivas = Math.round(ativasDepois.reduce((t, c) => t + (Number(c.valor) || 0), 0) * 100) / 100;
+  const saldoACobrar =
+    ativasDepois.length > 0 && ativasDepois.every((c) => isAutorizadaSemAjuste(c.tipo_cobranca))
+      ? Math.max(0, Math.round((novoTotalRealArredondado - somaCobrancasAtivas) * 100) / 100)
+      : 0;
+
 
   return NextResponse.json({
     success: true,
@@ -614,5 +646,6 @@ export async function POST(request: NextRequest) {
     pendenciaAtiva: pendenciaCriada,
     ehCaminhoFaturado,
     faturadoAjustado,
+    saldoACobrar,
   });
 }
