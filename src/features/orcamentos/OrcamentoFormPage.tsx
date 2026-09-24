@@ -5366,6 +5366,13 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
               modelos={form.pedidosModelos}
               autoSaveHabilitado={!hasActiveCobranca && !isFormBloqueadoPorCobranca}
               onModelosChange={aplicarPatchModelos}
+              // Proposta com cobrança: lotes excluídos na lista rápida vão no Salvar
+              // (editar-paga → saveProposta com force). Cobrada sem permissão de
+              // editar: a lista abre só para ver.
+              onModelosExcluidos={(ids) =>
+                setForm((prev) => ({ ...prev, deletedModeloIds: ids.length > 0 ? [...ids] : undefined }))
+              }
+              lotesSomenteLeitura={isFormBloqueadoPorCobranca}
               onLotesGravados={(idProdutoPropostaOrigem, novaQtd, freteMensagem) => {
                 // A lista rápida já gravou item e lotes no banco. Aqui só
                 // espelhamos no formulário: o total da proposta é calculado na

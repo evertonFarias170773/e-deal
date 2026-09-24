@@ -3160,8 +3160,30 @@ export async function saveProposta(
             (m.item_temp_id && m.item_temp_id === item.id)
           );
 
+          // C.0 Lotes excluídos na lista rápida de proposta com cobrança. Só no
+          // caminho autorizado de proposta paga (`force`, que o editar-paga
+          // passa depois de conferir a permissão). Sem cobrança a lista grava
+          // pela rota própria e nunca manda esta lista. Limitado aos lotes
+          // DESTE item e desta proposta.
+          const excluirModelos = options?.force
+            ? (formState.deletedModeloIds || []).map(Number).filter((id) => Number.isFinite(id) && id > 0)
+            : [];
+          if (excluirModelos.length > 0) {
+            const { error: deleteModelosError } = await client
+              .from("pedidos_modelos")
+              .delete()
+              .in("id", excluirModelos)
+              .eq("id_produto_proposta_origem", dbItemId)
+              .eq("id_int", id_int!);
+            if (deleteModelosError) {
+              console.error(`[OrcamentosService] Erro ao excluir lotes do item #${dbItemId}:`, deleteModelosError);
+              throw new Error(`Erro ao excluir lotes do item #${dbItemId}: ${deleteModelosError.message}`);
+            }
+          }
+          const excluidos = new Set(excluirModelos);
+
           const modelosNovos = modelosDoItem.filter(m => !m.isPersisted);
-          const modelosExistentes = modelosDoItem.filter(m => m.isPersisted && m.id && m.id > 0);
+          const modelosExistentes = modelosDoItem.filter(m => m.isPersisted && m.id && m.id > 0 && !excluidos.has(Number(m.id)));
 
           // A regra do checklist para os lotes DESTE item — a mesma da grade,
           // da rota de lotes, dos cards e do PCP. Produto sem checklist: null.

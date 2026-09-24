@@ -622,6 +622,8 @@ export function PedidoModelosTab({
   autoSaveHabilitado = true,
   onModelosChange,
   onLotesGravados,
+  onModelosExcluidos,
+  lotesSomenteLeitura = false,
 }: {
   idInt?: number;
   /** propostas.id_cliente — filtra as numerações exclusivas de cliente. */
@@ -643,6 +645,10 @@ export function PedidoModelosTab({
   onModelosChange: (atualizar: (prev: PedidoModeloState[]) => PedidoModeloState[]) => void;
   /** Lotes gravados em massa: o pai acerta a quantidade do item e relê os lotes. */
   onLotesGravados?: (idProdutoPropostaOrigem: number, novaQtd: number, freteMensagem: string | null) => void;
+  /** Proposta com cobrança: ids de lotes removidos na lista, gravados pelo Salvar. */
+  onModelosExcluidos?: (ids: number[]) => void;
+  /** Proposta cobrada sem permissão de editar: a lista abre, mas só para ver. */
+  lotesSomenteLeitura?: boolean;
 }) {
   const { showToast } = useAppToast();
   // Proposta 100% de prateleira: mesma definição usada para dispensar a arte.
@@ -685,7 +691,10 @@ export function PedidoModelosTab({
   // e a forma rapida de montar o pedido, e gravar nao a fecha. Onde a lista
   // rapida e desabilitada (proposta com cobranca) fica o modo cards.
   const [emModoGrade, setEmModoGrade] = useState<Record<string, boolean>>({});
-  const gradeAberta = (idItem: string) => emModoGrade[idItem] ?? autoSaveHabilitado;
+  // A lista rápida é a visualização principal em qualquer status (24/09/2026):
+  // abre por padrão, e os cards só quando o usuário pede. Com cobrança ela não
+  // grava sozinha — ver `onPendente` no LotesGrid.
+  const gradeAberta = (idItem: string) => emModoGrade[idItem] ?? true;
   // Botao "Amostras" de cada produto: a amostra da arte abaixo de cada lote da
   // grade. Comeca desligado.
   const [amostrasVisiveis, setAmostrasVisiveis] = useState<Record<string, boolean>>({});
@@ -935,13 +944,8 @@ export function PedidoModelosTab({
                   {/* Lista rápida: para o pedido de 12, 20, 30 lotes do mesmo
                       produto, onde os cards custam 4 idas ao servidor cada. */}
                   <button
-                    onClick={() => setEmModoGrade((atual) => ({ ...atual, [item.id]: !(atual[item.id] ?? autoSaveHabilitado) }))}
-                    disabled={!autoSaveHabilitado}
-                    title={
-                      autoSaveHabilitado
-                        ? "Digitar ou colar vários lotes de uma vez"
-                        : "Proposta com cobrança: a lista rápida fica indisponível"
-                    }
+                    onClick={() => setEmModoGrade((atual) => ({ ...atual, [item.id]: !(atual[item.id] ?? true) }))}
+                    title="Digitar ou colar vários lotes de uma vez"
                     className={`flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-bold transition disabled:opacity-50 ${
                       gradeAberta(item.id)
                         ? "bg-[#0b2f4a] text-white hover:bg-[#123f61]"
@@ -1004,6 +1008,8 @@ export function PedidoModelosTab({
                     }
 
                     return (
+                      // Cobrada sem permissão de editar: a lista abre só para ver.
+                      <fieldset disabled={lotesSomenteLeitura} className="min-w-0">
                       <LotesGrid
                         idInt={Number(idInt)}
                         // Por ele a grade le o checklist do boletim do produto.
@@ -1102,7 +1108,56 @@ export function PedidoModelosTab({
                           if (qtdItem !== qtdAnterior) onLotesGravados?.(idNoBanco, qtdItem, freteMensagem);
                         }}
                         onSair={() => setEmModoGrade((atual) => ({ ...atual, [item.id]: false }))}
+                        onPendente={
+                          autoSaveHabilitado
+                            ? undefined
+                            : ({ lotes, removerIds, soma }) => {
+                                // Proposta com cobrança: a grade vira estado do
+                                // formulário, e o Salvar da proposta (editar-paga)
+                                // grava lotes, exclusões e a quantidade do item.
+                                onModelosChange((prev) => {
+                                  const doItem = prev.filter(
+                                    (m) => Number(m.id_produto_proposta_origem) === Number(idNoBanco)
+                                  );
+                                  const persistidos = new Map(
+                                    doItem.filter((m) => m.id).map((m) => [Number(m.id), m] as const)
+                                  );
+                                  const novosAntes = new Map(
+                                    doItem.filter((m) => !m.isPersisted && m.tempId).map((m) => [String(m.tempId), m] as const)
+                                  );
+                                  return [
+                                    ...prev.filter((m) => Number(m.id_produto_proposta_origem) !== Number(idNoBanco)),
+                                    ...lotes.map((l) => {
+                                      const anterior = l.id ? persistidos.get(Number(l.id)) : novosAntes.get(l.chave);
+                                      return {
+                                        ...(anterior ?? { status_arte: "PENDENTE", status_producao: "PENDENTE" }),
+                                        ...(l.id
+                                          ? { id: Number(l.id), isPersisted: true }
+                                          : { id: undefined, tempId: l.chave, isPersisted: false }),
+                                        id_produto_proposta_origem: idNoBanco,
+                                        nome_modelo: l.nome_modelo,
+                                        quantidade: Number(l.quantidade) || 0,
+                                        padrao: l.padrao ?? null,
+                                        tipo_numeracao: l.tipo_numeracao ?? null,
+                                        numeracao_inicio: l.numeracao_inicio ?? null,
+                                        numeracao_fim: l.numeracao_fim ?? null,
+                                        verso_tipo: l.verso_tipo ?? null,
+                                        bloco: l.bloco ?? null,
+                                        gabarito_operacional: l.gabarito_operacional ?? null,
+                                        Q_CAM: l.Q_CAM ?? null,
+                                        L_CAM: l.L_CAM ?? null,
+                                        C_INI: l.C_INI ?? null,
+                                        variacoes_texto: l.variacoes_texto ?? anterior?.variacoes_texto ?? null
+                                      } as PedidoModeloState;
+                                    })
+                                  ];
+                                });
+                                onModelosExcluidos?.(removerIds);
+                                if (soma !== (item.quantidade || 0)) onLotesGravados?.(idNoBanco, soma, null);
+                              }
+                        }
                       />
+                      </fieldset>
                     );
                   })()
                 ) : (

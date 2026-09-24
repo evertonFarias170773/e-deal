@@ -191,7 +191,8 @@ export function LotesGrid({
   amostrasVisiveis,
   onGravado,
   onSair,
-  onAmpliarArte
+  onAmpliarArte,
+  onPendente
 }: {
   idInt: number;
   /**
@@ -238,6 +239,18 @@ export function LotesGrid({
   onSair: () => void;
   /** A arte ampliada abre no mesmo modal do modo cards. */
   onAmpliarArte: (arte: { frente: string; verso: string | null; nome: string }) => void;
+  /**
+   * Proposta com cobrança (24/09/2026): a grade NÃO grava sozinha — a rota em
+   * massa recusa proposta cobrada. Cada alteração vai para o formulário por
+   * aqui (lotes, excluídos e a soma, que vira a quantidade do item) e é
+   * gravada pelo Salvar da proposta, no caminho de proposta paga (editar-paga).
+   * Ausente = sem cobrança, auto-save de sempre.
+   */
+  onPendente?: (pendente: {
+    lotes: Array<LinhaLote & { chave: string }>;
+    removerIds: number[];
+    soma: number;
+  }) => void;
 }) {
   const { showToast } = useAppToast();
 
@@ -758,6 +771,27 @@ export function LotesGrid({
 
   const colunas = colunasDaLista({ simplificado, visivel, itemPrateleira });
 
+  // Proposta com cobrança: espelha no formulário a cada alteração (ver
+  // `onPendente`). A primeira passagem é o que veio do banco: nada a espelhar.
+  const [temPendente, setTemPendente] = useState(false);
+  const espelhouRef = useRef(false);
+  useEffect(() => {
+    if (!onPendente) return;
+    if (!espelhouRef.current) {
+      espelhouRef.current = true;
+      return;
+    }
+    const numeradas = numerar(linhasRef.current, modoRef.current);
+    // Linha nova sem os obrigatórios fica fora, como no envio da rota.
+    const lotes = numeradas
+      .filter((l) => l.id || completa(l))
+      .map((l) => ({ ...l, ...montarLote(l), chave: l.chave }));
+    onPendente({ lotes, removerIds: [...removidosRef.current], soma: somaQuantidades(lotes) });
+    setTemPendente(true);
+    // Só as linhas e o modo disparam: são as duas fontes do que vai ao Salvar.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [linhas, modoNumeracao]);
+
   const incompletas = linhas.filter((l) => !l.id && !completa(l) && (l.nome_modelo.trim() || l.quantidade !== "" || l.padrao)).length;
 
   return (
@@ -811,8 +845,15 @@ export function LotesGrid({
             Ver como cards
           </button>
           {/* O caminho de gravação de sempre: grava o que estiver pendente e
-              fica na grade. Em proposta com cobrança é o único caminho — o
-              auto-save fica desligado, como no card. */}
+              fica na grade. Em proposta com cobrança a grade não grava: quem
+              grava é o Salvar da proposta (editar-paga). */}
+          {onPendente ? (
+            <span className={`rounded-xl px-3 py-2 text-xs font-bold ${temPendente ? "bg-amber-50 text-amber-700" : "text-slate-500"}`}>
+              {temPendente
+                ? "Alterações pendentes: use Salvar alterações da proposta"
+                : "Proposta com cobrança: grava pelo Salvar da proposta"}
+            </span>
+          ) : (
           <button
             type="button"
             onClick={() => void executarSave({ forcado: true })}
@@ -821,6 +862,7 @@ export function LotesGrid({
           >
             {gravando ? "Gravando..." : "Gravar lote"}
           </button>
+          )}
         </div>
       </div>
 

@@ -241,6 +241,13 @@ export type PropostaFormState = {
   itens: PropostaItem[];
   /** IDs reais de produtos_proposta.id pendentes de DELETE no banco ao salvar */
   deletedProdutoPropostaIds: number[];
+  /**
+   * `pedidos_modelos.id` removidos na lista rápida de proposta COM cobrança
+   * (24/09/2026): lá a lista não grava sozinha, e a exclusão vai no Salvar da
+   * proposta. O `saveProposta` só a aplica no caminho autorizado de proposta
+   * paga (`force`); sem ele, é ignorada.
+   */
+  deletedModeloIds?: number[];
   pedidosModelos: PedidoModeloState[];
   briefingArtesDraft?: any;
   fretes: PropostaFrete[];
