@@ -35,6 +35,14 @@
  *   do papel no lugar da arte, e a janela de amostra sem o status.
  *   `simplificado` segue sendo a regra da PROPOSTA (100% prateleira); esta é
  *   a do ITEM, e vale só na lista.
+ *
+ * UMA LINHA POR MODELO NA LISTA (24/09/2026)
+ *   Na lista os campos não têm rótulo: o cabeçalho é um só por produto
+ *   (`CabecalhoDaLista`) e as células saem de `colunasDaLista`, a mesma
+ *   função que decide o que aparece — checklist, `simplificado`, prateleira —
+ *   e a largura de cada coluna (`gridDaLista`). O número do modelo vai
+ *   dentro do campo Modelo (`identificador`). Os campos de camarote, que só
+ *   existem quando o numerador é CAMAROTE, ficam numa sublinha com rótulo.
  */
 
 import { useEffect, useState } from "react";
@@ -327,6 +335,64 @@ export type ModeloCamposValores = Pick<
   | "C_INI"
 >;
 
+// ─── Colunas da lista rápida ─────────────────────────────────────────────────
+
+export type ColunaDaLista = { chave: string; rotulo: string; largura: string };
+
+/**
+ * As colunas que a lista rápida mostra para um produto, na ordem do card e com
+ * a MESMA regra de exibição dos campos. Fonte única: o cabeçalho e as células
+ * de cada lote saem daqui — coluna nova entra aqui e aparece nos dois.
+ */
+export function colunasDaLista({
+  simplificado,
+  visivel,
+  itemPrateleira,
+}: {
+  simplificado: boolean;
+  visivel: ChecklistVisivel;
+  itemPrateleira: boolean;
+}): ColunaDaLista[] {
+  const completo = !simplificado && !itemPrateleira;
+  const colunas: ColunaDaLista[] = [];
+  if (completo) colunas.push({ chave: "modelo", rotulo: "Modelo", largura: "minmax(150px, 2fr)" });
+  colunas.push({ chave: "qtd", rotulo: "Qtd *", largura: "76px" });
+  if (completo && mostraCampo(visivel, "numeracao_faixa")) {
+    colunas.push({ chave: "num_inicio", rotulo: "Nº Inicial", largura: "84px" });
+    colunas.push({ chave: "num_fim", rotulo: "Nº Final", largura: "84px" });
+  }
+  if (mostraCampo(visivel, "cor")) colunas.push({ chave: "cor", rotulo: "Cor papel *", largura: "minmax(130px, 1.5fr)" });
+  if (completo) colunas.push({ chave: "bloco", rotulo: "Bloco", largura: "96px" });
+  if (!itemPrateleira && mostraCampo(visivel, "impressao_fv")) {
+    colunas.push({ chave: "verso", rotulo: "Verso", largura: "132px" });
+  }
+  if (!itemPrateleira && mostraCampo(visivel, "num_gabarito")) {
+    colunas.push({ chave: "numerador", rotulo: "Numerador", largura: "minmax(130px, 1.3fr)" });
+  }
+  return colunas;
+}
+
+/** `grid-template-columns` da lista: as larguras das colunas visíveis. */
+export function gridDaLista(colunas: ColunaDaLista[]): string {
+  return colunas.map((c) => c.largura).join(" ");
+}
+
+const rotuloListaClass = "truncate text-[11px] font-bold uppercase tracking-wider text-slate-500";
+
+/** A linha de títulos, uma por produto — as mesmas colunas das células. */
+export function CabecalhoDaLista({ colunas, className }: { colunas: ColunaDaLista[]; className?: string }) {
+  return (
+    <div className={cn("grid items-end gap-2", className)} style={{ gridTemplateColumns: gridDaLista(colunas) }}>
+      {colunas.map((c) => (
+        <span key={c.chave} className={rotuloListaClass}>{c.rotulo}</span>
+      ))}
+    </div>
+  );
+}
+
+const inputListaClass = "w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-900 outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 transition";
+const rotuloSublinhaClass = "text-[10px] font-bold uppercase tracking-wider text-slate-500";
+
 export function ModeloCampos({
   modelo,
   coresOpcoes,
@@ -336,6 +402,7 @@ export function ModeloCampos({
   visivel,
   itemPrateleira,
   modo,
+  identificador = null,
   maxQtd,
   onChange,
   onBlurCampo,
@@ -353,8 +420,13 @@ export function ModeloCampos({
   visivel: ChecklistVisivel;
   /** Item de prateleira: no card, a prévia do papel da cor; na lista, só Qtd e Cor papel. */
   itemPrateleira: boolean;
-  /** Quem renderiza: o card de modelo ou a lista rápida. */
+  /**
+   * Quem renderiza. No card os campos têm rótulo e fluem num flex; na lista são
+   * células sem rótulo, colocadas pelo chamador num grid de `colunasDaLista`.
+   */
   modo: "card" | "lista";
+  /** Lista: o número do modelo, mostrado dentro do campo Modelo ("#1001304" ou "novo"). */
+  identificador?: string | null;
   /** Saldo do item, que corta a Qtd. Ausente = sem trava (lista rápida). */
   maxQtd?: number;
   /**
@@ -375,13 +447,20 @@ export function ModeloCampos({
   const mostraFaixa = mostraCampo(visivel, "numeracao_faixa");
   const mostraVerso = mostraCampo(visivel, "impressao_fv");
   const mostraNumerador = mostraCampo(visivel, "num_gabarito");
+  const lista = modo === "lista";
   // Prateleira na lista rápida: só Qtd e Cor papel (ver cabeçalho do arquivo).
-  const soQtdECor = modo === "lista" && itemPrateleira;
+  const soQtdECor = lista && itemPrateleira;
   const isCustomInit = modelo.bloco ? !["10", "15", "20", "25", "40", "50", "75", "100"].includes(modelo.bloco) : false;
   const [showCustomBloco, setShowCustomBloco] = useState(isCustomInit);
 
   const handleChange = onChange;
   const flushSave = onBlurCampo;
+
+  // Na lista as células não têm rótulo nem largura própria: o grid do chamador
+  // (colunasDaLista) é quem posiciona. No card fica tudo como sempre foi.
+  const campo = lista ? inputListaClass : inputClass;
+  const cel = (classeDoCard: string) => (lista ? "min-w-0" : classeDoCard);
+  const rotulo = (texto: string) => (lista ? null : <label className={labelClass}>{texto}</label>);
 
   const hasConfig = Boolean(itemIdFormato);
 
@@ -412,251 +491,277 @@ export function ModeloCampos({
   const camaroteExcedeSaldo =
     maxQtd !== undefined && qtdCamaroteCalculada !== null && qtdCamaroteCalculada > maxQtd;
 
-  return (
+  const inputModelo = (
+    <input
+      type="text"
+      className={campo}
+      placeholder="Ex: Talão"
+      value={modelo.nome_modelo}
+      onChange={(e) => handleChange({ nome_modelo: e.target.value })}
+      onBlur={flushSave}
+      onPaste={onPaste}
+      // Na lista, o número do modelo fica dentro do campo: abre espaço para ele.
+      style={lista && identificador ? { paddingLeft: `${12 + identificador.length * 6}px` } : undefined}
+    />
+  );
+
+  const camposCamarote = (
     <>
-      <div className="flex flex-wrap xl:flex-nowrap xl:items-end gap-3">
-        {!simplificado && !soQtdECor && (
-          <div className="flex-[2] min-w-[110px]">
-            <label className={labelClass}>Modelo *</label>
+      <div className={cel("flex-[0.8] min-w-[70px]")}>
+        <label className={lista ? rotuloSublinhaClass : labelClass}>Q CAM *</label>
+        <input
+          type="number"
+          min={1}
+          className={campo}
+          placeholder="Ex: 10"
+          title="Quantidade total de camarotes"
+          value={modelo.Q_CAM ?? ""}
+          onChange={(e) => handleChange({ Q_CAM: parseNumeroOpcional(e.target.value) })}
+          onBlur={flushSave}
+        />
+      </div>
+
+      <div className={cel("flex-[0.8] min-w-[70px]")}>
+        <label className={lista ? rotuloSublinhaClass : labelClass}>L CAM *</label>
+        <input
+          type="number"
+          min={1}
+          className={campo}
+          placeholder="Ex: 8"
+          title="Lugares por camarote"
+          value={modelo.L_CAM ?? ""}
+          onChange={(e) => handleChange({ L_CAM: parseNumeroOpcional(e.target.value) })}
+          onBlur={flushSave}
+        />
+      </div>
+
+      <div className={cel("flex-[0.8] min-w-[70px]")}>
+        <label className={lista ? rotuloSublinhaClass : labelClass}>C INI</label>
+        <input
+          type="number"
+          className={campo}
+          placeholder="Ex: 1"
+          title="Número inicial do camarote"
+          value={modelo.C_INI ?? ""}
+          onChange={(e) => handleChange({ C_INI: parseNumeroOpcional(e.target.value) })}
+          onBlur={flushSave}
+        />
+      </div>
+    </>
+  );
+
+  const celulas = (
+    <>
+      {!simplificado && !soQtdECor && (
+        <div className={cel("flex-[2] min-w-[110px]")}>
+          {rotulo("Modelo *")}
+          {lista && identificador ? (
+            <div className="relative">
+              <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400">
+                {identificador}
+              </span>
+              {inputModelo}
+            </div>
+          ) : (
+            inputModelo
+          )}
+        </div>
+      )}
+
+      <div className={cel(cn("flex-[0.8] min-w-[60px]", simplificado && "order-2"))}>
+        {rotulo("Qtd *")}
+        <input
+          type="number"
+          className={isCamarote ? `${campo} bg-slate-50` : campo}
+          value={modelo.quantidade || ""}
+          readOnly={isCamarote}
+          title={isCamarote ? "Calculado automaticamente: Q CAM × L CAM" : undefined}
+          placeholder={isCamarote ? "Auto" : undefined}
+          onChange={(e) => {
+            if (isCamarote) return;
+            const val = Number(e.target.value);
+            if (!isNaN(val)) {
+              handleChange({ quantidade: maxQtd === undefined ? val : Math.min(val, maxQtd) });
+            }
+          }}
+          onBlur={flushSave}
+          onPaste={onPaste}
+          onKeyDown={
+            onEnterQtd
+              ? (e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    onEnterQtd();
+                  }
+                }
+              : undefined
+          }
+        />
+      </div>
+
+      {/* No card os campos de camarote entram aqui, na sequência; na lista vão
+          para uma sublinha, para não desalinhar as colunas do cabeçalho. */}
+      {isCamarote && !lista && camposCamarote}
+
+      {!simplificado && !soQtdECor && mostraFaixa && (
+        <>
+          <div className={cel("flex-[0.8] min-w-[70px]")}>
+            {rotulo("Nº Inicial")}
             <input
-              type="text"
-              className={inputClass}
-              placeholder="Ex: Talão"
-              value={modelo.nome_modelo}
-              onChange={(e) => handleChange({ nome_modelo: e.target.value })}
+              type="number"
+              className={numeracaoInicioTravada ? `${campo} bg-slate-50` : campo}
+              placeholder="Ex: 1"
+              value={modelo.numeracao_inicio ?? ""}
+              readOnly={Boolean(numeracaoInicioTravada)}
+              title={numeracaoInicioTravada ?? undefined}
+              onChange={(e) => handleChange({ numeracao_inicio: Number(e.target.value) || null })}
               onBlur={flushSave}
-              onPaste={onPaste}
             />
           </div>
-        )}
 
-        <div className={cn("flex-[0.8] min-w-[60px]", simplificado && "order-2")}>
-          <label className={labelClass}>Qtd *</label>
-          <input
-            type="number"
-            className={isCamarote ? `${inputClass} bg-slate-50` : inputClass}
-            value={modelo.quantidade || ""}
-            readOnly={isCamarote}
-            title={isCamarote ? "Calculado automaticamente: Q CAM × L CAM" : undefined}
-            placeholder={isCamarote ? "Auto" : undefined}
-            onChange={(e) => {
-              if (isCamarote) return;
-              const val = Number(e.target.value);
-              if (!isNaN(val)) {
-                handleChange({ quantidade: maxQtd === undefined ? val : Math.min(val, maxQtd) });
-              }
-            }}
-            onBlur={flushSave}
-            onPaste={onPaste}
-            onKeyDown={
-              onEnterQtd
-                ? (e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      onEnterQtd();
-                    }
-                  }
-                : undefined
-            }
-          />
-        </div>
-
-        {isCamarote && (
-          <>
-            <div className="flex-[0.8] min-w-[70px]">
-              <label className={labelClass}>Q CAM *</label>
-              <input
-                type="number"
-                min={1}
-                className={inputClass}
-                placeholder="Ex: 10"
-                title="Quantidade total de camarotes"
-                value={modelo.Q_CAM ?? ""}
-                onChange={(e) => handleChange({ Q_CAM: parseNumeroOpcional(e.target.value) })}
-                onBlur={flushSave}
-              />
-            </div>
-
-            <div className="flex-[0.8] min-w-[70px]">
-              <label className={labelClass}>L CAM *</label>
-              <input
-                type="number"
-                min={1}
-                className={inputClass}
-                placeholder="Ex: 8"
-                title="Lugares por camarote"
-                value={modelo.L_CAM ?? ""}
-                onChange={(e) => handleChange({ L_CAM: parseNumeroOpcional(e.target.value) })}
-                onBlur={flushSave}
-              />
-            </div>
-
-            <div className="flex-[0.8] min-w-[70px]">
-              <label className={labelClass}>C INI</label>
-              <input
-                type="number"
-                className={inputClass}
-                placeholder="Ex: 1"
-                title="Número inicial do camarote"
-                value={modelo.C_INI ?? ""}
-                onChange={(e) => handleChange({ C_INI: parseNumeroOpcional(e.target.value) })}
-                onBlur={flushSave}
-              />
-            </div>
-          </>
-        )}
-
-        {!simplificado && !soQtdECor && mostraFaixa && (
-          <>
-            <div className="flex-[0.8] min-w-[70px]">
-              <label className={labelClass}>Nº Inicial</label>
-              <input
-                type="number"
-                className={numeracaoInicioTravada ? `${inputClass} bg-slate-50` : inputClass}
-                placeholder="Ex: 1"
-                value={modelo.numeracao_inicio ?? ""}
-                readOnly={Boolean(numeracaoInicioTravada)}
-                title={numeracaoInicioTravada ?? undefined}
-                onChange={(e) => handleChange({ numeracao_inicio: Number(e.target.value) || null })}
-                onBlur={flushSave}
-              />
-            </div>
-
-            <div className="flex-[0.8] min-w-[70px]">
-              <label className={labelClass}>Nº Final</label>
-              <input
-                type="number"
-                className={`${inputClass} bg-slate-50`}
-                placeholder="Auto"
-                value={modelo.numeracao_fim ?? ""}
-                readOnly
-              />
-            </div>
-          </>
-        )}
-
-        {mostraCor && (
-        <div className={cn("flex-[1.5] min-w-[100px]", simplificado && "order-1")}>
-          <label className={labelClass}>Cor papel *</label>
-            <select
-              className={inputClass}
-              value={modelo.padrao || ""}
-              onChange={(e) => handleChange({ padrao: e.target.value }, true)}
-              onPaste={onPaste}
-              disabled={!hasConfig}
-            >
-              {!hasConfig ? (
-                <option value="">Sem formato</option>
-              ) : (
-              <>
-                <option value="">Selecione...</option>
-                {filteredCores.map((c) => (
-                  <option key={String(c.id ?? c.name)} value={c.name}>{c.name}</option>
-                ))}
-              </>
-              )}
-            </select>
-        </div>
-        )}
-
-        {!simplificado && !soQtdECor && (
-          <div className="flex-[1.2] min-w-[90px]">
-            <label className={labelClass}>Bloco</label>
-            {showCustomBloco ? (
-              <div className="flex gap-1">
-                <input
-                  type="text"
-                  className={inputClass}
-                  placeholder="Ex: 50x2"
-                  value={modelo.bloco || ""}
-                  onChange={(e) => handleChange({ bloco: e.target.value || null })}
-                  onBlur={flushSave}
-                />
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowCustomBloco(false);
-                    handleChange({ bloco: null }, true);
-                  }}
-                  className="rounded-xl border border-slate-200 bg-white px-2 py-2 text-slate-500 hover:bg-slate-50"
-                  title="Voltar para opções fixas"
-                >
-                  X
-                </button>
-              </div>
-            ) : (
-              <select
-                className={inputClass}
-                value={modelo.bloco || ""}
-                onChange={(e) => {
-                  if (e.target.value === "Outro") {
-                    setShowCustomBloco(true);
-                    handleChange({ bloco: null }, true);
-                  } else {
-                    handleChange({ bloco: e.target.value || null }, true);
-                  }
-                }}
-              >
-                <option value="">Nenhum</option>
-                <option value="10">10</option>
-                <option value="15">15</option>
-                <option value="20">20</option>
-                <option value="25">25</option>
-                <option value="40">40</option>
-                <option value="50">50</option>
-                <option value="75">75</option>
-                <option value="100">100</option>
-                <option value="Outro">Outro</option>
-              </select>
-            )}
+          <div className={cel("flex-[0.8] min-w-[70px]")}>
+            {rotulo("Nº Final")}
+            <input
+              type="number"
+              className={`${campo} bg-slate-50`}
+              placeholder="Auto"
+              value={modelo.numeracao_fim ?? ""}
+              readOnly
+            />
           </div>
-        )}
+        </>
+      )}
 
-        {mostraVerso && !soQtdECor && (
-        <div className={cn("flex-[1.2] min-w-[100px]", simplificado && "order-3")}>
-          <label className={labelClass}>Verso</label>
+      {mostraCor && (
+      <div className={cel(cn("flex-[1.5] min-w-[100px]", simplificado && "order-1"))}>
+        {rotulo("Cor papel *")}
           <select
-            className={inputClass}
-            value={modelo.verso_tipo || ""}
-            onChange={(e) => handleChange({ verso_tipo: e.target.value }, true)}
-          >
-            <option value="SÓ FRENTE">SÓ FRENTE</option>
-            <option value="FRENTE E VERSO">FRENTE E VERSO</option>
-            <option value="VERSO FIXO">VERSO FIXO</option>
-            <option value="VERSO VARIÁVEL">VERSO VARIÁVEL</option>
-          </select>
-        </div>
-        )}
-
-        {mostraNumerador && !soQtdECor && (
-        <div className={cn("flex-[1.5] min-w-[100px]", simplificado && "order-4")}>
-          <label className={labelClass}>Numerador</label>
-          <select
-            className={inputClass}
-            value={modelo.gabarito_operacional || ""}
-            onChange={(e) => {
-              const val = e.target.value;
-              handleChange({ gabarito_operacional: val || null, tipo_numeracao: "SEQUENCIAL" }, true);
-            }}
+            className={campo}
+            value={modelo.padrao || ""}
+            onChange={(e) => handleChange({ padrao: e.target.value }, true)}
+            onPaste={onPaste}
             disabled={!hasConfig}
           >
             {!hasConfig ? (
               <option value="">Sem formato</option>
             ) : (
-              <>
-                <option value="">Selecione...</option>
-                {filteredNum.map((n) => (
-                  <option key={String(n.id ?? n.name)} value={n.name ?? ""}>{n.name}</option>
-                ))}
-              </>
+            <>
+              <option value="">Selecione...</option>
+              {filteredCores.map((c) => (
+                <option key={String(c.id ?? c.name)} value={c.name}>{c.name}</option>
+              ))}
+            </>
             )}
           </select>
-        </div>
-        )}
       </div>
+      )}
 
+      {!simplificado && !soQtdECor && (
+        <div className={cel("flex-[1.2] min-w-[90px]")}>
+          {rotulo("Bloco")}
+          {showCustomBloco ? (
+            <div className="flex gap-1">
+              <input
+                type="text"
+                className={campo}
+                placeholder="Ex: 50x2"
+                value={modelo.bloco || ""}
+                onChange={(e) => handleChange({ bloco: e.target.value || null })}
+                onBlur={flushSave}
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  setShowCustomBloco(false);
+                  handleChange({ bloco: null }, true);
+                }}
+                className={lista
+                  ? "rounded-lg border border-slate-200 bg-white px-1.5 text-xs text-slate-500 hover:bg-slate-50"
+                  : "rounded-xl border border-slate-200 bg-white px-2 py-2 text-slate-500 hover:bg-slate-50"}
+                title="Voltar para opções fixas"
+              >
+                X
+              </button>
+            </div>
+          ) : (
+            <select
+              className={campo}
+              value={modelo.bloco || ""}
+              onChange={(e) => {
+                if (e.target.value === "Outro") {
+                  setShowCustomBloco(true);
+                  handleChange({ bloco: null }, true);
+                } else {
+                  handleChange({ bloco: e.target.value || null }, true);
+                }
+              }}
+            >
+              <option value="">Nenhum</option>
+              <option value="10">10</option>
+              <option value="15">15</option>
+              <option value="20">20</option>
+              <option value="25">25</option>
+              <option value="40">40</option>
+              <option value="50">50</option>
+              <option value="75">75</option>
+              <option value="100">100</option>
+              <option value="Outro">Outro</option>
+            </select>
+          )}
+        </div>
+      )}
+
+      {mostraVerso && !soQtdECor && (
+      <div className={cel(cn("flex-[1.2] min-w-[100px]", simplificado && "order-3"))}>
+        {rotulo("Verso")}
+        <select
+          className={campo}
+          value={modelo.verso_tipo || ""}
+          onChange={(e) => handleChange({ verso_tipo: e.target.value }, true)}
+        >
+          <option value="SÓ FRENTE">SÓ FRENTE</option>
+          <option value="FRENTE E VERSO">FRENTE E VERSO</option>
+          <option value="VERSO FIXO">VERSO FIXO</option>
+          <option value="VERSO VARIÁVEL">VERSO VARIÁVEL</option>
+        </select>
+      </div>
+      )}
+
+      {mostraNumerador && !soQtdECor && (
+      <div className={cel(cn("flex-[1.5] min-w-[100px]", simplificado && "order-4"))}>
+        {rotulo("Numerador")}
+        <select
+          className={campo}
+          value={modelo.gabarito_operacional || ""}
+          onChange={(e) => {
+            const val = e.target.value;
+            handleChange({ gabarito_operacional: val || null, tipo_numeracao: "SEQUENCIAL" }, true);
+          }}
+          disabled={!hasConfig}
+        >
+          {!hasConfig ? (
+            <option value="">Sem formato</option>
+          ) : (
+            <>
+              <option value="">Selecione...</option>
+              {filteredNum.map((n) => (
+                <option key={String(n.id ?? n.name)} value={n.name ?? ""}>{n.name}</option>
+              ))}
+            </>
+          )}
+        </select>
+      </div>
+      )}
+    </>
+  );
+
+  // Avisos de numerador: no card ficam abaixo do flex; na lista ocupam a linha
+  // inteira do grid (col-span-full), abaixo das células.
+  const classeAviso = lista ? "col-span-full text-[11px]" : "mt-3 text-[11px]";
+  const avisos = (
+    <>
       {isCamarote && (
-        <p className={`mt-3 text-[11px] font-semibold ${camaroteExcedeSaldo ? "text-red-600" : "text-slate-500"}`}>
+        <p className={`${classeAviso} font-semibold ${camaroteExcedeSaldo ? "text-red-600" : "text-slate-500"}`}>
           Numerador tipo Camarote: QTD = Q CAM × L CAM
           {qtdCamaroteCalculada !== null
             ? ` = ${qtdCamaroteCalculada}${camaroteExcedeSaldo ? ` — excede o saldo disponível do item (${maxQtd})` : ""}`
@@ -666,17 +771,37 @@ export function ModeloCampos({
 
       {isTicket && (
         erroTicket ? (
-          <p className="mt-3 text-[11px] font-bold text-red-600">{erroTicket}</p>
+          <p className={`${classeAviso} font-bold text-red-600`}>{erroTicket}</p>
         ) : (
-          <p className="mt-3 text-[11px] font-semibold text-slate-500">
+          <p className={`${classeAviso} font-semibold text-slate-500`}>
             Numerador tipo Ticket ({ticketMultiplicador} numerações por unidade): Nº Final = Nº Inicial + (QTD × {ticketMultiplicador}) − 1
           </p>
         )
       )}
+    </>
+  );
+
+  if (lista) {
+    return (
+      <>
+        {celulas}
+        {isCamarote && <div className="col-span-full flex flex-wrap gap-3">{camposCamarote}</div>}
+        {avisos}
+      </>
+    );
+  }
+
+  return (
+    <>
+      <div className="flex flex-wrap xl:flex-nowrap xl:items-end gap-3">
+        {celulas}
+      </div>
+
+      {avisos}
 
       {/* Produto de prateleira: papel da cor escolhida, direto de producao_cores.
           Troca de cor troca a prévia porque a chave é o próprio `padrao`. */}
-      {itemPrateleira && !soQtdECor && <PreviaCorPapel key={modelo.padrao || "sem-cor"} nomeCor={modelo.padrao} />}
+      {itemPrateleira && <PreviaCorPapel key={modelo.padrao || "sem-cor"} nomeCor={modelo.padrao} />}
     </>
   );
 }
@@ -700,7 +825,11 @@ export function AmostraDoModelo({
    * mostrar "Arte: PENDENTE" ali seria uma pendência que não existe.
    */
   itemPrateleira: boolean;
-  /** Quem renderiza: o card fechado ou a lista rápida. */
+  /**
+   * Card fechado: status + imagens empilhadas, como sempre. Lista rápida (botão
+   * "Amostras" do produto): só as imagens, frente e verso lado a lado — o
+   * status já está na linha do lote.
+   */
   modo: "card" | "lista";
   onAmpliar: (arte: { frente: string; verso: string | null; nome: string }) => void;
 }) {
@@ -708,6 +837,7 @@ export function AmostraDoModelo({
   // No card fechado a moldura fica (sem o status), como sempre foi.
   if (modo === "lista" && itemPrateleira) return null;
 
+  const lista = modo === "lista";
   const arteSrc = modelo.amostra_arte_base64 ? toImageSrc(modelo.amostra_arte_base64) : null;
   // Verso resolvido pelo mesmo tratamento da frente (data URI, URL ou base64
   // puro). Null quando a coluna está vazia ou o conteúdo não é renderizável
@@ -717,8 +847,8 @@ export function AmostraDoModelo({
     arteSrc && onAmpliar({ frente: arteSrc, verso: versoSrc, nome: modelo.nome_modelo || "" });
 
   return (
-    <div className="mt-3 border-t border-slate-100 pt-3">
-      {!itemPrateleira && (
+    <div className={lista ? "mt-2 border-t border-slate-100 pt-2" : "mt-3 border-t border-slate-100 pt-3"}>
+      {!itemPrateleira && !lista && (
         <div className="flex items-center gap-2">
           <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Arte:</span>
           <StatusBadge
@@ -735,9 +865,9 @@ export function AmostraDoModelo({
         // de tablet para cima (md). Sem object-fit: as dimensões
         // são intrínsecas, então não há como esticar nem cortar.
         // Verso, quando existir, entra logo abaixo da frente com
-        // as mesmas regras. Clique (ou Enter/Espaço) em qualquer
-        // uma abre a arte ampliada com as duas.
-        <div className="mt-3 space-y-2">
+        // as mesmas regras (na lista, ao lado). Clique (ou
+        // Enter/Espaço) em qualquer uma abre a arte ampliada com as duas.
+        <div className={lista ? "flex flex-wrap items-start gap-4" : "mt-3 space-y-2"}>
           {[
             { src: arteSrc, lado: "Frente" as const },
             ...(versoSrc ? [{ src: versoSrc, lado: "Verso" as const }] : []),
@@ -754,7 +884,9 @@ export function AmostraDoModelo({
               <img
                 src={src}
                 alt={`${lado} da arte do modelo ${modelo.nome_modelo || ""}`}
-                className="block h-auto max-h-[200px] w-auto max-w-[90%] cursor-zoom-in rounded-xl border border-slate-200 bg-white transition hover:border-blue-400 md:max-h-[260px] md:max-w-[70%]"
+                className={lista
+                  ? "block h-auto max-h-[160px] w-auto max-w-full cursor-zoom-in rounded-xl border border-slate-200 bg-white transition hover:border-blue-400"
+                  : "block h-auto max-h-[200px] w-auto max-w-[90%] cursor-zoom-in rounded-xl border border-slate-200 bg-white transition hover:border-blue-400 md:max-h-[260px] md:max-w-[70%]"}
                 loading="lazy"
                 role="button"
                 tabIndex={0}
@@ -775,6 +907,8 @@ export function AmostraDoModelo({
             </div>
           ))}
         </div>
+      ) : lista ? (
+        <p className="text-[11px] font-semibold text-slate-400">Sem amostra de arte.</p>
       ) : null}
     </div>
   );

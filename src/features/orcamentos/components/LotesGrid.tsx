@@ -17,12 +17,18 @@
  *   isso a grade não tem trava de saldo nem corta número digitado — não existe
  *   saldo a estourar quando o item acompanha a soma.
  *
- * OS CAMPOS SÃO OS DO CARD (23/09/2026)
+ * OS CAMPOS SÃO OS DO CARD (23/09/2026), NUMA LINHA POR LOTE (24/09/2026)
  *   Cada lote é editado com `ModeloCampos` — o mesmo bloco de campos, ordem e
- *   regras de exibição do modo cards — e mostra embaixo a mesma janela de
- *   amostra da arte (`AmostraDoModelo`), sempre aberta. O que continua sendo
- *   só da grade: colar a lista, Enter criar a próxima linha, "+ N linhas", os
- *   modos de numeração e a soma que manda na quantidade do item.
+ *   regras de exibição do modo cards. Na grade os campos não têm rótulo: há
+ *   UM cabeçalho por produto (`CabecalhoDaLista`), e cada lote é uma linha
+ *   só — células no grid de `colunasDaLista`, o status da arte e os botões
+ *   de duplicar e excluir. O número do modelo vai dentro do campo Modelo. A
+ *   janela de amostra (`AmostraDoModelo`, frente e verso lado a lado) só
+ *   aparece com o botão "Amostras" do produto ligado (`amostrasVisiveis`).
+ *   O que continua sendo só da grade: colar a lista, Enter criar a próxima
+ *   linha, "+ N linhas", os modos de numeração e a soma que manda na
+ *   quantidade do item. Gravar não fecha a grade: sair dela é "Ver como
+ *   cards", e ela já abre aberta ao entrar na aba.
  *   Item de prateleira (24/09/2026): só Qtd e Cor papel, sem janela de
  *   amostra — a regra vive em `ModeloCampos` (`modo="lista"`). O nome do
  *   lote, que não tem campo ali, é o do produto (`nomeDoLote`).
@@ -59,6 +65,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Copy, Plus, Trash2 } from "lucide-react";
 import { useAppToast } from "@/components/common/AppToast";
+import { StatusBadge } from "@/components/common/StatusBadge";
 import { fetchComSessao, SessaoExpiradaError } from "@/lib/supabase/sessao";
 import { interpretarColagem, somaQuantidades, type CorOpcao } from "@/features/orcamentos/services/lotes-colagem";
 import {
@@ -74,6 +81,10 @@ import { anularColunasEscondidas, checklistVisivel, mostraCampo } from "@/featur
 import { listChecklistDeProdutos } from "@/features/produtos/services/produto-boletim-campos.service";
 import {
   AmostraDoModelo,
+  CabecalhoDaLista,
+  colunasDaLista,
+  getArteStatusTone,
+  gridDaLista,
   ModeloCampos,
   modeloCompleto,
   type CorDoPapelOpcao
@@ -177,6 +188,7 @@ export function LotesGrid({
   itemIdFormato,
   simplificado,
   autoSaveHabilitado,
+  amostrasVisiveis,
   onGravado,
   onSair,
   onAmpliarArte
@@ -213,6 +225,8 @@ export function LotesGrid({
    * sempre recusou.
    */
   autoSaveHabilitado: boolean;
+  /** Botão "Amostras" do produto: mostra a amostra da arte abaixo de cada lote. */
+  amostrasVisiveis: boolean;
   /** Chamado depois de cada gravação: o pai espelha os lotes com os ids e, se a quantidade mudou, o item. */
   onGravado: (resultado: {
     qtdItem: number;
@@ -250,10 +264,10 @@ export function LotesGrid({
    * gravação nunca manda uma lista velha. É o mesmo desenho do `latestModelo`
    * do card.
    */
-  const linhasRef = useRef<Lote[]>(
+  const [linhas, setLinhas] = useState<Lote[]>(() =>
     (linhasIniciais.length > 0 ? linhasIniciais : [novaLinha()]).map((l) => ({ ...l, chave: novaChave() }))
   );
-  const [linhas, setLinhas] = useState<Lote[]>(linhasRef.current);
+  const linhasRef = useRef<Lote[]>(linhas);
   const removidosRef = useRef<number[]>([]);
   const [modoNumeracao, setModoNumeracao] = useState<ModoNumeracao | null>(null);
   const modoRef = useRef<ModoNumeracao | null>(null);
@@ -405,7 +419,7 @@ export function LotesGrid({
     const enviaveis = numeradas.filter((l) => l.id || completa(l));
     const removerIds = removidosRef.current;
     if (enviaveis.length === 0 && removerIds.length === 0) return { segurar: "" };
-    // Mesma regra do "Fechar lote" de sempre: sem quantidade nenhuma não há o que gravar.
+    // Mesma regra do "Gravar lote" (ex-"Fechar lote") de sempre: sem quantidade nenhuma não há o que gravar.
     if (somaQuantidades(enviaveis) <= 0) return { segurar: "Informe a quantidade de pelo menos um lote." };
     return { lotes: enviaveis.map(montarLote), removerIds };
   }
@@ -414,13 +428,16 @@ export function LotesGrid({
     JSON.stringify({ lotes: envio.lotes, removerIds: envio.removerIds });
 
   // Ao abrir, o banco é o que a tela mostra: nada a gravar até alguém mexer.
-  if (ultimaAssinaturaRef.current === null) {
+  // Roda depois do primeiro render (antes de qualquer interação) e uma vez só:
+  // a guarda pela ref segura as passagens seguintes.
+  useEffect(() => {
+    if (ultimaAssinaturaRef.current !== null) return;
     const inicial = prepararEnvio();
     ultimaAssinaturaRef.current = "segurar" in inicial ? "" : assinaturaDe(inicial);
-  }
+  });
 
-  async function executarSave(opcoes: { forcado?: boolean; confirmarReducao?: boolean; fecharDepois?: boolean } = {}) {
-    const { forcado = false, confirmarReducao = false, fecharDepois = false } = opcoes;
+  async function executarSave(opcoes: { forcado?: boolean; confirmarReducao?: boolean } = {}) {
+    const { forcado = false, confirmarReducao = false } = opcoes;
     if (!autoSaveHabilitado && !forcado) return;
 
     // Requisição em voo: enfileira e sai. O próprio término reprocessa.
@@ -436,10 +453,7 @@ export function LotesGrid({
     }
     const assinatura = assinaturaDe(envio);
     if (assinatura === ultimaAssinaturaRef.current) {
-      if (forcado) {
-        setStatusSeMontado("saved");
-        if (fecharDepois) onSair();
-      }
+      if (forcado) setStatusSeMontado("saved");
       return;
     }
 
@@ -473,7 +487,7 @@ export function LotesGrid({
           salvandoRef.current = false;
           setGravando(false);
           if (ok) {
-            await executarSave({ forcado, confirmarReducao: true, fecharDepois });
+            await executarSave({ forcado, confirmarReducao: true });
             return;
           }
           // O que foi digitado fica na tela; o banco fica como estava.
@@ -522,7 +536,6 @@ export function LotesGrid({
         freteMensagem: dados.freteMensagem || null,
         lotes: devolvidos
       });
-      if (fecharDepois) onSair();
     } catch (erro) {
       setStatusSeMontado(
         "error",
@@ -691,6 +704,8 @@ export function LotesGrid({
     agendarSave(true);
   }
 
+  const colunas = colunasDaLista({ simplificado, visivel, itemPrateleira });
+
   const incompletas = linhas.filter((l) => !l.id && !completa(l) && (l.nome_modelo.trim() || l.quantidade !== "" || l.padrao)).length;
 
   return (
@@ -744,15 +759,15 @@ export function LotesGrid({
             Ver como cards
           </button>
           {/* O caminho de gravação de sempre: grava o que estiver pendente e
-              volta aos cards. Em proposta com cobrança é o único caminho — o
+              fica na grade. Em proposta com cobrança é o único caminho — o
               auto-save fica desligado, como no card. */}
           <button
             type="button"
-            onClick={() => void executarSave({ forcado: true, fecharDepois: true })}
+            onClick={() => void executarSave({ forcado: true })}
             disabled={gravando}
             className="rounded-xl bg-[#0b2f4a] px-4 py-2 text-xs font-bold text-white transition hover:bg-[#123f61] disabled:opacity-60"
           >
-            {gravando ? "Gravando..." : "Fechar lote"}
+            {gravando ? "Gravando..." : "Gravar lote"}
           </button>
         </div>
       </div>
@@ -799,30 +814,63 @@ export function LotesGrid({
       <p className="px-1 text-[11px] text-slate-500">
         {autoSaveHabilitado
           ? "As alterações são gravadas automaticamente; a Qtd grava ao sair do campo. "
-          : "Proposta com cobrança: use “Fechar lote” para gravar. "}
+          : "Proposta com cobrança: use “Gravar lote” para gravar. "}
         Cole a lista do cliente em qualquer campo de texto (uma linha por lote, cor e quantidade).
         Enter na Qtd cria a próxima linha herdando a cor.
         {incompletas > 0 && ` ${incompletas} lote(s) ainda sem os obrigatórios — não são gravados até ficarem completos.`}
       </p>
 
-      <div className="space-y-3">
+      <div className="space-y-2">
+        {/* Um cabeçalho por produto: as mesmas colunas das células de cada lote,
+            mais a coluna do status da arte e o espaço dos botões. */}
+        <div className="flex items-end gap-2 px-3">
+          <CabecalhoDaLista colunas={colunas} className="min-w-0 flex-1" />
+          <span className="w-28 shrink-0 text-center text-[11px] font-bold uppercase tracking-wider text-slate-500">
+            {itemPrateleira ? "" : "Arte"}
+          </span>
+          <span className="w-16 shrink-0" />
+        </div>
+
         {linhasNumeradas.map((linha, indice) => (
           <div
             key={linha.chave}
-            className={`rounded-2xl border p-4 shadow-sm ${
+            className={`rounded-xl border px-3 py-2 ${
               linha.corNaoReconhecida ? "border-red-300 bg-red-50/40" : "border-slate-200 bg-white"
             }`}
           >
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <h4 className="text-sm font-bold text-teal-800">
-                {linha.id ? `Modelo #${linha.id}` : "Novo modelo"}
-                {linha.corNaoReconhecida && (
-                  <span className="ml-2 text-[11px] font-semibold text-red-600">
-                    cor da lista não reconhecida: “{linha.corNaoReconhecida}” — escolha na Cor papel
-                  </span>
+            <div className="flex items-center gap-2">
+              <div className="grid min-w-0 flex-1 items-center gap-2" style={{ gridTemplateColumns: gridDaLista(colunas) }}>
+                <ModeloCampos
+                  modelo={valoresDoCard(linha)}
+                  coresOpcoes={coresOpcoes}
+                  numeracoesOpcoes={numeracoes}
+                  itemIdFormato={itemIdFormato}
+                  simplificado={simplificado}
+                  visivel={visivel}
+                  itemPrateleira={itemPrateleira}
+                  modo="lista"
+                  identificador={linha.id ? `#${linha.id}` : "novo"}
+                  onChange={(partial, imediato) => alterar(indice, partial, imediato)}
+                  onBlurCampo={flushSave}
+                  onPaste={(e) => colar(e, indice)}
+                  onEnterQtd={() => {
+                    flushSave();
+                    acrescentar(indice);
+                  }}
+                  numeracaoInicioTravada={
+                    modoEfetivo
+                      ? "Com um modo de numeração marcado acima, o Nº Inicial é calculado. Desmarque para editar."
+                      : null
+                  }
+                />
+              </div>
+              {/* Status da arte na própria linha. Prateleira não entra em arte. */}
+              <div className="flex w-28 shrink-0 justify-center">
+                {!itemPrateleira && (
+                  <StatusBadge status={linha.status_arte || "PENDENTE"} tone={getArteStatusTone(linha.status_arte)} />
                 )}
-              </h4>
-              <div className="flex justify-end gap-1">
+              </div>
+              <div className="flex w-16 shrink-0 justify-end gap-1">
                 <button
                   type="button"
                   title="Duplicar (quantidade em branco)"
@@ -842,31 +890,16 @@ export function LotesGrid({
               </div>
             </div>
 
-            <ModeloCampos
-              modelo={valoresDoCard(linha)}
-              coresOpcoes={coresOpcoes}
-              numeracoesOpcoes={numeracoes}
-              itemIdFormato={itemIdFormato}
-              simplificado={simplificado}
-              visivel={visivel}
-              itemPrateleira={itemPrateleira}
-              modo="lista"
-              onChange={(partial, imediato) => alterar(indice, partial, imediato)}
-              onBlurCampo={flushSave}
-              onPaste={(e) => colar(e, indice)}
-              onEnterQtd={() => {
-                flushSave();
-                acrescentar(indice);
-              }}
-              numeracaoInicioTravada={
-                modoEfetivo
-                  ? "Com um modo de numeração marcado acima, o Nº Inicial é calculado. Desmarque para editar."
-                  : null
-              }
-            />
+            {linha.corNaoReconhecida && (
+              <p className="mt-1 text-[11px] font-semibold text-red-600">
+                cor da lista não reconhecida: “{linha.corNaoReconhecida}” — escolha na Cor papel
+              </p>
+            )}
 
-            {/* A mesma janela de amostra do modo cards, sempre aberta — prateleira não tem. */}
-            <AmostraDoModelo modelo={linha} itemPrateleira={itemPrateleira} modo="lista" onAmpliar={onAmpliarArte} />
+            {/* A janela de amostra do modo cards, só com "Amostras" ligado — prateleira não tem. */}
+            {amostrasVisiveis && (
+              <AmostraDoModelo modelo={linha} itemPrateleira={itemPrateleira} modo="lista" onAmpliar={onAmpliarArte} />
+            )}
           </div>
         ))}
       </div>

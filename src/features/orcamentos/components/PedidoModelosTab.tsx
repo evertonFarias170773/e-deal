@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Plus, Edit2, Trash2, Package, CheckCircle, Copy, AlertOctagon, ChevronDown, ListPlus, X } from "lucide-react";
+import { Plus, Edit2, Trash2, Package, CheckCircle, Copy, AlertOctagon, ChevronDown, ListPlus, X, Eye } from "lucide-react";
 import { useAppToast } from "@/components/common/AppToast";
 import { LotesGrid, type PadroesDeLote } from "@/features/orcamentos/components/LotesGrid";
 // Campos, janela de amostra e helpers da arte: o que o card e a lista rapida
@@ -681,7 +681,14 @@ export function PedidoModelosTab({
     checklistVisivel(checklistPorProduto.get(Number(item.id_produto)));
   const [coresOpcoes, setCoresOpcoes] = useState<any[]>([]);
   /** Itens exibindo a lista rápida em vez da pilha de cards. */
+  // Sem escolha registrada, a grade abre aberta onde ela e permitida (24/09/2026):
+  // e a forma rapida de montar o pedido, e gravar nao a fecha. Onde a lista
+  // rapida e desabilitada (proposta com cobranca) fica o modo cards.
   const [emModoGrade, setEmModoGrade] = useState<Record<string, boolean>>({});
+  const gradeAberta = (idItem: string) => emModoGrade[idItem] ?? autoSaveHabilitado;
+  // Botao "Amostras" de cada produto: a amostra da arte abaixo de cada lote da
+  // grade. Comeca desligado.
+  const [amostrasVisiveis, setAmostrasVisiveis] = useState<Record<string, boolean>>({});
   const [numeracoesOpcoes, setNumeracoesOpcoes] = useState<any[]>([]);
   const [formatosOpcoes, setFormatosOpcoes] = useState<any[]>([]);
   const [deletingModelo, setDeletingModelo] = useState<PedidoModeloState | null>(null);
@@ -915,7 +922,7 @@ export function PedidoModelosTab({
                   {/* Lista rápida: para o pedido de 12, 20, 30 lotes do mesmo
                       produto, onde os cards custam 4 idas ao servidor cada. */}
                   <button
-                    onClick={() => setEmModoGrade((atual) => ({ ...atual, [item.id]: !atual[item.id] }))}
+                    onClick={() => setEmModoGrade((atual) => ({ ...atual, [item.id]: !(atual[item.id] ?? autoSaveHabilitado) }))}
                     disabled={!autoSaveHabilitado}
                     title={
                       autoSaveHabilitado
@@ -923,7 +930,7 @@ export function PedidoModelosTab({
                         : "Proposta com cobrança: a lista rápida fica indisponível"
                     }
                     className={`flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-bold transition disabled:opacity-50 ${
-                      emModoGrade[item.id]
+                      gradeAberta(item.id)
                         ? "bg-[#0b2f4a] text-white hover:bg-[#123f61]"
                         : "bg-slate-100 text-slate-700 hover:bg-slate-200"
                     }`}
@@ -931,7 +938,22 @@ export function PedidoModelosTab({
                     <ListPlus className="h-4 w-4" />
                     Lista rápida
                   </button>
-                  {!emModoGrade[item.id] && (
+                  {gradeAberta(item.id) && (
+                    <button
+                      type="button"
+                      onClick={() => setAmostrasVisiveis((atual) => ({ ...atual, [item.id]: !atual[item.id] }))}
+                      title="Mostrar ou esconder a amostra da arte abaixo de cada modelo"
+                      className={`flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-bold transition ${
+                        amostrasVisiveis[item.id]
+                          ? "bg-[#0b2f4a] text-white hover:bg-[#123f61]"
+                          : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                      }`}
+                    >
+                      <Eye className="h-4 w-4" />
+                      Amostras
+                    </button>
+                  )}
+                  {!gradeAberta(item.id) && (
                     <button
                       onClick={() => startCreate(item, saldo)}
                       disabled={isFull}
@@ -946,7 +968,7 @@ export function PedidoModelosTab({
 
               {!collapsedItems[item.id] && (
                 <div className="p-5 space-y-4 bg-slate-50/30">
-                {emModoGrade[item.id] ? (
+                {gradeAberta(item.id) ? (
                   (() => {
                     const numFormatId = item.produto?.id_formato;
                     const formatoObj = formatosOpcoes.find(
@@ -988,6 +1010,7 @@ export function PedidoModelosTab({
                         itemIdFormato={formatoUUID}
                         simplificado={formularioSimplificado}
                         autoSaveHabilitado={autoSaveHabilitado}
+                        amostrasVisiveis={Boolean(amostrasVisiveis[item.id])}
                         // Cores restritas ao formato do item, que e o que a grade
                         // oferece no dropdown: um padrao fora dessa lista viraria
                         // um valor selecionado que ninguem consegue ver.
