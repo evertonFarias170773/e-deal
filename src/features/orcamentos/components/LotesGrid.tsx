@@ -677,6 +677,24 @@ export function LotesGrid({
     // Linha nova nasce incompleta: nada a gravar por enquanto.
   }
 
+  /**
+   * Duplicar (24/09/2026): o lote novo copia tudo do original, INCLUSIVE a
+   * quantidade — ao contrário do Enter e do "+ Linha", que nascem com a Qtd em
+   * branco. Entra logo abaixo do original, completo, e grava na hora: a rota
+   * devolve o id, que vira o número do modelo. Nº Inicial e Final seguem o
+   * modo de numeração em uso (`numerar`, derivado no envio e na tela); sem
+   * modo marcado, a faixa é a do original, como o lote que ele copia.
+   */
+  function duplicar(indice: number) {
+    mutar((atual) => {
+      const base = atual[indice];
+      if (!base) return atual;
+      const copia = { ...novaLinha(base), quantidade: base.quantidade };
+      return [...atual.slice(0, indice + 1), copia, ...atual.slice(indice + 1)];
+    });
+    agendarSave(true);
+  }
+
   function remover(indice: number) {
     mutar((atual) => {
       const alvo = atual[indice];
@@ -845,14 +863,13 @@ export function LotesGrid({
       </div>
       )}
 
-      <p className="px-1 text-[11px] text-slate-500">
-        {autoSaveHabilitado
-          ? "As alterações são gravadas automaticamente; a Qtd grava ao sair do campo. "
-          : "Proposta com cobrança: use “Gravar lote” para gravar. "}
-        Cole a lista do cliente em qualquer campo de texto (uma linha por lote, cor e quantidade).
-        Enter na Qtd cria a próxima linha herdando a cor.
-        {incompletas > 0 && ` ${incompletas} lote(s) ainda sem os obrigatórios — não são gravados até ficarem completos.`}
-      </p>
+      {/* A linha de instruções saiu (24/09/2026); fica só o aviso que muda o
+          que é gravado. */}
+      {incompletas > 0 && (
+        <p className="px-1 text-[11px] font-semibold text-amber-600">
+          {incompletas} lote(s) ainda sem os obrigatórios — não são gravados até ficarem completos.
+        </p>
+      )}
 
       <div className="space-y-2">
         {/* Um cabeçalho por produto: as mesmas colunas das células de cada lote,
@@ -907,8 +924,8 @@ export function LotesGrid({
               <div className="flex w-16 shrink-0 justify-end gap-1">
                 <button
                   type="button"
-                  title="Duplicar (quantidade em branco)"
-                  onClick={() => acrescentar(indice)}
+                  title="Duplicar modelo (com a quantidade)"
+                  onClick={() => duplicar(indice)}
                   className="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
                 >
                   <Copy className="h-4 w-4" />

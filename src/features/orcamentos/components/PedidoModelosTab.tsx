@@ -907,7 +907,20 @@ export function PedidoModelosTab({
                     <ChevronDown className={`h-5 w-5 transition-transform ${collapsedItems[item.id] ? "-rotate-90" : ""}`} />
                   </button>
                   <div>
-                    <h3 className="font-bold text-slate-800">{item.nome}</h3>
+                    <h3 className="font-bold text-slate-800">
+                      {item.nome}
+                      {/* Lista rápida: as variações do item uma vez por box, em
+                          destaque — nos cards elas aparecem em cada modelo. Mesmo
+                          texto dos cards (`resolverVariacoesTexto`). */}
+                      {gradeAberta(item.id) && (() => {
+                        const variacoes = modelosDoItem[0]
+                          ? resolverVariacoesTexto(modelosDoItem[0], item)
+                          : formatVariacoesItem(item);
+                        return variacoes ? (
+                          <span className="font-semibold text-teal-700"> - {variacoes}</span>
+                        ) : null;
+                      })()}
+                    </h3>
                     <div className="mt-1 flex flex-wrap items-center gap-3 text-xs font-semibold text-slate-500">
                       <span className="rounded-full bg-slate-200 px-2 py-0.5 text-slate-700">Qtd: {item.quantidade}</span>
                       <span className={saldo > 0 ? "text-amber-600" : "text-teal-600"}>

@@ -867,12 +867,14 @@ export function AmostraDoModelo({
         // Verso, quando existir, entra logo abaixo da frente com
         // as mesmas regras (na lista, ao lado). Clique (ou
         // Enter/Espaço) em qualquer uma abre a arte ampliada com as duas.
+        // Na lista, frente e verso lado a lado; o tamanho de cada imagem segue
+        // as MESMAS regras do card (90%/200px, 70%/260px de md para cima).
         <div className={lista ? "flex flex-wrap items-start gap-4" : "mt-3 space-y-2"}>
           {[
             { src: arteSrc, lado: "Frente" as const },
             ...(versoSrc ? [{ src: versoSrc, lado: "Verso" as const }] : []),
           ].map(({ src, lado }) => (
-            <div key={lado}>
+            <div key={lado} className={lista ? "max-w-[90%] md:max-w-[70%]" : undefined}>
               {/* Rótulo só quando há os dois lados: com uma
                   imagem só ele não acrescenta informação. */}
               {versoSrc && (
@@ -885,7 +887,7 @@ export function AmostraDoModelo({
                 src={src}
                 alt={`${lado} da arte do modelo ${modelo.nome_modelo || ""}`}
                 className={lista
-                  ? "block h-auto max-h-[160px] w-auto max-w-full cursor-zoom-in rounded-xl border border-slate-200 bg-white transition hover:border-blue-400"
+                  ? "block h-auto max-h-[200px] w-auto max-w-full cursor-zoom-in rounded-xl border border-slate-200 bg-white transition hover:border-blue-400 md:max-h-[260px]"
                   : "block h-auto max-h-[200px] w-auto max-w-[90%] cursor-zoom-in rounded-xl border border-slate-200 bg-white transition hover:border-blue-400 md:max-h-[260px] md:max-w-[70%]"}
                 loading="lazy"
                 role="button"
