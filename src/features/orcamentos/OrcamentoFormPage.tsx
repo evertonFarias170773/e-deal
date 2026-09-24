@@ -120,7 +120,7 @@ import {
 // Imposicao (app externo Ideal Imposition): abre o pedido correspondente a
 // proposta. So existe destino quando a proposta ja tem numero (id_int) — em
 // proposta nova o botao nao e exibido.
-const IMPOSITION_BASE_URL = "https://ideal-imposition.vercel.app";
+const IMPOSITION_BASE_URL = "https://imposition.ai-ideal.com.br";
 const IMPOSITION_ICON_SRC = "/logos/ideal-icone.png";
 
 const removeAccents = (str: string): string => {
