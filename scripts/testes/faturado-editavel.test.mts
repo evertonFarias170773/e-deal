@@ -51,6 +51,32 @@ checar("faturado com paid_at nao e ajustavel", isFaturadoAjustavel(fat({ paid_at
 checar("faturado PAID nao e ajustavel", isFaturadoAjustavel(fat({ status: "PAID" })), false);
 checar("PIX nao e faturado", isFaturadoAjustavel(pix()), false);
 checar("confirmado nao importa", isFaturadoAjustavel(fat({ confirmado: false } as never)), true);
+// Só E-Faturado ajusta valor (24/09/2026): a autorização das demais é pelo valor.
+for (const tipo of ["E-RETRABALHO", "E-Retrabalho", "E-PERMUTA", "E-AMOSTRA"]) {
+  checar(`${tipo} a vencer NAO e ajustavel`, isFaturadoAjustavel(fat({ tipo_cobranca: tipo })), false);
+}
+checar(
+  "proposta so com E-Retrabalho a vencer nao entra no caminho do faturado",
+  avaliarElegibilidadeFaturado({ cobrancas: [fat({ tipo_cobranca: "E-RETRABALHO", valor: 67.06 })], titulos: [] }).elegivel,
+  false
+);
+checar(
+  "E-Retrabalho nao absorve aumento: avaliacao inelegivel",
+  avaliarEdicaoFaturado({ cobrancas: [fat({ tipo_cobranca: "E-RETRABALHO", valor: 67.06 })], titulos: [], novoTotal: 131.86 }).elegivel,
+  false
+);
+checar(
+  "E-Faturado ao lado de E-Retrabalho: so o E-Faturado absorve",
+  (() => {
+    const r = avaliarEdicaoFaturado({
+      cobrancas: [fat({ id: "R1", id_pagamento: "100-R", tipo_cobranca: "E-RETRABALHO", valor: 200 }), fat()],
+      titulos: [],
+      novoTotal: 1500
+    });
+    return r.elegivel ? [r.faturadoId, r.novoValorFaturado, r.valorOutrasCobrancas] : r.motivo;
+  })(),
+  ["F1", 1300, 200]
+);
 
 // — Título —
 checar("titulo PAID esta quitado", isTituloQuitado(titulo({ status: "PAID" })), true);

@@ -131,12 +131,26 @@ export function isTipoFaturado(tipoCobranca: unknown): boolean {
 }
 
 /**
- * Faturado que ainda pode absorver mudança: a vencer e sem liquidação.
- * `confirmado` NÃO entra — confirmar é conferência, não recebimento, e é
- * justamente o estado em que o financeiro precisa de flexibilidade.
+ * Só E-FATURADO tem o valor ajustável (decisão do dono, 24/09/2026).
+ *
+ * E-RETRABALHO, E-PERMUTA e E-AMOSTRA continuam na família faturado para
+ * todo o resto (`isTipoFaturado`), mas o valor autorizado pelo administrador
+ * nunca muda: se o total sobe, a diferença vira saldo a cobrar da proposta e é
+ * pedida uma cobrança nova, que passa de novo pela autorização — o mesmo
+ * padrão de proposta paga (`aplicarDiferencaFinanceira`), sem o ajuste. Antes
+ * daqui a E-Retrabalho da 22406 foi de R$ 56,00 para R$ 116,59 depois de
+ * autorizada.
+ */
+const TIPOS_COM_VALOR_AJUSTAVEL = new Set(["E-FATURADO", "EFATURADO", "FATURADO"]);
+
+/**
+ * Faturado que ainda pode absorver mudança: E-Faturado, a vencer e sem
+ * liquidação. `confirmado` NÃO entra — confirmar é conferência, não
+ * recebimento, e é justamente o estado em que o financeiro precisa de
+ * flexibilidade.
  */
 export function isFaturadoAjustavel(cobranca: CobrancaParaFaturado): boolean {
-  if (!isTipoFaturado(cobranca.tipo_cobranca)) return false;
+  if (!TIPOS_COM_VALOR_AJUSTAVEL.has(normalizar(cobranca.tipo_cobranca).replace(/_/g, "-"))) return false;
   if (normalizar(cobranca.status) !== "A_VENCER") return false;
   return !cobranca.paid_at;
 }
