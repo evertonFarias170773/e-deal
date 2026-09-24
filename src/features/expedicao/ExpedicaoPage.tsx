@@ -344,10 +344,10 @@ export function ExpedicaoPage() {
   }
 
   /**
-   * Liberar / cancelar a recotacao de frete de um pedido (Parte C).
-   * O expedidor nao recota por conta propria: o botao no modal Despachar nasce
-   * bloqueado e depende desta autorizacao, que e de USO UNICO — a aplicacao a
-   * consome e o botao volta a bloquear.
+   * Liberar / cancelar a APLICACAO da recotacao de frete de um pedido (Parte C).
+   * Desde 24/09/2026 o expedidor recota sozinho; o que depende desta
+   * autorizacao e APLICAR o frete novo na proposta. Uso unico: a aplicacao a
+   * consome.
    */
   async function handleLiberarRecotacao(p: PedidoExpedicao) {
     const res = await liberarRecotacao(p.idInt);
@@ -357,7 +357,7 @@ export function ExpedicaoPage() {
         title: res.idempotente ? "Já estava liberado" : "Recotação liberada",
         description: res.idempotente
           ? `O pedido ${p.idInt} já tinha liberação ativa${res.liberadoPorNome ? ` (por ${res.liberadoPorNome})` : ""}.`
-          : `O expedidor já pode recotar o frete do pedido ${p.idInt}. Vale para uma aplicação.`
+          : `O expedidor já pode aplicar a recotação do frete do pedido ${p.idInt}. Vale para uma aplicação.`
       });
     } else {
       showToast({ type: "error", title: "Não foi possível liberar", description: res.errorMessage });
@@ -371,7 +371,7 @@ export function ExpedicaoPage() {
       showToast({
         type: "success",
         title: "Liberação cancelada",
-        description: `A recotação do pedido ${p.idInt} voltou a ficar bloqueada.`
+        description: `Aplicar a recotação do pedido ${p.idInt} voltou a ficar bloqueado.`
       });
     } else {
       showToast({ type: "error", title: "Não foi possível cancelar", description: res.errorMessage });
@@ -488,7 +488,7 @@ export function ExpedicaoPage() {
                 onClick: () => void handleCancelarLiberacao(p)
               }
             ]
-          : [{ label: "Liberar recotação de frete", onClick: () => void handleLiberarRecotacao(p) }]
+          : [{ label: "Liberar aplicação da recotação", onClick: () => void handleLiberarRecotacao(p) }]
         : []),
       // Correcao de frete pos-liberacao: trocar a modalidade (e a transportadora)
       // de um pedido que ja saiu do orcamento. Fica ao lado da recotacao porque

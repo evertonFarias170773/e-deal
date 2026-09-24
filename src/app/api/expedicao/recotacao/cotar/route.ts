@@ -137,26 +137,13 @@ export async function POST(request: Request) {
     );
   }
 
-  // Liberação do admin. Desde 20/08/2026 o expedidor não recota por conta
-  // própria: um admin libera caso a caso pelo menu Ações. Aqui a liberação é
-  // apenas VERIFICADA — quem a consome é a aplicação, e só ela. Recotar quantas
-  // vezes quiser não gasta a autorização.
-  const { data: liberacao } = await supabase
-    .from("expedicao_recotacao_liberacoes")
-    .select("id, liberado_em, liberado_por_nome")
-    .eq("id_int", idInt)
-    .is("consumida_em", null)
-    .is("revogada_em", null)
-    .maybeSingle();
-  if (!liberacao) {
-    return NextResponse.json(
-      {
-        success: false,
-        message: "Recotação bloqueada: peça a um administrador para liberar este pedido no menu Ações da Expedição."
-      },
-      { status: 403 }
-    );
-  }
+  // SEM LIBERACAO PARA RECOTAR (24/09/2026, decisao do dono). De 20/08 a
+  // 24/09/2026 recotar exigia liberacao de admin. Com a trava do despacho
+  // medindo a diferenca pela recotacao (ate R$ 4,00 so avisa), isso fazia todo
+  // despacho com CEP ou transporte trocado passar por um admin. Agora o
+  // expedidor recota sozinho; APLICAR a recotacao na proposta continua exigindo
+  // a liberacao — conferida na rota `aplicar` e consumida em
+  // `exp_aplicar_recotacao`, que nao mudaram.
 
   // Endereço: override da tela > escolhido no despacho > mesmo CEP da cotação >
   // mais recente do cliente. Mesma cascata da prepostagem.
@@ -297,8 +284,6 @@ export async function POST(request: Request) {
       uf: String(endereco.uf ?? "")
     },
     opcoes,
-    avisos: cotacao.avisos,
-    liberadoPorNome: liberacao.liberado_por_nome,
-    liberadoEm: liberacao.liberado_em
+    avisos: cotacao.avisos
   });
 }

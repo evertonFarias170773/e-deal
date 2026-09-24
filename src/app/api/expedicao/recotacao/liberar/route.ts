@@ -7,10 +7,10 @@ import { verificarPermissaoServerSide } from "@/lib/auth/verificar-permissao";
  * Liberar e revogar a recotação de frete de UM pedido.
  *
  * POR QUE EXISTE
- *   Desde 20/08/2026 o expedidor não tem autonomia para recotar. O botão nasce
- *   bloqueado e um admin libera caso a caso, pelo menu Ações da Expedição. A
- *   liberação cobre o fluxo inteiro (ver as opções e aplicar uma delas) e é de
- *   uso único: a aplicação a consome. Recotar sem aplicar não consome.
+ *   De 20/08 a 24/09/2026 o expedidor não recotava sem esta liberação. Desde
+ *   24/09/2026 recotar é livre (a trava do despacho mede a diferença pela
+ *   recotação), e a liberação cobre só APLICAR o frete novo na proposta. Segue
+ *   de uso único: a aplicação a consome.
  *
  *   POST   → libera. Idempotente: pedido já liberado devolve a liberação atual.
  *   DELETE → revoga, enquanto não consumida. Liberação já usada não se desfaz.

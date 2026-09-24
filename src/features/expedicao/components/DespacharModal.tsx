@@ -431,14 +431,20 @@ export function DespacharModal({
    * Com NF-e autorizada so entra o que BARATEIA: empatar nao justifica mexer no
    * valor de um pedido que ja tem nota. Encarecer depende da alcada e fica para
    * a etapa seguinte. A rota e a RPC repetem os dois gates contra o banco.
+   *
+   * E APLICAR depende da liberacao do admin (24/09/2026): recotar e livre, mas
+   * gravar o frete novo na proposta segue caso a caso. A rota `aplicar` confere
+   * e `exp_aplicar_recotacao` consome a liberacao.
    */
   function podeAplicar(o: OpcaoRecotacao): boolean {
+    if (!recotacaoLiberada) return false;
     if (o.diferenca > 0) return false;
     if (pedido.nfStatus === "AUTORIZADA" && o.diferenca >= 0) return false;
     return true;
   }
 
   function motivoBloqueio(o: OpcaoRecotacao): string {
+    if (!recotacaoLiberada) return "Aplicar na proposta depende de liberação de um administrador.";
     if (o.diferenca > 0) return "Encarece: depende da alçada, ainda não liberado.";
     return "Com NF-e autorizada, só o que barateia.";
   }
@@ -1483,14 +1489,16 @@ export function DespacharModal({
               )}
 
 
-              {/* Recotação — SÓ CONSULTA. Fica embaixo do endereço porque é dele
-                  que o resultado depende. Nada aqui grava nada. */}
+              {/* Recotação. Fica embaixo do endereço porque é dele que o resultado
+                  depende. Recotar é livre e só REGISTRA o resultado (a trava do
+                  despacho mede a diferença por ele); aplicar na proposta depende
+                  da liberação de um administrador. */}
               {podeRecotar && (
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div>
                       <p className="text-sm font-semibold text-slate-800">
-                        Recotar frete {!recotacaoLiberada && <span title="Depende de liberação">🔒</span>}
+                        Recotar frete
                       </p>
                       <p className="text-xs text-slate-500">
                         Cota de novo com o endereço e o peso deste pedido. Frete atual da proposta:{" "}
@@ -1500,10 +1508,10 @@ export function DespacharModal({
                     <button
                       type="button"
                       onClick={handleRecotar}
-                      disabled={recotando || !recotacaoLiberada}
+                      disabled={recotando}
                       className="rounded-xl border border-teal-200 bg-teal-50 px-3.5 py-2 text-sm font-semibold text-teal-800 transition hover:bg-teal-100 disabled:cursor-not-allowed disabled:opacity-50"
                     >
-                      {recotando ? "Cotando..." : recotacaoLiberada ? "Recotar frete" : "Bloqueado"}
+                      {recotando ? "Cotando..." : "Recotar frete"}
                     </button>
                   </div>
 
@@ -1516,12 +1524,12 @@ export function DespacharModal({
                         hour: "2-digit",
                         minute: "2-digit"
                       })}
-                      {" — vale para UMA aplicação."}
+                      {" — aplicar na proposta liberado para UMA aplicação."}
                     </p>
                   ) : (
                     <p className="mt-2 rounded-xl border border-slate-200 bg-white p-2 text-xs text-slate-600">
-                      A recotação deste pedido depende de liberação de um administrador. Peça a liberação no menu
-                      <strong> Ações</strong> da lista de Expedição.
+                      Recotar é livre. <strong>Aplicar</strong> o frete novo na proposta depende de liberação de um
+                      administrador, no menu <strong>Ações</strong> da lista de Expedição.
                     </p>
                   )}
 

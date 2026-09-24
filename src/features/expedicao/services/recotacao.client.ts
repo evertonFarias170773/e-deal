@@ -41,9 +41,6 @@ export interface RecotacaoResult {
   endereco?: { rotulo: string; cep: string; cidade: string; uf: string } | null;
   opcoes?: OpcaoRecotacao[];
   avisos?: string[];
-  /** Quem autorizou esta recotacao, e quando. Vem da liberacao ativa. */
-  liberadoPorNome?: string | null;
-  liberadoEm?: string | null;
 }
 
 export async function recotarFrete(
