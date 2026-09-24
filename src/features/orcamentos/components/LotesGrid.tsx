@@ -292,6 +292,40 @@ export function LotesGrid({
     setLinhas(proximo);
   }
 
+  // ─── A grade segue o pai quando os lotes mudam por fora dela ───────────────
+  // As linhas são semeadas uma vez, no mount. Desde que a grade abre sozinha ao
+  // entrar na aba (24/09/2026) ela monta ANTES de `pedidos_modelos` chegar — e
+  // ficava com uma linha vazia enquanto os cards mostravam tudo (o Salvar
+  // recarrega a página em ?tab=pedido). Quando o CONJUNTO DE IDS que o pai
+  // manda muda e a grade não tem nada seu por gravar, ressemeia: o que veio do
+  // banco entra, e linha nova com algo digitado é preservada no fim. Ids iguais
+  // = o que mudou já é o espelho do onGravado, ou edição em curso: não mexe,
+  // para não tirar o foco de quem está digitando.
+  const chaveIniciais = JSON.stringify(
+    linhasIniciais.map((l) => [
+      l.id, l.nome_modelo, l.quantidade, l.padrao, l.tipo_numeracao, l.numeracao_inicio, l.numeracao_fim,
+      l.verso_tipo, l.bloco, l.gabarito_operacional, l.Q_CAM, l.L_CAM, l.C_INI
+    ])
+  );
+  const chaveSemeadaRef = useRef(chaveIniciais);
+  useEffect(() => {
+    if (chaveSemeadaRef.current === chaveIniciais) return;
+    chaveSemeadaRef.current = chaveIniciais;
+    if (salvandoRef.current || pendenteRef.current || timerRef.current) return;
+    const idsDaGrade = new Set(linhasRef.current.map((l) => l.id).filter((id): id is number => id != null));
+    const idsDoPai = new Set(linhasIniciais.map((l) => l.id).filter((id): id is number => id != null));
+    const mesmosIds = idsDaGrade.size === idsDoPai.size && [...idsDoPai].every((id) => idsDaGrade.has(id));
+    if (mesmosIds) return;
+    const novasComAlgo = linhasRef.current.filter(
+      (l) => !l.id && (l.nome_modelo.trim() || l.quantidade !== "" || l.padrao)
+    );
+    const proximo: Lote[] = [...linhasIniciais.map((l) => ({ ...l, chave: novaChave() })), ...novasComAlgo];
+    linhasRef.current = proximo;
+    setLinhas(proximo);
+    // A base do "nada a gravar" é recalculada no efeito abaixo, já com as linhas novas.
+    ultimaAssinaturaRef.current = null;
+  }, [chaveIniciais, linhasIniciais]);
+
   useEffect(() => {
     const id = Number(idProduto);
     if (!Number.isInteger(id) || id <= 0) return;
