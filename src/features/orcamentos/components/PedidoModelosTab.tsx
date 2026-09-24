@@ -605,6 +605,7 @@ function ModeloInlineCard({
         simplificado={simplificado}
         visivel={visivel}
         itemPrateleira={itemPrateleira}
+        modo="card"
         maxQtd={maxQtd}
         onChange={handleChange}
         onBlurCampo={flushSave}
@@ -1179,7 +1180,7 @@ export function PedidoModelosTab({
                       )}
 
                       {/* Janela de amostra: a mesma da lista rapida (`AmostraDoModelo`). */}
-                      <AmostraDoModelo modelo={m} itemPrateleira={itemPrateleira} onAmpliar={setArteAmpliada} />
+                      <AmostraDoModelo modelo={m} itemPrateleira={itemPrateleira} modo="card" onAmpliar={setArteAmpliada} />
 
                       <div className="absolute right-4 top-4 flex gap-2">
                         <div className="flex items-center gap-2">

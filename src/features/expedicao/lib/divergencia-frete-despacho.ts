@@ -5,7 +5,10 @@ import type { ModalidadeFrete, TipoFreteNormalizado } from "../types";
 
 /**
  * O envio que esta sendo despachado ainda corresponde ao frete que a proposta
- * cobra? Desde 20/08/2026 esta pergunta BLOQUEIA o despacho, nao so avisa.
+ * cobra? De 20/08/2026 a 24/09/2026 esta pergunta BLOQUEOU o despacho. Desde
+ * 24/09/2026 (decisao do dono: a recotacao e opcional) ela so AVISA — ver o
+ * bloco "RECOTACAO E OPCIONAL" na funcao. O texto abaixo descreve as dimensoes,
+ * que continuam calculadas e exibidas.
  *
  * TRES DIMENSOES
  *   1. TRANSPORTE  — o "COMO VAI" mudou em relacao ao que originou a cotacao;
@@ -69,7 +72,7 @@ export type CotacaoVigente = {
 };
 
 export type DivergenciaFreteDespacho = {
-  /** Trava o botao "Confirmar despacho"? So verdadeiro em CIF. */
+  /** Trava o botao "Confirmar despacho"? Sempre falso desde 24/09/2026 (recotacao opcional). */
   bloqueia: boolean;
   /** Ha algo a exibir na faixa, bloqueando ou nao? */
   temAviso: boolean;
@@ -153,7 +156,7 @@ export function divergenciaFreteDoDespacho(entrada: {
   pesoAferidoGramas: number | null | undefined;
   /** CEP do endereco de entrega selecionado no despacho. */
   cepDestino: string | null | undefined;
-  /** Modalidade efetiva (despacho > orcamento). So CIF bloqueia. */
+  /** Modalidade efetiva (despacho > orcamento). */
   modalidadeEfetiva: ModalidadeFrete | null;
   /** O "COMO VAI" selecionado agora. */
   tipoFreteEscolhido: TipoFreteNormalizado;
@@ -239,8 +242,24 @@ export function divergenciaFreteDoDespacho(entrada: {
   if (transporteMudou) motivosBloqueio.push("o transporte mudou em relação ao cotado");
   if (cepMudou) motivosBloqueio.push("o endereço de entrega mudou");
 
-  // Fora de CIF nao ha recotacao possivel — informa, nao trava.
-  const bloqueia = entrada.modalidadeEfetiva === "CIF" && motivosBloqueio.length > 0;
+  // ===========================================================================
+  // RECOTACAO E OPCIONAL — 24/09/2026, decisao do dono.
+  //
+  // CEP e transporte diferentes do cotado tambem deixaram de bloquear. Como o
+  // peso (paliativo acima), continuam apurados e entram em `motivos` e em
+  // `motivosBloqueio`, entao a tela segue avisando; so saem de `bloqueia`.
+  //
+  // POR QUE
+  //   A unica saida do bloqueio era APLICAR uma recotacao, e a recotacao so
+  //   aplica o que barateia (`exp_recot_dif_etapa2_ck`). No 22251 (CIF,
+  //   motoboy) o endereco de entrega escolhido no portal (91020-001) nao era o
+  //   CEP cotado (90430-000), e a recotacao para ele saiu R$ 0,02 mais cara: o
+  //   "Aplicar" ficava desabilitado e o pedido, pago e com NF, parado. Despachar
+  //   com o frete ja gravado na proposta nao depende mais de recotar.
+  //
+  // `modalidadeEfetiva` segue na assinatura: o aviso continua sendo sobre CIF.
+  // ===========================================================================
+  const bloqueia = false;
 
   return {
     bloqueia,

@@ -471,6 +471,12 @@ função da coluna FRETE da lista e do Kanban.
 voltar. `id_cliente_destinatario_etiqueta` é escolha **separada** e não mudou:
 a caixa pode ir para o endereço de um em nome do outro.
 
+### A recotação é opcional: divergência de frete só avisa (24/09/2026)
+
+Até 24/09/2026, em CIF, **CEP de entrega ou transporte diferentes do cotado travavam o despacho** (tela e `despachar()` no serviço) até alguém aplicar uma recotação — o peso já só avisava desde 26/08/2026. Decisão do dono: **a recotação é opcional**. Despachar com o frete já gravado na proposta não depende de recotar, e as três dimensões (transporte, peso, destino) continuam calculadas e exibidas na faixa amarela, sem travar o "Confirmar despacho" nem a prepostagem. A regra mora em `lib/divergencia-frete-despacho.ts` (`bloqueia` sempre falso), usada pela tela e pelo serviço.
+
+Caso que motivou: **22251** (CIF, motoboy, NF 41014, pago). O endereço escolhido no portal (CEP 91020-001) não era o cotado (90430-000); a recotação para ele saiu R$ 0,02 mais cara, e a recotação só aplica o que barateia (`exp_recot_dif_etapa2_ck`) — o "Aplicar" ficava desabilitado e o pedido parado sem saída. O frete e o total da proposta não mudaram.
+
 ### `peso_kg` pode vir de rascunho (20/08/2026)
 
 Desde 20/08/2026 o modal Despachar tem **"Salvar sem despachar"**: o expedidor altera peso, endereço ou transporte, grava, e fecha o modal para pedir liberação de recotação a um admin — sem perder o que preencheu. A gravação usa `salvarDadosExpedicao`, o mesmo caminho do modo edição, e **não toca `data_despacho`**.

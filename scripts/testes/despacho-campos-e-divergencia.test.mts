@@ -345,7 +345,9 @@ checar("20961 não acusa destino", d20961.cepMudou, false);
 
 // ── Dimensão DESTINO ──────────────────────────────────────────────────────
 const dCep = divergenciaFreteDoDespacho({ ...fiel, cepDestino: "01310-100" });
-checar("CEP diferente bloqueia", dCep.bloqueia, true);
+checar("CEP diferente é detectado", dCep.cepMudou, true);
+checar("CEP diferente AVISA, não bloqueia (recotação opcional, 24/09/2026)", dCep.bloqueia, false);
+checar("CEP diferente entra nos motivos", dCep.motivos.includes("o endereço de entrega mudou"), true);
 checar("CEP normalizado só com dígitos", dCep.cepDespacho, "01310100");
 checar(
   "cotação sem CEP não vira bloqueio",
@@ -360,9 +362,14 @@ checar(
 
 // ── Dimensão TRANSPORTE, e a referência confiável ─────────────────────────
 checar(
-  "trocar CORREIOS por TRANSPORTADORA bloqueia",
-  divergenciaFreteDoDespacho({ ...fiel, tipoFreteEscolhido: "TRANSPORTADORA" }).bloqueia,
+  "trocar CORREIOS por TRANSPORTADORA é detectado",
+  divergenciaFreteDoDespacho({ ...fiel, tipoFreteEscolhido: "TRANSPORTADORA" }).transporteMudou,
   true
+);
+checar(
+  "trocar CORREIOS por TRANSPORTADORA AVISA, não bloqueia (24/09/2026)",
+  divergenciaFreteDoDespacho({ ...fiel, tipoFreteEscolhido: "TRANSPORTADORA" }).bloqueia,
+  false
 );
 checar("referência vem do serviço cotado", referenciaTransporte(null, "SEDEX"), "CORREIOS");
 checar("MOTOBOY é referência válida", referenciaTransporte(null, "MOTOBOY"), "MOTOBOY");
@@ -399,8 +406,13 @@ checar(
   "MOTOBOY"
 );
 checar(
-  "redespacho trocando o transporte bloqueia",
+  "redespacho trocando o transporte AVISA, não bloqueia (24/09/2026)",
   divergenciaFreteDoDespacho({
+    ...fiel,
+    cotacao: { ...cotacao20961, servico: "FRETE INCLUSO" },
+    tipoFreteEscolhido: "CORREIOS",
+    tipoFreteJaDespachado: "MOTOBOY"
+  }).transporteMudou && !divergenciaFreteDoDespacho({
     ...fiel,
     cotacao: { ...cotacao20961, servico: "FRETE INCLUSO" },
     tipoFreteEscolhido: "CORREIOS",
@@ -416,7 +428,21 @@ const tudoDivergente = {
   cepDestino: "01310100",
   tipoFreteEscolhido: "TRANSPORTADORA" as const
 };
-checar("em CIF, tudo divergente bloqueia", divergenciaFreteDoDespacho(tudoDivergente).bloqueia, true);
+checar("em CIF, tudo divergente AVISA e não bloqueia (24/09/2026)", divergenciaFreteDoDespacho(tudoDivergente).bloqueia, false);
+
+// ── 22251 (24/09/2026): CIF, motoboy, endereço do portal fora do CEP cotado ──
+// A recotação para o CEP novo saiu R$ 0,02 mais cara e não podia ser aplicada;
+// o despacho não depende mais dela.
+const d22251 = divergenciaFreteDoDespacho({
+  cotacao: { pesoGramas: 497.7, cep: "90430-000", valor: 22.25, servico: "MOTOBOY", existe: true },
+  pesoAferidoGramas: 539,
+  cepDestino: "91020001",
+  modalidadeEfetiva: "CIF",
+  tipoFreteEscolhido: "MOTOBOY"
+});
+checar("22251: acusa o CEP diferente", d22251.cepMudou, true);
+checar("22251: avisa", d22251.temAviso, true);
+checar("22251: NÃO bloqueia o despacho", d22251.bloqueia, false);
 checar("em CIF, os três motivos aparecem", divergenciaFreteDoDespacho(tudoDivergente).motivos.length, 3);
 for (const modalidade of [null, "FOB", "RETIRA"] as const) {
   const d = divergenciaFreteDoDespacho({ ...tudoDivergente, modalidadeEfetiva: modalidade });

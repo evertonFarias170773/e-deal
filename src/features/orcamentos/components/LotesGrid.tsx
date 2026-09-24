@@ -23,6 +23,9 @@
  *   amostra da arte (`AmostraDoModelo`), sempre aberta. O que continua sendo
  *   só da grade: colar a lista, Enter criar a próxima linha, "+ N linhas", os
  *   modos de numeração e a soma que manda na quantidade do item.
+ *   Item de prateleira (24/09/2026): só Qtd e Cor papel, sem janela de
+ *   amostra — a regra vive em `ModeloCampos` (`modo="lista"`). O nome do
+ *   lote, que não tem campo ali, é o do produto (`nomeDoLote`).
  *
  * GRAVA SOZINHA, PELA ROTA DA PRÓPRIA GRADE (23/09/2026)
  *   A cada campo ou dropdown alterado a lista inteira vai para a rota em
@@ -321,7 +324,16 @@ export function LotesGrid({
 
   const quantasCriar = Math.min(MAX_LINHAS_DE_UMA_VEZ, Math.max(1, Number(quantasLinhas) || 1));
 
-  const completa = (l: Lote) => modeloCompleto({ ...l, quantidade: Number(l.quantidade) || 0 }, visivel);
+  /**
+   * Nome do lote como vai para o banco. Prateleira não tem campo Modelo na
+   * lista: sem nome, vai o do produto — a mesma regra de `novaLinha` e da
+   * colagem, e sem ela a linha nunca ficaria "completa". Produto normal e
+   * lote já batizado seguem com o que têm, sem mexer.
+   */
+  const nomeDoLote = (l: Lote) => (itemPrateleira && !l.nome_modelo?.trim() ? item.nome : l.nome_modelo);
+
+  const completa = (l: Lote) =>
+    modeloCompleto({ ...l, nome_modelo: nomeDoLote(l), quantidade: Number(l.quantidade) || 0 }, visivel);
 
   function novaLinha(base?: LinhaLote): Lote {
     // Herda da linha anterior o que não costuma variar entre lotes do mesmo
@@ -364,7 +376,7 @@ export function LotesGrid({
   function montarLote(l: Lote) {
     const lote = {
       id: l.id ?? null,
-      nome_modelo: l.nome_modelo,
+      nome_modelo: nomeDoLote(l),
       quantidade: Number(l.quantidade),
       padrao: l.padrao,
       tipo_numeracao: l.tipo_numeracao,
@@ -838,6 +850,7 @@ export function LotesGrid({
               simplificado={simplificado}
               visivel={visivel}
               itemPrateleira={itemPrateleira}
+              modo="lista"
               onChange={(partial, imediato) => alterar(indice, partial, imediato)}
               onBlurCampo={flushSave}
               onPaste={(e) => colar(e, indice)}
@@ -852,8 +865,8 @@ export function LotesGrid({
               }
             />
 
-            {/* A mesma janela de amostra do modo cards, sempre aberta. */}
-            <AmostraDoModelo modelo={linha} itemPrateleira={itemPrateleira} onAmpliar={onAmpliarArte} />
+            {/* A mesma janela de amostra do modo cards, sempre aberta — prateleira não tem. */}
+            <AmostraDoModelo modelo={linha} itemPrateleira={itemPrateleira} modo="lista" onAmpliar={onAmpliarArte} />
           </div>
         ))}
       </div>

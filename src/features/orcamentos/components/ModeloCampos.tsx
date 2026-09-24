@@ -25,6 +25,16 @@
  *   - `numeracaoInicioTravada`: com "cada do 1" ou "sequencial" marcados, o
  *     Nº Inicial é derivado e não se edita.
  *   O card não passa nenhuma delas.
+ *
+ * PRATELEIRA NA LISTA RÁPIDA (`modo="lista"` + `itemPrateleira`, 24/09/2026)
+ *   Produto de prateleira não entra em arte: sem janela de arte e sem status
+ *   de arte. Na lista rápida o lote dele mostra só Qtd e Cor papel — na
+ *   prática o que a grade antiga fazia (o Modelo vinha preenchido com o nome
+ *   do produto e não havia janela de amostra). O card fica como era: em
+ *   proposta mista o item de prateleira mostra todos os campos, com a prévia
+ *   do papel no lugar da arte, e a janela de amostra sem o status.
+ *   `simplificado` segue sendo a regra da PROPOSTA (100% prateleira); esta é
+ *   a do ITEM, e vale só na lista.
  */
 
 import { useEffect, useState } from "react";
@@ -325,6 +335,7 @@ export function ModeloCampos({
   simplificado,
   visivel,
   itemPrateleira,
+  modo,
   maxQtd,
   onChange,
   onBlurCampo,
@@ -340,8 +351,10 @@ export function ModeloCampos({
   simplificado: boolean;
   /** Checklist do boletim do produto (lib/checklist-lote). */
   visivel: ChecklistVisivel;
-  /** Item de prateleira: mostra a prévia do papel da cor selecionada. */
+  /** Item de prateleira: no card, a prévia do papel da cor; na lista, só Qtd e Cor papel. */
   itemPrateleira: boolean;
+  /** Quem renderiza: o card de modelo ou a lista rápida. */
+  modo: "card" | "lista";
   /** Saldo do item, que corta a Qtd. Ausente = sem trava (lista rápida). */
   maxQtd?: number;
   /**
@@ -362,6 +375,8 @@ export function ModeloCampos({
   const mostraFaixa = mostraCampo(visivel, "numeracao_faixa");
   const mostraVerso = mostraCampo(visivel, "impressao_fv");
   const mostraNumerador = mostraCampo(visivel, "num_gabarito");
+  // Prateleira na lista rápida: só Qtd e Cor papel (ver cabeçalho do arquivo).
+  const soQtdECor = modo === "lista" && itemPrateleira;
   const isCustomInit = modelo.bloco ? !["10", "15", "20", "25", "40", "50", "75", "100"].includes(modelo.bloco) : false;
   const [showCustomBloco, setShowCustomBloco] = useState(isCustomInit);
 
@@ -386,8 +401,10 @@ export function ModeloCampos({
   // Numerador selecionado (busca na lista completa: o gravado pode estar fora do filtro por formato)
   const numeracaoSelecionada = findNumeracaoByName(numeracoesOpcoes, modelo.gabarito_operacional);
   const tipoNumeracaoSelecionada = normalizarTipoNumeracao(numeracaoSelecionada?.tipo);
-  const isCamarote = tipoNumeracaoSelecionada === TIPO_CAMAROTE;
-  const isTicket = tipoNumeracaoSelecionada === TIPO_TICKET;
+  // Sem campo Numerador na tela, as regras dele (Qtd do camarote, aviso do
+  // ticket) também não aparecem.
+  const isCamarote = !soQtdECor && tipoNumeracaoSelecionada === TIPO_CAMAROTE;
+  const isTicket = !soQtdECor && tipoNumeracaoSelecionada === TIPO_TICKET;
   const qtdCamaroteCalculada = calcularQtdCamarote(modelo.Q_CAM, modelo.L_CAM);
   const { multiplicador: ticketMultiplicador, erro: erroTicket } = isTicket
     ? resolverMultiplicadorNumeracao(numeracaoSelecionada)
@@ -398,7 +415,7 @@ export function ModeloCampos({
   return (
     <>
       <div className="flex flex-wrap xl:flex-nowrap xl:items-end gap-3">
-        {!simplificado && (
+        {!simplificado && !soQtdECor && (
           <div className="flex-[2] min-w-[110px]">
             <label className={labelClass}>Modelo *</label>
             <input
@@ -489,7 +506,7 @@ export function ModeloCampos({
           </>
         )}
 
-        {!simplificado && mostraFaixa && (
+        {!simplificado && !soQtdECor && mostraFaixa && (
           <>
             <div className="flex-[0.8] min-w-[70px]">
               <label className={labelClass}>Nº Inicial</label>
@@ -542,7 +559,7 @@ export function ModeloCampos({
         </div>
         )}
 
-        {!simplificado && (
+        {!simplificado && !soQtdECor && (
           <div className="flex-[1.2] min-w-[90px]">
             <label className={labelClass}>Bloco</label>
             {showCustomBloco ? (
@@ -595,7 +612,7 @@ export function ModeloCampos({
           </div>
         )}
 
-        {mostraVerso && (
+        {mostraVerso && !soQtdECor && (
         <div className={cn("flex-[1.2] min-w-[100px]", simplificado && "order-3")}>
           <label className={labelClass}>Verso</label>
           <select
@@ -611,7 +628,7 @@ export function ModeloCampos({
         </div>
         )}
 
-        {mostraNumerador && (
+        {mostraNumerador && !soQtdECor && (
         <div className={cn("flex-[1.5] min-w-[100px]", simplificado && "order-4")}>
           <label className={labelClass}>Numerador</label>
           <select
@@ -659,7 +676,7 @@ export function ModeloCampos({
 
       {/* Produto de prateleira: papel da cor escolhida, direto de producao_cores.
           Troca de cor troca a prévia porque a chave é o próprio `padrao`. */}
-      {itemPrateleira && <PreviaCorPapel key={modelo.padrao || "sem-cor"} nomeCor={modelo.padrao} />}
+      {itemPrateleira && !soQtdECor && <PreviaCorPapel key={modelo.padrao || "sem-cor"} nomeCor={modelo.padrao} />}
     </>
   );
 }
@@ -674,6 +691,7 @@ export function ModeloCampos({
 export function AmostraDoModelo({
   modelo,
   itemPrateleira,
+  modo,
   onAmpliar,
 }: {
   modelo: Pick<PedidoModeloState, "nome_modelo" | "status_arte" | "amostra_arte_base64" | "verso_amostra_arte_base64">;
@@ -682,8 +700,14 @@ export function AmostraDoModelo({
    * mostrar "Arte: PENDENTE" ali seria uma pendência que não existe.
    */
   itemPrateleira: boolean;
+  /** Quem renderiza: o card fechado ou a lista rápida. */
+  modo: "card" | "lista";
   onAmpliar: (arte: { frente: string; verso: string | null; nome: string }) => void;
 }) {
+  // Na lista rápida, prateleira não tem janela de amostra — nem a moldura.
+  // No card fechado a moldura fica (sem o status), como sempre foi.
+  if (modo === "lista" && itemPrateleira) return null;
+
   const arteSrc = modelo.amostra_arte_base64 ? toImageSrc(modelo.amostra_arte_base64) : null;
   // Verso resolvido pelo mesmo tratamento da frente (data URI, URL ou base64
   // puro). Null quando a coluna está vazia ou o conteúdo não é renderizável
