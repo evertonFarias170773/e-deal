@@ -471,7 +471,23 @@ função da coluna FRETE da lista e do Kanban.
 voltar. `id_cliente_destinatario_etiqueta` é escolha **separada** e não mudou:
 a caixa pode ir para o endereço de um em nome do outro.
 
-### A recotação é opcional: divergência de frete só avisa (24/09/2026)
+### Trava do despacho pela recotação: limite de R$ 4,00 e liberação de ADM (24/09/2026, tarde)
+
+Substitui a regra da manhã (seção seguinte). Em pedido **CIF** com **CEP de entrega ou transporte diferentes do cotado**, a diferença de frete é medida pela **recotação**, em centavos, contra o frete da proposta:
+
+| Situação | Despacho e prepostagem dos Correios |
+|---|---|
+| Sem recotação feita para o CEP de agora | **trava** — pede para recotar |
+| Recotação mais barata, ou até **R$ 4,00** acima | **só avisa** |
+| Mais de R$ 4,00 acima | **trava**, até um ADM liberar |
+
+- **Qual opção conta:** a do transporte escolhido no despacho; havendo mais de uma (SEDEX e PAC), a do mesmo serviço da cotação, senão a mais barata daquele transporte. Vale a **última** recotação feita para o CEP de entrega atual.
+- **Onde a regra mora:** no banco. `exp_trava_frete_despacho(id_int, cep, tipo_frete, modalidade)` dá o veredito; a trigger `trg_exp_trava_frete_despacho` em `expedicoes` recusa marcar `data_despacho` quando ele trava (código `EXP_DESPACHO_TRAVA_FRETE`). A tela e a rota de prepostagem consultam a mesma função — a prepostagem **antes** de chamar os Correios, e só enquanto o pedido não foi despachado. Complemento que sai junto com o principal não é avaliado. Migrations `20260924_despacho_trava_frete_recotacao.sql` e `20260924_despacho_trava_frete_trigger.sql`.
+- **Recotação registrada:** a rota `cotar` grava cada resultado em `expedicao_recotacao_consultas`, com **service role** — `authenticated` não insere, então ninguém forja uma recotação barata.
+- **Liberação de ADM:** `expedicao.admin`, conferida dentro de `exp_liberar_despacho` (SECURITY DEFINER). Grava quem liberou (`auth.uid`), nome, quando e motivo obrigatório em `expedicao_despacho_liberacoes`; é de **uso único**, consumida pelo despacho, e pode ser cancelada antes (`exp_revogar_despacho`). É **outra** liberação que não a de recotação: toda recotação já depende de um admin liberar, e se uma valesse pela outra o limite de R$ 4,00 nunca se aplicaria. No modal, o ADM vê o campo de motivo e "Liberar despacho (ADM)" no painel da trava.
+- **O que não muda:** frete e total da proposta. Peso divergente continua só avisando (paliativo de 26/08/2026).
+
+### A recotação é opcional: divergência de frete só avisa (24/09/2026, manhã — substituída acima)
 
 Até 24/09/2026, em CIF, **CEP de entrega ou transporte diferentes do cotado travavam o despacho** (tela e `despachar()` no serviço) até alguém aplicar uma recotação — o peso já só avisava desde 26/08/2026. Decisão do dono: **a recotação é opcional**. Despachar com o frete já gravado na proposta não depende de recotar, e as três dimensões (transporte, peso, destino) continuam calculadas e exibidas na faixa amarela, sem travar o "Confirmar despacho" nem a prepostagem. A regra mora em `lib/divergencia-frete-despacho.ts` (`bloqueia` sempre falso), usada pela tela e pelo serviço.
 

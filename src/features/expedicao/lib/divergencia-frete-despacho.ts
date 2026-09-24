@@ -6,9 +6,10 @@ import type { ModalidadeFrete, TipoFreteNormalizado } from "../types";
 /**
  * O envio que esta sendo despachado ainda corresponde ao frete que a proposta
  * cobra? De 20/08/2026 a 24/09/2026 esta pergunta BLOQUEOU o despacho. Desde
- * 24/09/2026 (decisao do dono: a recotacao e opcional) ela so AVISA — ver o
- * bloco "RECOTACAO E OPCIONAL" na funcao. O texto abaixo descreve as dimensoes,
- * que continuam calculadas e exibidas.
+ * 24/09/2026 este modulo so AVISA; a trava pela recotacao (limite de R$ 4,00,
+ * liberacao de ADM) mora no banco — ver o bloco "A TRAVA VOLTOU, NO BANCO" na
+ * funcao. O texto abaixo descreve as dimensoes, que continuam calculadas e
+ * exibidas.
  *
  * TRES DIMENSOES
  *   1. TRANSPORTE  — o "COMO VAI" mudou em relacao ao que originou a cotacao;
@@ -258,6 +259,14 @@ export function divergenciaFreteDoDespacho(entrada: {
   //   com o frete ja gravado na proposta nao depende mais de recotar.
   //
   // `modalidadeEfetiva` segue na assinatura: o aviso continua sendo sobre CIF.
+  //
+  // A TRAVA VOLTOU, NO BANCO (24/09/2026, tarde). Com CEP ou transporte
+  // diferentes do cotado, a diferenca passou a ser medida pela RECOTACAO: ate
+  // R$ 4,00 acima do frete da proposta so avisa; acima, ou sem recotacao, trava
+  // ate um ADM liberar. Quem decide e `exp_trava_frete_despacho` (migration
+  // 20260924_despacho_trava_frete_recotacao.sql), e quem recusa o despacho e a
+  // trigger de `expedicoes`. Este modulo continua so INFORMANDO (`bloqueia`
+  // falso); a tela trava pelo veredito do banco.
   // ===========================================================================
   const bloqueia = false;
 

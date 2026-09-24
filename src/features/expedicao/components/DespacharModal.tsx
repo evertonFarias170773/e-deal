@@ -25,9 +25,21 @@ import type { EtiquetaViewModel } from "../services/etiqueta-viewmodel.service";
 import { ConferenciaDespacho } from "./ConferenciaDespacho";
 import { ConfirmarAcaoModal } from "./ConfirmarAcaoModal";
 import { camposMinimosDespacho, frasearFaltantes } from "../lib/campos-minimos-despacho";
-import { divergenciaFreteDoDespacho, formatarCep, frasearMotivos } from "../lib/divergencia-frete-despacho";
-import { recotarFrete, aplicarRecotacao, buscarLiberacaoAtiva } from "../services/recotacao.client";
-import type { RecotacaoResult, OpcaoRecotacao, AplicacaoRecotacao } from "../services/recotacao.client";
+import { divergenciaFreteDoDespacho, formatarCep } from "../lib/divergencia-frete-despacho";
+import {
+  recotarFrete,
+  aplicarRecotacao,
+  buscarLiberacaoAtiva,
+  avaliarTravaFreteDespacho,
+  liberarDespacho,
+  revogarDespacho
+} from "../services/recotacao.client";
+import type {
+  RecotacaoResult,
+  OpcaoRecotacao,
+  AplicacaoRecotacao,
+  TravaFreteDespacho
+} from "../services/recotacao.client";
 import { LABEL_MODALIDADE, MODALIDADES_OFERECIDAS, TRANSPORTES_POR_MODALIDADE } from "../types";
 import type { ModalidadeFrete, PedidoExpedicao, TipoFreteNormalizado } from "../types";
 
@@ -141,13 +153,19 @@ export function DespacharModal({
   modoEdicao,
   ator,
   onClose,
-  onDone
+  onDone,
+  podeLiberarDespacho = false
 }: {
   pedido: PedidoExpedicao;
   modoEdicao: boolean;
   ator: AtorExpedicao;
   onClose: () => void;
   onDone: () => void;
+  /**
+   * `expedicao.admin` (ou admin): mostra "Liberar despacho" quando a trava de
+   * frete recusa. So apresentacao — quem confere a permissao e a funcao do banco.
+   */
+  podeLiberarDespacho?: boolean;
 }) {
   const { showToast } = useAppToast();
   const exp = pedido.expedicao;
@@ -396,6 +414,8 @@ export function DespacharModal({
     setRecotando(false);
     if (res.success) {
       setRecotacao(res);
+      // A recotacao foi REGISTRADA no banco: e dela que a trava mede a diferenca.
+      setVersaoTrava((v) => v + 1);
       // Uma chave por opcao, AGORA — nao no clique.
       const chaves: Record<string, string> = {};
       for (const o of res.opcoes ?? []) chaves[o.id] = crypto.randomUUID();
@@ -442,6 +462,7 @@ export function DespacharModal({
     setAplicandoId(null);
     if (res.success) {
       setAplicacao(res);
+      setVersaoTrava((v) => v + 1);
       // A aplicacao consome a liberacao no banco, na mesma transacao. Refletir
       // aqui evita o selo continuar dizendo "liberado" depois de gasto.
       if (!res.idempotente) setLiberacao(null);
@@ -626,6 +647,71 @@ export function DespacharModal({
       tipoFreteJaDespachado: pedido.despachoConfirmado ? exp?.tipoFrete ?? null : null
     });
   }, [pesoKg, cepDoEnderecoEscolhido, cotacaoVigente, modalidade, tipoFrete, exp?.tipoFrete, pedido.despachoConfirmado]);
+
+  /**
+   * TRAVA DE FRETE DO DESPACHO (24/09/2026). O veredito vem do BANCO
+   * (`exp_trava_frete_despacho`), a mesma funcao que a trigger de `expedicoes`
+   * usa para recusar o despacho — a tela so pergunta, para travar o botao e
+   * dizer o motivo antes do clique. Com CEP ou transporte diferentes do cotado,
+   * vale a ultima recotacao para o CEP de agora: ate R$ 4,00 acima do frete da
+   * proposta so avisa; acima, ou sem recotacao, trava ate um ADM liberar.
+   *
+   * So antes do despacho: em edicao, ou com o despacho ja confirmado, a trava ja
+   * foi cumprida (e a trigger so age no momento do despacho).
+   */
+  const avaliaTrava = !modoEdicao && !pedido.despachoConfirmado;
+  const [trava, setTrava] = useState<TravaFreteDespacho | null>(null);
+  /** Incrementado depois de recotar, aplicar ou liberar: forca reler o veredito. */
+  const [versaoTrava, setVersaoTrava] = useState(0);
+  useEffect(() => {
+    if (!avaliaTrava) return;
+    let vivo = true;
+    void avaliarTravaFreteDespacho({
+      idInt: pedido.idInt,
+      cepDestino: cepDoEnderecoEscolhido,
+      tipoFrete,
+      modalidade
+    }).then((v) => {
+      if (vivo) setTrava(v);
+    });
+    return () => {
+      vivo = false;
+    };
+  }, [avaliaTrava, pedido.idInt, cepDoEnderecoEscolhido, tipoFrete, modalidade, versaoTrava]);
+  const travaBloqueia = avaliaTrava && trava?.bloqueia === true;
+  const mensagemTrava = trava?.mensagem || "diferença de frete acima do limite.";
+
+  const [motivoLiberacaoDespacho, setMotivoLiberacaoDespacho] = useState("");
+  const [liberandoDespacho, setLiberandoDespacho] = useState(false);
+
+  async function handleLiberarDespacho() {
+    const motivo = motivoLiberacaoDespacho.trim();
+    if (!motivo) {
+      showToast({ type: "warning", title: "Informe o motivo", description: "A liberação do despacho registra por que foi liberado." });
+      return;
+    }
+    setLiberandoDespacho(true);
+    const res = await liberarDespacho(pedido.idInt, motivo, ator.nome);
+    setLiberandoDespacho(false);
+    if (!res.success) {
+      showToast({ type: "error", title: "Despacho não liberado", description: res.errorMessage });
+      return;
+    }
+    setMotivoLiberacaoDespacho("");
+    setVersaoTrava((v) => v + 1);
+    showToast({ type: "success", title: "Despacho liberado", description: "Vale para um despacho deste pedido." });
+  }
+
+  async function handleRevogarDespacho() {
+    setLiberandoDespacho(true);
+    const res = await revogarDespacho(pedido.idInt, ator.nome);
+    setLiberandoDespacho(false);
+    if (!res.success) {
+      showToast({ type: "error", title: "Liberação não cancelada", description: res.errorMessage });
+      return;
+    }
+    setVersaoTrava((v) => v + 1);
+  }
 
 
   /**
@@ -868,12 +954,8 @@ export function DespacharModal({
       });
       return;
     }
-    if (divergencia.bloqueia) {
-      showToast({
-        type: "warning",
-        title: "Despacho bloqueado",
-        description: `Recote o frete antes de despachar: ${frasearMotivos(divergencia.motivosBloqueio)}.`
-      });
+    if (travaBloqueia) {
+      showToast({ type: "warning", title: "Despacho bloqueado", description: mensagemTrava });
       return;
     }
     const pesoNum = parsePesoKg(pesoKg);
@@ -1073,12 +1155,8 @@ export function DespacharModal({
       });
       return;
     }
-    if (divergencia.bloqueia) {
-      showToast({
-        type: "warning",
-        title: "Prepostagem bloqueada",
-        description: `Recote o frete antes de emitir: ${frasearMotivos(divergencia.motivosBloqueio)}.`
-      });
+    if (travaBloqueia) {
+      showToast({ type: "warning", title: "Prepostagem bloqueada", description: mensagemTrava });
       return;
     }
     const pesoNum = parsePesoKg(pesoKg);
@@ -1574,7 +1652,7 @@ export function DespacharModal({
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
-                      disabled={gerandoPrepostagem || salvando || faltantes.length > 0 || divergencia.bloqueia}
+                      disabled={gerandoPrepostagem || salvando || faltantes.length > 0 || travaBloqueia}
                       onClick={() => pedirPrepostagem("SEDEX")}
                       className="rounded-2xl bg-[#0f9f9a] px-4 py-2 text-xs font-bold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
                     >
@@ -1582,7 +1660,7 @@ export function DespacharModal({
                     </button>
                     <button
                       type="button"
-                      disabled={gerandoPrepostagem || salvando || faltantes.length > 0 || divergencia.bloqueia}
+                      disabled={gerandoPrepostagem || salvando || faltantes.length > 0 || travaBloqueia}
                       onClick={() => pedirPrepostagem("PAC")}
                       className="rounded-2xl border border-[#0f9f9a] px-4 py-2 text-xs font-bold text-[#0f9f9a] transition hover:bg-teal-50 disabled:cursor-not-allowed disabled:opacity-50"
                     >
@@ -1595,10 +1673,9 @@ export function DespacharModal({
                       Falta informar {frasearFaltantes(faltantes)}. Emitir prepostagem é contratar transporte — o mesmo
                       que o &quot;Confirmar despacho&quot; exige vale aqui.
                     </p>
-                  ) : divergencia.bloqueia ? (
+                  ) : travaBloqueia ? (
                     <p className="text-xs font-medium text-rose-700 dark:text-rose-400">
-                      Bloqueado: {frasearMotivos(divergencia.motivosBloqueio)}. Emitir prepostagem é contratar transporte — não
-                      dá para emitir um envio que não é o que foi cotado.
+                      Bloqueado: {mensagemTrava} A prepostagem segue a mesma regra do despacho.
                     </p>
                   ) : null}
                 </div>
@@ -1826,19 +1903,93 @@ export function DespacharModal({
           </div>
         ) : null}
 
+        {avaliaTrava &&
+          trava &&
+          (trava.situacao === "PRECISA_RECOTAR" ||
+            trava.situacao === "DENTRO_DO_LIMITE" ||
+            trava.situacao === "ACIMA_DO_LIMITE" ||
+            trava.situacao === "LIBERADO_ADM") && (
+            <div
+              className={
+                travaBloqueia
+                  ? "mx-5 mb-1 rounded-2xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-900 dark:border-rose-900/40 dark:bg-rose-950/30 dark:text-rose-200"
+                  : trava.situacao === "LIBERADO_ADM"
+                    ? "mx-5 mb-1 rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-900 dark:border-emerald-900/40 dark:bg-emerald-950/30 dark:text-emerald-200"
+                    : "mx-5 mb-1 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-200"
+              }
+            >
+              <p className="font-semibold">
+                {trava.situacao === "PRECISA_RECOTAR"
+                  ? "⛔ Recote o frete antes de despachar"
+                  : trava.situacao === "ACIMA_DO_LIMITE"
+                    ? "⛔ Recotação acima do limite de R$ 4,00"
+                    : trava.situacao === "LIBERADO_ADM"
+                      ? `🔓 Despacho liberado${trava.liberacao?.liberado_por_nome ? ` por ${trava.liberacao.liberado_por_nome}` : ""}`
+                      : "⚠ Recotação dentro do limite de R$ 4,00"}
+              </p>
+              {trava.situacao === "PRECISA_RECOTAR" ? (
+                <p className="mt-1">
+                  O endereço de entrega ou o transporte não são os que foram cotados. Recote o frete (bloco &quot;Recotar
+                  frete&quot;) para medir a diferença: até R$ 4,00 acima do frete da proposta, o despacho segue.
+                </p>
+              ) : trava.valor_recotado !== undefined ? (
+                <p className="mt-1">
+                  Recotado{trava.opcao?.transportadora ? ` (${trava.opcao.transportadora})` : ""}:{" "}
+                  <strong>{formatCurrency(trava.valor_recotado)}</strong>, contra{" "}
+                  <strong>{formatCurrency(trava.frete_proposta ?? 0)}</strong> na proposta —{" "}
+                  <strong>
+                    {(trava.diferenca ?? 0) > 0 ? "+" : ""}
+                    {formatCurrency(trava.diferenca ?? 0)}
+                  </strong>
+                  . O frete e o total da proposta não mudam.
+                </p>
+              ) : null}
+              {trava.situacao === "LIBERADO_ADM" && trava.liberacao ? (
+                <p className="mt-1">
+                  Motivo: {trava.liberacao.motivo}. Vale para um despacho.
+                  {podeLiberarDespacho ? (
+                    <button
+                      type="button"
+                      onClick={() => void handleRevogarDespacho()}
+                      disabled={liberandoDespacho}
+                      className="ml-2 font-semibold underline underline-offset-2 disabled:opacity-50"
+                    >
+                      Cancelar liberação
+                    </button>
+                  ) : null}
+                </p>
+              ) : null}
+              {travaBloqueia ? (
+                podeLiberarDespacho ? (
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <input
+                      value={motivoLiberacaoDespacho}
+                      onChange={(e) => setMotivoLiberacaoDespacho(e.target.value)}
+                      placeholder="Motivo da liberação (obrigatório)"
+                      aria-label="Motivo da liberação do despacho"
+                      className="min-w-[16rem] flex-1 rounded-xl border border-rose-200 bg-white px-3 py-1.5 text-xs text-slate-800 dark:border-rose-900/40 dark:bg-slate-900 dark:text-slate-100"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => void handleLiberarDespacho()}
+                      disabled={liberandoDespacho}
+                      className="rounded-xl bg-rose-700 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-rose-800 disabled:opacity-50"
+                    >
+                      {liberandoDespacho ? "Liberando..." : "Liberar despacho (ADM)"}
+                    </button>
+                  </div>
+                ) : (
+                  <p className="mt-2">Só um ADM da Expedição pode liberar o despacho com essa diferença.</p>
+                )
+              ) : null}
+            </div>
+          )}
+
         {divergencia.temAviso && !modoEdicao && (
-          <div
-            className={
-              divergencia.bloqueia
-                ? "mx-5 mb-1 rounded-2xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-900 dark:border-rose-900/40 dark:bg-rose-950/30 dark:text-rose-200"
-                : "mx-5 mb-1 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-200"
-            }
-          >
-            <p className="font-semibold">
-              {divergencia.bloqueia
-                ? "⛔ Despacho bloqueado: este envio não é o que foi cotado"
-                : "⚠ O frete cobrado pode não refletir este envio"}
-            </p>
+          <div className="mx-5 mb-1 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-200">
+            {/* Faixa que SO INFORMA. Quem trava o despacho e o painel da trava de
+                frete acima, com o veredito do banco (24/09/2026). */}
+            <p className="font-semibold">⚠ O frete cobrado pode não refletir este envio</p>
             {divergencia.transporteMudou && (
               <p className="mt-1">
                 Transporte: cotado como <strong>{labelTipoFrete(divergencia.transporteReferencia!)}</strong>, despacho
@@ -1860,12 +2011,7 @@ export function DespacharModal({
               </p>
             )}
             <p className="mt-2">
-              {divergencia.bloqueia ? (
-                <>
-                  O frete da proposta ({formatCurrency(pedido.freteValor ?? 0)}) não paga este envio. Para destravar,{" "}
-                  <strong>recote e aplique</strong> uma opção — o que depende de liberação de um administrador.
-                </>
-              ) : divergencia.pesoExcedeuMargem ? (
+              {divergencia.pesoExcedeuMargem ? (
                 <>
                   {/* PALIATIVO 26/08/2026: peso divergente avisa e NAO trava.
                       Rever quando existir o fluxo de abono ou de cobranca da
@@ -1902,12 +2048,12 @@ export function DespacharModal({
             <span className="text-xs font-medium text-amber-700 dark:text-amber-400">
               Falta informar {frasearFaltantes(faltantes)}
             </span>
-          ) : divergencia.bloqueia ? (
+          ) : travaBloqueia ? (
             <span className="text-xs font-medium text-rose-700 dark:text-rose-400">
-              Bloqueado: {frasearMotivos(divergencia.motivosBloqueio)}
+              Bloqueado: {mensagemTrava}
             </span>
           ) : null}
-          <button type="button" onClick={() => void handleConfirmar()} disabled={salvando || faltamParaSalvar || divergencia.bloqueia || bloqueioPorComplemento} className="rounded-2xl bg-[#0b2f4a] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[#123f61] disabled:cursor-not-allowed disabled:opacity-50">
+          <button type="button" onClick={() => void handleConfirmar()} disabled={salvando || faltamParaSalvar || travaBloqueia || bloqueioPorComplemento} className="rounded-2xl bg-[#0b2f4a] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[#123f61] disabled:cursor-not-allowed disabled:opacity-50">
             {salvando ? "Salvando..." : modoEdicao ? "Salvar dados" : tipoEntrega === "RETIRADA" ? "Confirmar: aguardando retirada" : "Confirmar despacho"}
           </button>
         </div>

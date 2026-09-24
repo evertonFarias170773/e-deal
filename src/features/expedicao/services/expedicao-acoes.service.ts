@@ -103,7 +103,6 @@ export type DespachoInput = {
 };
 
 import { camposMinimosDespacho, frasearFaltantes } from "../lib/campos-minimos-despacho";
-import { divergenciaFreteDoDespacho, frasearMotivos } from "../lib/divergencia-frete-despacho";
 
 const MSG_CONFLITO =
   "O pedido mudou de status em outra tela. A lista será recarregada.";
@@ -165,7 +164,9 @@ async function upsertExpedicao(
   const { error } = await client
     .from("expedicoes")
     .upsert({ id_int: idInt, updated_at: new Date().toISOString(), ...campos }, { onConflict: "id_int" });
-  if (error) return { success: false, error: error.message };
+  // A trava de frete do despacho (trigger no banco) recusa com um codigo na
+  // frente da mensagem; quem le e o expedidor, entao vai so o texto.
+  if (error) return { success: false, error: error.message.replace(/^EXP_DESPACHO_TRAVA_FRETE:\s*/, "") };
   return { success: true };
 }
 
@@ -483,44 +484,25 @@ export async function despachar(
   // Regra das três saídas em `lib/destino-despacho.ts`. `null` = sem transição.
   const destino = destinoDoDespacho(input.tipoEntrega, input.tipoFrete);
 
-  // Divergência bloqueante. A UI já barra, mas ela é só a UI: o despacho é
-  // PostgREST direto do browser, sem rota de API que revalide (§3.5 do
-  // EXPEDICAO.md). A referência de peso/CEP é a ÚLTIMA recotação aplicada
-  // quando houver — `cotacao_frete` não muda ao aplicar uma —, e só na falta
-  // dela a cotação escolhida.
-  const [{ data: cot }, { data: ultimaRecot }, { data: endereco }] = await Promise.all([
-    client.from("cotacao_frete").select("servico, peso, cep").eq("id_int", idInt).eq("escolhido", true).limit(1).maybeSingle(),
-    client
-      .from("expedicao_recotacoes")
-      .select("peso_gramas, cep")
-      .eq("id_int", idInt)
-      .order("aplicado_em", { ascending: false })
-      .limit(1)
-      .maybeSingle(),
-    input.idEnderecoEntrega
-      ? client.from("enderecos").select("cep").eq("id", input.idEnderecoEntrega).maybeSingle()
-      : Promise.resolve({ data: null } as { data: { cep: string | null } | null })
-  ]);
-
-  const divergencia = divergenciaFreteDoDespacho({
-    cotacao: {
-      pesoGramas: ultimaRecot ? ultimaRecot.peso_gramas : cot?.peso,
-      cep: ultimaRecot ? ultimaRecot.cep : cot?.cep,
-      valor: propAtual?.valor_frete,
-      servico: cot?.servico,
-      existe: Boolean(cot)
-    },
-    pesoAferidoGramas: input.pesoKg !== null ? Math.round(input.pesoKg * 1000) : null,
-    cepDestino: endereco?.cep ?? null,
-    modalidadeEfetiva: input.modalidadeFrete,
-    tipoFreteEscolhido: input.tipoFrete,
-    tipoFreteJaDespachado: null
+  // TRAVA DE FRETE (24/09/2026). Quem garante e a trigger
+  // `trg_exp_trava_frete_despacho`, no banco: o despacho e PostgREST direto do
+  // browser (§3.5 do EXPEDICAO.md), e so o banco nao e contornavel. Aqui a mesma
+  // funcao e consultada ANTES de gravar, para recusar com a mensagem certa em
+  // vez do erro cru da trigger. Com CEP ou transporte diferentes do cotado, vale
+  // a ultima recotacao para o CEP de agora: ate R$ 4,00 acima do frete da
+  // proposta passa; acima, ou sem recotacao, so com liberacao de ADM.
+  const { data: endereco } = input.idEnderecoEntrega
+    ? await client.from("enderecos").select("cep").eq("id", input.idEnderecoEntrega).maybeSingle()
+    : { data: null as { cep: string | null } | null };
+  const { data: trava } = await client.rpc("exp_trava_frete_despacho", {
+    p_id_int: idInt,
+    p_cep_destino: endereco?.cep ?? null,
+    p_tipo_frete: input.tipoFrete,
+    p_modalidade: input.modalidadeFrete
   });
-  if (divergencia.bloqueia) {
-    return {
-      success: false,
-      error: `Recote o frete antes de despachar: ${frasearMotivos(divergencia.motivosBloqueio)}.`
-    };
+  const veredito = trava as { bloqueia?: boolean; mensagem?: string } | null;
+  if (veredito?.bloqueia) {
+    return { success: false, error: veredito.mensagem || "Despacho bloqueado pela diferença de frete." };
   }
 
   // Leitura de cortesia: pega a aba obsoleta ANTES de escrever, no caso comum.

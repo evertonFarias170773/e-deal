@@ -7,7 +7,11 @@ import { cotarOpcoesFretePorEndereco } from "@/features/maestro/core/agent/maest
 import type { ModalidadeFrete } from "@/features/expedicao/types";
 
 /**
- * Recotação de frete do despacho — SOMENTE LEITURA (Parte C, Etapa 1).
+ * Recotação de frete do despacho (Parte C, Etapa 1).
+ *
+ * DESDE 24/09/2026 cada recotação é REGISTRADA em
+ * `expedicao_recotacao_consultas` — ver o bloco antes da resposta. O restante
+ * abaixo continua valendo: nada do frete nem do total da proposta é gravado.
  *
  * O QUE FAZ
  *   Cota o frete de novo a partir dos dados reais do pedido (endereço de entrega,
@@ -31,6 +35,14 @@ import type { ModalidadeFrete } from "@/features/expedicao/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+/** Unico cliente que escreve em `expedicao_recotacao_consultas` (RLS fecha para authenticated). */
+function clienteServiceRole() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !serviceKey) return null;
+  return createSupabaseClient(url, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });
+}
 
 /** Alçada do expedidor, medida sobre o VALOR DO FRETE NOVO — não sobre a diferença. */
 const ALCADA_EXPEDIDOR = 150;
@@ -225,8 +237,55 @@ export async function POST(request: Request) {
     dentroDaAlcada: o.valor <= ALCADA_EXPEDIDOR
   }));
 
+  // REGISTRO DA RECOTACAO (24/09/2026). E a fonte da trava do despacho: com CEP
+  // ou transporte diferentes do cotado, o banco compara a opcao do transporte
+  // escolhido com o frete da proposta (ate R$ 4,00 acima so avisa). Gravado com
+  // service role porque authenticated NAO insere nessa tabela — senao qualquer
+  // um forjaria uma recotacao barata para passar pela trava. Sem registro, a
+  // recotacao nao vale para o despacho, e o expedidor precisa saber disso.
+  const service = clienteServiceRole();
+  const cepDigitos = String(endereco.cep).replace(/\D/g, "");
+  const { data: usuarioRow } = await supabase
+    .from("usuarios")
+    .select("nome_usuario")
+    .eq("user_id", authData.user.id)
+    .maybeSingle();
+  const registro = service
+    ? await service
+        .from("expedicao_recotacao_consultas")
+        .insert({
+          id_int: idInt,
+          autor_uid: authData.user.id,
+          autor_nome: usuarioRow?.nome_usuario ?? authData.user.email ?? null,
+          frete_proposta: Number(freteAtual.toFixed(2)),
+          cep: cepDigitos,
+          id_endereco_entrega: endereco.id ? String(endereco.id) : null,
+          peso_gramas: pesoGramas,
+          opcoes: opcoes.map((o) => ({
+            id: o.id,
+            transportadora: o.transportadora,
+            servico: o.servico,
+            valor: o.valor,
+            prazo: o.prazo
+          }))
+        })
+        .select("id")
+        .single()
+    : null;
+  if (!registro || registro.error || !registro.data) {
+    console.error("[recotacao/cotar] Falha ao registrar a recotacao:", registro?.error?.message ?? "service role ausente");
+    return NextResponse.json(
+      {
+        success: false,
+        message: "A recotação foi feita, mas não pôde ser registrada — e o despacho depende do registro. Tente de novo."
+      },
+      { status: 500 }
+    );
+  }
+
   return NextResponse.json({
     success: true,
+    idConsulta: Number(registro.data.id),
     freteAtual,
     subtotalItens,
     pesoGramas,

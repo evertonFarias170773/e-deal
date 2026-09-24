@@ -126,6 +126,33 @@ export async function POST(request: Request) {
     );
   }
 
+  // TRAVA DE FRETE (24/09/2026): a mesma regra do despacho, pela mesma funcao do
+  // banco, ANTES de falar com os Correios — recusar depois deixaria um objeto
+  // orfao do lado deles. So antes do despacho: depois dele a trava ja foi
+  // cumprida, e a recotacao nem e permitida (rota `cotar`), entao cobrar aqui
+  // prenderia a reemissao de uma prepostagem cancelada sem saida.
+  if (!exp?.data_despacho) {
+    const { data: trava, error: erroTrava } = await supabase.rpc("exp_trava_frete_despacho", {
+      p_id_int: idInt,
+      p_cep_destino: String(endereco.cep),
+      p_tipo_frete: "CORREIOS",
+      p_modalidade: null
+    });
+    if (erroTrava) {
+      return NextResponse.json(
+        { success: false, message: "Não foi possível conferir a diferença de frete. Tente de novo." },
+        { status: 500 }
+      );
+    }
+    const veredito = trava as { bloqueia?: boolean; mensagem?: string } | null;
+    if (veredito?.bloqueia) {
+      return NextResponse.json(
+        { success: false, message: veredito.mensagem || "Prepostagem bloqueada pela diferença de frete." },
+        { status: 409 }
+      );
+    }
+  }
+
   /**
    * Destinatario escolhido no despacho (24/08/2026). Mesma resolucao da etiqueta
    * 10x15, pela mesma funcao: id que nao seja o cliente nem o pagador cai no

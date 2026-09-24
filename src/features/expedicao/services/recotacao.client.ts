@@ -3,9 +3,10 @@ import { getSupabaseClient } from "@/lib/supabase/client";
 /**
  * Cliente da recotação de frete do despacho (Parte C, Etapa 1).
  *
- * A rota é READ-ONLY: cota e devolve. Nada é gravado — nem em `cotacao_frete`,
- * nem em `propostas.valor_frete`/`valor_total`, nem na Conta Corrente. Gravar o
- * valor e lançar a diferença são as etapas seguintes.
+ * A rota cota e devolve. Desde 24/09/2026 ela REGISTRA o resultado em
+ * `expedicao_recotacao_consultas` (so o servidor grava ali) — e a fonte da trava
+ * do despacho. Frete e total da proposta continuam intocados: nem
+ * `cotacao_frete`, nem `propostas.valor_frete`/`valor_total`, nem Conta Corrente.
  *
  * Mesmo desenho de `correios.client.ts`: o token sai da sessão do browser e vai
  * no header, porque a rota autentica por Bearer OU cookie.
@@ -186,4 +187,94 @@ export async function buscarLiberacaoAtiva(
     liberadoEm: String(data.liberado_em),
     liberadoPorNome: data.liberado_por_nome ?? null
   };
+}
+
+/**
+ * Veredito da trava de frete do despacho (regra de 24/09/2026), calculado NO
+ * BANCO por `exp_trava_frete_despacho` — a mesma funcao que a trigger de
+ * `expedicoes` usa para recusar o despacho. A tela so pergunta; nao decide.
+ *
+ * Com CEP ou transporte diferentes do cotado, vale a ultima recotacao feita
+ * para o CEP de agora: ate R$ 4,00 acima do frete da proposta so avisa, acima
+ * trava, e sem recotacao pede para recotar. Liberacao de ADM destrava.
+ */
+export interface TravaFreteDespacho {
+  bloqueia: boolean;
+  situacao:
+    | "SEM_PROPOSTA"
+    | "FORA_DE_CIF"
+    | "SEM_COTACAO"
+    | "SEM_DIVERGENCIA"
+    | "PRECISA_RECOTAR"
+    | "DENTRO_DO_LIMITE"
+    | "ACIMA_DO_LIMITE"
+    | "LIBERADO_ADM";
+  mensagem?: string;
+  precisa_recotar?: boolean;
+  cep_mudou?: boolean;
+  transporte_mudou?: boolean;
+  frete_proposta?: number;
+  valor_recotado?: number;
+  diferenca?: number;
+  limite?: number;
+  opcao?: { transportadora?: string; servico?: string; valor?: number } | null;
+  liberacao?: { id: number; liberado_em: string; liberado_por_nome: string | null; motivo: string } | null;
+}
+
+/** Null = nao foi possivel avaliar agora (a trava do banco segue valendo no despacho). */
+export async function avaliarTravaFreteDespacho(entrada: {
+  idInt: number;
+  cepDestino: string | null;
+  tipoFrete: string | null;
+  modalidade: string | null;
+}): Promise<TravaFreteDespacho | null> {
+  const client = getSupabaseClient();
+  if (!client) return null;
+  const { data, error } = await client.rpc("exp_trava_frete_despacho", {
+    p_id_int: entrada.idInt,
+    p_cep_destino: entrada.cepDestino,
+    p_tipo_frete: entrada.tipoFrete,
+    p_modalidade: entrada.modalidade
+  });
+  if (error || !data) return null;
+  return data as TravaFreteDespacho;
+}
+
+/** "EXP_LIB_DESP_MOTIVO: informe o motivo" -> "informe o motivo". */
+function mensagemDoBanco(texto: string | undefined, padrao: string): string {
+  const limpo = String(texto ?? "").replace(/^[A-Z0-9_]+:\s*/, "").trim();
+  return limpo || padrao;
+}
+
+/**
+ * Liberacao do despacho pelo ADM, com qualquer diferenca de frete. A permissao
+ * (`expedicao.admin`) e conferida DENTRO da funcao do banco, que grava quem
+ * liberou (auth.uid) — o nome enviado aqui e so o rotulo legivel. Uso unico:
+ * o despacho a consome.
+ */
+export async function liberarDespacho(
+  idInt: number,
+  motivo: string,
+  autorNome: string | null
+): Promise<{ success: boolean; errorMessage?: string }> {
+  const client = getSupabaseClient();
+  if (!client) return { success: false, errorMessage: "Supabase não inicializado." };
+  const { error } = await client.rpc("exp_liberar_despacho", {
+    p_id_int: idInt,
+    p_motivo: motivo,
+    p_autor_nome: autorNome
+  });
+  if (error) return { success: false, errorMessage: mensagemDoBanco(error.message, "Não foi possível liberar o despacho.") };
+  return { success: true };
+}
+
+export async function revogarDespacho(
+  idInt: number,
+  autorNome: string | null
+): Promise<{ success: boolean; errorMessage?: string }> {
+  const client = getSupabaseClient();
+  if (!client) return { success: false, errorMessage: "Supabase não inicializado." };
+  const { error } = await client.rpc("exp_revogar_despacho", { p_id_int: idInt, p_autor_nome: autorNome });
+  if (error) return { success: false, errorMessage: mensagemDoBanco(error.message, "Não foi possível cancelar a liberação.") };
+  return { success: true };
 }

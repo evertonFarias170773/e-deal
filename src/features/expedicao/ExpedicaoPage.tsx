@@ -1404,6 +1404,7 @@ export function ExpedicaoPage() {
           pedido={pedidoDespacho.pedido}
           modoEdicao={pedidoDespacho.modo === "EDICAO"}
           ator={atorAtual()}
+          podeLiberarDespacho={canAdminExpedicao}
           onClose={() => setPedidoDespacho(null)}
           onDone={() => { setPedidoDespacho(null); void recarregar(); }}
         />
