@@ -9,6 +9,8 @@ type ProductSearchSelectorProps = {
   loadingProdutos: boolean;
   onAddProduct: (productId: string) => void;
   itensAtuais: PropostaItem[];
+  /** `id_cliente` do pedido: decide se a tag "Dseg" aparece (so para o 8469). */
+  idCliente?: number | null;
 };
 
 const allowedCategories = [
@@ -19,7 +21,30 @@ const allowedCategories = [
   "Credencial"
 ];
 
+/**
+ * Tag "Dseg" (25/09/2026): primeira da fila, SO para o cliente 8469. Os produtos
+ * Dseg nao tem categoria propria (hoje estao em "Pulseiras" e "Pulseiras de
+ * Identificacao para eventos"), entao o criterio e o nome, como o da tag
+ * "Credencial": produto ativo cujo nomeReal comeca com "Dseg" — #9000, #9002,
+ * #9003 e #9004 em 25/09/2026.
+ */
+const TAG_DSEG = "Dseg";
+const ID_CLIENTE_DSEG = 8469;
+
+/**
+ * Tags com criterio EXCLUSIVO por inicio do nome (sem apelido nem categoria), no
+ * lugar da busca textual das demais: tag -> prefixo normalizado do nomeReal.
+ */
+const PRESETS_POR_NOME: Record<string, string> = {
+  Credencial: "credencial",
+  [TAG_DSEG]: "dseg"
+};
+
 const TAG_STYLES: Record<string, { active: string; inactive: string }> = {
+  [TAG_DSEG]: {
+    inactive: "border-black bg-black text-white hover:bg-slate-800 hover:border-slate-800",
+    active: "border-black bg-black text-white shadow-sm ring-2 ring-slate-400/60"
+  },
   "Ingressos de segurança": {
     inactive: "border-indigo-100 bg-indigo-50/60 text-indigo-700 hover:bg-indigo-100/80 hover:border-indigo-200",
     active: "border-indigo-400 bg-indigo-100 text-indigo-900 shadow-sm ring-2 ring-indigo-200/50"
@@ -68,11 +93,13 @@ export function ProductSearchSelector({
   produtos,
   loadingProdutos,
   onAddProduct,
-  itensAtuais
+  itensAtuais,
+  idCliente
 }: ProductSearchSelectorProps) {
+  const tags = Number(idCliente) === ID_CLIENTE_DSEG ? [TAG_DSEG, ...allowedCategories] : allowedCategories;
   const [searchQuery, setSearchQuery] = useState("");
   // activePreset armazena o botão de filtro rápido selecionado, separado da busca textual.
-  // "Credencial" usa regra exclusiva; demais presets operam via searchQuery normal.
+  // "Credencial" e "Dseg" usam regra exclusiva (PRESETS_POR_NOME); demais presets operam via searchQuery normal.
   const [activePreset, setActivePreset] = useState<string | null>(null);
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -88,12 +115,13 @@ export function ProductSearchSelector({
   }, []);
 
   const filteredProducts = useMemo(() => {
-    // Preset exclusivo "Credencial":
-    // filtra apenas produtos ativos cujo nomeReal começa com "credencial" (sem apelidos, sem categoria)
-    if (activePreset === "Credencial" && !searchQuery) {
+    // Presets exclusivos por nome ("Credencial", "Dseg"):
+    // filtram apenas produtos ativos cujo nomeReal começa com o prefixo (sem apelidos, sem categoria)
+    const prefixoDoPreset = activePreset ? PRESETS_POR_NOME[activePreset] : undefined;
+    if (prefixoDoPreset && !searchQuery) {
       return produtos.filter((p) => {
         if (!p.ativo) return false;
-        return normalize(p.nomeReal).startsWith("credencial");
+        return normalize(p.nomeReal).startsWith(prefixoDoPreset);
       });
     }
 
@@ -124,10 +152,10 @@ export function ProductSearchSelector({
   };
 
   const handleTagClick = (tagLabel: string) => {
-    if (tagLabel === "Credencial") {
+    if (PRESETS_POR_NOME[tagLabel]) {
       // Preset com critério exclusivo: limpa o texto e ativa apenas o preset
       setSearchQuery("");
-      setActivePreset("Credencial");
+      setActivePreset(tagLabel);
     } else {
       // Demais presets: comportamento original via busca textual
       setActivePreset(null);
@@ -148,15 +176,15 @@ export function ProductSearchSelector({
     <div className="space-y-4" ref={containerRef}>
       {/* Category Tags */}
       <div className="flex flex-wrap gap-2">
-        {allowedCategories.map((cat) => {
+        {tags.map((cat) => {
           let isTagActive = false;
-          if (cat === "Credencial") {
+          if (PRESETS_POR_NOME[cat]) {
             // Ativo apenas quando o preset exclusivo está selecionado
-            isTagActive = activePreset === "Credencial";
+            isTagActive = activePreset === cat;
           } else {
             const catNormalized = getCorrectedCategoryNormalized(cat);
             const queryNormalized = getCorrectedCategoryNormalized(searchQuery);
-            isTagActive = queryNormalized === catNormalized && searchQuery !== "" && activePreset !== "Credencial";
+            isTagActive = queryNormalized === catNormalized && searchQuery !== "" && activePreset === null;
           }
 
           const style = TAG_STYLES[cat] || {

@@ -410,6 +410,11 @@ async function fetchFotosProdutos() {
     .from("fotosProdutos")
     .select(FOTOS_SELECT)
     .order("idProduto", { ascending: true })
+    // A "principal" nao existe no banco: e a PRIMEIRA foto de cada produto
+    // (groupRelations). Sem desempate por id a ordem dentro do produto era a
+    // que o Postgres quisesse devolver — depois de uma exclusao, a nova
+    // principal podia ser qualquer uma. Por id, e a mais antiga que sobrou.
+    .order("id", { ascending: true })
     .returns<SupabaseProdutoFotoRow[]>();
 
   if (error) {
@@ -1035,6 +1040,54 @@ export async function uploadProdutoFotoReal({
     path: uploadResult.data.path,
     publicUrl
   };
+}
+
+/**
+ * Exclui UMA foto do cadastro do produto (25/09/2026).
+ *
+ * APAGA SO A LINHA de `public.fotosProdutos`. O ARQUIVO FICA NO BUCKET, de
+ * proposito — a mesma URL publica e referenciada fora do cadastro:
+ *   - `pedidos_modelos.amostra_arte_base64` guarda a URL da foto do catalogo
+ *     como amostra do modelo (238 modelos em 58 propostas em 25/09; gravado
+ *     por sistema FORA deste repositorio). A aba Pedido e o PDF da OS leem a
+ *     URL ao vivo;
+ *   - "Duplicar produto" (`copiarFotosProduto`) aponta o duplicado para o
+ *     MESMO arquivo;
+ *   - o historico do Maestro exibe fotos pela URL.
+ * Apagar o objeto quebraria todos esses. Sem a linha, a foto some do catalogo,
+ * da tela do produto e do Maestro (views sobre esta tabela), e so.
+ *
+ * O produto pode ficar sem foto nenhuma. Nao ha "principal" gravada: ela e a
+ * primeira por id na leitura, entao a proxima assume sozinha.
+ *
+ * `select("id")` para distinguir "apagou" de "nao achou a linha" — sem ele o
+ * DELETE que nao atinge nada volta como sucesso.
+ */
+export async function excluirFotoProduto(fotoId: string): Promise<{ success: boolean; message: string }> {
+  const client = getSupabaseClient();
+  if (!client) {
+    return { success: false, message: "Cliente Supabase indisponível para excluir a foto." };
+  }
+
+  const idNumerico = Number(String(fotoId).replace(/^foto_/, ""));
+  if (!Number.isInteger(idNumerico) || idNumerico <= 0) {
+    return { success: false, message: "Foto sem identificador no banco; recarregue a página e tente de novo." };
+  }
+
+  const { data, error } = await client
+    .from("fotosProdutos")
+    .delete()
+    .eq("id", idNumerico)
+    .select("id");
+
+  if (error) {
+    return { success: false, message: error.message || "Não foi possível excluir a foto." };
+  }
+  if (!data || data.length === 0) {
+    return { success: false, message: "Esta foto não existe mais no cadastro. Recarregue a página." };
+  }
+
+  return { success: true, message: "Foto excluída do cadastro." };
 }
 
 export async function getProdutosReadOnlyList(): Promise<ProdutosReadResult> {

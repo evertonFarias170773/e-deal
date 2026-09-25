@@ -14,6 +14,7 @@ import {
   PRODUCT_IMAGES_BUCKET,
   copiarFotosProduto,
   createProdutoReal,
+  excluirFotoProduto,
   getProdutoByIdProduto,
   listCategoriasProdutos,
   listProdutos,
@@ -549,6 +550,40 @@ export function ProdutoFormPage({ mode, produto, duplicarDe }: ProdutoFormPagePr
       form.fotos.map((foto) => ({ ...foto, principal: foto.id === id }))
     );
     showToast({ type: "info", title: "Foto principal marcada", description: "Alteração visual aplicada apenas na tela." });
+  }
+
+  /**
+   * Exclui a foto do CADASTRO, na hora, apos confirmacao. O arquivo continua no
+   * bucket — ver `excluirFotoProduto`. Vale imediatamente (como o upload), nao
+   * espera o "Salvar produto".
+   *
+   * Se a excluida era a principal, a proxima da lista assume: e a mesma regra
+   * da leitura (primeira por id), entao a tela ja mostra o que o banco vai
+   * devolver ao recarregar.
+   */
+  async function excluirFoto(fotoId: string) {
+    const confirmado = window.confirm(
+      "Excluir esta foto do cadastro do produto?\n\nEla some do catálogo, da tela do produto e do Maestro. O arquivo continua guardado, então pedidos que já usam essa imagem não são afetados."
+    );
+    if (!confirmado) return;
+
+    const result = await excluirFotoProduto(fotoId);
+    if (!result.success) {
+      showToast({ type: "error", title: "Não foi possível excluir a foto", description: result.message });
+      return;
+    }
+
+    const restantes = form.fotos.filter((foto) => foto.id !== fotoId);
+    const temPrincipal = restantes.some((foto) => foto.principal);
+    updateField(
+      "fotos",
+      temPrincipal ? restantes : restantes.map((foto, index) => ({ ...foto, principal: index === 0 }))
+    );
+    showToast({
+      type: "success",
+      title: "Foto excluída",
+      description: restantes.length ? "A foto saiu do cadastro do produto." : "A foto saiu do cadastro. O produto ficou sem fotos."
+    });
   }
 
   function openVariationModal() {
@@ -1231,7 +1266,7 @@ export function ProdutoFormPage({ mode, produto, duplicarDe }: ProdutoFormPagePr
       <FormSection
         id="fotos"
         title="Fotos"
-        description={`Envie novas imagens para o bucket ${PRODUCT_IMAGES_BUCKET}, pasta produtos. Exclusão de imagem não está liberada nesta etapa.`}
+        description={`Envie novas imagens para o bucket ${PRODUCT_IMAGES_BUCKET}, pasta produtos.`}
         action={<AddFotoInput file={selectedFotoFile} onChange={setSelectedFotoFile} onAdd={addFoto} isUploading={isUploadingFoto} />}
       >
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -1246,7 +1281,8 @@ export function ProdutoFormPage({ mode, produto, duplicarDe }: ProdutoFormPagePr
                 <ActionsMenu
                   label="Acoes"
                   items={[
-                    { label: "Marcar principal", onClick: () => setFotoPrincipal(foto.id), disabled: foto.principal }
+                    { label: "Marcar principal", onClick: () => setFotoPrincipal(foto.id), disabled: foto.principal },
+                    { label: "Excluir", destructive: true, onClick: () => void excluirFoto(foto.id) }
                   ]}
                 />
               </div>

@@ -6338,6 +6338,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                   loadingProdutos={loadingProdutos}
                   onAddProduct={addProduct}
                   itensAtuais={form.itens}
+                  idCliente={Number(form.clienteId) || null}
                 />
 
 
