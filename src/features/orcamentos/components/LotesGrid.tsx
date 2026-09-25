@@ -33,13 +33,22 @@
  *   amostra — a regra vive em `ModeloCampos` (`modo="lista"`). O nome do
  *   lote, que não tem campo ali, é o do produto (`nomeDoLote`).
  *
- * GRAVA SOZINHA, PELA ROTA DA PRÓPRIA GRADE (23/09/2026)
- *   A cada campo ou dropdown alterado a lista inteira vai para a rota em
- *   massa, com debounce nos campos digitados e na hora nos selects — o mesmo
- *   ritmo do card. Não é o caminho do card (`criarModelo` /
- *   `atualizarModeloParcial`) de propósito: aquele valida cada lote contra o
- *   saldo do item, que é justamente a regra que a lista inverte. Decisão do
- *   dono, depois de mapeadas as duas opções.
+ * GRAVA UMA VEZ SÓ, EM "GRAVAR LOTE" (25/09/2026)
+ *   O salvamento automático saiu (23/09 a 25/09). Gravando a cada campo, a
+ *   primeira linha preenchida de uma grade de 10 já disparava a confirmação de
+ *   redução (soma 2 x item 10), cada gravação recotava o frete, e a linha
+ *   gravada enquanto outra ficava completa perdia o id e era inserida de novo.
+ *   Agora o usuário monta a grade inteira e grava uma vez: a rota compara a
+ *   soma com a quantidade do item, pede a confirmação se faltar, grava e
+ *   recalcula o que precisar, uma vez. Com alteração não gravada, sair da aba,
+ *   ir para os cards ou fechar a página pergunta antes (`onAlteracoesNaoGravadas`).
+ *   Em proposta com cobrança nada muda: a grade espelha no formulário e grava
+ *   pelo Salvar da proposta (`onPendente`).
+ *   Os ids das linhas novas saem das chaves ENVIADAS (`chavesNovas`), nunca de
+ *   uma recontagem da tela depois da resposta — era isso que duplicava lote.
+ *   A rota é a da grade, não o caminho do card (`criarModelo` /
+ *   `atualizarModeloParcial`): aquele valida cada lote contra o saldo do item,
+ *   que é justamente a regra que a lista inverte.
  *
  *   O que segura a gravação:
  *     - linha NOVA sem os obrigatórios (nome, Qtd, cor quando o produto a
@@ -47,9 +56,6 @@
  *     - linha que JÁ EXISTE no banco e ficou incompleta segura o envio inteiro:
  *       mandar sem ela faria a rota calcular a quantidade do item sem um lote
  *       que continua lá; mandar com ela seria recusado;
- *     - a Qtd digitada só grava ao sair do campo (blur ou Enter), nunca no
- *       meio da digitação: "3" a caminho de "30" reduziria a soma e abriria a
- *       confirmação de redução antes de o número existir.
  *   A quantidade do item só é regravada quando a soma mudou de fato — a rota
  *   compara antes de escrever; cor, bloco e numerador não mexem nela.
  *
@@ -93,9 +99,6 @@ import type { PedidoModeloState } from "@/features/orcamentos/types";
 
 /** Teto para a criação em lote: acima disso é engano de digitação, não pedido. */
 const MAX_LINHAS_DE_UMA_VEZ = 200;
-
-/** Espera antes de gravar campos digitados — o mesmo valor do card. */
-const DEBOUNCE_MS = 600;
 
 export type LinhaLote = {
   /** `pedidos_modelos.id` quando a linha já existe no banco. */
@@ -192,7 +195,8 @@ export function LotesGrid({
   onGravado,
   onSair,
   onAmpliarArte,
-  onPendente
+  onPendente,
+  onAlteracoesNaoGravadas
 }: {
   idInt: number;
   /**
@@ -246,6 +250,8 @@ export function LotesGrid({
    * gravada pelo Salvar da proposta, no caminho de proposta paga (editar-paga).
    * Ausente = sem cobrança, auto-save de sempre.
    */
+  /** Sem cobrança: avisa o pai se há alteração não gravada (aviso ao sair da aba). */
+  onAlteracoesNaoGravadas?: (naoGravadas: boolean) => void;
   onPendente?: (pendente: {
     lotes: Array<LinhaLote & { chave: string }>;
     removerIds: number[];
@@ -298,6 +304,8 @@ export function LotesGrid({
   const montadoRef = useRef(true);
   /** O que já está no banco. Igual ao que seria enviado = nada a gravar. */
   const ultimaAssinaturaRef = useRef<string | null>(null);
+  /** Retrato do último estado gravado — base do aviso de alteração não gravada. */
+  const retratoGravadoRef = useRef<string | null>(null);
 
   function mutar(fn: (atual: Lote[]) => Lote[]) {
     const proximo = fn(linhasRef.current);
@@ -324,7 +332,7 @@ export function LotesGrid({
   useEffect(() => {
     if (chaveSemeadaRef.current === chaveIniciais) return;
     chaveSemeadaRef.current = chaveIniciais;
-    if (salvandoRef.current || pendenteRef.current || timerRef.current) return;
+    if (salvandoRef.current || pendenteRef.current || timerRef.current || naoGravadoRef.current) return;
     const idsDaGrade = new Set(linhasRef.current.map((l) => l.id).filter((id): id is number => id != null));
     const idsDoPai = new Set(linhasIniciais.map((l) => l.id).filter((id): id is number => id != null));
     const mesmosIds = idsDaGrade.size === idsDoPai.size && [...idsDoPai].every((id) => idsDaGrade.has(id));
@@ -457,7 +465,9 @@ export function LotesGrid({
   }
 
   /** O que seria enviado agora, ou o motivo de não enviar. */
-  function prepararEnvio(): { lotes: ReturnType<typeof montarLote>[]; removerIds: number[] } | { segurar: string } {
+  function prepararEnvio():
+    | { lotes: ReturnType<typeof montarLote>[]; removerIds: number[]; chavesNovas: string[] }
+    | { segurar: string } {
     const numeradas = numerar(linhasRef.current, modoRef.current);
     const existenteIncompleta = numeradas.find((l) => l.id && !completa(l));
     if (existenteIncompleta) {
@@ -468,7 +478,23 @@ export function LotesGrid({
     if (enviaveis.length === 0 && removerIds.length === 0) return { segurar: "" };
     // Mesma regra do "Gravar lote" (ex-"Fechar lote") de sempre: sem quantidade nenhuma não há o que gravar.
     if (somaQuantidades(enviaveis) <= 0) return { segurar: "Informe a quantidade de pelo menos um lote." };
-    return { lotes: enviaveis.map(montarLote), removerIds };
+    // A chave de cada linha NOVA enviada, na ordem do envio: é por ela que o id
+    // devolvido pela rota volta para a linha certa.
+    const chavesNovas = enviaveis.filter((l) => !l.id).map((l) => l.chave);
+    return { lotes: enviaveis.map(montarLote), removerIds, chavesNovas };
+  }
+
+  /**
+   * O que a grade tem de gravável agora, para saber se há alteração não
+   * gravada: linhas do banco, linhas novas com Qtd e as exclusões. Linha nova
+   * vazia (criada pelo "+ N linhas" e não preenchida) não conta.
+   */
+  function retratoDaGrade(): string {
+    const numeradas = numerar(linhasRef.current, modoRef.current);
+    return JSON.stringify({
+      l: numeradas.filter((l) => l.id || l.quantidade !== "").map(montarLote),
+      r: removidosRef.current
+    });
   }
 
   const assinaturaDe = (envio: { lotes: unknown[]; removerIds: number[] }) =>
@@ -481,7 +507,24 @@ export function LotesGrid({
     if (ultimaAssinaturaRef.current !== null) return;
     const inicial = prepararEnvio();
     ultimaAssinaturaRef.current = "segurar" in inicial ? "" : assinaturaDe(inicial);
+    retratoGravadoRef.current = retratoDaGrade();
   });
+
+  // Alteração não gravada: compara com o retrato do último estado gravado.
+  // Proposta com cobrança fica de fora: lá a grade vive no formulário.
+  const [naoGravado, setNaoGravado] = useState(false);
+  const naoGravadoRef = useRef(false);
+  useEffect(() => {
+    if (onPendente || retratoGravadoRef.current === null) return;
+    const sim = retratoDaGrade() !== retratoGravadoRef.current;
+    naoGravadoRef.current = sim;
+    setNaoGravado(sim);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [linhas, modoNumeracao]);
+  useEffect(() => {
+    onAlteracoesNaoGravadas?.(naoGravado);
+  }, [naoGravado, onAlteracoesNaoGravadas]);
+  useEffect(() => () => onAlteracoesNaoGravadas?.(false), [onAlteracoesNaoGravadas]);
 
   async function executarSave(opcoes: { forcado?: boolean; confirmarReducao?: boolean } = {}) {
     const { forcado = false, confirmarReducao = false } = opcoes;
@@ -552,12 +595,14 @@ export function LotesGrid({
       const devolvidos = (Array.isArray(dados.lotes) ? dados.lotes : []) as Record<string, unknown>[];
       const idsConhecidos = new Set(envio.lotes.map((l) => Number(l.id)).filter((id) => id > 0));
       const novosDevolvidos = devolvidos.filter((d) => !idsConhecidos.has(Number(d.id)));
-      const chavesNovas = numerar(linhasRef.current, modoRef.current)
-        .filter((l) => !l.id && completa(l))
-        .map((l) => l.chave);
+      // Pelas chaves ENVIADAS, não por uma recontagem da tela: uma linha que
+      // ficou completa depois do envio não pode roubar o id de outra.
+      const chavesNovas = envio.chavesNovas;
       const idPorChave = new Map<string, number>();
       if (novosDevolvidos.length === chavesNovas.length) {
         chavesNovas.forEach((chave, i) => idPorChave.set(chave, Number(novosDevolvidos[i].id)));
+      } else {
+        console.warn(`[LotesGrid] ${chavesNovas.length} lote(s) novo(s) enviados, ${novosDevolvidos.length} devolvido(s): ids não aplicados.`);
       }
       const porId = new Map(devolvidos.map((d) => [Number(d.id), d] as const));
       mutar((atual) =>
@@ -575,6 +620,9 @@ export function LotesGrid({
       removidosRef.current = [];
       const depois = prepararEnvio();
       ultimaAssinaturaRef.current = "segurar" in depois ? "" : assinaturaDe(depois);
+      retratoGravadoRef.current = retratoDaGrade();
+      naoGravadoRef.current = false;
+      if (montadoRef.current) setNaoGravado(false);
 
       setStatusSeMontado("saved");
       onGravado({
@@ -603,44 +651,13 @@ export function LotesGrid({
     }
   }
 
-  // A limpeza do efeito de desmontagem captura a função do primeiro render;
-  // esta ref garante que ela chame sempre a versão atual.
-  const saveRef = useRef(executarSave);
-  useEffect(() => {
-    saveRef.current = executarSave;
-  });
-
-  const agendarSave = (imediato: boolean) => {
-    if (timerRef.current) clearTimeout(timerRef.current);
-    if (imediato) {
-      void saveRef.current();
-      return;
-    }
-    timerRef.current = setTimeout(() => {
-      timerRef.current = null;
-      void saveRef.current();
-    }, DEBOUNCE_MS);
-  };
-
-  /** Libera a gravação pendente (blur dos campos digitados, Enter na Qtd). */
-  const flushSave = () => {
-    if (timerRef.current) {
-      clearTimeout(timerRef.current);
-      timerRef.current = null;
-    }
-    void saveRef.current();
-  };
-
-  // Sair da grade ou trocar de aba com alteração pendente: grava antes de sumir.
+  // Desmontagem: nada é gravado sozinho (25/09/2026). O aviso de alteração
+  // não gravada é do pai, antes de sair da aba.
   useEffect(() => {
     montadoRef.current = true;
     return () => {
       montadoRef.current = false;
       if (okTimerRef.current) clearTimeout(okTimerRef.current);
-      if (timerRef.current) {
-        clearTimeout(timerRef.current);
-        void saveRef.current();
-      }
     };
   }, []);
 
@@ -675,9 +692,8 @@ export function LotesGrid({
         } as Lote;
       })
     );
-    // A Qtd digitada só grava ao sair do campo — ver o cabeçalho do arquivo.
-    if (partial.quantidade !== undefined && !imediato) return;
-    agendarSave(imediato);
+    // Nada grava aqui: a grade inteira vai em "Gravar lote".
+    void imediato;
   }
 
   function acrescentar(indice?: number, quantas = 1) {
@@ -705,7 +721,6 @@ export function LotesGrid({
       const copia = { ...novaLinha(base), quantidade: base.quantidade };
       return [...atual.slice(0, indice + 1), copia, ...atual.slice(indice + 1)];
     });
-    agendarSave(true);
   }
 
   function remover(indice: number) {
@@ -715,7 +730,6 @@ export function LotesGrid({
       const resto = atual.filter((_, i) => i !== indice);
       return resto.length > 0 ? resto : [novaLinha()];
     });
-    agendarSave(true);
   }
 
   function colar(evento: React.ClipboardEvent, indice: number) {
@@ -757,16 +771,12 @@ export function LotesGrid({
       title: `${lidas.length} lote(s) lidos da lista`,
       description: semCor > 0 ? `${semCor} cor(es) não reconhecidas — escolha na Cor papel.` : undefined
     });
-    // As linhas coladas já chegam completas: gravam depois do debounce.
-    agendarSave(false);
   }
 
   function alternarModo(modo: ModoNumeracao) {
     const proximo = modoRef.current === modo ? null : modo;
     modoRef.current = proximo;
     setModoNumeracao(proximo);
-    // A faixa de todos os lotes muda de uma vez: grava na hora.
-    agendarSave(true);
   }
 
   const colunas = colunasDaLista({ simplificado, visivel, itemPrateleira });
@@ -807,7 +817,8 @@ export function LotesGrid({
             </span>
           )}
           <span className="ml-2 flex items-center gap-1.5 text-[11px] font-bold">
-            {saveStatus === "idle" && <span className="flex h-2 w-2 rounded-full bg-slate-300" title="Sem alterações pendentes"></span>}
+            {saveStatus === "idle" && !naoGravado && <span className="flex h-2 w-2 rounded-full bg-slate-300" title="Sem alterações pendentes"></span>}
+            {saveStatus !== "saving" && naoGravado && <span className="text-amber-600">Não gravado</span>}
             {saveStatus === "saving" && <span className="text-amber-600">Salvando...</span>}
             {saveStatus === "saved" && <span className="text-teal-600">Salvo</span>}
             {saveStatus === "error" && <span className="text-red-500">Erro ao salvar</span>}
@@ -839,7 +850,10 @@ export function LotesGrid({
           </button>
           <button
             type="button"
-            onClick={onSair}
+            onClick={() => {
+              if (naoGravado && !window.confirm("Há lotes não gravados nesta lista. Ir para os cards e descartar as alterações?")) return;
+              onSair();
+            }}
             className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-bold text-slate-600 transition hover:bg-slate-50"
           >
             Ver como cards
@@ -944,12 +958,10 @@ export function LotesGrid({
                   modo="lista"
                   identificador={linha.id ? `#${linha.id}` : "novo"}
                   onChange={(partial, imediato) => alterar(indice, partial, imediato)}
-                  onBlurCampo={flushSave}
+                  // Sem salvamento automático: sair do campo não grava nada.
+                  onBlurCampo={() => {}}
                   onPaste={(e) => colar(e, indice)}
-                  onEnterQtd={() => {
-                    flushSave();
-                    acrescentar(indice);
-                  }}
+                  onEnterQtd={() => acrescentar(indice)}
                   numeracaoInicioTravada={
                     modoEfetivo
                       ? "Com um modo de numeração marcado acima, o Nº Inicial é calculado. Desmarque para editar."

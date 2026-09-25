@@ -624,6 +624,7 @@ export function PedidoModelosTab({
   onLotesGravados,
   onModelosExcluidos,
   lotesSomenteLeitura = false,
+  onLotesNaoGravados,
 }: {
   idInt?: number;
   /** propostas.id_cliente — filtra as numerações exclusivas de cliente. */
@@ -649,6 +650,8 @@ export function PedidoModelosTab({
   onModelosExcluidos?: (ids: number[]) => void;
   /** Proposta cobrada sem permissão de editar: a lista abre, mas só para ver. */
   lotesSomenteLeitura?: boolean;
+  /** Algum item com lote não gravado na lista rápida (aviso ao sair da aba). */
+  onLotesNaoGravados?: (algum: boolean) => void;
 }) {
   const { showToast } = useAppToast();
   // Proposta 100% de prateleira: mesma definição usada para dispensar a arte.
@@ -695,6 +698,15 @@ export function PedidoModelosTab({
   // abre por padrão, e os cards só quando o usuário pede. Com cobrança ela não
   // grava sozinha — ver `onPendente` no LotesGrid.
   const gradeAberta = (idItem: string) => emModoGrade[idItem] ?? true;
+  // Lotes não gravados por item: a página pergunta antes de sair da aba.
+  const naoGravadosRef = useRef<Record<string, boolean>>({});
+  const registrarNaoGravado = useCallback(
+    (idItem: string, sim: boolean) => {
+      naoGravadosRef.current = { ...naoGravadosRef.current, [idItem]: sim };
+      onLotesNaoGravados?.(Object.values(naoGravadosRef.current).some(Boolean));
+    },
+    [onLotesNaoGravados]
+  );
   // Botao "Amostras" de cada produto: a amostra da arte abaixo de cada lote da
   // grade. Comeca desligado.
   const [amostrasVisiveis, setAmostrasVisiveis] = useState<Record<string, boolean>>({});
@@ -1108,6 +1120,7 @@ export function PedidoModelosTab({
                           if (qtdItem !== qtdAnterior) onLotesGravados?.(idNoBanco, qtdItem, freteMensagem);
                         }}
                         onSair={() => setEmModoGrade((atual) => ({ ...atual, [item.id]: false }))}
+                        onAlteracoesNaoGravadas={(sim) => registrarNaoGravado(String(item.id), sim)}
                         onPendente={
                           autoSaveHabilitado
                             ? undefined

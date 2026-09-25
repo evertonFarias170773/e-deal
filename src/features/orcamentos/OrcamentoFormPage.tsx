@@ -262,6 +262,10 @@ const ABAS_EDITOR = [
 /** Aviso de salvamento que precisa sobreviver ao recarregamento da página. */
 const CHAVE_AVISO_POS_SALVAMENTO = "orcamento:aviso-pos-salvamento";
 
+/** Lista rápida com lote não gravado: sair da aba ou da página descarta. */
+const MENSAGEM_LOTES_NAO_GRAVADOS =
+  "Há lotes não gravados na lista rápida. Sair e descartar as alterações? Para manter, volte e use Gravar lote.";
+
 type AvisoPosSalvamento = {
   title: string;
   description?: string;
@@ -1051,6 +1055,8 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
   const initialFormSnapshot = useRef<string>("");
   const snapshotCaptured    = useRef(false);
   const isDirtyRef          = useRef(false);
+  /** Lista rápida com lote não gravado (sem cobrança): fica fora do formulário. */
+  const lotesNaoGravadosRef = useRef(false);
   /** Saída de página disparada por nós (reload pós-salvamento): não avisar. */
   const saindoIntencionalmenteRef = useRef(false);
   const handleNavigateRef   = useRef<(href: string) => void>(() => {});
@@ -1871,7 +1877,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
       // bem-sucedido — `isDirtyRef` só é reescrito no render seguinte, que não
       // chega a acontecer antes do reload.
       if (saindoIntencionalmenteRef.current) return;
-      if (!isDirtyRef.current) return;
+      if (!isDirtyRef.current && !lotesNaoGravadosRef.current) return;
       e.preventDefault();
       e.returnValue = '';
     };
@@ -1882,11 +1888,21 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
   // Intercept internal link clicks (sidebar, breadcrumbs, etc.) when dirty
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (!isDirtyRef.current) return;
+      if (!isDirtyRef.current && !lotesNaoGravadosRef.current) return;
       const anchor = (e.target as Element).closest('a[href]') as HTMLAnchorElement | null;
       if (!anchor) return;
       const href = anchor.getAttribute('href');
       if (!href || href.startsWith('#') || href.startsWith('http') || href.startsWith('mailto')) return;
+      // Só a lista rápida tem pendência: pergunta aqui, sem o modal do formulário.
+      if (!isDirtyRef.current) {
+        if (window.confirm(MENSAGEM_LOTES_NAO_GRAVADOS)) {
+          lotesNaoGravadosRef.current = false;
+          return;
+        }
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
       e.preventDefault();
       handleNavigateRef.current(href);
     };
@@ -3021,6 +3037,10 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
    * desfazia alterações concorrentes (vários modelos abertos ao mesmo tempo,
    * respostas de gravação chegando depois).
    */
+  const registrarLotesNaoGravados = useCallback((algum: boolean) => {
+    lotesNaoGravadosRef.current = algum;
+  }, []);
+
   const aplicarPatchModelos = useCallback(
     (atualizar: (prev: PedidoModeloState[]) => PedidoModeloState[]) => {
       setForm((prev) => ({ ...prev, pedidosModelos: atualizar(prev.pedidosModelos) }));
@@ -5313,6 +5333,11 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
               key={tab.id}
               type="button"
               onClick={() => {
+                // Lista rápida com lote não gravado: sair da aba descarta.
+                if (activeFormTab === "pedido" && tab.id !== "pedido" && lotesNaoGravadosRef.current) {
+                  if (!window.confirm(MENSAGEM_LOTES_NAO_GRAVADOS)) return;
+                  lotesNaoGravadosRef.current = false;
+                }
                 if (tab.id === "artes") {
                   const errosPorModelo: Record<string, Set<string>> = {};
                   for (const m of form.pedidosModelos) {
@@ -5395,6 +5420,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                 setForm((prev) => ({ ...prev, deletedModeloIds: ids.length > 0 ? [...ids] : undefined }))
               }
               lotesSomenteLeitura={isFormBloqueadoPorCobranca}
+              onLotesNaoGravados={registrarLotesNaoGravados}
               onLotesGravados={(idProdutoPropostaOrigem, novaQtd, freteMensagem) => {
                 // A lista rápida já gravou item e lotes no banco. Aqui só
                 // espelhamos no formulário: o total da proposta é calculado na
