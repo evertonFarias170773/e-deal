@@ -3036,6 +3036,28 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
    * porque o mesmo produto pode ter várias linhas com variações diferentes.
    * A gravação em si acontece no saveProposta; aqui é só o estado da tela.
    */
+  /**
+   * Remove do item UMA escolha de variacao cujo grupo nao esta mais vinculado
+   * ao produto (25/09/2026).
+   *
+   * So mexe no estado da tela: a remocao passa a valer quando o item (ou a
+   * proposta) for salvo, pelo mesmo delete+insert de produtos_proposta_variacao
+   * de sempre. Nada e descartado sozinho — ver `escolhasOrfas` no editor.
+   */
+  function removerVariacaoOrfa(itemId: string, escolhaId: string) {
+    let itemAtualizado: PropostaItem | null = null;
+    updateItem(itemId, (item) => {
+      itemAtualizado = {
+        ...item,
+        variacoesEscolhidas: item.variacoesEscolhidas.filter((c) => c.id !== escolhaId)
+      };
+      return itemAtualizado;
+    });
+    if (itemAtualizado) {
+      syncVariacoesTextoDosModelos(itemAtualizado);
+    }
+  }
+
   function syncVariacoesTextoDosModelos(item: PropostaItem) {
     const texto = formatVariacoesItem(item);
     setForm((prev) => ({
@@ -6379,6 +6401,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                           hasVariationError={errorFields.includes(`variacoes_${item.id}`)}
                           onUpdate={(updater) => updateItem(item.id, updater)}
                           onVariationChange={(idVariacao, tipoId) => updateItemVariation(item.id, idVariacao, tipoId)}
+                          onRemoveVariacaoOrfa={(escolhaId) => removerVariacaoOrfa(item.id, escolhaId)}
                           onRemove={() => handleRemoveProductClick(item.id)}
                           onSave={() => void handleSaveItem(item.id)}
                           isSaving={savingItemId === item.id}
@@ -7557,6 +7580,7 @@ function ProductItemEditor({
   hasVariationError,
   onUpdate,
   onVariationChange,
+  onRemoveVariacaoOrfa,
   onRemove,
   onSave,
   isSaving,
@@ -7573,6 +7597,8 @@ function ProductItemEditor({
   hasVariationError: boolean;
   onUpdate: (updater: (item: PropostaItem) => PropostaItem) => void;
   onVariationChange: (idVariacao: number, tipoId: string) => void;
+  /** Remove do estado uma escolha de grupo não vinculado — ver `escolhasOrfas`. */
+  onRemoveVariacaoOrfa?: (escolhaId: string) => void;
   onRemove: () => void;
   onSave: () => void;
   /** Gravação da linha em andamento — trava o botão contra clique duplo. */
@@ -7592,6 +7618,22 @@ function ProductItemEditor({
   onQuantidadeFocada?: () => void;
 }) {
   const quantidadeRef = useRef<HTMLInputElement | null>(null);
+
+  /**
+   * Escolhas gravadas cujo grupo nao esta mais vinculado ao produto.
+   *
+   * Casa por `id_variacao`. Duas linhas antigas de produtos_proposta_variacao
+   * tem `id_variacao` nulo; para elas o grupo e deduzido pela opcao (algum
+   * grupo vinculado oferece esse tipo?), senao seriam tratadas como orfas sem
+   * ser.
+   */
+  const escolhasOrfas = item.variacoesEscolhidas.filter((escolha) => {
+    const vinculados = item.produto.variacoes ?? [];
+    if (escolha.id_variacao) {
+      return !vinculados.some((v) => v.id_variacao === escolha.id_variacao);
+    }
+    return !vinculados.some((v) => v.tipos.some((t) => t.id === escolha.tipo.id));
+  });
 
   useEffect(() => {
     if (!autoFocusQuantidade) return;
@@ -7689,9 +7731,41 @@ function ProductItemEditor({
         </div>
       ) : null}
 
-      {item.produto.variacoes && item.produto.variacoes.length ? (
+      {(item.produto.variacoes && item.produto.variacoes.length) || escolhasOrfas.length ? (
         <div className="rounded-2xl border border-slate-200 bg-white p-4 space-y-3">
           <h5 className="text-xs font-bold uppercase tracking-wider text-slate-400">Configuração de Variações</h5>
+          {escolhasOrfas.length ? (
+            // Escolha gravada de um grupo que saiu do produto (ex.: TAMANHO do
+            // 3001, desvinculado quando o tamanho foi para o nome/preço base).
+            // Os controles abaixo so desenham grupos VINCULADOS, entao sem este
+            // bloco ela ficava invisivel e irremovivel — mas continuava somando
+            // no subtotal. Aqui ela aparece, SEGUE SOMANDO, e so sai por acao
+            // de alguem; a remocao vale ao salvar. Mesmo bloqueio das demais
+            // variacoes (proposta paga/pendencia), e o fieldset do item tambem
+            // desabilita o botao.
+            <div className="space-y-2 rounded-xl border border-amber-300 bg-amber-50 p-3">
+              {escolhasOrfas.map((escolha) => (
+                <div key={escolha.id} className="flex items-center justify-between gap-3 text-sm">
+                  <div className="min-w-0">
+                    <p className="truncate font-semibold text-amber-900">
+                      {escolha.variacao?.nome ? `${escolha.variacao.nome}: ` : ""}
+                      {escolha.tipo.variacao} (+{formatCurrency(escolha.tipo.v_extra)} / {formatWeightFromGrams(escolha.tipo.peso, { mode: "g" })})
+                    </p>
+                    <p className="text-xs font-medium text-amber-700">grupo não vinculado ao produto</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => onRemoveVariacaoOrfa?.(escolha.id)}
+                    disabled={!podeEditarVariacoes || !onRemoveVariacaoOrfa}
+                    className="shrink-0 rounded-xl border border-amber-300 bg-white px-3 py-1.5 text-xs font-semibold text-amber-800 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
+                    title="Remove do item. Só vale ao salvar."
+                  >
+                    Remover
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : null}
           <div className="grid gap-4 md:grid-cols-2">
             {item.produto.variacoes.map((variacao) => {
               const escolhasDoGrupo = item.variacoesEscolhidas.filter(
