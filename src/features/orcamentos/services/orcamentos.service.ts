@@ -624,97 +624,48 @@ async function fetchPropostaRows(
     // consulta — a lista nao ganha nenhuma ida extra ao banco por causa delas.
     const columnsToSelect = "id, id_int, id_cliente, cliente, created_at, updated_at, vendedor, status_interno, valor_total, valor, is_avulso, empresa, valor_frete, em_arte, is_prd_aprovado, encerrado_teste_em, encerrado_teste_por, faturado_fora_em, faturado_fora_por, id_faturado, id_int_pedido_principal, modalidade_frete, frete_escolhido";
 
-    let query = client
-      .from("propostas")
-      .select(columnsToSelect, { count: "exact" });
-
-    if (periodoFilter) {
-      // A coluna vem do proprio filtro: os meses seguem em `created_at`, exatamente
-      // como antes; so ULT15 recorta por `updated_at`. Teto so quando existe.
-      query = query.gte(periodoFilter.coluna, periodoFilter.inicioIso);
-      if (periodoFilter.fimExclusivoIso) {
-        query = query.lt(periodoFilter.coluna, periodoFilter.fimExclusivoIso);
-      }
-    }
-
-    if (filters?.vendedor && filters.vendedor !== "TODOS") {
-      query = query.ilike("vendedor", filters.vendedor);
-    }
-
-    if (filters?.modelo && filters.modelo !== "TODOS_MODELOS") {
-      if (filters.modelo === "AVULSO") {
-        query = query.eq("is_avulso", true);
-      } else if (filters.modelo === "PROPOSTA") {
-        query = query.or("is_avulso.is.null,is_avulso.eq.false");
-      }
-    }
+    // ── Pre-consultas: rodam UMA vez e viram listas de id_int. A consulta da
+    //    lista e montada depois, quantas vezes a ordenacao por grupo precisar.
 
     // Encerrados fora da lista por padrao. Ver `encerradosTeste` no tipo.
-    // Declarado aqui, antes do bloco de status, porque o `else` que exclui
-    // CANCELADO consulta esta mesma decisao.
     const visibilidadeEncerrados = filters?.encerradosTeste ?? "OCULTAR";
-    if (visibilidadeEncerrados === "SOMENTE") {
-      query = query.not("encerrado_teste_em", "is", null);
-    } else if (visibilidadeEncerrados === "OCULTAR") {
-      query = query.is("encerrado_teste_em", null);
-    }
 
     // Status de arte de cada proposta do card EM_ARTE, da MESMA pre-consulta que
     // decide quem entra. Viaja ate a lista para o card saber se ha pendencia sem
     // uma leitura a mais. Fica `null` fora do card.
     let statusArteDoCardPorId: Map<number, string[]> | null = null;
-
-    if (filters?.activeCard) {
-      const card = filters.activeCard;
-      if (card === "EM_ARTE") {
-        // `pedidos_artes` decide quem entra — ver `statusArteEntraNoCardEmArte`.
-        // Sem FK ate `propostas`, entao pre-consulta os id_int e dobra no `.in`,
-        // no mesmo molde do filtro de tipo de cobranca com `pagamentos_v2`.
-        // O `.neq` so poupa trazer os aprovados, que nunca entram; a decisao e
-        // a chave normalizada, feita aqui do lado de ca.
-        const { data: arteRows, error: arteError } = await client
-          .from("pedidos_artes")
-          .select("id_int, status")
-          .neq("status", "APROVADO");
-        if (arteError) {
-          console.warn("[OrcamentosService] Falha ao ler pedidos_artes para o card EM_ARTE:", arteError.message);
-        }
-        const idsEmArte = Array.from(
-          new Set(
-            (arteRows || [])
-              .filter((linha) => statusArteEntraNoCardEmArte(linha.status))
-              .map((linha) => Number(linha.id_int))
-              .filter((id) => Number.isFinite(id) && id > 0)
-          )
-        );
-        const porId = new Map<number, string[]>();
-        for (const linha of arteRows || []) {
-          const id = Number(linha.id_int);
-          if (!Number.isFinite(id) || id <= 0 || !statusArteEntraNoCardEmArte(linha.status)) continue;
-          porId.set(id, [...(porId.get(id) ?? []), String(linha.status ?? "")]);
-        }
-        statusArteDoCardPorId = porId;
-        query = query.in("id_int", idsEmArte.length > 0 ? idsEmArte : [-1]);
-      } else if (card === "LIBERADAS") {
-        query = query.or("status_interno.eq.LIBERADO,status_interno.eq.LIBERADO / EM ARTE");
-      } else if (card === "REVISAO_ATENDENTE") {
-        query = query.eq("status_interno", "REVISAO ATENDENTE");
-      } else if (card === "EM_PRODUCAO") {
-        query = query.in("status_interno", ["REVISAO PRODUCAO", "EM PRODUCAO", "EM IMPRESSAO", "EM IMPRESSAO / PENDENTE", "EM ACABAMENTO", "EM ACABAMENTO / PENDENTE"]);
+    let idsCardEmArte: number[] | null = null;
+    if (filters?.activeCard === "EM_ARTE") {
+      // `pedidos_artes` decide quem entra — ver `statusArteEntraNoCardEmArte`.
+      // Sem FK ate `propostas`, entao pre-consulta os id_int e dobra no `.in`,
+      // no mesmo molde do filtro de tipo de cobranca com `pagamentos_v2`.
+      // O `.neq` so poupa trazer os aprovados, que nunca entram; a decisao e
+      // a chave normalizada, feita aqui do lado de ca.
+      const { data: arteRows, error: arteError } = await client
+        .from("pedidos_artes")
+        .select("id_int, status")
+        .neq("status", "APROVADO");
+      if (arteError) {
+        console.warn("[OrcamentosService] Falha ao ler pedidos_artes para o card EM_ARTE:", arteError.message);
       }
-    } else if (filters?.status && filters.status !== "TODOS") {
-      if (filters.status === "EM ARTE") {
-        query = query.or("status_interno.ilike.%EM ARTE%,em_arte.eq.true");
-      } else {
-        query = query.eq("status_interno", filters.status);
+      idsCardEmArte = Array.from(
+        new Set(
+          (arteRows || [])
+            .filter((linha) => statusArteEntraNoCardEmArte(linha.status))
+            .map((linha) => Number(linha.id_int))
+            .filter((id) => Number.isFinite(id) && id > 0)
+        )
+      );
+      const porId = new Map<number, string[]>();
+      for (const linha of arteRows || []) {
+        const id = Number(linha.id_int);
+        if (!Number.isFinite(id) || id <= 0 || !statusArteEntraNoCardEmArte(linha.status)) continue;
+        porId.set(id, [...(porId.get(id) ?? []), String(linha.status ?? "")]);
       }
-    } else if (visibilidadeEncerrados !== "SOMENTE") {
-      query = query.neq("status_interno", "CANCELADO");
+      statusArteDoCardPorId = porId;
     }
-    // Em "SOMENTE", CANCELADO nao e excluido: quem abre a lista de encerrados
-    // quer a lista COMPLETA deles, inclusive os cancelados — senao um marcado
-    // por engano ficaria fora do unico atalho que o encontra.
 
+    let condicaoBusca: string | null = null;
     if (filters?.search && filters.search.trim()) {
       const term = filters.search.trim();
       const num = Number(term);
@@ -735,22 +686,18 @@ async function fetchPropostaRows(
       const idsEvento = await buscarIdsPedidosPorEvento(client, term);
       const condicaoEvento = idsEvento.length > 0 ? `id_int.in.(${idsEvento.join(",")})` : null;
 
+      const condicoes: string[] = [];
       if (Number.isInteger(num) && num > 0) {
         // id_int (nº da proposta) e id_cliente são colunas numéricas → comparação exata,
         // igual ao comportamento já existente do nº da proposta.
-        const condicoes = [`id_int.eq.${num}`];
+        condicoes.push(`id_int.eq.${num}`);
         // id_cliente é integer (int4): fora da faixa o Postgres aborta a consulta inteira.
         if (num <= MAX_INT4) condicoes.push(`id_cliente.eq.${num}`);
-        condicoes.push(`cliente.ilike.%${term}%`, `vendedor.ilike.%${term}%`);
-        if (condicaoSocio) condicoes.push(condicaoSocio);
-        if (condicaoEvento) condicoes.push(condicaoEvento);
-        query = query.or(condicoes.join(","));
-      } else {
-        const condicoes = [`cliente.ilike.%${term}%`, `vendedor.ilike.%${term}%`];
-        if (condicaoSocio) condicoes.push(condicaoSocio);
-        if (condicaoEvento) condicoes.push(condicaoEvento);
-        query = query.or(condicoes.join(","));
       }
+      condicoes.push(`cliente.ilike.%${term}%`, `vendedor.ilike.%${term}%`);
+      if (condicaoSocio) condicoes.push(condicaoSocio);
+      if (condicaoEvento) condicoes.push(condicaoEvento);
+      condicaoBusca = condicoes.join(",");
     }
 
     /**
@@ -763,39 +710,144 @@ async function fetchPropostaRows(
      * Produto sem nenhum pedido — ou teto atingido — vira `[-1]`: a lista volta
      * vazia, em vez de ignorar o filtro em silencio.
      */
+    let idsProduto: number[] | null = null;
     if (filters?.produto !== undefined && filters.produto !== null) {
-      const idsProduto = await buscarIdsPedidosPorProduto(client, Number(filters.produto));
-      query = query.in("id_int", idsProduto && idsProduto.length > 0 ? idsProduto : [-1]);
+      const achados = await buscarIdsPedidosPorProduto(client, Number(filters.produto));
+      idsProduto = achados && achados.length > 0 ? achados : [-1];
     }
 
+    let idsTipoCobranca: number[] | null = null;
     if (filters?.filterTipoCobranca && filters.filterTipoCobranca !== "TODOS") {
       const searchTipo = filters.filterTipoCobranca === "CARTAO" ? "CARD" : filters.filterTipoCobranca;
       const { data: paymentRows } = await client
         .from("pagamentos_v2")
         .select("id_int")
         .ilike("tipo_cobranca", `%${searchTipo}%`);
-      
+
       const matchedIds = Array.from(new Set((paymentRows || []).map(p => p.id_int).filter(Boolean)));
-      if (matchedIds.length > 0) {
-        query = query.in("id_int", matchedIds);
-      } else {
-        query = query.in("id_int", [-1]);
+      idsTipoCobranca = matchedIds.length > 0 ? matchedIds : [-1];
+    }
+
+    /**
+     * A consulta da lista com TODOS os filtros da barra — os mesmos de sempre,
+     * na mesma ordem. Montada de novo para cada grupo da ordenacao abaixo
+     * (supabase-js nao clona consulta), sempre a partir das pre-consultas acima.
+     */
+    const consultaFiltrada = (opcoes: { count: "exact"; head?: boolean }) => {
+      let query = client.from("propostas").select(columnsToSelect, opcoes);
+
+      if (periodoFilter) {
+        // A coluna vem do proprio filtro: os meses seguem em `created_at`, exatamente
+        // como antes; so ULT15 recorta por `updated_at`. Teto so quando existe.
+        query = query.gte(periodoFilter.coluna, periodoFilter.inicioIso);
+        if (periodoFilter.fimExclusivoIso) {
+          query = query.lt(periodoFilter.coluna, periodoFilter.fimExclusivoIso);
+        }
       }
-    }
 
-    if (buscaAmpla) {
-      // Da atualização mais recente para a mais antiga. `updated_at` é o campo
-      // real de última atualização (mesmo usado na ordenação da lista).
-      // nullsFirst: false mantém os registros sem updated_at no fim.
-      query = query.order("updated_at", { ascending: false, nullsFirst: false });
-      query = query.order("id_int", { ascending: false });
-    } else {
-      query = query.order("id_int", { ascending: false });
-    }
-    query = query.range(from, to);
+      if (filters?.vendedor && filters.vendedor !== "TODOS") {
+        query = query.ilike("vendedor", filters.vendedor);
+      }
 
-    const { data, error, count } = await query.returns<SupabasePropostaRow[]>();
-    const totalCount = count ?? (data?.length || 0);
+      if (filters?.modelo && filters.modelo !== "TODOS_MODELOS") {
+        if (filters.modelo === "AVULSO") {
+          query = query.eq("is_avulso", true);
+        } else if (filters.modelo === "PROPOSTA") {
+          query = query.or("is_avulso.is.null,is_avulso.eq.false");
+        }
+      }
+
+      if (visibilidadeEncerrados === "SOMENTE") {
+        query = query.not("encerrado_teste_em", "is", null);
+      } else if (visibilidadeEncerrados === "OCULTAR") {
+        query = query.is("encerrado_teste_em", null);
+      }
+
+      if (filters?.activeCard) {
+        const card = filters.activeCard;
+        if (card === "EM_ARTE") {
+          query = query.in("id_int", idsCardEmArte && idsCardEmArte.length > 0 ? idsCardEmArte : [-1]);
+        } else if (card === "LIBERADAS") {
+          query = query.or("status_interno.eq.LIBERADO,status_interno.eq.LIBERADO / EM ARTE");
+        } else if (card === "REVISAO_ATENDENTE") {
+          query = query.eq("status_interno", "REVISAO ATENDENTE");
+        } else if (card === "EM_PRODUCAO") {
+          query = query.in("status_interno", ["REVISAO PRODUCAO", "EM PRODUCAO", "EM IMPRESSAO", "EM IMPRESSAO / PENDENTE", "EM ACABAMENTO", "EM ACABAMENTO / PENDENTE"]);
+        }
+      } else if (filters?.status && filters.status !== "TODOS") {
+        if (filters.status === "EM ARTE") {
+          query = query.or("status_interno.ilike.%EM ARTE%,em_arte.eq.true");
+        } else {
+          query = query.eq("status_interno", filters.status);
+        }
+      } else if (visibilidadeEncerrados !== "SOMENTE") {
+        query = query.neq("status_interno", "CANCELADO");
+      }
+      // Em "SOMENTE", CANCELADO nao e excluido: quem abre a lista de encerrados
+      // quer a lista COMPLETA deles, inclusive os cancelados — senao um marcado
+      // por engano ficaria fora do unico atalho que o encontra.
+
+      if (condicaoBusca) query = query.or(condicaoBusca);
+      if (idsProduto) query = query.in("id_int", idsProduto);
+      if (idsTipoCobranca) query = query.in("id_int", idsTipoCobranca);
+
+      return query;
+    };
+
+    /**
+     * ORDEM DA LISTA (25/09/2026, pedido da direcao), para a lista INTEIRA e
+     * nao so para a pagina carregada:
+     *   1. REVISAO ATENDENTE;
+     *   2. financeiro LIBERADO — o legado APROVADO conta como LIBERADO, com ou
+     *      sem o sufixo " / EM ARTE" — e nao avulso;
+     *   3. os demais.
+     * Dentro de cada grupo, da ultima atualizacao para a mais antiga.
+     *
+     * O PostgREST so ordena por coluna, e o grupo nao e coluna: cada grupo vira
+     * uma consulta com os MESMOS filtros e um recorte proprio, e a pagina pedida
+     * e fatiada sobre a sequencia grupo 1 → 2 → 3. O grupo 3 e o complemento
+     * exato dos dois primeiros (status nulo incluido), para nenhuma proposta
+     * sumir nem aparecer duas vezes. Espelho na tela: `grupoDaLinha`, em
+     * OrcamentosListPageReal.
+     */
+    type Consulta = ReturnType<typeof consultaFiltrada>;
+    const grupos: ((q: Consulta) => Consulta)[] = [
+      (q) => q.eq("status_interno", "REVISAO ATENDENTE"),
+      (q) =>
+        q
+          .or("status_interno.ilike.LIBERADO*,status_interno.ilike.APROVADO*")
+          .or("is_avulso.is.null,is_avulso.eq.false"),
+      (q) =>
+        q
+          .or("status_interno.is.null,status_interno.neq.REVISAO ATENDENTE")
+          .or("status_interno.is.null,and(status_interno.not.ilike.LIBERADO*,status_interno.not.ilike.APROVADO*),is_avulso.eq.true")
+    ];
+
+    const contagens = await Promise.all(
+      grupos.map((recorte) => recorte(consultaFiltrada({ count: "exact", head: true })))
+    );
+    let error = contagens.find((c) => c.error)?.error ?? null;
+    const porGrupo = contagens.map((c) => c.count ?? 0);
+    const totalCount = porGrupo.reduce((soma, n) => soma + n, 0);
+
+    let data: SupabasePropostaRow[] | null = null;
+    if (!error) {
+      let inicioDoGrupo = 0;
+      const fatias = grupos.map((recorte, i) => {
+        const primeiro = Math.max(from, inicioDoGrupo) - inicioDoGrupo;
+        const ultimo = Math.min(to, inicioDoGrupo + porGrupo[i] - 1) - inicioDoGrupo;
+        inicioDoGrupo += porGrupo[i];
+        if (ultimo < primeiro) return Promise.resolve({ data: [] as SupabasePropostaRow[], error: null });
+        return recorte(consultaFiltrada({ count: "exact" }))
+          .order("updated_at", { ascending: false, nullsFirst: false })
+          .order("id_int", { ascending: false })
+          .range(primeiro, ultimo)
+          .returns<SupabasePropostaRow[]>();
+      });
+      const resultados = await Promise.all(fatias);
+      error = resultados.find((r) => r.error)?.error ?? null;
+      data = error ? null : resultados.flatMap((r) => r.data ?? []);
+    }
 
     if (error) {
       const supabaseError = getErrorMessage(error) ?? "Erro desconhecido no Supabase";

@@ -6,6 +6,12 @@ export type Column<T> = {
   header: string;
   align?: "left" | "center" | "right";
   cell: (item: T) => ReactNode;
+  /**
+   * Clique PROPRIO da celula (desktop), no lugar do `onRowClick` da linha: a
+   * celula inteira responde e o clique nao chega a linha. Controles dentro da
+   * celula (botao, link, menu...) continuam sendo deles.
+   */
+  onCellClick?: (item: T) => void;
 };
 
 type ResponsiveListProps<T> = {
@@ -138,8 +144,17 @@ export function ResponsiveList<T>({
                 {columns.map((column) => (
                   <td
                     key={column.header}
-                    className={`px-5 py-4 align-middle ${alignClass[column.align ?? "left"]}`}
+                    className={`px-5 py-4 align-middle ${alignClass[column.align ?? "left"]} ${column.onCellClick ? "cursor-pointer" : ""}`}
                     style={{ color: "var(--foreground)" }}
+                    onClick={
+                      column.onCellClick
+                        ? (e) => {
+                            if (isElementoInterativo(e.target as HTMLElement)) return;
+                            e.stopPropagation();
+                            column.onCellClick?.(item);
+                          }
+                        : undefined
+                    }
                   >
                     {column.cell(item)}
                   </td>

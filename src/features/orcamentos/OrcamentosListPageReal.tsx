@@ -76,6 +76,26 @@ function ehRevisaoAtendente(item: { statusInterno: string }): boolean {
  */
 const DESTAQUE_REVISAO = { base: "#eff6ff", hover: "#dbeafe" };
 
+/**
+ * Verde claro do pedido LIBERADO (25/09/2026, pedido da direcao), no mesmo
+ * contrato inline do azul acima.
+ */
+const DESTAQUE_LIBERADO = { base: "#ecfdf5", hover: "#d1fae5" };
+
+/**
+ * Grupo da linha na ordem da lista (25/09/2026): 0 = REVISAO ATENDENTE,
+ * 1 = financeiro LIBERADO e nao avulso, 2 = os demais. O legado APROVADO conta
+ * como LIBERADO, com ou sem o sufixo " / EM ARTE". ESPELHO do recorte do
+ * servidor em `fetchPropostaRows` (orcamentos.service), que ordena a lista
+ * INTEIRA; aqui so reordena o que ja veio, com a mesma regra.
+ */
+function grupoDaLinha(item: { statusInterno: string; isAvulsoRaw: boolean | null | undefined }): 0 | 1 | 2 {
+  if (ehRevisaoAtendente(item)) return 0;
+  const status = String(item.statusInterno || "").trim().toUpperCase();
+  const liberado = status.startsWith("LIBERADO") || status.startsWith("APROVADO");
+  return liberado && item.isAvulsoRaw !== true ? 1 : 2;
+}
+
 const TIPOS_COBRANCA = ["TODOS", "PIX", "BOLETO", "E-FATURADO", "CARTAO"] as const;
 type TipoCobrancaFiltro = (typeof TIPOS_COBRANCA)[number];
 
@@ -816,18 +836,14 @@ export function OrcamentosListPageReal() {
     }
 
     return result.sort((a, b) => {
-      // REVISAO ATENDENTE é a fila que trava o fluxo: alguém precisa olhar antes
-      // de a proposta seguir. Vem antes de qualquer outro critério — dentro do
-      // grupo, a data continua mandando como sempre.
-      //
-      // O pin vale sobre o que ESTÁ carregado. O servidor pagina em PAGE_SIZE e
-      // ordena por updated_at/id_int (intocado): uma proposta desse status que
-      // caia numa página seguinte não sobe para o topo da primeira. Hoje são 3
-      // em 8.198, todas recentes, então caem na primeira página de qualquer
-      // jeito — o que continua valendo com a página em 100.
-      const pinA = ehRevisaoAtendente(a) ? 0 : 1;
-      const pinB = ehRevisaoAtendente(b) ? 0 : 1;
-      if (pinA !== pinB) return pinA - pinB;
+      // ORDEM DA LISTA (25/09/2026): REVISAO ATENDENTE, depois LIBERADO nao
+      // avulso, depois o resto — dentro do grupo, a atualizacao mais recente
+      // primeiro. Quem ordena a lista INTEIRA e o servidor (`fetchPropostaRows`),
+      // grupo a grupo; aqui a mesma regra so mantem a pagina carregada na ordem
+      // que veio, inclusive depois dos filtros locais.
+      const grupoA = grupoDaLinha(a);
+      const grupoB = grupoDaLinha(b);
+      if (grupoA !== grupoB) return grupoA - grupoB;
 
       const dateA = new Date(a.updatedAt || a.createdAt).getTime();
       const dateB = new Date(b.updatedAt || b.createdAt).getTime();
@@ -1859,13 +1875,29 @@ Ela volta a aparecer nas listas operacionais.`
         }}
         emptyTitle="Nenhuma proposta encontrada"
         emptyDescription="Ajuste os filtros ou crie uma nova proposta para comecar."
-        getRowHighlight={(proposta) => (ehRevisaoAtendente(proposta) ? DESTAQUE_REVISAO : null)}
+        getRowHighlight={(proposta) => {
+          const grupo = grupoDaLinha(proposta);
+          return grupo === 0 ? DESTAQUE_REVISAO : grupo === 1 ? DESTAQUE_LIBERADO : null;
+        }}
         columns={[
           // Dois pontos maior que o corpo da tabela (text-sm, 14px) e em negrito:
           // o numero do pedido e por onde a operacao inteira se refere a linha.
           { header: "N°", cell: (proposta) => <span className="text-base font-bold text-slate-950">{proposta.id_int}</span> },
           {
             header: "id - Cliente",
+            // Clique da coluna (25/09/2026): abre a edicao do cadastro do cliente,
+            // a mesma rota da lista de Clientes — e a propria tela do cadastro que
+            // decide o que o usuario pode editar. Sem cadastro, vale o clique da
+            // linha.
+            onCellClick: (proposta) => {
+              const semCadastro = !proposta.clienteId || proposta.clienteId === "0";
+              if (semCadastro) {
+                const tab = proposta.isAvulsoRaw === true ? "pagamentos" : "produtos";
+                router.push(`/orcamentos/${proposta.id_int}/editar?tab=${tab}`);
+                return;
+              }
+              router.push(`/cadastros/${proposta.clienteId}/editar`);
+            },
             cell: (proposta) => {
               const isClienteNaoCadastrado = !proposta.clienteId || proposta.clienteId === "0";
               return (
@@ -1910,10 +1942,14 @@ Ela volta a aparecer nas listas operacionais.`
           {
             // As duas viram uma: o tipo em cima, o valor embaixo e em negrito.
             header: "Tipo cobrança / Valor total",
+            // Clique da coluna (25/09/2026): abre o pedido na aba Pagamentos.
+            onCellClick: (proposta) => router.push(`/orcamentos/${proposta.id_int}/editar?tab=pagamentos`),
             cell: (proposta) => (
               <div className="flex flex-col items-center">
                 <span>{rotuloCobrancaNaTela(proposta.tipoCobrancaLabel)}</span>
-                <span className="font-bold text-slate-950">{formatCurrency(proposta.total)}</span>
+                <span className={`font-bold ${grupoDaLinha(proposta) === 1 ? "text-emerald-800" : "text-slate-950"}`}>
+                  {formatCurrency(proposta.total)}
+                </span>
               </div>
             ),
             align: "center"
@@ -2054,6 +2090,8 @@ Ela volta a aparecer nas listas operacionais.`
              * Expedicao. Pedido antigo, sem rotulo gravado, mostra "—".
              */
             header: "Envio",
+            // Clique da coluna (25/09/2026): abre o pedido na aba Fretes.
+            onCellClick: (proposta) => router.push(`/orcamentos/${proposta.id_int}/editar?tab=fretes`),
             cell: (proposta) => proposta.envio || "—",
             align: "center"
           },
