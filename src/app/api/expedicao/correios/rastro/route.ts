@@ -14,9 +14,10 @@
  * Somente leitura: nenhuma escrita em banco, nenhuma mudança de status.
  */
 import { NextResponse } from "next/server";
-import { createClient as createSupabaseClient } from "@supabase/supabase-js";
+import { createClient as createSupabaseClient, type SupabaseClient } from "@supabase/supabase-js";
 import { createClient as createServerSupabaseClient } from "@/lib/supabase/server";
 import { verificarPermissaoServerSide } from "@/lib/auth/verificar-permissao";
+import { verificarEscopoPropostaServerSide } from "@/lib/auth/verificar-escopo-proposta";
 import { empresasComRastro, rastrearObjetoCorreios } from "@/lib/correios/cws";
 import type { CwsRastroObjeto } from "@/lib/correios/cws";
 import { resolverEmpresaRemetente } from "@/lib/correios/empresa-remetente";
@@ -33,6 +34,32 @@ export type RastroRotaResposta =
 
 function erro(motivo: string, message: string, status: number) {
   return NextResponse.json({ success: false, motivo, message } satisfies RastroRotaResposta, { status });
+}
+
+/**
+ * O codigo pertence a uma expedicao deste pedido? Vale o que a lista de
+ * Orcamentos mostra (`rastreio-lista.service`): os codigos de `expedicoes` —
+ * rastreio, objeto dos Correios e o objeto anterior, de prepostagem refeita — e
+ * o espelho em `propostas_os`, que e onde o complemento despachado junto com o
+ * principal guarda o rastreio.
+ */
+async function codigoEhDoPedido(supabase: SupabaseClient, idInt: number, codigo: string): Promise<boolean> {
+  const [{ data: expedicoes }, { data: os }] = await Promise.all([
+    supabase
+      .from("expedicoes")
+      .select("codigo_rastreamento, correios_codigo_objeto, correios_codigo_objeto_anterior")
+      .eq("id_int", idInt),
+    supabase.from("propostas_os").select("codigo_rastreamento").eq("id_int", idInt)
+  ]);
+  const codigos = [
+    ...(expedicoes ?? []).flatMap((e) => [
+      e.codigo_rastreamento,
+      e.correios_codigo_objeto,
+      e.correios_codigo_objeto_anterior
+    ]),
+    ...(os ?? []).map((o) => o.codigo_rastreamento)
+  ];
+  return codigos.some((c) => String(c ?? "").trim().toUpperCase() === codigo);
 }
 
 export async function GET(request: Request) {
@@ -63,8 +90,34 @@ export async function GET(request: Request) {
 
   const { data: authData, error: authError } = await supabase.auth.getUser();
   if (authError || !authData.user) return erro("SESSAO", "Sessão expirada. Faça login novamente.", 401);
+  // QUEM PODE RASTREAR (25/09/2026). `expedicao.view` rastreia qualquer objeto,
+  // como sempre. Sem ela, vale o ESCOPO DA PROPOSTA — a mesma checagem da
+  // impressao da OS e do cancelamento: o vendedor rastreia os pedidos que ja ve
+  // na lista, sem ganhar a Expedicao. Nesse caminho o pedido e obrigatorio e o
+  // codigo tem de ser de uma expedicao dele; senao, 403.
   const temPermissao = await verificarPermissaoServerSide(supabase, authData.user.id, "expedicao.view");
-  if (!temPermissao) return erro("PERMISSAO", "Sem permissão para consultar rastreio (expedicao.view).", 403);
+  if (!temPermissao) {
+    if (idInt === null) {
+      return erro("PERMISSAO", "Informe o pedido para consultar o rastreio.", 403);
+    }
+    const { data: propostaEscopo } = await supabase
+      .from("propostas")
+      .select("empresa, vendedor")
+      .eq("id_int", idInt)
+      .maybeSingle();
+    const escopoOk =
+      propostaEscopo !== null &&
+      (await verificarEscopoPropostaServerSide(supabase, authData.user.id, {
+        empresa: propostaEscopo.empresa,
+        vendedor: propostaEscopo.vendedor
+      }));
+    if (!escopoOk) {
+      return erro("PERMISSAO", "Sem permissão para consultar o rastreio deste pedido.", 403);
+    }
+    if (!(await codigoEhDoPedido(supabase, idInt, codigo))) {
+      return erro("PERMISSAO", "Este código de rastreio não é de uma expedição deste pedido.", 403);
+    }
+  }
 
   const configuradas = empresasComRastro();
   if (configuradas.length === 0) {
