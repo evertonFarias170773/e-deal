@@ -4502,7 +4502,8 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
               fetchSaldoCredito();
               setPendenciaRevisaoAberta(null);
               if (formToSave.briefingArtesDraft) {
-                salvarBriefingArtes(finalIdInt, { ...formToSave.briefingArtesDraft, status: "AGUARDANDO" })
+                // Sem status: registro de arte existente mantem o seu; novo nasce AGUARDANDO (salvarBriefingArtes).
+                salvarBriefingArtes(finalIdInt, { ...formToSave.briefingArtesDraft })
                   .catch(err => console.error("[handleSave] Falha ao salvar artes:", err));
               }
               
@@ -4537,7 +4538,8 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
 
         if (formToSave.briefingArtesDraft) {
           try {
-            await salvarBriefingArtes(finalIdInt, { ...formToSave.briefingArtesDraft, status: "AGUARDANDO" });
+            // Sem status: registro de arte existente mantem o seu; novo nasce AGUARDANDO (salvarBriefingArtes).
+            await salvarBriefingArtes(finalIdInt, { ...formToSave.briefingArtesDraft });
           } catch (arteErr) {
             console.error("[handleSave] Falha ao salvar artes:", arteErr);
           }
@@ -4653,10 +4655,8 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
 
         if (formToSave.briefingArtesDraft) {
           try {
-            await salvarBriefingArtes(Number(finalIdInt), {
-              ...formToSave.briefingArtesDraft,
-              status: "AGUARDANDO"
-            });
+            // Sem status: registro de arte existente mantem o seu; novo nasce AGUARDANDO (salvarBriefingArtes).
+            await salvarBriefingArtes(Number(finalIdInt), { ...formToSave.briefingArtesDraft });
           } catch (arteErr) {
             console.error("[handleSave] Falha ao salvar rascunho de artes:", arteErr);
             showToast({

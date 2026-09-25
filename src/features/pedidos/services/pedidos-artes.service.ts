@@ -76,7 +76,12 @@ export async function salvarBriefingArtes(idInt: number, payload: Partial<Pedido
     enviado_por: payload.enviado_por,
     enviado_por_uid: payload.enviado_por_uid,
     updated_at: new Date().toISOString(),
-    status: payload.status || "AGUARDANDO",
+    // Sem status informado, a coluna fica FORA do UPDATE e o registro existente
+    // mantem o que tem ("EM ARTE", "Em Aprovação" do fluxo da designer...). O
+    // "AGUARDANDO" padrao so vale para registro NOVO, no INSERT abaixo. Antes o
+    // "Salvar alteracoes" da proposta mandava "AGUARDANDO" fixo e desfazia o
+    // "Enviar para arte" (22714, 25/09/2026).
+    status: payload.status || undefined,
   };
 
   Object.keys(savePayload).forEach(key => {
@@ -112,7 +117,7 @@ export async function salvarBriefingArtes(idInt: number, payload: Partial<Pedido
   } else {
     const { data: insertData, error: insertError } = await client
       .from("pedidos_artes")
-      .insert(savePayload)
+      .insert({ ...savePayload, status: savePayload.status ?? "AGUARDANDO" })
       .select();
 
     if (insertError) {
