@@ -782,6 +782,11 @@ async function fetchPropostaRows(
         }
       } else if (visibilidadeEncerrados !== "SOMENTE") {
         query = query.neq("status_interno", "CANCELADO");
+        // ENTREGUE fora da lista padrao (25/09/2026): o pedido ja saiu do fluxo.
+        // Volta com o filtro de status ENTREGUE (ramo acima) ou com texto na
+        // busca — quem procura um pedido pelo nome precisa acha-lo, entregue ou
+        // nao. Vale para os tres grupos da ordenacao, que usam esta consulta.
+        if (!condicaoBusca) query = query.neq("status_interno", "ENTREGUE");
       }
       // Em "SOMENTE", CANCELADO nao e excluido: quem abre a lista de encerrados
       // quer a lista COMPLETA deles, inclusive os cancelados — senao um marcado
