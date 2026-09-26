@@ -208,7 +208,7 @@ export async function POST(request: Request) {
         .filter(Boolean)
         .join(", ")
     },
-    { pesoGramas, valorTotal: subtotalItens }
+    { pesoGramas, valorTotal: subtotalItens, supabase }
   );
 
   const freteAtual = Number(proposta.valor_frete ?? 0);

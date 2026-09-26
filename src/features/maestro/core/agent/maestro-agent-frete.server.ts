@@ -124,7 +124,12 @@ function mapearOpcao(f: PropostaFrete): OpcaoFrete | null {
  */
 export async function cotarOpcoesFretePorEndereco(
   endereco: EnderecoFrete | null,
-  params: { pesoGramas: number; valorTotal: number },
+  params: {
+    pesoGramas: number;
+    valorTotal: number;
+    /** Client do chamador, com o JWT do usuário — a cotação de transportadoras não roda como anon. */
+    supabase: SupabaseClient;
+  },
 ): Promise<CotacaoFreteResult> {
   const pesoGramas = Math.max(0, Math.round(params.pesoGramas));
   const avisos: string[] = [];
@@ -146,7 +151,12 @@ export async function cotarOpcoesFretePorEndereco(
       cotacoes.push(solicitarCotacaoAzulCargo({ peso: pesoGramas, cep: endereco.cep, valorTotal: params.valorTotal }));
     }
     if (temCidadeUf) {
-      cotacoes.push(solicitarCotacaoTransportadoras({ peso: pesoGramas, cidade: endereco.cidade, uf: endereco.uf }));
+      cotacoes.push(
+        solicitarCotacaoTransportadoras(
+          { peso: pesoGramas, cidade: endereco.cidade, uf: endereco.uf },
+          { supabase: params.supabase },
+        ),
+      );
       cotacoes.push(solicitarCotacaoVeppo({ peso: pesoGramas, valor: params.valorTotal, cidade: endereco.cidade, uf: endereco.uf }));
     } else {
       avisos.push('Cidade/UF do CEP indisponíveis no momento — transportadoras locais não foram cotadas (SEDEX/PAC seguem pelo CEP).');
@@ -190,7 +200,7 @@ export async function cotarOpcoesFrete(
   params: { pesoGramas: number; valorTotal: number },
 ): Promise<CotacaoFreteResult> {
   const endereco = await resolverEnderecoFrete(supabase, idCliente);
-  const result = await cotarOpcoesFretePorEndereco(endereco, params);
+  const result = await cotarOpcoesFretePorEndereco(endereco, { ...params, supabase });
   if (!endereco) {
     // Mensagem específica do fluxo por cliente (a genérica fala em "endereço")
     result.avisos = [

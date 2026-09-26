@@ -1,5 +1,6 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { getSupabaseClient } from "@/lib/supabase/client";
-import { bearerDaSessao } from "@/lib/supabase/bearer";
+import { tokenDaSessao } from "@/lib/supabase/bearer";
 import type { PropostaFrete } from "@/features/orcamentos/types";
 
 /**
@@ -301,22 +302,33 @@ export function normalizeCityName(value: string): string {
 
 /**
  * Request shipping carrier freight quotes from Supabase RPC.
+ *
+ * Sempre com o JWT do usuário: `calcular_frete_transportadora` roda como quem
+ * chama e lê `transportadoras`, que não é aberta ao `anon`. No navegador vale o
+ * client da sessão; no servidor não há sessão de navegador, e a rota PRECISA
+ * passar o próprio client em `opcoes.supabase`. Até 26/09/2026 o caminho do
+ * servidor caía na anon key sem avisar, e as rotas de recotação e de frete do
+ * complementar cotavam transportadoras como `anon`.
  */
-export async function solicitarCotacaoTransportadoras(input: {
-  peso: number;
-  cidade: string;
-  uf: string;
-  id_int?: number | string;
-}): Promise<PropostaFrete[]> {
+export async function solicitarCotacaoTransportadoras(
+  input: {
+    peso: number;
+    cidade: string;
+    uf: string;
+    id_int?: number | string;
+  },
+  opcoes: { supabase?: SupabaseClient } = {}
+): Promise<PropostaFrete[]> {
   const normalizedCidade = normalizeCityName(input.cidade);
   const normalizedUf = input.uf.toUpperCase().trim();
   const pesoKg = input.peso / 1000;
 
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-  if (!supabaseUrl || !supabaseKey) {
+  const client = opcoes.supabase ?? getSupabaseClient();
+  if (!client) {
     throw new Error("Configurações do Supabase ausentes no ambiente.");
+  }
+  if (!opcoes.supabase && !(await tokenDaSessao())) {
+    throw new Error("Cotação de transportadoras exige usuário logado.");
   }
 
   const payload = {
@@ -325,23 +337,12 @@ export async function solicitarCotacaoTransportadoras(input: {
     p_uf: normalizedUf
   };
 
-  const response = await fetch(`${supabaseUrl}/rest/v1/rpc/calcular_frete_transportadora`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "apikey": supabaseKey,
-      "Authorization": `Bearer ${await bearerDaSessao(supabaseKey)}`
-    },
-    body: JSON.stringify(payload)
-  });
+  const { data, error } = await client.rpc("calcular_frete_transportadora", payload);
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Erro na cotação de transportadoras (${response.status}): ${errorText || response.statusText}`);
+  if (error) {
+    throw new Error(`Erro na cotação de transportadoras: ${error.message}`);
   }
 
-  const data = await response.json();
-  
   // Resposta esperada: [{ sm: number, un: number, mb: number }]
   let row: Record<string, number> = {};
   if (Array.isArray(data) && data.length > 0) {

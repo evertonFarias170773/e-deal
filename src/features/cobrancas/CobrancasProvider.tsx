@@ -8,6 +8,7 @@ import type { Proposta } from "@/features/orcamentos/types";
 import { clonePagamentosMock, createCobrancaFromForm } from "@/lib/mocks/pagamentos.mock";
 import { canLiberarParaPedido, resolverEmpresaRecebedora, roundMoney, getTipoCobrancaLabel, montarUrlPublicaCobranca } from "@/features/cobrancas/cobrancas-utils";
 import { getSupabaseClient } from "@/lib/supabase/client";
+import { useAuth } from "@/features/auth/AuthProvider";
 import {
   getCobrancasReadOnlyData,
   updatePagamentoV2StatusConfirmacao,
@@ -542,11 +543,22 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
     return loadData(filters);
   }, [loadData]);
 
+  // Sem sessão não há o que ler. Antes a carga saía ao montar, e o provider monta
+  // em /pagamento e em qualquer rota do ERP antes do AuthGuard redirecionar: cada
+  // visita sem login lia pagamentos_v2, propostas e boletos como `anon` (fallback
+  // de `bearerDaSessao`), ~1.000 leituras da lista inteira em 3,7 dias. Espera o
+  // AuthProvider resolver e recarrega quando o usuário muda (login).
+  const { user, isLoading: authCarregando } = useAuth();
+  const idUsuario = user?.id ?? null;
+
   useEffect(() => {
+    if (authCarregando || !idUsuario) {
+      return;
+    }
     queueMicrotask(() => {
       void loadData();
     });
-  }, [loadData]);
+  }, [loadData, authCarregando, idUsuario]);
 
   useEffect(() => {
     return () => {

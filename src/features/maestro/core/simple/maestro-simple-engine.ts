@@ -1537,7 +1537,7 @@ export async function processSimpleQueryWithBrain(
                        peso: pesoTotal,
                        cidade: v2Ctx.budgetAddressCidade,
                        uf: v2Ctx.budgetAddressUf
-                     }) : Promise.resolve([]),
+                     }, { supabase }) : Promise.resolve([]),
                      v2Ctx.budgetAddressCidade && v2Ctx.budgetAddressUf ? solicitarCotacaoVeppo({
                        peso: pesoTotal,
                        valor: serviceResult.totalGeral || 0,

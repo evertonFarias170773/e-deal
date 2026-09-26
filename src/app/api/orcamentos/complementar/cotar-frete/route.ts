@@ -322,7 +322,8 @@ export async function POST(request: Request) {
   // ── 5. Cotação do peso somado ─────────────────────────────────────────────
   const cotacao = await cotarOpcoesFretePorEndereco(endereco, {
     pesoGramas: pesoSomadoGramas,
-    valorTotal: valorDeclarado
+    valorTotal: valorDeclarado,
+    supabase
   });
 
   const freteCobradoOriginal = Number(Number(principal.valor_frete ?? 0).toFixed(2));

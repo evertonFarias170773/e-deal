@@ -328,7 +328,8 @@ export async function POST(request: Request) {
   // ── Recotação no servidor, e a conferência do preço ───────────────────────
   const cotacao = await cotarOpcoesFretePorEndereco(endereco, {
     pesoGramas: pesoSomadoGramas,
-    valorTotal: valorDeclarado
+    valorTotal: valorDeclarado,
+    supabase
   });
   const opcao = cotacao.opcoes.find((o) => o.id === opcaoId && o.id !== OPCAO_RETIRA_BALCAO.id);
   if (!opcao) {

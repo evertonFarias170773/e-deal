@@ -231,7 +231,7 @@ export async function POST(request: Request) {
         .filter(Boolean)
         .join(", ")
     },
-    { pesoGramas, valorTotal: subtotalItens }
+    { pesoGramas, valorTotal: subtotalItens, supabase }
   );
 
   const opcao = cotacao.opcoes.find((o) => o.id === opcaoId);

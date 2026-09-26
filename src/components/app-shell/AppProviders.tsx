@@ -26,14 +26,30 @@ import { CompanyProvider } from "@/features/companies/CompanyProvider";
  */
 const PREFIXOS_PUBLICOS = ["/os", "/c", "/privacidade"];
 
+/**
+ * Telas de entrada: também sem login, mas `/login` e `/boas-vindas` usam
+ * `useAuth()`, então o AuthProvider fica. Saem o CompanyProvider e o
+ * CobrancasProvider — nada de dado do ERP antes de haver sessão.
+ */
+const PREFIXOS_DE_ENTRADA = ["/login", "/cadastro", "/esqueci-minha-senha", "/atualizar-senha", "/boas-vindas"];
+
+function casaPrefixo(pathname: string | null, prefixos: string[]) {
+  return prefixos.some((prefixo) => pathname === prefixo || pathname?.startsWith(`${prefixo}/`));
+}
+
 export function AppProviders({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const ehPublica = PREFIXOS_PUBLICOS.some(
-    (prefixo) => pathname === prefixo || pathname?.startsWith(`${prefixo}/`)
-  );
 
-  if (ehPublica) {
+  if (casaPrefixo(pathname, PREFIXOS_PUBLICOS)) {
     return <>{children}</>;
+  }
+
+  if (casaPrefixo(pathname, PREFIXOS_DE_ENTRADA)) {
+    return (
+      <AuthProvider>
+        <AppToastProvider>{children}</AppToastProvider>
+      </AuthProvider>
+    );
   }
 
   return (
