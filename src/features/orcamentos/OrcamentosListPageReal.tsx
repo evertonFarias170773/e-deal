@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CalendarDays, CreditCard, FileText, Search, WalletCards, MessageSquare, Paperclip, Palette, Printer, Link as LinkIcon } from "lucide-react";
+import { BadgeCheck, CalendarDays, CreditCard, FileText, Search, WalletCards, MessageSquare, Paperclip, Palette, Printer, Link as LinkIcon } from "lucide-react";
 import { ActionsMenu } from "@/components/common/ActionsMenu";
 import { BotaoDanfe } from "@/components/common/BotaoDanfe";
 import { urlDownloadXmlNfe } from "@/lib/fiscal/download-xml-nfe";
@@ -42,6 +42,7 @@ import {
   listarPropostasDoCardEmArte,
   statusArteEhPendenciaDoCardEmArte,
   statusArteEntraNoCardEmArte,
+  statusArteEhAprovado,
   type PropostaChatResumo
 } from "@/features/orcamentos/services/orcamentos.service";
 import { useGlobalChat } from "@/features/chat/context/GlobalChatContext";
@@ -83,17 +84,55 @@ const DESTAQUE_REVISAO = { base: "#eff6ff", hover: "#dbeafe" };
 const DESTAQUE_LIBERADO = { base: "#ecfdf5", hover: "#d1fae5" };
 
 /**
- * Grupo da linha na ordem da lista (25/09/2026): 0 = REVISAO ATENDENTE,
- * 1 = financeiro LIBERADO e nao avulso, 2 = os demais. O legado APROVADO conta
- * como LIBERADO, com ou sem o sufixo " / EM ARTE". ESPELHO do recorte do
- * servidor em `fetchPropostaRows` (orcamentos.service), que ordena a lista
- * INTEIRA; aqui so reordena o que ja veio, com a mesma regra.
+ * Amarelo do grupo "Aguardando financeiro" (26/09/2026): a MESMA cor da linha
+ * na pagina Conferencia (`--row-highlight`, o destaque do E-Faturado — e so
+ * cobranca E-Faturado chega a "Aguardando financeiro"). Variavel CSS, entao o
+ * modo escuro acompanha.
  */
-function grupoDaLinha(item: { statusInterno: string; isAvulsoRaw: boolean | null | undefined }): 0 | 1 | 2 {
+const DESTAQUE_AGUARDANDO_FINANCEIRO = { base: "var(--row-highlight)", hover: "var(--row-highlight-hover)" };
+
+/**
+ * "Pago / A liberar": a Conferencia nao pinta a linha, e o selo desse estado e
+ * o azul-claro (`sky-50`, tom "info" do CobrancaStatusBadge) — e essa a cor.
+ */
+const DESTAQUE_PAGO_A_LIBERAR = { base: "#f0f9ff", hover: "#e0f2fe" };
+
+/**
+ * Grupo da linha na ordem da lista: 0 = REVISAO ATENDENTE, 1 = financeiro
+ * LIBERADO e nao avulso (o legado APROVADO conta, com ou sem " / EM ARTE"),
+ * 2 = "Aguardando financeiro", 3 = "Pago / A liberar" (os dois pelo criterio da
+ * Conferencia, marcado no servidor — `grupoConferencia`), 4 = os demais.
+ * ESPELHO do recorte do servidor em `fetchPropostaRows` (orcamentos.service),
+ * que ordena a lista INTEIRA; aqui so reordena o que ja veio, com a mesma regra.
+ */
+function grupoDaLinha(item: {
+  statusInterno: string;
+  isAvulsoRaw: boolean | null | undefined;
+  grupoConferencia: "AGUARDANDO_FINANCEIRO" | "PAGO_A_LIBERAR" | null;
+}): 0 | 1 | 2 | 3 | 4 {
   if (ehRevisaoAtendente(item)) return 0;
   const status = String(item.statusInterno || "").trim().toUpperCase();
   const liberado = status.startsWith("LIBERADO") || status.startsWith("APROVADO");
-  return liberado && item.isAvulsoRaw !== true ? 1 : 2;
+  if (liberado && item.isAvulsoRaw !== true) return 1;
+  if (item.grupoConferencia === "AGUARDANDO_FINANCEIRO") return 2;
+  if (item.grupoConferencia === "PAGO_A_LIBERAR") return 3;
+  return 4;
+}
+
+const FORMATO_DIA_MES_HORA = new Intl.DateTimeFormat("pt-BR", {
+  timeZone: "America/Sao_Paulo",
+  day: "2-digit",
+  month: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit"
+});
+
+/** "26/09 13:10", sem ano, em horario de Brasilia. Vazio sem data valida. */
+function diaMesHora(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const data = new Date(iso);
+  if (Number.isNaN(data.getTime())) return "";
+  return FORMATO_DIA_MES_HORA.format(data).replace(",", "");
 }
 
 const TIPOS_COBRANCA = ["TODOS", "PIX", "BOLETO", "E-FATURADO", "CARTAO"] as const;
@@ -124,7 +163,7 @@ function rotuloCobrancaNaTela(rotulo: string) {
     .join(" / ");
 }
 
-const CARDS_FILTRO = ["ORCAMENTOS", "EM_ARTE", "LIBERADAS", "REVISAO_ATENDENTE", "EM_PRODUCAO"] as const;
+const CARDS_FILTRO = ["ORCAMENTOS", "EM_ARTE", "ARTE_APROVADA", "LIBERADAS", "REVISAO_ATENDENTE", "EM_PRODUCAO"] as const;
 type CardFiltro = (typeof CARDS_FILTRO)[number] | null;
 const defaultStatusOrder = [
   "NOVO", 
@@ -775,6 +814,9 @@ export function OrcamentosListPageReal() {
         if (activeCard === "EM_ARTE") {
           // Mesmo criterio do servidor — ver `ehEmArte`.
           matchesStatus = ehEmArte(statusArtePorId[item.id_int]);
+        } else if (activeCard === "ARTE_APROVADA") {
+          // Mesmo criterio do servidor — `statusArteEhAprovado`.
+          matchesStatus = statusArteEhAprovado(statusArtePorId[item.id_int]);
         } else if (activeCard === "LIBERADAS") {
           // Mesmo predicado do filtro do select — ver `ehLiberada`.
           matchesStatus = ehLiberada(item);
@@ -1123,6 +1165,7 @@ export function OrcamentosListPageReal() {
     let orcCnt = 0, orcTotal = 0;
     let emArteCnt = 0, emArteTotal = 0;
     let emArteTemPendencia = false;
+    let arteAprovadaCnt = 0, arteAprovadaTotal = 0;
     let liberadasCnt = 0, liberadasTotal = 0;
     let revisaoCnt = 0, revisaoTotal = 0;
     let producaoCnt = 0, producaoTotal = 0;
@@ -1137,6 +1180,10 @@ export function OrcamentosListPageReal() {
       orcTotal += v;
 
       const s = normalizeProposalStatus(item.statusInterno);
+      // Status Arte = APROVADO (26/09/2026): mesmo predicado do clique no card.
+      if (statusArteEhAprovado(statusArtePorId[item.id_int])) {
+        arteAprovadaCnt++; arteAprovadaTotal += v;
+      }
       // Mesmo predicado do filtro do select e do clique no card — ver `ehLiberada`.
       if (ehLiberada(item)) {
         liberadasCnt++; liberadasTotal += v;
@@ -1164,11 +1211,12 @@ export function OrcamentosListPageReal() {
     return {
       orcamentos: { count: orcCnt,        total: orcTotal        },
       emArte:     { count: emArteCnt,      total: emArteTotal, temPendencia: emArteTemPendencia },
+      arteAprovada: { count: arteAprovadaCnt, total: arteAprovadaTotal },
       liberadas:  { count: liberadasCnt,   total: liberadasTotal  },
       revisao:    { count: revisaoCnt,     total: revisaoTotal    },
       producao:   { count: producaoCnt,    total: producaoTotal   }
     };
-  }, [propostas, baseCardEmArte, modelo, vendedor, filterTipoCobranca]);
+  }, [propostas, baseCardEmArte, modelo, vendedor, filterTipoCobranca, statusArtePorId]);
 
   useEffect(() => {
     console.info("[Orcamentos][ReadOnly]", {
@@ -1704,15 +1752,15 @@ Ela volta a aparecer nas listas operacionais.`
 
       {isLoading ? (
         <section className="grid gap-4 md:grid-cols-3">
-          {Array.from({ length: 5 }).map((_, index) => (
+          {Array.from({ length: 6 }).map((_, index) => (
             <div key={index} className="h-36 animate-pulse rounded-3xl border border-slate-200 bg-white dark:bg-slate-800/40 dark:border-slate-700" />
           ))}
         </section>
       ) : (
-        <section className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
+        <section className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6">
           <div onClick={() => setFilters({ card: activeCard === "ORCAMENTOS" ? null : "ORCAMENTOS", status: "TODOS" })} className={`cursor-pointer transition rounded-3xl ${activeCard === "ORCAMENTOS" ? "ring-4 ring-teal-500 scale-[1.02]" : "hover:scale-[1.02]"}`}>
             <SummaryCard
-              title="Orçamentos"
+              title="Pedidos"
               value={cardsSummary.orcamentos.count.toString()}
               description={
                 <span>
@@ -1736,6 +1784,20 @@ Ela volta a aparecer nas listas operacionais.`
               }
               tone={cardsSummary.emArte.temPendencia ? "warning" : activeCard === "EM_ARTE" ? "info" : "neutral"}
               icon={Palette}
+            />
+          </div>
+          <div onClick={() => setFilters({ card: activeCard === "ARTE_APROVADA" ? null : "ARTE_APROVADA", status: "TODOS" })} className={`cursor-pointer transition rounded-3xl ${activeCard === "ARTE_APROVADA" ? "ring-4 ring-teal-500 scale-[1.02]" : "hover:scale-[1.02]"}`}>
+            <SummaryCard
+              title="Arte Aprovada"
+              value={cardsSummary.arteAprovada.count.toString()}
+              description={
+                <span>
+                  Soma em {periodoSelecionadoLabel}:{" "}
+                  <strong className="text-base font-bold text-slate-900">{formatCurrency(cardsSummary.arteAprovada.total)}</strong>
+                </span>
+              }
+              tone={activeCard === "ARTE_APROVADA" ? "success" : "neutral"}
+              icon={BadgeCheck}
             />
           </div>
           <div onClick={() => setFilters({ card: activeCard === "LIBERADAS" ? null : "LIBERADAS", status: "TODOS" })} className={`cursor-pointer transition rounded-3xl ${activeCard === "LIBERADAS" ? "ring-4 ring-teal-500 scale-[1.02]" : "hover:scale-[1.02]"}`}>
@@ -1877,7 +1939,11 @@ Ela volta a aparecer nas listas operacionais.`
         emptyDescription="Ajuste os filtros ou crie uma nova proposta para comecar."
         getRowHighlight={(proposta) => {
           const grupo = grupoDaLinha(proposta);
-          return grupo === 0 ? DESTAQUE_REVISAO : grupo === 1 ? DESTAQUE_LIBERADO : null;
+          if (grupo === 0) return DESTAQUE_REVISAO;
+          if (grupo === 1) return DESTAQUE_LIBERADO;
+          if (grupo === 2) return DESTAQUE_AGUARDANDO_FINANCEIRO;
+          if (grupo === 3) return DESTAQUE_PAGO_A_LIBERAR;
+          return null;
         }}
         columns={[
           // Dois pontos maior que o corpo da tabela (text-sm, 14px) e em negrito:
@@ -1950,12 +2016,14 @@ Ela volta a aparecer nas listas operacionais.`
                 <span className={`font-bold ${grupoDaLinha(proposta) === 1 ? "text-emerald-800" : "text-slate-950"}`}>
                   {formatCurrency(proposta.total)}
                 </span>
+                {/* Registro mais recente de pagamentos_v2 (26/09/2026); sem pagamento, nada. */}
+                {proposta.ultimoPagamentoEm ? (
+                  <span className="text-[11px] text-slate-500">{diaMesHora(proposta.ultimoPagamentoEm)}</span>
+                ) : null}
               </div>
             ),
             align: "center"
           },
-          // Ultima mudanca real de status (26/09/2026), nao o `updated_at`.
-          { header: "Data / Hora", cell: (proposta) => <span>{(proposta.statusAlteradoEm || proposta.createdAt) ? formatDateTime(proposta.statusAlteradoEm || proposta.createdAt) : "-"}</span>, align: "center" },
           {
             // `min-w` no conteudo: a tabela e `w-full` com largura automatica, e
             // este piso e o que da a folga de ~50% pedida — a coluna media 115px
@@ -1979,6 +2047,10 @@ Ela volta a aparecer nas listas operacionais.`
             cell: (proposta) => (
               <div className="flex flex-col items-center gap-1">
                 <StatusBadge status={proposta.statusLabel} tone={getStatusTone(proposta.status)} />
+                {/* Ultima mudanca real de status (26/09/2026) — `status_alterado_em`. */}
+                {proposta.statusAlteradoEm || proposta.createdAt ? (
+                  <span className="text-[11px] text-slate-500">{diaMesHora(proposta.statusAlteradoEm || proposta.createdAt)}</span>
+                ) : null}
                 {/* O status do banco não separa "não pagou" de "pagou e falta o
                     financeiro confirmar" — sem este selo o vendedor lê
                     "Aguardando" e mexe na proposta com o dinheiro já em caixa. */}
@@ -2239,7 +2311,8 @@ Ela volta a aparecer nas listas operacionais.`
             </div>
             <div className="mt-4 space-y-2 text-sm text-slate-600">
               <p>Tipo cobrança: {rotuloCobrancaNaTela(proposta.tipoCobrancaLabel)}</p>
-              <p>Data / Hora: {(proposta.statusAlteradoEm || proposta.createdAt) ? formatDateTime(proposta.statusAlteradoEm || proposta.createdAt) : "-"}</p>
+              <p>Status desde: {diaMesHora(proposta.statusAlteradoEm || proposta.createdAt) || "-"}</p>
+              {proposta.ultimoPagamentoEm ? <p>Último pagamento: {diaMesHora(proposta.ultimoPagamentoEm)}</p> : null}
               <p>Modelo: {proposta.modelo}</p>
               <p>Envio: {proposta.envio || "—"}</p>
               <p className="font-semibold text-slate-900">Valor total: {formatCurrency(proposta.total)}</p>

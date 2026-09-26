@@ -76,6 +76,9 @@ import {
   type DivergenciaDeLote
 } from "@/features/orcamentos/lib/divergencia-lotes";
 import { danfesDoPedido } from "@/lib/fiscal/danfes-do-pedido";
+// Grupos "Aguardando financeiro" e "Pago / A liberar" da lista de Pedidos: a
+// MESMA regra que a Conferencia usa por cobranca, sem copia.
+import { getConferenciaStatusLabel } from "@/features/cobrancas/cobrancas-utils";
 import {
   COLUNAS_NOTA_DO_PEDIDO,
   escolherNotaAutorizadaDoPedido,
@@ -97,7 +100,7 @@ export type OrcamentosReadFilters = {
    * quando tem PELO MENOS UM item daquele produto.
    */
   produto?: number;
-  activeCard?: "ORCAMENTOS" | "EM_ARTE" | "LIBERADAS" | "REVISAO_ATENDENTE" | "EM_PRODUCAO" | null;
+  activeCard?: "ORCAMENTOS" | "EM_ARTE" | "ARTE_APROVADA" | "LIBERADAS" | "REVISAO_ATENDENTE" | "EM_PRODUCAO" | null;
   /**
    * Busca ampla: há texto na pesquisa ou dropdown específico selecionado.
    * Nesse modo o período é ignorado e a consulta varre o lote de até
@@ -369,6 +372,16 @@ const CHAVES_DO_CARD_EM_ARTE = new Set(STATUS_ARTE_DO_CARD_EM_ARTE.map(chaveStat
  */
 export function statusArteEntraNoCardEmArte(status: string | null | undefined): boolean {
   return CHAVES_DO_CARD_EM_ARTE.has(chaveStatusArte(status));
+}
+
+/**
+ * O pedido entra no card "Arte Aprovada" (26/09/2026)? Status Arte =
+ * APROVADO, com a mesma chave de comparacao dos demais status de arte ("APROVADO
+ * PARCIAL" e "Apr Parcial" nao entram). Usada pelo filtro do servidor e pela
+ * lista e pelo contador da tela.
+ */
+export function statusArteEhAprovado(status: string | null | undefined): boolean {
+  return chaveStatusArte(status) === "APROVADO";
 }
 
 /**
@@ -730,6 +743,64 @@ async function fetchPropostaRows(
       idsTipoCobranca = matchedIds.length > 0 ? matchedIds : [-1];
     }
 
+    // Card "Arte Aprovada": mesma mecanica do EM_ARTE — os id_int vem de
+    // `pedidos_artes` e dobram no `.in`.
+    let idsCardArteAprovada: number[] | null = null;
+    if (filters?.activeCard === "ARTE_APROVADA") {
+      const { data: artesAprovadas, error: erroArtesAprovadas } = await client
+        .from("pedidos_artes")
+        .select("id_int, status");
+      if (erroArtesAprovadas) {
+        console.warn("[OrcamentosService] Falha ao ler pedidos_artes para o card ARTE_APROVADA:", erroArtesAprovadas.message);
+      }
+      idsCardArteAprovada = Array.from(
+        new Set(
+          (artesAprovadas || [])
+            .filter((linha) => statusArteEhAprovado(linha.status))
+            .map((linha) => Number(linha.id_int))
+            .filter((id) => Number.isFinite(id) && id > 0)
+        )
+      );
+    }
+
+    /**
+     * GRUPOS DA CONFERENCIA (26/09/2026): "Aguardando financeiro" e "Pago / A
+     * liberar", pela MESMA funcao da pagina Conferencia (`getConferenciaStatusLabel`),
+     * aplicada a cada cobranca. O pedido entra no grupo se tiver ao menos uma
+     * cobranca naquele estado; com as duas, vale "Aguardando financeiro".
+     * So cobranca nao confirmada e nao cancelada pode estar em qualquer dos dois,
+     * entao a leitura se limita a elas, em paginas de 1000 (teto do PostgREST).
+     */
+    const idsAguardandoFinanceiro = new Set<number>();
+    const idsPagoALiberar = new Set<number>();
+    for (let inicio = 0; ; inicio += 1000) {
+      const { data: abertas, error: erroAbertas } = await client
+        .from("pagamentos_v2")
+        .select("id, id_int, status, confirmado, confirmado_por, tipo_cobranca, valor")
+        .or("confirmado.is.null,confirmado.eq.false")
+        .neq("status", "CANCELADO")
+        .order("id", { ascending: true })
+        .range(inicio, inicio + 999);
+      if (erroAbertas) {
+        console.warn("[OrcamentosService] Falha ao ler pagamentos_v2 para os grupos da Conferencia:", erroAbertas.message);
+        break;
+      }
+      for (const cobranca of abertas ?? []) {
+        const id = Number(cobranca.id_int);
+        if (!Number.isFinite(id) || id <= 0) continue;
+        const rotulo = getConferenciaStatusLabel({
+          ...cobranca,
+          cliente_restricao: null,
+          cliente_limite_credito: null,
+          cliente_credito: null
+        } as unknown as Parameters<typeof getConferenciaStatusLabel>[0]);
+        if (rotulo === "Aguardando financeiro") idsAguardandoFinanceiro.add(id);
+        else if (rotulo === "Pago / A liberar") idsPagoALiberar.add(id);
+      }
+      if (!abertas || abertas.length < 1000) break;
+    }
+    for (const id of idsAguardandoFinanceiro) idsPagoALiberar.delete(id);
+
     /**
      * A consulta da lista com TODOS os filtros da barra — os mesmos de sempre,
      * na mesma ordem. Montada de novo para cada grupo da ordenacao abaixo
@@ -771,6 +842,8 @@ async function fetchPropostaRows(
         const card = filters.activeCard;
         if (card === "EM_ARTE") {
           query = query.in("id_int", idsCardEmArte && idsCardEmArte.length > 0 ? idsCardEmArte : [-1]);
+        } else if (card === "ARTE_APROVADA") {
+          query = query.in("id_int", idsCardArteAprovada && idsCardArteAprovada.length > 0 ? idsCardArteAprovada : [-1]);
         } else if (card === "LIBERADAS") {
           query = query.or("status_interno.eq.LIBERADO,status_interno.eq.LIBERADO / EM ARTE");
         } else if (card === "REVISAO_ATENDENTE") {
@@ -819,17 +892,29 @@ async function fetchPropostaRows(
      * sumir nem aparecer duas vezes. Espelho na tela: `grupoDaLinha`, em
      * OrcamentosListPageReal.
      */
+    //
+    // 26/09/2026: cinco grupos — 3. "Aguardando financeiro" e 4. "Pago / A
+    // liberar" (criterio da Conferencia, acima) entram entre LIBERADO e os demais.
+    // Cada grupo exclui os anteriores; "demais" e o complemento exato.
     type Consulta = ReturnType<typeof consultaFiltrada>;
+    const foraDeRevisao = (q: Consulta) => q.or("status_interno.is.null,status_interno.neq.REVISAO ATENDENTE");
+    const foraDeLiberado = (q: Consulta) =>
+      q.or("status_interno.is.null,and(status_interno.not.ilike.LIBERADO*,status_interno.not.ilike.APROVADO*),is_avulso.eq.true");
+    const listaAguardando = Array.from(idsAguardandoFinanceiro);
+    const listaPagoALiberar = Array.from(idsPagoALiberar);
+    const listaConferencia = [...listaAguardando, ...listaPagoALiberar];
     const grupos: ((q: Consulta) => Consulta)[] = [
       (q) => q.eq("status_interno", "REVISAO ATENDENTE"),
       (q) =>
         q
           .or("status_interno.ilike.LIBERADO*,status_interno.ilike.APROVADO*")
           .or("is_avulso.is.null,is_avulso.eq.false"),
-      (q) =>
-        q
-          .or("status_interno.is.null,status_interno.neq.REVISAO ATENDENTE")
-          .or("status_interno.is.null,and(status_interno.not.ilike.LIBERADO*,status_interno.not.ilike.APROVADO*),is_avulso.eq.true")
+      (q) => foraDeLiberado(foraDeRevisao(q)).in("id_int", listaAguardando.length > 0 ? listaAguardando : [-1]),
+      (q) => foraDeLiberado(foraDeRevisao(q)).in("id_int", listaPagoALiberar.length > 0 ? listaPagoALiberar : [-1]),
+      (q) => {
+        const resto = foraDeLiberado(foraDeRevisao(q));
+        return listaConferencia.length > 0 ? resto.not("id_int", "in", `(${listaConferencia.join(",")})`) : resto;
+      }
     ];
 
     const contagens = await Promise.all(
@@ -920,16 +1005,26 @@ async function fetchPropostaRows(
      * lista exibir ao lado dele.
      */
     const pagoAConfirmarSet = new Set<string>();
+    // Registro mais recente de `pagamentos_v2` de cada pedido (26/09/2026): a data
+    // abaixo do valor na lista. Qualquer status conta — e o ultimo registro.
+    const ultimoPagamentoPorId = new Map<string, string>();
 
     if (proposalIds.length) {
       const { data: paymentData, error: paymentError } = await client
         .from("pagamentos_v2")
-        .select("id_int,tipo_cobranca,status,confirmado")
+        .select("id_int,tipo_cobranca,status,confirmado,created_at")
         .in("id_int", proposalIds)
         .returns<SupabasePagamentoTipoCobrancaRow[]>();
 
       if (!paymentError && Array.isArray(paymentData)) {
         paymentData.forEach((row) => {
+          const idDoRegistro = row.id_int === null || row.id_int === undefined ? "" : String(row.id_int);
+          const criadoEm = row.created_at ? String(row.created_at) : "";
+          if (idDoRegistro && criadoEm) {
+            const atual = ultimoPagamentoPorId.get(idDoRegistro);
+            if (!atual || new Date(criadoEm) > new Date(atual)) ultimoPagamentoPorId.set(idDoRegistro, criadoEm);
+          }
+
           const rawStatus = row.status === null || row.status === undefined ? "" : String(row.status).trim().toUpperCase();
           if (rawStatus === "CANCELADO" || rawStatus === "EXTORNADO" || rawStatus === "RECUSADO") {
             return;
@@ -1030,6 +1125,12 @@ async function fetchPropostaRows(
       ...row,
       tipos_cobranca: paymentMap.get(String(row.id_int ?? "")) ?? [],
       pago_a_confirmar: pagoAConfirmarSet.has(String(row.id_int ?? "")),
+      ultimo_pagamento_em: ultimoPagamentoPorId.get(String(row.id_int ?? "")) ?? null,
+      grupo_conferencia: idsAguardandoFinanceiro.has(Number(row.id_int))
+        ? "AGUARDANDO_FINANCEIRO"
+        : idsPagoALiberar.has(Number(row.id_int))
+          ? "PAGO_A_LIBERAR"
+          : null,
       nota_emitida: notaEmitidaDaProposta(String(row.id_int ?? "")),
       danfes: danfesDaProposta(String(row.id_int ?? "")),
       em_arte: row.em_arte === true

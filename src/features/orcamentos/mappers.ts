@@ -35,6 +35,13 @@ export type OrcamentoListItem = {
    * usa para ordenar dentro dos grupos. Vazio fora da lista.
    */
   statusAlteradoEm: string;
+  /** created_at do registro mais recente de `pagamentos_v2` do pedido; vazio sem pagamento. */
+  ultimoPagamentoEm: string;
+  /**
+   * Grupo da Conferencia do pedido (cobranca em "Aguardando financeiro" ou
+   * "Pago / A liberar"), calculado no servidor da lista; null fora dos dois.
+   */
+  grupoConferencia: "AGUARDANDO_FINANCEIRO" | "PAGO_A_LIBERAR" | null;
   dataKey: string;
   periodoKey: string;
   status: string;
@@ -420,6 +427,11 @@ function mapRowToListItem(row: SupabasePropostaRow): OrcamentoListItem | null {
     createdAt: data || "",
     updatedAt: dataAtualizacao || data || "",
     statusAlteradoEm: parseMaybeDate(row.status_alterado_em) || "",
+    ultimoPagamentoEm: parseMaybeDate((row as { ultimo_pagamento_em?: unknown }).ultimo_pagamento_em as string | null | undefined) || "",
+    grupoConferencia: (() => {
+      const g = (row as { grupo_conferencia?: unknown }).grupo_conferencia;
+      return g === "AGUARDANDO_FINANCEIRO" || g === "PAGO_A_LIBERAR" ? g : null;
+    })(),
     dataKey,
     periodoKey,
     status: normalizeStatus(statusRaw),

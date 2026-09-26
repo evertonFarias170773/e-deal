@@ -38,6 +38,7 @@ export type SupabasePagamentoTipoCobrancaRow = {
   tipo_cobranca?: SupabaseValue;
   status?: SupabaseValue;
   confirmado?: SupabaseValue;
+  created_at?: SupabaseValue;
 };
 
 export type SupabaseProdutoPropostaRow = {
