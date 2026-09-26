@@ -29,6 +29,12 @@ export type OrcamentoListItem = {
   vendedor: string;
   createdAt: string;
   updatedAt: string;
+  /**
+   * Ultima mudanca REAL de `status_interno` (`vw_propostas_lista.status_alterado_em`);
+   * sem historico, a criacao. E o que a lista de Pedidos mostra em "Data / Hora" e
+   * usa para ordenar dentro dos grupos. Vazio fora da lista.
+   */
+  statusAlteradoEm: string;
   dataKey: string;
   periodoKey: string;
   status: string;
@@ -413,6 +419,7 @@ function mapRowToListItem(row: SupabasePropostaRow): OrcamentoListItem | null {
     vendedor: vendedor || "Nao informado",
     createdAt: data || "",
     updatedAt: dataAtualizacao || data || "",
+    statusAlteradoEm: parseMaybeDate(row.status_alterado_em) || "",
     dataKey,
     periodoKey,
     status: normalizeStatus(statusRaw),

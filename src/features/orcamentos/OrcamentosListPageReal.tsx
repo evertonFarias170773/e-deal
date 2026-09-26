@@ -845,8 +845,8 @@ export function OrcamentosListPageReal() {
       const grupoB = grupoDaLinha(b);
       if (grupoA !== grupoB) return grupoA - grupoB;
 
-      const dateA = new Date(a.updatedAt || a.createdAt).getTime();
-      const dateB = new Date(b.updatedAt || b.createdAt).getTime();
+      const dateA = new Date(a.statusAlteradoEm || a.createdAt).getTime();
+      const dateB = new Date(b.statusAlteradoEm || b.createdAt).getTime();
       return dateB - dateA;
     });
   }, [modelo, periodo, ignorarPeriodo, propostas, searchIndex, search, status, vendedor, activeCard, filterTipoCobranca, statusArtePorId]);
@@ -1954,7 +1954,8 @@ Ela volta a aparecer nas listas operacionais.`
             ),
             align: "center"
           },
-          { header: "Data / Hora", cell: (proposta) => <span>{(proposta.updatedAt || proposta.createdAt) ? formatDateTime(proposta.updatedAt || proposta.createdAt) : "-"}</span>, align: "center" },
+          // Ultima mudanca real de status (26/09/2026), nao o `updated_at`.
+          { header: "Data / Hora", cell: (proposta) => <span>{(proposta.statusAlteradoEm || proposta.createdAt) ? formatDateTime(proposta.statusAlteradoEm || proposta.createdAt) : "-"}</span>, align: "center" },
           {
             // `min-w` no conteudo: a tabela e `w-full` com largura automatica, e
             // este piso e o que da a folga de ~50% pedida — a coluna media 115px
@@ -2238,7 +2239,7 @@ Ela volta a aparecer nas listas operacionais.`
             </div>
             <div className="mt-4 space-y-2 text-sm text-slate-600">
               <p>Tipo cobrança: {rotuloCobrancaNaTela(proposta.tipoCobrancaLabel)}</p>
-              <p>Data / Hora: {(proposta.updatedAt || proposta.createdAt) ? formatDateTime(proposta.updatedAt || proposta.createdAt) : "-"}</p>
+              <p>Data / Hora: {(proposta.statusAlteradoEm || proposta.createdAt) ? formatDateTime(proposta.statusAlteradoEm || proposta.createdAt) : "-"}</p>
               <p>Modelo: {proposta.modelo}</p>
               <p>Envio: {proposta.envio || "—"}</p>
               <p className="font-semibold text-slate-900">Valor total: {formatCurrency(proposta.total)}</p>

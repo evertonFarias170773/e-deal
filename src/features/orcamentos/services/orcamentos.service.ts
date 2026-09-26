@@ -622,7 +622,9 @@ async function fetchPropostaRows(
     // `modalidade_frete` e `frete_escolhido` entram para a coluna ENVIO
     // (18/09/2026): sao colunas da PROPRIA proposta, entao viajam nesta mesma
     // consulta — a lista nao ganha nenhuma ida extra ao banco por causa delas.
-    const columnsToSelect = "id, id_int, id_cliente, cliente, created_at, updated_at, vendedor, status_interno, valor_total, valor, is_avulso, empresa, valor_frete, em_arte, is_prd_aprovado, encerrado_teste_em, encerrado_teste_por, faturado_fora_em, faturado_fora_por, id_faturado, id_int_pedido_principal, modalidade_frete, frete_escolhido";
+    // `status_alterado_em` (26/09/2026): ultima mudanca REAL de `status_interno`,
+    // de `vw_propostas_lista` — ver a migration 20260926_lista_pedidos_status_alterado_em.
+    const columnsToSelect = "id, id_int, id_cliente, cliente, created_at, updated_at, status_alterado_em, vendedor, status_interno, valor_total, valor, is_avulso, empresa, valor_frete, em_arte, is_prd_aprovado, encerrado_teste_em, encerrado_teste_por, faturado_fora_em, faturado_fora_por, id_faturado, id_int_pedido_principal, modalidade_frete, frete_escolhido";
 
     // ── Pre-consultas: rodam UMA vez e viram listas de id_int. A consulta da
     //    lista e montada depois, quantas vezes a ordenacao por grupo precisar.
@@ -734,7 +736,9 @@ async function fetchPropostaRows(
      * (supabase-js nao clona consulta), sempre a partir das pre-consultas acima.
      */
     const consultaFiltrada = (opcoes: { count: "exact"; head?: boolean }) => {
-      let query = client.from("propostas").select(columnsToSelect, opcoes);
+      // A VIEW, nao a tabela: e `propostas` + `status_alterado_em`, com
+      // security_invoker — a RLS e a de `propostas` para quem consulta.
+      let query = client.from("vw_propostas_lista").select(columnsToSelect, opcoes);
 
       if (periodoFilter) {
         // A coluna vem do proprio filtro: os meses seguem em `created_at`, exatamente
@@ -844,7 +848,9 @@ async function fetchPropostaRows(
         inicioDoGrupo += porGrupo[i];
         if (ultimo < primeiro) return Promise.resolve({ data: [] as SupabasePropostaRow[], error: null });
         return recorte(consultaFiltrada({ count: "exact" }))
-          .order("updated_at", { ascending: false, nullsFirst: false })
+          // Dentro do grupo: a ultima mudanca real de status, nao o `updated_at`
+          // (que qualquer UPDATE carimba, ate a migracao APROVADO -> LIBERADO).
+          .order("status_alterado_em", { ascending: false, nullsFirst: false })
           .order("id_int", { ascending: false })
           .range(primeiro, ultimo)
           .returns<SupabasePropostaRow[]>();
