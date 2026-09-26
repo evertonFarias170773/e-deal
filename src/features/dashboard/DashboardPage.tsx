@@ -21,6 +21,7 @@ import {
 import { useDashboardExecutivo } from "@/features/dashboard/hooks/useDashboardExecutivo";
 import { AlertasBanner } from "@/features/dashboard/sections/AlertasBanner";
 import { RankingVendedoresSection } from "@/features/dashboard/sections/RankingVendedoresSection";
+import { InfraSaudeSection } from "@/features/dashboard/sections/InfraSaudeSection";
 import { KpiCardsSection } from "@/features/dashboard/sections/KpiCardsSection";
 import { FinanceiroSection } from "@/features/dashboard/sections/FinanceiroSection";
 import { ComercialSection } from "@/features/dashboard/sections/ComercialSection";
@@ -159,6 +160,7 @@ export function DashboardPage() {
           <FiscalSection fiscal={data.fiscal} range={range} />
           <ClientesSection cli={data.clientes} range={range} />
           {isAdminView ? <RankingVendedoresSection range={range} /> : null}
+          {isAdminView ? <InfraSaudeSection /> : null}
         </>
       )}
 
