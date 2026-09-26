@@ -112,15 +112,22 @@ export async function buscarArtesDasPropostas(idInts: number[]): Promise<{
   status: Record<number, string>;
   evento: Record<number, string>;
   designer: Record<number, string>;
+  /**
+   * Ultima mudanca do status da arte (26/09/2026), de
+   * `pedidos_artes_status_alterado`, na MESMA consulta (embutida pela FK). So
+   * existe para mudanca feita depois de ligar o trigger; sem ela, o pedido nao
+   * aparece no mapa e nada e exibido.
+   */
+  desde: Record<number, string>;
 }> {
   const client = getSupabaseClient();
   const ids = Array.from(new Set(idInts.filter((n) => Number.isFinite(n) && n > 0)));
-  const vazio = { status: {}, evento: {}, designer: {} };
+  const vazio = { status: {}, evento: {}, designer: {}, desde: {} };
   if (!client || ids.length === 0) return vazio;
 
   const { data, error } = await client
     .from("pedidos_artes")
-    .select("id_int, status, nome_evento, designer_nome, created_at")
+    .select("id_int, status, nome_evento, designer_nome, created_at, pedidos_artes_status_alterado(status_alterado_em)")
     .in("id_int", ids)
     .order("created_at", { ascending: true });
 
@@ -133,6 +140,7 @@ export async function buscarArtesDasPropostas(idInts: number[]): Promise<{
   const status: Record<number, string> = {};
   const evento: Record<number, string> = {};
   const designer: Record<number, string> = {};
+  const desde: Record<number, string> = {};
   const gravar = (mapa: Record<number, string>, id: number, valor: string | null) => {
     if (valor) mapa[id] = valor;
     else delete mapa[id];
@@ -144,8 +152,12 @@ export async function buscarArtesDasPropostas(idInts: number[]): Promise<{
     gravar(status, id, textoExibido(linha.status));
     gravar(evento, id, textoExibido((linha as { nome_evento?: string | null }).nome_evento));
     gravar(designer, id, textoExibido((linha as { designer_nome?: string | null }).designer_nome));
+    // Relacao 1:1 (a PK da lateral e a FK): o PostgREST devolve objeto ou null.
+    const lateral = (linha as { pedidos_artes_status_alterado?: unknown }).pedidos_artes_status_alterado;
+    const registro = Array.isArray(lateral) ? lateral[0] : lateral;
+    gravar(desde, id, (registro as { status_alterado_em?: string | null } | null | undefined)?.status_alterado_em ?? null);
   }
-  return { status, evento, designer };
+  return { status, evento, designer, desde };
 }
 
 /**

@@ -773,6 +773,8 @@ export function OrcamentosListPageReal() {
    */
   const [eventoPorId, setEventoPorId] = useState<Record<number, string>>({});
   const [designerPorId, setDesignerPorId] = useState<Record<number, string>>({});
+  /** Ultima mudanca do status da arte (26/09/2026); so para mudanca feita depois de ligar o registro. */
+  const [statusArteDesdePorId, setStatusArteDesdePorId] = useState<Record<number, string>>({});
   const fetchedStatusArteIdsRef = useRef<Set<number>>(new Set());
 
   const searchIndex = useMemo(() => {
@@ -972,6 +974,7 @@ export function OrcamentosListPageReal() {
         setStatusArtePorId((atual) => ({ ...atual, ...dados.status }));
         setEventoPorId((atual) => ({ ...atual, ...dados.evento }));
         setDesignerPorId((atual) => ({ ...atual, ...dados.designer }));
+        setStatusArteDesdePorId((atual) => ({ ...atual, ...dados.desde }));
       } catch (err) {
         console.error("[OrcamentosListPageReal] Erro ao buscar status da arte das propostas:", err);
       }
@@ -2122,7 +2125,9 @@ Ela volta a aparecer nas listas operacionais.`
               // Sem link ativo o botao continua sumindo: nao ha para onde levar.
               const mostraLink = Boolean(linkCliente);
 
+              const statusArteDesde = statusArteDesdePorId[proposta.id_int];
               return (
+                <div className="flex flex-col items-center gap-1">
                 <div className="flex items-center justify-center gap-1.5">
                   <span
                     className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold whitespace-nowrap ${classeDoStatusArte(statusArte)}`}
@@ -2140,6 +2145,11 @@ Ela volta a aparecer nas listas operacionais.`
                       <LinkIcon className="h-3.5 w-3.5" />
                     </a>
                   ) : null}
+                </div>
+                {/* Ultima mudanca do status da arte (26/09/2026); sem registro, nada. */}
+                {statusArteDesde ? (
+                  <span className="text-[11px] text-slate-500">{diaMesHora(statusArteDesde)}</span>
+                ) : null}
                 </div>
               );
             },
