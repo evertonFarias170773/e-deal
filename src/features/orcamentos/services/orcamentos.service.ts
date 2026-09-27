@@ -385,6 +385,44 @@ export function statusArteEhAprovado(status: string | null | undefined): boolean
 }
 
 /**
+ * Status do pedido que TIRAM o pedido do card "Arte Aprovada" (27/09/2026,
+ * decisao do dono): ja entrou na producao, saiu dela ou foi cancelado. Cada um
+ * com e sem " / PENDENTE". Comparacao exata com `status_interno`, igual no
+ * servidor e na tela.
+ */
+const STATUS_BASE_FORA_DO_CARD_ARTE_APROVADA = [
+  "CANCELADO",
+  "ENTREGUE",
+  "EM TRANSITO",
+  "A RETIRAR",
+  "EXPEDICAO",
+  "REVISAO PRODUCAO",
+  "EM PRODUCAO",
+  "EM IMPRESSAO",
+  "EM ACABAMENTO",
+];
+export const STATUS_FORA_DO_CARD_ARTE_APROVADA: readonly string[] = STATUS_BASE_FORA_DO_CARD_ARTE_APROVADA.flatMap(
+  (status) => [status, `${status} / PENDENTE`]
+);
+const CONJUNTO_FORA_DO_CARD_ARTE_APROVADA = new Set(STATUS_FORA_DO_CARD_ARTE_APROVADA);
+
+/**
+ * O pedido entra no card "Arte Aprovada"? (27/09/2026) Status Arte = APROVADO,
+ * `is_prd_aprovado` falso (ou vazio) e `status_interno` fora de
+ * `STATUS_FORA_DO_CARD_ARTE_APROVADA`. A flag e reforco: sozinha nao basta,
+ * porque ha pedido em producao e entregue com ela falsa. Status vazio entra.
+ * O servidor aplica o mesmo criterio em `consultaFiltrada`.
+ */
+export function pedidoEntraNoCardArteAprovada(
+  statusArte: string | null | undefined,
+  pedido: { statusInterno?: string | null; is_prd_aprovado?: boolean | null }
+): boolean {
+  if (!statusArteEhAprovado(statusArte)) return false;
+  if (pedido.is_prd_aprovado === true) return false;
+  return !CONJUNTO_FORA_DO_CARD_ARTE_APROVADA.has(String(pedido.statusInterno ?? ""));
+}
+
+/**
  * Os status que pintam o card EM_ARTE de laranja: basta UMA proposta da lista
  * do card com um deles. Decisao do dono (15/09/2026). Os dois tambem estao em
  * `STATUS_ARTE_DO_CARD_EM_ARTE`, entao toda proposta que acende o laranja ja
@@ -844,6 +882,11 @@ async function fetchPropostaRows(
           query = query.in("id_int", idsCardEmArte && idsCardEmArte.length > 0 ? idsCardEmArte : [-1]);
         } else if (card === "ARTE_APROVADA") {
           query = query.in("id_int", idsCardArteAprovada && idsCardArteAprovada.length > 0 ? idsCardArteAprovada : [-1]);
+          // Mesmo criterio de `pedidoEntraNoCardArteAprovada`. `not.in` sozinho
+          // descartaria o status vazio (NULL), que entra no card.
+          query = query.or("is_prd_aprovado.is.null,is_prd_aprovado.eq.false");
+          const listaFora = STATUS_FORA_DO_CARD_ARTE_APROVADA.map((status) => `"${status}"`).join(",");
+          query = query.or(`status_interno.is.null,status_interno.not.in.(${listaFora})`);
         } else if (card === "LIBERADAS") {
           query = query.or("status_interno.eq.LIBERADO,status_interno.eq.LIBERADO / EM ARTE");
         } else if (card === "REVISAO_ATENDENTE") {
@@ -1505,7 +1548,27 @@ export async function listarPropostasDoCardEmArte(
   periodo: string,
   filters?: OrcamentosReadFilters
 ): Promise<OrcamentoListItem[] | null> {
-  const filtrosDoCard: OrcamentosReadFilters = { ...filters, activeCard: "EM_ARTE" };
+  return listarPropostasDoCard("EM_ARTE", periodo, filters);
+}
+
+/**
+ * Base da contagem e da soma do card "Arte Aprovada" (27/09/2026): o periodo
+ * inteiro, pela MESMA leitura da lista com o card ligado — mesma razao e mesma
+ * mecanica de `listarPropostasDoCardEmArte`. `null` quando a leitura falha.
+ */
+export async function listarPropostasDoCardArteAprovada(
+  periodo: string,
+  filters?: OrcamentosReadFilters
+): Promise<OrcamentoListItem[] | null> {
+  return listarPropostasDoCard("ARTE_APROVADA", periodo, filters);
+}
+
+async function listarPropostasDoCard(
+  card: "EM_ARTE" | "ARTE_APROVADA",
+  periodo: string,
+  filters?: OrcamentosReadFilters
+): Promise<OrcamentoListItem[] | null> {
+  const filtrosDoCard: OrcamentosReadFilters = { ...filters, activeCard: card };
   const itens: OrcamentoListItem[] = [];
   for (let pagina = 1; ; pagina++) {
     const resultado = await getOrcamentosReadOnlyData(periodo, pagina, 200, filtrosDoCard);

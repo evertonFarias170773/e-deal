@@ -40,9 +40,10 @@ import {
   retirarPropostaDaProducao,
   PERIODO_ULTIMOS_15_DIAS,
   listarPropostasDoCardEmArte,
+  listarPropostasDoCardArteAprovada,
+  pedidoEntraNoCardArteAprovada,
   statusArteEhPendenciaDoCardEmArte,
   statusArteEntraNoCardEmArte,
-  statusArteEhAprovado,
   type PropostaChatResumo
 } from "@/features/orcamentos/services/orcamentos.service";
 import { useGlobalChat } from "@/features/chat/context/GlobalChatContext";
@@ -661,6 +662,25 @@ export function OrcamentosListPageReal() {
     };
   }, [periodo, filtrosDoCardEmArte, rawPropostas, user]);
 
+  /**
+   * Base do card "Arte Aprovada" (27/09/2026): o periodo inteiro, com os MESMOS
+   * filtros da base do EM ARTE (os que a lista tera depois do clique) — assim o
+   * numero do card e o total da lista filtrada saem do mesmo criterio e periodo.
+   */
+  const [baseCardArteAprovada, setBaseCardArteAprovada] = useState<OrcamentoListItem[]>([]);
+
+  useEffect(() => {
+    let ativo = true;
+    void (async () => {
+      const itens = await listarPropostasDoCardArteAprovada(periodo, filtrosDoCardEmArte);
+      if (!ativo) return;
+      setBaseCardArteAprovada(filtrarPeloEscopo(itens ?? [], user));
+    })();
+    return () => {
+      ativo = false;
+    };
+  }, [periodo, filtrosDoCardEmArte, rawPropostas, user]);
+
   const [chatResumos, setChatResumos] = useState<Record<number, PropostaChatResumo>>({});
 
   const { openChat } = useGlobalChat();
@@ -817,8 +837,8 @@ export function OrcamentosListPageReal() {
           // Mesmo criterio do servidor — ver `ehEmArte`.
           matchesStatus = ehEmArte(statusArtePorId[item.id_int]);
         } else if (activeCard === "ARTE_APROVADA") {
-          // Mesmo criterio do servidor — `statusArteEhAprovado`.
-          matchesStatus = statusArteEhAprovado(statusArtePorId[item.id_int]);
+          // Mesmo criterio do servidor — `pedidoEntraNoCardArteAprovada`.
+          matchesStatus = pedidoEntraNoCardArteAprovada(statusArtePorId[item.id_int], item);
         } else if (activeCard === "LIBERADAS") {
           // Mesmo predicado do filtro do select — ver `ehLiberada`.
           matchesStatus = ehLiberada(item);
@@ -1183,10 +1203,6 @@ export function OrcamentosListPageReal() {
       orcTotal += v;
 
       const s = normalizeProposalStatus(item.statusInterno);
-      // Status Arte = APROVADO (26/09/2026): mesmo predicado do clique no card.
-      if (statusArteEhAprovado(statusArtePorId[item.id_int])) {
-        arteAprovadaCnt++; arteAprovadaTotal += v;
-      }
       // Mesmo predicado do filtro do select e do clique no card — ver `ehLiberada`.
       if (ehLiberada(item)) {
         liberadasCnt++; liberadasTotal += v;
@@ -1211,6 +1227,14 @@ export function OrcamentosListPageReal() {
       if ((item.statusArteDoCard ?? []).some(statusArteEhPendenciaDoCardEmArte)) emArteTemPendencia = true;
     }
 
+    // "Arte Aprovada" conta sobre o periodo inteiro (`baseCardArteAprovada`),
+    // que ja vem filtrado pelo criterio do card no servidor.
+    for (const item of baseCardArteAprovada) {
+      if (!passaFiltrosDosCards(item, filtrosDosCards)) continue;
+      arteAprovadaCnt++;
+      arteAprovadaTotal += Number(item.total) || 0;
+    }
+
     return {
       orcamentos: { count: orcCnt,        total: orcTotal        },
       emArte:     { count: emArteCnt,      total: emArteTotal, temPendencia: emArteTemPendencia },
@@ -1219,7 +1243,7 @@ export function OrcamentosListPageReal() {
       revisao:    { count: revisaoCnt,     total: revisaoTotal    },
       producao:   { count: producaoCnt,    total: producaoTotal   }
     };
-  }, [propostas, baseCardEmArte, modelo, vendedor, filterTipoCobranca, statusArtePorId]);
+  }, [propostas, baseCardEmArte, baseCardArteAprovada, modelo, vendedor, filterTipoCobranca]);
 
   useEffect(() => {
     console.info("[Orcamentos][ReadOnly]", {
