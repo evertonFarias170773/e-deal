@@ -19,6 +19,7 @@ import type { OrcamentoListItem } from "@/features/orcamentos/mappers";
 import { encerrarTeste, reabrirTeste } from "@/features/pedidos/services/encerrar-teste.client";
 import { desmarcarFaturadoNoSistemaAntigo } from "@/features/fiscal/services/faturado-fora.client";
 import { buscarRastreioDasPropostas, type RastreioDaProposta } from "@/features/orcamentos/services/rastreio-lista.service";
+import { buscarPrazoEnvioDosPedidos } from "@/features/orcamentos/services/prazo-envio-lista.service";
 import { RastreioPropostaModal } from "@/features/orcamentos/components/RastreioPropostaModal";
 import { buscarNomesDosSocios } from "@/features/orcamentos/services/socio-pagador.service";
 import { FiltroProdutoDrop, type OpcaoProduto } from "@/features/orcamentos/components/FiltroProdutoDrop";
@@ -918,6 +919,29 @@ export function OrcamentosListPageReal() {
   const visibleIdInts = useMemo(() => {
     return filteredPropostas.slice(0, 100).map((p) => p.id_int);
   }, [filteredPropostas]);
+
+  /**
+   * Prazo de envio (27/09/2026): so com o card "Em Producao" ligado, abaixo da
+   * forma de envio. Fonte e formato em `buscarPrazoEnvioDosPedidos`. Nos outros
+   * filtros nada e buscado e a coluna segue como antes.
+   */
+  const [prazoEnvioPorId, setPrazoEnvioPorId] = useState<Record<number, string>>({});
+  const idsPrazoEnvio = useMemo(
+    () => (activeCard === "EM_PRODUCAO" ? filteredPropostas.map((p) => p.id_int) : []),
+    [activeCard, filteredPropostas]
+  );
+
+  useEffect(() => {
+    if (idsPrazoEnvio.length === 0) return;
+    let ativo = true;
+    void (async () => {
+      const mapa = await buscarPrazoEnvioDosPedidos(idsPrazoEnvio);
+      if (ativo) setPrazoEnvioPorId(mapa);
+    })();
+    return () => {
+      ativo = false;
+    };
+  }, [idsPrazoEnvio, rawPropostas]);
 
   /**
    * Rastreio das linhas da pagina. Consulta a parte porque nem o tipo de frete
@@ -2199,7 +2223,16 @@ Ela volta a aparecer nas listas operacionais.`
             header: "Envio",
             // Clique da coluna (25/09/2026): abre o pedido na aba Fretes.
             onCellClick: (proposta) => router.push(`/orcamentos/${proposta.id_int}/editar?tab=fretes`),
-            cell: (proposta) => proposta.envio || "—",
+            cell: (proposta) => {
+              const prazoEnvio = activeCard === "EM_PRODUCAO" ? prazoEnvioPorId[proposta.id_int] : undefined;
+              if (!prazoEnvio) return proposta.envio || "—";
+              return (
+                <div className="flex flex-col items-center gap-1">
+                  <span>{proposta.envio || "—"}</span>
+                  <span className="text-[11px] text-slate-500">{prazoEnvio}</span>
+                </div>
+              );
+            },
             align: "center"
           },
           {
