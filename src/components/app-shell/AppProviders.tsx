@@ -24,7 +24,7 @@ import { CompanyProvider } from "@/features/companies/CompanyProvider";
  * Ou seja: a última linha de defesa segurou o que a primeira deixou passar. As
  * duas precisam valer.
  */
-const PREFIXOS_PUBLICOS = ["/os", "/c", "/privacidade"];
+const PREFIXOS_PUBLICOS = ["/os", "/c", "/p", "/privacidade"];
 
 /**
  * Telas de entrada: também sem login, mas `/login` e `/boas-vindas` usam

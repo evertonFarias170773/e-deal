@@ -4027,6 +4027,43 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     }
   }
 
+  /**
+   * Link da area do cliente (/p/<token>): o token so existe onde o segredo
+   * existe, entao vem da rota. Copiado para a area de transferencia como o
+   * link de cadastro em MeuLinkCadastro — com `window.location.origin`, para
+   * o link nascer no dominio em que a tela esta aberta.
+   */
+  async function handleCopiarLinkAreaCliente() {
+    if (!proposta?.id_int) return;
+    const client = getSupabaseClient();
+    if (!client) {
+      showToast({ type: "error", title: "Cliente Supabase indisponível." });
+      return;
+    }
+    const sessao = await client.auth.getSession();
+    const bearer = sessao.data.session?.access_token ?? "";
+    if (!bearer) {
+      showToast({ type: "error", title: "Sessão expirada. Entre novamente." });
+      return;
+    }
+    try {
+      const resposta = await fetch("/api/area-cliente/link", {
+        method: "POST",
+        headers: { "content-type": "application/json", Authorization: `Bearer ${bearer}` },
+        body: JSON.stringify({ idInt: proposta.id_int })
+      });
+      const json = (await resposta.json().catch(() => null)) as { ok?: boolean; caminho?: string; mensagem?: string } | null;
+      if (!resposta.ok || !json?.ok || !json.caminho) {
+        showToast({ type: "error", title: "Não foi possível gerar o link.", description: json?.mensagem });
+        return;
+      }
+      await navigator.clipboard.writeText(`${window.location.origin}${json.caminho}`);
+      showToast({ type: "success", title: "Link da área do cliente copiado." });
+    } catch {
+      showToast({ type: "error", title: "Não foi possível copiar o link." });
+    }
+  }
+
   function acoesDaProposta() {
     if (!proposta) return [];
     const idInt = proposta.id_int;
@@ -4048,6 +4085,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
         onClick: () => void handleDuplicarDaProposta()
       },
       { label: "Copiar proposta informal", onClick: () => void copyInformal() },
+      { label: "Copiar link da área do cliente", onClick: () => void handleCopiarLinkAreaCliente() },
       {
         label: acaoEmCurso === "pdf" ? "Gerando PDF..." : "Gerar PDF da proposta",
         onClick: () => void handleGerarPdfDaProposta()

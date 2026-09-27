@@ -28,6 +28,17 @@ const nextConfig: NextConfig = {
         ],
       },
       {
+        // Área do cliente (/p/<token>): mesma regra do /c — o token É o
+        // caminho, e o único link para fora (checkout do cartão) abre sem
+        // referrer para o token não viajar junto.
+        source: "/p/:path*",
+        headers: [
+          { key: "X-Robots-Tag", value: "noindex, nofollow" },
+          { key: "Referrer-Policy", value: "no-referrer" },
+          { key: "Cache-Control", value: "no-store" },
+        ],
+      },
+      {
         // Aviso de privacidade: aberto pelo formulário, e por isso também sem
         // referrer — senão o token do link do atendente viajaria até aqui.
         source: "/privacidade",
