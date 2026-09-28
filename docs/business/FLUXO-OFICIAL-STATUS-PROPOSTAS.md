@@ -286,9 +286,9 @@ Não significa:
 Transições esperadas:
 
 ```text
-NOVO ? NOVO / EM ARTE
-NOVO ? AGUARDANDO
-NOVO ? CANCELADO
+NOVO → NOVO / EM ARTE
+NOVO → AGUARDANDO
+NOVO → CANCELADO
 ```
 
 ## 6.2 `NOVO / EM ARTE`
@@ -307,8 +307,8 @@ Isso não autoriza:
 Transições esperadas:
 
 ```text
-NOVO / EM ARTE ? AGUARDANDO / EM ARTE
-NOVO / EM ARTE ? CANCELADO
+NOVO / EM ARTE → AGUARDANDO / EM ARTE
+NOVO / EM ARTE → CANCELADO
 ```
 
 ## 6.3 `AGUARDANDO`
@@ -327,10 +327,10 @@ public.pagamentos_v2.status = 'A_VENCER'
 Transições esperadas:
 
 ```text
-AGUARDANDO ? AGUARDANDO / EM ARTE
-AGUARDANDO ? AGUARDANDO / PENDENTE
-AGUARDANDO ? LIBERADO
-AGUARDANDO ? CANCELADO
+AGUARDANDO → AGUARDANDO / EM ARTE
+AGUARDANDO → AGUARDANDO / PENDENTE
+AGUARDANDO → LIBERADO
+AGUARDANDO → CANCELADO
 ```
 
 ## 6.4 `AGUARDANDO / EM ARTE`
@@ -342,9 +342,9 @@ A proposta ainda não está liberada para fabricação.
 Transições esperadas:
 
 ```text
-AGUARDANDO / EM ARTE ? LIBERADO / EM ARTE
-AGUARDANDO / EM ARTE ? AGUARDANDO / PENDENTE
-AGUARDANDO / EM ARTE ? CANCELADO
+AGUARDANDO / EM ARTE → LIBERADO / EM ARTE
+AGUARDANDO / EM ARTE → AGUARDANDO / PENDENTE
+AGUARDANDO / EM ARTE → CANCELADO
 ```
 
 ## 6.5 `AGUARDANDO / PENDENTE`
@@ -362,10 +362,10 @@ Não usar esse status como substituto de uma pendência detalhada.
 Transições esperadas:
 
 ```text
-AGUARDANDO / PENDENTE ? AGUARDANDO
-AGUARDANDO / PENDENTE ? AGUARDANDO / EM ARTE
-AGUARDANDO / PENDENTE ? LIBERADO
-AGUARDANDO / PENDENTE ? CANCELADO
+AGUARDANDO / PENDENTE → AGUARDANDO
+AGUARDANDO / PENDENTE → AGUARDANDO / EM ARTE
+AGUARDANDO / PENDENTE → LIBERADO
+AGUARDANDO / PENDENTE → CANCELADO
 ```
 
 ## 6.5.1 `NOVO_ARTE_APROVADA` e `AGUARDANDO_ARTE_APROVADA`
@@ -382,9 +382,9 @@ Representam `NOVO` e `AGUARDANDO` com **todas as artes já aprovadas** antes da 
 **Regra que grava.** Proposta não avulsa, com modelos, e todos os modelos com `pedidos_modelos.status_arte` em `APROVADA`, `APROVADO`, `APROVADA_CLIENTE`, `LIBERADA`, `IMPRESSA` ou `NAO_NECESSARIA`. Com isso, o resultado financeiro do motor vira:
 
 ```text
-NOVO       ? NOVO_ARTE_APROVADA
-AGUARDANDO ? AGUARDANDO_ARTE_APROVADA
-LIBERADO   ? REVISAO ATENDENTE   (regra já existente, inalterada)
+NOVO       → NOVO_ARTE_APROVADA
+AGUARDANDO → AGUARDANDO_ARTE_APROVADA
+LIBERADO   → REVISAO ATENDENTE   (regra já existente, inalterada)
 ```
 
 **Tratamento como sufixo.** `_ARTE_APROVADA` é tratado como ` / EM ARTE`: o status base é `NOVO` ou `AGUARDANDO`, e o pedido continua na família financeira. Pontos que aplicam isso:
@@ -400,12 +400,12 @@ LIBERADO   ? REVISAO ATENDENTE   (regra já existente, inalterada)
 Transições esperadas:
 
 ```text
-NOVO_ARTE_APROVADA ? NOVO | AGUARDANDO | AGUARDANDO_ARTE_APROVADA
-NOVO_ARTE_APROVADA ? LIBERADO ? REVISAO ATENDENTE   (pagamento confirmado)
-NOVO_ARTE_APROVADA ? CANCELADO
-AGUARDANDO_ARTE_APROVADA ? AGUARDANDO | NOVO
-AGUARDANDO_ARTE_APROVADA ? LIBERADO ? REVISAO ATENDENTE   (pagamento confirmado)
-AGUARDANDO_ARTE_APROVADA ? CANCELADO
+NOVO_ARTE_APROVADA → NOVO | AGUARDANDO | AGUARDANDO_ARTE_APROVADA
+NOVO_ARTE_APROVADA → LIBERADO → REVISAO ATENDENTE   (pagamento confirmado)
+NOVO_ARTE_APROVADA → CANCELADO
+AGUARDANDO_ARTE_APROVADA → AGUARDANDO | NOVO
+AGUARDANDO_ARTE_APROVADA → LIBERADO → REVISAO ATENDENTE   (pagamento confirmado)
+AGUARDANDO_ARTE_APROVADA → CANCELADO
 ```
 
 Como `NOVO` e `AGUARDANDO`, não autorizam impressão, fabricação nem entrada na fila produtiva.
@@ -425,9 +425,9 @@ A entrada na Produção continua dependendo de ação explícita.
 Transições esperadas:
 
 ```text
-LIBERADO ? LIBERADO / EM ARTE
-LIBERADO ? REVISAO ATENDENTE
-LIBERADO ? CANCELADO
+LIBERADO → LIBERADO / EM ARTE
+LIBERADO → REVISAO ATENDENTE
+LIBERADO → CANCELADO
 ```
 
 ## 6.7 `LIBERADO / EM ARTE`
@@ -437,8 +437,8 @@ Representa proposta comercialmente liberada, mas com arte ainda em andamento.
 Transições esperadas:
 
 ```text
-LIBERADO / EM ARTE ? REVISAO ATENDENTE
-LIBERADO / EM ARTE ? CANCELADO
+LIBERADO / EM ARTE → REVISAO ATENDENTE
+LIBERADO / EM ARTE → CANCELADO
 ```
 
 Antes de avançar, validar a situação dos modelos e artes existentes.
@@ -463,7 +463,7 @@ Validar:
 Transição esperada:
 
 ```text
-REVISAO ATENDENTE ? REVISAO PRODUCAO
+REVISAO ATENDENTE → REVISAO PRODUCAO
 ```
 
 ## 6.9 `REVISAO PRODUCAO`
@@ -486,7 +486,7 @@ Nesse estágio, validar:
 Transição esperada:
 
 ```text
-REVISAO PRODUCAO ? EM PRODUCAO
+REVISAO PRODUCAO → EM PRODUCAO
 ```
 
 A entrada na lista oficial depende também de `is_prd_aprovado = true`.
@@ -500,7 +500,7 @@ Não deve ser atribuído somente porque a arte foi aprovada ou o pagamento foi c
 Transição esperada:
 
 ```text
-EM PRODUCAO ? EM IMPRESSAO
+EM PRODUCAO → EM IMPRESSAO
 ```
 
 ## 6.11 `EM IMPRESSAO`
@@ -510,8 +510,8 @@ Representa impressão em andamento.
 Transições esperadas:
 
 ```text
-EM IMPRESSAO ? EM ACABAMENTO
-EM IMPRESSAO ? EM IMPRESSAO / PENDENTE
+EM IMPRESSAO → EM ACABAMENTO
+EM IMPRESSAO → EM IMPRESSAO / PENDENTE
 ```
 
 ## 6.11.1 `EM IMPRESSAO / PENDENTE`
@@ -523,7 +523,7 @@ O motivo da pausa é opcional e, quando informado, é registrado na auditoria.
 Transições esperadas:
 
 ```text
-EM IMPRESSAO / PENDENTE ? EM IMPRESSAO
+EM IMPRESSAO / PENDENTE → EM IMPRESSAO
 ```
 
 A retomada da etapa base é a transição natural. Qualquer outra saída é excepcional, com motivo opcional.
@@ -535,8 +535,8 @@ Representa atividades posteriores à impressão, como corte, serrilha, dobra, la
 Transições esperadas:
 
 ```text
-EM ACABAMENTO ? EXPEDICAO
-EM ACABAMENTO ? EM ACABAMENTO / PENDENTE
+EM ACABAMENTO → EXPEDICAO
+EM ACABAMENTO → EM ACABAMENTO / PENDENTE
 ```
 
 ## 6.12.1 `EM ACABAMENTO / PENDENTE`
@@ -548,7 +548,7 @@ O motivo da pausa é opcional e, quando informado, é registrado na auditoria.
 Transições esperadas:
 
 ```text
-EM ACABAMENTO / PENDENTE ? EM ACABAMENTO
+EM ACABAMENTO / PENDENTE → EM ACABAMENTO
 ```
 
 A retomada da etapa base é a transição natural. Qualquer outra saída é excepcional, com motivo opcional.
@@ -560,17 +560,17 @@ Representa produto concluído e encaminhado ao fluxo de entrega.
 Transições:
 
 ```text
-EXPEDICAO ? A RETIRAR
-EXPEDICAO ? EM TRANSITO
+EXPEDICAO → A RETIRAR
+EXPEDICAO → EM TRANSITO
 ```
 
 A escolha depende do método real de entrega.
 
 O próximo natural é determinado pela cotação de frete escolhida (`public.cotacao_frete.escolhido = true`):
 
-- serviço de retirada (ex.: `RETIRA BALCÃO`, `RETIRADA LOCAL`) ? natural é `A RETIRAR`;
-- serviço de transporte (transportadora, SEDEX, motoboy etc.) ? natural é `EM TRANSITO`;
-- sem cotação escolhida ou serviço não informativo ? nenhum dos dois é natural; ambos ficam disponíveis com confirmação.
+- serviço de retirada (ex.: `RETIRA BALCÃO`, `RETIRADA LOCAL`) → natural é `A RETIRAR`;
+- serviço de transporte (transportadora, SEDEX, motoboy etc.) → natural é `EM TRANSITO`;
+- sem cotação escolhida ou serviço não informativo → nenhum dos dois é natural; ambos ficam disponíveis com confirmação.
 
 ### Pedido complementar (14/09/2026)
 
@@ -593,7 +593,7 @@ A confirmação da retirada deve seguir o fluxo oficial.
 A transição final pode ser:
 
 ```text
-A RETIRAR ? ENTREGUE
+A RETIRAR → ENTREGUE
 ```
 
 ## 6.15 `EM TRANSITO`
@@ -603,7 +603,7 @@ Representa pedido coletado ou despachado.
 Transição:
 
 ```text
-EM TRANSITO ? ENTREGUE
+EM TRANSITO → ENTREGUE
 ```
 
 A confirmação deve vir de evidência operacional válida.
@@ -836,55 +836,91 @@ a proposta a `REVISAO ATENDENTE` e a liberação passa a ser possível pela tela
 Do nosso lado não há caminho: nenhuma tela nossa altera `status_arte` de modelo
 existente.
 
-## 8.3 Pendência conhecida — o financeiro reescreve `status_interno` sem olhar a etapa
+## 8.3 O financeiro do banco reescreve `status_interno` — com guarda de etapa
 
-Levantado em 20/08/2026. **Não corrigido — aguarda decisão do dono.**
+Levantado em 20/08/2026 como pendência. **Corrigido:** guarda de etapa aplicada em
+25/08/2026 (`20260825_guard_status_protegido_status_financeiro`); `CANCELADO` entrou
+na guarda em 08/09/2026 (`20260908_guarda_cancelado_status_financeiro`), por decisão
+do dono. Texto revisto em 28/09/2026 contra o corpo vivo das funções.
 
-`public.pagamentos_v2` tem o trigger `trg_sync_status_proposta`, que chama
-`tg_sync_status_financeiro_proposta` e daí `atualizar_status_financeiro_proposta`.
-A cada evento de pagamento (INSERT, UPDATE ou DELETE) essa função **recalcula
-`propostas.status_interno` a partir apenas do quadro de pagamentos, sem ler em
-nenhum momento o status atual da proposta**. O destino é sempre um destes quatro:
+**Quem dispara.** `atualizar_status_financeiro_proposta` é chamada por três triggers
+AFTER INSERT/UPDATE/DELETE — não só por pagamento: salvar o orçamento também dispara.
+
+| trigger | tabela | função intermediária |
+|---|---|---|
+| `trg_sync_status_proposta` | `pagamentos_v2` | `tg_sync_status_financeiro_proposta` |
+| `trg_produto_sync_financeiro` | `produtos_proposta` | `tg_recalc_financeiro_por_produto` |
+| `trg_frete_sync_financeiro` | `cotacao_frete` | `tg_recalc_financeiro_por_frete` |
+
+**A guarda.** Antes de qualquer cálculo a função lê o status atual. Se ele estiver
+nesta lista, ela retorna **sem gravar nada**:
+
+```text
+CANCELADO
+REVISAO ATENDENTE
+REVISAO PRODUCAO
+EM PRODUCAO
+EM IMPRESSAO
+EM IMPRESSAO / PENDENTE
+EM ACABAMENTO
+EM ACABAMENTO / PENDENTE
+EXPEDICAO
+A RETIRAR
+EM TRANSITO
+ENTREGUE
+RECEBIDO
+```
+
+A comparação é exata, sobre o valor em maiúsculas. Proposta cancelada não volta ao
+fluxo por trigger nenhum: a reativação é ato deliberado na tela.
+
+**Fora da guarda**, o status é recalculado só a partir do quadro de pagamentos:
 
 | situação dos pagamentos | `status_interno` gravado |
 |---|---|
 | nenhum pagamento | `NOVO` |
-| todos cancelados | `CANCELADO` |
+| todos cancelados | `NOVO` (proposta a refaturar; esta função não cancela proposta) |
 | algum `A_RECEBER`, ou `A_VENCER`/`PAID` não confirmado | `AGUARDANDO` |
 | algum `A_VENCER` ou `PAID` **confirmado** | `APROVADO` |
+| qualquer outro caso com pagamento | `AGUARDANDO` |
 
-Como não há guarda de etapa, um pedido já na fábrica é jogado de volta para o
-começo do funil. **Observado no sandbox da V6 da migration
-`20260820_arte_guardas_promocao_e_lista_aprovados`:** inserir uma cobrança `PAID`
-confirmada numa proposta em `EM PRODUCAO` a levou para `APROVADO`. Os outros três
-ramos são igualmente irrestritos — apagar as cobranças de um pedido em
-`EM TRANSITO` o devolve para `NOVO`.
+`APROVADO` é o valor legado que o motor de status depois leva a `LIBERADO` (ou a
+`REVISAO ATENDENTE`, com as artes aprovadas) — ver §7.
 
-É **a mesma classe de problema que o item A da migration de 20/08/2026 corrigiu**
-em `check_and_promote_proposta`, que promovia para `REVISAO ATENDENTE` sem olhar
-de onde vinha. O tratamento provável é o mesmo: **lista negativa dos status que
-não podem ser rebaixados** (`REVISAO PRODUCAO` em diante) no `WHERE` de cada um
-dos quatro `UPDATE`. Não foi feito aqui porque está fora do escopo aprovado
-naquela migration.
+**O que continua sendo reescrito.** Tudo que não está na guarda:
 
-Dois detalhes para quem for mexer:
+```text
+NOVO                      NOVO / EM ARTE            NOVO_ARTE_APROVADA
+AGUARDANDO                AGUARDANDO / EM ARTE      AGUARDANDO_ARTE_APROVADA
+AGUARDANDO / PENDENTE     LIBERADO                  LIBERADO / EM ARTE
+APROVADO
+```
 
-**Existem duas sobrecargas com lógica divergente.**
-`atualizar_status_financeiro_proposta(integer)` e
-`atualizar_status_financeiro_proposta(bigint)`. Na versão `integer` — a que roda
-hoje, porque `tg_sync_status_financeiro_proposta` declara a variável como `INT` —
-uma cobrança `A_VENCER`/`PAID` **não confirmada** conta como pendente e leva a
-`AGUARDANDO`. Na versão `bigint` esse caso cai direto no ramo seguinte. Como
-`propostas.id_int` é `bigint`, qualquer chamada nova que passe um `bigint`
-seleciona a sobrecarga divergente. Corrigir uma e esquecer a outra deixa a
-armadilha armada.
+Para a família financeira isso é o desenho. Duas consequências a conhecer:
+
+- **`LIBERADO` e `LIBERADO / EM ARTE` não são protegidos.** Salvar o orçamento de um
+  pedido liberado (o save escreve em `produtos_proposta` e `cotacao_frete`) o regrava
+  como `APROVADO` se houver pagamento confirmado — e como `AGUARDANDO` se houver
+  cobrança pendente. Quem mexer em `produtos_proposta` fora da tela precisa restaurar
+  o status no mesmo passo.
+- **Os sufixos não sobrevivem ao recálculo.** A função grava o valor base:
+  `AGUARDANDO / PENDENTE`, `* / EM ARTE` e `*_ARTE_APROVADA` voltam para `NOVO`,
+  `AGUARDANDO` ou `APROVADO`. No caso de `*_ARTE_APROVADA` o motor de status os
+  regrava na próxima abertura do pedido (§6.5.1).
+
+**Existem duas sobrecargas.** `atualizar_status_financeiro_proposta(integer)` — a
+que roda hoje nos três triggers: `id_int` é `integer` em `pagamentos_v2`,
+`produtos_proposta` e `cotacao_frete` (em `propostas` é `bigint`) — e
+`atualizar_status_financeiro_proposta(bigint)`. As duas têm a mesma guarda. Diferem
+num caso: com uma cobrança confirmada e outra `A_VENCER`/`PAID` **não** confirmada,
+a `integer` grava `AGUARDANDO` e a `bigint` grava `APROVADO`. Qualquer mudança
+precisa ir nas duas.
 
 **O trigger antigo está desabilitado.**
 `tg_atualiza_status_proposta_pagamento` → `atualizar_status_proposta_por_pagamento`,
 que grava `NOVO` / `A_RECEBER` / `QUITADO`, está com `tgenabled = 'D'` em
-`pg_trigger` — não executa. Ele não é o responsável pela reescrita descrita
-acima, e valores como `A_RECEBER` e `QUITADO` não fazem parte do fluxo oficial
-desta documentação.
+`pg_trigger` — não executa. Valores como `A_RECEBER` e `QUITADO` não fazem parte do
+fluxo oficial desta documentação.
 
 ---
 
