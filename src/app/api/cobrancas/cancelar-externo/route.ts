@@ -101,9 +101,14 @@ async function reverterStatusPropostaSeSemCobranca(supabase: SupabaseClient, idI
   if (currentStatus === "AGUARDANDO / EM ARTE" || currentStatus === "NOVO / EM ARTE") {
     nextStatus = "NOVO / EM ARTE";
   }
+  // So `status_interno`. Ate 28/09/2026 o UPDATE tambem gravava
+  // `tipo_cobranca: null`, coluna que `propostas` nao tem: o PostgREST recusava
+  // com PGRST204 e a rota devolvia "erro_ao_reverter" — enquanto a trigger de
+  // pagamentos_v2 ja tinha devolvido a proposta ao status certo. O resto do
+  // cancelamento (provedor, cancelamento logico, chat) nunca dependeu disto.
   const { error: updatePropError } = await supabase
     .from("propostas")
-    .update({ status_interno: nextStatus, tipo_cobranca: null })
+    .update({ status_interno: nextStatus })
     .eq("id_int", idInt);
 
   if (updatePropError) {
