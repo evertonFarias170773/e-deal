@@ -6,6 +6,7 @@ import { FileText, X, Loader2, Info, AlertTriangle } from "lucide-react";
 import { formatCurrency } from "@/lib/formatters/currency";
 import { useAppToast } from "@/components/common/AppToast";
 import { updateBoletoInDb, registerBoletoViaN8n, deleteBoletoFromBankViaN8n } from "@/features/nfe/services/nfe.service";
+import { gerarBoletoPdfInterno } from "@/features/contas-a-receber/services/contas-receber.service";
 import type { SupabaseBoletoRow } from "@/features/contas-a-receber/types.supabase";
 import { useCobrancas } from "@/features/cobrancas/CobrancasProvider";
 
@@ -232,6 +233,36 @@ export function RevisarGeracaoBancariaModal({
     });
   };
 
+  /**
+   * PDF do boleto logo depois do registro (28/09/2026).
+   *
+   * O C6 não devolve PDF no registro: quem o monta é a Edge Function
+   * `gerar-boleto-pdf`, a partir do modelo da empresa e dos dados do C6 já
+   * gravados na linha. O boleto à vista faz isso no próprio n8n; o faturado,
+   * que registra por aqui, dependia de alguém clicar em "Gerar PDF do Boleto"
+   * depois — e quem não clicava ficava sem PDF (20881, 21833 parcela 2).
+   *
+   * Mesma função do botão manual. Falha NÃO desfaz o registro: devolve a
+   * mensagem para o aviso, e o botão manual segue disponível.
+   * Retorna null quando o PDF foi gerado (ou já existia).
+   */
+  const gerarPdfAposRegistro = async (boletoId: string, idEmpresa: number | null | undefined): Promise<string | null> => {
+    const client = getSupabaseClient();
+    if (!client) return "Sistema indisponível para gerar o PDF.";
+    const { data: linha, error } = await client
+      .from("boletos")
+      .select("id_boleto_c6, linha_digitavel, codigo_barras, url_pdf, pdf_storage")
+      .eq("id", boletoId)
+      .maybeSingle();
+    if (error || !linha) return "Não foi possível reler o boleto para gerar o PDF.";
+    if (linha.url_pdf || linha.pdf_storage) return null;
+    if (!linha.id_boleto_c6 || !linha.linha_digitavel || !linha.codigo_barras) {
+      return "O banco não devolveu linha digitável e código de barras; o PDF não pôde ser gerado.";
+    }
+    const res = await gerarBoletoPdfInterno(boletoId, idEmpresa);
+    return res.success ? null : res.errorMessage || "Falha ao gerar o PDF.";
+  };
+
   const handleRegisterBoleto = async (boleto: SupabaseBoletoRow) => {
     if (boleto.deposito_conta) {
       showToast({
@@ -338,6 +369,16 @@ export function RevisarGeracaoBancariaModal({
         title: "Sucesso!",
         description: "Boleto registrado com sucesso no banco."
       });
+
+      // PDF: só avisa se falhar — o registro no banco já está feito.
+      const falhaPdf = await gerarPdfAposRegistro(boleto.id, Number(boleto.id_empresa) || null);
+      if (falhaPdf) {
+        showToast({
+          type: "warning",
+          title: "Boleto registrado, mas sem PDF",
+          description: `${falhaPdf} Use "Gerar PDF do Boleto" em Contas a Receber.`
+        });
+      }
 
       // 4. Reler do Supabase para atualizar a listagem local
       const { data: updatedBoleto, error: fetchError } = await client
@@ -500,6 +541,9 @@ export function RevisarGeracaoBancariaModal({
       const client = getSupabaseClient();
       if (!client) throw new Error("Sistema indisponível no momento. Tente novamente.");
 
+      // Parcelas registradas cujo PDF não saiu: avisadas no fim, sem interromper o lote.
+      const falhasPdf: string[] = [];
+
       for (let i = 0; i < eligible.length; i++) {
         setCurrentRegisterIndex(i);
         const boleto = eligible[i];
@@ -570,6 +614,10 @@ export function RevisarGeracaoBancariaModal({
             }
           }
 
+          // PDF da parcela: falha não interrompe o lote nem desfaz o registro.
+          const falhaPdf = await gerarPdfAposRegistro(boleto.id, Number(boleto.id_empresa) || null);
+          if (falhaPdf) falhasPdf.push(`Parcela ${boleto.parcela}: ${falhaPdf}`);
+
           const { data: updatedBoleto, error: fetchError } = await client
             .from("boletos")
             .select("*")
@@ -600,6 +648,13 @@ export function RevisarGeracaoBancariaModal({
         title: "Sucesso!",
         description: `Todos os ${eligible.length} boletos foram registrados com sucesso.`
       });
+      if (falhasPdf.length > 0) {
+        showToast({
+          type: "warning",
+          title: "Boletos registrados, mas nem todos têm PDF",
+          description: `${falhasPdf.join(" ")} Use "Gerar PDF do Boleto" em Contas a Receber.`
+        });
+      }
 
       if (onSaveSuccess) {
         onSaveSuccess();
