@@ -62,9 +62,10 @@ function ehRevisaoProducao(item: PropostaOperacionalListItem): boolean {
 }
 
 /**
- * Amarelo de atencao da linha em revisao de producao. `amber-50` e `amber-100`,
- * o par de atencao ja usado no sistema (amber-50 e o tom mais frequente da base)
- * — nenhuma cor nova.
+ * Amarelo de atencao da linha em revisao de producao. Desde 28/09/2026 e o MESMO
+ * tom da lista de Pedidos e da Conferencia: a variavel `--row-highlight` (e o
+ * hover `--row-highlight-hover`), que tambem acompanha o modo escuro. Antes era
+ * `amber-50`/`amber-100`, um amarelo diferente do das outras listas.
  *
  * Vai em `style` inline porque e o contrato do `getRowHighlight` do
  * ResponsiveList: o hover da linha tambem e inline e venceria qualquer classe,
@@ -73,7 +74,7 @@ function ehRevisaoProducao(item: PropostaOperacionalListItem): boolean {
  * Tom claro de proposito: o texto (`--foreground`) e os badges de setor, que tem
  * fundo proprio, seguem legiveis por cima sem precisar de ajuste.
  */
-const DESTAQUE_REVISAO_PRODUCAO = { base: "#fffbeb", hover: "#fef3c7" };
+const DESTAQUE_REVISAO_PRODUCAO = { base: "var(--row-highlight)", hover: "var(--row-highlight-hover)" };
 
 export function PedidosListPage() {
   const { openChat } = useGlobalChat();
@@ -905,7 +906,7 @@ export function PedidosListPage() {
             key={proposta.id_int}
             className={`rounded-3xl border p-5 shadow-sm ${
               ehRevisaoProducao(proposta)
-                ? "border-amber-200 bg-amber-50"
+                ? "border-amber-200 bg-[var(--row-highlight)]"
                 : "border-[#d7e5e8] bg-white"
             }`}
           >
