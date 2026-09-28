@@ -4,10 +4,6 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { gerarPixBancoInter } from "@/features/cobrancas/services/banco-inter.service";
 import { calcularSituacaoQuitacaoProposta } from "@/features/cobrancas/services/conferencia-financeira.service";
 import {
-  gerarCartaoAsasParaCobranca,
-  urlDoProvedor
-} from "@/features/cobrancas/services/cartao-asas.server";
-import {
   EMPRESAS_RECEBEDORAS_FIXAS,
   montarUrlPublicaCobranca,
   resolveEmpresaIdFromTexto
@@ -42,9 +38,12 @@ import { calcularTotaisPelaRegraDaTela } from "@/features/orcamentos/services/to
  * A cobrança que a página cria é a mesma que o painel da proposta cria
  * (CobrancasProvider → criarCobrancaReal): mesma tabela, mesmas colunas, mesmo
  * pagador (`propostas.id_faturado`, com o mesmo fallback para o cliente), mesma
- * empresa recebedora, mesma URL pública. O PIX sai por `gerarPixBancoInter` e o
- * cartão por `gerarCartaoAsasParaCobranca` — as funções que as rotas do
- * vendedor chamam. Só o `atendente` muda: "Area do cliente". A Conferência e a
+ * empresa recebedora, mesma URL pública. O PIX sai por `gerarPixBancoInter`, a
+ * função que a rota do vendedor chama. O cartão é o "Cartão de crédito" do
+ * vendedor (C6): a linha nasce com a URL da página pública `pagamento-publico`
+ * e é lá, no clique do cliente, que o n8n cria o checkout — o ERP não fala com
+ * o provedor. O Cartão Asaas fica só com o vendedor (decisão do dono,
+ * 28/09/2026). Só o `atendente` muda: "Area do cliente". A Conferência e a
  * confirmação humana seguem exatamente como hoje.
  */
 
@@ -54,11 +53,8 @@ const DIAS_VENCIMENTO = 3;
 
 /** Empresas com PIX no painel do vendedor (PropostaCobrancaPanel, opção PIX). */
 const EMPRESAS_COM_PIX = new Set([1, 2, 3]);
-/** Cartão Asas só existe para a IDEAL GRÁFICA (PropostaCobrancaPanel, EMPRESA_CARTAO_ASAAS). */
-const EMPRESA_CARTAO_ASAAS = 1;
-
-/** Marcador do Cartão Asas na descrição (CobrancasProvider.MARCADOR_CARTAO_ASAS). */
-const MARCADOR_CARTAO_ASAS = "Cartão Asas";
+/** "Cartão de crédito" (C6) no painel do vendedor: Ideal e E3; a Birô não tem. */
+const EMPRESAS_COM_CARTAO = new Set([1, 3]);
 
 /**
  * Família financeira do status-engine (`FAMILIA_FINANCEIRA`): só nela a
@@ -193,6 +189,7 @@ type PropostaRow = {
 type CobrancaRow = {
   id: string;
   id_pagamento: string | null;
+  token_publico?: string | null;
   tipo_cobranca: string | null;
   status: string | null;
   confirmado: boolean | null;
@@ -298,9 +295,9 @@ function paraPublica(row: CobrancaRow): CobrancaAbertaPublica {
     valor: reais(centavos(Number(row.valor))),
     vencimento: row.vencimento,
     pixCopiaCola: metodo === "PIX" ? row.pix_copia_cola : null,
-    // Só a URL do provedor sai para o cliente: a "interna" é a página pública
-    // antiga, que não é o que se quer abrir daqui.
-    urlCheckout: metodo === "CARTAO" && urlDoProvedor(row.url_cobranca) ? row.url_cobranca : null
+    // Cartão: a URL gravada na cobrança — a página pública `pagamento-publico`
+    // no fluxo C6, ou o checkout do provedor se o vendedor criou pelo Asaas.
+    urlCheckout: metodo === "CARTAO" ? row.url_cobranca : null
   };
 }
 
@@ -378,7 +375,7 @@ export async function montarSituacaoAreaCliente(
 
   const metodos = {
     pix: idEmpresa != null && EMPRESAS_COM_PIX.has(idEmpresa),
-    cartao: idEmpresa === EMPRESA_CARTAO_ASAAS
+    cartao: idEmpresa != null && EMPRESAS_COM_CARTAO.has(idEmpresa)
   };
 
   let motivoBloqueio: string | null = null;
@@ -405,7 +402,7 @@ export async function montarSituacaoAreaCliente(
       cobrancaAbertaReaproveitavel(cobrancas, "CARTAO", aPagarCents)
     ].filter((c): c is CobrancaRow => Boolean(c));
     cobrancaAberta =
-      candidatas.find((c) => (metodoDaCobranca(c) === "PIX" ? Boolean(c.pix_copia_cola) : urlDoProvedor(c.url_cobranca))) ??
+      candidatas.find((c) => (metodoDaCobranca(c) === "PIX" ? Boolean(c.pix_copia_cola) : Boolean(c.url_cobranca))) ??
       candidatas[0] ??
       null;
   }
@@ -579,7 +576,9 @@ export async function iniciarPagamentoAreaCliente(
       id_empresa: idEmpresa,
       os_ideal: null,
       atendente: ATENDENTE_AREA_CLIENTE,
-      descricao: `Cobrança ${metodo === "PIX" ? "PIX" : MARCADOR_CARTAO_ASAS} da proposta #${idInt}`,
+      // Mesmo texto que o painel grava (getCobrancaTipoLabel): "PIX" e
+      // "Cartão de crédito". Sem o marcador "Cartão Asas", de propósito.
+      descricao: `Cobrança ${metodo === "PIX" ? "PIX" : "Cartão de crédito"} da proposta #${idInt}`,
       vencimento: maisDias(hoje, DIAS_VENCIMENTO),
       obs_v2: `Criada pela área do cliente (origem ${ipHash}).`,
       confirmado: false,
@@ -631,6 +630,8 @@ export async function iniciarPagamentoAreaCliente(
         .eq("id", criada.id);
       if (urlErr) {
         console.error(`[area-cliente] token/url publicos nao gravados em ${criada.id}:`, urlErr.message);
+      } else {
+        linha = { ...criada, token_publico: tokenPublico, url_cobranca: montarUrlPublicaCobranca({ tipoCobranca, tokenPublico }) };
       }
     }
   }
@@ -698,20 +699,20 @@ export async function iniciarPagamentoAreaCliente(
     return { ok: true, cobranca: paraPublica(linha), reaproveitada };
   }
 
-  // CARTÃO
-  if (!urlDoProvedor(linha.url_cobranca)) {
-    if (!String(linha.descricao ?? "").includes(MARCADOR_CARTAO_ASAS)) {
-      // Cartão aberto pelo vendedor no fluxo padrão (C6): não é o Asaas, e a
-      // página não tem como emitir por ele.
-      return { ok: false, codigo: "BLOQUEADO", mensagem: "Já existe uma cobrança de cartão em andamento para este pedido. Fale com seu atendente." };
+  // CARTÃO (C6): nada a acionar aqui. Como no botão "Cartão de crédito" do
+  // vendedor, a cobrança nasce com a URL da página pública e é lá que o
+  // checkout é criado, no clique do cliente. Uma linha reaproveitada que já
+  // tenha URL de provedor (Cartão Asaas do vendedor) abre esse checkout.
+  if (!linha.url_cobranca) {
+    // Linha antiga sem URL pública: grava a mesma que o painel gravaria.
+    const tokenPublico = linha.token_publico || linha.id.split("-")[0];
+    const url = montarUrlPublicaCobranca({ tipoCobranca: "CARD_PARCELADO", tokenPublico });
+    const { error: urlErr } = await service.from("pagamentos_v2").update({ token_publico: tokenPublico, url_cobranca: url }).eq("id", linha.id);
+    if (urlErr) {
+      console.error(`[area-cliente] url publica nao gravada em ${linha.id}:`, urlErr.message);
+      return { ok: false, codigo: "INTERNO", mensagem: "Não foi possível preparar o pagamento por cartão. Tente novamente." };
     }
-    const resultado = await gerarCartaoAsasParaCobranca(service, linha.id);
-    const body = resultado.body as { success?: boolean; message?: string; data?: { url_cobranca?: string | null } };
-    if (!body.success) {
-      console.error(`[area-cliente] cartao nao emitido para ${linha.id}:`, body.message);
-      return { ok: false, codigo: "PROVEDOR", mensagem: "Não foi possível gerar o pagamento por cartão agora. Tente novamente em instantes." };
-    }
-    linha = { ...linha, url_cobranca: body.data?.url_cobranca ?? linha.url_cobranca };
+    linha = { ...linha, token_publico: tokenPublico, url_cobranca: url };
   }
   return { ok: true, cobranca: paraPublica(linha), reaproveitada };
 }

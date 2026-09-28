@@ -238,7 +238,7 @@ export function AreaClienteView({ token, inicial }: Props) {
           ) : (
             <>
               <h2 className="text-base font-semibold text-slate-900">Pague com cartão</h2>
-              <p className="mt-1 text-sm text-slate-600">{moeda.format(cobranca.valor)} · à vista, em ambiente seguro do provedor.</p>
+              <p className="mt-1 text-sm text-slate-600">{moeda.format(cobranca.valor)} · você será levado à página de pagamento, em uma aba nova.</p>
               {cobranca.urlCheckout ? (
                 <a
                   href={cobranca.urlCheckout}
