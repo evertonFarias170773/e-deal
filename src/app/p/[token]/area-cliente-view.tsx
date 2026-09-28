@@ -129,6 +129,7 @@ export function AreaClienteView({ token, inicial }: Props) {
     PAGO: "Pedido pago",
     EM_ANDAMENTO: "Pedido em andamento",
     CANCELADO: "Pedido cancelado",
+    EM_REVISAO: "Pedido em revisão",
     INDISPONIVEL: "Pedido"
   }[situacao.situacao];
 
@@ -139,6 +140,9 @@ export function AreaClienteView({ token, inicial }: Props) {
         <h1 className="mt-1 text-xl font-semibold text-slate-900">{titulo}</h1>
         <p className="mt-1 text-sm text-slate-600">Pedido nº {situacao.idInt}</p>
 
+        {situacao.situacao === "EM_REVISAO" ? (
+          <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">{situacao.motivoBloqueio}</p>
+        ) : (
         <dl className="mt-5 grid grid-cols-3 gap-3 text-center">
           <div className="rounded-xl bg-slate-50 p-3">
             <dt className="text-xs text-slate-500">Total do pedido</dt>
@@ -153,6 +157,7 @@ export function AreaClienteView({ token, inicial }: Props) {
             <dd className="mt-1 text-base font-bold text-teal-800">{moeda.format(situacao.aPagar)}</dd>
           </div>
         </dl>
+        )}
 
         {situacao.pagador.nome ? (
           <p className="mt-4 text-xs text-slate-500">
