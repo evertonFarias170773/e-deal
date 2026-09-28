@@ -6,6 +6,7 @@ import { BadgeCheck, CalendarDays, CreditCard, FileText, Search, WalletCards, Me
 import { ActionsMenu } from "@/components/common/ActionsMenu";
 import { BotaoDanfe } from "@/components/common/BotaoDanfe";
 import { urlDownloadXmlNfe } from "@/lib/fiscal/download-xml-nfe";
+import { abrirLinkDeDocumentoFiscal } from "@/lib/fiscal/documento-nota";
 import { useAppToast } from "@/components/common/AppToast";
 import { PageHeader } from "@/components/common/PageHeader";
 import { ResponsiveList } from "@/components/common/ResponsiveList";
@@ -1704,7 +1705,7 @@ Ela volta a aparecer nas listas operacionais.`
       ...(item.notaEmitida?.urlDanfe
         ? [{
             label: "Abrir DANFE (PDF)",
-            onClick: () => { window.open(item.notaEmitida!.urlDanfe!, "_blank"); }
+            onClick: () => { abrirLinkDeDocumentoFiscal(item.notaEmitida!.urlDanfe); }
           }]
         : []),
       // `url_xml` diz que HA xml; quem entrega o arquivo e a Edge Function, pela

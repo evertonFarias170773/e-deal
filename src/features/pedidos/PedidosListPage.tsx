@@ -36,6 +36,7 @@ import { DevolverRevisaoModal } from "./components/DevolverRevisaoModal";
 import { criarPedidoParaBoletim } from "./services/boletim-propostas.service";
 import { dataLimitePorPrazosOuNulo } from "./prazo-producao";
 import { urlDownloadXmlNfe } from "@/lib/fiscal/download-xml-nfe";
+import { abrirLinkDeDocumentoFiscal } from "@/lib/fiscal/documento-nota";
 import { horaPorCategoriaFrete } from "./hora-entrega";
 
 import type { PropostaOperacionalListItem, SetorDoPedido } from "./types";
@@ -854,7 +855,7 @@ export function PedidosListPage() {
                 ...(proposta.notaEmitida?.urlDanfe
                   ? [{
                       label: "Abrir DANFE (PDF)",
-                      onClick: () => { window.open(proposta.notaEmitida!.urlDanfe!, "_blank"); }
+                      onClick: () => { abrirLinkDeDocumentoFiscal(proposta.notaEmitida!.urlDanfe); }
                     }]
                   : []),
                 // `url_xml` diz que HA xml; quem entrega o arquivo e a Edge

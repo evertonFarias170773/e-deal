@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { AlertTriangle, CheckCircle2, ExternalLink, FileText, Loader2, Send } from "lucide-react";
 import { useAppToast } from "@/components/common/AppToast";
 import { getSupabaseClient } from "@/lib/supabase/client";
+import { abrirLinkDeDocumentoFiscal } from "@/lib/fiscal/documento-nota";
 import { getSefazRejectionInfo } from "@/features/fiscal/constants/sefaz-rejeicoes";
 import { lerDesfechoDaFocus, type DesfechoFocus } from "@/features/fiscal/services/desfecho-focus";
 import { estourosDeLayoutNfe, type EstouroDeLayout } from "@/features/fiscal/lib/limites-layout-nfe";
@@ -612,7 +613,7 @@ export function EmissaoNfeModal({
                         <button
                           type="button"
                           onClick={() => {
-                            window.open(notaAtual.url_danfe || danfeDoRetorno, "_blank");
+                            abrirLinkDeDocumentoFiscal(notaAtual.url_danfe || danfeDoRetorno);
                           }}
                           className="px-4 py-2.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 transition rounded-xl flex items-center gap-1.5"
                         >

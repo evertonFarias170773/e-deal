@@ -39,6 +39,10 @@ import { marcarFaturadoNoSistemaAntigo } from "@/features/fiscal/services/fatura
 import { criarRascunhoRemessa } from "@/features/nfe/services/remessa.service";
 import { COLUNAS_NOTA_DO_PEDIDO } from "@/lib/fiscal/nota-do-pedido";
 import { danfesDoPedido, type DanfeDoPedido } from "@/lib/fiscal/danfes-do-pedido";
+import {
+  abrirLinkDeDocumentoFiscal,
+  linkCompartilhavelDoLinkGravado
+} from "@/lib/fiscal/documento-nota";
 
 // Fase 1 MVP
 import type { FaturavelOrigem } from "./types";
@@ -1262,13 +1266,22 @@ export function NotasFiscaisPage() {
         actions.push({
           label: "Abrir DANFE (PDF)",
           onClick: () => {
-            window.open(item.url_danfe!, "_blank");
+            // O link gravado vence em 7 dias: abre com um assinado agora.
+            abrirLinkDeDocumentoFiscal(item.url_danfe);
           }
         });
         actions.push({
           label: "Copiar Link (PDF)",
           onClick: () => {
-            copyToClipboard(item.url_danfe!, "Link do DANFE copiado!");
+            void linkCompartilhavelDoLinkGravado(item.url_danfe)
+              .then((link) => copyToClipboard(link, "Link do DANFE copiado! Vale por 7 dias."))
+              .catch((err: unknown) =>
+                showToast({
+                  type: "error",
+                  title: "Não foi possível gerar o link do DANFE.",
+                  description: err instanceof Error ? err.message : undefined
+                })
+              );
           }
         });
       }
@@ -1283,7 +1296,15 @@ export function NotasFiscaisPage() {
         actions.push({
           label: "Copiar Link (XML)",
           onClick: () => {
-            copyToClipboard(item.url_xml!, "Link do XML copiado!");
+            void linkCompartilhavelDoLinkGravado(item.url_xml)
+              .then((link) => copyToClipboard(link, "Link do XML copiado! Vale por 7 dias."))
+              .catch((err: unknown) =>
+                showToast({
+                  type: "error",
+                  title: "Não foi possível gerar o link do XML.",
+                  description: err instanceof Error ? err.message : undefined
+                })
+              );
           }
         });
       }
@@ -1400,7 +1421,7 @@ export function NotasFiscaisPage() {
         actions.push({
           label: "Abrir XML",
           onClick: () => {
-            window.open(item.url_xml!, "_blank");
+            abrirLinkDeDocumentoFiscal(item.url_xml);
           }
         });
       }
@@ -1458,14 +1479,22 @@ export function NotasFiscaisPage() {
       actions.push({
         label: "Abrir PDF",
         onClick: () => {
-          window.open(item.url_pdf!, "_blank");
+          abrirLinkDeDocumentoFiscal(item.url_pdf);
         },
         icon: ExternalLink
       });
       actions.push({
         label: "Copiar Link (PDF)",
         onClick: () => {
-          copyToClipboard(item.url_pdf!, "Link do PDF copiado!");
+          void linkCompartilhavelDoLinkGravado(item.url_pdf)
+            .then((link) => copyToClipboard(link, "Link do PDF copiado! Vale por 7 dias."))
+            .catch((err: unknown) =>
+              showToast({
+                type: "error",
+                title: "Não foi possível gerar o link do PDF.",
+                description: err instanceof Error ? err.message : undefined
+              })
+            );
         },
         icon: Copy
       });
@@ -1475,14 +1504,22 @@ export function NotasFiscaisPage() {
       actions.push({
         label: "Abrir XML",
         onClick: () => {
-          window.open(item.url_xml!, "_blank");
+          abrirLinkDeDocumentoFiscal(item.url_xml);
         },
         icon: FileText
       });
       actions.push({
         label: "Copiar Link (XML)",
         onClick: () => {
-          copyToClipboard(item.url_xml!, "Link do XML copiado!");
+          void linkCompartilhavelDoLinkGravado(item.url_xml)
+            .then((link) => copyToClipboard(link, "Link do XML copiado! Vale por 7 dias."))
+            .catch((err: unknown) =>
+              showToast({
+                type: "error",
+                title: "Não foi possível gerar o link do XML.",
+                description: err instanceof Error ? err.message : undefined
+              })
+            );
         },
         icon: Copy
       });

@@ -25,6 +25,7 @@ import type { CSSProperties } from "react";
 import { FileDown } from "lucide-react";
 import { ACTIONS_MENU_OPEN_EVENT } from "@/components/common/ActionsMenu";
 import { rotuloDaDanfe, type DanfeDoPedido } from "@/lib/fiscal/danfes-do-pedido";
+import { abrirLinkDeDocumentoFiscal } from "@/lib/fiscal/documento-nota";
 
 const LARGURA_DO_MENU = 260;
 const MARGEM_DA_JANELA = 12;
@@ -105,8 +106,9 @@ export function BotaoDanfe({ danfes: recebidas, tamanho = "linha", className }: 
     ? `Baixar DANFE - ${rotuloDaDanfe(danfes[0])}`
     : `Baixar DANFE (${danfes.length} notas)`;
 
+  // O link gravado vence em 7 dias; quem abre pede um assinado agora.
   function baixar(url: string) {
-    window.open(url, "_blank", "noopener,noreferrer");
+    abrirLinkDeDocumentoFiscal(url);
     setAberto(false);
   }
 
