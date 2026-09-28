@@ -55,8 +55,16 @@ export interface EngineStatusResult {
   emArte: boolean;
 }
 
+/**
+ * Status sem os sufixos de arte. Dois sufixos, o mesmo tratamento:
+ * " / EM ARTE" e "_ARTE_APROVADA" (28/09/2026, decisao do dono) — este gravado
+ * por esta engine quando todas as artes estao aprovadas antes do pagamento.
+ * NOVO_ARTE_APROVADA conta como NOVO e AGUARDANDO_ARTE_APROVADA como
+ * AGUARDANDO: continuam na familia financeira, e um pedido pago nesse status
+ * segue para LIBERADO como qualquer outro.
+ */
 function baseStatus(status: string): string {
-  return (status || "NOVO").toUpperCase().replace(" / EM ARTE", "").trim();
+  return (status || "NOVO").toUpperCase().replace(" / EM ARTE", "").trim().replace(/_ARTE_APROVADA$/, "");
 }
 
 export function calcularStatusRecomendado(evidencias: EvidenciaStatus): EngineStatusResult {

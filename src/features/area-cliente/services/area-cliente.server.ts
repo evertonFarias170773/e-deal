@@ -348,7 +348,13 @@ export async function montarSituacaoAreaCliente(
   const idEmpresa = resolveEmpresaIdFromTexto(proposta.empresa);
   const empresaNome = EMPRESAS_RECEBEDORAS_FIXAS.find((e) => e.id === idEmpresa)?.nome ?? String(proposta.empresa ?? "").trim();
 
-  const statusBase = String(proposta.status_interno ?? "NOVO").toUpperCase().replace(" / EM ARTE", "").trim();
+  // Os dois sufixos de arte saem, como no status-engine: NOVO_ARTE_APROVADA e
+  // AGUARDANDO_ARTE_APROVADA ainda esperam pagamento (28/09/2026).
+  const statusBase = String(proposta.status_interno ?? "NOVO")
+    .toUpperCase()
+    .replace(" / EM ARTE", "")
+    .trim()
+    .replace(/_ARTE_APROVADA$/, "");
 
   let situacao: SituacaoAreaCliente["situacao"];
   if (statusBase === "CANCELADO") situacao = "CANCELADO";

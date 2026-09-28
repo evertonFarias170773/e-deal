@@ -1,8 +1,8 @@
 # FLUXO-OFICIAL-STATUS-PROPOSTAS.md
 
-Versão: 3.4  
+Versão: 3.5  
 Status: Oficial  
-Última atualização: 14/09/2026  
+Última atualização: 28/09/2026  
 Projeto: Vibe
 
 ---
@@ -138,8 +138,10 @@ Os status operacionais reconhecidos são:
 ```text
 NOVO
 NOVO / EM ARTE
+NOVO_ARTE_APROVADA
 AGUARDANDO
 AGUARDANDO / EM ARTE
+AGUARDANDO_ARTE_APROVADA
 AGUARDANDO / PENDENTE
 LIBERADO
 LIBERADO / EM ARTE
@@ -159,6 +161,8 @@ ENTREGUE
 
 `EM IMPRESSAO / PENDENTE` e `EM ACABAMENTO / PENDENTE` foram ratificados em 23/07/2026 como pausas operacionais da etapa base correspondente (mesmo padrão de separador de `AGUARDANDO / PENDENTE`).
 
+`NOVO_ARTE_APROVADA` e `AGUARDANDO_ARTE_APROVADA` entraram na lista em 28/09/2026. São automáticos, gravados pelo motor de status quando todas as artes estão aprovadas antes do pagamento, e o sufixo `_ARTE_APROVADA` tem o mesmo tratamento de ` / EM ARTE`: `NOVO_ARTE_APROVADA` conta como `NOVO` e `AGUARDANDO_ARTE_APROVADA` como `AGUARDANDO` — ver §6.5.1.
+
 Status desconhecido não deve ser convertido automaticamente para `NOVO`.
 
 A interface deve preservar o valor recebido e apresentar fallback controlado.
@@ -172,6 +176,7 @@ A interface deve preservar o valor recebido e apresentar fallback controlado.
 ```text
 NOVO
 NOVO / EM ARTE
+NOVO_ARTE_APROVADA
 ```
 
 ## Financeiro pendente
@@ -179,6 +184,7 @@ NOVO / EM ARTE
 ```text
 AGUARDANDO
 AGUARDANDO / EM ARTE
+AGUARDANDO_ARTE_APROVADA
 AGUARDANDO / PENDENTE
 ```
 
@@ -361,6 +367,48 @@ AGUARDANDO / PENDENTE ? AGUARDANDO / EM ARTE
 AGUARDANDO / PENDENTE ? LIBERADO
 AGUARDANDO / PENDENTE ? CANCELADO
 ```
+
+## 6.5.1 `NOVO_ARTE_APROVADA` e `AGUARDANDO_ARTE_APROVADA`
+
+Vigentes desde 01/07/2026 (primeira gravação no audit); documentados em 28/09/2026.
+
+Representam `NOVO` e `AGUARDANDO` com **todas as artes já aprovadas** antes da liberação financeira. São automáticos: ninguém os escolhe na tela.
+
+**Quem grava.** O motor de status (`src/features/orcamentos/services/status-engine.service.ts`, `calcularStatusRecomendado`), pelo gravador `aplicarStatusRecomendadoProposta` (`status-writer.service.ts`), que registra a mudança no chat do pedido. O motor roda:
+
+- ao abrir o pedido (`/api/orcamentos/sync-status`; no chat, setor `STATUS_ENGINE_FASE_4A`);
+- nas rotas financeiras — confirmar e cancelar cobrança, abonar e resolver diferença, `trigger-automacao` (setor `AUTO_FINANCEIRO`).
+
+**Regra que grava.** Proposta não avulsa, com modelos, e todos os modelos com `pedidos_modelos.status_arte` em `APROVADA`, `APROVADO`, `APROVADA_CLIENTE`, `LIBERADA`, `IMPRESSA` ou `NAO_NECESSARIA`. Com isso, o resultado financeiro do motor vira:
+
+```text
+NOVO       ? NOVO_ARTE_APROVADA
+AGUARDANDO ? AGUARDANDO_ARTE_APROVADA
+LIBERADO   ? REVISAO ATENDENTE   (regra já existente, inalterada)
+```
+
+**Tratamento como sufixo.** `_ARTE_APROVADA` é tratado como ` / EM ARTE`: o status base é `NOVO` ou `AGUARDANDO`, e o pedido continua na família financeira. Pontos que aplicam isso:
+
+- motor de status (`baseStatus` / `FAMILIA_FINANCEIRA`): reavalia a cobertura normalmente — pedido pago nesses status vai a `LIBERADO` e, com as artes aprovadas, a `REVISAO ATENDENTE`;
+- área do cliente (`/p/<token>`): a página oferece o pagamento, como para `NOVO` e `AGUARDANDO`;
+- frete complementar: a rota `/api/orcamentos/complementar/aplicar-frete` e a função `complementar_aplicar_frete` aceitam o complemento nesses dois status;
+- exibição (`composeStatusEmArte`): com `propostas.em_arte` ligado, a arte voltou para andamento e a tela mostra `NOVO / EM ARTE` ou `AGUARDANDO / EM ARTE`;
+- fase de orçamento do frete (`estaNaFaseDeOrcamento`, `modalidade-frete.ts`), que já reconhecia o sufixo.
+
+**No banco.** `atualizar_status_financeiro_proposta` (trigger de `pagamentos_v2`, `produtos_proposta` e `cotacao_frete`) não protege os dois valores e os trata como família financeira: regrava pelo quadro de pagamentos (`NOVO`, `AGUARDANDO` ou `APROVADO`). Por isso eles alternam com `NOVO`/`AGUARDANDO` quando o orçamento é salvo e o pedido é reaberto — é esperado, não é defeito.
+
+Transições esperadas:
+
+```text
+NOVO_ARTE_APROVADA ? NOVO | AGUARDANDO | AGUARDANDO_ARTE_APROVADA
+NOVO_ARTE_APROVADA ? LIBERADO ? REVISAO ATENDENTE   (pagamento confirmado)
+NOVO_ARTE_APROVADA ? CANCELADO
+AGUARDANDO_ARTE_APROVADA ? AGUARDANDO | NOVO
+AGUARDANDO_ARTE_APROVADA ? LIBERADO ? REVISAO ATENDENTE   (pagamento confirmado)
+AGUARDANDO_ARTE_APROVADA ? CANCELADO
+```
+
+Como `NOVO` e `AGUARDANDO`, não autorizam impressão, fabricação nem entrada na fila produtiva.
 
 ## 6.6 `LIBERADO`
 

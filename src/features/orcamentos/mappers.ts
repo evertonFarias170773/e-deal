@@ -12,6 +12,13 @@ export function composeStatusEmArte(baseStatus: string, emArte: boolean | undefi
   if (allowed.includes(upper)) {
     return `${baseStatus} / EM ARTE`;
   }
+  // "_ARTE_APROVADA" e sufixo, como " / EM ARTE" (28/09/2026): NOVO_ARTE_APROVADA
+  // e NOVO. Com a arte de volta em andamento (`em_arte`), vale o EM ARTE — o
+  // sufixo de arte aprovada ficou para tras.
+  const semArteAprovada = upper.replace(/_ARTE_APROVADA$/, "");
+  if (semArteAprovada !== upper && allowed.includes(semArteAprovada)) {
+    return `${semArteAprovada} / EM ARTE`;
+  }
   return baseStatus;
 }
 

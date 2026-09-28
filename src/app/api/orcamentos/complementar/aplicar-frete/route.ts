@@ -67,8 +67,12 @@ type LinhaProposta = {
 const COLUNAS_PROPOSTA =
   "id_int, id_cliente, id_int_pedido_principal, is_avulso, status_interno, modalidade_frete, valor_frete, frete_escolhido, id_endereco_ent, cep";
 
-/** Status do COMPLEMENTO em que o frete complementar pode ser gravado. */
-const STATUS_COMPLEMENTO_ACEITAM_FRETE = ["NOVO", "AGUARDANDO"];
+/**
+ * Status do COMPLEMENTO em que o frete complementar pode ser gravado. Os dois
+ * `_ARTE_APROVADA` sao NOVO e AGUARDANDO com a arte aprovada (28/09/2026) — a
+ * mesma lista da funcao `complementar_aplicar_frete` no banco.
+ */
+const STATUS_COMPLEMENTO_ACEITAM_FRETE = ["NOVO", "AGUARDANDO", "NOVO_ARTE_APROVADA", "AGUARDANDO_ARTE_APROVADA"];
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
