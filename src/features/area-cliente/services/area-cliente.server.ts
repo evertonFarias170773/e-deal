@@ -12,7 +12,7 @@ import {
   montarUrlPublicaCobranca,
   resolveEmpresaIdFromTexto
 } from "@/features/cobrancas/cobrancas-utils";
-import { calculateItemSubtotal, getClienteBonusPercent } from "@/features/orcamentos/orcamento-utils";
+import { calcularTotaisPelaRegraDaTela } from "@/features/orcamentos/services/totais-proposta.server";
 
 /**
  * Fronteira server-only da área do cliente (/p/<token>).
@@ -354,11 +354,12 @@ export async function montarSituacaoAreaCliente(
   // muda a quantidade e, de proposito, nao recalcula a proposta). As telas do
   // ERP nao mostram a coluna: recalculam o total dos itens em memoria
   // (orcamentos.service.ts, "valor_total_calculado"). Aqui a mesma regra e
-  // refeita e comparada com a coluna, em centavos; se divergirem, a pagina
+  // refeita (totais-proposta.server.ts, a do "Salvar alteracoes") e comparada
+  // com a coluna, em centavos; se divergirem, a pagina
   // nao cobra nada — cobrar o valor gravado foi o que gerou um PIX de
   // R$ 694,63 num pedido de R$ 304,63 (22759, 28/09/2026).
-  const totalTelaCents = await totalPelaRegraDaTela(service, proposta);
-  const valorEmRevisao = totalTelaCents !== null && totalTelaCents !== totalCents;
+  const totaisTela = await calcularTotaisPelaRegraDaTela(service, proposta);
+  const valorEmRevisao = totaisTela !== null && totaisTela.totalCents !== totalCents;
 
   // Os dois sufixos de arte saem, como no status-engine: NOVO_ARTE_APROVADA e
   // AGUARDANDO_ARTE_APROVADA ainda esperam pagamento (28/09/2026).
@@ -463,67 +464,6 @@ function chaveIdempotencia(idInt: number, metodo: MetodoAreaCliente, aPagarCents
   hash[8] = (hash[8] & 0x3f) | 0x80;
   const hex = hash.subarray(0, 16).toString("hex");
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
-}
-
-/**
- * Total do pedido pela regra das telas do ERP — copia fiel do bloco de
- * orcamentos.service.ts:1440-1481: soma de `calculateItemSubtotal` por item
- * (quantidade x unitario + fixo, menos o bonus do cliente), menos o desconto
- * geral, mais o frete gravado. Em centavos. Nulo quando a proposta nao tem
- * item (a tela cai em `valor_total`, entao nao ha o que comparar).
- */
-async function totalPelaRegraDaTela(service: SupabaseClient, proposta: PropostaRow): Promise<number | null> {
-  const { data: itens, error: itensErr } = await service
-    .from("produtos_proposta")
-    .select("valor_unt, qtd, fixo")
-    .eq("id_int", proposta.id_int);
-  if (itensErr) {
-    console.error(`[area-cliente] itens da proposta ${proposta.id_int} nao lidos:`, itensErr.message);
-    return null;
-  }
-  const lista = (itens ?? []) as Array<{ valor_unt: number | null; qtd: number | null; fixo: number | null }>;
-  if (lista.length === 0) return null;
-
-  let bonusPercent = 0;
-  if (proposta.id_cliente) {
-    const { data: cli } = await service
-      .from("clientes")
-      .select("is_bonus, percentual_bunus, usa_preco_fixo")
-      .eq("id_cliente", proposta.id_cliente)
-      .maybeSingle<{ is_bonus: boolean | null; percentual_bunus: number | null; usa_preco_fixo: boolean | null }>();
-    if (cli) {
-      bonusPercent = getClienteBonusPercent({
-        usaPrecoFixo: cli.usa_preco_fixo === true,
-        is_bonus: cli.is_bonus === true,
-        bonusAtivo: cli.is_bonus === true,
-        percentualBonus: Number(cli.percentual_bunus ?? 0)
-      } as Parameters<typeof getClienteBonusPercent>[0]);
-    }
-  }
-
-  let subtotalProdutos = 0;
-  for (const item of lista) {
-    subtotalProdutos += calculateItemSubtotal(
-      { quantidade: item.qtd || 0, valorUnitario: item.valor_unt || 0, valorFixo: item.fixo || 0, variacoesEscolhidas: [] },
-      bonusPercent
-    ).subtotal;
-  }
-
-  let descontoGeral = 0;
-  const { data: desconto } = await service
-    .from("desconto_proposta")
-    .select("valor_percentual, valor_nominal")
-    .eq("id_int", proposta.id_int)
-    .eq("tipo_desconto", "DESCONTO_GERAL")
-    .limit(1)
-    .maybeSingle<{ valor_percentual: number | null; valor_nominal: number | null }>();
-  if (desconto) {
-    const pct = Number(desconto.valor_percentual ?? 0);
-    descontoGeral = pct > 0 ? (subtotalProdutos * pct) / 100 : Number(desconto.valor_nominal ?? 0);
-  }
-
-  const total = Math.max(0, subtotalProdutos + (Number(proposta.valor_frete) || 0) - descontoGeral);
-  return centavos(total);
 }
 
 type EnderecoRow = {

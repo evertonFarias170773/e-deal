@@ -16,17 +16,27 @@
  *   lotes chegam, o saldo já foi aberto. Nada é desligado; ela apenas deixa de
  *   estar no caminho da grade e continua protegendo as outras portas.
  *
- * O QUE ELA NÃO FAZ, DE PROPÓSITO
- *   Não recalcula `propostas.valor` nem `valor_total`. O preço da proposta
- *   embute o bônus do cliente e o desconto geral, que hoje só são montados no
- *   `saveProposta`; refazer esse cálculo aqui criaria uma segunda montagem do
- *   preço, e as duas divergirem faria o valor da proposta oscilar conforme
- *   quem salvou por último — justamente sobre o cliente de tabela especial. O
- *   total da tela acompanha na hora (é calculado no cliente) e o cabeçalho
- *   sincroniza no "Salvar alterações", como sempre.
+ * CONSOLIDA `propostas.valor` E `valor_total` (desde 28/09/2026)
+ *   Ate essa data a rota nao recalculava a proposta, de proposito: o preco
+ *   embute o bonus do cliente e o desconto geral, montados so no
+ *   `saveProposta`, e uma segunda montagem aqui poderia divergir da primeira.
+ *   O que aconteceu foi o oposto: quem mudava a quantidade pela grade e nao
+ *   clicava em "Salvar alteracoes" deixava `valor_total` velho — e Conferencia,
+ *   motor de status e area do cliente leem a coluna, nao a tela. A 22759 ficou
+ *   com R$ 694,63 gravados num pedido de R$ 304,63 e a area do cliente emitiu
+ *   um PIX com o valor errado.
  *
- *   Também não cota frete: isso é da aba Fretes. A rota apenas LÊ a cotação e
- *   devolve se o peso passou a divergir, para a tela avisar.
+ *   Agora, quando a quantidade do item muda, a rota grava `valor` e
+ *   `valor_total` com a MESMA regra do save, por uma copia so
+ *   (`totais-proposta.server.ts`): itens ativos x bonus - desconto geral +
+ *   frete gravado. O frete continua o gravado (a rota nao cota; isso e da aba
+ *   Fretes, e o save tambem nao regrava frete depois de LIBERADO) e o desconto
+ *   continua em `desconto_proposta`, intocado. A gravacao e guardada por
+ *   `valor_frete`, como no save: se o frete mudou entre a leitura e a escrita,
+ *   nada e gravado e a resposta avisa (`totalConsolidado: false`).
+ *
+ *   A rota continua sem cotar frete: apenas LE a cotacao e devolve se o peso
+ *   passou a divergir, para a tela avisar.
  *
  * O CHECKLIST DO BOLETIM MANDA AQUI TAMBÉM (Etapa 6b)
  *   Campo opcional que o produto NÃO tem marcado em `produto_boletim_campos`:
@@ -46,6 +56,7 @@ import {
   checklistVisivel,
   omitirColunasEscondidas
 } from "@/features/orcamentos/lib/checklist-lote";
+import { calcularTotaisPelaRegraDaTela } from "@/features/orcamentos/services/totais-proposta.server";
 
 /** Espelha STATUS_INICIAL_MODELO de orcamento-utils: lote novo nasce pendente. */
 const STATUS_INICIAL_MODELO = "PENDENTE";
@@ -354,6 +365,18 @@ export async function POST(request: Request) {
     }
   }
 
+  // 9. Consolidar a proposta — so quando a quantidade mudou, porque so ela
+  //    altera o preco. Mesma regra e mesma guarda de frete do saveProposta.
+  let totalConsolidado: boolean | null = null;
+  let valorConsolidado: number | null = null;
+  let valorTotalConsolidado: number | null = null;
+  if (soma !== qtdAtual) {
+    const consolidacao = await consolidarTotaisDaProposta(supabase, idInt);
+    totalConsolidado = consolidacao.ok;
+    valorConsolidado = consolidacao.valor;
+    valorTotalConsolidado = consolidacao.valorTotal;
+  }
+
   const frete = await situacaoDoFrete(supabase, idInt);
 
   // Devolve os lotes COMO FICARAM, com os ids do banco. Sem isto a tela
@@ -377,6 +400,60 @@ export async function POST(request: Request) {
     lotesRemovidos: removerIds.length,
     lotes: lotesFinais || [],
     frete: frete.situacao,
-    freteMensagem: frete.mensagem
+    freteMensagem: frete.mensagem,
+    /** Nulo quando a quantidade nao mudou (nada a consolidar). */
+    totalConsolidado,
+    valor: valorConsolidado,
+    valorTotal: valorTotalConsolidado
   });
+}
+
+/**
+ * Grava `propostas.valor` e `valor_total` pela regra do save. Proposta avulsa
+ * nao passa por aqui (o preco dela e digitado, nao vem dos itens).
+ *
+ * Guarda de frete: o UPDATE so vale se `valor_frete` ainda for o que foi
+ * lido para a conta. E a mesma trava do saveProposta — sem ela, um frete
+ * recotado entre a leitura e a escrita entraria no total com o numero antigo.
+ */
+async function consolidarTotaisDaProposta(
+  supabase: SupabaseClient,
+  idInt: number
+): Promise<{ ok: boolean; valor: number | null; valorTotal: number | null }> {
+  const { data: proposta, error: erroProposta } = await supabase
+    .from("propostas")
+    .select("id_int, id_cliente, valor_frete, is_avulso")
+    .eq("id_int", idInt)
+    .maybeSingle<{ id_int: number; id_cliente: number | null; valor_frete: number | string | null; is_avulso: boolean | null }>();
+
+  if (erroProposta || !proposta) {
+    console.error(`[lotes-em-massa] proposta ${idInt} nao lida para consolidar:`, erroProposta?.message);
+    return { ok: false, valor: null, valorTotal: null };
+  }
+  if (proposta.is_avulso) return { ok: false, valor: null, valorTotal: null };
+
+  const totais = await calcularTotaisPelaRegraDaTela(supabase, {
+    id_int: proposta.id_int,
+    id_cliente: proposta.id_cliente,
+    valor_frete: proposta.valor_frete === null ? null : Number(proposta.valor_frete)
+  });
+  if (!totais) return { ok: false, valor: null, valorTotal: null };
+
+  const valor = totais.subtotalProdutosCents / 100;
+  const valorTotal = totais.totalCents / 100;
+
+  let atualizacao = supabase
+    .from("propostas")
+    .update({ valor, valor_total: valorTotal })
+    .eq("id_int", idInt);
+  atualizacao = proposta.valor_frete === null
+    ? atualizacao.is("valor_frete", null)
+    : atualizacao.eq("valor_frete", proposta.valor_frete);
+
+  const { data: gravada, error: erroUpdate } = await atualizacao.select("valor_total").maybeSingle<{ valor_total: number | null }>();
+  if (erroUpdate || !gravada) {
+    console.error(`[lotes-em-massa] consolidacao da proposta ${idInt} nao gravada:`, erroUpdate?.message ?? "frete mudou durante a gravacao");
+    return { ok: false, valor: null, valorTotal: null };
+  }
+  return { ok: true, valor, valorTotal };
 }
