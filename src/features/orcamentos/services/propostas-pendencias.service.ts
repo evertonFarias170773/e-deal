@@ -168,9 +168,11 @@ export async function createPropostaPendencia(
     let userProfileExists = false;
     let userProfile = null;
     try {
+      // So a existencia importa aqui. `user_id`, e nao `*`: o SELECT de
+      // usuarios passa a ser por coluna, e `*` pediria colunas fechadas.
       const { data: profileData, error: profileErr } = await client
         .from("usuarios")
-        .select("*")
+        .select("user_id")
         .eq("user_id", finalCriadoPorUserId);
 
       if (profileErr) {
