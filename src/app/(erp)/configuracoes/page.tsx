@@ -10,7 +10,8 @@ import {
   FileText, 
   Settings, 
   ArrowRight,
-  ShieldCheck
+  ShieldCheck,
+  PackageCheck
 } from "lucide-react";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { hasPermissao } from "@/features/auth/usuarios.service";
@@ -147,6 +148,14 @@ export default function ConfiguracoesHubPage() {
           href="/configuracoes/perfis"
           icon={ShieldCheck}
         />
+        {user.isAdmin || user.isSuperAdmin ? (
+          <ConfigHubCard
+            title="Encerrar pedidos pagos (transição)"
+            description="Passa para ENTREGUE os pedidos já pagos que continuam em LIBERADO, com prévia por grupo antes de confirmar."
+            href="/configuracoes/encerrar-pedidos-pagos"
+            icon={PackageCheck}
+          />
+        ) : null}
         <ConfigHubCard
           title="Empresas"
           description="Gerencie as filiais operacionais do grupo, chaves de acesso, logos e dados cadastrais comerciais."

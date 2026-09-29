@@ -880,6 +880,15 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
   /** Item cuja linha está sendo gravada pelo "Salvar item" — trava o botão contra clique duplo. */
   const [savingItemId, setSavingItemId] = useState<string | null>(null);
   /**
+   * Trava de gravação do item, em ref e não em estado: o blur do campo e o
+   * clique em "Salvar item" chegam no mesmo instante (o clique no botão tira
+   * o foco do campo), e um estado ainda não teria sido renderizado quando o
+   * segundo chegasse. Com a ref, o segundo pedido enxerga o primeiro em voo.
+   */
+  const itemEmGravacaoRef = useRef<string | null>(null);
+  /** Itens cujo "Salvar item" chegou durante um salvamento automático: fecham ao terminar. */
+  const fecharAoTerminarRef = useRef<Set<string>>(new Set());
+  /**
    * Produto recém-incluído no orçamento: o cursor vai direto para a Quantidade,
    * que é sempre o primeiro campo a preencher. Só na inclusão — ao editar um
    * item já existente o foco fica onde o vendedor clicou.
@@ -1563,7 +1572,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
    * clique leria o `form` velho — sem os fretes que acabaram de chegar — e
    * reproduziria exatamente o erro que a espera existe para evitar.
    */
-  const handleSaveRef = useRef<((opcoes?: { faturadoConfirmado?: boolean }) => Promise<boolean | undefined>) | null>(null);
+  const handleSaveRef = useRef<((opcoes?: { faturadoConfirmado?: boolean; permanecerNaTela?: boolean }) => Promise<boolean | undefined>) | null>(null);
   useEffect(() => {
     handleSaveRef.current = handleSave;
   });
@@ -3180,6 +3189,14 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     const item = form.itens.find((it) => it.id === itemId);
     if (!item) return;
 
+    // Um salvamento automático deste item já está em voo (o clique no botão
+    // tirou o foco do campo e disparou o blur). Não grava de novo: só pede
+    // para o card fechar quando aquele terminar bem.
+    if (itemEmGravacaoRef.current === itemId) {
+      fecharAoTerminarRef.current.add(itemId);
+      return;
+    }
+
     if (item.quantidade <= 0) {
       showToast({
         type: "error",
@@ -3228,6 +3245,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     // `updateItem` já roda `recalculateItem` a cada digitação, então
     // `form.itens` está atualizado aqui e o `handleSave` pode ler o estado
     // normalmente — não há versão nova esperando para ser aplicada.
+    itemEmGravacaoRef.current = itemId;
     setSavingItemId(itemId);
     try {
       // O item que acabou de entrar mudou o peso e agendou uma recotação de
@@ -3247,6 +3265,48 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
         setOpenItemIds((prev) => ({ ...prev, [itemId]: false }));
       }
     } finally {
+      itemEmGravacaoRef.current = null;
+      fecharAoTerminarRef.current.delete(itemId);
+      setSavingItemId(null);
+    }
+  }
+
+  /**
+   * Salvamento automático do item, quando Quantidade, Valor Unitário ou Fixo
+   * perdem o foco com valor NOVO e VÁLIDO (quem decide isso é o editor).
+   *
+   * É o mesmo caminho do "Salvar item" e do "Salvar alterações": espera a
+   * recotação de frete que a quantidade nova agendou e grava a proposta
+   * inteira — é o `handleSave` que consolida `valor_total`, e por ele passam
+   * todos os bloqueios de proposta paga e em produção. A diferença é que o
+   * card continua aberto: o operador pode estar indo para o próximo campo.
+   *
+   * SÓ EM PROPOSTA JÁ GRAVADA E LIVRE. Não age:
+   *   - em proposta nova: o blur criaria a proposta no meio do preenchimento;
+   *   - com cobrança ativa ou no fluxo do faturado: ali salvar mexe em título
+   *     e boleto e pede confirmação — continua pelo "Salvar item", que mostra
+   *     os avisos de sempre;
+   *   - com o formulário bloqueado (proposta paga, pendência de revisão).
+   */
+  async function handleAutoSalvarItem(itemId: string) {
+    if (mode !== "edit") return;
+    if (isFormBloqueadoPorCobranca || hasActiveCobranca || podeEditarPeloFaturado) return;
+    if (itemEmGravacaoRef.current) return;
+    if (!form.itens.some((it) => it.id === itemId)) return;
+
+    itemEmGravacaoRef.current = itemId;
+    setSavingItemId(itemId);
+    try {
+      await aguardarCotacaoDeFrete();
+      // Sem recarregar a página: o operador pode estar indo para o próximo campo.
+      const salvou = await handleSaveRef.current?.({ permanecerNaTela: true });
+      // O "Salvar item" chegou no meio: ele queria fechar o card.
+      if (salvou && fecharAoTerminarRef.current.has(itemId)) {
+        setOpenItemIds((prev) => ({ ...prev, [itemId]: false }));
+      }
+    } finally {
+      itemEmGravacaoRef.current = null;
+      fecharAoTerminarRef.current.delete(itemId);
       setSavingItemId(null);
     }
   }
@@ -4357,7 +4417,11 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
   //   chama /api/orcamentos/editar-paga com JWT, que valida permissão
   //   server-side e cria pendência financeira se houver diferença
   // ------------------------------------------------------------------
-  async function handleSave(opcoes?: { faturadoConfirmado?: boolean }) {
+  /**
+   * `permanecerNaTela`: grava sem recarregar a página no fim. Só o salvamento
+   * automático do item usa — ver `handleAutoSalvarItem`.
+   */
+  async function handleSave(opcoes?: { faturadoConfirmado?: boolean; permanecerNaTela?: boolean }) {
     // Bloqueio absoluto (vale para admin/superadmin): avulsa ou sem produtos
     // ativos + paga = somente visualização/Histórico/Pagamentos. O backend
     // (editar-paga) aplica a mesma regra — este guard evita o round-trip.
@@ -4747,6 +4811,13 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
           setPendingNavigation(null);
           showToast(avisoSalvamento);
           router.push(pendingNavigation);
+        } else if (opcoes?.permanecerNaTela) {
+          // Salvamento automático do item. O formulário JÁ está sincronizado
+          // acima — id real dos itens novos, modelos e o snapshot de
+          // "alterações não salvas" —, então recarregar a página não acrescenta
+          // nada: só fecharia o card e tiraria o foco do campo seguinte a cada
+          // vez que o operador sai de um campo.
+          showToast(res.errorMessage ? avisoSalvamento : { type: "success", title: "Item salvo." });
         } else {
           concluirSalvamentoERecarregar(avisoSalvamento);
         }
@@ -6469,6 +6540,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                           onRemoveVariacaoOrfa={(escolhaId) => removerVariacaoOrfa(item.id, escolhaId)}
                           onRemove={() => handleRemoveProductClick(item.id)}
                           onSave={() => void handleSaveItem(item.id)}
+                          onAutoSalvar={() => void handleAutoSalvarItem(item.id)}
                           isSaving={savingItemId === item.id}
                           isCotandoFrete={isCotandoFrete}
                           // Variação é característica do produto, não valor: segue a mesma
@@ -7648,6 +7720,7 @@ function ProductItemEditor({
   onRemoveVariacaoOrfa,
   onRemove,
   onSave,
+  onAutoSalvar,
   isSaving,
   isCotandoFrete,
   podeEditarVariacoes,
@@ -7666,6 +7739,12 @@ function ProductItemEditor({
   onRemoveVariacaoOrfa?: (escolhaId: string) => void;
   onRemove: () => void;
   onSave: () => void;
+  /**
+   * Pedido de salvamento automático: Quantidade, Valor Unitário ou Fixo
+   * saíram do campo com valor novo e válido. Quem decide se de fato grava
+   * (proposta existente, sem bloqueio) é a página.
+   */
+  onAutoSalvar?: () => void;
   /** Gravação da linha em andamento — trava o botão contra clique duplo. */
   isSaving?: boolean;
   /**
@@ -7683,6 +7762,51 @@ function ProductItemEditor({
   onQuantidadeFocada?: () => void;
 }) {
   const quantidadeRef = useRef<HTMLInputElement | null>(null);
+
+  /**
+   * O valor de cada campo quando ele ganhou o foco. Sair do campo só salva se
+   * o valor MUDOU desde então — entrar e sair sem editar não grava nada, e
+   * digitar não grava nada: é o blur que decide, uma vez.
+   */
+  const valorNoFocoRef = useRef<{ quantidade: number; valorUnitario: number; valorFixo: number }>({
+    quantidade: item.quantidade,
+    valorUnitario: item.valorUnitario,
+    valorFixo: item.valorFixo
+  });
+
+  const marcarBase = () => {
+    valorNoFocoRef.current = {
+      quantidade: item.quantidade,
+      valorUnitario: item.valorUnitario,
+      valorFixo: item.valorFixo
+    };
+  };
+
+  /**
+   * Ao sair de um dos três campos: grava só se o valor mudou e é válido.
+   * Válido é o que o "Salvar item" aceitaria para este campo — quantidade
+   * acima de zero e não abaixo da mínima do produto; valores não negativos.
+   * Inválido não grava e não avisa: o valor fica na tela, e o "Salvar item"
+   * continua dizendo o que está errado.
+   */
+  const aoSairDoCampo = (campo: "quantidade" | "valorUnitario" | "valorFixo") => {
+    if (!onAutoSalvar || isSaving) return;
+    const atual = item[campo];
+    const antes = valorNoFocoRef.current[campo];
+    if (atual === antes) return;
+
+    const minima = item.produto.quantidade_minima_venda;
+    const valido =
+      Number.isFinite(atual) &&
+      (campo === "quantidade"
+        ? atual > 0 && (minima === null || minima === undefined || atual >= minima)
+        : atual >= 0);
+    if (!valido) return;
+
+    // A base passa a ser o valor gravado: sair de novo sem editar não repete.
+    marcarBase();
+    onAutoSalvar();
+  };
 
   /**
    * Escolhas gravadas cujo grupo nao esta mais vinculado ao produto.
@@ -7724,6 +7848,8 @@ function ProductItemEditor({
           // ele: sem esta linha, o atalho continuaria salvando no meio da
           // cotação de frete — que é exatamente como o erro aparecia.
           if (isSaving || isCotandoFrete) return;
+          // O Enter já grava: o blur que vier depois não pode gravar de novo.
+          marcarBase();
           onSave();
         }
       }}
@@ -7739,42 +7865,73 @@ function ProductItemEditor({
         </div>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-1 items-start">
-        <div className="grid gap-4 grid-cols-2 sm:grid-cols-4 items-start">
-          <Field label="Quantidade">
-            <input
-              ref={quantidadeRef}
-              type="number"
-              value={item.quantidade || ""}
-              onChange={(event) => onUpdate((current) => ({ ...current, quantidade: Math.max(0, Number(event.target.value)) }))}
-              className={inputClass}
-              placeholder="Qtd"
-            />
-          </Field>
-          <Field label="Valor Unitário (R$)">
-            <input
-              type="number"
-              step="0.0001"
-              value={item.valorUnitario || ""}
-              onChange={(event) => onUpdate((current) => ({ ...current, valorUnitario: Math.max(0, Number(event.target.value)) }))}
-              className={inputClass}
-              placeholder="0,00"
-              disabled={!canEditarValoresItem}
-            />
-          </Field>
-          <Field label="Fixo (R$)">
-            <input
-              type="number"
-              step="0.01"
-              value={isPrecoFixoAplicado ? "0" : (item.valorFixo || "")}
-              onChange={(event) => onUpdate((current) => ({ ...current, valorFixo: Math.max(0, Number(event.target.value)) }))}
-              className={inputClass}
-              placeholder="0,00"
-              disabled={isPrecoFixoAplicado || !canEditarValoresItem}
-            />
-          </Field>
-          <InfoBox label="Subtotal final" value={formatCurrency(item.subtotal)} />
-        </div>
+      {/*
+        Numa linha só: os três valores, o subtotal, o "Salvar item" e a lixeira.
+        Em tela estreita a linha quebra — primeiro os valores, depois as ações.
+        Os três campos gravam sozinhos ao sair deles (ver `aoSairDoCampo`).
+      */}
+      <div className="grid grid-cols-2 items-end gap-3 lg:grid-cols-[repeat(4,minmax(0,1fr))_auto_auto]">
+        <Field label="Quantidade">
+          <input
+            ref={quantidadeRef}
+            type="number"
+            value={item.quantidade || ""}
+            onFocus={marcarBase}
+            onBlur={() => aoSairDoCampo("quantidade")}
+            onChange={(event) => onUpdate((current) => ({ ...current, quantidade: Math.max(0, Number(event.target.value)) }))}
+            className={inputClass}
+            placeholder="Qtd"
+          />
+        </Field>
+        <Field label="Valor Unitário (R$)">
+          <input
+            type="number"
+            step="0.0001"
+            value={item.valorUnitario || ""}
+            onFocus={marcarBase}
+            onBlur={() => aoSairDoCampo("valorUnitario")}
+            onChange={(event) => onUpdate((current) => ({ ...current, valorUnitario: Math.max(0, Number(event.target.value)) }))}
+            className={inputClass}
+            placeholder="0,00"
+            disabled={!canEditarValoresItem}
+          />
+        </Field>
+        <Field label="Fixo (R$)">
+          <input
+            type="number"
+            step="0.01"
+            value={isPrecoFixoAplicado ? "0" : (item.valorFixo || "")}
+            onFocus={marcarBase}
+            onBlur={() => aoSairDoCampo("valorFixo")}
+            onChange={(event) => onUpdate((current) => ({ ...current, valorFixo: Math.max(0, Number(event.target.value)) }))}
+            className={inputClass}
+            placeholder="0,00"
+            disabled={isPrecoFixoAplicado || !canEditarValoresItem}
+          />
+        </Field>
+        <InfoBox label="Subtotal final" value={formatCurrency(item.subtotal)} />
+        <button
+          type="button"
+          onClick={() => {
+            marcarBase();
+            onSave();
+          }}
+          disabled={isSaving || isCotandoFrete}
+          title={isCotandoFrete && !isSaving ? "Aguarde a cotação do frete terminar" : undefined}
+          className="h-[46px] whitespace-nowrap rounded-2xl bg-teal-600 px-5 text-sm font-semibold text-white shadow-md shadow-teal-700/10 transition-all hover:bg-teal-700 disabled:opacity-60"
+        >
+          {isSaving ? "Salvando..." : "Salvar item"}
+        </button>
+        <button
+          type="button"
+          onClick={onRemove}
+          disabled={!isRemoveAllowed}
+          aria-label="Remover item"
+          title={!isRemoveAllowed ? "Item não pode ser removido neste status" : "Remover item"}
+          className={`flex h-[46px] w-[46px] items-center justify-center justify-self-start rounded-2xl border border-red-200 bg-white text-red-600 transition-all hover:border-red-300 hover:bg-red-50 ${!isRemoveAllowed ? "cursor-not-allowed opacity-50" : ""}`}
+        >
+          <Trash2 className="h-4 w-4" />
+        </button>
       </div>
 
       <div className="pt-1">
@@ -7904,28 +8061,6 @@ function ProductItemEditor({
         </div>
       ) : null}
 
-      {/* Rodapé de Ações */}
-      <div className="flex items-center justify-between border-t border-slate-200/60 pt-4 mt-2">
-        <button
-          type="button"
-          onClick={onRemove}
-          disabled={!isRemoveAllowed}
-          className={`rounded-2xl border border-red-200 bg-white px-4 py-2.5 text-sm font-semibold text-red-600 hover:bg-red-50 hover:border-red-300 transition-all flex items-center gap-2 ${!isRemoveAllowed ? 'opacity-50 cursor-not-allowed' : ''}`}
-          title={!isRemoveAllowed ? "Item não pode ser removido neste status" : "Remover item"}
-        >
-          <Trash2 className="h-4 w-4" />
-          Remover item
-        </button>
-        <button
-          type="button"
-          onClick={onSave}
-          disabled={isSaving || isCotandoFrete}
-          title={isCotandoFrete && !isSaving ? "Aguarde a cotação do frete terminar" : undefined}
-          className="rounded-2xl bg-teal-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-teal-700 shadow-md shadow-teal-700/10 transition-all disabled:opacity-60"
-        >
-          {isSaving ? "Salvando..." : "Salvar item"}
-        </button>
-      </div>
     </div>
   );
 }
