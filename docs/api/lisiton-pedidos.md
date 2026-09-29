@@ -122,7 +122,7 @@ Os dados abaixo são **fictícios**.
 | Campo | O que é |
 |---|---|
 | `id_int` | Número do pedido no Vibe. |
-| `valor_total` | Valor total do pedido em reais, **o mesmo número da tela do Vibe**: soma dos itens, mais o frete, menos o desconto geral. |
+| `valor_total` | Valor total do pedido em reais, **o mesmo número da tela do Vibe**: soma dos itens (itens cancelados ficam de fora), mais o frete, menos o desconto geral. |
 
 ### `pagador` — quem paga o pedido (a Lisiton)
 
@@ -225,6 +225,6 @@ Todas as respostas de erro têm o mesmo formato:
 - Só atende pedidos com `id_cliente = 8469` (Lisiton). O filtro está na própria consulta: pedido de outro cliente nem chega a ser lido.
 - A chave é comparada em tempo constante (as duas passam por SHA-256 antes do `timingSafeEqual`).
 - O limite por IP é por instância do servidor (`src/lib/security/rate-limit-memory.ts`).
-- O valor total sai de `totalDaProposta` (`src/features/orcamentos/lib/total-da-proposta.ts`), a mesma função que a lista de propostas usa.
+- O valor total sai de `totaisDaProposta` (`src/features/orcamentos/lib/total-da-proposta.ts`), a regra única do sistema — a do "Salvar alterações", que a lista de propostas, a lista rápida e a área do cliente também usam.
 - O peso aferido é `expedicoes.peso_kg` — o primeiro degrau da precedência de peso de `src/features/expedicao/lib/peso.ts`.
 - O log registra só falhas do servidor, com o número do pedido. Nunca a chave, o IP ou dado pessoal.

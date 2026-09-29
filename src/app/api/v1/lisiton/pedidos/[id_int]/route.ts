@@ -4,7 +4,7 @@ import { createClient as createSupabaseClient, type SupabaseClient } from "@supa
 import { rateLimitCheck } from "@/lib/security/rate-limit-memory";
 import { escolherEnderecoPrincipal } from "@/lib/fiscal/endereco-principal";
 import { getClienteBonusPercent } from "@/features/orcamentos/orcamento-utils";
-import { totalDaProposta } from "@/features/orcamentos/lib/total-da-proposta";
+import { totaisDaProposta } from "@/features/orcamentos/lib/total-da-proposta";
 
 /**
  * API da Lisiton — dados de UM pedido, para gerar a etiqueta no Melhor Envio.
@@ -192,7 +192,7 @@ export async function GET(request: Request, contexto: { params: Promise<{ id_int
         )
         .eq("id_int", idInt)
         .maybeSingle(),
-      banco.from("produtos_proposta").select("qtd, valor_unt, fixo").eq("id_int", idInt),
+      banco.from("produtos_proposta").select("qtd, valor_unt, fixo, status_item").eq("id_int", idInt),
       banco
         .from("desconto_proposta")
         .select("valor_percentual, valor_nominal")
@@ -234,13 +234,14 @@ export async function GET(request: Request, contexto: { params: Promise<{ id_int
       numeroOuNulo(expedicao?.id_transportadora_cliente) ?? numeroOuNulo(proposta.id_transportadora_cliente);
     const transportadora = idTransportadora ? await lerCliente(banco, idTransportadora) : null;
 
-    // 8. Valor total pela regra da tela.
-    const valorTotal = totalDaProposta({
+    // 8. Valor total pela regra única do sistema — a do "Salvar alterações",
+    //    que deixa item cancelado de fora.
+    const { total: valorTotal } = totaisDaProposta({
       isAvulso: proposta.is_avulso === true,
       valorTotalGravado: proposta.valor_total,
       valor: proposta.valor,
       valorFrete: proposta.valor_frete,
-      itens: (itensRes.data ?? []) as Array<{ qtd: number; valor_unt: number; fixo: number }>,
+      itens: (itensRes.data ?? []) as Array<{ qtd: number; valor_unt: number; fixo: number; status_item: string | null }>,
       bonusPercent: getClienteBonusPercent(
         pagador
           ? ({

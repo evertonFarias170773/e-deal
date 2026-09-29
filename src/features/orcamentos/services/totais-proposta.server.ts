@@ -1,30 +1,27 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { calculateItemSubtotal, getClienteBonusPercent } from "@/features/orcamentos/orcamento-utils";
+import { getClienteBonusPercent } from "@/features/orcamentos/orcamento-utils";
+import { totaisDaProposta } from "@/features/orcamentos/lib/total-da-proposta";
 
 /**
- * Totais da proposta pela regra do "Salvar alteracoes" — no servidor.
+ * Totais da proposta no servidor — lendo as linhas do banco.
  *
- * E a mesma conta de `calculateResumo` (orcamento-utils) que o `saveProposta`
- * grava em `propostas.valor` e `propostas.valor_total`, e que o detalhe e a
- * lista da proposta refazem em memoria em vez de ler a coluna:
+ * NÃO TEM REGRA PRÓPRIA. A conta mora em `totaisDaProposta`
+ * (lib/total-da-proposta.ts), a única do sistema, a mesma do "Salvar
+ * alterações". Este arquivo só busca itens, bônus do cliente e desconto geral
+ * e entrega para ela.
  *
- *   subtotal = soma, nos itens NAO cancelados, de
- *              quantidade x unitario + fixo, menos o bonus do cliente
- *   total    = max(0, subtotal - desconto geral + frete gravado)
+ * Nasceu em 27/09/2026 na área do cliente (`/p/<token>`) e em 28/09 passou a
+ * servir também a lista rápida (`/api/pedidos/lotes-em-massa`). Em 29/09 a
+ * conta saiu daqui para a função única, que a lista de propostas e a API da
+ * Lisiton também usam.
  *
- * Nasceu em 27/09/2026 dentro da area do cliente (`/p/<token>`), que
- * comparava esse total com a coluna para nao cobrar valor velho. Em 28/09
- * veio para ca porque a lista rapida (`/api/pedidos/lotes-em-massa`) passou
- * a consolidar a proposta com a mesma regra — uma copia so, para as duas
- * nunca divergirem.
- *
- * Devolve centavos. Nulo quando a proposta nao tem item ativo: nesse caso o
- * ERP cai em `valor_total`, e nao ha o que calcular.
+ * Devolve centavos. Nulo quando a proposta não tem item ativo: nesse caso o
+ * ERP cai em `valor_total`, e não há o que calcular.
  */
 
 export type TotaisProposta = {
-  /** `propostas.valor`: subtotal dos itens com o bonus, SEM o desconto geral. */
+  /** `propostas.valor`: subtotal dos itens com o bônus, SEM o desconto geral. */
   subtotalProdutosCents: number;
   /** `propostas.valor_total`: subtotal - desconto geral + frete. */
   totalCents: number;
@@ -51,13 +48,6 @@ export async function calcularTotaisPelaRegraDaTela(
     return null;
   }
 
-  // Item cancelado fica de fora, como em `calculateResumo` e no detalhe da
-  // proposta. (O bloco da LISTA, orcamentos.service.ts:1440-1481, nao filtra;
-  // a regra oficial e a do save, e e ela que vale aqui.)
-  const lista = ((itens ?? []) as Array<{ valor_unt: number | null; qtd: number | null; fixo: number | null; status_item: string | null }>)
-    .filter((item) => String(item.status_item ?? "").toUpperCase() !== "CANCELADO");
-  if (lista.length === 0) return null;
-
   let bonusPercent = 0;
   if (proposta.id_cliente) {
     const { data: cli } = await client
@@ -75,15 +65,6 @@ export async function calcularTotaisPelaRegraDaTela(
     }
   }
 
-  let subtotalProdutos = 0;
-  for (const item of lista) {
-    subtotalProdutos += calculateItemSubtotal(
-      { quantidade: item.qtd || 0, valorUnitario: item.valor_unt || 0, valorFixo: item.fixo || 0, variacoesEscolhidas: [] },
-      bonusPercent
-    ).subtotal;
-  }
-
-  let descontoGeral = 0;
   const { data: desconto } = await client
     .from("desconto_proposta")
     .select("valor_percentual, valor_nominal")
@@ -91,13 +72,20 @@ export async function calcularTotaisPelaRegraDaTela(
     .eq("tipo_desconto", "DESCONTO_GERAL")
     .limit(1)
     .maybeSingle<{ valor_percentual: number | null; valor_nominal: number | null }>();
-  if (desconto) {
-    const pct = Number(desconto.valor_percentual ?? 0);
-    descontoGeral = pct > 0 ? (subtotalProdutos * pct) / 100 : Number(desconto.valor_nominal ?? 0);
-  }
-  // Mesmo teto de `calculateResumo`: o desconto nunca passa do subtotal.
-  descontoGeral = Math.min(subtotalProdutos, Math.max(0, descontoGeral));
 
-  const total = Math.max(0, subtotalProdutos - descontoGeral + (Number(proposta.valor_frete) || 0));
-  return { subtotalProdutosCents: centavos(subtotalProdutos), totalCents: centavos(total) };
+  const totais = totaisDaProposta({
+    // O carregador sempre calculou pelos itens, sem olhar se a proposta é
+    // avulsa: o `isAvulso: false` mantém isso. Avulsa não tem item, e cai no
+    // mesmo nulo de sempre.
+    isAvulso: false,
+    valorTotalGravado: null,
+    valor: null,
+    valorFrete: proposta.valor_frete,
+    itens: itens ?? [],
+    bonusPercent,
+    descontoGeral: desconto ?? null
+  });
+
+  if (totais.origem !== "itens") return null;
+  return { subtotalProdutosCents: centavos(totais.subtotalProdutos), totalCents: centavos(totais.total) };
 }

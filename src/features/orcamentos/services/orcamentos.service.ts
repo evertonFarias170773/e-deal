@@ -8,7 +8,7 @@ import {
   type TransporteCategoria
 } from "@/features/orcamentos/lib/transporte-categoria";
 import { calculateResumo, calculateItemSubtotal } from "@/features/orcamentos/orcamento-utils";
-import { totalDaProposta } from "@/features/orcamentos/lib/total-da-proposta";
+import { totaisDaProposta } from "@/features/orcamentos/lib/total-da-proposta";
 import {
   congelarChecklistDosItensNovos,
   type ItemNovoParaCongelar
@@ -1395,7 +1395,8 @@ export async function getOrcamentosReadOnlyData(
             .in("id_cliente", clientIds),
           client
             .from("produtos_proposta")
-            .select("id_int, valor_unt, qtd, fixo")
+            // status_item: item CANCELADO fica fora do total (regra do save).
+            .select("id_int, valor_unt, qtd, fixo, status_item")
             .in("id_int", idsToFetch)
         ]);
 
@@ -1427,11 +1428,12 @@ export async function getOrcamentosReadOnlyData(
           });
         }
 
-        // A regra do total mora em `totalDaProposta` (lib/total-da-proposta.ts):
-        // a API da Lisiton devolve o mesmo número por ela, sem cópia do laço.
+        // A regra do total mora em `totaisDaProposta` (lib/total-da-proposta.ts),
+        // a única do sistema: a do "Salvar alterações", que exclui item cancelado.
+        // Área do cliente, lista rápida e API da Lisiton usam a mesma.
         for (const row of rows) {
           const isAvulso = row.is_avulso === true || row.is_avulso === "true" || row.is_avulso === "1" || row.is_avulso === 1;
-          const total = totalDaProposta({
+          const { total } = totaisDaProposta({
             isAvulso,
             valorTotalGravado: row.valor_total,
             valor: row.valor,
