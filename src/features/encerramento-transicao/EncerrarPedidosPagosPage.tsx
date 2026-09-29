@@ -37,6 +37,12 @@ function dataHora(iso: string) {
   });
 }
 
+/** "AAAA-MM-DD" menos `dias`, sem passar por fuso (a data já é a de Brasília). */
+function diasAntes(iso: string, dias: number) {
+  const [ano, mes, dia] = iso.split("-").map(Number);
+  return new Date(Date.UTC(ano, mes - 1, dia - dias)).toISOString().slice(0, 10);
+}
+
 function dataCurta(iso: string) {
   const [ano, mes, dia] = iso.split("-");
   return `${dia}/${mes}/${ano}`;
@@ -62,7 +68,7 @@ async function chamar(corpo: Record<string, unknown>) {
  */
 export function EncerrarPedidosPagosPage() {
   const hoje = hojeSP();
-  const [dataCorte, setDataCorte] = useState(hoje);
+  const [dataCorte, setDataCorte] = useState(() => diasAntes(hoje, 7));
   const [previa, setPrevia] = useState<Previa | null>(null);
   const [confirmando, setConfirmando] = useState(false);
   const [resultado, setResultado] = useState<Resultado | null>(null);
@@ -133,6 +139,10 @@ export function EncerrarPedidosPagosPage() {
           Entram os pedidos cujo último pagamento foi antes da meia-noite desta data (horário de Brasília):
           pedidos avulsos, e pedidos que nunca entraram na produção nem na expedição. O cliente de teste e
           os pedidos sem pagamento ficam sempre de fora.
+        </p>
+        <p className="rounded-xl px-3 py-2 text-xs ring-1 bg-amber-50 text-amber-800 ring-amber-200 dark:bg-amber-900/30 dark:text-amber-200 dark:ring-amber-800">
+          Pedidos que não são avulsos só entram se foram pagos antes de 26/09/2026, qualquer que seja a
+          data escolhida: depois disso, um pedido pago pode ainda estar esperando a liberação para a produção.
         </p>
         <div className="flex flex-wrap items-center gap-3">
           <input
