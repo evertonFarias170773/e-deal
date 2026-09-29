@@ -60,6 +60,7 @@ import { LiberarProducaoModal } from "@/features/orcamentos/components/LiberarPr
 import { CancelPropostaModal } from "@/features/orcamentos/components/CancelPropostaModal";
 import { CriarComplementoModal } from "@/features/orcamentos/components/CriarComplementoModal";
 import type { Proposta } from "@/features/orcamentos/types";
+import { copiarLinkPagamentoExterno } from "@/features/area-cliente/lib/copiar-link-pagamento";
 
 
 const filterClass = "rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none";
@@ -1695,6 +1696,9 @@ Ela volta a aparecer nas listas operacionais.`
         label: "Copiar proposta informal",
         onClick: () => void handleCopiarPropostaInformal(item)
       },
+      // O mesmo "Link pgto. externo" do menu de dentro da proposta (29/09/2026):
+      // helper único, mesma rota e mesmas permissões.
+      { label: "Link pgto. externo", onClick: () => void copiarLinkPagamentoExterno(item.id_int, showToast) },
       { label: "Gerar PDF da proposta", onClick: () => void handleGerarPDFForListItem(item) },
       // NOTA EMITIDA (11/09/2026): so existem quando ha nota que passa no
       // criterio unico, e cada uma so aparece se o provedor devolveu o arquivo.
