@@ -1,4 +1,5 @@
 import { getSupabaseClient } from "@/lib/supabase/client";
+import { tokenDaSessao } from "@/lib/supabase/bearer";
 import type { PerfilDoCatalogo, UsuarioComPerfil } from "../types";
 
 /**
@@ -66,34 +67,36 @@ export async function listPerfisDoCatalogo(): Promise<PerfilDoCatalogo[]> {
 }
 
 /**
- * Atualiza unicamente a coluna `id_perfil` na tabela `public.usuarios`.
- * 
- * ⚠️ Rígida segurança de escrita: O payload de gravação contém estritamente o campo 'id_perfil'.
- * Nenhuma outra coluna é aceita ou enviada nesta camada, mitigando riscos em produção.
+ * Troca o perfil (`usuarios.id_perfil`) de um usuário.
+ *
+ * Desde 29/09/2026 passa pela rota `POST /api/admin/usuarios/perfil`, que confere
+ * a permissão no servidor e grava com a service role. O banco não aceita mais
+ * escrita direta na linha de outro usuário (a policy `usuarios_upd` saiu), então
+ * gravar daqui pelo PostgREST afetaria zero linhas em silêncio.
+ *
+ * A mensagem de recusa é a da rota, inteira: sem permissão, próprio perfil, ou
+ * perfil Super Administrador sem ser Super Admin.
  */
 export async function updatePerfilUsuario(
   userId: string,
   idPerfil: number | null
 ): Promise<void> {
-  const client = getSupabaseClient();
-  if (!client) {
-    throw new Error("Cliente Supabase não configurado no ambiente.");
+  const token = await tokenDaSessao();
+  if (!token) {
+    throw new Error("Sessão expirada. Faça login novamente.");
   }
 
-  // Whitelist explícita de campos a serem modificados: apenas id_perfil.
-  // Evita que modificações em outros atributos sejam injetadas.
-  const payload = {
-    id_perfil: idPerfil
-  };
+  const resposta = await fetch("/api/admin/usuarios/perfil", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ userId, idPerfil })
+  });
+  const corpo = (await resposta.json().catch(() => null)) as { success?: boolean; message?: string } | null;
 
-  const { error } = await client
-    .from("usuarios")
-    .update(payload)
-    .eq("user_id", userId);
-
-  if (error) {
-    console.error("[UsuariosPerfisService] Erro ao atualizar perfil do usuário:", error.message);
-    throw new Error(`Não foi possível salvar a alteração: ${error.message}`);
+  if (!resposta.ok || !corpo?.success) {
+    const mensagem = corpo?.message || `Não foi possível salvar a alteração (HTTP ${resposta.status}).`;
+    console.error("[UsuariosPerfisService] Troca de perfil recusada:", mensagem);
+    throw new Error(mensagem);
   }
 }
 
