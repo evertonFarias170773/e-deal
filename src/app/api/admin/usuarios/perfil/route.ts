@@ -19,8 +19,11 @@
  *
  * O AUTOR
  *   Gravando com a service role, o audit.logs_v2 registra a mudanca (antes e
- *   depois) com `actor_role = service_role`, mas sem o usuario. Quem fez vai no
- *   log do servidor e na resposta.
+ *   depois) com `actor_role = service_role`, mas sem o usuario. Por isso cada
+ *   troca bem-sucedida grava uma linha em `public.usuarios_perfil_historico`
+ *   (quem, de quem, de qual perfil para qual, quando). Troca sem historico nao
+ *   fica: se a linha do historico nao grava, o perfil volta ao anterior e a rota
+ *   responde erro.
  */
 
 import { NextResponse, type NextRequest } from "next/server";
@@ -176,14 +179,38 @@ export async function POST(request: NextRequest) {
     return recusa("Não foi possível gravar o perfil.", 500, "GRAVACAO");
   }
 
-  const registro = {
-    autor: { uid: autorId, email: authData.user.email ?? autor.email ?? null, nome: autor.nome_usuario ?? null },
-    alvo: { uid: alvoId, email: alvo.email ?? null },
-    perfilAnterior: alvo.id_perfil ?? null,
-    perfilNovo: idPerfilNovo,
-    em: new Date().toISOString()
-  };
-  console.info("[admin/usuarios/perfil] perfil alterado", JSON.stringify(registro));
+  const { data: historico, error: historicoErr } = await service
+    .from("usuarios_perfil_historico")
+    .insert({
+      autor_uid: autorId,
+      autor_email: authData.user.email ?? autor.email ?? null,
+      autor_nome: autor.nome_usuario ?? null,
+      alvo_uid: alvoId,
+      alvo_email: alvo.email ?? null,
+      perfil_de: alvo.id_perfil ?? null,
+      perfil_para: idPerfilNovo
+    })
+    .select("id, alterado_em")
+    .single();
 
-  return NextResponse.json({ success: true, alterado: true, idPerfil: idPerfilNovo, registro });
+  if (historicoErr || !historico) {
+    // Sem o registro de quem fez, a troca nao fica: devolve o perfil anterior.
+    console.error("[admin/usuarios/perfil] historico:", historicoErr?.message ?? "sem linha");
+    const { error: desfazerErr } = await service
+      .from("usuarios")
+      .update({ id_perfil: alvo.id_perfil ?? null })
+      .eq("user_id", alvoId);
+    if (desfazerErr) {
+      console.error("[admin/usuarios/perfil] CRITICO: perfil trocado sem historico e nao desfeito:", desfazerErr.message, JSON.stringify({ autorId, alvoId, de: alvo.id_perfil ?? null, para: idPerfilNovo }));
+    }
+    return recusa("Não foi possível registrar a troca de perfil; nada foi alterado.", 500, "HISTORICO");
+  }
+
+  return NextResponse.json({
+    success: true,
+    alterado: true,
+    idPerfil: idPerfilNovo,
+    historicoId: historico.id,
+    alteradoEm: historico.alterado_em
+  });
 }
