@@ -8,6 +8,7 @@ import {
   type TransporteCategoria
 } from "@/features/orcamentos/lib/transporte-categoria";
 import { calculateResumo, calculateItemSubtotal } from "@/features/orcamentos/orcamento-utils";
+import { totalDaProposta } from "@/features/orcamentos/lib/total-da-proposta";
 import {
   congelarChecklistDosItensNovos,
   type ItemNovoParaCongelar
@@ -1340,10 +1341,6 @@ export async function getOrcamentosReadOnlyData(
     : fetched.totalCount || 0;
   const totalPages = Math.ceil(totalCount / safePageSize) || 1;
 
-  const toNumber = (v: unknown) => {
-    const n = Number(v);
-    return Number.isFinite(n) ? n : 0;
-  };
 
   if (!rows) {
     return {
@@ -1430,57 +1427,21 @@ export async function getOrcamentosReadOnlyData(
           });
         }
 
+        // A regra do total mora em `totalDaProposta` (lib/total-da-proposta.ts):
+        // a API da Lisiton devolve o mesmo número por ela, sem cópia do laço.
         for (const row of rows) {
           const isAvulso = row.is_avulso === true || row.is_avulso === "true" || row.is_avulso === "1" || row.is_avulso === 1;
-          const freteValor = toNumber(row.valor_frete);
-
-          if (isAvulso) {
-            const total = toNumber(row.valor_total ?? (toNumber(row.valor) + freteValor));
-            row.valor_total = total;
-            (row as any)._valor_total_calculado_view = total;
-          } else {
-            const items = itemsMap.get(row.id_int) || [];
-            if (items.length === 0) {
-              const total = toNumber(row.valor_total ?? (toNumber(row.valor) + freteValor));
-              row.valor_total = total;
-              (row as any)._valor_total_calculado_view = total;
-            } else {
-              const bonusPercent = clientBonusMap.get(Number(row.id_cliente)) || 0;
-
-              let subtotalProdutos = 0;
-              for (const item of items) {
-                const itemObj = {
-                  quantidade: item.qtd || 0,
-                  valorUnitario: item.valor_unt || 0,
-                  valorFixo: item.fixo || 0,
-                  variacoesEscolhidas: []
-                };
-                const itemSubtotal = calculateItemSubtotal(itemObj, bonusPercent).subtotal;
-                subtotalProdutos += itemSubtotal;
-              }
-
-              let descontoGeralCalculado = 0;
-              const discount = discountMap.get(row.id_int);
-              if (discount) {
-                const valorPercentual = Number(discount.valor_percentual ?? 0);
-                const valorNominal = Number(discount.valor_nominal ?? 0);
-                if (valorPercentual > 0) {
-                  descontoGeralCalculado = (subtotalProdutos * valorPercentual) / 100;
-                } else {
-                  descontoGeralCalculado = valorNominal;
-                }
-              }
-
-              let totalCalculado = subtotalProdutos + freteValor - descontoGeralCalculado;
-              if (totalCalculado === freteValor && subtotalProdutos > 0) {
-                totalCalculado = subtotalProdutos + freteValor - descontoGeralCalculado;
-              }
-              totalCalculado = Math.max(0, totalCalculado);
-
-              row.valor_total = totalCalculado;
-              (row as any)._valor_total_calculado_view = totalCalculado;
-            }
-          }
+          const total = totalDaProposta({
+            isAvulso,
+            valorTotalGravado: row.valor_total,
+            valor: row.valor,
+            valorFrete: row.valor_frete,
+            itens: itemsMap.get(row.id_int) || [],
+            bonusPercent: clientBonusMap.get(Number(row.id_cliente)) || 0,
+            descontoGeral: discountMap.get(row.id_int) ?? null
+          });
+          row.valor_total = total;
+          (row as any)._valor_total_calculado_view = total;
         }
       }
     }

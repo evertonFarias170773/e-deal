@@ -148,6 +148,10 @@ Visão de produto e evolução do Maestro.
 
 # 6. Segurança Técnica e Interface
 
+## [`api/lisiton-pedidos.md`](./api/lisiton-pedidos.md)
+
+API externa, só leitura, para a Lisiton consultar um pedido pelo `id_int` e gerar a etiqueta no Melhor Envio (29/09/2026): autenticação por `x-api-key`, exemplo com curl, resposta, códigos de erro e a origem do peso aferido.
+
 ## [`technical/MATRIZ-SEGURANCA-ESCRITA-SUPABASE.md`](./technical/MATRIZ-SEGURANCA-ESCRITA-SUPABASE.md)
 
 Fonte específica para operações de leitura e escrita.
