@@ -193,7 +193,6 @@ export function LotesGrid({
   autoSaveHabilitado,
   amostrasVisiveis,
   onGravado,
-  onSair,
   onAmpliarArte,
   onPendente,
   onAlteracoesNaoGravadas
@@ -240,7 +239,6 @@ export function LotesGrid({
     /** Lotes como ficaram no banco, com os ids — o pai precisa deles para nao duplicar no proximo salvamento. */
     lotes: Record<string, unknown>[];
   }) => void;
-  onSair: () => void;
   /** A arte ampliada abre no mesmo modal do modo cards. */
   onAmpliarArte: (arte: { frente: string; verso: string | null; nome: string }) => void;
   /**
@@ -847,16 +845,6 @@ export function LotesGrid({
             className="flex items-center gap-1.5 rounded-xl bg-slate-100 px-3 py-2 text-xs font-bold text-slate-700 transition hover:bg-slate-200"
           >
             <Plus className="h-4 w-4" /> {quantasCriar > 1 ? `${quantasCriar} linhas` : "Linha"}
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              if (naoGravado && !window.confirm("Há lotes não gravados nesta lista. Ir para os cards e descartar as alterações?")) return;
-              onSair();
-            }}
-            className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-bold text-slate-600 transition hover:bg-slate-50"
-          >
-            Ver como cards
           </button>
           {/* O caminho de gravação de sempre: grava o que estiver pendente e
               fica na grade. Em proposta com cobrança a grade não grava: quem

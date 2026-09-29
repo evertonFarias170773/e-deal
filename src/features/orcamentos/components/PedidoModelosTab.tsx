@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Plus, Edit2, Trash2, Package, CheckCircle, Copy, AlertOctagon, ChevronDown, ListPlus, X, Eye } from "lucide-react";
+import { Plus, Edit2, Trash2, Package, CheckCircle, Copy, AlertOctagon, ChevronDown, X, Eye } from "lucide-react";
 import { useAppToast } from "@/components/common/AppToast";
 import { LotesGrid, type PadroesDeLote } from "@/features/orcamentos/components/LotesGrid";
 // Campos, janela de amostra e helpers da arte: o que o card e a lista rapida
@@ -689,14 +689,13 @@ export function PedidoModelosTab({
   const visivelDoItem = (item: PropostaItem): ChecklistVisivel =>
     checklistVisivel(checklistPorProduto.get(Number(item.id_produto)));
   const [coresOpcoes, setCoresOpcoes] = useState<any[]>([]);
-  /** Itens exibindo a lista rápida em vez da pilha de cards. */
-  // Sem escolha registrada, a grade abre aberta onde ela e permitida (24/09/2026):
-  // e a forma rapida de montar o pedido, e gravar nao a fecha. Onde a lista
-  // rapida e desabilitada (proposta com cobranca) fica o modo cards.
-  const [emModoGrade, setEmModoGrade] = useState<Record<string, boolean>>({});
-  // A lista rápida é a visualização principal em qualquer status (24/09/2026):
-  // abre por padrão, e os cards só quando o usuário pede. Com cobrança ela não
-  // grava sozinha — ver `onPendente` no LotesGrid.
+  // SÓ A LISTA RÁPIDA (29/09/2026, decisão do dono). O botão "Ver como cards" e
+  // o alternador "Lista rápida" saíram: a lista é a única visualização da aba,
+  // em qualquer status (com cobrança ela não grava sozinha — ver `onPendente` no
+  // LotesGrid). O modo cards continua no código, desligado: nada mais escreve
+  // em `emModoGrade`, então `gradeAberta` é sempre true. Para religar, basta
+  // voltar o setter e o botão (commit anterior a este).
+  const [emModoGrade] = useState<Record<string, boolean>>({});
   const gradeAberta = (idItem: string) => emModoGrade[idItem] ?? true;
   // Lotes não gravados por item: a página pergunta antes de sair da aba.
   const naoGravadosRef = useRef<Record<string, boolean>>({});
@@ -953,20 +952,6 @@ export function PedidoModelosTab({
                 </div>
 
                 <div className="flex flex-wrap gap-2">
-                  {/* Lista rápida: para o pedido de 12, 20, 30 lotes do mesmo
-                      produto, onde os cards custam 4 idas ao servidor cada. */}
-                  <button
-                    onClick={() => setEmModoGrade((atual) => ({ ...atual, [item.id]: !(atual[item.id] ?? true) }))}
-                    title="Digitar ou colar vários lotes de uma vez"
-                    className={`flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-bold transition disabled:opacity-50 ${
-                      gradeAberta(item.id)
-                        ? "bg-[#0b2f4a] text-white hover:bg-[#123f61]"
-                        : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-                    }`}
-                  >
-                    <ListPlus className="h-4 w-4" />
-                    Lista rápida
-                  </button>
                   {gradeAberta(item.id) && (
                     <button
                       type="button"
@@ -1119,7 +1104,6 @@ export function PedidoModelosTab({
                           // no banco: cor, bloco ou numerador nao mexem nela.
                           if (qtdItem !== qtdAnterior) onLotesGravados?.(idNoBanco, qtdItem, freteMensagem);
                         }}
-                        onSair={() => setEmModoGrade((atual) => ({ ...atual, [item.id]: false }))}
                         onAlteracoesNaoGravadas={(sim) => registrarNaoGravado(String(item.id), sim)}
                         onPendente={
                           autoSaveHabilitado
