@@ -28,6 +28,14 @@ import { validateDocumentByTipo } from "@/features/cadastros/utils/documento";
  * CPF nao consulta nada: a API de CPF e paga, e nao ha motivo de negocio para
  * gastar chamada num formulario aberto.
  *
+ * O PREENCHIMENTO PELO CEP (desde 29/09/2026)
+ * -------------------------------------------
+ * Completado um CEP de 8 digitos, a tela consulta o ViaCEP — a mesma API, do
+ * mesmo jeito (direto do navegador, sem chave) que o cadastro interno usa em
+ * CadastroFormPage — e preenche logradouro, bairro, cidade e UF. Mesmas tres
+ * regras da Receita: o que a pessoa editou vence, o que veio do CEP fica
+ * marcado, e falha nunca trava. Numero e complemento nunca vem do CEP.
+ *
  * O HONEYPOT
  * ----------
  * Campo `site`, real, do tipo text, escondido por CSS. Nao e `type="hidden"` de
@@ -88,6 +96,11 @@ const CAMPOS_DA_RECEITA: CampoPreenchivel[] = [
   "cep", "endereco", "numero", "complemento", "bairro", "cidade", "uf"
 ];
 
+/** Os que o ViaCEP preenche. Nunca numero nem complemento. */
+const CAMPOS_DO_CEP = ["endereco", "bairro", "cidade", "uf"] as const;
+type CampoDoCep = (typeof CAMPOS_DO_CEP)[number];
+type CamposDoCep = Partial<Record<CampoDoCep, string>>;
+
 export function CadastroOnlineForm({
   token,
   primeiroNomeVendedor
@@ -108,6 +121,13 @@ export function CadastroOnlineForm({
   const [daReceita, setDaReceita] = useState<CampoPreenchivel[]>([]);
   const [avisoConsulta, setAvisoConsulta] = useState("");
 
+  const [consultandoCep, setConsultandoCep] = useState(false);
+  /** Campos preenchidos pelo CEP e ainda nao tocados pela pessoa. */
+  const [doCep, setDoCep] = useState<CampoDoCep[]>([]);
+  const [avisoCep, setAvisoCep] = useState("");
+  /** Cache da sessao por CEP; `null` guarda "consultado e nao achado". */
+  const cepsConsultados = useRef(new Map<string, CamposDoCep | null>());
+
   /** Campos que a pessoa editou. O que esta aqui nunca e sobrescrito. */
   const editados = useRef(new Set<CampoPreenchivel>());
   /**
@@ -122,6 +142,7 @@ export function CadastroOnlineForm({
   const rotuloNome = pessoaFisica ? "Nome completo" : "Razão social";
 
   const documentoDigitos = useMemo(() => form.documento.replace(/\D/g, ""), [form.documento]);
+  const cepDigitos = useMemo(() => form.cep.replace(/\D/g, ""), [form.cep]);
 
   function alterar(campo: CampoDoForm, valor: string) {
     // Edicao da pessoa: some a marca da Receita e o campo fica protegido de
@@ -129,8 +150,27 @@ export function CadastroOnlineForm({
     if (campo !== "documento" && campo !== "tipoPessoa") {
       editados.current.add(campo as CampoPreenchivel);
       setDaReceita((atual) => atual.filter((c) => c !== campo));
+      setDoCep((atual) => atual.filter((c) => c !== campo));
     }
     setForm((atual) => ({ ...atual, [campo]: valor }));
+  }
+
+  function aplicarDoCep(campos: CamposDoCep) {
+    // Mesma construcao de `aplicarDaReceita`: a lista e montada ANTES do setForm.
+    const preenchidos = CAMPOS_DO_CEP.filter(
+      (campo) => (campos[campo] ?? "").trim() !== "" && !editados.current.has(campo)
+    );
+    if (preenchidos.length > 0) {
+      setForm((atual) => {
+        const novo = { ...atual };
+        for (const campo of preenchidos) novo[campo] = (campos[campo] ?? "").trim();
+        return novo;
+      });
+      // O que o CEP preencheu deixa de ser "da Receita": a marca certa e a do CEP.
+      setDaReceita((atual) => atual.filter((c) => !preenchidos.includes(c as CampoDoCep)));
+    }
+    setDoCep(preenchidos);
+    setAvisoCep(preenchidos.length > 0 ? "Endereço preenchido pelo CEP. Confira e informe o número." : "");
   }
 
   function aplicarDaReceita(campos: CamposDaReceita) {
@@ -221,6 +261,58 @@ export function CadastroOnlineForm({
     // `token` e estavel durante toda a vida da pagina.
   }, [documentoDigitos, pessoaFisica, token]);
 
+  /**
+   * Consulta ao completar um CEP. Debounce de 400 ms. Direto no ViaCEP, como o
+   * cadastro interno: sem chave, sem custo, e nada da casa vai na chamada.
+   */
+  useEffect(() => {
+    if (cepDigitos.length !== 8) return;
+
+    let ativo = true;
+    const temporizador = window.setTimeout(() => {
+      void (async () => {
+        const guardado = cepsConsultados.current.get(cepDigitos);
+        if (guardado !== undefined) {
+          if (ativo && guardado) aplicarDoCep(guardado);
+          return;
+        }
+
+        setConsultandoCep(true);
+        setAvisoCep("");
+        try {
+          const resposta = await fetch(`https://viacep.com.br/ws/${cepDigitos}/json/`);
+          const dados = (await resposta.json().catch(() => null)) as
+            | { erro?: boolean; logradouro?: string; bairro?: string; localidade?: string; uf?: string }
+            | null;
+          if (!ativo) return;
+
+          if (dados && !dados.erro) {
+            const campos: CamposDoCep = {
+              endereco: dados.logradouro ?? "",
+              bairro: dados.bairro ?? "",
+              cidade: dados.localidade ?? "",
+              uf: String(dados.uf ?? "").toUpperCase().slice(0, 2)
+            };
+            cepsConsultados.current.set(cepDigitos, campos);
+            aplicarDoCep(campos);
+          } else {
+            cepsConsultados.current.set(cepDigitos, null);
+            setAvisoCep("CEP não encontrado. Preencha o endereço abaixo.");
+          }
+        } catch {
+          if (ativo) setAvisoCep("Não foi possível consultar o CEP agora. Preencha o endereço abaixo.");
+        } finally {
+          if (ativo) setConsultandoCep(false);
+        }
+      })();
+    }, 400);
+
+    return () => {
+      ativo = false;
+      window.clearTimeout(temporizador);
+    };
+  }, [cepDigitos]);
+
   function conferirDocumento(): boolean {
     const resultado = validateDocumentByTipo(form.documento, pessoaFisica ? "CPF" : "CNPJ");
     setErroDocumento(resultado.isValid ? "" : (resultado.message ?? "Documento inválido."));
@@ -282,6 +374,7 @@ export function CadastroOnlineForm({
   }
 
   const veioDaReceita = (campo: CampoPreenchivel) => daReceita.includes(campo);
+  const veioDoCep = (campo: CampoDoCep) => doCep.includes(campo);
 
   if (situacao?.tipo === "RECEBIDO") {
     return (
@@ -456,6 +549,7 @@ export function CadastroOnlineForm({
               inputMode="numeric"
               autoComplete="postal-code"
               daReceita={veioDaReceita("cep")}
+              apoio={consultandoCep ? "Consultando o CEP…" : undefined}
             />
             <div className="sm:col-span-2">
               <Campo
@@ -465,9 +559,14 @@ export function CadastroOnlineForm({
                 aoMudar={(v) => alterar("endereco", v)}
                 autoComplete="street-address"
                 daReceita={veioDaReceita("endereco")}
+                doCep={veioDoCep("endereco")}
               />
             </div>
           </div>
+
+          {avisoCep ? (
+            <p className="rounded-xl bg-sky-50 px-3 py-2 text-xs leading-relaxed text-sky-800">{avisoCep}</p>
+          ) : null}
 
           <div className="grid gap-3 sm:grid-cols-2">
             <Campo
@@ -495,6 +594,7 @@ export function CadastroOnlineForm({
             aoMudar={(v) => alterar("bairro", v)}
             autoComplete="address-level3"
             daReceita={veioDaReceita("bairro")}
+            doCep={veioDoCep("bairro")}
           />
 
           <div className="grid gap-3 sm:grid-cols-3">
@@ -506,12 +606,14 @@ export function CadastroOnlineForm({
                 aoMudar={(v) => alterar("cidade", v)}
                 autoComplete="address-level2"
                 daReceita={veioDaReceita("cidade")}
+                doCep={veioDoCep("cidade")}
               />
             </div>
             <div>
               <label htmlFor="uf" className="block text-sm font-medium text-slate-700">
                 UF
-                {veioDaReceita("uf") ? <MarcaReceita /> : null}
+                {veioDaReceita("uf") ? <MarcaOrigem texto="da Receita" /> : null}
+                {veioDoCep("uf") ? <MarcaOrigem texto="do CEP" /> : null}
               </label>
               <select
                 id="uf"
@@ -593,11 +695,11 @@ function Cartao({ children }: { children: React.ReactNode }) {
   return <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">{children}</div>;
 }
 
-/** A marca de origem. Some sozinha quando a pessoa edita o campo. */
-function MarcaReceita() {
+/** A marca de origem ("da Receita", "do CEP"). Some sozinha quando a pessoa edita o campo. */
+function MarcaOrigem({ texto }: { texto: string }) {
   return (
     <span className="ml-2 rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-sky-700">
-      da Receita
+      {texto}
     </span>
   );
 }
@@ -614,7 +716,8 @@ function Campo({
   obrigatorio,
   erro,
   apoio,
-  daReceita
+  daReceita,
+  doCep
 }: {
   id: string;
   rotulo: string;
@@ -628,13 +731,15 @@ function Campo({
   erro?: string;
   apoio?: string;
   daReceita?: boolean;
+  doCep?: boolean;
 }) {
   return (
     <div>
       <label htmlFor={id} className="block text-sm font-medium text-slate-700">
         {rotulo}
         {obrigatorio ? <span className="ml-1 text-rose-500">*</span> : null}
-        {daReceita ? <MarcaReceita /> : null}
+        {daReceita ? <MarcaOrigem texto="da Receita" /> : null}
+        {doCep ? <MarcaOrigem texto="do CEP" /> : null}
       </label>
       <input
         id={id}
@@ -647,7 +752,7 @@ function Campo({
         onBlur={aoSair}
         aria-invalid={erro ? true : undefined}
         className={`mt-1 w-full rounded-xl border bg-white px-3 py-2 text-sm text-slate-800 outline-none transition focus:border-[#0b2f4a] ${
-          erro ? "border-rose-400" : daReceita ? "border-sky-200 bg-sky-50/40" : "border-slate-200"
+          erro ? "border-rose-400" : daReceita || doCep ? "border-sky-200 bg-sky-50/40" : "border-slate-200"
         }`}
       />
       {erro ? (

@@ -22,14 +22,16 @@
  * mudar quando o texto muda — nao ha adversario tentando forjar colisao.
  */
 
-const CONSENTIMENTO_DATA = "2026-09-07";
+const CONSENTIMENTO_DATA = "2026-09-29";
 
+// Texto definido pelo dono em 29/09/2026. Sem nome de empresa de proposito: o
+// link e divulgado por vendedor, para clientes de qualquer das empresas do
+// grupo; quem trata os dados esta no aviso de privacidade, nao aqui.
 export const CONSENTIMENTO_TEXTO =
-  "Autorizo a Ideal Etiquetas a usar os dados que enviei neste formulario para " +
-  "abrir e manter meu cadastro de cliente, emitir notas fiscais e cobrancas, e " +
-  "entrar em contato comigo sobre pedidos e orcamentos. Li o aviso de " +
-  "privacidade e sei que posso pedir a correcao ou a exclusao dos meus dados a " +
-  "qualquer momento.";
+  "Autorizo o uso dos dados enviados neste formulário para abrir e manter meu " +
+  "cadastro de cliente, emitir notas fiscais e cobranças, e entrar em contato " +
+  "comigo sobre pedidos e orçamentos. Li o aviso de privacidade e sei que posso " +
+  "pedir a correção ou a exclusão dos meus dados a qualquer momento.";
 
 function hashCurto(texto: string): string {
   // djb2. Suficiente para detectar edicao de texto, e igual nos dois lados.
