@@ -845,6 +845,8 @@ export function OrcamentosListPageReal() {
       let matchesStatus = true;
       if (activeCard) {
         const s = idx.statusNorm;
+        // Cancelada fora de qualquer card (30/09/2026), como no servidor.
+        if (modelo !== "ENCERRADOS" && s.startsWith("CANCEL")) continue;
         if (activeCard === "EM_ARTE") {
           // Mesmo criterio do servidor — ver `ehEmArte`.
           matchesStatus = ehEmArte(statusArtePorId[item.id_int]);

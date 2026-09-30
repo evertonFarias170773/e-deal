@@ -931,6 +931,15 @@ async function fetchPropostaRows(
 
       if (filters?.activeCard) {
         const card = filters.activeCard;
+        // CANCELADA FORA DE QUALQUER CARD (30/09/2026). O `neq CANCELADO` da lista
+        // padrao mora no ramo SEM card (abaixo), entao com um card ligado nenhuma
+        // cancelada era filtrada: a 22446 (Dados Pendentes) aparecia no EM_ARTE,
+        // e o ORCAMENTOS e o ARTE_APROVADA ("cancelada" minuscula, 21824) tinham o
+        // mesmo escape. `not.ilike CANCEL*` pega qualquer grafia e qualquer sufixo;
+        // o status nulo fica. Em "SOMENTE" (encerrados) cancelada continua vindo.
+        if (visibilidadeEncerrados !== "SOMENTE") {
+          query = query.or("status_interno.is.null,status_interno.not.ilike.CANCEL*");
+        }
         if (card === "EM_ARTE") {
           query = query.in("id_int", idsCardEmArte && idsCardEmArte.length > 0 ? idsCardEmArte : [-1]);
         } else if (card === "ARTE_APROVADA") {
