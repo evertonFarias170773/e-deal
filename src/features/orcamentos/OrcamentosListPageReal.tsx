@@ -42,6 +42,7 @@ import {
   retirarPropostaDaProducao,
   PERIODO_ULTIMOS_15_DIAS,
   listarPropostasDoCardEmArte,
+  grupoStatusArteDoCardEmArte,
   listarPropostasDoCardArteAprovada,
   pedidoEntraNoCardArteAprovada,
   statusArteEhPendenciaDoCardEmArte,
@@ -100,6 +101,14 @@ const DESTAQUE_AGUARDANDO_FINANCEIRO = { base: "var(--row-highlight)", hover: "v
  * o azul-claro (`sky-50`, tom "info" do CobrancaStatusBadge) — e essa a cor.
  */
 const DESTAQUE_PAGO_A_LIBERAR = { base: "#f0f9ff", hover: "#e0f2fe" };
+
+/**
+ * Card EM_ARTE ligado (30/09/2026): "Enviar Arte" em laranja e "Pendente
+ * Informacao" em vermelho (grupos 1 e 2 de `grupoStatusArteDoCardEmArte`).
+ * Valem so com o card ligado e passam na frente dos destaques de sempre.
+ */
+const DESTAQUE_ENVIAR_ARTE = { base: "#fff7ed", hover: "#ffedd5" };
+const DESTAQUE_PENDENTE_INFORMACAO = { base: "#fef2f2", hover: "#fee2e2" };
 
 /**
  * Grupo da linha na ordem da lista: 0 = REVISAO ATENDENTE, 1 = financeiro
@@ -908,6 +917,12 @@ export function OrcamentosListPageReal() {
       // primeiro. Quem ordena a lista INTEIRA e o servidor (`fetchPropostaRows`),
       // grupo a grupo; aqui a mesma regra so mantem a pagina carregada na ordem
       // que veio, inclusive depois dos filtros locais.
+      // Com o card EM_ARTE, antes de tudo o grupo de Status Arte (30/09/2026).
+      if (activeCard === "EM_ARTE") {
+        const arteA = grupoStatusArteDoCardEmArte(a.statusArteDoCard);
+        const arteB = grupoStatusArteDoCardEmArte(b.statusArteDoCard);
+        if (arteA !== arteB) return arteA - arteB;
+      }
       const grupoA = grupoDaLinha(a);
       const grupoB = grupoDaLinha(b);
       if (grupoA !== grupoB) return grupoA - grupoB;
@@ -1994,6 +2009,11 @@ Ela volta a aparecer nas listas operacionais.`
         emptyTitle="Nenhuma proposta encontrada"
         emptyDescription="Ajuste os filtros ou crie uma nova proposta para comecar."
         getRowHighlight={(proposta) => {
+          if (activeCard === "EM_ARTE") {
+            const arte = grupoStatusArteDoCardEmArte(proposta.statusArteDoCard);
+            if (arte === 1) return DESTAQUE_ENVIAR_ARTE;
+            if (arte === 2) return DESTAQUE_PENDENTE_INFORMACAO;
+          }
           const grupo = grupoDaLinha(proposta);
           if (grupo === 0) return DESTAQUE_REVISAO;
           if (grupo === 1) return DESTAQUE_LIBERADO;

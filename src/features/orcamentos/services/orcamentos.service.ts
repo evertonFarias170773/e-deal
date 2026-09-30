@@ -344,6 +344,8 @@ const STATUS_ARTE_DO_CARD_EM_ARTE = [
   "Em Aprovacao",
   "Em Alteracao",
   "Apr Parcial",
+  // 30/09/2026, decisao do dono: o mesmo significado de "Apr Parcial".
+  "APROVADO PARCIAL",
   "Dados Pendentes",
   "Corrigir Dados",
   "Pendente Informacao"
@@ -373,6 +375,56 @@ const CHAVES_DO_CARD_EM_ARTE = new Set(STATUS_ARTE_DO_CARD_EM_ARTE.map(chaveStat
  */
 export function statusArteEntraNoCardEmArte(status: string | null | undefined): boolean {
   return CHAVES_DO_CARD_EM_ARTE.has(chaveStatusArte(status));
+}
+
+/**
+ * ORDEM DO CARD EM_ARTE (30/09/2026, decisao do dono): com o card ligado, a
+ * lista inteira vai por grupo de Status Arte, nesta ordem, e dentro do grupo
+ * fica a ordem de sempre. Valores reais de `pedidos_artes.status`, comparados
+ * pela mesma chave do card (sem acento, caixa alta):
+ *   1. Enviar Arte (fundo laranja na tela)
+ *   2. Pendente Informacao (fundo vermelho na tela)
+ *   3. Em Alteracao
+ *   4. Dados Pendentes e Corrigir Dados
+ *   5. Em Aprovacao
+ *   6. Apr Parcial e APROVADO PARCIAL
+ *   7. EM ARTE
+ *   8. os demais
+ */
+const GRUPOS_STATUS_ARTE_DO_CARD_EM_ARTE: string[][] = [
+  ["Enviar Arte"],
+  ["Pendente Informacao"],
+  ["Em Alteracao"],
+  ["Dados Pendentes", "Corrigir Dados"],
+  ["Em Aprovacao"],
+  ["Apr Parcial", "APROVADO PARCIAL"],
+  ["EM ARTE"]
+];
+
+const GRUPO_POR_CHAVE_DO_CARD_EM_ARTE = new Map<string, number>(
+  GRUPOS_STATUS_ARTE_DO_CARD_EM_ARTE.flatMap((valores, i) =>
+    valores.map((v) => [chaveStatusArte(v), i + 1] as [string, number])
+  )
+);
+
+/** Grupos 1 a 7 da ordem acima; 8 para o resto. */
+export const GRUPO_DEMAIS_DO_CARD_EM_ARTE = GRUPOS_STATUS_ARTE_DO_CARD_EM_ARTE.length + 1;
+
+/**
+ * Grupo do pedido na ordem do card EM_ARTE. Recebe TODOS os status de arte do
+ * pedido (`statusArteDoCard`) e fica com o mais prioritario — hoje cada pedido
+ * tem uma linha so em `pedidos_artes`, mas nada no banco garante isso. Usada
+ * pelo servidor (a lista inteira) e pela tela (a pagina carregada).
+ */
+export function grupoStatusArteDoCardEmArte(
+  statuses: readonly (string | null | undefined)[] | null | undefined
+): number {
+  let melhor = GRUPO_DEMAIS_DO_CARD_EM_ARTE;
+  for (const status of statuses ?? []) {
+    const grupo = GRUPO_POR_CHAVE_DO_CARD_EM_ARTE.get(chaveStatusArte(status));
+    if (grupo !== undefined && grupo < melhor) melhor = grupo;
+  }
+  return melhor;
 }
 
 /**
@@ -969,7 +1021,43 @@ async function fetchPropostaRows(
     const totalCount = porGrupo.reduce((soma, n) => soma + n, 0);
 
     let data: SupabasePropostaRow[] | null = null;
-    if (!error) {
+    if (!error && statusArteDoCardPorId) {
+      /**
+       * CARD EM_ARTE (30/09/2026): a lista inteira vai por grupo de Status Arte
+       * (`grupoStatusArteDoCardEmArte`) e, dentro dele, na ordem de sempre — os
+       * cinco grupos acima e a data. O grupo de arte nao e coluna de `propostas`,
+       * entao aqui cada grupo de sempre vem INTEIRO, na ordem de sempre, e a
+       * sequencia e reordenada de forma ESTAVEL (a ordem de antes sobrevive
+       * dentro de cada grupo de arte) antes de fatiar a pagina. O card e pequeno
+       * por construcao — so pedido com arte fora de APROVADO —, entao ler o
+       * conjunto inteiro e barato; a contagem continua sendo a das consultas.
+       */
+      const completos = await Promise.all(
+        grupos.map((recorte, i) =>
+          porGrupo[i] === 0
+            ? Promise.resolve({ data: [] as SupabasePropostaRow[], error: null })
+            : recorte(consultaFiltrada({ count: "exact" }))
+                .order("status_alterado_em", { ascending: false, nullsFirst: false })
+                .order("id_int", { ascending: false })
+                .range(0, porGrupo[i] - 1)
+                .returns<SupabasePropostaRow[]>()
+        )
+      );
+      error = completos.find((r) => r.error)?.error ?? null;
+      if (!error) {
+        const mapaArte = statusArteDoCardPorId;
+        const sequencia = completos
+          .flatMap((r) => r.data ?? [])
+          .map((row, posicao) => ({
+            row,
+            posicao,
+            grupo: grupoStatusArteDoCardEmArte(mapaArte.get(Number(row.id_int)))
+          }))
+          .sort((a, b) => a.grupo - b.grupo || a.posicao - b.posicao)
+          .map((x) => x.row);
+        data = sequencia.slice(from, to + 1);
+      }
+    } else if (!error) {
       let inicioDoGrupo = 0;
       const fatias = grupos.map((recorte, i) => {
         const primeiro = Math.max(from, inicioDoGrupo) - inicioDoGrupo;
