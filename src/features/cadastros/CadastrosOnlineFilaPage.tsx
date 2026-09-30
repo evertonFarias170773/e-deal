@@ -9,6 +9,7 @@ import { useAuth } from "@/features/auth/AuthProvider";
 import { formatDocument } from "@/lib/formatters/document";
 import { MeuLinkCadastro } from "@/features/cadastros/components/MeuLinkCadastro";
 import {
+  aprovarCadastroOnline,
   desfazerCadastroOnline,
   listarCadastrosOnline,
   recusarCadastroOnline,
@@ -19,10 +20,11 @@ import {
 /**
  * Fila do cadastro online.
  *
- * Mostra TUDO o que caiu por link de atendente, inclusive o que foi aprovado
- * automaticamente — que hoje e a regra, nao a excecao. A coluna que diz quem
- * decidiu distingue os dois casos: `aprovado_por` nulo significa que ninguem
- * olhou, foi o proprio envio que virou cliente.
+ * Mostra TUDO o que caiu por link de atendente. CNPJ e aprovado
+ * automaticamente (a coluna que diz quem decidiu fica nula); CPF, desde
+ * 29/09/2026, nasce PENDENTE e e aprovado aqui — com o sinal de que o nome
+ * digitado confere (ou nao) com o do CPF na CPFHub. O nome que a CPFHub
+ * devolveu nao esta em lugar nenhum: so o sinal.
  *
  * Sem restricao de perfil, por decisao do dono: qualquer perfil com sessao ve a
  * fila inteira, de qualquer vendedor.
@@ -37,7 +39,8 @@ const FILTROS: Array<{ chave: "TODOS" | CadastroOnlineStatus; rotulo: string }> 
 
 type Decisao =
   | { tipo: "RECUSAR"; item: CadastroOnlineItem }
-  | { tipo: "DESFAZER"; item: CadastroOnlineItem };
+  | { tipo: "DESFAZER"; item: CadastroOnlineItem }
+  | { tipo: "APROVAR"; item: CadastroOnlineItem };
 
 export function CadastrosOnlineFilaPage() {
   const { user } = useAuth();
@@ -99,14 +102,16 @@ export function CadastrosOnlineFilaPage() {
 
     const decididoPor = user?.id ?? null;
     const resultado =
-      decisao.tipo === "DESFAZER" && decisao.item.idClienteGerado
-        ? await desfazerCadastroOnline(
-            decisao.item.id,
-            decisao.item.idClienteGerado,
-            motivo,
-            decididoPor
-          )
-        : await recusarCadastroOnline(decisao.item.id, motivo, decididoPor);
+      decisao.tipo === "APROVAR"
+        ? await aprovarCadastroOnline(decisao.item.id)
+        : decisao.tipo === "DESFAZER" && decisao.item.idClienteGerado
+          ? await desfazerCadastroOnline(
+              decisao.item.id,
+              decisao.item.idClienteGerado,
+              motivo,
+              decididoPor
+            )
+          : await recusarCadastroOnline(decisao.item.id, motivo, decididoPor);
 
     setSalvando(false);
 
@@ -121,11 +126,14 @@ export function CadastrosOnlineFilaPage() {
 
     showToast({
       type: "success",
-      title: decisao.tipo === "DESFAZER" ? "Cadastro desfeito" : "Envio recusado",
+      title:
+        decisao.tipo === "APROVAR" ? "Cadastro aprovado" : decisao.tipo === "DESFAZER" ? "Cadastro desfeito" : "Envio recusado",
       description:
-        decisao.tipo === "DESFAZER"
-          ? `O cliente ${decisao.item.idClienteGerado} ficou inativo na base.`
-          : "O envio foi marcado como recusado."
+        decisao.tipo === "APROVAR"
+          ? `Cliente #${"idCliente" in resultado && resultado.idCliente ? resultado.idCliente : "?"} criado.`
+          : decisao.tipo === "DESFAZER"
+            ? `O cliente ${decisao.item.idClienteGerado} ficou inativo na base.`
+            : "O envio foi marcado como recusado."
     });
     setDecisao(null);
     setMotivo("");
@@ -205,6 +213,18 @@ export function CadastrosOnlineFilaPage() {
                   rotulo="Cliente criado"
                   valor={item.idClienteGerado ? `#${item.idClienteGerado}` : "—"}
                 />
+                {item.tipoPessoa === "FISICA" ? (
+                  <Linha
+                    rotulo="Nome x CPF (CPFHub)"
+                    valor={
+                      item.cpfNomeConfere === true
+                        ? "Nome confere"
+                        : item.cpfNomeConfere === false
+                          ? "NOME NÃO CONFERE — verifique antes de aprovar"
+                          : "Não verificado"
+                    }
+                  />
+                ) : null}
                 <Linha rotulo="Consentimento" valor={`${formatarData(item.consentimentoEm)} · versão ${item.consentimentoVersao}`} />
                 {item.motivoRecusa ? <Linha rotulo="Motivo" valor={item.motivoRecusa} /> : null}
               </dl>
@@ -220,6 +240,18 @@ export function CadastrosOnlineFilaPage() {
                     className="rounded-xl border border-rose-200 bg-white px-4 py-2 text-sm font-medium text-rose-700 transition hover:bg-rose-50"
                   >
                     Desfazer cadastro
+                  </button>
+                ) : null}
+                {item.status === "PENDENTE" ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDecisao({ tipo: "APROVAR", item });
+                      setMotivo("");
+                    }}
+                    className="rounded-xl bg-[#0b2f4a] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#123f61]"
+                  >
+                    Aprovar e criar cliente
                   </button>
                 ) : null}
                 {item.status === "PENDENTE" ? (
@@ -313,18 +345,43 @@ function ModalDecisao({
   aoConfirmar: () => void;
 }) {
   const desfazendo = decisao.tipo === "DESFAZER";
+  const aprovando = decisao.tipo === "APROVAR";
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 px-4">
       <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl">
         <h2 className="text-base font-semibold text-slate-900">
-          {desfazendo ? "Desfazer este cadastro?" : "Recusar este envio?"}
+          {aprovando ? "Aprovar e criar o cliente?" : desfazendo ? "Desfazer este cadastro?" : "Recusar este envio?"}
         </h2>
         <p className="mt-2 text-sm text-slate-600">
           {decisao.item.nome} — {formatDocument(decisao.item.documento)}
         </p>
 
-        {desfazendo ? (
+        {aprovando ? (
+          <div className="mt-4 space-y-3 text-sm">
+            {decisao.item.tipoPessoa === "FISICA" ? (
+              <p
+                className={`rounded-xl border p-4 ${
+                  decisao.item.cpfNomeConfere === true
+                    ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+                    : decisao.item.cpfNomeConfere === false
+                      ? "border-rose-200 bg-rose-50 text-rose-900"
+                      : "border-amber-200 bg-amber-50 text-amber-900"
+                }`}
+              >
+                {decisao.item.cpfNomeConfere === true
+                  ? "O nome informado confere com o nome do CPF na CPFHub."
+                  : decisao.item.cpfNomeConfere === false
+                    ? "O nome informado NÃO confere com o nome do CPF na CPFHub. Confirme com a pessoa antes de aprovar."
+                    : "Não foi possível conferir o nome com o CPF (CPF não encontrado ou consulta indisponível no envio)."}
+              </p>
+            ) : null}
+            <p className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-slate-700">
+              Um cliente novo será criado na base, ativo, com o endereço e o contato deste envio, vinculado a{" "}
+              {decisao.item.nomeVendedor || "quem enviou o link"}. O envio passa para aprovado em seu nome.
+            </p>
+          </div>
+        ) : desfazendo ? (
           <div className="mt-4 space-y-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
             <p className="font-semibold">O que acontece</p>
             <p>
@@ -358,17 +415,21 @@ function ModalDecisao({
           </p>
         )}
 
-        <label htmlFor="motivo" className="mt-4 block text-sm font-medium text-slate-700">
-          Motivo {desfazendo ? "(recomendado)" : "(opcional)"}
-        </label>
-        <textarea
-          id="motivo"
-          rows={3}
-          value={motivo}
-          onChange={(evento) => aoMudarMotivo(evento.target.value)}
-          placeholder="Ex.: cliente enviou dados de outra empresa por engano"
-          className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#0b2f4a]"
-        />
+        {!aprovando ? (
+          <>
+            <label htmlFor="motivo" className="mt-4 block text-sm font-medium text-slate-700">
+              Motivo {desfazendo ? "(recomendado)" : "(opcional)"}
+            </label>
+            <textarea
+              id="motivo"
+              rows={3}
+              value={motivo}
+              onChange={(evento) => aoMudarMotivo(evento.target.value)}
+              placeholder="Ex.: cliente enviou dados de outra empresa por engano"
+              className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#0b2f4a]"
+            />
+          </>
+        ) : null}
 
         <div className="mt-5 flex justify-end gap-2">
           <button
@@ -383,9 +444,11 @@ function ModalDecisao({
             type="button"
             onClick={aoConfirmar}
             disabled={salvando}
-            className="rounded-xl bg-rose-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-rose-700 disabled:opacity-60"
+            className={`rounded-xl px-4 py-2 text-sm font-semibold text-white transition disabled:opacity-60 ${
+              aprovando ? "bg-[#0b2f4a] hover:bg-[#123f61]" : "bg-rose-600 hover:bg-rose-700"
+            }`}
           >
-            {salvando ? "Aplicando…" : desfazendo ? "Desfazer cadastro" : "Recusar envio"}
+            {salvando ? "Aplicando…" : aprovando ? "Aprovar e criar cliente" : desfazendo ? "Desfazer cadastro" : "Recusar envio"}
           </button>
         </div>
       </div>

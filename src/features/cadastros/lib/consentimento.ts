@@ -56,7 +56,7 @@ export const AVISO_PRIVACIDADE_SECOES: Array<{ titulo: string; paragrafos: strin
   {
     titulo: "Quem trata os seus dados",
     paragrafos: [
-      "A Ideal Etiquetas e a responsavel pelo tratamento dos dados enviados por este formulario. " +
+      "A Ingresso Ideal e a responsavel pelo tratamento dos dados enviados por este formulario. " +
         "O formulario e enviado por um atendente da empresa, e o cadastro criado fica vinculado a ele."
     ]
   },
@@ -95,8 +95,7 @@ export const AVISO_PRIVACIDADE_SECOES: Array<{ titulo: string; paragrafos: strin
   {
     titulo: "Como corrigir ou pedir exclusao",
     paragrafos: [
-      "Fale com o seu atendente, ou escreva para contato@idealetiquetas.com.br pedindo correcao, " +
-        "copia ou exclusao dos seus dados. Respondemos em ate 15 dias.",
+      "Para pedir a correção ou a exclusão dos seus dados, fale com o seu atendente da Ingresso Ideal.",
       "A exclusao vale para o que nao somos obrigados a guardar. Dados de notas fiscais e cobrancas " +
         "ja emitidas continuam arquivados pelo prazo legal, mesmo apos o pedido — nesse caso o " +
         "cadastro e desativado e deixa de ser usado para contato."

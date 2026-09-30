@@ -14,6 +14,8 @@ import {
   RECEITA_TIMEOUT_MS,
   sha256Hex
 } from "@/features/cadastros/services/cadastro-online.server";
+import { criarClienteDoCadastroOnline } from "@/features/cadastros/services/cadastro-online-cliente.server";
+import { conferirNomeNaCpfHub } from "@/features/cadastros/services/cpfhub-nome.server";
 
 /**
  * Envio do cadastro online. Publica, sem sessao, com service_role.
@@ -29,12 +31,20 @@ import {
  *   3. resolve o token
  *   4. digito verificador
  *   5. procura o documento em `clientes`
- *   6. Receita (so CNPJ, so aqui)
- *   7. cria o cliente e grava a fila como APROVADO
+ *   6. Receita (so CNPJ) ou CPFHub (so CPF) — so aqui
+ *   7. CNPJ: cria o cliente e grava a fila como APROVADO.
+ *      CPF (desde 29/09/2026): NAO cria cliente; grava a fila como PENDENTE,
+ *      com o sinal "nome confere" da CPFHub, e o atendente aprova.
  *
- * A Receita e o passo 6 porque e o unico que custa dinheiro e cota. Chama-la
- * antes do rate limit ou do honeypot deixaria qualquer robo queimar o orcamento
- * da casa. Documento repetido tambem nao chega la: o passo 5 corta antes.
+ * A Receita e a CPFHub sao o passo 6 porque sao o que custa dinheiro e cota.
+ * Chama-las antes do rate limit ou do honeypot deixaria qualquer robo queimar o
+ * orcamento da casa. Documento repetido tambem nao chega la: o passo 5 corta
+ * antes.
+ *
+ * A CPFHub devolve o nome do CPF; ele NAO e gravado nem devolvido. So o sinal
+ * (confere / nao confere / nao verificado) vai para a fila, para o atendente. A
+ * resposta da pagina e a mesma nos tres casos — e o piso de tempo cobre a
+ * chamada, como cobre a Receita.
  *
  * O PISO DE TEMPO, E O QUE ELE NAO RESOLVE
  * ----------------------------------------
@@ -270,122 +280,69 @@ export async function POST(request: Request) {
     });
   }
 
-  // --------------------------------------------------------------- 6. RECEITA
-  // So aqui, e so para CNPJ: depois do honeypot, do rate limit, do token, do
-  // digito verificador e da duplicidade. CPF nao consulta nada — a CPFHub e paga
-  // e nao ha motivo de negocio para gastar chamada num formulario aberto.
-  // A consulta do ENVIO continua sendo a validacao final. O que mudou e que ela
-  // agora passa pelo cache compartilhado: quando o formulario acabou de
-  // preencher os campos com este mesmo CNPJ, o dado ja esta em memoria e o
-  // envio nao gasta uma segunda das 3 chamadas por minuto que a casa inteira
-  // divide. Se nao estiver, consulta normalmente.
+  // --------------------------------------------------- 6. RECEITA ou CPFHUB
+  // So aqui: depois do honeypot, do rate limit, do token, do digito verificador
+  // e da duplicidade.
+  //
+  // CNPJ: a consulta do ENVIO continua sendo a validacao final, pelo cache
+  // compartilhado — quando o formulario acabou de preencher os campos com este
+  // mesmo CNPJ, o dado ja esta em memoria e o envio nao gasta uma segunda das 3
+  // chamadas por minuto que a casa inteira divide.
+  //
+  // CPF: a CPFHub responde o nome do CPF, e a unica coisa que sobrevive e o
+  // sinal de conferencia com o nome digitado. Nem o nome da API nem o sinal
+  // chegam a pagina. Falha na CPFHub vira `null` e o envio segue.
   const consulta =
     tipoPessoa === "JURIDICA" ? await consultarReceitaCnpj(digitos, RECEITA_TIMEOUT_MS) : null;
   const receita = consulta?.estado === "OK" ? consulta.dados : null;
+  const cpfNomeConfere = tipoPessoa === "FISICA" ? await conferirNomeNaCpfHub(digitos, nome) : null;
 
-  // ------------------------------------------------- 7. CRIA O CLIENTE E A FILA
+  // ------------------------------------------------- 7. CLIENTE (so CNPJ) E FILA
   const emailInformado = textoOuNulo(corpo.email);
   const whatsappInformado = textoOuNulo(corpo.whatsapp);
-  const telefoneInformado = textoOuNulo(corpo.telefoneFixo) || textoOuNulo(receita?.telefoneFixo);
 
-  const insertCliente = {
-    // `id_cliente` fica AUSENTE: e a ausencia que dispara o DEFAULT
-    // `fn_proximo_id_cliente()`. Mandar null gravaria null em silencio.
-    categoria: "CLIENTE",
-    nome: receita?.razaoSocial || nome,
-    fantasia: textoOuNulo(corpo.fantasia) || textoOuNulo(receita?.fantasia),
-    documento: digitos,
-    tipo_pessoa: tipoPessoa,
-    id_vendedor: link.id_vendedor ?? null,
-    nome_vendedor: textoOuNulo(link.primeiro_nome),
-    email: emailInformado,
-    email_contato: emailInformado,
-    whatsapp_1: whatsappInformado,
-    telefone_fixo: telefoneInformado,
-    cidade_uf: textoOuNulo(receita?.cidadeUf) || montarCidadeUf(corpo),
-    ins_estadual: textoOuNulo(receita?.insEstadual),
-    tipo_contribuinte: receita ? receita.tipoContribuinte : null,
-    data_fundacao: receita?.dataFundacao ?? null,
-    // `ativo` tem DEFAULT false na coluna. Sem esta linha o cadastro nasceria
-    // INATIVO e sumiria da lista dos atendentes.
-    ativo: true,
-    restricao: false,
-    recebe_email: Boolean(emailInformado),
-    recebe_whatsapp: Boolean(whatsappInformado),
-    // Veio de formulario publico, sem ninguem conferir: `verificado` fica false
-    // ate um atendente olhar.
-    verificado: false
-    // `nota` (default true), `padrao_pagamento` e `limite_credito` ficam de fora
-    // de proposito: os defaults da coluna sao a regra da casa, e o formulario
-    // publico nao tem o que dizer sobre eles.
-  };
-
-  const { data: clienteCriado, error: erroCliente } = await service
-    .from("clientes")
-    .insert(insertCliente)
-    .select("id_cliente,nome")
-    .single();
-
-  if (erroCliente || !clienteCriado) {
-    console.error("[cadastro-online] insert em clientes falhou:", erroCliente?.message);
-    await esperarPiso(inicio);
-    return NextResponse.json(
-      { ok: false, situacao: "ERRO", mensagem: "Nao foi possivel concluir o cadastro. Tente de novo em instantes." },
-      { status: 500 }
-    );
-  }
-
-  // O numero e SEMPRE o que o banco devolveu. Cair para 0 penduraria endereco e
-  // contato no id_cliente 0 — a mesma classe de erro que deixou 346 enderecos
-  // orfaos na importacao de 2025. `enderecos` nao tem FK, nada barraria.
-  const idCliente = Number(clienteCriado.id_cliente);
-  const numeroValido = Number.isInteger(idCliente) && idCliente > 0;
-
-  if (numeroValido) {
-    const endereco = {
-      id_cliente: idCliente,
+  // CNPJ cria o cliente na hora, como sempre. CPF nao: nasce PENDENTE na fila
+  // e so vira cliente quando o atendente aprova (rota /api/cadastro-online/aprovar,
+  // que usa a mesma funcao de criacao).
+  let idCliente: number | null = null;
+  if (tipoPessoa === "JURIDICA") {
+    const criacao = await criarClienteDoCadastroOnline(service, {
+      tipoPessoa,
+      documentoDigitos: digitos,
+      nome,
+      fantasia: textoOuNulo(corpo.fantasia),
+      email: emailInformado,
+      whatsapp: whatsappInformado,
+      telefoneFixo: textoOuNulo(corpo.telefoneFixo),
       cep: textoOuNulo(corpo.cep),
       endereco: textoOuNulo(corpo.endereco),
       numero: textoOuNulo(corpo.numero),
       complemento: textoOuNulo(corpo.complemento),
       bairro: textoOuNulo(corpo.bairro),
       cidade: textoOuNulo(corpo.cidade),
-      uf: texto(corpo.uf).toUpperCase().slice(0, 2) || null,
-      tipo_endereco: "PRINCIPAL",
-      obs: "Criado pelo cadastro online."
-    };
-    const temEndereco = Boolean(endereco.cep || endereco.endereco || endereco.cidade);
-    if (temEndereco) {
-      const { error: erroEndereco } = await service.from("enderecos").insert(endereco);
-      if (erroEndereco) {
-        // O cliente ja existe e o numero ja foi consumido. Derrubar tudo aqui
-        // exigiria DELETE, e o desfazer desta feature e por INATIVACAO. Entao
-        // registra e segue: a fila mostra o cadastro, e o atendente completa.
-        console.error("[cadastro-online] endereco nao gravado:", erroEndereco.message);
-      }
+      uf: textoOuNulo(corpo.uf),
+      idVendedor: link.id_vendedor ?? null,
+      nomeVendedor: textoOuNulo(link.primeiro_nome),
+      receita
+    });
+    if (!criacao.ok) {
+      await esperarPiso(inicio);
+      return NextResponse.json(
+        { ok: false, situacao: "ERRO", mensagem: "Nao foi possivel concluir o cadastro. Tente de novo em instantes." },
+        { status: 500 }
+      );
     }
-
-    // Contato so quando ha o que contatar. Linha so com o nome seria ruido.
-    if (emailInformado || whatsappInformado) {
-      const { error: erroContato } = await service.from("contatos").insert({
-        id_cliente: idCliente,
-        nome_contato: nome,
-        whats: whatsappInformado,
-        e_mail: emailInformado
-      });
-      if (erroContato) {
-        console.error("[cadastro-online] contato nao gravado:", erroContato.message);
-      }
-    }
-  } else {
-    console.error("[cadastro-online] insert em clientes nao devolveu id_cliente valido.");
+    idCliente = criacao.idCliente;
   }
+  const numeroValido = idCliente !== null;
 
-  // A linha da fila nasce APROVADO, com `aprovado_por` NULO — nulo e o registro
-  // de que ninguem decidiu: foi automatico. A constraint
+  // CNPJ: a linha da fila nasce APROVADO, com `aprovado_por` NULO — nulo e o
+  // registro de que ninguem decidiu: foi automatico. A constraint
   // `cadastros_online_aprovado_coerente` exige `aprovado_em` e `id_cliente_gerado`
   // junto do status APROVADO, e e por isso que a linha e gravada DEPOIS do
   // insert em `clientes`, nunca antes.
+  // CPF: nasce PENDENTE (sem `aprovado_em`, sem `id_cliente_gerado`), com o
+  // sinal da CPFHub em `cpf_nome_confere`.
   const { error: erroFila } = await service.from("cadastros_online").insert({
     id_vendedor: link.id_vendedor,
     nome_vendedor: textoOuNulo(link.primeiro_nome),
@@ -411,16 +368,28 @@ export async function POST(request: Request) {
     consentimento_em: new Date().toISOString(),
     consentimento_texto: CONSENTIMENTO_TEXTO,
     consentimento_versao: CONSENTIMENTO_VERSAO,
-    ip_hash: hashIpCadastro(ip)
+    ip_hash: hashIpCadastro(ip),
+    cpf_nome_confere: cpfNomeConfere
   });
 
   if (erroFila) {
-    // O cliente EXISTE. Falhar a resposta agora faria a pessoa reenviar e criar
-    // o segundo cadastro. Registra o rastro perdido e confirma o recebimento.
-    console.error(
-      `[cadastro-online] cliente ${idCliente} criado, mas a linha da fila nao gravou:`,
-      erroFila.message
-    );
+    if (numeroValido) {
+      // O cliente EXISTE. Falhar a resposta agora faria a pessoa reenviar e
+      // criar o segundo cadastro. Registra o rastro perdido e confirma.
+      console.error(
+        `[cadastro-online] cliente ${idCliente} criado, mas a linha da fila nao gravou:`,
+        erroFila.message
+      );
+    } else {
+      // CPF: sem a linha da fila nao existe cadastro nenhum. Aqui a pessoa
+      // PRECISA tentar de novo — nada foi criado, nao ha duplicidade a temer.
+      console.error("[cadastro-online] fila (CPF, PENDENTE) nao gravou:", erroFila.message);
+      await esperarPiso(inicio);
+      return NextResponse.json(
+        { ok: false, situacao: "ERRO", mensagem: "Nao foi possivel enviar agora. Tente de novo em instantes." },
+        { status: 500 }
+      );
+    }
   }
 
   await registrarUsoDoLink(service, token);
@@ -428,13 +397,6 @@ export async function POST(request: Request) {
   await esperarPiso(inicio);
   // Nem `id_cliente`, nem nome oficial, nem nada que a pessoa nao tenha digitado.
   return NextResponse.json(RESPOSTA_RECEBIDO);
-}
-
-function montarCidadeUf(corpo: CorpoEnvio): string | null {
-  const cidade = texto(corpo.cidade);
-  const uf = texto(corpo.uf).toUpperCase();
-  if (!cidade || !uf) return null;
-  return `${cidade} - ${uf}`;
 }
 
 /**

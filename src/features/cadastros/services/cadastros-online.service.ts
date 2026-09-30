@@ -43,6 +43,12 @@ export type CadastroOnlineItem = {
   motivoRecusa: string;
   consentimentoEm: string;
   consentimentoVersao: string;
+  /**
+   * CPF enviado pelo link: `true` o nome digitado confere com o do CPF na
+   * CPFHub, `false` nao confere, `null` nao verificado (CNPJ, CPF nao
+   * encontrado ou API indisponivel). O nome da CPFHub nunca e gravado.
+   */
+  cpfNomeConfere: boolean | null;
 };
 
 type LinhaFila = Record<string, unknown>;
@@ -77,7 +83,8 @@ function mapear(linha: LinhaFila): CadastroOnlineItem {
     idClienteGerado: Number.isInteger(idGerado) && idGerado > 0 ? idGerado : null,
     motivoRecusa: texto(linha.motivo_recusa),
     consentimentoEm: texto(linha.consentimento_em),
-    consentimentoVersao: texto(linha.consentimento_versao)
+    consentimentoVersao: texto(linha.consentimento_versao),
+    cpfNomeConfere: typeof linha.cpf_nome_confere === "boolean" ? linha.cpf_nome_confere : null
   };
 }
 
@@ -96,7 +103,7 @@ export async function listarCadastrosOnline(): Promise<{
     // select em tempo de compilacao, e uma expressao montada com `+` vira
     // `GenericStringError` — o retorno perde o formato de linha.
     .select(
-      "id,criado_em,nome_vendedor,documento,tipo_pessoa,nome,fantasia,email,whatsapp,telefone_fixo,cep,endereco,numero,complemento,bairro,cidade,uf,status,aprovado_em,aprovado_por,id_cliente_gerado,motivo_recusa,consentimento_em,consentimento_versao"
+      "id,criado_em,nome_vendedor,documento,tipo_pessoa,nome,fantasia,email,whatsapp,telefone_fixo,cep,endereco,numero,complemento,bairro,cidade,uf,status,aprovado_em,aprovado_por,id_cliente_gerado,motivo_recusa,consentimento_em,consentimento_versao,cpf_nome_confere"
     )
     .order("criado_em", { ascending: false })
     .limit(200);
@@ -195,4 +202,36 @@ export async function desfazerCadastroOnline(
   }
 
   return { success: true };
+}
+
+/**
+ * Aprova um envio PENDENTE: cria o cliente e marca a fila. Vai pela rota
+ * `/api/cadastro-online/aprovar` porque a criacao do cliente e a mesma funcao
+ * que o envio publico usa no CNPJ — uma copia so, no servidor.
+ */
+export async function aprovarCadastroOnline(
+  id: string
+): Promise<{ success: boolean; idCliente?: number; errorMessage?: string }> {
+  const client = getSupabaseClient();
+  if (!client) {
+    return { success: false, errorMessage: "Cliente Supabase indisponível." };
+  }
+  const sessao = await client.auth.getSession();
+  const bearer = sessao.data.session?.access_token ?? "";
+  if (!bearer) return { success: false, errorMessage: "Sessão expirada. Entre novamente." };
+
+  try {
+    const resposta = await fetch("/api/cadastro-online/aprovar", {
+      method: "POST",
+      headers: { "content-type": "application/json", Authorization: `Bearer ${bearer}` },
+      body: JSON.stringify({ id })
+    });
+    const json = (await resposta.json().catch(() => null)) as { ok?: boolean; idCliente?: number; mensagem?: string } | null;
+    if (!resposta.ok || !json?.ok) {
+      return { success: false, idCliente: json?.idCliente, errorMessage: json?.mensagem ?? "Não foi possível aprovar o envio." };
+    }
+    return { success: true, idCliente: json.idCliente };
+  } catch {
+    return { success: false, errorMessage: "Não foi possível falar com o servidor." };
+  }
 }
