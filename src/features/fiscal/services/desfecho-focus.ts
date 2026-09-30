@@ -32,6 +32,13 @@ export type DesfechoFocus =
   | { tipo: "AUTORIZADO"; status: string; codigo: string; mensagem: string; documentos: DocumentosDaFocus }
   | { tipo: "REJEITADO"; status: string; codigo: string; mensagem: string }
   | { tipo: "PROCESSANDO"; status: string }
+  /**
+   * A Focus RECUSOU o envio (4xx de validação, por exemplo município inválido):
+   * a nota não chegou à SEFAZ e não existe na Focus. Não há o que consultar —
+   * a consulta só devolveria "não encontrada" e esconderia o motivo, que foi o
+   * que a tela mostrou como "900" na NFE-22849-001.
+   */
+  | { tipo: "RECUSADO_NA_FOCUS"; codigo: string; mensagem: string }
   /** O campo veio, mas não deu para ler. Isso é falha visível, não sucesso. */
   | { tipo: "ILEGIVEL"; motivo: string }
   /** Nem sinal do bloco. Não afirma nada — quem chamou segue consultando. */
@@ -117,9 +124,34 @@ function extrairDocumentos(dados: Bruto): DocumentosDaFocus {
   };
 }
 
+/**
+ * Corpo com o status INTERNO ERRO_ENVIO. Recusa só com o segundo sinal — a
+ * Focus não ter aceitado (`enviada_focus` ou `ok` falsos), que é a resposta da
+ * emissão. Sem ele (a resposta da consulta), fica INDETERMINADO e quem decide é
+ * o banco: `status_sefaz` pode ser de uma tentativa anterior e viraria uma
+ * rejeição da SEFAZ que não aconteceu.
+ */
+function lerRecusaDoEnvio(corpo: Bruto): DesfechoFocus {
+  if (corpo.enviada_focus !== false && corpo.ok !== false) return { tipo: "INDETERMINADO" };
+
+  const mensagem =
+    texto(corpo.erro_mensagem) || texto(corpo.detalhe_tecnico) || texto(corpo.mensagem);
+  return {
+    tipo: "RECUSADO_NA_FOCUS",
+    codigo: texto(corpo.erro_codigo),
+    mensagem: mensagem || "A Focus recusou a nota e não detalhou o motivo."
+  };
+}
+
 export function lerDesfechoDaFocus(corpoBruto: unknown): DesfechoFocus {
   const corpo = comoObjeto(corpoBruto);
   if (!corpo) return { tipo: "INDETERMINADO" };
+
+  // A resposta de ERRO do webhook de emissão ("Retorna USER ERRO" no n8n):
+  // `status: "ERRO_ENVIO"`, `enviada_focus: false`, e o motivo em
+  // `erro_mensagem`. Vem ANTES da leitura do bloco fiscal: ali `status` seria
+  // tomado pelo status da Focus e a tela seguiria consultando.
+  if (texto(corpo.status).toUpperCase() === "ERRO_ENVIO") return lerRecusaDoEnvio(corpo);
 
   const { dados, havia, erroDeLeitura } = extrairData(corpo);
 

@@ -73,6 +73,11 @@ export function EmissaoNfeModal({
   const [erroTecnico, setErroTecnico] = useState<string>("");
   const [sefazCode, setSefazCode] = useState<string>("");
   const [sefazMessage, setSefazMessage] = useState<string>("");
+  // Recusa da FOCUS no envio (4xx): a nota nao chegou a SEFAZ e nao existe na
+  // Focus. Fica separada da rejeicao da SEFAZ de proposito — mostrar "Codigo
+  // Sefaz 900 / Nota fiscal nao encontrada" aqui escondeu o motivo real da
+  // NFE-22849-001 (municipio do destinatario).
+  const [recusaFocus, setRecusaFocus] = useState<{ codigo: string; mensagem: string } | null>(null);
   // Links vindos do proprio retorno da Focus. Existem mesmo quando o banco ainda
   // nao foi escrito - foi o caso da NFE-20481-001, autorizada na SEFAZ e ainda em
   // PROCESSANDO na tabela.
@@ -116,6 +121,7 @@ export function EmissaoNfeModal({
     if (desfecho.tipo === "AUTORIZADO") {
       const danfe = urlDaFocus(desfecho.documentos.caminhoDanfe);
       setPasso("AUTHORIZED");
+      setRecusaFocus(null);
       setSefazCode(desfecho.codigo);
       setSefazMessage("");
       setErroTecnico("");
@@ -138,8 +144,21 @@ export function EmissaoNfeModal({
       return true;
     }
 
+    if (desfecho.tipo === "RECUSADO_NA_FOCUS") {
+      // Sem consulta depois: ela so voltaria "nao encontrada".
+      setPasso("ERROR");
+      setRecusaFocus({ codigo: desfecho.codigo, mensagem: desfecho.mensagem });
+      setSefazCode("");
+      setSefazMessage("");
+      setErroTecnico("");
+      const atualizada = await recarregar();
+      if (atualizada) setNotaAtual(atualizada);
+      return true;
+    }
+
     if (desfecho.tipo === "REJEITADO") {
       setPasso("ERROR");
+      setRecusaFocus(null);
       setSefazCode(desfecho.codigo);
       setSefazMessage(desfecho.mensagem);
       setErroTecnico("");
@@ -150,6 +169,7 @@ export function EmissaoNfeModal({
 
     if (desfecho.tipo === "ILEGIVEL") {
       setPasso("ERROR");
+      setRecusaFocus(null);
       setSefazCode("");
       setSefazMessage("");
       setErroTecnico(desfecho.motivo);
@@ -162,6 +182,7 @@ export function EmissaoNfeModal({
   }
 
   async function consultarStatus(marcarPasso = true) {
+    setRecusaFocus(null);
     if (marcarPasso) {
       setPasso("QUERYING");
       setErroTecnico("");
@@ -216,6 +237,19 @@ export function EmissaoNfeModal({
         }
 
         showToast({ type: "success", title: "NF-e autorizada com sucesso." });
+        return;
+      }
+
+      // Recusa no ENVIO: o motivo mora em erro_mensagem. mensagem_sefaz pode ser
+      // de uma tentativa anterior (fn_preparar_envio_nfe nao a limpa) e nao vale.
+      const motivoEnvio = String(atualizada.erro_mensagem || "").trim();
+      if (status === "ERRO_ENVIO" && motivoEnvio) {
+        setPasso("ERROR");
+        setRecusaFocus({ codigo: String(atualizada.erro_codigo || ""), mensagem: motivoEnvio });
+        setSefazCode("");
+        setSefazMessage("");
+        setErroTecnico("");
+        setNotaAtual(atualizada);
         return;
       }
 
@@ -307,6 +341,7 @@ export function EmissaoNfeModal({
     if (estouros.length > 0) return;
 
     setPasso("SENDING");
+    setRecusaFocus(null);
     setErroTecnico("");
     setSefazCode("");
     setSefazMessage("");
@@ -462,6 +497,8 @@ export function EmissaoNfeModal({
                 {passo === "ERROR"
                   ? ehErroDeCredencial
                     ? "Falha de autenticação com a Focus NFe"
+                    : recusaFocus
+                    ? "A Focus recusou a nota"
                     : temDetalheSefaz
                     ? "NF-e rejeitada pela Sefaz"
                     : "Falha de processamento"
@@ -497,6 +534,40 @@ export function EmissaoNfeModal({
                         Peça a revisão da credencial Focus da empresa emissora. Depois use{" "}
                         <strong>Consultar status</strong> — se a nota não tiver saído, ela continua pronta
                         para envio.
+                      </span>
+                    </div>
+                  </div>
+                ) : recusaFocus ? (
+                  <div className="space-y-3">
+                    <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100 space-y-2 text-xs">
+                      <div className="flex flex-col gap-0.5">
+                        <span className="text-slate-400 font-semibold uppercase tracking-wider text-[10px]">
+                          Referência
+                        </span>
+                        <strong className="text-slate-800 font-mono text-sm">{notaAtual.ref}</strong>
+                      </div>
+                      <hr className="border-slate-100" />
+                      <div className="flex flex-col gap-0.5">
+                        <span className="text-slate-400 font-semibold uppercase tracking-wider text-[10px]">
+                          Motivo informado pela Focus{recusaFocus.codigo ? ` (${recusaFocus.codigo})` : ""}
+                        </span>
+                        <span
+                          data-testid="motivo-recusa-focus"
+                          className="text-rose-700 font-mono bg-rose-50/50 p-2.5 rounded-lg border border-rose-100/50 break-words leading-normal block"
+                        >
+                          {recusaFocus.mensagem}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="bg-blue-50/50 border border-blue-100 rounded-2xl p-4 text-xs text-blue-800 space-y-1">
+                      <span className="font-bold text-blue-900 block">O que fazer agora:</span>
+                      <span>
+                        A nota não chegou à Sefaz e não foi criada na Focus — enviar de novo não gera nota
+                        em dobro. Corrija o que o motivo aponta
+                        {/munic[ií]pio/i.test(recusaFocus.mensagem)
+                          ? " (confira a cidade e a UF do endereço do destinatário)"
+                          : ""}{" "}
+                        e envie de novo por <strong>Reenviar NF-e</strong>.
                       </span>
                     </div>
                   </div>
