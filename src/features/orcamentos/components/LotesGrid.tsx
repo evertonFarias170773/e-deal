@@ -286,8 +286,33 @@ export function LotesGrid({
   );
   const linhasRef = useRef<Lote[]>(linhas);
   const removidosRef = useRef<number[]>([]);
-  const [modoNumeracao, setModoNumeracao] = useState<ModoNumeracao | null>(null);
-  const modoRef = useRef<ModoNumeracao | null>(null);
+  /**
+   * MODELO NOVO NASCE EM "CADA MODELO COMEÇA DO 1" (30/09/2026, decisão do dono).
+   * Item sem lote abre com o modo marcado, e a numeração de cada lote começa
+   * do 1. Item que já tem lote abre sem modo, como sempre: marcar aqui
+   * renumeraria lotes gravados. `modoAutomaticoRef` diz que a marcação foi da
+   * grade, não do usuário — se os lotes gravados chegarem depois da montagem
+   * (a grade monta antes de `pedidos_modelos` carregar), o modo automático sai.
+   */
+  const [modoNumeracao, setModoNumeracao] = useState<ModoNumeracao | null>(() =>
+    linhasIniciais.length === 0 ? "CADA_DO_1" : null
+  );
+  const modoRef = useRef<ModoNumeracao | null>(modoNumeracao);
+  const modoAutomaticoRef = useRef(modoNumeracao !== null);
+
+  /**
+   * A LINHA AUTOMÁTICA — a que a grade cria sozinha quando o item não tem lote.
+   *
+   * Ela nasce na montagem, e a grade monta antes de as cores e os numeradores
+   * carregarem: `padroes` ainda vinha vazio, e a primeira linha ficava sem Cor
+   * papel e sem Numerador, enquanto as adicionadas depois (mesmo `novaLinha`, já
+   * com os padrões) vinham preenchidas. Agora, enquanto ninguém mexer nela, ela
+   * é refeita pelo MESMO `novaLinha()` quando os padrões ou o checklist chegam
+   * — o efeito logo abaixo das edições. Guarda a `chave` dela; vira null quando
+   * o usuário edita a linha, cola uma lista, ela é gravada ou some.
+   */
+  const [linhaAutomatica] = useState<string | null>(() => (linhasIniciais.length === 0 ? linhas[0]?.chave ?? null : null));
+  const linhaAutomaticaRef = useRef<string | null>(linhaAutomatica);
   const [gravando, setGravando] = useState(false);
   const [quantasLinhas, setQuantasLinhas] = useState<number | "">(1);
 
@@ -335,12 +360,21 @@ export function LotesGrid({
     const idsDoPai = new Set(linhasIniciais.map((l) => l.id).filter((id): id is number => id != null));
     const mesmosIds = idsDaGrade.size === idsDoPai.size && [...idsDoPai].every((id) => idsDaGrade.has(id));
     if (mesmosIds) return;
+    // A linha automática intocada não é "algo digitado": com lotes do banco
+    // chegando, ela sai — senão sobrava uma linha vazia depois deles.
     const novasComAlgo = linhasRef.current.filter(
-      (l) => !l.id && (l.nome_modelo.trim() || l.quantidade !== "" || l.padrao)
+      (l) => !l.id && l.chave !== linhaAutomaticaRef.current && (l.nome_modelo.trim() || l.quantidade !== "" || l.padrao)
     );
     const proximo: Lote[] = [...linhasIniciais.map((l) => ({ ...l, chave: novaChave() })), ...novasComAlgo];
     linhasRef.current = proximo;
     setLinhas(proximo);
+    linhaAutomaticaRef.current = null;
+    // Chegaram lotes gravados: o "cada do 1" automático não pode renumerá-los.
+    if (idsDoPai.size > 0 && modoAutomaticoRef.current) {
+      modoAutomaticoRef.current = false;
+      modoRef.current = null;
+      setModoNumeracao(null);
+    }
     // A base do "nada a gravar" é recalculada no efeito abaixo, já com as linhas novas.
     ultimaAssinaturaRef.current = null;
   }, [chaveIniciais, linhasIniciais]);
@@ -667,6 +701,7 @@ export function LotesGrid({
    * selects gravam na hora, texto e número esperam o debounce ou o blur.
    */
   function alterar(indice: number, partial: Partial<PedidoModeloState>, imediato = false) {
+    if (linhasRef.current[indice]?.chave === linhaAutomaticaRef.current) linhaAutomaticaRef.current = null;
     mutar((atual) =>
       atual.map((l, i) => {
         if (i !== indice) return l;
@@ -733,6 +768,7 @@ export function LotesGrid({
   function colar(evento: React.ClipboardEvent, indice: number) {
     const texto = evento.clipboardData.getData("text");
     if (!texto.includes("\n") && !texto.includes("\t")) return; // colagem de um valor só: comportamento normal
+    linhaAutomaticaRef.current = null;
 
     evento.preventDefault();
     // Sem coluna de cor, a cor da lista é descartada — não há onde mostrá-la e
@@ -772,10 +808,28 @@ export function LotesGrid({
   }
 
   function alternarModo(modo: ModoNumeracao) {
+    modoAutomaticoRef.current = false;
     const proximo = modoRef.current === modo ? null : modo;
     modoRef.current = proximo;
     setModoNumeracao(proximo);
   }
+
+  // A linha automática acompanha os padrões do produto (ver `linhaAutomaticaRef`):
+  // o MESMO `novaLinha()` das linhas adicionadas, mantendo a chave.
+  const chavePadroes = JSON.stringify(padroes);
+  useEffect(() => {
+    const chave = linhaAutomaticaRef.current;
+    if (!chave) return;
+    const indice = linhasRef.current.findIndex((l) => l.chave === chave);
+    if (indice < 0 || linhasRef.current[indice].id) {
+      linhaAutomaticaRef.current = null;
+      return;
+    }
+    const refeita = { ...novaLinha(), chave };
+    mutar((atual) => atual.map((l, i) => (i === indice ? refeita : l)));
+    // Só padrões e checklist refazem a linha: são o que `novaLinha` lê.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chavePadroes, visivel]);
 
   const colunas = colunasDaLista({ simplificado, visivel, itemPrateleira });
 
