@@ -3,7 +3,6 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import { createClient as createSupabaseClient, type SupabaseClient } from "@supabase/supabase-js";
 import { rateLimitCheck } from "@/lib/security/rate-limit-memory";
 import { escolherEnderecoPrincipal } from "@/lib/fiscal/endereco-principal";
-import { getClienteBonusPercent } from "@/features/orcamentos/orcamento-utils";
 import { totaisDaProposta } from "@/features/orcamentos/lib/total-da-proposta";
 import {
   TIPO_DESCONTO_TABELA_ESPECIAL,
@@ -251,19 +250,9 @@ export async function GET(request: Request, contexto: { params: Promise<{ id_int
       valor: proposta.valor,
       valorFrete: proposta.valor_frete,
       itens: (itensRes.data ?? []) as Array<{ qtd: number; valor_unt: number; fixo: number; status_item: string | null }>,
-      // O bônus gravado na venda manda; sem ele, o do cadastro (`bonusDaProposta`).
+      // O bônus gravado na venda; sem ele, 0 (`bonusDaProposta`).
       bonusPercent: bonusDaProposta(
-        percentualGravado(linhasDesconto.find((d) => d.tipo_desconto === TIPO_DESCONTO_TABELA_ESPECIAL)),
-        getClienteBonusPercent(
-          pagador
-            ? ({
-                usaPrecoFixo: pagador.usa_preco_fixo === true,
-                is_bonus: pagador.is_bonus === true,
-                bonusAtivo: pagador.is_bonus === true,
-                percentualBonus: Number(pagador.percentual_bunus ?? 0)
-              } as unknown as Parameters<typeof getClienteBonusPercent>[0])
-            : null
-        )
+        percentualGravado(linhasDesconto.find((d) => d.tipo_desconto === TIPO_DESCONTO_TABELA_ESPECIAL))
       ),
       descontoGeral: linhasDesconto.find((d) => d.tipo_desconto === "DESCONTO_GERAL") ?? null
     });

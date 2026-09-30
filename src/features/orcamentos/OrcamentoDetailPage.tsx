@@ -21,7 +21,6 @@ import { formatDate } from "@/lib/formatters/date";
 import { formatWeightFromGrams } from "@/lib/formatters/weight";
 import type { Proposta, PropostaStatus } from "@/features/orcamentos/types";
 import { buildPropostaInformalText, getCobrancaLabel } from "@/features/orcamentos/orcamento-utils";
-import { getClienteBonusPercent } from "@/features/orcamentos/orcamento-utils";
 import { bonusDaProposta } from "@/features/orcamentos/lib/bonus-da-proposta";
 
 import { useOrcamentoDetail } from "@/features/orcamentos/hooks/useOrcamentoDetail";
@@ -167,8 +166,8 @@ export function OrcamentoDetailPage({ idInt }: OrcamentoDetailPageProps) {
     formaPagamento: proposta.formaPagamento,
     cidade: proposta.enderecoEntrega?.cidade,
     uf: proposta.enderecoEntrega?.uf,
-    // O bônus gravado na proposta manda; sem ele, o do cliente (`bonusDaProposta`).
-    bonusPercent: proposta.cliente ? bonusDaProposta(proposta.bonusTabelaEspecial, getClienteBonusPercent(proposta.cliente)) : 0,
+    // O bônus gravado na proposta; sem ele, 0 (`bonusDaProposta`).
+    bonusPercent: bonusDaProposta(proposta.bonusTabelaEspecial),
     modalidade: proposta.modalidadeFrete
   });
 
@@ -575,7 +574,7 @@ function InfoPill({ label, value }: { label: string; value: string }) {
 }
 
 function ResumoValores({ proposta }: { proposta: Proposta }) {
-  const bonusPercent = proposta.cliente ? bonusDaProposta(proposta.bonusTabelaEspecial, getClienteBonusPercent(proposta.cliente)) : 0;
+  const bonusPercent = bonusDaProposta(proposta.bonusTabelaEspecial);
   const rows = [
     ["Subtotal bruto", formatCurrency(proposta.resumo.subtotalBrutoProdutos)],
     [`Tabela especial do cliente aplicada${bonusPercent > 0 ? ` (-${bonusPercent}%)` : ""}`, `-${formatCurrency(proposta.resumo.acrescimoBonus)}`],

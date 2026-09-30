@@ -30,7 +30,7 @@ import { conferirNomeNaCpfHub } from "@/features/cadastros/services/cpfhub-nome.
  *   2. rate limit por IP
  *   3. resolve o token
  *   4. digito verificador
- *   5. procura o documento em `clientes`
+ *   5. procura o documento em `clientes` e, PENDENTE, na propria fila
  *   6. Receita (so CNPJ) ou CPFHub (so CPF) — so aqui
  *   7. CNPJ: cria o cliente e grava a fila como APROVADO.
  *      CPF (desde 29/09/2026): NAO cria cliente; grava a fila como PENDENTE,
@@ -280,9 +280,35 @@ export async function POST(request: Request) {
     });
   }
 
+  // Um envio PENDENTE com o mesmo documento ja esta na fila (desde 30/09/2026):
+  // NAO grava outro. A resposta e a MESMA do envio bom, de proposito — dizer
+  // "ja existe" contaria a quem sonda que este documento foi enviado por
+  // alguem. `documento_digitos` e coluna gerada com indice proprio.
+  const { data: pendente, error: erroPendente } = await service
+    .from("cadastros_online")
+    .select("id")
+    .eq("documento_digitos", digitos)
+    .eq("status", "PENDENTE")
+    .limit(1)
+    .maybeSingle();
+
+  if (erroPendente) {
+    console.error("[cadastro-online] busca de pendente na fila falhou:", erroPendente.message);
+    await esperarPiso(inicio);
+    return NextResponse.json(
+      { ok: false, situacao: "ERRO", mensagem: "Nao foi possivel enviar agora. Tente de novo em instantes." },
+      { status: 500 }
+    );
+  }
+
+  if (pendente) {
+    await esperarPiso(inicio);
+    return NextResponse.json(RESPOSTA_RECEBIDO);
+  }
+
   // --------------------------------------------------- 6. RECEITA ou CPFHUB
   // So aqui: depois do honeypot, do rate limit, do token, do digito verificador
-  // e da duplicidade.
+  // e da duplicidade (em `clientes` e na fila).
   //
   // CNPJ: a consulta do ENVIO continua sendo a validacao final, pelo cache
   // compartilhado — quando o formulario acabou de preencher os campos com este

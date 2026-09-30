@@ -1,6 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { getClienteBonusPercent } from "@/features/orcamentos/orcamento-utils";
 import { totaisDaProposta } from "@/features/orcamentos/lib/total-da-proposta";
 import {
   TIPO_DESCONTO_TABELA_ESPECIAL,
@@ -14,8 +13,8 @@ import {
  * NÃO TEM REGRA PRÓPRIA. A conta mora em `totaisDaProposta`
  * (lib/total-da-proposta.ts), a única do sistema, a mesma do "Salvar
  * alterações". Este arquivo só busca itens, bônus e desconto geral e entrega
- * para ela. O bônus é o gravado na proposta (TABELA_ESPECIAL) e, sem ele, o do
- * cliente — ver `bonusDaProposta`.
+ * para ela. O bônus é o gravado na proposta (TABELA_ESPECIAL) e, sem ele, 0 —
+ * ver `bonusDaProposta`.
  *
  * Nasceu em 27/09/2026 na área do cliente (`/p/<token>`) e em 28/09 passou a
  * servir também a lista rápida (`/api/pedidos/lotes-em-massa`). Em 29/09 a
@@ -54,23 +53,6 @@ export async function calcularTotaisPelaRegraDaTela(
     return null;
   }
 
-  let bonusDoCliente = 0;
-  if (proposta.id_cliente) {
-    const { data: cli } = await client
-      .from("clientes")
-      .select("is_bonus, percentual_bunus, usa_preco_fixo")
-      .eq("id_cliente", proposta.id_cliente)
-      .maybeSingle<{ is_bonus: boolean | null; percentual_bunus: number | null; usa_preco_fixo: boolean | null }>();
-    if (cli) {
-      bonusDoCliente = getClienteBonusPercent({
-        usaPrecoFixo: cli.usa_preco_fixo === true,
-        is_bonus: cli.is_bonus === true,
-        bonusAtivo: cli.is_bonus === true,
-        percentualBonus: Number(cli.percentual_bunus ?? 0)
-      } as Parameters<typeof getClienteBonusPercent>[0]);
-    }
-  }
-
   // O desconto geral e o bônus gravado na venda (TABELA_ESPECIAL) numa leitura só.
   const { data: descontos } = await client
     .from("desconto_proposta")
@@ -79,8 +61,7 @@ export async function calcularTotaisPelaRegraDaTela(
     .in("tipo_desconto", ["DESCONTO_GERAL", TIPO_DESCONTO_TABELA_ESPECIAL]);
   const desconto = (descontos ?? []).find((d) => d.tipo_desconto === "DESCONTO_GERAL");
   const bonusPercent = bonusDaProposta(
-    percentualGravado((descontos ?? []).find((d) => d.tipo_desconto === TIPO_DESCONTO_TABELA_ESPECIAL)),
-    bonusDoCliente
+    percentualGravado((descontos ?? []).find((d) => d.tipo_desconto === TIPO_DESCONTO_TABELA_ESPECIAL))
   );
 
   const totais = totaisDaProposta({

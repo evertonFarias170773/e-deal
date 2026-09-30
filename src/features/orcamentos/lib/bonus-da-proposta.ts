@@ -8,17 +8,25 @@
  *   de 19/08/2026: o bônus da venda fica gravado na própria proposta, como linha
  *   `desconto_proposta` do tipo TABELA_ESPECIAL.
  *
- * A REGRA
+ * A REGRA DOS LEITORES (Fase 4, 30/09/2026)
  *   Linha gravada → vale o percentual dela, mesmo que seja 0.
- *   Sem linha     → vale o bônus do cliente, como sempre foi.
- *   Nunca os dois somados: é daqui que sai o único percentual da proposta.
+ *   Sem linha     → 0%. O bônus do cadastro NÃO é mais lido aqui: a carga de
+ *                   30/09 gravou a linha em toda proposta que usava percentual,
+ *                   e o salvar grava as novas (`bonusDaEdicao`).
  *
  *   Linha com percentual fora de 0..100, ou que não é número, conta como
- *   ausente — um valor quebrado não pode zerar nem inflar um total calado.
+ *   ausente — um valor quebrado não pode inflar um total calado. (A CHECK
+ *   desconto_proposta_tabela_especial_valida já impede gravá-la.)
  *
- * O banco segue a MESMA regra desde 01/10/2026 (`cc__total_soberano_proposta`,
- * `recalcular_proposta_v3` e `v4`, migration 20261001_desconto_tabela_especial_
- * leitores_banco): o percentual da linha sai dos produtos ANTES do desconto geral.
+ * A REGRA DO SALVAR (`bonusDaEdicao`)
+ *   Proposta SEM pagamento confirmado: vale o bônus vigente do cliente, e o
+ *   salvar grava esse percentual na linha — o orçamento acompanha o cadastro.
+ *   COM pagamento confirmado: a linha está CONGELADA. Vale o percentual gravado
+ *   (sem linha, 0) e o salvar não a toca, mesmo que o bônus do cliente mude.
+ *
+ * O banco segue a MESMA conta (`cc__total_soberano_proposta`,
+ * `recalcular_proposta_v3` e `v4`): o percentual da linha sai dos produtos ANTES
+ * do desconto geral.
  */
 
 export const TIPO_DESCONTO_TABELA_ESPECIAL = "TABELA_ESPECIAL";
@@ -37,12 +45,52 @@ export function percentualGravado(linha: LinhaTabelaEspecial): number | null {
 }
 
 /**
- * O percentual de bônus da proposta.
+ * O percentual de bônus que os LEITORES aplicam: o gravado, ou 0 sem linha.
  *
  * `percentualDaLinha` já é o número gravado (ou `null`); quem tem a linha crua
  * passa por `percentualGravado` antes.
  */
-export function bonusDaProposta(percentualDaLinha: number | null | undefined, bonusDoCliente: number): number {
-  if (typeof percentualDaLinha === "number" && Number.isFinite(percentualDaLinha)) return percentualDaLinha;
-  return Number.isFinite(bonusDoCliente) ? bonusDoCliente : 0;
+export function bonusDaProposta(percentualDaLinha: number | null | undefined): number {
+  return typeof percentualDaLinha === "number" && Number.isFinite(percentualDaLinha) ? percentualDaLinha : 0;
+}
+
+/**
+ * O percentual que o formulário usa e que o salvar grava.
+ *
+ * Congelada (tem pagamento confirmado): o gravado, ou 0 sem linha — o bônus do
+ * cliente não entra. Aberta: o bônus vigente do cliente.
+ */
+export function bonusDaEdicao(entrada: {
+  congelada: boolean;
+  percentualDaLinha: number | null | undefined;
+  bonusDoCliente: number;
+}): number {
+  if (entrada.congelada) return bonusDaProposta(entrada.percentualDaLinha);
+  return Number.isFinite(entrada.bonusDoCliente) && entrada.bonusDoCliente > 0 ? entrada.bonusDoCliente : 0;
+}
+
+/** Uma cobrança de `pagamentos_v2`, só com o que decide o pagamento confirmado. */
+export type CobrancaParaCongelamento = {
+  status?: unknown;
+  confirmado?: unknown;
+  valor?: unknown;
+  obs_v2?: unknown;
+};
+
+/**
+ * A proposta tem pagamento confirmado? A MESMA regra de `cc__valor_pago`:
+ * cobrança não cancelada, PAID ou A_VENCER confirmada, e o valor menos o
+ * abatimento de débito (`[ABATIMENTO_DEBITO:x]` em `obs_v2`) acima de zero.
+ */
+export function temPagamentoConfirmado(cobrancas: readonly CobrancaParaCongelamento[] | null | undefined): boolean {
+  let pago = 0;
+  for (const c of cobrancas ?? []) {
+    const status = String(c.status ?? "").toUpperCase();
+    if (status === "CANCELADO") continue;
+    if (!(status === "PAID" || (status === "A_VENCER" && c.confirmado === true))) continue;
+    const marcador = String(c.obs_v2 ?? "").match(/\[ABATIMENTO_DEBITO:(\d+(?:\.\d{1,2})?)\]/);
+    const abatimento = marcador ? Number(marcador[1]) || 0 : 0;
+    pago += Math.max(0, (Number(c.valor) || 0) - abatimento);
+  }
+  return Math.round(pago * 100) > 0;
 }

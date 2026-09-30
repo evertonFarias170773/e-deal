@@ -10,9 +10,11 @@ import {
 import { calculateResumo, calculateItemSubtotal } from "@/features/orcamentos/orcamento-utils";
 import {
   TIPO_DESCONTO_TABELA_ESPECIAL,
+  bonusDaEdicao,
   bonusDaProposta,
   percentualGravado
 } from "@/features/orcamentos/lib/bonus-da-proposta";
+import { gravarBonusDaVenda, lerBonusGravado } from "@/features/orcamentos/services/bonus-da-proposta.service";
 import { totaisDaProposta } from "@/features/orcamentos/lib/total-da-proposta";
 import {
   congelarChecklistDosItensNovos,
@@ -1478,24 +1480,18 @@ export async function getOrcamentosReadOnlyData(
       const idsToFetch = rows
         .map((r) => r.id_int)
         .filter((id) => typeof id === "number") as number[];
-      
-      const clientIds = rows
-        .map((r) => r.id_cliente)
-        .filter((id) => typeof id === "number") as number[];
 
       if (idsToFetch.length > 0) {
-        // Consultas em lote paralelas para evitar N+1 queries
-        const [discountsRes, clientsRes, itemsRes] = await Promise.all([
+        // Consultas em lote paralelas para evitar N+1 queries. O bônus do
+        // cadastro não entra mais (Fase 4, 30/09/2026): vale o gravado na
+        // proposta — ver `bonusDaProposta`.
+        const [discountsRes, itemsRes] = await Promise.all([
           // Desconto geral e bônus gravado na venda (TABELA_ESPECIAL) numa leitura.
           client
             .from("desconto_proposta")
             .select("id_int, tipo_desconto, valor_percentual, valor_nominal")
             .in("id_int", idsToFetch)
             .in("tipo_desconto", ["DESCONTO_GERAL", TIPO_DESCONTO_TABELA_ESPECIAL]),
-          client
-            .from("clientes")
-            .select("id_cliente, is_bonus, percentual_bunus, usa_preco_fixo")
-            .in("id_cliente", clientIds),
           client
             .from("produtos_proposta")
             // status_item: item CANCELADO fica fora do total (regra do save).
@@ -1512,19 +1508,6 @@ export async function getOrcamentosReadOnlyData(
             } else {
               discountMap.set(d.id_int, d);
             }
-          });
-        }
-
-        const clientBonusMap = new Map();
-        if (clientsRes.data) {
-          clientsRes.data.forEach((c) => {
-            const bp = getClienteBonusPercent({
-              usaPrecoFixo: c.usa_preco_fixo === true,
-              is_bonus: c.is_bonus === true,
-              bonusAtivo: c.is_bonus === true,
-              percentualBonus: Number(c.percentual_bunus ?? 0)
-            } as any);
-            clientBonusMap.set(Number(c.id_cliente), bp);
           });
         }
 
@@ -1549,10 +1532,7 @@ export async function getOrcamentosReadOnlyData(
             valor: row.valor,
             valorFrete: row.valor_frete,
             itens: itemsMap.get(row.id_int) || [],
-            bonusPercent: bonusDaProposta(
-              bonusGravadoMap.get(Number(row.id_int)),
-              clientBonusMap.get(Number(row.id_cliente)) || 0
-            ),
+            bonusPercent: bonusDaProposta(bonusGravadoMap.get(Number(row.id_int))),
             descontoGeral: discountMap.get(row.id_int) ?? null
           });
           row.valor_total = total;
@@ -1945,22 +1925,15 @@ export async function getPropostaDetailById(idInt: number, overrideClient?: Supa
     // Isso também protege contra dupla aplicação: se o valor_sub_total já estava
     // correto (líquido com bônus), o recalculo garante consistência via valorUnitario + qtd.
     //
-    // O bônus gravado na venda (linha TABELA_ESPECIAL) manda; sem ele, vale o do
-    // cliente, como sempre valeu — ver `bonusDaProposta`.
-    const { data: linhaTabelaEspecial, error: linhaTabelaEspecialError } = await client
-      .from("desconto_proposta")
-      .select("valor_percentual")
-      .eq("id_int", idInt)
-      .eq("tipo_desconto", TIPO_DESCONTO_TABELA_ESPECIAL)
-      .maybeSingle();
-    if (linhaTabelaEspecialError) {
-      throw new Error(`Não foi possível ler o bônus gravado da proposta #${idInt}: ${linhaTabelaEspecialError.message}`);
-    }
-    const bonusTabelaEspecial = percentualGravado(linhaTabelaEspecial);
-    const bonusPercentLoad = bonusDaProposta(
-      bonusTabelaEspecial,
-      clientObj ? getClienteBonusPercent(clientObj as Cadastro) : 0
+    // Desde a Fase 4 (30/09/2026) vale SÓ o bônus gravado na proposta (linha
+    // TABELA_ESPECIAL); sem ele, 0 — ver `bonusDaProposta`. O formulário decide
+    // à parte (`bonusDaEdicao`): proposta sem pagamento confirmado segue o bônus
+    // vigente do cliente, que o salvar grava.
+    const { percentualDaLinha: bonusTabelaEspecial, congelada: pagamentoConfirmado } = await lerBonusGravado(
+      client,
+      idInt
     );
+    const bonusPercentLoad = bonusDaProposta(bonusTabelaEspecial);
     if (bonusPercentLoad > 0) {
       for (const mappedItem of mappedItens) {
         const totals = calculateItemSubtotal(mappedItem, bonusPercentLoad);
@@ -2229,6 +2202,7 @@ export async function getPropostaDetailById(idInt: number, overrideClient?: Supa
       id_int: idInt,
       cliente: clientObj,
       bonusTabelaEspecial,
+      pagamentoConfirmado,
       contato: contact,
       enderecoEntrega: address,
       compradorAutorizado: undefined,
@@ -3091,24 +3065,29 @@ export async function saveProposta(
       return { success: false, errorMessage: "Selecione ou informe o frete antes de salvar o orçamento." };
     }
 
-    // O rótulo do bônus no texto segue o formulário (`bonusDoFormulario`): o
-    // gravado na proposta (TABELA_ESPECIAL) enquanto o cliente é o mesmo; senão,
-    // o do cliente. O TOTAL não depende disto — vem dos subtotais dos itens.
-    let bonusGravadoNoTexto: number | null = null;
+    // O BÔNUS DA VENDA — `bonusDaEdicao`, a mesma regra do formulário
+    // (`bonusDoFormulario`):
+    //   sem pagamento confirmado → o bônus vigente do cliente, que este salvar
+    //   grava na linha TABELA_ESPECIAL (mais abaixo, antes da cotação);
+    //   com pagamento confirmado → a linha está CONGELADA: vale o gravado (sem
+    //   linha, 0) e ela não é tocada — nem se o bônus do cliente mudar, nem se
+    //   o cliente for trocado nesta edição.
+    // O TOTAL vem dos subtotais dos itens, que o formulário já calculou com
+    // este mesmo percentual.
+    let bonusCongelado = false;
+    let percentualDaLinhaAtual: number | null = null;
     if (isUpdate && id_int) {
-      const [{ data: linhaTabelaEspecial }, { data: propostaAtual }] = await Promise.all([
-        client
-          .from("desconto_proposta")
-          .select("valor_percentual")
-          .eq("id_int", id_int)
-          .eq("tipo_desconto", TIPO_DESCONTO_TABELA_ESPECIAL)
-          .maybeSingle(),
-        client.from("propostas").select("id_cliente").eq("id_int", id_int).maybeSingle()
-      ]);
-      if (propostaAtual && Number(propostaAtual.id_cliente) === Number(formState.clienteId)) {
-        bonusGravadoNoTexto = percentualGravado(linhaTabelaEspecial);
-      }
+      const gravado = await lerBonusGravado(client, id_int);
+      bonusCongelado = gravado.congelada;
+      percentualDaLinhaAtual = gravado.percentualDaLinha;
     }
+    const bonusDaVenda = formState.isAvulso
+      ? 0
+      : bonusDaEdicao({
+          congelada: bonusCongelado,
+          percentualDaLinha: percentualDaLinhaAtual,
+          bonusDoCliente: cadastro ? getClienteBonusPercent(cadastro as any) : 0
+        });
 
     // Generate informal WhatsApp text
     const informalText = buildPropostaInformalText({
@@ -3131,7 +3110,7 @@ export async function saveProposta(
       formaPagamento: formState.formaPagamento || "A combinar",
       isAvulso: formState.isAvulso,
       contatoNome: contatoNome,
-      bonusPercent: cadastro ? bonusDaProposta(bonusGravadoNoTexto, getClienteBonusPercent(cadastro as any)) : 0,
+      bonusPercent: bonusDaVenda,
       // O texto gravado fala da modalidade que vai ser gravada, não do card.
       modalidade: modalidadeVigente
     });
@@ -3726,6 +3705,18 @@ export async function saveProposta(
           }
         }
       }
+    }
+
+    /**
+     * O BÔNUS DA VENDA NA LINHA TABELA_ESPECIAL (Fase 4, 30/09/2026).
+     *
+     * Gravado ANTES da cotação de frete: o trigger `trg_recalc_after_frete` roda
+     * `recalcular_proposta_v3`, que lê esta linha. Proposta com pagamento
+     * confirmado: a linha está congelada e não é tocada. Aberta: o bônus vigente
+     * vai para a linha; bônus zero apaga a linha (sem linha = 0%).
+     */
+    if (!formState.isAvulso && !bonusCongelado && id_int) {
+      await gravarBonusDaVenda(client, id_int, bonusDaVenda);
     }
 
     /**

@@ -152,10 +152,16 @@ export type Proposta = {
   cliente: Cadastro;
   /**
    * Percentual do bônus de tabela especial GRAVADO na proposta (linha
-   * `desconto_proposta` TABELA_ESPECIAL). `null`/ausente: não há linha, e vale o
-   * bônus do cliente. Ver `bonusDaProposta`.
+   * `desconto_proposta` TABELA_ESPECIAL). `null`/ausente: não há linha — os
+   * leitores aplicam 0%. Ver `bonusDaProposta`.
    */
   bonusTabelaEspecial?: number | null;
+  /**
+   * A proposta tem pagamento confirmado (a regra de `cc__valor_pago`)? Com ele,
+   * o bônus gravado está CONGELADO: o formulário usa o gravado e o salvar não o
+   * reescreve. Ver `bonusDaEdicao`.
+   */
+  pagamentoConfirmado?: boolean;
   compradorAutorizado?: CadastroVinculoComercial;
   contato: CadastroContato;
   enderecoEntrega: CadastroEndereco;

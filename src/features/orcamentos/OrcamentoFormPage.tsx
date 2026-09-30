@@ -64,7 +64,7 @@ import {
   novoItemId,
   sortEnderecosPorPrioridade
 } from "@/features/orcamentos/orcamento-utils";
-import { bonusDaProposta } from "@/features/orcamentos/lib/bonus-da-proposta";
+import { bonusDaEdicao } from "@/features/orcamentos/lib/bonus-da-proposta";
 import { getCadastrosReadOnlyList, getCadastroCompleto } from "@/features/cadastros/services/cadastros.service";
 import { listProdutos } from "@/features/produtos/services/produtos.service";
 import { listProdutoVariacaoVinculos } from "@/features/produtos/services/produto-variacoes.service";
@@ -287,16 +287,19 @@ function lerAvisoPosSalvamento(): AvisoPosSalvamento | null {
 }
 
 /**
- * O bônus de tabela especial que vale no formulário.
- *
- * O GRAVADO na proposta (linha TABELA_ESPECIAL) quando o cliente escolhido é o
- * mesmo da proposta carregada; senão — proposta nova, ou cliente trocado — o
- * bônus do cliente escolhido. Ver `bonusDaProposta`.
+ * O bônus de tabela especial que vale no formulário — `bonusDaEdicao`, a mesma
+ * regra que o salvar grava:
+ *   proposta com pagamento confirmado → CONGELADA: o percentual gravado na
+ *   linha TABELA_ESPECIAL (sem linha, 0), mesmo que o bônus do cliente mude ou
+ *   o cliente seja trocado;
+ *   proposta aberta ou nova → o bônus vigente do cliente escolhido.
  */
 function bonusDoFormulario(proposta: Proposta | undefined, cliente: Cadastro | null | undefined): number {
+  if (proposta?.pagamentoConfirmado === true) {
+    return bonusDaEdicao({ congelada: true, percentualDaLinha: proposta.bonusTabelaEspecial, bonusDoCliente: 0 });
+  }
   if (!cliente) return 0;
-  const mesmoCliente = proposta != null && Number(proposta.cliente?.idCliente) === Number(cliente.idCliente);
-  return bonusDaProposta(mesmoCliente ? proposta.bonusTabelaEspecial : null, getClienteBonusPercent(cliente));
+  return bonusDaEdicao({ congelada: false, percentualDaLinha: null, bonusDoCliente: getClienteBonusPercent(cliente) });
 }
 
 export function OrcamentoFormPage({ mode, idInt, proposta }: OrcamentoFormPageProps) {
