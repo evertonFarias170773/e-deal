@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 import { ThemedLogo } from "@/components/app-shell/ThemedLogo";
 import { APP_ICON_SRC, APP_NAME } from "@/constants/brand";
 import { hasPermissao } from "@/features/auth/usuarios.service";
+import { ContadorMenu, useContadorSecao } from "@/components/app-shell/ContadorMenu";
 
 type SidebarNavProps = {
   isCollapsed: boolean;
@@ -88,6 +89,8 @@ export function SidebarNav({ isCollapsed, onToggleCollapse }: SidebarNavProps) {
   const pathname = usePathname();
   const router = useRouter();
   const { user } = useAuth();
+  const contadorTarefas = useContadorSecao("tarefas");
+  const contadorDe = (section: NavigationSection) => (section.contador ? contadorTarefas : 0);
 
   const activeHref = resolveActiveHref(pathname);
 
@@ -278,7 +281,8 @@ export function SidebarNav({ isCollapsed, onToggleCollapse }: SidebarNavProps) {
     label: string,
     active: boolean,
     onClick: () => void,
-    onMouseEnter?: () => void
+    onMouseEnter?: () => void,
+    contador = 0
   ) => (
     <button
       key={key}
@@ -287,7 +291,7 @@ export function SidebarNav({ isCollapsed, onToggleCollapse }: SidebarNavProps) {
       onMouseEnter={onMouseEnter}
       title={label}
       aria-label={label}
-      className="flex h-11 w-11 items-center justify-center rounded-xl transition-all duration-150"
+      className="relative flex h-11 w-11 items-center justify-center rounded-xl transition-all duration-150"
       style={{
         background: active ? "var(--sidebar-active-bg)" : "transparent",
         color: active ? "var(--sidebar-active-text)" : "var(--sidebar-text)"
@@ -303,6 +307,7 @@ export function SidebarNav({ isCollapsed, onToggleCollapse }: SidebarNavProps) {
         className="h-5 w-5"
         style={{ color: active ? "var(--sidebar-icon-active)" : "var(--sidebar-icon)" }}
       />
+      <ContadorMenu valor={contador} flutuante />
     </button>
   );
 
@@ -494,6 +499,7 @@ export function SidebarNav({ isCollapsed, onToggleCollapse }: SidebarNavProps) {
                   <span className="flex-1 text-sm font-semibold uppercase tracking-wide">
                     {section.label}
                   </span>
+                  <ContadorMenu valor={contadorDe(section)} />
                 </Link>
               );
               return (
@@ -585,7 +591,9 @@ export function SidebarNav({ isCollapsed, onToggleCollapse }: SidebarNavProps) {
                     section.icon,
                     section.label,
                     href === activeHref,
-                    () => router.push(href)
+                    () => router.push(href),
+                    undefined,
+                    contadorDe(section)
                   )}
                   {section.separatorAfter ? (
                     <div className="my-1 h-px w-9 shrink-0" style={{ background: "var(--sidebar-border)" }} />

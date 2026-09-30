@@ -231,7 +231,8 @@ A presença de um script não comprova aplicação nem constitui autorização d
 | Conta Corrente e E-Crédito | `CONTA-CORRENTE-CREDITO.md` |
 | Cancelamento financeiro | `CANCELAMENTO-COBRANCAS.md` |
 | Produção | `PEDIDOS-PRODUCAO.md` |
-| Chat e pendências | `CHAT-INTERNO.md` |
+| Chat e pendências (legado) | `CHAT-INTERNO.md` |
+| Tarefas da equipe e melhorias | `superpowers/specs/2026-09-30-tarefas-equipe-design.md` |
 | Pedido complementar | `PEDIDO-COMPLEMENTAR.md` |
 | Maestro — estado atual e leitura | `maestro/STATUS-MAESTRO-AGENT-LOOP.md` |
 | Maestro — escrita e princípios de negócio | `maestro/MATRIZ-PERMISSOES-ESCRITA-MAESTRO.md` |

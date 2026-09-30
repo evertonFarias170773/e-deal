@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
-import { Menu, Bell, CheckSquare } from "lucide-react";
+import { Menu, Bell, ListTodo } from "lucide-react";
 import { CompanySwitcher } from "@/components/app-shell/CompanySwitcher";
 import { ThemeToggle } from "@/components/app-shell/ThemeToggle";
 import { UserMenu } from "@/components/app-shell/UserMenu";
@@ -14,10 +14,8 @@ import {
   listPropostaChatMentionsForUser,
   type PropostaChatMentionJoined
 } from "@/features/orcamentos/services/orcamentos.service";
-import {
-  getActiveUserPendenciasCount,
-  type PropostaPendencia
-} from "@/features/orcamentos/services/propostas-pendencias.service";
+import { type PropostaPendencia } from "@/features/orcamentos/services/propostas-pendencias.service";
+import { useTarefas } from "@/features/tarefas/TarefasProvider";
 
 type TopbarProps = {
   onOpenMenu: () => void;
@@ -27,7 +25,8 @@ export function Topbar({ onOpenMenu }: TopbarProps) {
   const { user } = useAuth();
   const { showToast } = useAppToast();
   const [unreadCount, setUnreadCount] = useState(0);
-  const [activePendenciasCount, setActivePendenciasCount] = useState(0);
+  // Contador de TAREFAS (30/09/2026): substitui o das pendencias antigas.
+  const { contagem: tarefasAtivas } = useTarefas();
 
   // Notification popover states
   const [isPopoverOpen, setIsPopoverOpen] = useState(false);
@@ -62,32 +61,15 @@ export function Topbar({ onOpenMenu }: TopbarProps) {
     }
   }, [user]);
 
-  // Fetch active user pendencies count
-  const fetchPendenciasCount = useCallback(async () => {
-    if (!user?.id) return;
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    if (!uuidRegex.test(user.id)) return;
-
-    try {
-      const res = await getActiveUserPendenciasCount(user.id);
-      if (res.success) {
-        setActivePendenciasCount(res.count);
-      }
-    } catch (err) {
-      console.error("[Topbar] Erro ao buscar contagem de pendências:", err);
-    }
-  }, [user]);
-
   // Initial fetch on mount / user change (deferred to avoid React Compiler cascading render warning)
   useEffect(() => {
     if (user?.id) {
       const timer = setTimeout(() => {
         void fetchNotifications();
-        void fetchPendenciasCount();
       }, 0);
       return () => clearTimeout(timer);
     }
-  }, [user, fetchNotifications, fetchPendenciasCount]);
+  }, [user, fetchNotifications]);
 
   // Fetch user name on demand for realtime toasts
   const fetchUserNameOnDemand = useCallback(async (userId: string): Promise<string> => {
@@ -106,15 +88,8 @@ export function Topbar({ onOpenMenu }: TopbarProps) {
     }
   }, []);
 
-  // Listen to custom updates from page
-  useEffect(() => {
-    window.addEventListener("pendencias-updated", fetchPendenciasCount);
-    return () => {
-      window.removeEventListener("pendencias-updated", fetchPendenciasCount);
-    };
-  }, [fetchPendenciasCount]);
-
-  // Subscribe to real-time pendencias
+  // Pendencias antigas (propostas_pendencias): o canal segue para a Central
+  // antiga e seus toasts ate a fase 2; o contador da Topbar agora e o de tarefas.
   useEffect(() => {
     if (!user?.id) return;
 
@@ -138,10 +113,7 @@ export function Topbar({ onOpenMenu }: TopbarProps) {
         (payload) => {
           console.log("[Topbar] Evento realtime de pendência recebido:", payload);
           
-          // 1. Refresh local topbar count
-          void fetchPendenciasCount();
-
-          // 2. Propagate to other listening components (page.tsx, PropostaPendenciasPanel.tsx)
+          // Propagate to other listening components (page.tsx, PropostaPendenciasPanel.tsx)
           window.dispatchEvent(new CustomEvent("propostas-pendencias-realtime", { detail: payload }));
 
           const newRec = payload.new as Partial<PropostaPendencia>;
@@ -212,7 +184,7 @@ export function Topbar({ onOpenMenu }: TopbarProps) {
       console.log(`[Topbar] Removendo canal realtime global de pendências para usuário: ${user.id}`);
       void supabase.removeChannel(channel);
     };
-  }, [user?.id, showToast, fetchPendenciasCount, fetchUserNameOnDemand]);
+  }, [user?.id, showToast, fetchUserNameOnDemand]);
 
   // Subscribe to real-time mentions (reused single subscription channel)
   useEffect(() => {
@@ -305,23 +277,23 @@ export function Topbar({ onOpenMenu }: TopbarProps) {
         <div className="ml-auto flex items-center gap-2">
           <CompanySwitcher />
 
-          {/* Badge de Pendências */}
+          {/* Badge de Tarefas */}
           {user && (
             <Link
-              href="/pendencias"
+              href="/tarefas"
               className="rounded-xl p-2.5 shadow-sm transition relative block"
               style={{
                 background: "var(--card)",
                 border: "1px solid var(--border)",
                 color: "var(--primary)"
               }}
-              title={activePendenciasCount > 0 ? `Você tem ${activePendenciasCount} pendência(s) ativa(s)` : "Sem pendências ativas"}
-              aria-label={activePendenciasCount > 0 ? `Você tem ${activePendenciasCount} pendência(s) ativa(s)` : "Sem pendências ativas"}
+              title={tarefasAtivas > 0 ? `Você tem ${tarefasAtivas} tarefa(s) em aberto` : "Sem tarefas em aberto"}
+              aria-label={tarefasAtivas > 0 ? `Você tem ${tarefasAtivas} tarefa(s) em aberto` : "Sem tarefas em aberto"}
             >
-              <CheckSquare className="h-5 w-5" />
-              {activePendenciasCount > 0 && (
-                <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-amber-600 text-[10px] font-bold text-white animate-pulse">
-                  {activePendenciasCount}
+              <ListTodo className="h-5 w-5" />
+              {tarefasAtivas > 0 && (
+                <span className="absolute -top-1 -right-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-amber-600 px-1 text-[10px] font-bold text-white animate-pulse">
+                  {tarefasAtivas > 99 ? "99+" : tarefasAtivas}
                 </span>
               )}
             </Link>

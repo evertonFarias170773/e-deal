@@ -106,6 +106,8 @@ export type NavigationSection = {
    * grupo e mais um clique para chegar às páginas.
    */
   separatorAfter?: boolean;
+  /** Mostra um contador ao lado do rotulo. "tarefas" = minhas tarefas em aberto. */
+  contador?: "tarefas";
   items: NavigationItem[];
 };
 

@@ -14,6 +14,7 @@ import {
   KeyRound,
   Layers,
   LayoutDashboard,
+  ListTodo,
   Package,
   Receipt,
   ReceiptText,
@@ -34,6 +35,7 @@ export const navigationItems: NavigationItem[] = [
   { label: "Verificação CPF/CNPJ", href: "/verificacao", icon: ShieldCheck },
   { label: "Produtos", href: "/produtos", icon: Package },
   { label: "Orcamentos", href: "/orcamentos", icon: ClipboardList },
+  { label: "Tarefas", href: "/tarefas", icon: ListTodo },
   { label: "Pendências", href: "/pendencias", icon: CheckSquare },
   { label: "Conta Corrente", href: "/conta-corrente", icon: Wallet },
   { label: "Maestro", href: "/maestro", icon: Bot },
@@ -165,6 +167,18 @@ export const navigationSections: NavigationSection[] = [
       // Segue desabilitado, como sempre esteve. Mantido para nao sumir do menu.
       { label: "Relatórios", href: "/relatorios", icon: BarChart3, disabled: true }
     ]
+  },
+  // 6b — Tarefas da equipe e melhorias (30/09/2026). Menu proprio, fora do
+  // Financeiro, com o contador das minhas tarefas em aberto. A Central de
+  // Pendencias antiga continua no Financeiro ate a fase 2 (spec
+  // 2026-09-30-tarefas-equipe-design.md).
+  {
+    id: "tarefas",
+    label: "Tarefas",
+    icon: ListTodo,
+    href: "/tarefas",
+    contador: "tarefas",
+    items: []
   },
   // 7
   {

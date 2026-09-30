@@ -1,0 +1,127 @@
+"use client";
+
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import { useAuth } from "@/features/auth/AuthProvider";
+import { useAppToast } from "@/components/common/AppToast";
+import { getSupabaseClient } from "@/lib/supabase/client";
+import { contarMinhasTarefasAtivas, mapaNomesUsuarios } from "@/features/tarefas/services/tarefas.service";
+import type { Tarefa } from "@/features/tarefas/types";
+
+/**
+ * Ponto unico do aviso de tarefas (spec 2026-09-30-tarefas-equipe-design.md).
+ *
+ * - `contagem`: minhas tarefas ABERTA ou EM_ANDAMENTO. Aparece no menu e na Topbar.
+ * - `versao`: sobe a cada evento de tempo real; a tela /tarefas recarrega quando muda.
+ * - Um canal de tempo real so, aqui. O realtime aplica o RLS de quem escuta:
+ *   ninguem recebe evento de tarefa que nao pode ver.
+ */
+
+type TarefasContexto = {
+  contagem: number;
+  versao: number;
+  recarregar: () => void;
+};
+
+const Contexto = createContext<TarefasContexto>({ contagem: 0, versao: 0, recarregar: () => {} });
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function TarefasProvider({ children }: { children: ReactNode }) {
+  const { user } = useAuth();
+  const { showToast } = useAppToast();
+  const userId = user?.id && UUID_RE.test(user.id) ? user.id : null;
+  const [contagem, setContagem] = useState(0);
+  const [versao, setVersao] = useState(0);
+  const nomesRef = useRef<Map<string, string> | null>(null);
+
+  const contar = useCallback(async () => {
+    if (!userId) return;
+    setContagem(await contarMinhasTarefasAtivas(userId));
+  }, [userId]);
+
+  const recarregar = useCallback(() => {
+    void contar();
+    setVersao((v) => v + 1);
+  }, [contar]);
+
+  useEffect(() => {
+    if (!userId) return;
+    const timer = setTimeout(() => void contar(), 0);
+    return () => clearTimeout(timer);
+  }, [userId, contar]);
+
+  const nomeDe = useCallback(async (id: string | null) => {
+    if (!id) return "alguém";
+    if (!nomesRef.current || !nomesRef.current.has(id)) nomesRef.current = await mapaNomesUsuarios();
+    return nomesRef.current.get(id) ?? "alguém";
+  }, []);
+
+  useEffect(() => {
+    if (!userId) return;
+    const supabase = getSupabaseClient();
+    if (!supabase) return;
+
+    const irParaTarefas = () => {
+      window.location.href = "/tarefas";
+    };
+
+    const channel = supabase
+      .channel(`tarefas_equipe_${userId}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "tarefas_equipe" }, (payload) => {
+        void contar();
+        setVersao((v) => v + 1);
+
+        const t = payload.new as Partial<Tarefa> | null;
+        if (!t || !t.titulo) return;
+
+        if (payload.eventType === "INSERT") {
+          if (t.responsavel_user_id === userId && t.criado_por_user_id !== userId) {
+            void nomeDe(t.criado_por_user_id ?? null).then((nome) =>
+              showToast({
+                type: "info",
+                title: "Nova tarefa para você",
+                description: `${nome} pediu: "${t.titulo}".`,
+                onClick: irParaTarefas
+              })
+            );
+          }
+          return;
+        }
+        if (payload.eventType !== "UPDATE") return;
+
+        if (t.status === "EM_ANDAMENTO" && t.criado_por_user_id === userId && t.assumido_por_user_id !== userId) {
+          void nomeDe(t.assumido_por_user_id ?? null).then((nome) =>
+            showToast({ type: "info", title: "Tarefa assumida", description: `${nome} assumiu "${t.titulo}".` })
+          );
+        } else if (t.status === "CONCLUIDA" && t.criado_por_user_id === userId && t.concluido_por_user_id !== userId) {
+          void nomeDe(t.concluido_por_user_id ?? null).then((nome) =>
+            showToast({
+              type: "success",
+              title: "Tarefa concluída",
+              description: `${nome} concluiu "${t.titulo}".`,
+              onClick: irParaTarefas
+            })
+          );
+        } else if (
+          t.status === "CANCELADA" &&
+          t.cancelado_por_user_id !== userId &&
+          (t.responsavel_user_id === userId || t.criado_por_user_id === userId)
+        ) {
+          void nomeDe(t.cancelado_por_user_id ?? null).then((nome) =>
+            showToast({ type: "info", title: "Tarefa cancelada", description: `${nome} cancelou "${t.titulo}".` })
+          );
+        }
+      })
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [userId, contar, nomeDe, showToast]);
+
+  return <Contexto.Provider value={{ contagem, versao, recarregar }}>{children}</Contexto.Provider>;
+}
+
+export function useTarefas() {
+  return useContext(Contexto);
+}

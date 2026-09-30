@@ -10,6 +10,7 @@ import { Topbar } from "@/components/app-shell/Topbar";
 import { USE_NEW_SIDEBAR } from "@/constants/featureFlags";
 import { GlobalChatProvider } from "@/features/chat/context/GlobalChatContext";
 import { GlobalChatBubble } from "@/features/chat/components/GlobalChatBubble";
+import { TarefasProvider } from "@/features/tarefas/TarefasProvider";
 
 export function AppLayout({ children }: { children: ReactNode }) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -17,6 +18,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
 
   return (
     <GlobalChatProvider>
+      <TarefasProvider>
       <div className="min-h-screen lg:flex" style={{ background: "var(--background)" }}>
         {USE_NEW_SIDEBAR ? (
           <SidebarNav
@@ -40,6 +42,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
           <GlobalChatBubble />
         </div>
       </div>
+      </TarefasProvider>
     </GlobalChatProvider>
   );
 }

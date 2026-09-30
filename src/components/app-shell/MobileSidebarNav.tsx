@@ -10,6 +10,7 @@ import { navigationHrefs, navigationSections, quickAccessItems } from "@/constan
 import type { NavigationItem, NavigationSection } from "@/lib/types";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { hasPermissao } from "@/features/auth/usuarios.service";
+import { ContadorMenu, useContadorSecao } from "@/components/app-shell/ContadorMenu";
 
 type MobileSidebarNavProps = {
   isOpen: boolean;
@@ -82,6 +83,7 @@ const SECAO_FECHADA_AO_ABRIR = "financeiro";
 export function MobileSidebarNav({ isOpen, onClose }: MobileSidebarNavProps) {
   const pathname = usePathname();
   const { user } = useAuth();
+  const contadorTarefas = useContadorSecao("tarefas");
 
   const activeHref = resolveActiveHref(pathname);
 
@@ -351,6 +353,7 @@ export function MobileSidebarNav({ isOpen, onClose }: MobileSidebarNavProps) {
                   <span className="flex-1 text-sm font-semibold uppercase tracking-wide">
                     {section.label}
                   </span>
+                  <ContadorMenu valor={section.contador ? contadorTarefas : 0} />
                 </Link>
               );
               return (
