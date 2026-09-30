@@ -150,6 +150,12 @@ export type Proposta = {
   id: string;
   id_int: number;
   cliente: Cadastro;
+  /**
+   * Percentual do bônus de tabela especial GRAVADO na proposta (linha
+   * `desconto_proposta` TABELA_ESPECIAL). `null`/ausente: não há linha, e vale o
+   * bônus do cliente. Ver `bonusDaProposta`.
+   */
+  bonusTabelaEspecial?: number | null;
   compradorAutorizado?: CadastroVinculoComercial;
   contato: CadastroContato;
   enderecoEntrega: CadastroEndereco;

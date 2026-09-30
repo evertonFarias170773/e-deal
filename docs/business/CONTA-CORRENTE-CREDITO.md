@@ -177,6 +177,14 @@ Nenhuma foi corrigida nesta sincronização, além das seis listadas em 4.1.
 
     Escopo a dimensionar antes de começar: mudança no save; backfill das divergentes (com a mesma questão de `updated_at` que fez o dono recusar o backfill de modalidade em 19/08/2026, registrada em `EXPEDICAO.md` §5.2); e revisão de **quatro** consumidores que hoje leem só `DESCONTO_GERAL` — `cc__total_soberano_proposta`, `abonar-diferenca`, `recalcular_proposta_v3` e `recalcular_proposta_v4`.
 
+    **Execução (plano de 30/09/2026, em 4 fases, nesta ordem):**
+    1. **Leitores do banco — FEITA 30/09** (`20261001_desconto_tabela_especial_leitores_banco`): índice de no máximo uma linha `TABELA_ESPECIAL` por proposta; `cc__total_soberano_proposta`, `recalcular_proposta_v3` e `v4` aplicam o percentual da linha nos produtos ANTES do desconto geral; as leituras "LIMIT 1" de desconto (v3, v4, `gerar_texto_whatsapp_e_salvar`) não pegam a linha; `copiar_proposta_v2` e `duplicar_proposta` não a copiam. Sem linha, tudo idêntico — provado nas 10.240 propostas.
+    2. **Leitores do app — FEITA 30/09**: `bonusDaProposta` (`src/features/orcamentos/lib/bonus-da-proposta.ts`) — linha gravada manda, sem ela o bônus do cliente, nunca os dois. Aplicado na lista, no carregador da área do cliente e da lista rápida, na API da Lisiton, na carga do formulário (`getPropostaDetailById`), no formulário e no detalhe, no texto informal, na NF-e, na simulação de correção de frete e em `abonar-diferenca`.
+    3. **Carga das linhas** — pendente, com autorização própria e lista final (≈125 propostas; as 7 inconsistentes e as 12 de ex-clientes com bônus dependem de decisão do dono).
+    4. **Salvar grava e congela a linha** — pendente.
+
+    Achado do levantamento: `recalcular_proposta_v3` (trigger de `cotacao_frete`) GRAVA `valor_total` com a soma bruta — toda troca de frete fora do salvar do orçamento apagava o bônus do total. Com a linha gravada (Fase 3), passa a aplicar o bônus certo.
+
     **Explicitamente rejeitado:** fazer a função ler `clientes.is_bonus` diretamente. Reconstruiria o passado com o percentual de hoje — mudar `percentual_bunus` reescreveria o total de todas as propostas históricas do cliente, inclusive pagas e faturadas. O caso do 8469 é exatamente o que isso produziria de errado.
 
     **Fora do padrão, sem causa identificada:** a proposta #19733 diverge para cima (R$ 6.097,56 gravado contra R$ 710,86 soberano), e **121 propostas** nos status vivos têm `valor_total` nulo — esta última é a mesma causa raiz do item 7 acima, ainda não identificada. Nenhuma das duas é explicada pelo bônus.

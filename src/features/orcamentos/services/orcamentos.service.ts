@@ -8,6 +8,11 @@ import {
   type TransporteCategoria
 } from "@/features/orcamentos/lib/transporte-categoria";
 import { calculateResumo, calculateItemSubtotal } from "@/features/orcamentos/orcamento-utils";
+import {
+  TIPO_DESCONTO_TABELA_ESPECIAL,
+  bonusDaProposta,
+  percentualGravado
+} from "@/features/orcamentos/lib/bonus-da-proposta";
 import { totaisDaProposta } from "@/features/orcamentos/lib/total-da-proposta";
 import {
   congelarChecklistDosItensNovos,
@@ -1481,11 +1486,12 @@ export async function getOrcamentosReadOnlyData(
       if (idsToFetch.length > 0) {
         // Consultas em lote paralelas para evitar N+1 queries
         const [discountsRes, clientsRes, itemsRes] = await Promise.all([
+          // Desconto geral e bônus gravado na venda (TABELA_ESPECIAL) numa leitura.
           client
             .from("desconto_proposta")
-            .select("id_int, valor_percentual, valor_nominal")
+            .select("id_int, tipo_desconto, valor_percentual, valor_nominal")
             .in("id_int", idsToFetch)
-            .eq("tipo_desconto", "DESCONTO_GERAL"),
+            .in("tipo_desconto", ["DESCONTO_GERAL", TIPO_DESCONTO_TABELA_ESPECIAL]),
           client
             .from("clientes")
             .select("id_cliente, is_bonus, percentual_bunus, usa_preco_fixo")
@@ -1498,8 +1504,15 @@ export async function getOrcamentosReadOnlyData(
         ]);
 
         const discountMap = new Map();
+        const bonusGravadoMap = new Map<number, number | null>();
         if (discountsRes.data) {
-          discountsRes.data.forEach((d) => discountMap.set(d.id_int, d));
+          discountsRes.data.forEach((d) => {
+            if (d.tipo_desconto === TIPO_DESCONTO_TABELA_ESPECIAL) {
+              bonusGravadoMap.set(Number(d.id_int), percentualGravado(d));
+            } else {
+              discountMap.set(d.id_int, d);
+            }
+          });
         }
 
         const clientBonusMap = new Map();
@@ -1536,7 +1549,10 @@ export async function getOrcamentosReadOnlyData(
             valor: row.valor,
             valorFrete: row.valor_frete,
             itens: itemsMap.get(row.id_int) || [],
-            bonusPercent: clientBonusMap.get(Number(row.id_cliente)) || 0,
+            bonusPercent: bonusDaProposta(
+              bonusGravadoMap.get(Number(row.id_int)),
+              clientBonusMap.get(Number(row.id_cliente)) || 0
+            ),
             descontoGeral: discountMap.get(row.id_int) ?? null
           });
           row.valor_total = total;
@@ -1928,7 +1944,23 @@ export async function getPropostaDetailById(idInt: number, overrideClient?: Supa
     //   acrescimoBonus e subtotal corretos na UI.
     // Isso também protege contra dupla aplicação: se o valor_sub_total já estava
     // correto (líquido com bônus), o recalculo garante consistência via valorUnitario + qtd.
-    const bonusPercentLoad = clientObj ? getClienteBonusPercent(clientObj as Cadastro) : 0;
+    //
+    // O bônus gravado na venda (linha TABELA_ESPECIAL) manda; sem ele, vale o do
+    // cliente, como sempre valeu — ver `bonusDaProposta`.
+    const { data: linhaTabelaEspecial, error: linhaTabelaEspecialError } = await client
+      .from("desconto_proposta")
+      .select("valor_percentual")
+      .eq("id_int", idInt)
+      .eq("tipo_desconto", TIPO_DESCONTO_TABELA_ESPECIAL)
+      .maybeSingle();
+    if (linhaTabelaEspecialError) {
+      throw new Error(`Não foi possível ler o bônus gravado da proposta #${idInt}: ${linhaTabelaEspecialError.message}`);
+    }
+    const bonusTabelaEspecial = percentualGravado(linhaTabelaEspecial);
+    const bonusPercentLoad = bonusDaProposta(
+      bonusTabelaEspecial,
+      clientObj ? getClienteBonusPercent(clientObj as Cadastro) : 0
+    );
     if (bonusPercentLoad > 0) {
       for (const mappedItem of mappedItens) {
         const totals = calculateItemSubtotal(mappedItem, bonusPercentLoad);
@@ -2196,6 +2228,7 @@ export async function getPropostaDetailById(idInt: number, overrideClient?: Supa
       id: `prop_${idInt}`,
       id_int: idInt,
       cliente: clientObj,
+      bonusTabelaEspecial,
       contato: contact,
       enderecoEntrega: address,
       compradorAutorizado: undefined,
@@ -3058,6 +3091,25 @@ export async function saveProposta(
       return { success: false, errorMessage: "Selecione ou informe o frete antes de salvar o orçamento." };
     }
 
+    // O rótulo do bônus no texto segue o formulário (`bonusDoFormulario`): o
+    // gravado na proposta (TABELA_ESPECIAL) enquanto o cliente é o mesmo; senão,
+    // o do cliente. O TOTAL não depende disto — vem dos subtotais dos itens.
+    let bonusGravadoNoTexto: number | null = null;
+    if (isUpdate && id_int) {
+      const [{ data: linhaTabelaEspecial }, { data: propostaAtual }] = await Promise.all([
+        client
+          .from("desconto_proposta")
+          .select("valor_percentual")
+          .eq("id_int", id_int)
+          .eq("tipo_desconto", TIPO_DESCONTO_TABELA_ESPECIAL)
+          .maybeSingle(),
+        client.from("propostas").select("id_cliente").eq("id_int", id_int).maybeSingle()
+      ]);
+      if (propostaAtual && Number(propostaAtual.id_cliente) === Number(formState.clienteId)) {
+        bonusGravadoNoTexto = percentualGravado(linhaTabelaEspecial);
+      }
+    }
+
     // Generate informal WhatsApp text
     const informalText = buildPropostaInformalText({
       id_int: formState.id_int || "NOVO",
@@ -3079,7 +3131,7 @@ export async function saveProposta(
       formaPagamento: formState.formaPagamento || "A combinar",
       isAvulso: formState.isAvulso,
       contatoNome: contatoNome,
-      bonusPercent: cadastro ? getClienteBonusPercent(cadastro as any) : 0,
+      bonusPercent: cadastro ? bonusDaProposta(bonusGravadoNoTexto, getClienteBonusPercent(cadastro as any)) : 0,
       // O texto gravado fala da modalidade que vai ser gravada, não do card.
       modalidade: modalidadeVigente
     });

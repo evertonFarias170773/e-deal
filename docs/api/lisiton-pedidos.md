@@ -122,7 +122,7 @@ Os dados abaixo são **fictícios**.
 | Campo | O que é |
 |---|---|
 | `id_int` | Número do pedido no Vibe. |
-| `valor_total` | Valor total do pedido em reais, **o mesmo número da tela do Vibe**: soma dos itens (itens cancelados ficam de fora), mais o frete, menos o desconto geral. |
+| `valor_total` | Valor total do pedido em reais, **o mesmo número da tela do Vibe**: soma dos itens (itens cancelados ficam de fora), menos o desconto de tabela especial da venda, mais o frete, menos o desconto geral. |
 
 ### `pagador` — quem paga o pedido (a Lisiton)
 

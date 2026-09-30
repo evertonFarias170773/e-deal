@@ -29,6 +29,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient as createSupabaseClient, type SupabaseClient } from "@supabase/supabase-js";
 import { aplicarStatusRecomendadoProposta } from "@/features/orcamentos/services/status-writer.service";
+import { TIPO_DESCONTO_TABELA_ESPECIAL, percentualGravado } from "@/features/orcamentos/lib/bonus-da-proposta";
 
 const TOLERANCIA = 0.02;
 
@@ -153,11 +154,29 @@ export async function POST(request: NextRequest) {
     if (itensErr) {
       return NextResponse.json({ success: false, error: "Erro ao buscar itens da proposta." }, { status: 500 });
     }
-    const subtotal = round2(
+    const subtotalBruto = round2(
       (itensRows || [])
         .filter((i) => (i.status_item || "PENDENTE") !== "CANCELADO")
         .reduce((sum, i) => sum + (Number(i.valor_sub_total) || 0), 0)
     );
+
+    // O bônus GRAVADO na venda (linha TABELA_ESPECIAL) sai do subtotal antes do
+    // desconto geral — a mesma conta de cc__total_soberano_proposta desde
+    // 01/10/2026. Sem a linha, o subtotal fica exatamente como era.
+    const { data: linhaTabelaEspecial, error: linhaTabelaEspecialErr } = await supabase
+      .from("desconto_proposta")
+      .select("valor_percentual")
+      .eq("id_int", idInt)
+      .eq("tipo_desconto", TIPO_DESCONTO_TABELA_ESPECIAL)
+      .maybeSingle();
+    if (linhaTabelaEspecialErr) {
+      return NextResponse.json({ success: false, error: "Erro ao buscar o bônus gravado da proposta." }, { status: 500 });
+    }
+    const bonusGravado = percentualGravado(linhaTabelaEspecial);
+    const subtotal =
+      bonusGravado && bonusGravado > 0
+        ? Math.max(0, round2(subtotalBruto - (subtotalBruto * bonusGravado) / 100))
+        : subtotalBruto;
     const frete = round2(Number(proposta.valor_frete) || 0);
 
     // Linha única de desconto geral — mesmo critério de cc__total_soberano_proposta

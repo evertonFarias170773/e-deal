@@ -5,6 +5,11 @@ import { rateLimitCheck } from "@/lib/security/rate-limit-memory";
 import { escolherEnderecoPrincipal } from "@/lib/fiscal/endereco-principal";
 import { getClienteBonusPercent } from "@/features/orcamentos/orcamento-utils";
 import { totaisDaProposta } from "@/features/orcamentos/lib/total-da-proposta";
+import {
+  TIPO_DESCONTO_TABELA_ESPECIAL,
+  bonusDaProposta,
+  percentualGravado
+} from "@/features/orcamentos/lib/bonus-da-proposta";
 
 /**
  * API da Lisiton — dados de UM pedido, para gerar a etiqueta no Melhor Envio.
@@ -195,11 +200,10 @@ export async function GET(request: Request, contexto: { params: Promise<{ id_int
       banco.from("produtos_proposta").select("qtd, valor_unt, fixo, status_item").eq("id_int", idInt),
       banco
         .from("desconto_proposta")
-        .select("valor_percentual, valor_nominal")
+        // Desconto geral e bônus gravado na venda (TABELA_ESPECIAL) numa leitura.
+        .select("tipo_desconto, valor_percentual, valor_nominal")
         .eq("id_int", idInt)
-        .eq("tipo_desconto", "DESCONTO_GERAL")
-        .limit(1)
-        .maybeSingle(),
+        .in("tipo_desconto", ["DESCONTO_GERAL", TIPO_DESCONTO_TABELA_ESPECIAL]),
       lerCliente(banco, ID_CLIENTE_LISITON),
       banco.from("enderecos").select(COLUNAS_ENDERECO).eq("id_cliente", ID_CLIENTE_LISITON)
     ]);
@@ -236,23 +240,32 @@ export async function GET(request: Request, contexto: { params: Promise<{ id_int
 
     // 8. Valor total pela regra única do sistema — a do "Salvar alterações",
     //    que deixa item cancelado de fora.
+    const linhasDesconto = (descontoRes.data ?? []) as Array<{
+      tipo_desconto: string;
+      valor_percentual: number;
+      valor_nominal: number;
+    }>;
     const { total: valorTotal } = totaisDaProposta({
       isAvulso: proposta.is_avulso === true,
       valorTotalGravado: proposta.valor_total,
       valor: proposta.valor,
       valorFrete: proposta.valor_frete,
       itens: (itensRes.data ?? []) as Array<{ qtd: number; valor_unt: number; fixo: number; status_item: string | null }>,
-      bonusPercent: getClienteBonusPercent(
-        pagador
-          ? ({
-              usaPrecoFixo: pagador.usa_preco_fixo === true,
-              is_bonus: pagador.is_bonus === true,
-              bonusAtivo: pagador.is_bonus === true,
-              percentualBonus: Number(pagador.percentual_bunus ?? 0)
-            } as unknown as Parameters<typeof getClienteBonusPercent>[0])
-          : null
+      // O bônus gravado na venda manda; sem ele, o do cadastro (`bonusDaProposta`).
+      bonusPercent: bonusDaProposta(
+        percentualGravado(linhasDesconto.find((d) => d.tipo_desconto === TIPO_DESCONTO_TABELA_ESPECIAL)),
+        getClienteBonusPercent(
+          pagador
+            ? ({
+                usaPrecoFixo: pagador.usa_preco_fixo === true,
+                is_bonus: pagador.is_bonus === true,
+                bonusAtivo: pagador.is_bonus === true,
+                percentualBonus: Number(pagador.percentual_bunus ?? 0)
+              } as unknown as Parameters<typeof getClienteBonusPercent>[0])
+            : null
+        )
       ),
-      descontoGeral: (descontoRes.data as { valor_percentual: number; valor_nominal: number } | null) ?? null
+      descontoGeral: linhasDesconto.find((d) => d.tipo_desconto === "DESCONTO_GERAL") ?? null
     });
 
     // 9. Volumes: peso de cada um, quando a Revisão gravou; dimensão não existe no Vibe.

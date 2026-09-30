@@ -7,6 +7,7 @@ import { getPropostaDetailById } from "@/features/orcamentos/services/orcamentos
 import { PROPOSTA_STATUS_GROUP_NFE_ELIGIBLE } from "@/features/orcamentos/constants";
 import { resolverPesoExpedicao } from "@/features/expedicao/lib/peso";
 import { getClienteBonusPercent } from "@/features/orcamentos/orcamento-utils";
+import { bonusDaProposta } from "@/features/orcamentos/lib/bonus-da-proposta";
 import { valoresDosItensDaNota } from "@/features/nfe/lib/valor-item-nfe";
 import { condicaoDaParcelaInicial, somarDiasIso } from "@/features/nfe/lib/parcela-inicial-nfe";
 import { isFamiliaFaturado } from "@/features/cobrancas/cobrancas-utils";
@@ -1193,7 +1194,13 @@ export async function createOrReuseNfeDraft(idInt: number): Promise<SupabaseNfeR
     // o mesmo percentual, lido do mesmo cadastro, que `getPropostaDetailById` ja
     // aplicou para chegar a `propostas.valor_total`. Sem consulta nova. Cliente sem
     // bonus (percentual 0, ou `usa_preco_fixo`) sai exatamente como antes.
-    const valoresDosItens = valoresDosItensDaNota(proposta.itens, getClienteBonusPercent(proposta.cliente));
+    // Desde 01/10/2026 o percentual e o GRAVADO na proposta (linha
+    // TABELA_ESPECIAL) e, sem ele, o do cadastro — `bonusDaProposta`, a mesma
+    // regra de `getPropostaDetailById`.
+    const valoresDosItens = valoresDosItensDaNota(
+      proposta.itens,
+      bonusDaProposta(proposta.bonusTabelaEspecial, getClienteBonusPercent(proposta.cliente))
+    );
 
     const itemsInsert = proposta.itens.map((item, idx) => {
       // O TOTAL DO ITEM NA NOTA PARTE DO SUBTOTAL DA PROPOSTA — nao `qtd x unitario`.

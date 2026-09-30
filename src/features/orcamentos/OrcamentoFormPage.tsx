@@ -64,6 +64,7 @@ import {
   novoItemId,
   sortEnderecosPorPrioridade
 } from "@/features/orcamentos/orcamento-utils";
+import { bonusDaProposta } from "@/features/orcamentos/lib/bonus-da-proposta";
 import { getCadastrosReadOnlyList, getCadastroCompleto } from "@/features/cadastros/services/cadastros.service";
 import { listProdutos } from "@/features/produtos/services/produtos.service";
 import { listProdutoVariacaoVinculos } from "@/features/produtos/services/produto-variacoes.service";
@@ -283,6 +284,19 @@ function lerAvisoPosSalvamento(): AvisoPosSalvamento | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * O bônus de tabela especial que vale no formulário.
+ *
+ * O GRAVADO na proposta (linha TABELA_ESPECIAL) quando o cliente escolhido é o
+ * mesmo da proposta carregada; senão — proposta nova, ou cliente trocado — o
+ * bônus do cliente escolhido. Ver `bonusDaProposta`.
+ */
+function bonusDoFormulario(proposta: Proposta | undefined, cliente: Cadastro | null | undefined): number {
+  if (!cliente) return 0;
+  const mesmoCliente = proposta != null && Number(proposta.cliente?.idCliente) === Number(cliente.idCliente);
+  return bonusDaProposta(mesmoCliente ? proposta.bonusTabelaEspecial : null, getClienteBonusPercent(cliente));
 }
 
 export function OrcamentoFormPage({ mode, idInt, proposta }: OrcamentoFormPageProps) {
@@ -1338,7 +1352,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
   const declaracaoFreteNaoSalva =
     (form.modalidadeFrete ?? null) !== (proposta?.modalidadeFrete ?? null) ||
     (form.idTransportadoraCliente ?? null) !== (proposta?.idTransportadoraCliente ?? null);
-  const bonusPercent = cliente ? getClienteBonusPercent(cliente) : 0;
+  const bonusPercent = bonusDoFormulario(proposta, cliente);
   
   const resumo = useMemo(() => {
     if (form.isAvulso) {
@@ -2570,7 +2584,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
         || enderLista.find(e => e.tipo === "principal") 
         || enderLista[0];
       const nextContacts = nextCliente.contatos || [];
-      const nextBonus = getClienteBonusPercent(nextCliente);
+      const nextBonus = bonusDoFormulario(proposta, nextCliente);
       const recalculatedItems = form.itens.map((item) => recalculateItem(item, nextBonus, nextCliente));
 
       setCliente(nextCliente);
@@ -2617,7 +2631,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
         description: "Não foi possível carregar os endereços e contatos do cliente."
       });
       
-      const nextBonus = getClienteBonusPercent(basicCliente);
+      const nextBonus = bonusDoFormulario(proposta, basicCliente);
       const recalculatedItems = form.itens.map((item) => recalculateItem(item, nextBonus));
       setCliente(basicCliente);
       setProposalContacts([]);
@@ -8958,7 +8972,7 @@ function createInitialState(proposta?: Proposta): PropostaFormState {
     itens: (() => {
       const rawItens = proposta?.itens ?? [];
       if (!cliente || rawItens.length === 0) return rawItens;
-      const bp = getClienteBonusPercent(cliente);
+      const bp = bonusDoFormulario(proposta, cliente);
       if (bp <= 0) return rawItens;
       return rawItens.map((item) => {
         const totals = calculateItemSubtotal(item, bp);

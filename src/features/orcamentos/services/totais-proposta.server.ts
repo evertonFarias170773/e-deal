@@ -2,14 +2,20 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { getClienteBonusPercent } from "@/features/orcamentos/orcamento-utils";
 import { totaisDaProposta } from "@/features/orcamentos/lib/total-da-proposta";
+import {
+  TIPO_DESCONTO_TABELA_ESPECIAL,
+  bonusDaProposta,
+  percentualGravado
+} from "@/features/orcamentos/lib/bonus-da-proposta";
 
 /**
  * Totais da proposta no servidor — lendo as linhas do banco.
  *
  * NÃO TEM REGRA PRÓPRIA. A conta mora em `totaisDaProposta`
  * (lib/total-da-proposta.ts), a única do sistema, a mesma do "Salvar
- * alterações". Este arquivo só busca itens, bônus do cliente e desconto geral
- * e entrega para ela.
+ * alterações". Este arquivo só busca itens, bônus e desconto geral e entrega
+ * para ela. O bônus é o gravado na proposta (TABELA_ESPECIAL) e, sem ele, o do
+ * cliente — ver `bonusDaProposta`.
  *
  * Nasceu em 27/09/2026 na área do cliente (`/p/<token>`) e em 28/09 passou a
  * servir também a lista rápida (`/api/pedidos/lotes-em-massa`). Em 29/09 a
@@ -48,7 +54,7 @@ export async function calcularTotaisPelaRegraDaTela(
     return null;
   }
 
-  let bonusPercent = 0;
+  let bonusDoCliente = 0;
   if (proposta.id_cliente) {
     const { data: cli } = await client
       .from("clientes")
@@ -56,7 +62,7 @@ export async function calcularTotaisPelaRegraDaTela(
       .eq("id_cliente", proposta.id_cliente)
       .maybeSingle<{ is_bonus: boolean | null; percentual_bunus: number | null; usa_preco_fixo: boolean | null }>();
     if (cli) {
-      bonusPercent = getClienteBonusPercent({
+      bonusDoCliente = getClienteBonusPercent({
         usaPrecoFixo: cli.usa_preco_fixo === true,
         is_bonus: cli.is_bonus === true,
         bonusAtivo: cli.is_bonus === true,
@@ -65,13 +71,17 @@ export async function calcularTotaisPelaRegraDaTela(
     }
   }
 
-  const { data: desconto } = await client
+  // O desconto geral e o bônus gravado na venda (TABELA_ESPECIAL) numa leitura só.
+  const { data: descontos } = await client
     .from("desconto_proposta")
-    .select("valor_percentual, valor_nominal")
+    .select("tipo_desconto, valor_percentual, valor_nominal")
     .eq("id_int", proposta.id_int)
-    .eq("tipo_desconto", "DESCONTO_GERAL")
-    .limit(1)
-    .maybeSingle<{ valor_percentual: number | null; valor_nominal: number | null }>();
+    .in("tipo_desconto", ["DESCONTO_GERAL", TIPO_DESCONTO_TABELA_ESPECIAL]);
+  const desconto = (descontos ?? []).find((d) => d.tipo_desconto === "DESCONTO_GERAL");
+  const bonusPercent = bonusDaProposta(
+    percentualGravado((descontos ?? []).find((d) => d.tipo_desconto === TIPO_DESCONTO_TABELA_ESPECIAL)),
+    bonusDoCliente
+  );
 
   const totais = totaisDaProposta({
     // O carregador sempre calculou pelos itens, sem olhar se a proposta é

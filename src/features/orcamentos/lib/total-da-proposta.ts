@@ -56,7 +56,10 @@ export type EntradaTotalDaProposta = {
   valorFrete: unknown;
   /** Linhas de `produtos_proposta` da proposta. */
   itens: readonly ItemParaTotal[];
-  /** Bônus do cliente, em pontos percentuais — ver `getClienteBonusPercent`. */
+  /**
+   * Bônus de tabela especial, em pontos percentuais — o da PROPOSTA: o gravado
+   * na linha TABELA_ESPECIAL e, sem ela, o do cliente. Ver `bonusDaProposta`.
+   */
   bonusPercent: number;
   /** `desconto_proposta` do tipo DESCONTO_GERAL, quando houver. */
   descontoGeral?: DescontoGeralParaTotal | null;

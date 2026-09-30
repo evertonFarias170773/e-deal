@@ -30,6 +30,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { valorFreteEfetivo, type ModalidadeFrete } from "@/features/orcamentos/lib/modalidade-frete";
 import { avaliarCoberturaFinanceira } from "@/features/cobrancas/services/cobertura-financeira-proposta";
+import { TIPO_DESCONTO_TABELA_ESPECIAL, percentualGravado } from "@/features/orcamentos/lib/bonus-da-proposta";
 
 /** Status em que a correção é oferecida. Ver `MOTIVO_FORA_DA_FAIXA`. */
 export const STATUS_CORRIGIVEIS = ["EXPEDICAO", "A RETIRAR"] as const;
@@ -353,12 +354,23 @@ export async function simularCorrecaoFrete(
 
   // ── Projeção ──────────────────────────────────────────────────────────────
 
-  const [{ data: itens }, { data: desconto }, { data: freteEscolhido }] = await Promise.all([
+  const [{ data: itens }, { data: desconto }, { data: linhaTabelaEspecial }, { data: freteEscolhido }] = await Promise.all([
     supabase.from("produtos_proposta").select("valor_sub_total, status_item").eq("id_int", idInt),
+    // O desconto da conta do `recalcular_proposta_v3`: qualquer linha que NAO
+    // seja o bonus gravado (TABELA_ESPECIAL). `.or` e nao `.neq`, porque `.neq`
+    // tambem descartaria as linhas legadas de tipo nulo — o `IS DISTINCT FROM`
+    // da v3.
     supabase
       .from("desconto_proposta")
       .select("valor_percentual, valor_nominal")
       .eq("id_int", idInt)
+      .or(`tipo_desconto.is.null,tipo_desconto.neq.${TIPO_DESCONTO_TABELA_ESPECIAL}`)
+      .maybeSingle(),
+    supabase
+      .from("desconto_proposta")
+      .select("valor_percentual")
+      .eq("id_int", idInt)
+      .eq("tipo_desconto", TIPO_DESCONTO_TABELA_ESPECIAL)
       .maybeSingle(),
     supabase
       .from("cotacao_frete")
@@ -376,11 +388,17 @@ export async function simularCorrecaoFrete(
    * R$ 85.000,00 para R$ 0,00. Duas das 17 propostas em EXPEDICAO sao avulsas.
    */
   const ehAvulsa = proposta.is_avulso === true;
-  const valorProdutos = ehAvulsa
+  const valorProdutosBruto = ehAvulsa
     ? Number(proposta.valor) || 0
     : (itens ?? [])
         .filter((i) => String((i as { status_item?: string | null }).status_item ?? "PENDENTE").toUpperCase() !== "CANCELADO")
         .reduce((soma, i) => soma + (Number((i as { valor_sub_total?: unknown }).valor_sub_total) || 0), 0);
+  // O bonus GRAVADO na venda sai dos produtos antes do desconto geral, como na
+  // v3 desde 01/10/2026 — e so fora da avulsa, que nao tem item. Sem a linha,
+  // nada muda.
+  const bonusGravado = ehAvulsa ? null : percentualGravado(linhaTabelaEspecial);
+  const valorProdutos =
+    bonusGravado && bonusGravado > 0 ? valorProdutosBruto - (valorProdutosBruto * bonusGravado) / 100 : valorProdutosBruto;
 
   const percentual = Number(desconto?.valor_percentual ?? 0);
   const nominal = Number(desconto?.valor_nominal ?? 0);
