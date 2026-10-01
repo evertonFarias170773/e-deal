@@ -4,10 +4,10 @@ import { createClient as createSupabaseClient, type SupabaseClient } from "@supa
 /**
  * Apoio comum das rotas /api/tarefas.
  *
- * As rotas gravam COM A SESSAO DO USUARIO (anon key + Bearer do usuario), nunca
- * com service role. Assim o RLS e a trigger `tarefas_equipe__guarda` valem aqui
- * exatamente como valeriam numa chamada direta — a rota so valida formato e
- * traduz a recusa do banco.
+ * Dados sempre COM A SESSAO DO USUARIO (anon key + Bearer): o RLS e a trigger
+ * `tarefas_equipe__guarda` valem aqui como numa chamada direta. A service role
+ * (`clienteServico`) so toca o bucket privado de anexos, e so depois de a
+ * sessao provar que o usuario enxerga a tarefa.
  */
 
 export function recusa(message: string, status: number, code: string) {
@@ -41,11 +41,22 @@ export async function abrirContexto(
   return { ok: true, ctx: { supabase, userId: data.user.id } };
 }
 
+/** Service role, SO para o bucket de anexos. Nunca para ler ou gravar tabelas. */
+export function clienteServico(): SupabaseClient | null {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !serviceKey) {
+    console.error("[api/tarefas] SUPABASE_SERVICE_ROLE_KEY ausente: anexos indisponíveis.");
+    return null;
+  }
+  return createSupabaseClient(url, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });
+}
+
 type ErroBanco = { code?: string; message?: string; details?: string } | null;
 
 /**
- * Traduz a recusa do banco. As mensagens da trigger ja vem em portugues
- * simples (P0001/42501 com texto proprio); o resto vira frase generica.
+ * Traduz a recusa do banco. As mensagens da trigger e da funcao de criacao ja
+ * vem em portugues simples; o resto vira frase generica.
  */
 export function respostaDoErroBanco(error: ErroBanco, contexto: string) {
   const code = error?.code ?? "";
@@ -58,19 +69,26 @@ export function respostaDoErroBanco(error: ErroBanco, contexto: string) {
     return recusa("Um dos vínculos informados não existe.", 400, "VINCULO_INEXISTENTE");
   }
   if (code === "23514") {
-    // Mensagens proprias da trigger (responsavel invalido) comecam com maiuscula e
-    // sem o nome da constraint; as de CHECK trazem "violates check constraint".
     if (!msg.includes("violates check constraint")) return recusa(msg, 400, "RECUSADO");
-    if (msg.includes("responsavel_chk")) return recusa("Escolha para quem é a tarefa.", 400, "SEM_RESPONSAVEL");
     if (msg.includes("titulo_chk")) return recusa("O título deve ter de 1 a 200 caracteres.", 400, "TITULO");
+    if (msg.includes("prioridade_chk")) return recusa("Prioridade inválida.", 400, "PRIORIDADE");
     return recusa("Algum campo está fora do limite permitido.", 400, "LIMITE");
   }
   if (code === "42501" || code === "P0001") {
-    // "permission denied for table" e a recusa de privilegio, nao da trigger.
     if (msg.startsWith("permission denied") || msg.includes("row-level security")) {
       return recusa("Você não tem permissão para esta ação.", 403, "SEM_PERMISSAO");
     }
     return recusa(msg, 403, "RECUSADO");
   }
-  return recusa("Não foi possível gravar a tarefa. Tente de novo.", 500, "ERRO_BANCO");
+  return recusa("Não foi possível gravar. Tente de novo.", 500, "ERRO_BANCO");
+}
+
+/** A sessao enxerga a tarefa? Devolve a situacao, ou null (inexistente ou sem acesso). */
+export async function tarefaVisivel(supabase: SupabaseClient, id: number) {
+  const { data, error } = await supabase.from("tarefas_equipe").select("id, status").eq("id", id).maybeSingle();
+  if (error) {
+    console.error("[api/tarefas] ler tarefa:", error.code, error.message);
+    return null;
+  }
+  return data as { id: number; status: string } | null;
 }

@@ -1,5 +1,10 @@
 import { cn } from "@/lib/utils";
-import { TAREFA_STATUS_ROTULO, type TarefaStatus } from "@/features/tarefas/types";
+import {
+  PRIORIDADE_ROTULO,
+  TAREFA_STATUS_ROTULO,
+  type TarefaPrioridade,
+  type TarefaStatus
+} from "@/features/tarefas/types";
 
 const COR_STATUS: Record<TarefaStatus, string> = {
   ABERTA: "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-900/30 dark:text-amber-300",
@@ -12,6 +17,32 @@ export function SituacaoBadge({ status }: { status: TarefaStatus }) {
   return (
     <span className={cn("inline-flex shrink-0 items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold", COR_STATUS[status])}>
       {TAREFA_STATUS_ROTULO[status]}
+    </span>
+  );
+}
+
+/** Normal nao ganha selo: so Alta e Urgente chamam atencao. */
+export function PrioridadeBadge({ prioridade }: { prioridade: TarefaPrioridade }) {
+  if (prioridade === "NORMAL") return null;
+  return (
+    <span
+      className={cn(
+        "inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide",
+        prioridade === "URGENTE" ? "bg-red-600 text-white" : "bg-amber-500 text-white"
+      )}
+    >
+      {PRIORIDADE_ROTULO[prioridade]}
+    </span>
+  );
+}
+
+export function NovaBadge() {
+  return (
+    <span
+      data-selo-nova
+      className="inline-flex shrink-0 animate-pulse items-center rounded-full bg-amber-600 px-2 py-0.5 text-[11px] font-bold text-white"
+    >
+      Nova
     </span>
   );
 }

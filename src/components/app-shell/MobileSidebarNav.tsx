@@ -353,7 +353,7 @@ export function MobileSidebarNav({ isOpen, onClose }: MobileSidebarNavProps) {
                   <span className="flex-1 text-sm font-semibold uppercase tracking-wide">
                     {section.label}
                   </span>
-                  <ContadorMenu valor={section.contador ? contadorTarefas : 0} />
+                  <ContadorMenu {...(section.contador ? contadorTarefas : { valor: 0, piscando: false })} />
                 </Link>
               );
               return (

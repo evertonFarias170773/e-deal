@@ -1,35 +1,41 @@
-# Tarefas da equipe e lista de melhorias — especificação
+# Tarefas da equipe — central única de pendências
 
-Data: 30/09/2026. Decisões do dono registradas na mesma data.
+Primeira versão em 30/09/2026 (commit eea6934). Etapa 1 da central única em
+01/10/2026. Decisões do dono registradas nas duas datas.
 
 ## Objetivo
 
-Uma pessoa abre uma tarefa para outra pessoa (ex.: o Financeiro pede ao
-vendedor a OC do cliente). Quem recebe assume, resolve e conclui. A diretoria
-usa a mesma tela para a lista de melhorias do sistema, destinada ao DEV.
-Prioridade: simplicidade para o usuário comum.
+Uma pessoa pede algo a uma ou mais pessoas da equipe (ou a todos). Quem
+recebe assume, resolve e conclui. A mesma tela guarda a lista de melhorias do
+sistema, da diretoria para o DEV. Prioridade: simplicidade para o usuário
+comum. A ferramenta vai substituir a Central de Pendências antiga
+(`propostas_pendencias`), o que acontece na etapa 2.
 
 ## Decisões
 
 | Tema | Decisão |
 |---|---|
-| Tabela | Nova, `public.tarefas_equipe`. `propostas_pendencias` vira legado, somente leitura depois da fase 2. |
-| Destino | Sempre uma pessoa. Sem setores nesta etapa. |
-| Prioridade | Não existe na fase 1. |
-| Melhorias | Mesma tela, `tipo = MELHORIA`, responsável opcional, criadas e vistas só por diretoria e admin, aba própria. |
-| Aviso | Contador no menu e na Topbar, toast em tempo real. Sem WhatsApp. |
+| Tabela | `public.tarefas_equipe`. `propostas_pendencias` vira legado na etapa 2. |
+| Destinatários | Uma ou mais pessoas, ou "todos". Todos os destinatários veem e qualquer um assume. Quem assume vira o responsável e conclui. |
+| Prioridade | Normal, Alta ou Urgente, escolhida ao criar. A lista ordena por prioridade e depois pela data. |
+| Anexos | PDF e imagem, até 10 MB cada, na criação, ao longo da tarefa e na conclusão. Bucket privado; download só por rota, com link assinado curto. |
+| Sinal de nova | Ícone da Topbar e item do menu piscam enquanto houver tarefa recebida e ainda não aberta. "Visto" é por usuário. |
+| Proposta | Botão "Nova tarefa" na proposta, com pedido e cliente preenchidos, e a área "Tarefas deste pedido". |
+| Melhorias | `tipo = MELHORIA`, sem destinatários, criadas e vistas só por admin; qualquer admin assume. |
+| Aviso | Contador e sinal no menu e na Topbar, toast em tempo real. Sem WhatsApp. |
 | Menu | Item próprio "Tarefas", fora do Financeiro. |
+| Fora desta etapa | Central de Pendências antiga e pendências criadas pelo sistema (etapa 2). |
 
 ## Quem é "admin"
 
 O mesmo critério da tela (`usuarios.service.ts`): com perfil ativo, o perfil
 decide (`*` ou `admin.usuarios.view`); sem perfil, `is_admin` ou
-`is_super_adm`. Em 30/09/2026 isso dá os perfis Super Administrador e
-Administrador — diretoria, DEV, Financeiro (Marielle) e Expedição (Celi).
-"Diretoria e admin" das melhorias é esse mesmo grupo.
+`is_super_adm`. São os perfis Super Administrador e Administrador. No banco:
+`tarefas_equipe__eh_admin(uuid)`.
 
-No banco o critério mora em `tarefas_equipe__eh_admin(uuid)`, SECURITY
-DEFINER, porque `usuarios` tem SELECT por coluna e `is_admin()` está quebrada.
+"Equipe" é quem tem perfil ativo com alguma permissão
+(`tarefas_equipe__eh_da_equipe(uuid)`). Fica de fora o perfil Acesso Pendente.
+Só a equipe cria tarefa, recebe tarefa e enxerga tarefa "para todos".
 
 ## Dados
 
@@ -41,26 +47,40 @@ DEFINER, porque `usuarios` tem SELECT por coluna e `is_admin()` está quebrada.
 | `tipo` | TAREFA (padrão) ou MELHORIA |
 | `titulo` | obrigatório, 1 a 200 caracteres |
 | `descricao` | opcional, até 5000 |
-| `responsavel_user_id` | obrigatório em TAREFA; opcional em MELHORIA; tem de ser usuário da equipe (perfil ativo com alguma permissão); em MELHORIA, se houver, tem de ser admin |
-| `id_int` | vínculo opcional a pedido (`propostas.id_int`), vira nulo se o pedido for apagado |
-| `id_cliente` | vínculo opcional a cliente, idem |
+| `prioridade` | NORMAL (padrão), ALTA, URGENTE |
+| `prioridade_ordem` | gerada: 3 urgente, 2 alta, 1 normal — só para ordenar |
+| `para_todos` | TAREFA para toda a equipe; MELHORIA nunca |
+| `responsavel_user_id` | vazio até alguém assumir; quem assume vira o responsável |
+| `id_int`, `id_cliente` | vínculo opcional a pedido e cliente; viram nulo se o pedido ou cliente for apagado |
 | `data_limite` | prazo opcional |
 | `status` | ABERTA, EM_ANDAMENTO, CONCLUIDA, CANCELADA |
 | `criado_por_user_id`, `created_at` | automáticos |
-| `assumido_por_user_id`, `assumido_at` | automáticos ao assumir |
-| `concluido_por_user_id`, `concluido_at`, `observacao_conclusao` | ao concluir; a observação é opcional, até 1000 |
-| `cancelado_por_user_id`, `cancelado_at` | ao cancelar |
-| `updated_at` | automático |
+| `assumido_*`, `concluido_*`, `observacao_conclusao`, `cancelado_*` | preenchidos pela trigger |
 
-Título, descrição, prazo, vínculos, tipo e criador não mudam depois de criados
-nesta fase. Não há edição, só mudança de situação.
+`public.tarefas_equipe_destinatarios` — (`tarefa_id`, `user_id`). Uma linha
+por pessoa escolhida. Tarefa "para todos" não tem linhas aqui.
+
+`public.tarefas_equipe_anexos` — `tarefa_id`, `momento` (CRIACAO, ANDAMENTO,
+CONCLUSAO), `nome_arquivo`, `caminho` (no bucket, sempre
+`tarefa/<id>/<uuid>.<ext>`), `tipo_mime`, `tamanho_bytes`,
+`enviado_por_user_id`, `created_at`.
+
+`public.tarefas_equipe_vistos` — (`tarefa_id`, `user_id`, `visto_em`). Gravado
+quando a pessoa abre a tarefa.
+
+Bucket `tarefas-anexos`: privado, limite de 10 MB por arquivo, tipos PDF, PNG,
+JPEG, WEBP e GIF. Nenhuma policy em `storage.objects` para ele: só a service
+role, dentro das rotas, lê e grava.
+
+Título, descrição, prioridade, destinatários, prazo, vínculos, tipo e criador
+não mudam depois de criados nesta etapa.
 
 ## Situações
 
 ```
 ABERTA ──assumir──> EM_ANDAMENTO ──concluir──> CONCLUIDA
   │                     │
-  ├──concluir───────────┘ (concluir direto também vale)
+  ├──concluir───────────┘ (destinatário que conclui direto também assume)
   └──cancelar──> CANCELADA  (de ABERTA ou EM_ANDAMENTO)
 ```
 
@@ -68,105 +88,103 @@ CONCLUIDA e CANCELADA são finais. Não há reabertura.
 
 ## Quem vê e faz o quê
 
+"Recebedor" = destinatário escolhido, ou qualquer pessoa da equipe numa tarefa
+para todos.
+
 | Ação | Quem |
 |---|---|
-| Ver uma TAREFA | quem criou, quem recebeu, admin |
+| Ver uma TAREFA, seus destinatários e anexos | quem criou, recebedores, o responsável, admin |
 | Ver uma MELHORIA | admin |
-| Criar TAREFA | qualquer usuário logado |
+| Criar TAREFA | equipe |
 | Criar MELHORIA | admin |
-| Assumir, concluir | quem recebeu, ou admin. Admin que assume uma melhoria sem responsável vira o responsável. |
-| Cancelar | quem criou, ou admin |
-| Apagar | ninguém |
+| Assumir | recebedor ou admin (quem assume vira o responsável); na melhoria, admin |
+| Concluir | o responsável ou admin; recebedor que conclui direto da ABERTA assume junto |
+| Cancelar | quem criou ou admin |
+| Anexar | quem vê, enquanto a tarefa está aberta ou em andamento |
+| Baixar anexo | quem vê a tarefa |
+| Apagar tarefa, destinatário, anexo ou visto | ninguém |
 
 A regra está no banco, em três camadas:
 
-1. **RLS** decide quais linhas cada um vê, cria e altera.
-2. **Trigger `tarefas_equipe__guarda`** (BEFORE INSERT/UPDATE) decide a
-   transição e quem pode fazê-la, preenche autor e horário pelo `auth.uid()`
-   (ignora o que o cliente mandar) e trava os campos imutáveis.
-3. **Privilégios**: `anon` sem nenhum acesso; `authenticated` sem DELETE,
-   TRUNCATE, REFERENCES e TRIGGER. TRUNCATE ignora RLS, por isso sai.
+1. **RLS** decide quais linhas cada um vê e altera.
+2. **Trigger `tarefas_equipe__guarda`** decide a transição e quem pode,
+   preenche autor, responsável e horários pelo `auth.uid()` e trava os campos
+   imutáveis.
+3. **Privilégios**: `anon` sem nada; `authenticated` sem DELETE e TRUNCATE.
 
-As rotas da aplicação gravam com a sessão do usuário (não com service role),
-então as três camadas valem para elas também.
+A criação passa pela função `tarefas_equipe_criar`, que grava a tarefa e os
+destinatários na mesma transação. Não há policy de INSERT direto em
+`tarefas_equipe` nem em `tarefas_equipe_destinatarios`.
 
 ## Rotas
 
-- `POST /api/tarefas` — cria. Corpo: `tipo`, `titulo`, `descricao`,
-  `responsavel_user_id`, `id_int`, `id_cliente`, `data_limite`.
-- `POST /api/tarefas/[id]/situacao` — corpo `acao`: `assumir`, `concluir`
-  (com `observacao` opcional) ou `cancelar`.
+Todas exigem a sessão do usuário. Leitura e gravação de dados usam a sessão
+(RLS vale). A service role só toca o bucket, e só depois de a sessão provar
+que o usuário vê a tarefa.
 
-As duas validam formato e traduzem a recusa do banco para uma frase simples.
-A leitura é direta pelo cliente Supabase, filtrada pelo RLS.
+- `POST /api/tarefas` — cria (chama `tarefas_equipe_criar`).
+- `POST /api/tarefas/[id]/situacao` — `assumir`, `concluir`, `cancelar`.
+- `POST /api/tarefas/[id]/anexos/preparar` — confere acesso e situação, valida
+  tipo e tamanho e devolve um link de envio assinado. O arquivo vai do
+  navegador direto para o bucket (a Vercel não aceita corpo de 10 MB).
+- `POST /api/tarefas/[id]/anexos` — confere que o arquivo chegou, lê tamanho e
+  tipo reais do storage e grava a linha do anexo com a sessão. Se a linha não
+  grava, o arquivo é removido.
+- `GET /api/tarefas/anexos/[anexoId]` — se a sessão enxerga o anexo, devolve
+  link assinado de 60 segundos.
 
-## Tela `/tarefas`
+## Telas
 
-Cabeçalho "Tarefas" com o botão **Nova tarefa** (ou **Nova melhoria** na aba
-Melhorias). Abas:
+**Tarefas** (`/tarefas`). Abas:
 
 | Aba | Conteúdo | Quem vê a aba |
 |---|---|---|
-| Minhas | TAREFA com responsável = eu | todos |
+| Minhas | assumidas por mim, ou recebidas por mim e ainda sem responsável | todos |
 | Criadas por mim | TAREFA criada por mim | todos |
 | Todas | toda TAREFA | admin |
 | Melhorias | toda MELHORIA | admin |
 
-Em cada aba, um seletor "Em aberto / Encerradas". Aba e seletor ficam na URL.
+Seletor "Em aberto / Encerradas". Ordem: prioridade, depois data (mais antiga
+primeiro em aberto, mais recente primeiro nas encerradas). Linha mostra
+prioridade, título, para quem, quem pediu, prazo, vínculos, situação e o
+selo "Nova" se eu ainda não abri. Botão principal: Assumir (ABERTA) ou
+Concluir (sou o responsável). Clicar abre o detalhe, que marca como vista:
+descrição, destinatários, anexos com download, histórico, Adicionar anexo,
+Cancelar.
 
-Cada linha mostra título, para quem, quem pediu, prazo (vermelho se vencido),
-pedido/cliente vinculado e a situação. Um botão principal muda com o momento:
-**Assumir** em ABERTA, **Concluir** em EM_ANDAMENTO, só aparece para quem pode.
-Clicar na linha abre o detalhe: descrição, vínculos, histórico (criada, assumida,
-concluída ou cancelada, por quem e quando) e os botões permitidos, inclusive
-**Cancelar** para quem criou.
+**Nova tarefa**: o que precisa ser feito, prioridade, para quem (pessoas
+marcadas numa lista com busca, ou "Todos"), detalhes, pedido, cliente, prazo e
+anexos. Obrigatórios: título e destinatários.
 
-**Nova tarefa**: título, para quem (lista de pessoas da equipe), descrição,
-número do pedido, código do cliente e prazo. Só título e "para quem" são
-obrigatórios. Na melhoria, "para quem" é opcional e lista só admins.
+**Proposta**: acima das abas, a área "Tarefas deste pedido" lista as tarefas
+com o `id_int` da proposta (as que o usuário pode ver) e tem o botão "Nova
+tarefa", que abre o mesmo formulário com pedido e cliente preenchidos.
 
 ## Aviso
 
-- Contador = minhas tarefas em ABERTA ou EM_ANDAMENTO (TAREFA e MELHORIA com
-  responsável = eu).
-- Aparece no item "Tarefas" do menu (desktop, trilho recolhido e celular) e no
-  ícone da Topbar, que passa a apontar para `/tarefas`.
-- Um provedor único (`TarefasProvider`) conta, escuta `tarefas_equipe` em tempo
-  real e mostra o toast: nova tarefa para mim; minha tarefa assumida, concluída
-  ou cancelada por outra pessoa. O realtime respeita o RLS, então ninguém
-  recebe evento de tarefa que não pode ver.
-- A tabela entra na publicação `supabase_realtime` na mesma migration.
+- Contador = minhas tarefas em aberto (mesma regra da aba Minhas, só ABERTA e
+  EM_ANDAMENTO).
+- Sinal piscando = existe tarefa recebida por mim, criada por outra pessoa,
+  ABERTA ou EM_ANDAMENTO, sem linha minha em `tarefas_equipe_vistos`.
+- Os dois números vêm de `tarefas_equipe_resumo()` (SECURITY INVOKER, então o
+  RLS vale).
+- O toast de "nova tarefa" sai para recebedores; admin que só enxerga a tarefa
+  por ser admin não recebe toast.
 
 ## Legado
 
-- `propostas_pendencias` continua como está nesta entrega: tela
-  `/pendencias` no Financeiro, aba no chat da proposta e criação automática do
-  pagamento combinado.
-- A Topbar deixa de mostrar o contador das pendências antigas e passa a mostrar
-  o de tarefas. O canal de tempo real das pendências segue, para a tela antiga
-  e seus toasts.
-- Fase 2 (fora desta entrega): criar tarefa de dentro do pedido, pagamento
-  combinado grava em `tarefas_equipe`, `/pendencias` sai do menu e fica só
-  leitura.
+`propostas_pendencias`, a tela `/pendencias`, a aba no chat da proposta e a
+criação automática do pagamento combinado seguem intactos até a etapa 2.
 
-## Fases
+## Validação da etapa 1
 
-| Fase | Entrega | Situação |
-|---|---|---|
-| 1 | Tabela, RLS, trigger, rotas, tela, menu, contador, toasts | esta entrega |
-| 2 | Ligação com pedido e pagamento combinado, legado só leitura | pendente |
-| 3 | Aba Melhorias (tipo MELHORIA) | esta entrega |
-| 4 | Limpeza e arquivamento do legado | pendente |
+Dados gravados de verdade (autorizado) e apagados no fim:
 
-## Validação
+1. de dentro de uma proposta, tarefa URGENTE para duas pessoas com PDF;
+2. sinal piscando para as duas até cada uma abrir;
+3. uma delas assume e conclui com anexo;
+4. terceiro usuário sem acesso à tarefa e ao anexo;
+5. tarefa para todos vista por qualquer usuário da equipe.
 
-Tudo o que grava roda em transação desfeita no fim (DO-block com RAISE), com
-usuários reais simulados por `request.jwt.claims`:
-
-1. usuário comum A cria tarefa para B; B assume e conclui; A vê CONCLUIDA;
-2. usuário comum C não vê a tarefa e não consegue alterá-la;
-3. admin cria melhoria; usuário comum não vê;
-4. recusas: C tenta assumir, A tenta concluir, B tenta cancelar, comum tenta
-   criar melhoria, ninguém apaga.
-
-ACL e policies conferidos com `array_agg(grantee)`, sem `anon`.
+ACL e policies das tabelas novas e do bucket conferidos com
+`array_agg(grantee)`: sem `anon`, bucket não público.

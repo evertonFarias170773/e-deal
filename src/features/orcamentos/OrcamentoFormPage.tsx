@@ -109,6 +109,7 @@ import {
 } from "@/features/cadastros/components/DocumentoRecebedorFields";
 import { DiferencaFinanceiraModal } from "@/features/orcamentos/components/DiferencaFinanceiraModal";
 import { FreteComplementarCard } from "@/features/orcamentos/components/FreteComplementarCard";
+import { TarefasDoPedido } from "@/features/tarefas/components/TarefasDoPedido";
 import { SocioPagadorInline, type SocioConfirmado } from "@/features/orcamentos/components/SocioPagadorInline";
 import type { AcaoFinanceiraDiferenca } from "@/features/cobrancas/types";
 import {
@@ -5404,6 +5405,11 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
             )}
           </div>
       )}
+
+      {/* Tarefas da equipe ligadas a este pedido (spec 2026-09-30-tarefas-equipe-design.md). */}
+      {proposta?.id_int && form.id_int !== "NOVO" ? (
+        <TarefasDoPedido idInt={proposta.id_int} idCliente={proposta.cliente?.idCliente ?? null} />
+      ) : null}
 
       <div className="sticky top-4 z-[45] mb-6 flex w-full justify-start gap-3 overflow-x-auto rounded-3xl border border-slate-200 bg-white/95 px-4 py-3 shadow-lg backdrop-blur hide-scrollbar">
           {[

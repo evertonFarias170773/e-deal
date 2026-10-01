@@ -90,7 +90,8 @@ export function SidebarNav({ isCollapsed, onToggleCollapse }: SidebarNavProps) {
   const router = useRouter();
   const { user } = useAuth();
   const contadorTarefas = useContadorSecao("tarefas");
-  const contadorDe = (section: NavigationSection) => (section.contador ? contadorTarefas : 0);
+  const contadorDe = (section: NavigationSection) =>
+    section.contador ? contadorTarefas : { valor: 0, piscando: false };
 
   const activeHref = resolveActiveHref(pathname);
 
@@ -282,7 +283,7 @@ export function SidebarNav({ isCollapsed, onToggleCollapse }: SidebarNavProps) {
     active: boolean,
     onClick: () => void,
     onMouseEnter?: () => void,
-    contador = 0
+    contador: { valor: number; piscando: boolean } = { valor: 0, piscando: false }
   ) => (
     <button
       key={key}
@@ -307,7 +308,7 @@ export function SidebarNav({ isCollapsed, onToggleCollapse }: SidebarNavProps) {
         className="h-5 w-5"
         style={{ color: active ? "var(--sidebar-icon-active)" : "var(--sidebar-icon)" }}
       />
-      <ContadorMenu valor={contador} flutuante />
+      <ContadorMenu {...contador} flutuante />
     </button>
   );
 
@@ -499,7 +500,7 @@ export function SidebarNav({ isCollapsed, onToggleCollapse }: SidebarNavProps) {
                   <span className="flex-1 text-sm font-semibold uppercase tracking-wide">
                     {section.label}
                   </span>
-                  <ContadorMenu valor={contadorDe(section)} />
+                  <ContadorMenu {...contadorDe(section)} />
                 </Link>
               );
               return (

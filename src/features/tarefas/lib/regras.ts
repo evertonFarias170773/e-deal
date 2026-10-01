@@ -7,16 +7,30 @@ import type { Tarefa } from "@/features/tarefas/types";
 
 const ativa = (t: Tarefa) => t.status === "ABERTA" || t.status === "EM_ANDAMENTO";
 
+/** Recebi a tarefa: sou destinatario escolhido, ou ela e para todos. */
+export function recebida(t: Tarefa, userId: string) {
+  return t.tipo === "TAREFA" && (t.para_todos || t.destinatarios.includes(userId));
+}
+
 export function podeAssumir(t: Tarefa, userId: string, admin: boolean) {
-  return t.status === "ABERTA" && (admin || t.responsavel_user_id === userId);
+  return t.status === "ABERTA" && (admin || recebida(t, userId));
 }
 
 export function podeConcluir(t: Tarefa, userId: string, admin: boolean) {
-  return ativa(t) && (admin || t.responsavel_user_id === userId);
+  return t.status === "EM_ANDAMENTO" && (admin || t.responsavel_user_id === userId);
 }
 
 export function podeCancelar(t: Tarefa, userId: string, admin: boolean) {
   return ativa(t) && (admin || t.criado_por_user_id === userId);
+}
+
+export function podeAnexar(t: Tarefa) {
+  return ativa(t);
+}
+
+/** Selo "Nova": recebida por mim, criada por outra pessoa, ativa e ainda nao aberta. */
+export function ehNovaParaMim(t: Tarefa, userId: string, vistas: Set<number>) {
+  return ativa(t) && recebida(t, userId) && t.criado_por_user_id !== userId && !vistas.has(t.id);
 }
 
 /** "AAAA-MM-DD" (prazo) ou timestamp ISO → "dd/mm/aaaa". */
@@ -45,4 +59,14 @@ function hojeISO() {
 
 export function prazoVencido(t: Tarefa) {
   return Boolean(t.data_limite) && ativa(t) && (t.data_limite as string) < hojeISO();
+}
+
+/** "Para Ana, Bruno e mais 2" / "Para todos" / "Sem responsável". */
+export function descreverDestino(t: Tarefa, nome: (id: string | null) => string) {
+  if (t.responsavel_user_id) return `Com ${nome(t.responsavel_user_id)}`;
+  if (t.para_todos) return "Para todos";
+  if (t.destinatarios.length === 0) return "Sem responsável";
+  const nomes = t.destinatarios.map((d) => nome(d));
+  if (nomes.length <= 2) return `Para ${nomes.join(" e ")}`;
+  return `Para ${nomes.slice(0, 2).join(", ")} e mais ${nomes.length - 2}`;
 }

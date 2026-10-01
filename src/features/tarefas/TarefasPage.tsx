@@ -12,6 +12,7 @@ import { EmptyState } from "@/components/common/EmptyState";
 import { cn } from "@/lib/utils";
 import { useTarefas } from "@/features/tarefas/TarefasProvider";
 import {
+  idsVistos,
   listarTarefas,
   mapaNomesUsuarios,
   mudarSituacaoTarefa,
@@ -19,10 +20,17 @@ import {
   type SituacaoFiltro
 } from "@/features/tarefas/services/tarefas.service";
 import type { Tarefa } from "@/features/tarefas/types";
-import { SituacaoBadge } from "@/features/tarefas/components/SituacaoBadge";
+import { NovaBadge, PrioridadeBadge, SituacaoBadge } from "@/features/tarefas/components/SituacaoBadge";
 import { NovaTarefaModal } from "@/features/tarefas/components/NovaTarefaModal";
 import { TarefaDetalheModal } from "@/features/tarefas/components/TarefaDetalheModal";
-import { podeAssumir, podeConcluir, dataBR, prazoVencido } from "@/features/tarefas/lib/regras";
+import {
+  podeAssumir,
+  podeConcluir,
+  dataBR,
+  prazoVencido,
+  descreverDestino,
+  ehNovaParaMim
+} from "@/features/tarefas/lib/regras";
 
 const ABAS = ["minhas", "criadas", "todas", "melhorias"] as const;
 const SITUACOES = ["abertas", "encerradas"] as const;
@@ -54,6 +62,7 @@ export function TarefasPage() {
   const situacao = filters.sit;
 
   const [tarefas, setTarefas] = useState<Tarefa[]>([]);
+  const [vistas, setVistas] = useState<Set<number>>(new Set());
   const [nomes, setNomes] = useState<Map<string, string>>(new Map());
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
@@ -75,9 +84,11 @@ export function TarefasPage() {
     let vivo = true;
     Promise.resolve().then(() => vivo && setCarregando(true));
     listarTarefas({ aba, situacao, userId })
-      .then((lista) => {
+      .then(async (lista) => {
+        const jaVistas = await idsVistos(userId, lista.map((t) => t.id));
         if (!vivo) return;
         setTarefas(lista);
+        setVistas(jaVistas);
         setErro(null);
       })
       .catch((e: unknown) => vivo && setErro(e instanceof Error ? e.message : String(e)))
@@ -196,6 +207,7 @@ export function TarefasPage() {
             return (
               <li
                 key={t.id}
+                data-tarefa-id={t.id}
                 className="flex flex-col gap-3 rounded-2xl border p-4 shadow-sm transition sm:flex-row sm:items-center"
                 style={{ background: "var(--card)", borderColor: "var(--border)" }}
               >
@@ -206,15 +218,17 @@ export function TarefasPage() {
                   aria-label={`Abrir tarefa ${t.titulo}`}
                 >
                   <div className="flex flex-wrap items-center gap-2">
+                    <PrioridadeBadge prioridade={t.prioridade} />
                     <span className="truncate text-sm font-semibold" style={{ color: "var(--foreground)" }}>
                       {t.titulo}
                     </span>
                     <SituacaoBadge status={t.status} />
+                    {ehNovaParaMim(t, userId, vistas) ? <NovaBadge /> : null}
                   </div>
                   <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-xs" style={{ color: "var(--muted)" }}>
                     <span className="inline-flex items-center gap-1">
                       <UserRound className="h-3.5 w-3.5" />
-                      {t.responsavel_user_id ? `Para ${nome(t.responsavel_user_id)}` : "Sem responsável"}
+                      {descreverDestino(t, nome)}
                     </span>
                     <span>Pedida por {nome(t.criado_por_user_id)} em {dataBR(t.created_at)}</span>
                     {t.data_limite ? (

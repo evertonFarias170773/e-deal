@@ -4,25 +4,26 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, ty
 import { useAuth } from "@/features/auth/AuthProvider";
 import { useAppToast } from "@/components/common/AppToast";
 import { getSupabaseClient } from "@/lib/supabase/client";
-import { contarMinhasTarefasAtivas, mapaNomesUsuarios } from "@/features/tarefas/services/tarefas.service";
+import { mapaNomesUsuarios, resumoTarefas, souDestinatario } from "@/features/tarefas/services/tarefas.service";
 import type { Tarefa } from "@/features/tarefas/types";
 
 /**
  * Ponto unico do aviso de tarefas (spec 2026-09-30-tarefas-equipe-design.md).
  *
- * - `contagem`: minhas tarefas ABERTA ou EM_ANDAMENTO. Aparece no menu e na Topbar.
- * - `versao`: sobe a cada evento de tempo real; a tela /tarefas recarrega quando muda.
- * - Um canal de tempo real so, aqui. O realtime aplica o RLS de quem escuta:
- *   ninguem recebe evento de tarefa que nao pode ver.
+ * - `contagem`: minhas tarefas em aberto (assumidas por mim, ou recebidas e sem responsavel).
+ * - `naoVistas`: recebidas por mim que ainda nao abri. > 0 faz o menu e a Topbar piscarem.
+ * - `versao`: sobe a cada evento de tempo real; as telas recarregam quando muda.
+ * - Um canal de tempo real so. O realtime aplica o RLS de quem escuta.
  */
 
 type TarefasContexto = {
   contagem: number;
+  naoVistas: number;
   versao: number;
   recarregar: () => void;
 };
 
-const Contexto = createContext<TarefasContexto>({ contagem: 0, versao: 0, recarregar: () => {} });
+const Contexto = createContext<TarefasContexto>({ contagem: 0, naoVistas: 0, versao: 0, recarregar: () => {} });
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -31,12 +32,15 @@ export function TarefasProvider({ children }: { children: ReactNode }) {
   const { showToast } = useAppToast();
   const userId = user?.id && UUID_RE.test(user.id) ? user.id : null;
   const [contagem, setContagem] = useState(0);
+  const [naoVistas, setNaoVistas] = useState(0);
   const [versao, setVersao] = useState(0);
   const nomesRef = useRef<Map<string, string> | null>(null);
 
   const contar = useCallback(async () => {
     if (!userId) return;
-    setContagem(await contarMinhasTarefasAtivas(userId));
+    const r = await resumoTarefas();
+    setContagem(r.minhas);
+    setNaoVistas(r.naoVistas);
   }, [userId]);
 
   const recarregar = useCallback(() => {
@@ -72,19 +76,26 @@ export function TarefasProvider({ children }: { children: ReactNode }) {
         setVersao((v) => v + 1);
 
         const t = payload.new as Partial<Tarefa> | null;
-        if (!t || !t.titulo) return;
+        if (!t || !t.titulo || !t.id) return;
 
         if (payload.eventType === "INSERT") {
-          if (t.responsavel_user_id === userId && t.criado_por_user_id !== userId) {
-            void nomeDe(t.criado_por_user_id ?? null).then((nome) =>
-              showToast({
-                type: "info",
-                title: "Nova tarefa para você",
-                description: `${nome} pediu: "${t.titulo}".`,
-                onClick: irParaTarefas
-              })
-            );
-          }
+          if (t.criado_por_user_id === userId || t.tipo !== "TAREFA") return;
+          // Admin enxerga tudo; toast so para quem recebeu.
+          const avisar = async () => {
+            const minha = t.para_todos || (await souDestinatario(t.id as number, userId));
+            if (!minha) return;
+            const nome = await nomeDe(t.criado_por_user_id ?? null);
+            const urgente = t.prioridade === "URGENTE" ? "URGENTE: " : "";
+            showToast({
+              type: t.prioridade === "URGENTE" ? "warning" : "info",
+              title: t.para_todos ? "Nova tarefa para todos" : "Nova tarefa para você",
+              description: `${urgente}${nome} pediu: "${t.titulo}".`,
+              // Aviso de tarefa nova fica mais que o padrao (2,6 s) para dar tempo de ler.
+              duration: 8000,
+              onClick: irParaTarefas
+            });
+          };
+          void avisar();
           return;
         }
         if (payload.eventType !== "UPDATE") return;
@@ -119,7 +130,7 @@ export function TarefasProvider({ children }: { children: ReactNode }) {
     };
   }, [userId, contar, nomeDe, showToast]);
 
-  return <Contexto.Provider value={{ contagem, versao, recarregar }}>{children}</Contexto.Provider>;
+  return <Contexto.Provider value={{ contagem, naoVistas, versao, recarregar }}>{children}</Contexto.Provider>;
 }
 
 export function useTarefas() {

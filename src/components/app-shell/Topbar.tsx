@@ -26,7 +26,7 @@ export function Topbar({ onOpenMenu }: TopbarProps) {
   const { showToast } = useAppToast();
   const [unreadCount, setUnreadCount] = useState(0);
   // Contador de TAREFAS (30/09/2026): substitui o das pendencias antigas.
-  const { contagem: tarefasAtivas } = useTarefas();
+  const { contagem: tarefasAtivas, naoVistas: tarefasNaoVistas } = useTarefas();
 
   // Notification popover states
   const [isPopoverOpen, setIsPopoverOpen] = useState(false);
@@ -281,18 +281,33 @@ export function Topbar({ onOpenMenu }: TopbarProps) {
           {user && (
             <Link
               href="/tarefas"
-              className="rounded-xl p-2.5 shadow-sm transition relative block"
+              data-tarefas-piscando={tarefasNaoVistas > 0 ? "sim" : "nao"}
+              className={`rounded-xl p-2.5 shadow-sm transition relative block ${
+                tarefasNaoVistas > 0 ? "animate-pulse ring-2 ring-amber-400" : ""
+              }`}
               style={{
                 background: "var(--card)",
                 border: "1px solid var(--border)",
                 color: "var(--primary)"
               }}
-              title={tarefasAtivas > 0 ? `Você tem ${tarefasAtivas} tarefa(s) em aberto` : "Sem tarefas em aberto"}
-              aria-label={tarefasAtivas > 0 ? `Você tem ${tarefasAtivas} tarefa(s) em aberto` : "Sem tarefas em aberto"}
+              title={
+                tarefasNaoVistas > 0
+                  ? `Você tem ${tarefasNaoVistas} tarefa(s) nova(s) para abrir`
+                  : tarefasAtivas > 0
+                    ? `Você tem ${tarefasAtivas} tarefa(s) em aberto`
+                    : "Sem tarefas em aberto"
+              }
+              aria-label={
+                tarefasNaoVistas > 0
+                  ? `Você tem ${tarefasNaoVistas} tarefa(s) nova(s) para abrir`
+                  : tarefasAtivas > 0
+                    ? `Você tem ${tarefasAtivas} tarefa(s) em aberto`
+                    : "Sem tarefas em aberto"
+              }
             >
               <ListTodo className="h-5 w-5" />
               {tarefasAtivas > 0 && (
-                <span className="absolute -top-1 -right-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-amber-600 px-1 text-[10px] font-bold text-white animate-pulse">
+                <span className="absolute -top-1 -right-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-amber-600 px-1 text-[10px] font-bold text-white">
                   {tarefasAtivas > 99 ? "99+" : tarefasAtivas}
                 </span>
               )}

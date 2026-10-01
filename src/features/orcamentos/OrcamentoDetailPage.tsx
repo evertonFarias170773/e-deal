@@ -33,6 +33,7 @@ import {
 } from "@/features/orcamentos/services/orcamentos.service";
 import { useGlobalChat } from "@/features/chat/context/GlobalChatContext";
 import { CancelPropostaModal } from "@/features/orcamentos/components/CancelPropostaModal";
+import { TarefasDoPedido } from "@/features/tarefas/components/TarefasDoPedido";
 
 type OrcamentoDetailPageProps = {
   idInt: number;
@@ -393,6 +394,9 @@ export function OrcamentoDetailPage({ idInt }: OrcamentoDetailPageProps) {
           icon={CreditCard}
         />
       </section>
+
+      {/* Tarefas da equipe ligadas a este pedido (spec 2026-09-30-tarefas-equipe-design.md). */}
+      <TarefasDoPedido idInt={idInt} idCliente={proposta.cliente?.idCliente ? Number(proposta.cliente.idCliente) : null} />
 
       <section className="rounded-3xl border border-[#d7e5e8] bg-white p-2 shadow-sm">
         <div className="flex gap-2 overflow-x-auto">
