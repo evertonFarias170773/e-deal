@@ -35,6 +35,14 @@ import { resolverUrlPdfBoleto } from "@/lib/boletos/pdf-url";
 import { RevisarGeracaoBancariaModal } from "./components/RevisarGeracaoBancariaModal";
 import { useCobrancas } from "@/features/cobrancas/CobrancasProvider";
 import { resolverCobrancaDoTitulo } from "@/features/cobrancas/services/cobranca-do-titulo";
+import {
+  EMPRESA_BIRO,
+  MARCA_SUBSTITUIDO,
+  motivoDeNaoRefazer,
+  refazerBoletoC6,
+  type LinhaBoleto
+} from "./services/refazer-boleto";
+import type { SupabaseBoletoRow } from "./types.supabase";
 
 type ActiveTab = "CARTEIRA" | "BOLETOS" | "DEPOSITOS" | "CARTOES" | "PREVISAO";
 type TipoFilter = "TODOS" | "BOLETO" | "DEPOSITO" | "CARTAO";
@@ -48,6 +56,29 @@ const FORMAS_RECEBIMENTO: Array<{ value: FormaRecebimento; label: string }> = [
   { value: "BONIFICADO", label: "Bonificado" },
   { value: "OUTROS", label: "Outros" }
 ];
+
+/** O que a janela do "Refazer boleto" mostra: o título relido e o pagador do cadastro. */
+type DadosDoRefazer = {
+  linha: LinhaBoleto;
+  pagador: { nome: string; documento: string; email: string; emailDoCadastro: boolean; endereco: string };
+};
+
+/**
+ * "Refazer boleto" aparece para boleto do C6 registrado e em aberto. A parcela
+ * vencida também mostra a ação: o clique explica por que não pode
+ * (`motivoDeNaoRefazer`). Ideal Birô (Inter) fica de fora.
+ */
+function ofereceRefazer(item: BoletoDepositoMock) {
+  return (
+    item.tipo === "BOLETO" &&
+    !item.deposito_conta &&
+    Boolean(item.id_boleto_c6) &&
+    item.status !== "PAID" &&
+    item.status !== "CANCELADO" &&
+    !item.paid_at &&
+    Number(item.id_empresa) !== EMPRESA_BIRO
+  );
+}
 
 // Ações de ciclo de vida do título (aba Boletos/Depósitos): agrupadas em um único
 // prop para não multiplicar callbacks no encadeamento até BoletoActions.
@@ -200,8 +231,16 @@ export function ContasReceberPage() {
   // Transformar depósito -> boleto
   const [transformTarget, setTransformTarget] = useState<BoletoDepositoMock | null>(null);
   const [isTransforming, setIsTransforming] = useState(false);
-  const [deletingBoletoId, setDeletingBoletoId] = useState<string | null>(null);
-  const [confirmDeleteBoleto, setConfirmDeleteBoleto] = useState<BoletoDepositoMock | null>(null);
+
+  // Refazer boleto (C6): troca só o boleto; o recebível e a cobrança ficam.
+  const [refazerTarget, setRefazerTarget] = useState<BoletoDepositoMock | null>(null);
+  const [refazerDados, setRefazerDados] = useState<DadosDoRefazer | null>(null);
+  const [refazerErroCadastro, setRefazerErroCadastro] = useState<string | null>(null);
+  const [refazerNf, setRefazerNf] = useState("");
+  const [refazerDescricao, setRefazerDescricao] = useState("");
+  const [refazerVenc, setRefazerVenc] = useState("");
+  const [refazerMotivo, setRefazerMotivo] = useState("");
+  const [isRefazendo, setIsRefazendo] = useState(false);
 
   // States for C6 manual query integration
   const [selectedBoletoForC6Query, setSelectedBoletoForC6Query] = useState<BoletoDepositoMock | null>(null);
@@ -815,48 +854,212 @@ export function ContasReceberPage() {
     window.open(getResolvedPdfUrl(url), "_blank");
   }
 
-  async function handleDeleteBoletoFromBank(boleto: BoletoDepositoMock) {
-    if (!boleto.id_boleto_c6) return;
-    setDeletingBoletoId(boleto.id);
-    try {
-      const { deleteBoletoFromBankViaN8n } = await import("@/features/nfe/services/nfe.service");
-      await deleteBoletoFromBankViaN8n(boleto.id, String(boleto.id_boleto_c6), Number(boleto.id_empresa || 1));
-      
-      const { getSupabaseClient } = await import("@/lib/supabase/client");
-      const client = getSupabaseClient();
-      if (client) {
-        // Fallback update no Supabase local por segurança: marcar como CANCELADO mas manter histórico do C6
-        const { error: updateError } = await client
-          .from("boletos")
-          .update({
-            status: "CANCELADO"
-          })
-          .eq("id", boleto.id);
+  function fecharRefazer() {
+    setRefazerTarget(null);
+    setRefazerDados(null);
+    setRefazerErroCadastro(null);
+    setRefazerMotivo("");
+  }
 
-        if (updateError) {
-          console.error("[ContasReceberPage] failed fallback update for delete:", updateError);
+  /**
+   * Abre a janela do "Refazer boleto": relê o título e monta o pagador a partir
+   * do CADASTRO, com as mesmas regras do registro. Pendência de cadastro aparece
+   * aqui, antes de qualquer chamada ao banco — descoberta só no registro, ela
+   * deixaria o título sem boleto.
+   */
+  async function abrirRefazer(item: BoletoDepositoMock) {
+    const impedimento = motivoDeNaoRefazer(item as unknown as Record<string, unknown>, today);
+    if (impedimento) {
+      showToast({ type: "warning", title: impedimento });
+      return;
+    }
+    const client = getSupabaseClient();
+    if (!client) {
+      showToast({ type: "error", title: "Sistema indisponível no momento." });
+      return;
+    }
+
+    setRefazerDados(null);
+    setRefazerErroCadastro(null);
+    setRefazerMotivo("");
+    setRefazerNf("");
+    setRefazerDescricao("");
+    setRefazerVenc(String(item.vencimento).slice(0, 10));
+    setRefazerTarget(item);
+
+    try {
+      const { data: linha, error } = await client.from("boletos").select("*").eq("id", item.id).maybeSingle();
+      if (error || !linha) throw new Error(error?.message || "Título não encontrado.");
+
+      setRefazerNf(String(linha.n_nf ?? ""));
+      setRefazerDescricao(String(linha.descricao ?? ""));
+      setRefazerVenc(String(linha.vencimento ?? "").slice(0, 10));
+
+      // Nome e documento do pagador saem do cadastro na hora; o que está
+      // gravado no título é a cópia do dia do faturamento.
+      let nome = String(linha.nome_cliente ?? "").trim();
+      let documento = String(linha.documento ?? "").replace(/\D/g, "");
+      if (linha.id_cliente) {
+        const { data: cadastro } = await client
+          .from("clientes")
+          .select("nome, documento")
+          .eq("id_cliente", linha.id_cliente)
+          .maybeSingle();
+        if (cadastro) {
+          nome = String(cadastro.nome ?? "").trim() || nome;
+          documento = String(cadastro.documento ?? "").replace(/\D/g, "") || documento;
         }
       }
 
-      showToast({
-        type: "success",
-        title: "Boleto removido do banco. O contas a receber foi mantido."
-      });
-
-      if (boleto.id_int) {
-        await recalcularBoletoIdIntsLocal(Number(boleto.id_int));
+      const { resolverPagadorDoBoletoC6 } = await import("@/features/nfe/services/nfe.service");
+      try {
+        const pagador = await resolverPagadorDoBoletoC6(client, {
+          id_cliente: linha.id_cliente,
+          id_empresa: linha.id_empresa,
+          documento
+        });
+        const e = pagador.address;
+        setRefazerDados({
+          linha: linha as LinhaBoleto,
+          pagador: {
+            nome,
+            documento: pagador.documentoDigits,
+            email: pagador.email,
+            emailDoCadastro: pagador.emailDoCadastro,
+            endereco: [
+              [e.logradouro, e.numero].filter(Boolean).join(", "),
+              e.complemento,
+              e.bairro,
+              [e.cidade, e.uf].filter(Boolean).join("/"),
+              e.cep ? `CEP ${e.cep}` : ""
+            ].filter(Boolean).join(" - ")
+          }
+        });
+      } catch (pendencia) {
+        setRefazerDados({
+          linha: linha as LinhaBoleto,
+          pagador: { nome, documento, email: "", emailDoCadastro: false, endereco: "" }
+        });
+        setRefazerErroCadastro(pendencia instanceof Error ? pendencia.message : String(pendencia));
       }
-
-      setRefreshTrigger(prev => prev + 1);
     } catch (err) {
-      console.error("[ContasReceberPage] failed to delete boleto:", err);
+      console.error("[ContasReceberPage] falha ao abrir o Refazer boleto:", err);
       showToast({
         type: "error",
-        title: "Erro ao excluir boleto",
+        title: "Não foi possível abrir o Refazer boleto",
+        description: err instanceof Error ? err.message : String(err)
+      });
+      fecharRefazer();
+    }
+  }
+
+  // Refazer boleto: a regra inteira vive em `services/refazer-boleto.ts`. Aqui
+  // só se entregam as funções oficiais de consulta, cancelamento e registro.
+  async function handleRefazer() {
+    const item = refazerTarget;
+    const dados = refazerDados;
+    if (!item || !dados || isRefazendo || refazerErroCadastro) return;
+
+    if (!refazerMotivo.trim()) {
+      showToast({ type: "warning", title: "Informe o motivo para refazer o boleto." });
+      return;
+    }
+    if (!refazerVenc || refazerVenc < today) {
+      showToast({ type: "warning", title: "O vencimento não pode ser no passado." });
+      return;
+    }
+    const client = getSupabaseClient();
+    if (!client) {
+      showToast({ type: "error", title: "Sistema indisponível no momento." });
+      return;
+    }
+
+    setIsRefazendo(true);
+    try {
+      const [{ consultarDetalhesBoletoC6 }, { deleteBoletoFromBankViaN8n, registerBoletoViaN8n }, { gerarBoletoPdfInterno }] =
+        await Promise.all([
+          import("@/features/cobrancas/services/pagamentos-v2.service"),
+          import("@/features/nfe/services/nfe.service"),
+          import("@/features/contas-a-receber/services/contas-receber.service")
+        ]);
+
+      const resultado = await refazerBoletoC6(
+        {
+          boletoId: item.id,
+          nNf: refazerNf,
+          descricao: refazerDescricao,
+          vencimento: refazerVenc,
+          motivo: refazerMotivo,
+          hoje: today,
+          usuario: confirmadoPorLabel(),
+          agoraIso: new Date().toISOString(),
+          pagador: { nome: dados.pagador.nome, documento: dados.pagador.documento }
+        },
+        {
+          client,
+          consultarBanco: consultarDetalhesBoletoC6,
+          // Recusa do banco fica só como recusa: sem baixar o título no ERP nem
+          // devolver a cobrança ao Registro de recebíveis.
+          cancelarNoBanco: (boletoId, idBoletoBanco, idEmpresa, motivo) =>
+            deleteBoletoFromBankViaN8n(boletoId, idBoletoBanco, idEmpresa, motivo, { semBaixaLocal: true }),
+          registrarNoBanco: (linha) => registerBoletoViaN8n(linha as SupabaseBoletoRow),
+          gerarPdf: async (boletoId, idEmpresa) => {
+            const pdf = await gerarBoletoPdfInterno(boletoId, idEmpresa);
+            return pdf.success ? null : pdf.errorMessage || "Falha ao gerar o PDF.";
+          }
+        }
+      );
+
+      if (item.id_int) await recalcularBoletoIdIntsLocal(Number(item.id_int));
+      setRefreshTrigger((prev) => prev + 1);
+
+      if (!resultado.ok) {
+        showToast({
+          type: resultado.etapa === "PAGO_NO_BANCO" ? "warning" : "error",
+          title:
+            resultado.etapa === "PAGO_NO_BANCO"
+              ? "Boleto pago no banco"
+              : resultado.canceladoNoBanco
+                ? "Boleto cancelado no banco, mas a troca não terminou"
+                : "Não foi possível refazer o boleto",
+          description: resultado.mensagem
+        });
+        // Falha de gravação: a janela fica aberta para repetir. Nas demais não
+        // há o que repetir com os mesmos dados.
+        if (!resultado.canceladoNoBanco) fecharRefazer();
+        return;
+      }
+
+      fecharRefazer();
+      if (resultado.registrado) {
+        showToast({
+          type: "success",
+          title: "Boleto refeito.",
+          description: "O boleto anterior foi cancelado no C6 e o novo está registrado. Envie o novo boleto ao cliente."
+        });
+        if (resultado.falhaPdf) {
+          showToast({
+            type: "warning",
+            title: "Boleto refeito, mas sem PDF",
+            description: `${resultado.falhaPdf} Use "Gerar PDF do Boleto".`
+          });
+        }
+      } else {
+        showToast({
+          type: "warning",
+          title: "Boleto anterior cancelado, mas o novo não foi registrado",
+          description: `${resultado.erroRegistro} O título ficou pendente de registro: corrija o que o banco apontou e use "Registrar boleto no banco".`
+        });
+      }
+    } catch (err) {
+      console.error("[ContasReceberPage] falha ao refazer boleto:", err);
+      showToast({
+        type: "error",
+        title: "Erro ao refazer o boleto",
         description: err instanceof Error ? err.message : String(err)
       });
     } finally {
-      setDeletingBoletoId(null);
+      setIsRefazendo(false);
     }
   }
 
@@ -1015,6 +1218,18 @@ export function ContasReceberPage() {
     Number(cancelTarget?.id_empresa) === 2
       ? "o título sai da lista do Contas a Receber"
       : "o título será marcado como CANCELADO no Contas a Receber";
+  // Faturado registrado no banco: o aviso diz o que de fato acontece — a parcela
+  // sai, a cobrança continua ativa e volta ao Registro de recebíveis, onde os
+  // títulos têm de ser lançados de novo. O texto antigo falava só em "marcado
+  // como CANCELADO" e o Financeiro cancelava para corrigir um dado do boleto.
+  const cancelEhBiro = Number(cancelTarget?.id_empresa) === EMPRESA_BIRO;
+  const cancelAvisoFaturado =
+    cancelRegistradoBanco && cancelTarget?.is_faturado
+      ? `Esta parcela será cancelada no ${cancelEhBiro ? "Banco Inter" : "C6"} e sai do Contas a Receber` +
+        `${cancelEhBiro ? "" : " (fica no histórico)"}. A cobrança ${cancelTarget.id_pagamento ? `${cancelTarget.id_pagamento} ` : ""}` +
+        "continua ativa e volta para o Registro de recebíveis, onde os títulos precisam ser lançados de novo." +
+        (cancelEhBiro ? "" : " Para só corrigir dados do boleto, use Refazer boleto.")
+      : null;
 
   const confirmIsDeposito = confirmTarget?.tipo === "DEPOSITO";
   const confirmRegistradoBanco = Boolean(confirmTarget && !confirmIsDeposito && confirmTarget.id_boleto_c6);
@@ -1635,6 +1850,7 @@ export function ContasReceberPage() {
             setSelectedBoletoIdInt(item.id_int || null);
             setReviewModalOpen(true);
           }}
+          onRefazer={(item) => void abrirRefazer(item)}
           onConsultaC6={(item) => {
             setSelectedBoletoForC6Query(item);
             setC6QueryResult(null);
@@ -1672,9 +1888,7 @@ export function ContasReceberPage() {
             setSelectedBoletoIdInt(item.id_int || null);
             setReviewModalOpen(true);
           }}
-          onDeleteFromBank={(item) => {
-            setConfirmDeleteBoleto(item);
-          }}
+          onRefazer={(item) => void abrirRefazer(item)}
           onConsultaC6={(item) => {
             setSelectedBoletoForC6Query(item);
             setC6QueryResult(null);
@@ -1719,42 +1933,145 @@ export function ContasReceberPage() {
         }}
       />
 
-      {confirmDeleteBoleto && (
+      {refazerTarget && (
         <div className="fixed inset-0 z-[10000] bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4 font-sans">
-          <div className="bg-white rounded-3xl shadow-2xl border border-slate-100 max-w-md w-full overflow-hidden p-6 transform transition-all scale-100 animate-in fade-in zoom-in-95 duration-200">
+          <div className="bg-white rounded-3xl shadow-2xl border border-slate-100 max-w-lg w-full max-h-[92vh] overflow-y-auto p-6 transform transition-all scale-100 animate-in fade-in zoom-in-95 duration-200">
             <div className="flex flex-col items-center text-center gap-4">
-              <div className="p-3 bg-red-50 text-red-500 rounded-2xl">
+              <div className="p-3 bg-sky-50 text-sky-600 rounded-2xl">
                 <AlertTriangle className="h-8 w-8" />
               </div>
               <div className="space-y-2">
-                <h4 className="text-base font-bold text-slate-900">
-                  Excluir boleto do banco?
-                </h4>
+                <h4 className="text-base font-bold text-slate-900">Refazer boleto?</h4>
                 <p className="text-xs text-slate-500 leading-relaxed text-left">
-                  Esta ação cancela/remove apenas o registro bancário do boleto no C6. O contas a receber continuará existindo no ERP e poderá ser revisado ou registrado novamente.
+                  O boleto atual será cancelado no C6 e um novo será registrado com a mesma parcela e o mesmo valor. O recebível continua no Contas a Receber. A linha digitável muda: envie o novo boleto ao cliente.
                 </p>
               </div>
+              <div className="w-full rounded-2xl bg-slate-50 border border-slate-100 p-3 text-left text-xs text-slate-600 space-y-1">
+                <div className="flex justify-between gap-2">
+                  <span className="text-slate-400 font-semibold">Cobrança</span>
+                  <span className="font-medium text-slate-800">{refazerTarget.id_pagamento}</span>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <span className="text-slate-400 font-semibold">Parcela</span>
+                  <span className="font-medium text-slate-800">
+                    {refazerTarget.parcela ? `${refazerTarget.parcela}/${refazerTarget.total_parcelas ?? refazerTarget.parcela}` : "-"}
+                  </span>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <span className="text-slate-400 font-semibold">Valor</span>
+                  <span className="font-mono font-semibold text-slate-800">{formatCurrency(refazerTarget.valor)}</span>
+                </div>
+              </div>
+
+              {!refazerDados ? (
+                <p className="w-full text-left text-xs text-slate-500">Carregando o título e o cadastro do pagador…</p>
+              ) : (
+                <>
+                  <div className="w-full rounded-2xl border border-slate-100 p-3 text-left text-xs text-slate-600 space-y-1">
+                    <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Pagador (do cadastro, agora)</p>
+                    <p className="font-medium text-slate-800">{refazerDados.pagador.nome || "-"}</p>
+                    <p className="font-mono">{refazerDados.pagador.documento || "-"}</p>
+                    {refazerDados.pagador.email && (
+                      <p>
+                        {refazerDados.pagador.email}
+                        {!refazerDados.pagador.emailDoCadastro && (
+                          <span className="text-slate-400"> (padrão da empresa: o cadastro não tem e-mail válido)</span>
+                        )}
+                      </p>
+                    )}
+                    {refazerDados.pagador.endereco && <p>{refazerDados.pagador.endereco}</p>}
+                    <p className="text-[11px] text-slate-400">Para corrigir o pagador, altere o cadastro do cliente e abra o Refazer de novo.</p>
+                  </div>
+
+                  {refazerErroCadastro && (
+                    <div className="w-full rounded-2xl border border-red-200 bg-red-50 p-3 text-left text-xs font-medium text-red-700">
+                      Pendência no cadastro do cliente: {refazerErroCadastro} Corrija o cadastro antes de refazer — o boleto atual não foi tocado.
+                    </div>
+                  )}
+
+                  <div className="w-full grid grid-cols-1 sm:grid-cols-2 gap-3 text-left">
+                    <div className="space-y-1.5">
+                      <label htmlFor="refazer-nf" className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                        Número da NF
+                      </label>
+                      <input
+                        id="refazer-nf"
+                        type="text"
+                        value={refazerNf}
+                        disabled={isRefazendo}
+                        onChange={(event) => setRefazerNf(event.target.value)}
+                        placeholder="Sem NF"
+                        className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-800 outline-none focus:border-sky-500 disabled:bg-slate-50 font-mono"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label htmlFor="refazer-venc" className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                        Vencimento <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        id="refazer-venc"
+                        type="date"
+                        value={refazerVenc}
+                        min={today}
+                        disabled={isRefazendo}
+                        onChange={(event) => setRefazerVenc(event.target.value)}
+                        className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-800 outline-none focus:border-sky-500 disabled:bg-slate-50 font-mono"
+                      />
+                    </div>
+                  </div>
+                  <div className="w-full text-left space-y-1.5">
+                    <label htmlFor="refazer-descricao" className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                      Descrição
+                    </label>
+                    <input
+                      id="refazer-descricao"
+                      type="text"
+                      value={refazerDescricao}
+                      disabled={isRefazendo}
+                      onChange={(event) => setRefazerDescricao(event.target.value)}
+                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-800 outline-none focus:border-sky-500 disabled:bg-slate-50"
+                    />
+                  </div>
+                  <div className="w-full text-left space-y-1.5">
+                    <label htmlFor="refazer-motivo" className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                      Motivo <span className="text-red-500">*</span>
+                    </label>
+                    <textarea
+                      id="refazer-motivo"
+                      value={refazerMotivo}
+                      disabled={isRefazendo}
+                      onChange={(event) => setRefazerMotivo(event.target.value)}
+                      rows={2}
+                      placeholder="Por que o boleto está sendo refeito"
+                      className="w-full resize-none rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-800 outline-none focus:border-sky-500 disabled:bg-slate-50"
+                    />
+                  </div>
+                </>
+              )}
             </div>
-            
             <div className="mt-6 flex items-center gap-3 justify-stretch">
               <button
                 type="button"
-                onClick={() => setConfirmDeleteBoleto(null)}
-                className="flex-1 py-2.5 text-xs font-bold text-slate-500 hover:text-slate-800 hover:bg-slate-50 border border-slate-200 rounded-xl transition"
+                disabled={isRefazendo}
+                onClick={fecharRefazer}
+                className="flex-1 py-2.5 text-xs font-bold text-slate-500 hover:text-slate-800 hover:bg-slate-50 border border-slate-200 rounded-xl transition disabled:opacity-50"
               >
                 Cancelar
               </button>
               <button
                 type="button"
-                disabled={deletingBoletoId !== null}
-                onClick={() => {
-                  const boleto = confirmDeleteBoleto;
-                  setConfirmDeleteBoleto(null);
-                  void handleDeleteBoletoFromBank(boleto);
-                }}
-                className="flex-1 py-2.5 text-xs font-bold text-white bg-red-650 hover:bg-red-700 rounded-xl transition"
+                disabled={
+                  isRefazendo ||
+                  !refazerDados ||
+                  Boolean(refazerErroCadastro) ||
+                  !refazerMotivo.trim() ||
+                  !refazerVenc ||
+                  refazerVenc < today
+                }
+                onClick={() => void handleRefazer()}
+                className="flex-1 py-2.5 text-xs font-bold text-white bg-sky-600 hover:bg-sky-700 rounded-xl transition disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                {deletingBoletoId ? "Excluindo..." : "Excluir boleto do banco"}
+                {isRefazendo ? "Refazendo..." : "Refazer boleto"}
               </button>
             </div>
           </div>
@@ -2155,7 +2472,9 @@ export function ContasReceberPage() {
                     ? "Este título está liquidado (pago) e não pode ser cancelado pela regra financeira."
                     : cancelIsDeposito
                       ? "O título de depósito em conta será marcado como CANCELADO no Contas a Receber. Não há registro bancário envolvido e o histórico é preservado pela auditoria."
-                      : cancelRegistradoBanco
+                      : cancelAvisoFaturado
+                        ? cancelAvisoFaturado
+                        : cancelRegistradoBanco
                         ? `O boleto será cancelado no ${cancelBanco} pela integração oficial. Somente após a confirmação do banco ${cancelDesfecho}. Em caso de falha bancária, nada é alterado.`
                         : "Este boleto ainda não possui registro bancário. O título será marcado como CANCELADO apenas no Contas a Receber, com histórico preservado pela auditoria."}
                 </p>
@@ -2396,6 +2715,16 @@ function StatusCell({
 }) {
   const badge = <StatusBadge status={getVisualStatus(item, today)} tone={getVisualStatusTone(item, today)} />;
 
+  // Boleto antigo de um "Refazer boleto": cancelado porque foi substituído.
+  if (item.status === "CANCELADO" && item.motivo_prorg?.startsWith(MARCA_SUBSTITUIDO)) {
+    return (
+      <span className="inline-flex flex-col items-center gap-0.5" title={item.motivo_prorg}>
+        {badge}
+        <span className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Substituído</span>
+      </span>
+    );
+  }
+
   if (!azul) return badge;
 
   return (
@@ -2419,7 +2748,7 @@ function GroupedSection({
   isBoletoTab = false,
   onProrrogar,
   onRegister,
-  onDeleteFromBank,
+  onRefazer,
   onConsultaC6,
   onConsultarPdf,
   onGerarPdfBoleto,
@@ -2438,7 +2767,7 @@ function GroupedSection({
   isBoletoTab?: boolean;
   onProrrogar?: (id: string) => void;
   onRegister?: (item: BoletoDepositoMock) => void;
-  onDeleteFromBank?: (item: BoletoDepositoMock) => void;
+  onRefazer?: (item: BoletoDepositoMock) => void;
   onConsultaC6?: (item: BoletoDepositoMock) => void;
   onConsultarPdf?: (item: BoletoDepositoMock) => void;
   onGerarPdfBoleto?: (item: BoletoDepositoMock) => void;
@@ -2506,12 +2835,12 @@ function GroupedSection({
                       Registrar
                     </button>
                   )}
-                  <BoletoActions item={item} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onProrrogar={onProrrogar!} onLifecycle={onLifecycle} onDetail={onDetail} onNavigate={onNavigate} onRegister={onRegister!} onDeleteFromBank={onDeleteFromBank!} onConsultaC6={onConsultaC6} onConsultarPdf={onConsultarPdf} onGerarPdfBoleto={onGerarPdfBoleto} />
+                  <BoletoActions item={item} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onProrrogar={onProrrogar!} onLifecycle={onLifecycle} onDetail={onDetail} onNavigate={onNavigate} onRegister={onRegister!} onRefazer={onRefazer!} onConsultaC6={onConsultaC6} onConsultarPdf={onConsultarPdf} onGerarPdfBoleto={onGerarPdfBoleto} />
                 </div>
               );
             }, align: "right" }
           ]}
-          renderCard={(item) => <RecebivelCard key={item.id} item={item} today={today} badgeAzul={badgeAzul} onRegister={onRegister!} actions={<BoletoActions item={item} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onProrrogar={onProrrogar!} onLifecycle={onLifecycle} onDetail={onDetail} onNavigate={onNavigate} onRegister={onRegister!} onDeleteFromBank={onDeleteFromBank!} onConsultaC6={onConsultaC6} onConsultarPdf={onConsultarPdf} onGerarPdfBoleto={onGerarPdfBoleto} label="Mais" />} />}
+          renderCard={(item) => <RecebivelCard key={item.id} item={item} today={today} badgeAzul={badgeAzul} onRegister={onRegister!} actions={<BoletoActions item={item} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onProrrogar={onProrrogar!} onLifecycle={onLifecycle} onDetail={onDetail} onNavigate={onNavigate} onRegister={onRegister!} onRefazer={onRefazer!} onConsultaC6={onConsultaC6} onConsultarPdf={onConsultarPdf} onGerarPdfBoleto={onGerarPdfBoleto} label="Mais" />} />}
         />
       ) : (
         <ResponsiveList<BoletoDepositoMock>
@@ -2543,12 +2872,12 @@ function GroupedSection({
                       Registrar
                     </button>
                   )}
-                  <RecebivelActions item={item} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} onRegister={onRegister} onConsultaC6={onConsultaC6} onConsultarPdf={onConsultarPdf} onGerarPdfBoleto={onGerarPdfBoleto} />
+                  <RecebivelActions item={item} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} onRegister={onRegister} onRefazer={onRefazer} onConsultaC6={onConsultaC6} onConsultarPdf={onConsultarPdf} onGerarPdfBoleto={onGerarPdfBoleto} />
                 </div>
               );
             }, align: "right" }
           ]}
-          renderCard={(item) => <RecebivelCard key={item.id} item={item} today={today} badgeAzul={badgeAzul} onRegister={onRegister} actions={<RecebivelActions item={item} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} onRegister={onRegister} onConsultaC6={onConsultaC6} onConsultarPdf={onConsultarPdf} onGerarPdfBoleto={onGerarPdfBoleto} label="Mais" />} />}
+          renderCard={(item) => <RecebivelCard key={item.id} item={item} today={today} badgeAzul={badgeAzul} onRegister={onRegister} actions={<RecebivelActions item={item} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} onRegister={onRegister} onRefazer={onRefazer} onConsultaC6={onConsultaC6} onConsultarPdf={onConsultarPdf} onGerarPdfBoleto={onGerarPdfBoleto} label="Mais" />} />}
         />
       )}
     </div>
@@ -2565,6 +2894,7 @@ function CarteiraTab({
   onDetail,
   onNavigate,
   onRegister,
+  onRefazer,
   onConsultaC6,
   onConsultarPdf,
   onGerarPdfBoleto
@@ -2578,6 +2908,7 @@ function CarteiraTab({
   onDetail: (item: BoletoDepositoMock) => void;
   onNavigate: (path: string) => void;
   onRegister?: (item: BoletoDepositoMock) => void;
+  onRefazer?: (item: BoletoDepositoMock) => void;
   onConsultaC6?: (item: BoletoDepositoMock) => void;
   onConsultarPdf?: (item: BoletoDepositoMock) => void;
   onGerarPdfBoleto?: (item: BoletoDepositoMock) => void;
@@ -2604,10 +2935,10 @@ function CarteiraTab({
 
   return (
     <div className="space-y-2">
-      <GroupedSection title="Vencidos" tone="danger" items={vencidos} today={today} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} onRegister={onRegister} onConsultaC6={onConsultaC6} onConsultarPdf={onConsultarPdf} onGerarPdfBoleto={onGerarPdfBoleto} />
-      <GroupedSection title="Previsão futura / E-Faturado" tone="blue" items={previsaoFutura} today={today} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} onRegister={onRegister} onConsultaC6={onConsultaC6} onConsultarPdf={onConsultarPdf} onGerarPdfBoleto={onGerarPdfBoleto} />
-      <GroupedSection title="Pagos" tone="success" items={pagos} today={today} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} onRegister={onRegister} onConsultaC6={onConsultaC6} onConsultarPdf={onConsultarPdf} onGerarPdfBoleto={onGerarPdfBoleto} />
-      <GroupedSection title="Cancelados" tone="neutral" items={cancelados} today={today} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} onRegister={onRegister} onConsultaC6={onConsultaC6} onConsultarPdf={onConsultarPdf} onGerarPdfBoleto={onGerarPdfBoleto} />
+      <GroupedSection title="Vencidos" tone="danger" items={vencidos} today={today} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} onRegister={onRegister} onRefazer={onRefazer} onConsultaC6={onConsultaC6} onConsultarPdf={onConsultarPdf} onGerarPdfBoleto={onGerarPdfBoleto} />
+      <GroupedSection title="Previsão futura / E-Faturado" tone="blue" items={previsaoFutura} today={today} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} onRegister={onRegister} onRefazer={onRefazer} onConsultaC6={onConsultaC6} onConsultarPdf={onConsultarPdf} onGerarPdfBoleto={onGerarPdfBoleto} />
+      <GroupedSection title="Pagos" tone="success" items={pagos} today={today} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} onRegister={onRegister} onRefazer={onRefazer} onConsultaC6={onConsultaC6} onConsultarPdf={onConsultarPdf} onGerarPdfBoleto={onGerarPdfBoleto} />
+      <GroupedSection title="Cancelados" tone="neutral" items={cancelados} today={today} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} onRegister={onRegister} onRefazer={onRefazer} onConsultaC6={onConsultaC6} onConsultarPdf={onConsultarPdf} onGerarPdfBoleto={onGerarPdfBoleto} />
     </div>
   );
 }
@@ -2623,7 +2954,7 @@ function BoletosDepositosTab({
   onDetail,
   onNavigate,
   onRegister,
-  onDeleteFromBank,
+  onRefazer,
   onConsultaC6,
   onConsultarPdf,
   onGerarPdfBoleto,
@@ -2639,7 +2970,7 @@ function BoletosDepositosTab({
   onDetail: (item: BoletoDepositoMock) => void;
   onNavigate: (path: string) => void;
   onRegister: (item: BoletoDepositoMock) => void;
-  onDeleteFromBank: (item: BoletoDepositoMock) => void;
+  onRefazer: (item: BoletoDepositoMock) => void;
   onConsultaC6?: (item: BoletoDepositoMock) => void;
   onConsultarPdf?: (item: BoletoDepositoMock) => void;
   onGerarPdfBoleto?: (item: BoletoDepositoMock) => void;
@@ -2667,10 +2998,10 @@ function BoletosDepositosTab({
 
   return (
     <div className="space-y-2">
-      <GroupedSection title="Vencidos" tone="danger" items={vencidos} today={today} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} isBoletoTab onProrrogar={onProrrogar} onLifecycle={onLifecycle} onRegister={onRegister} onDeleteFromBank={onDeleteFromBank} onConsultaC6={onConsultaC6} onConsultarPdf={onConsultarPdf} onGerarPdfBoleto={onGerarPdfBoleto} />
-      <GroupedSection title="Previsão futura / E-Faturado" tone="blue" items={previsaoFutura} today={today} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} isBoletoTab onProrrogar={onProrrogar} onLifecycle={onLifecycle} onRegister={onRegister} onDeleteFromBank={onDeleteFromBank} onConsultaC6={onConsultaC6} onConsultarPdf={onConsultarPdf} onGerarPdfBoleto={onGerarPdfBoleto} />
-      <GroupedSection title="Pagos" tone="success" items={pagos} today={today} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} isBoletoTab onProrrogar={onProrrogar} onLifecycle={onLifecycle} onRegister={onRegister} onDeleteFromBank={onDeleteFromBank} onConsultaC6={onConsultaC6} onConsultarPdf={onConsultarPdf} onGerarPdfBoleto={onGerarPdfBoleto} />
-      <GroupedSection title="Cancelados" tone="neutral" items={cancelados} today={today} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} isBoletoTab onProrrogar={onProrrogar} onLifecycle={onLifecycle} onRegister={onRegister} onDeleteFromBank={onDeleteFromBank} onConsultaC6={onConsultaC6} onConsultarPdf={onConsultarPdf} onGerarPdfBoleto={onGerarPdfBoleto} />
+      <GroupedSection title="Vencidos" tone="danger" items={vencidos} today={today} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} isBoletoTab onProrrogar={onProrrogar} onLifecycle={onLifecycle} onRegister={onRegister} onRefazer={onRefazer} onConsultaC6={onConsultaC6} onConsultarPdf={onConsultarPdf} onGerarPdfBoleto={onGerarPdfBoleto} />
+      <GroupedSection title="Previsão futura / E-Faturado" tone="blue" items={previsaoFutura} today={today} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} isBoletoTab onProrrogar={onProrrogar} onLifecycle={onLifecycle} onRegister={onRegister} onRefazer={onRefazer} onConsultaC6={onConsultaC6} onConsultarPdf={onConsultarPdf} onGerarPdfBoleto={onGerarPdfBoleto} />
+      <GroupedSection title="Pagos" tone="success" items={pagos} today={today} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} isBoletoTab onProrrogar={onProrrogar} onLifecycle={onLifecycle} onRegister={onRegister} onRefazer={onRefazer} onConsultaC6={onConsultaC6} onConsultarPdf={onConsultarPdf} onGerarPdfBoleto={onGerarPdfBoleto} />
+      <GroupedSection title="Cancelados" tone="neutral" items={cancelados} today={today} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} isBoletoTab onProrrogar={onProrrogar} onLifecycle={onLifecycle} onRegister={onRegister} onRefazer={onRefazer} onConsultaC6={onConsultaC6} onConsultarPdf={onConsultarPdf} onGerarPdfBoleto={onGerarPdfBoleto} />
     </div>
   );
 }
@@ -2814,6 +3145,7 @@ function RecebivelActions({
   onDetail,
   onNavigate,
   onRegister,
+  onRefazer,
   onConsultaC6,
   onConsultarPdf,
   onGerarPdfBoleto,
@@ -2827,6 +3159,7 @@ function RecebivelActions({
   onDetail: (item: BoletoDepositoMock) => void;
   onNavigate: (path: string) => void;
   onRegister?: (item: BoletoDepositoMock) => void;
+  onRefazer?: (item: BoletoDepositoMock) => void;
   onConsultaC6?: (item: BoletoDepositoMock) => void;
   onConsultarPdf?: (item: BoletoDepositoMock) => void;
   onGerarPdfBoleto?: (item: BoletoDepositoMock) => void;
@@ -2849,8 +3182,14 @@ function RecebivelActions({
   ];
 
   if (item.tipo === "BOLETO" && onRegister) {
-    const labelReg = (!item.id_boleto_c6 && !item.linha_digitavel) ? "Registrar boleto no banco" : "Alterar Cobrança";
+    // Em boleto já registrado a janela é só de consulta (os campos ficam
+    // travados): o rótulo antigo, "Alterar Cobrança", prometia o que ela não faz.
+    const labelReg = (!item.id_boleto_c6 && !item.linha_digitavel) ? "Registrar boleto no banco" : "Ver boleto registrado";
     actionItems.push({ label: labelReg, onClick: () => onRegister(item) });
+  }
+
+  if (canAdmin && onRefazer && ofereceRefazer(item)) {
+    actionItems.push({ label: "Refazer boleto", onClick: () => onRefazer(item) });
   }
 
   if (showConsultaC6 && onConsultaC6) {
@@ -2901,7 +3240,7 @@ function BoletoActions({
   onProrrogar,
   onDetail,
   onRegister,
-  onDeleteFromBank,
+  onRefazer,
   onConsultaC6,
   onConsultarPdf,
   onGerarPdfBoleto,
@@ -2917,7 +3256,7 @@ function BoletoActions({
   onDetail: (item: BoletoDepositoMock) => void;
   onNavigate: (path: string) => void;
   onRegister?: (item: BoletoDepositoMock) => void;
-  onDeleteFromBank?: (item: BoletoDepositoMock) => void;
+  onRefazer?: (item: BoletoDepositoMock) => void;
   onConsultaC6?: (item: BoletoDepositoMock) => void;
   onConsultarPdf?: (item: BoletoDepositoMock) => void;
   onGerarPdfBoleto?: (item: BoletoDepositoMock) => void;
@@ -2926,7 +3265,6 @@ function BoletoActions({
 }) {
   const isRegistered = !!(item.id_boleto_c6 || item.nosso_numero || item.linha_digitavel);
   const showRegister = !!onRegister && item.tipo === "BOLETO" && !item.deposito_conta && !isRegistered && item.status !== "PAID" && item.status !== "CANCELADO";
-  const showDelete = !!onDeleteFromBank && item.tipo === "BOLETO" && !item.deposito_conta && isRegistered && item.status !== "PAID" && item.status !== "CANCELADO";
   const showConsultaC6 = !!item.id_boleto_c6 && item.status !== "PAID" && item.tipo === "BOLETO";
   const showConsultarPdf = !!item.id_boleto_c6 && !item.url_pdf && !item.pdf_storage && item.tipo === "BOLETO";
 
@@ -2944,16 +3282,18 @@ function BoletoActions({
   ];
 
   if (item.tipo === "BOLETO" && onRegister) {
-    const labelReg = (!item.id_boleto_c6 && !item.linha_digitavel) ? "Registrar boleto no banco" : "Alterar Cobrança";
+    // Em boleto já registrado a janela é só de consulta (os campos ficam
+    // travados): o rótulo antigo, "Alterar Cobrança", prometia o que ela não faz.
+    const labelReg = (!item.id_boleto_c6 && !item.linha_digitavel) ? "Registrar boleto no banco" : "Ver boleto registrado";
     actionItems.push({ label: labelReg, onClick: () => onRegister(item) });
+  }
+
+  if (canAdmin && onRefazer && ofereceRefazer(item)) {
+    actionItems.push({ label: "Refazer boleto", onClick: () => onRefazer(item) });
   }
 
   if (showRegister && canAdmin) {
     actionItems.push({ label: "Registrar boleto", onClick: () => onRegister!(item) });
-  }
-
-  if (showDelete && canAdmin) {
-    actionItems.push({ label: "Excluir boleto do banco", destructive: true, onClick: () => onDeleteFromBank!(item) });
   }
 
   if (showConsultaC6 && onConsultaC6) {
@@ -3155,6 +3495,13 @@ function RecebivelDetailModal({
           {item.codigo_barras && <DetailField label="Código de barras" value={item.codigo_barras} />}
           {item.nosso_numero && <DetailField label="Nosso Número" value={item.nosso_numero} />}
         </div>
+
+        {item.motivo_prorg ? (
+          <div className="mt-4 rounded-2xl border border-amber-100 bg-amber-50 p-4">
+            <p className="text-xs font-semibold uppercase tracking-wide text-amber-700">Histórico do título</p>
+            <p className="mt-2 text-sm leading-6 text-slate-700">{item.motivo_prorg}</p>
+          </div>
+        ) : null}
 
         <div className="mt-4 rounded-2xl bg-slate-50 p-4">
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Observação / Descrição</p>

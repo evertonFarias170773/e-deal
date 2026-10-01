@@ -5,7 +5,7 @@ import { getSupabaseClient } from "@/lib/supabase/client";
 import { FileText, X, Loader2, Info, AlertTriangle } from "lucide-react";
 import { formatCurrency } from "@/lib/formatters/currency";
 import { useAppToast } from "@/components/common/AppToast";
-import { updateBoletoInDb, registerBoletoViaN8n, deleteBoletoFromBankViaN8n } from "@/features/nfe/services/nfe.service";
+import { updateBoletoInDb, registerBoletoViaN8n } from "@/features/nfe/services/nfe.service";
 import { gerarBoletoPdfInterno } from "@/features/contas-a-receber/services/contas-receber.service";
 import type { SupabaseBoletoRow } from "@/features/contas-a-receber/types.supabase";
 import { useCobrancas } from "@/features/cobrancas/CobrancasProvider";
@@ -66,8 +66,6 @@ export function RevisarGeracaoBancariaModal({
 
   const [registeringBoletoId, setRegisteringBoletoId] = useState<string | null>(null);
   const [confirmRegisterBoleto, setConfirmRegisterBoleto] = useState<SupabaseBoletoRow | null>(null);
-  const [deletingBoletoId, setDeletingBoletoId] = useState<string | null>(null);
-  const [confirmDeleteBoleto, setConfirmDeleteBoleto] = useState<SupabaseBoletoRow | null>(null);
   const [boletoErrors, setBoletoErrors] = useState<Record<string, string>>({});
 
   const [isRegisteringAll, setIsRegisteringAll] = useState(false);
@@ -415,70 +413,11 @@ export function RevisarGeracaoBancariaModal({
     }
   };
 
-  const handleDeleteBoleto = async (boleto: SupabaseBoletoRow) => {
-    if (!boleto.id_boleto_c6) return;
-    setDeletingBoletoId(boleto.id);
-    setBoletoErrors(prev => {
-      const next = { ...prev };
-      delete next[boleto.id];
-      return next;
-    });
-    try {
-      await deleteBoletoFromBankViaN8n(boleto.id, String(boleto.id_boleto_c6), Number(boleto.id_empresa || 1));
-      const client = getSupabaseClient();
-
-      if (client) {
-        // Fallback local no Supabase por segurança: marcar como CANCELADO mas manter histórico do C6
-        const { error: updateError } = await client
-          .from("boletos")
-          .update({
-            status: "CANCELADO"
-          })
-          .eq("id", boleto.id);
-
-        if (updateError) {
-          console.error("[RevisarGeracaoBancariaModal] failed fallback update for delete:", updateError);
-        }
-
-        // Reler do Supabase para refletir o estado correto e final
-        const { data: updatedBoleto, error } = await client
-          .from("boletos")
-          .select("*")
-          .eq("id", boleto.id)
-          .maybeSingle();
-
-        if (error) throw error;
-
-        if (updatedBoleto) {
-          setBoletosForReview(prev =>
-            prev.map(b => b.id === boleto.id ? updatedBoleto : b)
-          );
-        }
-      }
-
-      showToast({
-        type: "success",
-        title: "Boleto removido do banco. O contas a receber foi mantido."
-      });
-
-      if (boleto.id_int) {
-        await recalcularBoletoIdIntsLocal(Number(boleto.id_int));
-      }
-
-      if (onSaveSuccess) {
-        onSaveSuccess();
-      }
-    } catch (err) {
-      console.error("[RevisarGeracaoBancariaModal] failed to delete boleto:", err);
-      showToast({
-        type: "error",
-        title: "Erro ao excluir boleto",
-        description: err instanceof Error ? err.message : String(err)
-      });
-    } finally {
-      setDeletingBoletoId(null);
-    }
-  };
+  // "Excluir boleto do banco" saiu daqui em 01/10/2026: cancelava no C6 e
+  // marcava o título como CANCELADO dizendo que "o contas a receber foi
+  // mantido", sem devolver a cobrança ao Registro de recebíveis e sem deixar
+  // registrar de novo — um beco sem saída. Para trocar o boleto mantendo o
+  // recebível existe o "Refazer boleto", no menu do Contas a Receber.
 
   const handleRegisterAllBoletos = async () => {
     const idIntDoModal = idInt;
@@ -1094,24 +1033,6 @@ export function RevisarGeracaoBancariaModal({
                                   Copiar Link
                                 </button>
 
-                                {/* Excluir boleto do banco */}
-                                {boleto.id_boleto_c6 && boleto.status !== "PAID" && (
-                                  <button
-                                    type="button"
-                                    disabled={deletingBoletoId === boleto.id || isRegisteringAll || isSavingReview || registeringBoletoId !== null}
-                                    onClick={() => setConfirmDeleteBoleto(boleto)}
-                                    className="px-3 py-1.5 bg-red-50 text-red-700 hover:bg-red-100 transition rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5"
-                                  >
-                                    {deletingBoletoId === boleto.id ? (
-                                      <>
-                                        <Loader2 className="h-3 w-3 animate-spin text-red-700" />
-                                        Excluindo...
-                                      </>
-                                    ) : (
-                                      "Excluir boleto do banco"
-                                    )}
-                                  </button>
-                                )}
                               </div>
                             ) : (
                               boleto.status !== "PAID" && (
@@ -1311,47 +1232,6 @@ export function RevisarGeracaoBancariaModal({
         </div>
       )}
 
-      {/* Confirmation Dialog for Bank Deletion */}
-      {confirmDeleteBoleto && (
-        <div className="fixed inset-0 z-[10000] bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4 font-sans">
-          <div className="bg-white rounded-3xl shadow-2xl border border-slate-100 max-w-md w-full overflow-hidden p-6 transform transition-all scale-100 animate-in fade-in zoom-in-95 duration-200">
-            <div className="flex flex-col items-center text-center gap-4">
-              <div className="p-3 bg-red-50 text-red-500 rounded-2xl">
-                <AlertTriangle className="h-8 w-8" />
-              </div>
-              <div className="space-y-2">
-                <h4 className="text-base font-bold text-slate-900">
-                  Excluir boleto do banco?
-                </h4>
-                <p className="text-xs text-slate-500 leading-relaxed text-left">
-                  Esta ação cancela/remove apenas o registro bancário do boleto no C6. O contas a receber continuará existindo no ERP e poderá ser revisado ou registrado novamente.
-                </p>
-              </div>
-            </div>
-            
-            <div className="mt-6 flex items-center gap-3 justify-stretch">
-              <button
-                type="button"
-                onClick={() => setConfirmDeleteBoleto(null)}
-                className="flex-1 py-2.5 text-xs font-bold text-slate-500 hover:text-slate-800 hover:bg-slate-50 border border-slate-200 rounded-xl transition"
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  const boleto = confirmDeleteBoleto;
-                  setConfirmDeleteBoleto(null);
-                  void handleDeleteBoleto(boleto);
-                }}
-                className="flex-1 py-2.5 text-xs font-bold text-white bg-red-650 hover:bg-red-700 rounded-xl transition"
-              >
-                Excluir boleto do banco
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </>
   );
 }

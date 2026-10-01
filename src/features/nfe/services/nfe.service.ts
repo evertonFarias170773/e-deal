@@ -2731,22 +2731,23 @@ async function chamarRotaBoletoFaturado(rota: string, corpo: Record<string, unkn
   return resultado as { success: true; delegarLegado?: boolean; data?: Record<string, unknown> };
 }
 
-export async function registerBoletoViaN8n(boleto: SupabaseBoletoRow, overrideEmail?: string) {
-  // Roteamento por empresa, decidido no servidor com o id_empresa do banco.
-  // Empresa 2 (Ideal Birô) emite pelo Inter e retorna aqui; 1 e 3 caem no
-  // `delegarLegado` e seguem exatamente o fluxo abaixo, inalterado.
-  const roteamento = await chamarRotaBoletoFaturado("/api/cobrancas/registrar-boleto-faturado", {
-    boletoId: boleto.id,
-    overrideEmail
-  });
-
-  if (!roteamento.delegarLegado) {
-    return { success: true, data: roteamento.data || {} };
-  }
-
-  const client = getSupabaseClient();
-  if (!client) throw new Error("Supabase client not initialized");
-
+/**
+ * O pagador de um boleto do C6, lido do CADASTRO na hora: e-mail (com o padrão
+ * da empresa quando o cliente não tem um válido), endereço principal e o
+ * documento só com dígitos. Lança, com a pendência em palavras, quando falta
+ * algo que o banco exige.
+ *
+ * É o trecho que vivia dentro de `registerBoletoViaN8n`, sem alteração de
+ * regra. Saiu para o "Refazer boleto" conferir o cadastro ANTES de cancelar o
+ * boleto atual — descobrir a pendência só no registro deixaria o título sem
+ * boleto.
+ */
+export async function resolverPagadorDoBoletoC6(
+  client: NonNullable<ReturnType<typeof getSupabaseClient>>,
+  boleto: Pick<SupabaseBoletoRow, "id_cliente" | "id_empresa" | "documento">,
+  overrideEmail?: string
+) {
+  let emailDoCadastro = true;
   // 1. Fetch Client email and details
   let email = "";
   if (boleto.id_cliente) {
@@ -2763,6 +2764,7 @@ export async function registerBoletoViaN8n(boleto: SupabaseBoletoRow, overrideEm
 
   // Fallback de E-mail do ERP se override não foi passado
   if (!email || !isValidEmail(email)) {
+    emailDoCadastro = false;
     if (overrideEmail && isValidEmail(overrideEmail)) {
       email = overrideEmail;
     } else {
@@ -2847,7 +2849,7 @@ export async function registerBoletoViaN8n(boleto: SupabaseBoletoRow, overrideEm
     throw new Error("CEP do cliente é inválido (deve conter exatamente 8 dígitos).");
   }
 
-  // 3. Prepare payload
+  // 3. Documento do pagador
   if (!boleto.documento) {
     throw new Error("Documento do cliente está pendente.");
   }
@@ -2858,6 +2860,28 @@ export async function registerBoletoViaN8n(boleto: SupabaseBoletoRow, overrideEm
   if (documentoDigits.length !== 11 && documentoDigits.length !== 14) {
     throw new Error("Documento do cliente é inválido (deve conter 11 dígitos para CPF ou 14 dígitos para CNPJ).");
   }
+
+  return { email, emailDoCadastro, address, documentoDigits };
+}
+
+export async function registerBoletoViaN8n(boleto: SupabaseBoletoRow, overrideEmail?: string) {
+  // Roteamento por empresa, decidido no servidor com o id_empresa do banco.
+  // Empresa 2 (Ideal Birô) emite pelo Inter e retorna aqui; 1 e 3 caem no
+  // `delegarLegado` e seguem exatamente o fluxo abaixo, inalterado.
+  const roteamento = await chamarRotaBoletoFaturado("/api/cobrancas/registrar-boleto-faturado", {
+    boletoId: boleto.id,
+    overrideEmail
+  });
+
+  if (!roteamento.delegarLegado) {
+    return { success: true, data: roteamento.data || {} };
+  }
+
+  const client = getSupabaseClient();
+  if (!client) throw new Error("Supabase client not initialized");
+
+  // 1 a 3. Pagador: e-mail, endereço e documento, do cadastro.
+  const { email, address, documentoDigits } = await resolverPagadorDoBoletoC6(client, boleto, overrideEmail);
 
   const n_nfStr = boleto.n_nf ? String(boleto.n_nf) : "";
   const extReference = boleto.ext_reference || "";
@@ -2953,7 +2977,15 @@ export async function deleteBoletoFromBankViaN8n(
   boletoId: string,
   idBoletoC6: string,
   idEmpresa: number,
-  motivo?: string
+  motivo?: string,
+  opcoes?: {
+    /**
+     * Recusa do banco vira só a exceção com o motivo. Sem isto, a recusa por
+     * título já baixado no banco cancela o título no ERP e devolve a cobrança
+     * ao Registro de recebíveis — o que o "Refazer boleto" não pode fazer.
+     */
+    semBaixaLocal?: boolean;
+  }
 ) {
   // Mesmo roteamento server-side do registro. O `idEmpresa` recebido aqui é
   // apenas informativo: quem decide é o servidor, relendo do banco.
@@ -2986,10 +3018,9 @@ export async function deleteBoletoFromBankViaN8n(
     } catch {
       legivel = "";
     }
-    return await resolverRecusaDoBanco(
-      legivel || errorText || `Erro no processamento da exclusão do boleto: ${response.statusText}`,
-      boletoId
-    );
+    const recusaHttp = legivel || errorText || `Erro no processamento da exclusão do boleto: ${response.statusText}`;
+    if (opcoes?.semBaixaLocal) throw new Error(recusaHttp);
+    return await resolverRecusaDoBanco(recusaHttp, boletoId);
   }
 
   let resData;
@@ -3004,10 +3035,9 @@ export async function deleteBoletoFromBankViaN8n(
   }
 
   if (resData.error || resData.message || resData.status === "error" || resData.success === false) {
-    return await resolverRecusaDoBanco(
-      mensagemDoRetornoBancario(resData.error ?? resData.message, "Erro retornado pelo webhook."),
-      boletoId
-    );
+    const recusa = mensagemDoRetornoBancario(resData.error ?? resData.message, "Erro retornado pelo webhook.");
+    if (opcoes?.semBaixaLocal) throw new Error(recusa);
+    return await resolverRecusaDoBanco(recusa, boletoId);
   }
 
   return { success: true, data: resData };
