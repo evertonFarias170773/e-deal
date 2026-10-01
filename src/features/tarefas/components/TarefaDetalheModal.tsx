@@ -1,14 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { Download, Paperclip } from "lucide-react";
+import { Download, Paperclip, Send } from "lucide-react";
 import { useAppToast } from "@/components/common/AppToast";
 import { useTarefas } from "@/features/tarefas/TarefasProvider";
 import {
   baixarAnexo,
   enviarAnexo,
+  enviarMensagem,
   listarAnexos,
+  listarMensagens,
   marcarVista,
   mudarSituacaoTarefa,
   tamanhoLegivel,
@@ -16,18 +18,19 @@ import {
 } from "@/features/tarefas/services/tarefas.service";
 import {
   ANEXO_ACCEPT,
+  MENSAGEM_MAX,
   MOMENTO_ROTULO,
   OBSERVACAO_MAX,
   type Tarefa,
   type TarefaAcao,
-  type TarefaAnexo
+  type TarefaAnexo,
+  type TarefaMensagem
 } from "@/features/tarefas/types";
 import {
   podeAnexar,
   podeAssumir,
   podeCancelar,
   podeConcluir,
-  recebida,
   dataBR,
   dataHoraBR,
   prazoVencido
@@ -35,9 +38,18 @@ import {
 import { ModalBase, campoClasse, campoEstilo, rotuloClasse } from "@/features/tarefas/components/ModalBase";
 import { PrioridadeBadge, SituacaoBadge } from "@/features/tarefas/components/SituacaoBadge";
 
+type ItemHistorico =
+  | { tipo: "evento"; quando: string; texto: string }
+  | { tipo: "mensagem"; quando: string; mensagem: TarefaMensagem; anexos: TarefaAnexo[] };
+
 /**
- * Detalhe da tarefa. Abrir marca como vista (apaga o sinal piscando).
- * `modoConcluir` abre direto com observacao e anexo da conclusao.
+ * Detalhe da tarefa, com a conversa.
+ *
+ * - Abrir marca como vista (apaga o sinal piscando); se chegar novidade com o
+ *   detalhe aberto, recarrega a conversa e marca de novo.
+ * - Conversa: qualquer participante escreve, com anexo opcional, sem mudar a
+ *   situacao. So com a tarefa aberta ou em andamento. Ninguem edita nem apaga.
+ * - `modoConcluir` abre direto com observacao e anexo da conclusao.
  */
 export function TarefaDetalheModal({
   tarefa: t,
@@ -63,6 +75,9 @@ export function TarefaDetalheModal({
   const [observacao, setObservacao] = useState("");
   const [arquivoConclusao, setArquivoConclusao] = useState<File | null>(null);
   const [anexos, setAnexos] = useState<TarefaAnexo[]>([]);
+  const [mensagens, setMensagens] = useState<TarefaMensagem[]>([]);
+  const [texto, setTexto] = useState("");
+  const [arquivoMensagem, setArquivoMensagem] = useState<File | null>(null);
   const [ocupado, setOcupado] = useState<string | null>(null);
   const [erro, setErro] = useState<string | null>(null);
 
@@ -70,32 +85,35 @@ export function TarefaDetalheModal({
   const assumir = podeAssumir(t, userId, admin, participa);
   const concluir = podeConcluir(t, userId, admin);
   const cancelar = podeCancelar(t, userId, admin);
-  const anexar = podeAnexar(t);
+  const ativa = podeAnexar(t);
 
-  const carregarAnexos = useCallback(async () => {
+  const carregar = useCallback(async () => {
     try {
-      setAnexos(await listarAnexos(t.id));
+      const [listaAnexos, listaMensagens] = await Promise.all([listarAnexos(t.id), listarMensagens(t.id)]);
+      setAnexos(listaAnexos);
+      setMensagens(listaMensagens);
     } catch {
-      setErro("Não foi possível carregar os anexos.");
+      setErro("Não foi possível carregar a conversa e os anexos.");
     }
   }, [t.id]);
 
+  // Abrir = ver. Refaz a cada novidade que chega com o detalhe aberto
+  // (`novidade_em` muda), para a conversa aparecer e o sinal nao ficar aceso.
   useEffect(() => {
     let vivo = true;
-    listarAnexos(t.id)
-      .then((lista) => vivo && setAnexos(lista))
-      .catch(() => vivo && setErro("Não foi possível carregar os anexos."));
+    Promise.all([listarAnexos(t.id), listarMensagens(t.id)])
+      .then(([listaAnexos, listaMensagens]) => {
+        if (!vivo) return;
+        setAnexos(listaAnexos);
+        setMensagens(listaMensagens);
+      })
+      .catch(() => vivo && setErro("Não foi possível carregar a conversa e os anexos."));
+    void marcarVista(t.id).then(() => vivo && recarregar());
     return () => {
       vivo = false;
     };
-  }, [t.id]);
-
-  // Abrir = ver. So conta para quem recebeu (e o sinal so existe para essa pessoa).
-  useEffect(() => {
-    if (!recebida(t, userId, participa) || t.criado_por_user_id === userId) return;
-    void marcarVista(t.id).then(() => recarregar());
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [t.id]);
+  }, [t.id, t.novidade_em]);
 
   const executar = async (acao: TarefaAcao) => {
     setErro(null);
@@ -130,7 +148,32 @@ export function TarefaDetalheModal({
       return;
     }
     showToast({ type: "success", title: "Anexo enviado", description: arquivo.name });
-    await carregarAnexos();
+    await carregar();
+  };
+
+  const enviar = async () => {
+    const mensagem = texto.trim();
+    if (!mensagem || ocupado) return;
+    setErro(null);
+    setOcupado("Enviando…");
+    const r = await enviarMensagem(t.id, mensagem);
+    if (!r.success || typeof r.id !== "number") {
+      setOcupado(null);
+      setErro(r.message ?? "A mensagem não foi enviada.");
+      return;
+    }
+    let avisoAnexo: string | null = null;
+    if (arquivoMensagem) {
+      setOcupado("Enviando anexo…");
+      const a = await enviarAnexo(t.id, arquivoMensagem, "MENSAGEM", r.id);
+      if (!a.success) avisoAnexo = a.message ?? "O anexo não subiu.";
+    }
+    setOcupado(null);
+    setTexto("");
+    setArquivoMensagem(null);
+    if (avisoAnexo) setErro(`Mensagem enviada, mas o anexo não subiu: ${avisoAnexo}`);
+    await carregar();
+    recarregar();
   };
 
   const baixar = async (anexo: TarefaAnexo) => {
@@ -138,14 +181,49 @@ export function TarefaDetalheModal({
     if (!r.success) setErro(r.message ?? "Não foi possível baixar.");
   };
 
-  const historico: Array<[string, string]> = [[`Criada por ${nome(t.criado_por_user_id)}`, dataHoraBR(t.created_at)]];
-  if (t.assumido_at) historico.push([`Assumida por ${nome(t.assumido_por_user_id)}`, dataHoraBR(t.assumido_at)]);
-  if (t.concluido_at) historico.push([`Concluída por ${nome(t.concluido_por_user_id)}`, dataHoraBR(t.concluido_at)]);
-  if (t.cancelado_at) historico.push([`Cancelada por ${nome(t.cancelado_por_user_id)}`, dataHoraBR(t.cancelado_at)]);
+  // Historico: eventos da tarefa e mensagens, em ordem.
+  const historico = useMemo<ItemHistorico[]>(() => {
+    const nomeDe = (id: string | null) => (id ? nomes.get(id) ?? "—" : "—");
+    const itens: ItemHistorico[] = [{ tipo: "evento", quando: t.created_at, texto: `Criada por ${nomeDe(t.criado_por_user_id)}` }];
+    if (t.assumido_at) itens.push({ tipo: "evento", quando: t.assumido_at, texto: `Assumida por ${nomeDe(t.assumido_por_user_id)}` });
+    if (t.concluido_at) itens.push({ tipo: "evento", quando: t.concluido_at, texto: `Concluída por ${nomeDe(t.concluido_por_user_id)}` });
+    if (t.cancelado_at) itens.push({ tipo: "evento", quando: t.cancelado_at, texto: `Cancelada por ${nomeDe(t.cancelado_por_user_id)}` });
+    for (const m of mensagens) {
+      itens.push({ tipo: "mensagem", quando: m.created_at, mensagem: m, anexos: anexos.filter((a) => a.mensagem_id === m.id) });
+    }
+    return itens.sort((x, y) => new Date(x.quando).getTime() - new Date(y.quando).getTime());
+  }, [t, mensagens, anexos, nomes]);
+
+  const anexosDaTarefa = anexos.filter((a) => a.mensagem_id === null);
 
   const destino = t.tipo === "MELHORIA" ? "Administradores" : t.para_todos ? "Todos da equipe" : t.destinatarios.map(nome).join(", ");
   const ocupadoBool = ocupado !== null;
   const botaoSecundario = "rounded-xl border px-4 py-2 text-sm font-semibold disabled:opacity-50";
+
+  const linhaAnexo = (a: TarefaAnexo, compacto = false) => (
+    <li
+      key={a.id}
+      className="flex items-center justify-between gap-2 rounded-xl border px-3 py-2"
+      style={{ borderColor: "var(--border)", background: compacto ? "var(--card)" : undefined }}
+    >
+      <div className="min-w-0">
+        <p className="truncate font-medium">{a.nome_arquivo}</p>
+        <p className="text-xs" style={{ color: "var(--muted)" }}>
+          {tamanhoLegivel(a.tamanho_bytes)}
+          {compacto ? "" : ` · ${nome(a.enviado_por_user_id)} ${MOMENTO_ROTULO[a.momento]}`}
+        </p>
+      </div>
+      <button
+        type="button"
+        onClick={() => void baixar(a)}
+        className="inline-flex shrink-0 items-center gap-1 rounded-lg border px-2.5 py-1.5 text-xs font-semibold"
+        style={{ borderColor: "var(--border)", color: "var(--primary)" }}
+      >
+        <Download className="h-3.5 w-3.5" />
+        Baixar
+      </button>
+    </li>
+  );
 
   let rodape: ReactNode;
   if (concluindo) {
@@ -201,7 +279,7 @@ export function TarefaDetalheModal({
             className="rounded-xl px-4 py-2 text-sm font-bold shadow-sm disabled:opacity-60"
             style={{ background: "var(--primary)", color: "var(--primary-foreground)" }}
           >
-            {ocupado ?? "Assumir"}
+            Assumir
           </button>
         ) : null}
         {concluir ? (
@@ -273,7 +351,7 @@ export function TarefaDetalheModal({
             <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--muted)" }}>
               Anexos
             </p>
-            {anexar && !concluindo ? (
+            {ativa && !concluindo ? (
               <label className="inline-flex cursor-pointer items-center gap-1 text-xs font-semibold" style={{ color: "var(--primary)" }}>
                 <Paperclip className="h-3.5 w-3.5" />
                 Adicionar anexo
@@ -292,49 +370,55 @@ export function TarefaDetalheModal({
               </label>
             ) : null}
           </div>
-          {anexos.length === 0 ? (
+          {anexosDaTarefa.length === 0 ? (
             <p className="text-xs" style={{ color: "var(--muted)" }}>
               Nenhum anexo.
             </p>
           ) : (
             <ul className="space-y-1.5" aria-label="Anexos da tarefa">
-              {anexos.map((a) => (
-                <li key={a.id} className="flex items-center justify-between gap-2 rounded-xl border px-3 py-2" style={{ borderColor: "var(--border)" }}>
-                  <div className="min-w-0">
-                    <p className="truncate font-medium">{a.nome_arquivo}</p>
-                    <p className="text-xs" style={{ color: "var(--muted)" }}>
-                      {tamanhoLegivel(a.tamanho_bytes)} · {nome(a.enviado_por_user_id)} {MOMENTO_ROTULO[a.momento]}
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => void baixar(a)}
-                    className="inline-flex shrink-0 items-center gap-1 rounded-lg border px-2.5 py-1.5 text-xs font-semibold"
-                    style={{ borderColor: "var(--border)", color: "var(--primary)" }}
-                  >
-                    <Download className="h-3.5 w-3.5" />
-                    Baixar
-                  </button>
-                </li>
-              ))}
+              {anexosDaTarefa.map((a) => linhaAnexo(a))}
             </ul>
           )}
         </div>
 
         <div>
           <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--muted)" }}>
-            Histórico
+            Histórico e conversa
           </p>
-          <ul className="space-y-1">
-            {historico.map(([texto, quando]) => (
-              <li key={texto} className="flex justify-between gap-3">
-                <span>{texto}</span>
-                <span style={{ color: "var(--muted)" }}>{quando}</span>
-              </li>
-            ))}
+          <ul className="space-y-2" aria-label="Histórico e conversa">
+            {historico.map((item) =>
+              item.tipo === "evento" ? (
+                <li key={`e-${item.texto}`} className="flex justify-between gap-3 text-xs" style={{ color: "var(--muted)" }}>
+                  <span>{item.texto}</span>
+                  <span>{dataHoraBR(item.quando)}</span>
+                </li>
+              ) : (
+                <li
+                  key={`m-${item.mensagem.id}`}
+                  data-mensagem-id={item.mensagem.id}
+                  className="rounded-xl border px-3 py-2"
+                  style={{
+                    borderColor: "var(--border)",
+                    background: item.mensagem.autor_user_id === userId ? "color-mix(in srgb, var(--primary) 8%, transparent)" : "var(--background)"
+                  }}
+                >
+                  <div className="flex justify-between gap-3 text-xs" style={{ color: "var(--muted)" }}>
+                    <span className="font-semibold" style={{ color: "var(--foreground)" }}>
+                      {item.mensagem.autor_user_id === userId ? "Você" : nome(item.mensagem.autor_user_id)}
+                    </span>
+                    <span>{dataHoraBR(item.quando)}</span>
+                  </div>
+                  <p className="mt-1 whitespace-pre-wrap break-words">{item.mensagem.mensagem}</p>
+                  {item.anexos.length > 0 ? <ul className="mt-2 space-y-1.5">{item.anexos.map((a) => linhaAnexo(a, true))}</ul> : null}
+                </li>
+              )
+            )}
           </ul>
           {t.observacao_conclusao ? (
             <p className="mt-2 rounded-xl border px-3 py-2" style={{ borderColor: "var(--border)" }}>
+              <span className="text-xs font-semibold" style={{ color: "var(--muted)" }}>
+                Observação da conclusão:{" "}
+              </span>
               {t.observacao_conclusao}
             </p>
           ) : null}
@@ -382,11 +466,62 @@ export function TarefaDetalheModal({
               </label>
             </div>
           </div>
-        ) : null}
-
-        {ocupado && !concluindo && !confirmarCancelar ? (
+        ) : ativa && !confirmarCancelar ? (
+          <form
+            aria-label="Escrever na conversa"
+            className="rounded-xl border p-3"
+            style={{ borderColor: "var(--border)" }}
+            onSubmit={(e) => {
+              e.preventDefault();
+              void enviar();
+            }}
+          >
+            <label htmlFor="tarefa-mensagem" className={rotuloClasse}>
+              Responder sem mudar a situação
+            </label>
+            <textarea
+              id="tarefa-mensagem"
+              rows={2}
+              value={texto}
+              maxLength={MENSAGEM_MAX}
+              onChange={(e) => setTexto(e.target.value)}
+              placeholder="Escreva uma mensagem para quem participa da tarefa"
+              className={campoClasse}
+              style={campoEstilo}
+            />
+            <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+              <label className="inline-flex cursor-pointer items-center gap-1.5 text-xs font-semibold" style={{ color: "var(--primary)" }}>
+                <Paperclip className="h-3.5 w-3.5" />
+                {arquivoMensagem ? arquivoMensagem.name : "Anexar arquivo"}
+                <input
+                  id="tarefa-mensagem-anexo"
+                  type="file"
+                  accept={ANEXO_ACCEPT}
+                  className="sr-only"
+                  disabled={ocupadoBool}
+                  onChange={(e) => {
+                    const f = e.target.files?.[0] ?? null;
+                    e.target.value = "";
+                    const ruim = f ? validarArquivo(f) : null;
+                    setErro(ruim);
+                    setArquivoMensagem(ruim ? null : f);
+                  }}
+                />
+              </label>
+              <button
+                type="submit"
+                disabled={ocupadoBool || texto.trim().length === 0}
+                className="inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-bold shadow-sm disabled:opacity-50"
+                style={{ background: "var(--primary)", color: "var(--primary-foreground)" }}
+              >
+                <Send className="h-4 w-4" />
+                {ocupado === "Enviando…" || ocupado === "Enviando anexo…" ? ocupado : "Enviar"}
+              </button>
+            </div>
+          </form>
+        ) : !ativa ? (
           <p className="text-xs" style={{ color: "var(--muted)" }}>
-            {ocupado}
+            Tarefa encerrada: a conversa ficou só para leitura.
           </p>
         ) : null}
 

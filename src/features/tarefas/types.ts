@@ -7,7 +7,9 @@ export type TarefaTipo = "TAREFA" | "MELHORIA";
 export type TarefaStatus = "ABERTA" | "EM_ANDAMENTO" | "CONCLUIDA" | "CANCELADA";
 export type TarefaAcao = "assumir" | "concluir" | "cancelar";
 export type TarefaPrioridade = "NORMAL" | "ALTA" | "URGENTE";
-export type AnexoMomento = "CRIACAO" | "ANDAMENTO" | "CONCLUSAO";
+export type AnexoMomento = "CRIACAO" | "ANDAMENTO" | "CONCLUSAO" | "MENSAGEM";
+/** Ultima novidade da tarefa: faz o sinal piscar para os outros participantes. */
+export type NovidadeTipo = "CRIADA" | "MENSAGEM" | "ASSUMIDA" | "CONCLUIDA" | "CANCELADA";
 
 export type Tarefa = {
   id: number;
@@ -32,6 +34,9 @@ export type Tarefa = {
   observacao_conclusao: string | null;
   cancelado_por_user_id: string | null;
   cancelado_at: string | null;
+  novidade_em: string | null;
+  novidade_por_user_id: string | null;
+  novidade_tipo: NovidadeTipo | null;
   /** user_id dos destinatarios escolhidos (vazio em tarefa para todos e em melhoria). */
   destinatarios: string[];
 };
@@ -40,10 +45,21 @@ export type TarefaAnexo = {
   id: number;
   tarefa_id: number;
   momento: AnexoMomento;
+  /** Mensagem da conversa a que o anexo pertence (momento MENSAGEM). */
+  mensagem_id: number | null;
   nome_arquivo: string;
   tipo_mime: string;
   tamanho_bytes: number;
   enviado_por_user_id: string;
+  created_at: string;
+};
+
+/** Mensagem da conversa da tarefa. Ninguem edita nem apaga. */
+export type TarefaMensagem = {
+  id: number;
+  tarefa_id: number;
+  autor_user_id: string;
+  mensagem: string;
   created_at: string;
 };
 
@@ -74,12 +90,14 @@ export const PRIORIDADE_ROTULO: Record<TarefaPrioridade, string> = {
 export const MOMENTO_ROTULO: Record<AnexoMomento, string> = {
   CRIACAO: "na criação",
   ANDAMENTO: "durante a tarefa",
-  CONCLUSAO: "na conclusão"
+  CONCLUSAO: "na conclusão",
+  MENSAGEM: "na conversa"
 };
 
 export const TITULO_MAX = 200;
 export const DESCRICAO_MAX = 5000;
 export const OBSERVACAO_MAX = 1000;
+export const MENSAGEM_MAX = 2000;
 
 /** Mesmo limite e tipos do bucket `tarefas-anexos`. */
 export const ANEXO_BUCKET = "tarefas-anexos";

@@ -2,6 +2,7 @@ import { cn } from "@/lib/utils";
 import {
   PRIORIDADE_ROTULO,
   TAREFA_STATUS_ROTULO,
+  type NovidadeTipo,
   type TarefaPrioridade,
   type TarefaStatus
 } from "@/features/tarefas/types";
@@ -36,13 +37,22 @@ export function PrioridadeBadge({ prioridade }: { prioridade: TarefaPrioridade }
   );
 }
 
-export function NovaBadge() {
+const ROTULO_NOVIDADE: Record<NovidadeTipo, string> = {
+  CRIADA: "Nova",
+  MENSAGEM: "Nova mensagem",
+  ASSUMIDA: "Assumida",
+  CONCLUIDA: "Concluída agora",
+  CANCELADA: "Cancelada agora"
+};
+
+/** Selo piscando na linha enquanto houver novidade que eu ainda nao abri. */
+export function NovaBadge({ tipo }: { tipo?: NovidadeTipo }) {
   return (
     <span
-      data-selo-nova
+      data-selo-nova={tipo ?? "CRIADA"}
       className="inline-flex shrink-0 animate-pulse items-center rounded-full bg-amber-600 px-2 py-0.5 text-[11px] font-bold text-white"
     >
-      Nova
+      {ROTULO_NOVIDADE[tipo ?? "CRIADA"]}
     </span>
   );
 }

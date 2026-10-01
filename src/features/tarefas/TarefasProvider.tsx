@@ -4,15 +4,18 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, ty
 import { useAuth } from "@/features/auth/AuthProvider";
 import { useAppToast } from "@/components/common/AppToast";
 import { getSupabaseClient } from "@/lib/supabase/client";
-import { mapaNomesUsuarios, resumoTarefas, souDestinatario } from "@/features/tarefas/services/tarefas.service";
+import { contarMinhas, listarNovas, mapaNomesUsuarios } from "@/features/tarefas/services/tarefas.service";
 import { participaDasTarefas } from "@/features/tarefas/lib/participacao";
-import type { Tarefa } from "@/features/tarefas/types";
+import type { NovidadeTipo, Tarefa } from "@/features/tarefas/types";
 
 /**
  * Ponto unico do aviso de tarefas (spec 2026-09-30-tarefas-equipe-design.md).
  *
  * - `contagem`: minhas tarefas em aberto (assumidas por mim, ou recebidas e sem responsavel).
- * - `naoVistas`: recebidas por mim que ainda nao abri. > 0 faz o menu e a Topbar piscarem.
+ * - `novas`: tarefas com novidade para mim, com o tipo — recebida que nunca abri,
+ *   ou mensagem / assumir / concluir / cancelar de outra pessoa depois da minha
+ *   ultima abertura. A regra mora no banco (`tarefas_equipe_novas`).
+ * - `naoVistas`: quantas sao. > 0 faz o menu e a Topbar piscarem.
  * - `versao`: sobe a cada evento de tempo real; as telas recarregam quando muda.
  * - Um canal de tempo real so. O realtime aplica o RLS de quem escuta.
  */
@@ -22,11 +25,21 @@ type TarefasContexto = {
   participa: boolean;
   contagem: number;
   naoVistas: number;
+  novas: ReadonlyMap<number, NovidadeTipo>;
   versao: number;
   recarregar: () => void;
 };
 
-const Contexto = createContext<TarefasContexto>({ participa: false, contagem: 0, naoVistas: 0, versao: 0, recarregar: () => {} });
+const SEM_NOVAS: ReadonlyMap<number, NovidadeTipo> = new Map();
+
+const Contexto = createContext<TarefasContexto>({
+  participa: false,
+  contagem: 0,
+  naoVistas: 0,
+  novas: SEM_NOVAS,
+  versao: 0,
+  recarregar: () => {}
+});
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -36,15 +49,18 @@ export function TarefasProvider({ children }: { children: ReactNode }) {
   const userId = user?.id && UUID_RE.test(user.id) ? user.id : null;
   const participa = participaDasTarefas(user);
   const [contagem, setContagem] = useState(0);
-  const [naoVistas, setNaoVistas] = useState(0);
+  const [novas, setNovas] = useState<ReadonlyMap<number, NovidadeTipo>>(SEM_NOVAS);
   const [versao, setVersao] = useState(0);
   const nomesRef = useRef<Map<string, string> | null>(null);
+  /** Ultima novidade ja avisada por tarefa: evita toast repetido do mesmo evento. */
+  const avisadasRef = useRef<Map<number, string>>(new Map());
 
-  const contar = useCallback(async () => {
-    if (!userId) return;
-    const r = await resumoTarefas();
-    setContagem(r.minhas);
-    setNaoVistas(r.naoVistas);
+  const contar = useCallback(async (): Promise<ReadonlyMap<number, NovidadeTipo>> => {
+    if (!userId) return SEM_NOVAS;
+    const [minhas, mapa] = await Promise.all([contarMinhas(), listarNovas()]);
+    setContagem(minhas);
+    setNovas(mapa);
+    return mapa;
   }, [userId]);
 
   const recarregar = useCallback(() => {
@@ -76,66 +92,71 @@ export function TarefasProvider({ children }: { children: ReactNode }) {
     const channel = supabase
       .channel(`tarefas_equipe_${userId}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "tarefas_equipe" }, (payload) => {
-        void contar();
         setVersao((v) => v + 1);
 
         const t = payload.new as Partial<Tarefa> | null;
-        if (!t || !t.titulo || !t.id) return;
+        const tipo = t?.novidade_tipo ?? null;
+        const marca = t?.novidade_em ?? null;
 
-        if (payload.eventType === "INSERT") {
-          if (t.criado_por_user_id === userId || t.tipo !== "TAREFA") return;
-          // Admin enxerga tudo; toast so para quem recebeu.
-          const avisar = async () => {
-            // "Para todos" so avisa quem participa das Tarefas.
-            const minha = t.para_todos ? participa : await souDestinatario(t.id as number, userId);
-            if (!minha) return;
-            const nome = await nomeDe(t.criado_por_user_id ?? null);
+        // Sem novidade no evento (ex.: vinculo apagado) ou acao minha: so recarrega.
+        if (!t || !t.id || !t.titulo || !tipo || !marca || t.novidade_por_user_id === userId) {
+          void contar();
+          return;
+        }
+        if (avisadasRef.current.get(t.id) === marca) {
+          void contar();
+          return;
+        }
+
+        // Quem decide se a novidade e para mim e o banco: so aviso se a tarefa
+        // entrou na minha lista de novas (participante, e nao fui eu quem fez).
+        const avisar = async () => {
+          const mapa = await contar();
+          if (!mapa.has(t.id as number)) return;
+          avisadasRef.current.set(t.id as number, marca);
+          const nome = await nomeDe(t.novidade_por_user_id ?? null);
+          const titulo = `"${t.titulo}"`;
+
+          if (tipo === "CRIADA") {
             const urgente = t.prioridade === "URGENTE" ? "URGENTE: " : "";
             showToast({
               type: t.prioridade === "URGENTE" ? "warning" : "info",
               title: t.para_todos ? "Nova tarefa para todos" : "Nova tarefa para você",
-              description: `${urgente}${nome} pediu: "${t.titulo}".`,
+              description: `${urgente}${nome} pediu: ${titulo}.`,
               // Aviso de tarefa nova fica mais que o padrao (2,6 s) para dar tempo de ler.
               duration: 8000,
               onClick: irParaTarefas
             });
-          };
-          void avisar();
-          return;
-        }
-        if (payload.eventType !== "UPDATE") return;
-
-        if (t.status === "EM_ANDAMENTO" && t.criado_por_user_id === userId && t.assumido_por_user_id !== userId) {
-          void nomeDe(t.assumido_por_user_id ?? null).then((nome) =>
-            showToast({ type: "info", title: "Tarefa assumida", description: `${nome} assumiu "${t.titulo}".` })
-          );
-        } else if (t.status === "CONCLUIDA" && t.criado_por_user_id === userId && t.concluido_por_user_id !== userId) {
-          void nomeDe(t.concluido_por_user_id ?? null).then((nome) =>
+          } else if (tipo === "MENSAGEM") {
             showToast({
-              type: "success",
-              title: "Tarefa concluída",
-              description: `${nome} concluiu "${t.titulo}".`,
+              type: "info",
+              title: "Nova mensagem na tarefa",
+              description: `${nome} escreveu em ${titulo}.`,
+              duration: 8000,
               onClick: irParaTarefas
-            })
-          );
-        } else if (
-          t.status === "CANCELADA" &&
-          t.cancelado_por_user_id !== userId &&
-          (t.responsavel_user_id === userId || t.criado_por_user_id === userId)
-        ) {
-          void nomeDe(t.cancelado_por_user_id ?? null).then((nome) =>
-            showToast({ type: "info", title: "Tarefa cancelada", description: `${nome} cancelou "${t.titulo}".` })
-          );
-        }
+            });
+          } else if (tipo === "ASSUMIDA") {
+            showToast({ type: "info", title: "Tarefa assumida", description: `${nome} assumiu ${titulo}.`, duration: 6000, onClick: irParaTarefas });
+          } else if (tipo === "CONCLUIDA") {
+            showToast({ type: "success", title: "Tarefa concluída", description: `${nome} concluiu ${titulo}.`, duration: 6000, onClick: irParaTarefas });
+          } else if (tipo === "CANCELADA") {
+            showToast({ type: "info", title: "Tarefa cancelada", description: `${nome} cancelou ${titulo}.`, duration: 6000, onClick: irParaTarefas });
+          }
+        };
+        void avisar();
       })
       .subscribe();
 
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, [userId, participa, contar, nomeDe, showToast]);
+  }, [userId, contar, nomeDe, showToast]);
 
-  return <Contexto.Provider value={{ participa, contagem, naoVistas, versao, recarregar }}>{children}</Contexto.Provider>;
+  return (
+    <Contexto.Provider value={{ participa, contagem, naoVistas: novas.size, novas, versao, recarregar }}>
+      {children}
+    </Contexto.Provider>
+  );
 }
 
 export function useTarefas() {

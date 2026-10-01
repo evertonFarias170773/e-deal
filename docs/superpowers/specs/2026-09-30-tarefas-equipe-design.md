@@ -226,6 +226,53 @@ virava pendência antiga; agora vira tarefa.
 - **Cliente**: botão "Nova tarefa" no cabeçalho do cadastro, com o cliente
   preenchido.
 
+## Conversa e novidade
+
+Decisão do dono em 01/10/2026. Migrations `tarefas_equipe_conversa` e
+`tarefas_equipe_novidade`.
+
+**Conversa.** Qualquer participante — quem criou, destinatários, responsável e
+admin; em tarefa para todos, quem participa das Tarefas — escreve mensagens,
+com anexo opcional, sem mudar a situação. É a mesma regra de quem vê a tarefa.
+
+- Só com a tarefa aberta ou em andamento, como os anexos. Encerrada, a conversa
+  fica para leitura.
+- Ninguém edita nem apaga mensagem: não há policy nem privilégio de UPDATE ou
+  DELETE em `tarefas_equipe_mensagens`.
+- Autor e horário são preenchidos pelo banco.
+- O anexo da mensagem reaproveita `tarefas_equipe_anexos` e o bucket privado:
+  `momento = MENSAGEM` e `mensagem_id`. O banco só aceita apontar para mensagem
+  da mesma tarefa, escrita por quem anexa.
+- No detalhe, eventos (criada, assumida, concluída, cancelada) e mensagens
+  aparecem juntos, em ordem, com autor e horário.
+
+**Novidade.** Mensagem, assumir, concluir e cancelar contam como novidade. A
+tarefa guarda a última (`novidade_em`, `novidade_por_user_id`, `novidade_tipo`)
+e `tarefas_equipe_vistos.visto_em` passa a ser a hora da última abertura.
+
+Há novidade para mim (`tarefas_equipe_novas()`) quando:
+
+1. recebi a tarefa e nunca abri (regra de sempre); ou
+2. a última novidade é de outra pessoa, é posterior à minha última abertura e
+   estou envolvido: criei, sou o responsável, sou destinatário escolhido ou já
+   escrevi na conversa.
+
+Em tarefa **para todos** os destinatários não contam no item 2: só quem criou,
+o responsável e quem já escreveu. Não pisca para a equipe inteira a cada
+mensagem. Quem fez a ação nunca recebe o próprio aviso.
+
+Enquanto houver novidade, piscam o ícone da Topbar, o item do menu e o selo da
+linha (Nova, Nova mensagem, Assumida, Concluída agora, Cancelada agora), até a
+pessoa abrir a tarefa. Abrir chama `tarefas_equipe_marcar_vista`. O toast em
+tempo real sai para os mesmos casos: o provedor só avisa se, depois do evento,
+a tarefa entrou na lista de novas — quem decide é o banco.
+
+As colunas de novidade só mudam por dentro das triggers: um PATCH direto do
+cliente não consegue forjar nem apagar uma novidade.
+
+Rotas: `POST /api/tarefas/[id]/mensagens`; o registro de anexo aceita
+`mensagem_id`.
+
 ## Legado
 
 - `propostas_pendencias` não recebe mais nada do sistema. A tela `/pendencias`

@@ -8,10 +8,12 @@ import {
   TAREFA_STATUS_ATIVOS,
   TAREFA_STATUS_ENCERRADOS,
   type AnexoMomento,
+  type NovidadeTipo,
   type PessoaEquipe,
   type Tarefa,
   type TarefaAcao,
   type TarefaAnexo,
+  type TarefaMensagem,
   type TarefaPrioridade,
   type TarefaTipo
 } from "@/features/tarefas/types";
@@ -103,51 +105,60 @@ export async function listarTarefasDoPedido(idInt: number): Promise<Tarefa[]> {
   return ((data ?? []) as LinhaTarefa[]).map(paraTarefa);
 }
 
-/** Ids, entre os informados, que eu ja abri. */
-export async function idsVistos(userId: string, ids: number[]): Promise<Set<number>> {
-  if (ids.length === 0) return new Set();
-  const { data } = await cliente()
-    .from("tarefas_equipe_vistos")
-    .select("tarefa_id")
-    .eq("user_id", userId)
-    .in("tarefa_id", ids);
-  return new Set((data ?? []).map((v: { tarefa_id: number }) => v.tarefa_id));
-}
-
+/**
+ * Abrir a tarefa = ver. Regrava a hora da ultima abertura (funcao do banco:
+ * so grava a linha do proprio usuario, e so de tarefa que ele enxerga).
+ */
 export async function marcarVista(tarefaId: number): Promise<void> {
-  const { error } = await cliente()
-    .from("tarefas_equipe_vistos")
-    .upsert({ tarefa_id: tarefaId }, { onConflict: "tarefa_id,user_id", ignoreDuplicates: true });
+  const { error } = await cliente().rpc("tarefas_equipe_marcar_vista", { p_tarefa: tarefaId });
   if (error) console.warn("[tarefas] Falha ao marcar como vista:", error.message);
 }
 
-/** Contador (minhas em aberto) e sinal (recebidas que ainda nao abri). */
-export async function resumoTarefas(): Promise<{ minhas: number; naoVistas: number }> {
+/**
+ * Tarefas com novidade para mim: recebidas que nunca abri, e as que tiveram
+ * mensagem, assumir, concluir ou cancelar de outra pessoa depois da minha
+ * ultima abertura. A regra mora no banco (`tarefas_equipe_novas`).
+ */
+export async function listarNovas(): Promise<Map<number, NovidadeTipo>> {
+  const mapa = new Map<number, NovidadeTipo>();
   const supabase = getSupabaseClient();
-  if (!supabase) return { minhas: 0, naoVistas: 0 };
+  if (!supabase) return mapa;
+  const { data, error } = await supabase.rpc("tarefas_equipe_novas");
+  if (error) {
+    console.warn("[tarefas] Falha ao ler as novidades:", error.message);
+    return mapa;
+  }
+  for (const linha of (data ?? []) as { tarefa_id: number; tipo: NovidadeTipo }[]) mapa.set(linha.tarefa_id, linha.tipo);
+  return mapa;
+}
+
+/** Contador do menu e da Topbar: minhas tarefas em aberto. */
+export async function contarMinhas(): Promise<number> {
+  const supabase = getSupabaseClient();
+  if (!supabase) return 0;
   const { data, error } = await supabase.rpc("tarefas_equipe_resumo");
   if (error) {
     console.warn("[tarefas] Falha ao ler o resumo:", error.message);
-    return { minhas: 0, naoVistas: 0 };
+    return 0;
   }
-  const linha = (Array.isArray(data) ? data[0] : data) as { minhas?: number; nao_vistas?: number } | null;
-  return { minhas: linha?.minhas ?? 0, naoVistas: linha?.nao_vistas ?? 0 };
+  const linha = (Array.isArray(data) ? data[0] : data) as { minhas?: number } | null;
+  return linha?.minhas ?? 0;
 }
 
-/** Sou destinatario escolhido desta tarefa? (para o toast de nova tarefa) */
-export async function souDestinatario(tarefaId: number, userId: string): Promise<boolean> {
-  const { count } = await cliente()
-    .from("tarefas_equipe_destinatarios")
-    .select("tarefa_id", { count: "exact", head: true })
+export async function listarMensagens(tarefaId: number): Promise<TarefaMensagem[]> {
+  const { data, error } = await cliente()
+    .from("tarefas_equipe_mensagens")
+    .select("id, tarefa_id, autor_user_id, mensagem, created_at")
     .eq("tarefa_id", tarefaId)
-    .eq("user_id", userId);
-  return (count ?? 0) > 0;
+    .order("created_at", { ascending: true });
+  if (error) throw new Error(error.message);
+  return (data ?? []) as TarefaMensagem[];
 }
 
 export async function listarAnexos(tarefaId: number): Promise<TarefaAnexo[]> {
   const { data, error } = await cliente()
     .from("tarefas_equipe_anexos")
-    .select("id, tarefa_id, momento, nome_arquivo, tipo_mime, tamanho_bytes, enviado_por_user_id, created_at")
+    .select("id, tarefa_id, momento, mensagem_id, nome_arquivo, tipo_mime, tamanho_bytes, enviado_por_user_id, created_at")
     .eq("tarefa_id", tarefaId)
     .order("created_at", { ascending: true });
   if (error) throw new Error(error.message);
@@ -237,6 +248,11 @@ export function mudarSituacaoTarefa(id: number, acao: TarefaAcao, observacao?: s
   return postar(`/api/tarefas/${id}/situacao`, { acao, observacao });
 }
 
+/** Escreve na conversa da tarefa, sem mudar a situacao. Devolve o id da mensagem. */
+export function enviarMensagem(tarefaId: number, mensagem: string) {
+  return postar(`/api/tarefas/${tarefaId}/mensagens`, { mensagem });
+}
+
 /** Erro de validacao local do arquivo, ou null se pode enviar. */
 export function validarArquivo(arquivo: File): string | null {
   if (!ANEXO_TIPOS[arquivo.type]) return `"${arquivo.name}": só PDF ou imagem (PNG, JPG, WEBP, GIF).`;
@@ -246,7 +262,12 @@ export function validarArquivo(arquivo: File): string | null {
 }
 
 /** Envia um anexo: pede o link assinado, sobe direto ao bucket e registra. */
-export async function enviarAnexo(tarefaId: number, arquivo: File, momento: AnexoMomento): Promise<RespostaRota> {
+export async function enviarAnexo(
+  tarefaId: number,
+  arquivo: File,
+  momento: AnexoMomento,
+  mensagemId?: number
+): Promise<RespostaRota> {
   const invalido = validarArquivo(arquivo);
   if (invalido) return { success: false, message: invalido };
 
@@ -264,7 +285,7 @@ export async function enviarAnexo(tarefaId: number, arquivo: File, momento: Anex
     .uploadToSignedUrl(caminho, String(prep.token), arquivo, { contentType: arquivo.type });
   if (error) return { success: false, message: `Falha ao enviar "${arquivo.name}": ${error.message}` };
 
-  return postar(`/api/tarefas/${tarefaId}/anexos`, { caminho, nome: arquivo.name, momento });
+  return postar(`/api/tarefas/${tarefaId}/anexos`, { caminho, nome: arquivo.name, momento, mensagem_id: mensagemId ?? null });
 }
 
 /** Pede o link assinado curto e abre o download. */

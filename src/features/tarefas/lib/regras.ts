@@ -31,11 +31,6 @@ export function podeAnexar(t: Tarefa) {
   return ativa(t);
 }
 
-/** Selo "Nova": recebida por mim, criada por outra pessoa, ativa e ainda nao aberta. */
-export function ehNovaParaMim(t: Tarefa, userId: string, vistas: Set<number>, participa: boolean) {
-  return ativa(t) && recebida(t, userId, participa) && t.criado_por_user_id !== userId && !vistas.has(t.id);
-}
-
 /** "AAAA-MM-DD" (prazo) ou timestamp ISO → "dd/mm/aaaa". */
 export function dataBR(valor: string | null) {
   if (!valor) return "";

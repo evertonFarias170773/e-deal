@@ -12,7 +12,6 @@ import { EmptyState } from "@/components/common/EmptyState";
 import { cn } from "@/lib/utils";
 import { useTarefas } from "@/features/tarefas/TarefasProvider";
 import {
-  idsVistos,
   listarTarefas,
   mapaNomesUsuarios,
   mudarSituacaoTarefa,
@@ -28,8 +27,7 @@ import {
   podeConcluir,
   dataBR,
   prazoVencido,
-  descreverDestino,
-  ehNovaParaMim
+  descreverDestino
 } from "@/features/tarefas/lib/regras";
 
 const ABAS = ["minhas", "criadas", "todas", "melhorias"] as const;
@@ -45,7 +43,7 @@ const ROTULO_ABA: Record<AbaTarefas, string> = {
 export function TarefasPage() {
   const { user } = useAuth();
   const { showToast } = useAppToast();
-  const { versao, recarregar, participa } = useTarefas();
+  const { versao, recarregar, participa, novas } = useTarefas();
   const admin = Boolean(user?.isAdmin || user?.isSuperAdmin);
   const userId = user?.id ?? "";
 
@@ -62,7 +60,6 @@ export function TarefasPage() {
   const situacao = filters.sit;
 
   const [tarefas, setTarefas] = useState<Tarefa[]>([]);
-  const [vistas, setVistas] = useState<Set<number>>(new Set());
   const [nomes, setNomes] = useState<Map<string, string>>(new Map());
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
@@ -84,11 +81,9 @@ export function TarefasPage() {
     let vivo = true;
     Promise.resolve().then(() => vivo && setCarregando(true));
     listarTarefas({ aba, situacao, userId, participa })
-      .then(async (lista) => {
-        const jaVistas = await idsVistos(userId, lista.map((t) => t.id));
+      .then((lista) => {
         if (!vivo) return;
         setTarefas(lista);
-        setVistas(jaVistas);
         setErro(null);
       })
       .catch((e: unknown) => vivo && setErro(e instanceof Error ? e.message : String(e)))
@@ -223,7 +218,7 @@ export function TarefasPage() {
                       {t.titulo}
                     </span>
                     <SituacaoBadge status={t.status} />
-                    {ehNovaParaMim(t, userId, vistas, participa) ? <NovaBadge /> : null}
+                    {novas.has(t.id) ? <NovaBadge tipo={novas.get(t.id)} /> : null}
                   </div>
                   <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-xs" style={{ color: "var(--muted)" }}>
                     <span className="inline-flex items-center gap-1">

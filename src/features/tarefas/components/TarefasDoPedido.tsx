@@ -4,9 +4,9 @@ import { useEffect, useState } from "react";
 import { ListTodo, Plus } from "lucide-react";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { useTarefas } from "@/features/tarefas/TarefasProvider";
-import { idsVistos, listarTarefasDoPedido, mapaNomesUsuarios } from "@/features/tarefas/services/tarefas.service";
+import { listarTarefasDoPedido, mapaNomesUsuarios } from "@/features/tarefas/services/tarefas.service";
 import type { Tarefa } from "@/features/tarefas/types";
-import { dataBR, descreverDestino, ehNovaParaMim } from "@/features/tarefas/lib/regras";
+import { dataBR, descreverDestino } from "@/features/tarefas/lib/regras";
 import { NovaBadge, PrioridadeBadge, SituacaoBadge } from "@/features/tarefas/components/SituacaoBadge";
 import { NovaTarefaModal } from "@/features/tarefas/components/NovaTarefaModal";
 import { TarefaDetalheModal } from "@/features/tarefas/components/TarefaDetalheModal";
@@ -30,12 +30,11 @@ export function TarefasDoPedido({
   onContagem?: (ativas: number) => void;
 }) {
   const { user } = useAuth();
-  const { versao, recarregar, participa } = useTarefas();
+  const { versao, recarregar, novas } = useTarefas();
   const userId = user?.id ?? "";
   const admin = Boolean(user?.isAdmin || user?.isSuperAdmin);
 
   const [tarefas, setTarefas] = useState<Tarefa[]>([]);
-  const [vistas, setVistas] = useState<Set<number>>(new Set());
   const [nomes, setNomes] = useState<Map<string, string>>(new Map());
   const [novaAberta, setNovaAberta] = useState(false);
   const [abertaId, setAbertaId] = useState<number | null>(null);
@@ -45,12 +44,10 @@ export function TarefasDoPedido({
     if (!userId) return;
     let vivo = true;
     Promise.all([listarTarefasDoPedido(idInt), mapaNomesUsuarios()])
-      .then(async ([lista, mapa]) => {
-        const jaVistas = await idsVistos(userId, lista.map((t) => t.id));
+      .then(([lista, mapa]) => {
         if (!vivo) return;
         setTarefas(lista);
         setNomes(mapa);
-        setVistas(jaVistas);
         setErro(null);
       })
       .catch(() => vivo && setErro("Não foi possível carregar as tarefas deste pedido."));
@@ -114,7 +111,7 @@ export function TarefasDoPedido({
               >
                 <PrioridadeBadge prioridade={t.prioridade} />
                 <span className="min-w-0 flex-1 truncate font-medium">{t.titulo}</span>
-                {ehNovaParaMim(t, userId, vistas, participa) ? <NovaBadge /> : null}
+                {novas.has(t.id) ? <NovaBadge tipo={novas.get(t.id)} /> : null}
                 <span className="text-xs" style={{ color: "var(--muted)" }}>
                   {descreverDestino(t, nome)} · {dataBR(t.created_at)}
                 </span>

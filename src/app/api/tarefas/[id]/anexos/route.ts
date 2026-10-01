@@ -1,7 +1,7 @@
 /**
  * POST /api/tarefas/[id]/anexos — registra um anexo ja enviado ao bucket.
  *
- * Corpo: { caminho, nome, momento }
+ * Corpo: { caminho, nome, momento, mensagem_id? }
  *
  * Confere no storage que o arquivo chegou e le dele o tamanho e o tipo reais
  * (nao confia no que o navegador diz). Grava a linha com a SESSAO do usuario:
@@ -16,7 +16,7 @@ import { ANEXO_BUCKET, ANEXO_MAX_BYTES, ANEXO_TIPOS, type AnexoMomento } from "@
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const MOMENTOS: AnexoMomento[] = ["CRIACAO", "ANDAMENTO", "CONCLUSAO"];
+const MOMENTOS: AnexoMomento[] = ["CRIACAO", "ANDAMENTO", "CONCLUSAO", "MENSAGEM"];
 
 export async function POST(request: NextRequest, contexto: { params: Promise<{ id: string }> }) {
   const aberto = await abrirContexto(request);
@@ -35,6 +35,11 @@ export async function POST(request: NextRequest, contexto: { params: Promise<{ i
   const nome = String(body.nome ?? "").trim().slice(0, 200) || "anexo";
   const momento = String(body.momento ?? "ANDAMENTO") as AnexoMomento;
   if (!MOMENTOS.includes(momento)) return recusa("Momento inválido.", 400, "MOMENTO");
+  // Anexo de mensagem aponta para a mensagem; o banco confere que ela e da
+  // mesma tarefa e de quem esta anexando.
+  const mensagemId = body.mensagem_id === null || body.mensagem_id === undefined ? null : Number(body.mensagem_id);
+  if (mensagemId !== null && (!Number.isInteger(mensagemId) || mensagemId <= 0)) return recusa("Mensagem inválida.", 400, "MENSAGEM");
+  if ((momento === "MENSAGEM") !== (mensagemId !== null)) return recusa("Anexo de mensagem precisa da mensagem.", 400, "MENSAGEM");
   const esperado = new RegExp(`^tarefa/${id}/[0-9a-f-]{36}\\.(pdf|png|jpg|webp|gif)$`);
   if (!esperado.test(caminho)) return recusa("Arquivo inválido.", 400, "CAMINHO");
 
@@ -54,7 +59,7 @@ export async function POST(request: NextRequest, contexto: { params: Promise<{ i
 
   const { data, error } = await aberto.ctx.supabase
     .from("tarefas_equipe_anexos")
-    .insert({ tarefa_id: id, momento, nome_arquivo: nome, caminho, tipo_mime: tipo, tamanho_bytes: tamanho })
+    .insert({ tarefa_id: id, momento, mensagem_id: mensagemId, nome_arquivo: nome, caminho, tipo_mime: tipo, tamanho_bytes: tamanho })
     .select("id")
     .single();
 
