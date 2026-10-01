@@ -368,3 +368,27 @@ A Matriz de Segurança define se uma escrita está autorizada.
 No estado atual, a leitura está liberada e as escritas em perfis e vínculo de perfil permanecem bloqueadas.
 
 Nenhuma interface, fallback ou registro histórico amplia essa autorização.
+
+## Catálogo da tela e permissões fora dele
+
+O catálogo de permissões é a constante `CATALOGO_PERMISSOES`, em
+`src/features/usuarios-perfis/components/PerfisPermissoesPanel.tsx`. Não existe
+tabela de catálogo no banco: o que cada perfil tem fica em `perfis.permissoes`
+e é gravado pela função `update_permissoes_perfil`, que aceita qualquer lista.
+
+Permissão nova costuma nascer por migration antes de entrar no catálogo. Por
+isso, desde 01/10/2026:
+
+- ao salvar um perfil, a tela **preserva** as permissões gravadas que ela não
+  conhece (`montarPermissoesParaSalvar`). Antes ela filtrava pelo catálogo e
+  apagava essas chaves sem avisar — a janela de confirmação nem mostrava a perda;
+- essas chaves aparecem no bloco **Permissões fora do catálogo**, somente
+  leitura, abaixo dos grupos. Tirar uma delas é trabalho de migration.
+
+Entraram no catálogo em 01/10/2026 duas chaves que o código já verificava:
+`propostas.editar_faturado` (grupo Orçamentos e Propostas) e
+`contas_receber.admin` (grupo Contas a Receber), as duas críticas.
+
+Ficaram fora do catálogo, por decisão do dono: `propostas.view_team` e
+`propostas.view_company` (verificadas no escopo de propostas, em nenhum perfil)
+e `pedidos.edit` (gravada no perfil Produção, sem uso no código).

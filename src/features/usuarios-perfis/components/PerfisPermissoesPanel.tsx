@@ -90,6 +90,8 @@ const CATALOGO_PERMISSOES: Record<string, PermissionDefinition[]> = {
     { key: "propostas.release_nf",       label: "Liberar para Nota Fiscal",        desc: "Permite marcar a proposta para faturamento (campo libera_nf).",                      critica: true  },
     { key: "propostas.devolver_revisao", label: "Devolver para Revisão",           desc: "Permite devolver a proposta para a etapa de revisão de atendente.",                  critica: true  },
     { key: "propostas.editar_paga",      label: "Editar Proposta Paga",            desc: "Permite alterar itens e valores de propostas comerciais com pagamentos confirmados.",critica: true  },
+    // Usada desde 13/08/2026 (rota editar-paga e tela do orcamento); entrou no catalogo em 01/10/2026.
+    { key: "propostas.editar_faturado",  label: "Editar Proposta com Faturado a Vencer", desc: "Permite alterar proposta cuja cobranca e faturada a vencer e ainda nao recebida; ajusta o valor da cobranca. Nao abre proposta paga de verdade.", critica: true  },
     { key: "propostas.cancelar_cobranca_nao_paga", label: "Cancelar Cobrança Não Paga", desc: "Permite cancelar cobrança emitida e comprovadamente NÃO paga da própria proposta, para corrigir o orçamento e gerar outra. Não alcança cobrança paga, confirmada, conciliada ou vinculada à Conta Corrente.", critica: true },
     { key: "propostas.complementar",     label: "Criar Pedido Complementar",       desc: "Permite criar, a partir de proposta paga e nao expedida, um pedido complementar do mesmo evento, com frete cobrado pela diferenca do peso somado.", critica: true },
     { key: "propostas.encerrar_teste",   label: "Encerrar pedido de teste",        desc: "Permite encerrar e reabrir pedido de TESTE (tira e devolve o pedido das listas operacionais). Nenhum perfil a recebe: so o Super Administrador, pelo curinga.", critica: true },
@@ -136,6 +138,8 @@ const CATALOGO_PERMISSOES: Record<string, PermissionDefinition[]> = {
     { key: "contas_receber.view",       label: "Visualizar Títulos",          desc: "Permite listar e visualizar os títulos a receber.",                                critica: false },
     { key: "contas_receber.baixa",      label: "Registrar Baixa",             desc: "Permite registrar a baixa de um título a receber.",                               critica: true  },
     { key: "contas_receber.send_email", label: "Disparar E-mail de Cobrança", desc: "Permite enviar e-mail de cobrança para clientes em atraso.",                     critica: false },
+    // Verificada na tela de Contas a Receber; ate 01/10/2026 nenhum perfil a tinha e so admin passava.
+    { key: "contas_receber.admin",      label: "Administrar Contas a Receber", desc: "Libera as acoes administrativas da tela: cancelar recebivel, registrar boleto, excluir boleto do banco e editar ou transformar deposito.", critica: true  },
     // Permissões V1 mantidas para compatibilidade retroativa durante migração
     { key: "financeiro.view",    label: "Relatorios Financeiros", desc: "Sera substituido por dashboard.view_financeiro + contas_receber.view.", critica: false },
     { key: "financeiro.aprovar", label: "Aprovacao Financeira",   desc: "Sera substituido por contas_receber.baixa na Fase 4.",                  critica: true  }
@@ -210,6 +214,41 @@ const CATALOGO_PERMISSOES: Record<string, PermissionDefinition[]> = {
     { key: "config.faturamento", label: "Configurar Faturamento",     desc: "Permite configurar parâmetros de cobrança, vencimentos e meios de pagamento.",         critica: true  }
   ]
 };
+
+const CHAVES_DO_CATALOGO: ReadonlySet<string> = new Set(
+  Object.values(CATALOGO_PERMISSOES).flatMap((grupo) => grupo.map((p) => p.key))
+);
+
+/**
+ * Permissoes gravadas no perfil que esta tela nao conhece (fora do catalogo).
+ *
+ * Existem porque permissao nova costuma nascer por migration antes de entrar
+ * aqui — foi assim com `propostas.editar_faturado` (13/08/2026). Ate 01/10/2026
+ * o salvar filtrava pelo catalogo e APAGAVA essas chaves sem avisar: a janela
+ * de confirmacao comparava duas listas que ainda as continham, entao a perda
+ * nem aparecia no diff. Agora elas sao preservadas e mostradas, somente leitura.
+ */
+export function permissoesForaDoCatalogo(permissoes: readonly string[] | null | undefined): string[] {
+  const vistas = new Set<string>();
+  for (const bruta of permissoes ?? []) {
+    const chave = String(bruta).trim();
+    if (chave !== "" && chave !== "*" && !CHAVES_DO_CATALOGO.has(chave)) vistas.add(chave);
+  }
+  return Array.from(vistas);
+}
+
+/**
+ * O que vai para o banco ao salvar um perfil comum: o que esta marcado no
+ * catalogo MAIS o que o perfil ja tinha fora do catalogo. Nunca `*`.
+ */
+export function montarPermissoesParaSalvar(
+  editadas: readonly string[],
+  originaisDoPerfil: readonly string[] | null | undefined
+): string[] {
+  const preservadas = permissoesForaDoCatalogo(originaisDoPerfil);
+  const doCatalogo = editadas.map((p) => p.trim()).filter((p) => p !== "" && p !== "*" && CHAVES_DO_CATALOGO.has(p));
+  return Array.from(new Set([...doCatalogo, ...preservadas]));
+}
 
 export function PerfisPermissoesPanel() {
   const { user } = useAuth();
@@ -347,13 +386,8 @@ export function PerfisPermissoesPanel() {
       if (isSuperAdmin) {
         finalPerms = ["*"];
       } else {
-        const allowedKeys = Object.values(CATALOGO_PERMISSOES)
-          .flatMap((group) => group.map((p) => p.key));
-        
-        finalPerms = editedPermissoes
-          .map((p) => p.trim())
-          .filter((p) => p !== "" && p !== "*" && allowedKeys.includes(p));
-        finalPerms = Array.from(new Set(finalPerms));
+        // Marcadas no catalogo + as que o perfil ja tinha fora dele (preservadas).
+        finalPerms = montarPermissoesParaSalvar(editedPermissoes, perfilSelecionado.permissoes);
       }
 
       await updatePermissoesPerfil(perfilSelecionado.id, finalPerms);
@@ -381,6 +415,11 @@ export function PerfisPermissoesPanel() {
       setIsSaving(false);
     }
   };
+
+  const foraDoCatalogo = useMemo(
+    () => (perfilSelecionado?.slug === "super_admin" ? [] : permissoesForaDoCatalogo(perfilSelecionado?.permissoes)),
+    [perfilSelecionado]
+  );
 
   const totalPermissoesExibidas = useMemo(() => {
     if (perfilSelecionado?.slug === "super_admin") return "Acesso Total (*)";
@@ -571,6 +610,36 @@ export function PerfisPermissoesPanel() {
               );
             })}
           </div>
+
+          {foraDoCatalogo.length > 0 && (
+            <div className="px-6 pb-6">
+              <section
+                aria-label="Permissões fora do catálogo"
+                className="rounded-2xl border border-amber-200 bg-amber-50/60 p-4 dark:border-amber-900/50 dark:bg-amber-900/10"
+              >
+                <h3 className="flex items-center gap-2 text-sm font-bold text-amber-900 dark:text-amber-200">
+                  <Lock className="h-4 w-4" />
+                  Permissões fora do catálogo
+                </h3>
+                <p className="mt-1 text-xs leading-relaxed text-amber-900/80 dark:text-amber-200/80">
+                  Estão gravadas neste perfil, mas esta tela não as conhece. Não dá para marcar nem desmarcar aqui:
+                  elas são mantidas ao salvar. Para tirar ou explicar alguma, fale com o DEV.
+                </p>
+                <ul className="mt-3 flex flex-wrap gap-2">
+                  {foraDoCatalogo.map((chave) => (
+                    <li key={chave}>
+                      <code
+                        data-fora-do-catalogo={chave}
+                        className="inline-block rounded-md border border-amber-200 bg-white px-2 py-1 font-mono text-[11px] text-slate-700 select-all dark:border-amber-900/50 dark:bg-slate-900 dark:text-slate-200"
+                      >
+                        {chave}
+                      </code>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            </div>
+          )}
 
           {/* Rodapé do Editor */}
           <div className="border-t p-6 flex items-center justify-end gap-3" style={{ borderColor: "var(--border)", background: "var(--card-footer, #fafafa)" }}>
