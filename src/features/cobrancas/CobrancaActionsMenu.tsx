@@ -21,6 +21,9 @@ import { ConfirmarLiberacaoModal } from "./ConfirmarLiberacaoModal";
 import { RevisarGeracaoBancariaModal } from "@/features/contas-a-receber/components/RevisarGeracaoBancariaModal";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import type { Cobranca } from "@/features/cobrancas/types";
+import { NovaTarefaModal } from "@/features/tarefas/components/NovaTarefaModal";
+import { useTarefas } from "@/features/tarefas/TarefasProvider";
+import { formatCurrency } from "@/lib/formatters/currency";
 
 type CobrancaActionsMenuProps = {
   cobranca: Cobranca;
@@ -46,6 +49,20 @@ function getMesFechadoLabel(
   return isConfirmacaoDeMesAnterior(referencia) ? formatMesAnoPtBr(referencia) : null;
 }
 
+/**
+ * Identifica a cobranca no texto da tarefa. A tarefa guarda pedido e cliente
+ * em colunas proprias; a cobranca vai nos detalhes (nao ha coluna para ela).
+ */
+function descricaoDaCobranca(
+  cobranca: Pick<Cobranca, "id_pagamento" | "tipo_cobranca" | "valor" | "status" | "vencimento" | "cliente">
+): string {
+  const vencimento = cobranca.vencimento
+    ? `, vencimento ${new Date(`${cobranca.vencimento.slice(0, 10)}T12:00:00`).toLocaleDateString("pt-BR")}`
+    : "";
+  const referencia = cobranca.id_pagamento ? ` Referência: ${cobranca.id_pagamento}.` : "";
+  return `Cobrança ${cobranca.tipo_cobranca} de ${formatCurrency(cobranca.valor)} (${cobranca.status}${vencimento}) — ${cobranca.cliente}.${referencia}\n\n`;
+}
+
 export function CobrancaActionsMenu({ cobranca, label }: CobrancaActionsMenuProps) {
   const router = useRouter();
   const { showToast } = useAppToast();
@@ -58,6 +75,8 @@ export function CobrancaActionsMenu({ cobranca, label }: CobrancaActionsMenuProp
   const [isLiberarModalOpen, setIsLiberarModalOpen] = useState(false);
   const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
   const [justLaunchedExtRef, setJustLaunchedExtRef] = useState("");
+  const [isNovaTarefaOpen, setIsNovaTarefaOpen] = useState(false);
+  const { recarregar: recarregarTarefas } = useTarefas();
 
   const {
     liberarCobrancaReal,
@@ -236,6 +255,12 @@ export function CobrancaActionsMenu({ cobranca, label }: CobrancaActionsMenuProp
         onClick: () => void copyValue(cobranca.linha_digitavel, "Linha digitável copiada.", "Esta cobrança não possui boleto.")
       }
     ] : []),
+    // Tarefa para um colega, ja com o pedido, o cliente e esta cobranca
+    // identificada nos detalhes (etapa 2 das Tarefas, 01/10/2026).
+    {
+      label: "Nova tarefa",
+      onClick: () => setIsNovaTarefaOpen(true)
+    },
     {
       label: "Cancelar cobrança",
       destructive: true,
@@ -264,6 +289,21 @@ export function CobrancaActionsMenu({ cobranca, label }: CobrancaActionsMenuProp
         label={label}
         items={items}
       />
+      {isNovaTarefaOpen ? (
+        <NovaTarefaModal
+          tipo="TAREFA"
+          padrao={{
+            idInt: cobranca.id_int || null,
+            idCliente: cobranca.id_cliente || null,
+            descricao: descricaoDaCobranca(cobranca)
+          }}
+          onFechar={() => setIsNovaTarefaOpen(false)}
+          onCriada={() => {
+            setIsNovaTarefaOpen(false);
+            recarregarTarefas();
+          }}
+        />
+      ) : null}
       <AnaliseCreditoModal
         isOpen={isCreditModalOpen}
         onClose={() => setIsCreditModalOpen(false)}

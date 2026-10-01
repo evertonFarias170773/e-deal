@@ -3,7 +3,10 @@
 import { useEffect, type ReactNode } from "react";
 import { X } from "lucide-react";
 
-/** Moldura simples de modal: fundo escuro, Esc fecha, largura de formulario. */
+/**
+ * Moldura simples de modal: fundo escuro, Esc fecha, largura de formulario.
+ * z-[9000]: acima do drawer do chat (z-[70]/[80]), abaixo do toast (z-[10100]).
+ */
 export function ModalBase({
   titulo,
   onFechar,
@@ -25,7 +28,7 @@ export function ModalBase({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4"
+      className="fixed inset-0 z-[9000] flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onFechar();
       }}

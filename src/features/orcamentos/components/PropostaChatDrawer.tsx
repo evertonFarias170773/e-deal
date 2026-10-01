@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { X, Paperclip } from "lucide-react";
 import { PropostaChatPanel } from "./PropostaChatPanel";
-import { PropostaPendenciasPanel } from "./PropostaPendenciasPanel";
+import { TarefasDoPedido } from "@/features/tarefas/components/TarefasDoPedido";
 import { type PropostaChatResumo } from "@/features/orcamentos/services/orcamentos.service";
 
 interface PropostaChatDrawerProps {
@@ -191,7 +191,7 @@ export function PropostaChatDrawer({
                 : "border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100/50 dark:hover:bg-slate-800/50"
             }`}
           >
-            Pendências
+            Tarefas
             {activePendenciasCount > 0 && (
               <span className="inline-flex items-center justify-center rounded-full bg-amber-500 px-1.5 py-0.5 text-[9px] font-extrabold text-white leading-none">
                 {activePendenciasCount}
@@ -222,12 +222,14 @@ export function PropostaChatDrawer({
             />
           </div>
           <div className={`h-full ${activeTab === "pendencias" ? "block" : "hidden"}`}>
-            <PropostaPendenciasPanel
+            {/* Desde 01/10/2026 (etapa 2) a aba mostra as TAREFAS do pedido, da
+                central unica; as pendencias antigas ficaram no legado. */}
+            <TarefasDoPedido
               key={idInt}
               idInt={idInt}
               idCliente={idCliente ? Number(idCliente) : null}
-              className="h-full"
-              onPendenciasCountUpdated={handlePendenciasCountUpdated}
+              variante="painel"
+              onContagem={handlePendenciasCountUpdated}
             />
           </div>
         </div>

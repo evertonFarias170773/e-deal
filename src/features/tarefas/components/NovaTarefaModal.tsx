@@ -27,7 +27,8 @@ import { cn } from "@/lib/utils";
 /**
  * Nova tarefa: titulo e "para quem" (uma ou mais pessoas, ou todos) sao
  * obrigatorios. Nova melhoria: sem destinatarios (qualquer admin assume).
- * `padrao` preenche pedido e cliente quando aberta de dentro da proposta.
+ * `padrao` preenche pedido, cliente e detalhes quando aberta de dentro da
+ * proposta, da Conferencia (dados da cobranca nos detalhes) ou do cliente.
  */
 export function NovaTarefaModal({
   tipo,
@@ -36,7 +37,7 @@ export function NovaTarefaModal({
   onCriada
 }: {
   tipo: TarefaTipo;
-  padrao?: { idInt?: number | null; idCliente?: number | null };
+  padrao?: { idInt?: number | null; idCliente?: number | null; descricao?: string };
   onFechar: () => void;
   onCriada: (id: number) => void;
 }) {
@@ -50,7 +51,7 @@ export function NovaTarefaModal({
   const [paraTodos, setParaTodos] = useState(false);
   const [escolhidos, setEscolhidos] = useState<string[]>([]);
   const [busca, setBusca] = useState("");
-  const [descricao, setDescricao] = useState("");
+  const [descricao, setDescricao] = useState(padrao?.descricao ?? "");
   const [idInt, setIdInt] = useState(padrao?.idInt ? String(padrao.idInt) : "");
   const [idCliente, setIdCliente] = useState(padrao?.idCliente ? String(padrao.idCliente) : "");
   const [prazo, setPrazo] = useState("");

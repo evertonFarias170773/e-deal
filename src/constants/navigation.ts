@@ -5,7 +5,6 @@ import {
   Bot,
   Boxes,
   Building2,
-  CheckSquare,
   ClipboardCheck,
   ClipboardList,
   CreditCard,
@@ -36,7 +35,6 @@ export const navigationItems: NavigationItem[] = [
   { label: "Produtos", href: "/produtos", icon: Package },
   { label: "Orcamentos", href: "/orcamentos", icon: ClipboardList },
   { label: "Tarefas", href: "/tarefas", icon: ListTodo },
-  { label: "Pendências", href: "/pendencias", icon: CheckSquare },
   { label: "Conta Corrente", href: "/conta-corrente", icon: Wallet },
   { label: "Maestro", href: "/maestro", icon: Bot },
   { label: "Conferência", href: "/cobrancas", icon: CreditCard },
@@ -162,15 +160,15 @@ export const navigationSections: NavigationSection[] = [
       { label: "Carteira", href: "/contas-a-receber", icon: ReceiptText },
       { label: "Registro de recebíveis", href: "/contas-a-receber/registro", icon: ClipboardCheck },
       { label: "Conta Corrente", href: "/conta-corrente", icon: Wallet },
-      { label: "Pendências", href: "/pendencias", icon: CheckSquare },
+      // "Pendências" (/pendencias) saiu do menu em 01/10/2026: a central unica e
+      // o menu Tarefas. A tela antiga segue acessivel pelo endereco, so leitura.
       { label: "Verificação de CPF/CNPJ", href: "/verificacao", icon: ShieldCheck },
       // Segue desabilitado, como sempre esteve. Mantido para nao sumir do menu.
       { label: "Relatórios", href: "/relatorios", icon: BarChart3, disabled: true }
     ]
   },
   // 6b — Tarefas da equipe e melhorias (30/09/2026). Menu proprio, fora do
-  // Financeiro, com o contador das minhas tarefas em aberto. A Central de
-  // Pendencias antiga continua no Financeiro ate a fase 2 (spec
+  // Financeiro, com o contador das minhas tarefas em aberto (spec
   // 2026-09-30-tarefas-equipe-design.md).
   {
     id: "tarefas",

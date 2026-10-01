@@ -69,6 +69,14 @@ const SECTORS = [
  * Filtros da tela. Status é a única lista escrita à mão — as demais saem das
  * constantes acima, para não haver duas fontes da mesma verdade.
  */
+/**
+ * LEGADO, SOMENTE LEITURA (01/10/2026 — etapa 2 das Tarefas).
+ * A central unica e /tarefas. Esta tela saiu do menu e segue acessivel pelo
+ * endereco so para consulta: os botoes Assumir, Concluir e Cancelar somem.
+ * Voltar a `false` reabilita as acoes (as funcoes continuam no arquivo).
+ */
+const LEGADO_SOMENTE_LEITURA: boolean = true;
+
 const STATUS_FILTROS = ["TODOS", "ABERTA", "EM_ANDAMENTO", "CONCLUIDA", "CANCELADA"];
 const PRIORIDADE_FILTROS = ["TODOS", ...PRIORITIES.map((p) => p.value)];
 const CATEGORIA_FILTROS = ["TODOS", ...CATEGORIES.map((c) => c.value)];
@@ -407,9 +415,9 @@ function PendenciasPage() {
     <div className="space-y-6 p-4 lg:p-6" style={{ background: "var(--background)", color: "var(--foreground)" }}>
       {/* Header */}
       <PageHeader
-        title="Central de Pendências"
-        subtitle="Monitore, organize e resolva impedimentos operacionais vinculados às propostas comerciais."
-        context="Visão Geral"
+        title="Central de Pendências (antiga)"
+        subtitle="Somente consulta. As tarefas da equipe agora ficam no menu Tarefas."
+        context="Legado"
         action={
           <button
             type="button"
@@ -421,6 +429,17 @@ function PendenciasPage() {
           </button>
         }
       />
+
+      <div
+        role="note"
+        className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-900/30 dark:text-amber-200"
+      >
+        Esta tela ficou só para consulta. Para pedir algo a um colega ou resolver o que chegou para você, use{" "}
+        <Link href="/tarefas" className="font-bold underline">
+          Tarefas
+        </Link>
+        .
+      </div>
 
       {/* Summary Cards Grid */}
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
@@ -911,7 +930,7 @@ function PendenciasPage() {
                         <td className="px-6 py-4 text-right">
                           <div className="flex items-center justify-end gap-1.5">
                             {/* Assumir */}
-                            {item.status === "ABERTA" && (
+                            {!LEGADO_SOMENTE_LEITURA && item.status === "ABERTA" && (
                               <button
                                 type="button"
                                 disabled={actionLoadingId !== null}
@@ -928,7 +947,7 @@ function PendenciasPage() {
                             {/* Concluir — pendências financeiras de diferença pós-pagamento
                                 agora vivem em public.conta_corrente_pendencias (Conta Corrente),
                                 fora do domínio de propostas_pendencias; esta fila é só operacional. */}
-                            {(item.status === "ABERTA" || item.status === "EM_ANDAMENTO") && (
+                            {!LEGADO_SOMENTE_LEITURA && (item.status === "ABERTA" || item.status === "EM_ANDAMENTO") && (
                               <button
                                 type="button"
                                 disabled={actionLoadingId !== null}
@@ -943,7 +962,7 @@ function PendenciasPage() {
                             )}
 
                             {/* Cancelar */}
-                            {(item.status === "ABERTA" || item.status === "EM_ANDAMENTO") && (
+                            {!LEGADO_SOMENTE_LEITURA && (item.status === "ABERTA" || item.status === "EM_ANDAMENTO") && (
                               <button
                                 type="button"
                                 disabled={actionLoadingId !== null}
@@ -1089,7 +1108,7 @@ function PendenciasPage() {
                         Ver Proposta
                       </Link>
 
-                      {(item.status === "ABERTA" || item.status === "EM_ANDAMENTO") && (
+                      {!LEGADO_SOMENTE_LEITURA && (item.status === "ABERTA" || item.status === "EM_ANDAMENTO") && (
                         <div className="flex gap-1 shrink-0">
                           {item.status === "ABERTA" && (
                             <button

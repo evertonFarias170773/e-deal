@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
+import { criarTarefaAutomaticaFinanceiro } from "@/features/tarefas/lib/tarefa-automatica";
 import crypto from "crypto";
 import { resolveEmpresaIdFromTexto, montarUrlPublicaCobranca } from "@/features/cobrancas/cobrancas-utils";
 import { verificarPermissaoServerSide } from "@/lib/auth/verificar-permissao";
@@ -450,20 +451,14 @@ export async function POST(request: NextRequest) {
         visivel_externo: false
       }]);
 
-      await supabaseUser.from("propostas_pendencias").insert([{
-        id_int: idInt,
-        id_cliente: idCliente,
+      // Desde 01/10/2026 (etapa 2 das Tarefas) vira tarefa Alta para os admins
+      // do Financeiro, com o pedido vinculado, no lugar da pendencia antiga.
+      await criarTarefaAutomaticaFinanceiro(supabaseUser, {
         titulo: "Erro no pagamento combinado",
         descricao: msgFalha,
-        categoria: "PAGAMENTO",
-        status: "ABERTA",
-        prioridade: "ALTA",
-        responsavel_setor: "FINANCEIRO",
-        origem: "SISTEMA",
-        criado_por_user_id: user.id,
-        criado_por_nome: user.nome,
-        id_empresa: idEmpresaReal,
-      }]);
+        idInt: Number(idInt) || null,
+        idCliente: Number(idCliente) || null
+      });
 
       return NextResponse.json({ success: false, isCombinadoParcial: true, error: msgFalha }, { status: 200 });
     }
@@ -692,20 +687,12 @@ export async function POST(request: NextRequest) {
         visivel_externo: false
       }]);
 
-      await supabaseUser.from("propostas_pendencias").insert([{
-        id_int: idInt,
-        id_cliente: idCliente,
+      await criarTarefaAutomaticaFinanceiro(supabaseUser, {
         titulo: `Erro ao gerar ${labelIntegracao} do pagamento combinado`,
         descricao: msgFalha,
-        categoria: "PAGAMENTO",
-        status: "ABERTA",
-        prioridade: "ALTA",
-        responsavel_setor: "FINANCEIRO",
-        origem: "SISTEMA",
-        criado_por_user_id: user.id,
-        criado_por_nome: user.nome,
-        id_empresa: idEmpresaReal,
-      }]);
+        idInt: Number(idInt) || null,
+        idCliente: Number(idCliente) || null
+      });
 
       return NextResponse.json({
         success: false,

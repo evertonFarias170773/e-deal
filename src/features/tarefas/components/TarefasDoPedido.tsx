@@ -16,7 +16,19 @@ import { TarefaDetalheModal } from "@/features/tarefas/components/TarefaDetalheM
  * Lista as tarefas com este `id_int` que o usuario pode ver e abre a Nova
  * tarefa com pedido e cliente ja preenchidos.
  */
-export function TarefasDoPedido({ idInt, idCliente }: { idInt: number; idCliente: number | null }) {
+export function TarefasDoPedido({
+  idInt,
+  idCliente,
+  variante = "cartao",
+  onContagem
+}: {
+  idInt: number;
+  idCliente: number | null;
+  /** "painel" = dentro da aba Tarefas do chat da proposta (sem moldura, altura cheia). */
+  variante?: "cartao" | "painel";
+  /** Avisa quantas tarefas deste pedido estao em aberto (selo da aba do chat). */
+  onContagem?: (ativas: number) => void;
+}) {
   const { user } = useAuth();
   const { versao, recarregar } = useTarefas();
   const userId = user?.id ?? "";
@@ -51,11 +63,16 @@ export function TarefasDoPedido({ idInt, idCliente }: { idInt: number; idCliente
   const aberta = tarefas.find((t) => t.id === abertaId) ?? null;
   const ativas = tarefas.filter((t) => t.status === "ABERTA" || t.status === "EM_ANDAMENTO").length;
 
+  useEffect(() => {
+    onContagem?.(ativas);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ativas]);
+
   return (
     <section
       aria-label="Tarefas deste pedido"
-      className="mb-4 rounded-2xl border px-4 py-3"
-      style={{ background: "var(--card)", borderColor: "var(--border)" }}
+      className={variante === "painel" ? "h-full overflow-y-auto px-4 py-3" : "mb-4 rounded-2xl border px-4 py-3"}
+      style={variante === "painel" ? { color: "var(--foreground)" } : { background: "var(--card)", borderColor: "var(--border)" }}
     >
       <div className="flex items-center justify-between gap-3">
         <h2 className="inline-flex items-center gap-2 text-sm font-semibold" style={{ color: "var(--foreground)" }}>
@@ -79,6 +96,12 @@ export function TarefasDoPedido({ idInt, idCliente }: { idInt: number; idCliente
       </div>
 
       {erro ? <p className="mt-2 text-xs text-red-600">{erro}</p> : null}
+
+      {tarefas.length === 0 && variante === "painel" && !erro ? (
+        <p className="mt-6 text-center text-xs" style={{ color: "var(--muted)" }}>
+          Nenhuma tarefa neste pedido. Use Nova tarefa para pedir algo a um colega.
+        </p>
+      ) : null}
 
       {tarefas.length > 0 ? (
         <ul className="mt-2.5 divide-y" style={{ borderColor: "var(--border)" }}>

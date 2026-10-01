@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Building2, CreditCard, Mail, MapPin, Phone, Search, ShieldCheck } from "lucide-react";
+import { ArrowLeft, Building2, CreditCard, ListTodo, Mail, MapPin, Phone, Search, ShieldCheck } from "lucide-react";
 import { ActionsMenu } from "@/components/common/ActionsMenu";
 import { useAppToast } from "@/components/common/AppToast";
 import { EmptyState } from "@/components/common/EmptyState";
@@ -21,6 +21,8 @@ import { codecs } from "@/lib/url-state";
 import { useUrlFilters } from "@/hooks/useUrlFilters";
 import { useDebouncedInput } from "@/hooks/useDebouncedValue";
 import { AjusteContaCorrenteModal } from "./components/AjusteContaCorrenteModal";
+import { NovaTarefaModal } from "@/features/tarefas/components/NovaTarefaModal";
+import { useTarefas } from "@/features/tarefas/TarefasProvider";
 import { useAuth } from "@/features/auth/AuthProvider";
 
 const categoriaLabel: Record<CadastroCategoria, string> = {
@@ -54,6 +56,8 @@ export function CadastroDetailPage({ cadastro, dataSource = "mock" }: CadastroDe
   const [propostas, setPropostas] = useState<CadastroPropostaListItem[]>([]);
   const [isLoadingPropostas, setIsLoadingPropostas] = useState(false);
   const [ajusteModalOpen, setAjusteModalOpen] = useState(false);
+  const [novaTarefaOpen, setNovaTarefaOpen] = useState(false);
+  const { recarregar: recarregarTarefas } = useTarefas();
   const { user } = useAuth();
   const [propostasTotalCount, setPropostasTotalCount] = useState(0);
   const [propostasHasNextPage, setPropostasHasNextPage] = useState(false);
@@ -242,6 +246,15 @@ export function CadastroDetailPage({ cadastro, dataSource = "mock" }: CadastroDe
             ) : (
               <StatusBadge status="INATIVO" tone="neutral" />
             )}
+            {/* Tarefa para um colega ja vinculada a este cliente (etapa 2 das Tarefas). */}
+            <button
+              type="button"
+              onClick={() => setNovaTarefaOpen(true)}
+              className="inline-flex items-center gap-2 rounded-xl border border-white/30 bg-white/15 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-white/25"
+            >
+              <ListTodo className="h-4 w-4" />
+              Nova tarefa
+            </button>
             <ActionsMenu
               items={[
                 { label: "Editar cadastro", onClick: () => router.push(`/cadastros/${cadastro.idCliente}/editar`) },
@@ -608,6 +621,18 @@ export function CadastroDetailPage({ cadastro, dataSource = "mock" }: CadastroDe
           </DetailCard>
         </div>
       </section>
+
+      {novaTarefaOpen ? (
+        <NovaTarefaModal
+          tipo="TAREFA"
+          padrao={{ idCliente: Number(cadastro.idCliente) || null }}
+          onFechar={() => setNovaTarefaOpen(false)}
+          onCriada={() => {
+            setNovaTarefaOpen(false);
+            recarregarTarefas();
+          }}
+        />
+      ) : null}
 
       {ajusteModalOpen && (
         <AjusteContaCorrenteModal

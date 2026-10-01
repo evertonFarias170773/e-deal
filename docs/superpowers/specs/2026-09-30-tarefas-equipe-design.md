@@ -1,21 +1,22 @@
 # Tarefas da equipe — central única de pendências
 
-Primeira versão em 30/09/2026 (commit eea6934). Etapa 1 da central única em
-01/10/2026. Decisões do dono registradas nas duas datas.
+Primeira versão em 30/09/2026 (commit eea6934). Etapa 1 da central única
+(964ffb4) e etapa 2 (legado e tarefa automática) em 01/10/2026. Decisões do
+dono registradas em cada data.
 
 ## Objetivo
 
 Uma pessoa pede algo a uma ou mais pessoas da equipe (ou a todos). Quem
 recebe assume, resolve e conclui. A mesma tela guarda a lista de melhorias do
 sistema, da diretoria para o DEV. Prioridade: simplicidade para o usuário
-comum. A ferramenta vai substituir a Central de Pendências antiga
-(`propostas_pendencias`), o que acontece na etapa 2.
+comum. Desde a etapa 2 ela substitui a Central de Pendências antiga
+(`propostas_pendencias`), que ficou só para consulta.
 
 ## Decisões
 
 | Tema | Decisão |
 |---|---|
-| Tabela | `public.tarefas_equipe`. `propostas_pendencias` vira legado na etapa 2. |
+| Tabela | `public.tarefas_equipe`. `propostas_pendencias` é legado, somente leitura. |
 | Destinatários | Uma ou mais pessoas, ou "todos". Todos os destinatários veem e qualquer um assume. Quem assume vira o responsável e conclui. |
 | Prioridade | Normal, Alta ou Urgente, escolhida ao criar. A lista ordena por prioridade e depois pela data. |
 | Anexos | PDF e imagem, até 10 MB cada, na criação, ao longo da tarefa e na conclusão. Bucket privado; download só por rota, com link assinado curto. |
@@ -24,7 +25,8 @@ comum. A ferramenta vai substituir a Central de Pendências antiga
 | Melhorias | `tipo = MELHORIA`, sem destinatários, criadas e vistas só por admin; qualquer admin assume. |
 | Aviso | Contador e sinal no menu e na Topbar, toast em tempo real. Sem WhatsApp. |
 | Menu | Item próprio "Tarefas", fora do Financeiro. |
-| Fora desta etapa | Central de Pendências antiga e pendências criadas pelo sistema (etapa 2). |
+| Tarefa automática | O pagamento combinado cria tarefa Alta para quem tem setor Financeiro e perfil de administrador; se não houver ninguém, para todos os administradores. |
+| Onde criar | Menu Tarefas, proposta (área e aba do chat), Conferência (menu de ações da cobrança) e cadastro do cliente. |
 
 ## Quem é "admin"
 
@@ -171,10 +173,48 @@ tarefa", que abre o mesmo formulário com pedido e cliente preenchidos.
 - O toast de "nova tarefa" sai para recebedores; admin que só enxerga a tarefa
   por ser admin não recebe toast.
 
+## Tarefa automática (etapa 2)
+
+Só o pagamento combinado cria tarefa sozinho: quando o crédito já foi usado e
+a cobrança do restante falha, alguém precisa regularizar a proposta. Antes isso
+virava pendência antiga; agora vira tarefa.
+
+- Prioridade ALTA, com o pedido e o cliente vinculados; o texto da falha vai nos
+  detalhes. Quem criou é o operador que disparou o pagamento.
+- Destinatários: usuários com setor Financeiro (texto do cadastro, sem acento e
+  sem diferença de maiúsculas) **e** perfil de administrador. Sem ninguém assim,
+  todos os administradores.
+- A regra é a função pura `escolherDestinatariosFinanceiro`, em
+  `src/features/tarefas/lib/tarefa-automatica.ts`. A gravação usa
+  `tarefas_equipe_criar` com a sessão do operador — sem service role e sem
+  função nova no banco.
+- Se a criação falhar, a rota segue: o aviso no chat da proposta continua sendo
+  gravado, e o erro vai para o log.
+
+## Criar de outras telas (etapa 2)
+
+- **Proposta**: área "Tarefas deste pedido" (detalhe e editor) e a aba
+  **Tarefas** do chat da proposta, que substituiu a aba Pendências. O selo da
+  aba conta as tarefas em aberto do pedido.
+- **Conferência**: item "Nova tarefa" no menu de ações de cada cobrança (lista e
+  tela da cobrança). Abre com pedido e cliente preenchidos e a cobrança
+  identificada nos detalhes (tipo, valor, situação, vencimento e referência).
+  Não há coluna para a cobrança em `tarefas_equipe`: o vínculo é o texto.
+- **Cliente**: botão "Nova tarefa" no cabeçalho do cadastro, com o cliente
+  preenchido.
+
 ## Legado
 
-`propostas_pendencias`, a tela `/pendencias`, a aba no chat da proposta e a
-criação automática do pagamento combinado seguem intactos até a etapa 2.
+- `propostas_pendencias` não recebe mais nada do sistema. A tela `/pendencias`
+  saiu do menu, segue acessível pelo endereço e ficou só para consulta (sem
+  Assumir, Concluir e Cancelar; constante `LEGADO_SOMENTE_LEITURA`).
+- Migração de 01/10/2026: só a pendência 98 (proposta 19343, R$ 27,57 pagos a
+  mais) virou tarefa, a nº 16, para Marielle Fonseca. A linha antiga ficou
+  CANCELADA com a nota "Migrada para a tarefa nº 16". As demais abertas (20,
+  91, 99, 123, 128, 168, 169, 170) ficaram no legado por decisão do dono.
+- `PropostaPendenciasPanel.tsx` não é mais usado por nenhuma tela.
+- Não mexidos: `conta_corrente_pendencias` (Conta Corrente) e a rota
+  `consolidar-total-paga`, que ainda lê `propostas_pendencias` e não tem tela.
 
 ## Validação da etapa 1
 
