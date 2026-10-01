@@ -5,6 +5,7 @@ import { useAuth } from "@/features/auth/AuthProvider";
 import { useAppToast } from "@/components/common/AppToast";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import { mapaNomesUsuarios, resumoTarefas, souDestinatario } from "@/features/tarefas/services/tarefas.service";
+import { participaDasTarefas } from "@/features/tarefas/lib/participacao";
 import type { Tarefa } from "@/features/tarefas/types";
 
 /**
@@ -17,13 +18,15 @@ import type { Tarefa } from "@/features/tarefas/types";
  */
 
 type TarefasContexto = {
+  /** Participo das Tarefas (perfil com `tarefas.participar`, e-mail que nao e de teste). */
+  participa: boolean;
   contagem: number;
   naoVistas: number;
   versao: number;
   recarregar: () => void;
 };
 
-const Contexto = createContext<TarefasContexto>({ contagem: 0, naoVistas: 0, versao: 0, recarregar: () => {} });
+const Contexto = createContext<TarefasContexto>({ participa: false, contagem: 0, naoVistas: 0, versao: 0, recarregar: () => {} });
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -31,6 +34,7 @@ export function TarefasProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const { showToast } = useAppToast();
   const userId = user?.id && UUID_RE.test(user.id) ? user.id : null;
+  const participa = participaDasTarefas(user);
   const [contagem, setContagem] = useState(0);
   const [naoVistas, setNaoVistas] = useState(0);
   const [versao, setVersao] = useState(0);
@@ -82,7 +86,8 @@ export function TarefasProvider({ children }: { children: ReactNode }) {
           if (t.criado_por_user_id === userId || t.tipo !== "TAREFA") return;
           // Admin enxerga tudo; toast so para quem recebeu.
           const avisar = async () => {
-            const minha = t.para_todos || (await souDestinatario(t.id as number, userId));
+            // "Para todos" so avisa quem participa das Tarefas.
+            const minha = t.para_todos ? participa : await souDestinatario(t.id as number, userId);
             if (!minha) return;
             const nome = await nomeDe(t.criado_por_user_id ?? null);
             const urgente = t.prioridade === "URGENTE" ? "URGENTE: " : "";
@@ -128,9 +133,9 @@ export function TarefasProvider({ children }: { children: ReactNode }) {
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, [userId, contar, nomeDe, showToast]);
+  }, [userId, participa, contar, nomeDe, showToast]);
 
-  return <Contexto.Provider value={{ contagem, naoVistas, versao, recarregar }}>{children}</Contexto.Provider>;
+  return <Contexto.Provider value={{ participa, contagem, naoVistas, versao, recarregar }}>{children}</Contexto.Provider>;
 }
 
 export function useTarefas() {

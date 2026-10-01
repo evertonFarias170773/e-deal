@@ -57,7 +57,7 @@ export function TarefaDetalheModal({
   onMudou: () => void;
 }) {
   const { showToast } = useAppToast();
-  const { recarregar } = useTarefas();
+  const { recarregar, participa } = useTarefas();
   const [concluindo, setConcluindo] = useState(modoConcluir);
   const [confirmarCancelar, setConfirmarCancelar] = useState(false);
   const [observacao, setObservacao] = useState("");
@@ -67,7 +67,7 @@ export function TarefaDetalheModal({
   const [erro, setErro] = useState<string | null>(null);
 
   const nome = (id: string | null) => (id ? nomes.get(id) ?? "—" : "—");
-  const assumir = podeAssumir(t, userId, admin);
+  const assumir = podeAssumir(t, userId, admin, participa);
   const concluir = podeConcluir(t, userId, admin);
   const cancelar = podeCancelar(t, userId, admin);
   const anexar = podeAnexar(t);
@@ -92,7 +92,7 @@ export function TarefaDetalheModal({
 
   // Abrir = ver. So conta para quem recebeu (e o sinal so existe para essa pessoa).
   useEffect(() => {
-    if (!recebida(t, userId) || t.criado_por_user_id === userId) return;
+    if (!recebida(t, userId, participa) || t.criado_por_user_id === userId) return;
     void marcarVista(t.id).then(() => recarregar());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [t.id]);

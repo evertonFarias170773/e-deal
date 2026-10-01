@@ -7,13 +7,16 @@ import type { Tarefa } from "@/features/tarefas/types";
 
 const ativa = (t: Tarefa) => t.status === "ABERTA" || t.status === "EM_ANDAMENTO";
 
-/** Recebi a tarefa: sou destinatario escolhido, ou ela e para todos. */
-export function recebida(t: Tarefa, userId: string) {
-  return t.tipo === "TAREFA" && (t.para_todos || t.destinatarios.includes(userId));
+/**
+ * Recebi a tarefa: sou destinatario escolhido, ou ela e para todos E eu
+ * participo das Tarefas (`participa` — ver lib/participacao.ts).
+ */
+export function recebida(t: Tarefa, userId: string, participa: boolean) {
+  return t.tipo === "TAREFA" && ((t.para_todos && participa) || t.destinatarios.includes(userId));
 }
 
-export function podeAssumir(t: Tarefa, userId: string, admin: boolean) {
-  return t.status === "ABERTA" && (admin || recebida(t, userId));
+export function podeAssumir(t: Tarefa, userId: string, admin: boolean, participa: boolean) {
+  return t.status === "ABERTA" && (admin || recebida(t, userId, participa));
 }
 
 export function podeConcluir(t: Tarefa, userId: string, admin: boolean) {
@@ -29,8 +32,8 @@ export function podeAnexar(t: Tarefa) {
 }
 
 /** Selo "Nova": recebida por mim, criada por outra pessoa, ativa e ainda nao aberta. */
-export function ehNovaParaMim(t: Tarefa, userId: string, vistas: Set<number>) {
-  return ativa(t) && recebida(t, userId) && t.criado_por_user_id !== userId && !vistas.has(t.id);
+export function ehNovaParaMim(t: Tarefa, userId: string, vistas: Set<number>, participa: boolean) {
+  return ativa(t) && recebida(t, userId, participa) && t.criado_por_user_id !== userId && !vistas.has(t.id);
 }
 
 /** "AAAA-MM-DD" (prazo) ou timestamp ISO → "dd/mm/aaaa". */

@@ -30,7 +30,7 @@ export function TarefasDoPedido({
   onContagem?: (ativas: number) => void;
 }) {
   const { user } = useAuth();
-  const { versao, recarregar } = useTarefas();
+  const { versao, recarregar, participa } = useTarefas();
   const userId = user?.id ?? "";
   const admin = Boolean(user?.isAdmin || user?.isSuperAdmin);
 
@@ -114,7 +114,7 @@ export function TarefasDoPedido({
               >
                 <PrioridadeBadge prioridade={t.prioridade} />
                 <span className="min-w-0 flex-1 truncate font-medium">{t.titulo}</span>
-                {ehNovaParaMim(t, userId, vistas) ? <NovaBadge /> : null}
+                {ehNovaParaMim(t, userId, vistas, participa) ? <NovaBadge /> : null}
                 <span className="text-xs" style={{ color: "var(--muted)" }}>
                   {descreverDestino(t, nome)} · {dataBR(t.created_at)}
                 </span>

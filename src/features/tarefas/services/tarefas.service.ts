@@ -1,5 +1,6 @@
 import { getSupabaseClient } from "@/lib/supabase/client";
 import { fetchComSessao, SessaoExpiradaError } from "@/lib/supabase/sessao";
+import { ehEmailDeTeste, perfilParticipaDasTarefas } from "@/features/tarefas/lib/participacao";
 import {
   ANEXO_BUCKET,
   ANEXO_MAX_BYTES,
@@ -55,6 +56,8 @@ export async function listarTarefas(params: {
   aba: AbaTarefas;
   situacao: SituacaoFiltro;
   userId: string;
+  /** Participo das Tarefas? So quem participa recebe as tarefas "para todos". */
+  participa: boolean;
 }): Promise<Tarefa[]> {
   const statuses = params.situacao === "abertas" ? TAREFA_STATUS_ATIVOS : TAREFA_STATUS_ENCERRADOS;
   let query = cliente().from("tarefas_equipe").select(SELECT_TAREFA).in("status", statuses);
@@ -69,7 +72,7 @@ export async function listarTarefas(params: {
       const ids = await idsOndeSouDestinatario(params.userId);
       const ou = [
         `responsavel_user_id.eq.${params.userId}`,
-        "and(para_todos.is.true,responsavel_user_id.is.null)",
+        ...(params.participa ? ["and(para_todos.is.true,responsavel_user_id.is.null)"] : []),
         ...(ids.length > 0 ? [`id.in.(${ids.join(",")})`] : [])
       ];
       query = query.or(ou.join(","));
@@ -156,7 +159,8 @@ type UsuarioLinha = { user_id: string; nome_usuario: string | null; email: strin
 
 /**
  * Pessoas que podem receber tarefa. Mesmo criterio do banco
- * (`tarefas_equipe__eh_da_equipe`): perfil ativo com alguma permissao.
+ * (`tarefas_equipe__eh_da_equipe`): perfil ativo com `tarefas.participar` (ou
+ * `*`) e e-mail que nao e de teste. Ver lib/participacao.ts.
  */
 export async function listarPessoasEquipe(): Promise<PessoaEquipe[]> {
   const supabase = cliente();
@@ -174,7 +178,7 @@ export async function listarPessoasEquipe(): Promise<PessoaEquipe[]> {
   const pessoas: PessoaEquipe[] = [];
   for (const u of (usuarios ?? []) as UsuarioLinha[]) {
     const permissoes = u.id_perfil != null ? perfilPorId.get(u.id_perfil) : undefined;
-    if (!permissoes || permissoes.length === 0) continue;
+    if (!permissoes || !perfilParticipaDasTarefas(permissoes) || ehEmailDeTeste(u.email)) continue;
     pessoas.push({
       user_id: u.user_id,
       nome: u.nome_usuario?.trim() || u.email || "Sem nome",

@@ -35,9 +35,31 @@ decide (`*` ou `admin.usuarios.view`); sem perfil, `is_admin` ou
 `is_super_adm`. São os perfis Super Administrador e Administrador. No banco:
 `tarefas_equipe__eh_admin(uuid)`.
 
-"Equipe" é quem tem perfil ativo com alguma permissão
-(`tarefas_equipe__eh_da_equipe(uuid)`). Fica de fora o perfil Acesso Pendente.
-Só a equipe cria tarefa, recebe tarefa e enxerga tarefa "para todos".
+## Quem participa das Tarefas (01/10/2026)
+
+Definido por perfil, em Configurações → Perfis e Permissões, grupo "Tarefas":
+a permissão **Participar das Tarefas** (`tarefas.participar`).
+
+- Participa quem tem perfil ativo com essa permissão. O Super Administrador
+  passa pelo `*`.
+- Contas com e-mail `@teste.com.br` nunca participam, mesmo com a permissão.
+- Quem participa aparece em "Para quem", pode ser destinatário, entra em
+  "Todos da equipe" (vê a tarefa, conta no contador, pisca) e cria tarefa.
+- A permissão nasceu marcada em todos os perfis, menos Acesso Pendente.
+- Não existe campo de usuário ativo no cadastro: "ativo" aqui é o perfil ativo.
+
+Onde a regra mora:
+
+| Camada | Lugar |
+|---|---|
+| Banco (decide) | `tarefas_equipe__eh_da_equipe(uuid)`, migration `tarefas_equipe_participar`. É a função usada pela RLS de "todos", por `tarefas_equipe_criar`, pela trigger e pelo resumo. |
+| Tela | `src/features/tarefas/lib/participacao.ts` (lista "Para quem", selo, toast). |
+| Catálogo | `CATALOGO_PERMISSOES` em `PerfisPermissoesPanel.tsx`; as permissões de cada perfil ficam em `perfis.permissoes`. |
+
+Admin que não participa (ex.: conta de teste com perfil de administrador)
+continua enxergando todas as tarefas por ser admin, mas não recebe as "para
+todos": não conta, não pisca e não recebe toast. A tarefa automática do
+pagamento combinado só escolhe administradores que participam.
 
 ## Dados
 
@@ -90,14 +112,15 @@ CONCLUIDA e CANCELADA são finais. Não há reabertura.
 
 ## Quem vê e faz o quê
 
-"Recebedor" = destinatário escolhido, ou qualquer pessoa da equipe numa tarefa
-para todos.
+"Recebedor" = destinatário escolhido, ou qualquer pessoa que participa das
+Tarefas numa tarefa para todos.
 
 | Ação | Quem |
 |---|---|
 | Ver uma TAREFA, seus destinatários e anexos | quem criou, recebedores, o responsável, admin |
+| Receber tarefa, entrar em "todos" | quem participa das Tarefas |
 | Ver uma MELHORIA | admin |
-| Criar TAREFA | equipe |
+| Criar TAREFA | quem participa das Tarefas |
 | Criar MELHORIA | admin |
 | Assumir | recebedor ou admin (quem assume vira o responsável); na melhoria, admin |
 | Concluir | o responsável ou admin; recebedor que conclui direto da ABERTA assume junto |

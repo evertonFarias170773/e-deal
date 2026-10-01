@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { ehEmailDeTeste, perfilParticipaDasTarefas } from "./participacao";
 
 /**
  * Tarefa criada pelo sistema (etapa 2 — spec 2026-09-30-tarefas-equipe-design.md).
@@ -10,7 +11,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
  *   Quem tem setor Financeiro E perfil de administrador. Se nao houver ninguem
  *   assim, todos os administradores. "Administrador" e o mesmo criterio do
  *   banco (`tarefas_equipe__eh_admin`): perfil ativo com `*` ou
- *   `admin.usuarios.view`.
+ *   `admin.usuarios.view`. Em qualquer dos ramos so entra quem PARTICIPA das
+ *   Tarefas (lib/participacao.ts).
  *
  * COMO GRAVA
  *   Pela funcao `tarefas_equipe_criar`, com a SESSAO do operador que disparou
@@ -18,7 +20,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
  *   no banco.
  */
 
-export type UsuarioParaRegra = { user_id: string; setor: string | null; id_perfil: number | null };
+export type UsuarioParaRegra = { user_id: string; email?: string | null; setor: string | null; id_perfil: number | null };
 export type PerfilParaRegra = { id: number; permissoes: unknown; ativo: boolean | null };
 
 const semAcento = (texto: string) => texto.normalize("NFD").replace(/[̀-ͯ]/g, "");
@@ -28,9 +30,15 @@ export function ehSetorFinanceiro(setor: string | null | undefined) {
   return semAcento(String(setor ?? "")).trim().toLowerCase() === "financeiro";
 }
 
-function ehAdmin(u: UsuarioParaRegra, perfilPorId: Map<number, string[]>) {
+/**
+ * Administrador QUE PARTICIPA das Tarefas. Sem participar (perfil sem
+ * `tarefas.participar`, ou conta @teste.com.br) o banco recusa o destinatario,
+ * e a tarefa inteira deixaria de ser criada.
+ */
+function ehAdminParticipante(u: UsuarioParaRegra, perfilPorId: Map<number, string[]>) {
   const permissoes = u.id_perfil != null ? perfilPorId.get(u.id_perfil) : undefined;
-  return Boolean(permissoes && (permissoes.includes("*") || permissoes.includes("admin.usuarios.view")));
+  const admin = Boolean(permissoes && (permissoes.includes("*") || permissoes.includes("admin.usuarios.view")));
+  return admin && perfilParticipaDasTarefas(permissoes) && !ehEmailDeTeste(u.email);
 }
 
 /**
@@ -45,7 +53,7 @@ export function escolherDestinatariosFinanceiro(
   for (const p of perfis) {
     if (p.ativo && Array.isArray(p.permissoes)) perfilPorId.set(p.id, p.permissoes.map(String));
   }
-  const admins = usuarios.filter((u) => ehAdmin(u, perfilPorId));
+  const admins = usuarios.filter((u) => ehAdminParticipante(u, perfilPorId));
   const financeiro = admins.filter((u) => ehSetorFinanceiro(u.setor));
   if (financeiro.length > 0) return { destinatarios: financeiro.map((u) => u.user_id), regra: "FINANCEIRO" };
   if (admins.length > 0) return { destinatarios: admins.map((u) => u.user_id), regra: "TODOS_ADMINS" };
@@ -63,7 +71,7 @@ export async function criarTarefaAutomaticaFinanceiro(
 ): Promise<{ ok: boolean; id?: number; regra?: string; erro?: string }> {
   try {
     const [{ data: usuarios, error: errU }, { data: perfis, error: errP }] = await Promise.all([
-      supabaseUser.from("usuarios").select("user_id, setor, id_perfil"),
+      supabaseUser.from("usuarios").select("user_id, email, setor, id_perfil"),
       supabaseUser.from("perfis").select("id, permissoes, ativo")
     ]);
     if (errU || errP) throw new Error((errU ?? errP)?.message);

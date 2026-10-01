@@ -194,6 +194,14 @@ const CATALOGO_PERMISSOES: Record<string, PermissionDefinition[]> = {
     { key: "relatorios.export",     label: "Exportar Dados (CSV / PDF)",    desc: "Permite exportar dados de relatórios em formato CSV ou PDF.",                      critica: false }
   ],
 
+  // ── Tarefas ───────────────────────────────────────────────────────────────
+  // Define quem participa da central de Tarefas (01/10/2026). A regra de
+  // verdade esta no banco (`tarefas_equipe__eh_da_equipe`); ver
+  // src/features/tarefas/lib/participacao.ts.
+  "Tarefas": [
+    { key: "tarefas.participar", label: "Participar das Tarefas", desc: "Aparece em Para quem, recebe e cria tarefas e entra em Todos da equipe. Contas @teste.com.br ficam de fora mesmo com a permissão.", critica: false }
+  ],
+
   // ── Configurações Gerais ──────────────────────────────────────────────────
   "Configurações do Sistema": [
     { key: "config.view",        label: "Acessar Configurações",      desc: "Permite acessar o hub de Configurações do sistema.",                                   critica: false },

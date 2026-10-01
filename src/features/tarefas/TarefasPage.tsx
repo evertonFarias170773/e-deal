@@ -45,7 +45,7 @@ const ROTULO_ABA: Record<AbaTarefas, string> = {
 export function TarefasPage() {
   const { user } = useAuth();
   const { showToast } = useAppToast();
-  const { versao, recarregar } = useTarefas();
+  const { versao, recarregar, participa } = useTarefas();
   const admin = Boolean(user?.isAdmin || user?.isSuperAdmin);
   const userId = user?.id ?? "";
 
@@ -83,7 +83,7 @@ export function TarefasPage() {
     if (!userId) return;
     let vivo = true;
     Promise.resolve().then(() => vivo && setCarregando(true));
-    listarTarefas({ aba, situacao, userId })
+    listarTarefas({ aba, situacao, userId, participa })
       .then(async (lista) => {
         const jaVistas = await idsVistos(userId, lista.map((t) => t.id));
         if (!vivo) return;
@@ -96,7 +96,7 @@ export function TarefasPage() {
     return () => {
       vivo = false;
     };
-  }, [aba, situacao, userId, versao]);
+  }, [aba, situacao, userId, participa, versao]);
 
   const nome = (id: string | null) => (id ? nomes.get(id) ?? "—" : "—");
   const abasVisiveis = ABAS.filter((a) => admin || (a !== "todas" && a !== "melhorias"));
@@ -202,7 +202,7 @@ export function TarefasPage() {
         <ul className="space-y-2.5" aria-label="Lista de tarefas">
           {tarefas.map((t) => {
             const vencido = prazoVencido(t);
-            const acaoAssumir = podeAssumir(t, userId, admin);
+            const acaoAssumir = podeAssumir(t, userId, admin, participa);
             const acaoConcluir = !acaoAssumir && podeConcluir(t, userId, admin);
             return (
               <li
@@ -223,7 +223,7 @@ export function TarefasPage() {
                       {t.titulo}
                     </span>
                     <SituacaoBadge status={t.status} />
-                    {ehNovaParaMim(t, userId, vistas) ? <NovaBadge /> : null}
+                    {ehNovaParaMim(t, userId, vistas, participa) ? <NovaBadge /> : null}
                   </div>
                   <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-xs" style={{ color: "var(--muted)" }}>
                     <span className="inline-flex items-center gap-1">
