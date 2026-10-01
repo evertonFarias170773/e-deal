@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Plus, Edit2, Trash2, Package, CheckCircle, Copy, AlertOctagon, ChevronDown, X, Eye } from "lucide-react";
 import { useAppToast } from "@/components/common/AppToast";
-import { LotesGrid, type PadroesDeLote } from "@/features/orcamentos/components/LotesGrid";
+import { LotesGrid, type GradeDeLotesApi, type PadroesDeLote } from "@/features/orcamentos/components/LotesGrid";
 // Campos, janela de amostra e helpers da arte: o que o card e a lista rapida
 // compartilham (23/09/2026). Sairam daqui sem mudar marcacao nem regra.
 import {
@@ -614,6 +614,20 @@ function ModeloInlineCard({
   );
 }
 
+/**
+ * O que o "Salvar alterações" da proposta pede à aba Pedido (01/10/2026): os
+ * modelos pendentes da lista rápida de TODOS os produtos, na ordem em que
+ * aparecem na tela.
+ */
+export type AcoesDaAbaPedido = {
+  /** Motivos que impedem gravar os modelos como estão; vazio = pode gravar. */
+  impedimentos: () => string[];
+  /** Sem cobrança: alguma grade tem alteração que só a rota dela grava. */
+  temLotesNaoGravados: () => boolean;
+  /** Sem cobrança: grava cada grade com alteração; para na primeira que recusar. */
+  gravarLotesNaoGravados: () => Promise<{ ok: true } | { ok: false; motivo: string }>;
+};
+
 export function PedidoModelosTab({
   idInt,
   idCliente,
@@ -625,6 +639,7 @@ export function PedidoModelosTab({
   onModelosExcluidos,
   lotesSomenteLeitura = false,
   onLotesNaoGravados,
+  onAcoes,
 }: {
   idInt?: number;
   /** propostas.id_cliente — filtra as numerações exclusivas de cliente. */
@@ -652,6 +667,8 @@ export function PedidoModelosTab({
   lotesSomenteLeitura?: boolean;
   /** Algum item com lote não gravado na lista rápida (aviso ao sair da aba). */
   onLotesNaoGravados?: (algum: boolean) => void;
+  /** A aba entrega ao pai as ações do Salvar da proposta (null ao desmontar). */
+  onAcoes?: (acoes: AcoesDaAbaPedido | null) => void;
 }) {
   const { showToast } = useAppToast();
   // Proposta 100% de prateleira: mesma definição usada para dispensar a arte.
@@ -706,6 +723,39 @@ export function PedidoModelosTab({
     },
     [onLotesNaoGravados]
   );
+  // As grades montadas, por item: o Salvar da proposta fala com elas por aqui.
+  const gradesRef = useRef(new Map<string, GradeDeLotesApi>());
+  const registrarGrade = useCallback((idItem: string, api: GradeDeLotesApi | null) => {
+    if (api) gradesRef.current.set(idItem, api);
+    else gradesRef.current.delete(idItem);
+  }, []);
+  const ordemDosItens = itens.map((it) => String(it.id)).join("|");
+  useEffect(() => {
+    if (!onAcoes) return;
+    const ids = ordemDosItens ? ordemDosItens.split("|") : [];
+    const grades = () =>
+      ids.flatMap((id) => {
+        const grade = gradesRef.current.get(id);
+        return grade ? [grade] : [];
+      });
+    onAcoes({
+      impedimentos: () => grades().map((g) => g.impedimento()).filter((m): m is string => Boolean(m)),
+      temLotesNaoGravados: () => grades().some((g) => g.temNaoGravado()),
+      gravarLotesNaoGravados: async () => {
+        for (const id of ids) {
+          // Lida de novo a cada produto: a gravação anterior re-renderizou a
+          // aba, e a grade registrou as funções do render novo.
+          const grade = gradesRef.current.get(id);
+          if (!grade || !grade.temNaoGravado()) continue;
+          const desfecho = await grade.gravar();
+          if (!desfecho.ok) return desfecho;
+          await new Promise((resolve) => setTimeout(resolve, 0));
+        }
+        return { ok: true };
+      }
+    });
+    return () => onAcoes(null);
+  }, [onAcoes, ordemDosItens]);
   // Botao "Amostras" de cada produto: a amostra da arte abaixo de cada lote da
   // grade. Comeca desligado.
   const [amostrasVisiveis, setAmostrasVisiveis] = useState<Record<string, boolean>>({});
@@ -980,8 +1030,10 @@ export function PedidoModelosTab({
                 </div>
               </div>
 
-              {!collapsedItems[item.id] && (
-                <div className="p-5 space-y-4 bg-slate-50/30">
+              {/* Recolhido fica escondido, não desmontado: desmontar a grade
+                  descartava as linhas ainda não gravadas. */}
+              {(
+                <div className={`p-5 space-y-4 bg-slate-50/30 ${collapsedItems[item.id] ? "hidden" : ""}`}>
                 {gradeAberta(item.id) ? (
                   (() => {
                     const numFormatId = item.produto?.id_formato;
@@ -1105,6 +1157,7 @@ export function PedidoModelosTab({
                           if (qtdItem !== qtdAnterior) onLotesGravados?.(idNoBanco, qtdItem, freteMensagem);
                         }}
                         onAlteracoesNaoGravadas={(sim) => registrarNaoGravado(String(item.id), sim)}
+                        onRegistrar={(api) => registrarGrade(String(item.id), api)}
                         onPendente={
                           autoSaveHabilitado
                             ? undefined

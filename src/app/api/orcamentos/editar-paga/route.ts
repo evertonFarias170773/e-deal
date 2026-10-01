@@ -551,6 +551,20 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  // ── 7. Lotes da aba Pedido com cobrança ativa ainda não paga (01/10/2026) ─
+  // Sem pagamento confirmado, sem faturado e sem acréscimo, o save roda sem
+  // `force` e cai no salvamento parcial — que só gravava observações. Os
+  // modelos alterados na lista rápida eram descartados e a resposta era
+  // sucesso. A edição que chega aqui já passou pela conferência campo a campo
+  // (nenhuma entrada do cálculo mudou), então os lotes entram no parcial. A
+  // tela só deixa editar lote de proposta cobrada com `propostas.editar_paga`;
+  // a rota confere a mesma permissão antes de liberar.
+  let gravarLotesComCobranca = false;
+  if (temCobrancasAtivas && !ehPropostaPaga && !ehCaminhoFaturado && !ehAcrescimoSobreAutorizada) {
+    const { autorizado } = await verificarPermissaoEditarPaga(supabase, user.id, [PERMISSAO_PROPOSTA_PAGA]);
+    gravarLotesComCobranca = autorizado;
+  }
+
   // ── 8. Salvar proposta ────────────────────────────────────────────────────
   // `force` também no caminho do faturado: sem ele o saveProposta cai no
   // "salvamento parcial seguro", que preserva os produtos e ignora as
@@ -559,7 +573,7 @@ export async function POST(request: NextRequest) {
     formState,
     supabase as unknown as import("@supabase/supabase-js").SupabaseClient,
     user.id,
-    { force: ehPropostaPaga || ehCaminhoFaturado || ehAcrescimoSobreAutorizada }
+    { force: ehPropostaPaga || ehCaminhoFaturado || ehAcrescimoSobreAutorizada, gravarLotesComCobranca }
   );
 
   if (!saveResult.success) {
@@ -647,5 +661,8 @@ export async function POST(request: NextRequest) {
     ehCaminhoFaturado,
     faturadoAjustado,
     saldoACobrar,
+    // Lotes novos com o id do banco: a tela que continua aberta (aba
+    // Pagamentos) deixa de tratá-los como novos e não os insere de novo.
+    modelosSincronizados: saveResult.modelosSincronizados ?? [],
   });
 }

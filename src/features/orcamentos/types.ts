@@ -256,8 +256,11 @@ export type PropostaFormState = {
   /**
    * `pedidos_modelos.id` removidos na lista rápida de proposta COM cobrança
    * (24/09/2026): lá a lista não grava sozinha, e a exclusão vai no Salvar da
-   * proposta. O `saveProposta` só a aplica no caminho autorizado de proposta
-   * paga (`force`); sem ele, é ignorada.
+   * proposta. O `saveProposta` só a aplica nos caminhos autorizados pelo
+   * `editar-paga` — proposta paga (`force`) e cobrança ativa não paga
+   * (`gravarLotesComCobranca`); sem eles, é ignorada. Soma as exclusões de
+   * todos os produtos: cada grade acrescenta as suas, nenhuma apaga as das
+   * outras.
    */
   deletedModeloIds?: number[];
   pedidosModelos: PedidoModeloState[];

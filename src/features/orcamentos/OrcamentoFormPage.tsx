@@ -10,7 +10,7 @@ import { codecs } from "@/lib/url-state";
 import { Copy, Search, Trash2, X, Edit2, AlertTriangle, AlertOctagon, Check, ExternalLink } from "lucide-react";
 import { useAppToast } from "@/components/common/AppToast";
 import { ContactEditModal } from "@/features/orcamentos/components/ContactEditModal";
-import { PedidoModelosTab } from "@/features/orcamentos/components/PedidoModelosTab";
+import { PedidoModelosTab, type AcoesDaAbaPedido } from "@/features/orcamentos/components/PedidoModelosTab";
 import { copiarLinkPagamentoExterno } from "@/features/area-cliente/lib/copiar-link-pagamento";
 import { checklistVisivel, pendenciasDoLoteParaArtes } from "@/features/orcamentos/lib/checklist-lote";
 import { listChecklistDeProdutos } from "@/features/produtos/services/produto-boletim-campos.service";
@@ -265,9 +265,9 @@ const ABAS_EDITOR = [
 /** Aviso de salvamento que precisa sobreviver ao recarregamento da página. */
 const CHAVE_AVISO_POS_SALVAMENTO = "orcamento:aviso-pos-salvamento";
 
-/** Lista rápida com lote não gravado: sair da aba ou da página descarta. */
+/** Lista rápida com modelo não gravado: sair da aba ou da página descarta. */
 const MENSAGEM_LOTES_NAO_GRAVADOS =
-  "Há lotes não gravados na lista rápida. Sair e descartar as alterações? Para manter, volte e use Gravar lote.";
+  "Há modelos não gravados na lista rápida da aba Pedido. Sair e descartar as alterações? Para manter, cancele e use Salvar alterações.";
 
 type AvisoPosSalvamento = {
   title: string;
@@ -1085,6 +1085,10 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
   const isDirtyRef          = useRef(false);
   /** Lista rápida com lote não gravado (sem cobrança): fica fora do formulário. */
   const lotesNaoGravadosRef = useRef(false);
+  // O mesmo sinal, em estado: a guarda do botão voltar é um efeito e precisa reagir.
+  const [lotesNaoGravados, setLotesNaoGravados] = useState(false);
+  // Ações da aba Pedido para o Salvar (null fora da aba): ver `AcoesDaAbaPedido`.
+  const acoesDaAbaPedidoRef = useRef<AcoesDaAbaPedido | null>(null);
   /** Saída de página disparada por nós (reload pós-salvamento): não avisar. */
   const saindoIntencionalmenteRef = useRef(false);
   const handleNavigateRef   = useRef<(href: string) => void>(() => {});
@@ -1474,7 +1478,10 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     if (isDirty) {
       setPendingNavigation(href);
       setIsUnsavedModalOpen(true);
+    } else if (lotesNaoGravadosRef.current && !window.confirm(MENSAGEM_LOTES_NAO_GRAVADOS)) {
+      // Só a lista rápida tem pendência e o usuário preferiu ficar.
     } else {
+      lotesNaoGravadosRef.current = false;
       router.push(href);
     }
   };
@@ -1591,7 +1598,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
    * clique leria o `form` velho — sem os fretes que acabaram de chegar — e
    * reproduziria exatamente o erro que a espera existe para evitar.
    */
-  const handleSaveRef = useRef<((opcoes?: { faturadoConfirmado?: boolean; permanecerNaTela?: boolean }) => Promise<boolean | undefined>) | null>(null);
+  const handleSaveRef = useRef<((opcoes?: { faturadoConfirmado?: boolean; permanecerNaTela?: boolean; lotesJaGravados?: boolean }) => Promise<boolean | undefined>) | null>(null);
   useEffect(() => {
     handleSaveRef.current = handleSave;
   });
@@ -1938,18 +1945,28 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     return () => document.removeEventListener('click', handler, true);
   }, []);
 
-  // Intercept browser back button when dirty
+  // Intercept browser back button when dirty — ou com modelo não gravado na
+  // lista rápida, que não passa pelo `isDirty` do formulário.
+  const guardaDoVoltar = isDirty || lotesNaoGravados;
   useEffect(() => {
-    if (!isDirty) return;
+    if (!guardaDoVoltar) return;
     window.history.pushState(null, '', window.location.href);
     const handler = () => {
       window.history.pushState(null, '', window.location.href);
+      // Só a lista rápida tem pendência: pergunta aqui, sem o modal do formulário.
+      if (!isDirtyRef.current) {
+        if (window.confirm(MENSAGEM_LOTES_NAO_GRAVADOS)) {
+          lotesNaoGravadosRef.current = false;
+          router.push('/orcamentos');
+        }
+        return;
+      }
       setPendingNavigation('/orcamentos');
       setIsUnsavedModalOpen(true);
     };
     window.addEventListener('popstate', handler);
     return () => window.removeEventListener('popstate', handler);
-  }, [isDirty]);
+  }, [guardaDoVoltar, router]);
 
   /**
    * Selecao que saiu da lista e LIMPA, nao substituida (24/08/2026).
@@ -3067,6 +3084,10 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
    */
   const registrarLotesNaoGravados = useCallback((algum: boolean) => {
     lotesNaoGravadosRef.current = algum;
+    setLotesNaoGravados(algum);
+  }, []);
+  const registrarAcoesDaAbaPedido = useCallback((acoes: AcoesDaAbaPedido | null) => {
+    acoesDaAbaPedidoRef.current = acoes;
   }, []);
 
   const aplicarPatchModelos = useCallback(
@@ -4409,7 +4430,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
    * `permanecerNaTela`: grava sem recarregar a página no fim. Só o salvamento
    * automático do item usa — ver `handleAutoSalvarItem`.
    */
-  async function handleSave(opcoes?: { faturadoConfirmado?: boolean; permanecerNaTela?: boolean }) {
+  async function handleSave(opcoes?: { faturadoConfirmado?: boolean; permanecerNaTela?: boolean; lotesJaGravados?: boolean }) {
     // Bloqueio absoluto (vale para admin/superadmin): avulsa ou sem produtos
     // ativos + paga = somente visualização/Histórico/Pagamentos. O backend
     // (editar-paga) aplica a mesma regra — este guard evita o round-trip.
@@ -4422,6 +4443,27 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
       return;
     }
 
+    // — Modelos da lista rápida da aba Pedido (01/10/2026) —
+    // O "Salvar alterações" leva também o que está pendente nas grades de todos
+    // os produtos, pela regra de cada estado: sem cobrança, cada grade grava
+    // pela rota dela (a do "Gravar lote"), na ordem dos produtos, e depois a
+    // proposta; com cobrança, a grade já está espelhada no formulário e segue
+    // com ele pelo editar-paga. Modelo que não pode ser gravado interrompe TUDO
+    // antes de qualquer escrita: salvar recarrega a página, e recarregar
+    // descartaria o que foi digitado.
+    const abaPedido = opcoes?.lotesJaGravados ? null : acoesDaAbaPedidoRef.current;
+    if (abaPedido) {
+      const impedimentos = abaPedido.impedimentos();
+      if (impedimentos.length > 0) {
+        showToast({
+          type: "error",
+          title: "Modelos incompletos na aba Pedido",
+          description: `${impedimentos.join("; ")}. Complete ou remova a linha para salvar. Nada foi gravado e o que você digitou continua na tela.`
+        });
+        return;
+      }
+    }
+
     // Em orçamento rápido o vendedor é sempre quem está com a tela aberta. O
     // fallback cobre proposta rápida antiga, criada antes desta regra e salva
     // sem vendedor: sem ele a tela mostraria um nome e o save recusaria.
@@ -4431,6 +4473,30 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
 
     if (!validateBeforeSave(vendedorParaSalvar)) {
       return;
+    }
+
+    if (abaPedido?.temLotesNaoGravados()) {
+      setIsSaving(true);
+      try {
+        const lotes = await abaPedido.gravarLotesNaoGravados();
+        if (!lotes.ok) {
+          showToast({
+            type: "error",
+            title: "Modelos não gravados",
+            description: `${lotes.motivo} A proposta não foi salva e o que você digitou continua na tela.`
+          });
+          return;
+        }
+        // Cada grade espelhou os lotes e a quantidade do item no formulário, e a
+        // soma nova pode ter agendado recotação de frete. O `form` deste closure
+        // ficou para trás: segue pelo handleSave do render mais novo, como o
+        // "Salvar item" (ver `handleSaveRef`).
+        await new Promise((resolve) => setTimeout(resolve, 60));
+        await aguardarCotacaoDeFrete();
+      } finally {
+        setIsSaving(false);
+      }
+      return handleSaveRef.current?.({ ...opcoes, lotesJaGravados: true });
     }
 
     // O nome do contato sai de `proposalContacts`, que é a lista realmente
@@ -4561,12 +4627,39 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
         const idPendencia = pendenciaAtiva?.id;
         const finalIdInt = Number(formToSave.id_int);
 
+        // Lotes novos da lista rápida passam a valer como gravados, com o id
+        // do banco. Sem isto, quando a tela continua aberta (aba Pagamentos) um
+        // segundo save inseria os mesmos lotes de novo. As exclusões já
+        // aplicadas saem da fila.
+        const lotesGravados: Array<{ tempId: string; id: number; idProdutoPropostaOrigem: number }> =
+          Array.isArray(apiResult.modelosSincronizados) ? apiResult.modelosSincronizados : [];
+        const comIdsDoBanco = (lista: PedidoModeloState[]): PedidoModeloState[] =>
+          lotesGravados.length === 0
+            ? lista
+            : lista.map((m) => {
+                const gravado = m.tempId ? lotesGravados.find((s) => s.tempId === m.tempId) : undefined;
+                return gravado
+                  ? { ...m, id: gravado.id, isPersisted: true, id_produto_proposta_origem: gravado.idProdutoPropostaOrigem }
+                  : m;
+              });
+
         // Atualizar snapshot e URL (adiado se houver diferença)
         const updateSnapshotAndUrl = () => {
           // `freteDeclaracaoAlterada: undefined` some no JSON: o snapshot fica igual ao `form`.
-          const { fretes: _f, ...savedSnap } = { ...formToSave, deletedProdutoPropostaIds: [], freteDeclaracaoAlterada: undefined };
+          const { fretes: _f, ...savedSnap } = {
+            ...formToSave,
+            pedidosModelos: comIdsDoBanco(formToSave.pedidosModelos),
+            deletedProdutoPropostaIds: [],
+            deletedModeloIds: undefined,
+            freteDeclaracaoAlterada: undefined
+          };
           initialFormSnapshot.current = JSON.stringify(savedSnap);
-          setForm(prev => ({ ...prev, deletedProdutoPropostaIds: [] }));
+          setForm(prev => ({
+            ...prev,
+            deletedProdutoPropostaIds: [],
+            deletedModeloIds: undefined,
+            pedidosModelos: comIdsDoBanco(prev.pedidosModelos)
+          }));
         };
 
         if (Math.abs(diferenca ?? 0) >= 0.01) {
@@ -5518,24 +5611,37 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
               // Proposta com cobrança: lotes excluídos na lista rápida vão no Salvar
               // (editar-paga → saveProposta com force). Cobrada sem permissão de
               // editar: a lista abre só para ver.
-              onModelosExcluidos={(ids) =>
-                setForm((prev) => ({ ...prev, deletedModeloIds: ids.length > 0 ? [...ids] : undefined }))
-              }
+              // SOMA, nunca substitui: cada grade manda só as exclusões dela, e
+              // a de um produto apagava a fila do outro — o lote excluído voltava
+              // depois de salvar.
+              onModelosExcluidos={(ids) => {
+                if (ids.length === 0) return;
+                setForm((prev) => {
+                  const atuais = prev.deletedModeloIds ?? [];
+                  const novos = ids.filter((id) => !atuais.includes(id));
+                  return novos.length > 0 ? { ...prev, deletedModeloIds: [...atuais, ...novos] } : prev;
+                });
+              }}
               lotesSomenteLeitura={isFormBloqueadoPorCobranca}
               onLotesNaoGravados={registrarLotesNaoGravados}
+              onAcoes={registrarAcoesDaAbaPedido}
               onLotesGravados={(idProdutoPropostaOrigem, novaQtd, freteMensagem) => {
                 // A lista rápida já gravou item e lotes no banco. Aqui só
                 // espelhamos no formulário: o total da proposta é calculado na
                 // tela, então ele se move na hora, e o cabeçalho da proposta
                 // sincroniza no "Salvar alterações", como qualquer edição.
-                updateField(
-                  "itens",
-                  form.itens.map((it) =>
+                // Sobre o estado corrente, não sobre o `form.itens` do render:
+                // duas grades acertando a quantidade em seguida (o Salvar grava
+                // um produto atrás do outro) desfaziam a da anterior.
+                setForm((prev) => ({
+                  ...prev,
+                  itens: prev.itens.map((it) =>
                     Number(it.id_produto_proposta_origem) === Number(idProdutoPropostaOrigem)
                       ? recalculateItem({ ...it, quantidade: novaQtd }, bonusPercent, cliente, canEditarValoresItem)
                       : it
                   )
-                );
+                }));
+                setErrorFields((current) => current.filter((campo) => campo !== "itens"));
                 if (freteMensagem) {
                   // Aviso, não bloqueio: o vendedor decide quando recotar. O
                   // impedimento de verdade é na geração da cobrança.

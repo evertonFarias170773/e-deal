@@ -59,6 +59,14 @@
  *   A quantidade do item só é regravada quando a soma mudou de fato — a rota
  *   compara antes de escrever; cor, bloco e numerador não mexem nela.
  *
+ * O "SALVAR ALTERAÇÕES" DA PROPOSTA TAMBÉM GRAVA (01/10/2026)
+ *   O botão flutuante salvava a proposta e recarregava a página sem olhar para
+ *   a grade: o que estava só nela se perdia. Agora a página fala com cada grade
+ *   por `onRegistrar` (`GradeDeLotesApi`): pergunta se há linha que não pode ser
+ *   gravada (e nesse caso não salva nem recarrega nada, mostrando o motivo) e,
+ *   sem cobrança, manda gravar pela MESMA rota do "Gravar lote" antes de salvar
+ *   a proposta. Linha nova em que ninguém mexeu não segura nada.
+ *
  * O CHECKLIST DO BOLETIM (Etapa 6b)
  *   Coluna de campo que o produto não tem marcado em `produto_boletim_campos`
  *   não aparece, e lote NOVO não recebe valor nela — nem a cor do produto, nem
@@ -158,6 +166,19 @@ export type PadroesDeLote = {
   bloco: string;
 };
 
+/** Desfecho de uma gravação da grade, para quem a dispara de fora dela. */
+export type ResultadoDaGravacao = { ok: true } | { ok: false; motivo: string };
+
+/** O que o "Salvar alterações" da proposta precisa de cada grade. */
+export type GradeDeLotesApi = {
+  /** Linha mexida que não pode ser gravada como está, em palavras para o usuário; null = nenhuma. */
+  impedimento: () => string | null;
+  /** Sem cobrança: há alteração que só a rota da grade leva ao banco. */
+  temNaoGravado: () => boolean;
+  /** Sem cobrança: grava como o "Gravar lote". */
+  gravar: () => Promise<ResultadoDaGravacao>;
+};
+
 type Lote = LinhaDaGrade;
 
 /** O que a linha entrega ao `ModeloCampos`: os mesmos valores do card. */
@@ -195,7 +216,8 @@ export function LotesGrid({
   onGravado,
   onAmpliarArte,
   onPendente,
-  onAlteracoesNaoGravadas
+  onAlteracoesNaoGravadas,
+  onRegistrar
 }: {
   idInt: number;
   /**
@@ -255,6 +277,8 @@ export function LotesGrid({
     removerIds: number[];
     soma: number;
   }) => void;
+  /** A grade se apresenta ao Salvar da proposta (null ao desmontar). */
+  onRegistrar?: (api: GradeDeLotesApi | null) => void;
 }) {
   const { showToast } = useAppToast();
 
@@ -286,6 +310,13 @@ export function LotesGrid({
   );
   const linhasRef = useRef<Lote[]>(linhas);
   const removidosRef = useRef<number[]>([]);
+  /**
+   * Chaves das linhas em que o usuário mexeu (digitou, colou, duplicou). Linha
+   * fora daqui — a automática, as do "+ N linhas", o lote antigo intocado — não
+   * tem nada digitado a perder; linha daqui que não esteja completa segura o
+   * Salvar da proposta.
+   */
+  const tocadasRef = useRef<Set<string>>(new Set());
   /**
    * MODELO NOVO NASCE EM "CADA MODELO COMEÇA DO 1" (30/09/2026, decisão do dono).
    * Item sem lote abre com o modo marcado, e a numeração de cada lote começa
@@ -436,6 +467,25 @@ export function LotesGrid({
   const completa = (l: Lote) =>
     modeloCompleto({ ...l, nome_modelo: nomeDoLote(l), quantidade: Number(l.quantidade) || 0 }, visivel);
 
+  /**
+   * O que impede gravar a grade como está — ou null. Conta a linha em que o
+   * usuário mexeu e que está sem obrigatório, nova ou do banco: ela não entra
+   * na gravação, e salvar a proposta recarrega a página, o que descartaria o
+   * que foi digitado. Lote antigo incompleto em que ninguém mexeu não segura
+   * nada — continua como está no banco.
+   */
+  function impedimento(): string | null {
+    const presas = linhasRef.current.filter((l) => !completa(l) && tocadasRef.current.has(l.chave));
+    if (presas.length === 0) return null;
+    const faltam = new Set<string>();
+    for (const l of presas) {
+      if (!nomeDoLote(l)?.trim()) faltam.add("Modelo");
+      if (!(Number(l.quantidade) > 0)) faltam.add("Qtd");
+      if (mostraCor && !l.padrao?.trim()) faltam.add("Cor papel");
+    }
+    return `${item.nome}: ${presas.length} modelo(s) sem ${[...faltam].join(", ")}`;
+  }
+
   function novaLinha(base?: LinhaLote): Lote {
     // Herda da linha anterior o que não costuma variar entre lotes do mesmo
     // produto e, quando não há de quem herdar, cai no cadastro do produto — é
@@ -543,46 +593,66 @@ export function LotesGrid({
   });
 
   // Alteração não gravada: compara com o retrato do último estado gravado.
-  // Proposta com cobrança fica de fora: lá a grade vive no formulário.
+  // Com cobrança o mesmo retrato alimenta o aviso da barra ("Alterações
+  // pendentes"); lá quem guarda a saída é o formulário, que recebeu o espelho.
   const [naoGravado, setNaoGravado] = useState(false);
   const naoGravadoRef = useRef(false);
+  /** Linha mexida e incompleta: não está no banco nem no formulário. */
+  const [temLinhaPresa, setTemLinhaPresa] = useState(false);
   useEffect(() => {
-    if (onPendente || retratoGravadoRef.current === null) return;
+    if (retratoGravadoRef.current === null) return;
     const sim = retratoDaGrade() !== retratoGravadoRef.current;
     naoGravadoRef.current = sim;
     setNaoGravado(sim);
+    setTemLinhaPresa(impedimento() !== null);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [linhas, modoNumeracao]);
+  // O que se perde ao sair: sem cobrança, tudo que não foi gravado; com
+  // cobrança, só a linha presa — o resto já está no formulário.
+  const perdeAoSair = temLinhaPresa || (!onPendente && naoGravado);
+  // Pelo ref: o pai passa uma função nova a cada render, e avisar "false" e
+  // "true" de novo a cada um deles re-renderizava a página inteira à toa.
+  const avisarSaidaRef = useRef(onAlteracoesNaoGravadas);
   useEffect(() => {
-    onAlteracoesNaoGravadas?.(naoGravado);
-  }, [naoGravado, onAlteracoesNaoGravadas]);
-  useEffect(() => () => onAlteracoesNaoGravadas?.(false), [onAlteracoesNaoGravadas]);
+    avisarSaidaRef.current = onAlteracoesNaoGravadas;
+  });
+  useEffect(() => {
+    avisarSaidaRef.current?.(perdeAoSair);
+  }, [perdeAoSair]);
+  useEffect(() => () => avisarSaidaRef.current?.(false), []);
 
-  async function executarSave(opcoes: { forcado?: boolean; confirmarReducao?: boolean } = {}) {
+  /**
+   * Devolve o desfecho para quem chama de fora (o Salvar da proposta); o
+   * "Gravar lote" ignora o retorno e lê o status na barra, como sempre.
+   */
+  async function executarSave(
+    opcoes: { forcado?: boolean; confirmarReducao?: boolean } = {}
+  ): Promise<ResultadoDaGravacao> {
     const { forcado = false, confirmarReducao = false } = opcoes;
-    if (!autoSaveHabilitado && !forcado) return;
+    if (!autoSaveHabilitado && !forcado) return { ok: true };
 
     // Requisição em voo: enfileira e sai. O próprio término reprocessa.
     if (salvandoRef.current) {
       pendenteRef.current = true;
-      return;
+      return { ok: false, motivo: "os lotes ainda estão sendo gravados. Tente de novo em instantes." };
     }
 
     const envio = prepararEnvio();
     if ("segurar" in envio) {
       if (envio.segurar) setStatusSeMontado(forcado ? "error" : "idle", envio.segurar);
-      return;
+      return envio.segurar ? { ok: false, motivo: envio.segurar } : { ok: true };
     }
     const assinatura = assinaturaDe(envio);
     if (assinatura === ultimaAssinaturaRef.current) {
       if (forcado) setStatusSeMontado("saved");
-      return;
+      return { ok: true };
     }
 
     salvandoRef.current = true;
     setGravando(true);
     setStatusSeMontado("saving");
 
+    let falha: string | null = null;
     try {
       const resposta = await fetchComSessao("/api/pedidos/lotes-em-massa", {
         method: "POST",
@@ -609,15 +679,16 @@ export function LotesGrid({
           salvandoRef.current = false;
           setGravando(false);
           if (ok) {
-            await executarSave({ forcado, confirmarReducao: true });
-            return;
+            return await executarSave({ forcado, confirmarReducao: true });
           }
           // O que foi digitado fica na tela; o banco fica como estava.
-          setStatusSeMontado("error", "Redução não confirmada: a quantidade do item não foi alterada.");
-          return;
+          const naoConfirmada = "Redução não confirmada: a quantidade do item não foi alterada.";
+          setStatusSeMontado("error", naoConfirmada);
+          return { ok: false, motivo: naoConfirmada };
         }
-        setStatusSeMontado("error", dados?.message || "Não foi possível gravar os lotes.");
-        return;
+        const recusa = dados?.message || "Não foi possível gravar os lotes.";
+        setStatusSeMontado("error", recusa);
+        return { ok: false, motivo: recusa };
       }
 
       // Os ids das linhas novas: a rota devolve os lotes do item em ordem, e os
@@ -664,14 +735,13 @@ export function LotesGrid({
         lotes: devolvidos
       });
     } catch (erro) {
-      setStatusSeMontado(
-        "error",
+      falha =
         erro instanceof SessaoExpiradaError
           ? erro.message
           : erro instanceof Error
             ? erro.message
-            : "Falha ao gravar."
-      );
+            : "Falha ao gravar.";
+      setStatusSeMontado("error", falha);
     } finally {
       salvandoRef.current = false;
       if (montadoRef.current) setGravando(false);
@@ -681,6 +751,7 @@ export function LotesGrid({
       pendenteRef.current = false;
       await executarSave({ forcado });
     }
+    return falha ? { ok: false, motivo: falha } : { ok: true };
   }
 
   // Desmontagem: nada é gravado sozinho (25/09/2026). O aviso de alteração
@@ -702,6 +773,8 @@ export function LotesGrid({
    */
   function alterar(indice: number, partial: Partial<PedidoModeloState>, imediato = false) {
     if (linhasRef.current[indice]?.chave === linhaAutomaticaRef.current) linhaAutomaticaRef.current = null;
+    const chaveMexida = linhasRef.current[indice]?.chave;
+    if (chaveMexida) tocadasRef.current.add(chaveMexida);
     mutar((atual) =>
       atual.map((l, i) => {
         if (i !== indice) return l;
@@ -752,6 +825,7 @@ export function LotesGrid({
       const base = atual[indice];
       if (!base) return atual;
       const copia = { ...novaLinha(base), quantidade: base.quantidade };
+      tocadasRef.current.add(copia.chave);
       return [...atual.slice(0, indice + 1), copia, ...atual.slice(indice + 1)];
     });
   }
@@ -793,10 +867,9 @@ export function LotesGrid({
       const base = atual[atual.length - 1];
       // O que veio da lista (cor e quantidade) manda; o resto do lote vem dos
       // padrões, senão colar 20 linhas geraria 20 lotes sem numerador.
-      return [
-        ...semVaziaFinal,
-        ...lidas.map((l) => ({ ...novaLinha(base), ...l, nome_modelo: nomePadrao }))
-      ];
+      const coladas = lidas.map((l) => ({ ...novaLinha(base), ...l, nome_modelo: nomePadrao }));
+      coladas.forEach((l) => tocadasRef.current.add(l.chave));
+      return [...semVaziaFinal, ...coladas];
     });
 
     const semCor = lidas.filter((l) => l.corNaoReconhecida).length;
@@ -835,7 +908,6 @@ export function LotesGrid({
 
   // Proposta com cobrança: espelha no formulário a cada alteração (ver
   // `onPendente`). A primeira passagem é o que veio do banco: nada a espelhar.
-  const [temPendente, setTemPendente] = useState(false);
   const espelhouRef = useRef(false);
   useEffect(() => {
     if (!onPendente) return;
@@ -849,10 +921,24 @@ export function LotesGrid({
       .filter((l) => l.id || completa(l))
       .map((l) => ({ ...l, ...montarLote(l), chave: l.chave }));
     onPendente({ lotes, removerIds: [...removidosRef.current], soma: somaQuantidades(lotes) });
-    setTemPendente(true);
     // Só as linhas e o modo disparam: são as duas fontes do que vai ao Salvar.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [linhas, modoNumeracao]);
+
+  // A grade se apresenta ao Salvar da proposta. A cada render, para as funções
+  // serem as do render mais novo (elas leem `visivel`, `onGravado`, o item).
+  useEffect(() => {
+    onRegistrar?.({
+      impedimento,
+      temNaoGravado: () => !onPendente && naoGravadoRef.current,
+      gravar: async () => {
+        const desfecho = await executarSave({ forcado: true });
+        return desfecho.ok ? desfecho : { ok: false, motivo: `${item.nome}: ${desfecho.motivo}` };
+      }
+    });
+  });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => () => onRegistrar?.(null), []);
 
   const incompletas = linhas.filter((l) => !l.id && !completa(l) && (l.nome_modelo.trim() || l.quantidade !== "" || l.padrao)).length;
 
@@ -904,8 +990,8 @@ export function LotesGrid({
               fica na grade. Em proposta com cobrança a grade não grava: quem
               grava é o Salvar da proposta (editar-paga). */}
           {onPendente ? (
-            <span className={`rounded-xl px-3 py-2 text-xs font-bold ${temPendente ? "bg-amber-50 text-amber-700" : "text-slate-500"}`}>
-              {temPendente
+            <span className={`rounded-xl px-3 py-2 text-xs font-bold ${naoGravado ? "bg-amber-50 text-amber-700" : "text-slate-500"}`}>
+              {naoGravado
                 ? "Alterações pendentes: use Salvar alterações da proposta"
                 : "Proposta com cobrança: grava pelo Salvar da proposta"}
             </span>

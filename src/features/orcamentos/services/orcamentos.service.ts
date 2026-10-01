@@ -2488,6 +2488,188 @@ export function montarInsertDeLoteDaProposta(
   );
 }
 
+/** Lote novo gravado: o `tempId` da tela casado com o id do banco. */
+type ModeloSincronizado = { tempId: string; id: number; idProdutoPropostaOrigem: number };
+
+/**
+ * Grava os lotes de UM item no save da proposta: exclui (C.0), atualiza os que
+ * já existem (C.1) e insere os novos (C.2).
+ *
+ * Corpo único do salvamento completo e do parcial com cobrança
+ * (`gravarLotesNoSalvamentoParcial`): a regra é a mesma nos dois. Lança em
+ * qualquer falha, como o laço de itens sempre fez.
+ */
+async function gravarLotesDoItem(
+  client: import("@supabase/supabase-js").SupabaseClient,
+  params: {
+    idInt: number;
+    dbItemId: number;
+    modelosDoItem: PedidoModeloState[];
+    /** `deletedModeloIds` já filtrado; só os lotes DESTE item e desta proposta saem. */
+    excluirIds: number[];
+    visivel: ChecklistVisivel;
+    variacoesTexto: string | null;
+  }
+): Promise<ModeloSincronizado[]> {
+  const { idInt, dbItemId, modelosDoItem, excluirIds, visivel, variacoesTexto } = params;
+  const sincronizados: ModeloSincronizado[] = [];
+
+  if (excluirIds.length > 0) {
+    const { error: deleteModelosError } = await client
+      .from("pedidos_modelos")
+      .delete()
+      .in("id", excluirIds)
+      .eq("id_produto_proposta_origem", dbItemId)
+      .eq("id_int", idInt);
+    if (deleteModelosError) {
+      console.error(`[OrcamentosService] Erro ao excluir lotes do item #${dbItemId}:`, deleteModelosError);
+      throw new Error(`Erro ao excluir lotes do item #${dbItemId}: ${deleteModelosError.message}`);
+    }
+  }
+  const excluidos = new Set(excluirIds);
+
+  const modelosNovos = modelosDoItem.filter(m => !m.isPersisted);
+  const modelosExistentes = modelosDoItem.filter(m => m.isPersisted && m.id && m.id > 0 && !excluidos.has(Number(m.id)));
+
+  // C.1 Modelos já gravados: o save da proposta precisa levar as edições
+  // feitas na aba Pedido. Antes só os novos eram inseridos, então mudar
+  // a cor ou a quantidade de um modelo existente e salvar a proposta não
+  // gravava nada — a alteração revertia no recarregamento.
+  for (const m of modelosExistentes) {
+    // Coluna que o produto não imprime fica fora do UPDATE.
+    const { error: updateModeloError } = await client
+      .from("pedidos_modelos")
+      .update(montarUpdateDeLoteDaProposta(m, visivel))
+      .eq("id", m.id!);
+
+    if (updateModeloError) {
+      console.error(`[OrcamentosService] Erro ao atualizar modelo #${m.id} do item #${dbItemId}:`, updateModeloError);
+      throw new Error(`Erro ao atualizar modelo #${m.id}: ${updateModeloError.message}`);
+    }
+  }
+
+  // C.2 Modelos novos: inseridos um a um para poder devolver o id de cada
+  // um casado com o tempId da tela (o insert em lote não garante a
+  // correspondência por posição).
+  let proximaOrdem = modelosExistentes.length;
+  for (const m of modelosNovos) {
+    proximaOrdem += 1;
+    // Coluna que o produto não imprime nasce NULL.
+    const { data: novoModelo, error: insertModeloError } = await client
+      .from("pedidos_modelos")
+      .insert(
+        montarInsertDeLoteDaProposta(
+          m,
+          { idInt, idItem: dbItemId, variacoesTexto, ordem: proximaOrdem },
+          visivel
+        )
+      )
+      .select("id")
+      .single();
+
+    if (insertModeloError || !novoModelo) {
+      console.error(`[OrcamentosService] Erro ao gravar modelo novo do item #${dbItemId}:`, insertModeloError);
+      throw new Error(`Erro ao gravar modelos do item #${dbItemId}: ${insertModeloError?.message || "Sem ID de retorno"}`);
+    }
+
+    if (m.tempId) {
+      sincronizados.push({
+        tempId: m.tempId,
+        id: Number(novoModelo.id),
+        idProdutoPropostaOrigem: dbItemId,
+      });
+    }
+  }
+
+  return sincronizados;
+}
+
+/**
+ * Lotes da aba Pedido no SALVAMENTO PARCIAL — proposta com cobrança ativa
+ * ainda não paga (01/10/2026).
+ *
+ * O `editar-paga` libera a edição sem efeito financeiro dessa proposta, mas o
+ * save cai no salvamento parcial, que só gravava as observações: os modelos
+ * alterados na lista rápida eram descartados e a tela dizia "atualizada com
+ * sucesso". Lote não carrega dinheiro — quem carrega é a quantidade do item,
+ * que a rota já conferiu campo a campo contra o banco antes de chegar aqui.
+ *
+ * Só os lotes de itens que JÁ existem na proposta: o parcial não cria nem
+ * altera produto. O checklist do boletim sai do produto gravado no item, e a
+ * leitura que falha não grava nada.
+ */
+async function gravarLotesNoSalvamentoParcial(
+  client: import("@supabase/supabase-js").SupabaseClient,
+  formState: PropostaFormState,
+  idInt: number
+): Promise<{ success: true; modelosSincronizados: ModeloSincronizado[] } | { success: false; errorMessage: string }> {
+  const modelos = formState.pedidosModelos ?? [];
+  const excluirIds = (formState.deletedModeloIds || []).map(Number).filter((id) => Number.isFinite(id) && id > 0);
+  if (formState.isAvulso || (modelos.length === 0 && excluirIds.length === 0)) {
+    return { success: true, modelosSincronizados: [] };
+  }
+
+  const { data: itensBanco, error: itensErro } = await client
+    .from("produtos_proposta")
+    .select("id, id_produto")
+    .eq("id_int", idInt);
+  if (itensErro) {
+    return {
+      success: false,
+      errorMessage: "Não foi possível conferir os produtos da proposta. Nada foi gravado — tente salvar de novo."
+    };
+  }
+  const produtoDoItem = new Map<number, number>(
+    (itensBanco || []).map((it) => [Number(it.id), Number(it.id_produto)] as const)
+  );
+
+  const checklist = new Map<number, string[]>();
+  const idsProduto = Array.from(new Set(produtoDoItem.values())).filter((id) => Number.isInteger(id) && id > 0);
+  if (idsProduto.length > 0) {
+    const { data: checklistRows, error: checklistError } = await client
+      .from("produto_boletim_campos")
+      .select("id_produto, campo")
+      .in("id_produto", idsProduto);
+    if (checklistError) {
+      return {
+        success: false,
+        errorMessage: "Não foi possível ler o checklist do boletim dos produtos. Nada foi gravado — tente salvar de novo."
+      };
+    }
+    for (const linha of checklistRows || []) {
+      const id = Number((linha as { id_produto: number }).id_produto);
+      const lista = checklist.get(id) ?? [];
+      lista.push(String((linha as { campo: string }).campo));
+      checklist.set(id, lista);
+    }
+  }
+
+  const modelosSincronizados: ModeloSincronizado[] = [];
+  try {
+    for (const item of formState.itens) {
+      const dbItemId = Number(item.id_produto_proposta_origem);
+      if (!produtoDoItem.has(dbItemId)) continue;
+      modelosSincronizados.push(
+        ...(await gravarLotesDoItem(client, {
+          idInt,
+          dbItemId,
+          modelosDoItem: modelos.filter((m) => Number(m.id_produto_proposta_origem) === dbItemId),
+          excluirIds,
+          visivel: checklistVisivel(checklist.get(produtoDoItem.get(dbItemId) ?? 0)),
+          variacoesTexto: formatVariacoesItem(item) || null
+        }))
+      );
+    }
+  } catch (err) {
+    return {
+      success: false,
+      errorMessage: err instanceof Error ? err.message : "Erro ao gravar os modelos da proposta."
+    };
+  }
+
+  return { success: true, modelosSincronizados };
+}
+
 export async function saveProposta(
   formState: PropostaFormState,
   injectedClient?: import('@supabase/supabase-js').SupabaseClient,
@@ -2499,6 +2681,13 @@ export async function saveProposta(
      * O chamador é responsável por verificar a permissão antes de passar force=true.
      */
     force?: boolean;
+    /**
+     * Proposta com cobrança ativa ainda não paga, edição sem efeito financeiro:
+     * o salvamento continua parcial, mas leva os lotes da aba Pedido. Quem passa
+     * é o `editar-paga`, depois de conferir os valores contra o banco e a
+     * permissão `propostas.editar_paga`.
+     */
+    gravarLotesComCobranca?: boolean;
   }
 ): Promise<{
   success: boolean;
@@ -2554,6 +2743,17 @@ export async function saveProposta(
           if (process.env.NODE_ENV === "development") {
             console.log("[DEV][saveProposta] hasActiveCharge=true para id_int:", id_int, "→ return early, nenhum DELETE de produto será feito.");
           }
+          // Lotes da aba Pedido, ANTES das observações: se falharem, nada é
+          // gravado e a tela mostra o motivo sem recarregar.
+          let modelosSincronizadosParcial: ModeloSincronizado[] = [];
+          if (options?.gravarLotesComCobranca) {
+            const lotes = await gravarLotesNoSalvamentoParcial(client, formState, id_int);
+            if (!lotes.success) {
+              return { success: false, errorMessage: lotes.errorMessage };
+            }
+            modelosSincronizadosParcial = lotes.modelosSincronizados;
+          }
+
           // Salvamento Parcial Seguro (comportamento padrão sem permissão)
           const { error: partialUpdateError } = await client
             .from("propostas")
@@ -2576,7 +2776,8 @@ export async function saveProposta(
           return {
             success: true,
             id_int: id_int,
-            errorMessage: "Campos operacionais salvos. Produtos, valores, descontos e frete permanecem bloqueados porque existe cobrança gerada."
+            errorMessage: "Campos operacionais salvos. Produtos, valores, descontos e frete permanecem bloqueados porque existe cobrança gerada.",
+            modelosSincronizados: modelosSincronizadosParcial
           };
         }
       }
@@ -3486,76 +3687,22 @@ export async function saveProposta(
           const excluirModelos = options?.force
             ? (formState.deletedModeloIds || []).map(Number).filter((id) => Number.isFinite(id) && id > 0)
             : [];
-          if (excluirModelos.length > 0) {
-            const { error: deleteModelosError } = await client
-              .from("pedidos_modelos")
-              .delete()
-              .in("id", excluirModelos)
-              .eq("id_produto_proposta_origem", dbItemId)
-              .eq("id_int", id_int!);
-            if (deleteModelosError) {
-              console.error(`[OrcamentosService] Erro ao excluir lotes do item #${dbItemId}:`, deleteModelosError);
-              throw new Error(`Erro ao excluir lotes do item #${dbItemId}: ${deleteModelosError.message}`);
-            }
-          }
-          const excluidos = new Set(excluirModelos);
-
-          const modelosNovos = modelosDoItem.filter(m => !m.isPersisted);
-          const modelosExistentes = modelosDoItem.filter(m => m.isPersisted && m.id && m.id > 0 && !excluidos.has(Number(m.id)));
 
           // A regra do checklist para os lotes DESTE item — a mesma da grade,
           // da rota de lotes, dos cards e do PCP. Produto sem checklist: null.
           const visivelDoItem = checklistVisivel(checklistDosLotes.get(Number(item.id_produto)));
 
-          // C.1 Modelos já gravados: o save da proposta precisa levar as edições
-          // feitas na aba Pedido. Antes só os novos eram inseridos, então mudar
-          // a cor ou a quantidade de um modelo existente e salvar a proposta não
-          // gravava nada — a alteração revertia no recarregamento.
-          for (const m of modelosExistentes) {
-            // Coluna que o produto não imprime fica fora do UPDATE.
-            const { error: updateModeloError } = await client
-              .from("pedidos_modelos")
-              .update(montarUpdateDeLoteDaProposta(m, visivelDoItem))
-              .eq("id", m.id!);
-
-            if (updateModeloError) {
-              console.error(`[OrcamentosService] Erro ao atualizar modelo #${m.id} do item #${dbItemId}:`, updateModeloError);
-              throw new Error(`Erro ao atualizar modelo #${m.id}: ${updateModeloError.message}`);
-            }
-          }
-
-          // C.2 Modelos novos: inseridos um a um para poder devolver o id de cada
-          // um casado com o tempId da tela (o insert em lote não garante a
-          // correspondência por posição).
-          let proximaOrdem = modelosExistentes.length;
-          for (const m of modelosNovos) {
-            proximaOrdem += 1;
-            // Coluna que o produto não imprime nasce NULL.
-            const { data: novoModelo, error: insertModeloError } = await client
-              .from("pedidos_modelos")
-              .insert(
-                montarInsertDeLoteDaProposta(
-                  m,
-                  { idInt: id_int!, idItem: dbItemId, variacoesTexto: variacoesTextoItem, ordem: proximaOrdem },
-                  visivelDoItem
-                )
-              )
-              .select("id")
-              .single();
-
-            if (insertModeloError || !novoModelo) {
-              console.error(`[OrcamentosService] Erro ao gravar modelo novo do item #${dbItemId}:`, insertModeloError);
-              throw new Error(`Erro ao gravar modelos do item #${dbItemId}: ${insertModeloError?.message || "Sem ID de retorno"}`);
-            }
-
-            if (m.tempId) {
-              modelosSincronizados.push({
-                tempId: m.tempId,
-                id: Number(novoModelo.id),
-                idProdutoPropostaOrigem: dbItemId,
-              });
-            }
-          }
+          // C.1 e C.2 (existentes e novos) no corpo único `gravarLotesDoItem`.
+          modelosSincronizados.push(
+            ...(await gravarLotesDoItem(client, {
+              idInt: id_int!,
+              dbItemId,
+              modelosDoItem,
+              excluirIds: excluirModelos,
+              visivel: visivelDoItem,
+              variacoesTexto: variacoesTextoItem
+            }))
+          );
         }
 
         // C2. Ressincroniza o texto de variações de TODOS os modelos deste item.
