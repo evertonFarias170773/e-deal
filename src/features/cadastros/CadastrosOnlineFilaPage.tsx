@@ -144,7 +144,7 @@ export function CadastrosOnlineFilaPage() {
     <div className="space-y-6">
       <PageHeader
         title="Recebidos pelo link"
-        subtitle="Cadastros enviados pelos clientes através do link do atendente. A aprovação é automática — aqui você confere, recusa ou desfaz."
+        subtitle="Cadastros enviados pelos clientes através do link do atendente. Cadastros de CNPJ entram direto. Cadastros de CPF ficam pendentes até alguém aprovar."
         context="Cadastros"
       />
 

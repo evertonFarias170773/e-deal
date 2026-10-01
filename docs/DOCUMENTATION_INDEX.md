@@ -2,7 +2,7 @@
 
 Versão: 3.5  
 Status: Oficial  
-Última atualização: 13/09/2026  
+Última atualização: 01/10/2026  
 Projeto: Vibe
 
 ---
@@ -106,6 +106,10 @@ Painel do funil APROVADO→ENTREGUE, fontes de dados, transições, etiqueta 10�
 ## [`business/PEDIDO-COMPLEMENTAR.md`](./business/PEDIDO-COMPLEMENTAR.md)
 
 Pedido complementar do mesmo evento: regra aprovada em 13/09/2026, **implementada e disponível desde 14/09/2026** — elegibilidade (pago e não expedido), o que herda, vínculo, frete pela diferença do peso somado, guardas, despacho conjunto na Expedição, decisões do dono e pendência fiscal aberta.
+
+## [`manual/README.md`](./manual/README.md)
+
+Manual de uso do Vibe, em linguagem de usuário: uma página por tela ou fluxo (Pedidos, proposta e abas, Conferência, Carteira, Registro de recebíveis, Notas fiscais, Produção, Expedição, Tarefas), no formato fixo de `manual/_MODELO.md`. Mudança visível ao usuário atualiza a página no mesmo commit (regra no `AGENTS.md`); `scripts/checar-manual.mjs` avisa quando falta. Também é fonte de consulta do Maestro.
 
 ---
 

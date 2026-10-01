@@ -1,0 +1,5 @@
+#!/bin/sh
+# Aviso do manual de uso (docs/manual/). Nunca bloqueia o commit.
+# Ativar uma vez por copia do repositorio: git config core.hooksPath .githooks
+node scripts/checar-manual.mjs --staged || true
+exit 0
