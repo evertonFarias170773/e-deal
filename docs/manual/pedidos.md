@@ -156,7 +156,7 @@ As datas pequenas aparecem como dia/mês e hora, no horário de Brasília.
 1. **Ver proposta**: abre a proposta só para leitura.
 2. **Ver chat interno**: abre o chat do pedido. Mostra quantas mensagens não lidas há.
 3. **Editar proposta**: abre a proposta em edição.
-4. **Duplicar proposta**: pede confirmação, cria uma cópia e abre a cópia em edição. A cópia traz da original os produtos, o faturado, o endereço, o contato, as observações e a modalidade de frete; a cotação, a cobrança e os modelos não vêm. O passo a passo está na página da Proposta.
+4. **Duplicar proposta**: pede confirmação, cria uma cópia e abre a cópia em edição. A cópia traz da original os produtos, os modelos (com a mesma numeração e a arte pendente), o faturado, o endereço, o contato, as observações e a modalidade de frete; a cotação, a cobrança e a arte não vêm. O passo a passo está na página da Proposta.
 5. **Criar pedido complementar**: abre a confirmação para criar um pedido novo do mesmo evento. Aparece só em proposta que não é avulsa, não é ela mesma um complemento e está entre LIBERADO e EXPEDICAO.
 6. **Copiar proposta informal**: copia o resumo do pedido, pronto para colar no WhatsApp.
 7. **Link pgto. externo**: copia o link da área do cliente para pagamento.

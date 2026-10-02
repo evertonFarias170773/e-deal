@@ -243,7 +243,7 @@ O complemento herda do pedido original o cliente, o endereço, o contato, o paga
 3. Confira o faturado, o endereço de entrega, o contato e as observações. Eles vêm da original.
 4. Na aba Fretes, a modalidade (CIF, FOB ou Retira) e a transportadora do FOB vêm da original. A cotação não vem: em CIF, escolha o frete de novo.
 5. Na aba Orçamento, os produtos, as quantidades, as variações e o desconto geral vêm da original, com os preços daquela venda. Produto cancelado na original não vem.
-6. Na aba Pedido, monte os modelos de novo: eles não são copiados.
+6. Na aba Pedido, os modelos vêm da original com o mesmo nome, cor do papel, quantidade e numeração, e com a arte pendente. Confira a numeração: se for o mesmo evento, ela vai se repetir.
 7. Clique em **Salvar alterações**. A cobrança da original não vem: gere a da cópia na aba Pagamentos.
 
 O aviso some quando você clica em **Entendi** ou quando a cópia ganha cobrança.
@@ -271,7 +271,9 @@ O aviso some quando você clica em **Entendi** ou quando a cópia ganha cobranç
 - Sair da aba Pedido com modelo ainda não gravado na lista rápida descarta o que foi digitado. A tela pergunta antes.
 - Só duplica a proposta quem é o vendedor dela, o administrador ou quem vê todas as propostas.
 - Proposta que já é cópia não pode ser duplicada. Duplique a original.
-- A cópia não leva cobrança, status, cotação de frete, bônus de tabela especial, modelos, arte, chat, tarefas nem histórico. O bônus do cliente entra de novo no primeiro **Salvar alterações**.
+- A cópia não leva cobrança, status, cotação de frete, bônus de tabela especial, arte dos modelos, dados do evento, chat, tarefas nem histórico. O bônus do cliente entra de novo no primeiro **Salvar alterações**.
+- Os modelos da cópia nascem com a arte pendente, sem arquivo e sem amostra, e trazem "Cópia do pedido #<número>" na observação de arte. Modelo de produto cancelado na original não vem.
+- A cópia que traz modelos abre como **NOVO / EM ARTE**, como acontece quando os modelos são digitados.
 
 ## O que não confundir
 
@@ -349,6 +351,7 @@ O aviso some quando você clica em **Entendi** ou quando a cópia ganha cobranç
 - `src/features/orcamentos/services/faturado-editavel.ts`
 - `src/features/orcamentos/lib/aviso-copia.ts`
 - `supabase/migrations/20261002_copiar_proposta_v2_fase1_cabecalho_frete.sql`
+- `supabase/migrations/20261002_copiar_proposta_v2_fase2_modelos.sql`
 - `src/features/orcamentos/components/DiferencaFinanceiraModal.tsx`
 - `src/features/orcamentos/components/LiberarFaturadoModal.tsx`
 - `src/features/orcamentos/components/CancelPropostaModal.tsx`
