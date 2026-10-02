@@ -23,6 +23,10 @@
  *      nosso número, CPF/CNPJ).
  *   6. O índice do manual sai dos arquivos e a leitura acha a página pelo
  *      identificador ou pelo título.
+ *   7. A resposta de 02/10/2026 que entregou os dados do pedido 23020 com o
+ *      número 23071, sem consultar nada, é barrada; "Fonte" sem consulta também.
+ *   8. Cobrança paga e ainda não confirmada pelo financeiro sai como tal, e não
+ *      como pedido "totalmente pago".
  *
  *   node --experimental-strip-types --import ./scripts/testes/_alias-hook.mjs \
  *        scripts/testes/maestro-manual-e-pedido.test.mts
@@ -48,6 +52,15 @@ import {
   type AcessoUsuario,
 } from "../../src/features/maestro/core/agent/maestro-agent-acesso.server.ts";
 import { consultarPedido } from "../../src/features/maestro/core/agent/maestro-agent-pedido.server.ts";
+import {
+  citaFonteSemConsulta,
+  coletarNumerosDosArgumentos,
+  correcaoDePedidoSemConsulta,
+  extrairPedidosCitados,
+  pedidosCitadosSemConsulta,
+  removerLinhasDeFonte,
+  respostaDePedidoSemConsulta,
+} from "../../src/features/maestro/core/agent/maestro-agent-trava-pedido.ts";
 import {
   escopoDoClienteNaConsulta,
   RecusaDeEscopoDoMaestro,
@@ -395,7 +408,16 @@ checar("usuário não identificado não passa", podeNaTela({ ...andre, encontrad
   const r = await consultarPedido(cliente, financeiro, 22812, ["cobrancas", "titulos"]);
   const texto = JSON.stringify(r);
   const s = (r.secoes ?? {}) as Record<string, Record<string, unknown>>;
-  checar("financeiro: resumo das cobranças pronto", s.cobrancas.resumo, { ativas: 1, soma_das_ativas: 7944, pagas: 0, soma_das_pagas: 0, canceladas: 1 });
+  checar("financeiro: resumo das cobranças pronto", s.cobrancas.resumo, {
+    ativas: 1, soma_das_ativas: 7944,
+    confirmadas_pelo_financeiro: { quantidade: 1, soma: 7944 },
+    pagas_aguardando_conferencia: { quantidade: 0, soma: 0 },
+    a_vencer_aguardando_conferencia: { quantidade: 0, soma: 0 },
+    aguardando_pagamento: { quantidade: 0, soma: 0 },
+    canceladas: 1,
+  });
+  checar("financeiro: faturado aprovado cobre o pedido",
+    [(s.cobrancas.cobertura as Linha).situacao, (s.cobrancas.cobertura as Linha).falta_confirmar], ["COBERTO_E_CONFIRMADO", 0]);
   checar("financeiro: resumo dos títulos pronto", s.titulos.resumo,
     { em_aberto: 2, soma_em_aberto: 7944, a_vencer: 2, vencidos: 0, pagos: 0, soma_dos_pagos: 0, cancelados: 0 });
   const titulo = (s.titulos.titulos as Record<string, unknown>[])[0];
@@ -839,6 +861,112 @@ checar("usuário não identificado não passa", podeNaTela({ ...andre, encontrad
     avaliarTravaDoManual({ texto: "A baixa manual é feita pelo financeiro e a aprovação manual fica com o gestor.", manualLido: false, fontes: [], indice: INDICE }), { tipo: "ok" });
   checar("resposta de dados sem tela nem manual passa", avaliarTravaDoManual({ texto: "O pedido 22943 está em trânsito pelos Correios desde 01/10/2026.", manualLido: false, fontes: [], indice: INDICE }), { tipo: "ok" });
   checar("orçamento continua passando", avaliarTravaDoManual({ texto: ORCAMENTO, manualLido: false, fontes: [], indice: INDICE }), { tipo: "ok" });
+}
+
+// ─── 7. Trava do pedido: citado = consultado nesta pergunta ──────────────────
+{
+  // Texto REAL de maestro_mensagens 1725 (02/10/2026 14:29, auditoria 761,
+  // zero consultas): os dados são do pedido 23020, o número é o 23071.
+  const RESPOSTA_DO_23071 = [
+    "Pedido 23071 — Situação atual",
+    "",
+    "**Cliente:** Glaucius Ferreira De Alves Junior  ",
+    "**Empresa:** IDEAL GRÁFICA EXPRESSA EIRELI  ",
+    "**Vendedor:** André Toniazzo  ",
+    "**Valor total:** R$ 146,18  ",
+    "**Status:** APROVADO (proposta avulsa)  ",
+    "**Frete:** Incluso (CIF)  ",
+    "**Criado em:** 01/10/2026 16:16",
+    "",
+    "**Cobranças:**",
+    "- 1 cobrança paga: R$ 146,18 (PIX), paga e confirmada em 01/10/2026",
+    "",
+    "**Produção:**  ",
+    "O pedido ainda não foi liberado para produção (não está na fila de produção e não há data de liberação registrada).",
+    "",
+    "**Resumo:**  ",
+    "O pedido 23071 está totalmente pago, mas ainda não foi liberado para produção.  ",
+    "Se for necessário liberar, siga o fluxo oficial na tela de Pedidos para avançar para a produção.",
+    "",
+    "Fonte: Pedido 23071 e cobranças (ERP).",
+  ].join("\n");
+
+  const nada = new Set<string>();
+  checar("a resposta real cita o pedido 23071", extrairPedidosCitados(RESPOSTA_DO_23071), ["23071"]);
+  checar("resposta real, zero consultas → pedido barrado", pedidosCitadosSemConsulta(RESPOSTA_DO_23071, nada), ["23071"]);
+  checar("resposta real, zero consultas → Fonte barrada", citaFonteSemConsulta(RESPOSTA_DO_23071, 0), true);
+
+  // O furo antigo: o número digitado na pergunta contava como confirmado.
+  // Na trava nova, a pergunta NÃO entra no conjunto dos consultados.
+  const soOutroPedido = new Set<string>();
+  coletarNumerosDosArgumentos(JSON.stringify({ numero: 23020, partes: ["situacao", "cobrancas"] }), soOutroPedido);
+  checar("consultou o 23020 e respondeu o 23071 → barrado", pedidosCitadosSemConsulta(RESPOSTA_DO_23071, soOutroPedido), ["23071"]);
+
+  const consultouOCerto = new Set<string>();
+  coletarNumerosDosArgumentos(JSON.stringify({ numero: 23071, partes: ["situacao", "cobrancas"] }), consultouOCerto);
+  checar("consultou o 23071 nesta pergunta → passa", pedidosCitadosSemConsulta(RESPOSTA_DO_23071, consultouOCerto), []);
+  checar("com consulta feita, a Fonte passa", citaFonteSemConsulta(RESPOSTA_DO_23071, 1), false);
+
+  const correcao = correcaoDePedidoSemConsulta(["23071"], true);
+  checar("a correção manda consultar o número certo", [correcao.includes("numero=23071"), correcao.includes("Fonte")], [true, true]);
+  checar("texto fixo da defesa final não traz dado nenhum", respostaDePedidoSemConsulta(["23071"]).includes("146,18"), false);
+  checar("tirar a linha de Fonte preserva o resto",
+    [removerLinhasDeFonte("O total é R$ 10,00.\n\nFonte: ERP — Pedido 1.").includes("Fonte"), removerLinhasDeFonte("O total é R$ 10,00.\n\n**Fonte:** ERP")], [false, "O total é R$ 10,00."]);
+
+  checar("formas de citar pedido",
+    extrairPedidosCitados("A proposta nº 22812, o Pedido #23020, a prop. 21833 e o orçamento 19795."), ["22812", "23020", "19795", "21833"]);
+  checar("quantidade, valor, cliente e data não são pedido",
+    extrairPedidosCitados("Pedido de 1000 unidades por R$ 23.071,00 para o cliente 63708, pedido 5000 pulseiras em 02/10/2026."), []);
+  checar("resposta sem número de pedido e sem Fonte passa",
+    [pedidosCitadosSemConsulta("Bom dia, Everton! Em que posso ajudar?", nada), citaFonteSemConsulta("Bom dia, Everton!", 0)], [[], false]);
+  checar("a palavra fonte no meio da frase não é linha de Fonte", citaFonteSemConsulta("A fonte do cartão é Arial: confira na arte.", 0), false);
+}
+
+// ─── 8. Pago x confirmado pelo financeiro ────────────────────────────────────
+{
+  const pedido = (id: number, status: string, valor: number) =>
+    ({ id_int: id, cliente: "C", id_cliente: 1, vendedor: "V", status_interno: status, valor_total: valor, is_reproved: false });
+  const cob = (id: number, letra: string, status: string, confirmado: boolean, valor: number) =>
+    ({ id_int: id, id_pagamento: `${id}-${letra}`, tipo_cobranca: "PIX", valor, status, confirmado, created_at: "2026-10-02T17:23:00Z" });
+  const T: Record<string, Linha[]> = {
+    propostas: [pedido(23071, "AGUARDANDO", 491.69), pedido(23020, "APROVADO", 146.18), pedido(24000, "AGUARDANDO", 300), pedido(24001, "NOVO", 50), pedido(24002, "AGUARDANDO", 1000)],
+    pagamentos_v2: [
+      // O 23071 como estava às 14:30 de 02/10: PIX pago, financeiro ainda não conferiu.
+      cob(23071, "A", "PAID", false, 491.69),
+      // O 23020: um PIX cancelado e outro pago e confirmado.
+      cob(23020, "A", "CANCELADO", false, 171.5),
+      cob(23020, "B", "PAID", true, 146.18),
+      cob(24000, "A", "A_RECEBER", false, 300),
+      cob(24002, "A", "PAID", true, 400),
+      cob(24002, "B", "PAID", false, 600),
+    ],
+  };
+  const cobertura = async (numero: number) => {
+    const { cliente } = bancoFalso(T);
+    const r = await consultarPedido(cliente, financeiro, numero, ["cobrancas"]);
+    const c = ((r.secoes ?? {}) as Record<string, Record<string, unknown>>).cobrancas;
+    return { c, cobertura: c.cobertura as Linha, primeira: ((c.cobrancas as Linha[]) ?? [])[0] };
+  };
+
+  const a = await cobertura(23071);
+  checar("23071 às 14:30: pago, aguardando a conferência",
+    [a.cobertura.situacao, a.cobertura.confirmado_pelo_financeiro, a.cobertura.pago_aguardando_conferencia, a.cobertura.falta_confirmar, a.cobertura.status_do_pedido],
+    ["PAGO_AGUARDANDO_CONFERENCIA", 0, 491.69, 491.69, "AGUARDANDO"]);
+  checar("a leitura proíbe 'totalmente pago' e explica o status", [String(a.cobertura.leitura).includes("NÃO confirmou"), String(a.cobertura.leitura).includes('NÃO diga "totalmente pago"')], [true, true]);
+  checar("a cobrança diz que falta a conferência", a.primeira.situacao, "Paga pelo cliente, ainda NÃO confirmada pelo financeiro");
+
+  const b = await cobertura(23020);
+  checar("23020: coberto e confirmado, a cancelada não conta",
+    [b.cobertura.situacao, b.cobertura.confirmado_pelo_financeiro, b.cobertura.falta_confirmar, (b.c.resumo as Linha).canceladas], ["COBERTO_E_CONFIRMADO", 146.18, 0, 1]);
+
+  const c = await cobertura(24000);
+  checar("cobrança sem pagamento → falta pagamento", [c.cobertura.situacao, c.primeira.situacao], ["FALTA_PAGAMENTO", "Aguardando pagamento"]);
+  const d = await cobertura(24001);
+  checar("pedido sem cobrança", d.cobertura.situacao, "SEM_COBRANCA");
+  const e = await cobertura(24002);
+  checar("parte confirmada e parte aguardando conferência",
+    [e.cobertura.situacao, e.cobertura.confirmado_pelo_financeiro, e.cobertura.pago_aguardando_conferencia, e.cobertura.falta_confirmar],
+    ["PAGO_AGUARDANDO_CONFERENCIA", 400, 600, 600]);
 }
 
 console.log(falhas === 0 ? "\nTUDO OK" : `\n${falhas} FALHA(S)`);

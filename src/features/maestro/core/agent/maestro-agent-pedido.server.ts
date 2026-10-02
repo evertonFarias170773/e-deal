@@ -168,14 +168,31 @@ function secaoSituacao(p: Linha): Linha {
   };
 }
 
-const SITUACAO_DA_COBRANCA: Record<string, string> = {
-  PAID: 'Paga',
-  A_RECEBER: 'Aguardando pagamento',
-  CANCELADO: 'Cancelada',
-  CANCELADA: 'Cancelada',
-};
+/**
+ * PAGO não é CONFIRMADO. O cliente paga (status PAID) e só depois o financeiro
+ * confere na tela Conferência (confirmado = true). Enquanto não confere, o
+ * pedido continua AGUARDANDO e não segue para produção. Em 02/10/2026 o Maestro
+ * respondeu "totalmente pago" para o pedido 23071 nesse intervalo — pago às
+ * 14:26, confirmado às 14:50 — sem explicar o status AGUARDANDO.
+ */
+function situacaoDaCobranca(l: Linha): { rotulo: string; grupo: 'cancelada' | 'confirmada' | 'paga_sem_conferencia' | 'a_vencer_sem_conferencia' | 'aguardando_pagamento' } {
+  const status = String(l.status ?? '').trim().toUpperCase();
+  const confirmada = l.confirmado === true;
+  if (/^CANCELAD[OA]$/.test(status) || status === 'EXTORNADO' || status === 'RECUSADO') return { rotulo: 'Cancelada', grupo: 'cancelada' };
+  if (status === 'PAID') {
+    return confirmada
+      ? { rotulo: 'Paga e confirmada pelo financeiro', grupo: 'confirmada' }
+      : { rotulo: 'Paga pelo cliente, ainda NÃO confirmada pelo financeiro', grupo: 'paga_sem_conferencia' };
+  }
+  if (status === 'A_VENCER') {
+    return confirmada
+      ? { rotulo: 'A vencer, aprovada pelo financeiro', grupo: 'confirmada' }
+      : { rotulo: 'A vencer, aguardando conferência do financeiro', grupo: 'a_vencer_sem_conferencia' };
+  }
+  return { rotulo: 'Aguardando pagamento', grupo: 'aguardando_pagamento' };
+}
 
-async function secaoCobrancas(supabase: SupabaseClient, numero: number): Promise<Linha> {
+async function secaoCobrancas(supabase: SupabaseClient, numero: number, p: Linha): Promise<Linha> {
   const { data, error } = await supabase
     .from('pagamentos_v2')
     .select(
@@ -188,9 +205,49 @@ async function secaoCobrancas(supabase: SupabaseClient, numero: number): Promise
   if (error) return erroDaSecao(error.message);
 
   const linhas = (data ?? []) as unknown as Linha[];
-  const ehCancelada = (l: Linha) => /^CANCELAD[OA]$/.test(String(l.status ?? ''));
+  const comSituacao = linhas.map(l => ({ l, s: situacaoDaCobranca(l) }));
+  const doGrupo = (g: string) => comSituacao.filter(x => x.s.grupo === g).map(x => x.l);
+  const ehCancelada = (l: Linha) => situacaoDaCobranca(l).grupo === 'cancelada';
   const ativas = linhas.filter(l => !ehCancelada(l));
-  const pagas = linhas.filter(l => l.status === 'PAID');
+  const valorDe = (l: Linha) => num(l.valor);
+  const grupo = (g: string) => ({ quantidade: doGrupo(g).length, soma: somar(doGrupo(g), valorDe) });
+
+  // Cobertura do pedido: o que do valor já está CONFIRMADO, o que foi pago e
+  // espera a conferência, e o que ainda não tem pagamento. Tudo pronto.
+  const valorDoPedido = num(p.valor_total);
+  const confirmado = grupo('confirmada').soma;
+  const pagoSemConferencia = grupo('paga_sem_conferencia').soma;
+  const aVencerSemConferencia = grupo('a_vencer_sem_conferencia').soma;
+  const TOLERANCIA = 0.02;
+  let cobertura: Linha;
+  if (ativas.length === 0) {
+    cobertura = { situacao: 'SEM_COBRANCA', leitura: 'O pedido não tem cobrança ativa.' };
+  } else if (valorDoPedido != null && confirmado >= valorDoPedido - TOLERANCIA) {
+    cobertura = {
+      situacao: 'COBERTO_E_CONFIRMADO',
+      leitura: 'O valor do pedido está coberto por cobrança confirmada pelo financeiro.',
+    };
+  } else if (pagoSemConferencia > 0 && (valorDoPedido == null || confirmado + pagoSemConferencia >= valorDoPedido - TOLERANCIA)) {
+    cobertura = {
+      situacao: 'PAGO_AGUARDANDO_CONFERENCIA',
+      leitura:
+        'O cliente já pagou, mas o financeiro ainda NÃO confirmou o pagamento na Conferência. Enquanto não confirmar, o pedido continua com o status atual ' +
+        '(em geral AGUARDANDO) e não segue para produção. NÃO diga "totalmente pago" nem "quitado": diga "pago pelo cliente, aguardando a conferência do financeiro" ' +
+        'e explique que é por isso que o status ainda não avançou.',
+    };
+  } else if (aVencerSemConferencia > 0 && pagoSemConferencia === 0 && grupo('aguardando_pagamento').quantidade === 0) {
+    cobertura = {
+      situacao: 'FATURADO_AGUARDANDO_APROVACAO',
+      leitura: 'A cobrança faturada ainda aguarda a aprovação do financeiro. Enquanto não for aprovada, o pedido não avança.',
+    };
+  } else {
+    cobertura = {
+      situacao: 'FALTA_PAGAMENTO',
+      leitura:
+        'Ainda há valor do pedido sem pagamento confirmado. NÃO diga que o pedido está pago: diga o que está confirmado, o que foi pago e aguarda conferência, e o que falta.',
+    };
+  }
+  const faltaConfirmar = valorDoPedido != null ? Math.max(0, Math.round((valorDoPedido - confirmado) * 100) / 100) : null;
 
   return {
     disponivel: true,
@@ -198,21 +255,25 @@ async function secaoCobrancas(supabase: SupabaseClient, numero: number): Promise
     quantidade: linhas.length,
     resumo: {
       ativas: ativas.length,
-      soma_das_ativas: somar(ativas, l => num(l.valor)),
-      pagas: pagas.length,
-      soma_das_pagas: somar(pagas, l => num(l.valor)),
+      soma_das_ativas: somar(ativas, valorDe),
+      confirmadas_pelo_financeiro: grupo('confirmada'),
+      pagas_aguardando_conferencia: grupo('paga_sem_conferencia'),
+      a_vencer_aguardando_conferencia: grupo('a_vencer_sem_conferencia'),
+      aguardando_pagamento: grupo('aguardando_pagamento'),
       canceladas: linhas.length - ativas.length,
     },
-    cobrancas: linhas.map(l => {
+    cobertura: {
+      valor_do_pedido: valorDoPedido,
+      confirmado_pelo_financeiro: confirmado,
+      pago_aguardando_conferencia: pagoSemConferencia,
+      falta_confirmar: faltaConfirmar,
+      status_do_pedido: txt(p.status_interno),
+      ...cobertura,
+    },
+    cobrancas: comSituacao.map(({ l, s }) => {
       const tipo = String(l.tipo_cobranca ?? '');
       const faturada = tipo.toUpperCase() === 'E-FATURADO';
-      const status = String(l.status ?? '');
-      const situacao =
-        status === 'A_VENCER'
-          ? l.confirmado === true
-            ? 'A vencer, aprovada pelo financeiro'
-            : 'A vencer, aguardando conferência do financeiro'
-          : SITUACAO_DA_COBRANCA[status] ?? status;
+      const situacao = s.rotulo;
       return {
         numero_do_pagamento: txt(l.id_pagamento),
         tipo: tipo || null,
@@ -570,7 +631,7 @@ export async function consultarPedido(
       }
       try {
         if (secao === 'situacao') resultado[secao] = secaoSituacao(pedido);
-        else if (secao === 'cobrancas') resultado[secao] = await secaoCobrancas(supabase, numero);
+        else if (secao === 'cobrancas') resultado[secao] = await secaoCobrancas(supabase, numero, pedido);
         else if (secao === 'titulos') resultado[secao] = await secaoTitulos(supabase, numero);
         else if (secao === 'nota_fiscal') resultado[secao] = await secaoNotaFiscal(supabase, numero, pedido);
         else if (secao === 'producao') resultado[secao] = await secaoProducao(supabase, numero, pedido);

@@ -46,6 +46,15 @@ import {
 import { indiceDoManual } from './maestro-agent-manual.server';
 import { registrarUsuarioDoMaestro } from './maestro-agent-escopo.server';
 import {
+  AVISO_SEM_CONSULTA,
+  citaFonteSemConsulta,
+  coletarNumerosDosArgumentos,
+  correcaoDePedidoSemConsulta,
+  pedidosCitadosSemConsulta,
+  removerLinhasDeFonte,
+  respostaDePedidoSemConsulta,
+} from './maestro-agent-trava-pedido';
+import {
   conferirAssuntoDaResposta,
   respostaDeAssuntoSemPagina,
   type ClienteDeChat,
@@ -368,6 +377,16 @@ export async function runMaestroAgentLoop(input: AgentLoopInput): Promise<AgentL
   coletarNumerosDaPergunta(query, idsConfirmados);
   let correcoesDeCitacao = 0;
 
+  // Trava do pedido: número apresentado como pedido/proposta só vale se uma
+  // ferramenta foi chamada com ele, ou o devolveu, NESTA pergunta. A pergunta
+  // do usuário e o histórico NÃO entram aqui (era o furo da guarda acima: em
+  // 02/10/2026 o modelo respondeu o pedido 23071 com os dados do 23020, sem
+  // consultar nada). O estado real é autorado pelo servidor e entra.
+  const numerosConsultados = new Set<string>();
+  coletarNumerosDosArgumentos(estadoReal, numerosConsultados);
+  let consultasComSucesso = 0;
+  let correcoesDePedido = 0;
+
   // Trava do manual: o que foi lido/consultado neste turno e a unica origem
   // aceita para nome de menu, aba ou botao na resposta.
   const consultas: ConsultaAuditada[] = [];
@@ -436,6 +455,20 @@ export async function runMaestroAgentLoop(input: AgentLoopInput): Promise<AgentL
       // rodada forçada de correção (o modelo pode re-consultar); persiste o
       // problema → a defesa final abaixo redige o número.
       if (candidato) {
+        // Trava do pedido: pedido citado sem consulta nesta pergunta, ou "Fonte"
+        // sem consulta nenhuma → uma rodada forçada mandando consultar.
+        const pedidosSemConsulta = pedidosCitadosSemConsulta(candidato, numerosConsultados);
+        const fonteSemConsulta = citaFonteSemConsulta(candidato, consultasComSucesso);
+        if ((pedidosSemConsulta.length > 0 || fonteSemConsulta) && correcoesDePedido < 1 && Date.now() < deadline - 3_000) {
+          correcoesDePedido++;
+          console.warn(
+            `[MaestroAgentLoop] Trava do pedido (${pedidosSemConsulta.join(', ') || 'fonte sem consulta'}) — forçando consulta.`
+          );
+          messages.push({ role: 'assistant', content: candidato });
+          messages.push({ role: 'system', content: correcaoDePedidoSemConsulta(pedidosSemConsulta, fonteSemConsulta) });
+          continue;
+        }
+
         const invalidos = numerosNaoConfirmados(candidato, idsConfirmados);
         if (invalidos.length > 0 && correcoesDeCitacao < 1 && Date.now() < deadline - 3_000) {
           correcoesDeCitacao++;
@@ -498,12 +531,20 @@ export async function runMaestroAgentLoop(input: AgentLoopInput): Promise<AgentL
           args = {};
         }
 
+        // O número com que a ferramenta foi chamada conta como consultado
+        // mesmo quando ela recusa ou não encontra: "não achei o 23071" é legítimo.
+        coletarNumerosDosArgumentos(JSON.stringify(args), numerosConsultados);
+
         const exec = await executeAgentTool(tc.function.name, args, toolCtx);
         toolCallsExecutados++;
         const nomeTool = tc.function.name;
         if (exec.ok) {
+          consultasComSucesso++;
           const saida = JSON.stringify(exec.result);
           coletarIdsDeToolResult(saida, idsConfirmados);
+          // Tudo o que uma ferramenta devolveu NESTA pergunta foi consultado
+          // agora — inclusive os pedidos de uma lista (propostas do cliente).
+          coletarNumerosDosArgumentos(saida, numerosConsultados);
           if (nomeTool === 'consultar_manual' || nomeTool === 'consultar_pedido') {
             // Tudo o que estas duas devolvem veio do servidor: os numeros sao
             // citaveis (OS, parcela, nota) e o texto legitima nomes de tela.
@@ -572,6 +613,26 @@ export async function runMaestroAgentLoop(input: AgentLoopInput): Promise<AgentL
   }
 
   let content = finalContent || RESPOSTA_PARCIAL_SEGURA;
+
+  // Defesa final da trava do pedido — vale para qualquer caminho de saída.
+  // Redigir só o número não basta: os DADOS em volta dele são de outra
+  // consulta. A resposta inteira é trocada (menos em turno que gravou algo).
+  const pedidosSemConsultaFinais = pedidosCitadosSemConsulta(content, numerosConsultados);
+  let travaDoPedido: string | null = null;
+  if (pedidosSemConsultaFinais.length > 0) {
+    console.warn(`[MaestroAgentLoop] Pedido citado sem consulta na resposta final: ${pedidosSemConsultaFinais.join(', ')}`);
+    if (houveEscrita) {
+      travaDoPedido = 'aviso_pedido_sem_consulta';
+      content += `\n\n⚠️ Não consultei o(s) pedido(s) ${pedidosSemConsultaFinais.join(', ')} nesta resposta — desconsidere os dados citados sobre ele(s).`;
+    } else {
+      travaDoPedido = 'resposta_substituida';
+      content = respostaDePedidoSemConsulta(pedidosSemConsultaFinais);
+    }
+  } else if (citaFonteSemConsulta(content, consultasComSucesso)) {
+    console.warn('[MaestroAgentLoop] "Fonte" declarada sem nenhuma consulta nesta pergunta — linha removida.');
+    travaDoPedido = 'fonte_removida';
+    content = `${removerLinhasDeFonte(content)}\n\n${AVISO_SEM_CONSULTA}`;
+  }
 
   // Defesa final da guarda de citações — vale para qualquer caminho de saída
   const invalidosFinais = numerosNaoConfirmados(content, idsConfirmados);
@@ -650,6 +711,8 @@ export async function runMaestroAgentLoop(input: AgentLoopInput): Promise<AgentL
       limite_atingido: estourouLimite,
       citacoes_redigidas: invalidosFinais.length,
       correcoes_de_citacao: correcoesDeCitacao,
+      correcoes_de_pedido: correcoesDePedido,
+      trava_do_pedido: travaDoPedido,
       // O que foi consultado (nunca o conteudo): pagina do manual, pedido e partes.
       consultas,
       manual_lido: manualLido,

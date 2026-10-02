@@ -203,6 +203,47 @@ sem abrir a página: deduziu da linha do índice e citou a página como fonte.
   que o manual não tem aquilo e nada foi consultado, vira o texto fixo direto.
 - O prompt diz que o índice só serve para escolher a página.
 
+## 2.5 Pedido citado = pedido consultado; pago x confirmado (02/10/2026)
+
+**O caso.** Na mesma conversa o usuário perguntou a situação do pedido 23020
+e, depois, a do 23071. Na segunda (auditoria 761, `tools: []`) o modelo não
+consultou nada: copiou do histórico a resposta do 23020, trocou o número e
+fechou com "Fonte: Pedido 23071 e cobranças (ERP)". A guarda de citações não
+pegou porque aceita como confirmado todo número digitado na pergunta.
+
+**Trava do pedido** (`maestro-agent-trava-pedido.ts`, aplicada no loop):
+
+- Número apresentado como pedido ou proposta só passa se uma ferramenta foi
+  chamada com ele, ou o devolveu, NESTA pergunta. A pergunta do usuário e o
+  histórico não contam.
+- Linha de "Fonte:" só passa se alguma consulta deu certo nesta pergunta.
+- Falhou: uma rodada forçada mandando chamar `consultar_pedido` com o número.
+  Persistiu: a resposta inteira é trocada por um texto fixo sem dado nenhum
+  (redigir só o número deixaria os dados do outro pedido na tela). Em turno
+  que gravou algo, só entra um aviso.
+- Auditoria: `correcoes_de_pedido` e `trava_do_pedido`
+  (`resposta_substituida`, `fonte_removida`, `aviso_pedido_sem_consulta`).
+
+**Pago x confirmado.** `consultar_pedido`, parte `cobrancas`, devolve a
+situação de cada cobrança separando "Paga e confirmada pelo financeiro" de
+"Paga pelo cliente, ainda NÃO confirmada pelo financeiro", e um bloco
+`cobertura` com a leitura pronta:
+
+| `cobertura.situacao` | Quando |
+|---|---|
+| `COBERTO_E_CONFIRMADO` | cobranças confirmadas cobrem o valor do pedido |
+| `PAGO_AGUARDANDO_CONFERENCIA` | o que falta confirmar já foi pago pelo cliente |
+| `FATURADO_AGUARDANDO_APROVACAO` | faturado a vencer ainda sem aprovação |
+| `FALTA_PAGAMENTO` | ainda há valor sem pagamento |
+| `SEM_COBRANCA` | nenhuma cobrança ativa |
+
+O prompt só deixa dizer "pago" sem ressalva em `COBERTO_E_CONFIRMADO`. Em
+`PAGO_AGUARDANDO_CONFERENCIA` a resposta explica que falta a conferência do
+financeiro e que por isso o status continua AGUARDANDO.
+
+**Provas.** `scripts/testes/maestro-manual-e-pedido.test.mts` (seções 7 e 8,
+com o texto real da resposta errada).
+
 ---
 
 # 3. Regras de negócio aplicadas
