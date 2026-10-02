@@ -16,6 +16,7 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { exigirClienteNoEscopo, soPropostasDoVendedor } from '../agent/maestro-agent-escopo.server';
 import type { MaestroPeriodo } from './maestro-simple-intents';
 
 // Colunas seguras — sem dados sensíveis de proposta
@@ -110,12 +111,16 @@ export async function buscarUltimosPedidos(
   idCliente: number,
   limit = 5,
 ): Promise<PropostasResult> {
-  const { data, error } = await supabase
-    .from('propostas')
-    .select(PROPOSTAS_COLS)
-    .eq('id_cliente', idCliente)
-    .eq('is_prd_aprovado', true)
-    .eq('is_reproved', false)
+  const escopo = await exigirClienteNoEscopo(supabase, idCliente);
+  const { data, error } = await soPropostasDoVendedor(
+    supabase
+      .from('propostas')
+      .select(PROPOSTAS_COLS)
+      .eq('id_cliente', idCliente)
+      .eq('is_prd_aprovado', true)
+      .eq('is_reproved', false),
+    escopo,
+  )
     .order('created_at', { ascending: false })
     .limit(Math.min(limit, 10));
 
@@ -158,13 +163,17 @@ export async function calcularFaturamentoPeriodo(
     }
   }
 
-  let query = supabase
-    .from('propostas')
-    .select(PROPOSTAS_COLS)
-    .eq('id_cliente', idCliente)
-    .eq('is_prd_aprovado', true)
-    .eq('is_reproved', false)
-    .gte('created_at', desde);
+  const escopo = await exigirClienteNoEscopo(supabase, idCliente);
+  let query = soPropostasDoVendedor(
+    supabase
+      .from('propostas')
+      .select(PROPOSTAS_COLS)
+      .eq('id_cliente', idCliente)
+      .eq('is_prd_aprovado', true)
+      .eq('is_reproved', false)
+      .gte('created_at', desde),
+    escopo,
+  );
 
   if (ate) query = query.lt('created_at', ate);
 
@@ -190,12 +199,16 @@ export async function buscarMaiorPedido(
   supabase: SupabaseClient,
   idCliente: number,
 ): Promise<PropostasResult> {
-  const { data, error } = await supabase
-    .from('propostas')
-    .select(PROPOSTAS_COLS)
-    .eq('id_cliente', idCliente)
-    .eq('is_prd_aprovado', true)
-    .eq('is_reproved', false)
+  const escopo = await exigirClienteNoEscopo(supabase, idCliente);
+  const { data, error } = await soPropostasDoVendedor(
+    supabase
+      .from('propostas')
+      .select(PROPOSTAS_COLS)
+      .eq('id_cliente', idCliente)
+      .eq('is_prd_aprovado', true)
+      .eq('is_reproved', false),
+    escopo,
+  )
     // Ordenação dupla: valor_total desc (nulls last), depois valor desc
     .order('valor_total', { ascending: false, nullsFirst: false })
     .order('valor',       { ascending: false, nullsFirst: false })
@@ -221,13 +234,17 @@ export async function buscarPropostasNaoAprovadas(
   supabase: SupabaseClient,
   idCliente: number,
 ): Promise<PropostasResult> {
-  const { data, error } = await supabase
-    .from('propostas')
-    .select(PROPOSTAS_COLS)
-    .eq('id_cliente', idCliente)
-    .eq('is_prd_aprovado', false)
-    .eq('is_reproved', false)
-    .gte('created_at', primeiroDiaMesAtual())
+  const escopo = await exigirClienteNoEscopo(supabase, idCliente);
+  const { data, error } = await soPropostasDoVendedor(
+    supabase
+      .from('propostas')
+      .select(PROPOSTAS_COLS)
+      .eq('id_cliente', idCliente)
+      .eq('is_prd_aprovado', false)
+      .eq('is_reproved', false)
+      .gte('created_at', primeiroDiaMesAtual()),
+    escopo,
+  )
     .order('created_at', { ascending: false })
     .limit(20);
 
@@ -281,11 +298,15 @@ export async function listarPropostasCliente(
   idCliente: number,
   opts?: { desde?: string; ate?: string; periodoLabel?: string; limite?: number },
 ): Promise<ListagemPropostasResult> {
-  let query = supabase
-    .from('propostas')
-    .select(PROPOSTAS_COLS)
-    .eq('id_cliente', idCliente)
-    .eq('is_reproved', false);
+  const escopo = await exigirClienteNoEscopo(supabase, idCliente);
+  let query = soPropostasDoVendedor(
+    supabase
+      .from('propostas')
+      .select(PROPOSTAS_COLS)
+      .eq('id_cliente', idCliente)
+      .eq('is_reproved', false),
+    escopo,
+  );
 
   if (opts?.desde) query = query.gte('created_at', opts.desde);
   if (opts?.ate)   query = query.lt('created_at', opts.ate);
@@ -671,6 +692,15 @@ export async function buscarDetalheProposta(
   idCliente: number,
   numeroProposta: number,
 ): Promise<DetalhePropostaResult> {
+  const escopo = await exigirClienteNoEscopo(supabase, idCliente);
+  if (escopo.idsDeOutros.has(numeroProposta)) {
+    // Pedido de outro vendedor num cliente que os dois atendem: nada do pedido sai.
+    return {
+      found: false, proposta: null, itens: [], itens_detalhados: false, source: 'public.propostas',
+      error: 'PEDIDO_DE_OUTRO_VENDEDOR: esta proposta é de outro vendedor e o perfil de quem pergunta só consulta os próprios pedidos. Nenhum dado dela foi consultado.',
+    };
+  }
+
   const { data: propostaRow, error } = await supabase
     .from('propostas')
     .select(`${PROPOSTAS_COLS}, proposta, valor_frete, frete_escolhido, status_pedido, etapa_operacional, prazo_operacional, em_arte`)
@@ -753,11 +783,15 @@ export async function buscarUltimoOrcamento(
 ): Promise<PropostasResult & { criterio?: string; varridas?: number; janela_esgotada?: boolean }> {
   const janela = filtro === 'qualquer' ? 1 : ULTIMO_ORCAMENTO_JANELA;
 
-  const { data, error } = await supabase
-    .from('propostas')
-    .select(PROPOSTAS_COLS)
-    .eq('id_cliente', idCliente)
-    .eq('is_reproved', false)
+  const escopo = await exigirClienteNoEscopo(supabase, idCliente);
+  const { data, error } = await soPropostasDoVendedor(
+    supabase
+      .from('propostas')
+      .select(PROPOSTAS_COLS)
+      .eq('id_cliente', idCliente)
+      .eq('is_reproved', false),
+    escopo,
+  )
     .order('created_at', { ascending: false })
     .order('id_int', { ascending: false })
     .limit(janela);

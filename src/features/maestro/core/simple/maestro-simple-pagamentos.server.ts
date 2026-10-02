@@ -18,6 +18,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { contaNoFaturamento } from '@/features/cobrancas/cobrancas-utils';
 import type { MaestroPeriodo } from './maestro-simple-intents';
+import { exigirClienteNoEscopo, soLinhasDoVendedor } from '../agent/maestro-agent-escopo.server';
 
 // Colunas seguras — sem dados sensíveis de token, url ou pix
 const PAGAMENTOS_COLS = 'id_int, status, valor, paid_at, criado_em:created_at';
@@ -185,6 +186,10 @@ export async function calcularFaturamentoOficial(
     source: 'public.pagamentos_v2 (fonte; empresa = id_empresa) + public.propostas (dimensão vendedor)',
   };
 
+  // Consulta POR CLIENTE passa pela trava de vendedor; a consulta por vendedor
+  // ou ranking (sem cliente) tem o seu próprio recorte, em quem chama.
+  const escopo = opts.idCliente != null ? await exigirClienteNoEscopo(supabase, opts.idCliente) : null;
+
   // `tipo_cobranca` entra no SELECT só para a exclusão de cortesia abaixo.
   let query = supabase
     .from('pagamentos_v2')
@@ -211,7 +216,8 @@ export async function calcularFaturamentoOficial(
   // coluna nula devolve NULL e a linha some — e linha sem tipo TEM de contar,
   // como em `public.fn_conta_no_faturamento`. Filtrar depois é o único jeito
   // de as duas pontas darem o mesmo número.
-  const pagamentos = (data ?? []).filter(raw =>
+  const doEscopo = escopo ? await soLinhasDoVendedor(supabase, escopo, data ?? []) : (data ?? []);
+  const pagamentos = doEscopo.filter(raw =>
     contaNoFaturamento((raw as Record<string, unknown>).tipo_cobranca as string | null | undefined)
   ).map(raw => {
     const r = raw as Record<string, unknown>;
@@ -389,9 +395,10 @@ export async function calcularPerfilPagamento(
   const diasSeguro = Number.isFinite(dias) && dias > 0 && dias <= 1830 ? Math.floor(dias) : 365;
   const periodo = `últimos ${diasSeguro} dias`;
 
+  const escopo = await exigirClienteNoEscopo(supabase, idCliente);
   let query = supabase
     .from('pagamentos_v2')
-    .select('tipo_cobranca, forma_pgto, valor, paid_at')
+    .select('id_int, tipo_cobranca, forma_pgto, valor, paid_at')
     .eq('id_cliente', idCliente)
     .eq('confirmado', true)
     .eq('status', 'PAID')
@@ -415,7 +422,8 @@ export async function calcularPerfilPagamento(
   const condicoesPrazo: Record<string, number> = {};
   let totalValor = 0;
 
-  for (const raw of data ?? []) {
+  const linhasDoPerfil = await soLinhasDoVendedor(supabase, escopo, data ?? []);
+  for (const raw of linhasDoPerfil) {
     const r = raw as Record<string, unknown>;
     const tipo = typeof r.tipo_cobranca === 'string' && r.tipo_cobranca.trim() ? r.tipo_cobranca.trim() : 'NAO_INFORMADO';
     const valor = r.valor != null ? Number(r.valor) : 0;
@@ -432,7 +440,7 @@ export async function calcularPerfilPagamento(
     if (forma) condicoesPrazo[forma] = (condicoesPrazo[forma] ?? 0) + 1;
   }
 
-  const total = (data ?? []).length;
+  const total = linhasDoPerfil.length;
   return {
     found: total > 0,
     por_tipo_cobranca: porTipo,
@@ -440,7 +448,7 @@ export async function calcularPerfilPagamento(
     total_pagamentos: total,
     totalValor: Number(totalValor.toFixed(2)),
     periodo,
-    truncado: total >= PERFIL_MAX_ROWS,
+    truncado: (data ?? []).length >= PERFIL_MAX_ROWS,
     source: 'public.pagamentos_v2',
   };
 }
@@ -480,6 +488,8 @@ export async function calcularRecebimentoPeriodo(
     }
   }
 
+  const escopo = await exigirClienteNoEscopo(supabase, idCliente);
+
   // `tipo_cobranca` só para a exclusão de cortesia; o critério de status desta
   // consulta (PAID puro) fica como estava.
   let query = supabase
@@ -515,7 +525,7 @@ export async function calcularRecebimentoPeriodo(
 
   // Mesma exclusão de cortesia do faturamento oficial, e pelo mesmo motivo de
   // ser em memória (ver o comentário em calcularFaturamentoOficial).
-  const linhas = (data ?? []).filter(raw =>
+  const linhas = (await soLinhasDoVendedor(supabase, escopo, data ?? [])).filter(raw =>
     contaNoFaturamento((raw as Record<string, unknown>).tipo_cobranca as string | null | undefined)
   );
 
@@ -570,6 +580,8 @@ export async function compararRecebimentoClienteMeses(
   /** Recorte por empresa (pagamentos_v2.id_empresa) — princípio permanente §1.0 */
   idEmpresa?: number,
 ): Promise<ComparacaoRecebimentosResult> {
+  // Fora do try: a recusa de escopo tem de subir, e não virar um "erro" genérico.
+  await exigirClienteNoEscopo(supabase, idCliente);
   try {
     const promises = meses.map(async (m) => {
       const res = await calcularRecebimentoPeriodo(supabase, idCliente, {

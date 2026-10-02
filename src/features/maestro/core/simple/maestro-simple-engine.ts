@@ -37,6 +37,7 @@ import {
 import {
   buscarBoletosCliente,
 } from './maestro-simple-boletos.server';
+import { RecusaDeEscopoDoMaestro } from '../agent/maestro-agent-escopo.server';
 import { simularOrcamentoAvulsoDb } from './maestro-simple-produtos.server';
 import { processarOrcamentoService } from './maestro-orcamento-service.server';
 import { solicitarCotacaoSedex, solicitarCotacaoAzulCargo, solicitarCotacaoTransportadoras, solicitarCotacaoVeppo } from '@/features/orcamentos/services/frete.service';
@@ -469,6 +470,8 @@ export async function processSimpleQuery(
       }
     }
   } catch (err: unknown) {
+    // Trava de vendedor: sobe ate a rota, que responde com o texto certo.
+    if (err instanceof RecusaDeEscopoDoMaestro) throw err;
     const msg = err instanceof Error ? err.message : 'Erro desconhecido';
     return toResult(presenterErro(msg));
   }
@@ -2048,6 +2051,8 @@ export async function processSimpleQueryWithBrain(
         }
       }
     } catch (routerErr) {
+      // Trava de vendedor nao e falha do roteador: nao cai no fluxo estatico.
+      if (routerErr instanceof RecusaDeEscopoDoMaestro) throw routerErr;
       console.warn('[MaestroEngine] Falha ao rodar piloto do Tool Router — usando fluxo estático:', routerErr);
     }
   }

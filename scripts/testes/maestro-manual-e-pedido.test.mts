@@ -46,6 +46,21 @@ import {
 } from "../../src/features/maestro/core/agent/maestro-agent-acesso.server.ts";
 import { consultarPedido } from "../../src/features/maestro/core/agent/maestro-agent-pedido.server.ts";
 import {
+  escopoDoClienteNaConsulta,
+  RecusaDeEscopoDoMaestro,
+  registrarUsuarioDoMaestro,
+} from "../../src/features/maestro/core/agent/maestro-agent-escopo.server.ts";
+import { buscarBoletosCliente } from "../../src/features/maestro/core/simple/maestro-simple-boletos.server.ts";
+import { buscarDetalheProposta, listarPropostasCliente } from "../../src/features/maestro/core/simple/maestro-simple-propostas.server.ts";
+import {
+  calcularFaturamentoOficial,
+  calcularRecebimentoPeriodo,
+  compararRecebimentoClienteMeses,
+} from "../../src/features/maestro/core/simple/maestro-simple-pagamentos.server.ts";
+import { buscarContaCorrenteCliente } from "../../src/features/maestro/core/simple/maestro-simple-conta-corrente.server.ts";
+import { executeAgentTool } from "../../src/features/maestro/core/agent/maestro-agent-tools.ts";
+import { resumirConsulta } from "../../src/features/maestro/core/agent/maestro-agent-loop.ts";
+import {
   conferirAssuntoDaResposta,
   lerVeredito,
   montarPedidoDeConferencia,
@@ -199,11 +214,39 @@ function bancoFalso(tabelas: Record<string, Linha[]>) {
           linhas = linhas.filter(l => valores.includes(l[coluna]));
           return b;
         },
+        // "id_cliente.eq.100,id_faturado.eq.100"
+        or: (expr: string) => {
+          const termos = expr.split(",").map(t => t.split(".eq."));
+          linhas = linhas.filter(l => termos.some(([coluna, valor]) => String(l[coluna]) === valor));
+          return b;
+        },
+        range: () => b,
+        is: (coluna: string, valor: unknown) => {
+          linhas = linhas.filter(l => (l[coluna] ?? null) === valor);
+          return b;
+        },
+        not: (coluna: string, _op: string, valor: unknown) => {
+          linhas = linhas.filter(l => (l[coluna] ?? null) !== valor);
+          return b;
+        },
+        gt: (coluna: string, valor: number) => {
+          linhas = linhas.filter(l => Number(l[coluna] ?? 0) > valor);
+          return b;
+        },
+        gte: (coluna: string, valor: string) => {
+          linhas = linhas.filter(l => String(l[coluna] ?? "") >= valor);
+          return b;
+        },
+        lt: (coluna: string, valor: string) => {
+          linhas = linhas.filter(l => String(l[coluna] ?? "") < valor);
+          return b;
+        },
         maybeSingle: async () => ({ data: linhas[0] ?? null, error: null }),
         then: (resolver: (r: { data: Linha[]; error: null }) => unknown) => resolver({ data: linhas, error: null }),
       };
       return b;
     },
+    rpc: async () => ({ data: null, error: null }),
   };
   return { cliente: cliente as never, lidas };
 }
@@ -386,6 +429,143 @@ checar("usuário não identificado não passa", podeNaTela({ ...andre, encontrad
   checar("modelo falha → não barra", await conferirAssuntoDaResposta(cliente(new Error("fora do ar")), "m", entrada, 5000), "nao_conferido");
   checar("sem tempo → nem chama", await conferirAssuntoDaResposta(cliente('{"mesma_tarefa":false}'), "m", entrada, 500), "nao_conferido");
   checar("sem página lida → nem chama", await conferirAssuntoDaResposta(cliente('{"mesma_tarefa":false}'), "m", { ...entrada, paginasLidas: [] }, 5000), "nao_conferido");
+}
+
+// ─── 8. Trava de vendedor nas consultas POR CLIENTE ──────────────────────────
+// Cliente 100: carteira da Emily, mas com um pedido do André e um pedido do
+//   André faturado para ele. Cliente 200: do André. Cliente 300: carteira do
+//   André, onde a Emily tem um pedido.
+
+{
+  const U_EMILY = "u-emily", U_FIN = "u-fin", U_DESIGNER = "u-des";
+  const agora = new Date().toISOString();
+  const boleto = (idCliente: number, idInt: number | null) =>
+    ({ id_cliente: idCliente, id_int: idInt, paid_at: null, status: "A_VENCER", valor: 10, vencimento: "2026-12-01", dias_atraso: 0 });
+  const TAB: Record<string, Linha[]> = {
+    usuarios: [
+      { user_id: U_EMILY, id_perfil: 4, is_super_adm: false, is_admin: false, is_vendedor: true, nome_usuario: "Emily Boeira", meu_vendedor: "Emily Boeira" },
+      { user_id: U_FIN, id_perfil: 3, is_super_adm: false, is_admin: false, is_vendedor: false, nome_usuario: "Fin", meu_vendedor: null },
+      { user_id: U_DESIGNER, id_perfil: 6, is_super_adm: false, is_admin: false, is_vendedor: false, nome_usuario: "Des", meu_vendedor: null },
+    ],
+    perfis: [
+      { id: 4, ativo: true, nome: "Vendedor", permissoes: VENDEDOR },
+      { id: 3, ativo: true, nome: "Financeiro", permissoes: ["propostas.view", "propostas.view_all", "contas_receber.view"] },
+      { id: 6, ativo: true, nome: "Designer", permissoes: ["propostas.view", "pedidos.view"] },
+    ],
+    clientes: [
+      { id_cliente: 100, nome_vendedor: "Emily Boeira" },
+      { id_cliente: 200, nome_vendedor: "André Toniazzo" },
+      { id_cliente: 300, nome_vendedor: "André Toniazzo" },
+    ],
+    propostas: [
+      { id_int: 1001, id_cliente: 100, vendedor: "Emily Boeira", is_reproved: false, is_prd_aprovado: true, valor_total: 100, status_interno: "APROVADO", created_at: agora },
+      { id_int: 1002, id_cliente: 100, vendedor: "André Toniazzo", is_reproved: false, is_prd_aprovado: true, valor_total: 900, status_interno: "APROVADO", created_at: agora },
+      { id_int: 2001, id_cliente: 200, vendedor: "André Toniazzo", is_reproved: false, is_prd_aprovado: true, valor_total: 500, status_interno: "APROVADO", created_at: agora },
+      { id_int: 3001, id_cliente: 300, vendedor: "Emily Boeira", is_reproved: false, is_prd_aprovado: true, valor_total: 70, status_interno: "NOVO", created_at: agora },
+      { id_int: 3002, id_cliente: 300, vendedor: "André Toniazzo", is_reproved: false, is_prd_aprovado: true, valor_total: 80, status_interno: "NOVO", created_at: agora },
+      { id_int: 4001, id_cliente: 999, id_faturado: 100, vendedor: "André Toniazzo", is_reproved: false, valor_total: 40, created_at: agora },
+    ],
+    boletos: [boleto(100, 1001), boleto(100, 1002), boleto(100, 4001), boleto(100, 5555), boleto(200, 2001), boleto(300, 3001), boleto(300, 3002), boleto(300, 6666)],
+    pagamentos_v2: [
+      { id_cliente: 100, id_int: 1001, valor: 100, status: "PAID", confirmado: true, paid_at: agora, tipo_cobranca: "PIX" },
+      { id_cliente: 100, id_int: 1002, valor: 900, status: "PAID", confirmado: true, paid_at: agora, tipo_cobranca: "PIX" },
+    ],
+    conta_corrente_pendencias: [
+      { id_cliente: 100, id_int: 1001, direcao: "FAVOR_CLIENTE", status: "ABERTA", valor_saldo: 5, created_at: agora },
+      { id_cliente: 100, id_int: 1002, direcao: "FAVOR_CLIENTE", status: "ABERTA", valor_saldo: 50, created_at: agora },
+    ],
+    movimento_credito: [],
+  };
+
+  const sessao = (userId: string | null) => {
+    const banco = bancoFalso(TAB);
+    if (userId) registrarUsuarioDoMaestro(banco.cliente, userId);
+    return banco;
+  };
+  const recusaDe = async (f: () => Promise<unknown>): Promise<string> => {
+    try {
+      await f();
+      return "SEM RECUSA";
+    } catch (e) {
+      return e instanceof RecusaDeEscopoDoMaestro ? e.codigo : `outro erro: ${String(e)}`;
+    }
+  };
+  const ids = (r: { items: Array<{ id_int: number | null }> }) => r.items.map(i => i.id_int).sort();
+
+  // Cliente que não é dela: recusa antes de ler qualquer dado financeiro.
+  {
+    const { cliente, lidas } = sessao(U_EMILY);
+    checar("vendedora, cliente de outro vendedor: boletos recusados", await recusaDe(() => buscarBoletosCliente(cliente, 200, "todos")), "CLIENTE_DE_OUTRO_VENDEDOR");
+    checar("... propostas recusadas", await recusaDe(() => listarPropostasCliente(cliente, 200)), "CLIENTE_DE_OUTRO_VENDEDOR");
+    checar("... recebimentos recusados", await recusaDe(() => calcularRecebimentoPeriodo(cliente, 200, { tipo: "mes_atual", label: "mês atual" })), "CLIENTE_DE_OUTRO_VENDEDOR");
+    checar("... comparação de meses recusada (não vira 'sem dados')", await recusaDe(() => compararRecebimentoClienteMeses(cliente, 200, [{ startDate: "2026-09-01", endDate: "2026-10-01", label: "set" }])), "CLIENTE_DE_OUTRO_VENDEDOR");
+    checar("... conta corrente recusada", await recusaDe(() => buscarContaCorrenteCliente(cliente, 200)), "CLIENTE_DE_OUTRO_VENDEDOR");
+    checar("... faturamento do cliente recusado", await recusaDe(() => calcularFaturamentoOficial(cliente, { desde: "2026-01-01", periodoLabel: "ano", idCliente: 200 })), "CLIENTE_DE_OUTRO_VENDEDOR");
+    checar("... e nenhuma tabela financeira foi lida", lidas.filter(t => ["boletos", "pagamentos_v2", "conta_corrente_pendencias", "movimento_credito"].includes(t)), []);
+  }
+
+  // Cliente da carteira dela, com pedidos de outro vendedor no meio.
+  {
+    const { cliente } = sessao(U_EMILY);
+    checar("carteira dela: boletos só dos pedidos dela e o avulso", ids(await buscarBoletosCliente(cliente, 100, "todos")), [1001, 5555]);
+    const props = await listarPropostasCliente(cliente, 100);
+    checar("carteira dela: só as propostas dela", [props.count, props.totalValor, ids(props)], [1, 100, [1001]]);
+    checar("carteira dela: recebimento só do pedido dela", (await calcularRecebimentoPeriodo(cliente, 100, { tipo: "mes_atual", label: "mês atual" })).totalValor, 100);
+    const cc = await buscarContaCorrenteCliente(cliente, 100);
+    checar("carteira dela: pendência só do pedido dela", [cc.pendencias.length, cc.pendencias_abertas.favor_cliente.saldo], [1, 5]);
+    const detalhe = await buscarDetalheProposta(cliente, 100, 1002);
+    checar("proposta do outro vendedor no cliente dela: recusada", [detalhe.found, detalhe.proposta, String(detalhe.error).split(":")[0]], [false, null, "PEDIDO_DE_OUTRO_VENDEDOR"]);
+    checar("a proposta dela abre", (await buscarDetalheProposta(cliente, 100, 1001)).found, true);
+  }
+
+  // Cliente da carteira de outro, mas com pedido dela: só o pedido dela, sem o avulso.
+  {
+    const { cliente } = sessao(U_EMILY);
+    checar("pedido dela em cliente de outro: só o boleto do pedido dela", ids(await buscarBoletosCliente(cliente, 300, "todos")), [3001]);
+  }
+
+  // Visão geral e quem não vende: tudo como antes.
+  {
+    const { cliente } = sessao(U_FIN);
+    checar("visão geral: todos os boletos do cliente", ids(await buscarBoletosCliente(cliente, 100, "todos")), [1001, 1002, 4001, 5555]);
+    checar("visão geral: cliente de qualquer vendedor", ids(await buscarBoletosCliente(cliente, 200, "todos")), [2001]);
+    checar("visão geral: todas as propostas", (await listarPropostasCliente(cliente, 100)).count, 2);
+  }
+  {
+    const { cliente } = sessao(U_DESIGNER);
+    checar("quem não vende: sem recorte por vendedor (como antes)", ids(await buscarBoletosCliente(cliente, 200, "todos")), [2001]);
+  }
+
+  // Falha fechada.
+  {
+    const { cliente } = sessao(null);
+    checar("requisição sem usuário registrado: recusada", await recusaDe(() => buscarBoletosCliente(cliente, 100, "todos")), "USUARIO_NAO_IDENTIFICADO");
+    const desconhecido = sessao("u-que-nao-existe");
+    checar("usuário que não existe: recusado", await recusaDe(() => buscarBoletosCliente(desconhecido.cliente, 100, "todos")), "USUARIO_NAO_IDENTIFICADO");
+    checar("escopo sem recorte para quem tem visão geral", (await escopoDoClienteNaConsulta(sessao(U_FIN).cliente, 200)).restrito, false);
+  }
+
+  // Pela ferramenta do agente: a recusa chega ao modelo com o código, sem dado.
+  {
+    const { cliente, lidas } = bancoFalso(TAB);
+    const ctx = {
+      supabase: cliente,
+      userId: U_EMILY,
+      state: { activeClient: null, resolvedClientIds: new Set([100, 200]), pendingClientCandidates: null, pendingWriteAction: null, currentTurnId: "t1" },
+    };
+    const negada = await executeAgentTool("boletos_cliente", { id_cliente: 200 }, ctx as never);
+    checar("ferramenta boletos_cliente em cliente de outro: recusa com código", [negada.ok, String(negada.error).split(":")[0], negada.result], [false, "CLIENTE_DE_OUTRO_VENDEDOR", undefined]);
+    checar("... sem ler a tabela de boletos", lidas.includes("boletos"), false);
+    checar("... e a auditoria guarda só o código", resumirConsulta("boletos_cliente", { id_cliente: 200 }, false, null, negada.error),
+      { ferramenta: "boletos_cliente", ok: false, recusa: "CLIENTE_DE_OUTRO_VENDEDOR" });
+
+    const aceita = await executeAgentTool("boletos_cliente", { id_cliente: 100 }, ctx as never);
+    const r = (aceita.result ?? {}) as { count?: number; escopo_aplicado?: string };
+    checar("ferramenta no cliente dela: só os dela, com o aviso do recorte", [aceita.ok, r.count, typeof r.escopo_aplicado], [true, 2, "string"]);
+
+    const cadastro = await executeAgentTool("enderecos_cliente", { id_cliente: 200 }, ctx as never);
+    checar("cadastro do cliente de outro continua disponível (cotação e frete dependem dele)", cadastro.ok, true);
+  }
 }
 
 console.log(falhas === 0 ? "\nTUDO OK" : `\n${falhas} FALHA(S)`);

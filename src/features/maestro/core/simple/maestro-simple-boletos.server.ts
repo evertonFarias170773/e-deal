@@ -22,6 +22,7 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { exigirClienteNoEscopo, soLinhasDoVendedor } from '../agent/maestro-agent-escopo.server';
 
 // Colunas seguras — sem linha digitável, código de barras ou URLs de pagamento
 const BOLETOS_COLS = 'id_int, vencimento, valor, valor_atualizado, status, dias_atraso, n_nf, paid_at';
@@ -81,6 +82,7 @@ export async function buscarBoletosEmAberto(
   supabase: SupabaseClient,
   idCliente: number,
 ): Promise<BoletosResult> {
+  const escopo = await exigirClienteNoEscopo(supabase, idCliente);
   const { data, error } = await supabase
     .from('boletos')
     .select(BOLETOS_COLS)
@@ -94,7 +96,7 @@ export async function buscarBoletosEmAberto(
     return { found: false, items: [], count: 0, filtro: 'em aberto', source: 'public.boletos', authError: isAuthError(error), error: error.message };
   }
 
-  const items = (data ?? []).map(r => mapBoleto(r as Record<string, unknown>));
+  const items = (await soLinhasDoVendedor(supabase, escopo, data ?? [])).map(r => mapBoleto(r as Record<string, unknown>));
   return { found: items.length > 0, items, count: items.length, filtro: 'em aberto', source: 'public.boletos' };
 }
 
@@ -105,6 +107,7 @@ export async function buscarBoletosEmAtraso(
   supabase: SupabaseClient,
   idCliente: number,
 ): Promise<BoletosResult> {
+  const escopo = await exigirClienteNoEscopo(supabase, idCliente);
   const { data, error } = await supabase
     .from('boletos')
     .select(BOLETOS_COLS)
@@ -118,7 +121,7 @@ export async function buscarBoletosEmAtraso(
     return { found: false, items: [], count: 0, filtro: 'em atraso', source: 'public.boletos', authError: isAuthError(error), error: error.message };
   }
 
-  const items = (data ?? []).map(r => mapBoleto(r as Record<string, unknown>));
+  const items = (await soLinhasDoVendedor(supabase, escopo, data ?? [])).map(r => mapBoleto(r as Record<string, unknown>));
   return { found: items.length > 0, items, count: items.length, filtro: 'em atraso', source: 'public.boletos' };
 }
 
@@ -129,6 +132,7 @@ export async function buscarBoletosNaoLiquidados(
   supabase: SupabaseClient,
   idCliente: number,
 ): Promise<BoletosResult> {
+  const escopo = await exigirClienteNoEscopo(supabase, idCliente);
   const { data, error } = await supabase
     .from('boletos')
     .select(BOLETOS_COLS)
@@ -141,7 +145,7 @@ export async function buscarBoletosNaoLiquidados(
     return { found: false, items: [], count: 0, filtro: 'não liquidados', source: 'public.boletos', authError: isAuthError(error), error: error.message };
   }
 
-  const items = (data ?? []).map(r => mapBoleto(r as Record<string, unknown>));
+  const items = (await soLinhasDoVendedor(supabase, escopo, data ?? [])).map(r => mapBoleto(r as Record<string, unknown>));
   return { found: items.length > 0, items, count: items.length, filtro: 'não liquidados', source: 'public.boletos' };
 }
 

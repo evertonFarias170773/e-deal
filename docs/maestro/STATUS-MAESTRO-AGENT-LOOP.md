@@ -115,10 +115,44 @@ Arquivos: `maestro-agent-manual.server.ts`, `maestro-agent-pedido.server.ts`,
 `scripts/testes/maestro-manual-e-pedido.test.mts`. Em produção os `.md` do
 manual chegam à função por `outputFileTracingIncludes` no `next.config.ts`.
 
-Limites conhecidos: (a) o Maestro lê só a página que escolheu; quando o fluxo
-continua em outra tela, ele cita a tela mas nem sempre detalha os passos de lá;
-(b) as consultas por cliente (`propostas_cliente`, `detalhe_proposta`,
-`boletos_cliente`...) continuam sem o escopo por vendedor.
+Limite conhecido: o Maestro lê só a página que escolheu; quando o fluxo
+continua em outra tela, ele cita a tela mas nem sempre detalha os passos de lá.
+
+## 2.2 Trava de vendedor nas consultas por cliente (02/10/2026)
+
+A mesma regra da consulta por pedido, aplicada às consultas comerciais e
+financeiras por cliente: `visao_geral_cliente`, `propostas_cliente`,
+`detalhe_proposta`, `ultimo_orcamento_cliente`, `maior_pedido_cliente`,
+`soma_pedidos_producao_periodo`, `faturamento_cliente`, `recebimento_periodo`,
+`comparar_recebimento_meses`, `perfil_pagamento_cliente`, `boletos_cliente`,
+`conta_corrente_cliente` e `analise_credito_cliente`.
+
+Vale para vendedor sem `propostas.view_all` (visão geral e quem não vende
+seguem como estavam):
+
+1. **O cliente é dele** quando está na carteira dele (`clientes.nome_vendedor`)
+   ou quando ele tem ao menos um pedido ligado ao cliente (como cliente ou como
+   faturado). Fora disso, a consulta devolve `CLIENTE_DE_OUTRO_VENDEDOR` e
+   nenhum dado.
+2. **Dentro de um cliente dele, só os pedidos dele**: proposta, pagamento,
+   boleto, pendência e movimento de pedido de outro vendedor não aparecem
+   (cerca de 34 clientes têm pedidos de mais de um vendedor). Linha sem pedido
+   (boleto avulso) aparece só para o dono da carteira. Nesses clientes a visão
+   consolidada (`vw_maestro_cliente_360`, que soma tudo) não é exibida, e o
+   resultado sai com `escopo_aplicado` para o Maestro dizer o recorte.
+3. O saldo de crédito é do cliente, não de um pedido: sai para quem tem o
+   cliente no escopo.
+
+A trava mora **dentro dos adapters de dados** (`maestro-simple-propostas`,
+`-pagamentos`, `-boletos`, `-conta-corrente`), em
+`maestro-agent-escopo.server.ts`, e por isso vale também no motor legado
+(cotação em andamento ou fallback), que responde com um texto fixo de recusa. A
+rota registra o usuário da sessão no client da requisição; client sem registro
+é recusado (falha fechada).
+
+Ficam de fora, de propósito: `resolver_cliente`, cadastro, endereços, contatos,
+sócios, cotação, frete e salvar proposta — o vendedor cota para qualquer
+cliente, como na tela.
 
 ---
 

@@ -19,6 +19,7 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { exigirClienteNoEscopo, soLinhasDoVendedor } from '../agent/maestro-agent-escopo.server';
 
 function isAuthError(err: unknown): boolean {
   const e = err as Record<string, unknown>;
@@ -73,6 +74,9 @@ export async function buscarContaCorrenteCliente(
   supabase: SupabaseClient,
   idCliente: number,
 ): Promise<ContaCorrenteResult> {
+  // O saldo de crédito é do CLIENTE (não de um pedido): sai para quem tem o
+  // cliente no escopo. Pendências e movimentos são por pedido e são filtrados.
+  const escopo = await exigirClienteNoEscopo(supabase, idCliente);
   const [pendRes, movRes, saldoRes] = await Promise.all([
     supabase
       .from('conta_corrente_pendencias')
@@ -105,7 +109,7 @@ export async function buscarContaCorrenteCliente(
     };
   }
 
-  const pendencias: PendenciaContaCorrente[] = (pendRes.data ?? []).map(raw => {
+  const pendencias: PendenciaContaCorrente[] = (await soLinhasDoVendedor(supabase, escopo, pendRes.data ?? [])).map(raw => {
     const r = raw as Record<string, unknown>;
     return {
       id_int: numOrNull(r.id_int),
@@ -134,7 +138,7 @@ export async function buscarContaCorrenteCliente(
     alvo.saldo = Number((alvo.saldo + (p.valor_saldo ?? 0)).toFixed(2));
   }
 
-  const movimentos: MovimentoCredito[] = (movRes.error ? [] : (movRes.data ?? [])).map(raw => {
+  const movimentos: MovimentoCredito[] = (movRes.error ? [] : await soLinhasDoVendedor(supabase, escopo, movRes.data ?? [])).map(raw => {
     const r = raw as Record<string, unknown>;
     return {
       id_int: numOrNull(r.id_int),
@@ -179,6 +183,7 @@ export async function buscarAnaliseCredito(
     'critério da própria RPC (não recalcule nem misture com outros recortes).';
   const source = 'rpc fn_analise_credito_cliente';
 
+  await exigirClienteNoEscopo(supabase, idCliente);
   const { data, error } = await supabase.rpc('fn_analise_credito_cliente', { p_id_cliente: idCliente });
 
   if (error) {

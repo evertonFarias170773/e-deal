@@ -72,6 +72,16 @@ import { sanitizeAgentToolOutput } from './maestro-agent-sanitize';
 import { carregarAcessoUsuario, descreverQuemPergunta } from './maestro-agent-acesso.server';
 import { lerPaginasDoManual, MAX_PAGINAS_POR_CONSULTA } from './maestro-agent-manual.server';
 import { consultarPedido, SECOES_DO_PEDIDO } from './maestro-agent-pedido.server';
+import {
+  escopoDoClienteNaConsulta,
+  NOTA_SO_OS_PEDIDOS_DELE,
+  RecusaDeEscopoDoMaestro,
+  RECUSA_CLIENTE_DE_OUTRO_VENDEDOR,
+  registrarUsuarioDoMaestro,
+  temPedidoDeOutroVendedor,
+  type CodigoDeRecusa,
+  type EscopoDoCliente,
+} from './maestro-agent-escopo.server';
 
 // ─── Estado da sessão do agente (controlado SOMENTE pelo servidor) ───────────
 
@@ -127,6 +137,13 @@ interface AgentToolDefinition {
     };
   };
   needsActiveClient?: boolean;
+  /**
+   * Consulta comercial ou financeira POR CLIENTE: passa pela trava de vendedor
+   * (maestro-agent-escopo.server.ts). Vendedor sem visão geral só consulta
+   * cliente da própria carteira ou com pedido dele, e só vê os próprios pedidos.
+   * Exige needsActiveClient.
+   */
+  escopoPorVendedor?: boolean;
   requiredPermission?: string;
   /** Tool de ESCRITA — sujeita às camadas 1 e 3 da matriz (flags de escrita) */
   isWrite?: boolean;
@@ -446,6 +463,7 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
 
   visao_geral_cliente: {
     needsActiveClient: true,
+    escopoPorVendedor: true,
     schema: {
       type: 'function',
       function: {
@@ -467,8 +485,17 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
 
       // View atemporal + indicadores do mês atual (adapters parametrizados) —
       // uma única chamada do agente, quatro leituras paralelas no servidor.
+      // A view consolida TODOS os pedidos do cliente. Quando o cliente tambem
+      // tem pedido de outro vendedor, quem so ve os proprios pedidos fica sem a
+      // visao consolidada (os indicadores abaixo ja saem filtrados).
+      const escopo = await escopoDoClienteNaConsulta(ctx.supabase, idCliente);
+      const clienteDividido = temPedidoDeOutroVendedor(escopo);
+      const semVisao: { data: Record<string, unknown> | null; error: { message: string } | null } = { data: null, error: null };
+
       const [visaoRes, propostasMes, recebimentoMes, faturamentoMes] = await Promise.all([
-        ctx.supabase.from('vw_maestro_cliente_360').select('*').eq('id_cliente', idCliente).maybeSingle(),
+        clienteDividido
+          ? Promise.resolve(semVisao)
+          : ctx.supabase.from('vw_maestro_cliente_360').select('*').eq('id_cliente', idCliente).maybeSingle(),
         listarPropostasCliente(ctx.supabase, idCliente, { desde: inicioMes, periodoLabel: 'mês atual', limite: 0 }),
         calcularRecebimentoPeriodo(ctx.supabase, idCliente, { tipo: 'mes_atual', label: 'mês atual' }),
         calcularFaturamentoOficial(ctx.supabase, { desde: inicioMes, periodoLabel: 'mês atual', idCliente }),
@@ -505,7 +532,10 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
         return {
           found: !visaoRes.error,
           visao: null,
-          aviso: visaoRes.error
+          aviso: clienteDividido
+            ? 'Este cliente também tem pedidos de outro vendedor: a visão consolidada (que soma todos os pedidos) não é exibida para este perfil. ' +
+              'Os indicadores do mês consideram só os pedidos de quem pergunta; para cadastro use dados_cadastrais_cliente e para boletos, boletos_cliente.'
+            : visaoRes.error
             ? 'Visão consolidada indisponível neste ambiente — para cadastro/boletos use dados_cadastrais_cliente e boletos_cliente.'
             : 'Cliente não encontrado na visão consolidada.',
           indicadores_mes_atual: indicadoresMesAtual,
@@ -605,6 +635,7 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
 
   propostas_cliente: {
     needsActiveClient: true,
+    escopoPorVendedor: true,
     schema: {
       type: 'function',
       function: {
@@ -675,6 +706,7 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
 
   detalhe_proposta: {
     needsActiveClient: true,
+    escopoPorVendedor: true,
     schema: {
       type: 'function',
       function: {
@@ -718,6 +750,7 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
 
   ultimo_orcamento_cliente: {
     needsActiveClient: true,
+    escopoPorVendedor: true,
     schema: {
       type: 'function',
       function: {
@@ -759,6 +792,7 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
 
   maior_pedido_cliente: {
     needsActiveClient: true,
+    escopoPorVendedor: true,
     schema: {
       type: 'function',
       function: {
@@ -776,6 +810,7 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
 
   soma_pedidos_producao_periodo: {
     needsActiveClient: true,
+    escopoPorVendedor: true,
     schema: {
       type: 'function',
       function: {
@@ -802,6 +837,7 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
 
   recebimento_periodo: {
     needsActiveClient: true,
+    escopoPorVendedor: true,
     schema: {
       type: 'function',
       function: {
@@ -828,6 +864,7 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
 
   perfil_pagamento_cliente: {
     needsActiveClient: true,
+    escopoPorVendedor: true,
     schema: {
       type: 'function',
       function: {
@@ -858,6 +895,7 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
 
   comparar_recebimento_meses: {
     needsActiveClient: true,
+    escopoPorVendedor: true,
     schema: {
       type: 'function',
       function: {
@@ -915,6 +953,7 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
 
   boletos_cliente: {
     needsActiveClient: true,
+    escopoPorVendedor: true,
     schema: {
       type: 'function',
       function: {
@@ -1155,6 +1194,7 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
 
   conta_corrente_cliente: {
     needsActiveClient: true,
+    escopoPorVendedor: true,
     schema: {
       type: 'function',
       function: {
@@ -1175,6 +1215,7 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
 
   analise_credito_cliente: {
     needsActiveClient: true,
+    escopoPorVendedor: true,
     // fn_analise_credito_cliente é SECURITY DEFINER (roda como owner) — além
     // do isolamento por cliente resolvido, exige a permissão do módulo de
     // crédito do ERP (Financeiro/Administração; vendedor comum não tem).
@@ -1199,6 +1240,7 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
 
   faturamento_cliente: {
     needsActiveClient: true,
+    escopoPorVendedor: true,
     schema: {
       type: 'function',
       function: {
@@ -1934,6 +1976,14 @@ export const AGENT_TOOL_SCHEMAS = Object.values(AGENT_TOOLS).map(t => t.schema);
 
 // ─── Wrapper de execução com guardrails ──────────────────────────────────────
 
+function textoDaRecusaDeEscopo(codigo: CodigoDeRecusa | undefined): string {
+  if (codigo === 'CLIENTE_DE_OUTRO_VENDEDOR') return RECUSA_CLIENTE_DE_OUTRO_VENDEDOR;
+  return (
+    `${codigo ?? 'ESCOPO_INDISPONIVEL'}: não foi possível confirmar o perfil de quem pergunta para este cliente. ` +
+    'NENHUM dado do cliente foi consultado: diga que a consulta não pôde ser feita agora e sugira tentar de novo. Não suponha os dados.'
+  );
+}
+
 export async function executeAgentTool(
   name: string,
   args: Record<string, unknown>,
@@ -1944,6 +1994,9 @@ export async function executeAgentTool(
   if (!tool) {
     return { ok: false, error: `Ferramenta "${name}" não existe no catálogo.` };
   }
+
+  // Os adapters de dados descobrem o usuário pelo client da requisição.
+  registrarUsuarioDoMaestro(ctx.supabase, ctx.userId);
 
   // 1b. ESCRITA (camadas 1 e 3 da matriz): flag global + flag da ação.
   // Ambas default OFF — ausência de flag = NEGADO.
@@ -1976,6 +2029,15 @@ export async function executeAgentTool(
     args = { ...args, __idClienteSeguro: resolucao.id };
   }
 
+  // 2b. Trava de vendedor nas consultas por cliente: recusa ANTES de ler dado.
+  let escopoDoCliente: EscopoDoCliente | null = null;
+  if (tool.escopoPorVendedor) {
+    escopoDoCliente = await escopoDoClienteNaConsulta(ctx.supabase, Number(args.__idClienteSeguro));
+    if (!escopoDoCliente.permitido) {
+      return { ok: false, error: textoDaRecusaDeEscopo(escopoDoCliente.codigo) };
+    }
+  }
+
   // 3. Permissão sensível (quando declarada) → recusa amigável
   if (tool.requiredPermission) {
     let permitido = false;
@@ -1998,9 +2060,18 @@ export async function executeAgentTool(
 
   // 4. Executa o adapter e sanitiza a saída
   try {
-    const raw = await tool.handler(args, ctx);
+    let raw = await tool.handler(args, ctx);
+    // Cliente atendido por mais de um vendedor: o resultado ja saiu filtrado
+    // pelos adapters — o modelo precisa dizer que o recorte e so o dele.
+    if (escopoDoCliente && temPedidoDeOutroVendedor(escopoDoCliente) && raw && typeof raw === 'object' && !Array.isArray(raw)) {
+      raw = { ...(raw as Record<string, unknown>), escopo_aplicado: NOTA_SO_OS_PEDIDOS_DELE };
+    }
     return { ok: true, result: tool.saidaSemSanitizar ? raw : sanitizeAgentToolOutput(raw) };
   } catch (err) {
+    // Segunda linha da trava: o adapter recusou (tool sem a marca, ou cliente trocado no meio).
+    if (err instanceof RecusaDeEscopoDoMaestro) {
+      return { ok: false, error: textoDaRecusaDeEscopo(err.codigo) };
+    }
     console.error(`[MaestroAgentTools] Erro na tool "${name}":`, err);
     return { ok: false, error: 'Erro interno ao consultar o ERP. Informe que a consulta falhou e sugira tentar novamente.' };
   }

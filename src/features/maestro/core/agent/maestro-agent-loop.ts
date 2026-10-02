@@ -44,6 +44,7 @@ import {
   type AgentToolContext,
 } from './maestro-agent-tools';
 import { indiceDoManual } from './maestro-agent-manual.server';
+import { registrarUsuarioDoMaestro } from './maestro-agent-escopo.server';
 import {
   conferirAssuntoDaResposta,
   respostaDeAssuntoSemPagina,
@@ -175,8 +176,14 @@ export function resumirConsulta(
   args: Record<string, unknown>,
   ok: boolean,
   resultado: unknown,
+  erro?: string,
 ): ConsultaAuditada {
   const base: ConsultaAuditada = { ferramenta: nome, ok };
+  // Recusa: guarda so o CODIGO (o texto em maiusculas antes dos dois-pontos).
+  if (!ok) {
+    const codigo = /^([A-Z_]{5,40}):/.exec(erro ?? '');
+    base.recusa = codigo ? codigo[1] : 'ERRO';
+  }
   const r = (resultado ?? {}) as Record<string, unknown>;
 
   if (nome === 'consultar_manual') {
@@ -256,6 +263,8 @@ export async function runMaestroAgentLoop(input: AgentLoopInput): Promise<AgentL
   }
 
   const { query, context, supabase, userId, userName } = input;
+  // Os adapters de dados descobrem o usuario pelo client da requisicao.
+  registrarUsuarioDoMaestro(supabase, userId);
   const currentDateIso = new Date().toISOString();
   const deadline = Date.now() + getAgentTimeoutMs();
 
@@ -281,7 +290,9 @@ export async function runMaestroAgentLoop(input: AgentLoopInput): Promise<AgentL
     escopoUsuario = gestorVendas
       ? `\n- Usuário logado: ${rotulo} — PODE ver vendas, ranking e números de TODOS os vendedores (perfil de gestão).`
       : `\n- Usuário logado: ${rotulo}${identidade.isVendedor ? ' (vendedor)' : ''} — escopo PRÓPRIO: ele NÃO pode ver ` +
-        'vendas, ranking nem números de OUTROS vendedores (vendas_por_vendedor devolve apenas os números dele). ' +
+        'vendas, ranking nem números de OUTROS vendedores (vendas_por_vendedor devolve apenas os números dele), ' +
+        'nem propostas, recebimentos, boletos e conta corrente de CLIENTE que não é da carteira dele e com quem ele não tem pedido ' +
+        '(as consultas por cliente devolvem CLIENTE_DE_OUTRO_VENDEDOR). ' +
         'Se perguntarem "posso ver as vendas de todos?", responda que o perfil mostra somente os próprios números ' +
         '— NUNCA prometa ranking ou dados de colegas.';
   } catch {
@@ -498,7 +509,7 @@ export async function runMaestroAgentLoop(input: AgentLoopInput): Promise<AgentL
           }
           if (AGENT_TOOLS[nomeTool]?.isWrite) houveEscrita = true;
         }
-        consultas.push(resumirConsulta(nomeTool, args, exec.ok, exec.ok ? exec.result : null));
+        consultas.push(resumirConsulta(nomeTool, args, exec.ok, exec.ok ? exec.result : null, exec.error));
         // Cliente ativado DURANTE o turno (resolver/confirmar) também é confirmado
         state.resolvedClientIds.forEach(id => idsConfirmados.add(String(id)));
 

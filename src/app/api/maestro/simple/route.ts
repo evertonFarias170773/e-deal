@@ -30,6 +30,12 @@ import { deserializeV2Context } from '../../../../features/maestro/core/simple/m
 import { deveUsarAgentLoop } from '../../../../features/maestro/core/agent/maestro-agent-config';
 import { runMaestroAgentLoop } from '../../../../features/maestro/core/agent/maestro-agent-loop';
 import { registrarAcaoMaestro } from '../../../../features/maestro/core/simple/maestro-audit.server';
+import {
+  RecusaDeEscopoDoMaestro,
+  registrarUsuarioDoMaestro,
+  RESPOSTA_CLIENTE_DE_OUTRO_VENDEDOR,
+  RESPOSTA_USUARIO_NAO_IDENTIFICADO,
+} from '../../../../features/maestro/core/agent/maestro-agent-escopo.server';
 import type { ConversationContext } from '../../../../features/maestro/types';
 
 export async function POST(request: NextRequest) {
@@ -64,6 +70,11 @@ export async function POST(request: NextRequest) {
       { status: 401 }
     );
   }
+
+  // As consultas por cliente (propostas, recebimentos, boletos, conta corrente)
+  // aplicam a trava de vendedor DENTRO dos adapters, nos dois motores. Eles só
+  // recebem este client — é por ele que sabem de quem é a requisição.
+  registrarUsuarioDoMaestro(supabase, user.id);
 
   // ── 4. Leitura do payload ──────────────────────────────────────────────────
   let body: { query?: unknown; context?: unknown; recentMessages?: unknown };
@@ -123,12 +134,40 @@ export async function POST(request: NextRequest) {
     }
 
     if (!result) {
-      result = await processSimpleQueryWithBrain(query, context, {
-        supabase,
-        userName,
-        userId: user.id,
-        recentTurns,
-      });
+      try {
+        result = await processSimpleQueryWithBrain(query, context, {
+          supabase,
+          userName,
+          userId: user.id,
+          recentTurns,
+        });
+      } catch (legadoErr) {
+        // Trava de vendedor acionada no motor legado: vira resposta clara, não
+        // erro 500. O contexto da conversa (cotação em andamento) é preservado.
+        if (!(legadoErr instanceof RecusaDeEscopoDoMaestro)) throw legadoErr;
+        await registrarAcaoMaestro(supabase, {
+          userId: user.id,
+          acao: 'recusa_escopo_vendedor',
+          resultado: 'rejeitado',
+          detalhe: legadoErr.codigo,
+          payload: { motor: 'legado' },
+        });
+        result = {
+          message: {
+            id: 'maestro-msg-' + Date.now(),
+            role: 'maestro' as const,
+            content:
+              legadoErr.codigo === 'CLIENTE_DE_OUTRO_VENDEDOR'
+                ? RESPOSTA_CLIENTE_DE_OUTRO_VENDEDOR
+                : RESPOSTA_USUARIO_NAO_IDENTIFICADO,
+            contentType: 'text' as const,
+            timestamp: new Date().toISOString(),
+            status: 'completed' as const,
+          },
+          activity: [],
+          context,
+        };
+      }
     }
 
     // ── 6. Persistência de conversa/rascunho (flag-gated; nunca quebra o fluxo)
