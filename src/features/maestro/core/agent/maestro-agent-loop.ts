@@ -386,6 +386,17 @@ export async function runMaestroAgentLoop(input: AgentLoopInput): Promise<AgentL
   coletarNumerosDosArgumentos(estadoReal, numerosConsultados);
   let consultasComSucesso = 0;
   let correcoesDePedido = 0;
+  // Para o número SOLTO (sem a palavra pedido) valem também os códigos de
+  // cliente que o servidor já conhece na sessão: o modelo pode citá-los sem
+  // rótulo e eles não são pedido.
+  const codigosDaSessao = (): Set<string> => {
+    const codigos = new Set<string>();
+    state.resolvedClientIds.forEach(id => codigos.add(String(id)));
+    (state.pendingClientCandidates ?? []).forEach(c => codigos.add(String(c.id_cliente)));
+    if (state.activeClient?.clientDisplayCode) codigos.add(String(state.activeClient.clientDisplayCode));
+    if (state.activeClient?.clientInternalId != null) codigos.add(String(state.activeClient.clientInternalId));
+    return codigos;
+  };
 
   // Trava do manual: o que foi lido/consultado neste turno e a unica origem
   // aceita para nome de menu, aba ou botao na resposta.
@@ -457,7 +468,7 @@ export async function runMaestroAgentLoop(input: AgentLoopInput): Promise<AgentL
       if (candidato) {
         // Trava do pedido: pedido citado sem consulta nesta pergunta, ou "Fonte"
         // sem consulta nenhuma → uma rodada forçada mandando consultar.
-        const pedidosSemConsulta = pedidosCitadosSemConsulta(candidato, numerosConsultados);
+        const pedidosSemConsulta = pedidosCitadosSemConsulta(candidato, numerosConsultados, codigosDaSessao());
         const fonteSemConsulta = citaFonteSemConsulta(candidato, consultasComSucesso);
         if ((pedidosSemConsulta.length > 0 || fonteSemConsulta) && correcoesDePedido < 1 && Date.now() < deadline - 3_000) {
           correcoesDePedido++;
@@ -617,7 +628,7 @@ export async function runMaestroAgentLoop(input: AgentLoopInput): Promise<AgentL
   // Defesa final da trava do pedido — vale para qualquer caminho de saída.
   // Redigir só o número não basta: os DADOS em volta dele são de outra
   // consulta. A resposta inteira é trocada (menos em turno que gravou algo).
-  const pedidosSemConsultaFinais = pedidosCitadosSemConsulta(content, numerosConsultados);
+  const pedidosSemConsultaFinais = pedidosCitadosSemConsulta(content, numerosConsultados, codigosDaSessao());
   let travaDoPedido: string | null = null;
   if (pedidosSemConsultaFinais.length > 0) {
     console.warn(`[MaestroAgentLoop] Pedido citado sem consulta na resposta final: ${pedidosSemConsultaFinais.join(', ')}`);

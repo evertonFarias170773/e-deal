@@ -217,6 +217,15 @@ pegou porque aceita como confirmado todo número digitado na pergunta.
   chamada com ele, ou o devolveu, NESTA pergunta. A pergunta do usuário e o
   histórico não contam.
 - Linha de "Fonte:" só passa se alguma consulta deu certo nesta pergunta.
+- Número SOLTO de 4 a 6 dígitos (sem as palavras pedido, proposta ou
+  orçamento) entra na mesma regra quando a frase o trata como um pedido
+  (artigo antes: "o 23071", "do 23071"; título de linha: "23071 — Situação";
+  verbo de situação depois: "23071 está") E há dado de pedido ao lado
+  (cliente, valor, status, cobrança, produção). Ficam fora: quantidade
+  ("5000 unidades", "5000 tribands", "Quantidade: 5000"), CEP, valor,
+  telefone, data, ano, faixa ("de 1000 a 5000") e código de cliente
+  rotulado. Código de cliente sem rótulo passa se for o cliente ativo ou um
+  candidato da sessão.
 - Falhou: uma rodada forçada mandando chamar `consultar_pedido` com o número.
   Persistiu: a resposta inteira é trocada por um texto fixo sem dado nenhum
   (redigir só o número deixaria os dados do outro pedido na tela). Em turno

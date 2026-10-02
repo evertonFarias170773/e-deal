@@ -56,6 +56,7 @@ import {
   citaFonteSemConsulta,
   coletarNumerosDosArgumentos,
   correcaoDePedidoSemConsulta,
+  extrairNumerosSoltosDePedido,
   extrairPedidosCitados,
   pedidosCitadosSemConsulta,
   removerLinhasDeFonte,
@@ -920,6 +921,89 @@ checar("usuário não identificado não passa", podeNaTela({ ...andre, encontrad
   checar("resposta sem número de pedido e sem Fonte passa",
     [pedidosCitadosSemConsulta("Bom dia, Everton! Em que posso ajudar?", nada), citaFonteSemConsulta("Bom dia, Everton!", 0)], [[], false]);
   checar("a palavra fonte no meio da frase não é linha de Fonte", citaFonteSemConsulta("A fonte do cartão é Arial: confira na arte.", 0), false);
+
+  // ── Número solto: sem as palavras pedido, proposta ou orçamento ────────────
+  // Os dados do 23020 com o 23071 escrito sozinho (pergunta: "qual a situação do 23071?").
+  const ERRADA_COM_NUMERO_SOLTO = [
+    "23071 — Situação atual",
+    "",
+    "**Cliente:** Glaucius Ferreira De Alves Junior  ",
+    "**Vendedor:** André Toniazzo  ",
+    "**Valor total:** R$ 146,18  ",
+    "**Status:** APROVADO (avulsa)  ",
+    "",
+    "**Cobranças:**",
+    "- 1 cobrança paga: R$ 146,18 (PIX), paga e confirmada em 01/10/2026",
+    "",
+    "O 23071 está totalmente pago, mas ainda não foi liberado para produção.",
+  ].join("\n");
+  checar("número solto: a regra com rótulo não vê nada", extrairPedidosCitados(ERRADA_COM_NUMERO_SOLTO), []);
+  checar("número solto ao lado de dados de pedido → visto", extrairNumerosSoltosDePedido(ERRADA_COM_NUMERO_SOLTO), ["23071"]);
+  checar("número solto, zero consultas → barrado", pedidosCitadosSemConsulta(ERRADA_COM_NUMERO_SOLTO, nada), ["23071"]);
+  checar("número solto, consultou o 23020 → barrado", pedidosCitadosSemConsulta(ERRADA_COM_NUMERO_SOLTO, soOutroPedido), ["23071"]);
+  checar("número solto, consultou o 23071 → passa", pedidosCitadosSemConsulta(ERRADA_COM_NUMERO_SOLTO, consultouOCerto), []);
+
+  const solto = (t: string) => extrairNumerosSoltosDePedido(t);
+  checar("solto no meio da frase", solto("O 23071 está APROVADO, no valor de R$ 146,18, do cliente Glaucius."), ["23071"]);
+  checar("solto depois de 'do', em maiúsculas", solto("SITUAÇÃO DO 23071: APROVADO, cobrança paga."), ["23071"]);
+  checar("solto como título em negrito", solto("**23071**\nCliente: Glaucius\nValor: R$ 146,18"), ["23071"]);
+  checar("rótulo com pontuação no meio", solto("**Pedido:** 23071\n**Status:** APROVADO"), ["23071"]);
+  checar("dois soltos na mesma frase: basta um para barrar", solto("O 23020 e o 23071 estão pagos, R$ 146,18 e R$ 491,69."), ["23020", "23071"]);
+  checar("sem dado de pedido ao lado não dispara", solto("Você quis dizer o 23071? Me confirme o número, por favor."), []);
+
+  // Resposta REAL do loop a "quanto custam 5000 tribands para o cep 96810400?" (02/10/2026).
+  const COTACAO_REAL = [
+    "Segue o orçamento:",
+    "",
+    "📄 Orçamento conforme solicitação",
+    "",
+    "🎟️ Pulseira Triband (25×2cm)",
+    "📦 Quantidade: 5.000 unidades — R$ 840,00",
+    "🏭 Prazo de produção: 1 dia útil",
+    "",
+    "-----------------------------",
+    "📌 Centro  |  Santa Cruz do Sul  /  RS",
+    "-----------------------------",
+    "",
+    "🚚 Sedex: R$ 31,72",
+    "Prazo de entrega: 1 dia útil (+ prazo de produção)",
+    "",
+    "🚚 Transportadora São Miguel: R$ 72,25",
+    "Prazo de entrega sob consulta.",
+    "",
+    "🛵 Retira no balcão: R$ 0,00",
+    "",
+    "🧾 Subtotal produtos: R$ 840,00",
+    "Frete padrão (Sedex): R$ 31,72",
+    "",
+    "💰 Total final: R$ 871,72",
+    "",
+    "Se quiser salvar essa cotação como proposta, preciso identificar o cliente primeiro. O frete final considera o endereço do cadastro.",
+  ].join("\n");
+  checar("cotação real, mesmo sem nenhuma consulta: nada dispara", pedidosCitadosSemConsulta(COTACAO_REAL, nada), []);
+
+  // Pior caso: todos os números sem formatação e nenhuma consulta feita.
+  const NAO_SAO_PEDIDO = [
+    "5000 tribands para o CEP 96810400 saem por R$ 840,00.",
+    "Quantidade: 5000 — R$ 840,00",
+    "Entrega no CEP 96810-400, Santa Cruz do Sul.",
+    "Total: R$ 5000 ou 5000,00 à vista; frete de 1200.50.",
+    "Fale com o financeiro: (51) 99999-1234, 51 3333 4444 ou 0800 6421234.",
+    "A cobrança foi paga em 02/10/2026 e vale para 2026.",
+    "De 1000 a 5000 unidades o preço cai; acima de 5000, consulte.",
+    "- 1000: R$ 250,00",
+    "- 5000: R$ 840,00",
+    "O cliente 63708 tem 12 boletos; código 12460.",
+    "As 5000 pulseiras e os 1000 crachás ficam prontos em 3 dias.",
+    "São 1324 cobranças no mês, com 1320 propostas.",
+  ].join("\n");
+  checar("quantidade, CEP, valor, telefone, data e código de cliente não são pedido", solto(NAO_SAO_PEDIDO), []);
+  checar("as mesmas linhas não disparam a trava", pedidosCitadosSemConsulta(NAO_SAO_PEDIDO, nada), []);
+
+  const CLIENTE_SEM_ROTULO = "O 63708 está com um boleto em aberto de R$ 1.710,69.";
+  checar("código de cliente sem rótulo: barrado se o servidor não o conhece", pedidosCitadosSemConsulta(CLIENTE_SEM_ROTULO, nada), ["63708"]);
+  checar("código de cliente sem rótulo: passa se é o cliente ativo da sessão", pedidosCitadosSemConsulta(CLIENTE_SEM_ROTULO, nada, new Set(["63708"])), []);
+  checar("o cliente ativo não libera número COM rótulo de pedido", pedidosCitadosSemConsulta("O pedido 63708 está pago.", nada, new Set(["63708"])), ["63708"]);
 }
 
 // ─── 8. Pago x confirmado pelo financeiro ────────────────────────────────────
