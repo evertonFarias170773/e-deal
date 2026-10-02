@@ -93,6 +93,12 @@ import {
   valorFreteEfetivo
 } from "@/features/orcamentos/lib/modalidade-frete";
 import { contarModelosCopiados, copiaLevouCabecalho, montarAvisoDaCopia } from "@/features/orcamentos/lib/aviso-copia";
+import {
+  freteEhDoServico,
+  servicoDoFrete,
+  servicosDaTransportadora,
+  transportadoraTemEscolhaDeServico
+} from "@/features/orcamentos/lib/servicos-transportadora";
 import { barreirasDaTrocaDeFrete } from "@/features/expedicao/services/corrigir-frete-simulacao";
 import { verificarPermissaoServerSide } from "@/lib/auth/verificar-permissao";
 import {
@@ -3841,6 +3847,64 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
   }
 
   /**
+   * SERVIÇO DA TRANSPORTADORA EM CIF (02/10/2026).
+   *
+   * A SVT vende mais de um serviço da Azul, e a cotação automática só traz o
+   * ECOMM. Escolher um serviço na lista põe o frete NELE: se já existe cartão
+   * com esse serviço (a cotação automática, a linha gravada), é ele; senão
+   * nasce um frete manual com o nome do serviço — o mesmo registro que
+   * `escolherTransportadoraCif` cria, só que nomeado pelo serviço, que é o
+   * texto que vai para `cotacao_frete.servico` e `propostas.frete_escolhido`.
+   *
+   * Não cota e não mexe nos cartões das cotações automáticas: o valor do frete
+   * manual é o frete efetivo de agora, ajustado no "Valor cobrado". Quem não
+   * escolhe nada aqui fica exatamente como antes.
+   */
+  function escolherServicoCif(servico: string) {
+    const idTransportadora = form.idTransportadoraCliente ?? null;
+    if (idTransportadora === null || !servicosDaTransportadora(idTransportadora).includes(servico)) return;
+    if (bloqueioTrocaFrete) {
+      showToast({ type: "warning", title: "Troca de frete bloqueada", description: bloqueioTrocaFrete });
+      return;
+    }
+    const existente = form.fretes.find((f) => !ehFreteDeRetirada(f) && freteEhDoServico(f, servico));
+    if (existente) {
+      if (existente.id === form.freteEscolhidoId) return;
+      setValorCobradoCifDraft(null);
+      setForm((current) => ({
+        ...current,
+        fretes: current.fretes.map((f) => ({ ...f, escolhido: f.id === existente.id })),
+        freteEscolhidoId: existente.id,
+        idTransportadoraCliente: idTransportadora
+      }));
+      return;
+    }
+    const freteManual: PropostaFrete = {
+      id: `manual_${Date.now()}`,
+      id_int: Number(form.id_int) || 0,
+      transportadora: servico,
+      servico,
+      valor: resumo.frete,
+      prazo: "A combinar",
+      observacao: "Cadastro manual",
+      escolhido: true,
+      pesoUsado: resumo.pesoTotal
+    };
+    setValorCobradoCifDraft(null);
+    setForm((current) => ({
+      ...current,
+      fretes: [
+        ...current.fretes
+          .filter((f) => !(f.id.startsWith("manual_") || f.observacao === "Cadastro manual"))
+          .map((f) => ({ ...f, escolhido: false })),
+        freteManual
+      ],
+      freteEscolhidoId: freteManual.id,
+      idTransportadoraCliente: idTransportadora
+    }));
+  }
+
+  /**
    * VALOR COBRADO EM CIF — sobrepõe o valor do frete escolhido, inclusive de
    * card de parceira (decisão do dono, 23/09/2026). "Atualizar fretes" volta a
    * pôr o valor cotado no card da parceira; no frete manual o valor fica.
@@ -6914,6 +6978,36 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                         onChange={escolherTransportadoraCif}
                       />
                     </div>
+                    {/* SERVIÇO: só para transportadora com mais de um (a SVT, com
+                        os serviços da Azul). Sem escolha, o frete fica como
+                        está — a primeira opção só aparece quando o frete atual
+                        não é nenhum serviço da lista. */}
+                    {transportadoraTemEscolhaDeServico(form.idTransportadoraCliente) && (
+                      <div className="sm:w-52">
+                        <label
+                          htmlFor="servico-transportadora-cif"
+                          className="block text-xs font-bold uppercase tracking-wide text-slate-500 mb-1"
+                        >
+                          Serviço
+                        </label>
+                        <select
+                          id="servico-transportadora-cif"
+                          value={servicoDoFrete(form.idTransportadoraCliente, freteEscolhido) ?? ""}
+                          disabled={Boolean(bloqueioTrocaFrete)}
+                          onChange={(e) => escolherServicoCif(e.target.value)}
+                          className={`${inputClass} disabled:cursor-not-allowed disabled:opacity-60`}
+                        >
+                          {servicoDoFrete(form.idTransportadoraCliente, freteEscolhido) === null && (
+                            <option value="">— escolha o serviço —</option>
+                          )}
+                          {servicosDaTransportadora(form.idTransportadoraCliente).map((servico) => (
+                            <option key={servico} value={servico}>
+                              {servico}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
                     <div className="sm:w-44">
                       <label className="block text-xs font-bold uppercase tracking-wide text-slate-500 mb-1">
                         Valor cobrado (R$)

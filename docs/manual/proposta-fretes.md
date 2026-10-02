@@ -30,6 +30,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Transportadora definida \*** (lista, começa em "— escolha a transportadora —") | Caixa da modalidade, em FOB | Escolhe a transportadora do cliente que vai retirar a mercadoria. |
 | **Motoboy** | Ao lado da lista de transportadora, em FOB | Informa que um motoboy leva; dispensa a transportadora. Clicar de novo desmarca. |
 | **Transportadora** (lista) | Caixa da modalidade, em CIF | Escolhe quem leva. Se a transportadora tem card cotado, escolhe o card dela; se não tem, cria um frete manual dela. |
+| **Serviço** (lista) | Caixa da modalidade, em CIF, entre **Transportadora** e **Valor cobrado (R$)** | Escolhe o serviço da transportadora. Só aparece para transportadora com mais de um serviço: hoje, a SVT TRANSPORTES, com **ECOMM** e **AZUL PREMIUM**. |
 | **Valor cobrado (R$)** | Caixa da modalidade, em CIF | Define quanto o cliente paga de frete. Grava ao sair do campo ou no Enter; Esc desfaz. Só edita na fase de orçamento. |
 | **Rodoviário** / **Aéreo** | Pergunta **Como vai o transporte?**, na caixa da modalidade | Diz à Expedição em qual coluna o pedido entra, quando o sistema não reconhece a transportadora sozinho. Clicar de novo desmarca. |
 | **Atualizar fretes** (vira **Atualizando...**) | Acima dos cards, em CIF | Refaz a cotação com o CEP do endereço e o peso atual da proposta. |
@@ -74,6 +75,16 @@ Em cotação nova, sem escolha anterior, a tela já deixa o SEDEX escolhido; sem
 4. Clique em **Salvar alterações**.
 
 A proposta tem um frete manual por vez: escolher outra transportadora sem cotação substitui o anterior.
+
+### Escolher o serviço da transportadora (CIF)
+
+1. Em CIF, escolha a **Transportadora**. Se ela tem mais de um serviço, a lista **Serviço** aparece ao lado.
+2. Abra a lista **Serviço** e escolha. Para a SVT TRANSPORTES (Azul Cargo), as opções são **ECOMM**, que é o serviço da cotação automática, e **AZUL PREMIUM**.
+3. Se já existe card com esse serviço, ele vira o **Escolhido**. Se não existe, a tela cria um card **MANUAL / TRANSP.** com o nome do serviço, prazo "A combinar" e o valor que estava em **Valor cobrado (R$)**.
+4. Confira ou digite o valor em **Valor cobrado (R$)** e saia do campo.
+5. Clique em **Salvar alterações**.
+
+O serviço escolhido é o nome que aparece na coluna **Envio** da lista de Pedidos e na coluna de frete da Expedição. Quem não mexe na lista **Serviço** continua com o frete como estava.
 
 ### Cobrar um valor diferente do cotado (CIF)
 
@@ -141,6 +152,9 @@ Depois da liberação o campo **Valor cobrado (R$)** fica só para leitura: o va
 - A cotação usa o CEP do endereço de entrega e o peso total da proposta. Os volumes são calculados pelo sistema, um a cada 14,5 kg.
 - O botão **Atualizar fretes** fica apagado sem CEP válido de 8 dígitos, sem produto com peso ou sem endereço de entrega escolhido.
 - A Azul Cargo não é cotada para entrega no Rio Grande do Sul.
+- A cotação automática da Azul Cargo traz só o serviço ECOMM. O **AZUL PREMIUM** não é cotado: entra como frete manual, com o valor digitado em **Valor cobrado (R$)**.
+- A lista **Serviço** mostra "— escolha o serviço —" quando o frete atual não é nenhum serviço da lista, como no frete manual com o nome da transportadora. Deixar assim não muda nada.
+- Depois do despacho, a Expedição mostra o nome da transportadora, e não mais o serviço.
 - O card da Azul Cargo mostra, abaixo do valor, a linha "Original: R$ ... (+15%)" e o peso em kg com a quantidade de volumes.
 - Mudar o endereço de entrega desfaz o frete escolhido: é preciso escolher de novo. Mudar só o peso mantém a escolha quando a mesma opção volta na cotação nova.
 - Se o frete escolhido não volta na cotação nova, ele fica preservado e a tela avisa **Cotação Defasada**. Revise antes de salvar.
@@ -166,6 +180,7 @@ Depois da liberação o campo **Valor cobrado (R$)** fica só para leitura: o va
 - Valor do card e **Valor cobrado (R$)**: o card nasce com o valor cotado pelo parceiro; o valor cobrado é o que o cliente paga e pode substituir o cotado.
 - **Transportadora definida \*** (FOB), **Transportadora** (CIF) e **Corrigir a transportadora (admin)**: as duas primeiras gravam com o **Salvar alterações**; a terceira grava sozinha e só existe depois da liberação.
 - **Cotação desatualizada**, **Cotação Defasada** e **O frete precisa ser atualizado**: o primeiro avisa que o CEP ou o peso mudaram e a cotação precisa ser refeita; o segundo avisa que o frete escolhido não voltou na cotação nova; o terceiro é o bloqueio ao gerar cobrança com peso diferente do cotado.
+- **Transportadora** e **Serviço** (CIF): a transportadora é quem leva (SVT TRANSPORTES); o serviço é o que foi contratado com ela (ECOMM, AZUL PREMIUM). O nome que segue para a lista de Pedidos e para a Expedição é o do serviço.
 - **Atualizar fretes** e **Cotar frete complementar**: o primeiro cota o frete inteiro de uma proposta comum em CIF; o segundo cota só a diferença de um pedido complementar.
 - O aviso **Cotação desatualizada** manda clicar em "Atualizar frete", no singular; o botão na tela se chama **Atualizar fretes**.
 - Recotação de frete no despacho: é feita na Expedição, no despacho do pedido, e não nesta aba.
@@ -215,6 +230,7 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/features/orcamentos/OrcamentoFormPage.tsx`
 - `src/features/orcamentos/lib/modalidade-frete.ts`
 - `src/features/orcamentos/lib/categoria-frete.ts`
+- `src/features/orcamentos/lib/servicos-transportadora.ts`
 - `src/features/orcamentos/components/FreteComplementarCard.tsx`
 - `src/features/orcamentos/services/frete.service.ts`
 - `src/features/orcamentos/services/frete-desatualizado.ts`
