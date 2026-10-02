@@ -9,7 +9,20 @@ export type TarefaAcao = "assumir" | "concluir" | "cancelar";
 export type TarefaPrioridade = "NORMAL" | "ALTA" | "URGENTE";
 export type AnexoMomento = "CRIACAO" | "ANDAMENTO" | "CONCLUSAO" | "MENSAGEM";
 /** Ultima novidade da tarefa: faz o sinal piscar para os outros participantes. */
-export type NovidadeTipo = "CRIADA" | "MENSAGEM" | "ASSUMIDA" | "CONCLUIDA" | "CANCELADA";
+export type NovidadeTipo = "CRIADA" | "MENSAGEM" | "ASSUMIDA" | "CONCLUIDA" | "CANCELADA" | "ALTERADA";
+
+/**
+ * Linha do historico de prazo e prioridade. So a trigger de guarda escreve:
+ * uma entrada por campo mudado. `de`/`para` sao "AAAA-MM-DD" (ou null, sem
+ * prazo) em PRAZO, e o codigo da prioridade em PRIORIDADE.
+ */
+export type TarefaAlteracao = {
+  em: string;
+  por: string | null;
+  campo: "PRAZO" | "PRIORIDADE";
+  de: string | null;
+  para: string | null;
+};
 
 export type Tarefa = {
   id: number;
@@ -37,6 +50,8 @@ export type Tarefa = {
   novidade_em: string | null;
   novidade_por_user_id: string | null;
   novidade_tipo: NovidadeTipo | null;
+  /** Historico de mudancas de prazo e prioridade, em ordem. */
+  alteracoes?: TarefaAlteracao[] | null;
   /** user_id dos destinatarios escolhidos (vazio em tarefa para todos e em melhoria). */
   destinatarios: string[];
 };

@@ -141,6 +141,14 @@ export function TarefasProvider({ children }: { children: ReactNode }) {
             showToast({ type: "success", title: "Tarefa concluída", description: `${nome} concluiu ${titulo}.`, duration: 6000, onClick: irParaTarefas });
           } else if (tipo === "CANCELADA") {
             showToast({ type: "info", title: "Tarefa cancelada", description: `${nome} cancelou ${titulo}.`, duration: 6000, onClick: irParaTarefas });
+          } else if (tipo === "ALTERADA") {
+            showToast({
+              type: "info",
+              title: "Prazo ou prioridade alterados",
+              description: `${nome} mudou o prazo ou a prioridade de ${titulo}.`,
+              duration: 6000,
+              onClick: irParaTarefas
+            });
           }
         };
         void avisar();

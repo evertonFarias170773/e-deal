@@ -1,4 +1,4 @@
-import type { Tarefa } from "@/features/tarefas/types";
+import { PRIORIDADE_ROTULO, type Tarefa, type TarefaAlteracao, type TarefaPrioridade } from "@/features/tarefas/types";
 
 /**
  * Espelho, na tela, da regra da trigger `tarefas_equipe__guarda`. Serve so para
@@ -31,12 +31,47 @@ export function podeAnexar(t: Tarefa) {
   return ativa(t);
 }
 
+/**
+ * Prazo e prioridade: quem criou, quem recebeu e o responsavel, com a tarefa
+ * aberta ou em andamento. Em melhoria, quem recebe sao os administradores.
+ * Administrador que nao participa da tarefa nao altera.
+ */
+export function podeAlterarPrazoPrioridade(t: Tarefa, userId: string, admin: boolean, participa: boolean) {
+  return (
+    ativa(t) &&
+    (t.criado_por_user_id === userId ||
+      t.responsavel_user_id === userId ||
+      recebida(t, userId, participa) ||
+      (t.tipo === "MELHORIA" && admin))
+  );
+}
+
 /** "AAAA-MM-DD" (prazo) ou timestamp ISO → "dd/mm/aaaa". */
 export function dataBR(valor: string | null) {
   if (!valor) return "";
   const soData = /^\d{4}-\d{2}-\d{2}$/.test(valor);
   const d = soData ? new Date(`${valor}T12:00:00`) : new Date(valor);
   return Number.isNaN(d.getTime()) ? "" : d.toLocaleDateString("pt-BR");
+}
+
+/** "AAAA-MM-DD" → "dd/mm"; com o ano quando nao e o ano corrente. */
+export function dataCurtaBR(valor: string | null) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(valor ?? "");
+  if (!m) return "";
+  const curta = `${m[3]}/${m[2]}`;
+  return Number(m[1]) === new Date().getFullYear() ? curta : `${curta}/${m[1]}`;
+}
+
+/** Linha do historico: "Prazo alterado de 02/10 para 05/10 por Fulano". */
+export function descreverAlteracao(a: TarefaAlteracao, nome: (id: string | null) => string) {
+  const quem = a.por ? `por ${nome(a.por)}` : "pelo sistema";
+  if (a.campo === "PRAZO") {
+    if (a.de && a.para) return `Prazo alterado de ${dataCurtaBR(a.de)} para ${dataCurtaBR(a.para)} ${quem}`;
+    if (a.para) return `Prazo definido para ${dataCurtaBR(a.para)} ${quem}`;
+    return `Prazo removido (era ${dataCurtaBR(a.de)}) ${quem}`;
+  }
+  const rotulo = (codigo: string | null) => PRIORIDADE_ROTULO[codigo as TarefaPrioridade] ?? codigo ?? "—";
+  return `Prioridade alterada de ${rotulo(a.de)} para ${rotulo(a.para)} ${quem}`;
 }
 
 export function dataHoraBR(valor: string | null) {

@@ -96,8 +96,23 @@ Bucket `tarefas-anexos`: privado, limite de 10 MB por arquivo, tipos PDF, PNG,
 JPEG, WEBP e GIF. Nenhuma policy em `storage.objects` para ele: só a service
 role, dentro das rotas, lê e grava.
 
-Título, descrição, prioridade, destinatários, prazo, vínculos, tipo e criador
-não mudam depois de criados nesta etapa.
+Título, descrição, destinatários, vínculos, tipo e criador não mudam depois de
+criados.
+
+**Prazo e prioridade mudam** (02/10/2026, migration
+`20261002_tarefas_equipe_prazo_prioridade`), com a tarefa aberta ou em
+andamento, por quem criou, por quem recebeu (destinatário escolhido; em tarefa
+para todos, quem participa das Tarefas; em melhoria, os administradores) e pelo
+responsável. Administrador que não participa da tarefa não altera. Não se muda
+prazo ou prioridade no mesmo UPDATE que muda a situação.
+
+- Cada campo mudado vira uma entrada em `tarefas_equipe.alteracoes` (jsonb,
+  lista): `{ em, por, campo: PRAZO | PRIORIDADE, de, para }`. Só a trigger de
+  guarda escreve nessa coluna; o que o cliente mandar é descartado.
+- A mudança marca a novidade `ALTERADA`, de quem mudou. A regra de quem vê
+  (`tarefas_equipe_novas`) é a mesma das outras novidades.
+- A tela grava pela rota `POST /api/tarefas/[id]/prazo-prioridade`, com a sessão
+  do usuário.
 
 ## Situações
 

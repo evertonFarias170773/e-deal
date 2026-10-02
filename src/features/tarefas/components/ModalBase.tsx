@@ -54,7 +54,7 @@ export function ModalBase({
         </div>
         <div className="overflow-y-auto px-5 py-4">{children}</div>
         {rodape ? (
-          <div className="flex justify-end gap-2 border-t px-5 py-3" style={{ borderColor: "var(--border)" }}>
+          <div className="flex flex-wrap justify-end gap-2 border-t px-5 py-3" style={{ borderColor: "var(--border)" }}>
             {rodape}
           </div>
         ) : null}

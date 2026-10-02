@@ -6,6 +6,7 @@ import { Download, Paperclip, Send } from "lucide-react";
 import { useAppToast } from "@/components/common/AppToast";
 import { useTarefas } from "@/features/tarefas/TarefasProvider";
 import {
+  alterarPrazoPrioridade,
   baixarAnexo,
   enviarAnexo,
   enviarMensagem,
@@ -21,12 +22,17 @@ import {
   MENSAGEM_MAX,
   MOMENTO_ROTULO,
   OBSERVACAO_MAX,
+  PRIORIDADES,
+  PRIORIDADE_ROTULO,
   type Tarefa,
   type TarefaAcao,
   type TarefaAnexo,
-  type TarefaMensagem
+  type TarefaMensagem,
+  type TarefaPrioridade
 } from "@/features/tarefas/types";
 import {
+  descreverAlteracao,
+  podeAlterarPrazoPrioridade,
   podeAnexar,
   podeAssumir,
   podeCancelar,
@@ -39,7 +45,7 @@ import { ModalBase, campoClasse, campoEstilo, rotuloClasse } from "@/features/ta
 import { PrioridadeBadge, SituacaoBadge } from "@/features/tarefas/components/SituacaoBadge";
 
 type ItemHistorico =
-  | { tipo: "evento"; quando: string; texto: string }
+  | { tipo: "evento"; chave: string; quando: string; texto: string }
   | { tipo: "mensagem"; quando: string; mensagem: TarefaMensagem; anexos: TarefaAnexo[] };
 
 /**
@@ -49,7 +55,11 @@ type ItemHistorico =
  *   detalhe aberto, recarrega a conversa e marca de novo.
  * - Conversa: qualquer participante escreve, com anexo opcional, sem mudar a
  *   situacao. So com a tarefa aberta ou em andamento. Ninguem edita nem apaga.
- * - `modoConcluir` abre direto com observacao e anexo da conclusao.
+ * - Concluir abre uma janela de confirmacao, com a observacao e o anexo da
+ *   conclusao. `modoConcluir` (botao Concluir da lista) abre direto nela.
+ * - Prazo e prioridade: quem criou, quem recebeu e o responsavel alteram com a
+ *   tarefa aberta ou em andamento. A trigger grava a linha do historico e marca
+ *   a novidade; titulo e vinculos continuam sem edicao.
  */
 export function TarefaDetalheModal({
   tarefa: t,
@@ -80,12 +90,16 @@ export function TarefaDetalheModal({
   const [arquivoMensagem, setArquivoMensagem] = useState<File | null>(null);
   const [ocupado, setOcupado] = useState<string | null>(null);
   const [erro, setErro] = useState<string | null>(null);
+  const [alterando, setAlterando] = useState(false);
+  const [novoPrazo, setNovoPrazo] = useState("");
+  const [novaPrioridade, setNovaPrioridade] = useState<TarefaPrioridade>("NORMAL");
 
   const nome = (id: string | null) => (id ? nomes.get(id) ?? "—" : "—");
   const assumir = podeAssumir(t, userId, admin, participa);
   const concluir = podeConcluir(t, userId, admin);
   const cancelar = podeCancelar(t, userId, admin);
   const ativa = podeAnexar(t);
+  const alterar = podeAlterarPrazoPrioridade(t, userId, admin, participa);
 
   const carregar = useCallback(async () => {
     try {
@@ -176,6 +190,35 @@ export function TarefaDetalheModal({
     recarregar();
   };
 
+  const abrirAlteracao = () => {
+    setErro(null);
+    setNovoPrazo(t.data_limite ?? "");
+    setNovaPrioridade(t.prioridade);
+    setAlterando(true);
+  };
+
+  // Manda so o que mudou: cada campo mudado vira uma linha do historico.
+  const salvarAlteracao = async () => {
+    const mudanca: { data_limite?: string | null; prioridade?: TarefaPrioridade } = {};
+    if (novoPrazo !== (t.data_limite ?? "")) mudanca.data_limite = novoPrazo || null;
+    if (novaPrioridade !== t.prioridade) mudanca.prioridade = novaPrioridade;
+    if (Object.keys(mudanca).length === 0) {
+      setAlterando(false);
+      return;
+    }
+    setErro(null);
+    setOcupado("Salvando…");
+    const r = await alterarPrazoPrioridade(t.id, mudanca);
+    setOcupado(null);
+    if (!r.success) {
+      setErro(r.message ?? "Não foi possível alterar.");
+      return;
+    }
+    setAlterando(false);
+    showToast({ type: "success", title: "Tarefa alterada", description: `"${t.titulo}"` });
+    recarregar();
+  };
+
   const baixar = async (anexo: TarefaAnexo) => {
     const r = await baixarAnexo(anexo.id);
     if (!r.success) setErro(r.message ?? "Não foi possível baixar.");
@@ -184,10 +227,15 @@ export function TarefaDetalheModal({
   // Historico: eventos da tarefa e mensagens, em ordem.
   const historico = useMemo<ItemHistorico[]>(() => {
     const nomeDe = (id: string | null) => (id ? nomes.get(id) ?? "—" : "—");
-    const itens: ItemHistorico[] = [{ tipo: "evento", quando: t.created_at, texto: `Criada por ${nomeDe(t.criado_por_user_id)}` }];
-    if (t.assumido_at) itens.push({ tipo: "evento", quando: t.assumido_at, texto: `Assumida por ${nomeDe(t.assumido_por_user_id)}` });
-    if (t.concluido_at) itens.push({ tipo: "evento", quando: t.concluido_at, texto: `Concluída por ${nomeDe(t.concluido_por_user_id)}` });
-    if (t.cancelado_at) itens.push({ tipo: "evento", quando: t.cancelado_at, texto: `Cancelada por ${nomeDe(t.cancelado_por_user_id)}` });
+    const itens: ItemHistorico[] = [
+      { tipo: "evento", chave: "criada", quando: t.created_at, texto: `Criada por ${nomeDe(t.criado_por_user_id)}` }
+    ];
+    if (t.assumido_at) itens.push({ tipo: "evento", chave: "assumida", quando: t.assumido_at, texto: `Assumida por ${nomeDe(t.assumido_por_user_id)}` });
+    if (t.concluido_at) itens.push({ tipo: "evento", chave: "concluida", quando: t.concluido_at, texto: `Concluída por ${nomeDe(t.concluido_por_user_id)}` });
+    if (t.cancelado_at) itens.push({ tipo: "evento", chave: "cancelada", quando: t.cancelado_at, texto: `Cancelada por ${nomeDe(t.cancelado_por_user_id)}` });
+    (t.alteracoes ?? []).forEach((a, i) => {
+      itens.push({ tipo: "evento", chave: `alteracao-${i}`, quando: a.em, texto: descreverAlteracao(a, nomeDe) });
+    });
     for (const m of mensagens) {
       itens.push({ tipo: "mensagem", quando: m.created_at, mensagem: m, anexos: anexos.filter((a) => a.mensagem_id === m.id) });
     }
@@ -226,23 +274,7 @@ export function TarefaDetalheModal({
   );
 
   let rodape: ReactNode;
-  if (concluindo) {
-    rodape = (
-      <>
-        <button type="button" className={botaoSecundario} style={{ borderColor: "var(--border)" }} onClick={() => setConcluindo(false)} disabled={ocupadoBool}>
-          Voltar
-        </button>
-        <button
-          type="button"
-          onClick={() => void executar("concluir")}
-          disabled={ocupadoBool}
-          className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-bold text-white shadow-sm hover:bg-emerald-700 disabled:opacity-60"
-        >
-          {ocupado ?? "Confirmar conclusão"}
-        </button>
-      </>
-    );
-  } else if (confirmarCancelar) {
+  if (confirmarCancelar) {
     rodape = (
       <>
         <button type="button" className={botaoSecundario} style={{ borderColor: "var(--border)" }} onClick={() => setConfirmarCancelar(false)} disabled={ocupadoBool}>
@@ -258,9 +290,13 @@ export function TarefaDetalheModal({
         </button>
       </>
     );
-  } else if (assumir || concluir || cancelar) {
+  } else {
     rodape = (
       <>
+        {/* A esquerda, longe do Concluir: `mr-auto` empurra as acoes para a direita. */}
+        <button type="button" className={`${botaoSecundario} mr-auto`} style={{ borderColor: "var(--border)" }} onClick={onFechar}>
+          Fechar
+        </button>
         {cancelar ? (
           <button
             type="button"
@@ -285,13 +321,105 @@ export function TarefaDetalheModal({
         {concluir ? (
           <button
             type="button"
-            onClick={() => setConcluindo(true)}
+            onClick={() => {
+              setErro(null);
+              setAlterando(false);
+              setConcluindo(true);
+            }}
             className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-bold text-white shadow-sm hover:bg-emerald-700"
           >
             Concluir
           </button>
         ) : null}
       </>
+    );
+  }
+
+  const avisoErro = erro ? (
+    <p role="alert" className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-300">
+      {erro}
+    </p>
+  ) : null;
+
+  if (concluindo) {
+    // Veio do botao Concluir da lista: voltar e fechar. Veio do detalhe: volta para ele.
+    const sair = () => {
+      if (ocupadoBool) return;
+      setErro(null);
+      if (modoConcluir) onFechar();
+      else setConcluindo(false);
+    };
+    return (
+      <ModalBase
+        titulo="Concluir tarefa"
+        onFechar={sair}
+        rodape={
+          <>
+            <button type="button" className={`${botaoSecundario} mr-auto`} style={{ borderColor: "var(--border)" }} onClick={sair} disabled={ocupadoBool}>
+              Voltar
+            </button>
+            <button
+              type="button"
+              onClick={() => void executar("concluir")}
+              disabled={ocupadoBool}
+              className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-bold text-white shadow-sm hover:bg-emerald-700 disabled:opacity-60"
+            >
+              {ocupado ?? "Confirmar conclusão"}
+            </button>
+          </>
+        }
+      >
+        <div className="space-y-4 text-sm">
+          <div>
+            <p className="text-base font-semibold">Concluir esta tarefa?</p>
+            <p className="mt-1">Quem pediu será avisado e a tarefa sai da lista em aberto.</p>
+          </div>
+          <p className="rounded-xl border px-3 py-2 font-medium" style={{ borderColor: "var(--border)" }}>
+            {t.titulo}
+          </p>
+          <div>
+            <label htmlFor="tarefa-observacao" className={rotuloClasse}>
+              Observação (opcional)
+            </label>
+            <textarea
+              id="tarefa-observacao"
+              autoFocus
+              rows={2}
+              value={observacao}
+              maxLength={OBSERVACAO_MAX}
+              onChange={(e) => setObservacao(e.target.value)}
+              placeholder="Ex.: OC recebida e anexada"
+              className={campoClasse}
+              style={campoEstilo}
+            />
+          </div>
+          <div>
+            <span className={rotuloClasse}>Anexo da conclusão (opcional)</span>
+            <label
+              className="inline-flex cursor-pointer items-center gap-2 rounded-xl border px-3 py-2 text-sm font-semibold"
+              style={{ borderColor: "var(--border)", color: "var(--primary)" }}
+            >
+              <Paperclip className="h-4 w-4" />
+              {arquivoConclusao ? arquivoConclusao.name : "Escolher arquivo"}
+              <input
+                id="tarefa-anexo-conclusao"
+                type="file"
+                accept={ANEXO_ACCEPT}
+                className="sr-only"
+                disabled={ocupadoBool}
+                onChange={(e) => {
+                  const f = e.target.files?.[0] ?? null;
+                  e.target.value = "";
+                  const ruim = f ? validarArquivo(f) : null;
+                  setErro(ruim);
+                  setArquivoConclusao(ruim ? null : f);
+                }}
+              />
+            </label>
+          </div>
+          {avisoErro}
+        </div>
+      </ModalBase>
     );
   }
 
@@ -315,15 +443,17 @@ export function TarefaDetalheModal({
           <dd>{t.responsavel_user_id ? nome(t.responsavel_user_id) : "Ninguém assumiu ainda"}</dd>
           <dt style={{ color: "var(--muted)" }}>Pedida por</dt>
           <dd>{nome(t.criado_por_user_id)}</dd>
-          {t.data_limite ? (
+          {t.data_limite || alterar ? (
             <>
               <dt style={{ color: "var(--muted)" }}>Prazo</dt>
               <dd className={prazoVencido(t) ? "font-semibold text-red-600 dark:text-red-400" : undefined}>
-                {dataBR(t.data_limite)}
+                {t.data_limite ? dataBR(t.data_limite) : "Sem prazo"}
                 {prazoVencido(t) ? " (vencido)" : ""}
               </dd>
             </>
           ) : null}
+          <dt style={{ color: "var(--muted)" }}>Prioridade</dt>
+          <dd>{PRIORIDADE_ROTULO[t.prioridade]}</dd>
           {t.id_int ? (
             <>
               <dt style={{ color: "var(--muted)" }}>Pedido</dt>
@@ -346,12 +476,80 @@ export function TarefaDetalheModal({
           ) : null}
         </dl>
 
+        {alterar && !confirmarCancelar ? (
+          alterando ? (
+            <form
+              aria-label="Alterar prazo ou prioridade"
+              className="space-y-3 rounded-xl border p-3"
+              style={{ borderColor: "var(--border)" }}
+              onSubmit={(e) => {
+                e.preventDefault();
+                void salvarAlteracao();
+              }}
+            >
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <label htmlFor="tarefa-novo-prazo" className={rotuloClasse}>
+                    Prazo (vazio = sem prazo)
+                  </label>
+                  <input
+                    id="tarefa-novo-prazo"
+                    type="date"
+                    value={novoPrazo}
+                    onChange={(e) => setNovoPrazo(e.target.value)}
+                    className={campoClasse}
+                    style={campoEstilo}
+                  />
+                </div>
+                <div>
+                  <label htmlFor="tarefa-nova-prioridade" className={rotuloClasse}>
+                    Prioridade
+                  </label>
+                  <select
+                    id="tarefa-nova-prioridade"
+                    value={novaPrioridade}
+                    onChange={(e) => setNovaPrioridade(e.target.value as TarefaPrioridade)}
+                    className={campoClasse}
+                    style={campoEstilo}
+                  >
+                    {PRIORIDADES.map((p) => (
+                      <option key={p} value={p}>
+                        {PRIORIDADE_ROTULO[p]}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <p className="text-xs" style={{ color: "var(--muted)" }}>
+                A mudança entra no histórico e os outros participantes são avisados.
+              </p>
+              <div className="flex justify-end gap-2">
+                <button type="button" className={botaoSecundario} style={{ borderColor: "var(--border)" }} onClick={() => setAlterando(false)} disabled={ocupadoBool}>
+                  Não alterar
+                </button>
+                <button
+                  type="submit"
+                  disabled={ocupadoBool}
+                  className="rounded-xl px-4 py-2 text-sm font-bold shadow-sm disabled:opacity-50"
+                  style={{ background: "var(--primary)", color: "var(--primary-foreground)" }}
+                >
+                  {ocupado === "Salvando…" ? ocupado : "Salvar alteração"}
+                </button>
+              </div>
+            </form>
+          ) : (
+            <button type="button" onClick={abrirAlteracao} className="text-xs font-semibold underline" style={{ color: "var(--primary)" }}>
+              Alterar prazo ou prioridade
+            </button>
+          )
+        ) : null}
+
         <div>
           <div className="mb-1.5 flex items-center justify-between">
             <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--muted)" }}>
               Anexos
             </p>
-            {ativa && !concluindo ? (
+            {ativa ? (
               <label className="inline-flex cursor-pointer items-center gap-1 text-xs font-semibold" style={{ color: "var(--primary)" }}>
                 <Paperclip className="h-3.5 w-3.5" />
                 Adicionar anexo
@@ -388,7 +586,7 @@ export function TarefaDetalheModal({
           <ul className="space-y-2" aria-label="Histórico e conversa">
             {historico.map((item) =>
               item.tipo === "evento" ? (
-                <li key={`e-${item.texto}`} className="flex justify-between gap-3 text-xs" style={{ color: "var(--muted)" }}>
+                <li key={`e-${item.chave}`} className="flex justify-between gap-3 text-xs" style={{ color: "var(--muted)" }}>
                   <span>{item.texto}</span>
                   <span>{dataHoraBR(item.quando)}</span>
                 </li>
@@ -424,49 +622,7 @@ export function TarefaDetalheModal({
           ) : null}
         </div>
 
-        {concluindo ? (
-          <div className="space-y-3">
-            <div>
-              <label htmlFor="tarefa-observacao" className={rotuloClasse}>
-                Observação (opcional)
-              </label>
-              <textarea
-                id="tarefa-observacao"
-                autoFocus
-                rows={2}
-                value={observacao}
-                maxLength={OBSERVACAO_MAX}
-                onChange={(e) => setObservacao(e.target.value)}
-                placeholder="Ex.: OC recebida e anexada"
-                className={campoClasse}
-                style={campoEstilo}
-              />
-            </div>
-            <div>
-              <span className={rotuloClasse}>Anexo da conclusão (opcional)</span>
-              <label
-                className="inline-flex cursor-pointer items-center gap-2 rounded-xl border px-3 py-2 text-sm font-semibold"
-                style={{ borderColor: "var(--border)", color: "var(--primary)" }}
-              >
-                <Paperclip className="h-4 w-4" />
-                {arquivoConclusao ? arquivoConclusao.name : "Escolher arquivo"}
-                <input
-                  id="tarefa-anexo-conclusao"
-                  type="file"
-                  accept={ANEXO_ACCEPT}
-                  className="sr-only"
-                  onChange={(e) => {
-                    const f = e.target.files?.[0] ?? null;
-                    e.target.value = "";
-                    const ruim = f ? validarArquivo(f) : null;
-                    setErro(ruim);
-                    setArquivoConclusao(ruim ? null : f);
-                  }}
-                />
-              </label>
-            </div>
-          </div>
-        ) : ativa && !confirmarCancelar ? (
+        {ativa && !confirmarCancelar ? (
           <form
             aria-label="Escrever na conversa"
             className="rounded-xl border p-3"
@@ -525,11 +681,7 @@ export function TarefaDetalheModal({
           </p>
         ) : null}
 
-        {erro ? (
-          <p role="alert" className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-300">
-            {erro}
-          </p>
-        ) : null}
+        {avisoErro}
       </div>
     </ModalBase>
   );

@@ -248,6 +248,14 @@ export function mudarSituacaoTarefa(id: number, acao: TarefaAcao, observacao?: s
   return postar(`/api/tarefas/${id}/situacao`, { acao, observacao });
 }
 
+/**
+ * Muda o prazo e/ou a prioridade. So o campo presente e alterado;
+ * `data_limite: null` tira o prazo. Quem pode e decidido pela trigger de guarda.
+ */
+export function alterarPrazoPrioridade(id: number, mudanca: { data_limite?: string | null; prioridade?: TarefaPrioridade }) {
+  return postar(`/api/tarefas/${id}/prazo-prioridade`, mudanca);
+}
+
 /** Escreve na conversa da tarefa, sem mudar a situacao. Devolve o id da mensagem. */
 export function enviarMensagem(tarefaId: number, mensagem: string) {
   return postar(`/api/tarefas/${tarefaId}/mensagens`, { mensagem });

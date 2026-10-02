@@ -42,7 +42,8 @@ const ROTULO_NOVIDADE: Record<NovidadeTipo, string> = {
   MENSAGEM: "Nova mensagem",
   ASSUMIDA: "Assumida",
   CONCLUIDA: "Concluída agora",
-  CANCELADA: "Cancelada agora"
+  CANCELADA: "Cancelada agora",
+  ALTERADA: "Prazo ou prioridade"
 };
 
 /** Selo piscando na linha enquanto houver novidade que eu ainda nao abri. */

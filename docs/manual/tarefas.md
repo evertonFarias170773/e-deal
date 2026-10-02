@@ -43,7 +43,7 @@ Nomes exatamente como aparecem na tela.
 | **Pedido N** | Linha da tarefa, à direita, quando há pedido ligado | Abre a proposta daquele pedido. |
 | **Cliente N** | Linha da tarefa, à direita, quando há cliente ligado | Abre o cadastro daquele cliente. |
 | **Assumir** | Linha da tarefa Aberta, para quem a recebeu ou para administrador | Passa a tarefa para **Em andamento** com você como responsável. Durante a gravação mostra "Assumindo…". |
-| **Concluir** | Linha da tarefa Em andamento, para o responsável ou para administrador | Abre a tarefa já na etapa de conclusão. |
+| **Concluir** | Linha da tarefa Em andamento, para o responsável ou para administrador | Abre direto a janela **Concluir tarefa**. |
 
 ### Janela Nova tarefa / Nova melhoria
 
@@ -71,6 +71,9 @@ Nomes exatamente como aparecem na tela.
 |---|---|---|
 | Número do pedido (link) | Linha **Pedido** | Abre a proposta. |
 | Código do cliente (link) | Linha **Cliente** | Abre o cadastro do cliente. |
+| **Alterar prazo ou prioridade** | Abaixo das linhas de dados, com a tarefa em aberto, para quem criou, quem recebeu e o responsável | Abre o quadro com os campos **Prazo (vazio = sem prazo)** e **Prioridade**. |
+| **Salvar alteração** | No quadro de alteração, à direita | Grava o novo prazo e a nova prioridade. |
+| **Não alterar** | No quadro de alteração | Fecha o quadro sem mudar nada. |
 | **Adicionar anexo** | Bloco **Anexos**, à direita, com a tarefa em aberto | Sobe um arquivo para a tarefa. |
 | **Baixar** | Ao lado de cada anexo, inclusive os de mensagens | Baixa o arquivo. |
 | **Responder sem mudar a situação** | Campo de mensagem, abaixo de **Histórico e conversa** | Onde se escreve a mensagem da conversa. |
@@ -79,11 +82,12 @@ Nomes exatamente como aparecem na tela.
 | **Cancelar tarefa** | Rodapé, em vermelho, para quem criou ou para administrador | Abre a confirmação do cancelamento. |
 | **Sim, cancelar a tarefa** | Rodapé, na confirmação | Cancela a tarefa. |
 | **Assumir** | Rodapé, com a tarefa Aberta | Passa a tarefa para **Em andamento** com você como responsável. |
-| **Concluir** | Rodapé, com a tarefa Em andamento | Abre os campos da conclusão. |
-| **Observação (opcional)** | Etapa de conclusão | Texto que fica registrado como "Observação da conclusão". |
-| **Escolher arquivo** | Etapa de conclusão, campo **Anexo da conclusão (opcional)** | Escolhe um arquivo para subir ao concluir. |
-| **Confirmar conclusão** | Rodapé, na etapa de conclusão | Conclui a tarefa. |
-| **Voltar** | Rodapé, na etapa de conclusão e na confirmação do cancelamento | Volta ao detalhe sem mudar nada. |
+| **Concluir** | Rodapé, à direita, com a tarefa Em andamento | Abre a janela **Concluir tarefa**, com a pergunta "Concluir esta tarefa?". Ainda não conclui. |
+| **Observação (opcional)** | Janela **Concluir tarefa** | Texto que fica registrado como "Observação da conclusão". |
+| **Escolher arquivo** | Janela **Concluir tarefa**, campo **Anexo da conclusão (opcional)** | Escolhe um arquivo para subir ao concluir. |
+| **Confirmar conclusão** | Rodapé da janela **Concluir tarefa**, à direita | Conclui a tarefa. |
+| **Voltar** | Rodapé da janela **Concluir tarefa**, à esquerda, e na confirmação do cancelamento | Volta sem mudar nada. |
+| **Fechar** | Rodapé, à esquerda | Fecha a janela, sem mudar a tarefa. |
 | Ícone X (texto: "Fechar") | Canto superior direito da janela | Fecha a janela. |
 
 ### Em outras telas
@@ -144,10 +148,20 @@ Em tarefa enviada para várias pessoas ou para todos, quem assume primeiro fica 
 ### Concluir uma tarefa
 
 1. Com a tarefa **Em andamento**, clique em **Concluir** na linha ou dentro da tarefa.
-2. Se quiser, escreva uma **Observação (opcional)** e escolha um **Anexo da conclusão (opcional)**.
-3. Clique em **Confirmar conclusão**. Para desistir, clique em **Voltar**.
+2. Abre a janela **Concluir tarefa**, com o aviso: "Concluir esta tarefa? Quem pediu será avisado e a tarefa sai da lista em aberto."
+3. Se quiser, escreva uma **Observação (opcional)** e escolha um **Anexo da conclusão (opcional)**.
+4. Clique em **Confirmar conclusão**. Para desistir, clique em **Voltar**: nada é gravado.
 
 A tarefa vai para **Encerradas** com a situação **Concluída**, mostrando quem concluiu, a data e a observação.
+
+### Alterar o prazo ou a prioridade
+
+1. Abra a tarefa, que precisa estar **Aberta** ou **Em andamento**.
+2. Clique em **Alterar prazo ou prioridade**, abaixo das linhas de dados.
+3. Mude o **Prazo** (deixe o campo vazio para tirar o prazo) e, se quiser, a **Prioridade**.
+4. Clique em **Salvar alteração**. Para desistir, clique em **Não alterar**.
+
+A mudança aparece em **Histórico e conversa**, com quem mudou e quando (por exemplo, "Prazo alterado de 02/10 para 05/10 por Ana"). Os outros participantes veem o selo **Prazo ou prioridade** piscando, até abrirem a tarefa.
 
 ### Conversar dentro da tarefa
 
@@ -178,10 +192,10 @@ A tarefa vai para **Encerradas** com a situação **Cancelada**.
 
 1. Observe o item **Tarefas** no menu e o ícone de lista na barra do topo. O número é a quantidade das suas tarefas em aberto: as que você assumiu e as que recebeu e ainda estão sem responsável.
 2. Quando o número ou o ícone piscam, há novidade em alguma tarefa que você ainda não abriu.
-3. Na lista, a tarefa com novidade mostra um selo piscando: **Nova**, **Nova mensagem**, **Assumida**, **Concluída agora** ou **Cancelada agora**.
+3. Na lista, a tarefa com novidade mostra um selo piscando: **Nova**, **Nova mensagem**, **Assumida**, **Prazo ou prioridade**, **Concluída agora** ou **Cancelada agora**.
 4. Abra a tarefa. Abrir já conta como visto: o selo some e o sinal para de piscar.
 
-Com o sistema aberto, você também recebe um aviso na tela quando chega novidade: "Nova tarefa para você", "Nova tarefa para todos", "Nova mensagem na tarefa", "Tarefa assumida", "Tarefa concluída" ou "Tarefa cancelada". Clicar no aviso abre a tela Tarefas.
+Com o sistema aberto, você também recebe um aviso na tela quando chega novidade: "Nova tarefa para você", "Nova tarefa para todos", "Nova mensagem na tarefa", "Tarefa assumida", "Prazo ou prioridade alterados", "Tarefa concluída" ou "Tarefa cancelada". Clicar no aviso abre a tela Tarefas.
 
 ### Registrar uma melhoria (administradores)
 
@@ -202,7 +216,10 @@ Essa tela guarda as pendências de proposta do modelo anterior. Não dá mais pa
 
 ## Regras e bloqueios
 
-- Não dá para alterar uma tarefa depois de criada. Título, detalhes, prioridade, para quem, pedido, cliente e prazo ficam como foram salvos; só a situação muda. Se algo ficou errado, cancele e crie outra.
+- Depois de criada, a tarefa só muda na situação, no prazo e na prioridade. Título, detalhes, para quem, pedido e cliente ficam como foram salvos. Se algum deles ficou errado, cancele e crie outra.
+- Prazo e prioridade só mudam com a tarefa **Aberta** ou **Em andamento**, e só por quem criou, por quem recebeu e pelo responsável. Administrador que não participa da tarefa não altera.
+- Toda mudança de prazo ou de prioridade fica no histórico, com quem mudou e quando. Não dá para apagar essa linha.
+- **Concluir** sempre pede confirmação. Enquanto você não clicar em **Confirmar conclusão**, nada é gravado.
 - Não dá para apagar uma tarefa. Ela só pode ser concluída ou cancelada, e o histórico fica guardado.
 - Não dá para reabrir uma tarefa encerrada, nem devolver para **Aberta** uma tarefa já assumida.
 - Não dá para trocar o responsável. Quem assumiu fica com a tarefa até concluir; um administrador pode concluir no lugar dele.
@@ -214,12 +231,15 @@ Essa tela guarda as pendências de proposta do modelo anterior. Não dá mais pa
 - Anexo aceita somente PDF ou imagem (PNG, JPG, WEBP, GIF), com até 10 MB por arquivo.
 - O prazo é só uma data de referência. Quando passa e a tarefa ainda está em aberto, a data fica em vermelho com "(vencido)"; nada é bloqueado nem encerrado por causa disso.
 - O pedido e o cliente informados precisam existir. Se não existirem, a tarefa não é criada.
-- Quem recebe o sinal de novidade: quem recebeu a tarefa e ainda não abriu; e, a cada mensagem ou mudança de situação feita por outra pessoa, quem criou, o responsável, as pessoas escolhidas em **Para quem** e quem já escreveu na conversa. Em tarefa para **Todos da equipe**, as mensagens e mudanças avisam só quem criou, o responsável e quem já escreveu, para não piscar para a equipe inteira a cada mensagem. Você nunca é avisado da sua própria ação.
+- Quem recebe o sinal de novidade: quem recebeu a tarefa e ainda não abriu; e, a cada mensagem, mudança de situação ou mudança de prazo ou prioridade feita por outra pessoa, quem criou, o responsável, as pessoas escolhidas em **Para quem** e quem já escreveu na conversa. Em tarefa para **Todos da equipe**, as mensagens e mudanças avisam só quem criou, o responsável e quem já escreveu, para não piscar para a equipe inteira a cada mensagem. Você nunca é avisado da sua própria ação.
 - Quando um pagamento combinado falha depois de o crédito já ter sido usado, o sistema cria sozinho uma tarefa de prioridade **Alta**, ligada ao pedido, com o título "Erro no pagamento combinado" (ou "Erro ao gerar ... do pagamento combinado"). Ela vai para os administradores do setor Financeiro; se não houver nenhum, vai para todos os administradores. Quem aparece como autor é o operador que disparou o pagamento.
 - A lista mostra até 300 tarefas por visão.
 - O sino da barra do topo é das menções no chat das propostas. Ele não mostra tarefas.
 
 ## O que não confundir
+
+- **Fechar** e **Cancelar tarefa**: **Fechar** só fecha a janela e a tarefa continua como estava; **Cancelar tarefa** encerra a tarefa.
+- **Concluir** e **Confirmar conclusão**: o primeiro abre a janela de confirmação; só o segundo conclui.
 
 - **Tarefas** e **Central de Pendências (antiga)**: Tarefas é a central em uso, no menu; a Central de Pendências é a tela anterior, fora do menu, só para consulta, e o que está em uma não aparece na outra.
 - **Tarefa** e **Melhoria**: a tarefa é um pedido a colegas, com **Para quem**; a melhoria é um pedido de ajuste do sistema ao DEV, sem destinatário, vista só por administradores.
@@ -253,6 +273,9 @@ Essa tela guarda as pendências de proposta do modelo anterior. Não dá mais pa
 | "Só quem recebeu a tarefa ou um administrador pode assumi-la." | Você vê a tarefa (por exemplo, porque a criou), mas não está entre as pessoas que a receberam | Peça a quem recebeu ou a um administrador |
 | "Só quem assumiu a tarefa ou um administrador pode concluí-la." | A tarefa está com outro responsável | Fale com o responsável pela conversa, ou peça a um administrador |
 | "Só quem criou a tarefa ou um administrador pode cancelá-la." | Você não criou a tarefa | Peça a quem criou ou a um administrador |
+| "Só quem criou a tarefa, quem a recebeu ou o responsável pode mudar o prazo e a prioridade." | Você vê a tarefa como administrador, mas não participa dela | Peça a quem criou, a quem recebeu ou ao responsável |
+| Não vejo **Alterar prazo ou prioridade** | A tarefa já foi encerrada, ou você não criou, não recebeu nem é o responsável | Peça a mudança pela conversa a quem participa |
+| "Prazo inválido." | A data informada não existe | Escolha a data pelo calendário do campo |
 | "Esta tarefa já foi encerrada." | A tarefa foi concluída ou cancelada por outra pessoa enquanto você estava com ela aberta | Feche a janela; a tarefa agora está em **Encerradas** |
 | "Tarefa encerrada: a conversa ficou só para leitura." | A tarefa já foi concluída ou cancelada | Se o assunto continua, crie uma nova tarefa |
 | "Tarefa não encontrada ou sem acesso." | A tarefa não existe ou você não está entre as pessoas que podem vê-la | Confira com quem criou a tarefa |
