@@ -92,6 +92,7 @@ import {
   nomeTransportadoraCadastro,
   valorFreteEfetivo
 } from "@/features/orcamentos/lib/modalidade-frete";
+import { contarModelosCopiados, copiaLevouCabecalho, montarAvisoDaCopia } from "@/features/orcamentos/lib/aviso-copia";
 import { barreirasDaTrocaDeFrete } from "@/features/expedicao/services/corrigir-frete-simulacao";
 import { verificarPermissaoServerSide } from "@/lib/auth/verificar-permissao";
 import {
@@ -503,6 +504,37 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
   const formRef = useRef(form);
   formRef.current = form;
 
+  /**
+   * Modelos que vieram do "Duplicar proposta" — os que carregam a marca
+   * "Cópia do pedido #X" na observação de arte. Fica FORA do `form` de
+   * propósito: é só leitura para o aviso da cópia, e dentro do `form` entraria
+   * no retrato do guard de alterações.
+   */
+  const [modelosCopiados, setModelosCopiados] = useState(0);
+
+  /** "Entendi" no aviso da cópia: a dispensa fica guardada neste navegador. */
+  const chaveAvisoDaCopia = proposta?.id_int ? `vibe:aviso-copia:${proposta.id_int}` : null;
+  // Lido uma vez, na montagem: este formulário só monta no navegador, depois
+  // de a proposta carregar (`OrcamentoFormLoader`), e não troca de proposta.
+  const [avisoDaCopiaDispensado, setAvisoDaCopiaDispensado] = useState(() => {
+    if (!chaveAvisoDaCopia || typeof window === "undefined") return false;
+    try {
+      return window.localStorage.getItem(chaveAvisoDaCopia) === "1";
+    } catch {
+      // Aba anônima ou storage bloqueado: o aviso só não é lembrado.
+      return false;
+    }
+  });
+  function dispensarAvisoDaCopia() {
+    setAvisoDaCopiaDispensado(true);
+    if (!chaveAvisoDaCopia) return;
+    try {
+      window.localStorage.setItem(chaveAvisoDaCopia, "1");
+    } catch {
+      // Sem storage o aviso volta na próxima abertura, e só.
+    }
+  }
+
   const loadModelos = useCallback(async () => {
     if (proposta?.id_int && form.id_int !== "NOVO") {
       const client = getSupabaseClient();
@@ -541,6 +573,9 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
             C_INI: m.C_INI !== null && m.C_INI !== undefined ? Number(m.C_INI) : null,
           }));
           setForm((prev) => ({ ...prev, pedidosModelos: modelos }));
+          setModelosCopiados(
+            contarModelosCopiados(data.map((m: { observacao_arte?: string | null }) => m.observacao_arte))
+          );
         }
       } finally {
         inicializacoesPendentes.current -= 1;
@@ -5075,6 +5110,24 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
   );
   const cobrancasVinculadas = proposta?.id_int ? getCobrancasByProposta(proposta.id_int) : [];
   const hasActiveCobranca = cobrancasVinculadas.some(c => c.status !== "CANCELADO");
+
+  /**
+   * O aviso da cópia aparece enquanto ela é orçamento sem cobrança. Depois
+   * disso o que veio da original já foi conferido — ou já virou pedido.
+   */
+  const avisoDaCopia =
+    proposta?.copia &&
+    !avisoDaCopiaDispensado &&
+    !hasActiveCobranca &&
+    estaNaFaseDeOrcamento(form.status) &&
+    copiaLevouCabecalho(proposta.data)
+      ? montarAvisoDaCopia({
+          idIntOrigem: proposta.copia.idIntOrigem,
+          modalidade: form.modalidadeFrete ?? null,
+          avulsa: form.isAvulso === true,
+          modelosCopiados
+        })
+      : null;
   // Sinal oficial de "proposta paga" (mesmo critério usado em editar-paga no servidor):
   // cobrança cancelada/pendente não conta — só valor efetivamente pago/confirmado.
   const valorPagoConfirmadoAtual = calcularValorPagoConfirmado(cobrancasVinculadas);
@@ -5382,6 +5435,34 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
               </>
             )}
           </div>
+        </div>
+      )}
+
+      {/* Aviso da cópia ("Duplicar proposta"): o que veio da original e o que
+          precisa ser conferido. Só enquanto a cópia é orçamento sem cobrança, e
+          só para cópia feita depois que a função passou a levar o cabeçalho —
+          ver lib/aviso-copia.ts. "Entendi" guarda a dispensa neste navegador. */}
+      {avisoDaCopia && (
+        <div
+          id="aviso-da-copia"
+          className="rounded-3xl border border-sky-200 bg-sky-50 p-4 shadow-sm flex items-start gap-3 dark:border-sky-300/40 dark:bg-sky-950/20"
+        >
+          <Copy className="h-5 w-5 shrink-0 mt-0.5 text-sky-600 dark:text-sky-400" />
+          <div className="flex-1">
+            <p className="text-sm font-bold text-sky-900 dark:text-sky-200">{avisoDaCopia.titulo}</p>
+            <ul className="mt-1 list-disc space-y-1 pl-5 text-sm text-sky-800 dark:text-sky-200/80">
+              {avisoDaCopia.linhas.map((linha) => (
+                <li key={linha}>{linha}</li>
+              ))}
+            </ul>
+          </div>
+          <button
+            type="button"
+            onClick={dispensarAvisoDaCopia}
+            className="shrink-0 rounded-xl border border-sky-300 bg-white px-3 py-1.5 text-xs font-semibold text-sky-800 transition hover:bg-sky-100 dark:border-sky-700 dark:bg-slate-900 dark:text-sky-200"
+          >
+            Entendi
+          </button>
         </div>
       )}
 

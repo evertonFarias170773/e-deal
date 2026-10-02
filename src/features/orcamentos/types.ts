@@ -230,6 +230,12 @@ export type Proposta = {
   idIntPedidoPrincipal: number | null;
   /** Complementos NAO cancelados desta proposta, quando ela e o principal. */
   complementos: Array<{ idInt: number; statusInterno: string }>;
+  /**
+   * `propostas.is_copia` + `id_int_origem_copia`: esta proposta nasceu do
+   * "Duplicar proposta". `idIntOrigem` e nulo quando a original foi apagada.
+   * So alimenta o aviso da tela (lib/aviso-copia.ts); nenhuma regra le isto.
+   */
+  copia?: { idIntOrigem: number | null } | null;
 };
 
 export type PropostaFormState = {

@@ -18,6 +18,7 @@ No alto da tela o título aparece como "Orcamentos", com a etiqueta "Pedidos". �
 - Quem tem o perfil configurado para ver apenas as próprias propostas (por exemplo, o perfil Atendente) só enxerga os pedidos em que aparece como atendente. Quem vê todas as propostas (Gerente comercial, Super Administrador e perfis sem restrição de escopo) enxerga a lista inteira.
 - **Cancelar proposta**: só o Super Administrador e quem tem a permissão "Cancelar Propostas" (o perfil Gerente comercial já vem com ela).
 - **Criar pedido complementar**: só quem tem a permissão "Criar Pedido Complementar".
+- **Duplicar proposta**: só o vendedor da proposta, o administrador ou quem vê todas as propostas. Para os demais a cópia é recusada com o aviso "Você só pode duplicar proposta em que é o vendedor".
 - **Retirar da Produção**: só administrador, Super Administrador ou quem tem a permissão "Liberar para Produção".
 - **Encerrar teste** e **Reabrir (desfazer encerramento de teste)**: só o Super Administrador.
 - **Voltar para a Fila de Faturamento (desfazer nota no sistema antigo)**: só administrador, Super Administrador ou quem tem a permissão "Liberar para Nota Fiscal".
@@ -53,7 +54,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Ver proposta** | Menu da linha | Abre a proposta para leitura. |
 | **Ver chat interno** (ou **Ver chat interno (N não lidas)**) | Menu da linha | Abre o chat interno do pedido. |
 | **Editar proposta** | Menu da linha | Abre a proposta em edição. |
-| **Duplicar proposta** | Menu da linha | Cria uma cópia da proposta e abre a cópia em edição. |
+| **Duplicar proposta** | Menu da linha | Cria uma cópia da proposta, com os dados da original, e abre a cópia em edição. |
 | **Criar pedido complementar** | Menu da linha e botão da janela de confirmação | Cria um pedido novo do mesmo evento, vinculado a este. |
 | **Copiar proposta informal** | Menu da linha | Copia o resumo do pedido para colar no WhatsApp. |
 | **Link pgto. externo** | Menu da linha | Copia o link de pagamento da área do cliente. |
@@ -155,7 +156,7 @@ As datas pequenas aparecem como dia/mês e hora, no horário de Brasília.
 1. **Ver proposta**: abre a proposta só para leitura.
 2. **Ver chat interno**: abre o chat do pedido. Mostra quantas mensagens não lidas há.
 3. **Editar proposta**: abre a proposta em edição.
-4. **Duplicar proposta**: pede confirmação, cria uma cópia e abre a cópia em edição.
+4. **Duplicar proposta**: pede confirmação, cria uma cópia e abre a cópia em edição. A cópia traz da original os produtos, o faturado, o endereço, o contato, as observações e a modalidade de frete; a cotação, a cobrança e os modelos não vêm. O passo a passo está na página da Proposta.
 5. **Criar pedido complementar**: abre a confirmação para criar um pedido novo do mesmo evento. Aparece só em proposta que não é avulsa, não é ela mesma um complemento e está entre LIBERADO e EXPEDICAO.
 6. **Copiar proposta informal**: copia o resumo do pedido, pronto para colar no WhatsApp.
 7. **Link pgto. externo**: copia o link da área do cliente para pagamento.
@@ -249,6 +250,8 @@ As datas pequenas aparecem como dia/mês e hora, no horário de Brasília.
 | "Erro de Validação: Pendências de arte. Todas as artes devem estar com status APROVADO." | Liberação para a produção com arte ainda não aprovada. | Conclua a aprovação da arte e libere de novo. |
 | "Erro de Validação: A quantidade vendida não bate com a soma dos lotes. Acerte os lotes antes de liberar para produção:" seguido dos produtos | A quantidade vendida de algum produto não bate com a soma dos lotes. | Acerte os lotes na aba Pedido da proposta e libere de novo. |
 | "Erro de Validação: Status precisa ser REVISAO ATENDENTE." | O status do pedido mudou depois que a lista foi carregada. | Atualize a tela e confira o status do pedido. |
+| "Você só pode duplicar proposta em que é o vendedor. Peça a um administrador ou a quem tem visão geral das propostas." | Tentativa de duplicar proposta de outro vendedor com perfil que vê só as próprias. | Peça a cópia ao vendedor da proposta, a um administrador ou a quem vê todas as propostas. |
+| "Não é permitido duplicar uma proposta que já é cópia." | A proposta nasceu de um **Duplicar proposta**. | Duplique a proposta original. |
 | "Motivo obrigatório" | Tentativa de cancelar a proposta sem motivo. | Preencha o **Motivo do Cancelamento**. |
 | "Esta proposta tem pedido complementar aberto" | A proposta tem um complemento que ainda não foi cancelado. | Cancele ou desvincule o complemento antes de cancelar a proposta. |
 | "Não foi possível cancelar a proposta" | Há cobrança paga ou título liquidado, ou falta permissão. O motivo vem na mensagem. | Resolva o que a mensagem aponta, ou procure quem tem permissão para cancelar. |

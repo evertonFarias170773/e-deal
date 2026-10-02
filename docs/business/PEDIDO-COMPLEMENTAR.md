@@ -197,9 +197,11 @@ Na criação, uma mensagem de sistema em cada pedido:
 - É **1 → N no modelo**, mas a regra atual permite **um aberto por vez**
   (decisão 6).
 - **Não se confunde com a cópia de proposta.** "Duplicar proposta"
-  (`copiar_proposta_v2`) grava `is_copia` e `id_int_origem_copia` e faz o
-  contrário do complemento: zera endereço, contato e pagador, e copia itens e
-  valores.
+  (`copiar_proposta_v2`) grava `is_copia` e `id_int_origem_copia` e cria uma
+  proposta independente: copia itens, valores e, desde 02/10/2026, também
+  endereço, contato, pagador e a declaração de frete da original — mas sem
+  vínculo nenhum com ela e com frete a cotar. O complemento nasce sem itens,
+  herda esses campos travados e sai junto com o principal.
 
 O ledger é **append-only**. Cada aplicação de frete gera uma linha com chave de
 idempotência; recotar gera linha nova. A linha **vigente** é a mais recente

@@ -2261,6 +2261,15 @@ export async function getPropostaDetailById(idInt: number, overrideClient?: Supa
       dbValorTotal: proposalRow.valor_total != null ? Number(proposalRow.valor_total) : null,
       idIntPedidoPrincipal,
       complementos,
+      copia:
+        proposalRow.is_copia === true
+          ? {
+              idIntOrigem:
+                proposalRow.id_int_origem_copia != null && Number(proposalRow.id_int_origem_copia) > 0
+                  ? Number(proposalRow.id_int_origem_copia)
+                  : null
+            }
+          : null,
     };
 
     return proposta;

@@ -19,6 +19,7 @@ Esta página explica o que vale para a tela inteira: cabeçalho, abas, como salv
 - Alterar proposta que já tem cobrança ou pagamento: só quem tem a permissão **Editar Proposta Paga**. Quem tem a permissão **Editar Proposta com Faturado a Vencer** altera apenas a proposta cuja cobrança é faturada e ainda não foi recebida.
 - Na diferença financeira de uma proposta paga, as opções de devolver, bonificar e registrar débito futuro aparecem só para quem tem a permissão de cada uma.
 - **Cancelar proposta**: só quem tem a permissão de cancelar propostas.
+- **Duplicar proposta**: só o vendedor da proposta, o administrador ou quem vê todas as propostas. Para os demais a cópia é recusada com o aviso "Você só pode duplicar proposta em que é o vendedor".
 - **Criar pedido complementar**: perfis Administrador e Vendedor.
 - **Retirar da Produção**: administrador ou perfil com a permissão de liberar para produção.
 
@@ -33,7 +34,8 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Ver proposta** | Menu **Acoes** | Abre o detalhe da proposta, só para leitura. |
 | **Ver chat interno** | Menu **Acoes** | Abre o chat interno do pedido na lateral. |
 | **Editar proposta** | Menu **Acoes** | Abre a edição da proposta (esta tela). |
-| **Duplicar proposta** | Menu **Acoes** | Cria uma cópia da proposta e abre a cópia em edição. |
+| **Duplicar proposta** | Menu **Acoes** | Cria uma cópia da proposta, com os dados da original, e abre a cópia em edição. |
+| **Entendi** | Aviso azul **Cópia da proposta #<número>** | Fecha o aviso da cópia neste navegador. |
 | **Copiar proposta informal** | Menu **Acoes** | Copia o texto informal da proposta para colar no WhatsApp. |
 | **Link pgto. externo** | Menu **Acoes** | Copia o link da área do cliente daquele pedido. |
 | **Gerar PDF da proposta** | Menu **Acoes** | Gera o PDF e abre em outra aba. |
@@ -234,12 +236,23 @@ O complemento herda do pedido original o cliente, o endereço, o contato, o paga
 2. O aviso **Link de pagamento externo copiado.** confirma que o link está na área de transferência.
 3. Cole o link na conversa com o cliente. Ele abre a área do cliente daquele pedido.
 
+### Duplicar a proposta
+
+1. No menu **Acoes**, clique em **Duplicar proposta** e confirme. A cópia abre em edição, com número novo e status NOVO.
+2. Leia o aviso azul **Cópia da proposta #<número>**, no topo. Ele diz o que veio da original e o que falta conferir.
+3. Confira o faturado, o endereço de entrega, o contato e as observações. Eles vêm da original.
+4. Na aba Fretes, a modalidade (CIF, FOB ou Retira) e a transportadora do FOB vêm da original. A cotação não vem: em CIF, escolha o frete de novo.
+5. Na aba Orçamento, os produtos, as quantidades, as variações e o desconto geral vêm da original, com os preços daquela venda. Produto cancelado na original não vem.
+6. Na aba Pedido, monte os modelos de novo: eles não são copiados.
+7. Clique em **Salvar alterações**. A cobrança da original não vem: gere a da cópia na aba Pagamentos.
+
+O aviso some quando você clica em **Entendi** ou quando a cópia ganha cobrança.
+
 ### Outras ações do menu
 
-1. **Duplicar proposta**: confirma e abre a cópia já em edição.
-2. **Copiar proposta informal**: copia o mesmo texto do bloco **9. Envio do orçamento**.
-3. **Gerar PDF da proposta**: abre o PDF em nova aba. Precisa de cliente cadastrado e de empresa válida.
-4. **Retirar da Produção**: tira o pedido da fila da produção, depois de confirmar.
+1. **Copiar proposta informal**: copia o mesmo texto do bloco **9. Envio do orçamento**.
+2. **Gerar PDF da proposta**: abre o PDF em nova aba. Precisa de cliente cadastrado e de empresa válida.
+3. **Retirar da Produção**: tira o pedido da fila da produção, depois de confirmar.
 
 ## Regras e bloqueios
 
@@ -256,6 +269,9 @@ O complemento herda do pedido original o cliente, o endereço, o contato, o paga
 - Não dá para cancelar o pedido original enquanto ele tiver pedido complementar aberto. Cancele ou desvincule o complemento antes.
 - O pedido complementar só é aceito quando o original está pago integralmente, não é avulso, não foi despachado, não é ele mesmo um complemento e não tem outro complemento aberto.
 - Sair da aba Pedido com modelo ainda não gravado na lista rápida descarta o que foi digitado. A tela pergunta antes.
+- Só duplica a proposta quem é o vendedor dela, o administrador ou quem vê todas as propostas.
+- Proposta que já é cópia não pode ser duplicada. Duplique a original.
+- A cópia não leva cobrança, status, cotação de frete, bônus de tabela especial, modelos, arte, chat, tarefas nem histórico. O bônus do cliente entra de novo no primeiro **Salvar alterações**.
 
 ## O que não confundir
 
@@ -264,7 +280,7 @@ O complemento herda do pedido original o cliente, o endereço, o contato, o paga
 - **Salvar alterações** x **Salvar item** x sair do campo: **Salvar alterações** (rodapé) salva tudo e recarrega a tela; **Salvar item** salva tudo e fecha o cartão do produto; sair do campo grava sozinho só Quantidade, Valor Unitário e Fixo, e só em proposta com número e sem cobrança.
 - **Cancelar** x **Cancelar proposta** x **Cancelar só a cobrança**: **Cancelar** (rodapé) apenas sai da edição; **Cancelar proposta** encerra o pedido e é irreversível; **Cancelar só a cobrança** mantém o pedido e reabre o saldo para uma cobrança nova.
 - **Ver proposta** x **Editar proposta**: a primeira abre o detalhe, só para leitura; a segunda abre esta tela.
-- **Duplicar proposta** x **Criar pedido complementar**: duplicar abre uma cópia da proposta para editar; o complementar nasce sem itens, vinculado ao pedido original, e sai junto com ele na Expedição.
+- **Duplicar proposta** x **Criar pedido complementar**: duplicar abre uma cópia independente, com os produtos e os dados da original e frete a cotar; o complementar nasce sem itens, vinculado ao pedido original, e sai junto com ele na Expedição.
 - **Link pgto. externo** x **Copiar proposta informal** x **Copiar resumo para WhatsApp**: o primeiro copia o link da área do cliente; os outros dois copiam o mesmo texto informal da proposta.
 - Status da proposta x status da arte: são dois selos no cabeçalho. O primeiro diz em que etapa o pedido está; o segundo, em que pé está a arte.
 - **NOVO / EM ARTE** x **NOVO_ARTE_APROVADA**: no primeiro a arte ainda está em andamento; no segundo todas as artes já foram aprovadas e só falta o pagamento. O mesmo vale para AGUARDANDO.
@@ -296,6 +312,8 @@ O complemento herda do pedido original o cliente, o endereço, o contato, o paga
 | "Você deve salvar as alterações antes de acessar a aba Pagamentos." | Há alteração por salvar. | Clique em **Salvar e continuar**. |
 | **Modelos incompletos** — "Antes de acessar Artes, complete os modelos do Pedido." | Falta dado em algum modelo. | Complete os campos listados na aba Pedido. |
 | **Sessão expirada** | O login venceu durante a edição. | Entre de novo e repita a operação. |
+| **Erro ao duplicar** — "Você só pode duplicar proposta em que é o vendedor. Peça a um administrador ou a quem tem visão geral das propostas." | A proposta é de outro vendedor e o seu perfil vê só as próprias. | Peça a cópia ao vendedor da proposta, a um administrador ou a quem vê todas as propostas. |
+| **Erro ao duplicar** — "Não é permitido duplicar uma proposta que já é cópia." | A proposta nasceu de um **Duplicar proposta**. | Abra a proposta original e duplique a partir dela. |
 | **Não foi possível gerar o link.** | O link de pagamento não foi criado. | Tente de novo. Se continuar, avise o administrador. |
 | **Geracao de PDF bloqueada** | A proposta é de cliente não cadastrado. | Vincule um cliente cadastrado antes de gerar o PDF. |
 | **A proposta não está paga integralmente** | Tentativa de criar complemento de pedido com saldo em aberto. | Conclua o pagamento do pedido original antes. |
@@ -329,6 +347,8 @@ O complemento herda do pedido original o cliente, o endereço, o contato, o paga
 - `src/features/orcamentos/services/orcamentos.service.ts`
 - `src/features/orcamentos/services/status-engine.service.ts`
 - `src/features/orcamentos/services/faturado-editavel.ts`
+- `src/features/orcamentos/lib/aviso-copia.ts`
+- `supabase/migrations/20261002_copiar_proposta_v2_fase1_cabecalho_frete.sql`
 - `src/features/orcamentos/components/DiferencaFinanceiraModal.tsx`
 - `src/features/orcamentos/components/LiberarFaturadoModal.tsx`
 - `src/features/orcamentos/components/CancelPropostaModal.tsx`

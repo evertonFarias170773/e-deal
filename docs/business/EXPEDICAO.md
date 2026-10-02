@@ -835,7 +835,7 @@ A mesma precedência vale para a transportadora. Quando a transportadora vem pr�
 
 1. **NF-e emite o código errado em FOB.** `nfe.service.ts` deriva a modalidade fiscal de `valorFrete > 0 ? 0 : 9`. Como FOB grava zero, a nota sai com **`9` (sem ocorrência de transporte)** quando o correto seria **`1` (por conta do destinatário)**. Nenhuma das 43 notas usa `1` hoje. O campo é editável na tela da NF-e, então há saída manual. Corrigir é decisão fiscal — fora desta tarefa.
 2. **O avaliador de cobrança mostra o motivo errado.** `frete-desatualizado.ts` devolve `FRETE_SEM_CUSTO` para qualquer `valor === 0`, sem olhar modalidade. O comportamento acerta por acaso (FOB não deve bloquear cobrança por peso divergente, porque o cliente não paga frete à empresa), mas o motivo exibido mente. Falta um `FRETE_FOB` próprio.
-3. **Duplicar proposta perde a modalidade em silêncio.** `copiar_proposta_v2` e `duplicar_proposta` copiam `frete_escolhido`, mas **não copiam as colunas novas**. Duplicar uma proposta FOB gera uma cópia sem modalidade e sem transportadora, sem aviso nenhum. Atualizar as duas funções ficou fora desta tarefa.
+3. ~~**Duplicar proposta perde a modalidade em silêncio.**~~ **Resolvida em 02/10/2026** para `copiar_proposta_v2`, a única que o app chama (`20261002_copiar_proposta_v2_fase1_cabecalho_frete.sql`): a cópia leva `modalidade_frete` e `id_transportadora_cliente`; `transporte_categoria` e `categoria_frete` vão só em FOB e RETIRA, onde saem da declaração — em CIF saem da cotação escolhida, que continua fora da cópia. `frete_escolhido` segue "À definir" e `valor_frete` zero. A função antiga `duplicar_proposta` não foi alterada e não tem chamador no app.
 
 ---
 
