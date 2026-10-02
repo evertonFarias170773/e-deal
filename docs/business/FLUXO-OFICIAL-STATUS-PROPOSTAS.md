@@ -167,6 +167,8 @@ Status desconhecido não deve ser convertido automaticamente para `NOVO`.
 
 A interface deve preservar o valor recebido e apresentar fallback controlado.
 
+O Maestro usa esta mesma lista (`src/features/maestro/core/agent/maestro-agent-status.ts`). O teste `scripts/testes/maestro-status.test.mts` lê o bloco acima e falha se as duas divergirem: status novo aqui precisa entrar lá no mesmo commit.
+
 ---
 
 # 4. Agrupamento Operacional

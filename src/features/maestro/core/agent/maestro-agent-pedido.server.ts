@@ -45,6 +45,7 @@ import {
   tituloCancelado,
   tituloPago,
 } from '../simple/maestro-regra-titulos';
+import { statusDoPedidoParaExibir } from './maestro-agent-status';
 
 export const SECOES_DO_PEDIDO = ['situacao', 'cobrancas', 'titulos', 'nota_fiscal', 'producao', 'expedicao', 'tarefas'] as const;
 export type SecaoDoPedido = (typeof SECOES_DO_PEDIDO)[number];
@@ -141,8 +142,14 @@ function erroDaSecao(mensagem: string): Linha {
 
 // ─── Partes ──────────────────────────────────────────────────────────────────
 
+/** O status como a tela mostra (com " / EM ARTE" quando a arte está em andamento). */
+function statusDoPedido(p: Linha) {
+  return statusDoPedidoParaExibir(txt(p.status_interno), p.em_arte === true);
+}
+
 function secaoSituacao(p: Linha): Linha {
   const faturado = num(p.id_faturado);
+  const exibicao = statusDoPedido(p);
   return {
     disponivel: true,
     fonte: 'Pedidos',
@@ -153,7 +160,12 @@ function secaoSituacao(p: Linha): Linha {
     vendedor: txt(p.vendedor),
     empresa: txt(p.empresa),
     criado_em: dataHoraBR(p.created_at),
-    status: txt(p.status_interno),
+    status: exibicao.status,
+    status_na_tela: exibicao.rotulo,
+    como_informar_o_status:
+      'Escreva o status EXATAMENTE como está em "status" (ou em "status_na_tela"). Não traduza, não resuma e não troque por outro nome: ' +
+      'cada nome é um status diferente do fluxo. Estar ou não na fila de produção é outro dado, que vem separado nesta consulta, e não muda o status: ' +
+      'diga "está na fila de produção" ou "ainda não está na fila de produção". Nunca escreva nome de campo da consulta na resposta.',
     na_fila_de_producao: p.is_prd_aprovado === true && p.is_reproved !== true,
     liberado_para_producao_em: dataHoraBR(p.liberado_producao_em),
     reprovado: p.is_reproved === true,
@@ -267,7 +279,7 @@ async function secaoCobrancas(supabase: SupabaseClient, numero: number, p: Linha
       confirmado_pelo_financeiro: confirmado,
       pago_aguardando_conferencia: pagoSemConferencia,
       falta_confirmar: faltaConfirmar,
-      status_do_pedido: txt(p.status_interno),
+      status_do_pedido: statusDoPedido(p).status,
       ...cobertura,
     },
     cobrancas: comSituacao.map(({ l, s }) => {
@@ -450,12 +462,14 @@ async function secaoProducao(supabase: SupabaseClient, numero: number, p: Linha)
     na_fila_de_producao: p.is_prd_aprovado === true && p.is_reproved !== true,
     liberado_para_producao_em: dataHoraBR(p.liberado_producao_em),
     etapa_atual: txt(p.etapa_operacional),
-    status_do_pedido: txt(p.status_pedido),
+    // propostas.status_pedido é o andamento da ordem de serviço ("NÃO INICIADO"),
+    // não o status do pedido — com o nome antigo o modelo o apresentava como tal.
+    andamento_da_ordem_de_servico: txt(p.status_pedido),
     prazo_operacional: dataBR(p.prazo_operacional),
     em_arte: p.em_arte === true,
     tem_ordem_de_servico: ordens.length > 0,
     ordens_de_servico: ordens.map(o => ({
-      status_do_pedido: txt(o.status_pedido),
+      andamento: txt(o.status_pedido),
       status_do_pagamento: txt(o.status_pagamento),
       status_da_arte: txt(o.status_arte),
       status_da_producao: txt(o.status_producao),
@@ -492,7 +506,7 @@ async function secaoExpedicao(supabase: SupabaseClient, numero: number, p: Linha
   return {
     disponivel: true,
     fonte: 'Expedição',
-    status_do_pedido: txt(p.status_interno),
+    status_do_pedido: statusDoPedido(p).status,
     frete_escolhido_na_proposta: txt(p.frete_escolhido),
     valor_do_frete_na_proposta: num(p.valor_frete),
     modalidade_do_frete_na_proposta: txt(p.modalidade_frete),

@@ -253,6 +253,50 @@ financeiro e que por isso o status continua AGUARDANDO.
 **Provas.** `scripts/testes/maestro-manual-e-pedido.test.mts` (seções 7 e 8,
 com o texto real da resposta errada).
 
+## 2.6 Status do pedido: copiado da consulta, nunca reescrito (02/10/2026)
+
+**Regra.** O Maestro informa o status do pedido exatamente como a consulta
+devolveu, ou pelo rótulo que as telas do Vibe mostram para aquele status.
+
+**A tabela** (`maestro-agent-status.ts`):
+
+- a lista é a de `docs/business/FLUXO-OFICIAL-STATUS-PROPOSTAS.md` §3 (21
+  status, com `NOVO_ARTE_APROVADA` e `AGUARDANDO_ARTE_APROVADA`), mais os
+  legados `APROVADO` e `RECEBIDO`, que existem no banco;
+- o rótulo é o de `humanizeStatus`, o formatador de todo `StatusBadge` — não
+  há segunda tabela de rótulos;
+- o sufixo ` / EM ARTE` vem de `composeStatusEmArte`, como nas telas.
+
+`scripts/testes/maestro-status.test.mts` lê o documento oficial e falha se a
+lista divergir; também trava a tabela de rótulos por extenso.
+
+**Onde entra.**
+
+- `consultar_pedido` devolve `status` (com o sufixo de arte), `status_na_tela`
+  e a instrução de copiar. `propostas.status_pedido` saiu do nome
+  `status_do_pedido` (virou `andamento_da_ordem_de_servico`): era apresentado
+  como se fosse o status do pedido.
+- O prompt recebe a lista oficial gerada da tabela.
+- **Trava do status** no loop: o status que a resposta DECLARA — depois de
+  "Status:"/"Situação:", de "status …" ou de "está …" — tem de ser um valor
+  que as consultas desta pergunta devolveram (ou o rótulo dele). Não bateu:
+  uma rodada de reescrita, sem nova consulta. Persistiu: com um pedido
+  consultado, o servidor troca o trecho pelo status certo; com vários, ou sem
+  pedido, acrescenta o aviso com o status de cada um.
+- Não dispara em palavra solta ("aguardando a conferência", "liberado para
+  produção"), em status de cobrança, boleto, nota ou setor, no próximo status
+  do fluxo ("passa para LIBERADO"), nem quando nenhuma consulta da pergunta
+  trouxe status (cotação, manual, conceito).
+- Auditoria: `correcoes_de_status` e `trava_do_status` (`status_trocado`,
+  `aviso_de_status`, `status_trocado_e_aviso`).
+
+**Divergência conhecida entre telas (não alterada).** A lista de Propostas
+passa o status por uma normalização própria antes do `StatusBadge`
+(`getStatusLabel` em `orcamentos/mappers.ts`): `APROVADO` aparece lá como
+"Liberado", e `AGUARDANDO / PENDENTE`, `EM IMPRESSAO / PENDENTE` e
+`EM ACABAMENTO / PENDENTE` como "Aguardando". O Maestro usa o formatador
+comum, que não faz essa troca.
+
 ---
 
 # 3. Regras de negócio aplicadas

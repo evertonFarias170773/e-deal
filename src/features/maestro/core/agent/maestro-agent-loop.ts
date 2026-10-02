@@ -55,6 +55,15 @@ import {
   respostaDePedidoSemConsulta,
 } from './maestro-agent-trava-pedido';
 import {
+  coletarStatusDaConsulta,
+  correcaoDeStatus,
+  corrigirStatusNaResposta,
+  novoStatusConsultados,
+  rotuloDoStatus,
+  statusForaDaConsulta,
+  type StatusDoPedidoConsultado,
+} from './maestro-agent-status';
+import {
   conferirAssuntoDaResposta,
   respostaDeAssuntoSemPagina,
   type ClienteDeChat,
@@ -398,6 +407,13 @@ export async function runMaestroAgentLoop(input: AgentLoopInput): Promise<AgentL
     return codigos;
   };
 
+  // Trava do status: o status que a resposta declara tem de ser o que a
+  // consulta devolveu nesta pergunta (ou o rótulo de tela dele). Em 02/10/2026
+  // o pedido 23071, em REVISAO PRODUCAO, saiu como "EM PRODUÇÃO".
+  const statusConsultados = novoStatusConsultados();
+  const statusPorPedido = new Map<string, StatusDoPedidoConsultado>();
+  let correcoesDeStatus = 0;
+
   // Trava do manual: o que foi lido/consultado neste turno e a unica origem
   // aceita para nome de menu, aba ou botao na resposta.
   const consultas: ConsultaAuditada[] = [];
@@ -494,6 +510,17 @@ export async function runMaestroAgentLoop(input: AgentLoopInput): Promise<AgentL
           continue;
         }
 
+        // Trava do status: status declarado que não é o consultado → uma
+        // rodada forçada de reescrita (sem nova consulta).
+        const statusErrados = statusForaDaConsulta(candidato, statusConsultados);
+        if (statusErrados.length > 0 && correcoesDeStatus < 1 && Date.now() < deadline - 3_000) {
+          correcoesDeStatus++;
+          console.warn(`[MaestroAgentLoop] Trava do status (${statusErrados.map(e => e.escrito.trim()).join(' | ')}) — forçando correção.`);
+          messages.push({ role: 'assistant', content: candidato });
+          messages.push({ role: 'system', content: correcaoDeStatus(statusErrados, [...statusPorPedido.values()], statusConsultados) });
+          continue;
+        }
+
         // Trava do manual: passo a passo sem pagina lida, ou nome de tela que
         // nao esta na pagina → uma rodada forcada de correcao.
         const veredito = avaliarTrava(candidato);
@@ -556,6 +583,17 @@ export async function runMaestroAgentLoop(input: AgentLoopInput): Promise<AgentL
           // Tudo o que uma ferramenta devolveu NESTA pergunta foi consultado
           // agora — inclusive os pedidos de uma lista (propostas do cliente).
           coletarNumerosDosArgumentos(saida, numerosConsultados);
+          coletarStatusDaConsulta(exec.result, statusConsultados);
+          if (nomeTool === 'consultar_pedido') {
+            const r = exec.result as { numero?: unknown; secoes?: Record<string, Record<string, unknown> | undefined> } | null;
+            const status =
+              r?.secoes?.situacao?.status ??
+              (r?.secoes?.cobrancas?.cobertura as Record<string, unknown> | undefined)?.status_do_pedido ??
+              r?.secoes?.expedicao?.status_do_pedido;
+            if (r?.numero != null && typeof status === 'string' && status) {
+              statusPorPedido.set(String(r.numero), { numero: String(r.numero), status, rotulo: rotuloDoStatus(status) });
+            }
+          }
           if (nomeTool === 'consultar_manual' || nomeTool === 'consultar_pedido') {
             // Tudo o que estas duas devolvem veio do servidor: os numeros sao
             // citaveis (OS, parcela, nota) e o texto legitima nomes de tela.
@@ -645,6 +683,16 @@ export async function runMaestroAgentLoop(input: AgentLoopInput): Promise<AgentL
     content = `${removerLinhasDeFonte(content)}\n\n${AVISO_SEM_CONSULTA}`;
   }
 
+  // Defesa final da trava do status — sem o modelo: troca o status errado
+  // pelo consultado (um pedido) ou acrescenta o aviso com o status certo.
+  let travaDoStatus: string | null = null;
+  if (statusForaDaConsulta(content, statusConsultados).length > 0) {
+    const corrigida = corrigirStatusNaResposta(content, [...statusPorPedido.values()], statusConsultados);
+    console.warn(`[MaestroAgentLoop] Status fora da consulta na resposta final — ${corrigida.trocas} troca(s)${corrigida.aviso ? ' e aviso' : ''}.`);
+    content = corrigida.texto;
+    travaDoStatus = corrigida.aviso ? (corrigida.trocas > 0 ? 'status_trocado_e_aviso' : 'aviso_de_status') : 'status_trocado';
+  }
+
   // Defesa final da guarda de citações — vale para qualquer caminho de saída
   const invalidosFinais = numerosNaoConfirmados(content, idsConfirmados);
   if (invalidosFinais.length > 0) {
@@ -724,6 +772,8 @@ export async function runMaestroAgentLoop(input: AgentLoopInput): Promise<AgentL
       correcoes_de_citacao: correcoesDeCitacao,
       correcoes_de_pedido: correcoesDePedido,
       trava_do_pedido: travaDoPedido,
+      correcoes_de_status: correcoesDeStatus,
+      trava_do_status: travaDoStatus,
       // O que foi consultado (nunca o conteudo): pagina do manual, pedido e partes.
       consultas,
       manual_lido: manualLido,
