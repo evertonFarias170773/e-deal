@@ -14,7 +14,7 @@ A tela abre com o título **Contas a receber**. Os títulos entram nela pelo [Re
 
 - Vê a tela quem tem a permissão **Visualizar Títulos** no perfil, além de Administrador e Super Admin. Sem ela, a tela mostra acesso negado.
 - **Confirmar recebimento** (dar baixa) aparece só para quem tem a permissão **Registrar Baixa**, Administrador ou Super Admin.
-- **Registrar** (botão da linha), **Registrar boleto no banco**, **Registrar boleto**, **Refazer boleto**, **Cancelar recebível**, **Cancelar boleto**, **Prorrogar vencimento**, **Editar depósito** e **Transformar em boleto** aparecem só para quem tem a permissão **Administrar Contas a Receber**, Administrador ou Super Admin. O registro no banco é conferido de novo no servidor, pela mesma permissão.
+- **Registrar** (botão da linha), **Registrar boleto no banco**, **Registrar boleto**, **Refazer boleto**, **Cancelar recebível**, **Cancelar boleto**, **Prorrogar vencimento**, **Editar depósito** e **Transformar em boleto** aparecem só para quem tem a permissão **Administrar Contas a Receber**, Administrador ou Super Admin. O registro no banco é feito pelo servidor, que confere de novo a mesma permissão: a tela não fala mais direto com o banco.
 - As demais ações do menu (**Detalhe da Cobrança**, **Cadastro do Cliente**, **Ver boleto registrado**, **Consultar pagamento C6**, **Consultar PDF no C6**, **Visualizar Boleto** / **Gerar PDF do Boleto**) aparecem para todos que veem a tela.
 - Cancelar no banco um boleto registrado (em **Cancelar recebível**, **Cancelar boleto**, **Prorrogar vencimento**, **Refazer boleto** e na baixa manual) também exige, no servidor, a permissão **Cancelar / Estornar Cobranças** ou **Cancelar Cobrança Não Paga**. Quem não a tem recebe o aviso "Sem permissão para cancelar título".
 
@@ -355,3 +355,5 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/features/usuarios-perfis/catalogo-permissoes.ts`
 - `src/constants/navigation.ts`
 - `src/app/api/cobrancas/registrar-boleto-faturado/route.ts`
+- `src/features/cobrancas/services/boleto-c6.ts`
+- `src/lib/n8n/webhook-segredo.ts`

@@ -14,7 +14,7 @@ Esta página explica também como o pedido sai do atendimento e entra na fábric
 
 - Quem abre a edição do pedido vê as abas **Produção** e **Histórico**. A aba Produção aparece também em proposta avulsa e em pedido só de prateleira.
 - **Liberar para Produção** fica na lista de Pedidos e aparece só para Administrador, Super Administrador ou quem tem a permissão **Liberar para Produção** no perfil, quando o pedido está em REVISAO ATENDENTE. O servidor confere a mesma permissão e, depois, pagamento, arte e modelos. A liberação automática de pedido só de prateleira, que acontece quando o pagamento é confirmado, não depende dessa permissão.
-- **Retirar da Produção** aparece só para Administrador, Super Administrador ou quem tem a permissão **Liberar para Produção** no perfil.
+- **Retirar da Produção** aparece só para Administrador, Super Administrador ou quem tem a permissão **Liberar para Produção** no perfil. O servidor confere a mesma permissão antes de retirar.
 - **Voltar para Revisão Atendente** (tela Produção) aparece só para Administrador, Super Administrador ou quem tem a permissão **Ações Administrativas de OS**.
 - A OS (boletim) abre para quem tem a permissão **Visualizar Pedidos e OS**.
 - **Data Limite de Entrega** e **Hora do Prazo**, em OS que já existe, só são alteradas por Administrador, Super Administrador ou quem tem a permissão **Editar Datas de Entrega**.
@@ -213,3 +213,4 @@ As mensagens são internas: o cliente não vê.
 - `src/features/pedidos/components/DevolverRevisaoModal.tsx`
 - `src/features/pedidos/services/boletim-propostas.service.ts`
 - `src/features/usuarios-perfis/catalogo-permissoes.ts`
+- `src/app/api/orcamentos/retirar-producao/route.ts`

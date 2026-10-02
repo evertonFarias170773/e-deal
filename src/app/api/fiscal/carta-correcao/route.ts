@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { verificarPermissaoServerSide } from "@/lib/auth/verificar-permissao";
+import { cabecalhosWebhookN8n } from "@/lib/n8n/webhook-segredo";
 import {
   MAXIMO_CORRECAO,
   MINIMO_CORRECAO,
@@ -112,7 +113,7 @@ export async function POST(request: Request) {
     try {
       response = await fetch(WEBHOOK_CARTA_CORRECAO, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: cabecalhosWebhookN8n(),
         body: JSON.stringify({ id_empresa: idEmpresa, referencia: nota.ref, correcao })
       });
     } catch (erro) {

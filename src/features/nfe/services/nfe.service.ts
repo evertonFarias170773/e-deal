@@ -1,4 +1,5 @@
 import { getSupabaseClient } from "@/lib/supabase/client";
+import { mensagemDoRetornoBancario, resolverPagadorDoBoletoC6 } from "@/features/cobrancas/services/boleto-c6";
 import { nfeMocks } from "@/lib/mocks/nfe.mock";
 import { mapSupabaseNfeRowToReadModel } from "../mappers";
 import type { SupabaseNfeRow, NfeReadModel, SupabaseNfeItemRow, SupabaseNfePagamentoRow } from "../types";
@@ -2697,10 +2698,6 @@ export async function updateBoletoInDb(
   return data;
 }
 
-const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-function isValidEmail(email: string): boolean {
-  return EMAIL_REGEX.test(email);
-}
 
 /**
  * Chama uma rota server-side de título faturado. O servidor relê `id_empresa`
@@ -2731,247 +2728,25 @@ async function chamarRotaBoletoFaturado(rota: string, corpo: Record<string, unkn
   return resultado as { success: true; delegarLegado?: boolean; data?: Record<string, unknown> };
 }
 
-/**
- * O pagador de um boleto do C6, lido do CADASTRO na hora: e-mail (com o padrão
- * da empresa quando o cliente não tem um válido), endereço principal e o
- * documento só com dígitos. Lança, com a pendência em palavras, quando falta
- * algo que o banco exige.
- *
- * É o trecho que vivia dentro de `registerBoletoViaN8n`, sem alteração de
- * regra. Saiu para o "Refazer boleto" conferir o cadastro ANTES de cancelar o
- * boleto atual — descobrir a pendência só no registro deixaria o título sem
- * boleto.
- */
-export async function resolverPagadorDoBoletoC6(
-  client: NonNullable<ReturnType<typeof getSupabaseClient>>,
-  boleto: Pick<SupabaseBoletoRow, "id_cliente" | "id_empresa" | "documento">,
-  overrideEmail?: string
-) {
-  let emailDoCadastro = true;
-  // 1. Fetch Client email and details
-  let email = "";
-  if (boleto.id_cliente) {
-    const { data: cliData } = await client
-      .from("clientes")
-      .select("email, email_financeiro, email_contato")
-      .eq("id_cliente", boleto.id_cliente)
-      .maybeSingle();
 
-    if (cliData) {
-      email = (String(cliData.email_financeiro || cliData.email || cliData.email_contato || "")).trim();
-    }
-  }
-
-  // Fallback de E-mail do ERP se override não foi passado
-  if (!email || !isValidEmail(email)) {
-    emailDoCadastro = false;
-    if (overrideEmail && isValidEmail(overrideEmail)) {
-      email = overrideEmail;
-    } else {
-      if (boleto.id_empresa === 1) {
-        email = "financeiro@ingressoideal.com.br";
-      } else if (boleto.id_empresa === 3) {
-        email = "financeiro@e3brindes.com.br";
-      } else {
-        email = "financeiro@pay-ideal.com.br";
-      }
-    }
-  }
-
-  // Validação do email
-  if (!email || !isValidEmail(email)) {
-    throw new Error("O e-mail do cliente é inválido e nenhum e-mail de fallback pôde ser determinado.");
-  }
-
-  // 2. Fetch Client address
-  let address = {
-    logradouro: "",
-    numero: "",
-    complemento: "",
-    bairro: "",
-    cidade: "",
-    uf: "",
-    cep: ""
-  };
-
-  if (boleto.id_cliente) {
-    // Try principal first
-    let { data: addrData } = await client
-      .from("enderecos")
-      .select("endereco, numero, complemento, bairro, cidade, uf, cep")
-      .eq("id_cliente", boleto.id_cliente)
-      .eq("tipo_endereco", "Principal")
-      .maybeSingle();
-
-    if (!addrData) {
-      // Fallback to any address
-      const { data: fallbackAddr } = await client
-        .from("enderecos")
-        .select("endereco, numero, complemento, bairro, cidade, uf, cep")
-        .eq("id_cliente", boleto.id_cliente)
-        .limit(1);
-
-      if (fallbackAddr && fallbackAddr.length > 0) {
-        addrData = fallbackAddr[0];
-      }
-    }
-
-    if (addrData) {
-      address = {
-        logradouro: addrData.endereco || "",
-        numero: addrData.numero || "",
-        complemento: addrData.complemento || "",
-        bairro: addrData.bairro || "",
-        cidade: addrData.cidade || "",
-        uf: addrData.uf || "",
-        cep: addrData.cep ? String(addrData.cep).replace(/\D/g, "") : ""
-      };
-    }
-  }
-
-  // Validação dos campos obrigatórios de endereço
-  if (!address.logradouro) {
-    throw new Error("Logradouro do cliente está pendente.");
-  }
-  if (!address.numero) {
-    throw new Error("Número do endereço do cliente está pendente.");
-  }
-  if (!address.cidade) {
-    throw new Error("Cidade do cliente está pendente.");
-  }
-  if (!address.uf) {
-    throw new Error("UF do cliente está pendente.");
-  }
-  if (!address.cep) {
-    throw new Error("CEP do cliente está pendente.");
-  }
-  if (address.cep.length !== 8) {
-    throw new Error("CEP do cliente é inválido (deve conter exatamente 8 dígitos).");
-  }
-
-  // 3. Documento do pagador
-  if (!boleto.documento) {
-    throw new Error("Documento do cliente está pendente.");
-  }
-  const documentoDigits = String(boleto.documento).replace(/\D/g, "");
-  if (!documentoDigits) {
-    throw new Error("Documento do cliente é inválido ou vazio (deve conter apenas dígitos).");
-  }
-  if (documentoDigits.length !== 11 && documentoDigits.length !== 14) {
-    throw new Error("Documento do cliente é inválido (deve conter 11 dígitos para CPF ou 14 dígitos para CNPJ).");
-  }
-
-  return { email, emailDoCadastro, address, documentoDigits };
-}
+export { resolverPagadorDoBoletoC6 };
 
 export async function registerBoletoViaN8n(boleto: SupabaseBoletoRow, overrideEmail?: string) {
-  // Roteamento por empresa, decidido no servidor com o id_empresa do banco.
-  // Empresa 2 (Ideal Birô) emite pelo Inter e retorna aqui; 1 e 3 caem no
-  // `delegarLegado` e seguem exatamente o fluxo abaixo, inalterado.
-  const roteamento = await chamarRotaBoletoFaturado("/api/cobrancas/registrar-boleto-faturado", {
+  // O registro acontece INTEIRO no servidor (02/10/2026), para as três empresas:
+  // a rota confere a permissão, relê o título do banco, chama o banco (Inter na
+  // Birô, C6 nas outras duas) e grava o retorno no título. Até então, nas
+  // empresas 1 e 3, o navegador chamava o webhook do n8n direto.
+  const registro = await chamarRotaBoletoFaturado("/api/cobrancas/registrar-boleto-faturado", {
     boletoId: boleto.id,
     overrideEmail
   });
 
-  if (!roteamento.delegarLegado) {
-    return { success: true, data: roteamento.data || {} };
-  }
-
-  const client = getSupabaseClient();
-  if (!client) throw new Error("Supabase client not initialized");
-
-  // 1 a 3. Pagador: e-mail, endereço e documento, do cadastro.
-  const { email, address, documentoDigits } = await resolverPagadorDoBoletoC6(client, boleto, overrideEmail);
-
-  const n_nfStr = boleto.n_nf ? String(boleto.n_nf) : "";
-  const extReference = boleto.ext_reference || "";
-
-  const payload = {
-    boleto_id: boleto.id,
-    ext_reference: extReference,
-    id_empresa: boleto.id_empresa ? Number(boleto.id_empresa) : 0,
-    id_cliente: boleto.id_cliente ? Number(boleto.id_cliente) : 0,
-    id_int: boleto.id_int ? Number(boleto.id_int) : 0,
-    n_nf: n_nfStr,
-    parcela: boleto.parcela ? Number(boleto.parcela) : 1,
-    total_parcelas: boleto.total_parcelas ? Number(boleto.total_parcelas) : 1,
-    valor: boleto.valor ? Number(boleto.valor) : 0,
-    vencimento: boleto.vencimento ? String(boleto.vencimento).slice(0, 10) : "",
-    nome_cliente: boleto.nome_cliente || "",
-    documento: documentoDigits,
-    email: email,
-    endereco: address,
-    multa_percentual: boleto.multa ? Number(boleto.multa) : 0,
-    juros_dia_percentual: boleto.juros_dia ? Number(boleto.juros_dia) : 0,
-    instrucoes: [
-      `Parcela ${boleto.parcela || 1}/${boleto.total_parcelas || 1} - NF ${n_nfStr || "S/N"} - Ref ${extReference}`
-    ]
-  };
-
-  // 4. Send request
-  const response = await fetch("https://10074.hostoo.net.br/webhook/boletos-vibe", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify(payload)
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(errorText || `Erro no processamento do registro do boleto: ${response.statusText}`);
-  }
-
-  // Check response
-  let resData;
-  try {
-    resData = await response.json();
-  } catch {
-    throw new Error("A resposta do servidor não é um JSON válido.");
-  }
-
-  if (!resData) {
-    throw new Error("Resposta do banco vazia ou inválida.");
-  }
-
-  if (resData.error || resData.message || resData.status === "error" || resData.success === false) {
-    throw new Error(
-      mensagemDoRetornoBancario(resData.error ?? resData.message, "Erro retornado pelo webhook.")
-    );
-  }
-
-  return { success: true, data: resData };
+  // `any` como antes: os chamadores leem o retorno do banco campo a campo, com
+  // os vários nomes que o C6 e o Inter usam.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return { success: true, data: (registro.data || {}) as Record<string, any> };
 }
 
-/**
- * Mensagem legível a partir do que o webhook devolveu.
- *
- * O n8n responde ora `{ message }`, ora o objeto de erro cru do banco
- * (`{ error: { message } }`). No segundo caso `new Error(objeto)` vira
- * "[object Object]" na tela — foi o que o usuário viu quando o C6 recusou o
- * cancelamento do título 323976692 por situação do título: erro na tela, sem
- * uma palavra sobre o motivo.
- *
- * Os bancos ainda embutem o motivo real num JSON escapado dentro da própria
- * mensagem (`400 - "{...\"detail\":\"...\"}"`), então o `detail` é extraído
- * quando existe.
- */
-function mensagemDoRetornoBancario(valor: unknown, padrao: string): string {
-  if (typeof valor === "string" && valor.trim()) return valor.trim();
-
-  if (valor && typeof valor === "object") {
-    const obj = valor as { message?: unknown; detail?: unknown; description?: unknown };
-    const texto = String(obj.detail ?? obj.message ?? obj.description ?? "").trim();
-    if (texto) {
-      const limpo = texto.split("\\").join("");
-      const detalhe = limpo.match(/"detail"\s*:\s*"([^"]+)"/);
-      const titulo = limpo.match(/"title"\s*:\s*"([^"]+)"/);
-      return String(detalhe?.[1] ?? titulo?.[1] ?? texto).trim().slice(0, 400);
-    }
-  }
-
-  return padrao;
-}
 
 export async function deleteBoletoFromBankViaN8n(
   boletoId: string,

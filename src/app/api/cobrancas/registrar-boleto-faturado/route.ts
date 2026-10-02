@@ -1,6 +1,13 @@
 import { NextResponse } from "next/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { verificarPermissaoServerSide } from "@/lib/auth/verificar-permissao";
+import { cabecalhosWebhookN8n } from "@/lib/n8n/webhook-segredo";
+import {
+  camposDoTituloRegistradoC6,
+  lerRespostaDoRegistroC6,
+  montarPayloadBoletoC6,
+  resolverPagadorDoBoletoC6
+} from "@/features/cobrancas/services/boleto-c6";
 
 /**
  * Registro bancário de um título faturado do Registro de Recebíveis.
@@ -8,9 +15,13 @@ import { verificarPermissaoServerSide } from "@/lib/auth/verificar-permissao";
  * O roteamento por empresa é decidido AQUI, com o id_empresa relido do banco —
  * nunca o que veio do cliente. A empresa 2 (Ideal Birô) emite pelo Banco Inter.
  *
- * As empresas 1 e 3 seguem no fluxo legado, byte-idêntico: esta rota devolve
- * `delegarLegado: true` e o cliente chama `registerBoletoViaN8n` exatamente como
- * antes. Nenhum payload do C6 passa por aqui, então não há como regredir.
+ * As empresas 1 e 3 emitem pelo C6. Até 02/10/2026 esta rota devolvia
+ * `delegarLegado: true` e o NAVEGADOR chamava o webhook `boletos-vibe` do n8n.
+ * Agora o envio sai daqui: o título é relido do banco, o pagador vem do cadastro
+ * e o corpo é montado pelas MESMAS funções que o navegador usava
+ * (`@/features/cobrancas/services/boleto-c6`, recortadas sem alteração) — o
+ * corpo do webhook é o de sempre. A rota também grava o retorno do banco no
+ * título, como já fazia com a Birô.
  *
  * PERMISSÃO (02/10/2026): a chave `contas_receber.admin` é conferida AQUI, para
  * todas as empresas, ANTES de decidir o caminho — inclusive antes de devolver
@@ -19,6 +30,8 @@ import { verificarPermissaoServerSide } from "@/lib/auth/verificar-permissao";
  */
 
 const WEBHOOK_BIRO_FATURADO = "https://10074.hostoo.net.br/webhook/biro-faturado-inter";
+/** C6, empresas 1 e 3. Exige o cabeçalho do segredo (`cabecalhosWebhookN8n`). */
+const WEBHOOK_C6_FATURADO = "https://10074.hostoo.net.br/webhook/boletos-vibe";
 
 const EMPRESA_BIRO = 2;
 /** "Administrar Contas a Receber": a chave que a tela usa para as ações administrativas da Carteira. */
@@ -46,6 +59,7 @@ type BoletoRow = {
   id_empresa: number | null;
   id_pagamento: string | null;
   id_boleto_c6: string | null;
+  n_nf: string | number | null;
   nome_cliente: string | null;
   documento: string | null;
   valor: number | null;
@@ -112,7 +126,7 @@ export async function POST(request: Request) {
 
   const { data: boleto, error: fetchErr } = await supabase
     .from("boletos")
-    .select("id, id_int, id_cliente, id_empresa, id_pagamento, id_boleto_c6, nome_cliente, documento, valor, vencimento, parcela, total_parcelas, multa, juros_dia, descricao, ext_reference, status")
+    .select("id, id_int, id_cliente, id_empresa, id_pagamento, id_boleto_c6, n_nf, nome_cliente, documento, valor, vencimento, parcela, total_parcelas, multa, juros_dia, descricao, ext_reference, status")
     .eq("id", boletoId)
     .maybeSingle<BoletoRow>();
 
@@ -125,9 +139,55 @@ export async function POST(request: Request) {
 
   const idEmpresa = Number(boleto.id_empresa);
 
-  // Empresas 1 e 3: nada muda. O cliente segue no caminho legado.
+  // Empresas 1 e 3: C6. O mesmo fluxo que o navegador fazia, agora daqui.
   if (idEmpresa !== EMPRESA_BIRO) {
-    return NextResponse.json({ success: true, delegarLegado: true, idEmpresa });
+    // 1 a 3. Pagador: e-mail, endereço e documento, do cadastro. A pendência
+    //        volta em palavras, como sempre voltou.
+    let pagador: Awaited<ReturnType<typeof resolverPagadorDoBoletoC6>>;
+    try {
+      pagador = await resolverPagadorDoBoletoC6(supabase, boleto, overrideEmail);
+    } catch (erro) {
+      return NextResponse.json(
+        { success: false, code: "CADASTRO_PENDENTE", message: erro instanceof Error ? erro.message : "Pendência no cadastro do cliente." },
+        { status: 400 }
+      );
+    }
+
+    // 4. O webhook do n8n, com o corpo de sempre e o cabeçalho do segredo.
+    let resposta: Response;
+    try {
+      resposta = await fetch(WEBHOOK_C6_FATURADO, {
+        method: "POST",
+        headers: cabecalhosWebhookN8n(),
+        body: JSON.stringify(montarPayloadBoletoC6(boleto, pagador))
+      });
+    } catch (erro) {
+      console.error("[RegistrarBoletoFaturado] Webhook C6 inalcançável:", erro);
+      return NextResponse.json(
+        { success: false, code: "INTEGRACAO_INDISPONIVEL", message: "Não foi possível contatar a integração bancária. Nenhum boleto foi registrado." },
+        { status: 502 }
+      );
+    }
+
+    const lido = await lerRespostaDoRegistroC6(resposta);
+    if (!lido.ok) {
+      return NextResponse.json({ success: false, code: "BANCO_RECUSOU", message: lido.mensagem }, { status: 422 });
+    }
+
+    // 5. Grava o retorno do banco no título. O boleto JÁ existe no banco: falha
+    //    aqui não vira erro, senão a tela mandaria registrar de novo e sairia um
+    //    segundo boleto. A tela recebe os dados e os grava como sempre gravou.
+    const { error: erroGravacao } = await supabase
+      .from("boletos")
+      .update(camposDoTituloRegistradoC6(lido.data))
+      .eq("id", boleto.id);
+    if (erroGravacao) {
+      console.error(
+        `[RegistrarBoletoFaturado] Boleto ${boleto.id} registrado no C6, mas o título não foi gravado: ${erroGravacao.message}`
+      );
+    }
+
+    return NextResponse.json({ success: true, idEmpresa, gravado: !erroGravacao, data: lido.data });
   }
 
   // Idempotência: título já registrado no banco não é reenviado. Sem isso, um

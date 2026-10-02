@@ -5624,16 +5624,29 @@ export async function liberarPropostaParaProducaoPeloServidor(idInt: number): Pr
  * se leem juntas, como diz o `comment on column` da migration.
  */
 export async function retirarPropostaDaProducao(idInt: number): Promise<{ success: boolean; errorMessage?: string }> {
+  // Pela rota do servidor (02/10/2026), que confere a sessão e a permissão
+  // "Liberar para Produção". Até então a gravação saía direto do navegador.
   const client = getSupabaseClient();
   if (!client) return { success: false, errorMessage: "Cliente Supabase indisponível." };
 
-  const { error: updateErr } = await client
-    .from("propostas")
-    .update({ is_prd_aprovado: false })
-    .eq("id_int", idInt);
+  const sessionResponse = await client.auth.getSession();
+  const token = sessionResponse.data.session?.access_token || "";
+  if (!token) return { success: false, errorMessage: "Sessão não encontrada. Faça login novamente." };
 
-  if (updateErr) return { success: false, errorMessage: "Erro ao retirar proposta da produção." };
-  return { success: true };
+  try {
+    const response = await fetch("/api/orcamentos/retirar-producao", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ id_int: idInt })
+    });
+    const data = await response.json().catch(() => null);
+    if (!response.ok || !data?.success) {
+      return { success: false, errorMessage: data?.message || "Erro ao retirar proposta da produção." };
+    }
+    return { success: true };
+  } catch {
+    return { success: false, errorMessage: "Erro ao retirar proposta da produção." };
+  }
 }
 /**
  * PRESERVA `liberado_producao_em`, pela mesma razão de
