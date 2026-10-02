@@ -51,6 +51,40 @@ function segredo(): string | null {
  * sempre produzem o mesmo token, entao o link nunca precisa ser reemitido.
  * Trocar a versao mata o link antigo e cria o novo.
  */
+/** Linha de `usuarios` com o que a escolha da pessoa do link precisa. */
+export type UsuarioDoCodigo = {
+  user_id: string;
+  id_vendedor: string | null;
+  nome_usuario: string | null;
+  meu_vendedor: string | null;
+  is_vendedor: boolean | null;
+  /** Perfil `pendente_aprovacao`: o resolver nao aceita essa pessoa. */
+  perfil_pendente?: boolean;
+};
+
+/** Passa nos sinais que o resolver confere em `usuarios` e `perfis`. */
+export function vendeEPodeTerLink(u: UsuarioDoCodigo): boolean {
+  return u.is_vendedor === true && u.perfil_pendente !== true;
+}
+
+/**
+ * De quem e o link, quando mais de um usuario tem o mesmo codigo de vendedor
+ * (Edina e Edison; Lisiane e Everton). Mesma ordem do `cadastro_link_resolver`:
+ * quem vende e nao esta pendente primeiro; entre esses, o dono do codigo
+ * (user_id = id_vendedor) e depois por nome. Devolve null se o codigo nao tem
+ * ninguem. Banimento e exclusao moram em `auth.users` e so o resolver confere.
+ */
+export function escolherPessoaDoCodigo<T extends UsuarioDoCodigo>(doCodigo: readonly T[], idVendedor: string): T | null {
+  const ordenados = [...doCodigo].sort((a, b) => {
+    const vende = Number(vendeEPodeTerLink(b)) - Number(vendeEPodeTerLink(a));
+    if (vende !== 0) return vende;
+    const dono = Number(b.user_id === idVendedor) - Number(a.user_id === idVendedor);
+    if (dono !== 0) return dono;
+    return String(a.nome_usuario ?? "").localeCompare(String(b.nome_usuario ?? ""), "pt-BR");
+  });
+  return ordenados[0] ?? null;
+}
+
 export function derivarTokenCadastroLink(idVendedor: string, versao: number): string | null {
   const secret = segredo();
   if (!secret) return null;

@@ -336,6 +336,8 @@ export async function fetchUsuarioEnriquecido(
       isAdmin: perfilResolvido ? permissoes.includes("*") || permissoes.includes("admin.usuarios.view") : fallback.isAdmin,
       isSuperAdmin: perfilResolvido ? permissoes.includes("*") : fallback.isSuperAdmin,
       isSeller: perfilResolvido ? permissoes.includes("propostas.create") : fallback.isSeller,
+      // A marca "vende", direto da coluna: nao depende do perfil e nao restringe nada.
+      isVendedorMarcado: row.is_vendedor === true,
       isGerente: perfilResolvido ? permissoes.includes("*") || permissoes.includes("pedidos.admin") : (row.is_admin || row.is_super_adm),
       perfilSlug,
       permissoes,

@@ -4,7 +4,10 @@ import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import {
   criarClientServiceRole,
   derivarTokenCadastroLink,
-  sha256Hex
+  escolherPessoaDoCodigo,
+  sha256Hex,
+  vendeEPodeTerLink,
+  type UsuarioDoCodigo
 } from "@/features/cadastros/services/cadastro-online.server";
 
 /**
@@ -140,12 +143,25 @@ export async function POST(request: Request) {
   }
 
   // --- o vendedor alvo precisa existir em usuarios, senao o link nasce morto
-  const { data: alvo } = await service
-    .from("usuarios")
-    .select("id_vendedor,nome_usuario,meu_vendedor,is_vendedor")
-    .eq("id_vendedor", idVendedor)
-    .limit(1)
-    .maybeSingle();
+  //
+  // Mais de um usuario pode ter o mesmo codigo (Edina e Edison; Lisiane e
+  // Everton). A pessoa do link e escolhida como o `cadastro_link_resolver`
+  // escolhe (`escolherPessoaDoCodigo`). Um `limit 1` sem ordem pegava uma linha
+  // qualquer — e a tela avisava "nao vai funcionar" olhando a pessoa errada.
+  const [{ data: doCodigo }, { data: perfisPendentes }] = await Promise.all([
+    service
+      .from("usuarios")
+      .select("user_id,id_vendedor,nome_usuario,meu_vendedor,is_vendedor,id_perfil")
+      .eq("id_vendedor", idVendedor)
+      .returns<Array<UsuarioDoCodigo & { id_perfil: number | null }>>(),
+    service.from("perfis").select("id").eq("slug", "pendente_aprovacao").returns<Array<{ id: number }>>()
+  ]);
+  const idsPendentes = new Set((perfisPendentes ?? []).map((perfil) => perfil.id));
+
+  const alvo = escolherPessoaDoCodigo(
+    (doCodigo ?? []).map((linha) => ({ ...linha, perfil_pendente: linha.id_perfil != null && idsPendentes.has(linha.id_perfil) })),
+    idVendedor
+  );
 
   if (!alvo) {
     return erro("Nao ha usuario com esse codigo de vendedor.", 404);
@@ -214,10 +230,10 @@ export async function POST(request: Request) {
       descartesHoneypot: Number(ativo.descartes_honeypot ?? 0),
       nomeVendedor: alvo.meu_vendedor || alvo.nome_usuario || "",
       idVendedor,
-      // A tela avisa quando o alvo nao esta marcado como vendedor: o resolver
-      // exige is_vendedor = true, entao o link nasceria morto e ninguem
-      // descobriria ate um cliente reclamar que a pagina nao abre.
-      alvoEhVendedor: alvo.is_vendedor === true,
+      // A tela avisa quando NINGUEM do codigo esta marcado como vendedor: o
+      // resolver exige is_vendedor = true em algum deles, entao o link nasceria
+      // morto e ninguem descobriria ate um cliente reclamar que a pagina nao abre.
+      alvoEhVendedor: vendeEPodeTerLink(alvo),
       novo: false
     });
   }
@@ -230,7 +246,7 @@ async function emitir(
   idVendedor: string,
   versao: number,
   uid: string,
-  alvo: { nome_usuario?: string | null; meu_vendedor?: string | null; is_vendedor?: boolean | null }
+  alvo: UsuarioDoCodigo
 ) {
   const token = derivarTokenCadastroLink(idVendedor, versao);
   if (!token) return erro("CADASTRO_LINK_TOKEN_SECRET ausente ou curto demais no servidor.", 500);
@@ -267,7 +283,7 @@ async function emitir(
     descartesHoneypot: Number(data.descartes_honeypot ?? 0),
     nomeVendedor: alvo.meu_vendedor || alvo.nome_usuario || "",
     idVendedor,
-    alvoEhVendedor: alvo.is_vendedor === true,
+    alvoEhVendedor: vendeEPodeTerLink(alvo),
     novo: true
   });
 }

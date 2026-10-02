@@ -83,6 +83,8 @@ Cada envio mostra o nome, o documento, a situação (**Aprovado automaticamente*
 - Recusar não cria nem apaga nada: o envio continua na fila, com o motivo.
 - Gerar um link novo invalida o anterior na hora. Quem tiver o link antigo vê apenas "link indisponível". Os cadastros que já entraram não mudam.
 - Vendedores que dividem o mesmo código de vendedor dividem um link só: trocar o link de um troca o de todos.
+- O link funciona quando ao menos uma pessoa daquele código está marcada como vendedora no cadastro de usuário. O nome que o cliente vê na página é o dessa pessoa. Se mais de uma estiver marcada, vale a dona do código e, depois, a ordem alfabética.
+- Quem é diretor ou administrador e também vende recebe a marca de vendedor sem perder nada: continua vendo todos os pedidos e o Dashboard. A marca só serve para a pessoa aparecer nas listas de vendedores e ter link de cadastro.
 - A fila mostra os 200 envios mais recentes.
 
 ## O que não confundir
@@ -101,7 +103,7 @@ Cada envio mostra o nome, o documento, a situação (**Aprovado automaticamente*
 | "Não foi possível concluir" com "Este envio ja foi decidido. Recarregue a fila." | Outra pessoa aprovou ou recusou o mesmo envio antes. | Recarregue a tela. |
 | "Não foi possível concluir" com "O cliente #N foi criado, mas a fila nao foi atualizada. Nao aprove de novo..." | O cliente foi criado, mas o envio continuou pendente. | Não aprove de novo. Abra o cadastro #N e recuse o envio com o motivo. |
 | "Não foi possível concluir" com "Sessão expirada. Entre novamente." | A sessão venceu. | Entre de novo e repita. |
-| "Este link **não vai funcionar**..." | O usuário escolhido não está marcado como vendedor. | Ajuste o cadastro do usuário antes de enviar o link. |
+| "Este link **não vai funcionar**..." | Ninguém com aquele código de vendedor está marcado como vendedor, ou a única pessoa marcada está com o acesso pendente. | Peça a um administrador para marcar a pessoa como vendedora antes de enviar o link. |
 | "Este código de vendedor é compartilhado." | Mais de uma pessoa usa o mesmo código de vendedor. | Saiba que o link é um só para todas, e que trocá-lo troca o de todas. |
 | "Não foi possível copiar" | O navegador bloqueou a cópia. | Selecione o endereço no campo e copie manualmente. |
 

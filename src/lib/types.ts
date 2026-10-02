@@ -42,6 +42,13 @@ export type MockUser = {
   isGerente?: boolean;
   isSuperAdmin: boolean;
   isSeller: boolean;
+  /**
+   * `usuarios.is_vendedor`: a pessoa VENDE (aparece na lista de vendedores, tem
+   * link de cadastro, pode ser atendente). NAO restringe nada: o que cada um ve
+   * vem do perfil. Vale tambem para diretor e Super Admin que vendem. Nao
+   * confundir com `isSeller`, que sai da permissao `propostas.create`.
+   */
+  isVendedorMarcado?: boolean;
   /** Slug do perfil atribuído via public.perfis. Opcional — fallback via flags legadas. */
   perfilSlug?: PerfilSlug | string;
   /** Permissões resolvidas do perfil ou fallback legado. */

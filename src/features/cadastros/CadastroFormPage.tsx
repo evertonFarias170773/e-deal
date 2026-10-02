@@ -264,8 +264,11 @@ export function CadastroFormPage({ mode, cadastro, categoriaInicial }: CadastroF
   }, []);
 
   /**
-   * Cadastro NOVO aberto por um vendedor ja nasce com ele proprio no campo
-   * Atendente (item 2, 20/08/2026).
+   * Cadastro NOVO aberto por quem vende ja nasce com ele proprio no campo
+   * Atendente (item 2, 20/08/2026). "Quem vende" e a marca `is_vendedor` do
+   * cadastro do usuario (02/10/2026) — vale para o vendedor comum e tambem para
+   * diretor ou Super Admin que vende. Antes olhava a permissao de criar
+   * proposta, que o Super Admin so tem pelo curinga.
    *
    * E preenchimento, nao trava: o campo continua editavel e o usuario pode
    * trocar de atendente normalmente. So age quando o campo esta VAZIO — nunca
@@ -279,7 +282,7 @@ export function CadastroFormPage({ mode, cadastro, categoriaInicial }: CadastroF
   useEffect(() => {
     if (mode !== "new") return;
     if (isLoadingVendedores || vendedorOptions.length === 0) return;
-    if (!user?.isSeller) return;
+    if (!user?.isVendedorMarcado) return;
     if (form.atendente.trim() !== "") return;
 
     // Casar por UID e o caminho confiavel: `idVendedor` cai em `user_id` quando
