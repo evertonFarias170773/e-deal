@@ -67,6 +67,61 @@ Todas as consultas financeiras suportam `id_empresa`
 
 ---
 
+## 2.1 Manual de uso e consulta por pedido (02/10/2026)
+
+O catálogo real hoje tem **31 tools**: as 29 que já existiam (28 de leitura e a
+escrita `salvar_cotacao_como_proposta`, única exceção de escrita por decisão do
+dono em 01/10/2026) e as duas abaixo. O Maestro só orienta e mostra dados.
+
+- **`consultar_manual`** — lê páginas de `docs/manual/` (manual de uso, mantido
+  fora do Maestro: uma página por tela, atualizada no mesmo commit de cada
+  mudança visível; regra no `AGENTS.md`). O índice das páginas (título, onde
+  fica, o que cobre, páginas vizinhas) entra no prompt a cada turno; a tool
+  devolve o texto inteiro das páginas pedidas e o retrato de quem pergunta
+  (perfil e permissões pelos rótulos da tela de Perfis). Sem permissão, o
+  Maestro explica o passo e diz a quem pedir.
+- **`consultar_pedido`** — situação real de um pedido pelo número, sem cliente
+  ativo, em partes: `situacao`, `cobrancas`, `titulos`, `nota_fiscal`,
+  `producao`, `expedicao`, `tarefas`. Duas travas no servidor:
+  1. **Escopo por vendedor**: vendedor sem `propostas.view_all` só consulta o
+     pedido em que ele é o vendedor (`usuarios.meu_vendedor || nome_usuario` ×
+     `propostas.vendedor`). Pedido de outro devolve recusa sem nenhum dado. A
+     trava fica na tool porque a RLS de `propostas` é aberta. Quem não vende
+     (Produção, Designer, Expedição) é recortado só pela permissão de cada parte.
+  2. **Permissão por parte**, igual à da tela: `situacao` → `propostas.view*`;
+     `cobrancas` → `cobrancas.view`/`cobrancas.create`/`conferencia.view`;
+     `titulos` → `contas_receber.view`; `nota_fiscal` → `fiscal.view`;
+     `producao` → `pedidos.view`; `expedicao` → `expedicao.view`;
+     `tarefas` → `tarefas.participar`. Administrador e super admin passam, como
+     no `PermissionGuard`.
+  Nunca saem: linha digitável, código de barras, nosso número, link de boleto,
+  chave de NF-e, CPF/CNPJ. Totais e contagens saem prontos.
+
+Travas contra passo a passo inventado (todas no servidor, depois do modelo):
+
+| Trava | O que barra | Efeito |
+|---|---|---|
+| Passos sem manual | Resposta ensina a usar uma tela e nenhuma página foi lida no turno | Uma rodada de correção; persistindo, a resposta vira o texto fixo "ainda não tenho esse passo a passo" |
+| Nome fora da página | Menu, aba ou botão que não está em nenhuma página lida | Uma rodada de correção; persistindo, aviso no fim com os nomes |
+| Conferência do assunto | Página lida ensina OUTRA tarefa (só palavras em comum) | Chamada curta ao modelo; "outra tarefa" troca a resposta pelo texto fixo |
+
+A auditoria (`maestro_acoes.payload`) passou a registrar `consultas` (qual
+página do manual, qual pedido, quais partes e se saiu dado), `manual_lido`,
+`conferencia_do_assunto`, `correcoes_do_manual` e `trava_do_manual`.
+
+Arquivos: `maestro-agent-manual.server.ts`, `maestro-agent-pedido.server.ts`,
+`maestro-agent-acesso.server.ts`, `maestro-agent-trava-manual.ts`,
+`maestro-agent-conferencia.server.ts`. Teste sem banco e sem modelo:
+`scripts/testes/maestro-manual-e-pedido.test.mts`. Em produção os `.md` do
+manual chegam à função por `outputFileTracingIncludes` no `next.config.ts`.
+
+Limites conhecidos: (a) o Maestro lê só a página que escolheu; quando o fluxo
+continua em outra tela, ele cita a tela mas nem sempre detalha os passos de lá;
+(b) as consultas por cliente (`propostas_cliente`, `detalhe_proposta`,
+`boletos_cliente`...) continuam sem o escopo por vendedor.
+
+---
+
 # 3. Regras de negócio aplicadas
 
 Fonte normativa: `MATRIZ-PERMISSOES-ESCRITA-MAESTRO.md` §1.0 (princípios

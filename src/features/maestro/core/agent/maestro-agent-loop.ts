@@ -37,11 +37,26 @@ import {
 } from './maestro-agent-config';
 import { buildAgentSystemPrompt } from './maestro-agent-prompt';
 import {
+  AGENT_TOOLS,
   AGENT_TOOL_SCHEMAS,
   executeAgentTool,
   type AgentSessionState,
   type AgentToolContext,
 } from './maestro-agent-tools';
+import { indiceDoManual } from './maestro-agent-manual.server';
+import {
+  conferirAssuntoDaResposta,
+  respostaDeAssuntoSemPagina,
+  type ClienteDeChat,
+  type ConferenciaDoAssunto,
+} from './maestro-agent-conferencia.server';
+import {
+  avaliarTravaDoManual,
+  instrucaoDeCorrecao,
+  removerOfertaFinal,
+  RESPOSTA_SEM_PAGINA_NO_MANUAL,
+  type VereditoDaTrava,
+} from './maestro-agent-trava-manual';
 import { carregarHistoricoConversa } from './maestro-agent-history.server';
 import { registrarAcaoMaestro } from '../simple/maestro-audit.server';
 import { verificarPermissaoServerSide } from '../../../../lib/auth/verificar-permissao';
@@ -143,6 +158,50 @@ export function redigirNumerosNaoConfirmados(texto: string, invalidos: string[])
     s = s.replace(new RegExp(`\\b${n}\\b`, 'g'), '(número não confirmado)');
   }
   return s;
+}
+
+// ─── Resumo de cada consulta para a auditoria ────────────────────────────────
+// Guarda O QUE foi consultado (ferramenta, pagina do manual, numero do pedido,
+// partes e se saiu dado), nunca o conteudo devolvido.
+
+export interface ConsultaAuditada {
+  ferramenta: string;
+  ok: boolean;
+  [detalhe: string]: unknown;
+}
+
+export function resumirConsulta(
+  nome: string,
+  args: Record<string, unknown>,
+  ok: boolean,
+  resultado: unknown,
+): ConsultaAuditada {
+  const base: ConsultaAuditada = { ferramenta: nome, ok };
+  const r = (resultado ?? {}) as Record<string, unknown>;
+
+  if (nome === 'consultar_manual') {
+    const lidas = Array.isArray(r.paginas) ? r.paginas.map(p => String((p as Record<string, unknown>).pagina ?? '')) : [];
+    const pedidas = Array.isArray(args.paginas) ? args.paginas.map(String).slice(0, 5) : [];
+    return { ...base, paginas_pedidas: pedidas, paginas_lidas: lidas, sem_pagina: lidas.length === 0 };
+  }
+
+  if (nome === 'consultar_pedido') {
+    const secoes = (r.secoes ?? {}) as Record<string, unknown>;
+    const partes: Record<string, string> = {};
+    for (const [secao, valor] of Object.entries(secoes)) {
+      const v = (valor ?? {}) as Record<string, unknown>;
+      partes[secao] = v.disponivel === true ? 'dados' : String(v.motivo ?? 'sem dados');
+    }
+    return {
+      ...base,
+      numero: Number(args.numero) || null,
+      dados_entregues: r.ok === true,
+      motivo_da_recusa: r.ok === true ? null : String(r.motivo ?? 'ERRO'),
+      partes,
+    };
+  }
+
+  return base;
 }
 
 // ─── Seed do estado a partir do contexto V2 (autorado pelo servidor) ─────────
@@ -257,7 +316,16 @@ export async function runMaestroAgentLoop(input: AgentLoopInput): Promise<AgentL
       'Se negar, mudar de assunto ou pedir alteração, NÃO chame — a proposta expira neste turno e você deve seguir o novo assunto.';
   }
 
-  const systemPrompt = buildAgentSystemPrompt({ currentDateIso, userName, estadoReal });
+  // Indice do manual de uso (docs/manual). Vazio/ausente → o Maestro diz que nao
+  // tem o passo a passo; nunca improvisa.
+  let indiceManual = '';
+  try {
+    indiceManual = indiceDoManual();
+  } catch (err) {
+    console.error('[MaestroAgentLoop] Falha ao montar o indice do manual:', err);
+  }
+
+  const systemPrompt = buildAgentSystemPrompt({ currentDateIso, userName, estadoReal, indiceManual: indiceManual || undefined });
 
   type ChatMessage = Record<string, unknown>;
   const messages: ChatMessage[] = [
@@ -288,6 +356,17 @@ export async function runMaestroAgentLoop(input: AgentLoopInput): Promise<AgentL
   (state.pendingClientCandidates ?? []).forEach(c => idsConfirmados.add(String(c.id_cliente)));
   coletarNumerosDaPergunta(query, idsConfirmados);
   let correcoesDeCitacao = 0;
+
+  // Trava do manual: o que foi lido/consultado neste turno e a unica origem
+  // aceita para nome de menu, aba ou botao na resposta.
+  const consultas: ConsultaAuditada[] = [];
+  const fontesDoTurno: string[] = [query, indiceManual];
+  let manualLido = false;
+  const paginasLidas: string[] = [];
+  let houveEscrita = false;
+  let correcoesDoManual = 0;
+  const avaliarTrava = (texto: string): VereditoDaTrava =>
+    avaliarTravaDoManual({ texto, manualLido, fontes: fontesDoTurno });
 
   for (let iter = 0; iter < maxIterations; iter++) {
     const restanteMs = deadline - Date.now();
@@ -354,6 +433,20 @@ export async function runMaestroAgentLoop(input: AgentLoopInput): Promise<AgentL
           });
           continue;
         }
+
+        // Trava do manual: passo a passo sem pagina lida, ou nome de tela que
+        // nao esta na pagina → uma rodada forcada de correcao.
+        const veredito = avaliarTrava(candidato);
+        const correcao = instrucaoDeCorrecao(veredito);
+        if (correcao && correcoesDoManual < 1 && Date.now() < deadline - 3_000) {
+          correcoesDoManual++;
+          console.warn(
+            `[MaestroAgentLoop] Trava do manual (${veredito.tipo}${veredito.tipo === 'nomes_fora_da_pagina' ? `: ${veredito.nomes.join(' | ')}` : ''}) — forçando correção.`
+          );
+          messages.push({ role: 'assistant', content: candidato });
+          messages.push({ role: 'system', content: correcao });
+          continue;
+        }
       }
 
       finalContent = candidato;
@@ -383,9 +476,29 @@ export async function runMaestroAgentLoop(input: AgentLoopInput): Promise<AgentL
 
         const exec = await executeAgentTool(tc.function.name, args, toolCtx);
         toolCallsExecutados++;
+        const nomeTool = tc.function.name;
         if (exec.ok) {
-          coletarIdsDeToolResult(JSON.stringify(exec.result), idsConfirmados);
+          const saida = JSON.stringify(exec.result);
+          coletarIdsDeToolResult(saida, idsConfirmados);
+          if (nomeTool === 'consultar_manual' || nomeTool === 'consultar_pedido') {
+            // Tudo o que estas duas devolvem veio do servidor: os numeros sao
+            // citaveis (OS, parcela, nota) e o texto legitima nomes de tela.
+            coletarNumerosDaPergunta(saida, idsConfirmados);
+            fontesDoTurno.push(saida.split('\\n').join(' '));
+          }
+          if (nomeTool === 'consultar_manual') {
+            const paginas = (exec.result as { paginas?: unknown[] } | null)?.paginas;
+            if (Array.isArray(paginas) && paginas.length > 0) {
+              manualLido = true;
+              for (const p of paginas) {
+                const slug = String((p as { pagina?: unknown } | null)?.pagina ?? '');
+                if (slug && !paginasLidas.includes(slug)) paginasLidas.push(slug);
+              }
+            }
+          }
+          if (AGENT_TOOLS[nomeTool]?.isWrite) houveEscrita = true;
         }
+        consultas.push(resumirConsulta(nomeTool, args, exec.ok, exec.ok ? exec.result : null));
         // Cliente ativado DURANTE o turno (resolver/confirmar) também é confirmado
         state.resolvedClientIds.forEach(id => idsConfirmados.add(String(id)));
 
@@ -445,6 +558,48 @@ export async function runMaestroAgentLoop(input: AgentLoopInput): Promise<AgentL
       '\n\n⚠️ Removi número(s) de proposta que não pude confirmar nas consultas deste turno — desconfie de qualquer número que eu não tenha buscado agora.';
   }
 
+  // Conferencia do assunto: a pagina lida ensina a MESMA tarefa perguntada?
+  // Pagina parecida adaptada para outra tarefa e resposta errada com cara de
+  // certa — sai o texto fixo de "ainda nao tenho esse passo a passo".
+  // Roda em TODA resposta que leu o manual (nao so nas que tem cara de passo a
+  // passo): a adaptacao tambem aparece em prosa, com um botao solto no meio.
+  let conferenciaDoAssunto: ConferenciaDoAssunto | null = null;
+  if (manualLido && finalContent && !houveEscrita) {
+    conferenciaDoAssunto = await conferirAssuntoDaResposta(
+      openai as unknown as ClienteDeChat,
+      model,
+      { pergunta: query, historico, paginasLidas, resposta: content },
+      deadline - Date.now() - 1_000,
+    );
+    if (conferenciaDoAssunto === 'outra_tarefa') {
+      console.warn(`[MaestroAgentLoop] A página lida (${paginasLidas.join(', ')}) ensina outra tarefa — resposta substituída.`);
+      content = respostaDeAssuntoSemPagina(paginasLidas);
+    }
+  }
+
+  // Resposta de uso (manual lido) termina no ultimo passo ou aviso, sem despedida.
+  if (manualLido) content = removerOfertaFinal(content);
+
+  // Defesa final da trava do manual — vale para qualquer caminho de saida.
+  const vereditoFinal = avaliarTrava(content);
+  let travaDoManual: string | null = null;
+  if (vereditoFinal.tipo === 'passos_sem_manual') {
+    console.warn('[MaestroAgentLoop] Passo a passo sem página do manual na resposta final.');
+    if (houveEscrita) {
+      // Nunca apaga a resposta de um turno que gravou algo: so avisa.
+      travaDoManual = 'aviso_passos_sem_manual';
+      content += '\n\n⚠️ As orientações de tela acima não vieram do manual do Vibe — confira antes de seguir.';
+    } else {
+      travaDoManual = 'resposta_substituida';
+      content = RESPOSTA_SEM_PAGINA_NO_MANUAL;
+    }
+  } else if (vereditoFinal.tipo === 'nomes_fora_da_pagina') {
+    console.warn(`[MaestroAgentLoop] Nomes de tela fora do manual na resposta final: ${vereditoFinal.nomes.join(', ')}`);
+    travaDoManual = 'aviso_nomes_fora_da_pagina';
+    content +=
+      `\n\n⚠️ Não confirmei no manual do Vibe estes nomes de tela ou botão: ${vereditoFinal.nomes.join(', ')}. Confira na tela antes de seguir.`;
+  }
+
   if (estourouLimite) {
     console.warn(
       `[MaestroAgentLoop] Guardas acionadas (toolCalls=${toolCallsExecutados}, ` +
@@ -465,6 +620,12 @@ export async function runMaestroAgentLoop(input: AgentLoopInput): Promise<AgentL
       limite_atingido: estourouLimite,
       citacoes_redigidas: invalidosFinais.length,
       correcoes_de_citacao: correcoesDeCitacao,
+      // O que foi consultado (nunca o conteudo): pagina do manual, pedido e partes.
+      consultas,
+      manual_lido: manualLido,
+      conferencia_do_assunto: conferenciaDoAssunto,
+      correcoes_do_manual: correcoesDoManual,
+      trava_do_manual: travaDoManual,
     },
   });
 

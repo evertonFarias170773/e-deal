@@ -5,6 +5,13 @@ const nextConfig: NextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
+  // O Maestro lê o manual de uso (docs/manual/*.md) em tempo de execução, para
+  // montar o índice e devolver a página pedida. A pasta é listada com readdir,
+  // que o rastreador de arquivos do build não acompanha: sem esta linha os .md
+  // não entram na função da Vercel e o Maestro fica sem manual em produção.
+  outputFileTracingIncludes: {
+    "/api/maestro/simple": ["./docs/manual/*.md"],
+  },
   async headers() {
     return [
       {

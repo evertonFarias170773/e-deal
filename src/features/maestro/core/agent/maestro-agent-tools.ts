@@ -18,7 +18,10 @@
  *   3. permissão sensível → recusa amigável;
  *   4. saída sanitizada (maestro-agent-sanitize.ts) antes de voltar ao modelo.
  *
- * NÃO existe tool de SQL livre nem de escrita — impossível gravar via catálogo.
+ * NÃO existe tool de SQL livre. A ÚNICA tool de escrita é
+ * salvar_cotacao_como_proposta (duas fases, atrás de duas flags) — decisão do
+ * dono em 01/10/2026: ela fica como única exceção; todo o resto só orienta e
+ * mostra dados (consultar_manual e consultar_pedido incluídas).
  *
  * ⚠️ Roda apenas no servidor.
  */
@@ -66,6 +69,9 @@ import {
 import { resolverTermoCatalogo } from '../simple/maestro-orcamento-catalogo-oficial';
 import type { MaestroPeriodo } from '../simple/maestro-simple-intents';
 import { sanitizeAgentToolOutput } from './maestro-agent-sanitize';
+import { carregarAcessoUsuario, descreverQuemPergunta } from './maestro-agent-acesso.server';
+import { lerPaginasDoManual, MAX_PAGINAS_POR_CONSULTA } from './maestro-agent-manual.server';
+import { consultarPedido, SECOES_DO_PEDIDO } from './maestro-agent-pedido.server';
 
 // ─── Estado da sessão do agente (controlado SOMENTE pelo servidor) ───────────
 
@@ -126,6 +132,13 @@ interface AgentToolDefinition {
   isWrite?: boolean;
   /** Camada 3 — flag específica da ação (matriz §3). Ausente em tool de escrita = negado. */
   writeActionFlagEnabled?: () => boolean;
+  /**
+   * A saída NÃO passa pelo sanitizador. Só para conteúdo versionado do
+   * repositório (páginas do manual): o sanitizador corta textos em 2.000
+   * caracteres e redige trechos com palavras como "senha", o que mutilaria a
+   * página. NUNCA use em tool que devolve linha do banco.
+   */
+  saidaSemSanitizar?: boolean;
   handler: (args: Record<string, unknown>, ctx: AgentToolContext) => Promise<unknown>;
 }
 
@@ -1816,6 +1829,104 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
       };
     },
   },
+
+  // ─── Manual de uso e caso concreto (01/10/2026) ───────────────────────────
+  // O Maestro so ORIENTA e MOSTRA dados: as duas tools abaixo sao de leitura.
+
+  consultar_manual: {
+    saidaSemSanitizar: true,
+    schema: {
+      type: 'function',
+      function: {
+        name: 'consultar_manual',
+        description:
+          'Ler páginas do MANUAL DE USO do Vibe (docs/manual): onde fica cada tela, passo a passo com os nomes exatos de menu, aba e botão, ' +
+          'regras e bloqueios, quem acessa e erros comuns. OBRIGATÓRIA antes de responder qualquer pergunta de USO do sistema ' +
+          '("como faço", "onde fica", "onde clico", "por que não consigo", "quem pode", "o que significa esse aviso/status"). ' +
+          'Escolha as páginas pelo ÍNDICE do manual que está no prompt (campo identificador). Fluxo que passa por duas telas → peça as duas na MESMA chamada. ' +
+          'O retorno também traz quem_pergunta (perfil e permissões do usuário logado) para você dizer se ELE pode fazer o passo. ' +
+          'Se a pergunta cita um pedido, chame consultar_pedido no MESMO turno.',
+        parameters: {
+          type: 'object',
+          properties: {
+            paginas: {
+              type: 'array',
+              items: { type: 'string' },
+              description: `Identificadores das páginas, exatamente como no índice (ex.: ["carteira","registro-de-recebiveis"]). De 1 a ${MAX_PAGINAS_POR_CONSULTA}.`,
+            },
+          },
+          required: ['paginas'],
+          additionalProperties: false,
+        },
+      },
+    },
+    handler: async (args, ctx) => {
+      const pedidas = (Array.isArray(args.paginas) ? args.paginas : [])
+        .map(p => String(p ?? '').trim())
+        .filter(Boolean)
+        .slice(0, MAX_PAGINAS_POR_CONSULTA);
+      const leitura = lerPaginasDoManual(pedidas);
+      const acesso = await carregarAcessoUsuario(ctx.supabase, ctx.userId);
+      const semPagina = leitura.encontradas.length === 0;
+      return {
+        found: !semPagina,
+        paginas: leitura.encontradas,
+        paginas_nao_encontradas: leitura.nao_encontradas,
+        paginas_disponiveis: semPagina || leitura.nao_encontradas.length > 0 ? leitura.paginas_disponiveis : undefined,
+        paginas_citadas_e_nao_lidas: leitura.citadas_e_nao_lidas.length > 0 ? leitura.citadas_e_nao_lidas : undefined,
+        quem_pergunta: descreverQuemPergunta(acesso),
+        como_usar:
+          semPagina
+            ? 'NENHUMA página foi lida. Se o assunto não está em paginas_disponiveis, diga que ainda não tem esse passo a passo no manual — sem descrever cliques.'
+            : 'Responda SOMENTE com o que está nas páginas: nomes de menu, aba, botão e aviso EXATAMENTE como escritos (em negrito). ' +
+              'Passo que não está na página = diga que o manual não cobre; não complete. Você só orienta: quem executa é o usuário. ' +
+              'MAIS DE UM CAMINHO na página para o que foi pedido → apresente NA ORDEM DA PÁGINA (o primeiro da página vem primeiro, com os passos completos), cada um com o resultado em uma linha; não escolha pelo nome de botão parecido com as palavras do usuário. ' +
+              'ANTES de responder: se o caminho que você vai indicar CONTINUA em uma das paginas_citadas_e_nao_lidas (a página diz que a cobrança, o pedido ou o título "volta para" ou "segue para" outra tela), ' +
+              'chame consultar_manual para ela agora e inclua os passos seguintes. ' +
+              'Se consultou um pedido: liste o que existe (parcela, valor, vencimento, situação) e aplique ao caso os avisos da página que o atingem (filtro padrão que esconderia um título, parcela paga que bloqueia). ' +
+              'CONFIRA O ASSUNTO: a página lida trata da MESMA tarefa que foi perguntada (mesma tela, mesmo objetivo)? Se ela só compartilha palavras com a pergunta (CPF, boleto, frete, cadastro) mas ensina OUTRA tarefa, NÃO responda com ela: ' +
+              'diga que o manual ainda não tem esse passo a passo e, no máximo, cite em uma linha o que a página lida cobre. ' +
+              'OBRIGATÓRIO: uma frase dizendo se quem_pergunta PODE fazer o que perguntou — compare o "Quem acessa" da página com permissoes_do_perfil, administrador e super_admin. ' +
+              'Se NÃO pode: diga qual permissão falta, pelo nome que a página usa, e que deve pedir a quem tem essa permissão ou a um administrador — e explique os passos do mesmo jeito. ' +
+              'Termine no último passo ou aviso — sem oferta nem despedida.',
+      };
+    },
+  },
+
+  consultar_pedido: {
+    schema: {
+      type: 'function',
+      function: {
+        name: 'consultar_pedido',
+        description:
+          'Situação REAL de UM pedido/proposta pelo NÚMERO, lida agora no ERP — NÃO exige cliente ativo. Use sempre que a pergunta citar um número de pedido ' +
+          '("os boletos do pedido 22812", "em que pé está o 21500", "a nota do 22000 saiu?", "já despachou?"). Peça só as partes necessárias em secoes: ' +
+          'situacao (status, cliente, vendedor, valor, frete), cobrancas (cobranças do pedido: tipo, valor, paga/a vencer/cancelada, se já gerou títulos), ' +
+          'titulos (boletos e depósitos da Carteira: parcela, valor, vencimento, pago/vencido/cancelado, registrado no banco, qual banco), ' +
+          'nota_fiscal (notas do pedido e se está liberado para faturar), producao (ordem de serviço, etapa, prazos por setor), ' +
+          'expedicao (despacho, transportadora, rastreio, entrega), tarefas (tarefas da equipe ligadas ao pedido). ' +
+          'Totais e contagens vêm prontos em "resumo". Permissões são aplicadas no servidor: vendedor só consulta os próprios pedidos e cada parte exige a permissão da tela ' +
+          '— se vier ok=false ou uma parte com disponivel=false, NÃO há dado: explique com naturalidade e diga a quem pedir. Somente leitura.',
+        parameters: {
+          type: 'object',
+          properties: {
+            numero: { type: 'number', description: 'Número do pedido/proposta (id_int), como o usuário informou.' },
+            secoes: {
+              type: 'array',
+              items: { type: 'string', enum: [...SECOES_DO_PEDIDO] },
+              description: 'Partes a consultar. Omitido = só situacao. Boletos/títulos de um pedido → ["cobrancas","titulos"].',
+            },
+          },
+          required: ['numero'],
+          additionalProperties: false,
+        },
+      },
+    },
+    handler: async (args, ctx) => {
+      const acesso = await carregarAcessoUsuario(ctx.supabase, ctx.userId);
+      return consultarPedido(ctx.supabase, acesso, args.numero, args.secoes);
+    },
+  },
 };
 
 /** Schemas expostos ao modelo (formato OpenAI `tools`). */
@@ -1888,7 +1999,7 @@ export async function executeAgentTool(
   // 4. Executa o adapter e sanitiza a saída
   try {
     const raw = await tool.handler(args, ctx);
-    return { ok: true, result: sanitizeAgentToolOutput(raw) };
+    return { ok: true, result: tool.saidaSemSanitizar ? raw : sanitizeAgentToolOutput(raw) };
   } catch (err) {
     console.error(`[MaestroAgentTools] Erro na tool "${name}":`, err);
     return { ok: false, error: 'Erro interno ao consultar o ERP. Informe que a consulta falhou e sugira tentar novamente.' };
