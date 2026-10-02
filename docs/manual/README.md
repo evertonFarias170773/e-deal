@@ -29,6 +29,10 @@ Cada ficha cobre uma tela ou um fluxo e segue sempre o mesmo formato ([_MODELO.m
 - [Proposta: aba Pedido (Boletim Técnico & Lotes)](proposta-pedido.md)
 - [Proposta: abas Produção e Histórico, e o boletim](proposta-producao-boletim-historico.md)
 
+### Clientes
+
+- [Cadastros: Recebidos pelo link](cadastros-recebidos-pelo-link.md)
+
 ### Financeiro
 
 - [Conferência](conferencia.md)

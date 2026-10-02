@@ -82,6 +82,8 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 
 ## Passo a passo
 
+> Quer cancelar um boleto para corrigir data, NF ou descrição? Use **Refazer boleto**: troca o boleto e mantém o recebível. **Cancelar recebível** é para desistir do título.
+
 ### Entender a tela
 
 Os três cartões do topo respeitam a busca, a empresa e o status escolhidos. Nas abas **Boletos** e **Depósitos**, somam só os títulos daquele tipo. Os filtros ficam no endereço da página: sobrevivem a atualizar a tela e podem ser enviados por link.
@@ -263,9 +265,9 @@ O boleto é cancelado no banco e o título continua ativo, agora como **Depósit
 
 ## O que não confundir
 
+- Quer cancelar um boleto para corrigir data, NF ou descrição? Use **Refazer boleto**: troca o boleto e mantém o recebível. **Cancelar recebível** é para desistir do título. O Refazer mantém o título na Carteira; o Cancelar recebível cancela o título e libera a cobrança para o Registro de recebíveis.
 - **Carteira**, **Registro de recebíveis** e **Conferência**: a Conferência confere a cobrança do pedido; o Registro de recebíveis transforma a cobrança faturada já conferida em títulos; a Carteira acompanha e opera esses títulos.
 - **Título** (ou recebível, ou parcela) e **cobrança**: a cobrança é o pagamento do pedido, identificada na coluna **N°**; o título é cada parcela lançada a partir dela. Cancelar um título não cancela a cobrança.
-- **Refazer boleto** e **Cancelar recebível**: o primeiro troca só o boleto e mantém o título; o segundo cancela o título e libera a cobrança para o Registro de recebíveis.
 - **Refazer boleto** e **Prorrogar vencimento**: o Refazer mantém o mesmo título e deixa corrigir NF, descrição, vencimento e pagador; o Prorrogar só muda a data e cria um título novo, deixando o antigo como **Cancelado**.
 - **Cancelar recebível** e **Cancelar boleto**: o primeiro cancela o título; o segundo cancela só o boleto no banco e mantém o título ativo como depósito em conta.
 - **Cancelar boleto** (item do menu) e **Cancelar boleto?** (título da janela do **Cancelar recebível**): o item do menu mantém o título como depósito; a janela com esse título cancela o título por inteiro.
@@ -349,5 +351,5 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/components/common/PermissionGuard.tsx`
 - `src/lib/formatters/status.ts`
 - `src/lib/mocks/contas-receber.mock.ts`
-- `src/features/usuarios-perfis/`
+- `src/features/usuarios-perfis/catalogo-permissoes.ts`
 - `src/constants/navigation.ts`

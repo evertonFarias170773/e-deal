@@ -285,4 +285,4 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/features/cobrancas/CobrancaActionsMenu.tsx`
 - `src/features/cadastros/CadastroDetailPage.tsx`
 - `src/app/api/cobrancas/pagamento-combinado/route.ts`
-- `src/features/usuarios-perfis/components/PerfisPermissoesPanel.tsx`
+- `src/features/usuarios-perfis/catalogo-permissoes.ts`

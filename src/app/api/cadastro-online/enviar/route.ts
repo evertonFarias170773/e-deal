@@ -33,8 +33,10 @@ import { conferirNomeNaCpfHub } from "@/features/cadastros/services/cpfhub-nome.
  *   5. procura o documento em `clientes` e, PENDENTE, na propria fila
  *   6. Receita (so CNPJ) ou CPFHub (so CPF) — so aqui
  *   7. CNPJ: cria o cliente e grava a fila como APROVADO.
- *      CPF (desde 29/09/2026): NAO cria cliente; grava a fila como PENDENTE,
- *      com o sinal "nome confere" da CPFHub, e o atendente aprova.
+ *      CPF com "nome confere" na CPFHub (desde 02/10/2026): idem — cria o
+ *      cliente na hora e a fila nasce APROVADO, automatico.
+ *      CPF com "nao confere" ou "nao verificado": NAO cria cliente; grava a
+ *      fila como PENDENTE, com o sinal, e o atendente aprova.
  *
  * A Receita e a CPFHub sao o passo 6 porque sao o que custa dinheiro e cota.
  * Chama-las antes do rate limit ou do honeypot deixaria qualquer robo queimar o
@@ -43,8 +45,9 @@ import { conferirNomeNaCpfHub } from "@/features/cadastros/services/cpfhub-nome.
  *
  * A CPFHub devolve o nome do CPF; ele NAO e gravado nem devolvido. So o sinal
  * (confere / nao confere / nao verificado) vai para a fila, para o atendente. A
- * resposta da pagina e a mesma nos tres casos — e o piso de tempo cobre a
- * chamada, como cobre a Receita.
+ * resposta da pagina e a mesma nos tres casos — inclusive quando o "confere"
+ * criou o cliente — e o piso de tempo cobre a chamada e os inserts, como cobre
+ * a Receita.
  *
  * O PISO DE TEMPO, E O QUE ELE NAO RESOLVE
  * ----------------------------------------
@@ -323,15 +326,18 @@ export async function POST(request: Request) {
   const receita = consulta?.estado === "OK" ? consulta.dados : null;
   const cpfNomeConfere = tipoPessoa === "FISICA" ? await conferirNomeNaCpfHub(digitos, nome) : null;
 
-  // ------------------------------------------------- 7. CLIENTE (so CNPJ) E FILA
+  // ------------------------------------- 7. CLIENTE (CNPJ, CPF que confere) E FILA
   const emailInformado = textoOuNulo(corpo.email);
   const whatsappInformado = textoOuNulo(corpo.whatsapp);
 
-  // CNPJ cria o cliente na hora, como sempre. CPF nao: nasce PENDENTE na fila
-  // e so vira cliente quando o atendente aprova (rota /api/cadastro-online/aprovar,
-  // que usa a mesma funcao de criacao).
+  // CNPJ cria o cliente na hora, como sempre. CPF tambem, desde 02/10/2026,
+  // QUANDO a CPFHub disse que o nome confere (`true`, e so `true`). CPF com
+  // "nao confere" ou "nao verificado" nasce PENDENTE na fila e so vira cliente
+  // quando o atendente aprova (rota /api/cadastro-online/aprovar, que usa a
+  // mesma funcao de criacao).
+  const criaClienteNaHora = tipoPessoa === "JURIDICA" || cpfNomeConfere === true;
   let idCliente: number | null = null;
-  if (tipoPessoa === "JURIDICA") {
+  if (criaClienteNaHora) {
     const criacao = await criarClienteDoCadastroOnline(service, {
       tipoPessoa,
       documentoDigitos: digitos,
@@ -351,14 +357,18 @@ export async function POST(request: Request) {
       nomeVendedor: textoOuNulo(link.primeiro_nome),
       receita
     });
-    if (!criacao.ok) {
+    if (criacao.ok) {
+      idCliente = criacao.idCliente;
+    } else if (tipoPessoa === "JURIDICA") {
       await esperarPiso(inicio);
       return NextResponse.json(
         { ok: false, situacao: "ERRO", mensagem: "Nao foi possivel concluir o cadastro. Tente de novo em instantes." },
         { status: 500 }
       );
     }
-    idCliente = criacao.idCliente;
+    // CPF que confere e cuja criacao falhou NAO vira erro: segue como PENDENTE,
+    // com o sinal gravado, e o atendente aprova pela fila. Responder ERRO so
+    // neste ramo contaria a quem digitou que o nome conferiu.
   }
   const numeroValido = idCliente !== null;
 
@@ -367,8 +377,9 @@ export async function POST(request: Request) {
   // `cadastros_online_aprovado_coerente` exige `aprovado_em` e `id_cliente_gerado`
   // junto do status APROVADO, e e por isso que a linha e gravada DEPOIS do
   // insert em `clientes`, nunca antes.
-  // CPF: nasce PENDENTE (sem `aprovado_em`, sem `id_cliente_gerado`), com o
-  // sinal da CPFHub em `cpf_nome_confere`.
+  // CPF que confere: igual ao CNPJ, com `cpf_nome_confere = true`.
+  // CPF que nao confere ou nao foi verificado: nasce PENDENTE (sem
+  // `aprovado_em`, sem `id_cliente_gerado`), com o sinal em `cpf_nome_confere`.
   const { error: erroFila } = await service.from("cadastros_online").insert({
     id_vendedor: link.id_vendedor,
     nome_vendedor: textoOuNulo(link.primeiro_nome),
@@ -407,7 +418,7 @@ export async function POST(request: Request) {
         erroFila.message
       );
     } else {
-      // CPF: sem a linha da fila nao existe cadastro nenhum. Aqui a pessoa
+      // CPF pendente: sem a linha da fila nao existe cadastro nenhum. Aqui a pessoa
       // PRECISA tentar de novo — nada foi criado, nao ha duplicidade a temer.
       console.error("[cadastro-online] fila (CPF, PENDENTE) nao gravou:", erroFila.message);
       await esperarPiso(inicio);

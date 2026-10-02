@@ -177,5 +177,5 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/features/cobrancas/PrepararBoletosModal.tsx`
 - `src/features/contas-a-receber/ContasReceberPage.tsx`
 - `src/components/common/PermissionGuard.tsx`
-- `src/features/usuarios-perfis/`
+- `src/features/usuarios-perfis/catalogo-permissoes.ts`
 - `src/constants/navigation.ts`

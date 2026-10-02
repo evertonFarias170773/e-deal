@@ -427,4 +427,4 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/lib/formatters/status.ts`
 - `src/constants/navigation.ts`
 - `src/features/auth/usuarios.service.ts`
-- `src/features/usuarios-perfis/components/PerfisPermissoesPanel.tsx`
+- `src/features/usuarios-perfis/catalogo-permissoes.ts`

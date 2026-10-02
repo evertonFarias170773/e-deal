@@ -21,10 +21,11 @@ import {
  * Fila do cadastro online.
  *
  * Mostra TUDO o que caiu por link de atendente. CNPJ e aprovado
- * automaticamente (a coluna que diz quem decidiu fica nula); CPF, desde
- * 29/09/2026, nasce PENDENTE e e aprovado aqui — com o sinal de que o nome
- * digitado confere (ou nao) com o do CPF na CPFHub. O nome que a CPFHub
- * devolveu nao esta em lugar nenhum: so o sinal.
+ * automaticamente (a coluna que diz quem decidiu fica nula). CPF, desde
+ * 02/10/2026, tambem — quando o nome digitado confere com o do CPF na CPFHub.
+ * CPF cujo nome nao confere, ou que nao pode ser verificado, nasce PENDENTE e
+ * e aprovado aqui, com o sinal a vista. O nome que a CPFHub devolveu nao esta
+ * em lugar nenhum: so o sinal.
  *
  * Sem restricao de perfil, por decisao do dono: qualquer perfil com sessao ve a
  * fila inteira, de qualquer vendedor.
@@ -144,7 +145,7 @@ export function CadastrosOnlineFilaPage() {
     <div className="space-y-6">
       <PageHeader
         title="Recebidos pelo link"
-        subtitle="Cadastros enviados pelos clientes através do link do atendente. Cadastros de CNPJ entram direto. Cadastros de CPF ficam pendentes até alguém aprovar."
+        subtitle="Cadastros enviados pelos clientes através do link do atendente. Cadastros de CNPJ entram direto. Cadastros de CPF também, quando o nome confere com o CPF; os demais ficam pendentes até alguém aprovar."
         context="Cadastros"
       />
 

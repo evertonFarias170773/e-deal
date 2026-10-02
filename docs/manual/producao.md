@@ -314,7 +314,7 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/app/api/pedidos/os-qr/rotacionar/route.ts`
 - `src/constants/navigation.ts`
 - `src/features/auth/usuarios.service.ts`
-- `src/features/usuarios-perfis/components/PerfisPermissoesPanel.tsx`
+- `src/features/usuarios-perfis/catalogo-permissoes.ts`
 - `src/lib/auth/verificar-permissao.ts`
 - `src/features/orcamentos/services/orcamentos.service.ts`
 - `src/features/expedicao/services/expedicao-acoes.service.ts`
