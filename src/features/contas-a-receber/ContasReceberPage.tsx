@@ -2773,6 +2773,9 @@ function GroupedSection({
   onGerarPdfBoleto?: (item: BoletoDepositoMock) => void;
   onLifecycle?: BoletoLifecycleOps;
 }) {
+  const { user } = useAuth();
+  // Mesma chave que a rota de registro confere no servidor.
+  const canAdmin = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "contas_receber.admin");
   if (items.length === 0) return null;
 
   const totalSum = items.reduce((acc, item) => acc + (item.valor_atualizado ?? item.valor), 0);
@@ -2827,7 +2830,7 @@ function GroupedSection({
               const isVisualAReceberCriado = getVisualStatus(item, today) === "A_RECEBER_CRIADO";
               return (
                 <div className="flex items-center justify-end gap-2">
-                  {isVisualAReceberCriado && onRegister && (
+                  {isVisualAReceberCriado && onRegister && canAdmin && (
                     <button
                       onClick={() => onRegister(item)}
                       className="px-3 py-1.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl shadow-sm transition"
@@ -2864,7 +2867,7 @@ function GroupedSection({
               const isVisualAReceberCriado = getVisualStatus(item, today) === "A_RECEBER_CRIADO";
               return (
                 <div className="flex items-center justify-end gap-2">
-                  {isVisualAReceberCriado && onRegister && (
+                  {isVisualAReceberCriado && onRegister && canAdmin && (
                     <button
                       onClick={() => onRegister(item)}
                       className="px-3 py-1.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl shadow-sm transition"
@@ -3184,8 +3187,11 @@ function RecebivelActions({
   if (item.tipo === "BOLETO" && onRegister) {
     // Em boleto já registrado a janela é só de consulta (os campos ficam
     // travados): o rótulo antigo, "Alterar Cobrança", prometia o que ela não faz.
-    const labelReg = (!item.id_boleto_c6 && !item.linha_digitavel) ? "Registrar boleto no banco" : "Ver boleto registrado";
-    actionItems.push({ label: labelReg, onClick: () => onRegister(item) });
+    // Registrar exige a chave (a rota confere de novo); consultar o boleto já
+    // registrado continua aberto a quem vê a tela.
+    const semRegistro = !item.id_boleto_c6 && !item.linha_digitavel;
+    if (!semRegistro) actionItems.push({ label: "Ver boleto registrado", onClick: () => onRegister(item) });
+    else if (canAdmin) actionItems.push({ label: "Registrar boleto no banco", onClick: () => onRegister(item) });
   }
 
   if (canAdmin && onRefazer && ofereceRefazer(item)) {
@@ -3284,8 +3290,11 @@ function BoletoActions({
   if (item.tipo === "BOLETO" && onRegister) {
     // Em boleto já registrado a janela é só de consulta (os campos ficam
     // travados): o rótulo antigo, "Alterar Cobrança", prometia o que ela não faz.
-    const labelReg = (!item.id_boleto_c6 && !item.linha_digitavel) ? "Registrar boleto no banco" : "Ver boleto registrado";
-    actionItems.push({ label: labelReg, onClick: () => onRegister(item) });
+    // Registrar exige a chave (a rota confere de novo); consultar o boleto já
+    // registrado continua aberto a quem vê a tela.
+    const semRegistro = !item.id_boleto_c6 && !item.linha_digitavel;
+    if (!semRegistro) actionItems.push({ label: "Ver boleto registrado", onClick: () => onRegister(item) });
+    else if (canAdmin) actionItems.push({ label: "Registrar boleto no banco", onClick: () => onRegister(item) });
   }
 
   if (canAdmin && onRefazer && ofereceRefazer(item)) {
@@ -3365,6 +3374,9 @@ function RecebivelCard({
   onRegister?: (item: BoletoDepositoMock) => void;
   badgeAzul?: boolean;
 }) {
+  const { user } = useAuth();
+  // Mesma chave que a rota de registro confere no servidor.
+  const canAdmin = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "contas_receber.admin");
   const isVisualAReceberCriado = getVisualStatus(item, today) === "A_RECEBER_CRIADO";
 
   return (
@@ -3394,7 +3406,7 @@ function RecebivelCard({
         <p>Conf.: {item.confirmado ? "Sim" : "Não"}</p>
       </div>
       <div className="mt-4 flex justify-end gap-2 items-center">
-        {isVisualAReceberCriado && onRegister && (
+        {isVisualAReceberCriado && onRegister && canAdmin && (
           <button
             onClick={() => onRegister(item)}
             className="px-4 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl shadow-sm transition shrink-0"

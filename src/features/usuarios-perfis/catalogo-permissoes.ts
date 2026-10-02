@@ -144,6 +144,7 @@ export const CATALOGO_PERMISSOES: Record<string, PermissionDefinition[]> = {
     { key: "fiscal.emit_nfe",   label: "Emitir NF-e (Produto)",        desc: "Permite emitir oficialmente Notas Fiscais de Produto (NF-e).",                        critica: true  },
     { key: "fiscal.emit_nfse",  label: "Emitir NFS-e (Serviço)",       desc: "Permite emitir oficialmente Notas Fiscais de Serviço (NFS-e).",                       critica: true  },
     { key: "fiscal.cancel_nf",  label: "Cancelar Nota Fiscal",         desc: "Permite solicitar cancelamento de NF junto à Sefaz ou Prefeitura.",                   critica: true  },
+    { key: "fiscal.carta_correcao", label: "Emitir Carta de Correção", desc: "Permite enviar Carta de Correção (CC-e) de uma NF-e autorizada.",                      critica: true  },
     { key: "fiscal.admin",      label: "Configurar Parâmetros Fiscais", desc: "Permite configurar série, ambiente (produção/homologação) e CFOP padrão.",            critica: true  },
     // Permissão V1 mantida para compatibilidade retroativa durante migração
     { key: "fiscal.emitir", label: "Emitir NF", desc: "Sera substituido por fiscal.emit_nfe e fiscal.emit_nfse na Fase 4.",               critica: true  }

@@ -1550,6 +1550,16 @@ export function OrcamentosListPageReal() {
    * "Encerrar" nem "Reabrir". A rota confere a mesma chave.
    */
   const canEncerrarTeste = hasPermissao(user, "propostas.encerrar_teste");
+
+  /**
+   * "Liberar para Produção" e "Retirar da Produção" seguem a MESMA chave do
+   * catalogo (02/10/2026). Esconder o item nao protege nada: quem tranca a
+   * liberacao e POST /api/orcamentos/liberar-producao, que confere a chave no
+   * servidor.
+   */
+  const canLiberarProducao = Boolean(
+    user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "propostas.release_producao")
+  );
   const [encerrandoTesteId, setEncerrandoTesteId] = useState<number | null>(null);
 
   async function handleEncerrarTeste(item: OrcamentoListItem, encerrar: boolean) {
@@ -1761,7 +1771,7 @@ Ela volta a aparecer nas listas operacionais.`
        * funcionou — que era justamente a dúvida que levava ao segundo clique.
        * "Retirar" foi para o fim do menu, junto das outras ações destrutivas.
        */
-      ...(!item.is_prd_aprovado && item.isAvulsoRaw !== true && item.statusInterno === "REVISAO ATENDENTE" ? [{ label: "Liberar para Produção", onClick: () => void handleLiberarProducao(item) }] : []),
+      ...(!item.is_prd_aprovado && item.isAvulsoRaw !== true && item.statusInterno === "REVISAO ATENDENTE" && canLiberarProducao ? [{ label: "Liberar para Produção", onClick: () => void handleLiberarProducao(item) }] : []),
       ...(item.is_prd_aprovado && item.isAvulsoRaw !== true ? [{ label: "✓ Liberada para produção", disabled: true }] : []),
       // Rastrear: so quando o frete e Correios E ha codigo gravado. Sem uma das
       // duas coisas o item nem aparece — botao que abre modal para dizer "sem
@@ -1802,7 +1812,7 @@ Ela volta a aparecer nas listas operacionais.`
        *
        * Condicao, permissao e o que ela grava: tudo intocado.
        */
-      ...(item.is_prd_aprovado && (user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "propostas.release_producao")) ? [{ label: "Retirar da Produção", destructive: true, onClick: () => void handleRetirarProducao(item) }] : [])
+      ...(item.is_prd_aprovado && canLiberarProducao ? [{ label: "Retirar da Produção", destructive: true, onClick: () => void handleRetirarProducao(item) }] : [])
     ];
   }
 

@@ -13,7 +13,7 @@ Esta página explica também como o pedido sai do atendimento e entra na fábric
 ## Quem acessa
 
 - Quem abre a edição do pedido vê as abas **Produção** e **Histórico**. A aba Produção aparece também em proposta avulsa e em pedido só de prateleira.
-- **Liberar para Produção** fica na lista de Pedidos e aparece para quem vê o pedido na lista, quando ele está em REVISAO ATENDENTE. A ação não tem permissão própria na tela; o sistema confere pagamento, arte e modelos antes de aceitar.
+- **Liberar para Produção** fica na lista de Pedidos e aparece só para Administrador, Super Administrador ou quem tem a permissão **Liberar para Produção** no perfil, quando o pedido está em REVISAO ATENDENTE. O servidor confere a mesma permissão e, depois, pagamento, arte e modelos. A liberação automática de pedido só de prateleira, que acontece quando o pagamento é confirmado, não depende dessa permissão.
 - **Retirar da Produção** aparece só para Administrador, Super Administrador ou quem tem a permissão **Liberar para Produção** no perfil.
 - **Voltar para Revisão Atendente** (tela Produção) aparece só para Administrador, Super Administrador ou quem tem a permissão **Ações Administrativas de OS**.
 - A OS (boletim) abre para quem tem a permissão **Visualizar Pedidos e OS**.
@@ -172,7 +172,8 @@ As mensagens são internas: o cliente não vê.
 | "A quantidade vendida não bate com a soma dos lotes. Acerte os lotes antes de liberar para produção:" seguido de "Produto X: vendido N, lotes somam M" | A quantidade de um produto é diferente da soma dos modelos, ou o produto não tem modelo. | Acerte os modelos na aba **Pedido** e grave. |
 | "Proposta já está liberada para produção." | Outra pessoa (ou o sistema) já liberou. | Nada a fazer. O pedido já está na produção. |
 | "Propostas avulsas não vão para produção." | O pedido é avulso. | Nada a fazer. |
-| **Liberar para Produção** não aparece no menu | O pedido não está em REVISAO ATENDENTE, é avulso ou já foi liberado. | Confira o status. Se faltar pagamento ou arte, resolva antes. |
+| **Liberar para Produção** não aparece no menu | O pedido não está em REVISAO ATENDENTE, é avulso ou já foi liberado, ou o seu perfil não tem a permissão **Liberar para Produção**. | Confira o status. Se faltar pagamento ou arte, resolva antes. Se for permissão, peça a quem tem. |
+| "Sem permissão para liberar para produção (propostas.release_producao)." | Seu perfil não tem a permissão **Liberar para Produção**. | Peça a liberação a quem tem a permissão. |
 | "Data e hora de entrega só podem ser alteradas por um administrador. ..." | A OS já existe e o seu perfil não tem a permissão de editar data. | Peça a um administrador para ajustar, ou para incluir a permissão **Editar Datas de Entrega** no seu perfil. |
 | "Formulário Incompleto" — "A data de entrega prevista é obrigatória." | A OS foi salva sem a **Data Limite de Entrega**. | Preencha a data e salve. |
 | "Erro ao gerar PDF da OS" | O PDF não pôde ser gerado; o motivo vem no aviso. | Leia o motivo. Confira se o pedido está liberado para a produção e tente de novo. |

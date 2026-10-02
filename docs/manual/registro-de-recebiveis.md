@@ -124,7 +124,7 @@ Use só quando o parcelamento inteiro precisa ser refeito. Para trocar o boleto 
 - Toda parcela precisa ter valor maior que zero.
 - Não dá para lançar uma parcela que já tem título ativo na mesma proposta. Título cancelado não ocupa a parcela.
 - A entrada não é lançada por aqui: o parcelamento divide o valor total da cobrança.
-- Gerar os títulos não registra o boleto no banco. O registro é o passo seguinte, na janela **Revisar para Geração Bancária** da Carteira.
+- Gerar os títulos não registra o boleto no banco. O registro é o passo seguinte, na janela **Revisar para Geração Bancária** da Carteira. Registrar no banco exige a permissão **Administrar Contas a Receber**; quem só gera os títulos e não a tem recebe "Sem permissão para registrar boleto no banco (contas_receber.admin)."
 - Multa e juros nascem zerados em cada parcela. Preencha se for cobrar.
 - Só aparecem em **Empresa recebedora** as empresas que têm modelo de boleto configurado.
 - Ao mudar entre parcela única e parcelamento, as parcelas já geradas são descartadas. Clique em **Gerar Parcelas** de novo.

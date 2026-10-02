@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
+import { verificarPermissaoServerSide } from "@/lib/auth/verificar-permissao";
 
 /**
  * Registro bancário de um título faturado do Registro de Recebíveis.
@@ -10,11 +11,18 @@ import { createClient as createSupabaseClient } from "@supabase/supabase-js";
  * As empresas 1 e 3 seguem no fluxo legado, byte-idêntico: esta rota devolve
  * `delegarLegado: true` e o cliente chama `registerBoletoViaN8n` exatamente como
  * antes. Nenhum payload do C6 passa por aqui, então não há como regredir.
+ *
+ * PERMISSÃO (02/10/2026): a chave `contas_receber.admin` é conferida AQUI, para
+ * todas as empresas, ANTES de decidir o caminho — inclusive antes de devolver
+ * `delegarLegado`. Até então a rota só conferia a sessão, e o botão "Registrar"
+ * da Carteira aparecia para qualquer um que visse a tela.
  */
 
 const WEBHOOK_BIRO_FATURADO = "https://10074.hostoo.net.br/webhook/biro-faturado-inter";
 
 const EMPRESA_BIRO = 2;
+/** "Administrar Contas a Receber": a chave que a tela usa para as ações administrativas da Carteira. */
+const PERMISSAO = "contas_receber.admin";
 
 /**
  * O Inter devolve a cobrança como EM_PROCESSAMENTO por alguns segundos antes de
@@ -91,6 +99,15 @@ export async function POST(request: Request) {
   const { data: authData, error: authError } = await supabase.auth.getUser();
   if (authError || !authData.user) {
     return NextResponse.json({ success: false, message: "Sessão inválida." }, { status: 401 });
+  }
+
+  // A permissão vale AQUI, no servidor. A tela apenas esconde o botão.
+  const temPermissao = await verificarPermissaoServerSide(supabase, authData.user.id, PERMISSAO);
+  if (!temPermissao) {
+    return NextResponse.json(
+      { success: false, code: "SEM_PERMISSAO", message: `Sem permissão para registrar boleto no banco (${PERMISSAO}).` },
+      { status: 403 }
+    );
   }
 
   const { data: boleto, error: fetchErr } = await supabase

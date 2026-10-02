@@ -21,6 +21,16 @@
 import { NextResponse } from "next/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { liberarPropostaParaProducao } from "@/features/orcamentos/services/orcamentos.service";
+import { verificarPermissaoServerSide } from "@/lib/auth/verificar-permissao";
+
+/**
+ * A chave do catalogo "Liberar para Produção". Ate 02/10/2026 esta rota so
+ * conferia a sessao: qualquer usuario logado liberava. A liberacao AUTOMATICA
+ * de pedido de prateleira (na confirmacao do pagamento) nao passa por aqui —
+ * chama `liberarPropostaParaProducao` direto — e por isso continua sem exigir a
+ * chave de quem confirma.
+ */
+const PERMISSAO = "propostas.release_producao";
 
 export async function POST(request: Request) {
   let body: { id_int?: number };
@@ -56,6 +66,15 @@ export async function POST(request: Request) {
   const { data: authData, error: authError } = await supabase.auth.getUser();
   if (authError || !authData.user) {
     return NextResponse.json({ success: false, message: "Sessão inválida." }, { status: 401 });
+  }
+
+  // A permissão vale AQUI, no servidor. O menu só esconde o item.
+  const temPermissao = await verificarPermissaoServerSide(supabase, authData.user.id, PERMISSAO);
+  if (!temPermissao) {
+    return NextResponse.json(
+      { success: false, code: "SEM_PERMISSAO", message: `Sem permissão para liberar para produção (${PERMISSAO}).` },
+      { status: 403 }
+    );
   }
 
   const resultado = await liberarPropostaParaProducao(idInt, supabase);

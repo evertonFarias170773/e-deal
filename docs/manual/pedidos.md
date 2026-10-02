@@ -19,7 +19,7 @@ No alto da tela o título aparece como "Orcamentos", com a etiqueta "Pedidos". �
 - **Cancelar proposta**: só o Super Administrador e quem tem a permissão "Cancelar Propostas" (o perfil Gerente comercial já vem com ela).
 - **Criar pedido complementar**: só quem tem a permissão "Criar Pedido Complementar".
 - **Duplicar proposta**: só o vendedor da proposta, o administrador ou quem vê todas as propostas. Para os demais a cópia é recusada com o aviso "Você só pode duplicar proposta em que é o vendedor".
-- **Retirar da Produção**: só administrador, Super Administrador ou quem tem a permissão "Liberar para Produção".
+- **Liberar para Produção** e **Retirar da Produção**: só administrador, Super Administrador ou quem tem a permissão "Liberar para Produção". Sem ela, os dois itens não aparecem no menu, e o servidor recusa a liberação.
 - **Encerrar teste** e **Reabrir (desfazer encerramento de teste)**: só o Super Administrador.
 - **Voltar para a Fila de Faturamento (desfazer nota no sistema antigo)**: só administrador, Super Administrador ou quem tem a permissão "Liberar para Nota Fiscal".
 - As demais ações do menu da linha aparecem para qualquer usuário que vê o pedido. O que cada um consegue alterar dentro da proposta é decidido na própria proposta.
@@ -164,7 +164,7 @@ As datas pequenas aparecem como dia/mês e hora, no horário de Brasília.
 9. **Abrir DANFE (PDF)** e **Baixar XML**: aparecem quando o pedido tem nota autorizada.
 10. **Gerar cobrança**: abre a geração de cobrança. Não aparece em pedido sem cliente cadastrado.
 11. **Cancelar proposta**: abre a janela de cancelamento, que exige o **Motivo do Cancelamento**.
-12. **Liberar para Produção**: aparece em pedido não avulso que está em REVISAO ATENDENTE e ainda não foi liberado. Depois de liberado, no lugar dela fica o aviso **✓ Liberada para produção**, que não é clicável.
+12. **Liberar para Produção**: aparece para quem tem a permissão "Liberar para Produção", em pedido não avulso que está em REVISAO ATENDENTE e ainda não foi liberado. Depois de liberado, no lugar dela fica o aviso **✓ Liberada para produção**, que não é clicável.
 13. **Rastrear objeto**: aparece quando o envio é pelos Correios e já existe código de rastreio.
 14. **Encerrar teste** ou **Reabrir (desfazer encerramento de teste)**.
 15. **Voltar para a Fila de Faturamento (desfazer nota no sistema antigo)**: aparece só no pedido com a marca "faturado no sistema antigo".
@@ -240,6 +240,7 @@ As datas pequenas aparecem como dia/mês e hora, no horário de Brasília.
 
 | O que aparece | Por que acontece | O que fazer |
 |---|---|---|
+| "Sem permissão para liberar para produção (propostas.release_producao)." | Seu perfil não tem a permissão "Liberar para Produção". | Peça a liberação a quem tem a permissão, ou peça ao administrador para incluí-la no seu perfil. |
 | "Nenhuma proposta encontrada" | Os filtros não trazem nenhum pedido, ou o pedido está escondido (entregue, teste encerrado, cancelado). | Clique em **Limpar filtros** e busque pelo número. Veja "Achar o que a lista esconde". |
 | Busquei pelo valor ou pela OS Ideal e o pedido não veio | A busca na base inteira é por número, código e nome do cliente, atendente, nome de quem recebe a nota e nome do evento. Valor e OS só refinam o que já está na tela. | Busque pelo número do pedido ou pelo nome do cliente. |
 | O número do card não bate com o total do rodapé | Os cards Pedidos, Liberadas, Revisão atendente e Em produção contam só a página carregada. | Use o "Total de propostas encontradas" do rodapé ou ligue o card para ver a lista. |

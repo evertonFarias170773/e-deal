@@ -16,8 +16,9 @@ Daqui se emite a NF-e de produto, se acompanha a autorização, se baixa o DANFE
 - **Emitir NF-e (Produto)**: mostra o botão **Faturar** na fila, o **Emitir NF-e** dentro da nota e o **Enviar para Focus** no menu da nota. Sem essa permissão a pessoa consegue abrir e conferir a nota, mas não transmite.
 - **Cancelar Nota Fiscal**: mostra **Cancelar NF-e** e **Cancelar NFS-e** no menu da nota autorizada.
 - **Liberar para Nota Fiscal**: mostra o botão **Nota emitida no sistema antigo** na fila e, na tela **Pedidos**, a ação que desfaz essa marca.
+- **Emitir Carta de Correção**: mostra **Carta de Correção** no menu da nota autorizada. O servidor confere a mesma permissão antes de enviar.
 - Hoje os perfis **Administrador** e **Financeiro** têm todas essas permissões, e o **Super Administrador** pode tudo. O perfil **Designer** só visualiza a tela.
-- Carta de correção, nota avulsa, segunda nota do pedido e descarte de rascunho não pedem permissão própria: aparecem para quem vê a tela. Transmitir a nota criada continua exigindo **Emitir NF-e (Produto)**.
+- Nota avulsa, segunda nota do pedido e descarte de rascunho não pedem permissão própria: aparecem para quem vê a tela. Transmitir a nota criada continua exigindo **Emitir NF-e (Produto)**.
 - Abrir DANFE e XML exige apenas estar logado e enxergar a nota.
 
 ## Botões e ações da tela
@@ -62,7 +63,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Cancelar NF-e** | Menu da nota Autorizada | Abre a janela **Cancelar NF-e**. |
 | **Abrir Carta de Correção (PDF)** | Menu da nota Autorizada que já tem carta | Abre o PDF da última carta de correção. |
 | **Baixar XML da Carta de Correção** | Menu da nota Autorizada que já tem carta | Abre o XML da última carta de correção. |
-| **Carta de Correção** | Menu da nota Autorizada | Abre a janela **Carta de Correção (CCe)**. |
+| **Carta de Correção** | Menu da nota Autorizada, para quem tem a permissão **Emitir Carta de Correção** | Abre a janela **Carta de Correção (CCe)**. |
 | **Abrir XML** | Menu da nota Cancelada ou Denegada; menu da NFS-e | Abre o XML da nota. |
 | **Descartar rascunho** | Menu da nota que nunca foi transmitida | Pede confirmação e apaga o rascunho. |
 | **Copiar Ref** | Último item do menu de toda nota | Copia a referência da nota. |
@@ -274,6 +275,7 @@ Nos dois casos a confirmação lista as notas autorizadas que o pedido já tem. 
 - Nota autorizada não se desfaz: só sai por cancelamento. Nota Autorizada, Cancelada, Denegada ou Processando não pode ser editada.
 - Não dá para transmitir duas vezes a mesma nota. Se ela já tem número ou chave, ou se o retorno guardado indica autorização, a nova emissão é bloqueada.
 - Só nota **Autorizada** pode ser cancelada, e só uma vez. Justificativa e texto de carta de correção precisam de pelo menos 15 caracteres.
+- Carta de correção só vale para nota **Autorizada**, e o texto aceita no máximo 1.000 caracteres.
 - O Vibe não confere prazo de cancelamento nem de carta de correção. Quem aceita ou recusa é a SEFAZ, e o motivo da recusa aparece no aviso.
 - Só dá para descartar rascunho que nunca foi transmitido. Não dá para desfazer o descarte.
 - Nota de remessa só pode ser gerada depois da nota de venda autorizada, e exige nome e CPF ou CNPJ do recebedor no endereço de entrega. Ela não tira o pedido da fila e não gera título.
@@ -322,6 +324,8 @@ Nos dois casos a confirmação lista as notas autorizadas que o pedido já tem. 
 
 | O que aparece | Por que acontece | O que fazer |
 |---|---|---|
+| "Sem permissão para emitir carta de correção (fiscal.carta_correcao)." | Seu perfil não tem a permissão **Emitir Carta de Correção**. | Peça o envio a quem tem a permissão. |
+| "Carta de correção não permitida: a nota está em ..." | A nota deixou de estar Autorizada (foi cancelada, por exemplo). | Atualize a lista e confira o status da nota. |
 | A nota não pode ser aberta ainda | A conferência do **Faturar** achou dado faltando no pedido, no cadastro ou no produto. | Use **Abrir para corrigir** em cada pendência e depois **Reconferir**. |
 | Falta resolver N coisas antes de emitir | A nota tem pendência que impede a emissão. | Siga cada linha do painel pelo botão **Abrir em ...** ou **Abrir cadastro** e clique em **Reconferir**. |
 | A nota não foi enviada: um campo passa do tamanho que a NF-e aceita. | Nome, endereço, transportadora, natureza ou descrição de item acima do limite. | Encurte no campo que o aviso indica (em geral os campos "só nesta nota") e emita de novo. Nada foi transmitido. |
@@ -398,3 +402,5 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/features/usuarios-perfis/catalogo-permissoes.ts`
 - `src/lib/formatters/status.ts`
 - `src/constants/navigation.ts`
+- `src/app/api/fiscal/carta-correcao/route.ts`
+- `src/lib/fiscal/carta-correcao.ts`

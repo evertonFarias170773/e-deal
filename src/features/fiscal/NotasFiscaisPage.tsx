@@ -52,52 +52,8 @@ import { conferirFaturamento, type ResultadoConferencia } from "./services/confe
 import { partesDaConfirmacaoDeSegundaNota } from "./lib/confirmacao-segunda-nota";
 import { ConfirmarAcaoModal } from "@/features/expedicao/components/ConfirmarAcaoModal";
 import { resolverAmbienteFiscal } from "./services/ambiente-fiscal";
+import { parseFocusResponse } from "@/lib/fiscal/carta-correcao";
 
-/* eslint-disable-next-line @typescript-eslint/no-explicit-any */
-function parseFocusResponse(data: any): { success: boolean; message: string } {
-  if (!data) {
-    return { success: false, message: "Resposta do servidor vazia." };
-  }
-
-  const normalized = Array.isArray(data) ? data[0] : data;
-  const body = normalized?.body ?? normalized;
-
-  const statusCode = Number(normalized?.statusCode ?? body?.statusCode ?? normalized?.status_code ?? body?.status_code ?? 200);
-  if (statusCode >= 400) {
-    const errMsg = body?.erro?.mensagem || body?.error || body?.message || body?.mensagem || "Erro processado pelo webhook.";
-    return { success: false, message: `${errMsg} (Status: ${statusCode})` };
-  }
-
-  if (body.erro) {
-    if (typeof body.erro === "object") {
-      return { success: false, message: body.erro.mensagem || body.erro.message || JSON.stringify(body.erro) };
-    }
-    return { success: false, message: String(body.erro) };
-  }
-
-  if (body.error || body.errors) {
-    const err = body.error || body.errors;
-    return { success: false, message: typeof err === "object" ? (err.message || JSON.stringify(err)) : String(err) };
-  }
-
-  if (body.status === "erro" || body.status === "rejeitado" || body.status === "erro_autorizacao") {
-    return { success: false, message: body.mensagem || body.mensagem_sefaz || "Erro retornado pela SEFAZ/Focus API." };
-  }
-
-  if (body.codigo) {
-    const lowerCode = String(body.codigo).toLowerCase();
-    const successCodes = ["100", "135", "sucesso", "autorizado", "cancelado", "cce_registrada"];
-    if (!successCodes.includes(lowerCode)) {
-      return { success: false, message: body.mensagem || body.mensagem_sefaz || `Erro retornado pela API (Código: ${body.codigo})` };
-    }
-  }
-
-  if (body.mensagem_sefaz && (body.mensagem_sefaz.toLowerCase().includes("rejeicao") || body.mensagem_sefaz.toLowerCase().includes("rejeição"))) {
-    return { success: false, message: body.mensagem_sefaz };
-  }
-
-  return { success: true, message: "Operação realizada com sucesso." };
-}
 
 type ActiveTab = "FILA_FATURAMENTO" | "HISTORICO_FISCAL";
 
@@ -260,6 +216,8 @@ export function NotasFiscaisPage() {
   const canEmitNfe = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "fiscal.emit_nfe");
   const canEmitNfse = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "fiscal.emit_nfse");
   const canCancelNf = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "fiscal.cancel_nf");
+  // Mesma chave que a rota POST /api/fiscal/carta-correcao confere no servidor.
+  const canCartaCorrecao = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "fiscal.carta_correcao");
   // Mesma chave que a rota POST /api/fiscal/faturado-fora confere no servidor.
   const canMarcarFaturadoFora = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "propostas.release_nf");
   // Aba e filtros na URL: sobrevivem ao F5, ao histórico do navegador e a um
@@ -675,106 +633,39 @@ export function NotasFiscaisPage() {
     }
     setCceLoading(true);
     try {
-      const response = await fetch("https://10074.hostoo.net.br/webhook/carta-correcao", {
+      // A carta passa pelo servidor: é lá que a sessão e a permissão
+      // fiscal.carta_correcao são conferidas, que a empresa é relida do banco e
+      // que o evento é gravado com a autoria. A tela não alcança mais o webhook.
+      const sessionResult = await getSupabaseClient()?.auth.getSession();
+      const accessToken = sessionResult?.data?.session?.access_token ?? "";
+      if (!accessToken) {
+        throw new Error("Sessão expirada. Faça login novamente.");
+      }
+
+      const response = await fetch("/api/fiscal/carta-correcao", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`
+        },
         body: JSON.stringify({
-          id_empresa: Number(cceNote.id_empresa),
-          referencia: cceNote.ref,
+          ref: cceNote.ref,
           correcao: cceText.trim()
         })
       });
 
-      let data;
+      let envelope: { success?: boolean; message?: string } | null = null;
       try {
-        data = await response.json();
+        envelope = await response.json();
       } catch {
         throw new Error("A resposta da API de Carta de Correção não é um JSON válido.");
       }
 
-      if (!response.ok) {
-        const errorMsg = data.erro?.mensagem || data.error || data.message || `Erro HTTP ${response.status}`;
-        throw new Error(errorMsg);
+      if (!response.ok || !envelope?.success) {
+        throw new Error(envelope?.message || `Erro HTTP ${response.status}`);
       }
 
-      const parsed = parseFocusResponse(data);
-      if (!parsed.success) throw new Error(parsed.message);
-
-      // Inserir registro em public.notas_eventos
-      const client = getSupabaseClient();
-      if (client) {
-        try {
-          const { data: { session } } = await client.auth.getSession();
-          const criadoPor = session?.user?.id || session?.user?.email || null;
-          const criadoPorNome = session?.user?.user_metadata?.nome || session?.user?.user_metadata?.full_name || session?.user?.email || null;
-
-          const normalized = Array.isArray(data) ? data[0] : data;
-
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          let focusData: any = normalized;
-
-          if (normalized && normalized.body) {
-            focusData = normalized.body;
-          }
-
-          if (focusData && focusData.payload_retorno) {
-            focusData = focusData.payload_retorno;
-          }
-
-          if (focusData && typeof focusData.data === "string") {
-            try {
-              focusData = JSON.parse(focusData.data);
-            } catch (err) {
-              console.error("[CCE] Error parsing focusData.data string:", err);
-            }
-          } else if (focusData && focusData.data && typeof focusData.data === "object") {
-            focusData = focusData.data;
-          }
-
-          if (typeof focusData === "string") {
-            try {
-              focusData = JSON.parse(focusData);
-            } catch (err) {
-              console.error("[CCE] Error parsing focusData string:", err);
-            }
-          }
-
-          const payloadEnvio = {
-            id_empresa: Number(cceNote.id_empresa),
-            referencia: cceNote.ref,
-            correcao: cceText.trim()
-          };
-
-          const eventData = {
-            tipo_documento: "NFE" as const,
-            ref: cceNote.ref,
-            tipo_evento: "CARTA_CORRECAO" as const,
-            sequencia_evento: focusData?.numero_carta_correcao ? Number(focusData.numero_carta_correcao) : null,
-            status_evento: focusData?.status || null,
-            status_sefaz: focusData?.status_sefaz || focusData?.codigo_status_sefaz || null,
-            mensagem_sefaz: focusData?.mensagem_sefaz || null,
-            caminho_xml: focusData?.caminho_xml_carta_correcao || null,
-            caminho_pdf: focusData?.caminho_pdf_carta_correcao || null,
-            correcao: cceText.trim(),
-            payload_envio: payloadEnvio,
-            payload_retorno: focusData,
-            origem: "FOCUS_CCE",
-            criado_por: criadoPor,
-            criado_por_nome: criadoPorNome
-          };
-
-          console.log("[NotasFiscaisPage] Inserindo evento de Carta de Correção:", eventData);
-          const success = await insertNotaEvento(eventData);
-          if (success) {
-            console.log("[CCE] Evento persistido:", eventData);
-          } else {
-            console.error("[CCE] Falha ao persistir evento de Carta de Correção:", eventData);
-          }
-          void refreshCceEventsForRefs([cceNote.ref]);
-        } catch (eventErr) {
-          console.error("[NotasFiscaisPage] Falha ao registrar evento da Carta de Correção:", eventErr);
-        }
-      }
+      void refreshCceEventsForRefs([cceNote.ref]);
 
       showToast({
         type: "success",
@@ -1403,10 +1294,12 @@ export function NotasFiscaisPage() {
         }
       }
 
-      actions.push({
-        label: "Carta de Correção",
-        onClick: () => handleOpenCceModal(item)
-      });
+      if (canCartaCorrecao) {
+        actions.push({
+          label: "Carta de Correção",
+          onClick: () => handleOpenCceModal(item)
+        });
+      }
     }
 
     // 6. CANCELADA / DENEGADA

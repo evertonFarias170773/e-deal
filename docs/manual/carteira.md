@@ -14,8 +14,8 @@ A tela abre com o título **Contas a receber**. Os títulos entram nela pelo [Re
 
 - Vê a tela quem tem a permissão **Visualizar Títulos** no perfil, além de Administrador e Super Admin. Sem ela, a tela mostra acesso negado.
 - **Confirmar recebimento** (dar baixa) aparece só para quem tem a permissão **Registrar Baixa**, Administrador ou Super Admin.
-- **Refazer boleto**, **Cancelar recebível**, **Cancelar boleto**, **Prorrogar vencimento**, **Registrar boleto**, **Editar depósito** e **Transformar em boleto** aparecem só para quem tem a permissão **Administrar Contas a Receber**, Administrador ou Super Admin.
-- As demais ações do menu (**Detalhe da Cobrança**, **Cadastro do Cliente**, **Registrar boleto no banco** / **Ver boleto registrado**, **Consultar pagamento C6**, **Consultar PDF no C6**, **Visualizar Boleto** / **Gerar PDF do Boleto**) e o botão **Registrar** da linha aparecem para todos que veem a tela.
+- **Registrar** (botão da linha), **Registrar boleto no banco**, **Registrar boleto**, **Refazer boleto**, **Cancelar recebível**, **Cancelar boleto**, **Prorrogar vencimento**, **Editar depósito** e **Transformar em boleto** aparecem só para quem tem a permissão **Administrar Contas a Receber**, Administrador ou Super Admin. O registro no banco é conferido de novo no servidor, pela mesma permissão.
+- As demais ações do menu (**Detalhe da Cobrança**, **Cadastro do Cliente**, **Ver boleto registrado**, **Consultar pagamento C6**, **Consultar PDF no C6**, **Visualizar Boleto** / **Gerar PDF do Boleto**) aparecem para todos que veem a tela.
 - Cancelar no banco um boleto registrado (em **Cancelar recebível**, **Cancelar boleto**, **Prorrogar vencimento**, **Refazer boleto** e na baixa manual) também exige, no servidor, a permissão **Cancelar / Estornar Cobranças** ou **Cancelar Cobrança Não Paga**. Quem não a tem recebe o aviso "Sem permissão para cancelar título".
 
 ## Botões e ações da tela
@@ -38,11 +38,11 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Cartões a receber** | Aba | Ainda não está em uso. Mostra "Cartões a receber ficará disponível em uma fase futura." |
 | **Previsão de recebimento** | Aba | Resumo do que está a vencer, por prazo e por empresa. Não tem ações. |
 | **Vencimento** (duas datas, com ícone de calendário) | À direita das abas | Filtra pelo vencimento. Começa no mês corrente. A palavra **Vencimento** só aparece em tela larga. |
-| **Registrar** | Na linha do título, coluna **Ações**, quando o status é **A receber criado — boleto não registrado** | Abre a janela **Revisar para Geração Bancária**. No celular o botão se chama **Registrar boleto no banco**. |
+| **Registrar** | Na linha do título, coluna **Ações**, quando o status é **A receber criado — boleto não registrado**; só para quem tem **Administrar Contas a Receber** | Abre a janela **Revisar para Geração Bancária**. No celular o botão se chama **Registrar boleto no banco**. |
 | **Acoes** (no celular, **Mais**) | Na linha do título, coluna **Ações** | Abre o menu de ações do título. |
 | **Detalhe da Cobrança** | Menu de ações | Abre a janela **Conferência de Recebível**, com os dados do título e o **Histórico do título**. |
 | **Cadastro do Cliente** | Menu de ações, só na aba **Carteira** | Abre o cadastro do cliente. |
-| **Registrar boleto no banco** | Menu de ações, em boleto sem registro no banco | Abre a janela **Revisar para Geração Bancária**. |
+| **Registrar boleto no banco** | Menu de ações, em boleto sem registro no banco; só para quem tem **Administrar Contas a Receber** | Abre a janela **Revisar para Geração Bancária**. |
 | **Ver boleto registrado** | Menu de ações, em boleto já registrado (no lugar de **Registrar boleto no banco**) | Abre a mesma janela para consulta. A parcela registrada fica travada. |
 | **Refazer boleto** | Menu de ações, abas **Carteira** e **Boletos**, em boleto do C6 registrado e em aberto | Troca o boleto da parcela por um novo, sem cancelar o título. |
 | **Registrar boleto** | Menu de ações, aba **Boletos**, em boleto sem registro | Abre a janela **Revisar para Geração Bancária**. |
@@ -310,6 +310,7 @@ O boleto é cancelado no banco e o título continua ativo, agora como **Depósit
 | "Boleto cancelado no banco, mas a troca não terminou" | O boleto foi cancelado no C6 e a gravação falhou no meio. A janela continua aberta. | Clique em **Refazer boleto** de novo, na mesma janela. O cancelamento não se repete. Se o aviso disser que o título mudou, recarregue a página e confira antes. |
 | "Boleto anterior cancelado, mas o novo não foi registrado" | O boleto antigo saiu do banco e o banco recusou o novo. O título ficou **A receber criado — boleto não registrado**. | Corrija o que o aviso aponta e use **Registrar boleto no banco**. Se o aviso disser "NÃO registre de novo", avise o suporte. |
 | "Boleto refeito, mas sem PDF" | A troca deu certo, mas o PDF não foi gerado. | Use **Gerar PDF do Boleto** no menu de ações. |
+| "Sem permissão para registrar boleto no banco (contas_receber.admin)." | Seu perfil não tem a permissão **Administrar Contas a Receber**. | Peça o registro a quem tem a permissão. |
 | "Dados Cadastrais Incompletos / Inválidos" | Falta documento, e-mail ou endereço no cadastro do cliente. | **Editar Cadastro do Cliente**, corrigir e **Re-validar Cadastro**. |
 | "Boleto já registrado" | A parcela já tem registro no banco. | Nada a fazer. Para trocar o boleto, use **Refazer boleto**. |
 | "Registro em Lote Interrompido" | Uma parcela do lote falhou. O aviso diz qual. | Corrija o que o aviso aponta e registre as parcelas que faltam. |
@@ -353,3 +354,4 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/lib/mocks/contas-receber.mock.ts`
 - `src/features/usuarios-perfis/catalogo-permissoes.ts`
 - `src/constants/navigation.ts`
+- `src/app/api/cobrancas/registrar-boleto-faturado/route.ts`
