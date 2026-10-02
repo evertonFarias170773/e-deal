@@ -2,22 +2,32 @@
 /**
  * Checagem do manual de uso (docs/manual/).
  *
- * AVISA quando ha arquivo de TELA alterado sem nenhuma pagina do manual
- * alterada junto. NAO bloqueia: sai sempre com codigo 0. A decisao de atualizar
- * o manual e de quem esta commitando — mudanca so interna nao precisa.
+ * AVISA quando uma ficha do manual pode ter ficado desatualizada. NAO bloqueia:
+ * sai sempre com codigo 0. A decisao de atualizar o manual e de quem esta
+ * commitando — mudanca so interna nao precisa.
  *
- * O que conta como "arquivo de tela": todo .tsx em src/app (fora de src/app/api),
- * src/features e src/components. Servico, rota de API, migration e teste nao
- * disparam o aviso, mesmo que mudem uma regra visivel — nesses casos a regra do
- * AGENTS.md continua valendo, so nao ha como o script adivinhar.
+ * DE ONDE VEM A LIGACAO ENTRE CODIGO E FICHA
+ *   De cada ficha: a secao "## Arquivos de origem" lista, entre crases, os
+ *   arquivos de codigo de onde ela saiu (pasta termina com "/" e vale para
+ *   tudo dentro). Nao ha tabela aqui dentro para manter: quem escreve a ficha
+ *   diz de onde ela saiu.
+ *
+ * O QUE ELE AVISA
+ *   1. Arquivo de origem de uma ficha alterado, e a ficha nao alterada junto.
+ *   2. Arquivo de TELA alterado (.tsx em src/app fora de api, src/features ou
+ *      src/components) que nao e origem de nenhuma ficha — tela sem ficha.
  *
  * Uso:
  *   node scripts/checar-manual.mjs            # tudo que mudou na arvore (com e sem stage, e arquivos novos)
  *   node scripts/checar-manual.mjs --staged   # so o que esta no stage (e o que o hook de pre-commit usa)
+ *   node scripts/checar-manual.mjs --origens  # confere as listas: caminho que nao existe mais, ficha sem lista
  */
 import { execFileSync } from "node:child_process";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 
+const PASTA_MANUAL = "docs/manual";
 const soStaged = process.argv.includes("--staged");
+const conferirOrigens = process.argv.includes("--origens");
 
 function git(args) {
   try {
@@ -27,7 +37,7 @@ function git(args) {
   }
 }
 
-function listar() {
+function listarAlterados() {
   const saidas = soStaged
     ? [git(["diff", "--cached", "--name-only", "--diff-filter=ACMRD"])]
     : [
@@ -38,83 +48,109 @@ function listar() {
   const arquivos = new Set();
   for (const saida of saidas) {
     for (const linha of saida.split(/\r?\n/)) {
-      const caminho = linha.trim().replace(/\\/g, "/");
+      const caminho = linha.trim().replace(/^"|"$/g, "").replace(/\\/g, "/");
       if (caminho) arquivos.add(caminho);
     }
   }
   return [...arquivos].sort();
 }
 
+/** Fichas do manual: tudo em docs/manual/*.md, menos o indice e o modelo. */
+function listarFichas() {
+  if (!existsSync(PASTA_MANUAL)) return [];
+  return readdirSync(PASTA_MANUAL)
+    .filter((nome) => nome.endsWith(".md") && nome !== "README.md" && !nome.startsWith("_"))
+    .sort();
+}
+
+/** Caminhos entre crases nos itens de lista da secao "## Arquivos de origem". */
+function origensDaFicha(nome) {
+  const texto = readFileSync(`${PASTA_MANUAL}/${nome}`, "utf8");
+  const inicio = texto.search(/^## Arquivos de origem\s*$/m);
+  if (inicio < 0) return null;
+  const resto = texto.slice(inicio).split(/\r?\n/).slice(1);
+  const origens = [];
+  for (const linha of resto) {
+    if (/^## /.test(linha)) break;
+    const item = /^\s*[-*]\s+`([^`]+)`/.exec(linha);
+    if (item) origens.push(item[1].trim().replace(/\\/g, "/").replace(/^\.\//, ""));
+  }
+  return origens;
+}
+
+const casa = (origem, caminho) => (origem.endsWith("/") ? caminho.startsWith(origem) : caminho === origem);
+
 const ehTela = (caminho) =>
   caminho.endsWith(".tsx") &&
   !caminho.startsWith("src/app/api/") &&
   (caminho.startsWith("src/app/") || caminho.startsWith("src/features/") || caminho.startsWith("src/components/"));
 
-const ehManual = (caminho) => caminho.startsWith("docs/manual/") && caminho.endsWith(".md");
+const fichas = listarFichas().map((nome) => ({ nome, origens: origensDaFicha(nome) }));
 
-/**
- * De qual pagina do manual cada pedaco do codigo costuma tratar. So uma
- * sugestao para o aviso — o primeiro prefixo que casar vence, entao os mais
- * especificos vem antes. Tela sem pagina ainda aparece como "sem pagina".
- */
-const PAGINAS_POR_PREFIXO = [
-  ["src/features/orcamentos/OrcamentosListPageReal", ["pedidos.md"]],
-  ["src/features/orcamentos/components/LotesGrid", ["proposta-pedido.md"]],
-  ["src/features/orcamentos/components/PedidoModelosTab", ["proposta-pedido.md"]],
-  ["src/features/orcamentos/components/ModeloCampos", ["proposta-pedido.md"]],
-  ["src/features/orcamentos/components/Artes", ["proposta-artes.md"]],
-  ["src/features/orcamentos/", ["proposta.md", "proposta-geral.md", "proposta-produtos.md", "proposta-fretes.md"]],
-  ["src/app/(erp)/orcamentos/", ["pedidos.md", "proposta.md"]],
-  ["src/features/cobrancas/PropostaCobrancaPanel", ["proposta-pagamentos.md"]],
-  ["src/features/cobrancas/", ["conferencia.md", "proposta-pagamentos.md"]],
-  ["src/app/(erp)/cobrancas/", ["conferencia.md"]],
-  ["src/features/contas-a-receber/registro-recebiveis/", ["registro-de-recebiveis.md"]],
-  ["src/app/(erp)/contas-a-receber/registro/", ["registro-de-recebiveis.md"]],
-  ["src/features/contas-a-receber/", ["carteira.md"]],
-  ["src/app/(erp)/contas-a-receber/", ["carteira.md"]],
-  ["src/features/fiscal/", ["notas-fiscais.md"]],
-  ["src/features/nfe/", ["notas-fiscais.md"]],
-  ["src/features/nfse/", ["notas-fiscais.md"]],
-  ["src/app/(erp)/notas-fiscais/", ["notas-fiscais.md"]],
-  ["src/features/expedicao/", ["expedicao.md"]],
-  ["src/app/(erp)/expedicao/", ["expedicao.md"]],
-  ["src/features/pedidos/BoletimFormPage", ["proposta-producao-boletim-historico.md", "producao.md"]],
-  ["src/features/pedidos/", ["producao.md"]],
-  ["src/features/producao/", ["producao.md"]],
-  ["src/app/(erp)/pedidos/", ["producao.md"]],
-  ["src/features/tarefas/", ["tarefas.md"]],
-  ["src/app/(erp)/tarefas/", ["tarefas.md"]]
-];
-
-function paginasSugeridas(caminho) {
-  const achado = PAGINAS_POR_PREFIXO.find(([prefixo]) => caminho.startsWith(prefixo));
-  return achado ? achado[1] : null;
-}
-
-const alterados = listar();
-const telas = alterados.filter(ehTela);
-const manual = alterados.filter(ehManual);
-
-if (telas.length === 0 || manual.length > 0) {
-  // Nada de tela mudou, ou o manual ja foi mexido junto: nada a avisar.
+// ── Modo --origens: as listas ainda apontam para arquivos que existem? ──────
+if (conferirOrigens) {
+  const linhas = [];
+  for (const { nome, origens } of fichas) {
+    if (origens === null) {
+      linhas.push(`  ${PASTA_MANUAL}/${nome}: sem a secao "## Arquivos de origem"`);
+      continue;
+    }
+    if (origens.length === 0) linhas.push(`  ${PASTA_MANUAL}/${nome}: secao "Arquivos de origem" vazia`);
+    for (const origem of origens) {
+      if (!existsSync(origem)) linhas.push(`  ${PASTA_MANUAL}/${nome}: nao existe mais -> ${origem}`);
+    }
+  }
+  if (linhas.length > 0) {
+    console.warn(`\nAVISO (manual): listas de "Arquivos de origem" a corrigir.\n\n${linhas.join("\n")}\n`);
+  } else {
+    console.log(`Manual: ${fichas.length} fichas, todas com "Arquivos de origem" apontando para arquivos que existem.`);
+  }
   process.exit(0);
 }
 
-const linhas = [];
-linhas.push("");
-linhas.push("AVISO (manual): ha arquivo de tela alterado e nenhuma pagina de docs/manual/ alterada.");
-linhas.push("Se a mudanca aparece para o usuario (tela, botao, aviso, fluxo ou regra visivel),");
-linhas.push('atualize a pagina correspondente e a data de "Ultima revisao" no mesmo commit.');
-linhas.push("Mudanca so interna nao precisa. Este aviso nao bloqueia o commit.");
-linhas.push("");
-for (const tela of telas) {
-  const paginas = paginasSugeridas(tela);
-  linhas.push(
-    paginas
-      ? `  ${tela}\n      -> docs/manual/${paginas.join(", docs/manual/")}`
-      : `  ${tela}\n      -> sem pagina no manual ainda (crie a partir de docs/manual/_MODELO.md se for tela de uso)`
-  );
+// ── Modo normal: o que mudou sem a ficha mudar junto ────────────────────────
+const alterados = listarAlterados();
+const fichasAlteradas = new Set(
+  alterados.filter((c) => c.startsWith(`${PASTA_MANUAL}/`) && c.endsWith(".md")).map((c) => c.slice(PASTA_MANUAL.length + 1))
+);
+const codigoAlterado = alterados.filter((c) => !c.startsWith("docs/"));
+
+/** ficha -> arquivos de origem dela que mudaram, quando a ficha nao mudou. */
+const desatualizadas = new Map();
+const cobertos = new Set();
+for (const caminho of codigoAlterado) {
+  for (const { nome, origens } of fichas) {
+    if (!origens || !origens.some((origem) => casa(origem, caminho))) continue;
+    cobertos.add(caminho);
+    if (fichasAlteradas.has(nome)) continue;
+    desatualizadas.set(nome, [...(desatualizadas.get(nome) ?? []), caminho]);
+  }
 }
+const telasSemFicha = codigoAlterado.filter((c) => ehTela(c) && !cobertos.has(c));
+
+if (desatualizadas.size === 0 && telasSemFicha.length === 0) process.exit(0);
+
+const linhas = [""];
+if (desatualizadas.size > 0) {
+  linhas.push("AVISO (manual): arquivo de origem alterado e a ficha do manual nao.");
+  linhas.push("Se a mudanca aparece para o usuario (tela, botao, aviso, fluxo ou regra visivel),");
+  linhas.push('atualize a ficha e a data de "Ultima revisao" no mesmo commit. Mudanca so interna nao precisa.');
+  linhas.push("");
+  for (const [nome, arquivos] of [...desatualizadas.entries()].sort()) {
+    linhas.push(`  ${PASTA_MANUAL}/${nome}`);
+    for (const arquivo of arquivos) linhas.push(`      <- ${arquivo}`);
+  }
+  linhas.push("");
+}
+if (telasSemFicha.length > 0) {
+  linhas.push("AVISO (manual): arquivo de tela alterado que nao e origem de nenhuma ficha.");
+  linhas.push(`Se for tela de uso, crie a ficha a partir de ${PASTA_MANUAL}/_MODELO.md ou acrescente o arquivo`);
+  linhas.push('na secao "Arquivos de origem" da ficha que trata dele.');
+  linhas.push("");
+  for (const tela of telasSemFicha) linhas.push(`  ${tela}`);
+  linhas.push("");
+}
+linhas.push("Este aviso nao bloqueia o commit.");
 linhas.push("");
 console.warn(linhas.join("\n"));
 process.exit(0);

@@ -1,23 +1,124 @@
 # Notas fiscais
 
-> **Última revisão:** 01/10/2026
-> **Onde fica:** menu Financeiro → Notas fiscais (endereço `/notas-fiscais`; a nota aberta fica em `/notas-fiscais/[id]`)
+> **Última revisão:** 02/10/2026
+> **Caminho no menu:** Financeiro → Notas fiscais (primeiro item da seção Financeiro do menu lateral)
+> **Endereço:** `/notas-fiscais` (a nota aberta fica em `/notas-fiscais/[id]`)
 
 ## Para que serve
 
 É a central de faturamento. Na aba **Fila Faturamento** ficam os pedidos que ainda precisam de nota e as notas que estão no meio do caminho (rascunho, processando ou com erro). Na aba **Histórico NF-e / NFS-e** ficam as notas que já viraram documento fiscal: autorizadas e canceladas.
 
-Daqui se emite a NF-e de produto, se acompanha a autorização, se baixa o DANFE e o XML, se envia carta de correção e se cancela a nota.
+Daqui se emite a NF-e de produto, se acompanha a autorização, se baixa o DANFE e o XML, se envia carta de correção, se cancela a nota e se lança a nota autorizada no contas a receber.
 
 ## Quem acessa
 
 - Só vê a tela quem tem a permissão **Visualizar Painel Fiscal**. Sem ela, o item não abre.
 - **Emitir NF-e (Produto)**: mostra o botão **Faturar** na fila, o **Emitir NF-e** dentro da nota e o **Enviar para Focus** no menu da nota. Sem essa permissão a pessoa consegue abrir e conferir a nota, mas não transmite.
 - **Cancelar Nota Fiscal**: mostra **Cancelar NF-e** e **Cancelar NFS-e** no menu da nota autorizada.
-- **Liberar para Nota Fiscal**: mostra o botão **Nota emitida no sistema antigo** na fila e, em Orçamentos, a ação que desfaz essa marca.
+- **Liberar para Nota Fiscal**: mostra o botão **Nota emitida no sistema antigo** na fila e, na tela **Pedidos**, a ação que desfaz essa marca.
 - Hoje os perfis **Administrador** e **Financeiro** têm todas essas permissões, e o **Super Administrador** pode tudo. O perfil **Designer** só visualiza a tela.
 - Carta de correção, nota avulsa, segunda nota do pedido e descarte de rascunho não pedem permissão própria: aparecem para quem vê a tela. Transmitir a nota criada continua exigindo **Emitir NF-e (Produto)**.
 - Abrir DANFE e XML exige apenas estar logado e enxergar a nota.
+
+## Botões e ações da tela
+
+Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros de grafia. A tabela segue esta ordem: a lista (`/notas-fiscais`), as janelas que ela abre e, por fim, a nota aberta (`/notas-fiscais/[id]`).
+
+| Nome na tela | Onde fica | O que faz |
+|---|---|---|
+| **Nova nota avulsa** | Cabeçalho da tela, à direita | Abre a janela **Nova nota avulsa**, para criar uma NF-e que não nasce de pedido. |
+| **Fila Faturamento (N)** (aba) | Abas do topo, 1ª | Mostra os pedidos a faturar e a seção **Notas em processo**. O número conta só os pedidos. |
+| **Histórico NF-e / NFS-e** (aba) | Abas do topo, 2ª | Mostra **Histórico NF-e (Produtos)** e, abaixo, **Histórico NFS-e (Serviços)**. |
+| **Buscar fila por Ref, ID Cliente ou Nome...** | Aba Fila, filtros | Busca na lista de pedidos por número, código ou nome do cliente, sócio pagador e vendedor. |
+| **Todas as Empresas Emitentes** | Filtros da Fila e dos dois Históricos | Filtra por **INGRESSO IDEAL**, **BIRÔ IDEAL** ou **E3 BRINDES**. |
+| **Todos os status do pedido (N)** | Aba Fila, filtros | Filtra a lista de pedidos pelo status do pedido; cada opção mostra quantos pedidos tem. |
+| **Só faturados (N)** — as cobranças do Financeiro | Aba Fila, caixa de marcar abaixo dos filtros | Deixa só os pedidos com cobrança do tipo **Faturado**. |
+| Número do pedido (**#N**, dica "Abrir a proposta") | Aba Fila, coluna **Pedido** | Abre a proposta do pedido. |
+| Nome do cliente (dica "Abrir o cadastro do cliente") | Aba Fila, coluna **Cliente / Destinatário** | Abre o cadastro do cliente em edição. |
+| **Nota emitida no sistema antigo** | Aba Fila, coluna **Ação** | Marca o pedido como faturado no sistema antigo e o tira da fila. Enquanto grava mostra "Marcando...". |
+| **Faturar** | Aba Fila, coluna **Ação** | Confere o pedido e abre (ou cria) o rascunho da NF-e. Não transmite nada. |
+| **Notas em processo (N)** | Aba Fila, abaixo da lista de pedidos | Seção com as notas que ainda não são documento fiscal. |
+| Ícone de arquivo com seta (dica "Baixar DANFE - ..." ou "Baixar DANFE (N notas)") | Linha da nota, coluna **Ações** | Abre a DANFE; com mais de uma nota no pedido, abre a lista **Baixar DANFE** para escolher. |
+| **Acoes** (na versão de celular, **Ações**) | Linha da nota, coluna **Ações** | Abre o menu da nota. Os itens mudam com o status. |
+| **Editar** | Menu da nota Pendente | Abre a nota para edição. |
+| **DANFE Preview** | Menu da nota Pendente ou Pronta para Envio; cabeçalho da nota aberta | Gera uma prévia da DANFE em outra aba, sem validade fiscal. |
+| **Editar última hora** | Menu da nota Pronta para Envio | Devolve a nota a rascunho e abre para edição. |
+| **Enviar para Focus** | Menu da nota Pronta para Envio | Abre a confirmação **Emitir NF-e**. |
+| **Consultar status** | Menu da nota Processando; janela de emissão | Consulta a situação da nota. Não emite. |
+| **Visualizar detalhes** | Menu da nota Processando, Autorizada, Cancelada ou Denegada | Abre a nota, só para leitura. |
+| **Ver detalhes** | Menu da nota Rejeitada ou com erro de envio | Abre a nota para ler o motivo. |
+| **Corrigir rascunho** | Menu da nota Rejeitada ou com erro de envio | Devolve a nota a Pendente, limpa o erro e abre para edição. |
+| **Reenviar NF-e** | Menu da nota Rejeitada ou com erro de envio | Prepara a nota de novo e abre a confirmação **Emitir NF-e**. |
+| **Atualizar status** | Menu da nota Rejeitada ou com erro de envio | Consulta a situação da nota. Não emite. |
+| **Gerar outra nota de venda (faturamento parcial)** | Menu da nota de venda Autorizada em produção | Pede confirmação e abre o rascunho de uma segunda nota de venda do pedido. |
+| **Gerar nota de remessa** | Menu da nota de venda Autorizada em produção | Pede confirmação e abre o rascunho da nota de remessa do pedido. |
+| **Abrir DANFE (PDF)** | Menu da nota Autorizada | Abre a DANFE desta nota em outra aba. |
+| **Copiar Link (PDF)** | Menu da nota Autorizada; menu da NFS-e | Copia um link do PDF que vale por 7 dias. |
+| **Baixar XML** | Menu da nota Autorizada; janela de emissão | Baixa o XML da nota. |
+| **Copiar Link (XML)** | Menu da nota Autorizada; menu da NFS-e | Copia um link do XML que vale por 7 dias. |
+| **Lançar no Contas a Receber** | Menu da nota Autorizada de venda faturada ainda não lançada | Abre a janela **Preparar Cobrança** com as parcelas da nota. |
+| **Revisar para gerar boletos** | Menu da nota Autorizada que já tem títulos | Abre a janela **Revisar para Geração Bancária**. |
+| **Ver contas a receber** | Menu da nota Autorizada que já tem títulos | Abre a Carteira com a busca pela referência da nota. |
+| **Cancelar NF-e** | Menu da nota Autorizada | Abre a janela **Cancelar NF-e**. |
+| **Abrir Carta de Correção (PDF)** | Menu da nota Autorizada que já tem carta | Abre o PDF da última carta de correção. |
+| **Baixar XML da Carta de Correção** | Menu da nota Autorizada que já tem carta | Abre o XML da última carta de correção. |
+| **Carta de Correção** | Menu da nota Autorizada | Abre a janela **Carta de Correção (CCe)**. |
+| **Abrir XML** | Menu da nota Cancelada ou Denegada; menu da NFS-e | Abre o XML da nota. |
+| **Descartar rascunho** | Menu da nota que nunca foi transmitida | Pede confirmação e apaga o rascunho. |
+| **Copiar Ref** | Último item do menu de toda nota | Copia a referência da nota. |
+| **Buscar por Nº Nota, Ref, ID ou Nome...** | Histórico NF-e, filtros | Busca nas notas autorizadas e canceladas. |
+| **Todos os Status** | Histórico NF-e (Autorizada, Cancelada) e Histórico NFS-e (Pendente, Pronta para envio, Processando, Autorizada, Erro de Envio, Rejeitada, Cancelada) | Filtra pelo status da nota. |
+| **Buscar por Nº NFS-e, Ref, ID ou Nome...** | Histórico NFS-e, filtros | Busca nas notas de serviço. |
+| **Cancelar NFS-e** | Menu da NFS-e Autorizada | Abre a janela **Cancelar NFS-e**. |
+| **Abrir PDF** | Menu da NFS-e | Abre o PDF da nota de serviço. |
+| **Abrir para corrigir** | Janela **A nota não pode ser aberta ainda**, em cada pendência | Leva à tela onde o dado se corrige (proposta, cadastro ou produtos). |
+| **Reconferir** / **Fechar** | Janela **A nota não pode ser aberta ainda**, rodapé | Repete a conferência do pedido, ou fecha a janela. |
+| **Emitir NF-e** / **Cancelar** | Janela **Emitir NF-e** | Transmite a nota, ou fecha sem transmitir. Durante a conferência o botão mostra "Conferindo...". |
+| **Abrir DANFE** | Janela de emissão, com a nota autorizada | Abre a DANFE em outra aba, sem fechar a janela. |
+| **Abrir a nota** | Janela de emissão, quando há erro (só na lista) | Leva à nota para corrigir. Não muda o status. |
+| **Fechar** | Janela de emissão, depois do resultado | Fecha a janela. |
+| **Buscar** | Janela **Nova nota avulsa**, ao lado do campo **Destinatário** | Procura o cadastro por código, nome, fantasia ou CNPJ. |
+| **Criar rascunho** / **Cancelar** | Janela **Nova nota avulsa**, rodapé | Cria a nota avulsa e abre para edição, ou fecha. |
+| **Gerar outra nota de venda** / **Cancelar** | Janela "Gerar OUTRA nota de venda do pedido #N?" | Cria o rascunho da segunda nota de venda, ou fecha. |
+| **Gerar nota de remessa** / **Cancelar** | Janela "Gerar nota de REMESSA do pedido #N?" | Cria o rascunho da remessa, ou fecha. |
+| **Descartar rascunho** / **Cancelar** | Janela "Descartar o rascunho ...?" | Apaga o rascunho, ou fecha sem apagar. |
+| **Enviar CCe** / **Cancelar** | Janela **Carta de Correção (CCe)** | Envia a carta de correção, ou fecha. |
+| **Confirmar** / **Cancelar** | Janela **Cancelar NF-e** ou **Cancelar NFS-e** | **Confirmar** cancela a nota; **Cancelar** só fecha a janela. |
+| **Confirmar Lançamento** / **Cancelar** | Janela **Preparar Cobrança** | Cria os títulos no contas a receber e abre a Carteira, ou fecha. |
+| **Depósito em conta** | Janela **Preparar Cobrança**, em cada parcela | Marca a parcela para ser lançada como depósito, sem boleto. |
+| **Registrar boleto** | Janela **Revisar para Geração Bancária**, em cada parcela | Registra o boleto da parcela no banco. |
+| **Registrar todos os boletos desta proposta** | Janela **Revisar para Geração Bancária** | Registra no banco todos os boletos elegíveis. |
+| **Salvar Alterações** / **Cancelar** | Janela **Revisar para Geração Bancária**, rodapé | Grava os ajustes das parcelas, ou fecha. |
+| **Voltar** | Cabeçalho da nota aberta | Volta para a lista, sem gravar. |
+| **Emitir NF-e** | Cabeçalho da nota | Salva, valida, prepara a nota e abre a confirmação de emissão. Fica desabilitado enquanto houver pendência que impede. |
+| **Só concluir rascunho** | Cabeçalho da nota | Salva, valida e, depois de **Confirmar Conclusão**, deixa a nota Pronta para Envio e volta para a lista. Não transmite. |
+| **Salvar e sair** | Cabeçalho da nota | Grava o rascunho. A tela continua na nota. |
+| **Reconferir** | Painel de pendências, no topo da nota | Recarrega a nota e o cadastro do cliente e refaz a conferência. |
+| **Abrir em ...** (nome do bloco) | Painel de pendências, em cada linha | Abre o bloco e leva o cursor ao campo. |
+| **Abrir cadastro** | Painel de pendências, em cada linha | Abre o cadastro do cliente em outra aba. |
+| **Resumo**, **Emitente**, **Destinatário**, **Itens**, **Transporte/Frete**, **Pagamentos**, **Totais**, **Informações adicionais**, **Validação**, **Documentos/Preview** | Lateral **Conferência da nota** e cabeçalho de cada bloco | Na lateral, abre o bloco e rola até ele. No cabeçalho do bloco, abre ou recolhe. |
+| **Natureza da operação** (lista "Selecionar natureza...") | Bloco Resumo | Define a natureza, o CFOP e a situação tributária de todos os itens. |
+| **Empresa Emitente** | Bloco Emitente | Troca a empresa que emite a nota. |
+| **Voltar ao cadastro** | Bloco Destinatário, abaixo de cada campo "só nesta nota" preenchido | Limpa o campo; a nota volta a usar o cadastro. |
+| **Usar endereço de entrega diferente** | Bloco Destinatário, caixa de marcar | Mostra os endereços do cliente para escolher o de entrega. |
+| **Informar novo endereço** | Bloco Destinatário, último cartão de endereço | Abre os campos para digitar um endereço de entrega. |
+| **Salvar no cadastro do endereço** / **Desfazer** | Bloco Destinatário, só em nota de remessa | Grava nome e CPF do recebedor no cadastro do endereço, ou desfaz o que foi digitado. |
+| **Adicionar Item Fiscal** / **Fechar Formulário** | Bloco Itens, à direita do título | Abre ou fecha o formulário **Adicionar Novo Item Fiscal**. |
+| **CST** | Bloco Itens, coluna **Ações** de cada item | Abre a **Situação tributária** do item. Um ponto âmbar indica valor diferente do padrão da natureza. |
+| **Salvar \*** (vira **Salvo** quando não há mudança) | Bloco Itens, coluna **Ações** | Grava a linha alterada. |
+| **Excluir** | Bloco Itens, coluna **Ações** | Pede confirmação e remove o item. |
+| **Adicionar Item** | Formulário **Adicionar Novo Item Fiscal** | Inclui o item na nota. |
+| **Aplicar esta condição** | Bloco Pagamentos, abaixo de **Condição de pagamento** | Devolve quantidade, dias e intervalo aos valores da condição escolhida. |
+| **Parcela única com vencimento específico** | Bloco Pagamentos, caixa de marcar | Gera uma parcela só, no vencimento escolhido. |
+| **Arredondar valores das parcelas** | Bloco Pagamentos, caixa de marcar | Arredonda as parcelas e ajusta a diferença na última. |
+| **Gerar Parcelas Fiscais** | Bloco Pagamentos | Cria as parcelas da nota, substituindo as que existirem. |
+| **Usar datas e valores dos títulos** / **Descartar sugestão** | Bloco Pagamentos, aviso de títulos já lançados | Copia datas e valores dos títulos para as parcelas, ou volta ao que estava gravado. |
+| **Visualizar arquivo técnico da nota (JSON)** | Bloco Documentos/Preview | Mostra os dados técnicos que serão enviados. |
+| **Continuar e Invalidar** / **Cancelar** | Janela **Invalidação de Pagamentos** | Apaga as parcelas e segue com a alteração, ou desiste. |
+| **Confirmar Conclusão** / **Cancelar** | Janela **Concluir Rascunho Fiscal** | Deixa a nota Pronta para Envio, ou fecha. |
+| **Visualizar Pendências** | Janela **Inconsistências Fiscais Identificadas** | Leva ao bloco Validação. |
+| **Reconferir mesmo assim** / **Voltar e salvar antes** | Janela **Reconferir descarta o que não foi salvo** | Recarrega e perde o que não foi salvo, ou volta. |
+| **Confirmar** / **Cancelar** | Janelas **Confirmar Remoção**, **Remover Item e Invalidar Pagamentos** e **Alterar Forma de Pagamento** | Confirma a ação, ou fecha. |
 
 ## Passo a passo
 
@@ -65,7 +166,7 @@ Volta para a lista quando a nota é **cancelada** ou **denegada**, quando o rasc
 Outros botões do cabeçalho da nota:
 
 - **Só concluir rascunho**: valida e deixa a nota **Pronta para Envio**, sem transmitir. Depois, no menu da nota em **Notas em processo**, use **Enviar para Focus**.
-- **Salvar e sair**: grava o rascunho como está.
+- **Salvar e sair**: grava o rascunho como está. Apesar do nome, a tela continua na nota.
 - **Voltar**: volta para a lista sem gravar.
 
 ### Conferir parcelas e duplicatas
@@ -121,13 +222,25 @@ O ícone **Baixar DANFE** só aparece para nota autorizada em produção, com n�
 2. Informe a justificativa, com pelo menos 15 caracteres, e clique em **Confirmar**.
 3. Com **A nota fiscal foi cancelada com sucesso.**, a nota passa a Cancelada. Se o pedido não tiver outra nota de venda, ele volta para a lista da fila e pode ser faturado de novo.
 
+### Lançar a nota no contas a receber e preparar a cobrança
+
+Vale para nota autorizada de pedido com cobrança do tipo **Faturado**. A coluna **Contas a Receber** da lista diz em que pé está: **Não lançado no contas a receber**, **Parcialmente lançado**, **Divergência**, **A receber criado — boleto não registrado**, **Boleto registrado**, **Depósito em conta** ou **Sem vencimentos fiscais**.
+
+1. No **Histórico**, abra o menu da nota e clique em **Lançar no Contas a Receber**.
+2. Abre a janela **Preparar Cobrança**, com o aviso **Parcelas definidas pela NF-e nº ...**. Vencimento e valor vêm da nota e não podem ser alterados aqui.
+3. Confira a **Empresa recebedora** e, se precisar, ajuste **Descrição**, **Multa (%)** e **Juros/Dia (%)**. Marque **Depósito em conta** na parcela que não deve gerar boleto.
+4. Clique em **Confirmar Lançamento**. O título é criado e o sistema abre a [Carteira](carteira.md) filtrada pela proposta, com a janela **Revisar para Geração Bancária** para registrar o boleto no banco.
+5. Para voltar a essa janela depois, use **Revisar para gerar boletos** no menu da nota. **Ver contas a receber** abre a Carteira com a busca pela referência da nota.
+
+Nota com duas parcelas ou mais não é lançada por este caminho: a janela mostra **Nota parcelada ainda não é suportada neste caminho**. Nesse caso, gere os títulos pelo [Registro de recebíveis](registro-de-recebiveis.md).
+
 ### Marcar "Nota emitida no sistema antigo" e desfazer
 
 Ação temporária, da transição entre sistemas. Use só quando a nota do pedido já foi emitida no sistema antigo.
 
 1. Na fila, clique em **Nota emitida no sistema antigo** na linha do pedido e confirme.
 2. O pedido sai da fila. Liberação para nota, status e produção do pedido ficam como estavam, e nenhuma nota é criada no Vibe. O registro fica na linha do tempo do pedido.
-3. Para desfazer, vá em **Orçamentos**, ache o pedido (ele mostra a etiqueta **faturado no sistema antigo**), abra o menu da linha e clique em **Voltar para a Fila de Faturamento (desfazer nota no sistema antigo)**. O pedido volta a aparecer na fila.
+3. Para desfazer, abra **Pedidos** no menu lateral (é a tela que o aviso chama de Orçamentos), ache o pedido (ele mostra a etiqueta **faturado no sistema antigo**), abra o menu da linha e clique em **Voltar para a Fila de Faturamento (desfazer nota no sistema antigo)**. O pedido volta a aparecer na fila.
 
 ### Gerar outra nota do mesmo pedido
 
@@ -158,7 +271,7 @@ Nos dois casos a confirmação lista as notas autorizadas que o pedido já tem. 
 - Alterar quantidade, valor de item ou frete em nota de boleto invalida as parcelas: é preciso gerá-las de novo.
 - Trocar a forma de pagamento para uma que não seja boleto substitui as parcelas por um pagamento único à vista.
 - A nota sai no ambiente em que a empresa emitente está no momento da transmissão. Com **Sairá em PRODUÇÃO**, a nota tem valor fiscal e número definitivo.
-- Nota autorizada não se desfaz: só sai por cancelamento. Nota Autorizada, Cancelada ou Processando não pode ser editada.
+- Nota autorizada não se desfaz: só sai por cancelamento. Nota Autorizada, Cancelada, Denegada ou Processando não pode ser editada.
 - Não dá para transmitir duas vezes a mesma nota. Se ela já tem número ou chave, ou se o retorno guardado indica autorização, a nova emissão é bloqueada.
 - Só nota **Autorizada** pode ser cancelada, e só uma vez. Justificativa e texto de carta de correção precisam de pelo menos 15 caracteres.
 - O Vibe não confere prazo de cancelamento nem de carta de correção. Quem aceita ou recusa é a SEFAZ, e o motivo da recusa aparece no aviso.
@@ -166,8 +279,44 @@ Nos dois casos a confirmação lista as notas autorizadas que o pedido já tem. 
 - Nota de remessa só pode ser gerada depois da nota de venda autorizada, e exige nome e CPF ou CNPJ do recebedor no endereço de entrega. Ela não tira o pedido da fila e não gera título.
 - Cliente com o interruptor **Nota** desligado no cadastro não entra na fila. Vale o cliente do pedido, não o pagador. Esses pedidos não têm nota emitida pelo Vibe.
 - **Só faturados** e a coluna **Contas a Receber** existem porque só venda faturada vira título. **Lançar no Contas a Receber** só aparece em nota autorizada de pedido com cobrança faturada em aberto.
+- Não dá para lançar no contas a receber quando a soma das parcelas da nota difere do total faturado em aberto da proposta, nem quando a parcela já tem título ativo. Os valores não se ajustam na janela de lançamento: vêm da nota autorizada.
+- Nota de remessa e nota de pedido pago por PIX, cartão, crédito ou boleto à vista não oferecem **Lançar no Contas a Receber**.
 - A empresa emitente é uma de três: **INGRESSO IDEAL**, **BIRÔ IDEAL** e **E3 BRINDES**. Ela vem do pedido e pode ser trocada no bloco Emitente enquanto a nota ainda puder ser editada.
 - NFS-e (nota de serviço): a tela só oferece o **Histórico NFS-e (Serviços)**, com busca, filtro por empresa e por status, **Abrir PDF**, **Abrir XML**, **Copiar Link** e **Cancelar NFS-e** para nota autorizada. Não existe emissão de NFS-e pela tela.
+
+## O que não confundir
+
+- Lista de pedidos da **Fila Faturamento**, **Notas em processo** e **Histórico**: a primeira é de pedidos que ainda não têm nota; a segunda é de notas que ainda não são documento fiscal; o Histórico só tem nota autorizada ou cancelada.
+- Número da aba **Fila Faturamento (N)** e **Notas em processo (N)**: o da aba conta só os pedidos a faturar; as notas em processo têm contador próprio.
+- **Faturar**, **Emitir NF-e** e **Enviar para Focus**: Faturar só abre o rascunho; Emitir NF-e (dentro da nota) e Enviar para Focus (no menu da nota pronta) transmitem de verdade.
+- **Emitir NF-e** e **Só concluir rascunho**: o primeiro transmite; o segundo para em Pronta para Envio e não transmite.
+- **Salvar e sair** e **Voltar**: Salvar e sair grava e continua na nota; Voltar sai para a lista sem gravar.
+- **DANFE Preview** e **Abrir DANFE (PDF)**: a prévia é de rascunho e não vale como documento; a DANFE é a da nota autorizada.
+- **Corrigir rascunho**, **Reenviar NF-e** e **Editar última hora**: Corrigir rascunho reabre a nota com erro para edição; Reenviar tenta de novo sem editar; Editar última hora reabre uma nota que estava pronta e ainda não foi transmitida.
+- **Consultar status** e **Atualizar status**: fazem a mesma consulta; o nome muda conforme o status da nota. Nenhum dos dois emite.
+- **Editar**, **Ver detalhes** e **Visualizar detalhes**: os três abrem a mesma tela da nota; ela fica só para leitura quando a nota está Autorizada, Cancelada, Denegada ou Processando.
+- **Cancelar NF-e**, **Carta de Correção** e **Descartar rascunho**: cancelar anula uma nota autorizada na SEFAZ; a carta corrige um dado sem anular; descartar apaga um rascunho que nunca foi transmitido.
+- Botão **Cancelar** e botão **Confirmar** na janela **Cancelar NF-e**: Cancelar só fecha a janela; quem cancela a nota é Confirmar.
+- Status **Rejeitada** e aviso **A Focus recusou a nota**: rejeitada chegou à SEFAZ e foi recusada por ela; recusada pela Focus nem chegou à SEFAZ.
+- **Nota emitida no sistema antigo** e nota emitida pelo Vibe: a marca só tira o pedido da fila e não cria nota, número nem DANFE no Vibe.
+- Etiqueta **faturado no sistema antigo** e tipo de cobrança **Faturado**: a etiqueta diz que a nota saiu por fora; Faturado é a forma de cobrança do pedido (venda a prazo que vira título).
+- Caixa **Só faturados** e pedidos já faturados: a caixa filtra pela forma de cobrança Faturado; pedido que já tem nota não aparece na lista de pedidos.
+- **Gerar outra nota de venda (faturamento parcial)**, **Gerar nota de remessa** e **Nova nota avulsa**: as duas primeiras criam mais uma nota de um pedido que já tem nota autorizada; a avulsa não tem pedido.
+- **NF venda**, **NF complementar** e **NF remessa** na lista **Baixar DANFE**: venda é a primeira nota de venda autorizada do pedido; complementar é cada nota de venda seguinte; remessa acompanha a mercadoria e não cobra.
+- **Nº Nota**, referência (`NFE-...`) e **Pedido**: o número é o que a SEFAZ deu e só existe depois da autorização (antes aparece `****`); a referência identifica a nota no Vibe desde o rascunho; o pedido é o número da proposta.
+- Status da nota e status do pedido na coluna **Status**: a etiqueta de cima é da nota; a de baixo, em cinza, é do pedido e não interfere na emissão.
+- Parcelas da nota (**Gerar Parcelas Fiscais**) e títulos do contas a receber (**Lançar no Contas a Receber**): as parcelas são o que a nota declara à SEFAZ; os títulos são a cobrança na Carteira e só nascem com o lançamento.
+- **Lançar no Contas a Receber** e **Revisar para gerar boletos**: o primeiro cria o título; o segundo abre títulos que já existem para registrar o boleto no banco.
+- **A receber criado — boleto não registrado** e **Boleto registrado**: no primeiro o título existe, mas o boleto ainda não foi registrado no banco.
+- **Empresa Emitente** (nota) e **Empresa recebedora** (janela Preparar Cobrança): a primeira emite a nota; a segunda é a que recebe o título e define o banco do boleto.
+- Cliente e **Sócio pagador**: o cliente é quem fez o pedido; a nota sai no nome de quem paga.
+- Endereço principal, **Usar endereço de entrega diferente** e **Endereço só nesta nota**: o principal é o do destinatário na nota; o de entrega é um segundo endereço informado na nota; "só nesta nota" apenas encurta o texto do endereço principal.
+- **Sairá em** e **Transmitida em**: Sairá em mostra o ambiente em que a empresa está hoje, para nota ainda não transmitida; Transmitida em mostra onde a nota já saiu.
+- **Data / Hora** da nota e **Em produção desde** do pedido: a primeira é quando a nota foi criada no Vibe, não a data da autorização; a segunda é quando o pedido foi liberado para produção.
+- **Abrir DANFE (PDF)** e **Copiar Link (PDF)**: abrir serve para ver agora; o link copiado é o que se manda a outra pessoa e vale por 7 dias.
+- **Histórico NF-e (Produtos)** e **Histórico NFS-e (Serviços)**: são listas separadas, cada uma com a própria busca e os próprios filtros.
+- Permissão **Liberar para Nota Fiscal** e entrada na fila: a permissão controla a marca de sistema antigo; quem põe o pedido na fila é a liberação para produção.
+- Menu **Pedidos** e "Orçamentos": são a mesma tela; os avisos desta tela ainda usam o nome antigo.
 
 ## Erros comuns
 
@@ -193,7 +342,11 @@ Nos dois casos a confirmação lista as notas autorizadas que o pedido já tem. 
 | Sem permissão para emitir NF-e / para cancelar nota fiscal | Seu perfil não tem a permissão da ação. | Peça ao administrador. |
 | Não foi possível gerar a remessa | O endereço de entrega está sem recebedor ou sem CPF/CNPJ, ou o pedido não tem nota de venda autorizada. | Complete o endereço de entrega no cadastro do cliente e tente de novo. |
 | Não foi possível descartar | A nota já tem número, chave, protocolo ou evento registrado. | Essa nota não pode ser apagada; se for o caso, cancele. |
-
+| Nota sem parcela fiscal ativa | A nota não tem vencimento gravado para lançar. | Não há o que lançar a partir desta nota. Gere os títulos pelo Registro de recebíveis. |
+| Sem faturado em aberto | A proposta não tem cobrança faturada em aberto. | Nada a lançar: só venda faturada entra no contas a receber. |
+| Nota parcelada ainda não é suportada neste caminho | A nota tem duas parcelas ou mais. | Gere os títulos pelo Registro de recebíveis. |
+| Lançamento bloqueado: totais não fecham | A soma das parcelas da nota difere do total faturado em aberto da proposta. | Regularize a nota ou a cobrança da proposta antes de lançar. |
+| Duplicidade detectada! A parcela N desta origem já possui um boleto ativo no Contas a Receber | A parcela já foi lançada. | Use **Revisar para gerar boletos**. Para refazer, cancele o título atual na Carteira antes. |
 ## Veja também
 
 - [Carteira (contas a receber)](carteira.md)
@@ -203,3 +356,45 @@ Nos dois casos a confirmação lista as notas autorizadas que o pedido já tem. 
 - [Proposta: aba Pagamentos](proposta-pagamentos.md)
 - [Proposta: aba Fretes](proposta-fretes.md)
 - [Expedição](expedicao.md)
+
+## Arquivos de origem
+
+Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê esta lista: quando um deles muda e a ficha não, ele avisa. Um caminho por item, entre crases, a partir da raiz do repositório; pasta termina com `/` e vale para tudo dentro dela.
+
+- `src/app/(erp)/notas-fiscais/`
+- `src/features/fiscal/NotasFiscaisPage.tsx`
+- `src/features/fiscal/components/EmissaoNfeModal.tsx`
+- `src/features/fiscal/components/ConferenciaFaturamentoModal.tsx`
+- `src/features/fiscal/components/NovaNotaAvulsaModal.tsx`
+- `src/features/fiscal/services/conferencia-faturamento.ts`
+- `src/features/fiscal/services/ambiente-fiscal.ts`
+- `src/features/fiscal/services/ja-autorizada.ts`
+- `src/features/fiscal/services/faturado-fora.client.ts`
+- `src/features/fiscal/lib/limites-layout-nfe.ts`
+- `src/features/fiscal/lib/confirmacao-segunda-nota.ts`
+- `src/features/fiscal/lib/fila-status.ts`
+- `src/features/fiscal/constants/sefaz-rejeicoes.ts`
+- `src/features/nfe/components/NfeDetailPage.tsx`
+- `src/features/nfe/components/ConferenciaNfe.tsx`
+- `src/features/nfe/pendencias.ts`
+- `src/features/nfe/lib/ambiente-exibido.ts`
+- `src/features/nfe/services/nfe.service.ts`
+- `src/features/nfe/services/remessa.service.ts`
+- `src/app/api/fiscal/emitir-nfe/`
+- `src/app/api/fiscal/cancelar-nfe/`
+- `src/app/api/fiscal/faturado-fora/`
+- `src/app/api/fiscal/documento-nota/`
+- `src/app/api/fiscal/emitir-nfse/`
+- `src/lib/fiscal/danfes-do-pedido.ts`
+- `src/lib/fiscal/documento-nota.ts`
+- `src/components/common/BotaoDanfe.tsx`
+- `src/components/common/ActionsMenu.tsx`
+- `src/features/expedicao/components/ConfirmarAcaoModal.tsx`
+- `src/features/cobrancas/PrepararBoletosModal.tsx`
+- `src/features/contas-a-receber/components/RevisarGeracaoBancariaModal.tsx`
+- `src/features/orcamentos/OrcamentosListPageReal.tsx`
+- `src/features/orcamentos/services/orcamentos.service.ts`
+- `src/features/cadastros/CadastroFormPage.tsx`
+- `src/features/usuarios-perfis/catalogo-permissoes.ts`
+- `src/lib/formatters/status.ts`
+- `src/constants/navigation.ts`

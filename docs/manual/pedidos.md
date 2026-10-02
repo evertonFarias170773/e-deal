@@ -1,7 +1,8 @@
 # Pedidos (lista)
 
-> **Última revisão:** 01/10/2026
-> **Onde fica:** menu → Pedidos (endereço `/orcamentos`)
+> **Última revisão:** 02/10/2026
+> **Caminho no menu:** Pedidos (item direto do menu lateral, sem submenu; é o segundo, logo abaixo de Conferência)
+> **Endereço:** `/orcamentos`
 
 ## Para que serve
 
@@ -21,6 +22,61 @@ No alto da tela o título aparece como "Orcamentos", com a etiqueta "Pedidos". �
 - **Encerrar teste** e **Reabrir (desfazer encerramento de teste)**: só o Super Administrador.
 - **Voltar para a Fila de Faturamento (desfazer nota no sistema antigo)**: só administrador, Super Administrador ou quem tem a permissão "Liberar para Nota Fiscal".
 - As demais ações do menu da linha aparecem para qualquer usuário que vê o pedido. O que cada um consegue alterar dentro da proposta é decidido na própria proposta.
+
+## Botões e ações da tela
+
+Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros de grafia.
+
+| Nome na tela | Onde fica | O que faz |
+|---|---|---|
+| **+ Nova proposta** | Cabeçalho da tela, à direita | Abre a criação de uma proposta nova. |
+| **Pedidos** (card) | Cards do topo, 1º | Liga ou desliga o filtro do card; ligado, a lista traz tudo menos cancelados, inclusive entregues. |
+| **Em arte** (card) | Cards do topo, 2º | Liga ou desliga a lista dos pedidos com arte em andamento, na ordem por Status Arte. |
+| **Arte Aprovada** (card) | Cards do topo, 3º | Liga ou desliga a lista dos pedidos com arte aprovada que ainda não foram para a produção. |
+| **Liberadas** (card) | Cards do topo, 4º | Liga ou desliga a lista dos pedidos com status "Liberado". |
+| **Revisão atendente** (card) | Cards do topo, 5º | Liga ou desliga a lista dos pedidos em REVISAO ATENDENTE. |
+| **Em produção** (card) | Cards do topo, 6º | Liga ou desliga a lista dos pedidos em produção e mostra o prazo do boletim na coluna Envio. |
+| **Buscar por proposta, cliente, ID cliente, valor ou OS Ideal** | Barra de filtros, campo de texto | Busca pedidos em todos os períodos. |
+| **Todos status** | Barra de filtros | Filtra por status do pedido e desliga o card que estiver ligado. |
+| **Todos modelos** | Barra de filtros | Filtra por AVULSO, PROPOSTA ou ENCERRADOS (teste). |
+| **Todos produtos** | Barra de filtros | Abre a lista de produtos, com o campo **Código ou nome**, e filtra os pedidos que têm o produto escolhido. |
+| **Todos vendedores** | Barra de filtros | Filtra por atendente. |
+| **Todas cobranças** | Barra de filtros | Filtra por PIX, BOLETO, E-FATURADO ou CARTÃO. |
+| **15 dias** (e os meses, como "Out/26") | Barra de filtros, último seletor | Troca o período da lista e dos cards. |
+| **Limpar filtros** | Barra de filtros, à direita | Devolve todos os filtros ao padrão e desliga o card. |
+| Coluna **id - Cliente** | Linha da lista | O clique abre o cadastro do cliente; sem cadastro, abre a proposta. |
+| Coluna **Tipo cobrança / Valor total** | Linha da lista | O clique abre a proposta na aba Pagamentos. |
+| Coluna **Envio** | Linha da lista | O clique abre a proposta na aba Fretes. |
+| Ícone de corrente (dica "Abrir o painel do cliente em nova aba") | Coluna Status Arte, ao lado da situação da arte | Abre o painel do cliente em nova aba. Só aparece quando o pedido tem link ativo. |
+| Ícone de balão de conversa (dica "Chat interno") | Coluna Ações | Abre o chat interno do pedido. |
+| Ícone de arquivo com seta (dica "Baixar DANFE - ..." ou "Baixar DANFE (N notas)") | Coluna Ações | Abre a DANFE; com mais de uma nota, abre a lista **Baixar DANFE** para escolher. Só aparece com nota autorizada. |
+| **Ver proposta** | Menu da linha | Abre a proposta para leitura. |
+| **Ver chat interno** (ou **Ver chat interno (N não lidas)**) | Menu da linha | Abre o chat interno do pedido. |
+| **Editar proposta** | Menu da linha | Abre a proposta em edição. |
+| **Duplicar proposta** | Menu da linha | Cria uma cópia da proposta e abre a cópia em edição. |
+| **Criar pedido complementar** | Menu da linha e botão da janela de confirmação | Cria um pedido novo do mesmo evento, vinculado a este. |
+| **Copiar proposta informal** | Menu da linha | Copia o resumo do pedido para colar no WhatsApp. |
+| **Link pgto. externo** | Menu da linha | Copia o link de pagamento da área do cliente. |
+| **Gerar PDF da proposta** | Menu da linha | Gera o PDF da proposta e abre em nova aba. |
+| **Abrir DANFE (PDF)** | Menu da linha | Abre a DANFE da nota que representa o pedido. |
+| **Baixar XML** | Menu da linha | Baixa o XML da nota. |
+| **Gerar cobrança** | Menu da linha | Abre a geração de cobrança da proposta. |
+| **Cancelar proposta** | Menu da linha | Abre a janela **Cancelar Proposta**. |
+| **Liberar para Produção** | Menu da linha | Abre a confirmação "Liberar proposta para Produção?". |
+| **✓ Liberada para produção** | Menu da linha | Não faz nada: é só o aviso de que o pedido já foi liberado. |
+| **Rastrear objeto** | Menu da linha | Abre o rastreio dos Correios do pedido. |
+| **Encerrar teste** | Menu da linha | Marca o pedido como teste encerrado e o tira das listas operacionais. |
+| **Reabrir (desfazer encerramento de teste)** | Menu da linha | Devolve o pedido de teste às listas operacionais. |
+| **Voltar para a Fila de Faturamento (desfazer nota no sistema antigo)** | Menu da linha | Remove a marca "faturado no sistema antigo" e devolve o pedido à Fila de Faturamento. |
+| **Retirar da Produção** | Menu da linha, último item | Tira o pedido da fila de produção. |
+| **Confirmar liberação** / **Cancelar** | Janela "Liberar proposta para Produção?" | Confirma a liberação, ou fecha sem liberar. |
+| **Confirmar Cancelamento** / **Voltar** | Janela "Cancelar Proposta" | Cancela a proposta (exige motivo), ou fecha sem cancelar. |
+| **Cancelar só a cobrança** | Janela "Cancelar Proposta", quando há uma única cobrança ativa | Troca para o cancelamento só da cobrança, sem cancelar o pedido. |
+| **Ver cobranças na aba Pagamentos** | Janela "Cancelar Proposta", quando há mais de uma cobrança ativa | Fecha a janela e abre a proposta na aba Pagamentos. |
+| **Anterior** / **Próxima** | Rodapé da lista | Muda de página. |
+| **Ver** | Cartão do pedido, só no celular | Abre a proposta para leitura. |
+| **Chat** | Cartão do pedido, só no celular | Abre o chat interno do pedido. |
+| **Mais** | Cartão do pedido, só no celular | Abre o mesmo menu da linha, sem o item Ver proposta. |
 
 ## Passo a passo
 
@@ -137,6 +193,7 @@ As datas pequenas aparecem como dia/mês e hora, no horário de Brasília.
 - Proposta cancelada nunca aparece em card nenhum, nem na contagem nem na lista do card.
 - A lista padrão esconde os pedidos cancelados, os entregues e os testes encerrados. Entregue já saiu do fluxo; teste encerrado não é pedido de verdade.
 - Os cards **Em arte** e **Arte Aprovada** contam o período inteiro. Os cards **Pedidos**, **Liberadas**, **Revisão atendente** e **Em produção** contam apenas os pedidos carregados na página atual (até 100). Com mais de uma página, o número desses quatro cards é menor que o total real; o total está no rodapé, em "Total de propostas encontradas".
+- Com um card ligado, esses quatro cards passam a contar só o que o card ligado trouxe para a lista. Por exemplo, com **Em produção** ligado, **Pedidos** mostra a quantidade de pedidos em produção carregados e **Liberadas** e **Revisão atendente** caem para zero. **Em arte** e **Arte Aprovada** não mudam. Para comparar os números dos cards, desligue o card.
 - Com busca ou com qualquer filtro de status, modelo, produto, vendedor ou cobrança, o período é ignorado e a lista traz no máximo 100 pedidos, sem outras páginas. Se o que você procura não aparecer, refine a busca.
 - O período **15 dias** olha a data da última alteração do pedido; os meses olham a data de criação. Por isso um pedido antigo que foi mexido esta semana aparece em 15 dias e não aparece no mês atual.
 - O card **Em arte** olha o Status Arte, e não o "/ EM ARTE" do status do pedido. Os dois podem divergir: um pedido pode mostrar "/ EM ARTE" no status e estar fora do card, e o contrário.
@@ -151,6 +208,32 @@ As datas pequenas aparecem como dia/mês e hora, no horário de Brasília.
 - Não dá para gerar cobrança de proposta que já foi totalmente cobrada.
 - Encerrar um teste tira o pedido da Produção, do Kanban, da fila de impressão e da Expedição. Ele continua nesta lista, com a marca, e segue contando no faturamento. Esta é a única tela de onde dá para reabrir.
 - A busca por nome de quem recebe a nota fiscal e por nome do evento precisa de pelo menos duas letras e é desligada quando o termo é comum demais (casa com 200 nomes ou mais). A busca por número, cliente e atendente continua funcionando.
+
+## O que não confundir
+
+- **Pedidos** (menu) e **Produção** (menu): Pedidos é esta lista de propostas, no endereço `/orcamentos`; Produção é o painel das ordens de serviço, no endereço `/pedidos`.
+- Título "Orcamentos" e item de menu **Pedidos**: são a mesma tela; o menu mudou de nome e o título do cabeçalho não.
+- Card **Pedidos** e o "Total de propostas encontradas" do rodapé: o card conta só a página carregada; o rodapé dá o total de todas as páginas.
+- Card **Em arte** e opção EM ARTE do filtro de status: o card olha a coluna Status Arte; o filtro olha o "/ EM ARTE" escrito no status do pedido.
+- Card **Arte Aprovada** e status "Novo / Arte aprovada" ou "Aguardando / Arte aprovada": o card olha o Status Arte APROVADO de pedido ainda não liberado para a produção; os outros são status do pedido.
+- Card **Liberadas** e linha verde: o card conta só o status exatamente "Liberado"; a linha verde vale para todo pedido não avulso com financeiro liberado, inclusive "Liberado / EM ARTE".
+- Card **Liberadas** e **✓ Liberada para produção**: o primeiro é a liberação do financeiro (status "Liberado"); o segundo é o pedido que já entrou na fila da produção.
+- **Liberar para Produção** e **Retirar da Produção**: são ações opostas; retirar deixa o pedido parado fora da fila, mesmo pago.
+- Card **Revisão atendente** e status REVISAO PRODUCAO: o primeiro espera o atendente liberar; o segundo já foi liberado e está com a produção, e conta no card **Em produção**.
+- Selo **Pago / A liberar** e status "Liberado": o selo diz que o cliente pagou e o financeiro ainda não confirmou; "Liberado" é depois da confirmação.
+- Linha amarela (Aguardando financeiro) e linha azul bem claro (Pago / A liberar): as duas vêm da situação da cobrança na Conferência; se o pedido tem cobranças nas duas situações, vale Aguardando financeiro.
+- Linha azul clara (revisão atendente) e linha azul bem claro (Pago / A liberar): a primeira é pelo status do pedido e fica no topo; a segunda é pela cobrança e fica no quarto grupo.
+- Fundo laranja da linha (Enviar Arte) e card **Em arte** laranja: a linha fica laranja por Enviar Arte, só com o card ligado; o card fica laranja quando há pedido em Pendente Informação ou Corrigir Dados.
+- **Cancelar proposta** e **Cancelar só a cobrança**: a primeira encerra o pedido e não tem volta; a segunda mantém o pedido e reabre o saldo para uma cobrança nova.
+- **Encerrar teste** e **Cancelar proposta**: encerrar teste só esconde o pedido das listas operacionais, sem mudar o status, e pode ser desfeito; cancelar é irreversível.
+- **Encerrar teste** e **Retirar da Produção**: encerrar teste não mexe na liberação do pedido; retirar desfaz a entrada na fila da produção.
+- **Ver proposta** e **Editar proposta**: a primeira abre para leitura; a segunda abre em edição, que é também o que o clique na linha faz.
+- **Duplicar proposta** e **Criar pedido complementar**: duplicar cria uma cópia independente; o complementar nasce sem itens, vinculado ao pedido original, e sai junto com ele na Expedição.
+- **Abrir DANFE (PDF)** do menu e o ícone de DANFE da linha: o menu abre só a nota que representa o pedido; o ícone lista todas as notas autorizadas, inclusive complementar e remessa.
+- Período **15 dias** e os meses: 15 dias olha quando o pedido foi alterado; os meses olham quando foi criado.
+- Data abaixo do valor e data abaixo do status: a primeira é do último registro de pagamento; a segunda é da última mudança de status.
+- Coluna **Envio** e modalidade do frete: Envio mostra o transporte (SEDEX, RETIRADA, transportadora, motoboy); a modalidade (RETIRA, FOB, CIF) não aparece nesta lista.
+- **N°** e o código antes do nome na coluna **id - Cliente**: o primeiro é o número do pedido; o segundo é o código do cliente.
 
 ## Erros comuns
 
@@ -185,3 +268,27 @@ As datas pequenas aparecem como dia/mês e hora, no horário de Brasília.
 - [Produção (ordens de serviço)](producao.md)
 - [Expedição](expedicao.md)
 - [Notas fiscais](notas-fiscais.md)
+
+## Arquivos de origem
+
+Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê esta lista: quando um deles muda e a ficha não, ele avisa. Um caminho por item, entre crases, a partir da raiz do repositório; pasta termina com `/` e vale para tudo dentro dela.
+
+- `src/features/orcamentos/OrcamentosListPageReal.tsx`
+- `src/features/orcamentos/services/orcamentos.service.ts`
+- `src/features/orcamentos/mappers.ts`
+- `src/features/orcamentos/components/FiltroProdutoDrop.tsx`
+- `src/features/orcamentos/components/LiberarProducaoModal.tsx`
+- `src/features/orcamentos/components/CancelPropostaModal.tsx`
+- `src/features/orcamentos/components/CriarComplementoModal.tsx`
+- `src/features/orcamentos/services/prazo-envio-lista.service.ts`
+- `src/features/orcamentos/services/rastreio-lista.service.ts`
+- `src/features/orcamentos/lib/divergencia-lotes.ts`
+- `src/features/area-cliente/lib/copiar-link-pagamento.ts`
+- `src/components/common/BotaoDanfe.tsx`
+- `src/components/common/ResponsiveList.tsx`
+- `src/lib/formatters/status.ts`
+- `src/constants/navigation.ts`
+- `src/features/auth/usuarios.service.ts`
+- `src/features/auth/redirect-utils.ts`
+- `src/app/api/orcamentos/liberar-producao/`
+- `src/app/api/orcamentos/cancelar-proposta/`

@@ -1,7 +1,8 @@
 # Proposta: aba Geral
 
-> **Última revisão:** 01/10/2026
-> **Onde fica:** menu **Pedidos** → abrir ou criar uma proposta → aba **Geral** (endereço `/orcamentos/novo` ou `/orcamentos/<número>/editar`)
+> **Última revisão:** 02/10/2026
+> **Caminho no menu:** Pedidos → abrir um pedido → aba **Geral**
+> **Endereço:** `/orcamentos/<número>/editar` (em proposta nova, `/orcamentos/novo`)
 
 ## Para que serve
 
@@ -14,6 +15,46 @@
 - O **Desconto geral**, no bloco **8. Resumo do orçamento**, só é editável para administrador, gerente ou perfil com a permissão de desconto geral.
 - Em proposta com cobrança, o botão **+ Adicionar novo sócio** fica travado para quem não tem a permissão de editar proposta paga.
 
+## Botões e ações da tela
+
+Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros de grafia. Cabeçalho, barra de abas e rodapé estão em [Proposta: visão geral e abas](proposta.md).
+
+| Nome na tela | Onde fica | O que faz |
+|---|---|---|
+| **Geral** | Barra de abas | Abre esta aba. |
+| **Cliente cadastrado** | Bloco **1. Cliente**, só em proposta nova | Faz a proposta para um cliente do cadastro. |
+| **Cliente não cadastrado / orçamento rápido** | Bloco **1. Cliente**, só em proposta nova | Faz a proposta só com nome e CEP, sem cadastro. |
+| Campo "Buscar por ID, nome, apelido ou documento do cliente..." | Bloco **1. Cliente** | Procura o cliente; clicar numa linha do resultado escolhe o cliente. |
+| Botão **X** (sem dica) | Dentro do campo de busca, com cliente escolhido | Limpa o cliente, o contato, o endereço, o pagador, o vendedor e a empresa. |
+| **Vincular cliente cadastrado** | Bloco **1. Cliente**, em orçamento rápido já salvo | Começa a troca do cliente manual por um cadastrado. |
+| **Cancelar vinculação** | Bloco **1. Cliente**, durante a vinculação | Desfaz a troca e volta ao que era. |
+| **Empresa** (lista: **Ideal**, **Biro**, **E3**) | Bloco **2. Dados da proposta** | Define a empresa que vende. |
+| **Vendedor** (lista; primeira opção "Selecione o vendedor") | Bloco **2. Dados da proposta** | Define o vendedor, para quem pode alterar. |
+| Linha de **Outros contatos** | Bloco **3. Contato responsável** | Troca o contato selecionado. |
+| **+ Adicionar novo contato** | Bloco **3. Contato responsável** | Abre a janela **Adicionar novo contato**. |
+| **Adicionar** | Janela **Adicionar novo contato** | Inclui o contato e já o seleciona. |
+| Botão de lápis (dica: "Editar") | No contato e no endereço, selecionado ou da lista | Abre a edição do contato ou do endereço. |
+| **Salvar** | Janela **Editar contato (Modo Local)** | Aplica a correção do contato na tela. |
+| Linha de **Outras opções de pagador** | Bloco **4. Dados para nota fiscal** | Troca o pagador. Em proposta com número, grava na hora. |
+| **Copiar dados** | Painel do pagador selecionado | Copia os dados fiscais do pagador. |
+| **Abrir cadastro** | Painel do pagador selecionado | Abre o cadastro do pagador em outra aba. |
+| **+ Adicionar novo sócio** | Bloco **4. Dados para nota fiscal** | Abre a busca de sócio por CPF ou CNPJ. |
+| **Buscar** | Busca de sócio | Procura o documento digitado. |
+| **Selecionar como pagador** | Resultado "já é vínculo deste cliente" | Usa o sócio como pagador. |
+| **Vincular e usar como pagador** | Resultado "cadastro existente, ainda sem vínculo" | Cria o vínculo e usa o sócio como pagador. |
+| **Confirmar e usar como pagador** | Resultado "Sem cadastro — dados da Receita" | Cria o cadastro, o endereço principal e o vínculo, e usa como pagador. |
+| Linha de **Outras opções de entrega** | Bloco **5. Endereço de entrega** | Troca o endereço de entrega. |
+| Botão de copiar (dica: "Copiar endereço") | No endereço, selecionado ou da lista | Copia o endereço completo. |
+| **+ Adicionar novo endereço** / **Salvar endereço** | Bloco **5. Endereço de entrega** | Em proposta nova, abre um endereço em branco. Em proposta existente com endereço escolhido, o nome é **Salvar endereço** e abre o endereço selecionado para edição. |
+| **Validar** | Janela de endereço, ao lado de **CPF / CNPJ do Recebedor** | Consulta o documento e preenche os dados do recebedor. |
+| **Adicionar** / **Salvar** | Janela **Adicionar novo endereço** / **Editar endereço** | Grava o endereço na hora. |
+| **Confirmar** | Janela **Atenção** (endereço diferente do da nota) | Confirma o endereço de entrega escolhido. |
+| **Ciente, continuar** | Janela **Atenção à Carteira** | Mantém o cliente escolhido, de outra carteira. |
+| **Cancelar** | Todas as janelas acima e a busca de sócio | Fecha sem aplicar. Em **Atenção à Carteira**, limpa o cliente escolhido. |
+| Botão **X** (dica: "Limpar pesquisa") | Campo de pesquisa das listas com mais de quatro opções | Limpa a pesquisa. |
+| **Tipo** (**%** ou **R$**) e **Desconto geral** | Bloco **8. Resumo do orçamento** | Aplicam desconto sobre o subtotal dos produtos. |
+| **Copiar resumo para WhatsApp** | Bloco **9. Envio do orçamento** | Copia o texto informal da proposta. |
+
 ## Passo a passo
 
 ### Escolher o cliente (bloco 1. Cliente)
@@ -22,7 +63,7 @@
 2. Para cliente cadastrado, digite no campo de busca o código, o nome, o apelido ou o documento. A busca começa com dois caracteres.
 3. Clique no cliente na lista. Cada linha mostra o código, o nome, o documento, a cidade e o vendedor do cadastro.
 4. O sistema preenche sozinho o primeiro contato, o endereço de entrega (o do tipo entrega; se não houver, o principal), o vendedor padrão e a empresa padrão do cliente. Confira cada um nos blocos seguintes.
-5. Abaixo da busca aparecem três quadros: **Cliente**, **Limite Faturado / Risco** e **Tabela especial** (o percentual da tabela especial do cliente, ou "Sem acréscimo especial").
+5. Abaixo da busca aparecem três quadros: **Cliente**, **Limite Faturado / Risco** e **Tabela especial**. Este último mostra o percentual da tabela especial do cliente, escrito na tela como "+N% applied nos produtos", ou "Sem acréscimo especial".
 6. Para trocar o cliente, clique no **X** do campo de busca e escolha outro.
 
 Quando a proposta é aberta a partir do cadastro do cliente (**Criar proposta**), o cliente já vem escolhido.
@@ -57,7 +98,7 @@ Enquanto o cliente não é escolhido numa proposta nova, os outros blocos e abas
 1. O contato selecionado aparece no painel de cima, com cargo, WhatsApp e e-mail. Os demais ficam em **Outros contatos**.
 2. Para trocar, clique em outro contato da lista. Com mais de quatro contatos, a lista ganha um campo de pesquisa.
 3. Para incluir, clique em **+ Adicionar novo contato**, preencha **Nome** e **WhatsApp** (obrigatórios), **Cargo** e **E-mail**, e clique em **Adicionar**.
-4. Para corrigir um contato, clique no lápis ao lado dele.
+4. Para corrigir um contato, clique no lápis ao lado dele, altere na janela **Editar contato (Modo Local)** e clique em **Salvar**.
 5. Salve a proposta para o contato escolhido valer.
 
 O nome do contato é o que aparece na proposta enviada ao cliente.
@@ -109,7 +150,7 @@ O destino escolhido aparece também no topo do bloco **8. Resumo do orçamento**
 
 ### Proposta avulsa x proposta com produtos
 
-A escolha entre proposta avulsa e proposta com produtos do catálogo não fica na aba Geral. Ela é feita na aba **Orçamento**, na caixa **Proposta avulsa (orçamento sem produtos cadastrados)**. Veja [Proposta: aba Produtos](proposta-produtos.md).
+A escolha entre proposta avulsa e proposta com produtos do catálogo não fica na aba Geral. Ela é feita na aba **Orçamento**, na caixa **Proposta avulsa (orçamento sem produtos cadastrados)**. Veja [Proposta: aba Orçamento (produtos)](proposta-produtos.md).
 
 ## Regras e bloqueios
 
@@ -125,6 +166,23 @@ A escolha entre proposta avulsa e proposta com produtos do catálogo não fica n
 - Não dá para vincular cliente cadastrado a um orçamento rápido que tenha cobrança ativa ou pagamento confirmado. Cancele as cobranças antes.
 - No pedido complementar, contato, pagador e endereço ficam travados com o aviso **Herdado do pedido #<número>**. Um endereço novo cadastrado ali vai para o cadastro do cliente, mas a entrega continua sendo a do pedido principal.
 - Com cobrança ativa e sem a permissão de editar proposta paga, alterações de vendedor, empresa, contato e endereço não são gravadas: o salvamento guarda só as observações e a orientação técnica.
+
+## O que não confundir
+
+- Cliente x pagador x recebedor: o cliente (bloco 1) é de quem é a proposta; o pagador (bloco 4) é quem sai na nota fiscal; o recebedor é a pessoa ou empresa do endereço de entrega (bloco 5).
+- Contato responsável x recebedor: o contato recebe o orçamento e aparece na proposta enviada; o recebedor é quem recebe a mercadoria.
+- Endereço de entrega x endereço fiscal: o de entrega é o escolhido no bloco 5 e é o destino do frete; o fiscal é o endereço principal do pagador, mostrado no bloco 4, e não se escolhe aqui.
+- **Cliente não cadastrado / orçamento rápido** x **Proposta avulsa**: o orçamento rápido é proposta sem cliente no cadastro; a avulsa é proposta sem produtos do catálogo, marcada na aba Orçamento. Uma coisa não depende da outra.
+- **Salvar endereço** x **Salvar alterações**: **Salvar endereço** só abre a janela de edição do endereço selecionado; quem salva a proposta é **Salvar alterações**, no rodapé.
+- **Salvar** da janela de endereço x **Salvar** da janela de contato: o endereço grava na hora no cadastro do cliente; o contato corrigido fica na tela ("Modo Local") e o nome dele só vai para a proposta ao salvar.
+- Trocar o pagador x trocar o endereço: trocar o pagador muda a lista de endereços disponíveis, mas não escolhe o endereço de entrega por você.
+- Vendedor da proposta x vendedor do cadastro: o campo **Vendedor** nasce com o vendedor padrão do cliente; só quem tem permissão grava um vendedor diferente.
+- **Empresa** x cliente: **Empresa** é quem vende (Ideal, Biro ou E3), não a empresa do cliente.
+- Quadro **Tabela especial** x **Desconto geral**: a tabela especial vem do cadastro do cliente e entra sozinha em cada item; o desconto geral é digitado na proposta e exige permissão.
+- **Limite Faturado / Risco** x **Saldo na Conta Corrente**: o primeiro mostra o limite e o risco que estão no cadastro do cliente; o segundo é crédito que o cliente já tem a usar e aparece em aviso verde no topo da tela.
+- Selo **Endereço de sócio** x selo **REQUER NOTA DE TRANSPORTE**: o primeiro só diz de quem é o endereço; o segundo avisa que a entrega é em cidade diferente da do endereço principal do pagador.
+- **Observações e Condições** x orientação técnica da aba Produção: a primeira é comercial e não chega à produção.
+- **id_int** x código do cliente: **id_int** é o número da proposta; o código do cliente é o número que aparece com `#` ao lado do nome dele.
 
 ## Erros comuns
 
@@ -155,10 +213,21 @@ A escolha entre proposta avulsa e proposta com produtos do catálogo não fica n
 ## Veja também
 
 - [Proposta: visão geral e abas](proposta.md)
-- [Proposta: aba Produtos](proposta-produtos.md)
+- [Proposta: aba Orçamento (produtos)](proposta-produtos.md)
 - [Proposta: aba Fretes](proposta-fretes.md)
 - [Proposta: aba Pagamentos](proposta-pagamentos.md)
 - [Proposta: abas Produção, Boletim e Histórico](proposta-producao-boletim-historico.md)
 - [Pedidos (lista)](pedidos.md)
 - [Notas fiscais](notas-fiscais.md)
 - [Expedição](expedicao.md)
+
+## Arquivos de origem
+
+- `src/features/orcamentos/OrcamentoFormPage.tsx`
+- `src/features/orcamentos/components/SocioPagadorInline.tsx`
+- `src/features/orcamentos/components/ContactEditModal.tsx`
+- `src/features/cadastros/components/DocumentoRecebedorFields.tsx`
+- `src/features/orcamentos/services/orcamentos.service.ts`
+- `src/features/orcamentos/orcamento-utils.ts`
+- `src/lib/mocks/empresas.mock.ts`
+- `src/features/cadastros/CadastroDetailPage.tsx`

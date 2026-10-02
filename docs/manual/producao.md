@@ -1,7 +1,8 @@
 # Produção (ordens de serviço)
 
-> **Última revisão:** 01/10/2026
-> **Onde fica:** menu → Produção (endereço `/pedidos`, o painel geral). A OS de cada pedido abre em `/pedidos/boletim`. O Kanban (`/pedidos/kanban`) e a Fila de impressão (`/pedidos/impressao`) não têm item próprio no menu: abrem pelo endereço ou pelas abas que aparecem no topo dessas duas telas.
+> **Última revisão:** 02/10/2026
+> **Caminho no menu:** Produção (item direto do menu lateral, sem submenu). A OS de cada pedido abre a partir da lista. O Kanban e a Fila de impressão não estão no menu: chega-se a eles pelo endereço ou pelas abas **Fila Geral / Kanban Board / Fila de Impressão / Expedição** que aparecem no topo dessas duas telas.
+> **Endereço:** `/pedidos` (painel geral). OS: `/pedidos/boletim`. Kanban: `/pedidos/kanban` (e `/os-producao`). Fila de impressão: `/pedidos/impressao`.
 
 ## Para que serve
 
@@ -19,6 +20,99 @@ Dela você abre a OS (o boletim) de cada pedido para conferir prazo, instruçõe
 - **Gerar novo QR (invalida o anterior)** aparece para quem tem a permissão **Revogar/Gerar novo QR da OS**.
 - **Encerrar teste** aparece só para o Super Administrador.
 - As permissões de cada perfil são definidas em Configurações → Perfis e Permissões.
+
+## Botões e ações da tela
+
+Nomes exatamente como aparecem na tela.
+
+### Painel geral (`/pedidos`)
+
+| Nome na tela | Onde fica | O que faz |
+|---|---|---|
+| **Atrasados** | Cartões do topo | Só mostra o número, que hoje é sempre 0. Não é clicável. |
+| **Total de OS** | Cartões do topo | Tira o filtro de fase e mostra todos os pedidos da lista. |
+| **Em impressão** | Cartões do topo | Filtra os pedidos em EM IMPRESSAO. |
+| **Em revisão** | Cartões do topo | Filtra os pedidos em REVISAO PRODUCAO (linha amarela). |
+| **Em acabamento** | Cartões do topo | Filtra os pedidos em EM ACABAMENTO. |
+| **Buscar por ID, cliente, vendedor ou OS...** | Barra de filtros | Busca por número, cliente, vendedor ou empresa. |
+| **Todos Status** / **Todos Vendedores** / **Todas Empresas** | Barra de filtros | Filtram a lista por status, vendedor e empresa. |
+| **Limpar filtros** | Barra de filtros | Volta busca e filtros ao padrão. |
+| Clique na linha | Lista | Abre a OS do pedido. |
+| Chip do setor (**PVC**, **LASER**, **FLEXO**, **TEXTIL** + fase) | Coluna **Setores** | Abre o menu **Fase do setor** para mover a fase daquele setor. Com **Sem boletim**, não abre. |
+| **Em produção** / **Impressão** / **Impressão pausada** / **Acabamento** / **Acabamento pausado** / **Pronto** | Menu **Fase do setor** | Grava a fase escolhida para o setor. |
+| **Editar OS / Boletim** (ou **Criar OS / Boletim**) | Menu **Ações** da linha | Abre a OS. Aparece como "Criar" quando o pedido ainda não tem lotes. |
+| **Imprimir OS (PDF)** | Menu **Ações** da linha | Abre em nova aba o PDF completo, com todos os setores. Enquanto gera, mostra "Gerando PDF...". |
+| **Imprimir OS reduzida (PDF)** | Menu **Ações** da linha | Abre o PDF resumido (lista de conferência, sem imagens). |
+| **Gerar novo QR (invalida o anterior)** | Menu **Ações** da linha | Cria um QR novo para a OS e invalida o das vias já impressas. |
+| **Abrir DANFE (PDF)** | Menu **Ações** da linha | Abre a DANFE da nota do pedido. Só aparece quando há nota autorizada. |
+| **Baixar XML** | Menu **Ações** da linha | Baixa o XML da nota do pedido. Só aparece quando há nota autorizada. |
+| **Ver chat interno** | Menu **Ações** da linha | Abre o chat interno do pedido. |
+| **Detalhes da proposta** | Menu **Ações** da linha | Abre o pedido na tela de Pedidos. |
+| **Voltar para Revisão Atendente** | Menu **Ações** da linha | Abre a confirmação para devolver o pedido ao atendente. |
+| **Encerrar teste** | Menu **Ações** da linha | Tira o pedido de teste das filas, depois de uma confirmação. |
+| **Cancelar** / **Confirmar devolução** | Janela "Devolver proposta para Revisão?" | Desiste ou confirma a devolução ao atendente. |
+| **Editar OS** (ou **Criar OS**) / **Detalhes** / **Voltar p/ Revisão** | Cartão do pedido, no celular | Mesmas ações do menu da linha: abrir a OS, abrir o pedido e devolver ao atendente. |
+
+### Tela da OS (`/pedidos/boletim`)
+
+| Nome na tela | Onde fica | O que faz |
+|---|---|---|
+| **Voltar** | Cabeçalho | Volta para o painel geral sem salvar. |
+| **Imprimir OS · SETOR** (ou **Imprimir OS**) | Cabeçalho | Abre o PDF completo do setor da aba aberta. |
+| **Baixar todos (N)** | Cabeçalho, quando o pedido tem mais de um setor | Baixa um PDF por setor. |
+| **PDF reduzido** | Cabeçalho (menu) | Abre as opções **PDF reduzido da OS · SETOR** e **Baixar todos reduzidos (N)**. |
+| **Salvar Alterações** (na abertura: **Salvar Boletim**) | Cabeçalho e botão verde flutuante | Grava a OS. |
+| Abas **PVC** / **LASER** / **FLEXO** / **TEXTIL** | Abaixo do Bloco 1 | Trocam o setor mostrado. A aba marcada **a abrir** ainda não tem boletim. |
+| **Data Limite de Entrega \*** / **Hora do Prazo** | Faixa azul do Bloco 1 | Campos do prazo prometido ao cliente. |
+| **⚡ PRIORIDADE URGENTE** | Faixa azul do Bloco 1 | Caixa de marcar. Fica travada na edição e não tem efeito hoje. |
+| **Abrir PDF do SETOR** / **reduzido** | Bloco de produtos de outro setor | Abrem o PDF completo ou reduzido daquele setor. |
+| **Adicionar Lote** | Bloco de produtos, só na abertura | Cria mais um lote no produto. |
+| Ícone de lixeira (title "Remover Lote") | Cartão do lote, só na abertura | Remove o lote. O produto precisa ficar com pelo menos um. |
+| Ícone de olho (title "Ver gabarito visual") | Campo **Gabarito Operacional**, só na abertura | Mostra a imagem do gabarito; fecha em **Fechar Visualização**. |
+| **Importar CSV Variáveis** | Cartão do lote com numeração Customizada, só na abertura | Só simula a importação: marca um nome de arquivo no lote, sem enviar planilha. |
+| **Abrir para imprimir** / **Abrir os N setores** | Janela "Abrir para imprimir?" / "Reimprimir o boletim?" | Abre o documento com todos os setores e volta para o painel geral. |
+| **Abrir só SETOR** | Janela "Reimprimir o boletim?" | Abre só o setor que acabou de ser editado. |
+| **Abrir o documento em nova aba** | Mesma janela, quando o navegador bloqueou a aba | Abre o PDF que foi bloqueado. |
+| **Agora não** | Mesma janela | Fecha sem imprimir e volta para o painel geral. A OS já está salva. |
+
+### Página do QR da OS (`/os`)
+
+| Nome na tela | Onde fica | O que faz |
+|---|---|---|
+| **Avançar para STATUS** / **Retomar: STATUS** | Botão verde | Escolhe o próximo passo natural da OS. |
+| **Outros status (N)** / **Ocultar outros status** | Abaixo do botão verde | Mostra ou esconde as demais mudanças possíveis. |
+| **Voltar** | Painel de confirmação | Desiste da mudança escolhida. |
+| **Confirmar STATUS** | Painel de confirmação | Grava a mudança de status. |
+| **Confirmar entrega** e depois **Confirmar ENTREGUE agora** | Painel de confirmação, só para ENTREGUE | Os dois toques que marcam a entrega. |
+
+### Kanban (`/pedidos/kanban` e `/os-producao`)
+
+| Nome na tela | Onde fica | O que faz |
+|---|---|---|
+| **Fila Geral** / **Kanban Board** / **Fila de Impressão** / **Expedição** | Abas do topo | Levam ao painel geral, ao Kanban, à Fila de impressão e à Expedição. |
+| **Modo TV / Galpão** | Topo, à direita | Abre o quadro em tela cheia; **Sair do Modo TV** ou a tecla ESC fecha. |
+| **Tudo**, **Atrasados**, **Urgentes**, **Fase Arte**, **Produção**, **Expedição**, **Aguardando Clie.**, **Bloqueados**, **Prazo Hoje**, **Esta Semana** | Faixa de filtros rápidos | Filtram o quadro. |
+| **Buscar por OS, Cliente, Vendedor...**, **Todas as Empresas**, **Ordem: ...** | Barra de filtros | Busca, filtro de empresa e ordenação dos cartões. |
+| **Card Compacto: Ligado / Desligado** | Barra de filtros | Alterna o tamanho dos cartões. |
+| Setas esquerda e direita (title "Mudança de status desativada") | Cartão | Desativadas: não têm efeito hoje. |
+| Ícone de chama (title "Urgência desativada nesta etapa") | Cartão | Desativado: não tem efeito hoje. |
+| Ícone de pausa (title "Pausa desativada nesta etapa") | Cartão | Desativado: não tem efeito hoje. |
+| Ícone de balão (title "Chat") | Cartão | Abre o chat interno do pedido. |
+| Ícone de olho (title "Abrir Boletim de OS") e **Fábrica** (title "Ir para Boletim de Produção") | Cartão | Os dois abrem a OS do pedido. |
+
+### Fila de impressão (`/pedidos/impressao`)
+
+| Nome na tela | Onde fica | O que faz |
+|---|---|---|
+| **Fila Geral** / **Kanban Board** / **Fila de Impressão** / **Expedição** | Abas do topo | Levam às outras telas. |
+| **Modo TV** | Topo, à direita | Abre a fila em tela cheia; **Sair da TV** ou a tecla ESC fecha. |
+| **Todos Ativos**, **Prontos para Imprimir**, **Em Impressão (Rodando)**, **Aguardando Arte**, **Bloqueados / Pausados**, **Atrasados** | Filtros | Filtram os lotes pela situação. |
+| **Setor:** / **Material:** | Filtros | Filtram por setor e por material. |
+| **Priorizar Urgentes** | Filtros | Mostra só os lotes de pedido urgente. |
+| **Compacto: Ligado / Desligado** | Filtros | Alterna a altura das linhas. |
+| **Iniciar** | Coluna Ações do lote | Não tem efeito hoje. |
+| **Pausar** / **Concluir** | Coluna Ações do lote | Não têm efeito hoje. |
+| **Retomar** | Coluna Ações do lote | Não tem efeito hoje. |
 
 ## Passo a passo
 
@@ -140,6 +234,25 @@ Dela você abre a OS (o boletim) de cada pedido para conferir prazo, instruçõe
 - O cartão **Atrasados** do painel geral ainda não faz a conta e mostra sempre 0. Para ver prazo, use a coluna **Data entrega**.
 - Não existe lista de pendências dentro da Produção. A pausa de etapa é a fase "pausada" do setor; assunto que depende de outra pessoa vai para o chat interno do pedido ou para uma tarefa. Veja [Tarefas](tarefas.md).
 
+## O que não confundir
+
+- **Menu Produção x menu Pedidos:** o menu Produção abre a lista da fábrica (só pedidos liberados); o menu Pedidos abre a lista comercial, com todos os pedidos, onde se libera para produção.
+- **Menu Produção x aba Produção do pedido:** a aba **Produção** fica dentro de um pedido, na tela de Pedidos, e é do atendente; o menu Produção é a lista da fábrica.
+- **OS x boletim:** são a mesma tela. A OS é do pedido inteiro; cada setor tem a sua parte (o boletim daquele setor), que aparece como uma aba e sai como uma página do PDF.
+- **Número da OS x número do pedido:** é o mesmo número. A coluna **OS** mostra o número do pedido.
+- **Status do pedido x fase do setor:** a fase é de cada setor (chip na coluna Setores); o status é do pedido inteiro e segue o setor mais atrasado.
+- **Pronto (fase do setor) x Marcar pronto (Expedição):** **Pronto** só diz que aquele setor terminou; **Marcar pronto**, na Expedição, é o que tira o pedido da Produção.
+- **REVISAO PRODUCAO x REVISAO ATENDENTE:** em REVISAO ATENDENTE o pedido ainda está com o atendente, antes da liberação; em REVISAO PRODUCAO ele já foi liberado e espera a fábrica salvar a OS.
+- **Card "Em revisão" x devolver para revisão:** o cartão **Em revisão** conta pedidos em REVISAO PRODUCAO; **Voltar para Revisão Atendente** devolve o pedido ao atendente e o tira da lista.
+- **"/ PENDENTE" x tarefa:** EM IMPRESSAO / PENDENTE e EM ACABAMENTO / PENDENTE são pausas da etapa; não criam tarefa nem pendência para ninguém.
+- **Imprimir OS (PDF) x Imprimir OS reduzida (PDF):** a primeira traz as imagens das artes e todos os setores; a reduzida é a lista de conferência, sem imagens.
+- **Imprimir OS x Baixar todos:** **Imprimir OS** abre o PDF em nova aba; **Baixar todos (N)** salva um arquivo por setor na pasta de downloads.
+- **Fila de impressão x imprimir a OS:** a Fila de impressão é um painel de lotes a rodar na máquina; ela não imprime a OS em papel.
+- **Painel geral x Kanban:** só o painel geral move fases; o Kanban é quadro de consulta.
+- **Liberado para NF x Nota emitida:** **Liberado para NF** diz que o pedido pode ser faturado; **Nota emitida · nº** diz que a nota já foi autorizada.
+- **Encerrar teste x Voltar para Revisão Atendente:** encerrar teste esconde um pedido de teste das filas sem mudar o status; voltar para revisão devolve um pedido real ao atendente.
+- **`/producao` x menu Produção:** o endereço `/producao` é a tela "Controle de Artes e Modelos de Produção"; o menu Produção abre `/pedidos`.
+
 ## Erros comuns
 
 | O que aparece | Por que acontece | O que fazer |
@@ -171,3 +284,38 @@ Dela você abre a OS (o boletim) de cada pedido para conferir prazo, instruçõe
 - [Expedição](expedicao.md)
 - [Tarefas](tarefas.md)
 - [Notas fiscais](notas-fiscais.md)
+
+## Arquivos de origem
+
+Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê esta lista: quando um deles muda e a ficha não, ele avisa.
+
+- `src/features/pedidos/PedidosListPage.tsx`
+- `src/features/pedidos/BoletimFormPage.tsx`
+- `src/features/pedidos/PedidosKanbanPage.tsx`
+- `src/features/pedidos/PainelImpressaoPage.tsx`
+- `src/features/pedidos/components/SetorFaseChip.tsx`
+- `src/features/pedidos/components/DevolverRevisaoModal.tsx`
+- `src/features/pedidos/components/GerarPdfBoletimModal.tsx`
+- `src/features/pedidos/status-setor.ts`
+- `src/features/pedidos/setores.ts`
+- `src/features/pedidos/prazo-producao.ts`
+- `src/features/pedidos/hora-entrega.ts`
+- `src/features/pedidos/services/pedidos-producao.service.ts`
+- `src/features/pedidos/services/pedidos-detalhe.service.ts`
+- `src/features/pedidos/services/boletim-setores.service.ts`
+- `src/features/pedidos/services/boletim-propostas.service.ts`
+- `src/features/pedidos/services/imprimir-os.client.ts`
+- `src/features/pedidos/services/encerrar-teste.client.ts`
+- `src/app/(erp)/pedidos/`
+- `src/app/(erp)/producao/page.tsx`
+- `src/app/(erp)/os-producao/page.tsx`
+- `src/app/os/os-qr-client.tsx`
+- `src/app/api/pedidos/imprimir-os/route.ts`
+- `src/app/api/pedidos/os-qr/rotacionar/route.ts`
+- `src/constants/navigation.ts`
+- `src/features/auth/usuarios.service.ts`
+- `src/features/usuarios-perfis/components/PerfisPermissoesPanel.tsx`
+- `src/lib/auth/verificar-permissao.ts`
+- `src/features/orcamentos/services/orcamentos.service.ts`
+- `src/features/expedicao/services/expedicao-acoes.service.ts`
+- `src/features/dashboard/sections/ProducaoSection.tsx`

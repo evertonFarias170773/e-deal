@@ -1,0 +1,228 @@
+# Proposta: aba Fretes
+
+> **Última revisão:** 02/10/2026
+> **Caminho no menu:** Pedidos → abrir um pedido → aba Fretes
+> **Endereço:** `/orcamentos/<número>/editar?tab=fretes`
+
+## Para que serve
+
+É onde você diz quem paga o transporte (a modalidade), quem leva a mercadoria e quanto de frete entra no total da proposta. Em CIF a tela cota o frete com os parceiros e você escolhe uma opção; em FOB você só informa a transportadora do cliente; em retirada não há nada a cotar. A escolha feita aqui segue para a ordem de serviço e chega preenchida na Expedição.
+
+## Quem acessa
+
+- Quem abre a proposta para editar vê a aba Fretes (bloco **7. Fretes e Entrega**).
+- Na fase de orçamento (proposta em NOVO ou AGUARDANDO, com ou sem arte), quem edita a proposta escolhe a modalidade e o frete livremente.
+- Depois que o pedido é liberado, trocar a modalidade, a transportadora ou o frete escolhido exige a permissão **Editar Proposta Paga**. Sem ela, os campos ficam apagados e a tela mostra o motivo.
+- O bloco **Corrigir a transportadora (admin)**, com o campo do valor negociado do frete, só aparece para quem tem a permissão **Configurar Expedição**.
+- Cotar e aplicar o frete complementar exige a permissão **Criar Pedido Complementar**.
+- Proposta com cobrança gerada fica com a aba inteira travada para quem não tem a permissão de editar proposta paga (nem a de editar proposta com faturado a vencer, quando é esse o caso). Também trava enquanto houver revisão financeira pendente e em proposta avulsa já paga.
+
+## Botões e ações da tela
+
+Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros de grafia.
+
+| Nome na tela | Onde fica | O que faz |
+|---|---|---|
+| **Fretes** | Barra de abas da proposta | Abre esta aba. |
+| **Retira no balcão** | Caixa **Modalidade do frete — quem paga** | Marca retirada: o cliente busca a mercadoria e a proposta sai sem frete. |
+| **FOB — por conta do cliente** | Caixa **Modalidade do frete — quem paga** | Marca FOB: o cliente contrata e paga o transporte; a proposta sai sem frete. |
+| **CIF — por conta da empresa** | Caixa **Modalidade do frete — quem paga** | Marca CIF: a empresa contrata o transporte e o frete entra no total. Abre a cotação e os cards. |
+| **Transportadora definida \*** (lista, começa em "— escolha a transportadora —") | Caixa da modalidade, em FOB | Escolhe a transportadora do cliente que vai retirar a mercadoria. |
+| **Motoboy** | Ao lado da lista de transportadora, em FOB | Informa que um motoboy leva; dispensa a transportadora. Clicar de novo desmarca. |
+| **Transportadora** (lista) | Caixa da modalidade, em CIF | Escolhe quem leva. Se a transportadora tem card cotado, escolhe o card dela; se não tem, cria um frete manual dela. |
+| **Valor cobrado (R$)** | Caixa da modalidade, em CIF | Define quanto o cliente paga de frete. Grava ao sair do campo ou no Enter; Esc desfaz. Só edita na fase de orçamento. |
+| **Rodoviário** / **Aéreo** | Pergunta **Como vai o transporte?**, na caixa da modalidade | Diz à Expedição em qual coluna o pedido entra, quando o sistema não reconhece a transportadora sozinho. Clicar de novo desmarca. |
+| **Atualizar fretes** (vira **Atualizando...**) | Acima dos cards, em CIF | Refaz a cotação com o CEP do endereço e o peso atual da proposta. |
+| **Escolher** | Em cada card de frete | Torna aquele card o frete da proposta. |
+| **Escolhido** | Selo no card | Indica o frete que está valendo. Não é clicável. |
+| **Corrigir a transportadora (admin)** (lista, com a opção "— Sem transportadora —") | Caixa da modalidade, depois da liberação | Troca só a transportadora, na hora, sem passar pelo **Salvar alterações**. |
+| Campo **Frete R$** (dica: "Valor negociado do frete, em reais") | Ao lado da lista **Corrigir a transportadora (admin)** | Grava o valor negociado do frete e o novo total da proposta, ao sair do campo ou no Enter. |
+| **Cotar frete complementar** (ou **Salve os itens antes de cotar**, **Salve as alterações antes de cotar**, **Cotando...**) | Card **Frete complementar do pedido #...**, em pedido complementar | Cota o frete do peso somado do pedido principal com este pedido. |
+| **Aplicar** (vira **Aplicando...**) | Em cada opção da cotação complementar | Grava a diferença de frete neste pedido. |
+| **Serviço / Transportadora \*** | Proposta avulsa | Campo de texto com o nome do transporte. |
+| **Valor do frete (R$) \*** | Proposta avulsa | Campo com o valor do frete da proposta avulsa. |
+| **Copiar resumo para WhatsApp** | Bloco **9. Envio do orçamento**, na lateral | Copia o texto do orçamento. Fica apagado, com a dica "Escolha um frete primeiro", enquanto não há frete escolhido. |
+| **Salvar alterações** (em proposta nova: **Salvar proposta**) | Barra fixa no rodapé | Grava a proposta, com a modalidade, a transportadora e o frete escolhido. |
+| **Cancelar** | Barra fixa no rodapé | Sai da edição. |
+| **Recalcular frete** | Aviso **O frete precisa ser atualizado**, que aparece ao gerar cobrança | Traz você para esta aba para refazer o frete. |
+
+## Passo a passo
+
+### Escolher a modalidade
+
+1. Abra a aba **Fretes**.
+2. Na caixa **Modalidade do frete — quem paga**, clique em **Retira no balcão**, **FOB — por conta do cliente** ou **CIF — por conta da empresa**.
+3. O bloco **8. Resumo do orçamento** muda na hora: em retirada e em FOB o frete zera; em CIF entra o valor do frete escolhido.
+4. Clique em **Salvar alterações**. Enquanto não salvar, a tela mostra o aviso "Modalidade ainda não gravada: salve o orçamento para ela valer na OS e na Expedição."
+
+### Cotar e escolher um frete (CIF)
+
+1. Confira na aba **Geral** o endereço de entrega e na aba **Orçamento** os produtos: a cotação usa o CEP do endereço e o peso total da proposta, mostrado abaixo do botão **Atualizar fretes**.
+2. Marque **CIF — por conta da empresa**.
+3. A tela cota sozinha quando o endereço ou o peso mudam. Para cotar de novo, clique em **Atualizar fretes**.
+4. Aparecem os cards das opções: **SEDEX EXPRESS** e **PAC ECONÔMICO** (Correios), **AZUL CARGO**, **TRANSP. SÃO MIGUEL**, **ENTREGA MOTOBOY** e **VEPPO**, conforme o que cada parceiro devolver para aquele destino. Cada card mostra a transportadora, o prazo, o valor e o peso usado.
+5. Clique em **Escolher** no card desejado. Ele ganha o selo **Escolhido**, e os campos **Transportadora** e **Valor cobrado (R$)** acima são preenchidos com ele.
+6. Clique em **Salvar alterações**.
+
+Em cotação nova, sem escolha anterior, a tela já deixa o SEDEX escolhido; sem SEDEX, a primeira opção. Confira antes de salvar.
+
+### Usar uma transportadora que não tem cotação (frete manual em CIF)
+
+1. Em CIF, abra a lista **Transportadora** e escolha a transportadora.
+2. Se ela não tem card cotado, a tela cria um card **MANUAL / TRANSP.** com o nome dela, prazo "A combinar" e a observação "Cadastro manual", já como **Escolhido**.
+3. Digite o valor em **Valor cobrado (R$)** e saia do campo.
+4. Clique em **Salvar alterações**.
+
+A proposta tem um frete manual por vez: escolher outra transportadora sem cotação substitui o anterior.
+
+### Cobrar um valor diferente do cotado (CIF)
+
+1. Escolha o frete.
+2. Digite o valor em **Valor cobrado (R$)** e pressione Enter ou saia do campo. O card escolhido e o total passam a mostrar esse valor.
+3. Clique em **Salvar alterações**.
+
+Clicar em **Atualizar fretes** depois disso devolve o valor cotado ao card da parceira. No frete manual o valor digitado fica.
+
+### Informar a transportadora do cliente (FOB)
+
+1. Marque **FOB — por conta do cliente**.
+2. Em **Transportadora definida \***, escolha a transportadora que o cliente contratou. Se quem leva é um motoboy, clique em **Motoboy** no lugar.
+3. Se aparecer a pergunta **Como vai o transporte?**, marque **Rodoviário** ou **Aéreo**. Deixar em branco também vale: o pedido entra em Extras na Expedição.
+4. Clique em **Salvar alterações**.
+
+Em FOB não há cards de cotação. A tela mostra: "Em FOB o cliente contrata e paga o transporte — não há cotação a escolher. Defina acima quem leva: a transportadora ou o motoboy."
+
+### Marcar retirada no balcão
+
+1. Clique em **Retira no balcão**.
+2. Clique em **Salvar alterações**.
+
+Não há transportadora nem cotação: "Na retirada em balcão o cliente busca a mercadoria — não há transporte a cotar nem transportadora a definir."
+
+### Informar o frete de uma proposta avulsa
+
+1. Escolha a modalidade.
+2. Preencha **Serviço / Transportadora \*** (por exemplo, "Transportadora Própria / PAC") e **Valor do frete (R$) \***.
+3. Clique em **Salvar alterações**.
+
+A proposta avulsa não tem cotação nem cards.
+
+### Trocar o frete depois que o pedido foi liberado
+
+1. Abra a aba **Fretes**. Abaixo da modalidade aparece um quadro com o aviso do que a troca faz, ou, se a troca estiver bloqueada, com o motivo.
+2. Se os campos estão livres, troque a modalidade, a transportadora ou clique em **Escolher** em outro card.
+3. Clique em **Salvar alterações**. O frete e o total são recalculados.
+4. Se a proposta já tem pagamento e o total subiu, a diferença aparece na aba **Pagamentos** para cobrança, e a proposta fica aguardando essa cobrança. Pedido em produção continua na produção.
+
+Depois da liberação o campo **Valor cobrado (R$)** fica só para leitura: o valor muda pelo valor negociado (tarefa seguinte).
+
+### Corrigir só a transportadora ou o valor negociado (administrador da Expedição)
+
+1. Em proposta já liberada, localize **Corrigir a transportadora (admin)** na caixa da modalidade.
+2. Para trocar quem leva, escolha a transportadora na lista. A troca é gravada na hora, sem o **Salvar alterações**, e não mexe na modalidade nem no valor do frete. A Expedição vê a troca no próximo carregamento da tela.
+3. Para mudar o valor que o cliente paga, digite no campo **Frete R$** e pressione Enter ou saia do campo. O frete e o total da proposta são gravados juntos.
+4. Leia o aviso que aparece: ele mostra o total anterior e o novo, o saldo a cobrar na aba **Pagamentos** quando houver, e a mudança de status quando houver.
+
+### Aplicar o frete complementar (pedido complementar)
+
+1. Abra o pedido complementar e inclua os produtos na aba **Orçamento**. Salve.
+2. Na aba **Fretes**, no card **Frete complementar do pedido #...**, clique em **Cotar frete complementar**.
+3. A tela mostra o peso do pedido principal, o peso deste pedido, o peso somado, o frete já cobrado no principal e as opções cotadas. A opção do mesmo serviço do principal vem com o selo **Mesmo serviço do #...**.
+4. Em cada opção, confira **A cobrar aqui** e clique em **Aplicar** na escolhida.
+5. A tela confirma com "Frete complementar aplicado" e o valor a cobrar neste pedido. O total do pedido complementar passa a incluir essa diferença.
+
+## Regras e bloqueios
+
+- Retirada e FOB não cobram frete: o total da proposta sai sem frete, qualquer que seja a cotação. Só CIF cobra.
+- Em CIF não dá para salvar sem um frete escolhido. Em FOB não dá para salvar sem a transportadora ou o **Motoboy**. Em retirada não é preciso escolher nada.
+- Sem modalidade marcada, a tela não mostra cards e pede: "Escolha a modalidade do frete acima para continuar."
+- Trocar de modalidade limpa a transportadora (fora de FOB) e desfaz a escolha de retirada. Confira a caixa da modalidade depois de trocar.
+- A modalidade e a transportadora só valem depois do **Salvar alterações**.
+- A cotação usa o CEP do endereço de entrega e o peso total da proposta. Os volumes são calculados pelo sistema, um a cada 14,5 kg.
+- O botão **Atualizar fretes** fica apagado sem CEP válido de 8 dígitos, sem produto com peso ou sem endereço de entrega escolhido.
+- A Azul Cargo não é cotada para entrega no Rio Grande do Sul.
+- O card da Azul Cargo mostra, abaixo do valor, a linha "Original: R$ ... (+15%)" e o peso em kg com a quantidade de volumes.
+- Mudar o endereço de entrega desfaz o frete escolhido: é preciso escolher de novo. Mudar só o peso mantém a escolha quando a mesma opção volta na cotação nova.
+- Se o frete escolhido não volta na cotação nova, ele fica preservado e a tela avisa **Cotação Defasada**. Revise antes de salvar.
+- Ao reabrir uma proposta em CIF, a tela mostra o frete gravado e busca sozinha as outras opções, sem mudar o valor do escolhido.
+- Se o peso da proposta mudar depois da cotação, não dá para gerar cobrança enquanto o frete não for refeito aqui. Frete de valor zero não bloqueia.
+- Depois da liberação, salvar a proposta sem mexer na modalidade, na transportadora ou no card não altera o frete gravado. É assim que o valor negociado e a recotação feita na Expedição não se perdem.
+- Depois da liberação, a troca de frete é bloqueada em três casos, e a tela diz qual: quem está logado não tem a permissão de editar proposta paga; o pedido tem NF-e autorizada (cancele a nota antes); o pedido já foi despachado (volte um passo no painel da Expedição).
+- A lista **Corrigir a transportadora (admin)** troca a transportadora mesmo com o pedido já despachado. Ela mexe só em quem transporta.
+- O campo **Frete R$** não aceita valor em FOB nem em retirada, porque nessas modalidades o cliente não paga frete à empresa.
+- O valor negociado é recusado quando a proposta tem cobrança faturada a vencer, quando tem cobrança enviada ao cliente e ainda não paga (cancele a cobrança antes, na aba **Pagamentos**), quando é avulsa já paga, quando é pedido complementar, e quando o valor novo deixaria crédito a favor do cliente em proposta que não estava integralmente paga.
+- Em pedido complementar, a modalidade e a transportadora vêm do pedido principal e ficam travadas. Não há cards nem **Atualizar fretes**.
+- Pedido complementar fora de CIF não cobra frete: a tela mostra "... herdado do pedido #... — sem frete a cobrar neste pedido."
+- O frete complementar é só a diferença entre a cotação do peso somado e o frete que o pedido principal já cobra. Se o somado sair mais barato, este pedido cobra R$ 0,00 e nada é creditado. O pedido principal não é alterado.
+- O frete complementar só pode ser aplicado com o pedido complementar em NOVO ou AGUARDANDO, com o pedido principal entre LIBERADO e EXPEDICAO e ainda sem despacho, e com os dois pedidos no mesmo endereço de entrega.
+- Não dá para gerar cobrança de um pedido complementar antes de aplicar o frete complementar.
+
+## O que não confundir
+
+- **Modalidade** e **transportadora**: a modalidade diz quem paga o transporte; a transportadora diz quem leva. SEDEX, por exemplo, pode levar tanto em CIF quanto em FOB.
+- **Retira no balcão** e **FOB — por conta do cliente**: nas duas a proposta sai sem frete, mas em retirada o cliente busca e não há transportadora; em FOB há uma transportadora (ou motoboy) do cliente, obrigatória.
+- Botão **Motoboy** (FOB) e card **ENTREGA MOTOBOY** (CIF): o botão só informa que um motoboy do cliente leva, sem valor; o card é uma opção cotada que a empresa contrata e cobra.
+- **Valor cobrado (R$)** e campo **Frete R$**: o primeiro vale na fase de orçamento e grava com o **Salvar alterações**; o segundo é o valor negociado, só para administrador da Expedição, depois da liberação, e grava na hora.
+- Valor do card e **Valor cobrado (R$)**: o card nasce com o valor cotado pelo parceiro; o valor cobrado é o que o cliente paga e pode substituir o cotado.
+- **Transportadora definida \*** (FOB), **Transportadora** (CIF) e **Corrigir a transportadora (admin)**: as duas primeiras gravam com o **Salvar alterações**; a terceira grava sozinha e só existe depois da liberação.
+- **Cotação desatualizada**, **Cotação Defasada** e **O frete precisa ser atualizado**: o primeiro avisa que o CEP ou o peso mudaram e a cotação precisa ser refeita; o segundo avisa que o frete escolhido não voltou na cotação nova; o terceiro é o bloqueio ao gerar cobrança com peso diferente do cotado.
+- **Atualizar fretes** e **Cotar frete complementar**: o primeiro cota o frete inteiro de uma proposta comum em CIF; o segundo cota só a diferença de um pedido complementar.
+- O aviso **Cotação desatualizada** manda clicar em "Atualizar frete", no singular; o botão na tela se chama **Atualizar fretes**.
+- Recotação de frete no despacho: é feita na Expedição, no despacho do pedido, e não nesta aba.
+
+## Erros comuns
+
+| O que aparece | Por que acontece | O que fazer |
+|---|---|---|
+| "CEP não encontrado" — "Selecione um endereço de entrega válido com CEP para cotar." | A proposta está sem endereço de entrega, ou o endereço está sem CEP. | Escolha o endereço na aba **Geral** e volte para cotar. No orçamento rápido, preencha o CEP de entrega. |
+| "Peso inválido" — "Adicione pelo menos um produto com peso maior que zero para cotar." | A proposta não tem produto com peso. | Inclua os produtos na aba **Orçamento**. |
+| "Falha na cotação de todos os fretes" | Nenhum parceiro respondeu à cotação. | Tente **Atualizar fretes** de novo em instantes. |
+| "Cotação parcial realizada" — "Alguns serviços falharam: ..." | Um ou mais parceiros não responderam; os outros vieram. | Escolha entre as opções que vieram, ou atualize de novo. |
+| "Nenhum frete cotado para esta proposta." | Em CIF, ainda não há cotação. | Confira endereço e produtos e clique em **Atualizar fretes**. |
+| "Frete não selecionado" — "Selecione ou informe o frete antes de salvar o orçamento." | Em CIF, nenhum card está como **Escolhido**. | Clique em **Escolher** em um card ou escolha a **Transportadora**. |
+| "Transportadora obrigatória em FOB" — "Escolha a transportadora que vai retirar, ou marque Motoboy, antes de salvar o orçamento." | FOB sem transportadora e sem **Motoboy**. | Preencha **Transportadora definida \*** ou clique em **Motoboy**. |
+| "Frete obrigatório" ou "Transportadora obrigatória" | Proposta avulsa sem o valor do frete ou sem o nome do serviço. | Preencha **Valor do frete (R$) \*** e **Serviço / Transportadora \***. |
+| "Modalidade ainda não gravada: salve o orçamento para ela valer na OS e na Expedição." | A modalidade ou a transportadora foi trocada e ainda não foi salva. | Clique em **Salvar alterações**. |
+| "Cotação desatualizada" | O CEP, o peso ou os volumes mudaram depois da última cotação. | Clique em **Atualizar fretes**. |
+| "Cotação Defasada" — "Frete escolhido anteriormente não retornou na nova cotação. Revise antes de salvar." | A opção escolhida não veio na cotação nova. | Escolha outra opção ou confirme que o frete preservado ainda vale. |
+| "Troca de frete bloqueada" — "Voce nao tem permissao para corrigir o frete de um pedido ja liberado." | Pedido já liberado e o seu perfil não tem a permissão de editar proposta paga. | Peça a troca a quem tem a permissão. |
+| "Troca de frete bloqueada" — "Pedido #... tem a NF-e ... autorizada. ... Cancele a nota antes de corrigir o frete." | A nota já foi transmitida com o valor atual. | Cancele a nota em Notas fiscais e refaça a troca. |
+| "Troca de frete bloqueada" — "Pedido #... ja foi despachado. Para corrigir o frete, volte um passo pelo menu Acoes do painel da Expedicao e tente de novo." | O despacho já foi confirmado. | Volte um passo na Expedição. Para trocar só a transportadora, o administrador usa **Corrigir a transportadora (admin)**. |
+| "O frete precisa ser atualizado" (ao gerar cobrança) | O peso da proposta mudou depois da cotação, ou o pedido complementar está sem o frete complementar aplicado. | Clique em **Recalcular frete**, refaça o frete nesta aba e gere a cobrança de novo. |
+| "Frete não gravado" | O valor negociado foi recusado; a descrição diz o motivo (faturado a vencer, cobrança enviada e não paga, modalidade sem frete, entre outros). | Siga a orientação da mensagem. Nada foi alterado. |
+| "Frete gravado, mas com pendência" | O valor foi gravado, mas a diferença financeira não foi tratada. | Avise o financeiro e confira a aba **Pagamentos**. |
+| "O preço mudou desde a consulta: R$ ... agora, R$ ... na sua tela. Cote de novo para confirmar." | O frete complementar mudou de preço entre a cotação e o **Aplicar**. | Clique em **Cotar frete complementar** de novo e aplique. |
+| "A opção escolhida não apareceu na cotação de agora — cote e escolha de novo." | A opção sumiu na recotação feita ao aplicar. | Cote de novo e escolha outra opção. |
+| "Nenhuma transportadora devolveu cotação agora — tente de novo em instantes." | A cotação complementar voltou sem opções. | Tente de novo em instantes. |
+| "O frete complementar só entra em NOVO ou AGUARDANDO; o pedido #... está em ..." | O pedido complementar já avançou de status. | O frete complementar não pode mais ser aplicado nesse status. |
+| "O pedido #... já tem despacho registrado" | O pedido principal já saiu. | Não há mais frete somado a cotar; o pedido complementar precisa de frete próprio. |
+| "Frete complementar invalidado" | O pedido foi desvinculado do principal. | Refaça o frete do pedido antes de gerar a cobrança. |
+
+## Veja também
+
+- [Proposta: visão geral e abas](proposta.md)
+- [Proposta: aba Geral](proposta-geral.md)
+- [Proposta: aba Produtos](proposta-produtos.md)
+- [Proposta: aba Pagamentos](proposta-pagamentos.md)
+- [Proposta: aba Pedido (Boletim Técnico & Lotes)](proposta-pedido.md)
+- [Expedição](expedicao.md)
+- [Notas fiscais](notas-fiscais.md)
+
+## Arquivos de origem
+
+Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê esta lista: quando um deles muda e a ficha não, ele avisa. Um caminho por item, entre crases, a partir da raiz do repositório; pasta termina com `/` e vale para tudo dentro dela.
+
+- `src/features/orcamentos/OrcamentoFormPage.tsx`
+- `src/features/orcamentos/lib/modalidade-frete.ts`
+- `src/features/orcamentos/lib/categoria-frete.ts`
+- `src/features/orcamentos/components/FreteComplementarCard.tsx`
+- `src/features/orcamentos/services/frete.service.ts`
+- `src/features/orcamentos/services/frete-desatualizado.ts`
+- `src/features/orcamentos/services/valor-frete-negociado.ts`
+- `src/features/orcamentos/services/orcamentos.service.ts`
+- `src/features/expedicao/services/corrigir-frete-simulacao.ts`
+- `src/features/expedicao/types.ts`
+- `src/app/api/propostas/valor-frete/route.ts`
+- `src/app/api/propostas/transportadora/route.ts`
+- `src/app/api/orcamentos/complementar/cotar-frete/route.ts`
+- `src/app/api/orcamentos/complementar/aplicar-frete/route.ts`

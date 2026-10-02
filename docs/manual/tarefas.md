@@ -1,6 +1,6 @@
 # Tarefas
 
-> **Última revisão:** 01/10/2026
+> **Última revisão:** 02/10/2026
 > **Caminho no menu:** Tarefas (item direto do menu lateral, sem subitem; fica entre Financeiro e Maestro). O ícone de lista na barra do topo leva para a mesma tela.
 > **Endereço:** `/tarefas`
 
@@ -20,6 +20,80 @@ O que entra na lista são somente as tarefas criadas nesta central (pelo botão 
 - Administradores veem todas as tarefas, têm as abas **Todas** e **Melhorias** e podem assumir, concluir e cancelar qualquer tarefa.
 - Melhorias só são vistas e criadas por administradores.
 - Não existe atribuição a um setor. A tarefa vai para uma ou mais pessoas escolhidas pelo nome, ou para todos.
+
+## Botões e ações da tela
+
+Nomes exatamente como aparecem na tela.
+
+### Lista de tarefas
+
+| Nome na tela | Onde fica | O que faz |
+|---|---|---|
+| **Tarefas** | Menu lateral | Abre esta tela. Ao lado do nome aparece o número das suas tarefas em aberto, que pisca quando há novidade. |
+| Ícone de lista (texto ao passar o mouse: "Você tem N tarefa(s) nova(s) para abrir", "Você tem N tarefa(s) em aberto" ou "Sem tarefas em aberto") | Barra do topo, antes do sino | Abre esta tela. Mostra o mesmo número do menu e pisca quando há novidade. |
+| **Nova tarefa** | Topo da tela, à direita | Abre a janela **Nova tarefa**. |
+| **Nova melhoria** | Topo da tela, à direita, na aba **Melhorias** (só administrador) | Abre a janela **Nova melhoria**. |
+| **Minhas** | Abas no topo da lista | Mostra o que você assumiu, o que recebeu e as tarefas para todos ainda sem responsável. |
+| **Criadas por mim** | Abas no topo da lista | Mostra as tarefas que você pediu. |
+| **Todas** | Abas no topo da lista (só administrador) | Mostra todas as tarefas da equipe. |
+| **Melhorias** | Abas no topo da lista (só administrador) | Mostra as melhorias pedidas ao DEV. |
+| **Em aberto** | Seletor à direita das abas | Mostra as tarefas Aberta e Em andamento. |
+| **Encerradas** | Seletor à direita das abas | Mostra as tarefas Concluída e Cancelada. |
+| Linha da tarefa (clicável) | Lista | Abre a janela de detalhe da tarefa. |
+| **Pedido N** | Linha da tarefa, à direita, quando há pedido ligado | Abre a proposta daquele pedido. |
+| **Cliente N** | Linha da tarefa, à direita, quando há cliente ligado | Abre o cadastro daquele cliente. |
+| **Assumir** | Linha da tarefa Aberta, para quem a recebeu ou para administrador | Passa a tarefa para **Em andamento** com você como responsável. Durante a gravação mostra "Assumindo…". |
+| **Concluir** | Linha da tarefa Em andamento, para o responsável ou para administrador | Abre a tarefa já na etapa de conclusão. |
+
+### Janela Nova tarefa / Nova melhoria
+
+| Nome na tela | Onde fica | O que faz |
+|---|---|---|
+| **O que precisa ser feito \*** (na melhoria: **O que melhorar \***) | Primeiro campo | Título da tarefa. Obrigatório. |
+| **Normal** / **Alta** / **Urgente** | Campo **Prioridade** | Define a prioridade. Começa em Normal. |
+| **Todos da equipe** | Campo **Para quem \***, caixa de marcar | Manda a tarefa para todos que participam das Tarefas e esconde a lista de pessoas. |
+| **Buscar pessoa** | Campo **Para quem \*** | Filtra a lista de pessoas pelo nome. |
+| Caixa de marcar ao lado de cada nome | Lista de pessoas em **Para quem \*** | Escolhe ou tira a pessoa. As escolhidas aparecem em etiquetas acima da busca. |
+| Ícone X na etiqueta da pessoa (texto: "Tirar" e o nome) | Etiquetas das pessoas escolhidas | Tira a pessoa da tarefa. |
+| **Detalhes** | Campo de texto | Descrição livre, até 5.000 caracteres. |
+| **Nº do pedido** | Campo numérico | Liga a tarefa a um pedido. |
+| **Código do cliente** | Campo numérico | Liga a tarefa a um cliente. |
+| **Prazo** | Campo de data | Data de referência da tarefa. |
+| **Escolher arquivos** | Campo **Anexos (PDF ou imagem, até 10 MB cada)** | Escolhe um ou mais arquivos para subir junto com a tarefa. |
+| Ícone X ao lado do arquivo (texto: "Tirar" e o nome do arquivo) | Lista de arquivos escolhidos | Tira o arquivo antes de salvar. |
+| **Cancelar** | Rodapé da janela | Fecha sem criar. |
+| **Salvar** | Rodapé da janela | Cria a tarefa e envia os anexos. Durante a gravação mostra "Salvando…". |
+| Ícone X (texto: "Fechar") | Canto superior direito da janela | Fecha a janela. A tecla Esc e o clique fora da janela fazem o mesmo. |
+
+### Janela de detalhe (título Tarefa ou Melhoria)
+
+| Nome na tela | Onde fica | O que faz |
+|---|---|---|
+| Número do pedido (link) | Linha **Pedido** | Abre a proposta. |
+| Código do cliente (link) | Linha **Cliente** | Abre o cadastro do cliente. |
+| **Adicionar anexo** | Bloco **Anexos**, à direita, com a tarefa em aberto | Sobe um arquivo para a tarefa. |
+| **Baixar** | Ao lado de cada anexo, inclusive os de mensagens | Baixa o arquivo. |
+| **Responder sem mudar a situação** | Campo de mensagem, abaixo de **Histórico e conversa** | Onde se escreve a mensagem da conversa. |
+| **Anexar arquivo** | Abaixo do campo de mensagem | Escolhe um arquivo para ir junto com a mensagem. Depois de escolhido, mostra o nome do arquivo. |
+| **Enviar** | Abaixo do campo de mensagem, à direita | Grava a mensagem na conversa. |
+| **Cancelar tarefa** | Rodapé, em vermelho, para quem criou ou para administrador | Abre a confirmação do cancelamento. |
+| **Sim, cancelar a tarefa** | Rodapé, na confirmação | Cancela a tarefa. |
+| **Assumir** | Rodapé, com a tarefa Aberta | Passa a tarefa para **Em andamento** com você como responsável. |
+| **Concluir** | Rodapé, com a tarefa Em andamento | Abre os campos da conclusão. |
+| **Observação (opcional)** | Etapa de conclusão | Texto que fica registrado como "Observação da conclusão". |
+| **Escolher arquivo** | Etapa de conclusão, campo **Anexo da conclusão (opcional)** | Escolhe um arquivo para subir ao concluir. |
+| **Confirmar conclusão** | Rodapé, na etapa de conclusão | Conclui a tarefa. |
+| **Voltar** | Rodapé, na etapa de conclusão e na confirmação do cancelamento | Volta ao detalhe sem mudar nada. |
+| Ícone X (texto: "Fechar") | Canto superior direito da janela | Fecha a janela. |
+
+### Em outras telas
+
+| Nome na tela | Onde fica | O que faz |
+|---|---|---|
+| **Nova tarefa** | Quadro **Tarefas deste pedido**, na proposta | Abre **Nova tarefa** com pedido e cliente preenchidos. |
+| **Tarefas** | Aba do chat da proposta, ao lado de **Conversa** | Mostra as tarefas daquele pedido, com o número das que estão em aberto, e o botão **Nova tarefa**. |
+| **Nova tarefa** | Menu de ações da cobrança, na Conferência | Abre **Nova tarefa** com pedido, cliente e resumo da cobrança preenchidos. |
+| **Nova tarefa** | Topo do cadastro do cliente | Abre **Nova tarefa** com o código do cliente preenchido. |
 
 ## Passo a passo
 
@@ -145,6 +219,23 @@ Essa tela guarda as pendências de proposta do modelo anterior. Não dá mais pa
 - A lista mostra até 300 tarefas por visão.
 - O sino da barra do topo é das menções no chat das propostas. Ele não mostra tarefas.
 
+## O que não confundir
+
+- **Tarefas** e **Central de Pendências (antiga)**: Tarefas é a central em uso, no menu; a Central de Pendências é a tela anterior, fora do menu, só para consulta, e o que está em uma não aparece na outra.
+- **Tarefa** e **Melhoria**: a tarefa é um pedido a colegas, com **Para quem**; a melhoria é um pedido de ajuste do sistema ao DEV, sem destinatário, vista só por administradores.
+- **Cancelar** e **Cancelar tarefa**: **Cancelar**, na janela **Nova tarefa**, só fecha a janela sem criar nada; **Cancelar tarefa**, no detalhe, encerra uma tarefa que já existe.
+- **Aberta** e **Em aberto**: **Aberta** é a situação da tarefa que ninguém assumiu; **Em aberto** é o filtro, que junta as situações Aberta e Em andamento.
+- **Para** e **Responsável**: **Para** é quem recebeu a tarefa; **Responsável** é quem assumiu. Enquanto ninguém assume, a tarefa tem destinatários e nenhum responsável.
+- **Minhas** e **Criadas por mim**: **Minhas** é o que está com você ou chegou para você; **Criadas por mim** é o que você pediu aos outros. Uma tarefa que você criou para si mesmo aparece nas duas.
+- **Número no menu** e **sinal piscando**: o número conta as suas tarefas em aberto; o piscar avisa que há novidade ainda não aberta. Pode haver número sem piscar e piscar sem número (por exemplo, quando concluem uma tarefa que você pediu).
+- **Ícone de lista** e **sino**, na barra do topo: o ícone de lista é das tarefas; o sino é das menções no chat das propostas.
+- **Conversa da tarefa** e **Conversa do chat da proposta**: a conversa da tarefa fica dentro da tarefa e é vista só por quem participa dela; a aba **Conversa** do chat é o chat interno da proposta.
+- **Aba Tarefas do chat da proposta** e **tela Tarefas**: a aba do chat mostra só as tarefas ligadas àquele pedido; a tela Tarefas mostra as suas tarefas de qualquer pedido, e também as sem pedido.
+- **Selo Nova** e **situação Aberta**: **Nova** some assim que você abre a tarefa; **Aberta** continua até alguém assumir.
+- **Concluída agora** / **Cancelada agora** e **Concluída** / **Cancelada**: os selos com "agora" são o aviso de novidade e somem quando você abre a tarefa; **Concluída** e **Cancelada** são a situação, que fica.
+- **Prazo** da tarefa e prazo de entrega do pedido: o prazo da tarefa é só a data combinada para aquele pedido de ajuda e não altera nada na proposta.
+- **Pedido N** na linha da tarefa: é um atalho para a proposta; clicar nele não abre a tarefa.
+
 ## Erros comuns
 
 | O que aparece | Por que acontece | O que fazer |
@@ -178,3 +269,20 @@ Essa tela guarda as pendências de proposta do modelo anterior. Não dá mais pa
 - [Conferência](conferencia.md)
 - [Proposta: aba Pagamentos](proposta-pagamentos.md)
 - [Manual do Vibe (índice)](README.md)
+
+## Arquivos de origem
+
+Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê esta lista: quando um deles muda e a ficha não, ele avisa.
+
+- `src/features/tarefas/`
+- `src/app/(erp)/tarefas/page.tsx`
+- `src/app/api/tarefas/`
+- `src/app/(erp)/pendencias/page.tsx`
+- `src/components/app-shell/ContadorMenu.tsx`
+- `src/components/app-shell/Topbar.tsx`
+- `src/constants/navigation.ts`
+- `src/features/orcamentos/components/PropostaChatDrawer.tsx`
+- `src/features/cobrancas/CobrancaActionsMenu.tsx`
+- `src/features/cadastros/CadastroDetailPage.tsx`
+- `src/app/api/cobrancas/pagamento-combinado/route.ts`
+- `src/features/usuarios-perfis/components/PerfisPermissoesPanel.tsx`

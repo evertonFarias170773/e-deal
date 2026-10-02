@@ -1,13 +1,14 @@
 # Conferência
 
-> **Última revisão:** 01/10/2026
-> **Onde fica:** menu → Conferência (endereço `/cobrancas`; o detalhe de uma cobrança abre em `/cobrancas/<cobrança>`)
+> **Última revisão:** 02/10/2026
+> **Caminho no menu:** Conferência (primeiro item do menu lateral; é um link direto, sem subitens)
+> **Endereço:** `/cobrancas` (o detalhe de uma cobrança abre em `/cobrancas/<cobrança>`)
 
 ## Para que serve
 
 É a fila do financeiro. Aqui chegam as cobranças que já foram pagas ou que tiveram o faturamento autorizado, e o financeiro confere cada uma antes de o pedido seguir adiante. Também é aqui que se analisa a condição de um faturamento pedido pelo vendedor, se consulta o crédito do cliente e se cancela uma cobrança.
 
-No topo da tela, o título é **Conferência de pagamentos**.
+No topo da tela, o título é **Conferência de pagamentos**. A lista tem as colunas **N°** (número da cobrança e, embaixo, a OS), **Cliente**, **Status**, **Empresa**, **Valor**, **Tipo**, **Data/Hora** (na aba de confirmadas a coluna vira **Confirmação**, com a data e o nome de quem confirmou) e **Ações**. Na coluna **Cliente**, o código e o nome são os do cliente do pedido; quando quem paga é outro cadastro, aparece embaixo a linha **Sócio pagador**. Passe o mouse sobre o cliente para ver o documento.
 
 ## Quem acessa
 
@@ -15,68 +16,66 @@ No topo da tela, o título é **Conferência de pagamentos**.
 - **Confirmar Conferência** e **Voltar para lista principal** aparecem no menu de ações para administradores e para quem tem a permissão **Confirmar Pagamento**.
 - **Analisar condição** (aprovar, alterar ou reprovar um faturamento) aparece para administradores e para quem tem a permissão **Liberar OS / Confirmar**. Para a aprovação ser gravada, o usuário também precisa da permissão **Confirmar Pagamento**.
 - **Cancelar cobrança** de uma cobrança que ainda não foi paga fica habilitado para administradores e para quem tem **Cancelar / Estornar Cobranças** ou **Cancelar Cobrança Não Paga**. Além da permissão, é preciso ter acesso à proposta daquela cobrança.
-- **Cancelar cobrança** de uma cobrança já paga é exclusivo de super administrador.
+- **Cancelar cobrança** de uma cobrança já paga só fica habilitado para super administrador, e mesmo para ele a tela recusa o cancelamento (veja "Regras e bloqueios").
 - As demais ações do menu (ver cobrança, abrir proposta, ver cliente, chat, copiar PIX, copiar linha digitável, nova tarefa) ficam disponíveis para quem vê a tela.
 
-## O que aparece na tela
+## Botões e ações da tela
 
-### Cards do topo
+Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros de grafia.
 
-- **Pendentes de aprovação**: quantidade e valor dos faturamentos que ainda esperam a decisão do financeiro. Clicar no card filtra a lista por eles.
-- **Confirmados do dia**: quantidade e valor do que foi confirmado hoje. Clicar no card mostra essas cobranças.
-- **Faturamento do período**: total confirmado no mês atual, com a divisão por empresa (Ideal Gráfica, Ideal Birô e E3 Brindes).
-- **Faturamento por Período**: total confirmado entre as duas datas escolhidas no próprio card, também dividido por empresa.
-
-Os três cards de faturamento não somam E-Amostra nem E-Retrabalho, porque são cortesia e não receita. E-Permuta entra na soma. Os cards não mudam quando você digita na busca.
-
-### Abas
-
-- **Fila de Conferência**: o que está esperando a conferência do financeiro.
-- **Cobranças Confirmadas**: o que já foi conferido, com a data e o nome de quem confirmou.
-
-### O que entra na Fila de Conferência
-
-- Cobrança já paga e ainda não conferida. Aparece com o status **Pago / A liberar**.
-- Faturamento já autorizado (pelo financeiro ou automaticamente) e ainda não conferido. Aparece com o status **Faturamento autorizado / A liberar**.
-
-### O que não entra na Fila de Conferência
-
-- Cobrança que o cliente ainda não pagou (PIX, boleto ou cartão em aberto). Ela só chega à fila depois do pagamento.
-- Faturamento que ainda espera a análise do financeiro. Esses ficam no card **Pendentes de aprovação** (ou no filtro **Pendentes aprovação**), com o status **Aguardando financeiro**.
-- Cobrança cancelada. Para vê-las, use o filtro **Cancelados**.
-- Cobrança já conferida. Ela passa para a aba **Cobranças Confirmadas**.
-
-### Status mostrados
-
-| Status | O que significa |
-|---|---|
-| **Aguardando financeiro** | Faturamento (E-Faturado, E-Permuta, E-Amostra ou E-Retrabalho) que ainda não foi autorizado. |
-| **Faturamento autorizado / A liberar** | Faturamento autorizado, esperando a conferência. |
-| **Pago / A liberar** | Pagamento recebido, esperando a conferência. |
-| **Liberado** | Cobrança conferida. |
-| **Cancelado** | Cobrança cancelada. |
-| **A receber** | Cobrança em aberto, ainda sem pagamento. |
-
-### Colunas da lista
-
-**N°** (número da cobrança e, embaixo, a OS), **Cliente**, **Status**, **Empresa**, **Valor**, **Tipo**, **Data/Hora** (na aba de confirmadas a coluna vira **Confirmação**, com a data e o nome de quem confirmou) e **Ações**.
-
-- Na coluna **Cliente**, o código e o nome são os do cliente do pedido. Quando quem paga é outro cadastro, aparece embaixo a linha **Sócio pagador**. Passe o mouse sobre o cliente para ver o documento.
-- Quando a cobrança tem número de OS, aparece o botão **OS Ideal**: ele abre a OS no sistema antigo em outra aba e copia um resumo da cobrança (proposta, tipo, valor, data do pagamento e empresa) para colar lá.
-
-### Cores das linhas
-
-As linhas de faturamento (E-Faturado, E-Permuta, E-Amostra e E-Retrabalho) ficam com fundo amarelo claro, nas duas abas e em qualquer empresa. O destaque é só visual: não muda filtros nem ações.
-
-### Filtros
-
-- **Busca**: por número, cliente, ID, documento ou empresa. Com três ou mais caracteres, a busca passa a procurar em todo o período, e a tela avisa: "Buscando ... em todo o período. Os cards acima continuam somando apenas o período selecionado. Limpe a busca para voltar a filtrar por data."
-- **Tipo**: **Pendentes aprovação**, **Confirmados do dia**, **PIX**, **Boleto**, **Faturado**, **Cartão**, **Cancelados**, **E-Crédito** e **Todos os tipos**. Escolher um tipo de pagamento (PIX, Boleto, Faturado, Cartão, E-Crédito) leva para a aba **Cobranças Confirmadas**: esses filtros mostram só o que já foi conferido.
-- **Todas empresas** e **Todos os vendedores**.
-- **Período**: aparece só na aba **Cobranças Confirmadas** e filtra pela data da confirmação. Começa no mês atual.
-- **Limpar filtros**: volta tudo ao padrão.
-
-Os filtros ficam no endereço da página. Atualizar a tela, voltar pelo navegador ou mandar o link para um colega mantém a mesma visão.
+| Nome na tela | Onde fica | O que faz |
+|---|---|---|
+| **Abrir propostas** | Topo da tela, à direita do título | Abre a lista de Pedidos. |
+| **Pendentes de aprovação** | Card do topo (clicável) | Mostra quantidade e valor dos faturamentos que esperam a decisão do financeiro e filtra a lista por eles. |
+| **Confirmados do dia** | Card do topo (clicável) | Mostra quantidade e valor do que foi confirmado hoje e lista essas cobranças. |
+| **Faturamento do período** | Card do topo (não clicável) | Total confirmado no mês atual, dividido por empresa (Ideal Gráfica, Ideal Birô e E3 Brindes). |
+| **Faturamento por Período** | Card do topo, com dois campos de data | Total confirmado entre as duas datas escolhidas no card, dividido por empresa. |
+| **Fila de Conferência** | Aba, acima da lista | Mostra o que está esperando a conferência do financeiro. |
+| **Cobranças Confirmadas** | Aba, acima da lista | Mostra o que já foi conferido, com a data e o nome de quem confirmou. |
+| Campo **Buscar por número, cliente, ID, documento ou empresa** | Barra de filtros | Filtra a lista pelo texto; com três ou mais caracteres, procura em todo o período. |
+| Filtro de tipo (**Pendentes aprovação**, **Confirmados do dia**, **PIX**, **Boleto**, **Faturado**, **Cartão**, **Cancelados**, **E-Crédito**, **Todos os tipos**) | Barra de filtros | Filtra por situação ou por tipo de pagamento. |
+| **Todas empresas** | Barra de filtros | Filtra pela empresa recebedora. |
+| **Todos os vendedores** | Barra de filtros | Filtra pelo vendedor. |
+| **Período:** (duas datas) | Barra de filtros, só na aba **Cobranças Confirmadas** | Filtra pela data da confirmação. Começa no mês atual. |
+| **Limpar filtros** | Barra de filtros | Volta busca, filtros, aba e período ao padrão. |
+| Nome da empresa (sublinhado pontilhado) | Coluna **Empresa**, só em cobrança **Aguardando financeiro** | Abre a janela **Atualizar empresa**. |
+| **OS Ideal** | Coluna **Ações**, só em cobrança com número de OS | Abre a OS no sistema antigo em outra aba e copia um resumo da cobrança (proposta, tipo, valor, data do pagamento e empresa) para colar lá. |
+| **Acoes** | Coluna **Ações** de cada linha e cabeçalho do detalhe | Abre o menu de ações da cobrança. Na lista em formato de cartões (tela estreita) o botão se chama **Mais**. |
+| **Ver cobrança** | Menu de ações; também é botão nos cartões da tela estreita | Abre o detalhe da cobrança. |
+| **Abrir proposta** | Menu de ações | Abre o pedido da cobrança. |
+| **Ver cliente** | Menu de ações | Abre o cadastro do cliente. |
+| **Abrir chat da proposta** | Menu de ações | Abre o chat do pedido, onde fica o histórico. |
+| **Analisar condição** | Menu de ações, em faturamento **Aguardando financeiro** | Abre a janela **Análise de Faturamento**. |
+| **Confirmar Conferência** | Menu de ações, em cobrança da fila | Abre a janela **Confirmar Liberação Operacional**. |
+| **Voltar para lista principal** | Menu de ações, em cobrança já confirmada | Devolve a cobrança para a Fila de Conferência. |
+| **Analisar crédito** | Menu de ações | Abre a janela **Análise de Crédito**. Fica desabilitado fora de faturamento ainda não conferido. |
+| **Copiar PIX** | Menu de ações (não aparece em cartão parcelado) | Copia o código PIX. Desabilitado quando a cobrança não tem PIX. |
+| **Copiar linha digitável** | Menu de ações (não aparece em cartão parcelado) | Copia a linha digitável do boleto. Desabilitado quando não há boleto. |
+| **Nova tarefa** | Menu de ações | Cria uma tarefa para um colega, já com o pedido, o cliente e a descrição da cobrança. |
+| **Cancelar cobrança** | Menu de ações (em vermelho) e **Ações Administrativas** do detalhe | Abre a janela **Cancelar Cobrança**. |
+| **Confirmar Liberação** | Janela **Confirmar Liberação Operacional** | Confirma a conferência da cobrança. |
+| **Cancelar** | Janelas **Confirmar Liberação Operacional**, **Análise de Faturamento** e **Atualizar empresa** | Fecha a janela sem gravar. |
+| **Entendi, voltar** | Alerta **Não é possível confirmar esta cobrança** | Fecha o alerta. |
+| **Aprovar**, **Alterar**, **Reprovar** | Abas da janela **Análise de Faturamento** | Escolhem o que fazer com a condição pedida pelo vendedor. |
+| **Confirmar Autorização** | Janela **Análise de Faturamento**, aba **Aprovar** | Autoriza o faturamento e o envia para a Fila de Conferência. |
+| **Alterar Condição** | Janela **Análise de Faturamento**, aba **Alterar** | Troca a condição de pagamento; a cobrança continua aguardando análise. |
+| **Reprovar e cancelar cobrança** | Janela **Análise de Faturamento**, aba **Reprovar** | Reprova a condição, cancela a cobrança e devolve a proposta para NOVO. |
+| **Salvar empresa** | Janela **Atualizar empresa** | Grava a empresa escolhida na cobrança pendente. |
+| **Atualizar Limite** | Janela **Análise de Crédito** | Grava o novo limite de crédito do cliente e refaz a análise. |
+| **Ver Contas a Receber do Cliente** | Rodapé da janela **Análise de Crédito** | Abre a Carteira em outra aba, já filtrada pelo cliente. |
+| **Fechar** | Rodapé da janela **Análise de Crédito** | Fecha a janela. |
+| **Confirmar Cancelamento** | Janela **Cancelar Cobrança** | Cancela a cobrança. Só habilita depois que o sistema libera e o motivo é preenchido. |
+| **Voltar** | Janela **Cancelar Cobrança** | Fecha a janela sem cancelar. |
+| **Ir para Notas Fiscais**, **Ir para Pedidos**, **Ir para Contas a Receber** | Janela **Cancelar Cobrança**, quando o cancelamento é recusado | Leva à tela onde a pendência se resolve. |
+| **Voltar para cobranças** | Topo do detalhe | Retorna à lista. |
+| **Atualizar status** | Detalhe, no aviso **Gerando código PIX...** | Recarrega os dados da cobrança. |
+| **Abrir** e **Copiar** | Detalhe, bloco **Links e Códigos de Pagamento**, linha **Link de Pagamento** | Abre o link de pagamento em outra aba ou o copia. |
+| **Copiar PIX** | Detalhe, bloco **Links e Códigos de Pagamento** | Copia o código PIX copia e cola. |
+| **Copiar Código** | Detalhe, bloco **Links e Códigos de Pagamento** | Copia a linha digitável. |
+| **Baixar PDF** | Detalhe, bloco **Links e Códigos de Pagamento** | Abre o PDF da cobrança. |
+| **Atualizar Status** | Detalhe, bloco **Ações Administrativas** | Recarrega os dados da cobrança. |
+| **Visualizar Checkout** | Detalhe, bloco **Ações Administrativas** (não aparece em boleto, PIX nem cartão parcelado) | Abre a página de pagamento da cobrança. |
+| **Liberar para pedido** | Detalhe, bloco **Ações Administrativas** | Não libera o pedido: a tela responde "Liberação de pedido automática desativada nesta etapa de testes." |
 
 ## Passo a passo
 
@@ -116,8 +115,6 @@ A cobrança perde a data e o nome de quem confirmou e volta para a **Fila de Con
    - **Alterar**: escolha a **Nova Condição de Pagamento** e clique em **Alterar Condição**. A condição muda, a troca fica registrada no chat da proposta e a cobrança continua aguardando análise.
    - **Reprovar**: preencha o **Motivo da Reprovação (Obrigatório)** e clique em **Reprovar e cancelar cobrança**. A cobrança é cancelada, a proposta volta para **NOVO** e o vendedor é avisado no chat, com o motivo.
 
-Autorizar não é conferir. Depois de autorizado, o faturamento ainda precisa do **Confirmar Conferência** para o pedido andar.
-
 ### Trocar a empresa de um faturamento pendente
 
 1. Em uma cobrança com status **Aguardando financeiro**, clique no nome da empresa (ele aparece sublinhado).
@@ -130,7 +127,7 @@ Autorizar não é conferir. Depois de autorizado, o faturamento ainda precisa do
 2. A janela **Análise de Crédito** mostra **Limite de Crédito**, **Utilizado**, **Disponível**, **Saldo de Carteira**, **Faturamentos Vencidos** e **Risco de Crédito**, com a conclusão embaixo: **Crédito Operacional Disponível** ou **Aguardando Análise Financeira**.
 3. Para mudar o limite, preencha **Atualizar Limite de Crédito** e clique em **Atualizar Limite**.
 4. Se, com o novo limite, o cliente ficar com crédito suficiente e sem impedimento, o faturamento é autorizado na hora ("Faturamento aprovado automaticamente (limite suficiente)!") e segue para a Fila de Conferência. Se não, aparece o aviso "Limite atualizado, mas a cobrança permanece pendente por impedimento financeiro."
-5. O botão **Ver Contas a Receber do Cliente** abre a carteira já filtrada pelo cliente.
+5. O botão **Ver Contas a Receber do Cliente** abre a Carteira já filtrada pelo cliente.
 
 ### Cancelar uma cobrança que ainda não foi paga
 
@@ -158,27 +155,14 @@ São três passos, cada um feito por você. Nenhum dispara o seguinte.
 
 Enquanto houver título em aberto, a Conferência recusa o cancelamento, lista os títulos e oferece o botão **Ir para Contas a Receber**.
 
-### Cancelar uma cobrança já paga
-
-Só super administrador. Para os demais, a opção fica desabilitada.
-
-O formulário de cobrança paga pede:
-
-1. **Motivo do Cancelamento**, escolhido na lista: Desistencia do cliente, Engano de modalidade, Cobranca duplicada, Valor incorreto ou Outro motivo. Em **Outro motivo**, o campo **Detalhe o motivo** é obrigatório.
-2. **Destino do valor**: Valor devolvido ao cliente, Valor lancado como credito na conta corrente ou Valor mantido (cobranca sera refeita). Em E-Amostra e E-Retrabalho só existe a opção de manter o valor, porque nenhum dinheiro entrou.
-3. Quando a cobrança foi confirmada em mês anterior, a marcação "Entendo que o faturamento de (mês/ano) será alterado."
-4. **Confirmar Cancelamento**.
-
-Se, ao abrir, a janela mostrar **Não é possível cancelar agora** com o aviso de que a cobrança já foi recebida, o formulário não é exibido e o cancelamento não segue por esta tela.
-
 ### Abrir o detalhe de uma cobrança
 
 1. No menu de ações da linha, clique em **Ver cobrança**.
 2. O detalhe mostra:
    - cabeçalho com o número da cobrança, o cliente, a proposta, o CPF/CNPJ e o status;
    - **Informações Financeiras**: valor (e parcelas, no cartão parcelado), vencimento, data do pagamento, tipo de cobrança, empresa recebedora, vendedor e OS Ideal, além da condição comercial e das observações, quando existem;
-   - **Links e Códigos de Pagamento**: link de pagamento (**Abrir** e **Copiar**), **Copiar PIX**, **Copiar Código** da linha digitável e **Baixar PDF**, conforme o tipo da cobrança;
-   - **Ações Administrativas**: **Atualizar Status** (recarrega os dados), **Visualizar Checkout** (em alguns tipos de cobrança), **Liberar para pedido** e **Cancelar cobrança**;
+   - **Links e Códigos de Pagamento**: link de pagamento, código PIX, linha digitável e PDF, conforme o tipo da cobrança;
+   - **Ações Administrativas**: **Atualizar Status**, **Visualizar Checkout** (em alguns tipos de cobrança), **Liberar para pedido** e **Cancelar cobrança**;
    - o mesmo menu de ações da lista, ao lado do status.
 3. Avisos que podem aparecer no detalhe: **Gerando código PIX...** (PIX ainda sem código; use **Atualizar status**) e **Vencimento Excedido** (o prazo da cobrança expirou).
 4. **Voltar para cobranças** retorna à lista.
@@ -187,20 +171,49 @@ Se, ao abrir, a janela mostrar **Não é possível cancelar agora** com o aviso 
 
 O bloco **Histórico da cobrança**, no detalhe, ainda mostra "Histórico ainda não disponível." O registro do que aconteceu com a cobrança (criação, autorização, alteração de condição, reprovação, conferência e cancelamento, com o autor) fica no chat da proposta. Use **Abrir chat da proposta** no menu de ações.
 
-### Outras ações do menu
-
-- **Abrir proposta** e **Ver cliente**: abrem o pedido e o cadastro.
-- **Copiar PIX** e **Copiar linha digitável**: ficam desabilitados quando a cobrança não tem o código.
-- **Nova tarefa**: cria uma tarefa para um colega já com o pedido, o cliente e a descrição da cobrança preenchidos.
-
 ## Regras e bloqueios
+
+O que entra e o que não entra na fila:
+
+- Entra na **Fila de Conferência** a cobrança já paga e ainda não conferida (status **Pago / A liberar**) e o faturamento já autorizado e ainda não conferido (status **Faturamento autorizado / A liberar**).
+- Cobrança que o cliente ainda não pagou (PIX, boleto ou cartão em aberto) não aparece na lista. Ela só chega à fila depois do pagamento.
+- Faturamento que ainda espera a análise do financeiro não entra na fila. Fica no card **Pendentes de aprovação** (ou no filtro **Pendentes aprovação**), com o status **Aguardando financeiro**.
+- Cobrança cancelada só aparece no filtro **Cancelados**.
+- Cobrança já conferida sai da fila e passa para a aba **Cobranças Confirmadas**.
+- Faturamento só entra na fila depois de autorizado. O E-Faturado é autorizado sozinho, na criação, quando o cliente não tem restrição, não tem faturamento vencido e o limite de crédito comporta este e os demais faturamentos pendentes. E-Permuta, E-Amostra e E-Retrabalho sempre esperam a análise do financeiro.
+- E-Amostra e E-Retrabalho já conferidos não aparecem na aba **Cobranças Confirmadas**, pelo mesmo motivo de não entrarem no faturamento. Para consultá-los, abra a proposta.
+
+Status mostrados na lista e no detalhe:
+
+- **Aguardando financeiro**: faturamento (E-Faturado, E-Permuta, E-Amostra ou E-Retrabalho) que ainda não foi autorizado.
+- **Faturamento autorizado / A liberar**: faturamento autorizado, esperando a conferência.
+- **Pago / A liberar**: pagamento recebido, esperando a conferência.
+- **Liberado**: cobrança conferida.
+- **Cancelado**: cobrança cancelada.
+- **A receber**: cobrança em aberto, ainda sem pagamento.
+
+Lista, filtros e cards:
+
+- As linhas de faturamento (E-Faturado, E-Permuta, E-Amostra e E-Retrabalho) ficam com fundo amarelo claro, nas duas abas e em qualquer empresa. O destaque é só visual: não muda filtros nem ações.
+- Escolher um tipo de pagamento no filtro (PIX, Boleto, Faturado, Cartão, E-Crédito) leva para a aba **Cobranças Confirmadas**: esses filtros mostram só o que já foi conferido.
+- O período só vale na aba **Cobranças Confirmadas** e filtra pela data da confirmação.
+- Com três ou mais caracteres na busca, o período deixa de valer para a lista, e a tela avisa: "Buscando ... em todo o período. Os cards acima continuam somando apenas o período selecionado. Limpe a busca para voltar a filtrar por data."
+- Os cards do topo não mudam quando você digita na busca.
+- Os três cards de faturamento não somam E-Amostra nem E-Retrabalho, porque são cortesia e não receita. E-Permuta entra na soma.
+- A lista mostra no máximo 500 cobranças por vez. Se a que você procura não aparece, use a busca ou reduza o período.
+- Os filtros ficam no endereço da página. Atualizar a tela, voltar pelo navegador ou mandar o link para um colega mantém a mesma visão.
+
+Conferência:
 
 - Não dá para confirmar uma cobrança quando o pedido tem duas ou mais cobranças ativas e a soma das já quitadas com a que está sendo conferida fica abaixo do total do pedido. A tela abre o alerta **Não é possível confirmar esta cobrança**, com o **Total da Proposta**, o **Saldo Pendente (Falta)** e o resumo das cobranças. É preciso cadastrar a cobrança que falta ou corrigir o valor do pedido.
 - Pedido com uma única cobrança pode ser confirmado mesmo com valor menor que o total. Nesse caso o pedido fica em **AGUARDANDO** até o restante ser coberto.
 - Não dá para confirmar cobrança cancelada.
-- Faturamento só entra na fila depois de autorizado. O E-Faturado é autorizado sozinho, na criação, quando o cliente não tem restrição, não tem faturamento vencido e o limite de crédito comporta este e os demais faturamentos pendentes. E-Permuta, E-Amostra e E-Retrabalho sempre esperam a análise do financeiro.
 - A empresa da cobrança só pode ser trocada pela lista enquanto o faturamento está **Aguardando financeiro**.
 - **Analisar crédito** só fica habilitado em faturamento que ainda não foi conferido.
+
+Cancelamento:
+
+- Não dá para cancelar por esta tela uma cobrança já paga. Para quem não é super administrador, **Cancelar cobrança** fica desabilitado. Para o super administrador a janela abre, mas a verificação responde **Não é possível cancelar agora**, com o aviso de que a cobrança já foi recebida e de que o caso é devolução; o formulário de cancelamento não é exibido.
 - Não dá para cancelar uma cobrança enquanto o pedido tem nota fiscal autorizada. Cancele a nota primeiro, em Notas fiscais. A nota é do pedido inteiro: bloqueia todas as cobranças dele.
 - Não dá para cancelar uma cobrança de pedido que já está na produção (REVISAO PRODUCAO em diante, ou liberado para a produção). O gerente precisa devolver o pedido para REVISAO ATENDENTE, ou retirá-lo da produção, antes.
 - Não dá para cancelar um faturamento com título em aberto. Cancele o título na Carteira primeiro.
@@ -208,17 +221,30 @@ O bloco **Histórico da cobrança**, no detalhe, ainda mostra "Histórico ainda 
 - Cobrança paga com crédito do cliente (E-Crédito) não é cancelada por aqui, porque o cancelamento não devolve o crédito consumido. O caminho é o estorno de crédito.
 - A permissão **Cancelar Cobrança Não Paga** só alcança cobrança emitida e ainda não paga, de pedido do próprio usuário, e não alcança cobrança ligada à Conta Corrente. Como a Conferência lista o que já foi pago ou autorizado, essa permissão é usada na prática pela aba Pagamentos da proposta.
 - O cancelamento de uma cobrança é irreversível. Para cobrar de novo, gere outra cobrança na proposta.
-- A lista mostra no máximo 500 cobranças por vez. Se a que você procura não aparece, use a busca ou reduza o período.
-- E-Amostra e E-Retrabalho já conferidos não aparecem na aba **Cobranças Confirmadas**, pelo mesmo motivo de não entrarem no faturamento. Para consultá-los, abra a proposta.
-- No detalhe, **Liberar para pedido** não libera o pedido: a tela responde "Liberação de pedido automática desativada nesta etapa de testes." A liberação acontece pela confirmação da conferência.
+
+Outros:
+
 - O rodapé da lista traz o texto "Esta tela é somente leitura. As ações continuam simuladas nesta fase." As ações descritas nesta página gravam de verdade.
 
-### O que não fica nesta tela
+## O que não confundir
 
-- **Preparar boletos** (lançar os títulos de um faturamento conferido) fica no Registro de recebíveis e em Notas fiscais.
-- **Cancelar recebível** e o tratamento de título que o banco já baixou ficam na Carteira. Quando o banco recusa o cancelamento porque o título já está expirado, baixado ou cancelado, o sistema confirma no banco que não houve pagamento e cancela o título só no sistema, registrando isso no chat da proposta. Essa saída vale para a Ideal Gráfica e a E3 Brindes. Título da Ideal Birô nessa situação segue para tratamento manual.
-- **Corrigir telefone do pagador** aparece na aba Pagamentos da proposta, na hora de gerar a cobrança, quando o telefone do cadastro não serve para o tipo de pagamento escolhido.
-- **Faturado no sistema antigo** fica em Notas fiscais, não na Conferência.
+- **Analisar condição** e **Confirmar Conferência**: a primeira autoriza (ou altera, ou reprova) a condição de um faturamento; a segunda confere a cobrança e faz o pedido andar. Autorizar não é conferir: depois de autorizado, o faturamento ainda precisa da conferência.
+- **Analisar condição** e **Analisar crédito**: a primeira decide sobre a condição de pagamento desta cobrança; a segunda mostra o limite e a situação de crédito do cliente e permite mudar o limite.
+- **Aguardando financeiro** e **Faturamento autorizado / A liberar**: no primeiro o faturamento ainda espera a autorização; no segundo já foi autorizado e espera a conferência.
+- **Pago / A liberar** e **Liberado**: no primeiro o dinheiro entrou mas a cobrança ainda não foi conferida; no segundo a cobrança já foi conferida.
+- Status **Liberado** (da cobrança) e status **LIBERADO** (do pedido): a cobrança conferida fica **Liberado**; o pedido só vai para **LIBERADO** quando as cobranças confirmadas cobrem o valor total.
+- Card **Faturamento do período** e card **Faturamento por Período**: o primeiro soma o mês atual; o segundo soma o intervalo das duas datas do próprio card.
+- Card **Pendentes de aprovação** e aba **Fila de Conferência**: o card reúne faturamentos que esperam autorização; a fila reúne o que já foi pago ou autorizado e espera conferência.
+- **Atualizar status** (no aviso do PIX) e **Atualizar Status** (em Ações Administrativas): os dois só recarregam os dados da cobrança; nenhum muda o status dela.
+- **Liberar para pedido** (no detalhe) e **Confirmar Conferência**: o primeiro não libera nada hoje; quem faz o pedido andar é a confirmação da conferência.
+- **Cancelar** e **Cancelar cobrança**: **Cancelar** só fecha a janela aberta; **Cancelar cobrança** abre o cancelamento da cobrança.
+- **Cancelar cobrança** (aqui) e **Cancelar recebível** (na Carteira): a primeira cancela a cobrança do pedido; a segunda cancela um título (boleto) e mantém a cobrança ativa.
+- **Reprovar e cancelar cobrança** e **Cancelar cobrança**: a reprovação vale para faturamento ainda não autorizado e devolve a proposta para NOVO avisando o vendedor; o cancelamento comum passa pela verificação e pede só o motivo.
+- **OS Ideal** e **Abrir proposta**: **OS Ideal** abre a OS no sistema antigo; **Abrir proposta** abre o pedido no Vibe.
+- **Preparar boletos** não fica nesta tela: o lançamento dos títulos de um faturamento conferido é feito no Registro de recebíveis e em Notas fiscais.
+- Título que o banco já baixou não se resolve aqui: é tratado na Carteira, no **Cancelar recebível**. Quando o banco recusa o cancelamento porque o título já está expirado, baixado ou cancelado, o sistema confirma no banco que não houve pagamento e cancela o título só no sistema, registrando isso no chat da proposta. Essa saída vale para a Ideal Gráfica e a E3 Brindes; título da Ideal Birô nessa situação segue para tratamento manual.
+- **Corrigir telefone do pagador** não fica nesta tela: aparece na aba Pagamentos da proposta, na hora de gerar a cobrança, quando o telefone do cadastro não serve para o tipo de pagamento escolhido.
+- **Faturado no sistema antigo** não fica nesta tela: é uma ação de Notas fiscais.
 
 ## Erros comuns
 
@@ -227,7 +253,7 @@ O bloco **Histórico da cobrança**, no detalhe, ainda mostra "Histórico ainda 
 | "Não é possível confirmar esta cobrança — A soma das cobranças é inferior ao total da proposta." | O pedido tem mais de uma cobrança e, mesmo contando esta, o total não é coberto. | Veja o resumo no alerta. Cadastre a cobrança que falta na proposta ou corrija o valor do pedido, e confirme de novo. |
 | "Sem permissão para confirmar cobrança." | O perfil não tem **Confirmar Pagamento**. | Peça a um administrador para ajustar o perfil ou fazer a confirmação. |
 | "Não é possível confirmar uma cobrança com status inválido." | A cobrança foi cancelada enquanto a tela estava aberta. | Atualize a tela. |
-| "Esta cobrança já foi recebida em (data). Cancelar não devolve o dinheiro — o caso é devolução, não cancelamento." | A cobrança já está paga. | Trate como devolução, com um super administrador. |
+| "Esta cobrança já foi recebida em (data). Cancelar não devolve o dinheiro — o caso é devolução, não cancelamento." | A cobrança já está paga. | A tela não cancela cobrança paga. Trate como devolução, com o financeiro. |
 | "O título ... desta cobrança ... foi liquidado ... A cobrança inteira vira devolução — não cancele por aqui." | Um título ligado à cobrança já foi pago. | Trate como devolução. |
 | "A proposta ... tem NF-e nº ... autorizada. Cancele a nota em Fiscal › Notas Fiscais antes de cancelar a cobrança." | O pedido tem nota fiscal autorizada. | Use **Ir para Notas Fiscais**, cancele a nota e volte. |
 | "Proposta ... está (status). Peça ao gerente para devolver a proposta para REVISAO ATENDENTE antes de cancelar a cobrança." | O pedido já passou pela revisão do gerente. | Peça a devolução ao gerente e tente de novo. |
@@ -240,10 +266,9 @@ O bloco **Histórico da cobrança**, no detalhe, ainda mostra "Histórico ainda 
 | "Acesso negado a esta cobrança." | A cobrança é de um pedido fora do seu alcance (outro vendedor ou outra empresa). | Peça a quem tem acesso ao pedido. |
 | "A API bancária recusou o cancelamento do Boleto. Nenhuma alteração local foi feita." (ou a mesma mensagem para PIX ou Cartão) | O banco ou a operadora recusou o cancelamento. | Nada foi alterado. Tente mais tarde ou confira a cobrança no banco. |
 | "Cobrança do Cartão Asaas ainda sem identificador sincronizado. Aguarde alguns instantes e tente cancelar novamente. Nenhuma alteração foi feita." | O link do cartão ainda está sendo registrado. | Aguarde e tente de novo. |
-| "Somente um super administrador pode cancelar uma cobranca ja paga." | Tentativa de cancelar cobrança paga sem ser super administrador. | Peça a um super administrador. |
-| "Esta cobranca foi confirmada em mes anterior. Confirme que o faturamento fechado sera alterado." | Cancelamento de cobrança paga de mês já fechado, sem a marcação de confirmação. | Marque "Entendo que o faturamento de ... será alterado." |
-| "Erro ao reprovar", com explicação | A reprovação não foi gravada (por exemplo, o pedido já está em uma etapa que não permite voltar). | Nada foi alterado. Leia a explicação e, se for o caso, trate pelo cancelamento da cobrança. |
+| "Erro ao reprovar", com explicação | A reprovação não foi gravada. | Nada foi alterado. Leia a explicação e tente de novo. |
 | "Cliente não identificado para análise de crédito." | A cobrança não tem cliente vinculado. | Corrija o cliente na proposta. |
+| "Liberação de pedido automática desativada nesta etapa de testes." | Clique em **Liberar para pedido** no detalhe. | Use **Confirmar Conferência**; é ela que faz o pedido andar. |
 | "Cobrança não encontrada" no detalhe | A cobrança não está entre as carregadas na tela. | Volte para a lista, localize pela busca e abra de novo. |
 | "Nenhuma cobrança encontrada" | Nada bate com os filtros, a aba e a busca. | Troque de aba, ajuste o período ou use **Limpar filtros**. |
 
@@ -256,3 +281,35 @@ O bloco **Histórico da cobrança**, no detalhe, ainda mostra "Histórico ainda 
 - [Notas fiscais](notas-fiscais.md)
 - [Produção (ordens de serviço)](producao.md)
 - [Tarefas](tarefas.md)
+
+## Arquivos de origem
+
+Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê esta lista: quando um deles muda e a ficha não, ele avisa. Um caminho por item, entre crases, a partir da raiz do repositório; pasta termina com `/` e vale para tudo dentro dela.
+
+- `src/app/(erp)/cobrancas/page.tsx`
+- `src/app/(erp)/cobrancas/[id]/page.tsx`
+- `src/features/cobrancas/CobrancasList.tsx`
+- `src/features/cobrancas/CobrancaActionsMenu.tsx`
+- `src/features/cobrancas/CobrancaDetail.tsx`
+- `src/features/cobrancas/CobrancaStatusBadge.tsx`
+- `src/features/cobrancas/CobrancaHistoricoPanel.tsx`
+- `src/features/cobrancas/ConfirmarLiberacaoModal.tsx`
+- `src/features/cobrancas/ConferenciaFinanceiraAlertaModal.tsx`
+- `src/features/cobrancas/AutorizarFaturamentoModal.tsx`
+- `src/features/cobrancas/AnaliseCreditoModal.tsx`
+- `src/features/cobrancas/CancelCobrancaModal.tsx`
+- `src/features/cobrancas/CobrancasProvider.tsx`
+- `src/features/cobrancas/cobrancas-utils.ts`
+- `src/features/cobrancas/cancelamento-elegibilidade.ts`
+- `src/features/cobrancas/cancelamento-pago.ts`
+- `src/features/cobrancas/services/cancelamento-elegibilidade.server.ts`
+- `src/features/cobrancas/services/conferencia-financeira.service.ts`
+- `src/features/cobrancas/services/pagamentos-v2.service.ts`
+- `src/features/orcamentos/services/status-engine.service.ts`
+- `src/app/api/cobrancas/confirmar/route.ts`
+- `src/app/api/cobrancas/pode-cancelar/route.ts`
+- `src/app/api/cobrancas/cancelar-externo/route.ts`
+- `src/app/api/cobrancas/aprovar-faturado-automatico/route.ts`
+- `src/app/api/cobrancas/titulo-inativo-no-banco/route.ts`
+- `src/components/common/ActionsMenu.tsx`
+- `src/constants/navigation.ts`

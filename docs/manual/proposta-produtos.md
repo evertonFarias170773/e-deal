@@ -1,7 +1,8 @@
-# Proposta: aba Produtos
+# Proposta: aba Orçamento (produtos)
 
-> **Última revisão:** 01/10/2026
-> **Onde fica:** menu **Pedidos** → abrir ou criar uma proposta → aba **Orçamento** (endereço `/orcamentos/<número>/editar?tab=produtos`)
+> **Última revisão:** 02/10/2026
+> **Caminho no menu:** Pedidos → abrir um pedido → aba **Orçamento**
+> **Endereço:** `/orcamentos/<número>/editar?tab=produtos` (em proposta nova, `/orcamentos/novo`)
 
 ## Para que serve
 
@@ -15,6 +16,36 @@ Na tela, esta aba aparece com o nome **Orçamento** e o bloco se chama **6. Prod
 - **Valor Unitário (R$)** e **Fixo (R$)** só são editáveis para administrador. Para os demais, o preço é sempre o do produto ou o da tabela do cliente.
 - O **Desconto geral** (bloco **8. Resumo do orçamento**) só é editável para administrador, gerente ou perfil com a permissão de desconto geral.
 - Em proposta com cobrança, só mexe nos produtos quem tem a permissão **Editar Proposta Paga**. Quem tem a permissão **Editar Proposta com Faturado a Vencer** mexe apenas quando a cobrança é faturada e ainda não foi recebida.
+
+## Botões e ações da tela
+
+Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros de grafia. Cabeçalho, barra de abas e rodapé estão em [Proposta: visão geral e abas](proposta.md).
+
+| Nome na tela | Onde fica | O que faz |
+|---|---|---|
+| **Orçamento** | Barra de abas | Abre esta aba. |
+| **Proposta avulsa (orçamento sem produtos cadastrados)** | Caixa de marcar no topo do bloco **6. Produtos** | Troca a lista de produtos por um valor digitado à mão. |
+| **Sim, remover os produtos** | Janela **Marcar como proposta avulsa?** | Confirma a avulsa e remove os produtos e os modelos. |
+| **Valor total dos produtos (R$) \*** | Bloco **6. Produtos**, só em proposta avulsa | Campo do valor dos produtos da avulsa. |
+| **Ingressos de segurança**, **Pulseiras**, **Cordão Credencial**, **Cartão PVC**, **Credencial** | Etiquetas acima da pesquisa de produtos | Filtram o catálogo pela categoria. |
+| **Dseg** | Primeira etiqueta, só em pedido de um cliente específico | Filtra os produtos cujo nome começa com "Dseg". |
+| **Limpar Filtro** | Ao lado das etiquetas, quando há filtro ou pesquisa | Desfaz o filtro e a pesquisa. |
+| Campo "Pesquisar produto por nome, código ou apelido..." | Abaixo das etiquetas | Procura no catálogo; clicar numa linha do resultado adiciona o produto. |
+| Botão **X** (sem dica) | Dentro do campo de pesquisa, com texto digitado | Limpa a pesquisa. |
+| **Atualizar quantidade** | Janela "Este produto já foi adicionado nesta proposta." | Abre o item que já existe, sem criar outro. |
+| **Adicionar novo item** | Mesma janela | Cria outra linha do mesmo produto. |
+| **Editar** | Cartão fechado do item | Abre o item para edição. |
+| **Duplicar** (dica: "Duplicar item (mesma configuração em uma nova linha)") | Cartão fechado do item | Cria uma linha igual logo abaixo. |
+| Botão de lixeira (dica: "Remover item"; travado: "Item não pode ser removido neste status") | Cartão do item, aberto ou fechado | Pede a exclusão ou a inativação do item. |
+| **Salvar item** | Cartão aberto do item | Salva a proposta inteira e fecha o cartão. Enquanto grava, mostra **Salvando...** |
+| Lista ou caixas de cada grupo de variação | **Configuração de Variações**, no cartão aberto | Escolhem as variações do item. |
+| **Remover** (dica: "Remove do item. Só vale ao salvar.") | Quadro amarelo "grupo não vinculado ao produto", no cartão aberto | Tira do item uma variação de grupo que não pertence mais ao produto. |
+| **Sim, excluir** | Janela **Excluir produto?** | Apaga o item, e os modelos dele, de forma definitiva. |
+| **Sim, inativar** | Janela **Inativar produto?** | Marca o item como removido, com possibilidade de restaurar. |
+| **Mostrar removidos (N)** / **Ocultar removidos** | Abaixo da lista de itens, quando há item removido | Mostra ou esconde os itens removidos. |
+| **Restaurar** | Linha do item removido | Reativa o item. |
+| **Cancelar** | Janelas de produto repetido, de exclusão e de proposta avulsa | Fecha a janela sem fazer nada. |
+| **Tipo** (**%** ou **R$**) e **Desconto geral** | Bloco **8. Resumo do orçamento**, coluna da direita | Aplicam desconto sobre o subtotal dos produtos. |
 
 ## Passo a passo
 
@@ -125,6 +156,23 @@ A marcação de prateleira é guardada no item no momento em que ele entra na pr
 - Trocar a quantidade de um produto que já tem lotes na aba Pedido é permitido. A conferência entre a quantidade do item e a soma dos lotes acontece na liberação para a produção.
 - Variação de um grupo que deixou de pertencer ao produto aparece em destaque, com a nota "grupo não vinculado ao produto". Ela continua somando no subtotal até alguém clicar em **Remover** e salvar.
 
+## O que não confundir
+
+- Aba **Orçamento** x menu **Pedidos** x título **Orcamentos**: a aba **Orçamento** guarda os produtos de uma proposta; o menu lateral **Pedidos** abre a lista de propostas, cuja página tem o título **Orcamentos** (sem cedilha).
+- Aba **Orçamento** x aba **Pedido**: na **Orçamento** ficam produto, quantidade, preço e variações; na **Pedido** ficam os modelos e lotes de cada produto.
+- **Salvar item** x **Salvar alterações** x sair do campo: os dois botões salvam a proposta inteira, e **Salvar item** ainda fecha o cartão; sair do campo grava sozinho só Quantidade, Valor Unitário e Fixo, e só em proposta com número e sem cobrança.
+- **Excluir produto?** x **Inativar produto?**: excluir apaga o item de vez, na hora; inativar deixa o item guardado como removido, pode ser desfeito em **Restaurar** e só vale depois de salvar.
+- **Removido (Inativo)** x **CANCELADO**: o primeiro é a marca de um item removido dentro da proposta; o segundo é o status da proposta inteira cancelada.
+- **Duplicar** x **Adicionar novo item** x **Duplicar proposta**: **Duplicar** copia o item com a mesma configuração; **Adicionar novo item** cria outra linha do produto do zero, com a quantidade mínima e sem variações escolhidas; **Duplicar proposta**, no menu **Acoes**, copia a proposta inteira.
+- **Valor Unitário (R$)** x **Fixo (R$)**: o unitário é multiplicado pela quantidade; o fixo entra uma vez só no subtotal do item.
+- **Fixo (R$)** x preço fixo do cliente: **Fixo (R$)** é o valor fixo do produto; o preço fixo do cliente é um preço unitário combinado no cadastro dele, que substitui o do produto e zera o campo **Fixo (R$)**.
+- Tabela especial x **Desconto geral**: a tabela especial vem do cadastro do cliente e abate sozinha cada item; o desconto geral é digitado na proposta, incide sobre o subtotal dos produtos e exige permissão.
+- **Proposta avulsa** x orçamento rápido: a avulsa não tem produtos do catálogo; o orçamento rápido (aba Geral) não tem cliente no cadastro. Uma proposta pode ser uma coisa, a outra, as duas ou nenhuma.
+- **Proposta avulsa** x produto de prateleira: a avulsa não tem produto nenhum e não vai para a produção; a de prateleira tem produto do catálogo e só dispensa a etapa de arte.
+- **Subtotal final** x **Subtotal produtos** x **Total final**: o primeiro é de um item; o segundo é a soma dos itens ativos; o terceiro é o subtotal dos produtos menos o desconto geral mais o frete.
+- **Valor Unit.** da lista de pesquisa x **Valor Unitário (R$)** do item: o da lista é o preço do cadastro do produto; o do item já pode ser o preço fixo do cliente.
+- **Peso parcial** x **Peso total**: o parcial é o peso de um item; o total, no Resumo, é o da proposta e é o que o frete usa.
+
 ## Erros comuns
 
 | O que aparece | Por que acontece | O que fazer |
@@ -157,3 +205,13 @@ A marcação de prateleira é guardada no item no momento em que ele entra na pr
 - [Proposta: aba Pedido (Boletim Técnico & Lotes)](proposta-pedido.md)
 - [Pedidos (lista)](pedidos.md)
 - [Produção (ordens de serviço)](producao.md)
+
+## Arquivos de origem
+
+- `src/features/orcamentos/OrcamentoFormPage.tsx`
+- `src/features/orcamentos/components/ProductSearchSelector.tsx`
+- `src/features/orcamentos/orcamento-utils.ts`
+- `src/features/orcamentos/services/orcamentos.service.ts`
+- `src/features/orcamentos/services/status-engine.service.ts`
+- `src/features/orcamentos/OrcamentosListPageReal.tsx`
+- `src/app/api/orcamentos/editar-paga/route.ts`

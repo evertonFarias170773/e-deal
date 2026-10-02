@@ -1,7 +1,8 @@
 # Proposta: visão geral e abas
 
-> **Última revisão:** 01/10/2026
-> **Onde fica:** menu **Pedidos** → botão **+ Nova proposta** (endereço `/orcamentos/novo`) ou, numa proposta que já existe, menu de ações → **Editar proposta** (endereço `/orcamentos/<número>/editar`)
+> **Última revisão:** 02/10/2026
+> **Caminho no menu:** Pedidos → **+ Nova proposta** (proposta nova) ou Pedidos → abrir um pedido → **Editar proposta**
+> **Endereço:** `/orcamentos/novo` e `/orcamentos/<número>/editar`
 
 ## Para que serve
 
@@ -21,6 +22,61 @@ Esta página explica o que vale para a tela inteira: cabeçalho, abas, como salv
 - **Criar pedido complementar**: perfis Administrador e Vendedor.
 - **Retirar da Produção**: administrador ou perfil com a permissão de liberar para produção.
 
+## Botões e ações da tela
+
+Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros de grafia. Os botões de dentro de cada aba estão na página da aba.
+
+| Nome na tela | Onde fica | O que faz |
+|---|---|---|
+| **+ Nova proposta** | Topo da lista de Pedidos | Abre uma proposta em branco. |
+| **Acoes** (botão com três pontos; em tela estreita aparece só o ícone) | Canto direito do cabeçalho | Abre o menu de ações da proposta. |
+| **Ver proposta** | Menu **Acoes** | Abre o detalhe da proposta, só para leitura. |
+| **Ver chat interno** | Menu **Acoes** | Abre o chat interno do pedido na lateral. |
+| **Editar proposta** | Menu **Acoes** | Abre a edição da proposta (esta tela). |
+| **Duplicar proposta** | Menu **Acoes** | Cria uma cópia da proposta e abre a cópia em edição. |
+| **Copiar proposta informal** | Menu **Acoes** | Copia o texto informal da proposta para colar no WhatsApp. |
+| **Link pgto. externo** | Menu **Acoes** | Copia o link da área do cliente daquele pedido. |
+| **Gerar PDF da proposta** | Menu **Acoes** | Gera o PDF e abre em outra aba. |
+| **Retirar da Produção** | Menu **Acoes**, só em pedido já liberado para a produção | Tira o pedido da fila da produção. |
+| Botão com o ícone do Ideal Imposition (dica: "Abrir no Ideal Imposition") | Cabeçalho, em proposta que já tem número | Abre o pedido no sistema de imposição. |
+| **Voltar ao detalhe** / **Voltar para lista** | Cabeçalho | Sai da edição. Em proposta nova o nome é **Voltar para lista**. |
+| **Complemento do #<número>** | Selo no cabeçalho do pedido complementar | Abre o pedido principal. |
+| **Complemento: #<número> · <status>** | Selo no cabeçalho do pedido principal | Abre o pedido complementar. |
+| **Geral** | Barra de abas | Cliente, dados da proposta, contato, nota fiscal e endereço. |
+| **Orçamento** | Barra de abas | Produtos da proposta. |
+| **Fretes** | Barra de abas | Modalidade, transportadora e cotações. |
+| **Pedido** | Barra de abas | Modelos e lotes de cada produto. |
+| **Artes** | Barra de abas | Briefing e arquivos de arte. |
+| **Produção** | Barra de abas | Orientação técnica de produção. |
+| **Pagamentos** | Barra de abas | Cobranças da proposta. |
+| **Histórico** | Barra de abas | Timeline da proposta e movimentos de crédito. |
+| **Salvar proposta** / **Salvar alterações** | Barra fixa do rodapé | Salva a proposta inteira. Enquanto grava, mostra **Salvando...** |
+| **Cancelar** | Barra fixa do rodapé | Sai da edição sem salvar. Não cancela a proposta. |
+| **Copiar resumo para WhatsApp** | Bloco **9. Envio do orçamento**, coluna da direita | Copia o texto informal da proposta. |
+| **Tipo** (**%** ou **R$**) e **Desconto geral** | Bloco **8. Resumo do orçamento**, coluna da direita | Aplicam desconto sobre o subtotal dos produtos. |
+| **Resolver agora** | Aviso vermelho **Revisão financeira pendente** | Abre a janela para escolher o destino da diferença. |
+| **Consolidar Total Oficial** | Aviso vermelho **Revisão financeira pendente** | Abre a confirmação para recalcular o total pelos itens ativos. |
+| **Confirmar Consolidação** | Janela **Consolidar Total Oficial** | Recalcula o total e recarrega a tela. |
+| **Continuar editando** | Janela **Existem alterações não salvas** | Fecha a janela e mantém a edição. |
+| **Sair sem salvar** | Janela **Existem alterações não salvas** | Sai e descarta o que não foi salvo. |
+| **Salvar e sair** / **Salvar e continuar** | Janela **Existem alterações não salvas** / janela **Salvar alterações** (ao abrir Pagamentos) | Salva e segue para onde você ia. |
+| **Salvar proposta agora** | Aba Pagamentos de proposta ainda sem número | Salva a proposta para liberar as cobranças. |
+| **Entendi** | Janela **Modelos incompletos** | Fecha a lista do que falta nos modelos. |
+| **Manter crédito para uso futuro** | Janela **Diferença Financeira — Crédito ao Cliente** | Deixa o valor como crédito do cliente. |
+| **Devolver ao cliente (solicitar ao Financeiro)** | Mesma janela | Registra o pedido de devolução. |
+| **Abater débito existente** | Mesma janela | Usa o crédito para abater um débito do cliente. |
+| **Confirmar** | Mesma janela | Conclui a alteração com a opção escolhida. |
+| Botão **X** (dica: "Voltar para proposta") | Mesma janela | Fecha a janela sem resolver; a pendência continua aberta. |
+| **Excluir títulos e salvar** / **Salvar alterações** | Janela **Alterar proposta faturada** | Tira os títulos do Contas a Receber e salva a proposta. |
+| **Voltar** | Janelas **Alterar proposta faturada**, **Cancelar Proposta** e **Criar pedido complementar** | Fecha a janela sem fazer nada. |
+| **Conversa** e **Tarefas** | Abas do painel do chat | Alternam entre as mensagens e as tarefas do pedido. |
+| Botão de anexo (dica: "Anexar arquivo (até 10MB)") | Painel do chat | Escolhe arquivos para enviar com a mensagem. |
+| Botão de envio (dica: "Enviar mensagem") | Painel do chat | Envia a mensagem. |
+| **Cancelar proposta** | Menu **Acoes** da lista de Pedidos (na lista em cartões o botão se chama **Mais**) e do detalhe da proposta | Abre a janela **Cancelar Proposta**. |
+| **Cancelar só a cobrança** / **Ver cobranças na aba Pagamentos** | Janela **Cancelar Proposta** | Cancela só a cobrança, ou leva à aba Pagamentos quando há mais de uma. |
+| **Confirmar Cancelamento** | Janela **Cancelar Proposta** | Cancela a proposta. |
+| **Criar pedido complementar** | Menu **Acoes** (ou **Mais**) da lista de Pedidos e botão da janela de mesmo nome | Cria a proposta complementar, vinculada ao pedido original. |
+
 ## Passo a passo
 
 ### Entender o cabeçalho
@@ -30,17 +86,17 @@ Esta página explica o que vale para a tela inteira: cabeçalho, abas, como salv
 3. Se a proposta é um pedido complementar, aparece o selo **Complemento do #<número>**, que leva ao pedido principal. No pedido principal aparece **Complemento: #<número> · <status>**.
 4. O botão com o ícone do Ideal Imposition abre o pedido no sistema de imposição. Ele só aparece em proposta que já tem número.
 5. **Voltar ao detalhe** (ou **Voltar para lista**, em proposta nova) sai da edição.
-6. O menu de ações, no canto direito, traz: **Ver proposta**, **Ver chat interno**, **Editar proposta**, **Duplicar proposta**, **Copiar proposta informal**, **Link pgto. externo**, **Gerar PDF da proposta** e, em pedido já liberado para a produção, **Retirar da Produção**.
+6. O botão **Acoes**, no canto direito, abre o menu de ações: **Ver proposta**, **Ver chat interno**, **Editar proposta**, **Duplicar proposta**, **Copiar proposta informal**, **Link pgto. externo**, **Gerar PDF da proposta** e, em pedido já liberado para a produção, **Retirar da Produção**.
 7. Abaixo do cabeçalho podem aparecer avisos: sobre cobrança gerada, **Saldo na Conta Corrente** (cliente com crédito), **Cliente com débito em aberto** e **Revisão financeira pendente**. Também fica ali o bloco de tarefas da equipe ligadas ao pedido.
 
 ### Navegar pelas abas
 
-A barra de abas acompanha a rolagem da tela. A ordem é esta:
+A barra de abas acompanha a rolagem da tela. São oito abas, nesta ordem:
 
 | Aba | O que tem | Página |
 |---|---|---|
 | **Geral** | Cliente, dados da proposta, contato, dados para nota fiscal e endereço de entrega | [Aba Geral](proposta-geral.md) |
-| **Orçamento** | Produtos da proposta (seção "6. Produtos") | [Aba Produtos](proposta-produtos.md) |
+| **Orçamento** | Produtos da proposta (seção "6. Produtos") | [Aba Orçamento (produtos)](proposta-produtos.md) |
 | **Fretes** | Modalidade, transportadora e cotações | [Aba Fretes](proposta-fretes.md) |
 | **Pedido** | Modelos e lotes de cada produto | [Aba Pedido](proposta-pedido.md) |
 | **Artes** | Briefing e arquivos de arte | [Aba Artes](proposta-artes.md) |
@@ -49,6 +105,8 @@ A barra de abas acompanha a rolagem da tela. A ordem é esta:
 | **Histórico** | Timeline da proposta e movimentos de crédito | [Abas Produção, Boletim e Histórico](proposta-producao-boletim-historico.md) |
 
 A aba de produtos aparece na tela com o nome **Orçamento**.
+
+**Boletim** não é aba visível: a barra não tem botão com esse nome. Quem abre o endereço da proposta com `?tab=boletim` vê só o quadro "Boletim — Aguarde orientações."
 
 Na coluna da direita, em todas as abas, ficam três blocos: **8. Resumo do orçamento** (valores, peso, destino da entrega e o desconto geral), **9. Envio do orçamento** (texto pronto, com o botão **Copiar resumo para WhatsApp**) e **10. Observações e Condições**.
 
@@ -140,7 +198,7 @@ Como o status muda sozinho:
 
 ### Conversar no chat interno do pedido
 
-1. No menu de ações, clique em **Ver chat interno**. O painel abre na lateral, com as abas **Conversa** e **Tarefas**.
+1. No menu **Acoes**, clique em **Ver chat interno**. O painel abre na lateral, com as abas **Conversa** e **Tarefas**.
 2. Escreva a mensagem e envie com Enter. Use Shift + Enter para pular linha.
 3. Para anexar arquivo, use o botão de clipe. O limite é 10 MB por arquivo.
 4. Para avisar alguém, digite `@` e escolha a pessoa na lista. Ela recebe a notificação no sino do topo.
@@ -152,7 +210,7 @@ O chat é interno. O cliente não vê essas mensagens.
 
 O cancelamento não fica no menu de dentro da edição. Faça pela lista de Pedidos ou pelo detalhe da proposta.
 
-1. No menu de ações, clique em **Cancelar proposta**.
+1. No menu **Acoes**, clique em **Cancelar proposta**.
 2. Leia o quadro **Será cancelado junto**: ele lista as cobranças e os títulos que saem com a proposta.
 3. Se a intenção é só refazer a cobrança, use **Cancelar só a cobrança** (ou **Ver cobranças na aba Pagamentos**) em vez de cancelar a proposta.
 4. Preencha o **Motivo do Cancelamento**.
@@ -162,7 +220,7 @@ O cancelamento não fica no menu de dentro da edição. Faça pela lista de Pedi
 
 Use quando o cliente pede itens a mais para o mesmo evento de um pedido já pago, para os dois saírem juntos.
 
-1. Na lista de Pedidos, abra o menu de ações do pedido original e clique em **Criar pedido complementar**.
+1. Na lista de Pedidos, abra o menu **Acoes** do pedido original e clique em **Criar pedido complementar**.
 2. Confira o resumo e clique em **Criar pedido complementar**.
 3. O sistema abre a proposta nova na aba **Orçamento**. Ela nasce sem itens: inclua os produtos e salve.
 4. Na aba **Fretes**, cote e aplique o frete complementar. Ele cobra só a diferença do peso somado dos dois pedidos.
@@ -172,7 +230,7 @@ O complemento herda do pedido original o cliente, o endereço, o contato, o paga
 
 ### Enviar o link de pagamento ao cliente
 
-1. No menu de ações, clique em **Link pgto. externo**.
+1. No menu **Acoes**, clique em **Link pgto. externo**.
 2. O aviso **Link de pagamento externo copiado.** confirma que o link está na área de transferência.
 3. Cole o link na conversa com o cliente. Ele abre a área do cliente daquele pedido.
 
@@ -198,6 +256,23 @@ O complemento herda do pedido original o cliente, o endereço, o contato, o paga
 - Não dá para cancelar o pedido original enquanto ele tiver pedido complementar aberto. Cancele ou desvincule o complemento antes.
 - O pedido complementar só é aceito quando o original está pago integralmente, não é avulso, não foi despachado, não é ele mesmo um complemento e não tem outro complemento aberto.
 - Sair da aba Pedido com modelo ainda não gravado na lista rápida descarta o que foi digitado. A tela pergunta antes.
+
+## O que não confundir
+
+- **Menu Pedidos** x título **Orcamentos** x aba **Orçamento**: o menu lateral **Pedidos** abre a lista de propostas, cuja página tem o título **Orcamentos** (sem cedilha); a aba **Orçamento** fica dentro de uma proposta e guarda os produtos dela.
+- Aba **Pedido** x aba **Produção** x menu **Produção**: a aba **Pedido** tem os modelos e lotes de cada produto; a aba **Produção** é só o texto da orientação técnica; o menu lateral **Produção** é outra tela, a das ordens de serviço.
+- **Salvar alterações** x **Salvar item** x sair do campo: **Salvar alterações** (rodapé) salva tudo e recarrega a tela; **Salvar item** salva tudo e fecha o cartão do produto; sair do campo grava sozinho só Quantidade, Valor Unitário e Fixo, e só em proposta com número e sem cobrança.
+- **Cancelar** x **Cancelar proposta** x **Cancelar só a cobrança**: **Cancelar** (rodapé) apenas sai da edição; **Cancelar proposta** encerra o pedido e é irreversível; **Cancelar só a cobrança** mantém o pedido e reabre o saldo para uma cobrança nova.
+- **Ver proposta** x **Editar proposta**: a primeira abre o detalhe, só para leitura; a segunda abre esta tela.
+- **Duplicar proposta** x **Criar pedido complementar**: duplicar abre uma cópia da proposta para editar; o complementar nasce sem itens, vinculado ao pedido original, e sai junto com ele na Expedição.
+- **Link pgto. externo** x **Copiar proposta informal** x **Copiar resumo para WhatsApp**: o primeiro copia o link da área do cliente; os outros dois copiam o mesmo texto informal da proposta.
+- Status da proposta x status da arte: são dois selos no cabeçalho. O primeiro diz em que etapa o pedido está; o segundo, em que pé está a arte.
+- **NOVO / EM ARTE** x **NOVO_ARTE_APROVADA**: no primeiro a arte ainda está em andamento; no segundo todas as artes já foram aprovadas e só falta o pagamento. O mesmo vale para AGUARDANDO.
+- **LIBERADO** x liberado para a produção: **LIBERADO** quer dizer que o pagamento cobre o total; a entrada na fila da produção depende da ação **Liberar para Produção**, na lista de Pedidos.
+- **Salvamento Parcial** x salvamento completo: no parcial só as observações e a orientação técnica foram gravadas; produtos, valores, descontos e frete ficaram como estavam.
+- Crédito ao cliente x saldo a cobrar: novo total abaixo do que já foi pago gera crédito, e a tela obriga a escolher o destino; novo total acima do pago vira saldo a cobrar, resolvido na aba Pagamentos.
+- **Observações e Condições** x **Orientação técnica de produção**: a primeira é comercial e não chega à produção; a segunda é o que a bancada lê.
+- Número do pedido x código do cliente: no título, **N° <número>** é o número da proposta; o número depois do nome do cliente é o código do cadastro dele.
 
 ## Erros comuns
 
@@ -230,7 +305,7 @@ O complemento herda do pedido original o cliente, o endereço, o contato, o paga
 
 - [Pedidos (lista)](pedidos.md)
 - [Proposta: aba Geral](proposta-geral.md)
-- [Proposta: aba Produtos](proposta-produtos.md)
+- [Proposta: aba Orçamento (produtos)](proposta-produtos.md)
 - [Proposta: aba Fretes](proposta-fretes.md)
 - [Proposta: aba Pagamentos](proposta-pagamentos.md)
 - [Proposta: aba Artes](proposta-artes.md)
@@ -241,3 +316,26 @@ O complemento herda do pedido original o cliente, o endereço, o contato, o paga
 - [Registro de recebíveis](registro-de-recebiveis.md)
 - [Expedição](expedicao.md)
 - [Tarefas](tarefas.md)
+
+## Arquivos de origem
+
+- `src/features/orcamentos/OrcamentoFormPage.tsx`
+- `src/app/(erp)/orcamentos/novo/page.tsx`
+- `src/app/(erp)/orcamentos/[id]/editar/page.tsx`
+- `src/features/orcamentos/OrcamentosListPageReal.tsx`
+- `src/features/orcamentos/OrcamentoDetailPage.tsx`
+- `src/features/orcamentos/mappers.ts`
+- `src/features/orcamentos/orcamento-utils.ts`
+- `src/features/orcamentos/services/orcamentos.service.ts`
+- `src/features/orcamentos/services/status-engine.service.ts`
+- `src/features/orcamentos/services/faturado-editavel.ts`
+- `src/features/orcamentos/components/DiferencaFinanceiraModal.tsx`
+- `src/features/orcamentos/components/LiberarFaturadoModal.tsx`
+- `src/features/orcamentos/components/CancelPropostaModal.tsx`
+- `src/features/orcamentos/components/CriarComplementoModal.tsx`
+- `src/features/orcamentos/components/PropostaChatDrawer.tsx`
+- `src/features/orcamentos/components/PropostaChatPanel.tsx`
+- `src/features/area-cliente/lib/copiar-link-pagamento.ts`
+- `src/app/api/orcamentos/editar-paga/route.ts`
+- `src/components/common/ActionsMenu.tsx`
+- `src/constants/navigation.ts`
