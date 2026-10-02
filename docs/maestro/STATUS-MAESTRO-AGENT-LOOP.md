@@ -314,6 +314,50 @@ lista divergir; também trava a tabela de rótulos por extenso.
 de Pedidos, formulário da proposta) mostram `APROVADO` como "Aprovado" e os
 "/ PENDENTE" por extenso. O Maestro segue a lista de Propostas.
 
+## 2.7 Vendas de teste fora do faturamento (02/10/2026)
+
+**Decisão do dono.** Não somam no faturamento os pedidos nos cadastros de
+teste 6, 11, 14 e 58613 ("Teste Testando"), os dos vendedores "Everton Dev" e
+"TESTE AUTOMATIZADO" e os do login userteste1 (como vendedor do pedido ou como
+quem o criou). Nenhuma cobrança, boleto ou status foi alterado: a exclusão é
+só na soma.
+
+**Onde está a regra.**
+
+| Camada | Onde | Situação |
+|---|---|---|
+| Banco | `public.fn_venda_de_teste` + `view_pagamentos_pagos_v2` (`20261002_faturamento_exclui_vendas_de_teste.sql`) | aplicada |
+| Maestro | `core/simple/maestro-venda-de-teste.ts`, usado por `calcularFaturamentoOficial` | no ar |
+| Ranking e "Meu desempenho" do Dashboard | `rpc_ranking_vendedores` e `rpc_dashboard_vendedor` leem `pagamentos_v2` direto | **pendente** — migration pronta em `scratch/pendente-ranking-exclui-vendas-de-teste.sql`, aguarda autorização |
+
+As listas do banco e do aplicativo têm de ser iguais. O total do Maestro vem
+da visão e o detalhe por vendedor e por empresa é somado no aplicativo:
+divergiu, `conferencia.confere` vira falso e
+`scripts/testes/maestro-faturamento-gabarito.test.mts` falha.
+
+**Efeito medido em 02/10/2026** (19 cobranças, R$ 3.052,28):
+
+| Mês | Antes | Depois | Saiu |
+|---|---|---|---|
+| Junho | 627.136,71 | 627.048,71 | 88,00 (1) |
+| Julho | 636.067,72 | 633.484,52 | 2.583,20 (7) |
+| Agosto | 779.679,50 | 779.463,95 | 215,55 (8) |
+| Setembro | 1.121.100,46 | 1.120.934,93 | 165,53 (3) |
+
+**AUTOMATECH não é teste.** Os pedidos 19795 e 21833 estavam com vendedor
+"userteste1" e são vendas da Edina Farias. Foram corrigidos antes da migration
+(`propostas.vendedor` e `pagamentos_v2.atendente`); depois disso o userteste1
+ficou sem nenhuma cobrança no faturamento.
+
+**Quem atribui a venda ao vendedor.** Ranking, "Meu desempenho" e Maestro
+leem só `propostas.vendedor` (texto). `pagamentos_v2.atendente` é o vendedor
+no Relatório de vendas pagas. `propostas.id_vendedor` não é lido por nenhum
+deles.
+
+**Fora desta regra, de propósito.** Recebimento (caixa, por data do
+pagamento), Relatório de vendas pagas, cobertura da proposta e o gráfico
+"Aprovadas por tipo" continuam contando tudo.
+
 ---
 
 # 3. Regras de negócio aplicadas

@@ -17,6 +17,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { contaNoFaturamento } from '@/features/cobrancas/cobrancas-utils';
+import { CRITERIO_VENDA_DE_TESTE, lerPropostasDeTeste } from './maestro-venda-de-teste';
 import type { MaestroPeriodo } from './maestro-simple-intents';
 import { exigirClienteNoEscopo, soLinhasDoVendedor } from '../agent/maestro-agent-escopo.server';
 
@@ -175,13 +176,14 @@ export const AVISO_FATURAMENTO_TRUNCADO =
   'diga que o periodo e grande demais para uma consulta e sugira uma janela menor (um mes, por exemplo).';
 
 export const MEDIDA_FATURAMENTO =
-  'FATURAMENTO: cobranças confirmadas pelo financeiro (pagas ou faturadas a vencer), pela data da confirmação, sem amostra nem retrabalho. ' +
+  'FATURAMENTO: cobranças confirmadas pelo financeiro (pagas ou faturadas a vencer), pela data da confirmação, sem amostra, sem retrabalho e sem pedidos de teste. ' +
   'É o mesmo número do card Faturamento do Dashboard. NÃO é o dinheiro que entrou em caixa (isso é o recebimento, pela data do pagamento).';
 
 export const CRITERIO_FATURAMENTO_OFICIAL =
   'pagamentos_v2 com confirmado=true e status PAID ou A_VENCER, período por data_confirmacao no calendário de Brasília; ' +
   'faturamento = soma das cobranças; cobranças = pagamentos confirmados; propostas = id_int distintos. propostas é só dimensão (vendedor/cliente). ' +
-  'Exclui E-AMOSTRA e E-RETRABALHO (cortesia, não receita); E-PERMUTA e E-CREDITO contam.';
+  'Exclui E-AMOSTRA e E-RETRABALHO (cortesia, não receita); E-PERMUTA e E-CREDITO contam. ' +
+  CRITERIO_VENDA_DE_TESTE;
 
 // ─── Período em dia de Brasília ────────────────────────────────────────────
 
@@ -372,8 +374,17 @@ export async function calcularFaturamentoOficial(
   // como em `public.fn_conta_no_faturamento`. Filtrar depois é o único jeito
   // de as duas pontas darem o mesmo número.
   const doEscopo = escopo ? await soLinhasDoVendedor(supabase, escopo, leitura.linhas) : leitura.linhas;
+
+  // Venda de teste não é faturamento (decisão do dono, 02/10/2026). A visão do
+  // Dashboard já as tira; aqui sai a mesma lista, para o detalhe por vendedor e
+  // por empresa fechar com o total. Sem a lista não há número confiável: falha.
+  const deTeste = await lerPropostasDeTeste(supabase);
+  if (deTeste.error) return falha(deTeste.error);
+  const ehDeTeste = (r: Record<string, unknown>) =>
+    r.id_int != null && deTeste.ids.has(Number(r.id_int));
+
   const pagamentos: LinhaPagamento[] = doEscopo
-    .filter(r => contaNoFaturamento(r.tipo_cobranca as string | null | undefined))
+    .filter(r => contaNoFaturamento(r.tipo_cobranca as string | null | undefined) && !ehDeTeste(r))
     .map(r => ({
       id_int: r.id_int != null && Number.isFinite(Number(r.id_int)) ? Number(r.id_int) : null,
       valor: r.valor != null ? Number(r.valor) : 0,

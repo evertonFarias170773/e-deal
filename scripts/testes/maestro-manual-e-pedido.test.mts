@@ -84,6 +84,7 @@ import {
   diasCivisDoIntervalo,
 } from "../../src/features/maestro/core/simple/maestro-simple-pagamentos.server.ts";
 import { buscarContaCorrenteCliente } from "../../src/features/maestro/core/simple/maestro-simple-conta-corrente.server.ts";
+import { ehVendaDeTeste } from "../../src/features/maestro/core/simple/maestro-venda-de-teste.ts";
 import { executeAgentTool } from "../../src/features/maestro/core/agent/maestro-agent-tools.ts";
 import { resumirConsulta } from "../../src/features/maestro/core/agent/maestro-agent-loop.ts";
 import {
@@ -265,6 +266,10 @@ function bancoFalso(tabelas: Record<string, Linha[]>) {
             if (nulo) return l[nulo[1]] == null;
             const fora = /^(\w+)\.not\.in\.\((.*)\)$/.exec(termo);
             if (fora) return l[fora[1]] != null && !fora[2].split(",").includes(String(l[fora[1]]));
+            const dentro = /^(\w+)\.in\.\((.*)\)$/.exec(termo);
+            if (dentro) return l[dentro[1]] != null && dentro[2].split(",").includes(String(l[dentro[1]]));
+            const parecido = /^(\w+)\.ilike\.\*(.*)\*$/.exec(termo);
+            if (parecido) return String(l[parecido[1]] ?? "").toLowerCase().includes(parecido[2].toLowerCase());
             throw new Error("or() nao previsto no banco em memoria: " + termo);
           }));
           return b;
@@ -757,12 +762,29 @@ checar("usuário não identificado não passa", podeNaTela({ ...andre, encontrad
   pagamentos.push(borda("b5", "2026-09-15T15:01:00.000Z", { confirmado: false }));   // não confirmada: fora
   pagamentos.push(borda("b6", "2026-09-15T15:02:00.000Z", { id_int: null }));        // sem proposta: o valor conta
   pagamentos.push(borda("b7", "2026-09-15T15:03:00.000Z", { tipo_cobranca: null })); // sem tipo: conta
+  // Vendas de teste (02/10/2026): confirmadas, pagas, e FORA do faturamento.
+  pagamentos.push(borda("t1", "2026-09-16T15:00:00.000Z", { id_int: 99001, valor: 2131.1 }));  // cadastro de teste
+  pagamentos.push(borda("t2", "2026-09-16T15:01:00.000Z", { id_int: 99002, valor: 147.53 }));  // vendedor Everton Dev
+  pagamentos.push(borda("t3", "2026-09-16T15:02:00.000Z", { id_int: 99003, valor: 50 }));      // faturado para cadastro de teste
+  pagamentos.push(borda("t4", "2026-09-16T15:03:00.000Z", { id_int: 99004, valor: 60 }));      // criado pelo login userteste1
+  pagamentos.push(borda("t5", "2026-09-16T15:04:00.000Z", { id_int: 99005, valor: 13000 }));   // AUTOMATECH: vendedor Edina Farias — CONTA
+  pagamentos.push(borda("t6", "2026-09-16T15:05:00.000Z", { id_int: 99006, valor: 70 }));      // "Everton Dev Junior" não é o vendedor de teste — CONTA
+  const PROPOSTAS_DO_TESTE: Record<number, Linha> = {
+    99001: { id_cliente: 14, id_faturado: 8469, vendedor: "Bia" },
+    99002: { id_cliente: 500, id_faturado: 500, vendedor: "  Everton DEV " },
+    99003: { id_cliente: 500, id_faturado: 58613, vendedor: "Ana" },
+    99004: { id_cliente: 500, id_faturado: 500, vendedor: "Ana", user_id: "264c562e-3fee-48c2-a071-d609e71cb8bb" },
+    99005: { id_cliente: 39327, id_faturado: 66235, vendedor: "Edina Farias", user_id: "4cab5b88-50b9-44bc-8063-e68de9f5da06" },
+    99006: { id_cliente: 500, id_faturado: 500, vendedor: "Everton Dev Junior" },
+  };
+  const VENDAS_DE_TESTE = new Set([99001, 99002, 99003, 99004]);
 
   // O que o banco responderia: a regra da visão do Dashboard, escrita à parte.
   const diaSP = (iso: string) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date(iso));
   const naRegra = pagamentos.filter(p =>
     p.confirmado === true && ["PAID", "A_VENCER"].includes(String(p.status)) && p.data_confirmacao != null &&
-    !["E-AMOSTRA", "E-RETRABALHO"].includes(String(p.tipo_cobranca ?? "").trim().toUpperCase()));
+    !["E-AMOSTRA", "E-RETRABALHO"].includes(String(p.tipo_cobranca ?? "").trim().toUpperCase()) &&
+    !VENDAS_DE_TESTE.has(Number(p.id_int)));
   const visao = new Map<string, Linha>();
   for (const p of naRegra) {
     const chave = `${diaSP(String(p.data_confirmacao))}|${p.id_empresa}|${p.status}`;
@@ -782,7 +804,11 @@ checar("usuário não identificado não passa", podeNaTela({ ...andre, encontrad
   const TF: Record<string, Linha[]> = {
     pagamentos_v2: pagamentos,
     view_pagamentos_pagos_v2: [...visao.values()],
-    propostas: pagamentos.filter(p => p.id_int != null).map(p => ({ id_int: p.id_int, vendedor: Number(p.id_int) % 2 === 0 ? "Ana" : "Bia" })),
+    propostas: pagamentos.filter(p => p.id_int != null).map(p => ({
+      id_int: p.id_int, id_cliente: 500, id_faturado: 500, user_id: null,
+      vendedor: Number(p.id_int) % 2 === 0 ? "Ana" : "Bia",
+      ...(PROPOSTAS_DO_TESTE[Number(p.id_int)] ?? {}),
+    })),
   };
   const SETEMBRO = { desde: "2026-09-01T00:00:00.000Z", ate: "2026-10-01T00:00:00.000Z", periodoLabel: "setembro" };
 
@@ -800,8 +826,28 @@ checar("usuário não identificado não passa", podeNaTela({ ...andre, encontrad
   checar("a cobrança de 30/09 às 23:56 entra em setembro; as de 31/08 22h e 01/10 00h não",
     [deSetembro.some(p => p.id === "b1"), deSetembro.some(p => p.id === "b2"), deSetembro.some(p => p.id === "b3")], [true, false, false]);
 
+  // Vendas de teste: fora do total, do detalhe por vendedor e da busca por vendedor.
+  const nomes = (total.por_vendedor ?? []).map(v => v.vendedor);
+  checar("vendedor de teste não aparece no ranking; a AUTOMATECH aparece na Edina",
+    [nomes.some(n => n.trim().toLowerCase() === "everton dev"), (total.por_vendedor ?? []).find(v => v.vendedor === "Edina Farias")?.faturamento,
+      (total.por_vendedor ?? []).find(v => v.vendedor === "Everton Dev Junior")?.faturamento],
+    [false, 13000, 70]);
+  checar("as 4 cobranças de teste não entram: o total é o da visão e a soma linha a linha confere",
+    [deSetembro.filter(p => VENDAS_DE_TESTE.has(Number(p.id_int))).length, total.conferencia?.confere], [0, true]);
+  checar("o critério informado diz que pedidos de teste ficam fora",
+    [total.criterio.includes("Exclui pedidos de teste"), total.medida.includes("sem pedidos de teste")], [true, true]);
+  const dev = await calcularFaturamentoOficial(bancoFalso(TF).cliente, { ...SETEMBRO, vendedorNome: "Everton Dev" });
+  checar("perguntar pelo vendedor de teste: só o homônimo real aparece", [dev.faturamento, dev.total_cobrancas], [70, 1]);
+  checar("regra do predicado, caso a caso",
+    [ehVendaDeTeste({ id_cliente: 14, id_faturado: 8469, vendedor: "André Toniazzo" }), ehVendaDeTeste({ id_cliente: 100, id_faturado: "58613" }),
+      ehVendaDeTeste({ id_cliente: 100, vendedor: "  Everton DEV " }), ehVendaDeTeste({ vendedor: "teste automatizado" }), ehVendaDeTeste({ vendedor: "userteste1" }),
+      ehVendaDeTeste({ id_cliente: 100, vendedor: "Edina Farias", user_id: "264c562e-3fee-48c2-a071-d609e71cb8bb" }),
+      ehVendaDeTeste({ id_cliente: 66235, id_faturado: 66235, vendedor: "Edina Farias", user_id: "4cab5b88-50b9-44bc-8063-e68de9f5da06" }),
+      ehVendaDeTeste({}), ehVendaDeTeste({ id_cliente: 100, vendedor: "Everton Farias" }), ehVendaDeTeste({ id_cliente: 60 })],
+    [true, true, true, true, true, true, false, false, false, false]);
+
   const ana = await calcularFaturamentoOficial(bancoFalso(TF).cliente, { ...SETEMBRO, vendedorNome: "Ana" });
-  const esperadoAna = deSetembro.filter(p => p.id_int != null && Number(p.id_int) % 2 === 0);
+  const esperadoAna = deSetembro.filter(p => p.id_int != null && Number(p.id_int) % 2 === 0 && !PROPOSTAS_DO_TESTE[Number(p.id_int)]);
   checar("um vendedor: soma dele no mês inteiro",
     [ana.faturamento, ana.total_cobrancas, ana.conferencia], [Math.round(esperadoAna.reduce((t, p) => t + Number(p.valor), 0) * 100) / 100, esperadoAna.length, undefined]);
 

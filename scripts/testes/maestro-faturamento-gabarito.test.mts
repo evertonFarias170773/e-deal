@@ -6,8 +6,9 @@
  * fechado, o MESMO número do card Faturamento do Dashboard.
  *
  * O QUE CONFERE
- *   1. Setembro/2026 = R$ 1.121.100,46 em 1.324 cobranças (gabarito medido em
- *      02/10/2026; antes da correção o Maestro respondia R$ 780.657,05).
+ *   1. Setembro/2026 = R$ 1.120.934,93 em 1.321 cobranças (gabarito medido em
+ *      02/10/2026, já sem as vendas de teste; antes da correção da leitura o
+ *      Maestro respondia R$ 780.657,05). Junho, julho e agosto também têm gabarito.
  *   2. O total do Maestro é igual à soma, feita agora, da visão que o Dashboard
  *      usa (view_pagamentos_pagos_v2) para o mesmo mês. Esta é a conferência
  *      que continua valendo se um lançamento retroativo mudar o mês.
@@ -24,8 +25,15 @@ import { readFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
 import { calcularFaturamentoOficial } from "../../src/features/maestro/core/simple/maestro-simple-pagamentos.server.ts";
 
+// Medidos em 02/10/2026, DEPOIS de as vendas de teste saírem da visão
+// (20261002_faturamento_exclui_vendas_de_teste.sql). Antes dessa migration
+// setembro era R$ 1.121.100,46 em 1.324 cobranças: saíram 3 cobranças de teste,
+// R$ 165,53. Julho perdeu 7 (R$ 2.583,20), agosto 8 (R$ 215,55), junho 1 (R$ 88,00).
 const GABARITO: Record<string, { valor: number; cobrancas: number }> = {
-  "2026-09": { valor: 1121100.46, cobrancas: 1324 },
+  "2026-06": { valor: 627048.71, cobrancas: 1087 },
+  "2026-07": { valor: 633484.52, cobrancas: 1107 },
+  "2026-08": { valor: 779463.95, cobrancas: 1146 },
+  "2026-09": { valor: 1120934.93, cobrancas: 1321 },
 };
 
 const mes = process.argv.find((a) => /^\d{4}-\d{2}$/.test(a)) ?? "2026-09";
