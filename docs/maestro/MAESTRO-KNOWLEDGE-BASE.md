@@ -227,16 +227,17 @@ Esse estado não representa dinheiro já recebido.
 
 Representa títulos bancários, vencimentos e atrasos.
 
-Exemplos:
+Regra única (02/10/2026):
 
 ```text
 Em aberto:
 paid_at IS NULL
-AND status = 'A_VENCER'
+AND status não cancelado (qualquer status;
+o substituído pelo Refazer boleto é cancelado)
 
 Em atraso:
-paid_at IS NULL
-AND dias_atraso > 0
+em aberto
+AND vencimento < hoje (calendário de Brasília)
 
 Liquidado:
 paid_at IS NOT NULL

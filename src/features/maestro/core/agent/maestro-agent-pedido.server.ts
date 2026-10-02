@@ -38,6 +38,13 @@ import {
   podeNaTela,
   type AcessoUsuario,
 } from './maestro-agent-acesso.server';
+import {
+  CRITERIO_TITULOS,
+  diasDeAtraso,
+  hojeEmBrasilia,
+  tituloCancelado,
+  tituloPago,
+} from '../simple/maestro-regra-titulos';
 
 export const SECOES_DO_PEDIDO = ['situacao', 'cobrancas', 'titulos', 'nota_fiscal', 'producao', 'expedicao', 'tarefas'] as const;
 export type SecaoDoPedido = (typeof SECOES_DO_PEDIDO)[number];
@@ -235,12 +242,13 @@ async function secaoCobrancas(supabase: SupabaseClient, numero: number): Promise
   };
 }
 
-function situacaoDoTitulo(l: Linha): { rotulo: string; grupo: 'cancelado' | 'pago' | 'vencido' | 'a_vencer' } {
-  const status = String(l.status ?? '');
-  // Mesma ordem da Carteira (getVisualStatus em ContasReceberPage.tsx).
-  if (/^CANCELAD[OA]$/.test(status)) return { rotulo: 'Cancelado', grupo: 'cancelado' };
-  if (status === 'PAID') return { rotulo: 'Pago', grupo: 'pago' };
-  if (status === 'VENCIDO') return { rotulo: 'Vencido', grupo: 'vencido' };
+function situacaoDoTitulo(l: Linha, hoje: string): { rotulo: string; grupo: 'cancelado' | 'pago' | 'vencido' | 'a_vencer' } {
+  // REGRA ÚNICA do Maestro (maestro-regra-titulos.ts): em aberto = sem pagamento
+  // e não cancelado, em qualquer status; em atraso = em aberto com vencimento
+  // antes de hoje em Brasília. O rótulo dos demais segue a Carteira.
+  if (tituloCancelado(l)) return { rotulo: 'Cancelado', grupo: 'cancelado' };
+  if (tituloPago(l)) return { rotulo: 'Pago', grupo: 'pago' };
+  if (diasDeAtraso(l, hoje) > 0) return { rotulo: 'Vencido', grupo: 'vencido' };
   if (l.deposito_conta === true) return { rotulo: 'Depósito em conta', grupo: 'a_vencer' };
   const registrado = Boolean(txt(l.id_boleto_c6) || txt(l.nosso_numero) || txt(l.linha_digitavel));
   return registrado
@@ -253,7 +261,7 @@ async function secaoTitulos(supabase: SupabaseClient, numero: number): Promise<L
     .from('boletos')
     .select(
       'parcela, total_parcelas, valor, valor_atualizado, vencimento, status, paid_at, created_at, id_empresa, empresa, nome_cliente, n_nf, ' +
-        'id_pagamento, dias_atraso, is_prorrogado, deposito_conta, forma_recebimento, id_boleto_c6, nosso_numero, linha_digitavel'
+        'id_pagamento, is_prorrogado, deposito_conta, forma_recebimento, id_boleto_c6, nosso_numero, linha_digitavel, motivo_prorg'
     )
     .eq('id_int', numero)
     .order('parcela', { ascending: true })
@@ -263,13 +271,15 @@ async function secaoTitulos(supabase: SupabaseClient, numero: number): Promise<L
 
   const linhas = (data ?? []) as unknown as Linha[];
   const valorDe = (l: Linha) => num(l.valor_atualizado) ?? num(l.valor);
-  const comSituacao = linhas.map(l => ({ l, s: situacaoDoTitulo(l) }));
+  const hoje = hojeEmBrasilia();
+  const comSituacao = linhas.map(l => ({ l, s: situacaoDoTitulo(l, hoje) }));
   const doGrupo = (g: string) => comSituacao.filter(x => x.s.grupo === g).map(x => x.l);
   const emAberto = [...doGrupo('a_vencer'), ...doGrupo('vencido')];
 
   return {
     disponivel: true,
     fonte: 'Carteira (contas a receber)',
+    criterio: CRITERIO_TITULOS,
     quantidade: linhas.length,
     resumo: {
       em_aberto: emAberto.length,
@@ -291,13 +301,15 @@ async function secaoTitulos(supabase: SupabaseClient, numero: number): Promise<L
         em_aberto: s.grupo === 'a_vencer' || s.grupo === 'vencido',
         valor: valorDe(l),
         vencimento: dataBR(l.vencimento),
-        dias_de_atraso: s.grupo === 'vencido' ? num(l.dias_atraso) : null,
+        dias_de_atraso: s.grupo === 'vencido' ? diasDeAtraso(l, hoje) : null,
         pago_em: dataHoraBR(l.paid_at),
         forma_do_recebimento: txt(l.forma_recebimento),
         registrado_no_banco: registrado,
         // A empresa 2 (Ideal Biro) emite pelo Banco Inter; as demais, pelo C6.
         banco: deposito ? null : Number(l.id_empresa) === 2 ? 'Banco Inter' : 'C6 Bank',
         prorrogado: l.is_prorrogado === true,
+        // O Refazer boleto cancela o título antigo e deixa esta marca nele.
+        substituido_pelo_refazer_boleto: s.grupo === 'cancelado' && String(l.motivo_prorg ?? '').startsWith('Substituído pelo Refazer boleto'),
         nota_fiscal: txt(l.n_nf),
         numero_do_pagamento_de_origem: txt(l.id_pagamento),
         em_nome_de: txt(l.nome_cliente),

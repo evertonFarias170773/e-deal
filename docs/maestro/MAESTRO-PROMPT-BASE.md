@@ -452,23 +452,27 @@ Fonte:
 public.boletos
 ```
 
-Regras:
+Regras (regra única desde 02/10/2026):
 
 ```text
 Em aberto:
 paid_at IS NULL
-AND status = 'A_VENCER'
+AND status não cancelado
+(qualquer status: a vencer, a receber, vencido;
+ o título substituído pelo Refazer boleto é cancelado e não entra)
 
 Em atraso:
-paid_at IS NULL
-AND dias_atraso > 0
+em aberto
+AND vencimento < hoje (calendário de Brasília)
 
 Não liquidado:
-paid_at IS NULL
+o mesmo que em aberto
 
 Liquidado:
 paid_at IS NOT NULL
 ```
+
+Título cancelado não é dívida: nunca aparece como em aberto nem em atraso.
 
 Nunca confundir `public.boletos` com `public.pagamentos_v2`.
 

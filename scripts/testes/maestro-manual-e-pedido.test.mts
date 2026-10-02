@@ -50,7 +50,14 @@ import {
   RecusaDeEscopoDoMaestro,
   registrarUsuarioDoMaestro,
 } from "../../src/features/maestro/core/agent/maestro-agent-escopo.server.ts";
-import { buscarBoletosCliente } from "../../src/features/maestro/core/simple/maestro-simple-boletos.server.ts";
+import { buscarBoletosCliente, resumoDeTitulosDoCliente } from "../../src/features/maestro/core/simple/maestro-simple-boletos.server.ts";
+import {
+  diasDeAtraso,
+  hojeEmBrasilia,
+  tituloCancelado,
+  tituloEmAberto,
+  tituloEmAtraso,
+} from "../../src/features/maestro/core/simple/maestro-regra-titulos.ts";
 import { buscarDetalheProposta, listarPropostasCliente } from "../../src/features/maestro/core/simple/maestro-simple-propostas.server.ts";
 import {
   calcularFaturamentoOficial,
@@ -202,9 +209,17 @@ function bancoFalso(tabelas: Record<string, Linha[]>) {
     from(tabela: string) {
       lidas.push(tabela);
       let linhas = [...(tabelas[tabela] ?? [])];
+      let ordenado = false;
       const b: Record<string, unknown> = {
         select: () => b,
-        order: () => b,
+        // Só a PRIMEIRA ordenação vale (é a principal no PostgREST); as demais são desempate.
+        order: (coluna: string, opcoes?: { ascending?: boolean }) => {
+          if (ordenado) return b;
+          ordenado = true;
+          const sinal = opcoes?.ascending === false ? -1 : 1;
+          linhas = [...linhas].sort((x, y) => (String(x[coluna] ?? "") < String(y[coluna] ?? "") ? -sinal : String(x[coluna] ?? "") > String(y[coluna] ?? "") ? sinal : 0));
+          return b;
+        },
         limit: () => b,
         eq: (coluna: string, valor: unknown) => {
           linhas = linhas.filter(l => l[coluna] === valor);
@@ -214,10 +229,18 @@ function bancoFalso(tabelas: Record<string, Linha[]>) {
           linhas = linhas.filter(l => valores.includes(l[coluna]));
           return b;
         },
-        // "id_cliente.eq.100,id_faturado.eq.100"
+        // "id_cliente.eq.100,id_faturado.eq.100" ou "status.is.null,status.not.in.(A,B)"
         or: (expr: string) => {
-          const termos = expr.split(",").map(t => t.split(".eq."));
-          linhas = linhas.filter(l => termos.some(([coluna, valor]) => String(l[coluna]) === valor));
+          const termos = expr.split(/,(?![^(]*\))/);
+          linhas = linhas.filter(l => termos.some(termo => {
+            const eq = /^(\w+)\.eq\.(.*)$/.exec(termo);
+            if (eq) return String(l[eq[1]]) === eq[2];
+            const nulo = /^(\w+)\.is\.null$/.exec(termo);
+            if (nulo) return l[nulo[1]] == null;
+            const fora = /^(\w+)\.not\.in\.\((.*)\)$/.exec(termo);
+            if (fora) return l[fora[1]] != null && !fora[2].split(",").includes(String(l[fora[1]]));
+            throw new Error("or() nao previsto no banco em memoria: " + termo);
+          }));
           return b;
         },
         range: () => b,
@@ -266,8 +289,8 @@ const TABELAS: Record<string, Linha[]> = {
     { id_int: 22812, id_pagamento: "22812-B", tipo_cobranca: "E-FATURADO", valor: 7944, status: "A_VENCER", confirmado: true, boleto_enviadoo: true, vencimento: "2026-10-19", created_at: "2026-09-28T21:04:00Z" },
   ],
   boletos: [
-    { id_int: 22812, parcela: 1, total_parcelas: 2, valor: 3972, vencimento: "2026-10-14", status: "A_VENCER", id_empresa: 1, id_boleto_c6: "01ABC", nosso_numero: "340945472", linha_digitavel: LINHA_DIGITAVEL, id_pagamento: "22812-B", documento: "37248444000150" },
-    { id_int: 22812, parcela: 2, total_parcelas: 2, valor: 3972, vencimento: "2026-11-21", status: "A_VENCER", id_empresa: 1, id_boleto_c6: "01ABD", nosso_numero: "340945476", linha_digitavel: LINHA_DIGITAVEL, id_pagamento: "22812-B", documento: "37248444000150" },
+    { id_int: 22812, parcela: 1, total_parcelas: 2, valor: 3972, vencimento: "2099-10-14", status: "A_VENCER", id_empresa: 1, id_boleto_c6: "01ABC", nosso_numero: "340945472", linha_digitavel: LINHA_DIGITAVEL, id_pagamento: "22812-B", documento: "37248444000150" },
+    { id_int: 22812, parcela: 2, total_parcelas: 2, valor: 3972, vencimento: "2099-11-21", status: "A_VENCER", id_empresa: 1, id_boleto_c6: "01ABD", nosso_numero: "340945476", linha_digitavel: LINHA_DIGITAVEL, id_pagamento: "22812-B", documento: "37248444000150" },
   ],
   propostas_os: [],
   propostas_os_setores: [],
@@ -357,7 +380,7 @@ checar("usuário não identificado não passa", podeNaTela({ ...andre, encontrad
     { em_aberto: 2, soma_em_aberto: 7944, a_vencer: 2, vencidos: 0, pagos: 0, soma_dos_pagos: 0, cancelados: 0 });
   const titulo = (s.titulos.titulos as Record<string, unknown>[])[0];
   checar("título: situação, registro e banco calculados",
-    [titulo.situacao_na_carteira, titulo.registrado_no_banco, titulo.banco, titulo.vencimento], ["Boleto registrado", true, "C6 Bank", "14/10/2026"]);
+    [titulo.situacao_na_carteira, titulo.registrado_no_banco, titulo.banco, titulo.vencimento], ["Boleto registrado", true, "C6 Bank", "14/10/2099"]);
   checar("linha digitável não sai", texto.includes(LINHA_DIGITAVEL), false);
   checar("nosso número não sai", texto.includes("340945472"), false);
   checar("identificador do banco não sai", texto.includes("01ABC"), false);
@@ -440,7 +463,7 @@ checar("usuário não identificado não passa", podeNaTela({ ...andre, encontrad
   const U_EMILY = "u-emily", U_FIN = "u-fin", U_DESIGNER = "u-des";
   const agora = new Date().toISOString();
   const boleto = (idCliente: number, idInt: number | null) =>
-    ({ id_cliente: idCliente, id_int: idInt, paid_at: null, status: "A_VENCER", valor: 10, vencimento: "2026-12-01", dias_atraso: 0 });
+    ({ id_cliente: idCliente, id_int: idInt, paid_at: null, status: "A_VENCER", valor: 10, vencimento: "2099-12-01", dias_atraso: 0 });
   const TAB: Record<string, Linha[]> = {
     usuarios: [
       { user_id: U_EMILY, id_perfil: 4, is_super_adm: false, is_admin: false, is_vendedor: true, nome_usuario: "Emily Boeira", meu_vendedor: "Emily Boeira" },
@@ -566,6 +589,89 @@ checar("usuário não identificado não passa", podeNaTela({ ...andre, encontrad
     const cadastro = await executeAgentTool("enderecos_cliente", { id_cliente: 200 }, ctx as never);
     checar("cadastro do cliente de outro continua disponível (cotação e frete dependem dele)", cadastro.ok, true);
   }
+}
+
+// ─── 9. Regra única de título em aberto e em atraso (02/10/2026) ─────────────
+
+{
+  const HOJE = "2026-10-02";
+  // A regra, sem banco.
+  checar("a receber sem pagamento está em aberto (era o caso do cliente 63708)", tituloEmAberto({ status: "A_RECEBER", paid_at: null }), true);
+  checar("a vencer, vencido e sem status estão em aberto",
+    [tituloEmAberto({ status: "A_VENCER" }), tituloEmAberto({ status: "VENCIDO" }), tituloEmAberto({ status: null })], [true, true, true]);
+  checar("cancelado não está em aberto, em qualquer grafia",
+    [tituloEmAberto({ status: "CANCELADO" }), tituloEmAberto({ status: "CANCELADA" }), tituloEmAberto({ status: " cancelado " }), tituloCancelado({ status: "Cancelado" })],
+    [false, false, false, true]);
+  checar("pago não está em aberto", [tituloEmAberto({ status: "A_VENCER", paid_at: "2026-09-30T10:00:00Z" }), tituloEmAberto({ status: "PAID" })], [false, false]);
+  checar("vence hoje: ainda não está em atraso", [tituloEmAtraso({ status: "A_VENCER", vencimento: HOJE }, HOJE), diasDeAtraso({ vencimento: HOJE }, HOJE)], [false, 0]);
+  checar("venceu ontem: 1 dia de atraso, em qualquer status",
+    [diasDeAtraso({ status: "A_VENCER", vencimento: "2026-10-01" }, HOJE), diasDeAtraso({ status: "A_RECEBER", vencimento: "2026-10-01" }, HOJE)], [1, 1]);
+  checar("atraso atravessa mês e ano", [diasDeAtraso({ vencimento: "2026-08-02" }, HOJE), diasDeAtraso({ vencimento: "2025-12-31" }, "2026-01-01")], [61, 1]);
+  checar("cancelado com vencimento antigo não está em atraso", [tituloEmAtraso({ status: "CANCELADO", vencimento: "2026-08-02" }, HOJE), diasDeAtraso({ status: "CANCELADO", vencimento: "2026-08-02" }, HOJE)], [false, 0]);
+  checar("pago depois do vencimento não está em atraso", tituloEmAtraso({ status: "PAID", paid_at: "2026-09-01T00:00:00Z", vencimento: "2026-08-02" }, HOJE), false);
+  checar("sem vencimento não está em atraso", tituloEmAtraso({ status: "A_VENCER", vencimento: null }, HOJE), false);
+  // 02:30 UTC de 03/10 ainda é 23:30 de 02/10 em Brasília: o dia que vale é o de Brasília.
+  checar("hoje é o dia de Brasília, não o de UTC", hojeEmBrasilia(new Date("2026-10-03T02:30:00Z")), "2026-10-02");
+
+  // As três consultas, com o banco em memória. Vencimentos relativos a hoje.
+  const dia = (delta: number) => {
+    const d = new Date(hojeEmBrasilia() + "T12:00:00Z");
+    d.setUTCDate(d.getUTCDate() + delta);
+    return d.toISOString().slice(0, 10);
+  };
+  const T: Record<string, Linha[]> = {
+    usuarios: [{ user_id: "u-fin", id_perfil: 3, is_super_adm: false, is_admin: false, is_vendedor: false, nome_usuario: "Fin", meu_vendedor: null }],
+    perfis: [{ id: 3, ativo: true, nome: "Financeiro", permissoes: ["propostas.view_all"] }],
+    boletos: [
+      { id_cliente: 700, id_int: 1, status: "A_VENCER", paid_at: null, valor: 100, vencimento: dia(10), dias_atraso: 0 },
+      { id_cliente: 700, id_int: 2, status: "A_RECEBER", paid_at: null, valor: 1710.69, vencimento: dia(1), dias_atraso: 0 },
+      { id_cliente: 700, id_int: 3, status: "A_RECEBER", paid_at: null, valor: 50, valor_atualizado: 55, vencimento: dia(-3), dias_atraso: 0 },
+      { id_cliente: 700, id_int: 4, status: "VENCIDO", paid_at: null, valor: 200, valor_atualizado: 210, vencimento: dia(-20), dias_atraso: 20 },
+      // Cancelado com dias de atraso congelados pela rotina antiga: não é dívida.
+      { id_cliente: 700, id_int: 5, status: "CANCELADO", paid_at: null, valor: 119.27, vencimento: dia(-48), dias_atraso: 48 },
+      // O "Substituído" do Refazer boleto: cancelado com a marca.
+      { id_cliente: 700, id_int: 6, status: "CANCELADO", paid_at: null, valor: 300, vencimento: dia(-5), dias_atraso: 5, motivo_prorg: "Substituído pelo Refazer boleto em 01/10/2026" },
+      { id_cliente: 700, id_int: 7, status: "PAID", paid_at: "2026-09-05T12:00:00Z", valor: 540.01, vencimento: dia(-27), dias_atraso: 0 },
+    ],
+  };
+  const banco = bancoFalso(T);
+  registrarUsuarioDoMaestro(banco.cliente, "u-fin");
+
+  const abertos = await buscarBoletosCliente(banco.cliente, 700, "aberto");
+  const todos = await buscarBoletosCliente(banco.cliente, 700, "todos");
+  const naoLiquidados = await buscarBoletosCliente(banco.cliente, 700, "nao_liquidado");
+  const atrasados = await buscarBoletosCliente(banco.cliente, 700, "atraso");
+
+  checar("em aberto: os quatro sem pagamento e não cancelados, do vencimento mais antigo ao mais novo",
+    abertos.items.map(i => i.id_int), [4, 3, 2, 1]);
+  checar("em aberto inclui o título A_RECEBER de R$ 1.710,69", abertos.items.some(i => i.valor === 1710.69 && i.status === "A_RECEBER"), true);
+  checar("em aberto não traz o cancelado, o substituído nem o pago", abertos.items.some(i => [5, 6, 7].includes(i.id_int)), false);
+  checar("'todos' e 'não liquidados' são a mesma lista do em aberto",
+    [todos.items.map(i => i.id_int), naoLiquidados.items.map(i => i.id_int), todos.filtro], [[4, 3, 2, 1], [4, 3, 2, 1], "em aberto"]);
+  checar("em atraso: só os em aberto com vencimento antes de hoje", [atrasados.items.map(i => i.id_int), atrasados.count], [[4, 3], 2]);
+  checar("dias de atraso pelo vencimento, não pela coluna da rotina", atrasados.items.map(i => [i.id_int, i.dias_atraso, i.em_atraso]), [[4, 20, true], [3, 3, true]]);
+  checar("quem vence amanhã ou depois não está em atraso", abertos.items.filter(i => !i.em_atraso).map(i => [i.id_int, i.dias_atraso]), [[2, 0], [1, 0]]);
+  const resumoEsperado = { em_aberto: { quantidade: 4, soma_valor: 2060.69 }, em_atraso: { quantidade: 2, soma_valor: 265 } };
+  checar("resumo pronto e igual nas três consultas", [abertos.resumo, atrasados.resumo, todos.resumo], [resumoEsperado, resumoEsperado, resumoEsperado]);
+  checar("resumo da visão geral sai da mesma regra", (await resumoDeTitulosDoCliente(banco.cliente, 700)).resumo, resumoEsperado);
+
+  // A consulta por pedido usa a mesma regra para vencido e para dias de atraso.
+  const TP: Record<string, Linha[]> = {
+    propostas: [{ id_int: 9001, cliente: "X", id_cliente: 700, vendedor: "Y", status_interno: "APROVADO", valor_total: 1 }],
+    boletos: [
+      { id_int: 9001, parcela: 1, total_parcelas: 3, valor: 50, status: "A_RECEBER", paid_at: null, vencimento: dia(-3), dias_atraso: 0 },
+      { id_int: 9001, parcela: 2, total_parcelas: 3, valor: 60, status: "A_VENCER", paid_at: null, vencimento: dia(30) },
+      { id_int: 9001, parcela: 3, total_parcelas: 3, valor: 70, status: "CANCELADO", paid_at: null, vencimento: dia(-40), dias_atraso: 40, motivo_prorg: "Substituído pelo Refazer boleto em 01/10/2026" },
+    ],
+  };
+  const pedido = await consultarPedido(bancoFalso(TP).cliente, financeiro, 9001, ["titulos"]);
+  const st = ((pedido.secoes ?? {}) as Record<string, Record<string, unknown>>).titulos;
+  const lista = st.titulos as Record<string, unknown>[];
+  checar("pedido: a receber vencido conta como vencido; o substituído fica como cancelado",
+    st.resumo, { em_aberto: 2, soma_em_aberto: 110, a_vencer: 1, vencidos: 1, pagos: 0, soma_dos_pagos: 0, cancelados: 1 });
+  checar("pedido: situação e dias de atraso de cada título",
+    lista.map(t => [t.parcela, t.situacao_na_carteira, t.dias_de_atraso, t.substituido_pelo_refazer_boleto]),
+    [[1, "Vencido", 3, false], [2, "A receber criado — boleto não registrado", null, false], [3, "Cancelado", null, true]]);
 }
 
 console.log(falhas === 0 ? "\nTUDO OK" : `\n${falhas} FALHA(S)`);

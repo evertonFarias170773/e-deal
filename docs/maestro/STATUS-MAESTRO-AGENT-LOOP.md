@@ -154,6 +154,25 @@ Ficam de fora, de propósito: `resolver_cliente`, cadastro, endereços, contatos
 sócios, cotação, frete e salvar proposta — o vendedor cota para qualquer
 cliente, como na tela.
 
+## 2.3 Regra única de título em aberto e em atraso (02/10/2026)
+
+Uma regra só, em `core/simple/maestro-regra-titulos.ts`, usada por
+`boletos_cliente` (filtros abertos, atrasados e todos), pelo resumo de boletos
+de `visao_geral_cliente` e pela parte `titulos` de `consultar_pedido`:
+
+- **Em aberto** = título sem pagamento e não cancelado, em qualquer status
+  (a vencer, a receber, vencido). O "Substituído" do Refazer boleto é gravado
+  como cancelado e não entra.
+- **Em atraso** = em aberto com vencimento antes de hoje, no calendário de
+  Brasília. Os dias de atraso saem dessa conta, não da coluna `dias_atraso`.
+- **Não liquidado** = o mesmo que em aberto.
+
+Antes eram três regras: em aberto só via status `A_VENCER` (o título
+`A_RECEBER` não pago sumia), em atraso dependia de `dias_atraso` (contava
+cancelado com dias congelados) e não liquidado contava cancelado.
+`boletos_cliente` passou a devolver `resumo` com os totais prontos de todos os
+títulos em aberto e em atraso, e não só dos 30 listados.
+
 ---
 
 # 3. Regras de negócio aplicadas

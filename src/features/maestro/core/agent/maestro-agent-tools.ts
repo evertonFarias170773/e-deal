@@ -51,7 +51,7 @@ import {
   calcularFaturamentoOficial,
   compararRecebimentoClienteMeses,
 } from '../simple/maestro-simple-pagamentos.server';
-import { buscarBoletosCliente } from '../simple/maestro-simple-boletos.server';
+import { buscarBoletosCliente, resumoDeTitulosDoCliente } from '../simple/maestro-simple-boletos.server';
 import { simularOrcamentoAvulsoDb, listarProdutosCatalogo, buscarFotosProduto } from '../simple/maestro-simple-produtos.server';
 import { cotarOpcoesFrete, cotarOpcoesFretePorEndereco, enderecoFreteDeCep } from './maestro-agent-frete.server';
 import { gerarPdfPropostaServer } from './maestro-agent-pdf.server';
@@ -492,14 +492,27 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
       const clienteDividido = temPedidoDeOutroVendedor(escopo);
       const semVisao: { data: Record<string, unknown> | null; error: { message: string } | null } = { data: null, error: null };
 
-      const [visaoRes, propostasMes, recebimentoMes, faturamentoMes] = await Promise.all([
+      const [visaoRes, propostasMes, recebimentoMes, faturamentoMes, titulos] = await Promise.all([
         clienteDividido
           ? Promise.resolve(semVisao)
           : ctx.supabase.from('vw_maestro_cliente_360').select('*').eq('id_cliente', idCliente).maybeSingle(),
         listarPropostasCliente(ctx.supabase, idCliente, { desde: inicioMes, periodoLabel: 'mês atual', limite: 0 }),
         calcularRecebimentoPeriodo(ctx.supabase, idCliente, { tipo: 'mes_atual', label: 'mês atual' }),
         calcularFaturamentoOficial(ctx.supabase, { desde: inicioMes, periodoLabel: 'mês atual', idCliente }),
+        resumoDeTitulosDoCliente(ctx.supabase, idCliente),
       ]);
+
+      // Resumo de boletos pela REGRA ÚNICA (maestro-regra-titulos.ts). A view
+      // mede atraso pela rotina diária (dias_atraso); aqui vale o vencimento
+      // contra hoje em Brasília — o mesmo número que boletos_cliente devolve.
+      const boletosPelaRegra = titulos.resumo
+        ? {
+            boletos_abertos_qtd: titulos.resumo.em_aberto.quantidade,
+            boletos_abertos_valor: titulos.resumo.em_aberto.soma_valor,
+            boletos_atrasados_qtd: titulos.resumo.em_atraso.quantidade,
+            boletos_atrasados_valor: titulos.resumo.em_atraso.soma_valor,
+          }
+        : null;
 
       if (visaoRes.error) {
         // View ainda não aplicada neste ambiente (42P01) ou indisponível —
@@ -538,6 +551,7 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
             : visaoRes.error
             ? 'Visão consolidada indisponível neste ambiente — para cadastro/boletos use dados_cadastrais_cliente e boletos_cliente.'
             : 'Cliente não encontrado na visão consolidada.',
+          boletos: boletosPelaRegra,
           indicadores_mes_atual: indicadoresMesAtual,
           semantica: SEMANTICA_PROPOSTAS,
         };
@@ -545,7 +559,8 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
 
       return {
         found: true,
-        visao: visaoRes.data,
+        visao: boletosPelaRegra ? { ...(visaoRes.data as Record<string, unknown>), ...boletosPelaRegra } : visaoRes.data,
+        criterio_boletos: 'em aberto = sem pagamento e não cancelado, em qualquer status; em atraso = em aberto com vencimento antes de hoje (Brasília).',
         indicadores_mes_atual: indicadoresMesAtual,
         referencia: 'visao = estado atual/últimos registros (atemporal); indicadores_mes_atual = calculados agora para o mês corrente.',
         semantica: SEMANTICA_PROPOSTAS,
@@ -959,8 +974,12 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
       function: {
         name: 'boletos_cliente',
         description:
-          'Boletos bancários do cliente ativo (títulos, vencimentos, atrasos). Fonte: public.boletos — ' +
-          'NUNCA equivale a pagamentos_v2. filtro: "atrasados" | "abertos" | "todos" (não liquidados).',
+          'Títulos (boletos e depósitos) EM ABERTO do cliente ativo. Fonte: public.boletos — NUNCA equivale a pagamentos_v2. ' +
+          'REGRA ÚNICA: em aberto = título sem pagamento e não cancelado, em QUALQUER status (a vencer, a receber, vencido); ' +
+          'título cancelado, inclusive o substituído pelo Refazer boleto, NÃO entra. Em atraso = em aberto com vencimento antes de hoje (Brasília). ' +
+          'filtro: "abertos" ou "todos" (mesma lista: tudo o que está em aberto) | "atrasados" (só os vencidos). ' +
+          'count = quantos atendem ao filtro; resumo = totais PRONTOS de todos os em aberto e dos em atraso (quantidade e soma) — nunca conte nem some os itens. ' +
+          'Cada item traz em_atraso e dias_atraso já calculados. lista_parcial=true → há mais títulos do que os listados.',
         parameters: {
           type: 'object',
           properties: {
