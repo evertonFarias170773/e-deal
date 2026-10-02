@@ -77,7 +77,7 @@ Cada envio mostra o nome, o documento, a situação (**Aprovado automaticamente*
 - Cadastro de CPF fica **Pendente** quando o nome não confere (**NOME NÃO CONFERE — verifique antes de aprovar**) ou quando a consulta não pôde ser feita (**Não verificado**). Enquanto estiver pendente, o cliente não existe em Cadastros.
 - O nome confere quando é igual ao do CPF, ou quando o primeiro e o último nome são os mesmos e os nomes do meio informados existem no nome completo, na mesma ordem. Apelido e nome social não conferem.
 - O cliente que preenche vê sempre a mesma mensagem de recebido, entre direto ou fique pendente. Ele não é avisado se o nome conferiu.
-- Documento que já tem cadastro, ativo ou inativo, não cria outro. O cliente vê **Você já tem cadastro** e nada novo aparece na fila.
+- Documento que já tem cadastro, ativo ou inativo, não cria outro, e nada novo aparece na fila. No CNPJ, o cliente vê **Você já tem cadastro**. No CPF, ele vê a mesma mensagem de recebido de qualquer envio, sem aviso de que já é cliente.
 - Quem já tem um envio pendente e envia de novo o mesmo documento não gera um segundo envio.
 - Desfazer não apaga: o cliente continua existindo, inativo, o número dele não é reaproveitado, e o endereço e o contato criados permanecem.
 - Recusar não cria nem apaga nada: o envio continua na fila, com o motivo.

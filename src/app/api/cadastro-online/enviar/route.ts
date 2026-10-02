@@ -271,9 +271,19 @@ export async function POST(request: Request) {
   }
 
   if (existente) {
-    // NAO grava, NAO cria, NAO devolve id_cliente nem a razao social inteira.
-    // O nome mascarado serve para a pessoa reconhecer o proprio cadastro sem que
-    // a resposta entregue o dado a quem so tem o documento.
+    // CPF (desde 02/10/2026): a resposta e a MESMA do envio bom, e nada e
+    // gravado. Como o CPF cujo nome confere vira cliente na hora e o que nao
+    // confere fica pendente, dizer "ja cadastrado" aqui faria o SEGUNDO envio
+    // do mesmo CPF contar se o nome conferiu no primeiro — um consultor de nome
+    // por CPF em duas chamadas. Nem o nome mascarado sai.
+    if (tipoPessoa === "FISICA") {
+      await esperarPiso(inicio);
+      return NextResponse.json(RESPOSTA_RECEBIDO);
+    }
+
+    // CNPJ: NAO grava, NAO cria, NAO devolve id_cliente nem a razao social
+    // inteira. O nome mascarado serve para a pessoa reconhecer o proprio
+    // cadastro sem que a resposta entregue o dado a quem so tem o documento.
     await esperarPiso(inicio);
     return NextResponse.json({
       ok: true,
