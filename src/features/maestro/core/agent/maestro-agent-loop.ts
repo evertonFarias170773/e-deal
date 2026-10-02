@@ -55,6 +55,7 @@ import {
   respostaDePedidoSemConsulta,
 } from './maestro-agent-trava-pedido';
 import {
+  aplicarRotulosDeTela,
   coletarStatusDaConsulta,
   correcaoDeStatus,
   corrigirStatusNaResposta,
@@ -408,8 +409,8 @@ export async function runMaestroAgentLoop(input: AgentLoopInput): Promise<AgentL
   };
 
   // Trava do status: o status que a resposta declara tem de ser o que a
-  // consulta devolveu nesta pergunta (ou o rótulo de tela dele). Em 02/10/2026
-  // o pedido 23071, em REVISAO PRODUCAO, saiu como "EM PRODUÇÃO".
+  // consulta devolveu nesta pergunta (ou o rótulo de tela dele). Status que a
+  // lista de Propostas mostra com outro nome (APROVADO → "Liberado") sai pelo rótulo.
   const statusConsultados = novoStatusConsultados();
   const statusPorPedido = new Map<string, StatusDoPedidoConsultado>();
   let correcoesDeStatus = 0;
@@ -573,7 +574,10 @@ export async function runMaestroAgentLoop(input: AgentLoopInput): Promise<AgentL
         // mesmo quando ela recusa ou não encontra: "não achei o 23071" é legítimo.
         coletarNumerosDosArgumentos(JSON.stringify(args), numerosConsultados);
 
-        const exec = await executeAgentTool(tc.function.name, args, toolCtx);
+        const execucao = await executeAgentTool(tc.function.name, args, toolCtx);
+        // O status chega ao modelo como a lista de Propostas mostra: APROVADO
+        // vira "Liberado" e os "/ PENDENTE" viram "Aguardando", em qualquer ferramenta.
+        const exec = execucao.ok ? { ...execucao, result: aplicarRotulosDeTela(execucao.result) } : execucao;
         toolCallsExecutados++;
         const nomeTool = tc.function.name;
         if (exec.ok) {

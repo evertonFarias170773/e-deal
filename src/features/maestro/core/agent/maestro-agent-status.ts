@@ -2,26 +2,33 @@
  * maestro-agent-status.ts
  *
  * Status do pedido na resposta do Maestro: exatamente como veio da consulta, ou
- * pelo rótulo que as telas do Vibe mostram para aquele status. Nunca reescrito.
+ * pelo rótulo que a lista de Propostas mostra para aquele status. Nunca reescrito.
  *
- * O CASO (02/10/2026)
- *   Pedido 23071, `status_interno = 'REVISAO PRODUCAO'`. A consulta devolveu o
- *   valor certo e o modelo escreveu "Situação: EM PRODUÇÃO" — que é OUTRO status
- *   da lista oficial (o seguinte no fluxo). O dado vinha da consulta certa; o
- *   nome foi trocado na redação.
+ * POR QUE EXISTE
+ *   Um status trocado na redação ("EM PRODUCAO" no lugar de "REVISAO PRODUCAO")
+ *   é outro status da lista oficial: a resposta fica errada com cara de certa.
+ *   (O caso de 02/10/2026 que motivou a trava foi alarme falso: o pedido 23071
+ *   tinha mudado de status minutos antes e a resposta estava certa.)
  *
  * DE ONDE VEM A TABELA
  *   - A lista: docs/business/FLUXO-OFICIAL-STATUS-PROPOSTAS.md §3 (21 status,
  *     incluindo NOVO_ARTE_APROVADA e AGUARDANDO_ARTE_APROVADA). O teste
  *     maestro-status.test.mts lê o documento e falha se a lista daqui divergir.
- *   - O rótulo: `humanizeStatus`, o formatador que TODO StatusBadge do Vibe
- *     aplica. Não há segunda tabela de rótulos aqui — mudou na tela, mudou aqui.
+ *   - O rótulo: o da LISTA DE PROPOSTAS — `getStatusLabel` (orcamentos/mappers)
+ *     seguido de `humanizeStatus` (o formatador do StatusBadge), exatamente o
+ *     que a lista faz. Não há segunda tabela de rótulos aqui.
  *   - O sufixo " / EM ARTE": `composeStatusEmArte`, a mesma função das telas.
+ *
+ * STATUS EXIBIDO COMO OUTRO (decisão do dono, 02/10/2026)
+ *   Na lista de Propostas, APROVADO aparece como "Liberado" (é o legado de
+ *   LIBERADO, sem relação com arte) e os três "/ PENDENTE" aparecem como
+ *   "Aguardando". O Maestro mostra igual: para esses, vale SÓ o rótulo — o valor
+ *   cru escrito na resposta é trocado pelo rótulo.
  *
  * Funções puras — sem banco, sem modelo. Quem aplica é o loop.
  */
 import { humanizeStatus } from '@/lib/formatters/status';
-import { composeStatusEmArte } from '@/features/orcamentos/mappers';
+import { composeStatusEmArte, getStatusLabel } from '@/features/orcamentos/mappers';
 
 /** FLUXO-OFICIAL-STATUS-PROPOSTAS.md §3, na ordem do documento. */
 export const STATUS_OFICIAIS = [
@@ -57,33 +64,112 @@ export const STATUS_LEGADOS = ['APROVADO', 'RECEBIDO'] as const;
 
 export interface LinhaDaTabelaDeStatus {
   status: string;
-  /** Como as telas do Vibe mostram esse status. */
+  /** Como a lista de Propostas mostra esse status. */
   rotulo: string;
   oficial: boolean;
+  /**
+   * O rótulo é o nome de OUTRO status da lista (APROVADO → "Liberado",
+   * "EM IMPRESSAO / PENDENTE" → "Aguardando"). Para estes o Maestro mostra só o
+   * rótulo, nunca o valor cru.
+   */
+  exibidoComoOutro: boolean;
 }
 
-/** Rótulo de exibição: o mesmo formatador do StatusBadge. Desconhecido → o próprio valor. */
+/** Rótulo de exibição: o que a lista de Propostas mostra. Desconhecido → o próprio valor. */
 export function rotuloDoStatus(status: string): string {
-  return humanizeStatus(status);
+  return humanizeStatus(getStatusLabel(status));
 }
 
-export const TABELA_DE_STATUS: readonly LinhaDaTabelaDeStatus[] = [
-  ...STATUS_OFICIAIS.map(status => ({ status, rotulo: rotuloDoStatus(status), oficial: true })),
-  ...STATUS_LEGADOS.map(status => ({ status, rotulo: rotuloDoStatus(status), oficial: false })),
-];
+export const TABELA_DE_STATUS: readonly LinhaDaTabelaDeStatus[] = (() => {
+  const linhas = [
+    ...STATUS_OFICIAIS.map(status => ({ status: status as string, rotulo: rotuloDoStatus(status), oficial: true })),
+    ...STATUS_LEGADOS.map(status => ({ status: status as string, rotulo: rotuloDoStatus(status), oficial: false })),
+  ];
+  const crus = new Set(linhas.map(l => normalizarStatus(l.status)));
+  return linhas.map(l => {
+    const rotulo = normalizarStatus(l.rotulo);
+    return { ...l, exibidoComoOutro: rotulo !== normalizarStatus(l.status) && crus.has(rotulo) };
+  });
+})();
+
+/** O que o rótulo sozinho não diz — vai junto do status para a resposta não enganar. */
+const OBSERVACAO_DO_STATUS: Record<string, string> = {
+  'AGUARDANDO / PENDENTE':
+    'Além da condição financeira em aberto, há pendência operacional registrada neste pedido. Diga isso ao informar o status.',
+  'EM IMPRESSAO / PENDENTE':
+    'O status aparece como "Aguardando", mas NÃO é falta de pagamento: o pedido está na produção, com a IMPRESSÃO em pausa por pendência. Diga isso ao informar o status.',
+  'EM ACABAMENTO / PENDENTE':
+    'O status aparece como "Aguardando", mas NÃO é falta de pagamento: o pedido está na produção, com o ACABAMENTO em pausa por pendência. Diga isso ao informar o status.',
+};
 
 /**
- * O status como a tela mostra: `status_interno` com o sufixo " / EM ARTE" quando
- * `em_arte` está ligado, e o rótulo de exibição desse valor.
+ * O status como a lista de Propostas mostra: `status_interno` com o sufixo
+ * " / EM ARTE" quando `em_arte` está ligado, e o rótulo de exibição desse valor.
+ * Status exibido como outro (APROVADO, "/ PENDENTE") sai JÁ com o rótulo em
+ * `status`: o valor cru não chega ao modelo.
  */
 export function statusDoPedidoParaExibir(
   statusInterno: string | null | undefined,
   emArte: boolean,
-): { status: string | null; rotulo: string | null } {
+): { status: string | null; rotulo: string | null; observacao: string | null } {
   const cru = String(statusInterno ?? '').trim();
-  if (!cru) return { status: null, rotulo: null };
-  const status = composeStatusEmArte(cru, emArte);
-  return { status, rotulo: rotuloDoStatus(status) };
+  if (!cru) return { status: null, rotulo: null, observacao: null };
+  const composto = composeStatusEmArte(cru, emArte);
+  const rotulo = rotuloDoStatus(composto);
+  const chave = normalizarStatus(composto);
+  const linha = TABELA_DE_STATUS.find(l => normalizarStatus(l.status) === chave);
+  return {
+    status: linha?.exibidoComoOutro ? rotulo : composto,
+    rotulo,
+    observacao: OBSERVACAO_DO_STATUS[chave] ?? null,
+  };
+}
+
+/** Mapa de contagem ou soma por status ("contagem_por_status_interno", "soma_por_status"). */
+const MAPA_POR_STATUS = /^(?:contagem|soma)(?:_valor)?_por_status(?:_interno)?$/;
+
+/**
+ * Aplica o rótulo de tela ao resultado de QUALQUER ferramenta, antes de ele
+ * chegar ao modelo: `status_interno` com valor exibido como outro (APROVADO,
+ * "/ PENDENTE") vira o rótulo, e os mapas por status somam a linha na do
+ * rótulo ({APROVADO: 10, LIBERADO: 3} → {LIBERADO: 13}), como a lista de
+ * Propostas mostra. Sem isto o valor cru chegava ao modelo e cada resposta de
+ * lista gastava uma rodada de correção — APROVADO é o status mais comum do banco.
+ * Devolve uma cópia; não altera o original.
+ */
+export function aplicarRotulosDeTela(resultado: unknown, profundidade = 0): unknown {
+  if (resultado == null || typeof resultado !== 'object' || profundidade > 12) return resultado;
+  if (Array.isArray(resultado)) return resultado.map(item => aplicarRotulosDeTela(item, profundidade + 1));
+  const saida: Record<string, unknown> = {};
+  for (const [chave, valor] of Object.entries(resultado as Record<string, unknown>)) {
+    if ((chave === 'status_interno' || chave === 'statusInterno') && typeof valor === 'string') {
+      const linha = TABELA_DE_STATUS.find(l => l.exibidoComoOutro && normalizarStatus(l.status) === normalizarStatus(valor));
+      saida[chave] = linha ? linha.rotulo : valor;
+    } else if (MAPA_POR_STATUS.test(chave) && valor && typeof valor === 'object' && !Array.isArray(valor)) {
+      saida[chave] = juntarPorRotulo(valor as Record<string, unknown>);
+    } else {
+      saida[chave] = aplicarRotulosDeTela(valor, profundidade + 1);
+    }
+  }
+  return saida;
+}
+
+function juntarPorRotulo(mapa: Record<string, unknown>): Record<string, unknown> {
+  const saida: Record<string, unknown> = {};
+  const comOutroRotulo: Array<[LinhaDaTabelaDeStatus, unknown]> = [];
+  for (const [status, valor] of Object.entries(mapa)) {
+    const linha = TABELA_DE_STATUS.find(l => l.exibidoComoOutro && normalizarStatus(l.status) === normalizarStatus(status));
+    if (linha) comOutroRotulo.push([linha, valor]);
+    else saida[status] = valor;
+  }
+  for (const [linha, valor] of comOutroRotulo) {
+    const alvo = Object.keys(saida).find(k => normalizarStatus(k) === normalizarStatus(linha.rotulo)) ?? linha.rotulo;
+    const atual = saida[alvo];
+    if (atual === undefined) saida[alvo] = valor;
+    else if (typeof atual === 'number' && typeof valor === 'number') saida[alvo] = Math.round((atual + valor) * 100) / 100;
+    else saida[linha.status] = valor; // não dá para somar: mantém a linha como veio
+  }
+  return saida;
 }
 
 /** Linha para o prompt: a lista oficial com o rótulo de tela quando ele difere. */
@@ -145,6 +231,11 @@ const VOCABULARIO: readonly TermoDoVocabulario[] = (() => {
 
 const TERMOS_DO_VOCABULARIO: ReadonlySet<string> = new Set(VOCABULARIO.map(v => v.termo));
 
+/** Linha da tabela pelo valor cru normalizado. */
+const LINHA_POR_STATUS: ReadonlyMap<string, LinhaDaTabelaDeStatus> = new Map(
+  TABELA_DE_STATUS.map(l => [normalizarStatus(l.status), l]),
+);
+
 /** Termo de status que começa exatamente em `pos` do texto aplanado. */
 function termoEm(plano: string, pos: number): { termo: string; fim: number; ambiguo: boolean } | null {
   const resto = plano.slice(pos, pos + 60);
@@ -168,35 +259,56 @@ export function novoStatusConsultados(): StatusConsultados {
   return { aceitos: new Set(), daTabela: new Set() };
 }
 
+/** Bloco do resultado que fala de outra coisa (o "status" ali é do setor, do título, da nota…). */
+const BLOCO_DE_OUTRA_COISA = /^(?:setores|ordens_de_servico|titulos|nota_fiscal|notas|expedicoes|tarefas|artes|pagamentos|boletos|parcelas)$/;
+/** Campo que não é o status do pedido, mesmo fora desses blocos. */
+const CAMPO_DE_OUTRA_COISA = /^status_(?:d[aoe]_)?(?:arte|pagamento|producao|expedicao)$/;
+
 /**
  * Guarda os valores de texto (e as chaves, para contagens por status) do
- * resultado de uma ferramenta. Status da tabela entra com o valor cru E o rótulo.
+ * resultado de uma ferramenta.
+ *   - Status do pedido da tabela entra com o valor cru E o rótulo.
+ *   - Status exibido como outro (APROVADO, "/ PENDENTE") entra SÓ com o rótulo.
+ *   - Texto de outro bloco (setor, título, nota, arte) entra como texto comum:
+ *     não vira status do pedido.
  */
-export function coletarStatusDaConsulta(resultado: unknown, destino: StatusConsultados, profundidade = 0): void {
+export function coletarStatusDaConsulta(resultado: unknown, destino: StatusConsultados, deOutraCoisa = false, profundidade = 0): void {
   if (resultado == null || profundidade > 12) return;
-  const anotar = (texto: string) => {
+  const anotar = (texto: string, outra: boolean) => {
     if (texto.length < 2 || texto.length > 80) return;
     const n = normalizarStatus(texto);
     if (!n) return;
+    if (outra || !TERMOS_DO_VOCABULARIO.has(n)) {
+      destino.aceitos.add(n);
+      return;
+    }
+    destino.daTabela.add(n);
+    const linha = LINHA_POR_STATUS.get(n);
+    if (linha?.exibidoComoOutro) {
+      destino.aceitos.add(normalizarStatus(linha.rotulo)); // só o rótulo; o cru não vale
+      return;
+    }
     destino.aceitos.add(n);
-    if (TERMOS_DO_VOCABULARIO.has(n)) {
-      destino.daTabela.add(n);
-      destino.aceitos.add(normalizarStatus(rotuloDoStatus(texto.trim())));
-      // O rótulo devolvido também libera o valor cru correspondente.
-      for (const l of TABELA_DE_STATUS) {
-        if (normalizarStatus(l.rotulo) === n) destino.aceitos.add(normalizarStatus(l.status));
-      }
+    if (linha) destino.aceitos.add(normalizarStatus(linha.rotulo));
+    // O rótulo devolvido também libera o valor cru correspondente (EXPEDICAO ↔ Na Expedição).
+    for (const l of TABELA_DE_STATUS) {
+      if (!l.exibidoComoOutro && normalizarStatus(l.rotulo) === n) destino.aceitos.add(normalizarStatus(l.status));
     }
   };
-  if (typeof resultado === 'string') return anotar(resultado);
+  if (typeof resultado === 'string') return anotar(resultado, deOutraCoisa);
   if (Array.isArray(resultado)) {
-    for (const item of resultado) coletarStatusDaConsulta(item, destino, profundidade + 1);
+    for (const item of resultado) coletarStatusDaConsulta(item, destino, deOutraCoisa, profundidade + 1);
     return;
   }
   if (typeof resultado === 'object') {
     for (const [chave, valor] of Object.entries(resultado as Record<string, unknown>)) {
-      anotar(chave);
-      coletarStatusDaConsulta(valor, destino, profundidade + 1);
+      anotar(chave, deOutraCoisa);
+      const outra =
+        deOutraCoisa ||
+        BLOCO_DE_OUTRA_COISA.test(chave) ||
+        CAMPO_DE_OUTRA_COISA.test(chave) ||
+        (chave === 'cobrancas' && Array.isArray(valor)); // a lista de cobranças, não a parte "cobrancas"
+      coletarStatusDaConsulta(valor, destino, outra, profundidade + 1);
     }
   }
 }
@@ -216,6 +328,8 @@ export interface StatusDeclarado {
   forma: 'rotulo' | 'frase' | 'esta';
   /** Não é um status da tabela: é uma reescrita ("Revisão da produção"). */
   parafrase: boolean;
+  /** Valor cru que a tela mostra com outro rótulo, e a consulta trouxe esse rótulo: troca direta. */
+  trocarPor?: string;
 }
 
 /** "Status:" ou "Situação:" do PEDIDO (não "Situação financeira:", "Status da cobrança:"). */
@@ -238,7 +352,7 @@ const CARA_DE_STATUS =
 
 /** Antes do status, a frase fala de cobrança, boleto, nota, setor…: o status é dessa outra coisa. */
 const FRASE_DE_OUTRA_COISA =
-  /COBRANCA|PAGAMENTO|BOLETO|TITULO|PARCELA|\bPIX\b|NOTA|\bNF|\bARTE|SETOR|\bOS\b|ORDEM|RASTREIO|TAREFA|\bPVC\b|LASER|FLEXO|TEXTIL/;
+  /COBRANCA|PAGAMENTO|BOLETO|TITULO|PARCELA|\bPIX\b|NOTA|\bNF|\bARTE|SETOR|\bOS\b|ORDEM|RASTREIO|TAREFA|CREDITO|CADASTRO|\bPVC\b|LASER|FLEXO|TEXTIL/;
 
 const FIM_DO_VALOR = /\n|\(|\)|[.;,|]|[ \t][—–-][ \t]|\*\*|__/;
 
@@ -343,7 +457,19 @@ function bateComAConsulta(d: StatusDeclarado, consultados: StatusConsultados): b
  */
 export function statusForaDaConsulta(texto: string, consultados: StatusConsultados): StatusDeclarado[] {
   if (consultados.daTabela.size === 0) return [];
-  return extrairStatusDeclarados(texto).filter(d => !bateComAConsulta(d, consultados));
+  const fora: StatusDeclarado[] = [];
+  for (const d of extrairStatusDeclarados(texto)) {
+    const linha = LINHA_POR_STATUS.get(d.termo);
+    if (linha?.exibidoComoOutro) {
+      // "APROVADO" escrito cru: a tela mostra "Liberado". Se foi esse o rótulo
+      // consultado, a troca é direta; senão é só um status que não bate.
+      const consultouORotulo = consultados.aceitos.has(normalizarStatus(linha.rotulo));
+      fora.push(consultouORotulo ? { ...d, trocarPor: linha.rotulo } : d);
+      continue;
+    }
+    if (!bateComAConsulta(d, consultados)) fora.push(d);
+  }
+  return fora;
 }
 
 // ─── Correção ────────────────────────────────────────────────────────────────
@@ -360,7 +486,10 @@ function descreverConsultados(pedidos: readonly StatusDoPedidoConsultado[], cons
       .map(p => `pedido ${p.numero} = ${p.status}${normalizarStatus(p.rotulo) !== normalizarStatus(p.status) ? ` (na tela: ${p.rotulo})` : ''}`)
       .join('; ');
   }
-  return [...consultados.daTabela].join(', ');
+  return [...new Set([...consultados.daTabela].map(s => {
+    const linha = LINHA_POR_STATUS.get(s);
+    return linha?.exibidoComoOutro ? linha.rotulo : s;
+  }))].join(', ');
 }
 
 export function correcaoDeStatus(
@@ -368,9 +497,18 @@ export function correcaoDeStatus(
   pedidos: readonly StatusDoPedidoConsultado[],
   consultados: StatusConsultados,
 ): string {
-  const escritos = [...new Set(errados.map(e => `"${e.escrito.trim()}"`))].join(', ');
+  const outros = errados.filter(e => !e.trocarPor);
+  const comRotulo = errados.filter(e => e.trocarPor);
+  const partes: string[] = ['CORREÇÃO OBRIGATÓRIA:'];
+  if (outros.length > 0) {
+    const escritos = [...new Set(outros.map(e => `"${e.escrito.trim()}"`))].join(', ');
+    partes.push(`a sua resposta informa o status ${escritos}, que NÃO é o que a consulta devolveu.`);
+  }
+  for (const frase of new Set(comRotulo.map(e => `o status "${e.escrito.trim()}" aparece nas telas do Vibe como "${e.trocarPor}": escreva "${e.trocarPor}".`))) {
+    partes.push(frase);
+  }
   return (
-    `CORREÇÃO OBRIGATÓRIA: a sua resposta informa o status ${escritos}, que NÃO é o que a consulta devolveu. ` +
+    `${partes.join(' ')} ` +
     `Status consultado nesta pergunta: ${descreverConsultados(pedidos, consultados)}. ` +
     'Reescreva a resposta informando o status EXATAMENTE como está no campo "status" da consulta (ou pelo "status_na_tela"). ' +
     'Não traduza, não resuma e não troque por outro nome: "EM PRODUCAO" é um status diferente de "REVISAO PRODUCAO". ' +
@@ -399,6 +537,13 @@ export function corrigirStatusNaResposta(
 ): CorrecaoAplicada {
   let saida = texto;
   let trocas = 0;
+  // Valor cru que a tela mostra com outro rótulo: a troca não depende de qual
+  // pedido a frase fala, então vale mesmo com vários pedidos.
+  for (const e of statusForaDaConsulta(saida, consultados).filter(x => x.trocarPor).sort((a, b) => b.inicio - a.inicio)) {
+    const novo = e.forma === 'esta' ? `com o status ${e.trocarPor}` : String(e.trocarPor);
+    saida = saida.slice(0, e.inicio) + novo + saida.slice(e.fim);
+    trocas++;
+  }
   if (pedidos.length === 1) {
     const certo = pedidos[0].rotulo || pedidos[0].status;
     const errados = statusForaDaConsulta(saida, consultados).sort((a, b) => b.inicio - a.inicio); // de trás para frente

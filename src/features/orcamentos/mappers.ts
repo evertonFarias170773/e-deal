@@ -279,7 +279,13 @@ function normalizeStatus(status: string) {
   return base;
 }
 
-function getStatusLabel(status: string) {
+/**
+ * Rótulo do status na lista de Propostas. Exportado porque o Maestro mostra o
+ * status com este mesmo rótulo (maestro-agent-status.ts) — decisão de
+ * 02/10/2026: APROVADO aparece como "Liberado" e os "/ PENDENTE" como
+ * "Aguardando", iguais à lista. Mudou aqui, muda lá.
+ */
+export function getStatusLabel(status: string) {
   const normalized = normalizeStatus(status);
   
   if (normalized === "NOVO / ARTE APROVADA") return "Novo / Arte aprovada";

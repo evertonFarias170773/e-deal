@@ -263,9 +263,28 @@ devolveu, ou pelo rótulo que as telas do Vibe mostram para aquele status.
 - a lista é a de `docs/business/FLUXO-OFICIAL-STATUS-PROPOSTAS.md` §3 (21
   status, com `NOVO_ARTE_APROVADA` e `AGUARDANDO_ARTE_APROVADA`), mais os
   legados `APROVADO` e `RECEBIDO`, que existem no banco;
-- o rótulo é o de `humanizeStatus`, o formatador de todo `StatusBadge` — não
-  há segunda tabela de rótulos;
+- o rótulo é o da **lista de Propostas**: `getStatusLabel`
+  (`orcamentos/mappers.ts`) seguido de `humanizeStatus`, exatamente o que a
+  lista faz — não há segunda tabela de rótulos;
 - o sufixo ` / EM ARTE` vem de `composeStatusEmArte`, como nas telas.
+
+**Status exibido como outro (decisão do dono, 02/10/2026).** Na lista de
+Propostas, `APROVADO` aparece como "Liberado" (é o legado de `LIBERADO`, sem
+relação com arte) e `AGUARDANDO / PENDENTE`, `EM IMPRESSAO / PENDENTE` e
+`EM ACABAMENTO / PENDENTE` aparecem como "Aguardando". O Maestro mostra igual,
+e para esses quatro vale SÓ o rótulo:
+
+- `aplicarRotulosDeTela` troca o valor na saída de qualquer ferramenta antes
+  de ela chegar ao modelo (`status_interno` e os mapas de contagem e soma por
+  status, que somam a linha na do rótulo);
+- `consultar_pedido` já devolve o rótulo em `status`, e nos três "/ PENDENTE"
+  devolve também `observacao_sobre_o_status` (impressão ou acabamento em
+  pausa não é falta de pagamento);
+- se a resposta ainda trouxer o valor cru, a trava troca pelo rótulo — no
+  lugar, mesmo com vários pedidos.
+
+Em 02/10/2026 eram 3.560 pedidos em `APROVADO`, 102 em `LIBERADO` e nenhum
+em status "/ PENDENTE".
 
 `scripts/testes/maestro-status.test.mts` lê o documento oficial e falha se a
 lista divergir; também trava a tabela de rótulos por extenso.
@@ -290,12 +309,10 @@ lista divergir; também trava a tabela de rótulos por extenso.
 - Auditoria: `correcoes_de_status` e `trava_do_status` (`status_trocado`,
   `aviso_de_status`, `status_trocado_e_aviso`).
 
-**Divergência conhecida entre telas (não alterada).** A lista de Propostas
-passa o status por uma normalização própria antes do `StatusBadge`
-(`getStatusLabel` em `orcamentos/mappers.ts`): `APROVADO` aparece lá como
-"Liberado", e `AGUARDANDO / PENDENTE`, `EM IMPRESSAO / PENDENTE` e
-`EM ACABAMENTO / PENDENTE` como "Aguardando". O Maestro usa o formatador
-comum, que não faz essa troca.
+**Divergência entre telas (não alterada).** Só a lista de Propostas aplica
+`getStatusLabel`. As telas que passam o status direto ao `StatusBadge` (lista
+de Pedidos, formulário da proposta) mostram `APROVADO` como "Aprovado" e os
+"/ PENDENTE" por extenso. O Maestro segue a lista de Propostas.
 
 ---
 

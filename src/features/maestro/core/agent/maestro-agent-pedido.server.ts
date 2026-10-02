@@ -142,7 +142,11 @@ function erroDaSecao(mensagem: string): Linha {
 
 // ─── Partes ──────────────────────────────────────────────────────────────────
 
-/** O status como a tela mostra (com " / EM ARTE" quando a arte está em andamento). */
+/**
+ * O status como a lista de Propostas mostra (com " / EM ARTE" quando a arte
+ * está em andamento). APROVADO sai "Liberado" e os "/ PENDENTE" saem
+ * "Aguardando", iguais à lista — decisão do dono em 02/10/2026.
+ */
 function statusDoPedido(p: Linha) {
   return statusDoPedidoParaExibir(txt(p.status_interno), p.em_arte === true);
 }
@@ -162,6 +166,7 @@ function secaoSituacao(p: Linha): Linha {
     criado_em: dataHoraBR(p.created_at),
     status: exibicao.status,
     status_na_tela: exibicao.rotulo,
+    ...(exibicao.observacao ? { observacao_sobre_o_status: exibicao.observacao } : {}),
     como_informar_o_status:
       'Escreva o status EXATAMENTE como está em "status" (ou em "status_na_tela"). Não traduza, não resuma e não troque por outro nome: ' +
       'cada nome é um status diferente do fluxo. Estar ou não na fila de produção é outro dado, que vem separado nesta consulta, e não muda o status: ' +
