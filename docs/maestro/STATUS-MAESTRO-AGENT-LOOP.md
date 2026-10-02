@@ -328,7 +328,7 @@ só na soma.
 |---|---|---|
 | Banco | `public.fn_venda_de_teste` + `view_pagamentos_pagos_v2` (`20261002_faturamento_exclui_vendas_de_teste.sql`) | aplicada |
 | Maestro | `core/simple/maestro-venda-de-teste.ts`, usado por `calcularFaturamentoOficial` | no ar |
-| Ranking e "Meu desempenho" do Dashboard | `rpc_ranking_vendedores` e `rpc_dashboard_vendedor` leem `pagamentos_v2` direto | **pendente** — migration pronta em `scratch/pendente-ranking-exclui-vendas-de-teste.sql`, aguarda autorização |
+| Ranking e "Meu desempenho" do Dashboard | `rpc_ranking_vendedores` e `rpc_dashboard_vendedor` leem `pagamentos_v2` direto; ganharam a mesma condição (`20261002_ranking_exclui_vendas_de_teste.sql`) | aplicada |
 
 As listas do banco e do aplicativo têm de ser iguais. O total do Maestro vem
 da visão e o detalhe por vendedor e por empresa é somado no aplicativo:
@@ -343,6 +343,10 @@ divergiu, `conferencia.confere` vira falso e
 | Julho | 636.067,72 | 633.484,52 | 2.583,20 (7) |
 | Agosto | 779.679,50 | 779.463,95 | 215,55 (8) |
 | Setembro | 1.121.100,46 | 1.120.934,93 | 165,53 (3) |
+
+Com as três camadas aplicadas, o total do ranking é igual ao card Faturamento
+(conferido em junho, julho, agosto e setembro) e "Everton Dev" não aparece
+mais no ranking.
 
 **AUTOMATECH não é teste.** Os pedidos 19795 e 21833 estavam com vendedor
 "userteste1" e são vendas da Edina Farias. Foram corrigidos antes da migration
