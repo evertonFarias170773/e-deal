@@ -31,7 +31,10 @@ import {
   avaliarTravaDoManual,
   contarPassosImperativos,
   extrairRotulosDeTela,
+  instrucaoDeCorrecao,
+  paginasDoIndiceCitadas,
   removerOfertaFinal,
+  soNegaOManual,
 } from "../../src/features/maestro/core/agent/maestro-agent-trava-manual.ts";
 import {
   indiceDoManual,
@@ -63,6 +66,8 @@ import {
   calcularFaturamentoOficial,
   calcularRecebimentoPeriodo,
   compararRecebimentoClienteMeses,
+  diaCivilDoLimite,
+  diasCivisDoIntervalo,
 } from "../../src/features/maestro/core/simple/maestro-simple-pagamentos.server.ts";
 import { buscarContaCorrenteCliente } from "../../src/features/maestro/core/simple/maestro-simple-conta-corrente.server.ts";
 import { executeAgentTool } from "../../src/features/maestro/core/agent/maestro-agent-tools.ts";
@@ -210,6 +215,13 @@ function bancoFalso(tabelas: Record<string, Linha[]>) {
       lidas.push(tabela);
       let linhas = [...(tabelas[tabela] ?? [])];
       let ordenado = false;
+      let faixa: [number, number] | null = null;
+      // Carimbo de tempo com fuso ("...-03:00" x "...Z") compara pelo instante; o resto, como texto.
+      const cmp = (x: unknown, y: unknown) => {
+        const a = String(x ?? ""), c = String(y ?? "");
+        if (a.includes("T") && c.includes("T")) return Date.parse(a) - Date.parse(c);
+        return a < c ? -1 : a > c ? 1 : 0;
+      };
       const b: Record<string, unknown> = {
         select: () => b,
         // Só a PRIMEIRA ordenação vale (é a principal no PostgREST); as demais são desempate.
@@ -217,7 +229,7 @@ function bancoFalso(tabelas: Record<string, Linha[]>) {
           if (ordenado) return b;
           ordenado = true;
           const sinal = opcoes?.ascending === false ? -1 : 1;
-          linhas = [...linhas].sort((x, y) => (String(x[coluna] ?? "") < String(y[coluna] ?? "") ? -sinal : String(x[coluna] ?? "") > String(y[coluna] ?? "") ? sinal : 0));
+          linhas = [...linhas].sort((x, y) => sinal * cmp(x[coluna], y[coluna]));
           return b;
         },
         limit: () => b,
@@ -243,7 +255,10 @@ function bancoFalso(tabelas: Record<string, Linha[]>) {
           }));
           return b;
         },
-        range: () => b,
+        range: (de: number, ate: number) => {
+          faixa = [de, ate];
+          return b;
+        },
         is: (coluna: string, valor: unknown) => {
           linhas = linhas.filter(l => (l[coluna] ?? null) === valor);
           return b;
@@ -257,15 +272,20 @@ function bancoFalso(tabelas: Record<string, Linha[]>) {
           return b;
         },
         gte: (coluna: string, valor: string) => {
-          linhas = linhas.filter(l => String(l[coluna] ?? "") >= valor);
+          linhas = linhas.filter(l => cmp(l[coluna], valor) >= 0);
+          return b;
+        },
+        lte: (coluna: string, valor: string) => {
+          linhas = linhas.filter(l => cmp(l[coluna], valor) <= 0);
           return b;
         },
         lt: (coluna: string, valor: string) => {
-          linhas = linhas.filter(l => String(l[coluna] ?? "") < valor);
+          linhas = linhas.filter(l => cmp(l[coluna], valor) < 0);
           return b;
         },
         maybeSingle: async () => ({ data: linhas[0] ?? null, error: null }),
-        then: (resolver: (r: { data: Linha[]; error: null }) => unknown) => resolver({ data: linhas, error: null }),
+        then: (resolver: (r: { data: Linha[]; error: null }) => unknown) =>
+          resolver({ data: faixa ? linhas.slice(faixa[0], faixa[1] + 1) : linhas, error: null }),
       };
       return b;
     },
@@ -441,7 +461,7 @@ checar("usuário não identificado não passa", podeNaTela({ ...andre, encontrad
     [pedido.includes("cadastro de CPF"), pedido.includes("Carteira (contas a receber)"), pedido.includes("Cancelar recebível")], [true, true, true]);
 
   const fixo = respostaDeAssuntoSemPagina(["carteira"]);
-  checar("texto fixo cita a página lida e não ensina clique", [fixo.includes("Carteira (contas a receber)"), avaliarTravaDoManual({ texto: fixo, manualLido: false, fontes: [] }).tipo], [true, "ok"]);
+  checar("texto fixo cita a página lida e não ensina clique", [fixo.includes("Carteira (contas a receber)"), contarPassosImperativos(fixo) + extrairRotulosDeTela(fixo).length], [true, 0]);
 
   // Modelo simulado: falha e demora nunca derrubam a resposta.
   const entrada = { pergunta: "x", historico: [], paginasLidas: ["carteira"], resposta: "y" };
@@ -672,6 +692,153 @@ checar("usuário não identificado não passa", podeNaTela({ ...andre, encontrad
   checar("pedido: situação e dias de atraso de cada título",
     lista.map(t => [t.parcela, t.situacao_na_carteira, t.dias_de_atraso, t.substituido_pelo_refazer_boleto]),
     [[1, "Vencido", 3, false], [2, "A receber criado — boleto não registrado", null, false], [3, "Cancelado", null, true]]);
+}
+
+// ─── 10. Faturamento: leitura até o fim, dia de Brasília e total da visão do Dashboard ──
+// Defeito de 02/10/2026: setembro tinha 1.335 cobranças, o banco entrega 1.000
+// por leitura, e o Maestro respondeu R$ 780.657,05 no lugar de R$ 1.121.100,46.
+
+{
+  checar("meia-noite UTC do dia 1 vale como o dia 1 do calendário", diaCivilDoLimite("2026-09-01T00:00:00.000Z"), "2026-09-01");
+  checar("23:56 de 30/09 em Brasília é 30/09, mesmo já sendo 01/10 em UTC", diaCivilDoLimite("2026-10-01T02:56:00.000Z"), "2026-09-30");
+  checar("meia-noite de Brasília de 01/10 é 01/10", diaCivilDoLimite("2026-10-01T03:00:00.000Z"), "2026-10-01");
+  checar("mês passado: do dia 1 ao dia 30", diasCivisDoIntervalo("2026-09-01T00:00:00.000Z", "2026-10-01T00:00:00.000Z"), { diaInicio: "2026-09-01", diaFim: "2026-09-30" });
+  checar("um dia de Brasília: começa e termina nele", diasCivisDoIntervalo("2026-10-02T03:00:00.000Z", "2026-10-03T03:00:00.000Z"), { diaInicio: "2026-10-02", diaFim: "2026-10-02" });
+  checar("sem fim: vai até hoje em Brasília", diasCivisDoIntervalo("2026-10-01T00:00:00.000Z", undefined, new Date("2026-10-03T01:00:00Z")), { diaInicio: "2026-10-01", diaFim: "2026-10-02" });
+
+  // 2.300 cobranças em setembro (uma a cada 18 minutos), mais os casos de borda.
+  const pagamentos: Linha[] = [];
+  const inicioSet = Date.parse("2026-09-01T03:00:00Z"); // 00:00 de 01/09 em Brasília
+  for (let i = 0; i < 2300; i++) {
+    pagamentos.push({
+      id: `p${String(i).padStart(5, "0")}`,
+      // A cada 500, duas cobranças da MESMA proposta.
+      id_int: 50000 + (i % 500 === 1 ? i - 1 : i),
+      id_cliente: 1,
+      valor: 100 + (i % 7),
+      confirmado: true,
+      status: i % 10 === 0 ? "A_VENCER" : "PAID",
+      data_confirmacao: new Date(inicioSet + i * 18 * 60_000).toISOString(),
+      id_empresa: 1 + (i % 3),
+      empresa: `Empresa ${1 + (i % 3)}`,
+      // 17 cortesias, todas entre as 1.000 mais recentes (era o que mascarava o aviso).
+      tipo_cobranca: i >= 1300 && i % 60 === 0 ? "E-AMOSTRA" : "PIX",
+    });
+  }
+  const borda = (id: string, quando: string, extra: Linha = {}) =>
+    ({ id, id_int: 90000 + pagamentos.length, id_cliente: 1, valor: 120, confirmado: true, status: "PAID", data_confirmacao: quando, id_empresa: 1, empresa: "Empresa 1", tipo_cobranca: "PIX", ...extra });
+  pagamentos.push(borda("b1", "2026-10-01T02:56:00.000Z"));                       // 30/09 23:56 em Brasília: DENTRO
+  pagamentos.push(borda("b2", "2026-09-01T01:00:00.000Z"));                       // 31/08 22:00 em Brasília: fora
+  pagamentos.push(borda("b3", "2026-10-01T03:00:00.000Z"));                       // 01/10 00:00 em Brasília: fora
+  pagamentos.push(borda("b4", "2026-09-15T15:00:00.000Z", { status: "A_RECEBER" })); // não confirmada pelo status: fora
+  pagamentos.push(borda("b5", "2026-09-15T15:01:00.000Z", { confirmado: false }));   // não confirmada: fora
+  pagamentos.push(borda("b6", "2026-09-15T15:02:00.000Z", { id_int: null }));        // sem proposta: o valor conta
+  pagamentos.push(borda("b7", "2026-09-15T15:03:00.000Z", { tipo_cobranca: null })); // sem tipo: conta
+
+  // O que o banco responderia: a regra da visão do Dashboard, escrita à parte.
+  const diaSP = (iso: string) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date(iso));
+  const naRegra = pagamentos.filter(p =>
+    p.confirmado === true && ["PAID", "A_VENCER"].includes(String(p.status)) && p.data_confirmacao != null &&
+    !["E-AMOSTRA", "E-RETRABALHO"].includes(String(p.tipo_cobranca ?? "").trim().toUpperCase()));
+  const visao = new Map<string, Linha>();
+  for (const p of naRegra) {
+    const chave = `${diaSP(String(p.data_confirmacao))}|${p.id_empresa}|${p.status}`;
+    const v = visao.get(chave) ?? { data: diaSP(String(p.data_confirmacao)), id_empresa: p.id_empresa, status: p.status, total: 0, quantidade: 0 };
+    v.total = Number(v.total) + Number(p.valor);
+    v.quantidade = Number(v.quantidade) + 1;
+    visao.set(chave, v);
+  }
+  const deSetembro = naRegra.filter(p => diaSP(String(p.data_confirmacao)).startsWith("2026-09"));
+  const esperado = {
+    valor: Math.round(deSetembro.reduce((t, p) => t + Number(p.valor), 0) * 100) / 100,
+    cobrancas: deSetembro.length,
+    propostas: new Set(deSetembro.filter(p => p.id_int != null).map(p => p.id_int)).size,
+  };
+  checar("o cenário tem mais de 2.000 cobranças e proposta com duas cobranças", [esperado.cobrancas > 2000, esperado.propostas < esperado.cobrancas], [true, true]);
+
+  const TF: Record<string, Linha[]> = {
+    pagamentos_v2: pagamentos,
+    view_pagamentos_pagos_v2: [...visao.values()],
+    propostas: pagamentos.filter(p => p.id_int != null).map(p => ({ id_int: p.id_int, vendedor: Number(p.id_int) % 2 === 0 ? "Ana" : "Bia" })),
+  };
+  const SETEMBRO = { desde: "2026-09-01T00:00:00.000Z", ate: "2026-10-01T00:00:00.000Z", periodoLabel: "setembro" };
+
+  const total = await calcularFaturamentoOficial(bancoFalso(TF).cliente, { ...SETEMBRO, agruparPorEmpresa: true, agruparPorVendedor: true });
+  checar("faturamento do mês inteiro, sem cortar em 1.000 linhas", [total.faturamento, total.total_cobrancas, total.total_propostas], [esperado.valor, esperado.cobrancas, esperado.propostas]);
+  checar("o período sai em dias de Brasília", total.dias, { inicio: "01/09/2026", fim: "30/09/2026" });
+  checar("o total vem da visão do Dashboard e confere com a soma linha a linha", [total.conferencia?.confere, total.conferencia?.soma_linha_a_linha], [true, esperado.valor]);
+  checar("leitura completa: sem aviso de incompleto", [total.truncado, total.aviso_truncamento], [false, undefined]);
+  checar("a resposta nomeia a medida", [total.medida.startsWith("FATURAMENTO"), total.medida.includes("NÃO é o dinheiro que entrou em caixa")], [true, true]);
+  const somaEmpresas = (total.por_empresa ?? []).reduce((t, e) => t + e.faturamento, 0);
+  const cobrancasEmpresas = (total.por_empresa ?? []).reduce((t, e) => t + e.cobrancas, 0);
+  checar("por empresa: valores e cobranças fecham com o total", [Math.round(somaEmpresas * 100) / 100, cobrancasEmpresas, (total.por_empresa ?? []).length], [esperado.valor, esperado.cobrancas, 3]);
+  const somaVendedores = (total.por_vendedor ?? []).reduce((t, v) => t + v.faturamento, 0);
+  checar("por vendedor: lido até o fim, fecha com o total", [Math.round(somaVendedores * 100) / 100, (total.por_vendedor ?? []).reduce((t, v) => t + v.cobrancas, 0)], [esperado.valor, esperado.cobrancas]);
+  checar("a cobrança de 30/09 às 23:56 entra em setembro; as de 31/08 22h e 01/10 00h não",
+    [deSetembro.some(p => p.id === "b1"), deSetembro.some(p => p.id === "b2"), deSetembro.some(p => p.id === "b3")], [true, false, false]);
+
+  const ana = await calcularFaturamentoOficial(bancoFalso(TF).cliente, { ...SETEMBRO, vendedorNome: "Ana" });
+  const esperadoAna = deSetembro.filter(p => p.id_int != null && Number(p.id_int) % 2 === 0);
+  checar("um vendedor: soma dele no mês inteiro",
+    [ana.faturamento, ana.total_cobrancas, ana.conferencia], [Math.round(esperadoAna.reduce((t, p) => t + Number(p.valor), 0) * 100) / 100, esperadoAna.length, undefined]);
+
+  // O aviso de incompleto conta as linhas LIDAS. Com teto de 1 página: 1.000
+  // lidas, cortesias saem, sobram menos de 1.000 — e o aviso tem de sair.
+  const cortado = await calcularFaturamentoOficial(bancoFalso(TF).cliente, { ...SETEMBRO, agruparPorVendedor: true, maxPaginas: 1 });
+  checar("leitura que para no teto avisa, mesmo sobrando menos de 1.000 depois das cortesias",
+    [cortado.linhas_lidas, cortado.truncado, typeof cortado.aviso_truncamento, cortado.total_propostas < 1000], [1000, true, "string", true]);
+  checar("mesmo com a leitura cortada, o total (da visão) continua certo", [cortado.faturamento, cortado.total_cobrancas], [esperado.valor, esperado.cobrancas]);
+}
+
+// ─── 11. Citar o manual sem ter lido nenhuma página ──────────────────────────
+
+{
+  // Texto real que o Maestro devolveu em 02/10/2026 (maestro_mensagens 1711), com zero consultas.
+  const RESPOSTA_DO_CADASTRO = [
+    "Everton, quando um cliente preenche o cadastro pelo link, ele não aparece automaticamente na lista de Clientes. O cadastro fica primeiro na tela **Recebidos pelo link**, aguardando conferência e aprovação manual.",
+    "",
+    "Veja o fluxo oficial conforme o manual do Vibe:",
+    "",
+    "---",
+    "",
+    "### O que acontece após o cliente preencher o cadastro pelo link?",
+    "",
+    "1. O cadastro chega na tela **Recebidos pelo link** (Clientes → botão **Recebidos pelo link** no topo da tela Cadastros).",
+    "2. Um responsável precisa conferir os dados recebidos.",
+    "3. Para CPF: é obrigatório aprovar ou recusar manualmente.",
+    "4. Para CNPJ: pode ser aprovado manualmente ou, em alguns casos, aprovado automaticamente se os dados baterem com a Receita Federal.",
+    "5. Só depois de aprovado, o cadastro entra na lista principal de Clientes.",
+    "",
+    "**Se não aparecer em Clientes:**",
+    "- Verifique a tela **Recebidos pelo link** — o cadastro provavelmente está lá aguardando aprovação.",
+    "- Se já foi aprovado, pode haver um filtro ativo na tela de Clientes (exemplo: mostrando só clientes ativos ou de um tipo específico).",
+    "",
+    "---",
+    "",
+    "**Resumo:**  ",
+    "O cadastro preenchido pelo link só aparece em Clientes depois de aprovado manualmente na tela **Recebidos pelo link**.",
+    "",
+    'Fonte: página "Cadastros: Recebidos pelo link" do manual do Vibe.',
+  ].join("\n");
+  const INDICE = indiceDoManual();
+
+  checar("a resposta real cita uma página do índice", paginasDoIndiceCitadas(RESPOSTA_DO_CADASTRO, INDICE), ["cadastros-recebidos-pelo-link"]);
+  const veredito = avaliarTravaDoManual({ texto: RESPOSTA_DO_CADASTRO, manualLido: false, fontes: [], indice: INDICE });
+  checar("resposta real, sem nenhuma página lida → barrada", veredito, { tipo: "cita_manual_sem_ler", paginas: ["cadastros-recebidos-pelo-link"], negativa: false });
+  checar("a correção manda ler a página certa", String(instrucaoDeCorrecao(veredito)).includes("cadastros-recebidos-pelo-link"), true);
+  checar("antes (trava sem o índice e sem a regra nova) ela passava", avaliarTravaDoManual({ texto: RESPOSTA_DO_CADASTRO.replace(/manual do Vibe/g, "sistema").replace("Fonte: página", "Origem:"), manualLido: false, fontes: [] }), { tipo: "ok" });
+  checar("a mesma resposta com a página lida não cai nesta regra",
+    avaliarTravaDoManual({ texto: RESPOSTA_DO_CADASTRO, manualLido: true, fontes: [RESPOSTA_DO_CADASTRO, INDICE], indice: INDICE }).tipo, "ok");
+
+  checar("só dizer que o manual não tem a página é citação negativa",
+    avaliarTravaDoManual({ texto: "Everton, o manual do Vibe não traz um passo a passo para alterar o NCM de um produto.", manualLido: false, fontes: [], indice: INDICE }),
+    { tipo: "cita_manual_sem_ler", paginas: [], negativa: true });
+  checar("negativa seguida de regra afirmada não é só negativa",
+    soNegaOManual("O manual não traz esse passo. Conforme o manual do Vibe, CPF exige aprovação."), false);
+  checar("'aprovação manual' e 'baixa manual' não são citar o manual",
+    avaliarTravaDoManual({ texto: "A baixa manual é feita pelo financeiro e a aprovação manual fica com o gestor.", manualLido: false, fontes: [], indice: INDICE }), { tipo: "ok" });
+  checar("resposta de dados sem tela nem manual passa", avaliarTravaDoManual({ texto: "O pedido 22943 está em trânsito pelos Correios desde 01/10/2026.", manualLido: false, fontes: [], indice: INDICE }), { tipo: "ok" });
+  checar("orçamento continua passando", avaliarTravaDoManual({ texto: ORCAMENTO, manualLido: false, fontes: [], indice: INDICE }), { tipo: "ok" });
 }
 
 console.log(falhas === 0 ? "\nTUDO OK" : `\n${falhas} FALHA(S)`);

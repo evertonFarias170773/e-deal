@@ -90,6 +90,8 @@ function primeiroDiaMesPassado(): string {
 
 export interface FaturamentoVendedorAgregado {
   vendedor: string;
+  /** Cobranças confirmadas — uma proposta pode ter mais de uma */
+  cobrancas: number;
   propostas: number;
   faturamento: number;
 }
@@ -98,6 +100,8 @@ export interface FaturamentoEmpresaAgregado {
   /** null = pagamentos SEM id_empresa (sinalizados, nunca descartados) */
   id_empresa: number | null;
   empresa: string | null;
+  /** Cobranças confirmadas da empresa no período */
+  cobrancas: number;
   propostas: number;
   faturamento: number;
   vendedores: FaturamentoVendedorAgregado[];
@@ -105,11 +109,19 @@ export interface FaturamentoEmpresaAgregado {
 
 export interface FaturamentoOficialResult {
   found: boolean;
+  /** Nome da medida, para o modelo dizer o que o número é (e o que não é) */
+  medida: string;
+  /** Instrução de apresentação, junto do dado: o modelo tende a omitir as contagens */
+  como_apresentar: string;
   periodo: string;
+  /** Primeiro e último dia do período, no calendário de Brasília (dd/mm/aaaa) */
+  dias?: { inicio: string; fim: string };
   criterio: string;
-  /** Propostas distintas com pagamento confirmado no período */
+  /** Cobranças (pagamentos) confirmadas no período — o mesmo "N pagamentos confirmados" do Dashboard */
+  total_cobrancas: number;
+  /** Propostas distintas com cobrança confirmada no período */
   total_propostas: number;
-  /** Soma dos pagamentos confirmados (PAID/A_VENCER) no período */
+  /** Soma das cobranças confirmadas (PAID/A_VENCER) no período */
   faturamento: number;
   /** Ranking — presente apenas quando agruparPorVendedor=true */
   por_vendedor?: FaturamentoVendedorAgregado[];
@@ -121,30 +133,36 @@ export interface FaturamentoOficialResult {
   aviso?: string;
   /** Presente só quando `truncado` — texto pronto para o modelo repassar ao usuário. */
   aviso_truncamento?: string;
+  /** true = a leitura linha a linha parou no teto de segurança antes do fim */
   truncado: boolean;
+  /** Linhas de pagamentos_v2 lidas (antes de tirar cortesia) */
+  linhas_lidas?: number;
+  /** De onde saiu o total e se a soma linha a linha confere com a visão do Dashboard */
+  conferencia?: { fonte_do_total: string; soma_linha_a_linha: number; confere: boolean };
   source: string;
   authError?: boolean;
   error?: string;
 }
 
 /**
- * Teto de linhas de UMA leitura, calibrado no teto REAL do PostgREST.
+ * Teto de linhas de UMA leitura do PostgREST deste projeto: ele corta em 1.000
+ * por requisição e devolve HTTP 200 sem aviso (medido em produção em
+ * 27/08/2026, com `.limit()` e com `Range:`).
  *
- * Era 5000, e por isso a salvaguarda de truncamento nunca disparava: o
- * PostgREST do projeto corta em 1.000 linhas por requisicao e devolve HTTP 200
- * sem aviso nenhum — `.limit(5000)` recebe 1.000 e `Content-Range: 0-999/*`.
- * Medido em producao em 27/08/2026, com `.limit()` e com `Range:`, os dois
- * cortam igual.
+ * ATÉ 02/10/2026 a consulta fazia UMA leitura só. Todo mês desde maio/2026 tem
+ * mais de 1.000 cobranças confirmadas, então o faturamento mensal saía cortado:
+ * setembro/2026 respondeu R$ 780.657,05 quando o Dashboard mostra
+ * R$ 1.121.100,46 (as 333 cobranças de 01/09 a 09/09 ficaram de fora). E o aviso
+ * de incompleto não disparou, porque contava as linhas DEPOIS de tirar as
+ * cortesias (1.000 lidas − 11 = 989 < 1.000).
  *
- * Com 5000 aqui, `pagamentos.length >= FATURAMENTO_MAX_ROWS` era sempre falso e
- * o faturamento saia MENOR que o real dizendo estar integro. O filtro desta
- * consulta casa 1.177 linhas em 30 dias, 3.249 em 90 e 6.847 no total — ou seja,
- * o corte ja acontece a partir de cerca de 25 dias de janela.
- *
- * ISTO NAO CONSERTA O VALOR: a consulta continua sem paginacao nesta etapa. O
- * que muda e que o resultado passa a se declarar incompleto quando esta.
+ * AGORA a leitura é paginada até o fim, e o total do consolidado sai da mesma
+ * visão que o Dashboard usa.
  */
-const FATURAMENTO_MAX_ROWS = 1000;
+const PAGINA = 1000;
+/** Teto de segurança: 40 páginas = 40 mil cobranças (mais de dois anos no volume atual). */
+const MAX_PAGINAS = 40;
+const FATURAMENTO_LOTE_PROPOSTAS = 400;
 
 /**
  * Texto que acompanha `truncado`. Existe porque um booleano no meio de vinte
@@ -152,21 +170,158 @@ const FATURAMENTO_MAX_ROWS = 1000;
  * precisa de uma instrucao explicita, nao de uma flag.
  */
 export const AVISO_FATURAMENTO_TRUNCADO =
-  'ATENCAO — RESULTADO INCOMPLETO: a leitura atingiu o teto de 1.000 linhas por consulta do banco, ' +
-  'entao o faturamento apresentado esta MENOR que o real e as contagens estao subestimadas. ' +
-  'NAO apresente este numero como o faturamento do periodo: diga que o periodo tem mais pagamentos ' +
-  'do que coube em uma leitura e sugira consultar uma janela menor.';
-const FATURAMENTO_LOTE_PROPOSTAS = 400;
+  'ATENCAO — RESULTADO INCOMPLETO: o periodo tem mais cobrancas do que o teto de leitura desta consulta. ' +
+  'A contagem de propostas e os numeros por vendedor estao SUBESTIMADOS. NAO os apresente como o resultado do periodo: ' +
+  'diga que o periodo e grande demais para uma consulta e sugira uma janela menor (um mes, por exemplo).';
+
+export const MEDIDA_FATURAMENTO =
+  'FATURAMENTO: cobranças confirmadas pelo financeiro (pagas ou faturadas a vencer), pela data da confirmação, sem amostra nem retrabalho. ' +
+  'É o mesmo número do card Faturamento do Dashboard. NÃO é o dinheiro que entrou em caixa (isso é o recebimento, pela data do pagamento).';
 
 export const CRITERIO_FATURAMENTO_OFICIAL =
-  'pagamentos_v2 com confirmado=true e status PAID ou A_VENCER, período por data_confirmacao; ' +
-  'faturamento = soma dos pagamentos; propostas = id_int distintos. propostas é só dimensão (vendedor/cliente). ' +
-  'Exclui E-AMOSTRA e E-RETRABALHO (cortesia, não receita); E-PERMUTA conta.';
+  'pagamentos_v2 com confirmado=true e status PAID ou A_VENCER, período por data_confirmacao no calendário de Brasília; ' +
+  'faturamento = soma das cobranças; cobranças = pagamentos confirmados; propostas = id_int distintos. propostas é só dimensão (vendedor/cliente). ' +
+  'Exclui E-AMOSTRA e E-RETRABALHO (cortesia, não receita); E-PERMUTA e E-CREDITO contam.';
+
+// ─── Período em dia de Brasília ────────────────────────────────────────────
+
+function somarDias(dia: string, n: number): string {
+  const d = new Date(`${dia}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
+function diaBR(dia: string): string {
+  return `${dia.slice(8, 10)}/${dia.slice(5, 7)}/${dia.slice(0, 4)}`;
+}
+
+/**
+ * Converte um limite de período (ISO) no DIA civil de Brasília.
+ *
+ * Os chamadores montam mês como "meia-noite UTC do dia 1" (2026-09-01T00:00Z).
+ * Lido ao pé da letra, isso é 21h do dia 31/08 em Brasília — o mês começava e
+ * terminava três horas antes da hora, e dois PIX de 30/09 às 23h iam para
+ * outubro. Aqui meia-noite UTC significa "esse dia do calendário"; qualquer
+ * outro instante (hoje, ontem, últimos N dias) vale pelo dia em que cai em
+ * Brasília.
+ */
+export function diaCivilDoLimite(iso: string): string {
+  const meiaNoiteUtc = /^(\d{4}-\d{2}-\d{2})T00:00:00(?:\.0+)?Z$/.exec(iso.trim());
+  if (meiaNoiteUtc) return meiaNoiteUtc[1];
+  const instante = new Date(iso);
+  if (Number.isNaN(instante.getTime())) return iso.slice(0, 10);
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(instante);
+}
+
+/** [desde, ate) em ISO → primeiro e último dia (inclusive) no calendário de Brasília. */
+export function diasCivisDoIntervalo(desde: string, ate?: string, agora: Date = new Date()): { diaInicio: string; diaFim: string } {
+  const diaInicio = diaCivilDoLimite(desde);
+  const hoje = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(agora);
+  const diaFim = ate ? somarDias(diaCivilDoLimite(ate), -1) : hoje;
+  return { diaInicio, diaFim: diaFim < diaInicio ? diaInicio : diaFim };
+}
+
+// ─── Leituras ──────────────────────────────────────────────────────────────
+
+interface LinhaPagamento {
+  id_int: number | null;
+  valor: number;
+  id_empresa: number | null;
+  empresaLabel: string | null;
+}
+
+/** Todas as cobranças confirmadas do período, página a página, até acabar. */
+async function lerCobrancasConfirmadas(
+  supabase: SupabaseClient,
+  filtro: { diaInicio: string; diaFim: string; idCliente?: number; idEmpresa?: number; maxPaginas: number },
+): Promise<{ linhas: Record<string, unknown>[]; truncado: boolean; error?: { message: string } }> {
+  // O Brasil não tem horário de verão desde 2019: Brasília é UTC-3 o ano todo.
+  const inicio = `${filtro.diaInicio}T00:00:00-03:00`;
+  const fim = `${somarDias(filtro.diaFim, 1)}T00:00:00-03:00`;
+  const linhas: Record<string, unknown>[] = [];
+
+  for (let pagina = 0; pagina < filtro.maxPaginas; pagina++) {
+    // `tipo_cobranca` entra no SELECT só para a exclusão de cortesia, em memória.
+    let query = supabase
+      .from('pagamentos_v2')
+      .select('id, id_int, id_cliente, valor, data_confirmacao, id_empresa, empresa, tipo_cobranca')
+      .eq('confirmado', true)
+      .in('status', ['PAID', 'A_VENCER'])
+      .not('data_confirmacao', 'is', null)
+      .gte('data_confirmacao', inicio)
+      .lt('data_confirmacao', fim);
+    if (filtro.idCliente != null) query = query.eq('id_cliente', filtro.idCliente);
+    if (filtro.idEmpresa != null) query = query.eq('id_empresa', filtro.idEmpresa);
+
+    const { data, error } = await query
+      .order('data_confirmacao', { ascending: false })
+      .order('id', { ascending: true })
+      .range(pagina * PAGINA, pagina * PAGINA + PAGINA - 1);
+    if (error) return { linhas, truncado: false, error };
+
+    const lote = (data ?? []) as unknown as Record<string, unknown>[];
+    linhas.push(...lote);
+    if (lote.length < PAGINA) return { linhas, truncado: false };
+  }
+  // Saiu pelo teto com a última página cheia: pode haver mais.
+  return { linhas, truncado: true };
+}
+
+/**
+ * Total do período pela visão que o Dashboard usa (view_pagamentos_pagos_v2):
+ * a mesma regra, somada pelo banco, por dia de Brasília e por empresa.
+ */
+async function lerVisaoDoDashboard(
+  supabase: SupabaseClient,
+  filtro: { diaInicio: string; diaFim: string; idEmpresa?: number },
+): Promise<{ total: number; cobrancas: number; porEmpresa: Map<number | null, { total: number; cobrancas: number }>; error?: string }> {
+  const porEmpresa = new Map<number | null, { total: number; cobrancas: number }>();
+  let total = 0;
+  let cobrancas = 0;
+
+  for (let pagina = 0; pagina < MAX_PAGINAS; pagina++) {
+    let query = supabase
+      .from('view_pagamentos_pagos_v2')
+      .select('data, id_empresa, status, total, quantidade')
+      .gte('data', filtro.diaInicio)
+      .lte('data', filtro.diaFim);
+    if (filtro.idEmpresa != null) query = query.eq('id_empresa', filtro.idEmpresa);
+
+    const { data, error } = await query
+      .order('data', { ascending: true })
+      .order('id_empresa', { ascending: true })
+      .order('status', { ascending: true })
+      .range(pagina * PAGINA, pagina * PAGINA + PAGINA - 1);
+    if (error) return { total: 0, cobrancas: 0, porEmpresa, error: error.message };
+
+    const lote = (data ?? []) as unknown as Record<string, unknown>[];
+    for (const r of lote) {
+      const valor = r.total != null ? Number(r.total) : 0;
+      const qtd = r.quantidade != null ? Number(r.quantidade) : 0;
+      const empresa = r.id_empresa != null && Number.isFinite(Number(r.id_empresa)) ? Number(r.id_empresa) : null;
+      total += valor;
+      cobrancas += qtd;
+      const agg = porEmpresa.get(empresa) ?? { total: 0, cobrancas: 0 };
+      agg.total += valor;
+      agg.cobrancas += qtd;
+      porEmpresa.set(empresa, agg);
+    }
+    if (lote.length < PAGINA) break;
+  }
+
+  return { total, cobrancas, porEmpresa };
+}
+
+function centavos(n: number): number {
+  return Number(n.toFixed(2));
+}
 
 export async function calcularFaturamentoOficial(
   supabase: SupabaseClient,
   opts: {
+    /** Início do período (ISO). Vale o DIA de Brasília — ver diaCivilDoLimite. */
     desde: string;
+    /** Fim exclusivo do período (ISO). Ausente = até hoje. */
     ate?: string;
     periodoLabel: string;
     idCliente?: number;
@@ -178,56 +333,53 @@ export async function calcularFaturamentoOficial(
     idEmpresa?: number;
     /** Subtotais por empresa com vendedores dentro de cada uma */
     agruparPorEmpresa?: boolean;
+    /** Teto de páginas de 1.000 linhas. Só para teste; o padrão é MAX_PAGINAS. */
+    maxPaginas?: number;
   },
 ): Promise<FaturamentoOficialResult> {
+  const { diaInicio, diaFim } = diasCivisDoIntervalo(opts.desde, opts.ate);
   const base = {
+    medida: MEDIDA_FATURAMENTO,
+    como_apresentar:
+      'Mostre SEMPRE três números: o valor (faturamento), as cobranças (total_cobrancas) e as propostas (total_propostas) — no total e, quando houver, em cada empresa e em cada vendedor listado (campos cobrancas e propostas). ' +
+      'Diga o período pelos dias (campo dias) e nomeie a medida em uma linha. Não some nem conte: os números já vêm prontos.',
     periodo: opts.periodoLabel,
+    dias: { inicio: diaBR(diaInicio), fim: diaBR(diaFim) },
     criterio: CRITERIO_FATURAMENTO_OFICIAL,
-    source: 'public.pagamentos_v2 (fonte; empresa = id_empresa) + public.propostas (dimensão vendedor)',
+    source: 'public.pagamentos_v2 (fonte; empresa = id_empresa) + public.propostas (dimensão vendedor) + view_pagamentos_pagos_v2 (total, a mesma do Dashboard)',
   };
+  const falha = (error: { message: string }): FaturamentoOficialResult => ({
+    ...base, found: false, total_cobrancas: 0, total_propostas: 0, faturamento: 0, truncado: false,
+    authError: isAuthError(error), error: error.message,
+  });
 
   // Consulta POR CLIENTE passa pela trava de vendedor; a consulta por vendedor
   // ou ranking (sem cliente) tem o seu próprio recorte, em quem chama.
   const escopo = opts.idCliente != null ? await exigirClienteNoEscopo(supabase, opts.idCliente) : null;
 
-  // `tipo_cobranca` entra no SELECT só para a exclusão de cortesia abaixo.
-  let query = supabase
-    .from('pagamentos_v2')
-    .select('id_int, id_cliente, valor, data_confirmacao, id_empresa, empresa, tipo_cobranca')
-    .eq('confirmado', true)
-    .in('status', ['PAID', 'A_VENCER'])
-    .not('id_int', 'is', null)
-    .not('data_confirmacao', 'is', null)
-    .gte('data_confirmacao', opts.desde);
-  if (opts.ate) query = query.lt('data_confirmacao', opts.ate);
-  if (opts.idCliente != null) query = query.eq('id_cliente', opts.idCliente);
-  if (opts.idEmpresa != null) query = query.eq('id_empresa', opts.idEmpresa);
-
-  const { data, error } = await query
-    .order('data_confirmacao', { ascending: false })
-    .limit(FATURAMENTO_MAX_ROWS);
-
-  if (error) {
-    return { ...base, found: false, total_propostas: 0, faturamento: 0, truncado: false, authError: isAuthError(error), error: error.message };
-  }
+  const leitura = await lerCobrancasConfirmadas(supabase, {
+    diaInicio,
+    diaFim,
+    idCliente: opts.idCliente,
+    idEmpresa: opts.idEmpresa,
+    maxPaginas: Math.max(1, opts.maxPaginas ?? MAX_PAGINAS),
+  });
+  if (leitura.error) return falha(leitura.error);
 
   // Cortesia não é receita. A exclusão é feita AQUI, em memória, e não como
   // `.not('tipo_cobranca','in',...)` na consulta: no PostgREST um NOT IN sobre
   // coluna nula devolve NULL e a linha some — e linha sem tipo TEM de contar,
   // como em `public.fn_conta_no_faturamento`. Filtrar depois é o único jeito
   // de as duas pontas darem o mesmo número.
-  const doEscopo = escopo ? await soLinhasDoVendedor(supabase, escopo, data ?? []) : (data ?? []);
-  const pagamentos = doEscopo.filter(raw =>
-    contaNoFaturamento((raw as Record<string, unknown>).tipo_cobranca as string | null | undefined)
-  ).map(raw => {
-    const r = raw as Record<string, unknown>;
-    return {
-      id_int: Number(r.id_int),
+  const doEscopo = escopo ? await soLinhasDoVendedor(supabase, escopo, leitura.linhas) : leitura.linhas;
+  const pagamentos: LinhaPagamento[] = doEscopo
+    .filter(r => contaNoFaturamento(r.tipo_cobranca as string | null | undefined))
+    .map(r => ({
+      id_int: r.id_int != null && Number.isFinite(Number(r.id_int)) ? Number(r.id_int) : null,
       valor: r.valor != null ? Number(r.valor) : 0,
       id_empresa: r.id_empresa != null && Number.isFinite(Number(r.id_empresa)) ? Number(r.id_empresa) : null,
       empresaLabel: typeof r.empresa === 'string' && r.empresa.trim() ? r.empresa.trim() : null,
-    };
-  });
+    }));
 
   // Dimensão vendedor (propostas), somente quando necessária
   // (na separação por empresa os vendedores aparecem dentro de cada empresa)
@@ -235,16 +387,14 @@ export async function calcularFaturamentoOficial(
     Boolean(opts.vendedorNome) || opts.agruparPorVendedor === true || opts.agruparPorEmpresa === true;
   const vendedorPorProposta = new Map<number, string>();
   if (precisaVendedor && pagamentos.length > 0) {
-    const ids = [...new Set(pagamentos.map(p => p.id_int))];
+    const ids = [...new Set(pagamentos.map(p => p.id_int).filter((id): id is number => id !== null))];
     for (let i = 0; i < ids.length; i += FATURAMENTO_LOTE_PROPOSTAS) {
       const lote = ids.slice(i, i + FATURAMENTO_LOTE_PROPOSTAS);
       const { data: props, error: perr } = await supabase
         .from('propostas')
         .select('id_int, vendedor')
         .in('id_int', lote);
-      if (perr) {
-        return { ...base, found: false, total_propostas: 0, faturamento: 0, truncado: false, authError: isAuthError(perr), error: perr.message };
-      }
+      if (perr) return falha(perr);
       for (const raw of props ?? []) {
         const r = raw as Record<string, unknown>;
         const nome = typeof r.vendedor === 'string' && r.vendedor.trim() ? r.vendedor.trim() : 'SEM_VENDEDOR';
@@ -269,29 +419,34 @@ export async function calcularFaturamentoOficial(
   // nunca uma soma mesclada sem aviso
   const agrupar = opts.agruparPorVendedor === true || (vendedoresFiltrados?.size ?? 0) > 1;
 
-  const propostasDistintas = new Set<number>();
-  let faturamentoTotal = 0;
-  const porVendedor = new Map<string, { vendedor: string; propostasSet: Set<number>; faturamento: number }>();
-  interface EmpresaAgg {
+  interface Agg { cobrancas: number; propostasSet: Set<number>; faturamento: number }
+  const novoAgg = (): Agg => ({ cobrancas: 0, propostasSet: new Set<number>(), faturamento: 0 });
+  const somarEm = (agg: Agg, pg: LinhaPagamento) => {
+    agg.cobrancas++;
+    if (pg.id_int !== null) agg.propostasSet.add(pg.id_int);
+    agg.faturamento += pg.valor;
+  };
+
+  const geral = novoAgg();
+  const porVendedor = new Map<string, Agg>();
+  interface EmpresaAgg extends Agg {
     id_empresa: number | null;
     empresa: string | null;
-    propostasSet: Set<number>;
-    faturamento: number;
-    vendedores: Map<string, { propostasSet: Set<number>; faturamento: number }>;
+    vendedores: Map<string, Agg>;
   }
   const porEmpresa = new Map<string, EmpresaAgg>();
 
   for (const pg of pagamentos) {
-    const vendedor = precisaVendedor ? (vendedorPorProposta.get(pg.id_int) ?? 'SEM_VENDEDOR') : null;
+    const vendedor = precisaVendedor
+      ? (pg.id_int !== null ? vendedorPorProposta.get(pg.id_int) : undefined) ?? 'SEM_VENDEDOR'
+      : null;
     if (vendedoresFiltrados && !vendedoresFiltrados.has(vendedor ?? '')) continue;
 
-    propostasDistintas.add(pg.id_int);
-    faturamentoTotal += pg.valor;
+    somarEm(geral, pg);
 
     if (agrupar && vendedor !== null) {
-      const agg = porVendedor.get(vendedor) ?? { vendedor, propostasSet: new Set<number>(), faturamento: 0 };
-      agg.propostasSet.add(pg.id_int);
-      agg.faturamento = Number((agg.faturamento + pg.valor).toFixed(2));
+      const agg = porVendedor.get(vendedor) ?? novoAgg();
+      somarEm(agg, pg);
       porVendedor.set(vendedor, agg);
     }
 
@@ -299,39 +454,79 @@ export async function calcularFaturamentoOficial(
       // Pagamentos SEM id_empresa entram no grupo próprio — nunca descartados
       const chave = pg.id_empresa != null ? `emp:${pg.id_empresa}` : 'emp:sem';
       const emp = porEmpresa.get(chave) ?? {
+        ...novoAgg(),
         id_empresa: pg.id_empresa,
         empresa: pg.id_empresa != null ? pg.empresaLabel : 'SEM id_empresa (pagamentos sem empresa atribuída)',
-        propostasSet: new Set<number>(),
-        faturamento: 0,
-        vendedores: new Map(),
+        vendedores: new Map<string, Agg>(),
       };
       if (!emp.empresa && pg.empresaLabel) emp.empresa = pg.empresaLabel;
-      emp.propostasSet.add(pg.id_int);
-      emp.faturamento = Number((emp.faturamento + pg.valor).toFixed(2));
+      somarEm(emp, pg);
       if (vendedor !== null) {
-        const ve = emp.vendedores.get(vendedor) ?? { propostasSet: new Set<number>(), faturamento: 0 };
-        ve.propostasSet.add(pg.id_int);
-        ve.faturamento = Number((ve.faturamento + pg.valor).toFixed(2));
+        const ve = emp.vendedores.get(vendedor) ?? novoAgg();
+        somarEm(ve, pg);
         emp.vendedores.set(vendedor, ve);
       }
       porEmpresa.set(chave, emp);
     }
   }
 
-  const empresas: FaturamentoEmpresaAgregado[] | undefined = opts.agruparPorEmpresa
-    ? [...porEmpresa.values()]
-        .map(e => ({
-          id_empresa: e.id_empresa,
-          empresa: e.empresa,
-          propostas: e.propostasSet.size,
-          faturamento: e.faturamento,
-          vendedores: [...e.vendedores.entries()]
-            .map(([vendedor, v]) => ({ vendedor, propostas: v.propostasSet.size, faturamento: v.faturamento }))
-            .sort((a, b) => b.faturamento - a.faturamento),
-        }))
-        // sem-empresa por último; demais por faturamento desc
-        .sort((a, b) => (a.id_empresa === null ? 1 : b.id_empresa === null ? -1 : b.faturamento - a.faturamento))
+  const vendedorAgregado = (vendedor: string, v: Agg): FaturamentoVendedorAgregado => ({
+    vendedor, cobrancas: v.cobrancas, propostas: v.propostasSet.size, faturamento: centavos(v.faturamento),
+  });
+
+  let empresas: FaturamentoEmpresaAgregado[] | undefined = opts.agruparPorEmpresa
+    ? [...porEmpresa.values()].map(e => ({
+        id_empresa: e.id_empresa,
+        empresa: e.empresa,
+        cobrancas: e.cobrancas,
+        propostas: e.propostasSet.size,
+        faturamento: centavos(e.faturamento),
+        vendedores: [...e.vendedores.entries()]
+          .map(([vendedor, v]) => vendedorAgregado(vendedor, v))
+          .sort((a, b) => b.faturamento - a.faturamento),
+      }))
     : undefined;
+
+  // ── Total pela visão do Dashboard ──────────────────────────────────────────
+  // Só no consolidado (sem cliente e sem filtro de vendedor): a visão não tem
+  // essas duas dimensões. O valor e a contagem de cobranças passam a ser os
+  // dela, por construção iguais aos do card Faturamento; a soma linha a linha
+  // fica como conferência.
+  const somaLinhas = centavos(geral.faturamento);
+  let faturamento = somaLinhas;
+  let totalCobrancas = geral.cobrancas;
+  let conferencia: FaturamentoOficialResult['conferencia'];
+  if (opts.idCliente == null && !vendedoresFiltrados) {
+    const visao = await lerVisaoDoDashboard(supabase, { diaInicio, diaFim, idEmpresa: opts.idEmpresa });
+    if (!visao.error) {
+      faturamento = centavos(visao.total);
+      totalCobrancas = visao.cobrancas;
+      conferencia = {
+        fonte_do_total: 'view_pagamentos_pagos_v2 (a mesma do card Faturamento do Dashboard)',
+        soma_linha_a_linha: somaLinhas,
+        confere: Math.abs(somaLinhas - faturamento) < 0.005 && geral.cobrancas === visao.cobrancas,
+      };
+      if (empresas) {
+        const vistas = new Set<number | null>();
+        empresas = empresas.map(e => {
+          vistas.add(e.id_empresa);
+          const v = visao.porEmpresa.get(e.id_empresa);
+          return v ? { ...e, faturamento: centavos(v.total), cobrancas: v.cobrancas } : e;
+        });
+        // Empresa que a visão tem e a leitura linha a linha não alcançou (teto).
+        for (const [idEmpresa, v] of visao.porEmpresa) {
+          if (!vistas.has(idEmpresa)) {
+            empresas.push({ id_empresa: idEmpresa, empresa: null, cobrancas: v.cobrancas, propostas: 0, faturamento: centavos(v.total), vendedores: [] });
+          }
+        }
+      }
+    } else {
+      conferencia = { fonte_do_total: `soma linha a linha (visão do Dashboard indisponível: ${visao.error.slice(0, 80)})`, soma_linha_a_linha: somaLinhas, confere: true };
+    }
+  }
+
+  // sem-empresa por último; demais por faturamento desc
+  empresas?.sort((a, b) => (a.id_empresa === null ? 1 : b.id_empresa === null ? -1 : b.faturamento - a.faturamento));
 
   // Uma proposta com pagamentos em mais de uma empresa conta em cada grupo,
   // mas uma única vez no consolidado — sinalize quando as contagens divergirem
@@ -339,25 +534,28 @@ export async function calcularFaturamentoOficial(
 
   return {
     ...base,
-    found: propostasDistintas.size > 0,
-    total_propostas: propostasDistintas.size,
-    faturamento: Number(faturamentoTotal.toFixed(2)),
+    found: totalCobrancas > 0,
+    total_cobrancas: totalCobrancas,
+    total_propostas: geral.propostasSet.size,
+    faturamento,
     por_vendedor: agrupar
-      ? [...porVendedor.values()]
-          .map(v => ({ vendedor: v.vendedor, propostas: v.propostasSet.size, faturamento: v.faturamento }))
+      ? [...porVendedor.entries()]
+          .map(([vendedor, v]) => vendedorAgregado(vendedor, v))
           .sort((a, b) => b.faturamento - a.faturamento)
       : undefined,
     por_empresa: empresas,
-    ...(empresas && somaPropostasEmpresas !== propostasDistintas.size
+    ...(empresas && somaPropostasEmpresas !== geral.propostasSet.size
       ? { nota_contagem: 'Proposta com pagamentos em mais de uma empresa conta em cada empresa, mas UMA única vez no total consolidado — por isso a soma das contagens difere do total.' }
       : {}),
     ...((vendedoresFiltrados?.size ?? 0) > 1
       ? { aviso: 'O nome informado corresponde a mais de um vendedor — números apresentados SEPARADOS por vendedor; o total soma todos os correspondentes.' }
       : {}),
-    ...(pagamentos.length >= FATURAMENTO_MAX_ROWS
-      ? { aviso_truncamento: AVISO_FATURAMENTO_TRUNCADO }
-      : {}),
-    truncado: pagamentos.length >= FATURAMENTO_MAX_ROWS,
+    // O aviso conta as linhas LIDAS, antes de tirar cortesia e de aplicar
+    // filtros: é a leitura que fica incompleta, não o resultado filtrado.
+    ...(leitura.truncado ? { aviso_truncamento: AVISO_FATURAMENTO_TRUNCADO } : {}),
+    truncado: leitura.truncado,
+    linhas_lidas: leitura.linhas.length,
+    ...(conferencia ? { conferencia } : {}),
   };
 }
 

@@ -173,6 +173,36 @@ cancelado com dias congelados) e não liquidado contava cancelado.
 `boletos_cliente` passou a devolver `resumo` com os totais prontos de todos os
 títulos em aberto e em atraso, e não só dos 30 listados.
 
+## 2.4 Faturamento igual ao Dashboard e manual lido de verdade (02/10/2026)
+
+**Faturamento.** Maestro e Dashboard sempre usaram a mesma regra, mas o Maestro
+fazia UMA leitura de `pagamentos_v2` e o banco entrega no máximo 1.000 linhas.
+Todo mês desde maio/2026 tem mais de 1.000 cobranças: setembro saiu
+R$ 780.657,05 quando o Dashboard mostra R$ 1.121.100,46. O aviso de incompleto
+não disparava porque contava as linhas depois de tirar as cortesias.
+
+- A leitura linha a linha é paginada até o fim (teto de segurança: 40 páginas).
+- No consolidado (sem cliente e sem filtro de vendedor), o valor e a contagem de
+  cobranças saem de `view_pagamentos_pagos_v2`, a mesma visão do card
+  Faturamento; a soma linha a linha fica como conferência (`conferencia`).
+- O período vale pelo dia de Brasília: meia-noite UTC do dia 1 significa "o dia
+  1 do calendário", e mês atual/passado saem do calendário de Brasília.
+- `aviso_truncamento` conta as linhas lidas, antes de tirar cortesia.
+- A resposta traz `total_cobrancas`, `total_propostas`, `medida` e
+  `como_apresentar`: o Maestro mostra cobranças e propostas e diz que
+  faturamento não é o recebido em caixa.
+- Gabarito contra o banco real: `scripts/testes/maestro-faturamento-gabarito.test.mts`
+  (setembro/2026 = R$ 1.121.100,46 em 1.324 cobranças, e igual à visão lida na hora).
+
+**Manual.** Em 02/10/2026 o Maestro respondeu que "CPF exige aprovação manual"
+sem abrir a página: deduziu da linha do índice e citou a página como fonte.
+
+- Trava nova (`cita_manual_sem_ler`): resposta que cita o manual, ou uma tela
+  que tem página no índice, sem nenhuma página lida no turno → rodada de
+  correção mandando ler a página; persistindo, texto fixo. Se a resposta só diz
+  que o manual não tem aquilo e nada foi consultado, vira o texto fixo direto.
+- O prompt diz que o índice só serve para escolher a página.
+
 ---
 
 # 3. Regras de negócio aplicadas

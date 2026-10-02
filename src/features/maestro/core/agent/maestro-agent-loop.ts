@@ -377,7 +377,12 @@ export async function runMaestroAgentLoop(input: AgentLoopInput): Promise<AgentL
   let houveEscrita = false;
   let correcoesDoManual = 0;
   const avaliarTrava = (texto: string): VereditoDaTrava =>
-    avaliarTravaDoManual({ texto, manualLido, fontes: fontesDoTurno });
+    avaliarTravaDoManual({ texto, manualLido, fontes: fontesDoTurno, indice: indiceManual });
+  // Citar o manual sem ler: não mexe em turno que gravou algo, e deixa passar
+  // o "o manual não cobre isso" quando o turno trouxe dados de outra consulta.
+  const barraCitacao = (v: VereditoDaTrava): boolean =>
+    v.tipo === 'cita_manual_sem_ler' && !houveEscrita && !(v.negativa && toolCallsExecutados > 0);
+  let travaDireta: string | null = null;
 
   for (let iter = 0; iter < maxIterations; iter++) {
     const restanteMs = deadline - Date.now();
@@ -448,7 +453,15 @@ export async function runMaestroAgentLoop(input: AgentLoopInput): Promise<AgentL
         // Trava do manual: passo a passo sem pagina lida, ou nome de tela que
         // nao esta na pagina → uma rodada forcada de correcao.
         const veredito = avaliarTrava(candidato);
-        const correcao = instrucaoDeCorrecao(veredito);
+        // Só disse "o manual não tem isso", de cabeça e sem consultar nada: vira
+        // o texto fixo na hora — uma rodada a mais não traria informação nova.
+        if (veredito.tipo === 'cita_manual_sem_ler' && veredito.negativa && barraCitacao(veredito)) {
+          travaDireta = 'sem_pagina_sem_consulta';
+          finalContent = RESPOSTA_SEM_PAGINA_NO_MANUAL;
+          break;
+        }
+        const correcao =
+          veredito.tipo === 'cita_manual_sem_ler' && !barraCitacao(veredito) ? null : instrucaoDeCorrecao(veredito);
         if (correcao && correcoesDoManual < 1 && Date.now() < deadline - 3_000) {
           correcoesDoManual++;
           console.warn(
@@ -593,8 +606,14 @@ export async function runMaestroAgentLoop(input: AgentLoopInput): Promise<AgentL
 
   // Defesa final da trava do manual — vale para qualquer caminho de saida.
   const vereditoFinal = avaliarTrava(content);
-  let travaDoManual: string | null = null;
-  if (vereditoFinal.tipo === 'passos_sem_manual') {
+  let travaDoManual: string | null = travaDireta;
+  if (travaDireta) {
+    // já é o texto fixo
+  } else if (barraCitacao(vereditoFinal)) {
+    console.warn('[MaestroAgentLoop] Resposta cita o manual sem ter lido nenhuma página — substituída.');
+    travaDoManual = 'resposta_substituida_cita_sem_ler';
+    content = RESPOSTA_SEM_PAGINA_NO_MANUAL;
+  } else if (vereditoFinal.tipo === 'passos_sem_manual') {
     console.warn('[MaestroAgentLoop] Passo a passo sem página do manual na resposta final.');
     if (houveEscrita) {
       // Nunca apaga a resposta de um turno que gravou algo: so avisa.

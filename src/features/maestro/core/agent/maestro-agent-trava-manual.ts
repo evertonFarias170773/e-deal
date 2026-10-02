@@ -31,7 +31,7 @@ export function normalizarParaComparar(texto: string): string {
 
 // Palavras que, logo antes de um nome em destaque, dizem "isto e um elemento de tela".
 const PALAVRA_DE_TELA =
-  /(?<![\wÀ-ú])(clique|clicar|cliquem|toque|aperte|selecione|selecionar|escolha|escolher|marque|marcar|use|usar|utilize|abra|abrir|acesse|acessar|entre|va|vá|confirme|confirmar|botao|botão|botoes|botões|menu|aba|abas|opcao|opção|opcoes|opções|tela|janela|item|campo|filtro|cartao|cartão|acao|ação|acoes|ações|coluna|grupo)(?![\wÀ-ú])/i;
+  /(?<![\wÀ-ú])(clique|clicar|cliquem|toque|aperte|selecione|selecionar|escolha|escolher|marque|marcar|use|usar|utilize|abra|abrir|acesse|acessar|entre|va|vá|confirme|confirmar|botao|botão|botoes|botões|menu|aba|abas|opcao|opção|opcoes|opções|tela|janela|item|campo|filtro|cartao|cartão|acao|ação|acoes|ações|coluna|grupo|pagina|página)(?![\wÀ-ú])/i;
 
 const VERBO_DE_PASSO =
   /^(acesse|abra|clique|selecione|localize|utilize|use|confirme|escolha|va|vá|entre|marque|preencha|informe|busque|procure|filtre|digite|navegue)(?![\wÀ-ú])/i;
@@ -115,10 +115,59 @@ export function pareceInstrucaoDeTela(texto: string): boolean {
   return contarPassosImperativos(texto) >= 2 || extrairRotulosDeTela(texto).length >= 2;
 }
 
+// ─── Citar o manual sem ter lido ─────────────────────────────────────────────
+// Caso real de 02/10/2026 (maestro_mensagens 1711): perguntado por que um
+// cadastro feito pelo link não aparecia em Clientes, o modelo NÃO chamou
+// consultar_manual, deduziu do índice que "CPF exige aprovação manual" (a
+// página dizia o contrário desde a véspera) e fechou com
+// 'Fonte: página "Cadastros: Recebidos pelo link" do manual do Vibe'.
+// Não era passo a passo — era regra — e por isso passava pela trava.
+
+// "o manual", "do manual", "no manual"... como SUBSTANTIVO. "aprovação manual"
+// e "baixa manual" (adjetivo) não casam: a palavra antes tem de ser o artigo.
+const CITA_O_MANUAL =
+  /(?<![\wÀ-ú])(o|do|no|pelo|ao|neste|nesse|deste|desse)\s+manual(?![\wÀ-ú])|fonte:\s*p[aá]gina|p[aá]gina\s+["“][^"”\n]{3,80}["”]/i;
+
+// A frase só diz que o manual NÃO tem aquilo.
+const NEGA_O_MANUAL =
+  /(o|do|no|pelo)\s+manual[^.\n]{0,80}?(?<![\wÀ-ú])(n[ãa]o|nenhum|nenhuma)(?![\wÀ-ú])|(?<![\wÀ-ú])(n[ãa]o|nenhum|nenhuma)(?![\wÀ-ú])[^.\n]{0,70}(no|do|pelo)\s+manual/i;
+
+export function citaOManual(texto: string): boolean {
+  return CITA_O_MANUAL.test(texto);
+}
+
+/** A resposta só diz que o manual não cobre o assunto (sem afirmar o que ele "diz"). */
+export function soNegaOManual(texto: string): boolean {
+  if (!CITA_O_MANUAL.test(texto)) return false;
+  // Toda frase que cita o manual precisa ser uma negativa.
+  const frases = texto.split(/(?<=[.!?:])\s+|\n+/).filter(f => CITA_O_MANUAL.test(f));
+  return frases.length > 0 && frases.every(f => NEGA_O_MANUAL.test(f));
+}
+
+/**
+ * Páginas do índice que a resposta cita como tela: nome em destaque depois de
+ * "tela", "página", "aba"... que aparece no título ou no caminho de menu de uma
+ * linha do índice. Devolve os identificadores das páginas.
+ */
+export function paginasDoIndiceCitadas(texto: string, indice: string): string[] {
+  const rotulos = extrairRotulosDeTela(texto).map(normalizarParaComparar).filter(r => r.length >= 4);
+  if (rotulos.length === 0) return [];
+  const paginas: string[] = [];
+  for (const linha of indice.split('\n')) {
+    const m = /^- ([a-z0-9-]+) — (.*)$/.exec(linha);
+    if (!m) continue;
+    // Só título e "onde fica": os assuntos ("cobre: ...") têm verbos genéricos demais.
+    const cabeca = normalizarParaComparar(m[2].split(' | cobre:')[0].split(' | serve para:')[0]);
+    if (rotulos.some(r => cabeca.includes(r))) paginas.push(m[1]);
+  }
+  return paginas;
+}
+
 export type VereditoDaTrava =
   | { tipo: 'ok' }
   | { tipo: 'passos_sem_manual' }
-  | { tipo: 'nomes_fora_da_pagina'; nomes: string[] };
+  | { tipo: 'nomes_fora_da_pagina'; nomes: string[] }
+  | { tipo: 'cita_manual_sem_ler'; paginas: string[]; negativa: boolean };
 
 export interface EntradaDaTrava {
   /** Resposta candidata do modelo */
@@ -130,11 +179,24 @@ export interface EntradaDaTrava {
    * turno, a pergunta do usuario e o indice do manual.
    */
   fontes: readonly string[];
+  /** O indice do manual que foi no prompt — para saber se a resposta cita uma pagina dele */
+  indice?: string;
 }
 
 export function avaliarTravaDoManual(entrada: EntradaDaTrava): VereditoDaTrava {
   if (!entrada.manualLido) {
-    return pareceInstrucaoDeTela(entrada.texto) ? { tipo: 'passos_sem_manual' } : { tipo: 'ok' };
+    const instrucao = pareceInstrucaoDeTela(entrada.texto);
+    const paginas = entrada.indice ? paginasDoIndiceCitadas(entrada.texto, entrada.indice) : [];
+    // Citar o manual (ou uma página dele) vem primeiro: a correção já diz qual página ler.
+    if (citaOManual(entrada.texto) || paginas.length > 0) {
+      return {
+        tipo: 'cita_manual_sem_ler',
+        paginas,
+        // "Negativa" é só dizer que o manual não tem aquilo, sem ensinar tela nenhuma.
+        negativa: !instrucao && paginas.length === 0 && soNegaOManual(entrada.texto),
+      };
+    }
+    return instrucao ? { tipo: 'passos_sem_manual' } : { tipo: 'ok' };
   }
 
   const corpo = normalizarParaComparar(entrada.fontes.join('\n'));
@@ -177,6 +239,15 @@ export function instrucaoDeCorrecao(veredito: VereditoDaTrava): string | null {
       'Passo a passo só pode sair de consultar_manual. Chame AGORA consultar_manual com a página do índice que cobre o assunto e responda de novo ' +
       'usando somente os nomes de menu, aba e botão que estão na página. Se nenhuma página do índice cobre o assunto, diga com clareza que ainda não tem ' +
       'esse passo a passo no manual — sem descrever cliques, menus ou botões.'
+    );
+  }
+  if (veredito.tipo === 'cita_manual_sem_ler') {
+    const qual = veredito.paginas.length > 0 ? ` (${veredito.paginas.join(', ')})` : '';
+    return (
+      'CORREÇÃO OBRIGATÓRIA: a sua resposta cita o manual do Vibe, ou uma tela que tem página no manual, mas você NÃO leu nenhuma página neste turno. ' +
+      'O índice do prompt só serve para ESCOLHER a página: ele não diz as regras da tela, e a regra pode ter mudado. ' +
+      `Chame AGORA consultar_manual com a página do índice que cobre o assunto${qual} e responda de novo SOMENTE com o que a página diz. ` +
+      'Se nenhuma página do índice cobre o assunto, diga apenas que ainda não tem isso no manual — sem regras, sem "normalmente", sem citar fonte.'
     );
   }
   if (veredito.tipo === 'nomes_fora_da_pagina') {

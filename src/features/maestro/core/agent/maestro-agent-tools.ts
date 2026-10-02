@@ -56,7 +56,7 @@ import { simularOrcamentoAvulsoDb, listarProdutosCatalogo, buscarFotosProduto } 
 import { cotarOpcoesFrete, cotarOpcoesFretePorEndereco, enderecoFreteDeCep } from './maestro-agent-frete.server';
 import { gerarPdfPropostaServer } from './maestro-agent-pdf.server';
 import { buscarNomeUsuario } from '../simple/maestro-simple-vendedores.server';
-import { intervaloDiaSaoPaulo } from '../simple/maestro-simple-tempo';
+import { intervaloDiaSaoPaulo, ymdSaoPaulo } from '../simple/maestro-simple-tempo';
 import { calcularPerformanceVendedor } from '../simple/maestro-simple-performance.server';
 import { buscarContaCorrenteCliente, buscarAnaliseCredito } from '../simple/maestro-simple-conta-corrente.server';
 import { isAgentWriteEnabled, isWriteSalvarCotacaoEnabled } from './maestro-agent-config';
@@ -190,11 +190,19 @@ function inicioMesUtc(ano: number, mesIndex0: number): string {
   return new Date(Date.UTC(ano, mesIndex0, 1)).toISOString();
 }
 
+/**
+ * Ano e mês (0-11) de HOJE em Brasília. "Mês atual" e "mês passado" saem do
+ * calendário de Brasília: pelo relógio UTC, das 21h do último dia do mês em
+ * diante o "mês atual" já era o mês seguinte.
+ */
+function anoMesDeBrasilia(agora: Date = new Date()): { ano: number; mes: number } {
+  const hoje = ymdSaoPaulo(agora);
+  return { ano: Number(hoje.slice(0, 4)), mes: Number(hoje.slice(5, 7)) - 1 };
+}
+
 /** Converte MaestroPeriodo em intervalo desde/ate (UTC) para listagens. */
 function intervaloDoPeriodo(p: MaestroPeriodo): { desde?: string; ate?: string } {
-  const agora = new Date();
-  const ano = agora.getUTCFullYear();
-  const mes = agora.getUTCMonth();
+  const { ano, mes } = anoMesDeBrasilia();
   switch (p.tipo) {
     case 'mes_atual':
       return { desde: inicioMesUtc(ano, mes) };
@@ -217,8 +225,7 @@ function intervaloAnterior(
   intervalo: { desde?: string; ate?: string },
 ): { desde: string; ate: string; label: string } | null {
   const agora = new Date();
-  const ano = agora.getUTCFullYear();
-  const mes = agora.getUTCMonth();
+  const { ano, mes } = anoMesDeBrasilia(agora);
   if (periodo.tipo === 'mes_atual') {
     return { desde: inicioMesUtc(ano, mes - 1), ate: inicioMesUtc(ano, mes), label: 'mês passado' };
   }
@@ -481,7 +488,8 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
     handler: async (args, ctx) => {
       const idCliente = (args.__idClienteSeguro as number)!;
       const agora = new Date();
-      const inicioMes = inicioMesUtc(agora.getUTCFullYear(), agora.getUTCMonth());
+      const mesDeHoje = anoMesDeBrasilia(agora);
+      const inicioMes = inicioMesUtc(mesDeHoje.ano, mesDeHoje.mes);
 
       // View atemporal + indicadores do mês atual (adapters parametrizados) —
       // uma única chamada do agente, quatro leituras paralelas no servidor.
@@ -873,7 +881,13 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
       const idCliente = (args.__idClienteSeguro as number)!;
       const periodo = mapPeriodoArg(args.periodo);
       if (!periodo) return { found: false, error: 'Período inválido.' };
-      return await calcularRecebimentoPeriodo(ctx.supabase, idCliente, periodo, idEmpresaDe(args));
+      const recebido = await calcularRecebimentoPeriodo(ctx.supabase, idCliente, periodo, idEmpresaDe(args));
+      return {
+        ...recebido,
+        medida:
+          'RECEBIDO EM CAIXA: pagamentos efetivamente pagos, pela data do pagamento. NÃO é o faturamento ' +
+          '(que conta também o faturado a vencer, pela data da confirmação) — nomeie a medida ao apresentar.',
+      };
     },
   },
 
@@ -1004,7 +1018,10 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
       function: {
         name: 'vendas_por_vendedor',
         description:
-          'FATURAMENTO OFICIAL por vendedor em um período: ranking ou um vendedor específico. ' +
+          'FATURAMENTO OFICIAL em um período: o CONSOLIDADO da empresa ou das empresas ("faturamento das empresas mês passado" → ' +
+          'separar_por_empresa=true), o ranking de vendedores ou um vendedor específico. É o MESMO número do card Faturamento do Dashboard ' +
+          '(o total sai da mesma visão). O período vale pelo DIA de Brasília. Devolve PRONTOS: faturamento, total_cobrancas ' +
+          '(pagamentos confirmados) e total_propostas (propostas distintas) — apresente SEMPRE os dois e nomeie a medida pelo campo medida. ' +
           'Fonte oficial: pagamentos_v2 confirmados com status PAID ou A_VENCER, período por data_confirmacao; ' +
           'faturamento = soma dos pagamentos, propostas = id_int distintos (NUNCA por data de criação da proposta). ' +
           'Use para "quanto vendeu/faturou o(a) X", "ranking de vendedores", "vendas da equipe", comissão e metas. ' +
