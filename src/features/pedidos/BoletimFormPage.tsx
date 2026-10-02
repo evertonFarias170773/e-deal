@@ -84,6 +84,9 @@ import {
 } from "./services/revisao-expedicao.service";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { hasPermissao } from "@/features/auth/usuarios.service";
+// A data do evento é gravada como meia-noite em UTC: lida com `new Date` ela
+// aparecia com um dia a menos. É data civil — vale o que foi digitado.
+import { formatDataCivil } from "@/lib/formatters/date";
 
 export interface GabaritoItem {
   id: string;
@@ -2398,9 +2401,9 @@ export function BoletimFormPage() {
                     <label className="text-xs font-semibold text-slate-500 uppercase">Data do Evento</label>
                     <div className="relative w-full h-12 rounded-2xl border border-slate-200 bg-slate-100 overflow-hidden cursor-not-allowed">
                       <div className="absolute inset-0 flex items-center px-4">
-                        <span className="text-base font-bold text-slate-800 truncate">{dadosEventoData ? new Date(dadosEventoData).toLocaleDateString("pt-BR") : "Não informada"}</span>
+                        <span className="text-base font-bold text-slate-800 truncate">{dadosEventoData ? formatDataCivil(dadosEventoData) : "Não informada"}</span>
                       </div>
-                      <input type="text" readOnly value={dadosEventoData ? new Date(dadosEventoData).toLocaleDateString("pt-BR") : "Não informada"} className="opacity-0 absolute inset-0 w-full h-full cursor-not-allowed" />
+                      <input type="text" readOnly value={dadosEventoData ? formatDataCivil(dadosEventoData) : "Não informada"} className="opacity-0 absolute inset-0 w-full h-full cursor-not-allowed" />
                     </div>
                   </div>
                 </div>

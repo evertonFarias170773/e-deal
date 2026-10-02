@@ -14,7 +14,7 @@ import { StatusBadge } from "@/components/common/StatusBadge";
 import { SummaryCard } from "@/components/common/SummaryCard";
 import { listPropostasDoCadastro } from "@/features/cadastros/services/cadastros.service";
 import { formatCurrency } from "@/lib/formatters/currency";
-import { formatDate } from "@/lib/formatters/date";
+import { formatDataCivil, formatDate } from "@/lib/formatters/date";
 import { formatDocument } from "@/lib/formatters/document";
 import type { Cadastro, CadastroCategoria, CadastroPropostaListItem } from "@/features/cadastros/types";
 import { codecs } from "@/lib/url-state";
@@ -309,7 +309,7 @@ export function CadastroDetailPage({ cadastro, dataSource = "mock" }: CadastroDe
         <SummaryCard
           title="Total comprado"
           value={formatCurrency(cadastro.totalCompras)}
-          description={`Ultima compra em ${formatDate(cadastro.ultimaCompra)}.`}
+          description={`Ultima compra em ${formatDataCivil(cadastro.ultimaCompra)}.`}
           tone="special"
           icon={Building2}
         />

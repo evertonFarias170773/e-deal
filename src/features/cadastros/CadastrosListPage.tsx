@@ -9,7 +9,8 @@ import { useAppToast } from "@/components/common/AppToast";
 import { PageHeader } from "@/components/common/PageHeader";
 import { ResponsiveList } from "@/components/common/ResponsiveList";
 import { SummaryCard } from "@/components/common/SummaryCard";
-import { formatDate } from "@/lib/formatters/date";
+// Data civil (coluna `date`): `formatDate` leria como UTC e mostraria um dia a menos.
+import { formatDataCivil } from "@/lib/formatters/date";
 import { formatDocument } from "@/lib/formatters/document";
 import { useCadastrosDashboardResumo } from "@/features/cadastros/hooks/useCadastrosDashboardResumo";
 import { useCadastrosReadOnlyData } from "@/features/cadastros/hooks/useCadastrosReadOnlyData";
@@ -141,7 +142,7 @@ function AniversariantesModal({
                     <p className="mt-1 font-semibold text-slate-950">{item.nome}</p>
                     <p className="text-sm text-slate-500">{item.fantasia || item.apelido || "Sem nome fantasia"}</p>
                     <p className="mt-2 text-sm text-slate-600">
-                      Data comemorativa: {item.dataFundacao ? formatDate(item.dataFundacao) : "—"}
+                      Data comemorativa: {item.dataFundacao ? formatDataCivil(item.dataFundacao) : "—"}
                     </p>
                   </div>
                   <button
@@ -464,7 +465,7 @@ export function CadastrosListPage() {
           },
           {
             header: "Data Ult Pedido",
-            cell: (cadastro) => (cadastro.dataUltPedido ? formatDate(cadastro.dataUltPedido) : "—")
+            cell: (cadastro) => (cadastro.dataUltPedido ? formatDataCivil(cadastro.dataUltPedido) : "—")
           },
           {
             header: "Qtd/Pedidos",
@@ -543,7 +544,7 @@ export function CadastrosListPage() {
                   : formatDocument(cadastro.documentoNumeros || cadastro.documento)}
               </p>
               <p>Atendente: {cadastro.nomeVendedor}</p>
-              <p>Ultimo pedido: {cadastro.dataUltPedido ? formatDate(cadastro.dataUltPedido) : "—"}</p>
+              <p>Ultimo pedido: {cadastro.dataUltPedido ? formatDataCivil(cadastro.dataUltPedido) : "—"}</p>
               <p className="font-semibold text-slate-900">Pedidos: {cadastro.qtdPedidos}</p>
             </div>
 

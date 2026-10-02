@@ -37,6 +37,7 @@ import {
 } from "@/features/cobrancas/services/conta-corrente.service";
 import { Wallet, TrendingUp, TrendingDown, Coins, Search, Loader2, X, ChevronRight, ChevronDown } from "lucide-react";
 import Link from "next/link";
+import { formatDataCivil } from "@/lib/formatters/date";
 
 const STATUS_LABEL: Record<ContaCorrentePendenciaStatus, string> = {
   ABERTA: "Aberta",
@@ -82,6 +83,8 @@ function formatCurrency(v: number): string {
   return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
+// Só para carimbo com hora (created_at). O período do filtro é data civil e
+// usa `formatDataCivil`: lido por aqui ele aparecia com um dia a menos.
 function formatDate(iso: string | null): string {
   if (!iso) return "—";
   return new Date(iso).toLocaleDateString("pt-BR");
@@ -410,7 +413,7 @@ function ContaCorrentePage() {
           value={formatCurrency(totais.usoTotal)}
           description={
             temPeriodo
-              ? `${totais.usoQtd} uso(s) entre ${dataDe ? formatDate(dataDe) : "o início"} e ${dataAte ? formatDate(dataAte) : "hoje"}`
+              ? `${totais.usoQtd} uso(s) entre ${dataDe ? formatDataCivil(dataDe) : "o início"} e ${dataAte ? formatDataCivil(dataAte) : "hoje"}`
               : `${totais.usoQtd} uso(s) desde o início — filtre por período para fechar um mês`
           }
           icon={Coins}
