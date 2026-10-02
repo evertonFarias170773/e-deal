@@ -3867,7 +3867,9 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
       showToast({ type: "warning", title: "Troca de frete bloqueada", description: bloqueioTrocaFrete });
       return;
     }
-    const existente = form.fretes.find((f) => !ehFreteDeRetirada(f) && freteEhDoServico(f, servico));
+    const existente = form.fretes.find(
+      (f) => !ehFreteDeRetirada(f) && freteEhDoServico(idTransportadora, f, servico)
+    );
     if (existente) {
       if (existente.id === form.freteEscolhidoId) return;
       setValorCobradoCifDraft(null);
