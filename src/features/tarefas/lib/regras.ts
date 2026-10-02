@@ -32,17 +32,13 @@ export function podeAnexar(t: Tarefa) {
 }
 
 /**
- * Prazo e prioridade: quem criou, quem recebeu e o responsavel, com a tarefa
- * aberta ou em andamento. Em melhoria, quem recebe sao os administradores.
- * Administrador que nao participa da tarefa nao altera.
+ * Prazo e prioridade: quem criou, quem recebeu, o responsavel e o
+ * administrador (como nas outras acoes), com a tarefa aberta ou em andamento.
  */
 export function podeAlterarPrazoPrioridade(t: Tarefa, userId: string, admin: boolean, participa: boolean) {
   return (
     ativa(t) &&
-    (t.criado_por_user_id === userId ||
-      t.responsavel_user_id === userId ||
-      recebida(t, userId, participa) ||
-      (t.tipo === "MELHORIA" && admin))
+    (admin || t.criado_por_user_id === userId || t.responsavel_user_id === userId || recebida(t, userId, participa))
   );
 }
 

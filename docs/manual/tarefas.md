@@ -71,7 +71,7 @@ Nomes exatamente como aparecem na tela.
 |---|---|---|
 | Número do pedido (link) | Linha **Pedido** | Abre a proposta. |
 | Código do cliente (link) | Linha **Cliente** | Abre o cadastro do cliente. |
-| **Alterar prazo ou prioridade** | Abaixo das linhas de dados, com a tarefa em aberto, para quem criou, quem recebeu e o responsável | Abre o quadro com os campos **Prazo (vazio = sem prazo)** e **Prioridade**. |
+| **Alterar prazo ou prioridade** | Abaixo das linhas de dados, com a tarefa em aberto, para quem criou, quem recebeu, o responsável e administrador | Abre o quadro com os campos **Prazo (vazio = sem prazo)** e **Prioridade**. |
 | **Salvar alteração** | No quadro de alteração, à direita | Grava o novo prazo e a nova prioridade. |
 | **Não alterar** | No quadro de alteração | Fecha o quadro sem mudar nada. |
 | **Adicionar anexo** | Bloco **Anexos**, à direita, com a tarefa em aberto | Sobe um arquivo para a tarefa. |
@@ -217,7 +217,7 @@ Essa tela guarda as pendências de proposta do modelo anterior. Não dá mais pa
 ## Regras e bloqueios
 
 - Depois de criada, a tarefa só muda na situação, no prazo e na prioridade. Título, detalhes, para quem, pedido e cliente ficam como foram salvos. Se algum deles ficou errado, cancele e crie outra.
-- Prazo e prioridade só mudam com a tarefa **Aberta** ou **Em andamento**, e só por quem criou, por quem recebeu e pelo responsável. Administrador que não participa da tarefa não altera.
+- Prazo e prioridade só mudam com a tarefa **Aberta** ou **Em andamento**, e só por quem criou, por quem recebeu, pelo responsável ou por um administrador.
 - Toda mudança de prazo ou de prioridade fica no histórico, com quem mudou e quando. Não dá para apagar essa linha.
 - **Concluir** sempre pede confirmação. Enquanto você não clicar em **Confirmar conclusão**, nada é gravado.
 - Não dá para apagar uma tarefa. Ela só pode ser concluída ou cancelada, e o histórico fica guardado.
@@ -273,8 +273,7 @@ Essa tela guarda as pendências de proposta do modelo anterior. Não dá mais pa
 | "Só quem recebeu a tarefa ou um administrador pode assumi-la." | Você vê a tarefa (por exemplo, porque a criou), mas não está entre as pessoas que a receberam | Peça a quem recebeu ou a um administrador |
 | "Só quem assumiu a tarefa ou um administrador pode concluí-la." | A tarefa está com outro responsável | Fale com o responsável pela conversa, ou peça a um administrador |
 | "Só quem criou a tarefa ou um administrador pode cancelá-la." | Você não criou a tarefa | Peça a quem criou ou a um administrador |
-| "Só quem criou a tarefa, quem a recebeu ou o responsável pode mudar o prazo e a prioridade." | Você vê a tarefa como administrador, mas não participa dela | Peça a quem criou, a quem recebeu ou ao responsável |
-| Não vejo **Alterar prazo ou prioridade** | A tarefa já foi encerrada, ou você não criou, não recebeu nem é o responsável | Peça a mudança pela conversa a quem participa |
+| Não vejo **Alterar prazo ou prioridade** | A tarefa já foi encerrada, ou você não criou, não recebeu, não é o responsável nem é administrador | Peça a mudança pela conversa a quem participa, ou a um administrador |
 | "Prazo inválido." | A data informada não existe | Escolha a data pelo calendário do campo |
 | "Esta tarefa já foi encerrada." | A tarefa foi concluída ou cancelada por outra pessoa enquanto você estava com ela aberta | Feche a janela; a tarefa agora está em **Encerradas** |
 | "Tarefa encerrada: a conversa ficou só para leitura." | A tarefa já foi concluída ou cancelada | Se o assunto continua, crie uma nova tarefa |

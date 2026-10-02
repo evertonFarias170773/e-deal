@@ -4,12 +4,12 @@
  * Corpo: { data_limite?: "AAAA-MM-DD" | null, prioridade?: "NORMAL" | "ALTA" | "URGENTE" }
  * So o campo presente no corpo e alterado; `data_limite: null` tira o prazo.
  *
- * Grava com a sessao do usuario. Quem pode (quem criou, quem recebeu e o
- * responsavel), e em qual situacao (aberta ou em andamento), e decidido pela
+ * Grava com a sessao do usuario. Quem pode (quem criou, quem recebeu, o
+ * responsavel e o administrador), e em qual situacao (aberta ou em andamento), e decidido pela
  * trigger `tarefas_equipe__guarda`, que tambem escreve a linha do historico
  * (`alteracoes`) e marca a novidade para os outros participantes. O RLS esconde
- * a tarefa de quem nao participa dela: nesse caso o UPDATE afeta zero linhas e
- * a rota responde "nao encontrada".
+ * a tarefa de quem nao participa dela e nao e administrador: nesse caso o
+ * UPDATE afeta zero linhas e a rota responde "nao encontrada".
  */
 
 import { NextResponse, type NextRequest } from "next/server";

@@ -57,8 +57,8 @@ type ItemHistorico =
  *   situacao. So com a tarefa aberta ou em andamento. Ninguem edita nem apaga.
  * - Concluir abre uma janela de confirmacao, com a observacao e o anexo da
  *   conclusao. `modoConcluir` (botao Concluir da lista) abre direto nela.
- * - Prazo e prioridade: quem criou, quem recebeu e o responsavel alteram com a
- *   tarefa aberta ou em andamento. A trigger grava a linha do historico e marca
+ * - Prazo e prioridade: quem criou, quem recebeu, o responsavel e o
+ *   administrador alteram com a tarefa aberta ou em andamento. A trigger grava a linha do historico e marca
  *   a novidade; titulo e vinculos continuam sem edicao.
  */
 export function TarefaDetalheModal({

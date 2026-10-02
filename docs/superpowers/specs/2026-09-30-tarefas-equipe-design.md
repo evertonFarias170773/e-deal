@@ -99,12 +99,12 @@ role, dentro das rotas, lê e grava.
 Título, descrição, destinatários, vínculos, tipo e criador não mudam depois de
 criados.
 
-**Prazo e prioridade mudam** (02/10/2026, migration
-`20261002_tarefas_equipe_prazo_prioridade`), com a tarefa aberta ou em
-andamento, por quem criou, por quem recebeu (destinatário escolhido; em tarefa
-para todos, quem participa das Tarefas; em melhoria, os administradores) e pelo
-responsável. Administrador que não participa da tarefa não altera. Não se muda
-prazo ou prioridade no mesmo UPDATE que muda a situação.
+**Prazo e prioridade mudam** (02/10/2026, migrations
+`20261002_tarefas_equipe_prazo_prioridade` e `..._prazo_prioridade_admin`), com
+a tarefa aberta ou em andamento, por quem criou, por quem recebeu (destinatário
+escolhido; em tarefa para todos, quem participa das Tarefas), pelo responsável
+e pelo administrador, como nas outras ações. Não se muda prazo ou prioridade no
+mesmo UPDATE que muda a situação.
 
 - Cada campo mudado vira uma entrada em `tarefas_equipe.alteracoes` (jsonb,
   lista): `{ em, por, campo: PRAZO | PRIORIDADE, de, para }`. Só a trigger de
