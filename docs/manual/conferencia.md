@@ -164,7 +164,7 @@ Enquanto houver título em aberto, a Conferência recusa o cancelamento, lista o
    - **Links e Códigos de Pagamento**: link de pagamento, código PIX, linha digitável e PDF, conforme o tipo da cobrança;
    - **Ações Administrativas**: **Atualizar Status**, **Visualizar Checkout** (em alguns tipos de cobrança), **Liberar para pedido** e **Cancelar cobrança**;
    - o mesmo menu de ações da lista, ao lado do status.
-3. Avisos que podem aparecer no detalhe: **Gerando código PIX...** (PIX ainda sem código; use **Atualizar status**) e **Vencimento Excedido** (o prazo da cobrança expirou).
+3. Avisos que podem aparecer no detalhe: **Gerando código PIX...** (PIX ainda sem código; use **Atualizar status**) e **Vencimento Excedido** (o prazo da cobrança expirou). Esse aviso só aparece a partir do dia seguinte ao vencimento; no próprio dia do vencimento a cobrança ainda está no prazo.
 4. **Voltar para cobranças** retorna à lista.
 
 ### Consultar o histórico

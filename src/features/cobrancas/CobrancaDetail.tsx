@@ -25,7 +25,7 @@ import {
   isPropostaLiberadaParaPedido
 } from "@/features/cobrancas/cobrancas-utils";
 import { formatCurrency } from "@/lib/formatters/currency";
-import { formatDate } from "@/lib/formatters/date";
+import { formatDataCivil, formatDate } from "@/lib/formatters/date";
 import type { Cobranca } from "@/features/cobrancas/types";
 
 export interface CobrancaDetailProps {
@@ -212,7 +212,7 @@ export function CobrancaDetail({ cobrancaId, onClose, onRefreshProposta }: Cobra
               <div>
                 <span className="text-slate-500 block mb-0.5">Vencimento</span>
                 <span className="font-semibold text-slate-900">
-                  {cobrancaAtual.vencimento ? formatDate(cobrancaAtual.vencimento) : "-"}
+                  {cobrancaAtual.vencimento ? formatDataCivil(cobrancaAtual.vencimento) : "-"}
                 </span>
                 {cobrancaAtual.paid_at ? (
                   <span className="text-[10px] text-teal-600 block font-medium">Pago em {formatDate(cobrancaAtual.paid_at)}</span>

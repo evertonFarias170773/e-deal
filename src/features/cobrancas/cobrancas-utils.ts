@@ -1,7 +1,7 @@
 import type { StatusTone } from "@/lib/types";
 import type { Cobranca, EmpresaRecebedoraOption, LiberacaoPedidoStatus } from "@/features/cobrancas/types";
 import { formatCurrencyWithoutPrefix } from "@/lib/formatters/currency";
-import { formatDate } from "@/lib/formatters/date";
+import { formatDate, hojeEmSaoPaulo } from "@/lib/formatters/date";
 
 export const EMPRESAS_RECEBEDORAS_FIXAS: EmpresaRecebedoraOption[] = [
   {
@@ -405,7 +405,10 @@ export function isCobrancaVencida(cobranca: Pick<Cobranca, "status" | "venciment
     return false;
   }
 
-  return new Date(cobranca.vencimento).getTime() < Date.now();
+  // Vencida só DEPOIS do dia do vencimento, pelo calendário de São Paulo. Antes
+  // a data era lida como meia-noite em UTC: a cobrança aparecia como vencida a
+  // partir das 21h da véspera e durante todo o dia do vencimento.
+  return cobranca.vencimento.slice(0, 10) < hojeEmSaoPaulo();
 }
 
 export function getCobrancaStatusDescription(cobranca: Cobranca) {

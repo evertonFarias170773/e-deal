@@ -6,7 +6,7 @@ import { CobrancaStatusBadge } from "@/features/cobrancas/CobrancaStatusBadge";
 import { useCobrancas } from "@/features/cobrancas/CobrancasProvider";
 import { getTipoCobrancaLabel } from "@/features/cobrancas/cobrancas-utils";
 import { formatCurrency } from "@/lib/formatters/currency";
-import { formatDate } from "@/lib/formatters/date";
+import { formatDataCivil } from "@/lib/formatters/date";
 
 type PublicCobrancaPageProps = {
   token: string;
@@ -59,7 +59,7 @@ export function PublicCobrancaPage({ token }: PublicCobrancaPageProps) {
               <InfoRow label="OS Ideal" value={cobranca.os_ideal} />
               <InfoRow label="Valor" value={formatCurrency(cobranca.cartao_valor_final ?? cobranca.valor)} />
               <InfoRow label="Status" value={cobranca.status} />
-              <InfoRow label="Vencimento" value={cobranca.vencimento ? formatDate(cobranca.vencimento) : "Sem vencimento"} />
+              <InfoRow label="Vencimento" value={cobranca.vencimento ? formatDataCivil(cobranca.vencimento) : "Sem vencimento"} />
               <InfoRow label="PIX copia e cola" value={cobranca.pix_copia_cola ?? "Não se aplica"} />
               <InfoRow label="Checkout / boleto" value={cobranca.cartao_checkout_url ?? cobranca.url_pdf ?? cobranca.url_cobranca ?? "Link indisponível"} />
             </div>
