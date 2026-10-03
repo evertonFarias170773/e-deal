@@ -415,7 +415,8 @@ export async function montarPdfProposta(
     size = 10,
     bold = false,
     align: Align = "left",
-    color = rgb(0, 0, 0)
+    color = rgb(0, 0, 0),
+    pagina = page
   ) => {
     const raw = text != null ? String(text) : "-";
     const t = sanitizeForPdf(raw).replace(/\n/g, " ");
@@ -430,7 +431,7 @@ export async function montarPdfProposta(
       xFinal = x - width / 2;
     }
 
-    page.drawText(t, {
+    pagina.drawText(t, {
       x: xFinal,
       y,
       size,
@@ -442,9 +443,7 @@ export async function montarPdfProposta(
   // ============================
   // FUNÇÃO DE QUEBRA DE LINHA
   // ============================
-  // maxWidth pode variar por linha (índice da linha já montada).
-  function wrapLine(text: string, maxWidth: number | ((idx: number) => number), fontSize: number) {
-    const larguraDa = (idx: number) => (typeof maxWidth === "number" ? maxWidth : maxWidth(idx));
+  function wrapLine(text: string, maxWidth: number, fontSize: number) {
     const clean = sanitizeForPdf(text);
 
     const logicalLines = clean.split("\n");
@@ -458,7 +457,7 @@ export async function montarPdfProposta(
         const testLine = currentLine ? `${currentLine} ${word}` : word;
         const width = font.widthOfTextAtSize(testLine, fontSize);
 
-        if (width > larguraDa(finalLines.length) && currentLine) {
+        if (width > maxWidth && currentLine) {
           finalLines.push(currentLine);
           currentLine = word;
         } else {
@@ -581,27 +580,58 @@ export async function montarPdfProposta(
     currentY -= linhas.length * (fontSize + lineSpacing);
   }
 
+  // ============================
+  // OBSERVAÇÕES
+  // ============================
+  // Espaço: de y 266 (abaixo do VALOR TOTAL) até y 162 (acima da frase da
+  // entrega, em y 149). Na OC todas as linhas ficam na coluna da esquerda, antes
+  // da linha da assinatura (x 307); no orçamento, na largura de sempre.
+  // Não cabe: a fonte desce de 10 até 7 pt, de 0,5 em 0,5. Ainda não cabe:
+  // nada é cortado — o resto vai para páginas "Observações (continuação)",
+  // com o mesmo modelo de fundo e o número da proposta no cabeçalho.
   if (obsNormalizada) {
-    const obsFontSize = 10;
-    const obsLineSpacing = 5;
-    // Na OC a assinatura do cliente ocupa a direita abaixo de y 230 (x 307 em
-    // diante) e a frase da entrega fica em y 149: as 2 primeiras linhas usam a
-    // largura do orçamento; dali para baixo a observação fica à esquerda da
-    // assinatura e para antes da frase da entrega.
-    const obsMaxWidth = (idx: number) => (ehOc && idx >= 2 ? 265 : 500);
+    const xObs = 30;
+    const larguraObs = ehOc ? 270 : 500;
+    const yTopo = 266;
+    const yFim = 162;
+    const entrelinha = (tamanho: number) => tamanho * 1.5;
+    const cabem = (topo: number, tamanho: number) =>
+      Math.floor((topo - yFim) / entrelinha(tamanho)) + 1;
 
-    let linhasObs = wrapLine(obsNormalizada, obsMaxWidth, obsFontSize);
-    if (ehOc) {
-      const cabem = Math.floor((266 - 162) / (obsFontSize + obsLineSpacing)) + 1;
-      if (linhasObs.length > cabem) {
-        linhasObs = [...linhasObs.slice(0, cabem - 1), `${linhasObs[cabem - 1]} ...`];
-      }
+    let tamanhoObs = 10;
+    let linhasObs = wrapLine(obsNormalizada, larguraObs, tamanhoObs);
+    while (tamanhoObs > 7 && linhasObs.length > cabem(yTopo, tamanhoObs)) {
+      tamanhoObs -= 0.5;
+      linhasObs = wrapLine(obsNormalizada, larguraObs, tamanhoObs);
     }
 
-    linhasObs.forEach((linha, idx) => {
-      const y = 266 - idx * (obsFontSize + obsLineSpacing);
-      drawText(linha, 30, y, obsFontSize);
+    const naPrimeira = linhasObs.slice(0, cabem(yTopo, tamanhoObs));
+    naPrimeira.forEach((linha, idx) => {
+      drawText(linha, xObs, yTopo - idx * entrelinha(tamanhoObs), tamanhoObs);
     });
+
+    let restantes = linhasObs.slice(naPrimeira.length);
+    if (restantes.length > 0) {
+      // Cópia limpa do modelo (o pdfDoc já tem os textos da primeira página).
+      const modeloLimpo = await PDFDocument.load(templatePdfBytes, { ignoreEncryption: true });
+      const yTopoContinuacao = 680;
+      while (restantes.length > 0) {
+        const [pagina] = await pdfDoc.copyPages(modeloLimpo, [0]);
+        pdfDoc.addPage(pagina);
+        drawText(String(id_int), 514, 760, 16, true, "center", rgb(0, 0, 0), pagina);
+        if (ehOc) drawText("DATA:", 473.1, 740.8, 9, true, "left", corRotulo, pagina);
+        drawText(formatDate(dataProposta), 505, 741, 10, false, "left", rgb(0, 0, 0), pagina);
+        drawText("Observações (continuação)", 29.5, 700, 12, true, "left", corTexto, pagina);
+        const nestaPagina = restantes.slice(0, cabem(yTopoContinuacao, tamanhoObs));
+        nestaPagina.forEach((linha, idx) => {
+          drawText(
+            linha, xObs, yTopoContinuacao - idx * entrelinha(tamanhoObs),
+            tamanhoObs, false, "left", rgb(0, 0, 0), pagina
+          );
+        });
+        restantes = restantes.slice(nestaPagina.length);
+      }
+    }
   }
 
   // ============================

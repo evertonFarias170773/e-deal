@@ -276,6 +276,7 @@ O aviso some quando você clica em **Entendi** ou quando a cópia ganha cobranç
 - A cópia não leva cobrança, status, cotação de frete, bônus de tabela especial, arte dos modelos, dados do evento, chat, tarefas nem histórico. O bônus do cliente entra de novo no primeiro **Salvar alterações**.
 - Os modelos da cópia nascem com a arte pendente, sem arquivo e sem amostra, e trazem "Cópia do pedido #<número>" na observação de arte. Modelo de produto cancelado na original não vem.
 - A cópia que traz modelos abre como **NOVO / EM ARTE**, como acontece quando os modelos são digitados.
+- No PDF da proposta e na OC, as **Observações e Condições** saem inteiras, sem corte. Na OC elas ficam todas à esquerda da assinatura. Texto que não cabe no espaço abaixo do total sai com letra menor, até um limite. Se ainda assim não couber, o PDF ganha uma página **Observações (continuação)** com o resto do texto.
 
 ## O que não confundir
 
