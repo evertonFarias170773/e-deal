@@ -278,18 +278,20 @@ export async function montarPdfProposta(
   // Endereço: o que a proposta gravou (propostas.id_endereco_ent).
   // Envio: modalidade + o mesmo nome da coluna Envio da lista de Pedidos, pela
   // regra de nomeTransporteEfetivo (src/features/orcamentos/lib/modalidade-frete.ts):
-  // RETIRA -> "RETIRADA"; FOB -> transportadora gravada em frete_escolhido;
-  // CIF ou sem modalidade -> serviço cotado gravado em frete_escolhido.
+  // FOB -> transportadora gravada em frete_escolhido; CIF ou sem modalidade ->
+  // serviço cotado gravado em frete_escolhido. RETIRA não usa o nome da
+  // coluna: ENVIO repete "Retira no balcão", igual à linha ENTREGA.
   const modalidade = String(propostaFat.modalidade_frete ?? "").trim().toUpperCase() || null;
   let linhaEntrega = "";
   let linhaEnvio = "";
   if (documento === "oc") {
     const freteGravado = String(propostaFat.frete_escolhido ?? "").trim();
     const nomeEnvio =
-      modalidade === "RETIRA" ? "RETIRADA"
-      : modalidade === "FOB" ? freteGravado || "Transportadora a definir"
-      : freteGravado;
-    linhaEnvio = modalidade ? `${modalidade} — ${nomeEnvio || "—"}` : nomeEnvio || "—";
+      modalidade === "FOB" ? freteGravado || "Transportadora a definir" : freteGravado;
+    linhaEnvio =
+      modalidade === "RETIRA" ? "Retira no balcão"
+      : modalidade ? `${modalidade} — ${nomeEnvio || "—"}`
+      : nomeEnvio || "—";
 
     if (modalidade === "RETIRA") {
       linhaEntrega = "Retira no balcão";
