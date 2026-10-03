@@ -244,7 +244,7 @@ O complemento herda do pedido original o cliente, o endereço, o contato, o paga
 3. Confira o faturado, o endereço de entrega, o contato e as observações. Eles vêm da original.
 4. Na aba Fretes, a modalidade (CIF, FOB ou Retira) e a transportadora do FOB vêm da original. A cotação não vem: em CIF, escolha o frete de novo.
 5. Na aba Orçamento, os produtos, as quantidades, as variações e o desconto geral vêm da original, com os preços daquela venda. Produto cancelado na original não vem.
-6. Na aba Pedido, os modelos vêm da original com o mesmo nome, cor do papel, quantidade e numeração, e com a arte pendente. Confira a numeração: se for o mesmo evento, ela vai se repetir.
+6. Na aba Pedido, os modelos vêm da original com o mesmo nome, cor do papel, quantidade e numeração, e com a arte pendente. Confira a numeração: se for o mesmo evento, ela vai se repetir. Modelo criado pelo **Mapa Teatro** continua ligado ao mesmo mapa e ao mesmo setor, e o selo **Mapa: <nome do mapa>** aparece na cópia.
 7. Clique em **Salvar alterações**. A cobrança da original não vem: gere a da cópia na aba Pagamentos.
 
 O aviso some quando você clica em **Entendi** ou quando a cópia ganha cobrança.

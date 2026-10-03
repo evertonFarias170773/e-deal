@@ -151,6 +151,7 @@ Clicar em **Mapa Teatro** de novo, no mesmo mapa, traz de volta só os setores q
 - Mapa em formato antigo, ou com setor sem identificador, aparece apagado na janela com o motivo e não pode ser escolhido.
 - Em pedido com cobrança o botão **Mapa Teatro** fica apagado: o mapa só entra antes da cobrança.
 - Duplicar uma linha de modelo de mapa (ícone de copiar) cria um modelo comum, sem ligação com o mapa.
+- **Duplicar proposta** leva os modelos de mapa com a ligação: a cópia fica com o mesmo mapa, os mesmos setores e a mesma cópia do setor guardada na original, mesmo que o mapa tenha mudado depois.
 - Não dá para sair da aba com modelo não gravado sem responder à pergunta "Há modelos não gravados na lista rápida da aba Pedido. Sair e descartar as alterações? Para manter, cancele e use Salvar alterações.". Se você confirmar, o que não foi gravado se perde.
 - Linha nova sem os obrigatórios não é gravada. A tela avisa: "N lote(s) ainda sem os obrigatórios — não são gravados até ficarem completos.". As demais linhas são gravadas normalmente.
 - Modelo que já existe e ficou sem um campo obrigatório segura a gravação inteira do produto, até ser completado.
