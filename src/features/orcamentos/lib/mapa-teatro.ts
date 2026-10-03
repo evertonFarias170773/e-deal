@@ -37,7 +37,12 @@
  *   JCS é a RFC 8785 (JSON Canonicalization Scheme), aplicada ao valor JSON da
  *   coluna `config` INTEIRA:
  *     1. objeto: chaves ordenadas pela sequência de unidades UTF-16 (a ordem
- *        padrão de comparação de strings do JavaScript), sem repetição;
+ *        padrão de comparação de strings do JavaScript), sem repetição, em
+ *        TODOS os níveis. Vale para chave puramente inteira também: "10" vem
+ *        antes de "2". Atenção de quem implementa em JavaScript: o motor
+ *        enumera essas chaves em ordem numérica, então reordenar o objeto e
+ *        chamar `JSON.stringify` NÃO dá JCS — é preciso montar o texto chave a
+ *        chave, na ordem ordenada (é o que `jsonCanonico` faz);
  *     2. array: na ordem em que está;
  *     3. sem espaço nenhum entre os tokens — separadores "," e ":";
  *     4. string: como o `JSON.stringify` do ECMAScript escreve — aspas duplas,
@@ -47,6 +52,9 @@
  *        1.0 → `1`); `true`, `false` e `null` literais;
  *     6. o texto resultante é codificado em UTF-8, sem BOM, e passa pelo
  *        SHA-256.
+ *   SÓ A CONFIG entra (decisão do dono, 04/10/2026): `id` e `name` do mapa
+ *   ficam de fora, para renomear o mapa não desfazer o vínculo. Texto com
+ *   substituto solto (Unicode inválido) é recusado, como a RFC manda.
  *   Em Python: `hashlib.sha256(jcs.canonicalize(config)).hexdigest()` (pacote
  *   `jcs`), ou `json.dumps(config, sort_keys=True, separators=(",", ":"),
  *   ensure_ascii=False)` enquanto a config só tiver números inteiros e chaves
@@ -214,16 +222,49 @@ export function jsonCanonico(valor: Json): string {
       throw new Error("JSON canônico não aceita NaN nem infinito.");
     }
     if (valor === undefined) throw new Error("JSON canônico não aceita valor indefinido.");
+    if (typeof valor === "string") exigirTextoBemFormado(valor);
     return JSON.stringify(valor);
   }
   if (Array.isArray(valor)) {
     return `[${valor.map((item) => jsonCanonico(item === undefined ? null : item)).join(",")}]`;
   }
   const objeto = valor as Record<string, Json>;
+  // A ORDEM NÃO VEM DA ENUMERAÇÃO DO OBJETO. O JavaScript enumera chave
+  // puramente inteira ("2", "10") primeiro e em ordem numérica, e é isso que
+  // faz "ordenar e chamar JSON.stringify" não ser JCS. Aqui a lista de chaves é
+  // ordenada explicitamente por unidade UTF-16 ("10" antes de "2") e o texto é
+  // montado chave a chave, nessa ordem, em todos os níveis.
   const chaves = Object.keys(objeto)
     .filter((chave) => objeto[chave] !== undefined)
     .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
-  return `{${chaves.map((chave) => `${JSON.stringify(chave)}:${jsonCanonico(objeto[chave])}`).join(",")}}`;
+  return `{${chaves
+    .map((chave) => {
+      exigirTextoBemFormado(chave);
+      return `${JSON.stringify(chave)}:${jsonCanonico(objeto[chave])}`;
+    })
+    .join(",")}}`;
+}
+
+/**
+ * A RFC 8785 só aceita texto Unicode válido: substituto solto (metade de um par
+ * UTF-16) é erro, não algo a escapar. O `JSON.stringify` o escreveria como
+ * `\ud83d`, e dois sistemas poderiam discordar do resultado. Não acontece com o
+ * que vem de uma coluna jsonb — o Postgres recusa esse texto —, mas a função não
+ * depende disso para ser fiel.
+ */
+function exigirTextoBemFormado(texto: string): void {
+  for (let i = 0; i < texto.length; i += 1) {
+    const unidade = texto.charCodeAt(i);
+    if (unidade >= 0xd800 && unidade <= 0xdbff) {
+      const seguinte = texto.charCodeAt(i + 1);
+      if (!(seguinte >= 0xdc00 && seguinte <= 0xdfff)) {
+        throw new Error("JSON canônico não aceita texto com substituto solto (Unicode inválido).");
+      }
+      i += 1;
+    } else if (unidade >= 0xdc00 && unidade <= 0xdfff) {
+      throw new Error("JSON canônico não aceita texto com substituto solto (Unicode inválido).");
+    }
+  }
 }
 
 /**

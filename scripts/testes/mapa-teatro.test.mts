@@ -68,6 +68,84 @@ checar("canonico: maiuscula vem antes de minuscula", jsonCanonico({ a: 1, B: 2 }
 checar("canonico: objeto e array vazios", jsonCanonico({ o: {}, l: [] }), '{"l":[],"o":{}}');
 checar("canonico: comeca pelas chaves em ordem", jsonCanonico(config).startsWith('{"cadeiras":{},"setores":[{"cadeiras":{"-14,0":'), true);
 
+// — 2b. JCS FIEL (RFC 8785): os casos em que "ordenar e chamar JSON.stringify" erraria —
+// Chave puramente inteira: o JavaScript ENUMERA "2" antes de "10" (ordem
+// numérica), qualquer que seja a ordem de entrada. O canônico não usa a
+// enumeração: ordena as chaves por unidade UTF-16, e aí "10" vem antes de "2".
+const inteiras = JSON.parse('{"2":"dois","10":"dez","1":"um","b":{"20":true,"3":false,"100":null}}');
+checar("jcs: o motor enumera as chaves inteiras em ordem numerica", Object.keys(inteiras), ["1", "2", "10", "b"]);
+checar(
+  "jcs: chaves inteiras ordenadas como texto, em qualquer nivel",
+  jsonCanonico(inteiras),
+  '{"1":"um","10":"dez","2":"dois","b":{"100":null,"20":true,"3":false}}'
+);
+checar(
+  "jcs: chave inteira misturada com chave de posicao e com letra",
+  jsonCanonico(JSON.parse('{"a":1,"9":1,"10,2":1,"-1,0":1,"10":1}')),
+  '{"-1,0":1,"10":1,"10,2":1,"9":1,"a":1}'
+);
+checar(
+  "jcs: objeto dentro de array tambem e ordenado",
+  jsonCanonico(JSON.parse('[{"2":0,"10":0},{"z":0,"A":0}]')),
+  '[{"10":0,"2":0},{"A":0,"z":0}]'
+);
+// Ordenação da RFC 8785, seção 3.2.3: por unidade UTF-16, não por code point —
+// o emoji (par substituto, D83D DE00) vem ANTES de U+FB33. As chaves são
+// montadas por código, sem escape no fonte. A ordem é lida no TEXTO canônico:
+// reler com JSON.parse devolveria as chaves inteiras na frente.
+const chavesDaRfc = [0x20ac, 0x0d, 0xfb33, 0x31, 0x1f600, 0x80, 0xf6].map((c) => String.fromCodePoint(c));
+const canonicoDaRfc = jsonCanonico(Object.fromEntries(chavesDaRfc.map((chave) => [chave, 1])));
+checar(
+  "jcs: ordem das chaves do exemplo da RFC 8785 (3.2.3)",
+  [...chavesDaRfc]
+    .sort((a, b) => canonicoDaRfc.indexOf(JSON.stringify(a) + ":") - canonicoDaRfc.indexOf(JSON.stringify(b) + ":"))
+    .map((chave) => chave.codePointAt(0)!.toString(16)),
+  ["d", "31", "80", "f6", "20ac", "1f600", "fb33"]
+);
+// Números e strings do exemplo da RFC 8785 (3.2.2 e 3.2.4): escritos como o
+// JSON.stringify do ECMAScript escreve. BARRA e ASPAS montadas por código.
+const BARRA = String.fromCharCode(92);
+const ASPAS = String.fromCharCode(34);
+const textoDaRfc =
+  String.fromCodePoint(0x20ac) + "$" + String.fromCharCode(15) + String.fromCharCode(10) + "A'B" + ASPAS + BARRA + BARRA + ASPAS + "/";
+checar(
+  "jcs: numeros do exemplo da RFC 8785",
+  jsonCanonico([333333333.33333329, 1e30, 4.5, 2e-3, 0.000000000000000000000000001]),
+  "[333333333.3333333,1e+30,4.5,0.002,1e-27]"
+);
+checar(
+  "jcs: string do exemplo da RFC 8785 (so aspas, barra e controles escapados)",
+  jsonCanonico(textoDaRfc),
+  ASPAS + String.fromCodePoint(0x20ac) + "$" + BARRA + "u000f" + BARRA + "n" + "A'B" + BARRA + ASPAS + BARRA + BARRA + BARRA + BARRA + BARRA + ASPAS + "/" + ASPAS
+);
+checar("jcs: zero negativo e escrito como 0", jsonCanonico([-0, 0]), "[0,0]");
+checar("jcs: inteiro no limite seguro", jsonCanonico([9007199254740991, -9007199254740991]), "[9007199254740991,-9007199254740991]");
+checar("jcs: numero grande em notacao do ECMAScript", jsonCanonico([1e21, 123456789012345680000]), "[1e+21,123456789012345680000]");
+const recusa = (v: unknown) => {
+  try {
+    jsonCanonico(v);
+    return "ACEITOU";
+  } catch {
+    return "RECUSOU";
+  }
+};
+checar("jcs: NaN e infinito nao tem forma canonica", [recusa([NaN]), recusa({ n: Infinity })], ["RECUSOU", "RECUSOU"]);
+const ALTO = String.fromCharCode(0xd83d);
+const BAIXO = String.fromCharCode(0xde00);
+checar(
+  "jcs: substituto solto nao e texto valido, em valor ou em chave",
+  [recusa(ALTO), recusa("a" + BAIXO), recusa({ [BAIXO]: 1 }), recusa(BAIXO + ALTO)],
+  ["RECUSOU", "RECUSOU", "RECUSOU", "RECUSOU"]
+);
+checar("jcs: par substituto completo e aceito, literal", jsonCanonico(ALTO + BAIXO), ASPAS + String.fromCodePoint(0x1f600) + ASPAS);
+// A revisão é só da config: renomear o mapa (ou trocar o id dele) não muda nada,
+// porque nome e id nem entram na função.
+checar(
+  "revisao: e funcao so da config (o mesmo valor para qualquer nome de mapa)",
+  await revisaoDoMapaTeatro(JSON.parse(JSON.stringify(config))),
+  REVISAO_PYTHON
+);
+
 // — 3. Setores e quantidades —
 const leitura = lerSetoresDoMapaTeatro(config);
 checar("setores: leitura aceita o mapa de exemplo", leitura.ok, true);
