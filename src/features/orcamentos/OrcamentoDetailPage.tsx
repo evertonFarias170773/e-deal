@@ -22,6 +22,7 @@ import { formatWeightFromGrams } from "@/lib/formatters/weight";
 import type { Proposta, PropostaStatus } from "@/features/orcamentos/types";
 import { buildPropostaInformalText, getCobrancaLabel } from "@/features/orcamentos/orcamento-utils";
 import { bonusDaProposta } from "@/features/orcamentos/lib/bonus-da-proposta";
+import { idEmpresaDoPdf } from "@/features/orcamentos/lib/empresa-pdf";
 
 import { useOrcamentoDetail } from "@/features/orcamentos/hooks/useOrcamentoDetail";
 import {
@@ -190,15 +191,8 @@ export function OrcamentoDetailPage({ idInt }: OrcamentoDetailPageProps) {
       return;
     }
 
-    const empresaLower = (proposta.empresa || "").toLowerCase();
-    let idEmpresa: number | null = null;
-    if (empresaLower.includes("grafica") || empresaLower.includes("ingresso")) {
-      idEmpresa = 1;
-    } else if (empresaLower.includes("biro")) {
-      idEmpresa = 2;
-    } else if (empresaLower.includes("e3") || empresaLower.includes("brindes")) {
-      idEmpresa = 3;
-    }
+    // O gerador so aceita 1, 2 ou 3; a comparacao ignora acento ("GRÁFICA", "BIRÔ").
+    const idEmpresa = idEmpresaDoPdf(proposta.empresa);
 
     if (idEmpresa === null) {
       showToast({

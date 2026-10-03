@@ -68,6 +68,7 @@ import { bonusDaEdicao } from "@/features/orcamentos/lib/bonus-da-proposta";
 import { getCadastrosReadOnlyList, getCadastroCompleto } from "@/features/cadastros/services/cadastros.service";
 import { listProdutos } from "@/features/produtos/services/produtos.service";
 import { listProdutoVariacaoVinculos } from "@/features/produtos/services/produto-variacoes.service";
+import { idEmpresaDoPdf } from "@/features/orcamentos/lib/empresa-pdf";
 import { saveProposta, listVendedoresReais, insertEnderecoProposta, updateEnderecoProposta, contarOutrosPedidosNoEndereco, updatePropostaFiscalDados, registrarMensagemSistemaProposta, gerarPDFProposta, duplicarProposta, retirarPropostaDaProducao, type UsuarioVendedor } from "@/features/orcamentos/services/orcamentos.service";
 import { ActionsMenu } from "@/components/common/ActionsMenu";
 import { classificarTransporte } from "@/features/orcamentos/lib/transporte-categoria";
@@ -4182,13 +4183,8 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
       });
       return;
     }
-    // Mesmo mapeamento empresa->id da lista: o gerador so aceita 1, 2 ou 3.
-    const rotulo = (form.empresa || "").toLowerCase();
-    const idEmpresa =
-      rotulo.includes("grafica") || rotulo.includes("ingresso") ? 1
-      : rotulo.includes("biro") || rotulo.includes("birô") ? 2
-      : rotulo.includes("e3") || rotulo.includes("brindes") ? 3
-      : null;
+    // O gerador so aceita 1, 2 ou 3; a comparacao ignora acento ("GRÁFICA").
+    const idEmpresa = idEmpresaDoPdf(form.empresa);
     if (idEmpresa === null) {
       showToast({
         type: "error",
