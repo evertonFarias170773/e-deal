@@ -391,7 +391,9 @@ export async function montarPdfProposta(
   // ============================
   // FUNÇÃO DE QUEBRA DE LINHA
   // ============================
-  function wrapLine(text: string, maxWidth: number, fontSize: number) {
+  // maxWidth pode variar por linha (índice da linha já montada).
+  function wrapLine(text: string, maxWidth: number | ((idx: number) => number), fontSize: number) {
+    const larguraDa = (idx: number) => (typeof maxWidth === "number" ? maxWidth : maxWidth(idx));
     const clean = sanitizeForPdf(text);
 
     const logicalLines = clean.split("\n");
@@ -405,7 +407,7 @@ export async function montarPdfProposta(
         const testLine = currentLine ? `${currentLine} ${word}` : word;
         const width = font.widthOfTextAtSize(testLine, fontSize);
 
-        if (width > maxWidth && currentLine) {
+        if (width > larguraDa(finalLines.length) && currentLine) {
           finalLines.push(currentLine);
           currentLine = word;
         } else {
@@ -428,11 +430,15 @@ export async function montarPdfProposta(
   const corTexto = cor(COR_TEXTO);
   const ehOc = documento === "oc";
 
-  // Linhas de cliente: no orçamento, como no modelo antigo; na OC, logo
-  // abaixo de "Dados para faturamento:", que ocupa o lugar da linha da empresa.
-  const yCliente = ehOc ? 709 : 680;
-  const yDocumento = ehOc ? 690 : 660;
-  const yVendedor = ehOc ? 660 : 709;
+  // A OC traz o mesmo conteúdo do orçamento, nas mesmas posições. Só o bloco
+  // de cima desce, porque o modelo de OC tem "Dados para faturamento:" (y 731)
+  // onde o orçamento tem a linha da empresa: empresa, endereço, "Orçado por:",
+  // CLIENTE e CPF/CNPJ ficam logo abaixo dele.
+  const yEmpresa = ehOc ? 714 : 743;
+  const yEndereco = ehOc ? 699 : 726;
+  const yVendedor = ehOc ? 682 : 709;
+  const yCliente = ehOc ? 665 : 680;
+  const yDocumento = ehOc ? 649 : 660;
 
   // A linha da empresa termina antes de "DATA:" / "Validade" (x 473): o texto
   // longo diminui a fonte em vez de invadir a coluna da direita.
@@ -444,19 +450,24 @@ export async function montarPdfProposta(
   };
 
   if (escreverRotulos) {
-    if (!ehOc) {
-      const linhaEmpresa = `${empresa.empresa ?? ""} - CNPJ: ${formatCnpj(empresa.cnpj)}`;
-      const endereco = linhaEndereco(empresa);
-      drawText(linhaEmpresa, 31.5, 743, tamanhoQueCabe(linhaEmpresa, true, 11, 435), true, "left", corTexto);
-      drawText(endereco, 31.5, 726, tamanhoQueCabe(endereco, false, 11, 435), false, "left", corTexto);
-    } else {
-      // O modelo de orçamento já traz "DATA:"; o de OC não.
+    const linhaEmpresa = `${empresa.empresa ?? ""} - CNPJ: ${formatCnpj(empresa.cnpj)}`;
+    const endereco = linhaEndereco(empresa);
+    drawText(linhaEmpresa, 31.5, yEmpresa, tamanhoQueCabe(linhaEmpresa, true, 11, 435), true, "left", corTexto);
+    drawText(endereco, 31.5, yEndereco, tamanhoQueCabe(endereco, false, 11, 435), false, "left", corTexto);
+    if (ehOc) {
+      // O modelo de orçamento já traz estes textos; o de OC não. Mesma grafia
+      // do orçamento ("Válidade").
       drawText("DATA:", 473.1, 740.8, 9, true, "left", corRotulo);
+      drawText("Válidade: 15 dias", 477.8, 725.5, 9, true, "left", corRotulo);
+      drawText(
+        "A entrega será realizada por empresa terceira contratada,  (Correios, Azul Cargo, Transportadora, etc...).",
+        29.6, 149, 10, false, "left", corTexto
+      );
     }
-    drawText(ehOc ? "Vendedor:" : "Orçado por:", 31.5, yVendedor - 0.5, 10, true, "left", corTexto);
+    drawText("Orçado por:", 31.5, yVendedor - 0.5, 10, true, "left", corTexto);
     drawText("CLIENTE:", 31.5, yCliente - 0.5, 10, true, "left", corRotulo);
     drawText("CPF/CNPJ:", 31.5, yDocumento - 0.3, 10, true, "left", corRotulo);
-    drawText(ehOc ? "DETALHES DO PEDIDO:" : "DETALHES DO ORÇAMENTO:", 31.6, 627, 12, true, "left", corRotulo);
+    drawText("DETALHES DO ORÇAMENTO:", 31.6, 627, 12, true, "left", corRotulo);
     drawText("*P.P. - Prazo de Produção.", 228.9, 627, 10, true, "left", corRotulo);
     drawText("QTD", 31.9, 602.7, 12, true, "left", corRotulo);
     drawText("Produto", 144.4, 602.8, 12, true, "left", corRotulo);
@@ -477,7 +488,7 @@ export async function montarPdfProposta(
 
   drawText(cliente, 92, yCliente, 11);
   drawText(cpf_cnpj, 92, yDocumento, 10);
-  drawText(vendedor, ehOc ? 88 : 100, yVendedor, 9);
+  drawText(vendedor, 100, yVendedor, 9);
 
   // ============================
   // PRODUTOS COM WRAP
@@ -506,13 +517,15 @@ export async function montarPdfProposta(
   if (obsNormalizada) {
     const obsFontSize = 10;
     const obsLineSpacing = 5;
-    // Na OC a assinatura do cliente ocupa a direita a partir de y 230 e o
-    // rodapé começa em 136: a observação fica à esquerda e acima dele.
-    const obsMaxWidth = ehOc ? 265 : 500;
+    // Na OC a assinatura do cliente ocupa a direita abaixo de y 230 (x 307 em
+    // diante) e a frase da entrega fica em y 149: as 2 primeiras linhas usam a
+    // largura do orçamento; dali para baixo a observação fica à esquerda da
+    // assinatura e para antes da frase da entrega.
+    const obsMaxWidth = (idx: number) => (ehOc && idx >= 2 ? 265 : 500);
 
     let linhasObs = wrapLine(obsNormalizada, obsMaxWidth, obsFontSize);
     if (ehOc) {
-      const cabem = Math.floor((266 - 140) / (obsFontSize + obsLineSpacing)) + 1;
+      const cabem = Math.floor((266 - 162) / (obsFontSize + obsLineSpacing)) + 1;
       if (linhasObs.length > cabem) {
         linhasObs = [...linhasObs.slice(0, cabem - 1), `${linhasObs[cabem - 1]} ...`];
       }
