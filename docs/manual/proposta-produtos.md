@@ -1,6 +1,6 @@
 # Proposta: aba Orçamento (produtos)
 
-> **Última revisão:** 02/10/2026
+> **Última revisão:** 03/10/2026
 > **Caminho no menu:** Pedidos → abrir um pedido → aba **Orçamento**
 > **Endereço:** `/orcamentos/<número>/editar?tab=produtos` (em proposta nova, `/orcamentos/novo`)
 
@@ -84,7 +84,7 @@ Variações e descrição não gravam sozinhas: use **Salvar item**.
 ### Editar, duplicar ou repetir um produto
 
 1. No cartão fechado do item, clique em **Editar** para abri-lo de novo.
-2. Clique em **Duplicar** para criar uma linha igual logo abaixo, com a mesma quantidade, preço, descrição e variações. A cópia não leva os modelos da aba Pedido.
+2. Clique em **Duplicar** para criar uma linha igual logo abaixo, com a mesma quantidade, preço, descrição e variações. A cópia não leva os modelos da aba Pedido, com uma exceção: produto que usa um Mapa de Teatro leva os modelos do mapa, para você montar outro combo de setores. Eles são gravados quando você salva, e nascem com a arte pendente.
 3. Ao adicionar um produto que já está na proposta, a tela pergunta o que fazer:
    - **Atualizar quantidade** abre o item que já existe.
    - **Adicionar novo item** cria outra linha do mesmo produto, para outra configuração ou variação.

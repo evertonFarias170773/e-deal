@@ -80,6 +80,20 @@ export type PedidoModeloState = {
   L_CAM?: number | null;
   /** Camarote: número inicial do camarote */
   C_INI?: number | null;
+  /**
+   * MAPA DE TEATRO (03/10/2026). Preenchidos quando o modelo nasceu de um setor
+   * de `producao_mapas_teatro` (botão "Mapa Teatro" da aba Pedido). O vínculo é
+   * por id; o nome do mapa vem do retrato gravado e serve só para exibir. A
+   * revisão e o retrato (`mapa_teatro_snapshot`) ficam no banco, não na tela.
+   */
+  mapa_teatro_id?: string | null;
+  mapa_teatro_setor_id?: string | null;
+  mapa_teatro_nome?: string | null;
+  /**
+   * Só em modelo NOVO criado pelo Duplicar do produto: o `pedidos_modelos.id`
+   * de onde o salvar copia a revisão e o retrato, direto do banco.
+   */
+  mapa_teatro_copiar_de?: number | null;
 };
 
 export type TipoDescontoProposta = "PERCENTUAL" | "VALOR";

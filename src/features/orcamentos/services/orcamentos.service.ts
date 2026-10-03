@@ -2557,22 +2557,75 @@ async function gravarLotesDoItem(
     }
   }
 
+  // C.2a MAPA DE TEATRO (03/10/2026): modelo novo que veio do Duplicar de um
+  // produto com mapa copia o vínculo — mapa, setor, revisão e retrato — do
+  // modelo de origem, LIDO DO BANCO e desta mesma proposta. A tela só diz de
+  // qual modelo copiar; se a origem não existe aqui, ou não é o setor que a
+  // tela diz, nada é inserido. O vínculo é por id, nunca reconstruído por nome.
+  const copiarDe = Array.from(
+    new Set(
+      modelosNovos
+        .map((m) => Number(m.mapa_teatro_copiar_de))
+        .filter((id) => Number.isInteger(id) && id > 0)
+    )
+  );
+  const vinculoDeOrigem = new Map<number, Record<string, unknown>>();
+  if (copiarDe.length > 0) {
+    const { data: origens, error: origensError } = await client
+      .from("pedidos_modelos")
+      .select("id, mapa_teatro_id, mapa_teatro_setor_id, mapa_teatro_revisao, mapa_teatro_snapshot")
+      .in("id", copiarDe)
+      .eq("id_int", idInt);
+    if (origensError) {
+      throw new Error(`Erro ao ler os modelos de Mapa de Teatro a copiar: ${origensError.message}`);
+    }
+    for (const origem of origens || []) {
+      vinculoDeOrigem.set(Number((origem as { id: number }).id), origem as Record<string, unknown>);
+    }
+  }
+
   // C.2 Modelos novos: inseridos um a um para poder devolver o id de cada
   // um casado com o tempId da tela (o insert em lote não garante a
   // correspondência por posição).
   let proximaOrdem = modelosExistentes.length;
   for (const m of modelosNovos) {
     proximaOrdem += 1;
+    let vinculoDeMapa: Record<string, unknown> | null = null;
+    if (m.mapa_teatro_copiar_de) {
+      const origem = vinculoDeOrigem.get(Number(m.mapa_teatro_copiar_de));
+      const retrato = origem?.mapa_teatro_snapshot as { mapa?: { id?: string }; setor?: { id?: string } } | null | undefined;
+      const confere =
+        origem &&
+        String(origem.mapa_teatro_id ?? "") !== "" &&
+        String(origem.mapa_teatro_id) === String(m.mapa_teatro_id ?? "") &&
+        String(origem.mapa_teatro_setor_id ?? "") === String(m.mapa_teatro_setor_id ?? "") &&
+        // O setor do retrato tem de ser o do vínculo, e do mesmo mapa.
+        String(retrato?.mapa?.id ?? "") === String(origem.mapa_teatro_id) &&
+        String(retrato?.setor?.id ?? "") === String(origem.mapa_teatro_setor_id);
+      if (!origem || !confere) {
+        throw new Error(
+          `O modelo "${m.nome_modelo}" é de um Mapa de Teatro, mas o modelo de origem não foi encontrado nesta proposta. ` +
+            "Remova o produto duplicado e duplique de novo."
+        );
+      }
+      vinculoDeMapa = {
+        mapa_teatro_id: origem.mapa_teatro_id,
+        mapa_teatro_setor_id: origem.mapa_teatro_setor_id,
+        mapa_teatro_revisao: origem.mapa_teatro_revisao,
+        mapa_teatro_snapshot: origem.mapa_teatro_snapshot
+      };
+    }
     // Coluna que o produto não imprime nasce NULL.
     const { data: novoModelo, error: insertModeloError } = await client
       .from("pedidos_modelos")
-      .insert(
-        montarInsertDeLoteDaProposta(
+      .insert({
+        ...montarInsertDeLoteDaProposta(
           m,
           { idInt, idItem: dbItemId, variacoesTexto, ordem: proximaOrdem },
           visivel
-        )
-      )
+        ),
+        ...(vinculoDeMapa ?? {})
+      })
       .select("id")
       .single();
 

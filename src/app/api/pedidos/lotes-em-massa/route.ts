@@ -47,6 +47,22 @@
  *   defaults incluídos. O checklist é lido ANTES de qualquer escrita; se a
  *   leitura falhar, nada é gravado. A regra mora em lib/checklist-lote, a mesma
  *   do formulário do PCP.
+ *
+ * MAPA DE TEATRO (03/10/2026)
+ *   Lote NOVO pode chegar com `mapa_teatro_id` + `mapa_teatro_setor_id`: é o
+ *   modelo de um setor de `producao_mapas_teatro`. Para esses, quem manda é o
+ *   mapa, não a requisição:
+ *     - o mapa é lido AQUI, e o setor tem de existir dentro dele — conferir só
+ *       que o mapa existe deixaria gravar o setor de outro mapa;
+ *     - nome do modelo = nome do setor; quantidade = cadeiras do setor fora as
+ *       apagadas. O que a tela mandou nesses dois campos é descartado;
+ *     - a revisão (`revisaoDoMapaTeatro`) e o retrato do setor são calculados
+ *       aqui e gravados no lote. Numeração não é gerada.
+ *   Um produto fica com UM mapa, e cada setor entra uma vez. Tudo é conferido
+ *   antes de qualquer escrita: mapa em formato não suportado, setor sem id ou
+ *   setor de outro mapa recusam a gravação inteira.
+ *   Lote que JÁ existe nunca tem o vínculo reescrito por esta rota, e lote sem
+ *   os dois campos segue exatamente como antes.
  */
 import { NextResponse } from "next/server";
 import { createClient as createSupabaseClient, type SupabaseClient } from "@supabase/supabase-js";
@@ -57,6 +73,12 @@ import {
   omitirColunasEscondidas
 } from "@/features/orcamentos/lib/checklist-lote";
 import { calcularTotaisPelaRegraDaTela } from "@/features/orcamentos/services/totais-proposta.server";
+import {
+  lerSetoresDoMapaTeatro,
+  montarRetratoDoSetor,
+  revisaoDoMapaTeatro,
+  type RetratoDoSetor
+} from "@/features/orcamentos/lib/mapa-teatro";
 
 /** Espelha STATUS_INICIAL_MODELO de orcamento-utils: lote novo nasce pendente. */
 const STATUS_INICIAL_MODELO = "PENDENTE";
@@ -87,7 +109,20 @@ type LoteEmMassa = {
   Q_CAM?: number | null;
   L_CAM?: number | null;
   C_INI?: number | null;
+  /** Mapa de Teatro: só em lote novo, e sempre os dois juntos. */
+  mapa_teatro_id?: string | null;
+  mapa_teatro_setor_id?: string | null;
 };
+
+/** O que o servidor resolveu para um lote novo de setor de mapa. */
+type VinculoDeMapa = {
+  mapa_teatro_id: string;
+  mapa_teatro_setor_id: string;
+  mapa_teatro_revisao: string;
+  mapa_teatro_snapshot: RetratoDoSetor;
+};
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 type Corpo = {
   idInt?: number;
@@ -234,6 +269,80 @@ export async function POST(request: Request) {
   // Sem registro de checklist (ou item sem produto de catalogo) = sem regra.
   const visivel = checklistVisivel(camposDoProduto);
 
+  // 2c. Mapa de Teatro: resolve o vinculo de cada lote NOVO que veio com mapa e
+  //     setor, ANTES de qualquer escrita. Nome e quantidade desses lotes passam
+  //     a ser os do setor — e entram assim na soma que vira a quantidade do item.
+  const ehNovo = (l: LoteEmMassa) => !Number.isFinite(Number(l.id)) || Number(l.id) <= 0;
+  const vinculos = new Map<LoteEmMassa, VinculoDeMapa>();
+  const lotesDeMapa = lotes.filter(
+    (l) => ehNovo(l) && (String(l.mapa_teatro_id ?? "").trim() || String(l.mapa_teatro_setor_id ?? "").trim())
+  );
+  if (lotesDeMapa.length > 0) {
+    for (const lote of lotesDeMapa) {
+      if (!UUID.test(String(lote.mapa_teatro_id ?? "").trim()) || !String(lote.mapa_teatro_setor_id ?? "").trim()) {
+        return erro("MAPA_DADOS", "Modelo de Mapa de Teatro sem o mapa ou sem o setor. Nada foi gravado.", 400);
+      }
+    }
+    const idsMapa = Array.from(new Set(lotesDeMapa.map((l) => String(l.mapa_teatro_id).trim().toLowerCase())));
+    if (idsMapa.length > 1) {
+      return erro("MAPA_UNICO", "Um produto usa um Mapa de Teatro só. Nada foi gravado.", 409);
+    }
+
+    const { data: mapas, error: erroMapas } = await supabase
+      .from("producao_mapas_teatro")
+      .select("id, name, config")
+      .in("id", idsMapa)
+      .returns<{ id: string; name: string | null; config: unknown }[]>();
+    if (erroMapas) return erro("INTERNO", "Nao foi possivel ler o Mapa de Teatro. Nada foi gravado.", 500);
+    const mapa = (mapas || [])[0];
+    if (!mapa) return erro("MAPA_NAO_ENCONTRADO", "O Mapa de Teatro escolhido nao existe mais. Nada foi gravado.", 409);
+
+    const leitura = lerSetoresDoMapaTeatro(mapa.config);
+    if (!leitura.ok) {
+      return erro("MAPA_NAO_SUPORTADO", `Mapa "${mapa.name ?? mapa.id}": ${leitura.motivo} Nada foi gravado.`, 409);
+    }
+
+    // O que o produto ja tem no banco, fora o que esta sendo removido agora.
+    const { data: jaVinculados, error: erroVinculados } = await supabase
+      .from("pedidos_modelos")
+      .select("id, mapa_teatro_id, mapa_teatro_setor_id")
+      .eq("id_produto_proposta_origem", idProdutoProposta)
+      .not("mapa_teatro_id", "is", null)
+      .returns<{ id: number; mapa_teatro_id: string | null; mapa_teatro_setor_id: string | null }[]>();
+    if (erroVinculados) return erro("INTERNO", "Nao foi possivel conferir os modelos do produto. Nada foi gravado.", 500);
+    const vivos = (jaVinculados || []).filter((m) => !removerIds.includes(Number(m.id)));
+    if (vivos.some((m) => String(m.mapa_teatro_id).toLowerCase() !== String(mapa.id).toLowerCase())) {
+      return erro("MAPA_UNICO", "Este produto ja usa outro Mapa de Teatro. Para outro mapa, use outro produto. Nada foi gravado.", 409);
+    }
+
+    const revisao = await revisaoDoMapaTeatro(mapa.config);
+    const setoresNoProduto = new Set(vivos.map((m) => String(m.mapa_teatro_setor_id)));
+    for (const lote of lotesDeMapa) {
+      const idSetor = String(lote.mapa_teatro_setor_id).trim();
+      // O SETOR TEM DE SER DESTE MAPA: e a conferencia que so validar o mapa nao faz.
+      const setor = leitura.setores.find((s) => s.id === idSetor);
+      const retrato = setor ? montarRetratoDoSetor(mapa, idSetor) : null;
+      if (!setor || !retrato) {
+        return erro("SETOR_FORA_DO_MAPA", `O setor informado nao pertence ao mapa "${mapa.name ?? mapa.id}". Nada foi gravado.`, 409);
+      }
+      if (setor.lugares <= 0) {
+        return erro("SETOR_SEM_CADEIRAS", `O setor "${setor.nome || setor.id}" nao tem cadeiras. Nada foi gravado.`, 409);
+      }
+      if (setoresNoProduto.has(idSetor)) {
+        return erro("SETOR_REPETIDO", `O setor "${setor.nome || setor.id}" ja esta neste produto. Nada foi gravado.`, 409);
+      }
+      setoresNoProduto.add(idSetor);
+      lote.nome_modelo = setor.nome || setor.id;
+      lote.quantidade = setor.lugares;
+      vinculos.set(lote, {
+        mapa_teatro_id: mapa.id,
+        mapa_teatro_setor_id: idSetor,
+        mapa_teatro_revisao: revisao,
+        mapa_teatro_snapshot: retrato
+      });
+    }
+  }
+
   const qtdAtual = Number(item.qtd) || 0;
 
   // 3. Sem trava de concorrência, por decisão do dono: a última gravação
@@ -336,7 +445,11 @@ export async function POST(request: Request) {
     // que nao vira "SEM_NUMERACAO" quando escondido. O valor que a requisicao
     // mandou nessas colunas e descartado.
     const { error: erroInsert } = await supabase.from("pedidos_modelos").insert(
-      novos.map((lote) => anularColunasEscondidas({
+      novos.map((lote) => {
+        // Setor de Mapa de Teatro: o vinculo resolvido no passo 2c, e sem
+        // numeracao gerada. Lote comum nao ganha nenhuma dessas chaves.
+        const vinculo = vinculos.get(lote);
+        return { ...anularColunasEscondidas({
         id_int: idInt,
         id_produto_proposta_origem: idProdutoProposta,
         nome_modelo: String(lote.nome_modelo).trim(),
@@ -357,7 +470,8 @@ export async function POST(request: Request) {
         ordem: proximaOrdem++,
         created_at: agora,
         updated_at: agora
-      }, visivel))
+      }, visivel), ...(vinculo ? { ...vinculo, numeracao_inicio: null, numeracao_fim: null } : {}) };
+      })
     );
 
     if (erroInsert) {
@@ -387,7 +501,9 @@ export async function POST(request: Request) {
     .from("pedidos_modelos")
     .select(
       "id, nome_modelo, padrao, quantidade, tipo_numeracao, numeracao_inicio, numeracao_fim, " +
-      "verso_tipo, bloco, gabarito_operacional, variacoes_texto, Q_CAM, L_CAM, C_INI, status_arte, status_producao, ordem"
+      "verso_tipo, bloco, gabarito_operacional, variacoes_texto, Q_CAM, L_CAM, C_INI, status_arte, status_producao, ordem, " +
+      // Mapa de Teatro: os ids do vinculo e o nome do mapa (o retrato fica no banco).
+      "mapa_teatro_id, mapa_teatro_setor_id, mapa_teatro_nome:mapa_teatro_snapshot->mapa->>nome"
     )
     .eq("id_produto_proposta_origem", idProdutoProposta)
     .order("ordem", { ascending: true });

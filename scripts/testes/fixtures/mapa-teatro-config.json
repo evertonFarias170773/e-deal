@@ -1,0 +1,33 @@
+{
+  "tiposAssento": [
+    { "id": "Normal", "cor": "#6ab22e", "nome": "Normal", "icone": "💺", "sufixo": "" },
+    { "id": "tipo_pne", "cor": "#00e0f0", "nome": "PNE", "icone": "💺", "sufixo": " PNE" },
+    { "id": "Apagado", "cor": "#ffffff", "nome": "Apagado", "icone": "", "sufixo": "" }
+  ],
+  "setores": [
+    {
+      "id": "setor_0_1",
+      "nome": "Mesas 01 a 02",
+      "nomeConjunto": "Mesa",
+      "fileiras": [{ "fim": "B", "inicio": "A", "padrao": "sequencial", "prefixo": "1" }],
+      "cadeiras": {
+        "-14,0": { "num": "B", "tipo": "Normal", "prefixo": "1" },
+        "-15,0": { "num": "A", "tipo": "Normal", "prefixo": "1" },
+        "-15,2": { "num": "A", "tipo": "tipo_pne", "prefixo": "2" }
+      }
+    },
+    {
+      "id": "setor_1_2",
+      "nome": "Platéia",
+      "fileiras": [],
+      "cadeiras": {
+        "0,0": { "num": 16, "tipo": "Normal", "prefixo": "D" },
+        "0,2": { "num": 17, "tipo": "Apagado", "prefixo": "D" },
+        "1,0": { "num": 18, "tipo": "Normal", "prefixo": "D", "isErased": true },
+        "1,2": { "num": 19, "tipo": "Normal", "prefixo": "E" }
+      }
+    },
+    { "id": "setor_2_3", "nome": "Vazio", "fileiras": [], "cadeiras": {} }
+  ],
+  "cadeiras": {}
+}

@@ -74,6 +74,16 @@
  *   já existe segue com o que tem: a grade devolve o valor intacto e a rota
  *   tira a coluna do UPDATE. A mesma regra do formulário do PCP, em
  *   lib/checklist-lote; produto sem checklist fica como sempre foi.
+ *
+ * MAPA TEATRO (03/10/2026)
+ *   O botão ao lado do "Gravar lote" abre a lista de mapas de
+ *   `producao_mapas_teatro`. Escolhido o mapa, entra uma linha por setor com
+ *   cadeiras — nome do setor e quantidade de lugares — e a grade grava na hora,
+ *   pela mesma rota: é o servidor que confere que o setor é do mapa e grava a
+ *   revisão e o retrato. A linha só carrega os ids (mapa e setor); o vínculo
+ *   nunca é por nome. Linha de mapa não entra nos modos de numeração, e pode
+ *   ser gravada sem a cor do papel, que o usuário escolhe depois. Um produto
+ *   usa um mapa só; em proposta com cobrança o botão fica desligado.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -104,6 +114,7 @@ import {
   type CorDoPapelOpcao
 } from "@/features/orcamentos/components/ModeloCampos";
 import type { PedidoModeloState } from "@/features/orcamentos/types";
+import { MapaTeatroSeletor, type MapaTeatroEscolhido } from "@/features/orcamentos/components/MapaTeatroSeletor";
 
 /** Teto para a criação em lote: acima disso é engano de digitação, não pedido. */
 const MAX_LINHAS_DE_UMA_VEZ = 200;
@@ -132,6 +143,11 @@ export type LinhaLote = {
   verso_amostra_arte_base64?: string | null;
   /** Só na tela: cor colada que não casou com o cadastro. */
   corNaoReconhecida?: string | null;
+  /** Mapa de Teatro: o mapa e o setor de onde a linha nasceu (vínculo por id). */
+  mapa_teatro_id?: string | null;
+  mapa_teatro_setor_id?: string | null;
+  /** Só para exibir; quem grava o nome no retrato é o servidor. */
+  mapa_teatro_nome?: string | null;
 };
 
 /**
@@ -346,6 +362,7 @@ export function LotesGrid({
   const linhaAutomaticaRef = useRef<string | null>(linhaAutomatica);
   const [gravando, setGravando] = useState(false);
   const [quantasLinhas, setQuantasLinhas] = useState<number | "">(1);
+  const [seletorDeMapaAberto, setSeletorDeMapaAberto] = useState(false);
 
   // Estado do auto-save, igual ao do card: fila serial, um pedido em voo por
   // vez, o seguinte espera e dispara ao terminar.
@@ -442,13 +459,23 @@ export function LotesGrid({
   const modoEfetivo = mostraFaixa ? modoNumeracao : null;
 
   const numerar = useCallback(
-    (lista: Lote[], modo: ModoNumeracao | null): Lote[] =>
-      aplicarNumeracao(lista, mostraFaixa ? modo : null, (inicio, qtd, linha) => {
-        const { multiplicador } = resolverMultiplicadorNumeracao(
-          findNumeracaoByName(numeracoes, linha.gabarito_operacional)
-        );
-        return calcularNumeracaoFim(inicio, qtd, multiplicador);
-      }),
+    (lista: Lote[], modo: ModoNumeracao | null): Lote[] => {
+      // Linha de Mapa de Teatro fica FORA dos modos de numeração: os assentos
+      // são os do mapa, e gerar faixa 1–N nela seria numeração inventada. Ela
+      // também não move a sequência das outras.
+      const comuns = aplicarNumeracao(
+        lista.filter((l) => !l.mapa_teatro_setor_id),
+        mostraFaixa ? modo : null,
+        (inicio, qtd, linha) => {
+          const { multiplicador } = resolverMultiplicadorNumeracao(
+            findNumeracaoByName(numeracoes, linha.gabarito_operacional)
+          );
+          return calcularNumeracaoFim(inicio, qtd, multiplicador);
+        }
+      );
+      let i = 0;
+      return lista.map((l) => (l.mapa_teatro_setor_id ? l : comuns[i++]));
+    },
     [numeracoes, mostraFaixa]
   );
 
@@ -543,8 +570,18 @@ export function LotesGrid({
     };
     // Novo: coluna escondida vai null. Existente: vai como veio do banco,
     // e a rota a tira do UPDATE.
-    return l.id ? lote : anularColunasEscondidas(lote, visivel);
+    if (l.id) return lote;
+    const novo = anularColunasEscondidas(lote, visivel);
+    // Setor de Mapa de Teatro: só os dois ids. Nome, quantidade, revisão e
+    // retrato são do servidor, que lê o mapa e confere o setor.
+    return l.mapa_teatro_id && l.mapa_teatro_setor_id
+      ? { ...novo, mapa_teatro_id: l.mapa_teatro_id, mapa_teatro_setor_id: l.mapa_teatro_setor_id }
+      : novo;
   }
+
+  /** Linha nova de setor de mapa: vai para a rota mesmo sem a cor do papel. */
+  const novaDeMapa = (l: Lote) =>
+    !l.id && Boolean(l.mapa_teatro_id && l.mapa_teatro_setor_id) && Boolean(nomeDoLote(l)?.trim()) && Number(l.quantidade) > 0;
 
   /** O que seria enviado agora, ou o motivo de não enviar. */
   function prepararEnvio():
@@ -555,7 +592,7 @@ export function LotesGrid({
     if (existenteIncompleta) {
       return { segurar: `Complete os campos obrigatórios do modelo #${existenteIncompleta.id} para voltar a gravar.` };
     }
-    const enviaveis = numeradas.filter((l) => l.id || completa(l));
+    const enviaveis = numeradas.filter((l) => l.id || completa(l) || novaDeMapa(l));
     const removerIds = removidosRef.current;
     if (enviaveis.length === 0 && removerIds.length === 0) return { segurar: "" };
     // Mesma regra do "Gravar lote" (ex-"Fechar lote") de sempre: sem quantidade nenhuma não há o que gravar.
@@ -716,7 +753,15 @@ export function LotesGrid({
           return {
             ...l,
             id,
-            status_arte: (doBanco?.status_arte as string | undefined) ?? l.status_arte
+            status_arte: (doBanco?.status_arte as string | undefined) ?? l.status_arte,
+            // Setor de mapa: o nome e a quantidade que valem são os que o
+            // servidor leu do mapa e gravou.
+            ...(l.mapa_teatro_setor_id && doBanco
+              ? {
+                  nome_modelo: String(doBanco.nome_modelo ?? l.nome_modelo),
+                  quantidade: Number(doBanco.quantidade) || l.quantidade
+                }
+              : {})
           };
         })
       );
@@ -880,6 +925,89 @@ export function LotesGrid({
     });
   }
 
+  /**
+   * MAPA TEATRO: uma linha por setor com cadeiras, e grava na hora.
+   *
+   * A linha nasce com os padrões do produto (cor, verso, bloco), como qualquer
+   * lote novo, mas SEM numeração e sem numerador: nada é gerado além do modelo
+   * e do vínculo. Setor que já está no produto não entra de novo; setor sem
+   * cadeiras não vira modelo, e o usuário é avisado dos dois.
+   */
+  function aplicarMapaTeatro(mapa: MapaTeatroEscolhido) {
+    setSeletorDeMapaAberto(false);
+    const mapaDoProduto = linhasRef.current.find((l) => l.mapa_teatro_id)?.mapa_teatro_id ?? null;
+    if (mapaDoProduto && mapaDoProduto.toLowerCase() !== mapa.id.toLowerCase()) {
+      showToast({
+        type: "warning",
+        title: "Este produto já usa outro mapa",
+        description: "Um produto usa um Mapa de Teatro só. Para outro mapa, use outro produto."
+      });
+      return;
+    }
+    const jaNoProduto = new Set(linhasRef.current.map((l) => l.mapa_teatro_setor_id).filter(Boolean));
+    const semCadeiras = mapa.setores.filter((s) => s.lugares <= 0);
+    const novos = mapa.setores.filter((s) => s.lugares > 0 && !jaNoProduto.has(s.id));
+    const avisoSemCadeiras =
+      semCadeiras.length > 0
+        ? `Sem cadeiras, não ${semCadeiras.length === 1 ? "virou" : "viraram"} modelo: ${semCadeiras.map((s) => s.nome || s.id).join(", ")}.`
+        : undefined;
+
+    if (novos.length === 0) {
+      showToast({
+        type: "warning",
+        title: semCadeiras.length === mapa.setores.length ? "Mapa sem cadeiras" : "Nenhum setor novo",
+        description:
+          semCadeiras.length === mapa.setores.length
+            ? `Nenhum setor de "${mapa.nome}" tem cadeiras: nenhum modelo foi criado.`
+            : `Os setores de "${mapa.nome}" já estão neste produto. ${avisoSemCadeiras ?? ""}`.trim()
+      });
+      return;
+    }
+
+    linhaAutomaticaRef.current = null;
+    mutar((atual) => {
+      // A linha vazia em que ninguém mexeu sai, como na colagem.
+      const semVazias = atual.filter((l) => l.id || l.nome_modelo.trim() || l.quantidade !== "" || l.mapa_teatro_setor_id);
+      const base = semVazias[semVazias.length - 1];
+      return [
+        ...semVazias,
+        ...novos.map((setor) => ({
+          ...novaLinha(base),
+          nome_modelo: setor.nome || setor.id,
+          quantidade: setor.lugares,
+          tipo_numeracao: null,
+          numeracao_inicio: null,
+          numeracao_fim: null,
+          gabarito_operacional: null,
+          Q_CAM: null,
+          L_CAM: null,
+          C_INI: null,
+          mapa_teatro_id: mapa.id,
+          mapa_teatro_setor_id: setor.id,
+          mapa_teatro_nome: mapa.nome
+        }))
+      ];
+    });
+
+    void (async () => {
+      const desfecho = await executarSave({ forcado: true });
+      if (!montadoRef.current) return;
+      if (desfecho.ok) {
+        showToast({
+          type: avisoSemCadeiras ? "warning" : "success",
+          title: `${novos.length} ${novos.length === 1 ? "modelo criado" : "modelos criados"} do mapa "${mapa.nome}"`,
+          description: avisoSemCadeiras
+        });
+      } else {
+        showToast({
+          type: "error",
+          title: "Mapa Teatro não gravado",
+          description: `${desfecho.motivo} Os setores estão na lista: corrija e use Gravar lote.`
+        });
+      }
+    })();
+  }
+
   function alternarModo(modo: ModoNumeracao) {
     modoAutomaticoRef.current = false;
     const proximo = modoRef.current === modo ? null : modo;
@@ -986,6 +1114,25 @@ export function LotesGrid({
           >
             <Plus className="h-4 w-4" /> {quantasCriar > 1 ? `${quantasCriar} linhas` : "Linha"}
           </button>
+          {/* MAPA TEATRO: cria um modelo por setor de um mapa cadastrado e
+              grava pela rota da grade. Com cobrança a grade não grava sozinha,
+              e o vínculo só é gravado pelo servidor: o botão fica desligado.
+              Prateleira não tem modelo desenhado, então não tem mapa. */}
+          {!itemPrateleira && (
+            <button
+              type="button"
+              onClick={() => setSeletorDeMapaAberto(true)}
+              disabled={gravando || Boolean(onPendente)}
+              title={
+                onPendente
+                  ? "Proposta com cobrança: o Mapa Teatro só entra antes da cobrança."
+                  : "Criar os modelos deste produto a partir de um Mapa de Teatro"
+              }
+              className="rounded-xl border border-[#0b2f4a] bg-white px-4 py-2 text-xs font-bold text-[#0b2f4a] transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Mapa Teatro
+            </button>
+          )}
           {/* O caminho de gravação de sempre: grava o que estiver pendente e
               fica na grade. Em proposta com cobrança a grade não grava: quem
               grava é o Salvar da proposta (editar-paga). */}
@@ -1141,6 +1288,15 @@ export function LotesGrid({
         <p className="px-1 text-[11px] font-semibold text-red-600">
           {naoReconhecidas} cor(es) da lista não existem no cadastro deste produto — escolha na Cor papel de cada lote.
         </p>
+      )}
+
+      {seletorDeMapaAberto && (
+        <MapaTeatroSeletor
+          nomeDoProduto={item.nome}
+          mapaAtualId={linhas.find((l) => l.mapa_teatro_id)?.mapa_teatro_id ?? null}
+          onEscolher={aplicarMapaTeatro}
+          onClose={() => setSeletorDeMapaAberto(false)}
+        />
       )}
     </div>
   );

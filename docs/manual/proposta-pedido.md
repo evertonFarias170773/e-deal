@@ -1,6 +1,6 @@
 # Proposta: aba Pedido (Boletim Técnico & Lotes)
 
-> **Última revisão:** 02/10/2026
+> **Última revisão:** 03/10/2026
 > **Caminho no menu:** Pedidos → abrir um pedido → Editar proposta → aba Pedido
 > **Endereço:** `/orcamentos/[número]/editar?tab=pedido`
 
@@ -28,6 +28,9 @@ Nomes exatamente como aparecem na tela.
 | **Amostras** | Cabeçalho de cada produto | Mostra ou esconde a amostra da arte abaixo de cada modelo. Começa desligado. |
 | Campo numérico (dica "Quantas linhas criar de uma vez") | Barra da lista, antes do botão de linha | Diz quantas linhas o botão ao lado cria. Vai de 1 a 200. |
 | **Linha** / **N linhas** | Barra da lista | Acrescenta uma linha em branco no fim (ou N, conforme o campo ao lado). |
+| **Mapa Teatro** | Barra da lista, ao lado de **Gravar lote** | Abre a lista dos Mapas de Teatro cadastrados e cria um modelo para cada setor do mapa escolhido. Fica apagado em pedido com cobrança. Não aparece em produto de prateleira. |
+| **Cancelar** (janela **Mapa Teatro**) | Rodapé da janela | Fecha a janela sem criar nada. |
+| Selo **Mapa: <nome do mapa>** | Cabeçalho do produto, junto ao nome | Mostra o Mapa de Teatro que o produto usa. Não é clicável. |
 | **Gravar lote** | Barra da lista, em pedido sem cobrança | Grava todos os modelos daquele produto e acerta a quantidade do produto pela soma. Enquanto grava, mostra "Gravando...". |
 | **Cada modelo começa do 1** | Faixa **Numeração** | Caixa de marcar. Todo modelo recebe Nº Inicial 1 (exemplo da tela: "1–300, 1–150, 1–80"). |
 | **Sequencial entre os modelos** | Faixa **Numeração** | Caixa de marcar. Cada modelo continua de onde o anterior parou ("1–300, 301–450, 451–530"). |
@@ -105,6 +108,19 @@ Como a colagem é lida: a quantidade é o último número da linha e a cor é tu
 
 Em numerador do tipo Camarote, aparecem os campos **Q CAM \***, **L CAM \*** e **C INI**, e a **Qtd** deixa de ser digitada: ela é Q CAM × L CAM. Em numerador do tipo Ticket, cada unidade consome mais de um número e o Nº Final leva isso em conta; a regra aparece escrita abaixo da linha.
 
+### Criar os modelos a partir de um Mapa de Teatro
+
+1. No produto, clique em **Mapa Teatro**, ao lado de **Gravar lote**.
+2. A janela **Mapa Teatro** lista os mapas cadastrados, cada um com os setores e a quantidade de lugares.
+3. Clique no mapa. A tela cria um modelo para cada setor que tem cadeiras: o nome do modelo é o nome do setor e a **Qtd** é o total de lugares do setor, sem contar as cadeiras apagadas.
+4. Os modelos são gravados na hora, sem o **Gravar lote**. O aviso confirma quantos foram criados, e o cabeçalho do produto passa a mostrar o selo **Mapa: <nome do mapa>**.
+5. Setor sem cadeiras não vira modelo. O aviso diz quais ficaram de fora.
+6. Complete o que faltar em cada modelo, como a **Cor papel**, e clique em **Gravar lote**.
+
+Para montar outro combo de setores do mesmo mapa, vá à aba **Orçamento**, clique em **Duplicar** no produto e salve: a cópia vem com os mesmos modelos do mapa. Depois, na aba **Pedido**, remova da cópia os setores que não entram.
+
+Clicar em **Mapa Teatro** de novo, no mesmo mapa, traz de volta só os setores que não estão mais no produto.
+
 ### Gravar em pedido com cobrança
 
 1. Em pedido que já tem cobrança, o botão **Gravar lote** dá lugar ao aviso "Proposta com cobrança: grava pelo Salvar da proposta".
@@ -126,7 +142,15 @@ Em numerador do tipo Camarote, aparecem os campos **Q CAM \***, **L CAM \*** e *
 ## Regras e bloqueios
 
 - Nesta lista a soma dos modelos manda: ao gravar, a quantidade do produto no pedido passa a ser a soma das quantidades dos modelos. Não há limite de saldo no campo Qtd.
-- Nada é gravado sozinho. O que está na lista só vai para o sistema em **Gravar lote** ou em **Salvar alterações**.
+- Nada é gravado sozinho. O que está na lista só vai para o sistema em **Gravar lote** ou em **Salvar alterações**. A exceção é o **Mapa Teatro**, que grava os modelos dos setores na hora.
+- Um produto usa um Mapa de Teatro só. Com um mapa já escolhido, os outros aparecem apagados na janela, com o aviso "Este produto já usa outro mapa. Para este, use outro produto.".
+- Cada setor do mapa entra uma vez no produto.
+- O **Mapa Teatro** cria só os modelos e a ligação com o mapa. Não gera arte, PDF nem numeração: os modelos nascem com a arte pendente e sem Nº Inicial e Nº Final, e ficam fora dos modos **Cada modelo começa do 1** e **Sequencial entre os modelos**.
+- A quantidade do produto acompanha a soma dos lugares, como em qualquer gravação da lista. O valor do pedido muda junto.
+- O modelo guarda uma cópia do setor como estava no mapa no momento em que foi criado. Mudar o mapa depois não altera os modelos já criados.
+- Mapa em formato antigo, ou com setor sem identificador, aparece apagado na janela com o motivo e não pode ser escolhido.
+- Em pedido com cobrança o botão **Mapa Teatro** fica apagado: o mapa só entra antes da cobrança.
+- Duplicar uma linha de modelo de mapa (ícone de copiar) cria um modelo comum, sem ligação com o mapa.
 - Não dá para sair da aba com modelo não gravado sem responder à pergunta "Há modelos não gravados na lista rápida da aba Pedido. Sair e descartar as alterações? Para manter, cancele e use Salvar alterações.". Se você confirmar, o que não foi gravado se perde.
 - Linha nova sem os obrigatórios não é gravada. A tela avisa: "N lote(s) ainda sem os obrigatórios — não são gravados até ficarem completos.". As demais linhas são gravadas normalmente.
 - Modelo que já existe e ficou sem um campo obrigatório segura a gravação inteira do produto, até ser completado.
@@ -162,6 +186,12 @@ Em numerador do tipo Camarote, aparecem os campos **Q CAM \***, **L CAM \*** e *
 | O que aparece | Por que acontece | O que fazer |
 |---|---|---|
 | "Nenhum produto encontrado" | O pedido não tem produto. | Inclua os produtos na aba **Orçamento** e salve. |
+| "Nenhum Mapa de Teatro cadastrado." | Não há mapa cadastrado. | Cadastre o mapa no sistema de mapas e abra a janela de novo. |
+| "Este produto já usa outro mapa" | O produto já tem modelos de outro Mapa de Teatro. | Use outro produto para o outro mapa. |
+| "Nenhum setor novo" | Todos os setores do mapa já estão no produto. | Não há o que criar. Para outro combo, duplique o produto na aba **Orçamento**. |
+| "Mapa sem cadeiras" | Nenhum setor do mapa tem cadeiras. | Confira o mapa no sistema de mapas. |
+| "Mapa Teatro não gravado", com o motivo | A gravação foi recusada. Os setores ficam na lista, sem gravar. | Corrija o que a mensagem aponta e clique em **Gravar lote**. |
+| "O setor informado nao pertence ao mapa ..." | O mapa mudou entre abrir a janela e gravar. | Abra **Mapa Teatro** de novo e escolha o mapa. |
 | "Salve a proposta uma vez antes de montar os lotes deste produto." | O produto foi incluído e o pedido ainda não foi salvo. | Clique em **Salvar alterações** e volte à aba. |
 | "N lote(s) ainda sem os obrigatórios — não são gravados até ficarem completos." | Há linha nova sem Modelo, Qtd ou Cor papel. | Complete a linha ou remova-a. |
 | "Complete os campos obrigatórios do modelo #... para voltar a gravar." | Um modelo que já existia ficou sem campo obrigatório. | Preencha o campo naquele modelo e grave de novo. |
@@ -192,6 +222,8 @@ Em numerador do tipo Camarote, aparecem os campos **Q CAM \***, **L CAM \*** e *
 - `src/features/orcamentos/components/PedidoModelosTab.tsx`
 - `src/features/orcamentos/components/LotesGrid.tsx`
 - `src/features/orcamentos/components/ModeloCampos.tsx`
+- `src/features/orcamentos/components/MapaTeatroSeletor.tsx`
+- `src/features/orcamentos/lib/mapa-teatro.ts`
 - `src/features/orcamentos/services/lotes-colagem.ts`
 - `src/features/orcamentos/services/lotes-numeracao.ts`
 - `src/features/orcamentos/lib/checklist-lote.ts`

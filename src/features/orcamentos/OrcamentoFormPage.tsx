@@ -578,6 +578,11 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
             Q_CAM: m.Q_CAM !== null && m.Q_CAM !== undefined ? Number(m.Q_CAM) : null,
             L_CAM: m.L_CAM !== null && m.L_CAM !== undefined ? Number(m.L_CAM) : null,
             C_INI: m.C_INI !== null && m.C_INI !== undefined ? Number(m.C_INI) : null,
+            // Mapa de Teatro: só os ids e o nome. A revisão e o retrato ficam
+            // no banco — a tela não precisa deles e não os regrava.
+            mapa_teatro_id: m.mapa_teatro_id ? String(m.mapa_teatro_id) : null,
+            mapa_teatro_setor_id: m.mapa_teatro_setor_id ? String(m.mapa_teatro_setor_id) : null,
+            mapa_teatro_nome: m.mapa_teatro_id ? String(m.mapa_teatro_snapshot?.mapa?.nome ?? "") || null : null,
           }));
           setForm((prev) => ({ ...prev, pedidosModelos: modelos }));
           setModelosCopiados(
@@ -3426,13 +3431,66 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
 
     const proximosItens = [...form.itens];
     proximosItens.splice(index + 1, 0, copia);
-    updateField("itens", proximosItens);
+
+    /**
+     * PRODUTO COM MAPA DE TEATRO: o Duplicar leva os modelos (03/10/2026).
+     *
+     * Serve para montar outro combo de setores do mesmo mapa: a cópia nasce com
+     * os mesmos setores, e o usuário tira os que não quer depois de salvar. Só
+     * os modelos de mapa vão — modelo comum segue ficando de fora, como sempre.
+     * A cópia leva os ids (mapa e setor) e de qual modelo ela veio; a revisão e
+     * o retrato são copiados pelo salvar, direto do banco (`gravarLotesDoItem`),
+     * sem passar pela tela. Arte, impressão e acabamento não vão: nasce pendente.
+     */
+    const modelosDeMapa = (form.pedidosModelos ?? []).filter(
+      (m) =>
+        Boolean(m.mapa_teatro_id && m.mapa_teatro_setor_id) &&
+        ((original.id_produto_proposta_origem &&
+          Number(m.id_produto_proposta_origem) === Number(original.id_produto_proposta_origem)) ||
+          m.item_temp_id === original.id) &&
+        Boolean(m.isPersisted ? m.id : m.mapa_teatro_copiar_de)
+    );
+    const copiasDeMapa: PedidoModeloState[] = modelosDeMapa.map((m, i) => ({
+      tempId: `mapa_${Date.now()}_${i}`,
+      item_temp_id: copia.id,
+      isPersisted: false,
+      id_produto_proposta_origem: null,
+      nome_modelo: m.nome_modelo,
+      padrao: m.padrao,
+      quantidade: m.quantidade,
+      tipo_numeracao: m.tipo_numeracao,
+      numeracao_inicio: m.numeracao_inicio,
+      numeracao_fim: m.numeracao_fim,
+      verso_tipo: m.verso_tipo,
+      bloco: m.bloco ?? null,
+      gabarito_operacional: m.gabarito_operacional ?? null,
+      variacoes_texto: m.variacoes_texto ?? null,
+      Q_CAM: m.Q_CAM ?? null,
+      L_CAM: m.L_CAM ?? null,
+      C_INI: m.C_INI ?? null,
+      status_arte: "PENDENTE",
+      status_producao: "PENDENTE",
+      ordem: m.ordem,
+      mapa_teatro_id: m.mapa_teatro_id,
+      mapa_teatro_setor_id: m.mapa_teatro_setor_id,
+      mapa_teatro_nome: m.mapa_teatro_nome ?? null,
+      mapa_teatro_copiar_de: m.isPersisted && m.id ? Number(m.id) : (m.mapa_teatro_copiar_de ?? null)
+    }));
+
+    setForm((current) => ({
+      ...current,
+      itens: proximosItens,
+      pedidosModelos: [...(current.pedidosModelos ?? []), ...copiasDeMapa]
+    }));
     setOpenItemIds((prev) => ({ ...prev, [copia.id]: true }));
 
     showToast({
       type: "success",
       title: "Produto duplicado",
-      description: `Nova linha de "${original.nome}" criada. Ajuste o que precisar.`
+      description:
+        copiasDeMapa.length > 0
+          ? `Nova linha de "${original.nome}" criada com ${copiasDeMapa.length} ${copiasDeMapa.length === 1 ? "modelo" : "modelos"} do mapa "${copiasDeMapa[0].mapa_teatro_nome || "de teatro"}". Salve e tire na aba Pedido os setores que não quer.`
+          : `Nova linha de "${original.nome}" criada. Ajuste o que precisar.`
     });
   }
 

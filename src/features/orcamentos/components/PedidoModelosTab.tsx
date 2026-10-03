@@ -990,6 +990,19 @@ export function PedidoModelosTab({
                           <span className="font-semibold text-teal-700"> - {variacoes}</span>
                         ) : null;
                       })()}
+                      {/* Mapa de Teatro do produto, em destaque junto ao nome:
+                          vem do retrato gravado nos modelos (vínculo por id). */}
+                      {(() => {
+                        const doMapa = modelosDoItem.find((m) => m.mapa_teatro_id);
+                        return doMapa ? (
+                          <span
+                            data-mapa-teatro={doMapa.mapa_teatro_id ?? undefined}
+                            className="ml-2 inline-flex items-center rounded-full bg-violet-100 px-2.5 py-0.5 align-middle text-xs font-bold text-violet-800"
+                          >
+                            Mapa: {doMapa.mapa_teatro_nome || "Mapa de Teatro"}
+                          </span>
+                        ) : null;
+                      })()}
                     </h3>
                     <div className="mt-1 flex flex-wrap items-center gap-3 text-xs font-semibold text-slate-500">
                       <span className="rounded-full bg-slate-200 px-2 py-0.5 text-slate-700">Qtd: {item.quantidade}</span>
@@ -1101,7 +1114,11 @@ export function PedidoModelosTab({
                           // Somente leitura na grade: alimentam a janela de amostra.
                           status_arte: m.status_arte,
                           amostra_arte_base64: m.amostra_arte_base64 ?? null,
-                          verso_amostra_arte_base64: m.verso_amostra_arte_base64 ?? null
+                          verso_amostra_arte_base64: m.verso_amostra_arte_base64 ?? null,
+                          // Mapa de Teatro: o vínculo que o lote já tem no banco.
+                          mapa_teatro_id: m.mapa_teatro_id ?? null,
+                          mapa_teatro_setor_id: m.mapa_teatro_setor_id ?? null,
+                          mapa_teatro_nome: m.mapa_teatro_nome ?? null
                         }))}
                         onAmpliarArte={setArteAmpliada}
                         onGravado={({ qtdItem, qtdAnterior, freteMensagem, lotes }) => {
@@ -1147,7 +1164,11 @@ export function PedidoModelosTab({
                                   status_arte: (linha.status_arte as string | undefined) ?? anterior?.status_arte,
                                   status_producao: (linha.status_producao as string | undefined) ?? anterior?.status_producao,
                                   variacoes_texto: (linha.variacoes_texto as string | null) ?? null,
-                                  ordem: linha.ordem == null ? undefined : Number(linha.ordem)
+                                  ordem: linha.ordem == null ? undefined : Number(linha.ordem),
+                                  // Mapa de Teatro: como o servidor gravou.
+                                  mapa_teatro_id: (linha.mapa_teatro_id as string | null) ?? null,
+                                  mapa_teatro_setor_id: (linha.mapa_teatro_setor_id as string | null) ?? null,
+                                  mapa_teatro_nome: (linha.mapa_teatro_nome as string | null) ?? null
                                 } as PedidoModeloState;
                               })
                             ];
