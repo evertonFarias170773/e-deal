@@ -480,20 +480,20 @@ export async function montarPdfProposta(
   const corTexto = cor(COR_TEXTO);
   const ehOc = documento === "oc";
 
-  // A OC traz o mesmo conteúdo do orçamento, nas mesmas posições. Só o bloco
-  // de cima desce, porque o modelo de OC tem "Dados para faturamento:" (y 731)
-  // onde o orçamento tem a linha da empresa: empresa, endereço, "Orçado por:",
-  // CLIENTE e CPF/CNPJ ficam logo abaixo dele, seguidos de ENTREGA e ENVIO,
-  // que só a OC tem. Para caber, as linhas ficam a 15 pt e a tabela de
-  // produtos (DETALHES, QTD/Produto e itens) desce 21 pt; totais, observações
-  // e assinatura não mudam.
-  const yEmpresa = ehOc ? 716 : 743;
-  const yEndereco = ehOc ? 702 : 726;
-  const yVendedor = ehOc ? 687 : 709;
-  const yCliente = ehOc ? 672 : 680;
-  const yDocumento = ehOc ? 657 : 660;
-  const yEntrega = 642;
-  const yEnvio = 627;
+  // A OC traz o mesmo conteúdo do orçamento. O bloco de cima muda de ordem e
+  // de altura porque o modelo de OC tem "Dados para faturamento:" impresso
+  // (y 731) e ele introduz os dados do CLIENTE: logo abaixo vêm CLIENTE,
+  // CPF/CNPJ, ENTREGA e ENVIO (os dois últimos só a OC tem); depois "Orçado
+  // por:"; por último a empresa emissora e o endereço dela. Para caber, as
+  // linhas ficam a 15 pt e a tabela de produtos (DETALHES, QTD/Produto e
+  // itens) desce 21 pt; totais, observações e assinatura não mudam.
+  const yCliente = ehOc ? 716 : 680;
+  const yDocumento = ehOc ? 702 : 660;
+  const yEntrega = 687;
+  const yEnvio = 672;
+  const yVendedor = ehOc ? 657 : 709;
+  const yEmpresa = ehOc ? 642 : 743;
+  const yEndereco = ehOc ? 627 : 726;
   const descidaTabela = ehOc ? 21 : 0;
 
   // A linha da empresa termina antes de "DATA:" / "Validade" (x 473): o texto
@@ -546,7 +546,8 @@ export async function montarPdfProposta(
   drawText(String(id_int), 514, 760, 16, true, "center");
   drawText(formatDate(dataProposta), 505, 741, 10);
 
-  drawText(cliente, 92, yCliente, 11);
+  // Na OC o cliente fica na altura de "Válidade" (x 478): nome longo diminui.
+  drawText(cliente, 92, yCliente, ehOc ? tamanhoQueCabe(cliente, false, 11, 375) : 11);
   drawText(cpf_cnpj, 92, yDocumento, 10);
   drawText(vendedor, 100, yVendedor, 9);
 
