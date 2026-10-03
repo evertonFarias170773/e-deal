@@ -21,6 +21,7 @@ import { encerrarTeste, reabrirTeste } from "@/features/pedidos/services/encerra
 import { desmarcarFaturadoNoSistemaAntigo } from "@/features/fiscal/services/faturado-fora.client";
 import { buscarRastreioDasPropostas, type RastreioDaProposta } from "@/features/orcamentos/services/rastreio-lista.service";
 import { buscarPrazoEnvioDosPedidos } from "@/features/orcamentos/services/prazo-envio-lista.service";
+import { idEmpresaDoPdf } from "@/features/orcamentos/lib/empresa-pdf";
 import { RastreioPropostaModal } from "@/features/orcamentos/components/RastreioPropostaModal";
 import { buscarNomesDosSocios } from "@/features/orcamentos/services/socio-pagador.service";
 import { FiltroProdutoDrop, type OpcaoProduto } from "@/features/orcamentos/components/FiltroProdutoDrop";
@@ -1299,7 +1300,8 @@ export function OrcamentosListPageReal() {
 
 
 
-  async function handleGerarPDFForListItem(item: OrcamentoListItem) {
+  /** "Gerar PDF da proposta" (orcamento) e "Gerar OC": os mesmos do menu de dentro da proposta. */
+  async function handleGerarPDFForListItem(item: OrcamentoListItem, documento: "orcamento" | "oc" = "orcamento") {
     const isUnregistered = !item.clienteId || item.clienteId === "0" || item.clienteId === "null";
     if (isUnregistered) {
       showToast({
@@ -1310,15 +1312,8 @@ export function OrcamentosListPageReal() {
       return;
     }
 
-    const labelLower = (item.empresaLabel || "").toLowerCase();
-    let idEmpresa: number | null = null;
-    if (labelLower.includes("grafica") || labelLower.includes("ingresso")) {
-      idEmpresa = 1;
-    } else if (labelLower.includes("biro")) {
-      idEmpresa = 2;
-    } else if (labelLower.includes("e3") || labelLower.includes("brindes")) {
-      idEmpresa = 3;
-    }
+    // Mesma checagem da proposta: ignora acento ("GRÁFICA", "BIRÔ").
+    const idEmpresa = idEmpresaDoPdf(item.empresaLabel);
 
     if (idEmpresa === null) {
       showToast({
@@ -1329,26 +1324,27 @@ export function OrcamentosListPageReal() {
       return;
     }
 
+    const nomeDoc = documento === "oc" ? "a OC" : "o PDF da proposta";
     showToast({
       type: "info",
-      title: "Gerando PDF",
-      description: "Aguarde enquanto geramos o PDF da proposta comercial..."
+      title: documento === "oc" ? "Gerando OC" : "Gerando PDF",
+      description: documento === "oc" ? "Aguarde enquanto geramos a OC..." : "Aguarde enquanto geramos o PDF da proposta comercial..."
     });
 
     try {
-      const res = await gerarPDFProposta(item.id_int, idEmpresa);
+      const res = await gerarPDFProposta(item.id_int, idEmpresa, documento);
       if (res.success && res.url) {
         window.open(res.url, "_blank");
         showToast({
           type: "success",
-          title: "PDF Gerado",
-          description: "O PDF da proposta foi aberto em uma nova aba."
+          title: documento === "oc" ? "OC gerada" : "PDF Gerado",
+          description: documento === "oc" ? "A OC foi aberta em uma nova aba." : "O PDF da proposta foi aberto em uma nova aba."
         });
       } else {
         showToast({
           type: "error",
           title: "Falha na geração",
-          description: "Não foi possível gerar o PDF da proposta."
+          description: `Não foi possível gerar ${nomeDoc}.`
         });
         console.error("[Edge Function Error] Falha ao gerar PDF da proposta:", res.errorMessage);
       }
@@ -1727,6 +1723,7 @@ Ela volta a aparecer nas listas operacionais.`
       // helper único, mesma rota e mesmas permissões.
       { label: "Link pgto. externo", onClick: () => void copiarLinkPagamentoExterno(item.id_int, showToast) },
       { label: "Gerar PDF da proposta", onClick: () => void handleGerarPDFForListItem(item) },
+      { label: "Gerar OC", onClick: () => void handleGerarPDFForListItem(item, "oc") },
       // NOTA EMITIDA (11/09/2026): so existem quando ha nota que passa no
       // criterio unico, e cada uma so aparece se o provedor devolveu o arquivo.
       // Pedido com mais de uma AUTORIZADA oferece a ESCOLHIDA — a mais recente

@@ -1,6 +1,6 @@
 # Pedidos (lista)
 
-> **Última revisão:** 02/10/2026
+> **Última revisão:** 03/10/2026
 > **Caminho no menu:** Pedidos (item direto do menu lateral, sem submenu; é o segundo, logo abaixo de Conferência)
 > **Endereço:** `/orcamentos`
 
@@ -59,6 +59,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Copiar proposta informal** | Menu da linha | Copia o resumo do pedido para colar no WhatsApp. |
 | **Link pgto. externo** | Menu da linha | Copia o link de pagamento da área do cliente. |
 | **Gerar PDF da proposta** | Menu da linha | Gera o PDF da proposta e abre em nova aba. |
+| **Gerar OC** | Menu da linha, logo abaixo de **Gerar PDF da proposta** | Gera a OC (autorização de faturamento que o cliente assina) e abre em nova aba. É o mesmo **Gerar OC** de dentro da proposta. |
 | **Abrir DANFE (PDF)** | Menu da linha | Abre a DANFE da nota que representa o pedido. |
 | **Baixar XML** | Menu da linha | Baixa o XML da nota. |
 | **Gerar cobrança** | Menu da linha | Abre a geração de cobrança da proposta. |
@@ -161,14 +162,15 @@ As datas pequenas aparecem como dia/mês e hora, no horário de Brasília.
 6. **Copiar proposta informal**: copia o resumo do pedido, pronto para colar no WhatsApp.
 7. **Link pgto. externo**: copia o link da área do cliente para pagamento.
 8. **Gerar PDF da proposta**: gera o PDF e abre em nova aba.
-9. **Abrir DANFE (PDF)** e **Baixar XML**: aparecem quando o pedido tem nota autorizada.
-10. **Gerar cobrança**: abre a geração de cobrança. Não aparece em pedido sem cliente cadastrado.
-11. **Cancelar proposta**: abre a janela de cancelamento, que exige o **Motivo do Cancelamento**.
-12. **Liberar para Produção**: aparece para quem tem a permissão "Liberar para Produção", em pedido não avulso que está em REVISAO ATENDENTE e ainda não foi liberado. Depois de liberado, no lugar dela fica o aviso **✓ Liberada para produção**, que não é clicável.
-13. **Rastrear objeto**: aparece quando o envio é pelos Correios e já existe código de rastreio.
-14. **Encerrar teste** ou **Reabrir (desfazer encerramento de teste)**.
-15. **Voltar para a Fila de Faturamento (desfazer nota no sistema antigo)**: aparece só no pedido com a marca "faturado no sistema antigo".
-16. **Retirar da Produção**: último item do menu, só em pedido já liberado.
+9. **Gerar OC**: gera a OC do pedido e abre em nova aba. Mesmo conteúdo do PDF, com o título "Autorização de faturamento", a entrega, o envio e o campo de assinatura do cliente. As exigências são as mesmas do PDF.
+10. **Abrir DANFE (PDF)** e **Baixar XML**: aparecem quando o pedido tem nota autorizada.
+11. **Gerar cobrança**: abre a geração de cobrança. Não aparece em pedido sem cliente cadastrado.
+12. **Cancelar proposta**: abre a janela de cancelamento, que exige o **Motivo do Cancelamento**.
+13. **Liberar para Produção**: aparece para quem tem a permissão "Liberar para Produção", em pedido não avulso que está em REVISAO ATENDENTE e ainda não foi liberado. Depois de liberado, no lugar dela fica o aviso **✓ Liberada para produção**, que não é clicável.
+14. **Rastrear objeto**: aparece quando o envio é pelos Correios e já existe código de rastreio.
+15. **Encerrar teste** ou **Reabrir (desfazer encerramento de teste)**.
+16. **Voltar para a Fila de Faturamento (desfazer nota no sistema antigo)**: aparece só no pedido com a marca "faturado no sistema antigo".
+17. **Retirar da Produção**: último item do menu, só em pedido já liberado.
 
 ### Liberar um pedido para a produção
 
@@ -205,7 +207,7 @@ As datas pequenas aparecem como dia/mês e hora, no horário de Brasília.
 - Não dá para cancelar uma proposta sem informar o motivo, nem enquanto ela tiver pedido complementar aberto. Cobrança já paga ou título já liquidado também bloqueiam o cancelamento. As cobranças pendentes são canceladas junto com a proposta.
 - Se a intenção é só refazer a cobrança, não cancele a proposta: na janela de cancelamento use **Cancelar só a cobrança** (ou **Ver cobranças na aba Pagamentos**, quando há mais de uma). O pedido continua de pé e o saldo reabre.
 - Pedido complementar só é aceito em proposta paga integralmente, não avulsa, ainda não despachada e sem outro complemento aberto. O sistema confere isso na hora de criar e mostra o motivo da recusa na própria janela.
-- Não dá para gerar PDF nem cobrança de pedido sem cliente cadastrado.
+- Não dá para gerar PDF, OC nem cobrança de pedido sem cliente cadastrado.
 - Não dá para gerar cobrança de proposta que já foi totalmente cobrada.
 - Encerrar um teste tira o pedido da Produção, do Kanban, da fila de impressão e da Expedição. Ele continua nesta lista, com a marca, e segue contando no faturamento. Esta é a única tela de onde dá para reabrir.
 - A busca por nome de quem recebe a nota fiscal e por nome do evento precisa de pelo menos duas letras e é desligada quando o termo é comum demais (casa com 200 nomes ou mais). A busca por número, cliente e atendente continua funcionando.
@@ -246,7 +248,7 @@ As datas pequenas aparecem como dia/mês e hora, no horário de Brasília.
 | Busquei pelo valor ou pela OS Ideal e o pedido não veio | A busca na base inteira é por número, código e nome do cliente, atendente, nome de quem recebe a nota e nome do evento. Valor e OS só refinam o que já está na tela. | Busque pelo número do pedido ou pelo nome do cliente. |
 | O número do card não bate com o total do rodapé | Os cards Pedidos, Liberadas, Revisão atendente e Em produção contam só a página carregada. | Use o "Total de propostas encontradas" do rodapé ou ligue o card para ver a lista. |
 | "Geração de PDF bloqueada" | O pedido não tem cliente cadastrado. | Cadastre ou vincule um cliente à proposta e gere o PDF de novo. |
-| "Empresa inválida" | A empresa da proposta não é aceita para gerar PDF. | Use Ideal Grafica, Ideal Biro ou E3 Brindes na proposta. |
+| "Empresa inválida" | A empresa da proposta não é aceita para gerar PDF ou OC. A grafia com ou sem acento não importa ("Gráfica", "Birô"). | Use Ideal Grafica, Ideal Biro ou E3 Brindes na proposta. |
 | "Ação bloqueada: Esta proposta já foi totalmente cobrada (saldo restante é R$ 0,00)." | Tentativa de gerar cobrança em proposta sem saldo a cobrar. | Para refazer, cancele a cobrança existente na aba Pagamentos da proposta. |
 | "Erro de Validação: Pendências financeiras. Todos os pagamentos ativos precisam estar confirmados (Paid/A Vencer) e deve haver pelo menos um." | Liberação para a produção com pagamento ainda não confirmado, ou sem pagamento. | Aguarde a confirmação do financeiro e libere de novo. |
 | "Erro de Validação: Pendências de arte. Todas as artes devem estar com status APROVADO." | Liberação para a produção com arte ainda não aprovada. | Conclua a aprovação da arte e libere de novo. |
@@ -279,6 +281,7 @@ As datas pequenas aparecem como dia/mês e hora, no horário de Brasília.
 Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê esta lista: quando um deles muda e a ficha não, ele avisa. Um caminho por item, entre crases, a partir da raiz do repositório; pasta termina com `/` e vale para tudo dentro dela.
 
 - `src/features/orcamentos/OrcamentosListPageReal.tsx`
+- `src/features/orcamentos/lib/empresa-pdf.ts`
 - `src/features/orcamentos/services/orcamentos.service.ts`
 - `src/features/orcamentos/mappers.ts`
 - `src/features/orcamentos/components/FiltroProdutoDrop.tsx`
