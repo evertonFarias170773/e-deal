@@ -3,8 +3,9 @@
  *
  * Geração do PDF oficial da proposta para o agent loop — MESMO caminho
  * consolidado da tela de orçamentos (gerarPDFProposta em
- * orcamentos.service.ts): Edge Function `proposta_comencial` (template por
- * empresa em pdf_propostas_modelos), upload no bucket público `pdf_fatura`
+ * orcamentos.service.ts): Edge Function `proposta_comencial` (o id_modelo
+ * diz a empresa; o modelo vem de empresas.url_pdf_base_prop, no bucket
+ * privado `modelos-pdf`), upload no bucket público `pdf_fatura`
  * e URL pública no retorno + registro na timeline da proposta.
  *
  * Uso no agente: SOMENTE para a proposta recém-criada pelo próprio usuário

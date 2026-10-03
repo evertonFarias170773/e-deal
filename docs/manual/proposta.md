@@ -1,6 +1,6 @@
 # Proposta: visão geral e abas
 
-> **Última revisão:** 02/10/2026
+> **Última revisão:** 03/10/2026
 > **Caminho no menu:** Pedidos → **+ Nova proposta** (proposta nova) ou Pedidos → abrir um pedido → **Editar proposta**
 > **Endereço:** `/orcamentos/novo` e `/orcamentos/<número>/editar`
 
@@ -38,7 +38,8 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Entendi** | Aviso azul **Cópia da proposta #<número>** | Fecha o aviso da cópia neste navegador. |
 | **Copiar proposta informal** | Menu **Acoes** | Copia o texto informal da proposta para colar no WhatsApp. |
 | **Link pgto. externo** | Menu **Acoes** | Copia o link da área do cliente daquele pedido. |
-| **Gerar PDF da proposta** | Menu **Acoes** | Gera o PDF e abre em outra aba. |
+| **Gerar PDF da proposta** | Menu **Acoes** | Gera o PDF do orçamento e abre em outra aba. |
+| **Gerar OC** | Menu **Acoes**, logo abaixo de **Gerar PDF da proposta** (na edição e no detalhe da proposta) | Gera a OC, a autorização de faturamento que o cliente assina, e abre em outra aba. |
 | **Retirar da Produção** | Menu **Acoes**, só em pedido já liberado para a produção | Tira o pedido da fila da produção. |
 | Botão com o ícone do Ideal Imposition (dica: "Abrir no Ideal Imposition") | Cabeçalho, em proposta que já tem número | Abre o pedido no sistema de imposição. |
 | **Voltar ao detalhe** / **Voltar para lista** | Cabeçalho | Sai da edição. Em proposta nova o nome é **Voltar para lista**. |
@@ -88,7 +89,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 3. Se a proposta é um pedido complementar, aparece o selo **Complemento do #<número>**, que leva ao pedido principal. No pedido principal aparece **Complemento: #<número> · <status>**.
 4. O botão com o ícone do Ideal Imposition abre o pedido no sistema de imposição. Ele só aparece em proposta que já tem número.
 5. **Voltar ao detalhe** (ou **Voltar para lista**, em proposta nova) sai da edição.
-6. O botão **Acoes**, no canto direito, abre o menu de ações: **Ver proposta**, **Ver chat interno**, **Editar proposta**, **Duplicar proposta**, **Copiar proposta informal**, **Link pgto. externo**, **Gerar PDF da proposta** e, em pedido já liberado para a produção, **Retirar da Produção**.
+6. O botão **Acoes**, no canto direito, abre o menu de ações: **Ver proposta**, **Ver chat interno**, **Editar proposta**, **Duplicar proposta**, **Copiar proposta informal**, **Link pgto. externo**, **Gerar PDF da proposta**, **Gerar OC** e, em pedido já liberado para a produção, **Retirar da Produção**.
 7. Abaixo do cabeçalho podem aparecer avisos: sobre cobrança gerada, **Saldo na Conta Corrente** (cliente com crédito), **Cliente com débito em aberto** e **Revisão financeira pendente**. Também fica ali o bloco de tarefas da equipe ligadas ao pedido.
 
 ### Navegar pelas abas
@@ -251,8 +252,9 @@ O aviso some quando você clica em **Entendi** ou quando a cópia ganha cobranç
 ### Outras ações do menu
 
 1. **Copiar proposta informal**: copia o mesmo texto do bloco **9. Envio do orçamento**.
-2. **Gerar PDF da proposta**: abre o PDF em nova aba. Precisa de cliente cadastrado e de empresa válida.
-3. **Retirar da Produção**: tira o pedido da fila da produção, depois de confirmar.
+2. **Gerar PDF da proposta**: abre o PDF do orçamento em nova aba. Precisa de cliente cadastrado e de empresa válida.
+3. **Gerar OC**: abre em nova aba a **Autorização de faturamento** do pedido. Tem os mesmos dados do orçamento (cliente, CPF/CNPJ, vendedor, produtos, frete, desconto, total e observações) e um campo para o cliente assinar e carimbar. Precisa de cliente cadastrado e de empresa válida, como o PDF.
+4. **Retirar da Produção**: tira o pedido da fila da produção, depois de confirmar.
 
 ## Regras e bloqueios
 
@@ -281,6 +283,7 @@ O aviso some quando você clica em **Entendi** ou quando a cópia ganha cobranç
 - Aba **Pedido** x aba **Produção** x menu **Produção**: a aba **Pedido** tem os modelos e lotes de cada produto; a aba **Produção** é só o texto da orientação técnica; o menu lateral **Produção** é outra tela, a das ordens de serviço.
 - **Salvar alterações** x **Salvar item** x sair do campo: **Salvar alterações** (rodapé) salva tudo e recarrega a tela; **Salvar item** salva tudo e fecha o cartão do produto; sair do campo grava sozinho só Quantidade, Valor Unitário e Fixo, e só em proposta com número e sem cobrança.
 - **Cancelar** x **Cancelar proposta** x **Cancelar só a cobrança**: **Cancelar** (rodapé) apenas sai da edição; **Cancelar proposta** encerra o pedido e é irreversível; **Cancelar só a cobrança** mantém o pedido e reabre o saldo para uma cobrança nova.
+- **Gerar PDF da proposta** x **Gerar OC**: o primeiro é o orçamento, com validade de 15 dias, para o cliente decidir; o segundo é a autorização de faturamento, que o cliente devolve assinada. Os dois saem com o modelo da empresa da proposta e entram na timeline como "PDF da proposta gerado." e "PDF da OC gerado.".
 - **Ver proposta** x **Editar proposta**: a primeira abre o detalhe, só para leitura; a segunda abre esta tela.
 - **Duplicar proposta** x **Criar pedido complementar**: duplicar abre uma cópia independente, com os produtos e os dados da original e frete a cotar; o complementar nasce sem itens, vinculado ao pedido original, e sai junto com ele na Expedição.
 - **Link pgto. externo** x **Copiar proposta informal** x **Copiar resumo para WhatsApp**: o primeiro copia o link da área do cliente; os outros dois copiam o mesmo texto informal da proposta.
@@ -317,7 +320,8 @@ O aviso some quando você clica em **Entendi** ou quando a cópia ganha cobranç
 | **Erro ao duplicar** — "Você só pode duplicar proposta em que é o vendedor. Peça a um administrador ou a quem tem visão geral das propostas." | A proposta é de outro vendedor e o seu perfil vê só as próprias. | Peça a cópia ao vendedor da proposta, a um administrador ou a quem vê todas as propostas. |
 | **Erro ao duplicar** — "Não é permitido duplicar uma proposta que já é cópia." | A proposta nasceu de um **Duplicar proposta**. | Abra a proposta original e duplique a partir dela. |
 | **Não foi possível gerar o link.** | O link de pagamento não foi criado. | Tente de novo. Se continuar, avise o administrador. |
-| **Geracao de PDF bloqueada** | A proposta é de cliente não cadastrado. | Vincule um cliente cadastrado antes de gerar o PDF. |
+| **Geracao de PDF bloqueada** | A proposta é de cliente não cadastrado. Vale também para **Gerar OC**. | Vincule um cliente cadastrado antes de gerar o PDF ou a OC. |
+| **Erro ao gerar PDF** / **Falha na geração** ao gerar a OC | A empresa da proposta não tem modelo de OC cadastrado. Hoje só Ideal Gráfica, Ideal Birô e E3 Brindes têm. | Peça ao administrador para cadastrar o modelo da empresa. |
 | **A proposta não está paga integralmente** | Tentativa de criar complemento de pedido com saldo em aberto. | Conclua o pagamento do pedido original antes. |
 | **Já existe um complemento aberto** | O pedido original já tem um complemento em andamento. | Use o complemento existente ou cancele-o antes. |
 
@@ -359,6 +363,9 @@ O aviso some quando você clica em **Entendi** ou quando a cópia ganha cobranç
 - `src/features/orcamentos/components/PropostaChatDrawer.tsx`
 - `src/features/orcamentos/components/PropostaChatPanel.tsx`
 - `src/features/area-cliente/lib/copiar-link-pagamento.ts`
+- `supabase/functions/proposta_comencial/index.ts`
+- `supabase/functions/proposta_comencial/gerar.ts`
+- `supabase/migrations/20261003_empresas_modelos_pdf_storage.sql`
 - `src/app/api/orcamentos/editar-paga/route.ts`
 - `src/components/common/ActionsMenu.tsx`
 - `src/constants/navigation.ts`

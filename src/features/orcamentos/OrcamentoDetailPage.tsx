@@ -177,7 +177,8 @@ export function OrcamentoDetailPage({ idInt }: OrcamentoDetailPageProps) {
     showToast({ type: "success", title: "Resumo copiado", description: "Proposta informal copiada para WhatsApp." });
   }
 
-  async function handleGerarPDF() {
+  /** "Gerar PDF da proposta" (orcamento) e "Gerar OC": mesma funcao, modelo de cada um. */
+  async function handleGerarPDF(documento: "orcamento" | "oc" = "orcamento") {
     if (!proposta) return;
     const isUnregistered = proposta.clienteNaoCadastrado || proposta.cliente.idCliente === null || proposta.cliente.idCliente === undefined || Number(proposta.cliente.idCliente) === 0;
     if (isUnregistered) {
@@ -208,27 +209,28 @@ export function OrcamentoDetailPage({ idInt }: OrcamentoDetailPageProps) {
       return;
     }
 
+    const nomeDoc = documento === "oc" ? "a OC" : "o PDF da proposta";
     showToast({
       type: "info",
-      title: "Gerando PDF",
-      description: "Aguarde enquanto geramos o PDF da proposta comercial..."
+      title: documento === "oc" ? "Gerando OC" : "Gerando PDF",
+      description: documento === "oc" ? "Aguarde enquanto geramos a OC..." : "Aguarde enquanto geramos o PDF da proposta comercial..."
     });
 
     try {
-      const res = await gerarPDFProposta(proposta.id_int, idEmpresa);
+      const res = await gerarPDFProposta(proposta.id_int, idEmpresa, documento);
       if (res.success && res.url) {
         window.open(res.url, "_blank");
         showToast({
           type: "success",
-          title: "PDF Gerado",
-          description: "O PDF da proposta foi aberto em uma nova aba."
+          title: documento === "oc" ? "OC gerada" : "PDF Gerado",
+          description: documento === "oc" ? "A OC foi aberta em uma nova aba." : "O PDF da proposta foi aberto em uma nova aba."
         });
         void fetchChatResumo();
       } else {
         showToast({
           type: "error",
           title: "Falha na geração",
-          description: "Não foi possível gerar o PDF da proposta."
+          description: `Não foi possível gerar ${nomeDoc}.`
         });
         console.error("[Edge Function Error] Falha ao gerar PDF da proposta:", res.errorMessage);
       }
@@ -350,6 +352,7 @@ export function OrcamentoDetailPage({ idInt }: OrcamentoDetailPageProps) {
                 { label: "Duplicar proposta", onClick: () => void handleDuplicarProposta() },
                 { label: "Copiar proposta informal", onClick: () => void copyInformal() },
                 { label: "Gerar PDF da proposta", onClick: () => void handleGerarPDF() },
+                { label: "Gerar OC", onClick: () => void handleGerarPDF("oc") },
                 ...(saldoRestante > 0 && !isClienteNaoCadastrado ? [{ label: "Gerar cobranca", onClick: () => setIsCobrancaModalOpen(true) }] : []),
                 ...(canCancelarProposta && proposta.status !== "CANCELADO" ? [{
                   label: "Cancelar proposta",

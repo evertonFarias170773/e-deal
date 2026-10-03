@@ -4171,7 +4171,8 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     }
   }
 
-  async function handleGerarPdfDaProposta() {
+  /** "Gerar PDF da proposta" (orcamento) e "Gerar OC": mesma funcao, modelo de cada um. */
+  async function handleGerarPdfDaProposta(documento: "orcamento" | "oc" = "orcamento") {
     if (!proposta || acaoEmCurso) return;
     if (!form.clienteId || form.clienteId === "0") {
       showToast({
@@ -4196,10 +4197,10 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
       });
       return;
     }
-    setAcaoEmCurso("pdf");
-    showToast({ type: "info", title: "Gerando PDF", description: "Aguarde..." });
+    setAcaoEmCurso(documento === "oc" ? "oc" : "pdf");
+    showToast({ type: "info", title: documento === "oc" ? "Gerando OC" : "Gerando PDF", description: "Aguarde..." });
     try {
-      const res = await gerarPDFProposta(proposta.id_int, idEmpresa);
+      const res = await gerarPDFProposta(proposta.id_int, idEmpresa, documento);
       if (res.success && res.url) {
         window.open(res.url, "_blank");
         showToast({ type: "success", title: "PDF gerado", description: "Aberto em uma nova aba." });
@@ -4259,6 +4260,10 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
       {
         label: acaoEmCurso === "pdf" ? "Gerando PDF..." : "Gerar PDF da proposta",
         onClick: () => void handleGerarPdfDaProposta()
+      },
+      {
+        label: acaoEmCurso === "oc" ? "Gerando OC..." : "Gerar OC",
+        onClick: () => void handleGerarPdfDaProposta("oc")
       },
       ...(proposta.is_prd_aprovado && podeRetirar
         ? [{

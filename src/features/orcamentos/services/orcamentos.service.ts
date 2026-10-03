@@ -4143,9 +4143,16 @@ export async function listVendedoresReais(): Promise<UsuarioVendedor[]> {
   return (data || []) as UsuarioVendedor[];
 }
 
+/**
+ * PDF da proposta pela Edge Function `proposta_comencial`.
+ * documento "orcamento" usa o modelo de empresas.url_pdf_base_prop;
+ * "oc" (autorização de faturamento) usa empresas.url_pdf_base_oc.
+ * id_modelo segue no corpo para quem ainda lê o parâmetro antigo.
+ */
 export async function gerarPDFProposta(
   idInt: number,
-  idEmpresa: number | string | null | undefined
+  idEmpresa: number | string | null | undefined,
+  documento: "orcamento" | "oc" = "orcamento"
 ): Promise<{ success: boolean; url?: string; errorMessage?: string }> {
   try {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -4181,7 +4188,9 @@ export async function gerarPDFProposta(
       },
       body: JSON.stringify({
         id_int: idInt,
-        id_modelo: idModelo
+        id_empresa: idEmpresaNum,
+        id_modelo: idModelo,
+        documento
       })
     });
 
@@ -4195,7 +4204,7 @@ export async function gerarPDFProposta(
       // Registrar timeline de forma assíncrona (não-bloqueante)
       void registrarMensagemSistemaProposta({
         idInt: idInt,
-        mensagem: "PDF da proposta gerado.",
+        mensagem: documento === "oc" ? "PDF da OC gerado." : "PDF da proposta gerado.",
         setor: "Comercial"
       }).catch((err) => console.warn("[PDF Timeline Error]", err));
 
