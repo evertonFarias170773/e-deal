@@ -20,6 +20,8 @@ import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import {
   LIMITES_SAUDE,
   avaliarNivel,
+  taxaSwapBytesPorSegundo,
+  type AmostraSwap,
   type BucketSaude,
   type InfraSaude,
   type MetricaSaude
@@ -30,6 +32,17 @@ export const dynamic = "force-dynamic";
 
 const VALIDADE_MS = 10 * 60 * 1000;
 let cache: { expiraEm: number; dados: InfraSaude } | null = null;
+
+/**
+ * Atividade do swap: o servidor só expõe contadores acumulados, então a taxa
+ * sai de duas leituras. Uma curta, feita aqui mesmo (ESPERA_SWAP_MS entre as
+ * duas, é o "agora"), e uma longa, contra a última leitura que ESTE servidor
+ * guardou (pega rajadas que a curta perde). Vale a pior das duas. O servidor da
+ * Vercel pode ser reciclado, então a longa é só um bônus: sem ela, vale a curta.
+ */
+const ESPERA_SWAP_MS = 4000;
+const JANELA_LONGA_MAX_MS = 30 * 60 * 1000;
+let ultimaAmostraSwap: AmostraSwap | null = null;
 
 type Amostra = { nome: string; rotulos: Record<string, string>; valor: number };
 
@@ -65,6 +78,21 @@ function metrica(m: Omit<MetricaSaude, "nivel">): MetricaSaude {
   return { ...m, nivel: avaliarNivel(m.valor, m.sentido, m.amarelo, m.vermelho) };
 }
 
+async function buscarMetricas(url: string, serviceKey: string): Promise<Amostra[]> {
+  const resposta = await fetch(`${url}/customer/v1/privileged/metrics`, {
+    headers: { Authorization: `Basic ${Buffer.from(`service_role:${serviceKey}`).toString("base64")}` },
+    cache: "no-store"
+  });
+  if (!resposta.ok) throw new Error(`HTTP ${resposta.status}`);
+  return lerMetricas(await resposta.text());
+}
+
+function amostraSwap(amostras: Amostra[]): AmostraSwap | null {
+  const entrou = primeira(amostras, "node_vmstat_pswpin");
+  const saiu = primeira(amostras, "node_vmstat_pswpout");
+  return entrou === null || saiu === null ? null : { em: Date.now(), entrou, saiu };
+}
+
 type Resumo = {
   banco?: { bytes?: number; cache_hit_pct?: number | null };
   historico?: { total_bytes?: number; meses?: { mes: string; bytes: number }[] };
@@ -78,22 +106,44 @@ type Resumo = {
 async function montar(url: string, serviceKey: string): Promise<InfraSaude> {
   const avisos: string[] = [];
 
+  // A consulta ao banco corre durante a espera entre as duas leituras do swap.
+  const admin = createSupabaseClient(url, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });
+  const resumoPromise = admin.rpc("infra_saude_resumo");
+
   let amostras: Amostra[] = [];
+  let swapAntes: AmostraSwap | null = null;
+  let swapDepois: AmostraSwap | null = null;
   try {
-    const resposta = await fetch(`${url}/customer/v1/privileged/metrics`, {
-      headers: { Authorization: `Basic ${Buffer.from(`service_role:${serviceKey}`).toString("base64")}` },
-      cache: "no-store"
-    });
-    if (!resposta.ok) throw new Error(`HTTP ${resposta.status}`);
-    amostras = lerMetricas(await resposta.text());
+    amostras = await buscarMetricas(url, serviceKey);
+    swapAntes = amostraSwap(amostras);
+    if (swapAntes) {
+      await new Promise((r) => setTimeout(r, ESPERA_SWAP_MS));
+      try {
+        swapDepois = amostraSwap(await buscarMetricas(url, serviceKey));
+      } catch (err) {
+        console.error("[infra-saude] segunda leitura do swap falhou:", err);
+      }
+    }
   } catch (err) {
     console.error("[infra-saude] métricas da Supabase indisponíveis:", err);
     avisos.push("Não foi possível ler memória, disco, processador, conexões e Realtime agora.");
   }
 
+  const swapAgora = swapDepois ?? swapAntes;
+  const taxas: number[] = [];
+  if (swapAntes && swapDepois) {
+    const curta = taxaSwapBytesPorSegundo(swapAntes, swapDepois);
+    if (curta !== null) taxas.push(curta);
+  }
+  if (swapAgora && ultimaAmostraSwap && swapAgora.em - ultimaAmostraSwap.em <= JANELA_LONGA_MAX_MS) {
+    const longa = taxaSwapBytesPorSegundo(ultimaAmostraSwap, swapAgora);
+    if (longa !== null) taxas.push(longa);
+  }
+  if (swapAgora) ultimaAmostraSwap = swapAgora;
+  const atividadeSwap = taxas.length ? Math.max(...taxas) : null;
+
   let resumo: Resumo = {};
-  const admin = createSupabaseClient(url, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });
-  const { data, error } = await admin.rpc("infra_saude_resumo");
+  const { data, error } = await resumoPromise;
   if (error) {
     console.error("[infra-saude] infra_saude_resumo falhou:", error.message);
     avisos.push("Não foi possível ler o tamanho do banco, o histórico e os arquivos agora.");
@@ -133,14 +183,19 @@ async function montar(url: string, serviceKey: string): Promise<InfraSaude> {
     }),
     metrica({
       chave: "swap",
-      titulo: "Memória de emergência em uso",
-      explicacao: "Quando a memória acaba, o servidor passa a usar o disco no lugar dela, o que é bem mais lento.",
-      unidade: "pct",
-      valor: swapTotal ? pct(swapTotal - (swapLivre ?? swapTotal), swapTotal) : null,
-      limite: 100,
+      titulo: "Memória de emergência em atividade",
+      explicacao:
+        "Mostra se o servidor está, agora, passando dados da memória para o disco e de volta, o que deixa as telas lentas. Ocupação alta sozinha não é problema: o servidor guarda ali coisas paradas.",
+      unidade: "taxa",
+      valor: atividadeSwap,
+      limite: null,
       sentido: "acima",
-      amarelo: L.swapPct.amarelo,
-      vermelho: L.swapPct.vermelho
+      amarelo: L.swapAtividadeBytesPorSegundo.amarelo,
+      vermelho: L.swapAtividadeBytesPorSegundo.vermelho,
+      detalhe:
+        swapTotal !== null && swapLivre !== null
+          ? `Ocupação: ${(pct(swapTotal - swapLivre, swapTotal) ?? 0).toFixed(0)}% de ${(swapTotal / 1024 ** 3).toFixed(1).replace(".", ",")} GB. Informação de apoio, não define a cor.`
+          : null
     }),
     metrica({
       chave: "processador",

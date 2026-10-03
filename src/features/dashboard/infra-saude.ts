@@ -10,8 +10,8 @@
 
 export type NivelSaude = "ok" | "atencao" | "critico" | "indisponivel";
 
-/** Como formatar o valor, o limite e as faixas. */
-export type UnidadeSaude = "pct" | "bytes" | "carga" | "contagem";
+/** Como formatar o valor, o limite e as faixas. "taxa" = bytes por segundo. */
+export type UnidadeSaude = "pct" | "bytes" | "taxa" | "carga" | "contagem";
 
 export type MetricaSaude = {
   chave: string;
@@ -28,6 +28,8 @@ export type MetricaSaude = {
   amarelo: number;
   vermelho: number;
   nivel: NivelSaude;
+  /** Informação secundária, em uma linha. Não entra no cálculo da cor. */
+  detalhe?: string | null;
 };
 
 export type BucketSaude = {
@@ -55,7 +57,17 @@ const MB = 1024 ** 2;
 /** Faixas do raio-X. `null` no limite = sem capacidade fixa. */
 export const LIMITES_SAUDE = {
   memoriaLivrePct: { amarelo: 25, vermelho: 10 },
-  swapPct: { amarelo: 30, vermelho: 60 },
+  /**
+   * Atividade do swap, em bytes por segundo (páginas que entram + saem × 4 KB).
+   * A OCUPAÇÃO do swap não entra na cor: em 02/10/2026 ela marcava 61% com a
+   * memória livre em 48%, as leituras pela memória em 100% e zero troca por
+   * segundo — o Linux guarda ali páginas paradas e as deixa lá. O que machuca é
+   * o servidor trocar dados com o disco o tempo todo. Em 03/10/2026 o acumulado
+   * desde o boot era de ~3 milhões de páginas (12 GB) e, entre duas leituras com
+   * 15 s de intervalo, não houve nenhuma troca. As faixas são ponto de partida:
+   * ajustar conforme o painel mostrar a rotina real.
+   */
+  swapAtividadeBytesPorSegundo: { amarelo: 100 * 1024, vermelho: 1024 * 1024 },
   /** Fração dos núcleos: 70% e 90% da capacidade. */
   cargaFracao: { amarelo: 0.7, vermelho: 0.9 },
   discoPct: { amarelo: 70, vermelho: 85 },
@@ -85,6 +97,24 @@ export function avaliarNivel(
   return "ok";
 }
 
+/** Contadores acumulados do kernel (`pswpin`/`pswpout`, em páginas) lidos num instante. */
+export type AmostraSwap = { em: number; entrou: number; saiu: number };
+
+const BYTES_POR_PAGINA = 4096;
+
+/**
+ * Bytes por segundo trocados entre memória e disco entre duas leituras dos
+ * contadores. `null` quando não dá para saber: intervalo zero, ou contador que
+ * diminuiu (o servidor reiniciou e zerou).
+ */
+export function taxaSwapBytesPorSegundo(antes: AmostraSwap, depois: AmostraSwap): number | null {
+  const segundos = (depois.em - antes.em) / 1000;
+  const entrou = depois.entrou - antes.entrou;
+  const saiu = depois.saiu - antes.saiu;
+  if (!(segundos > 0) || entrou < 0 || saiu < 0) return null;
+  return ((entrou + saiu) * BYTES_POR_PAGINA) / segundos;
+}
+
 export function formatarBytes(bytes: number): string {
   if (!Number.isFinite(bytes)) return "—";
   if (bytes >= GB) return `${(bytes / GB).toFixed(1).replace(".", ",")} GB`;
@@ -99,6 +129,8 @@ export function formatarValorSaude(valor: number | null, unidade: UnidadeSaude):
       return `${valor.toFixed(1).replace(".", ",")}%`;
     case "bytes":
       return formatarBytes(valor);
+    case "taxa":
+      return `${formatarBytes(valor)}/s`;
     case "carga":
       return valor.toFixed(2).replace(".", ",");
     default:

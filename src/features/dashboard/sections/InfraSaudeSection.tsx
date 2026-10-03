@@ -63,7 +63,7 @@ function CartaoMetrica({ m }: { m: MetricaSaude }) {
       </div>
       <p className="text-2xl font-bold" style={{ color: "var(--foreground)" }}>
         {formatarValorSaude(m.valor, m.unidade)}
-        {m.unidade !== "pct" ? (
+        {m.unidade !== "pct" && m.unidade !== "taxa" ? (
           <span className="ml-1 text-sm font-medium" style={{ color: "var(--muted)" }}>
             {m.limite !== null ? `de ${formatarValorSaude(m.limite, m.unidade)}` : "sem limite fixo"}
           </span>
@@ -80,6 +80,11 @@ function CartaoMetrica({ m }: { m: MetricaSaude }) {
       <p className="text-xs" style={{ color: "var(--muted)" }}>
         {faixas(m)}
       </p>
+      {m.detalhe ? (
+        <p className="text-xs font-medium" style={{ color: "var(--foreground)" }}>
+          {m.detalhe}
+        </p>
+      ) : null}
       <p className="text-xs leading-5" style={{ color: "var(--muted-subtle)" }}>
         {m.explicacao}
       </p>
