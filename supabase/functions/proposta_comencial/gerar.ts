@@ -263,13 +263,62 @@ export async function montarPdfProposta(
   // ============================
   const { data: propostaFat, error: propostaFatError } = await supabase
     .from("propostas")
-    .select("id_faturado, obs_proposta")
+    .select("id_faturado, obs_proposta, modalidade_frete, frete_escolhido, id_endereco_ent")
     .eq("id_int", id_int)
     .single();
 
   if (propostaFatError || !propostaFat) {
     console.error("Erro ao buscar id_faturado na proposta:", propostaFatError);
     throw new ErroPdf("Proposta não encontrada para faturamento", 404);
+  }
+
+  // ============================
+  // ENTREGA E ENVIO (só a OC mostra)
+  // ============================
+  // Endereço: o que a proposta gravou (propostas.id_endereco_ent).
+  // Envio: modalidade + o mesmo nome da coluna Envio da lista de Pedidos, pela
+  // regra de nomeTransporteEfetivo (src/features/orcamentos/lib/modalidade-frete.ts):
+  // RETIRA -> "RETIRADA"; FOB -> transportadora gravada em frete_escolhido;
+  // CIF ou sem modalidade -> serviço cotado gravado em frete_escolhido.
+  const modalidade = String(propostaFat.modalidade_frete ?? "").trim().toUpperCase() || null;
+  let linhaEntrega = "";
+  let linhaEnvio = "";
+  if (documento === "oc") {
+    const freteGravado = String(propostaFat.frete_escolhido ?? "").trim();
+    const nomeEnvio =
+      modalidade === "RETIRA" ? "RETIRADA"
+      : modalidade === "FOB" ? freteGravado || "Transportadora a definir"
+      : freteGravado;
+    linhaEnvio = modalidade ? `${modalidade} — ${nomeEnvio || "—"}` : nomeEnvio || "—";
+
+    if (modalidade === "RETIRA") {
+      linhaEntrega = "Retira no balcão";
+    } else if (propostaFat.id_endereco_ent) {
+      const { data: end } = await supabase
+        .from("enderecos")
+        .select("endereco, numero, complemento, bairro, cep, cidade, uf")
+        .eq("id", propostaFat.id_endereco_ent)
+        .maybeSingle();
+      if (end) {
+        // O cadastro às vezes traz espaços em sequência no meio do texto, ou um
+        // "-" no lugar do complemento vazio: parte só de pontuação sai.
+        const limpo = (v: unknown) => {
+          const t = String(v ?? "").replace(/\s+/g, " ").trim();
+          return /^[\s\-–—.,/]*$/.test(t) ? "" : t;
+        };
+        linhaEntrega = [
+          [end.endereco, end.numero].map(limpo).filter(Boolean).join(", "),
+          limpo(end.complemento),
+          limpo(end.bairro),
+          end.cep ? `CEP ${formatCep(end.cep)}` : "",
+          limpo(end.cidade),
+          limpo(end.uf),
+        ]
+          .filter(Boolean)
+          .join(" - ");
+      }
+    }
+    linhaEntrega = linhaEntrega || "Endereço de entrega não informado";
   }
 
   const obsNormalizada = normalizeMultiline(
@@ -433,12 +482,18 @@ export async function montarPdfProposta(
   // A OC traz o mesmo conteúdo do orçamento, nas mesmas posições. Só o bloco
   // de cima desce, porque o modelo de OC tem "Dados para faturamento:" (y 731)
   // onde o orçamento tem a linha da empresa: empresa, endereço, "Orçado por:",
-  // CLIENTE e CPF/CNPJ ficam logo abaixo dele.
-  const yEmpresa = ehOc ? 714 : 743;
-  const yEndereco = ehOc ? 699 : 726;
-  const yVendedor = ehOc ? 682 : 709;
-  const yCliente = ehOc ? 665 : 680;
-  const yDocumento = ehOc ? 649 : 660;
+  // CLIENTE e CPF/CNPJ ficam logo abaixo dele, seguidos de ENTREGA e ENVIO,
+  // que só a OC tem. Para caber, as linhas ficam a 15 pt e a tabela de
+  // produtos (DETALHES, QTD/Produto e itens) desce 21 pt; totais, observações
+  // e assinatura não mudam.
+  const yEmpresa = ehOc ? 716 : 743;
+  const yEndereco = ehOc ? 702 : 726;
+  const yVendedor = ehOc ? 687 : 709;
+  const yCliente = ehOc ? 672 : 680;
+  const yDocumento = ehOc ? 657 : 660;
+  const yEntrega = 642;
+  const yEnvio = 627;
+  const descidaTabela = ehOc ? 21 : 0;
 
   // A linha da empresa termina antes de "DATA:" / "Validade" (x 473): o texto
   // longo diminui a fonte em vez de invadir a coluna da direita.
@@ -467,10 +522,14 @@ export async function montarPdfProposta(
     drawText("Orçado por:", 31.5, yVendedor - 0.5, 10, true, "left", corTexto);
     drawText("CLIENTE:", 31.5, yCliente - 0.5, 10, true, "left", corRotulo);
     drawText("CPF/CNPJ:", 31.5, yDocumento - 0.3, 10, true, "left", corRotulo);
-    drawText("DETALHES DO ORÇAMENTO:", 31.6, 627, 12, true, "left", corRotulo);
-    drawText("*P.P. - Prazo de Produção.", 228.9, 627, 10, true, "left", corRotulo);
-    drawText("QTD", 31.9, 602.7, 12, true, "left", corRotulo);
-    drawText("Produto", 144.4, 602.8, 12, true, "left", corRotulo);
+    if (ehOc) {
+      drawText("ENTREGA:", 31.5, yEntrega - 0.3, 10, true, "left", corRotulo);
+      drawText("ENVIO:", 31.5, yEnvio - 0.3, 10, true, "left", corRotulo);
+    }
+    drawText("DETALHES DO ORÇAMENTO:", 31.6, 627 - descidaTabela, 12, true, "left", corRotulo);
+    drawText("*P.P. - Prazo de Produção.", 228.9, 627 - descidaTabela, 10, true, "left", corRotulo);
+    drawText("QTD", 31.9, 602.7 - descidaTabela, 12, true, "left", corRotulo);
+    drawText("Produto", 144.4, 602.8 - descidaTabela, 12, true, "left", corRotulo);
     drawText("Sub Total (Produtos):", 364.8, 365.5, 12, false, "left", corTexto);
     if (ehOc) {
       drawText("VALOR TOTAL:", 390.3, 304.8, 12, true, "left", corRotulo);
@@ -490,10 +549,16 @@ export async function montarPdfProposta(
   drawText(cpf_cnpj, 92, yDocumento, 10);
   drawText(vendedor, 100, yVendedor, 9);
 
+  if (ehOc) {
+    // Endereço longo diminui a fonte para não passar da margem direita.
+    drawText(linhaEntrega, 92, yEntrega, tamanhoQueCabe(linhaEntrega, false, 10, 470));
+    drawText(linhaEnvio, 92, yEnvio, tamanhoQueCabe(linhaEnvio, false, 10, 470));
+  }
+
   // ============================
   // PRODUTOS COM WRAP
   // ============================
-  let currentY = 580;
+  let currentY = 580 - descidaTabela;
   const fontSize = 11;
   const lineSpacing = 7;
   const maxWidthProduto = 460;
