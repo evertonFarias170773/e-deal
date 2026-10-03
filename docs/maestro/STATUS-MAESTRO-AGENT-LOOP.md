@@ -43,7 +43,7 @@ Reversão total = desligar `MAESTRO_AGENT_LOOP_ENABLED`.
 
 ---
 
-# 2. Catálogo de tools (23, todas somente leitura)
+# 2. Catálogo de tools (todas somente leitura, salvo a B1)
 
 - **Cliente**: `resolver_cliente`, `confirmar_cliente_candidato`,
   `visao_geral_cliente` (visão consolidada primeiro — princípio permanente),
@@ -96,6 +96,8 @@ dono em 01/10/2026) e as duas abaixo. O Maestro só orienta e mostra dados.
      no `PermissionGuard`.
   Nunca saem: linha digitável, código de barras, nosso número, link de boleto,
   chave de NF-e, CPF/CNPJ. Totais e contagens saem prontos.
+- **`consultar_saude_infra`** — saúde do banco e dos arquivos, a mesma leitura do
+  painel "Saúde da infraestrutura" do Dashboard. Só administrador; ver §2.8.
 
 Travas contra passo a passo inventado (todas no servidor, depois do modelo):
 
@@ -361,6 +363,46 @@ deles.
 **Fora desta regra, de propósito.** Recebimento (caixa, por data do
 pagamento), Relatório de vendas pagas, cobertura da proposta e o gráfico
 "Aprovadas por tipo" continuam contando tudo.
+
+## 2.8 Saúde da infraestrutura: "como está o banco?" (03/10/2026)
+
+Ferramenta `consultar_saude_infra` (somente leitura, sem parâmetros). Entrega ao
+Maestro a MESMA leitura do painel "Saúde da infraestrutura" do Dashboard.
+
+**Mesma fonte.** A leitura (métricas da Supabase, `infra_saude_resumo()`,
+cartões, limites de amarelo e vermelho, cache de 10 minutos e a última amostra
+do swap) mora em `src/features/dashboard/infra-saude.server.ts`. A rota
+`/api/admin/infra-saude` e o Maestro chamam a mesma função: mesmo objeto, mesmo
+cache, mesmo horário. Valor, limite, faixas, selos ("Tudo certo", "Atenção",
+"Agir agora", "Sem leitura") e o texto de cada cartão saem das mesmas
+definições do painel (`infra-saude.ts`) e chegam ao modelo já formatados — ele
+copia, não converte. A primeira leitura sem cache leva uns 5 segundos (a rota
+espera 4 s entre duas leituras do swap).
+
+**Só administrador.** Mesma regra da rota: `usuarios.is_admin` ou
+`is_super_adm`. Quem não é recebe `SO_ADMINISTRADOR` e a leitura nem é chamada
+(flag `soAdministrador` do executor). A ficha do manual
+`saude-da-infraestrutura` tem a linha `Acesso: somente administradores`: quem
+não é administrador lê só um aviso no lugar do conteúdo, e o índice do prompt
+marca a página como só de administradores. O prompt manda recusar sem número,
+sem diagnóstico e sem explicar de memória.
+
+**O que o servidor calcula** (o modelo não calcula nada): o panorama (quantos
+cartões em cada cor) e a previsão de espaço — em quantos meses os 100 GB acabam
+pelo ritmo dos últimos 30 dias, o mês previsto, o tempo até o amarelo e o
+vermelho e as 5 pastas que mais crescem, com a parte de cada uma. Três
+ressalvas vão junto: projeção simples, ritmo sem descontar o que foi apagado, e
+os 100 GB valem para a conta toda.
+
+**O "o que fazer"** está na ficha `docs/manual/saude-da-infraestrutura.md`, uma
+seção por cartão, e o Maestro a lê no mesmo turno. A ficha é a única fonte
+dessas orientações; o teste `scripts/testes/maestro-infra.test.mts` exige uma
+seção para cada cartão que o painel monta, com o mesmo título.
+
+**Provas.** O teste cobre a previsão, o formato da resposta, o acesso e a ficha
+restrita. Rodada real em 03/10/2026 com o modelo e a leitura reais: o
+administrador recebeu os números do painel; a vendedora recebeu "informação
+restrita a administradores".
 
 ---
 

@@ -46,6 +46,10 @@ Cada ficha cobre uma tela ou um fluxo e segue sempre o mesmo formato ([_MODELO.m
 - [Expedição](expedicao.md)
 - [Tarefas](tarefas.md)
 
+### Administração
+
+- [Saúde da infraestrutura](saude-da-infraestrutura.md) (só administradores)
+
 ## Como manter
 
 - Toda mudança que o usuário percebe (tela, botão, aviso, fluxo ou regra visível) atualiza a ficha correspondente **no mesmo commit**, com a data nova em "Última revisão". A regra completa está no [AGENTS.md](../../AGENTS.md).
@@ -59,4 +63,5 @@ Cada ficha cobre uma tela ou um fluxo e segue sempre o mesmo formato ([_MODELO.m
 - Língua de usuário: nomes de botões, campos e avisos exatamente como aparecem na tela. Sem nome de tabela, função ou arquivo no texto de uso (os arquivos ficam só na última seção).
 - Regras reais, do jeito que o usuário as sente: "Cancelar só uma parcela não deixa relançar."
 - Só o que o sistema faz hoje. Na dúvida, confira no código antes de escrever.
+- Ficha que só administradores podem ver leva, no cabeçalho, a linha `> **Acesso:** somente administradores`. O Maestro entrega a ficha inteira só a administradores; aos demais, só o aviso de que é restrita.
 - Em "O que não confundir", registre os pares que geram dúvida: duas telas, dois botões, dois status ou dois números de nome parecido.

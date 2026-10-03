@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { Activity } from "lucide-react";
 import { fetchComSessao } from "@/lib/supabase/sessao";
 import {
+  ROTULO_DO_NIVEL,
+  descreverFaixas,
   formatarBytes,
   formatarValorSaude,
   type InfraSaude,
@@ -13,22 +15,22 @@ import {
 
 const ESTILO_NIVEL: Record<NivelSaude, { rotulo: string; selo: string; barra: string }> = {
   ok: {
-    rotulo: "Tudo certo",
+    rotulo: ROTULO_DO_NIVEL.ok,
     selo: "bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:ring-emerald-800",
     barra: "bg-emerald-500"
   },
   atencao: {
-    rotulo: "Atenção",
+    rotulo: ROTULO_DO_NIVEL.atencao,
     selo: "bg-amber-50 text-amber-700 ring-amber-200 dark:bg-amber-900/30 dark:text-amber-300 dark:ring-amber-800",
     barra: "bg-amber-500"
   },
   critico: {
-    rotulo: "Agir agora",
+    rotulo: ROTULO_DO_NIVEL.critico,
     selo: "bg-rose-50 text-rose-700 ring-rose-200 dark:bg-rose-900/30 dark:text-rose-300 dark:ring-rose-800",
     barra: "bg-rose-500"
   },
   indisponivel: {
-    rotulo: "Sem leitura",
+    rotulo: ROTULO_DO_NIVEL.indisponivel,
     selo: "bg-slate-100 text-slate-600 ring-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-700",
     barra: "bg-slate-400"
   }
@@ -36,11 +38,6 @@ const ESTILO_NIVEL: Record<NivelSaude, { rotulo: string; selo: string; barra: st
 
 function horaCurta(iso: string) {
   return new Date(iso).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" });
-}
-
-function faixas(m: MetricaSaude) {
-  const palavra = m.sentido === "acima" ? "acima de" : "abaixo de";
-  return `Amarelo ${palavra} ${formatarValorSaude(m.amarelo, m.unidade)} · vermelho ${palavra} ${formatarValorSaude(m.vermelho, m.unidade)}`;
 }
 
 function CartaoMetrica({ m }: { m: MetricaSaude }) {
@@ -78,7 +75,7 @@ function CartaoMetrica({ m }: { m: MetricaSaude }) {
         </div>
       ) : null}
       <p className="text-xs" style={{ color: "var(--muted)" }}>
-        {faixas(m)}
+        {descreverFaixas(m)}
       </p>
       {m.detalhe ? (
         <p className="text-xs font-medium" style={{ color: "var(--foreground)" }}>

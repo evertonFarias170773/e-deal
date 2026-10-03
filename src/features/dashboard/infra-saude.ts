@@ -122,6 +122,23 @@ export function formatarBytes(bytes: number): string {
   return `${Math.round(bytes / 1024)} KB`;
 }
 
+/**
+ * Selo de cada cor, como aparece no cartão do painel. O Maestro usa a mesma
+ * tabela para dizer "Atenção" ou "Agir agora" com as palavras da tela.
+ */
+export const ROTULO_DO_NIVEL: Record<NivelSaude, string> = {
+  ok: "Tudo certo",
+  atencao: "Atenção",
+  critico: "Agir agora",
+  indisponivel: "Sem leitura"
+};
+
+/** A linha de faixas do cartão: "Amarelo acima de X · vermelho acima de Y". */
+export function descreverFaixas(m: Pick<MetricaSaude, "sentido" | "amarelo" | "vermelho" | "unidade">): string {
+  const palavra = m.sentido === "acima" ? "acima de" : "abaixo de";
+  return `Amarelo ${palavra} ${formatarValorSaude(m.amarelo, m.unidade)} · vermelho ${palavra} ${formatarValorSaude(m.vermelho, m.unidade)}`;
+}
+
 export function formatarValorSaude(valor: number | null, unidade: UnidadeSaude): string {
   if (valor === null || !Number.isFinite(valor)) return "—";
   switch (unidade) {

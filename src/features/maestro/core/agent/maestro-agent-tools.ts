@@ -70,7 +70,8 @@ import { resolverTermoCatalogo } from '../simple/maestro-orcamento-catalogo-ofic
 import type { MaestroPeriodo } from '../simple/maestro-simple-intents';
 import { sanitizeAgentToolOutput } from './maestro-agent-sanitize';
 import { carregarAcessoUsuario, descreverQuemPergunta } from './maestro-agent-acesso.server';
-import { lerPaginasDoManual, MAX_PAGINAS_POR_CONSULTA } from './maestro-agent-manual.server';
+import { lerPaginasDoManual, MAX_PAGINAS_POR_CONSULTA, pedeAlgumaPaginaRestrita } from './maestro-agent-manual.server';
+import { consultarSaudeDaInfra, ehAdministradorDoPainel, RECUSA_SAUDE_DA_INFRA } from './maestro-agent-infra.server';
 import { consultarPedido, SECOES_DO_PEDIDO } from './maestro-agent-pedido.server';
 import {
   escopoDoClienteNaConsulta,
@@ -145,6 +146,11 @@ interface AgentToolDefinition {
    */
   escopoPorVendedor?: boolean;
   requiredPermission?: string;
+  /**
+   * Só administrador (mesma regra da rota /api/admin/infra-saude: usuarios.is_admin
+   * ou is_super_adm). Quem não é recebe SO_ADMINISTRADOR e a ferramenta nem roda.
+   */
+  soAdministrador?: boolean;
   /** Tool de ESCRITA — sujeita às camadas 1 e 3 da matriz (flags de escrita) */
   isWrite?: boolean;
   /** Camada 3 — flag específica da ação (matriz §3). Ausente em tool de escrita = negado. */
@@ -1943,9 +1949,16 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
         .map(p => String(p ?? '').trim())
         .filter(Boolean)
         .slice(0, MAX_PAGINAS_POR_CONSULTA);
-      const leitura = lerPaginasDoManual(pedidas);
+      // Página restrita a administradores (linha "Acesso" da ficha): só entrega o
+      // conteúdo a quem a rota do painel também deixaria ver. Só consulta quem é
+      // quando alguma das pedidas é restrita.
+      const podeVerRestritas = pedeAlgumaPaginaRestrita(pedidas) ? await ehAdministradorDoPainel(ctx.supabase, ctx.userId) : false;
+      const leitura = lerPaginasDoManual(pedidas, { podeVerRestritas });
       const acesso = await carregarAcessoUsuario(ctx.supabase, ctx.userId);
       const semPagina = leitura.encontradas.length === 0;
+      // Página de administradores: negada a quem não é (só o aviso) ou lida por quem é.
+      const restritaNegada = leitura.encontradas.some(e => e.restrita === true);
+      const restritaLidaPorAdmin = podeVerRestritas && !restritaNegada && pedeAlgumaPaginaRestrita(pedidas);
       return {
         found: !semPagina,
         paginas: leitura.encontradas,
@@ -1954,7 +1967,10 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
         paginas_citadas_e_nao_lidas: leitura.citadas_e_nao_lidas.length > 0 ? leitura.citadas_e_nao_lidas : undefined,
         quem_pergunta: descreverQuemPergunta(acesso),
         como_usar:
-          semPagina
+          restritaNegada
+            ? 'PÁGINA RESTRITA A ADMINISTRADORES, NÃO liberada para quem está perguntando: o conteúdo não veio. Diga em uma ou duas frases que é informação restrita a administradores e que deve pedir a um administrador. ' +
+              'NÃO explique passo, número nem assunto, não responda de memória e não escreva linha de Fonte.'
+            : semPagina
             ? 'NENHUMA página foi lida. Se o assunto não está em paginas_disponiveis, diga que ainda não tem esse passo a passo no manual — sem descrever cliques.'
             : 'Responda SOMENTE com o que está nas páginas: nomes de menu, aba, botão e aviso EXATAMENTE como escritos (em negrito). ' +
               'Passo que não está na página = diga que o manual não cobre; não complete. Você só orienta: quem executa é o usuário. ' +
@@ -1964,11 +1980,32 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
               'Se consultou um pedido: liste o que existe (parcela, valor, vencimento, situação) e aplique ao caso os avisos da página que o atingem (filtro padrão que esconderia um título, parcela paga que bloqueia). ' +
               'CONFIRA O ASSUNTO: a página lida trata da MESMA tarefa que foi perguntada (mesma tela, mesmo objetivo)? Se ela só compartilha palavras com a pergunta (CPF, boleto, frete, cadastro) mas ensina OUTRA tarefa, NÃO responda com ela: ' +
               'diga que o manual ainda não tem esse passo a passo e, no máximo, cite em uma linha o que a página lida cobre. ' +
-              'OBRIGATÓRIO: uma frase dizendo se quem_pergunta PODE fazer o que perguntou — compare o "Quem acessa" da página com permissoes_do_perfil, administrador e super_admin. ' +
-              'Se NÃO pode: diga qual permissão falta, pelo nome que a página usa, e que deve pedir a quem tem essa permissão ou a um administrador — e explique os passos do mesmo jeito. ' +
+              (restritaLidaPorAdmin
+                ? 'Página de administradores lida por um administrador: NÃO escreva frase sobre permissão do usuário. '
+                : 'OBRIGATÓRIO: uma frase dizendo se quem_pergunta PODE fazer o que perguntou — compare o "Quem acessa" da página com permissoes_do_perfil, administrador e super_admin. ' +
+                  'Se NÃO pode: diga qual permissão falta, pelo nome que a página usa, e que deve pedir a quem tem essa permissão ou a um administrador — e explique os passos do mesmo jeito. ') +
               'Termine no último passo ou aviso — sem oferta nem despedida.',
       };
     },
+  },
+
+  consultar_saude_infra: {
+    soAdministrador: true,
+    schema: {
+      type: 'function',
+      function: {
+        name: 'consultar_saude_infra',
+        description:
+          'Saúde da infraestrutura (banco de dados e arquivos do sistema): a MESMA leitura e os mesmos limites do painel "Saúde da infraestrutura" do Dashboard. ' +
+          'Use para "como está o banco", "o sistema está lento?", "memória", "memória de emergência", "disco", "processador", "conexões", "cache", ' +
+          '"quanto espaço ainda temos", "quando acabam os 100 GB", "que pastas de arquivos mais crescem", "por que está vermelho/amarelo". ' +
+          'Devolve cada cartão com valor, faixas e a explicação do próprio painel, o horário da leitura, a previsão de espaço já calculada e as pastas que mais crescem. ' +
+          'SÓ ADMINISTRADORES: para os demais volta SO_ADMINISTRADOR e não há dado — diga que é informação restrita a administradores. ' +
+          'Para dizer O QUE FAZER, leia também a ficha "saude-da-infraestrutura" com consultar_manual no mesmo turno. Somente leitura.',
+        parameters: { type: 'object', properties: {}, additionalProperties: false },
+      },
+    },
+    handler: async () => consultarSaudeDaInfra(),
   },
 
   consultar_pedido: {
@@ -2092,6 +2129,11 @@ export async function executeAgentTool(
           'Responda de forma educada explicando que o perfil dele não permite esta consulta.',
       };
     }
+  }
+
+  // 3b. Só administrador: a ferramenta nem roda (nenhum dado é lido).
+  if (tool.soAdministrador && !(await ehAdministradorDoPainel(ctx.supabase, ctx.userId))) {
+    return { ok: false, error: RECUSA_SAUDE_DA_INFRA };
   }
 
   // 4. Executa o adapter e sanitiza a saída

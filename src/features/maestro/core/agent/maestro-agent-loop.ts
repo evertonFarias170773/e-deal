@@ -598,7 +598,7 @@ export async function runMaestroAgentLoop(input: AgentLoopInput): Promise<AgentL
               statusPorPedido.set(String(r.numero), { numero: String(r.numero), status, rotulo: rotuloDoStatus(status) });
             }
           }
-          if (nomeTool === 'consultar_manual' || nomeTool === 'consultar_pedido') {
+          if (nomeTool === 'consultar_manual' || nomeTool === 'consultar_pedido' || nomeTool === 'consultar_saude_infra') {
             // Tudo o que estas duas devolvem veio do servidor: os numeros sao
             // citaveis (OS, parcela, nota) e o texto legitima nomes de tela.
             coletarNumerosDaPergunta(saida, idsConfirmados);

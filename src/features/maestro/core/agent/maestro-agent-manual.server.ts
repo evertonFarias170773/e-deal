@@ -37,8 +37,19 @@ export interface PaginaDoManual {
   assuntos: string[];
   /** Outras páginas do manual que esta cita por link: por onde o fluxo continua */
   ligadas: string[];
+  /**
+   * A página traz a linha `> **Acesso:** somente administradores`. Quem não é
+   * administrador recebe só um aviso no lugar do conteúdo (ver `lerPaginasDoManual`).
+   */
+  somenteAdministradores: boolean;
   conteudo: string;
 }
+
+/** O que o Maestro devolve no lugar de uma página restrita a quem não é administrador. */
+export const TEXTO_DE_PAGINA_RESTRITA =
+  'Esta página do manual é restrita a administradores e NÃO foi liberada para quem está perguntando. ' +
+  'Diga apenas que é informação restrita a administradores e que deve pedir a um administrador. ' +
+  'Não descreva o conteúdo, não dê números e não explique o assunto de memória.';
 
 const TTL_MS = 30_000;
 // A maior página hoje tem ~42 mil caracteres (notas-fiscais). O corte é só um teto de segurança.
@@ -131,6 +142,9 @@ export function interpretarPagina(slug: string, bruto: string): PaginaDoManual {
     paraQueServe,
     assuntos,
     ligadas: [...new Set([...conteudo.matchAll(/\]\(([a-z0-9-]+)\.md(?:#[^)]*)?\)/g)].map(m => m[1]))].filter(s => s !== slug),
+    somenteAdministradores: /^somente administrador/.test(
+      (campo('Acesso') ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase(),
+    ),
     conteudo,
   };
 }
@@ -182,13 +196,23 @@ export function indiceDoManual(): string {
     else if (p.paraQueServe) partes.push(`serve para: ${p.paraQueServe}`);
     const ligadas = p.ligadas.filter(s => paginas.some(o => o.slug === s));
     if (ligadas.length > 0) partes.push(`o fluxo continua em: ${ligadas.join(', ')}`);
+    if (p.somenteAdministradores) partes.push('acesso: SÓ ADMINISTRADORES (quem não é administrador não recebe o conteúdo)');
     return partes.join(' | ');
   });
   return ['MANUAL DE USO DO VIBE — PÁGINAS DISPONÍVEIS (identificador — título | onde fica | o que cobre | páginas vizinhas do fluxo):', ...linhas].join('\n');
 }
 
 export interface LeituraDoManual {
-  encontradas: Array<{ pagina: string; titulo: string; onde_fica: string | null; ultima_revisao: string | null; conteudo: string; cortada: boolean }>;
+  encontradas: Array<{
+    pagina: string;
+    titulo: string;
+    onde_fica: string | null;
+    ultima_revisao: string | null;
+    conteudo: string;
+    cortada: boolean;
+    /** Página restrita a administradores lida por quem não é: o conteúdo NÃO veio. */
+    restrita?: boolean;
+  }>;
   nao_encontradas: string[];
   paginas_disponiveis: string[];
   /** Páginas do manual que as páginas lidas citam por link e que NÃO foram lidas nesta chamada */
@@ -205,20 +229,49 @@ function chave(valor: string): string {
     .replace(/^-+|-+$/g, '');
 }
 
-/** Le as paginas pedidas pelo identificador (aceita o titulo, com ou sem acento). */
-export function lerPaginasDoManual(pedidas: readonly string[]): LeituraDoManual {
+function acharPagina(paginas: readonly PaginaDoManual[], pedida: string): PaginaDoManual | undefined {
+  const alvo = chave(pedida);
+  return paginas.find(p => chave(p.slug) === alvo) ?? paginas.find(p => chave(p.titulo) === alvo);
+}
+
+/** Alguma das páginas pedidas é restrita a administradores? (decide se vale checar quem pergunta) */
+export function pedeAlgumaPaginaRestrita(pedidas: readonly string[]): boolean {
+  const paginas = carregarManual();
+  return pedidas.slice(0, MAX_PAGINAS_POR_CONSULTA).some(p => acharPagina(paginas, p)?.somenteAdministradores === true);
+}
+
+/**
+ * Le as paginas pedidas pelo identificador (aceita o titulo, com ou sem acento).
+ * Página restrita a administradores só entrega o conteúdo com `podeVerRestritas`
+ * (negado por padrão): sem ele, volta o aviso e `restrita: true`.
+ */
+export function lerPaginasDoManual(
+  pedidas: readonly string[],
+  opcoes: { podeVerRestritas?: boolean } = {},
+): LeituraDoManual {
   const paginas = carregarManual();
   const encontradas: LeituraDoManual['encontradas'] = [];
   const naoEncontradas: string[] = [];
 
   for (const pedida of pedidas.slice(0, MAX_PAGINAS_POR_CONSULTA)) {
-    const alvo = chave(pedida);
-    const pagina = paginas.find(p => chave(p.slug) === alvo) ?? paginas.find(p => chave(p.titulo) === alvo);
+    const pagina = acharPagina(paginas, pedida);
     if (!pagina) {
       naoEncontradas.push(pedida);
       continue;
     }
     if (encontradas.some(e => e.pagina === pagina.slug)) continue;
+    if (pagina.somenteAdministradores && opcoes.podeVerRestritas !== true) {
+      encontradas.push({
+        pagina: pagina.slug,
+        titulo: pagina.titulo,
+        onde_fica: null,
+        ultima_revisao: null,
+        conteudo: TEXTO_DE_PAGINA_RESTRITA,
+        cortada: false,
+        restrita: true,
+      });
+      continue;
+    }
     const cortada = pagina.conteudo.length > MAX_CHARS_POR_PAGINA;
     encontradas.push({
       pagina: pagina.slug,
