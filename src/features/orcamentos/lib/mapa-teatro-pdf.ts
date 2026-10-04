@@ -80,36 +80,71 @@ export function arquivoDoMapaCompleto(arquivos: Json): { pdfRecurso: string; tam
 }
 
 /**
- * O endereço do `pdf_recurso`, sempre DENTRO da função do parceiro. Aceita o
- * endereço inteiro, o caminho a partir da raiz do servidor ou o caminho
- * relativo à função. Qualquer coisa que caia fora da função devolve `null`: o
- * token do usuário não é enviado a outro lugar (nem ao Storage público).
+ * O endereço do `pdf_recurso`, sempre DENTRO da função do parceiro, sempre em
+ * https e sempre no servidor da `base`. Qualquer coisa que caia fora da função
+ * devolve `null`: o token do usuário não é enviado a outro lugar (nem ao
+ * Storage público).
+ *
+ * Formas aceitas — todas viram `{base}/<resto>`:
+ *   - endereço inteiro do mesmo servidor, com o caminho público da função
+ *     (`/functions/v1/mapas-teatro-pdfs/...`);
+ *   - endereço inteiro do mesmo servidor com o caminho INTERNO da função
+ *     (`/mapas-teatro-pdfs/...`, sem `/functions/v1`) e em `http`. É o que o
+ *     parceiro devolve de fato (medido em 04/10/2026): a função monta o
+ *     endereço a partir da requisição como ela a enxerga por dentro. Só o
+ *     caminho e a consulta são aproveitados; protocolo e servidor são os da base;
+ *   - os mesmos dois caminhos sem o servidor, ou o caminho relativo à função.
  */
 export function urlDoRecursoPdf(base: string, recurso: string): string | null {
-  const raiz = base.replace(/\/+$/, "");
   let origem: string;
+  let servidor: string;
   let caminhoDaFuncao: string;
   try {
-    const u = new URL(raiz);
+    const u = new URL(base.replace(/\/+$/, ""));
     origem = u.origin;
+    servidor = u.hostname.toLowerCase();
     caminhoDaFuncao = u.pathname.replace(/\/+$/, "");
   } catch {
     return null;
   }
+  const nomeDaFuncao = caminhoDaFuncao.split("/").pop() || "";
+  if (!nomeDaFuncao) return null;
 
-  let alvo: URL;
+  // Subir de pasta não tem uso legítimo aqui: recusado antes de normalizar.
+  if (/(^|[/\\])(\.|%2e){1,2}([/\\?#]|$)/i.test(recurso)) return null;
+
+  let caminho: string;
+  let consulta: string;
   try {
-    if (/^[a-z][a-z0-9+.-]*:/i.test(recurso)) alvo = new URL(recurso);
-    else if (recurso.startsWith("//")) return null;
-    else if (recurso.startsWith(`${caminhoDaFuncao}/`)) alvo = new URL(origem + recurso);
-    else alvo = new URL(`${raiz}/${recurso.replace(/^\/+/, "")}`);
+    if (/^[a-z][a-z0-9+.-]*:/i.test(recurso)) {
+      const u = new URL(recurso);
+      if (u.protocol !== "https:" && u.protocol !== "http:") return null;
+      if (u.hostname.toLowerCase() !== servidor || u.username || u.password) return null;
+      // Porta: só a padrão do protocolo (a função interna responde em http na 80).
+      if (u.port) return null;
+      caminho = u.pathname;
+      consulta = u.search;
+    } else if (recurso.startsWith("//")) {
+      return null;
+    } else {
+      const u = new URL(recurso.startsWith("/") ? recurso : `/${recurso}`, "https://relativo.invalid");
+      // Relativo à função, a não ser que já traga um dos dois caminhos dela.
+      const jaTrazAFuncao =
+        recurso.startsWith(`${caminhoDaFuncao}/`) || recurso.startsWith(`/${nomeDaFuncao}/`);
+      caminho = jaTrazAFuncao ? u.pathname : `${caminhoDaFuncao}${u.pathname}`;
+      consulta = u.search;
+    }
   } catch {
     return null;
   }
-  if (alvo.origin !== origem) return null;
-  if (!alvo.pathname.startsWith(`${caminhoDaFuncao}/`)) return null;
-  if (alvo.pathname.split("/").includes("..")) return null;
-  return alvo.toString();
+
+  let resto: string;
+  if (caminho.startsWith(`${caminhoDaFuncao}/`)) resto = caminho.slice(caminhoDaFuncao.length);
+  else if (caminho.startsWith(`/${nomeDaFuncao}/`)) resto = caminho.slice(nomeDaFuncao.length + 1);
+  else return null;
+  if (resto.length <= 1 || resto.split("/").some((parte) => parte === ".." || parte === ".")) return null;
+
+  return `${origem}${caminhoDaFuncao}${resto}${consulta}`;
 }
 
 export type ResultadoDoPdfDoMapa =
@@ -117,6 +152,13 @@ export type ResultadoDoPdfDoMapa =
   | { tipo: "pendente" }
   /** 401, 403, 404 (repassados) ou 503 (parceiro fora do ar ou resposta que não é a combinada). */
   | { tipo: "erro"; status: 401 | 403 | 404 | 503 };
+
+/** O passo que falhou, para o log. Nunca leva token, endereço nem corpo de resposta. */
+export type FalhaDoPdfDoMapa = {
+  passo: "consulta" | "manifesto" | "selecao" | "recurso" | "download";
+  motivo: string;
+  statusDoParceiro?: number;
+};
 
 function statusRepassado(status: number): 401 | 403 | 404 | 503 {
   return status === 401 || status === 403 || status === 404 ? status : 503;
@@ -131,9 +173,15 @@ export async function buscarPdfDoMapa(entrada: {
   mapaId: string;
   autorizacao: string;
   buscar: (url: string, init: RequestInit) => Promise<Response>;
+  /** Para o log do servidor: o passo que falhou e o motivo, sem token nem endereço. */
+  registrar?: (falha: FalhaDoPdfDoMapa) => void;
 }): Promise<ResultadoDoPdfDoMapa> {
   const { base, mapaId, autorizacao, buscar } = entrada;
-  if (!ehUuid(mapaId)) return { tipo: "erro", status: 404 };
+  const falhou = (falha: FalhaDoPdfDoMapa, status: 401 | 403 | 404 | 503): ResultadoDoPdfDoMapa => {
+    entrada.registrar?.(falha);
+    return { tipo: "erro", status };
+  };
+  if (!ehUuid(mapaId)) return falhou({ passo: "consulta", motivo: "id do mapa não é uuid" }, 404);
   const raiz = base.replace(/\/+$/, "");
   const cabecalhos = { Authorization: autorizacao };
 
@@ -144,33 +192,48 @@ export async function buscarPdfDoMapa(entrada: {
       { method: "GET", headers: cabecalhos, cache: "no-store" }
     );
   } catch {
-    return { tipo: "erro", status: 503 };
+    return falhou({ passo: "consulta", motivo: "sem resposta do parceiro" }, 503);
   }
-  if (exportacao.status !== 200) return { tipo: "erro", status: statusRepassado(exportacao.status) };
+  if (exportacao.status !== 200) {
+    return falhou(
+      { passo: "consulta", motivo: "status do parceiro", statusDoParceiro: exportacao.status },
+      statusRepassado(exportacao.status)
+    );
+  }
 
   let corpo: Json;
   try {
     corpo = await exportacao.json();
   } catch {
-    return { tipo: "erro", status: 503 };
+    return falhou({ passo: "manifesto", motivo: "resposta não é JSON" }, 503);
   }
-  if (!ehObjeto(corpo)) return { tipo: "erro", status: 503 };
+  if (!ehObjeto(corpo)) return falhou({ passo: "manifesto", motivo: "resposta não é objeto" }, 503);
   if (corpo.estado === "pendente") return { tipo: "pendente" };
-  if (corpo.estado !== "pronto") return { tipo: "erro", status: 503 };
+  if (corpo.estado !== "pronto") {
+    return falhou({ passo: "manifesto", motivo: `estado desconhecido: ${String(corpo.estado).slice(0, 40)}` }, 503);
+  }
 
   const arquivo = arquivoDoMapaCompleto(corpo.arquivos);
-  const alvo = arquivo ? urlDoRecursoPdf(raiz, arquivo.pdfRecurso) : null;
-  if (!arquivo || !alvo) return { tipo: "erro", status: 503 };
+  if (!arquivo) return falhou({ passo: "selecao", motivo: "sem arquivo tipo mapa com setor_id null" }, 503);
+  const alvo = urlDoRecursoPdf(raiz, arquivo.pdfRecurso);
+  if (!alvo) return falhou({ passo: "recurso", motivo: "pdf_recurso fora da função do parceiro" }, 503);
 
   let pdf: Response;
   try {
     pdf = await buscar(alvo, { method: "GET", headers: cabecalhos, cache: "no-store" });
   } catch {
-    return { tipo: "erro", status: 503 };
+    return falhou({ passo: "download", motivo: "sem resposta do parceiro" }, 503);
   }
-  if (pdf.status !== 200) return { tipo: "erro", status: statusRepassado(pdf.status) };
+  if (pdf.status !== 200) {
+    return falhou(
+      { passo: "download", motivo: "status do parceiro", statusDoParceiro: pdf.status },
+      statusRepassado(pdf.status)
+    );
+  }
   const tipoDoConteudo = (pdf.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
-  if (tipoDoConteudo !== "application/pdf" || !pdf.body) return { tipo: "erro", status: 503 };
+  if (tipoDoConteudo !== "application/pdf" || !pdf.body) {
+    return falhou({ passo: "download", motivo: `conteúdo não é PDF: ${tipoDoConteudo.slice(0, 40) || "sem tipo"}` }, 503);
+  }
 
   return {
     tipo: "pdf",

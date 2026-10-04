@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { buscarPdfDoMapa } from "@/features/orcamentos/lib/mapa-teatro-pdf";
+import { buscarPdfDoMapa, ehUuid } from "@/features/orcamentos/lib/mapa-teatro-pdf";
 
 /**
  * GET /api/pedidos/mapa-teatro/{mapaId}/pdf
@@ -37,7 +37,13 @@ export async function GET(request: Request, { params }: { params: Promise<{ mapa
     base: `${urlDoSupabase}/functions/v1/mapas-teatro-pdfs`,
     mapaId,
     autorizacao,
-    buscar: (url, init) => fetch(url, init)
+    buscar: (url, init) => fetch(url, init),
+    // Sem token, sem endereço e sem corpo: só o passo, o motivo e o status.
+    registrar: (falha) =>
+      console.warn(
+        `[mapa-teatro-pdf] mapa ${ehUuid(mapaId) ? mapaId : "(id inválido)"}: falhou em ${falha.passo} — ${falha.motivo}` +
+          (falha.statusDoParceiro !== undefined ? ` (HTTP ${falha.statusDoParceiro})` : "")
+      )
   });
 
   if (resultado.tipo === "pendente") {

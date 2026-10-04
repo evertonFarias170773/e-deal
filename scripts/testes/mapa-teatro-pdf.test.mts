@@ -75,7 +75,32 @@ checar("recurso: Storage do mesmo projeto e recusado", urlDoRecursoPdf(BASE, "ht
 checar("recurso: outra funcao do mesmo projeto e recusada", urlDoRecursoPdf(BASE, "https://projeto.supabase.co/functions/v1/outra/x"), null);
 checar("recurso: sem protocolo com duas barras e recusado", urlDoRecursoPdf(BASE, "//outro.exemplo/x"), null);
 checar("recurso: subir de pasta e recusado", urlDoRecursoPdf(BASE, "../outra/x"), null);
-checar("recurso: http no lugar de https e recusado", urlDoRecursoPdf(BASE, "http://projeto.supabase.co/functions/v1/mapas-teatro-pdfs/a"), null);
+checar("recurso: http do mesmo servidor vira https (o token nunca sai em http)", urlDoRecursoPdf(BASE, "http://projeto.supabase.co/functions/v1/mapas-teatro-pdfs/a"), `${BASE}/a`);
+// O formato REAL do parceiro (04/10/2026): http, sem /functions/v1, com consulta.
+const REAL = "http://projeto.supabase.co/mapas-teatro-pdfs/mapas/a1184de9-1dd8-4d1a-a668-bfe124000e6a/arquivo?revisao=a27a03ee&gerador=a3-v1-20261003";
+checar("recurso: caminho interno da funcao, em http, vira o publico em https", urlDoRecursoPdf(BASE, REAL), `${BASE}/mapas/a1184de9-1dd8-4d1a-a668-bfe124000e6a/arquivo?revisao=a27a03ee&gerador=a3-v1-20261003`);
+checar("recurso: caminho interno sem o servidor", urlDoRecursoPdf(BASE, "/mapas-teatro-pdfs/mapas/x/arquivo?gerador=g"), `${BASE}/mapas/x/arquivo?gerador=g`);
+checar("recurso: caminho interno em OUTRO servidor e recusado", urlDoRecursoPdf(BASE, "http://outro.exemplo/mapas-teatro-pdfs/mapas/x/arquivo"), null);
+checar("recurso: servidor parecido e recusado", urlDoRecursoPdf(BASE, "https://projeto.supabase.co.exemplo/mapas-teatro-pdfs/a"), null);
+checar("recurso: usuario no endereco e recusado", urlDoRecursoPdf(BASE, "https://projeto.supabase.co@outro.exemplo/mapas-teatro-pdfs/a"), null);
+checar("recurso: porta diferente e recusada", urlDoRecursoPdf(BASE, "http://projeto.supabase.co:8080/mapas-teatro-pdfs/a"), null);
+checar("recurso: funcao de nome parecido e recusada", urlDoRecursoPdf(BASE, "http://projeto.supabase.co/mapas-teatro-pdfs-2/a"), null);
+checar("recurso: subir de pasta pelo caminho interno e recusado", urlDoRecursoPdf(BASE, "http://projeto.supabase.co/mapas-teatro-pdfs/../storage/v1/x"), null);
+checar("recurso: subir de pasta codificado e recusado", urlDoRecursoPdf(BASE, "/mapas-teatro-pdfs/%2e%2e/storage/v1/x"), null);
+checar("recurso: outro protocolo e recusado", urlDoRecursoPdf(BASE, "ftp://projeto.supabase.co/mapas-teatro-pdfs/a"), null);
+checar("recurso: so a raiz da funcao e recusado", urlDoRecursoPdf(BASE, "http://projeto.supabase.co/mapas-teatro-pdfs/"), null);
+{
+  const falhas: unknown[] = [];
+  const fora = { estado: "pronto", arquivos: [{ tipo: "mapa", setor_id: null, pdf_recurso: "https://outro.exemplo/x.pdf", tamanho_bytes: 4 }] };
+  await buscarPdfDoMapa({
+    base: BASE,
+    mapaId: "a1184de9-1dd8-4d1a-a668-bfe124000e6a",
+    autorizacao: "Bearer token-do-usuario",
+    buscar: async () => new Response(JSON.stringify(fora), { status: 200 }),
+    registrar: (f) => falhas.push(f)
+  });
+  checar("log: a falha diz o passo e o motivo, sem token nem endereco", falhas, [{ passo: "recurso", motivo: "pdf_recurso fora da função do parceiro" }]);
+}
 
 // 4. As duas chamadas
 const MAPA = "A1184DE9-1DD8-4D1A-A668-BFE124000E6A";
