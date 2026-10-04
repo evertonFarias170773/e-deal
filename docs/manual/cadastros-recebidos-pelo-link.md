@@ -1,6 +1,6 @@
 # Cadastros: Recebidos pelo link
 
-> **Última revisão:** 02/10/2026
+> **Última revisão:** 04/10/2026
 > **Caminho no menu:** Clientes → botão **Recebidos pelo link** (no topo da tela Cadastros)
 > **Endereço:** `/cadastros/online`
 
@@ -84,6 +84,7 @@ Cada envio mostra o nome, o documento, a situação (**Aprovado automaticamente*
 - Gerar um link novo invalida o anterior na hora. Quem tiver o link antigo vê apenas "link indisponível". Os cadastros que já entraram não mudam.
 - Vendedores que dividem o mesmo código de vendedor dividem um link só: trocar o link de um troca o de todos.
 - O link funciona quando ao menos uma pessoa daquele código está marcada como vendedora no cadastro de usuário. O nome que o cliente vê na página é o dessa pessoa. Se mais de uma estiver marcada, vale a dona do código e, depois, a ordem alfabética.
+- Na página o cliente vê só o primeiro nome do vendedor. No cadastro criado e na fila, o vendedor é gravado com o nome comercial completo (por exemplo "Emily Boeira"), o mesmo das propostas e do ranking.
 - Quem é diretor ou administrador e também vende recebe a marca de vendedor sem perder nada: continua vendo todos os pedidos e o Dashboard. A marca só serve para a pessoa aparecer nas listas de vendedores e ter link de cadastro.
 - A fila mostra os 200 envios mais recentes.
 

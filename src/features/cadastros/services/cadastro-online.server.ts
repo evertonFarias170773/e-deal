@@ -85,6 +85,47 @@ export function escolherPessoaDoCodigo<T extends UsuarioDoCodigo>(doCodigo: read
   return ordenados[0] ?? null;
 }
 
+/**
+ * Nome COMERCIAL do vendedor de um codigo: `meu_vendedor` (ou `nome_usuario`),
+ * o mesmo texto que as propostas gravam e o ranking agrupa.
+ *
+ * O `cadastro_link_resolver` devolve so o PRIMEIRO nome, de proposito: e o que
+ * a pagina publica mostra. Ate 04/10/2026 esse primeiro nome ("Emily") tambem
+ * era gravado em `clientes.nome_vendedor` e na fila, e o cliente passava a
+ * existir com um vendedor que nao e o nome de ninguem ("Emily" x "Emily
+ * Boeira"). O que se GRAVA sai daqui; o primeiro nome fica so para a pagina.
+ *
+ * Mesma escolha de pessoa do resolver (`escolherPessoaDoCodigo`). Devolve null
+ * se a leitura falhar ou o codigo nao tiver ninguem: quem chama decide o
+ * fallback.
+ */
+export async function nomeComercialDoCodigo(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  cliente: { from: (tabela: string) => any },
+  idVendedor: string | null | undefined
+): Promise<string | null> {
+  if (!idVendedor) return null;
+  try {
+    const [{ data: doCodigo }, { data: pendentes }] = await Promise.all([
+      cliente
+        .from("usuarios")
+        .select("user_id,id_vendedor,nome_usuario,meu_vendedor,is_vendedor,id_perfil")
+        .eq("id_vendedor", idVendedor),
+      cliente.from("perfis").select("id").eq("slug", "pendente_aprovacao")
+    ]);
+    const idsPendentes = new Set(((pendentes ?? []) as Array<{ id: unknown }>).map((p) => String(p.id)));
+    const linhas = ((doCodigo ?? []) as Array<UsuarioDoCodigo & { id_perfil?: unknown }>).map((u) => ({
+      ...u,
+      perfil_pendente: u.id_perfil != null && idsPendentes.has(String(u.id_perfil))
+    }));
+    const pessoa = escolherPessoaDoCodigo(linhas, idVendedor);
+    const nome = String(pessoa?.meu_vendedor ?? "").trim() || String(pessoa?.nome_usuario ?? "").trim();
+    return nome || null;
+  } catch {
+    return null;
+  }
+}
+
 export function derivarTokenCadastroLink(idVendedor: string, versao: number): string | null {
   const secret = segredo();
   if (!secret) return null;

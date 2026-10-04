@@ -11,6 +11,7 @@ import {
   hashIpCadastro,
   ipDaRequisicao,
   mascararNome,
+  nomeComercialDoCodigo,
   RECEITA_TIMEOUT_MS,
   sha256Hex
 } from "@/features/cadastros/services/cadastro-online.server";
@@ -345,6 +346,11 @@ export async function POST(request: Request) {
   // "nao confere" ou "nao verificado" nasce PENDENTE na fila e so vira cliente
   // quando o atendente aprova (rota /api/cadastro-online/aprovar, que usa a
   // mesma funcao de criacao).
+  // O que se GRAVA como vendedor e o nome comercial (o das propostas e do
+  // ranking), nao o primeiro nome que o resolver devolve para a pagina.
+  const nomeVendedor =
+    (await nomeComercialDoCodigo(service, link.id_vendedor)) ?? textoOuNulo(link.primeiro_nome);
+
   const criaClienteNaHora = tipoPessoa === "JURIDICA" || cpfNomeConfere === true;
   let idCliente: number | null = null;
   if (criaClienteNaHora) {
@@ -364,7 +370,7 @@ export async function POST(request: Request) {
       cidade: textoOuNulo(corpo.cidade),
       uf: textoOuNulo(corpo.uf),
       idVendedor: link.id_vendedor ?? null,
-      nomeVendedor: textoOuNulo(link.primeiro_nome),
+      nomeVendedor,
       receita
     });
     if (criacao.ok) {
@@ -392,7 +398,7 @@ export async function POST(request: Request) {
   // `aprovado_em`, sem `id_cliente_gerado`), com o sinal em `cpf_nome_confere`.
   const { error: erroFila } = await service.from("cadastros_online").insert({
     id_vendedor: link.id_vendedor,
-    nome_vendedor: textoOuNulo(link.primeiro_nome),
+    nome_vendedor: nomeVendedor,
     id_link: link.id_link,
     documento: digitos,
     tipo_pessoa: tipoPessoa,

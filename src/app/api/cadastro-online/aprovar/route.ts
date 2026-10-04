@@ -3,7 +3,7 @@ import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 
 import { criarClienteDoCadastroOnline } from "@/features/cadastros/services/cadastro-online-cliente.server";
 import { consultarReceitaCnpj } from "@/features/cadastros/services/receita-cnpj.server";
-import { RECEITA_TIMEOUT_MS } from "@/features/cadastros/services/cadastro-online.server";
+import { nomeComercialDoCodigo, RECEITA_TIMEOUT_MS } from "@/features/cadastros/services/cadastro-online.server";
 
 /**
  * Aprovacao de um envio PENDENTE da fila do cadastro online.
@@ -121,6 +121,10 @@ export async function POST(request: Request) {
   const consulta = tipoPessoa === "JURIDICA" ? await consultarReceitaCnpj(documentoDigitos, RECEITA_TIMEOUT_MS) : null;
   const receita = consulta?.estado === "OK" ? consulta.dados : null;
 
+  // Nome comercial do vendedor, lido agora: envio antigo da fila pode ter so o
+  // primeiro nome gravado ("Emily"), e o cliente nao pode nascer com ele.
+  const nomeVendedor = (await nomeComercialDoCodigo(supabase, linha.id_vendedor)) ?? linha.nome_vendedor;
+
   const criacao = await criarClienteDoCadastroOnline(supabase, {
     tipoPessoa,
     documentoDigitos,
@@ -137,7 +141,7 @@ export async function POST(request: Request) {
     cidade: linha.cidade,
     uf: linha.uf,
     idVendedor: linha.id_vendedor,
-    nomeVendedor: linha.nome_vendedor,
+    nomeVendedor,
     receita
   });
   if (!criacao.ok) return erro(`Nao foi possivel criar o cliente: ${criacao.erro}`, 500);
@@ -148,7 +152,8 @@ export async function POST(request: Request) {
       status: "APROVADO",
       aprovado_em: new Date().toISOString(),
       aprovado_por: auth.user.id,
-      id_cliente_gerado: criacao.idCliente
+      id_cliente_gerado: criacao.idCliente,
+      nome_vendedor: nomeVendedor
     })
     .eq("id", id)
     .eq("status", "PENDENTE")
