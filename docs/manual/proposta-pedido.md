@@ -1,6 +1,6 @@
 # Proposta: aba Pedido (Boletim Técnico & Lotes)
 
-> **Última revisão:** 03/10/2026
+> **Última revisão:** 04/10/2026
 > **Caminho no menu:** Pedidos → abrir um pedido → Editar proposta → aba Pedido
 > **Endereço:** `/orcamentos/[número]/editar?tab=pedido`
 
@@ -29,6 +29,8 @@ Nomes exatamente como aparecem na tela.
 | Campo numérico (dica "Quantas linhas criar de uma vez") | Barra da lista, antes do botão de linha | Diz quantas linhas o botão ao lado cria. Vai de 1 a 200. |
 | **Linha** / **N linhas** | Barra da lista | Acrescenta uma linha em branco no fim (ou N, conforme o campo ao lado). |
 | **Mapa Teatro** | Barra da lista, ao lado de **Gravar lote** | Abre a lista dos Mapas de Teatro cadastrados e cria um modelo para cada setor do mapa escolhido. Fica apagado em pedido com cobrança. Não aparece em produto de prateleira. |
+| **Buscar mapa pelo nome** (janela **Mapa Teatro**) | Topo da janela | Filtra a lista pelo nome do mapa. Não diferencia maiúscula nem acento. |
+| Ícone **Baixar PDF do mapa** (janela **Mapa Teatro**) | Canto direito de cada mapa | Baixa o PDF do mapa completo, para enviar ao cliente. Não escolhe o mapa. Funciona também no mapa apagado. |
 | **Cancelar** (janela **Mapa Teatro**) | Rodapé da janela | Fecha a janela sem criar nada. |
 | Selo **Mapa: <nome do mapa>** | Cabeçalho do produto, junto ao nome | Mostra o Mapa de Teatro que o produto usa. Não é clicável. |
 | **Gravar lote** | Barra da lista, em pedido sem cobrança | Grava todos os modelos daquele produto e acerta a quantidade do produto pela soma. Enquanto grava, mostra "Gravando...". |
@@ -111,7 +113,7 @@ Em numerador do tipo Camarote, aparecem os campos **Q CAM \***, **L CAM \*** e *
 ### Criar os modelos a partir de um Mapa de Teatro
 
 1. No produto, clique em **Mapa Teatro**, ao lado de **Gravar lote**.
-2. A janela **Mapa Teatro** lista os mapas cadastrados, cada um com os setores e a quantidade de lugares.
+2. A janela **Mapa Teatro** lista os mapas cadastrados, cada um com os setores e a quantidade de lugares. Para achar um mapa, digite parte do nome em **Buscar mapa pelo nome**.
 3. Clique no mapa. A tela cria um modelo para cada setor que tem cadeiras: o nome do modelo é o nome do setor e a **Qtd** é o total de lugares do setor, sem contar as cadeiras apagadas.
 4. Os modelos são gravados na hora, sem o **Gravar lote**. O aviso confirma quantos foram criados, e o cabeçalho do produto passa a mostrar o selo **Mapa: <nome do mapa>**.
 5. Setor sem cadeiras não vira modelo. O aviso diz quais ficaram de fora.
@@ -120,6 +122,15 @@ Em numerador do tipo Camarote, aparecem os campos **Q CAM \***, **L CAM \*** e *
 Para montar outro combo de setores do mesmo mapa, vá à aba **Orçamento**, clique em **Duplicar** no produto e salve: a cópia vem com os mesmos modelos do mapa. Depois, na aba **Pedido**, remova da cópia os setores que não entram.
 
 Clicar em **Mapa Teatro** de novo, no mesmo mapa, traz de volta só os setores que não estão mais no produto.
+
+### Baixar o PDF do mapa para enviar ao cliente
+
+1. No produto, clique em **Mapa Teatro**.
+2. Ache o mapa na lista. Se precisar, use **Buscar mapa pelo nome**.
+3. Clique no ícone **Baixar PDF do mapa**, no canto direito do mapa. O ícone gira enquanto o arquivo é buscado.
+4. O PDF é salvo com o nome do mapa. A janela continua aberta e nenhum modelo é criado.
+
+O PDF é sempre o do mapa como está hoje no sistema de mapas. Quem publica o PDF é o sistema de mapas: o Vibe só baixa.
 
 ### Gravar em pedido com cobrança
 
@@ -188,6 +199,12 @@ Clicar em **Mapa Teatro** de novo, no mesmo mapa, traz de volta só os setores q
 |---|---|---|
 | "Nenhum produto encontrado" | O pedido não tem produto. | Inclua os produtos na aba **Orçamento** e salve. |
 | "Nenhum Mapa de Teatro cadastrado." | Não há mapa cadastrado. | Cadastre o mapa no sistema de mapas e abra a janela de novo. |
+| "Nenhum mapa encontrado" | Nenhum mapa tem o texto digitado na busca. | Apague a busca ou digite outra parte do nome. |
+| "PDF ainda não publicado para este mapa" | O sistema de mapas ainda não publicou o PDF da versão atual do mapa. | Peça a publicação do PDF no sistema de mapas e clique no ícone de novo. |
+| "Sem permissão para este mapa" | O seu usuário não tem acesso ao PDF deste mapa. | Peça o acesso a um administrador. |
+| "PDF do mapa indisponível no momento. Tente de novo em instantes." | O sistema de mapas não respondeu, ou o mapa não foi encontrado lá. | Tente de novo em alguns minutos. Se continuar, avise o administrador. |
+| "O PDF do mapa chegou incompleto. Tente de novo." | O arquivo recebido não tem o tamanho informado pelo sistema de mapas. Nada é salvo. | Clique no ícone de novo. |
+| "Sua sessão expirou. Entre novamente para baixar o PDF." | A sessão acabou e não pôde ser renovada. | Entre de novo no sistema. |
 | "Este produto já usa outro mapa" | O produto já tem modelos de outro Mapa de Teatro. | Use outro produto para o outro mapa. |
 | "Nenhum setor novo" | Todos os setores do mapa já estão no produto. | Não há o que criar. Para outro combo, duplique o produto na aba **Orçamento**. |
 | "Mapa sem cadeiras" | Nenhum setor do mapa tem cadeiras. | Confira o mapa no sistema de mapas. |
@@ -225,6 +242,8 @@ Clicar em **Mapa Teatro** de novo, no mesmo mapa, traz de volta só os setores q
 - `src/features/orcamentos/components/ModeloCampos.tsx`
 - `src/features/orcamentos/components/MapaTeatroSeletor.tsx`
 - `src/features/orcamentos/lib/mapa-teatro.ts`
+- `src/features/orcamentos/lib/mapa-teatro-pdf.ts`
+- `src/app/api/pedidos/mapa-teatro/[mapaId]/pdf/route.ts`
 - `src/features/orcamentos/services/lotes-colagem.ts`
 - `src/features/orcamentos/services/lotes-numeracao.ts`
 - `src/features/orcamentos/lib/checklist-lote.ts`
