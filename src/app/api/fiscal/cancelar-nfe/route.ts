@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { verificarPermissaoServerSide } from "@/lib/auth/verificar-permissao";
+import { cabecalhosWebhookN8n } from "@/lib/n8n/webhook-segredo";
 
 /**
  * Cancelamento de nota fiscal — porta de entrada no servidor.
@@ -273,7 +274,7 @@ export async function POST(request: Request) {
     try {
       response = await fetch(webhook, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: cabecalhosWebhookN8n(),
         body: JSON.stringify({
           id_empresa: Number(nota.id_empresa),
           referencia: nota.ref,

@@ -5,12 +5,15 @@ import { cabecalhosWebhookN8n, segredoWebhookN8nConfigurado } from "@/lib/n8n/we
 /**
  * POST /api/admin/n8n-segredo-prova — diagnóstico do segredo dos webhooks do n8n.
  *
- * Faz o SERVIDOR chamar `boletos-vibe` e `carta-correcao` com os mesmos
- * cabeçalhos do registro real (`cabecalhosWebhookN8n`) e um corpo que não faz
- * nada: `id_empresa: 0` não casa com nenhum ramo dos dois workflows, então a
- * chamada não chega a banco nem a SEFAZ.
+ * Faz o SERVIDOR chamar os webhooks que exigem o segredo, com os mesmos
+ * cabeçalhos da chamada real (`cabecalhosWebhookN8n`) e um corpo que não faz
+ * nada. Onde o fluxo escolhe a empresa, `id_empresa: 0` não casa com nenhum
+ * ramo e a chamada para no seletor. Onde ele parte da `ref` da nota, vai uma
+ * ref que não existe: a função do banco responde "não encontrada" sem gravar,
+ * e o que vem depois filtra por essa mesma ref e não alcança linha nenhuma.
+ * Nenhuma das chamadas chega à Focus nem ao banco emissor.
  *
- * Serve para conferir, sem registrar boleto de verdade, que a variável
+ * Serve para conferir, sem registrar boleto nem nota de verdade, que a variável
  * `N8N_WEBHOOK_SECRET` está no servidor e que o n8n aceita o que ele envia.
  * Só Super Admin. Nunca devolve o valor do segredo.
  */
@@ -18,9 +21,17 @@ import { cabecalhosWebhookN8n, segredoWebhookN8nConfigurado } from "@/lib/n8n/we
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const WEBHOOKS = [
-  "https://10074.hostoo.net.br/webhook/boletos-vibe",
-  "https://10074.hostoo.net.br/webhook/carta-correcao"
+const PROVA = "segredo do webhook - chamada do servidor, nao registra nada";
+const REF_INEXISTENTE = "PROVA-SEGREDO-WEBHOOK-REF-INEXISTENTE";
+
+const WEBHOOKS: Array<{ caminho: string; corpo: Record<string, unknown> }> = [
+  { caminho: "boletos-vibe", corpo: { id_empresa: 0, prova: PROVA } },
+  { caminho: "carta-correcao", corpo: { id_empresa: 0, prova: PROVA } },
+  { caminho: "cancelamento", corpo: { id_empresa: 0, prova: PROVA } },
+  { caminho: "cancelamento-nfse", corpo: { id_empresa: 0, prova: PROVA } },
+  { caminho: "emitir-nfe-focus", corpo: { ref: REF_INEXISTENTE, prova: PROVA } },
+  { caminho: "emitir-nfse-focus", corpo: { ref: REF_INEXISTENTE, prova: PROVA } },
+  { caminho: "consultar-nfse-focus", corpo: { ref: REF_INEXISTENTE, prova: PROVA } }
 ];
 
 export async function POST(request: Request) {
@@ -52,14 +63,17 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: false, message: "Somente Super Admin." }, { status: 403 });
   }
 
-  const corpo = JSON.stringify({ id_empresa: 0, prova: "segredo do webhook - chamada do servidor, nao registra nada" });
   const resultados = [];
-  for (const webhook of WEBHOOKS) {
+  for (const { caminho, corpo } of WEBHOOKS) {
     try {
-      const resposta = await fetch(webhook, { method: "POST", headers: cabecalhosWebhookN8n(), body: corpo });
-      resultados.push({ webhook: webhook.split("/").pop(), status: resposta.status, aceito: resposta.status !== 401 && resposta.status !== 403 });
+      const resposta = await fetch(`https://10074.hostoo.net.br/webhook/${caminho}`, {
+        method: "POST",
+        headers: cabecalhosWebhookN8n(),
+        body: JSON.stringify(corpo)
+      });
+      resultados.push({ webhook: caminho, status: resposta.status, aceito: resposta.status !== 401 && resposta.status !== 403 });
     } catch (erro) {
-      resultados.push({ webhook: webhook.split("/").pop(), status: 0, aceito: false, erro: erro instanceof Error ? erro.message : "falha de rede" });
+      resultados.push({ webhook: caminho, status: 0, aceito: false, erro: erro instanceof Error ? erro.message : "falha de rede" });
     }
   }
 
