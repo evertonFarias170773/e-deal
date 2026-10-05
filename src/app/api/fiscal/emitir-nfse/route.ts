@@ -267,31 +267,30 @@ export async function POST(request: Request) {
     // 7. Trava de duplicidade — a parte que vale contra corrida.
     //
     //    A checagem declarativa não basta: duas chamadas simultâneas leem o
-    //    mesmo estado e passam as duas. Quem decide é este UPDATE condicional,
-    //    que reserva a emissão comparando `tentativas_envio` com o valor lido
-    //    (compare-and-swap). O Postgres serializa as escritas na mesma linha: a
-    //    primeira casa e incrementa; a segunda não casa mais o valor anterior e
-    //    afeta ZERO linhas. Sem coluna nova, sem migration.
+    //    mesmo estado e passam as duas. Quem decide é a reserva, que compara
+    //    `tentativas_envio` com o valor lido (compare-and-swap). O Postgres
+    //    serializa as escritas na mesma linha: a primeira casa e incrementa; a
+    //    segunda não casa mais o valor anterior e não reserva nada.
     //
     //    O `status` entra na condição junto, o que fecha também a corrida com o
     //    próprio n8n: `fn_preparar_envio_nfse` muda o status durante o envio.
     //
     //    A repetição legítima depois de uma falha continua possível: o contador
     //    apenas avança.
+    //
+    //    DESDE 05/10/2026 A RESERVA É UMA FUNÇÃO DO BANCO, e não mais um UPDATE
+    //    direto em `notas_servico`. `fn_reservar_emissao_nfse` faz a MESMA
+    //    escrita (tentativas + 1, ambiente, updated_at) sob a MESMA condição,
+    //    mas confere `fiscal.emit_nfse` de novo lá dentro e lê o ambiente de
+    //    `empresas` — a rota não manda mais o ambiente. Era este UPDATE o único
+    //    motivo de existir a policy que deixava qualquer usuário logado alterar
+    //    qualquer nota de serviço. O autor fica em `audit.logs_v2`.
     const tentativasAntes = Number(nota.tentativas_envio ?? 0);
-    const { data: reserva, error: reservaError } = await supabase
-      .from("notas_servico")
-      .update({
-        tentativas_envio: tentativasAntes + 1,
-        ambiente: ambienteResolvido.ambiente,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", nota.id)
-      .eq("status", status)
-      .eq("tentativas_envio", tentativasAntes)
-      .is("numero_nfse", null)
-      .is("codigo_verificacao", null)
-      .select("id, tentativas_envio");
+    const { data: reservaBruta, error: reservaError } = await supabase.rpc("fn_reservar_emissao_nfse", {
+      p_id: nota.id,
+      p_status_lido: status,
+      p_tentativas_lidas: tentativasAntes,
+    });
 
     if (reservaError) {
       console.error("[API][EmitirNfse] Falha ao reservar a emissão:", reservaError.message);
@@ -301,7 +300,13 @@ export async function POST(request: Request) {
       );
     }
 
-    if (!reserva || reserva.length === 0) {
+    const reserva = (reservaBruta ?? null) as {
+      reservada?: boolean;
+      tentativas_envio?: number;
+      motivo?: string;
+    } | null;
+
+    if (!reserva || reserva.reservada !== true) {
       return NextResponse.json(
         {
           success: false,
@@ -357,7 +362,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       success: true,
       ref: nota.ref,
-      tentativas_envio: reserva[0]?.tentativas_envio ?? tentativasAntes + 1,
+      tentativas_envio: reserva.tentativas_envio ?? tentativasAntes + 1,
       retorno,
     });
   } catch (err) {
