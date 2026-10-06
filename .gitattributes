@@ -1,0 +1,3 @@
+# Edge Function publicada em producao: o git guarda os bytes exatos (fim de linha incluido),
+# para o arquivo do repositorio ser identico ao que esta no ar e servir de base de volta.
+supabase/functions/pagamento-publico/** -text
