@@ -537,6 +537,28 @@ async function selecionarParcela(parcelas, taxa) {
 }
 
 async function continuarPagamento() {
+  // Trava contra clique repetido: a criação do checkout leva cerca de 1 segundo,
+  // e um segundo clique nesse intervalo criava outro checkout para a mesma cobrança.
+  if (continuarPagamento.emAndamento) return;
+  continuarPagamento.emAndamento = true;
+
+  const botao = document.querySelector('button[onclick="continuarPagamento()"]');
+  const textoDoBotao = botao ? botao.innerText : "";
+  if (botao) {
+    botao.disabled = true;
+    botao.innerText = "Abrindo pagamento...";
+  }
+
+  // Na falha, na hora. No sucesso a página é redirecionada, e o botão só é
+  // liberado depois, para o caso de o cliente voltar do checkout.
+  function liberarBotao() {
+    continuarPagamento.emAndamento = false;
+    if (botao) {
+      botao.disabled = false;
+      botao.innerText = textoDoBotao;
+    }
+  }
+
   console.log("Botão Continuar clicado");
 
   try {
@@ -563,6 +585,7 @@ async function continuarPagamento() {
     }
 
     if (!response.ok) {
+      liberarBotao();
       alert(data.erro || data.message || "Erro ao criar checkout no C6. Status: " + response.status);
       return;
     }
@@ -570,14 +593,18 @@ async function continuarPagamento() {
 const checkoutUrl = data.checkout_url || data.url;
 
 if (checkoutUrl) {
+  // Se o cliente voltar do checkout pelo navegador, o botão não pode ficar travado.
+  setTimeout(liberarBotao, 8000);
   window.location.href = checkoutUrl;
   return;
 }
 
+liberarBotao();
 alert(data.mensagem || "Checkout criado, mas a URL não foi retornada.");
 
   } catch (e) {
     console.log("Erro ao chamar webhook n8n:", e);
+    liberarBotao();
     alert("Erro ao chamar o n8n. Veja o Console do navegador.");
   }
 }
