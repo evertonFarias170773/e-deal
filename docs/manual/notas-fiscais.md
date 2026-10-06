@@ -1,6 +1,6 @@
 # Notas fiscais
 
-> **Última revisão:** 02/10/2026
+> **Última revisão:** 06/10/2026
 > **Caminho no menu:** Financeiro → Notas fiscais (primeiro item da seção Financeiro do menu lateral)
 > **Endereço:** `/notas-fiscais` (a nota aberta fica em `/notas-fiscais/[id]`)
 
@@ -14,6 +14,7 @@ Daqui se emite a NF-e de produto, se acompanha a autorização, se baixa o DANFE
 
 - Só vê a tela quem tem a permissão **Visualizar Painel Fiscal**. Sem ela, o item não abre.
 - **Emitir NF-e (Produto)**: mostra o botão **Faturar** na fila, o **Emitir NF-e** dentro da nota e o **Enviar para Focus** no menu da nota. Sem essa permissão a pessoa consegue abrir e conferir a nota, mas não transmite.
+- **Emitir NFS-e (Serviço)**: mostra o botão **NFS-e** na fila, só nos pedidos da **BIRÔ IDEAL**, e permite criar o rascunho, emitir e consultar a nota de serviço. O servidor confere a mesma permissão em cada passo.
 - **Cancelar Nota Fiscal**: mostra **Cancelar NF-e** e **Cancelar NFS-e** no menu da nota autorizada.
 - **Liberar para Nota Fiscal**: mostra o botão **Nota emitida no sistema antigo** na fila e, na tela **Pedidos**, a ação que desfaz essa marca.
 - **Emitir Carta de Correção**: mostra **Carta de Correção** no menu da nota autorizada. O servidor confere a mesma permissão antes de enviar.
@@ -37,6 +38,14 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | Número do pedido (**#N**, dica "Abrir a proposta") | Aba Fila, coluna **Pedido** | Abre a proposta do pedido. |
 | Nome do cliente (dica "Abrir o cadastro do cliente") | Aba Fila, coluna **Cliente / Destinatário** | Abre o cadastro do cliente em edição. |
 | **Nota emitida no sistema antigo** | Aba Fila, coluna **Ação** | Marca o pedido como faturado no sistema antigo e o tira da fila. Enquanto grava mostra "Marcando...". |
+| **NFS-e** | Aba Fila, coluna **Ação**, entre **Nota emitida no sistema antigo** e **Faturar**; só em pedido da **BIRÔ IDEAL** | Abre a janela **Gerar NFS-e**. O texto muda com a nota de serviço do pedido: **NFS-e** (sem nota ou com rascunho), **NFS-e nº N** (autorizada), **NFS-e em análise** e **NFS-e (reenviar)** (o envio falhou). |
+| **Criar rascunho** | Janela **Gerar NFS-e** | Grava o rascunho da nota de serviço com o endereço, o valor e a descrição da janela. Não transmite nada. |
+| **Emitir NFS-e** / **Reenviar NFS-e** | Janela **Gerar NFS-e**, com o rascunho aberto | Pede confirmação (**Confirmar emissão** ou **Voltar**) e envia a nota. |
+| **Criar outro rascunho** | Janela **Gerar NFS-e**, com o rascunho aberto | Abre o formulário de novo para criar um rascunho novo. O anterior fica sem uso. |
+| **Voltar ao rascunho atual** | Janela **Gerar NFS-e**, no formulário aberto por **Criar outro rascunho** | Desiste do rascunho novo e volta ao que já existe. |
+| **Consultar agora** | Janela **Gerar NFS-e**, com a nota em análise | Pergunta o status da nota na hora, sem esperar a consulta automática. |
+| **Abrir PDF** / **Abrir XML** | Janela **Gerar NFS-e**, com a nota autorizada | Abre o PDF ou o XML da nota de serviço. |
+| **Fechar** | Janela **Gerar NFS-e** | Fecha a janela. O que já foi criado ou enviado continua valendo. |
 | **Faturar** | Aba Fila, coluna **Ação** | Confere o pedido e abre (ou cria) o rascunho da NF-e. Não transmite nada. |
 | **Notas em processo (N)** | Aba Fila, abaixo da lista de pedidos | Seção com as notas que ainda não são documento fiscal. |
 | Ícone de arquivo com seta (dica "Baixar DANFE - ..." ou "Baixar DANFE (N notas)") | Linha da nota, coluna **Ações** | Abre a DANFE; com mais de uma nota no pedido, abre a lista **Baixar DANFE** para escolher. |
@@ -170,6 +179,25 @@ Outros botões do cabeçalho da nota:
 - **Salvar e sair**: grava o rascunho como está. Apesar do nome, a tela continua na nota.
 - **Voltar**: volta para a lista sem gravar.
 
+### Emitir a NFS-e (nota de serviço) de um pedido
+
+Só para pedido da **BIRÔ IDEAL** e para quem tem a permissão **Emitir NFS-e (Serviço)**.
+
+1. Na aba **Fila Faturamento**, ache o pedido e clique em **NFS-e**, entre **Nota emitida no sistema antigo** e **Faturar**.
+2. A janela **Gerar NFS-e** abre com a faixa do ambiente no topo. Em homologação ela diz "HOMOLOGAÇÃO: NOTA DE TESTE, sem valor fiscal".
+3. Confira o **Tomador** (o cliente do pedido), a **Empresa emissora** e o **Serviço** (13.05.01).
+4. Em **Endereço do tomador**, escolha um dos endereços do cliente. A escolha é obrigatória quando o cliente tem endereço.
+5. Confira o **Valor do serviço**. Ele vem do total do pedido e pode ser alterado; se ficar diferente do pedido, a janela avisa.
+6. Confira a **Descrição do serviço**. Ela vem com os itens do pedido (nome, quantidade e valor unitário) e pode ser alterada. O contador mostra quantos caracteres já foram usados, de 1000.
+7. Clique em **Criar rascunho**. A janela passa a mostrar o rascunho, com a referência (por exemplo NFS-22760-001), o valor, a descrição e os alertas da conferência.
+8. Clique em **Emitir NFS-e** e depois em **Confirmar emissão**.
+9. A janela acompanha a nota sozinha: consulta a cada 15 segundos, por até 5 minutos. Quando a prefeitura responde, aparecem o número da NFS-e e os botões **Abrir PDF** e **Abrir XML**.
+10. Se passar dos 5 minutos, a janela mostra "A nota continua em análise. Consulte depois.". Clique em **Consultar agora**, ou feche e volte mais tarde pelo botão **NFS-e em análise** da fila.
+
+O pedido continua na fila depois da NFS-e emitida, com o botão **NFS-e nº N**. Clicar nele abre a nota só para leitura.
+
+O rascunho não é editado depois de criado. Se o endereço, o valor ou a descrição ficaram errados, clique em **Criar outro rascunho**: o anterior fica sem uso e a nota sai pelo novo.
+
 ### Conferir parcelas e duplicatas
 
 1. No bloco **Pagamentos**, escolha a **Forma de Pagamento**. Só **15 - Boleto Bancário** gera parcelas; as outras formas são tratadas como à vista, com um pagamento único no total da nota.
@@ -284,7 +312,21 @@ Nos dois casos a confirmação lista as notas autorizadas que o pedido já tem. 
 - Não dá para lançar no contas a receber quando a soma das parcelas da nota difere do total faturado em aberto da proposta, nem quando a parcela já tem título ativo. Os valores não se ajustam na janela de lançamento: vêm da nota autorizada.
 - Nota de remessa e nota de pedido pago por PIX, cartão, crédito ou boleto à vista não oferecem **Lançar no Contas a Receber**.
 - A empresa emitente é uma de três: **INGRESSO IDEAL**, **BIRÔ IDEAL** e **E3 BRINDES**. Ela vem do pedido e pode ser trocada no bloco Emitente enquanto a nota ainda puder ser editada.
-- NFS-e (nota de serviço): a tela só oferece o **Histórico NFS-e (Serviços)**, com busca, filtro por empresa e por status, **Abrir PDF**, **Abrir XML**, **Copiar Link** e **Cancelar NFS-e** para nota autorizada. Não existe emissão de NFS-e pela tela.
+- NFS-e (nota de serviço): sai pelo botão **NFS-e** da fila, só para pedido da **BIRÔ IDEAL**. Para as outras empresas o botão não aparece e o servidor recusa.
+- A NFS-e só é emitida em homologação por enquanto. Com a empresa marcada para produção, o envio é recusado.
+- Um pedido tem uma NFS-e viva por vez:
+  - com nota autorizada, a janela só mostra a nota e não cria outra;
+  - com nota em análise, é preciso esperar o desfecho;
+  - com rascunho, a janela reabre o mesmo, ou cria outro se você pedir;
+  - com erro de envio, reenvia a mesma nota;
+  - com nota recusada pela prefeitura ou cancelada, permite um rascunho novo.
+- O cliente precisa ter CPF (11 dígitos) ou CNPJ (14 dígitos) no cadastro. Sem isso o rascunho não é criado.
+- A descrição do serviço tem de 1 a 1000 caracteres. Acima disso o **Criar rascunho** fica apagado.
+- Quando o município do endereço escolhido não é reconhecido, a nota sai sem o endereço do tomador. A janela avisa e não bloqueia. O mesmo vale para cliente sem endereço cadastrado.
+- Os alertas mostrados antes de emitir são informativos. Os marcados em vermelho apontam dado que a integração recusa: corrija o cadastro antes de enviar.
+- O número que identifica a nota de serviço é o **número da NFS-e**. A referência (NFS-pedido-sequência) é interna do Vibe.
+- NFS-e não conta como nota do pedido na fila: o pedido não sai da fila por causa dela.
+- No **Histórico NFS-e (Serviços)** ficam a busca, o filtro por empresa e por status, **Abrir PDF**, **Abrir XML**, **Copiar Link** e **Cancelar NFS-e** para nota autorizada.
 
 ## O que não confundir
 
@@ -351,6 +393,24 @@ Nos dois casos a confirmação lista as notas autorizadas que o pedido já tem. 
 | Nota parcelada ainda não é suportada neste caminho | A nota tem duas parcelas ou mais. | Gere os títulos pelo Registro de recebíveis. |
 | Lançamento bloqueado: totais não fecham | A soma das parcelas da nota difere do total faturado em aberto da proposta. | Regularize a nota ou a cobrança da proposta antes de lançar. |
 | Duplicidade detectada! A parcela N desta origem já possui um boleto ativo no Contas a Receber | A parcela já foi lançada. | Use **Revisar para gerar boletos**. Para refazer, cancele o título atual na Carteira antes. |
+### Na janela Gerar NFS-e
+
+| O que aparece | Por que acontece | O que fazer |
+|---|---|---|
+| "A emissão de NFS-e pelo Vibe não está liberada para ..." | O pedido não é da **BIRÔ IDEAL**. | Não há NFS-e pelo Vibe para essa empresa. |
+| "O cliente não tem CPF (11 dígitos) ou CNPJ (14 dígitos) no cadastro." | O documento do cliente está vazio ou incompleto. | Corrija o cadastro do cliente e abra a janela de novo. |
+| "Escolha o endereço do tomador." | O cliente tem endereço e nenhum foi marcado. | Marque um endereço e clique em **Criar rascunho**. |
+| "O município deste endereço não foi reconhecido. A nota sairá sem o endereço do tomador." | A cidade ou a UF do endereço não confere com a lista oficial de municípios. | Pode seguir. Para a nota sair com endereço, corrija a cidade e a UF no cadastro do cliente antes de criar o rascunho. |
+| "O valor difere do total do pedido (R$ ...)." | O valor digitado não é o total do pedido. | Confirme se é isso mesmo. Não bloqueia. |
+| "N de 1000 caracteres: reduza o texto para criar o rascunho." | A descrição passou do limite. | Encurte a descrição. |
+| "Este pedido já tem NFS-e autorizada (nº N)." | Alguém já emitiu a nota deste pedido. | Use a nota existente. A janela passa a mostrá-la. |
+| "A NFS-e ... deste pedido está em análise. Aguarde o desfecho antes de criar outra." | Há uma nota do pedido sem resposta da prefeitura. | Clique em **Consultar agora** ou volte mais tarde. |
+| "Outra emissão desta mesma nota já está em andamento." | Duas pessoas clicaram em emitir a mesma nota. | Aguarde e clique em **Consultar agora**. |
+| "A empresa ... está marcada para emitir NFS-e em produção, mas a integração de NFS-e ainda transmite só para homologação." | O ambiente da empresa foi mudado para produção. | Avise o administrador. A emissão em produção ainda não está liberada. |
+| Faixa vermelha com a mensagem da prefeitura ou do envio | A nota foi recusada ou o envio falhou. | Leia a mensagem. Em erro de envio, corrija e clique em **Reenviar NFS-e**; em nota recusada pela prefeitura, abra a janela de novo e crie outro rascunho. |
+| "A integração fiscal não respondeu à consulta. O status mostrado é o último gravado." | A consulta não chegou à integração. | Tente **Consultar agora** em alguns minutos. |
+| "A nota continua em análise. Consulte depois." | Passaram 5 minutos sem resposta da prefeitura. | Clique em **Consultar agora** ou feche e volte pelo botão **NFS-e em análise**. |
+
 ## Veja também
 
 - [Carteira (contas a receber)](carteira.md)
@@ -368,6 +428,12 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/app/(erp)/notas-fiscais/`
 - `src/features/fiscal/NotasFiscaisPage.tsx`
 - `src/features/fiscal/components/EmissaoNfeModal.tsx`
+- `src/features/nfse/components/GerarNfseModal.tsx`
+- `src/features/nfse/lib/regras-emissao.ts`
+- `src/features/nfse/services/nfse-pedido.server.ts`
+- `src/app/api/fiscal/rascunho-nfse/route.ts`
+- `src/app/api/fiscal/consultar-nfse/route.ts`
+- `src/app/api/fiscal/emitir-nfse/route.ts`
 - `src/features/fiscal/components/ConferenciaFaturamentoModal.tsx`
 - `src/features/fiscal/components/NovaNotaAvulsaModal.tsx`
 - `src/features/fiscal/services/conferencia-faturamento.ts`

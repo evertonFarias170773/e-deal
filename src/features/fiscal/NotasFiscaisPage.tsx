@@ -52,6 +52,9 @@ import { conferirFaturamento, type ResultadoConferencia } from "./services/confe
 import { partesDaConfirmacaoDeSegundaNota } from "./lib/confirmacao-segunda-nota";
 import { ConfirmarAcaoModal } from "@/features/expedicao/components/ConfirmarAcaoModal";
 import { resolverAmbienteFiscal } from "./services/ambiente-fiscal";
+import { GerarNfseModal } from "@/features/nfse/components/GerarNfseModal";
+import { useNfseDosPedidos } from "@/features/nfse/hooks/useNfseDosPedidos";
+import { decidirNfseDoPedido, empresaLiberadaParaNfse, rotuloDoBotaoNfse } from "@/features/nfse/lib/regras-emissao";
 import { parseFocusResponse } from "@/lib/fiscal/carta-correcao";
 
 
@@ -272,6 +275,9 @@ export function NotasFiscaisPage() {
 
   // State para fila faturável
   const [faturaveisList, setFaturaveisList] = useState<FaturavelOrigem[]>([]);
+  /** Pedido com a janela "Gerar NFS-e" aberta, e o contador que manda reler o estado dos botões. */
+  const [nfsePedidoAberto, setNfsePedidoAberto] = useState<number | null>(null);
+  const [nfseVersao, setNfseVersao] = useState(0);
   const [isFilaLoading, setIsFilaLoading] = useState(true);
   const [marcandoFaturadoForaId, setMarcandoFaturadoForaId] = useState<number | null>(null);
   const [gerandoRemessaId, setGerandoRemessaId] = useState<number | null>(null);
@@ -1929,6 +1935,42 @@ export function NotasFiscaisPage() {
     filaStatusVigente
   );
 
+  /**
+   * Botão "NFS-e" da linha do pedido.
+   *
+   * Só existe para pedido de empresa liberada (lista fechada no código, hoje a
+   * Ideal Birô) e para quem tem `fiscal.emit_nfse`; nas outras linhas não
+   * aparece, nem desligado. A empresa é a que a própria Fila já resolveu
+   * (`item.id_empresa`, mesma regra de `resolverEmpresaEmitente`).
+   *
+   * O texto vem do estado da NFS-e do pedido, lido em lote de `notas_servico`
+   * só para as linhas visíveis — a consulta que monta a Fila não muda. O pedido
+   * continua na Fila depois de emitir: NFS-e não conta como nota do pedido aqui.
+   */
+  const pedidosComBotaoNfse = canEmitNfse
+    ? filteredFilaNfe
+        .filter((item) => empresaLiberadaParaNfse(item.id_empresa) && Number(item.id_int) > 0)
+        .map((item) => Number(item.id_int))
+    : [];
+  const nfseDosPedidos = useNfseDosPedidos(pedidosComBotaoNfse, Boolean(canEmitNfse), nfseVersao);
+
+  function renderBotaoNfse(item: FaturavelOrigem) {
+    const idInt = Number(item.id_int);
+    if (!canEmitNfse || !empresaLiberadaParaNfse(item.id_empresa) || !(idInt > 0)) return null;
+    const decisao = decidirNfseDoPedido(nfseDosPedidos.get(idInt) ?? []);
+    return (
+      <button
+        type="button"
+        data-botao-nfse={decisao.acao}
+        onClick={() => setNfsePedidoAberto(idInt)}
+        title="Nota fiscal de serviço (NFS-e) deste pedido"
+        className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-xl border border-[#0b2f4a] bg-white px-3 py-2 text-xs font-semibold text-[#0b2f4a] hover:bg-slate-50 transition"
+      >
+        {rotuloDoBotaoNfse(decisao)}
+      </button>
+    );
+  }
+
   // Filtragem da Fila de Faturamento (NFS-e)
   const filteredFilaNfse = faturaveisList.filter((item) => {
     if (item.tipo !== "OS" && item.tipo !== "CONTRATO") return false;
@@ -2255,6 +2297,14 @@ export function NotasFiscaisPage() {
       </section>
 
       {/* Renderização da Fila NF-e */}
+      {nfsePedidoAberto !== null && (
+        <GerarNfseModal
+          idInt={nfsePedidoAberto}
+          onClose={() => setNfsePedidoAberto(null)}
+          onMudou={() => setNfseVersao((v) => v + 1)}
+        />
+      )}
+
       {activeTab === "FILA_FATURAMENTO" ? (
         <div className="space-y-4">
           {/* Os TRES campos de pesquisa lado a lado no desktop e empilhados no
@@ -2427,6 +2477,7 @@ export function NotasFiscaisPage() {
                 cell: (item) => (
                   <div className="flex items-center justify-end gap-2">
                     {renderBotaoFaturadoFora(item)}
+                    {renderBotaoNfse(item)}
                     {canEmitNfe ? (
                       <button
                         type="button"
@@ -2477,6 +2528,7 @@ export function NotasFiscaisPage() {
                 </div>
                 <div className="flex flex-wrap justify-end gap-2 pt-2">
                   {renderBotaoFaturadoFora(item)}
+                  {renderBotaoNfse(item)}
                   {canEmitNfe && (
                     <button
                       type="button"

@@ -1,0 +1,268 @@
+import { NextResponse } from "next/server";
+import { createClient as createSupabaseClient, type SupabaseClient } from "@supabase/supabase-js";
+import { verificarPermissaoServerSide } from "@/lib/auth/verificar-permissao";
+import {
+  SERVICO_NFSE,
+  ambienteDaEmpresa,
+  decidirNfseDoPedido,
+  descricaoDosItens,
+  documentoDoTomador,
+  empresaEmitenteDoTexto,
+  empresaLiberadaParaNfse,
+  type AmbienteDaEmpresa,
+  type DecisaoDoPedido
+} from "@/features/nfse/lib/regras-emissao";
+
+/**
+ * NFS-e pela Fila — o que as rotas `/api/fiscal/rascunho-nfse` e
+ * `/api/fiscal/consultar-nfse` têm em comum: sessão, permissão e a releitura do
+ * pedido no servidor.
+ *
+ * DUAS CHAVES, DOIS PAPÉIS
+ *   - O cliente com o TOKEN DO USUÁRIO lê tudo o que a tela mostra (proposta,
+ *     cliente, endereços, itens, notas). O RLS continua valendo.
+ *   - O cliente com a chave de SERVIÇO só é usado para o que o banco fechou ao
+ *     usuário comum: `fn_criar_rascunho_nfse` e `fn_nfse_codigo_municipio`. A
+ *     permissão `fiscal.emit_nfse` é conferida ANTES de ele ser criado.
+ */
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Cliente = SupabaseClient<any, any, any>;
+
+export const COLUNAS_DA_NOTA_DE_SERVICO =
+  "id, ref, id_int, id_empresa, status, status_focus, numero_nfse, url_pdf, url_xml, valor_servicos, discriminacao, " +
+  "id_endereco_tomador, mensagem_prefeitura, erro_mensagem, ambiente, tentativas_envio, created_at";
+
+export type NotaDeServicoLida = {
+  id: string;
+  ref: string;
+  id_int: number | null;
+  id_empresa: number | null;
+  status: string | null;
+  status_focus: string | null;
+  numero_nfse: string | null;
+  url_pdf: string | null;
+  url_xml: string | null;
+  valor_servicos: number | null;
+  discriminacao: string | null;
+  id_endereco_tomador: string | null;
+  mensagem_prefeitura: string | null;
+  erro_mensagem: string | null;
+  ambiente: string | null;
+  tentativas_envio: number | null;
+  created_at: string | null;
+};
+
+export type EnderecoDoTomador = {
+  id: string;
+  linha: string;
+  cidade: string;
+  uf: string;
+  cep: string;
+  tipo: string;
+  /** O município resolve para um código do IBGE? Sem isso a nota sai sem endereço. */
+  municipioReconhecido: boolean;
+};
+
+export type ContextoNfseDoPedido = {
+  idInt: number;
+  totalDoPedido: number;
+  empresa: { id: number; nome: string; ambiente: AmbienteDaEmpresa; liberada: boolean };
+  tomador: { idCliente: number | null; nome: string; documentoOk: boolean; tipoDocumento: "CPF" | "CNPJ" | null };
+  servico: typeof SERVICO_NFSE;
+  enderecos: EnderecoDoTomador[];
+  descricaoSugerida: string;
+  notas: NotaDeServicoLida[];
+  decisao: DecisaoDoPedido<NotaDeServicoLida>;
+};
+
+export type SessaoFiscal = { supabase: Cliente; userId: string; nomeDoUsuario: string };
+
+const erro = (status: number, message: string, extra: Record<string, unknown> = {}) =>
+  NextResponse.json({ success: false, message, ...extra }, { status, headers: { "Cache-Control": "no-store" } });
+
+export const respostaDeErro = erro;
+
+/** Sessão + `fiscal.emit_nfse`. Devolve a resposta de recusa pronta quando falha. */
+export async function autenticarEmissorDeNfse(request: Request): Promise<SessaoFiscal | NextResponse> {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!url || !anonKey) {
+    console.error("[API][Nfse] ENV AUSENTE");
+    return erro(500, "Erro interno no servidor de banco de dados.");
+  }
+
+  const authHeader = request.headers.get("authorization") ?? "";
+  const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
+  if (!token) return erro(401, "Sessão não encontrada.");
+
+  const supabase = createSupabaseClient(url, anonKey, {
+    global: { headers: { Authorization: `Bearer ${token}` } },
+    auth: { persistSession: false, autoRefreshToken: false }
+  });
+
+  const { data: authData, error: authError } = await supabase.auth.getUser();
+  if (authError || !authData.user) return erro(401, "Sessão inválida.");
+
+  const temPermissao = await verificarPermissaoServerSide(supabase, authData.user.id, "fiscal.emit_nfse");
+  if (!temPermissao) return erro(403, "Sem permissão para emitir NFS-e (fiscal.emit_nfse).");
+
+  // O autor que vai para a nota sai do cadastro do usuário, nunca do navegador.
+  const { data: usuario } = await supabase
+    .from("usuarios")
+    .select("nome_usuario")
+    .eq("user_id", authData.user.id)
+    .maybeSingle();
+  const nome = String((usuario as { nome_usuario?: string | null } | null)?.nome_usuario ?? "").trim();
+
+  return { supabase, userId: authData.user.id, nomeDoUsuario: nome || authData.user.email || "Usuário do Vibe" };
+}
+
+/** O cliente com a chave de serviço, só no servidor. `null` se a chave não estiver configurada. */
+export function clienteDeServico(): Cliente | null {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !serviceKey) return null;
+  return createSupabaseClient(url, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });
+}
+
+function texto(valor: unknown): string {
+  return typeof valor === "string" ? valor.trim() : typeof valor === "number" ? String(valor) : "";
+}
+
+type Falha = { ok: false; status: number; message: string; code?: string };
+
+/**
+ * Relê, no servidor, tudo o que a janela mostra e a rota confere.
+ *
+ * `servico` só entra para saber se o município de cada endereço é reconhecido
+ * (`fn_nfse_codigo_municipio` é fechada ao usuário comum). Sem ele, os
+ * endereços voltam como "não reconhecido" e a tela avisa — a nota não é
+ * bloqueada por isso.
+ */
+export async function lerContextoNfseDoPedido(
+  supabase: Cliente,
+  servico: Cliente | null,
+  idInt: number
+): Promise<{ ok: true; contexto: ContextoNfseDoPedido } | Falha> {
+  const { data: propostaRow, error: propostaError } = await supabase
+    .from("propostas")
+    .select("id_int, id_cliente, cliente, empresa, valor, valor_total")
+    .eq("id_int", idInt)
+    .maybeSingle();
+  if (propostaError) {
+    console.error("[API][Nfse] Falha ao ler a proposta:", propostaError.message);
+    return { ok: false, status: 500, message: "Não foi possível ler o pedido no banco." };
+  }
+  if (!propostaRow) return { ok: false, status: 404, message: `Pedido ${idInt} não encontrado.` };
+
+  const proposta = propostaRow as {
+    id_cliente: number | null;
+    cliente: string | null;
+    empresa: string | null;
+    valor: number | null;
+    valor_total: number | null;
+  };
+  const idEmpresa = empresaEmitenteDoTexto(proposta.empresa);
+  const idCliente = proposta.id_cliente != null && Number(proposta.id_cliente) > 0 ? Number(proposta.id_cliente) : null;
+
+  const [empresaRes, clienteRes, enderecosRes, itensRes, notasRes] = await Promise.all([
+    supabase.from("empresas").select("id, nome_fantasia, ambiente_nfse").eq("id", idEmpresa).maybeSingle(),
+    idCliente
+      ? supabase.from("clientes").select("id_cliente, nome, fantasia, documento").eq("id_cliente", idCliente).maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+    idCliente
+      ? supabase
+          .from("enderecos")
+          .select("id, cep, endereco, numero, complemento, bairro, cidade, uf, tipo_endereco")
+          .eq("id_cliente", idCliente)
+      : Promise.resolve({ data: [], error: null }),
+    supabase.from("produtos_proposta").select("id, nome_produto, qtd, valor_unt, status_item").eq("id_int", idInt).order("id"),
+    supabase.from("notas_servico").select(COLUNAS_DA_NOTA_DE_SERVICO).eq("id_int", idInt)
+  ]);
+
+  const falhou = [empresaRes, clienteRes, enderecosRes, itensRes, notasRes].find((r) => r.error);
+  if (falhou?.error) {
+    console.error("[API][Nfse] Falha ao ler os dados do pedido:", falhou.error.message);
+    return { ok: false, status: 500, message: "Não foi possível ler os dados do pedido no banco." };
+  }
+
+  const empresa = (empresaRes.data ?? null) as { nome_fantasia?: string | null; ambiente_nfse?: string | null } | null;
+  const cliente = (clienteRes.data ?? null) as { nome?: string | null; fantasia?: string | null; documento?: string | null } | null;
+  const documento = documentoDoTomador(cliente?.documento);
+
+  const enderecosBrutos = (enderecosRes.data ?? []) as Record<string, unknown>[];
+  const reconhecidos = new Map<string, boolean>();
+  if (servico) {
+    const pares = Array.from(new Set(enderecosBrutos.map((e) => `${texto(e.cidade)}|${texto(e.uf)}`)));
+    await Promise.all(
+      pares.map(async (par) => {
+        const [cidade, uf] = par.split("|");
+        if (!cidade || !uf) return void reconhecidos.set(par, false);
+        const { data, error } = await servico.rpc("fn_nfse_codigo_municipio", { p_cidade: cidade, p_uf: uf });
+        if (error) console.warn("[API][Nfse] Não foi possível conferir o município:", error.message);
+        reconhecidos.set(par, !error && texto(data) !== "");
+      })
+    );
+  }
+
+  const enderecos: EnderecoDoTomador[] = enderecosBrutos.map((e) => {
+    const cidade = texto(e.cidade);
+    const uf = texto(e.uf);
+    const rua = [texto(e.endereco), texto(e.numero)].filter(Boolean).join(", ");
+    const linha = [rua, texto(e.complemento), texto(e.bairro)].filter(Boolean).join(" - ");
+    return {
+      id: texto(e.id),
+      linha: linha || "(endereço sem logradouro)",
+      cidade,
+      uf,
+      cep: texto(e.cep),
+      tipo: texto(e.tipo_endereco),
+      municipioReconhecido: reconhecidos.get(`${cidade}|${uf}`) === true
+    };
+  });
+
+  const itens = ((itensRes.data ?? []) as Record<string, unknown>[])
+    .filter((i) => texto(i.status_item).toUpperCase() !== "CANCELADO")
+    .map((i) => ({
+      nome: texto(i.nome_produto) || null,
+      quantidade: i.qtd == null ? null : Number(i.qtd),
+      valorUnitario: i.valor_unt == null ? null : Number(i.valor_unt)
+    }));
+
+  const notas = ((notasRes.data ?? []) as unknown as NotaDeServicoLida[]).map((n) => ({
+    ...n,
+    numero_nfse: n.numero_nfse == null ? null : String(n.numero_nfse)
+  }));
+
+  return {
+    ok: true,
+    contexto: {
+      idInt,
+      totalDoPedido: Number(proposta.valor_total) || Number(proposta.valor) || 0,
+      empresa: {
+        id: idEmpresa,
+        nome: texto(empresa?.nome_fantasia) || `Empresa ${idEmpresa}`,
+        ambiente: ambienteDaEmpresa(empresa?.ambiente_nfse),
+        liberada: empresaLiberadaParaNfse(idEmpresa)
+      },
+      tomador: {
+        idCliente,
+        nome: texto(cliente?.nome) || texto(cliente?.fantasia) || texto(proposta.cliente) || "(cliente sem nome)",
+        documentoOk: documento.ok,
+        tipoDocumento: documento.tipo
+      },
+      servico: SERVICO_NFSE,
+      enderecos,
+      descricaoSugerida: descricaoDosItens(idInt, itens),
+      notas,
+      decisao: decidirNfseDoPedido(notas)
+    }
+  };
+}
+
+/** Número de pedido válido vindo do navegador. */
+export function lerIdInt(valor: unknown): number | null {
+  const numero = typeof valor === "number" ? valor : Number(String(valor ?? "").trim());
+  return Number.isSafeInteger(numero) && numero > 0 ? numero : null;
+}
