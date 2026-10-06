@@ -1,6 +1,6 @@
 # Proposta: aba Artes
 
-> **Última revisão:** 02/10/2026
+> **Última revisão:** 06/10/2026
 > **Caminho no menu:** Pedidos → abrir um pedido → Editar proposta → aba Artes
 > **Endereço:** `/orcamentos/[número]/editar?tab=artes`
 
@@ -126,7 +126,7 @@ O bloco **Últimos pedidos** lista as cinco propostas mais recentes do mesmo cli
 
 ## Regras e bloqueios
 
-- Não dá para abrir a aba Artes enquanto houver modelo incompleto na aba Pedido. A janela **Modelos incompletos** lista, por modelo, o que falta entre: Modelo, Qtd, Cor Papel, Numerador, Nº Inicial, Nº Final e Verso. Aparece também "Nº Final < Inicial" quando a numeração final é menor que a inicial.
+- Não dá para abrir a aba Artes enquanto houver modelo incompleto na aba Pedido. A janela **Modelos incompletos** lista, por modelo, o que falta entre: Modelo, Qtd, Cor Papel, Numerador, Nº Inicial, Nº Final e Verso. A Cor Papel só é cobrada de produto que tem cor para escolher (formato com cores); produto sem formato, como os serviços, passa sem ela. Aparece também "Nº Final < Inicial" quando a numeração final é menor que a inicial.
 - A trava só cobra o campo que o produto usa. Se o produto não tem verso ou numeração, esses campos nem aparecem na aba Pedido e não são cobrados aqui. Modelo de produto removido do pedido também não é cobrado.
 - Não dá para iniciar a arte de um pedido sem modelos. A aba mostra o aviso e nada mais.
 - Não dá para enviar para arte sem o **Nome do Evento / Tema**.
