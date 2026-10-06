@@ -50,7 +50,13 @@ import { cn } from "@/lib/utils";
 import { StatusBadge } from "@/components/common/StatusBadge";
 import type { StatusTone } from "@/lib/types";
 import type { PedidoModeloState } from "@/features/orcamentos/types";
-import { mostraCampo, type ChecklistVisivel } from "@/features/orcamentos/lib/checklist-lote";
+import {
+  corDoPapelObrigatoria,
+  seletorDeCorTemOpcao,
+  loteCompleto,
+  mostraCampo,
+  type ChecklistVisivel
+} from "@/features/orcamentos/lib/checklist-lote";
 import { buscarArquivoCorPapel } from "@/features/orcamentos/services/pedidos-modelos.service";
 import {
   TIPO_CAMAROTE,
@@ -301,20 +307,23 @@ export function PreviaCorPapel({ nomeCor }: { nomeCor: string | null | undefined
 // ─── Completude ──────────────────────────────────────────────────────────────
 
 /**
- * Os campos com asterisco do formulário: nome, quantidade e — só quando o
- * produto a imprime — a cor do papel. É o mínimo para um lote existir no
- * banco; o card usa isto para decidir quando criar o modelo, e a lista rápida
- * para decidir quais linhas entram na gravação.
+ * Os campos com asterisco do formulário: nome, quantidade e a cor do papel —
+ * esta só quando o checklist do item marca "cor" E o produto tem ao menos uma
+ * cor para escolher (`corDoPapelObrigatoria`, em lib/checklist-lote). É o
+ * mínimo para um lote existir no banco; o card usa isto para decidir quando
+ * criar o modelo, e a lista rápida para decidir quais linhas entram na
+ * gravação.
+ *
+ * `temCoresParaEscolher` é obrigatório de propósito: quem chama tem de dizer se
+ * o seletor de cor do item tem opção. Produto sem formato, ou formato sem
+ * cores, grava o lote com a cor vazia.
  */
 export function modeloCompleto(
   mod: Pick<PedidoModeloState, "nome_modelo" | "padrao" | "quantidade">,
-  visivel: ChecklistVisivel
+  visivel: ChecklistVisivel,
+  temCoresParaEscolher: boolean
 ): boolean {
-  return Boolean(
-    mod.nome_modelo?.trim() &&
-    (!mostraCampo(visivel, "cor") || mod.padrao?.trim()) &&
-    mod.quantidade > 0
-  );
+  return loteCompleto(mod, visivel, temCoresParaEscolher);
 }
 
 // ─── Campos do modelo ────────────────────────────────────────────────────────
@@ -348,10 +357,13 @@ export function colunasDaLista({
   simplificado,
   visivel,
   itemPrateleira,
+  temCoresParaEscolher,
 }: {
   simplificado: boolean;
   visivel: ChecklistVisivel;
   itemPrateleira: boolean;
+  /** O produto tem cor para escolher? Sem isso a coluna aparece sem asterisco. */
+  temCoresParaEscolher: boolean;
 }): ColunaDaLista[] {
   const completo = !simplificado && !itemPrateleira;
   const colunas: ColunaDaLista[] = [];
@@ -361,7 +373,13 @@ export function colunasDaLista({
     colunas.push({ chave: "num_inicio", rotulo: "Nº Inicial", largura: "84px" });
     colunas.push({ chave: "num_fim", rotulo: "Nº Final", largura: "84px" });
   }
-  if (mostraCampo(visivel, "cor")) colunas.push({ chave: "cor", rotulo: "Cor papel *", largura: "minmax(130px, 1.5fr)" });
+  if (mostraCampo(visivel, "cor")) {
+    colunas.push({
+      chave: "cor",
+      rotulo: corDoPapelObrigatoria(visivel, temCoresParaEscolher) ? "Cor papel *" : "Cor papel",
+      largura: "minmax(130px, 1.5fr)"
+    });
+  }
   if (completo) colunas.push({ chave: "bloco", rotulo: "Bloco", largura: "96px" });
   if (!itemPrateleira && mostraCampo(visivel, "impressao_fv")) {
     colunas.push({ chave: "verso", rotulo: "Verso", largura: "132px" });
@@ -467,6 +485,9 @@ export function ModeloCampos({
   const filteredCores = hasConfig ? coresOpcoes.filter((c) => {
     return String(c.formato_id) === String(itemIdFormato);
   }) : [];
+
+  // O asterisco só existe quando há cor para escolher (lib/checklist-lote).
+  const corObrigatoria = corDoPapelObrigatoria(visivel, seletorDeCorTemOpcao(itemIdFormato, coresOpcoes));
 
   const corSelecionada = modelo.padrao ? coresOpcoes.find((c) => c.name === modelo.padrao) : null;
   const formatoReferencia = corSelecionada?.formato_id ? String(corSelecionada.formato_id) : String(itemIdFormato);
@@ -634,7 +655,7 @@ export function ModeloCampos({
 
       {mostraCor && (
       <div className={cel(cn("flex-[1.5] min-w-[100px]", simplificado && "order-1"))}>
-        {rotulo("Cor papel *")}
+        {rotulo(corObrigatoria ? "Cor papel *" : "Cor papel")}
           <select
             className={campo}
             value={modelo.padrao || ""}

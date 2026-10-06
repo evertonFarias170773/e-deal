@@ -2,6 +2,7 @@ import { getSupabaseClient } from "@/lib/supabase/client";
 import { STATUS_INICIAL_MODELO } from "@/features/orcamentos/orcamento-utils";
 import {
   anularColunasEscondidas,
+  corDoPapelObrigatoria,
   mostraCampo,
   omitirColunasEscondidas,
   type ChecklistVisivel
@@ -98,11 +99,13 @@ function getClient() {
  * da faixa obrigatória recusaria todo lote novo. `visivel` null = produto sem
  * checklist: validação exatamente como sempre foi.
  */
-function validarInput(input: ModeloInput, visivel: ChecklistVisivel): string | null {
+function validarInput(input: ModeloInput, visivel: ChecklistVisivel, temCoresParaEscolher: boolean): string | null {
   if (!input.nome_modelo?.trim()) {
     return "O nome do modelo é obrigatório.";
   }
-  if (mostraCampo(visivel, "cor") && !input.padrao?.trim()) {
+  // A cor só é cobrada quando há cor para escolher: produto sem formato, ou
+  // formato sem cores, grava o lote com a cor vazia (lib/checklist-lote).
+  if (corDoPapelObrigatoria(visivel, temCoresParaEscolher) && !input.padrao?.trim()) {
     return "A cor do papel (padrão) é obrigatória.";
   }
   if (!input.quantidade || input.quantidade <= 0) {
@@ -322,10 +325,12 @@ export async function validarSaldoModelo(
  */
 export async function criarModelo(
   input: ModeloInput,
-  visivel: ChecklistVisivel
+  visivel: ChecklistVisivel,
+  /** O produto do item tem cor de papel para escolher? Sem isso a cor não é cobrada. */
+  temCoresParaEscolher: boolean
 ): Promise<ServiceResult<PedidoModeloRow>> {
   try {
-    const validationError = validarInput(input, visivel);
+    const validationError = validarInput(input, visivel, temCoresParaEscolher);
     if (validationError) {
       return { success: false, errorMessage: validationError };
     }
@@ -398,7 +403,7 @@ export async function atualizarModelo(id: number, input: ModeloInput): Promise<S
   try {
     // Sem checklist aqui: esta função não tem consumidor hoje e segue com a
     // validação de sempre.
-    const validationError = validarInput(input, null);
+    const validationError = validarInput(input, null, true);
     if (validationError) {
       return { success: false, errorMessage: validationError };
     }

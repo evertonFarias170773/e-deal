@@ -12,7 +12,12 @@ import { useAppToast } from "@/components/common/AppToast";
 import { ContactEditModal } from "@/features/orcamentos/components/ContactEditModal";
 import { PedidoModelosTab, type AcoesDaAbaPedido } from "@/features/orcamentos/components/PedidoModelosTab";
 import { copiarLinkPagamentoExterno } from "@/features/area-cliente/lib/copiar-link-pagamento";
-import { checklistVisivel, pendenciasDoLoteParaArtes } from "@/features/orcamentos/lib/checklist-lote";
+import {
+  checklistVisivel,
+  pendenciasDoLoteParaArtes,
+  produtoTemCoresParaEscolher
+} from "@/features/orcamentos/lib/checklist-lote";
+import { useCoresDeProducao } from "@/features/orcamentos/hooks/useCoresDeProducao";
 import { listChecklistDeProdutos } from "@/features/produtos/services/produto-boletim-campos.service";
 import { ArtesTab, type BriefingArtesDraft } from "@/features/orcamentos/components/ArtesTab";
 import { ProductSearchSelector } from "@/features/orcamentos/components/ProductSearchSelector";
@@ -989,6 +994,8 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
    * ausente do mapa (sem checklist, ou leitura que falhou) = cobrança de sempre.
    */
   const [checklistPorProduto, setChecklistPorProduto] = useState<Map<number, string[]>>(new Map());
+  /** Formatos e cores do cadastro de produção: dizem se o produto tem cor de papel para escolher. */
+  const coresDeProducao = useCoresDeProducao();
   const idsProdutoDosItens = form.itens
     .map((it) => Number(it.id_produto))
     .filter((id) => Number.isInteger(id) && id > 0)
@@ -5752,9 +5759,19 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
 
                     // Campo que o produto não imprime não é cobrado — o card
                     // nem o mostra (mesma regra de lib/checklist-lote).
+                    // A cor só é cobrada de produto que tem cor para escolher
+                    // (formato com cores). Enquanto o cadastro de cores não
+                    // chegou, vale a cobrança de sempre.
                     const faltam = pendenciasDoLoteParaArtes(
                       m,
-                      checklistVisivel(checklistPorProduto.get(Number(itemDoModelo.id_produto)))
+                      checklistVisivel(checklistPorProduto.get(Number(itemDoModelo.id_produto))),
+                      coresDeProducao
+                        ? produtoTemCoresParaEscolher(
+                            itemDoModelo.produto?.id_formato,
+                            coresDeProducao.formatos,
+                            coresDeProducao.cores
+                          )
+                        : true
                     );
 
                     if (faltam.length > 0) {

@@ -1,6 +1,6 @@
 # Proposta: aba Pedido (Boletim Técnico & Lotes)
 
-> **Última revisão:** 04/10/2026
+> **Última revisão:** 06/10/2026
 > **Caminho no menu:** Pedidos → abrir um pedido → Editar proposta → aba Pedido
 > **Endereço:** `/orcamentos/[número]/editar?tab=pedido`
 
@@ -60,12 +60,12 @@ As colunas dependem do produto: campo que o produto não usa não aparece.
 1. **Modelo**: o nome do modelo (exemplo da tela: "Talão"). Dentro do campo aparece o número do modelo ("#1001304") ou "novo", quando a linha ainda não foi gravada.
 2. **Qtd \***: a quantidade daquele modelo. Apertar Enter neste campo cria a próxima linha.
 3. **Nº Inicial** e **Nº Final**: a faixa de numeração. O Nº Final é sempre calculado. O Nº Inicial só pode ser digitado quando nenhuma das duas caixas da faixa **Numeração** está marcada.
-4. **Cor papel \***: escolha na lista. Só aparecem as cores do formato do produto.
+4. **Cor papel \***: escolha na lista. Só aparecem as cores do formato do produto. Em produto sem formato, ou com formato sem cores, o campo aparece como **Cor papel**, sem asterisco, fica apagado e não precisa ser preenchido.
 5. **Bloco**: Nenhum, 10, 15, 20, 25, 40, 50, 75, 100 ou **Outro** (que abre um campo para digitar, exemplo "50x2").
 6. **Verso**: SÓ FRENTE, FRENTE E VERSO, VERSO FIXO ou VERSO VARIÁVEL.
 7. **Numerador**: escolha na lista. Numerador exclusivo de um cliente só aparece em pedido daquele cliente.
 
-Os campos com asterisco são obrigatórios: **Modelo**, **Qtd** e, quando o produto usa cor, **Cor papel**.
+Os campos com asterisco são obrigatórios: **Modelo**, **Qtd** e, quando o produto usa cor e tem cor para escolher, **Cor papel**.
 
 Linha nova já nasce com cor, numerador, verso (SÓ FRENTE) e bloco (50) preenchidos: ela copia a linha anterior e, quando não há anterior, usa o cadastro do produto. A **Qtd** nasce sempre em branco.
 
@@ -148,7 +148,7 @@ O PDF é sempre o do mapa como está hoje no sistema de mapas. Quem publica o PD
 
 1. Para cada produto, a quantidade do produto tem de ser **igual** à soma dos modelos. Soma maior, soma menor e produto sem nenhum modelo barram a liberação.
 2. Confira se o quadro de cada produto mostra **Saldo distribuído 100%** e se não há **Não gravado** em nenhuma lista.
-3. Confira os campos que a aba **Artes** cobra de cada modelo: Modelo, Qtd, Cor Papel, Numerador, Nº Inicial, Nº Final e Verso (só os que o produto usa).
+3. Confira os campos que a aba **Artes** cobra de cada modelo: Modelo, Qtd, Cor Papel, Numerador, Nº Inicial, Nº Final e Verso (só os que o produto usa). A Cor Papel não é cobrada de produto que não tem cor para escolher.
 
 ## Regras e bloqueios
 
@@ -172,6 +172,7 @@ O PDF é sempre o do mapa como está hoje no sistema de mapas. Quem publica o PD
 - Em pedido com cobrança a lista não grava direto. Quem tem permissão grava pelo **Salvar alterações**; quem não tem vê a lista travada.
 - Campo que o produto não usa não aparece e não recebe valor em modelo novo. Em modelo que já existe, o valor guardado nesse campo fica como está.
 - Produto de prateleira mostra só **Qtd** e **Cor papel**. O nome do modelo é o nome do produto, e não há coluna **Arte** nem amostra.
+- A **Cor papel** só é obrigatória quando há cor para escolher: o produto tem formato e esse formato tem cores. Produto sem formato, ou com formato sem cores (os serviços, por exemplo), grava o modelo só com a quantidade, e a cor fica vazia.
 - O Nº Final nunca é digitado. Ele é refeito sempre que a quantidade, o Nº Inicial ou o numerador mudam.
 - Modelo sem quantidade não recebe numeração e não entra na sequência.
 - O botão de linhas cria no máximo 200 de uma vez.
@@ -211,7 +212,7 @@ O PDF é sempre o do mapa como está hoje no sistema de mapas. Quem publica o PD
 | "Mapa Teatro não gravado", com o motivo | A gravação foi recusada. Os setores ficam na lista, sem gravar. | Corrija o que a mensagem aponta e clique em **Gravar lote**. |
 | "O setor informado nao pertence ao mapa ..." | O mapa mudou entre abrir a janela e gravar. | Abra **Mapa Teatro** de novo e escolha o mapa. |
 | "Salve a proposta uma vez antes de montar os lotes deste produto." | O produto foi incluído e o pedido ainda não foi salvo. | Clique em **Salvar alterações** e volte à aba. |
-| "N lote(s) ainda sem os obrigatórios — não são gravados até ficarem completos." | Há linha nova sem Modelo, Qtd ou Cor papel. | Complete a linha ou remova-a. |
+| "N lote(s) ainda sem os obrigatórios — não são gravados até ficarem completos." | Há linha nova sem Modelo, Qtd ou Cor papel (a cor só conta quando o campo tem asterisco). | Complete a linha ou remova-a. |
 | "Complete os campos obrigatórios do modelo #... para voltar a gravar." | Um modelo que já existia ficou sem campo obrigatório. | Preencha o campo naquele modelo e grave de novo. |
 | "Informe a quantidade de pelo menos um lote." | Nenhuma linha tem quantidade. | Preencha a **Qtd**. |
 | "Redução não confirmada: a quantidade do item não foi alterada." | Você cancelou a pergunta de redução. | Nada foi gravado. Ajuste as quantidades ou grave de novo e confirme. |
@@ -222,7 +223,7 @@ O PDF é sempre o do mapa como está hoje no sistema de mapas. Quem publica o PD
 | "Nada reconhecido na lista" — "Esperado uma linha por lote, com a cor e a quantidade — como sai da planilha." | O texto colado não tem linha com número no fim. | Copie de novo, com a cor e a quantidade em cada linha. |
 | "cor da lista não reconhecida: “...” — escolha na Cor papel" | A cor colada não existe no cadastro do produto. | Escolha a cor certa no campo **Cor papel** da linha. |
 | "O frete precisa ser atualizado" | A quantidade mudou e o peso não bate mais com o frete cotado. | Recote o frete na aba **Fretes** antes de gerar a cobrança. |
-| Campo **Cor papel** ou **Numerador** mostrando "Sem formato" | O produto não tem formato configurado no cadastro. | Peça para acertar o cadastro do produto. |
+| Campo **Cor papel** ou **Numerador** mostrando "Sem formato" | O produto não tem formato configurado no cadastro. | Não impede a gravação: a cor não é exigida nesse caso. Se o produto deveria ter cor ou numerador, peça para acertar o cadastro do produto. |
 | "Com um modo de numeração marcado acima, o Nº Inicial é calculado. Desmarque para editar." | Há uma caixa marcada na faixa **Numeração**. | Desmarque a caixa para digitar o Nº Inicial. |
 | A liberação recusa com "A quantidade vendida não bate com a soma dos lotes. Acerte os lotes antes de liberar para produção:" | Algum produto tem quantidade diferente da soma dos modelos, ou não tem modelo. | Acerte os modelos do produto listado e grave. |
 

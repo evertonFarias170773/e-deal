@@ -16,6 +16,7 @@ import { rotuloFaixaExtenso } from "@/features/orcamentos/services/lotes-numerac
 import {
   anularColunasEscondidas,
   checklistVisivel,
+  seletorDeCorTemOpcao,
   mostraCampo,
   type ChecklistVisivel
 } from "@/features/orcamentos/lib/checklist-lote";
@@ -190,9 +191,14 @@ function montarPayloadParcial(mod: PedidoModeloState, campos: Set<CampoAutoSave>
  * boletim a esconde, o campo nem aparece, e cobrá-lo trancaria o lote para
  * sempre. Nome e quantidade são sempre obrigatórios.
  */
-function temDadosMinimos(mod: PedidoModeloState, idInt: number | undefined, visivel: ChecklistVisivel): boolean {
+function temDadosMinimos(
+  mod: PedidoModeloState,
+  idInt: number | undefined,
+  visivel: ChecklistVisivel,
+  temCoresParaEscolher: boolean
+): boolean {
   // Os asteriscos do formulario sao os mesmos da lista rapida: `modeloCompleto`.
-  return Boolean(idInt && mod.id_produto_proposta_origem && modeloCompleto(mod, visivel));
+  return Boolean(idInt && mod.id_produto_proposta_origem && modeloCompleto(mod, visivel, temCoresParaEscolher));
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -251,6 +257,9 @@ function ModeloInlineCard({
   onUpdateParent: (partial: Partial<PedidoModeloState>) => void;
 }) {
   const mostraCor = mostraCampo(visivel, "cor");
+  // O seletor de cor deste item tem opção? Sem formato, ou com formato sem
+  // cores, a cor não é cobrada e o modelo é criado com ela vazia.
+  const temCores = seletorDeCorTemOpcao(itemIdFormato, coresOpcoes);
   const isNew = !modelo.isPersisted;
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [erroSalvar, setErroSalvar] = useState<string | null>(null);
@@ -326,7 +335,7 @@ function ModeloInlineCard({
 
     if (!mod.isPersisted && !criandoRef.current) {
       // Sem os dados mínimos o modelo permanece só no estado local.
-      if (!temDadosMinimos(mod, idInt, visivel)) {
+      if (!temDadosMinimos(mod, idInt, visivel, temCores)) {
         setStatusSeMontado("idle");
         return;
       }
@@ -355,7 +364,7 @@ function ModeloInlineCard({
         C_INI: mod.C_INI ?? null,
         // O checklist do produto: o serviço anula o que ele não imprime — o
         // "SEQUENCIAL" fixo acima inclusive, quando o tipo está escondido.
-      }, visivel).catch((e) => ({ success: false as const, data: undefined, errorMessage: String(e?.message || e) }));
+      }, visivel, temCores).catch((e) => ({ success: false as const, data: undefined, errorMessage: String(e?.message || e) }));
 
       salvandoRef.current = false;
       criandoRef.current = false;
@@ -461,11 +470,11 @@ function ModeloInlineCard({
   const criacaoInicialRef = useRef(false);
   useEffect(() => {
     if (criacaoInicialRef.current) return;
-    if (!isNew || !temDadosMinimos(modelo, idInt, visivel)) return;
+    if (!isNew || !temDadosMinimos(modelo, idInt, visivel, temCores)) return;
     // Só a primeira vez: depois quem agenda é o handleChange.
     criacaoInicialRef.current = true;
     agendarSave(false);
-  }, [isNew, modelo, idInt, visivel]);
+  }, [isNew, modelo, idInt, visivel, temCores]);
 
   /**
    * @param imediato true para selects e toggles (valor discreto, não existe
@@ -582,7 +591,7 @@ function ModeloInlineCard({
             ? "Proposta com cobrança: use “Salvar modelo” para gravar."
             : !hasConfig
               ? "Produto sem formato configurado: cor e numerador indisponíveis, o modelo não pode ser gravado."
-              : isNew && !temDadosMinimos(modelo, idInt, visivel)
+              : isNew && !temDadosMinimos(modelo, idInt, visivel, temCores)
                 ? simplificado
                   ? mostraCor
                     ? "Preencha Qtd e Cor do papel — a gravação é automática a partir daí."

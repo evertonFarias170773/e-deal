@@ -101,7 +101,12 @@ import {
   type NumeracaoOpcao
 } from "@/features/orcamentos/numeracao-modelo-utils";
 import { aplicarNumeracao, type ModoNumeracao } from "@/features/orcamentos/services/lotes-numeracao";
-import { anularColunasEscondidas, checklistVisivel, mostraCampo } from "@/features/orcamentos/lib/checklist-lote";
+import {
+  anularColunasEscondidas,
+  checklistVisivel,
+  seletorDeCorTemOpcao,
+  mostraCampo
+} from "@/features/orcamentos/lib/checklist-lote";
 import { listChecklistDeProdutos } from "@/features/produtos/services/produto-boletim-campos.service";
 import {
   AmostraDoModelo,
@@ -491,8 +496,12 @@ export function LotesGrid({
    */
   const nomeDoLote = (l: Lote) => (itemPrateleira && !l.nome_modelo?.trim() ? item.nome : l.nome_modelo);
 
+  // O seletor de cor deste produto tem opção? Sem formato, ou com formato sem
+  // cores, a cor não é cobrada e a linha grava com ela vazia.
+  const temCores = seletorDeCorTemOpcao(itemIdFormato, coresOpcoes);
+
   const completa = (l: Lote) =>
-    modeloCompleto({ ...l, nome_modelo: nomeDoLote(l), quantidade: Number(l.quantidade) || 0 }, visivel);
+    modeloCompleto({ ...l, nome_modelo: nomeDoLote(l), quantidade: Number(l.quantidade) || 0 }, visivel, temCores);
 
   /**
    * O que impede gravar a grade como está — ou null. Conta a linha em que o
@@ -1032,7 +1041,7 @@ export function LotesGrid({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chavePadroes, visivel]);
 
-  const colunas = colunasDaLista({ simplificado, visivel, itemPrateleira });
+  const colunas = colunasDaLista({ simplificado, visivel, itemPrateleira, temCoresParaEscolher: temCores });
 
   // Proposta com cobrança: espelha no formulário a cada alteração (ver
   // `onPendente`). A primeira passagem é o que veio do banco: nada a espelhar.

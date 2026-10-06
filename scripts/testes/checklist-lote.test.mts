@@ -347,11 +347,11 @@ function entradaDoCard(sobre: Record<string, unknown> = {}) {
   };
 }
 
-async function criarComFalso(entrada: ReturnType<typeof entradaDoCard>, visivel: typeof COMPLETO) {
+async function criarComFalso(entrada: ReturnType<typeof entradaDoCard>, visivel: typeof COMPLETO, temCores = true) {
   falso.zerar();
   falso.responder("produtos_proposta:select", { data: { qtd: 1000 }, error: null }); // saldo do item
   falso.responder("pedidos_modelos:select", { data: [], error: null }); // lotes e maior ordem
-  const res = await modelosSvc.criarModelo(entrada, visivel);
+  const res = await modelosSvc.criarModelo(entrada, visivel, temCores);
   const insert = falso.chamadas.find((c) => c.tabela === "pedidos_modelos" && c.op === "insert");
   return { res, linha: (insert?.payload ?? null) as Record<string, unknown> | null };
 }
@@ -541,23 +541,115 @@ const loteTriband = {
 };
 checar(
   "22563: Triband sem Impressão no checklist não é cobrada por Verso",
-  regra.pendenciasDoLoteParaArtes(loteTriband, regra.checklistVisivel(["cor", "imagem", "num_gabarito", "numeracao_faixa"])),
+  regra.pendenciasDoLoteParaArtes(loteTriband, regra.checklistVisivel(["cor", "imagem", "num_gabarito", "numeracao_faixa"]), true),
   []
 );
 checar(
   "com Impressão marcada, Verso vazio segue cobrado",
-  regra.pendenciasDoLoteParaArtes(loteTriband, COMPLETO),
+  regra.pendenciasDoLoteParaArtes(loteTriband, COMPLETO, true),
   ["Verso"]
 );
 checar(
   "sem checklist: cobrança de sempre, campo por campo",
-  regra.pendenciasDoLoteParaArtes({ nome_modelo: "", quantidade: 0, numeracao_inicio: 10, numeracao_fim: 5 }, SEM_CHECKLIST),
+  regra.pendenciasDoLoteParaArtes({ nome_modelo: "", quantidade: 0, numeracao_inicio: 10, numeracao_fim: 5 }, SEM_CHECKLIST, true),
   ["Modelo", "Qtd", "Cor Papel", "Numerador", "Nº Final < Inicial", "Verso"]
 );
 checar(
   "campo escondido não é cobrado; nome e quantidade sempre são",
-  regra.pendenciasDoLoteParaArtes({ nome_modelo: "", quantidade: 0 }, regra.checklistVisivel(["imagem"])),
+  regra.pendenciasDoLoteParaArtes({ nome_modelo: "", quantidade: 0 }, regra.checklistVisivel(["imagem"]), true),
   ["Modelo", "Qtd"]
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// A COR DO PAPEL SÓ É OBRIGATÓRIA QUANDO HÁ COR PARA ESCOLHER (06/10/2026)
+//
+// 17 produtos ativos tinham "cor" no checklist e nenhum formato: o seletor
+// ficava travado em "Sem formato", o lote nunca ficava completo e a liberação
+// para Produção era barrada pela trava de lotes (pedido 23248, produto 4001).
+// ─────────────────────────────────────────────────────────────────────────────
+const FORMATOS = [
+  { id: "f-ingresso", id_formato_num: 1 },
+  { id: "f-vazio", id_formato_num: 7 } // formato cadastrado, sem nenhuma cor
+];
+const CORES = [{ formato_id: "f-ingresso" }, { formato_id: "f-ingresso" }];
+const SO_COR_E_IMAGEM = regra.checklistVisivel(["cor", "imagem"]); // o checklist dos 9 serviços ADM
+
+checar(
+  "cores: produto sem formato (null, undefined, vazio) não tem cor para escolher",
+  [null, undefined, "", "  "].map((f) => regra.produtoTemCoresParaEscolher(f, FORMATOS, CORES)),
+  [false, false, false, false]
+);
+checar("cores: formato que não existe no cadastro", regra.produtoTemCoresParaEscolher(99, FORMATOS, CORES), false);
+checar("cores: formato cadastrado sem nenhuma cor", regra.produtoTemCoresParaEscolher(7, FORMATOS, CORES), false);
+checar("cores: formato com cores, pelo número", regra.produtoTemCoresParaEscolher(1, FORMATOS, CORES), true);
+checar("cores: formato com cores, pelo número em texto", regra.produtoTemCoresParaEscolher("1", FORMATOS, CORES), true);
+checar("cores: formato com cores, pelo id", regra.produtoTemCoresParaEscolher("f-ingresso", FORMATOS, CORES), true);
+checar("cores: cadastro de cores vazio", regra.produtoTemCoresParaEscolher(1, FORMATOS, []), false);
+checar(
+  "cores: formato sem número não casa com produto sem formato",
+  regra.produtoTemCoresParaEscolher(null, [{ id: "f-x", id_formato_num: null }], [{ formato_id: "f-x" }]),
+  false
+);
+checar(
+  "cores: pelo formato já resolvido (o que o seletor da tela usa)",
+  [regra.formatoTemCores("f-ingresso", CORES), regra.formatoTemCores("f-vazio", CORES), regra.formatoTemCores(null, CORES)],
+  [true, false, false]
+);
+
+checar(
+  "seletor: cadastro de cores ainda não carregado mantém a cor cobrada; carregado, decide pelo formato",
+  [
+    regra.seletorDeCorTemOpcao(null, []),
+    regra.seletorDeCorTemOpcao("f-ingresso", []),
+    regra.seletorDeCorTemOpcao(null, CORES),
+    regra.seletorDeCorTemOpcao("f-vazio", CORES),
+    regra.seletorDeCorTemOpcao("f-ingresso", CORES)
+  ],
+  [true, true, false, false, true]
+);
+checar(
+  "obrigatória: checklist marca cor E há cor para escolher",
+  [
+    regra.corDoPapelObrigatoria(SO_COR_E_IMAGEM, true),
+    regra.corDoPapelObrigatoria(SO_COR_E_IMAGEM, false),
+    regra.corDoPapelObrigatoria(regra.checklistVisivel(["imagem"]), true),
+    regra.corDoPapelObrigatoria(regra.checklistVisivel(["imagem"]), false),
+    regra.corDoPapelObrigatoria(SEM_CHECKLIST, true),
+    regra.corDoPapelObrigatoria(SEM_CHECKLIST, false)
+  ],
+  [true, false, false, false, true, false]
+);
+
+const servico = { nome_modelo: "*Pag. c/Fecham Arq e 03 Provas", quantidade: 1, padrao: null };
+checar("lote: produto sem formato — quantidade 1, sem cor, está COMPLETO", regra.loteCompleto(servico, SO_COR_E_IMAGEM, false), true);
+checar("lote: formato sem cores — sem cor, está completo", regra.loteCompleto({ ...servico, padrao: "" }, SO_COR_E_IMAGEM, false), true);
+checar("lote: formato COM cores — sem cor, continua incompleto", regra.loteCompleto(servico, SO_COR_E_IMAGEM, true), false);
+checar("lote: formato com cores e cor escolhida — completo", regra.loteCompleto({ ...servico, padrao: "Azul" }, SO_COR_E_IMAGEM, true), true);
+checar("lote: cor só com espaços não conta como preenchida", regra.loteCompleto({ ...servico, padrao: "   " }, SO_COR_E_IMAGEM, true), false);
+checar("lote: checklist sem cor — completo com ou sem cores no formato", [regra.loteCompleto(servico, regra.checklistVisivel(["imagem"]), true), regra.loteCompleto(servico, regra.checklistVisivel(["imagem"]), false)], [true, true]);
+checar("lote: sem checklist e com cores — cor segue obrigatória", regra.loteCompleto(servico, SEM_CHECKLIST, true), false);
+checar("lote: sem checklist e sem cores — completo", regra.loteCompleto(servico, SEM_CHECKLIST, false), true);
+checar(
+  "lote: nome e quantidade continuam obrigatórios, haja cor ou não",
+  [
+    regra.loteCompleto({ nome_modelo: " ", quantidade: 1, padrao: null }, SO_COR_E_IMAGEM, false),
+    regra.loteCompleto({ nome_modelo: "Serviço", quantidade: 0, padrao: null }, SO_COR_E_IMAGEM, false),
+    regra.loteCompleto({ nome_modelo: "Serviço", quantidade: null, padrao: null }, SO_COR_E_IMAGEM, false)
+  ],
+  [false, false, false]
+);
+
+checar("aba Artes: produto sem cores não é barrado por Cor Papel", regra.pendenciasDoLoteParaArtes(servico, SO_COR_E_IMAGEM, false), []);
+checar("aba Artes: produto com cores continua barrado por Cor Papel", regra.pendenciasDoLoteParaArtes(servico, SO_COR_E_IMAGEM, true), ["Cor Papel"]);
+
+const cardSemCor = await criarComFalso(entradaDoCard({ padrao: null }), SO_COR_E_IMAGEM, false);
+checar("card: produto sem cores cria o modelo sem cor", cardSemCor.res.success, true);
+checar("card: a cor vai vazia (null) para o banco", cardSemCor.linha?.padrao ?? null, null);
+const cardComCores = await criarComFalso(entradaDoCard({ padrao: null }), SO_COR_E_IMAGEM, true);
+checar(
+  "card: produto com cores continua recusando modelo sem cor",
+  [cardComCores.res.success, cardComCores.res.errorMessage, cardComCores.linha],
+  [false, "A cor do papel (padrão) é obrigatória.", null]
 );
 
 console.log(falhas === 0 ? "\nTUDO OK" : `\n${falhas} FALHA(S)`);
