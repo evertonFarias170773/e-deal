@@ -7,6 +7,7 @@ import {
   detectarNfseJaEmitida,
   mensagemNfseJaEmitida
 } from "@/features/fiscal/services/nfse-ja-emitida";
+import { empresaLiberadaParaNfse } from "@/features/nfse/lib/regras-emissao";
 
 /**
  * Emissão de NFS-e — porta de entrada no servidor.
@@ -183,6 +184,21 @@ export async function POST(request: Request) {
 
     const nota = notaRow as NotaServicoParaEnvio;
 
+    // 4b. Empresa: só as da lista fechada emitem NFS-e pelo Vibe, em qualquer
+    //     ambiente. É a MESMA lista das rotas de rascunho e de consulta
+    //     (`EMPRESAS_NFSE_LIBERADAS`), e a recusa vem antes de qualquer escrita
+    //     — a primeira é a reserva, no passo 7.
+    if (!empresaLiberadaParaNfse(nota.id_empresa == null ? null : Number(nota.id_empresa))) {
+      return NextResponse.json(
+        {
+          success: false,
+          code: "EMPRESA_NAO_LIBERADA",
+          message: "A emissão de NFS-e pelo Vibe não está liberada para a empresa desta nota.",
+        },
+        { status: 422 }
+      );
+    }
+
     // 5. Trava de duplicidade — a parte declarativa.
     const status = String(nota.status ?? "").toUpperCase();
     if (!STATUS_ENVIAVEIS.includes(status)) {
@@ -242,27 +258,17 @@ export async function POST(request: Request) {
       );
     }
 
-    // 6b. PRODUÇÃO NÃO TEM CAMINHO — e por isso é recusa, não registro.
+    // 6b. PRODUÇÃO PASSA, para empresa liberada (desde 06/10/2026).
     //
-    //     Os dez nós Focus do fluxo de NFS-e apontam, todos, para
-    //     `homologacao.focusnfe.com.br`. Se uma empresa for virada para produção
-    //     em Cadastros, gravar "producao" nesta coluna enquanto o fluxo
-    //     transmite para homologação faria o banco mentir sobre onde a nota
-    //     saiu — exatamente o defeito que `ambiente-fiscal.ts` existe para
-    //     evitar na NF-e. Melhor recusar e dizer onde arrumar.
-    if (ambienteResolvido.ambiente === "producao") {
-      return NextResponse.json(
-        {
-          success: false,
-          code: "AMBIENTE_SEM_CAMINHO",
-          message:
-            `A empresa ${ambienteResolvido.empresa} está marcada para emitir NFS-e em produção, ` +
-            `mas a integração de NFS-e ainda transmite só para homologação. ` +
-            `Enquanto o fluxo não apontar para produção, a emissão fica bloqueada para não registrar ambiente errado.`,
-        },
-        { status: 422 }
-      );
-    }
+    //     Até aqui esta rota recusava toda produção (`AMBIENTE_SEM_CAMINHO`).
+    //     A barreira agora é a empresa (passo 4b): quem está na lista emite no
+    //     ambiente que `empresas.ambiente_nfse` disser — homologação ou
+    //     produção. Ambiente vazio ou desconhecido já foi recusado acima.
+    //
+    //     A rota NÃO manda o ambiente ao n8n: quem escolhe o host da Focus é o
+    //     fluxo. Virar `ambiente_nfse` para produção só é seguro depois de o
+    //     fluxo ter o caminho de produção da empresa — antes disso a nota
+    //     sairia em homologação com "producao" gravado no banco.
 
     // 7. Trava de duplicidade — a parte que vale contra corrida.
     //

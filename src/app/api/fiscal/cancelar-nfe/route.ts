@@ -30,6 +30,10 @@ const STATUS_CANCELAVEL = "AUTORIZADA";
 /** A SEFAZ e as prefeituras exigem justificativa; 15 é o mínimo legal da NF-e. */
 const MINIMO_JUSTIFICATIVA = 15;
 
+/** O que a tela mostra quando alguém tenta cancelar NFS-e (ver o passo 4b). */
+const MENSAGEM_CANCELAMENTO_NFSE_INDISPONIVEL =
+  "Cancelamento de NFS-e ainda não está disponível no Vibe. Cancele pelo portal nacional (www.nfse.gov.br) e avise o fiscal.";
+
 type NotaCancelavel = {
   id: string;
   ref: string;
@@ -175,6 +179,25 @@ export async function POST(request: Request) {
       return NextResponse.json(
         { success: false, message: "Nota fiscal não encontrada." },
         { status: 404 }
+      );
+    }
+
+    // 4b. NFS-e: o cancelamento pelo Vibe está FECHADO (06/10/2026).
+    //
+    //     O ramo de NFS-e do fluxo de cancelamento no n8n está errado para a
+    //     NFS-e nacional: host de homologação com a credencial de produção,
+    //     endpoint municipal e método de emissão. Enquanto ele não for
+    //     corrigido, a recusa sai daqui — antes do webhook e sem gravar nada —
+    //     para ninguém acreditar que cancelou uma nota que continua valendo.
+    //     A NF-e não passa por este `if`: segue exatamente como era.
+    if (ehNfse) {
+      return NextResponse.json(
+        {
+          success: false,
+          code: "CANCELAMENTO_NFSE_INDISPONIVEL",
+          message: MENSAGEM_CANCELAMENTO_NFSE_INDISPONIVEL,
+        },
+        { status: 422 }
       );
     }
 

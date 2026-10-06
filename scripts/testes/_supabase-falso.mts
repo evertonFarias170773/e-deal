@@ -98,6 +98,11 @@ function construtor(tabela: string) {
 
 const clienteFalso = {
   from: (tabela: string) => construtor(tabela),
+  /** Função do banco: anotada como a "tabela" `rpc:<nome>`, com os argumentos no payload. */
+  rpc: (nome: string, args?: unknown) => {
+    estado.chamadas.push({ tabela: `rpc:${nome}`, op: "select", payload: args, filtros: [] });
+    return Promise.resolve(estado.respostas.get(`rpc:${nome}`) ?? { data: null, error: null });
+  },
   auth: {
     getUser: async () => ({ data: { user: { id: "usuario-de-teste" } }, error: null }),
     getSession: async () => ({ data: { session: null }, error: null })
