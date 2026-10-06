@@ -13,8 +13,80 @@
  *   status LIDO DO BANCO. A tela nunca escreve em `notas_servico`.
  */
 
-/** Serviço único da NFS-e (item 13.05.01 da lista, NBS 121011000). */
+/**
+ * O serviço que a janela traz escolhido (`nfse_servicos_padrao.id`): 13.05.01,
+ * NBS 121011000. Os serviços em si vêm do cadastro, lidos pelo servidor.
+ */
 export const SERVICO_NFSE = { id: 1, codigo: "13.05.01", nbs: "121011000", nome: "Serviços de impressão / composição gráfica" } as const;
+
+/** Um serviço de `nfse_servicos_padrao`, como a janela e a rota o enxergam. */
+export type ServicoNfse = {
+  id: number;
+  nome: string;
+  /** `codigo_servico`: o código de tributação (ex.: "13.05.01"). */
+  codigo: string | null;
+  /** `codigo_nbs`. */
+  nbs: string | null;
+  /** `descricao_padrao`. */
+  descricao: string | null;
+  ativo: boolean;
+};
+
+/**
+ * O NBS que a nota recebe HOJE, seja qual for o serviço escolhido.
+ *
+ * `fn_criar_rascunho_nfse` copia do serviço o código de tributação, mas NÃO o
+ * NBS: a nota nasce sem ele e o gatilho da tabela grava este padrão. Enquanto
+ * for assim, um serviço com outro NBS geraria nota com o NBS errado sem ninguém
+ * ver — por isso `conferirServico` o recusa. Quando a função do banco passar a
+ * copiar o NBS do serviço, esta trava sai.
+ */
+export const NBS_GRAVADO_PELO_BANCO = "121011000";
+
+export type ConferenciaDoServico = { ok: true } | { ok: false; motivo: string };
+
+/**
+ * O serviço pode ser usado num rascunho? Existe, está ativo, tem código de
+ * tributação e NBS de 9 dígitos — e o NBS é o que o banco vai gravar.
+ */
+export function conferirServico(servico: ServicoNfse | null | undefined): ConferenciaDoServico {
+  if (!servico) return { ok: false, motivo: "Serviço não encontrado no cadastro de serviços da NFS-e." };
+  if (!servico.ativo) return { ok: false, motivo: `O serviço "${servico.nome}" está inativo.` };
+  if (!/\d/.test(String(servico.codigo ?? ""))) {
+    return { ok: false, motivo: `O serviço "${servico.nome}" está sem código de tributação no cadastro.` };
+  }
+  const nbs = String(servico.nbs ?? "").replace(/\D/g, "");
+  if (nbs.length !== 9) {
+    return { ok: false, motivo: `O serviço "${servico.nome}" está sem NBS de 9 dígitos no cadastro.` };
+  }
+  if (nbs !== NBS_GRAVADO_PELO_BANCO) {
+    return {
+      ok: false,
+      motivo:
+        `O serviço "${servico.nome}" tem NBS ${nbs}, mas o banco ainda grava ${NBS_GRAVADO_PELO_BANCO} em toda nota. ` +
+        "A emissão com este serviço depende de um ajuste no banco."
+    };
+  }
+  return { ok: true };
+}
+
+/**
+ * Nome do arquivo baixado: "NFS-e-14-Pedido-23248.pdf". Sem o número da NFS-e
+ * (não deveria acontecer em nota autorizada), vai a referência interna.
+ */
+export function nomeDoArquivoNfse(entrada: {
+  numeroNfse: string | number | null | undefined;
+  idInt: number | null | undefined;
+  ref: string;
+  tipo: "pdf" | "xml";
+}): string {
+  const limpar = (valor: unknown) => String(valor ?? "").replace(/[^0-9A-Za-z]+/g, "");
+  const numero = limpar(entrada.numeroNfse);
+  const pedido = Number(entrada.idInt) > 0 ? String(Math.trunc(Number(entrada.idInt))) : "";
+  const partes = ["NFS-e", numero || String(entrada.ref).replace(/[^0-9A-Za-z-]+/g, "")];
+  if (pedido) partes.push("Pedido", pedido);
+  return `${partes.join("-")}.${entrada.tipo}`;
+}
 
 /**
  * Empresas que podem emitir NFS-e pela Fila. LISTA FECHADA NO CÓDIGO, de

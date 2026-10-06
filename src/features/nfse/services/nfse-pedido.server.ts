@@ -10,7 +10,8 @@ import {
   empresaEmitenteDoTexto,
   empresaLiberadaParaNfse,
   type AmbienteDaEmpresa,
-  type DecisaoDoPedido
+  type DecisaoDoPedido,
+  type ServicoNfse
 } from "@/features/nfse/lib/regras-emissao";
 
 /**
@@ -31,7 +32,8 @@ type Cliente = SupabaseClient<any, any, any>;
 
 export const COLUNAS_DA_NOTA_DE_SERVICO =
   "id, ref, id_int, id_empresa, status, status_focus, numero_nfse, url_pdf, url_xml, valor_servicos, discriminacao, " +
-  "id_endereco_tomador, mensagem_prefeitura, erro_mensagem, ambiente, tentativas_envio, created_at";
+  "id_endereco_tomador, mensagem_prefeitura, erro_mensagem, ambiente, tentativas_envio, created_at, " +
+  "id_servico_padrao, codigo_servico, codigo_nbs";
 
 export type NotaDeServicoLida = {
   id: string;
@@ -51,6 +53,9 @@ export type NotaDeServicoLida = {
   ambiente: string | null;
   tentativas_envio: number | null;
   created_at: string | null;
+  id_servico_padrao: number | null;
+  codigo_servico: string | null;
+  codigo_nbs: string | null;
 };
 
 export type EnderecoDoTomador = {
@@ -69,7 +74,10 @@ export type ContextoNfseDoPedido = {
   totalDoPedido: number;
   empresa: { id: number; nome: string; ambiente: AmbienteDaEmpresa; liberada: boolean };
   tomador: { idCliente: number | null; nome: string; documentoOk: boolean; tipoDocumento: "CPF" | "CNPJ" | null };
-  servico: typeof SERVICO_NFSE;
+  /** Os serviços ATIVOS de `nfse_servicos_padrao`. Vazio se o servidor não pôde ler o cadastro. */
+  servicos: ServicoNfse[];
+  /** O serviço que a janela traz escolhido. */
+  idServicoPadrao: number;
   enderecos: EnderecoDoTomador[];
   descricaoSugerida: string;
   notas: NotaDeServicoLida[];
@@ -128,6 +136,33 @@ export function clienteDeServico(): Cliente | null {
 
 function texto(valor: unknown): string {
   return typeof valor === "string" ? valor.trim() : typeof valor === "number" ? String(valor) : "";
+}
+
+/**
+ * Os serviços de `nfse_servicos_padrao`. A tabela é fechada ao usuário comum
+ * (RLS ligado, sem policy): só o cliente de serviço a lê, e quem chama já
+ * conferiu `fiscal.emit_nfse`. Só leitura — esta tela nunca cadastra serviço.
+ */
+export async function lerServicosNfse(servico: Cliente | null, opcoes?: { soAtivos?: boolean }): Promise<ServicoNfse[]> {
+  if (!servico) return [];
+  let consulta = servico
+    .from("nfse_servicos_padrao")
+    .select("id, nome, codigo_servico, codigo_nbs, descricao_padrao, ativo")
+    .order("id", { ascending: true });
+  if (opcoes?.soAtivos !== false) consulta = consulta.eq("ativo", true);
+  const { data, error } = await consulta;
+  if (error) {
+    console.error("[API][Nfse] Falha ao ler os serviços da NFS-e:", error.message);
+    return [];
+  }
+  return ((data ?? []) as Record<string, unknown>[]).map((linha) => ({
+    id: Number(linha.id),
+    nome: texto(linha.nome) || `Serviço ${linha.id}`,
+    codigo: texto(linha.codigo_servico) || null,
+    nbs: texto(linha.codigo_nbs) || null,
+    descricao: texto(linha.descricao_padrao) || null,
+    ativo: linha.ativo === true
+  }));
 }
 
 type Falha = { ok: false; status: number; message: string; code?: string };
@@ -230,6 +265,8 @@ export async function lerContextoNfseDoPedido(
       valorUnitario: i.valor_unt == null ? null : Number(i.valor_unt)
     }));
 
+  const servicos = await lerServicosNfse(servico);
+
   const notas = ((notasRes.data ?? []) as unknown as NotaDeServicoLida[]).map((n) => ({
     ...n,
     numero_nfse: n.numero_nfse == null ? null : String(n.numero_nfse)
@@ -252,7 +289,8 @@ export async function lerContextoNfseDoPedido(
         documentoOk: documento.ok,
         tipoDocumento: documento.tipo
       },
-      servico: SERVICO_NFSE,
+      servicos,
+      idServicoPadrao: servicos.some((s) => s.id === SERVICO_NFSE.id) ? SERVICO_NFSE.id : (servicos[0]?.id ?? SERVICO_NFSE.id),
       enderecos,
       descricaoSugerida: descricaoDosItens(idInt, itens),
       notas,

@@ -4,12 +4,14 @@ import {
   clienteDeServico,
   lerContextoNfseDoPedido,
   lerIdInt,
+  lerServicosNfse,
   respostaDeErro
 } from "@/features/nfse/services/nfse-pedido.server";
 import {
   SERVICO_NFSE,
   conferirDescricao,
   conferirEndereco,
+  conferirServico,
   conferirValor,
   decisaoPermiteRascunhoNovo
 } from "@/features/nfse/lib/regras-emissao";
@@ -30,8 +32,10 @@ import {
  *   sessão e `fiscal.emit_nfse` — ANTES de usar a chave de serviço.
  *
  * O QUE VEM DO NAVEGADOR
- *   Só o pedido, o endereço escolhido, a descrição e o valor. Cliente, empresa,
- *   serviço e autor saem do banco e da sessão.
+ *   Só o pedido, o endereço escolhido, o serviço escolhido, a descrição e o
+ *   valor. Cliente, empresa e autor saem do banco e da sessão. O serviço é
+ *   relido de `nfse_servicos_padrao`: tem de existir, estar ativo e ter código
+ *   de tributação e NBS válidos (`conferirServico`).
  *
  * EMPRESA
  *   Lista fechada no código (`EMPRESAS_NFSE_LIBERADAS`, hoje só a Ideal Birô).
@@ -143,11 +147,19 @@ export async function POST(request: Request) {
     const valor = conferirValor(corpo?.valor);
     if (!valor.ok) return respostaDeErro(422, valor.motivo, { code: "VALOR_INVALIDO" });
 
+    // O serviço escolhido, relido do cadastro (inativos inclusive, para a recusa
+    // dizer o motivo certo). Sem escolha, vale o padrão.
+    const idServico = lerIdInt(corpo?.id_servico ?? SERVICO_NFSE.id);
+    if (!idServico) return respostaDeErro(422, "Serviço da NFS-e inválido.", { code: "SERVICO_INVALIDO" });
+    const servicoEscolhido = (await lerServicosNfse(servico, { soAtivos: false })).find((s) => s.id === idServico) ?? null;
+    const servicoConferido = conferirServico(servicoEscolhido);
+    if (!servicoConferido.ok) return respostaDeErro(422, servicoConferido.motivo, { code: "SERVICO_INVALIDO" });
+
     const { data, error } = await servico.rpc("fn_criar_rascunho_nfse", {
       p_id_int: idInt,
       p_id_empresa: empresa.id,
       p_id_cliente: tomador.idCliente,
-      p_id_servico_padrao: SERVICO_NFSE.id,
+      p_id_servico_padrao: idServico,
       p_valor_servicos: valor.valor,
       p_discriminacao: descricao.texto,
       p_criado_por_nome: sessao.nomeDoUsuario,

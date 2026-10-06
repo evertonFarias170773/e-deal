@@ -6,7 +6,8 @@
  * A janela NÃO escreve em `notas_servico`. Ela conversa com três rotas:
  *   - `/api/fiscal/rascunho-nfse`  GET lê o pedido; POST cria o rascunho;
  *   - `/api/fiscal/emitir-nfse`    a rota oficial de emissão, com a `ref`;
- *   - `/api/fiscal/consultar-nfse` acompanha, devolvendo o status DO BANCO.
+ *   - `/api/fiscal/consultar-nfse` acompanha, devolvendo o status DO BANCO;
+ *   - `/api/fiscal/nfse-arquivo`   baixa o PDF ou o XML da nota autorizada.
  *
  * O que ela mostra depende do que o pedido já tem (`decidirNfseDoPedido`, a
  * mesma função que as rotas usam):
@@ -19,7 +20,7 @@
  * Rascunho não se edita: errou, cria outro ("Criar outro rascunho").
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AlertTriangle, ExternalLink, Loader2, X } from "lucide-react";
+import { AlertTriangle, Download, ExternalLink, Loader2, X } from "lucide-react";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import { fetchComSessao, SessaoExpiradaError } from "@/lib/supabase/sessao";
 import { abrirLinkDeDocumentoFiscal } from "@/lib/fiscal/documento-nota";
@@ -29,7 +30,9 @@ import {
   LIMITE_DESCRICAO_NFSE,
   MAXIMO_DE_CONSULTAS_NFSE,
   conferirDescricao,
+  conferirServico,
   conferirValor,
+  nomeDoArquivoNfse,
   situacaoDoStatus,
   valorDifereDoPedido
 } from "@/features/nfse/lib/regras-emissao";
@@ -89,6 +92,8 @@ export function GerarNfseModal({
   const [contexto, setContexto] = useState<ContextoNfseDoPedido | null>(null);
   const [modo, setModo] = useState<Modo>({ tipo: "CARREGANDO" });
   const [idEndereco, setIdEndereco] = useState("");
+  const [idServico, setIdServico] = useState<number | null>(null);
+  const [baixando, setBaixando] = useState<null | "pdf" | "xml">(null);
   const [valorTexto, setValorTexto] = useState("");
   const [descricao, setDescricao] = useState("");
   const [alertas, setAlertas] = useState<Alerta[]>([]);
@@ -127,6 +132,7 @@ export function GerarNfseModal({
         }
         const lido = dados as unknown as ContextoNfseDoPedido;
         setContexto(lido);
+        setIdServico((atual) => (atual !== null && lido.servicos.some((sv) => sv.id === atual) ? atual : lido.idServicoPadrao));
 
         if (lido.decisao.acao === "CRIAR") {
           setIdEndereco(lido.enderecos.length === 1 ? lido.enderecos[0].id : "");
@@ -219,6 +225,8 @@ export function GerarNfseModal({
     const valor = conferirValor(valorTexto);
     if (!valor.ok) return setErro(valor.motivo);
     if (contexto.enderecos.length > 0 && !idEndereco) return setErro("Escolha o endereço do tomador.");
+    const servicoConferido = conferirServico(contexto.servicos.find((sv) => sv.id === idServico) ?? null);
+    if (!servicoConferido.ok) return setErro(servicoConferido.motivo);
 
     setOcupado("criar");
     try {
@@ -228,6 +236,7 @@ export function GerarNfseModal({
         body: JSON.stringify({
           id_int: idInt,
           id_endereco: idEndereco || null,
+          id_servico: idServico,
           descricao: desc.texto,
           valor: valor.valor,
           novo
@@ -288,6 +297,43 @@ export function GerarNfseModal({
     }
   }
 
+  /** Baixa o PDF ou o XML pelo servidor (o bucket é privado) e salva com nome legível. */
+  async function baixar(nota: NotaDeServicoLida, tipo: "pdf" | "xml") {
+    if (baixando) return;
+    setAviso(null);
+    setBaixando(tipo);
+    try {
+      const resposta = await fetchComSessao(
+        `/api/fiscal/nfse-arquivo?ref=${encodeURIComponent(nota.ref)}&arquivo=${tipo}`,
+        { cache: "no-store" }
+      );
+      if (!resposta.ok) {
+        const dados = await lerJson(resposta);
+        if (ativo.current) setAviso(String(dados.message ?? "Não foi possível baixar o arquivo."));
+        return;
+      }
+      const arquivo = await resposta.blob();
+      if (arquivo.size === 0) {
+        if (ativo.current) setAviso("O arquivo chegou vazio. Tente de novo.");
+        return;
+      }
+      const endereco = URL.createObjectURL(arquivo);
+      const link = document.createElement("a");
+      link.href = endereco;
+      link.download = nomeDoArquivoNfse({ numeroNfse: nota.numero_nfse, idInt: nota.id_int ?? idInt, ref: nota.ref, tipo });
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(endereco), 60_000);
+    } catch (falha) {
+      if (ativo.current) setAviso(mensagemDaFalha(falha, "Não foi possível baixar o arquivo."));
+    } finally {
+      if (ativo.current) setBaixando(null);
+    }
+  }
+
+  const servicoEscolhido = contexto?.servicos.find((sv) => sv.id === idServico) ?? null;
+  const servicoConferido = conferirServico(servicoEscolhido);
   const ambiente = contexto?.empresa.ambiente ?? null;
   const enderecoEscolhido = contexto?.enderecos.find((e) => e.id === idEndereco) ?? null;
   const valorConferido = conferirValor(valorTexto);
@@ -348,6 +394,50 @@ export function GerarNfseModal({
                 {ambiente === null && "Ambiente da NFS-e não definido no cadastro da empresa"}
               </div>
 
+              <div data-servico-nfse>
+                <label htmlFor="nfse-servico" className="text-xs font-semibold uppercase text-slate-400">
+                  Serviço
+                </label>
+                {modo.tipo === "FORMULARIO" ? (
+                  <>
+                    <select
+                      id="nfse-servico"
+                      value={idServico ?? ""}
+                      onChange={(e) => setIdServico(Number(e.target.value) || null)}
+                      disabled={contexto.servicos.length === 0 || ocupado !== null}
+                      className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-teal-400 disabled:bg-slate-50"
+                    >
+                      {contexto.servicos.length === 0 && <option value="">Nenhum serviço disponível</option>}
+                      {contexto.servicos.map((sv) => (
+                        <option key={sv.id} value={sv.id}>
+                          {[sv.codigo, sv.nome].filter(Boolean).join(" · ")}
+                        </option>
+                      ))}
+                    </select>
+                    {servicoEscolhido && (
+                      <p className="mt-1 text-xs text-slate-600" data-servico-escolhido>
+                        Código de tributação <strong>{servicoEscolhido.codigo || "não informado"}</strong> · NBS{" "}
+                        <strong>{servicoEscolhido.nbs || "não informado"}</strong>
+                        {servicoEscolhido.descricao ? ` · ${servicoEscolhido.descricao}` : ""}
+                      </p>
+                    )}
+                    {!servicoConferido.ok && (
+                      <p role="alert" className="mt-1 text-xs font-semibold text-red-700">
+                        {contexto.servicos.length === 0
+                          ? "Não foi possível ler os serviços da NFS-e. Sem serviço, o rascunho não é criado."
+                          : servicoConferido.motivo}
+                      </p>
+                    )}
+                  </>
+                ) : (
+                  <p className="mt-1 text-sm text-slate-900" data-servico-escolhido>
+                    {modo.tipo === "NOTA"
+                      ? `Código de tributação ${modo.nota.codigo_servico || "não informado"} · NBS ${modo.nota.codigo_nbs || "não informado"}`
+                      : ""}
+                  </p>
+                )}
+              </div>
+
               <dl className="grid grid-cols-1 gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
                 <div>
                   <dt className="text-xs font-semibold uppercase text-slate-400">Tomador</dt>
@@ -359,12 +449,6 @@ export function GerarNfseModal({
                 <div>
                   <dt className="text-xs font-semibold uppercase text-slate-400">Empresa emissora</dt>
                   <dd className="font-semibold text-slate-900">{contexto.empresa.nome}</dd>
-                </div>
-                <div className="sm:col-span-2">
-                  <dt className="text-xs font-semibold uppercase text-slate-400">Serviço</dt>
-                  <dd className="text-slate-900">
-                    {contexto.servico.codigo} · {contexto.servico.nome}
-                  </dd>
                 </div>
               </dl>
 
@@ -523,6 +607,28 @@ export function GerarNfseModal({
                       <ExternalLink className="h-3.5 w-3.5" /> Abrir XML
                     </button>
                   )}
+                  {modo.nota.url_pdf && (
+                    <button
+                      type="button"
+                      onClick={() => void baixar(modo.nota, "pdf")}
+                      disabled={baixando !== null}
+                      className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                    >
+                      {baixando === "pdf" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+                      Baixar PDF
+                    </button>
+                  )}
+                  {modo.nota.url_xml && (
+                    <button
+                      type="button"
+                      onClick={() => void baixar(modo.nota, "xml")}
+                      disabled={baixando !== null}
+                      className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                    >
+                      {baixando === "xml" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+                      Baixar XML
+                    </button>
+                  )}
                   {!modo.nota.url_pdf && !modo.nota.url_xml && (
                     <span className="text-xs text-slate-500">PDF e XML ainda não disponíveis.</span>
                   )}
@@ -664,7 +770,7 @@ export function GerarNfseModal({
               <button
                 type="button"
                 onClick={() => void criarRascunho(modo.novo)}
-                disabled={ocupado !== null || !contexto.tomador.documentoOk || descricaoEstourou}
+                disabled={ocupado !== null || !contexto.tomador.documentoOk || descricaoEstourou || !servicoConferido.ok}
                 className="inline-flex items-center gap-2 rounded-2xl bg-[#0b2f4a] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#061d2e] disabled:opacity-50"
               >
                 {ocupado === "criar" && <Loader2 className="h-4 w-4 animate-spin" />}

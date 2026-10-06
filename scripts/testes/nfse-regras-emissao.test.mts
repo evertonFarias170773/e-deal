@@ -14,12 +14,16 @@
  *   4. O texto do botão da Fila.
  *   5. Descrição: preenchida com os itens, de 1 a 1000 caracteres.
  *   6. Valor, documento do tomador e endereço.
+ *   7. Serviço: inativo, sem código de tributação, sem NBS de 9 dígitos ou com
+ *      NBS diferente do que o banco grava não cria rascunho.
+ *   8. O nome do arquivo baixado: número da NFS-e e do pedido.
  */
 import {
   EMPRESAS_NFSE_LIBERADAS,
   LIMITE_DESCRICAO_NFSE,
   conferirDescricao,
   conferirEndereco,
+  conferirServico,
   conferirValor,
   decidirNfseDoPedido,
   decisaoPermiteRascunhoNovo,
@@ -27,6 +31,7 @@ import {
   documentoDoTomador,
   empresaEmitenteDoTexto,
   empresaLiberadaParaNfse,
+  nomeDoArquivoNfse,
   rotuloDoBotaoNfse,
   situacaoDoStatus,
   statusPedeConsulta,
@@ -174,6 +179,46 @@ checar("endereco: obrigatorio quando o cliente tem algum", conferirEndereco(null
 checar("endereco: de outro cliente e recusado", conferirEndereco(B, [A]), { ok: false, motivo: "O endereço informado não pertence ao tomador." });
 checar("endereco: cliente sem endereco segue sem", conferirEndereco(null, []), { ok: true, idEndereco: null });
 checar("endereco: cliente sem endereco nao aceita um de fora", conferirEndereco(A, []).ok, false);
+
+// 7. Serviço
+const servicoOk = { id: 1, nome: "Serviços de impressão", codigo: "13.05.01", nbs: "121011000", descricao: "SERVICOS DE IMPRESSAO", ativo: true };
+checar("servico: o cadastrado hoje passa", conferirServico(servicoOk), { ok: true });
+checar("servico: que nao existe", conferirServico(null), { ok: false, motivo: "Serviço não encontrado no cadastro de serviços da NFS-e." });
+checar("servico: inativo", conferirServico({ ...servicoOk, ativo: false }), { ok: false, motivo: 'O serviço "Serviços de impressão" está inativo.' });
+checar(
+  "servico: sem codigo de tributacao (nulo, vazio, so pontos)",
+  [null, "", " ", ".."].map((codigo) => conferirServico({ ...servicoOk, codigo }).ok),
+  [false, false, false, false]
+);
+checar("servico: sem NBS", conferirServico({ ...servicoOk, nbs: null }), { ok: false, motivo: 'O serviço "Serviços de impressão" está sem NBS de 9 dígitos no cadastro.' });
+checar(
+  "servico: NBS com 8 ou 10 digitos, ou vazio",
+  ["21012200", "1210110000", "", "abc"].map((nbs) => conferirServico({ ...servicoOk, nbs }).ok),
+  [false, false, false, false]
+);
+checar("servico: NBS com pontuacao e 9 digitos passa", conferirServico({ ...servicoOk, nbs: "1.2101.10.00" }).ok, true);
+checar(
+  "servico: NBS de 9 digitos diferente do que o banco grava e recusado",
+  conferirServico({ ...servicoOk, nbs: "121012200" }).ok,
+  false
+);
+checar(
+  "servico: a recusa do NBS diferente diz qual e o do banco",
+  /121012200.*121011000/.test((conferirServico({ ...servicoOk, nbs: "121012200" }) as { motivo: string }).motivo),
+  true
+);
+
+// 8. Nome do arquivo baixado
+checar("arquivo: PDF com numero da NFS-e e do pedido", nomeDoArquivoNfse({ numeroNfse: "14", idInt: 23248, ref: "NFS-23248-001", tipo: "pdf" }), "NFS-e-14-Pedido-23248.pdf");
+checar("arquivo: XML", nomeDoArquivoNfse({ numeroNfse: 14, idInt: 23248, ref: "NFS-23248-001", tipo: "xml" }), "NFS-e-14-Pedido-23248.xml");
+checar("arquivo: numero com lixo fica so com letras e numeros", nomeDoArquivoNfse({ numeroNfse: " 14/2026 ", idInt: 23248, ref: "NFS-23248-001", tipo: "pdf" }), "NFS-e-142026-Pedido-23248.pdf");
+checar("arquivo: sem numero da NFS-e vai a referencia", nomeDoArquivoNfse({ numeroNfse: null, idInt: 23248, ref: "NFS-23248-001", tipo: "pdf" }), "NFS-e-NFS-23248-001-Pedido-23248.pdf");
+checar("arquivo: sem pedido", nomeDoArquivoNfse({ numeroNfse: "14", idInt: null, ref: "NFS-23248-001", tipo: "xml" }), "NFS-e-14.xml");
+checar(
+  "arquivo: nada que o sistema de arquivos recuse",
+  /^[0-9A-Za-z.-]+$/.test(nomeDoArquivoNfse({ numeroNfse: '1"4<>', idInt: 23248, ref: `NFS/..${String.fromCharCode(92)} x:*?`, tipo: "pdf" })),
+  true
+);
 
 console.log(falhas === 0 ? "\nTODOS OS TESTES PASSARAM" : `\n${falhas} TESTE(S) FALHARAM`);
 process.exitCode = falhas === 0 ? 0 : 1;
