@@ -41,7 +41,11 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **NFS-e** | Aba Fila, coluna **Ação**, entre **Nota emitida no sistema antigo** e **Faturar**; só em pedido da **BIRÔ IDEAL** | Abre a janela **Gerar NFS-e**. O texto muda com a nota de serviço do pedido: **NFS-e** (sem nota ou com rascunho), **NFS-e nº N** (autorizada), **NFS-e em análise** e **NFS-e (reenviar)** (o envio falhou). |
 | **Serviço** (lista) | Janela **Gerar NFS-e**, no topo | Escolhe o serviço da nota entre os serviços ativos do cadastro. Abaixo aparecem o código de tributação e o NBS do escolhido. Hoje há um serviço só (13.05.01). |
 | **Criar rascunho** | Janela **Gerar NFS-e** | Grava o rascunho da nota de serviço com o serviço, o endereço, o valor e a descrição da janela. Não transmite nada. |
-| **Emitir NFS-e** / **Reenviar NFS-e** | Janela **Gerar NFS-e**, com o rascunho aberto | Pede confirmação (**Confirmar emissão** ou **Voltar**) e envia a nota. |
+| **Emitir NFS-e** / **Reenviar NFS-e** | Janela **Gerar NFS-e**, com o rascunho aberto | Em homologação, envia a nota na hora, sem pedir confirmação. Em produção, abre a confirmação com o resumo da nota. |
+| **Emitir em PRODUÇÃO** / **Voltar** | Janela **Gerar NFS-e**, na confirmação de produção | **Emitir em PRODUÇÃO** envia a nota com valor fiscal; **Voltar** fecha a confirmação sem enviar. |
+| **Copiar detalhes** | Janela **Gerar NFS-e**, no quadro vermelho de erro | Copia o pedido, a referência da nota, a etapa, a hora e o código do erro, para mandar a quem vai investigar. |
+| **Dispensar** | Janela **Gerar NFS-e**, no quadro vermelho de erro | Tira o erro da janela. Sem isso ele continua aparecendo, mesmo fechando e abrindo a janela. |
+| **Ler de novo** | Janela **Gerar NFS-e**, quando os dados do pedido não carregam | Tenta ler os dados do pedido outra vez. |
 | **Criar outro rascunho** | Janela **Gerar NFS-e**, com o rascunho aberto | Abre o formulário de novo para criar um rascunho novo. O anterior fica sem uso. |
 | **Voltar ao rascunho atual** | Janela **Gerar NFS-e**, no formulário aberto por **Criar outro rascunho** | Desiste do rascunho novo e volta ao que já existe. |
 | **Consultar agora** | Janela **Gerar NFS-e**, com a nota em análise | Pergunta o status da nota na hora, sem esperar a consulta automática. |
@@ -192,13 +196,17 @@ Só para pedido da **BIRÔ IDEAL** e para quem tem a permissão **Emitir NFS-e (
 5. Confira o **Valor do serviço**. Ele vem do total do pedido e pode ser alterado; se ficar diferente do pedido, a janela avisa.
 6. Confira a **Descrição do serviço**. Ela vem com os itens do pedido (nome, quantidade e valor unitário) e pode ser alterada. O contador mostra quantos caracteres já foram usados, de 1000.
 7. Clique em **Criar rascunho**. A janela passa a mostrar o rascunho, com a referência (por exemplo NFS-22760-001), o valor, a descrição e os alertas da conferência.
-8. Clique em **Emitir NFS-e** e depois em **Confirmar emissão**.
+8. Clique em **Emitir NFS-e**. Em homologação a nota é enviada na hora, sem confirmação. Em produção aparece uma confirmação com a faixa **PRODUÇÃO**, a empresa, o tomador e o valor: confira e clique em **Emitir em PRODUÇÃO**.
 9. A janela acompanha a nota sozinha: consulta a cada 15 segundos, por até 5 minutos. Quando a prefeitura responde, aparecem o número da NFS-e e os botões **Abrir PDF**, **Abrir XML**, **Baixar PDF** e **Baixar XML**.
 10. Se passar dos 5 minutos, a janela mostra "A nota continua em análise. Consulte depois.". Clique em **Consultar agora**, ou feche e volte mais tarde pelo botão **NFS-e em análise** da fila.
 
 O pedido continua na fila depois da NFS-e emitida, com o botão **NFS-e nº N**. Clicar nele abre a nota só para leitura, com os mesmos botões de abrir e de baixar o PDF e o XML.
 
 O rascunho não é editado depois de criado. Se o endereço, o valor ou a descrição ficaram errados, clique em **Criar outro rascunho**: o anterior fica sem uso e a nota sai pelo novo.
+
+Enquanto a janela trabalha (lendo o pedido, criando o rascunho, emitindo ou consultando), os botões ficam apagados e aparece "Aguarde, não clique de novo". Depois de 15 segundos o aviso muda para "Ainda processando. Não feche nem clique de novo". A emissão pode levar vários segundos: espere.
+
+Se a resposta não chegar (demora ou queda de conexão), a janela não conclui que deu errado: ela relê a nota e mostra o que existe, por exemplo "A resposta não chegou, mas o envio saiu: a nota está em análise". Leia o quadro vermelho antes de clicar de novo.
 
 ### Conferir parcelas e duplicatas
 
@@ -328,6 +336,9 @@ Nos dois casos a confirmação lista as notas autorizadas que o pedido já tem. 
 - Os serviços da lista vêm do cadastro de serviços da NFS-e. A janela não cadastra nem altera serviço.
 - A descrição do serviço tem de 1 a 1000 caracteres. Acima disso o **Criar rascunho** fica apagado.
 - Quando o município do endereço escolhido não é reconhecido, a nota sai sem o endereço do tomador. A janela avisa e não bloqueia. O mesmo vale para cliente sem endereço cadastrado.
+- Homologação não pede confirmação para emitir. Produção pede uma, com o resumo da nota.
+- A janela nunca tenta de novo sozinha. Depois de um erro, quem decide repetir é você, com o que o quadro vermelho informar.
+- O erro fica na janela até você clicar em **Dispensar**, ou até a nota ser autorizada. Fechar a janela não o apaga.
 - Os alertas mostrados antes de emitir são informativos. Os marcados em vermelho apontam dado que a integração recusa: corrija o cadastro antes de enviar.
 - O número que identifica a nota de serviço é o **número da NFS-e**. A referência (NFS-pedido-sequência) é interna do Vibe.
 - NFS-e não conta como nota do pedido na fila: o pedido não sai da fila por causa dela.
@@ -416,6 +427,14 @@ Nos dois casos a confirmação lista as notas autorizadas que o pedido já tem. 
 | "N de 1000 caracteres: reduza o texto para criar o rascunho." | A descrição passou do limite. | Encurte a descrição. |
 | "Este pedido já tem NFS-e autorizada (nº N)." | Alguém já emitiu a nota deste pedido. | Use a nota existente. A janela passa a mostrá-la. |
 | "A NFS-e ... deste pedido está em análise. Aguarde o desfecho antes de criar outra." | Há uma nota do pedido sem resposta da prefeitura. | Clique em **Consultar agora** ou volte mais tarde. |
+| "A resposta não chegou, mas o rascunho ... foi criado." | A criação do rascunho demorou ou a conexão caiu, e o rascunho existe. | Confira o rascunho mostrado e emita por ele. Não crie outro. |
+| "A resposta não chegou e o rascunho NÃO foi criado." | A criação não chegou ao servidor. | Clique em **Criar rascunho** de novo. |
+| "A resposta não chegou, mas o envio saiu: a nota está em análise." | A emissão demorou ou a conexão caiu, e a nota foi enviada. | Aguarde. A janela acompanha sozinha; se quiser, clique em **Consultar agora**. |
+| "A resposta não chegou, mas a nota foi AUTORIZADA (NFS-e nº N)." | A resposta se perdeu, mas a nota saiu. | Nada a fazer: a nota está emitida. |
+| "... o envio foi registrado e pode estar a caminho. NÃO emita de novo" | O envio foi iniciado e ainda não há retorno gravado. | Não clique em emitir. Aguarde e use **Consultar agora**. |
+| "A resposta não chegou e o envio NÃO foi registrado. A nota continua como rascunho." | A emissão não chegou ao servidor. | Clique em **Emitir NFS-e** de novo. |
+| "A resposta não chegou e não foi possível conferir o estado da nota." | A conexão caiu e a releitura também falhou. | Feche a janela, abra de novo e confira o que aparece antes de repetir. |
+| "A leitura dos dados do pedido demorou demais." ou "Sem conexão com o servidor" | Os dados do pedido não carregaram. | Clique em **Ler de novo**. |
 | "Outra emissão desta mesma nota já está em andamento." | Duas pessoas clicaram em emitir a mesma nota. | Aguarde e clique em **Consultar agora**. |
 | "A empresa ... está marcada para emitir NFS-e em produção, mas a integração de NFS-e ainda transmite só para homologação." | O ambiente da empresa foi mudado para produção. | Avise o administrador. A emissão em produção ainda não está liberada. |
 | Faixa vermelha com a mensagem da prefeitura ou do envio | A nota foi recusada ou o envio falhou. | Leia a mensagem. Em erro de envio, corrija e clique em **Reenviar NFS-e**; em nota recusada pela prefeitura, abra a janela de novo e crie outro rascunho. |
@@ -441,6 +460,7 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/features/fiscal/components/EmissaoNfeModal.tsx`
 - `src/features/nfse/components/GerarNfseModal.tsx`
 - `src/features/nfse/lib/regras-emissao.ts`
+- `src/features/nfse/lib/janela-nfse.ts`
 - `src/features/nfse/services/nfse-pedido.server.ts`
 - `src/app/api/fiscal/rascunho-nfse/route.ts`
 - `src/app/api/fiscal/consultar-nfse/route.ts`

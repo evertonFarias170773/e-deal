@@ -18,9 +18,19 @@
  *   autorizada           → leitura, com PDF e XML.
  *
  * Rascunho não se edita: errou, cria outro ("Criar outro rascunho").
+ *
+ * CONDUTA (lib/janela-nfse)
+ *   - Homologação não pede confirmação: conferir, "Criar rascunho", "Emitir".
+ *     Produção pede UMA, com o resumo e o botão "Emitir em PRODUÇÃO".
+ *   - Enquanto uma chamada roda, os botões ficam desligados e a janela diz
+ *     "Aguarde, não clique de novo". Nada é tentado de novo sozinho.
+ *   - Resposta que não chega (tempo ou rede) não é tratada como falha: a janela
+ *     relê a nota no banco e mostra o que existe.
+ *   - O erro fica na janela até ser dispensado, mesmo fechando e abrindo, com
+ *     "Copiar detalhes".
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AlertTriangle, Download, ExternalLink, Loader2, X } from "lucide-react";
+import { AlertTriangle, Copy, Download, ExternalLink, Loader2, X } from "lucide-react";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import { fetchComSessao, SessaoExpiradaError } from "@/lib/supabase/sessao";
 import { abrirLinkDeDocumentoFiscal } from "@/lib/fiscal/documento-nota";
@@ -36,6 +46,23 @@ import {
   situacaoDoStatus,
   valorDifereDoPedido
 } from "@/features/nfse/lib/regras-emissao";
+import {
+  LIMITE_DA_CHAMADA_MS,
+  chaveDoErroGuardado,
+  codigoDaFalha,
+  depoisDeFalhaAoCriar,
+  depoisDeFalhaAoEmitir,
+  detalhesDoErro,
+  emissaoPedeConfirmacao,
+  falhaEhIncerta,
+  lerErroGuardado,
+  rotuloDoBotaoDeEmitir,
+  textoDeEspera,
+  type ErroDaJanela,
+  type EtapaDaJanela,
+  type FalhaDaChamada,
+  type NotaRelida
+} from "@/features/nfse/lib/janela-nfse";
 import type {
   ContextoNfseDoPedido,
   NotaDeServicoLida
@@ -74,6 +101,27 @@ async function lerJson(resposta: Response): Promise<Record<string, unknown>> {
   }
 }
 
+/** O desfecho de uma chamada da janela: resposta do servidor, sessão vencida ou silêncio. */
+type Chamada =
+  | { tipo: "resposta"; ok: boolean; status: number; dados: Record<string, unknown> }
+  | { tipo: "sessao"; mensagem: string }
+  | { tipo: "sem_resposta"; motivo: "tempo" | "rede" };
+
+/** A nota que manda no pedido, no formato que lib/janela-nfse entende. */
+function notaRelida(contexto: ContextoNfseDoPedido): NotaRelida {
+  const nota = contexto.decisao.nota;
+  if (!nota) return null;
+  return {
+    ref: nota.ref,
+    situacao: situacaoDoStatus(nota.status),
+    numeroNfse: nota.numero_nfse,
+    tentativasEnvio: nota.tentativas_envio
+  };
+}
+
+const SEM_COMO_CONFIRMAR =
+  "A resposta não chegou e não foi possível conferir o estado da nota. Feche a janela, abra de novo e confira antes de tentar outra vez.";
+
 function mensagemDaFalha(falha: unknown, padrao: string): string {
   if (falha instanceof SessaoExpiradaError) return falha.message;
   return falha instanceof Error && falha.message ? falha.message : padrao;
@@ -98,11 +146,22 @@ export function GerarNfseModal({
   const [descricao, setDescricao] = useState("");
   const [alertas, setAlertas] = useState<Alerta[]>([]);
   const [ocupado, setOcupado] = useState<null | "criar" | "emitir" | "consultar">(null);
-  const [erro, setErro] = useState<string | null>(null);
+  /** Falha de uma chamada: fica na janela (e no navegador) até ser dispensada. */
+  const [erro, setErro] = useState<ErroDaJanela | null>(null);
+  /** Campo do formulário que falta: some na próxima tentativa. */
+  const [validacao, setValidacao] = useState<string | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
   const [confirmando, setConfirmando] = useState(false);
   const [consultas, setConsultas] = useState(0);
+  const [decorrido, setDecorrido] = useState(0);
+  const [copiado, setCopiado] = useState(false);
   const ativo = useRef(true);
+  // A Fila passa uma função nova a cada render: guardada aqui, ela não refaz
+  // os efeitos (o relógio da consulta automática recomeçava a cada render).
+  const onMudouRef = useRef(onMudou);
+  useEffect(() => {
+    onMudouRef.current = onMudou;
+  });
 
   useEffect(() => {
     ativo.current = true;
@@ -119,47 +178,126 @@ export function GerarNfseModal({
     setAlertas(error || !Array.isArray(data) ? [] : (data as Alerta[]));
   }, []);
 
-  /** Lê o pedido e escolhe o que a janela mostra. */
-  const carregar = useCallback(
-    async (opcoes?: { acompanhar?: boolean }) => {
+  /** Guarda o erro na janela e no navegador: ele não some ao fechar. */
+  const registrarErro = useCallback(
+    (etapa: EtapaDaJanela, mensagem: string, codigo: string, ref: string | null) => {
+      const novo: ErroDaJanela = { etapa, mensagem, codigo, idInt, ref, quando: new Date().toISOString() };
+      setErro(novo);
+      setCopiado(false);
       try {
-        const resposta = await fetchComSessao(`/api/fiscal/rascunho-nfse?id_int=${idInt}`, { cache: "no-store" });
-        const dados = await lerJson(resposta);
-        if (!ativo.current) return;
-        if (!resposta.ok || dados.success !== true) {
-          setModo({ tipo: "FALHA", mensagem: String(dados.message ?? "Não foi possível ler os dados do pedido.") });
-          return;
-        }
-        const lido = dados as unknown as ContextoNfseDoPedido;
-        setContexto(lido);
-        setIdServico((atual) => (atual !== null && lido.servicos.some((sv) => sv.id === atual) ? atual : lido.idServicoPadrao));
-
-        if (lido.decisao.acao === "CRIAR") {
-          setIdEndereco(lido.enderecos.length === 1 ? lido.enderecos[0].id : "");
-          setValorTexto(lido.totalDoPedido > 0 ? lido.totalDoPedido.toFixed(2).replace(".", ",") : "");
-          setDescricao(lido.descricaoSugerida);
-          setAlertas([]);
-          setModo({ tipo: "FORMULARIO", novo: false });
-          return;
-        }
-
-        const nota = lido.decisao.nota;
-        const emAnalise = lido.decisao.acao === "EM_ANALISE";
-        setModo({ tipo: "NOTA", nota, acompanhando: opcoes?.acompanhar === true || emAnalise });
-        if (lido.decisao.acao === "REABRIR_RASCUNHO" || lido.decisao.acao === "REENVIAR") void carregarAlertas(nota.ref);
-        else setAlertas([]);
-      } catch (falha) {
-        if (ativo.current) setModo({ tipo: "FALHA", mensagem: mensagemDaFalha(falha, "Não foi possível ler os dados do pedido.") });
+        window.sessionStorage.setItem(chaveDoErroGuardado(idInt), JSON.stringify(novo));
+      } catch {
+        /* sem armazenamento: o erro fica só na janela aberta */
       }
     },
-    [idInt, carregarAlertas]
+    [idInt]
+  );
+
+  const limparErro = useCallback(() => {
+    setErro(null);
+    try {
+      window.sessionStorage.removeItem(chaveDoErroGuardado(idInt));
+    } catch {
+      /* nada a limpar */
+    }
+  }, [idInt]);
+
+  /**
+   * UMA chamada, com limite de espera. Não tenta de novo: devolve o que
+   * aconteceu e quem chamou decide — inclusive reler a nota quando o servidor
+   * não respondeu.
+   */
+  const chamar = useCallback(async (etapa: EtapaDaJanela, url: string, init: RequestInit): Promise<Chamada> => {
+    const controle = new AbortController();
+    let esgotou = false;
+    const relogio = window.setTimeout(() => {
+      esgotou = true;
+      controle.abort();
+    }, LIMITE_DA_CHAMADA_MS[etapa]);
+    try {
+      const resposta = await fetchComSessao(url, { ...init, signal: controle.signal });
+      return { tipo: "resposta", ok: resposta.ok, status: resposta.status, dados: await lerJson(resposta) };
+    } catch (falha) {
+      if (falha instanceof SessaoExpiradaError) return { tipo: "sessao", mensagem: falha.message };
+      return { tipo: "sem_resposta", motivo: esgotou ? "tempo" : "rede" };
+    } finally {
+      window.clearTimeout(relogio);
+    }
+  }, []);
+
+  /** Lê o pedido no servidor. Só lê: quem decide o que a janela mostra é `aplicarContexto`. */
+  const lerContexto = useCallback(async (): Promise<{ contexto: ContextoNfseDoPedido } | { falha: string; codigo: string }> => {
+    const c = await chamar("carregar", `/api/fiscal/rascunho-nfse?id_int=${idInt}`, { cache: "no-store" });
+    if (c.tipo === "sessao") return { falha: c.mensagem, codigo: "SESSAO_EXPIRADA" };
+    if (c.tipo === "sem_resposta") {
+      return {
+        falha:
+          c.motivo === "tempo"
+            ? "A leitura dos dados do pedido demorou demais. Tente ler de novo."
+            : "Sem conexão com o servidor para ler os dados do pedido.",
+        codigo: codigoDaFalha(c)
+      };
+    }
+    if (!c.ok || c.dados.success !== true) {
+      return {
+        falha: String(c.dados.message ?? "Não foi possível ler os dados do pedido."),
+        codigo: codigoDaFalha({ tipo: "http", status: c.status }, c.dados.code as string | undefined)
+      };
+    }
+    return { contexto: c.dados as unknown as ContextoNfseDoPedido };
+  }, [chamar, idInt]);
+
+  /** Mostra o que o pedido tem: formulário, rascunho, acompanhamento ou a nota autorizada. */
+  const aplicarContexto = useCallback(
+    (lido: ContextoNfseDoPedido, opcoes?: { acompanhar?: boolean }) => {
+      setContexto(lido);
+      setConfirmando(false);
+      setIdServico((atual) => (atual !== null && lido.servicos.some((sv) => sv.id === atual) ? atual : lido.idServicoPadrao));
+
+      if (lido.decisao.acao === "CRIAR") {
+        setIdEndereco(lido.enderecos.length === 1 ? lido.enderecos[0].id : "");
+        setValorTexto(lido.totalDoPedido > 0 ? lido.totalDoPedido.toFixed(2).replace(".", ",") : "");
+        setDescricao(lido.descricaoSugerida);
+        setAlertas([]);
+        setModo({ tipo: "FORMULARIO", novo: false });
+        return;
+      }
+
+      const nota = lido.decisao.nota;
+      const emAnalise = lido.decisao.acao === "EM_ANALISE";
+      setModo({ tipo: "NOTA", nota, acompanhando: opcoes?.acompanhar === true || emAnalise });
+      if (lido.decisao.acao === "REABRIR_RASCUNHO" || lido.decisao.acao === "REENVIAR") void carregarAlertas(nota.ref);
+      else setAlertas([]);
+    },
+    [carregarAlertas]
+  );
+
+  /** Lê e mostra. Usado ao abrir a janela e nos botões que voltam ao estado do pedido. */
+  const carregar = useCallback(
+    async (opcoes?: { acompanhar?: boolean }) => {
+      const lido = await lerContexto();
+      if (!ativo.current) return;
+      if ("falha" in lido) {
+        setModo({ tipo: "FALHA", mensagem: lido.falha });
+        return;
+      }
+      aplicarContexto(lido.contexto, opcoes);
+    },
+    [lerContexto, aplicarContexto]
   );
 
   useEffect(() => {
-    // A primeira leitura: `carregar` só mexe no estado depois da resposta da rota.
-    const relogio = window.setTimeout(() => void carregar(), 0);
+    // A primeira leitura — e o erro que ficou guardado da última vez neste pedido.
+    const relogio = window.setTimeout(() => {
+      try {
+        setErro(lerErroGuardado(window.sessionStorage.getItem(chaveDoErroGuardado(idInt)), idInt));
+      } catch {
+        /* sem armazenamento */
+      }
+      void carregar();
+    }, 0);
     return () => window.clearTimeout(relogio);
-  }, [carregar]);
+  }, [carregar, idInt]);
 
   useEffect(() => {
     const fecharComEsc = (e: KeyboardEvent) => {
@@ -174,19 +312,21 @@ export function GerarNfseModal({
     async (ref: string, manual: boolean) => {
       if (manual) setOcupado("consultar");
       try {
-        const resposta = await fetchComSessao("/api/fiscal/consultar-nfse", {
+        const c = await chamar("consultar", "/api/fiscal/consultar-nfse", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ ref })
         });
-        const dados = await lerJson(resposta);
         if (!ativo.current) return;
-        if (!resposta.ok || dados.success !== true || !dados.nota) {
-          setAviso(String(dados.message ?? "Não foi possível consultar a nota agora."));
-          return;
+        if (c.tipo === "sessao") return setAviso(c.mensagem);
+        if (c.tipo === "sem_resposta") {
+          return setAviso("A consulta não respondeu. O status mostrado é o último lido; use Consultar agora daqui a pouco.");
         }
-        const nota = dados.nota as NotaDeServicoLida;
-        setAviso(typeof dados.aviso === "string" ? dados.aviso : null);
+        if (!c.ok || c.dados.success !== true || !c.dados.nota) {
+          return setAviso(String(c.dados.message ?? "Não foi possível consultar a nota agora."));
+        }
+        const nota = c.dados.nota as NotaDeServicoLida;
+        setAviso(typeof c.dados.aviso === "string" ? c.dados.aviso : null);
         const situacao = situacaoDoStatus(nota.status);
         // Logo depois do envio o fluxo ainda não gravou "processando": o rascunho
         // continua contando como "aguardando" enquanto a janela acompanha.
@@ -195,16 +335,15 @@ export function GerarNfseModal({
           atual.tipo === "NOTA" ? { tipo: "NOTA", nota, acompanhando: atual.acompanhando && !terminou } : atual
         );
         if (terminou) {
-          onMudou();
+          onMudouRef.current();
+          if (situacao === "AUTORIZADA") limparErro();
           if (situacao === "REENVIAR") void carregarAlertas(nota.ref);
         }
-      } catch (falha) {
-        if (ativo.current) setAviso(mensagemDaFalha(falha, "Não foi possível consultar a nota agora."));
       } finally {
         if (ativo.current && manual) setOcupado(null);
       }
     },
-    [carregarAlertas, onMudou]
+    [chamar, carregarAlertas, limparErro]
   );
 
   const refAcompanhada = modo.tipo === "NOTA" && modo.acompanhando ? modo.nota.ref : null;
@@ -219,18 +358,19 @@ export function GerarNfseModal({
 
   async function criarRascunho(novo: boolean) {
     if (!contexto || ocupado) return;
-    setErro(null);
+    setValidacao(null);
     const desc = conferirDescricao(descricao);
-    if (!desc.ok) return setErro(desc.motivo);
+    if (!desc.ok) return setValidacao(desc.motivo);
     const valor = conferirValor(valorTexto);
-    if (!valor.ok) return setErro(valor.motivo);
-    if (contexto.enderecos.length > 0 && !idEndereco) return setErro("Escolha o endereço do tomador.");
-    const servicoConferido = conferirServico(contexto.servicos.find((sv) => sv.id === idServico) ?? null);
-    if (!servicoConferido.ok) return setErro(servicoConferido.motivo);
+    if (!valor.ok) return setValidacao(valor.motivo);
+    if (contexto.enderecos.length > 0 && !idEndereco) return setValidacao("Escolha o endereço do tomador.");
+    const servicoDoRascunho = conferirServico(contexto.servicos.find((sv) => sv.id === idServico) ?? null);
+    if (!servicoDoRascunho.ok) return setValidacao(servicoDoRascunho.motivo);
 
+    const refAntes = contexto.decisao.nota?.ref ?? null;
     setOcupado("criar");
     try {
-      const resposta = await fetchComSessao("/api/fiscal/rascunho-nfse", {
+      const c = await chamar("criar", "/api/fiscal/rascunho-nfse", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -242,58 +382,114 @@ export function GerarNfseModal({
           novo
         })
       });
-      const dados = await lerJson(resposta);
       if (!ativo.current) return;
-      if (!resposta.ok || dados.success !== true) {
-        setErro(String(dados.message ?? "Não foi possível criar o rascunho."));
-        // Recusa por nota já existente: a janela passa a mostrar a nota.
-        if (resposta.status === 409) await carregar();
+
+      if (c.tipo === "resposta" && c.ok && c.dados.success === true) {
+        limparErro();
+        onMudouRef.current();
+        await carregar();
         return;
       }
-      onMudou();
-      await carregar();
-    } catch (falha) {
-      if (ativo.current) setErro(mensagemDaFalha(falha, "Não foi possível criar o rascunho."));
+      if (c.tipo === "sessao") return registrarErro("criar", c.mensagem, "SESSAO_EXPIRADA", null);
+
+      const falha: FalhaDaChamada = c.tipo === "resposta" ? { tipo: "http", status: c.status } : c;
+      const codigo = codigoDaFalha(falha, c.tipo === "resposta" ? (c.dados.code as string | undefined) : null);
+
+      if (!falhaEhIncerta(falha)) {
+        const dados = c.tipo === "resposta" ? c.dados : {};
+        registrarErro("criar", String(dados.message ?? "Não foi possível criar o rascunho."), codigo, null);
+        // Recusa por nota já existente: a janela passa a mostrar a nota.
+        if (c.tipo === "resposta" && c.status === 409) await carregar();
+        return;
+      }
+
+      // Sem resposta: não se assume que falhou. O que o pedido tem agora?
+      const lido = await lerContexto();
+      if (!ativo.current) return;
+      if ("falha" in lido) return registrarErro("criar", SEM_COMO_CONFIRMAR, codigo, null);
+      const existe = depoisDeFalhaAoCriar(notaRelida(lido.contexto), refAntes);
+      registrarErro("criar", existe.mensagem, codigo, lido.contexto.decisao.nota?.ref ?? null);
+      // Rascunho não criado: o formulário fica como estava, com o que foi digitado.
+      if (existe.aconteceu || existe.acompanhar || lido.contexto.decisao.acao === "MOSTRAR_AUTORIZADA") {
+        onMudouRef.current();
+        aplicarContexto(lido.contexto, { acompanhar: existe.acompanhar });
+      }
     } finally {
       if (ativo.current) setOcupado(null);
     }
   }
 
-  async function emitir(ref: string) {
+  async function emitir(nota: NotaDeServicoLida) {
     if (ocupado) return;
-    setErro(null);
+    const ref = nota.ref;
+    const tentativasAntes = Number(nota.tentativas_envio ?? 0);
     setAviso(null);
     setConfirmando(false);
     setOcupado("emitir");
     try {
-      const resposta = await fetchComSessao("/api/fiscal/emitir-nfse", {
+      const c = await chamar("emitir", "/api/fiscal/emitir-nfse", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ref })
       });
-      const dados = await lerJson(resposta);
       if (!ativo.current) return;
-      if (!resposta.ok || dados.success !== true) {
-        setErro(String(dados.message ?? "Não foi possível enviar a nota."));
-        onMudou();
-        await carregar();
+
+      if (c.tipo === "resposta" && c.ok && c.dados.success === true) {
+        // O 200 da rota é o sucesso da CHAMADA. O fluxo avisa no corpo quando a
+        // conferência bloqueou ou a Focus recusou o envio; o desfecho vem do banco.
+        const retornoBruto = c.dados.retorno;
+        const retorno = (Array.isArray(retornoBruto) ? retornoBruto[0] : retornoBruto) as Record<string, unknown> | null;
+        const recusado = retorno != null && typeof retorno === "object" && retorno.ok === false;
+        if (recusado) {
+          registrarErro(
+            "emitir",
+            String(retorno.mensagem_usuario ?? retorno.mensagem ?? "A nota não foi enviada."),
+            `RECUSADA_PELA_INTEGRACAO${retorno.erro_codigo ? `/${String(retorno.erro_codigo)}` : ""}`,
+            ref
+          );
+        } else {
+          limparErro();
+        }
+        setConsultas(0);
+        onMudouRef.current();
+        await carregar({ acompanhar: !recusado });
         return;
       }
-      // O 200 da rota é o sucesso da CHAMADA. O fluxo avisa no corpo quando a
-      // conferência bloqueou ou a Focus recusou o envio; o desfecho vem do banco.
-      const retornoBruto = dados.retorno;
-      const retorno = (Array.isArray(retornoBruto) ? retornoBruto[0] : retornoBruto) as Record<string, unknown> | null;
-      const recusado = retorno != null && typeof retorno === "object" && retorno.ok === false;
-      if (recusado) {
-        setErro(String(retorno.mensagem_usuario ?? retorno.mensagem ?? "A nota não foi enviada."));
+      if (c.tipo === "sessao") return registrarErro("emitir", c.mensagem, "SESSAO_EXPIRADA", ref);
+
+      const falha: FalhaDaChamada = c.tipo === "resposta" ? { tipo: "http", status: c.status } : c;
+      const codigo = codigoDaFalha(falha, c.tipo === "resposta" ? (c.dados.code as string | undefined) : null);
+
+      // Com ou sem resposta, o que vale é o que está no banco.
+      const lido = await lerContexto();
+      if (!ativo.current) return;
+      onMudouRef.current();
+
+      if (!falhaEhIncerta(falha)) {
+        const dados = c.tipo === "resposta" ? c.dados : {};
+        registrarErro("emitir", String(dados.message ?? "Não foi possível enviar a nota."), codigo, ref);
+        if ("contexto" in lido) aplicarContexto(lido.contexto);
+        return;
       }
+
+      if ("falha" in lido) return registrarErro("emitir", SEM_COMO_CONFIRMAR, codigo, ref);
+      const existe = depoisDeFalhaAoEmitir(notaRelida(lido.contexto), ref, tentativasAntes);
+      registrarErro("emitir", existe.mensagem, codigo, ref);
       setConsultas(0);
-      onMudou();
-      await carregar({ acompanhar: !recusado });
-    } catch (falha) {
-      if (ativo.current) setErro(mensagemDaFalha(falha, "Não foi possível enviar a nota."));
+      aplicarContexto(lido.contexto, { acompanhar: existe.acompanhar });
     } finally {
       if (ativo.current) setOcupado(null);
+    }
+  }
+
+  async function copiarDetalhes() {
+    if (!erro) return;
+    const texto = detalhesDoErro(erro);
+    try {
+      await navigator.clipboard.writeText(texto);
+      setCopiado(true);
+    } catch {
+      window.prompt("Copie os detalhes do erro:", texto);
     }
   }
 
@@ -331,6 +527,19 @@ export function GerarNfseModal({
       if (ativo.current) setBaixando(null);
     }
   }
+
+  // Enquanto uma chamada roda: botões desligados e o aviso de espera, que muda
+  // depois de 15 segundos. Sem nova tentativa automática.
+  const emEspera = modo.tipo === "CARREGANDO" || ocupado !== null;
+  useEffect(() => {
+    if (!emEspera) return;
+    const inicio = Date.now();
+    const relogio = window.setInterval(() => setDecorrido(Date.now() - inicio), 1000);
+    return () => {
+      window.clearInterval(relogio);
+      setDecorrido(0);
+    };
+  }, [emEspera]);
 
   const servicoEscolhido = contexto?.servicos.find((sv) => sv.id === idServico) ?? null;
   const servicoConferido = conferirServico(servicoEscolhido);
@@ -376,7 +585,19 @@ export function GerarNfseModal({
           )}
 
           {modo.tipo === "FALHA" && (
-            <p className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700">{modo.mensagem}</p>
+            <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700">
+              <p>{modo.mensagem}</p>
+              <button
+                type="button"
+                onClick={() => {
+                  setModo({ tipo: "CARREGANDO" });
+                  void carregar();
+                }}
+                className="mt-3 rounded-xl border border-red-300 bg-white px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-50"
+              >
+                Ler de novo
+              </button>
+            </div>
           )}
 
           {contexto && modo.tipo !== "CARREGANDO" && modo.tipo !== "FALHA" && (
@@ -385,11 +606,11 @@ export function GerarNfseModal({
                 data-ambiente={ambiente ?? "indefinido"}
                 className={
                   ambiente === "producao"
-                    ? "rounded-2xl border border-emerald-300 bg-emerald-50 p-3 text-sm font-bold text-emerald-900"
+                    ? "rounded-2xl border-2 border-red-700 bg-red-600 p-3 text-center text-base font-extrabold tracking-wide text-white"
                     : "rounded-2xl border border-amber-300 bg-amber-50 p-3 text-sm font-bold text-amber-900"
                 }
               >
-                {ambiente === "producao" && "PRODUÇÃO"}
+                {ambiente === "producao" && "PRODUÇÃO: NOTA COM VALOR FISCAL"}
                 {ambiente === "homologacao" && "HOMOLOGAÇÃO: NOTA DE TESTE, sem valor fiscal"}
                 {ambiente === null && "Ambiente da NFS-e não definido no cadastro da empresa"}
               </div>
@@ -676,14 +897,62 @@ export function GerarNfseModal({
               {aviso}
             </p>
           )}
-          {erro && (
+          {contexto && modo.tipo === "NOTA" && confirmando && (
+            <div data-confirmacao-producao className="rounded-2xl border-2 border-red-700 bg-red-50 p-4 text-sm text-slate-900">
+              <p className="rounded-xl bg-red-600 px-3 py-2 text-center text-base font-extrabold tracking-wide text-white">
+                PRODUÇÃO
+              </p>
+              <p className="mt-3 font-semibold">Esta nota tem valor fiscal. Confira antes de emitir:</p>
+              <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
+                <dt className="text-slate-500">Empresa</dt>
+                <dd className="font-semibold">{contexto.empresa.nome}</dd>
+                <dt className="text-slate-500">Tomador</dt>
+                <dd className="font-semibold">{contexto.tomador.nome}</dd>
+                <dt className="text-slate-500">Valor</dt>
+                <dd className="font-semibold">{formatCurrency(Number(modo.nota.valor_servicos) || 0)}</dd>
+              </dl>
+            </div>
+          )}
+
+          {validacao && (
             <p role="alert" className="rounded-2xl border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700">
-              {erro}
+              {validacao}
             </p>
+          )}
+
+          {erro && (
+            <div data-erro-nfse={erro.codigo} className="rounded-2xl border border-red-300 bg-red-50 p-3 text-sm text-red-800">
+              <p className="font-semibold">{erro.mensagem}</p>
+              <p className="mt-1 text-xs text-red-700">
+                {erro.ref ? `Nota ${erro.ref} · ` : ""}
+                {new Date(erro.quando).toLocaleString("pt-BR")} · código {erro.codigo}
+              </p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => void copiarDetalhes()}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-red-300 bg-white px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-50"
+                >
+                  <Copy className="h-3.5 w-3.5" /> {copiado ? "Detalhes copiados" : "Copiar detalhes"}
+                </button>
+                <button
+                  type="button"
+                  onClick={limparErro}
+                  className="rounded-xl border border-red-300 bg-white px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-50"
+                >
+                  Dispensar
+                </button>
+              </div>
+            </div>
           )}
         </div>
 
         <div className="mt-4 flex flex-wrap items-center justify-end gap-2 border-t border-slate-100 pt-4">
+          {emEspera && (
+            <p role="status" data-espera className="mr-auto flex items-center gap-2 text-sm font-semibold text-slate-700">
+              <Loader2 className="h-4 w-4 animate-spin" /> {textoDeEspera(decorrido)}
+            </p>
+          )}
           {contexto && modo.tipo === "NOTA" && contexto.empresa.liberada && !modo.acompanhando &&
             (situacaoDoStatus(modo.nota.status) === "RASCUNHO" || situacaoDoStatus(modo.nota.status) === "REENVIAR") && (
               <>
@@ -691,7 +960,7 @@ export function GerarNfseModal({
                   type="button"
                   disabled={ocupado !== null}
                   onClick={() => {
-                    setErro(null);
+                    setValidacao(null);
                     setConfirmando(false);
                     setIdEndereco(contexto.enderecos.length === 1 ? contexto.enderecos[0].id : "");
                     setValorTexto(contexto.totalDoPedido > 0 ? contexto.totalDoPedido.toFixed(2).replace(".", ",") : "");
@@ -704,10 +973,6 @@ export function GerarNfseModal({
                 </button>
                 {confirmando ? (
                   <>
-                    <span className="text-xs font-semibold text-slate-700">
-                      Emitir {formatCurrency(Number(modo.nota.valor_servicos) || 0)} em{" "}
-                      {ambiente === "producao" ? "PRODUÇÃO" : "homologação"}?
-                    </span>
                     <button
                       type="button"
                       onClick={() => setConfirmando(false)}
@@ -718,22 +983,21 @@ export function GerarNfseModal({
                     </button>
                     <button
                       type="button"
-                      onClick={() => void emitir(modo.nota.ref)}
+                      onClick={() => void emitir(modo.nota)}
                       disabled={ocupado !== null}
-                      className="inline-flex items-center gap-2 rounded-2xl bg-[#0b2f4a] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#061d2e] disabled:opacity-50"
+                      className="inline-flex items-center gap-2 rounded-2xl bg-red-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-red-700 disabled:opacity-50"
                     >
-                      {ocupado === "emitir" && <Loader2 className="h-4 w-4 animate-spin" />}
-                      Confirmar emissão
+                      {rotuloDoBotaoDeEmitir("producao", situacaoDoStatus(modo.nota.status) === "REENVIAR")}
                     </button>
                   </>
                 ) : (
                   <button
                     type="button"
-                    onClick={() => setConfirmando(true)}
+                    // Homologação emite direto. Só produção abre a confirmação — uma.
+                    onClick={() => (emissaoPedeConfirmacao(ambiente) ? setConfirmando(true) : void emitir(modo.nota))}
                     disabled={ocupado !== null}
                     className="inline-flex items-center gap-2 rounded-2xl bg-[#0b2f4a] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#061d2e] disabled:opacity-50"
                   >
-                    {ocupado === "emitir" && <Loader2 className="h-4 w-4 animate-spin" />}
                     {situacaoDoStatus(modo.nota.status) === "REENVIAR" ? "Reenviar NFS-e" : "Emitir NFS-e"}
                   </button>
                 )}
@@ -759,7 +1023,7 @@ export function GerarNfseModal({
                   type="button"
                   disabled={ocupado !== null}
                   onClick={() => {
-                    setErro(null);
+                    setValidacao(null);
                     void carregar();
                   }}
                   className="mr-auto rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
