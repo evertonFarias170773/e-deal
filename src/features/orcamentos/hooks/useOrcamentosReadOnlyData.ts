@@ -47,6 +47,8 @@ export function useOrcamentosReadOnlyData(
     }
   });
   const [isLoading, setIsLoading] = useState(true);
+  // De qual pedido (periodo, pagina e filtros) sao as linhas em `state`.
+  const [chaveCarregada, setChaveCarregada] = useState<string | null>(null);
   const [loadedCount, setLoadedCount] = useState(0);
   const [refreshCount, setRefreshCount] = useState(0);
 
@@ -55,6 +57,7 @@ export function useOrcamentosReadOnlyData(
   const triggerRefresh = () => setRefreshCount(c => c + 1);
 
   const filterKey = JSON.stringify(filters || {});
+  const chavePedida = `${periodo}|${page}|${pageSize}|${filterKey}`;
 
   useEffect(() => {
     let active = true;
@@ -70,6 +73,7 @@ export function useOrcamentosReadOnlyData(
 
       setState(result);
       setLoadedCount(result.propostas.length);
+      setChaveCarregada(chavePedida);
       setIsLoading(false);
     })();
 
@@ -80,7 +84,11 @@ export function useOrcamentosReadOnlyData(
 
   return {
     ...state,
-    isLoading,
+    // Entre a troca do filtro e o inicio da leitura ha um render em que as
+    // linhas ainda sao do pedido anterior. Contar esse instante como
+    // carregando impede a tela de mostrar a lista velha — ou "nenhum
+    // resultado" — como se fosse a resposta do filtro novo.
+    isLoading: isLoading || chaveCarregada !== chavePedida,
     loadedCount,
     triggerRefresh
   } as OrcamentosReadResult & { loadedCount: number; isLoading: boolean; triggerRefresh: () => void };

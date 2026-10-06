@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { BadgeCheck, CalendarDays, CreditCard, FileText, Search, WalletCards, MessageSquare, Paperclip, Palette, Printer, Link as LinkIcon } from "lucide-react";
+import { BadgeCheck, CalendarDays, CreditCard, FileText, Loader2, Search, WalletCards, MessageSquare, Paperclip, Palette, Printer, Link as LinkIcon } from "lucide-react";
 import { ActionsMenu } from "@/components/common/ActionsMenu";
 import { BotaoDanfe } from "@/components/common/BotaoDanfe";
 import { urlDownloadXmlNfe } from "@/lib/fiscal/download-xml-nfe";
@@ -206,54 +206,6 @@ function normalize(value: string) {
     .replace(/\s+/g, " ")
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "");
-}
-
-function onlyDigits(value: unknown) {
-  return String(value ?? "").replace(/\D/g, "");
-}
-
-function getSearchableProposalText(
-  item: OrcamentoListItem,
-  nomeSocio?: string | null,
-  nomeEvento?: string | null
-) {
-  return normalize(
-    [
-      // Socio pagador entra no indice da tela para a busca refinar por ele
-      // depois que o servidor ja trouxe a linha. O servidor tem alcance proprio
-      // (id_faturado.in), porque a tela so filtra o que ja veio.
-      nomeSocio ?? "",
-      // Nome do evento, pelo mesmo motivo: o alcance na base inteira e do
-      // servidor (`buscarIdsPedidosPorEvento` -> id_int.in), e aqui ele so
-      // impede que a linha achada la seja descartada no filtro da tela.
-      nomeEvento ?? "",
-      item.id_int,
-      item.clienteId,
-      item.clienteNome,
-      item.documento,
-      item.vendedor,
-      item.statusLabel,
-      item.tipoCobrancaLabel,
-      item.modelo,
-      item.createdAt,
-      item.osIdeal,
-      formatCurrency(item.total)
-    ]
-      .map((value) => String(value ?? ""))
-      .join(" ")
-  );
-}
-
-function getSearchableProposalDigits(item: OrcamentoListItem) {
-  return [
-    item.id_int,
-    item.clienteId,
-    item.documento,
-    item.total,
-    item.osIdeal
-  ]
-    .map((value) => onlyDigits(value))
-    .join(" ");
 }
 
 function getMonthKeyFromDate(value: Date) {
@@ -582,6 +534,10 @@ export function OrcamentosListPageReal() {
     setFilter("q", valor)
   );
 
+  // Termo digitado que ainda nao virou consulta (a pausa da digitacao). Conta
+  // como busca em andamento: a lista de baixo ainda e a do termo anterior.
+  const buscaPendente = buscaDigitada.trim() !== search.trim();
+
   // Busca ampla: pesquisa textual ou dropdown específico selecionado pelo usuário.
   // Nesse modo o período deixa de recortar a consulta — senão não há como achar
   // registro de outro mês. O vendedor herdado do ESCOPO não conta aqui: ele é
@@ -635,6 +591,11 @@ export function OrcamentosListPageReal() {
   } = useOrcamentosReadOnlyData(periodo, pageIndex + 1, PAGE_SIZE, queryFilters);
 
   const propostas = useMemo(() => filtrarPeloEscopo(rawPropostas, user), [rawPropostas, user]);
+
+  // Indicador do campo de busca: do primeiro toque no teclado ate a resposta
+  // do termo atual chegar. So aparece quando ha busca envolvida — carregar a
+  // lista por troca de filtro ou de pagina continua com o esqueleto de sempre.
+  const buscando = buscaPendente || (isLoading && Boolean(search.trim()));
 
   /**
    * Base da contagem e da soma do card EM ARTE: o PERIODO INTEIRO, e nao a
@@ -788,10 +749,7 @@ export function OrcamentosListPageReal() {
     []
   );
 
-  /**
-   * Nomes dos socios pagadores ja resolvidos. Declarado aqui, acima do
-   * `searchIndex`, porque o indice de busca da tela consome estes nomes.
-   */
+  /** Nomes dos socios pagadores (linha "Nota fiscal") e fantasia dos clientes, ja resolvidos. */
   const [nomesSocios, setNomesSocios] = useState<Record<number, string>>({});
 
   /**
@@ -810,42 +768,25 @@ export function OrcamentosListPageReal() {
   const [statusArteDesdePorId, setStatusArteDesdePorId] = useState<Record<number, string>>({});
   const fetchedStatusArteIdsRef = useRef<Set<number>>(new Set());
 
-  const searchIndex = useMemo(() => {
-    return propostas.map((item) => {
-      const faturado = item.idFaturado;
-      const nomeSocio =
-        faturado && faturado !== Number(item.clienteId) ? (nomesSocios[faturado] ?? null) : null;
-      return {
-        // O NOME DO EVENTO entra no indice (18/09/2026) porque a tela filtra de
-        // novo o que o servidor mandou: sem ele, a linha que o servidor achou
-        // POR EVENTO seria descartada aqui e a busca continuaria sem achar.
-        // `eventoPorId` cobre a pagina inteira, nao so as linhas filtradas.
-        text: getSearchableProposalText(item, nomeSocio, eventoPorId[item.id_int] ?? null),
-        digits: getSearchableProposalDigits(item),
-        statusNorm: normalizeProposalStatus(item.statusInterno)
-      };
-    });
-  }, [propostas, nomesSocios, eventoPorId]);
-
+  /**
+   * O TEXTO DA BUSCA NAO E REFILTRADO AQUI (06/10/2026). Quem decide o que casa
+   * com o termo e o servidor, que procura na base inteira (`fetchPropostaRows`).
+   *
+   * Ate entao a tela conferia de novo cada linha devolvida contra um indice
+   * proprio, e esse indice so conhecia o nome da "Nota fiscal" DEPOIS de
+   * carrega-lo — e ele so era carregado para as linhas que passavam no filtro.
+   * O pedido achado no servidor pelo nome da nota era descartado antes de o
+   * nome chegar, e a busca so dava certo quando o nome ja estava em memoria de
+   * uma lista aberta antes: a mesma digitacao ora achava, ora nao.
+   */
   const filteredPropostas = useMemo(() => {
-    const normalizedSearch = normalize(search.trim());
-    const digitsSearch = onlyDigits(search);
-
     const result: typeof propostas = [];
     for (let i = 0; i < propostas.length; i++) {
       const item = propostas[i];
-      const idx = searchIndex[i];
-
-      const matchesSearch =
-        !normalizedSearch && !digitsSearch
-          ? true
-          : (normalizedSearch && idx.text.includes(normalizedSearch)) ||
-            (digitsSearch && idx.digits.includes(digitsSearch));
-      if (!matchesSearch) continue;
 
       let matchesStatus = true;
       if (activeCard) {
-        const s = idx.statusNorm;
+        const s = normalizeProposalStatus(item.statusInterno);
         // Cancelada fora de qualquer card (30/09/2026), como no servidor.
         if (modelo !== "ENCERRADOS" && s.startsWith("CANCEL")) continue;
         if (activeCard === "EM_ARTE") {
@@ -934,7 +875,7 @@ export function OrcamentosListPageReal() {
       const dateB = new Date(b.statusAlteradoEm || b.createdAt).getTime();
       return dateB - dateA;
     });
-  }, [modelo, periodo, ignorarPeriodo, propostas, searchIndex, search, status, vendedor, activeCard, filterTipoCobranca, statusArtePorId]);
+  }, [modelo, periodo, ignorarPeriodo, propostas, status, vendedor, activeCard, filterTipoCobranca, statusArtePorId]);
 
   const visibleIdInts = useMemo(() => {
     return filteredPropostas.slice(0, 100).map((p) => p.id_int);
@@ -1928,13 +1869,19 @@ Ela volta a aparecer nas listas operacionais.`
       <section className="rounded-3xl border border-[#d7e5e8] bg-white p-4 shadow-sm">
         <div className="grid gap-3 xl:grid-cols-[1fr_170px_170px_190px_170px_150px_auto]">
           <label className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-            <Search className="h-4 w-4 text-[#0f9f9a]" />
+            {buscando ? (
+              <Loader2 className="h-4 w-4 shrink-0 animate-spin text-[#0f9f9a]" aria-hidden="true" />
+            ) : (
+              <Search className="h-4 w-4 shrink-0 text-[#0f9f9a]" />
+            )}
             <input
               value={buscaDigitada}
               onChange={(event) => setBuscaDigitada(event.target.value)}
               className="w-full bg-transparent text-sm text-slate-900 outline-none"
-              placeholder="Buscar por proposta, cliente, ID cliente, valor ou OS Ideal"
+              placeholder="Buscar por número, cliente, ID do cliente, nota fiscal, atendente ou evento"
+              aria-busy={buscando}
             />
+            {buscando ? <span className="shrink-0 text-xs font-medium text-[#0f9f9a]">Buscando...</span> : null}
           </label>
 
           <select
@@ -2010,7 +1957,7 @@ Ela volta a aparecer nas listas operacionais.`
       <ResponsiveList<OrcamentoListItem>
         items={filteredPropostas}
         getKey={(proposta) => proposta.id}
-        isLoading={isLoading}
+        isLoading={isLoading || buscaPendente}
         onRowClick={(proposta) => {
           const tab = proposta.isAvulsoRaw === true ? "pagamentos" : "produtos";
           router.push(`/orcamentos/${proposta.id_int}/editar?tab=${tab}`);

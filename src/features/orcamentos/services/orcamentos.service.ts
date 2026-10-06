@@ -84,6 +84,7 @@ import {
   type DivergenciaDeLote
 } from "@/features/orcamentos/lib/divergencia-lotes";
 import { danfesDoPedido } from "@/lib/fiscal/danfes-do-pedido";
+import { padraoBuscaSemAcento, valorParaOr } from "@/features/orcamentos/lib/padrao-busca";
 // Grupos "Aguardando financeiro" e "Pago / A liberar" da lista de Pedidos: a
 // MESMA regra que a Conferencia usa por cobranca, sem copia.
 import { getConferenciaStatusLabel } from "@/features/cobrancas/cobrancas-utils";
@@ -506,8 +507,9 @@ export function statusArteEhPendenciaDoCardEmArte(status: string | null | undefi
 const LIMITE_IDS_SOCIO_BUSCA = 200;
 
 /**
- * IDs de clientes cujo nome casa com o termo. Serve so a busca por SOCIO
- * PAGADOR: `propostas.id_faturado` guarda o id, e o nome vive em `clientes`.
+ * IDs de clientes cujo nome casa com o termo. Serve a busca por SOCIO PAGADOR
+ * (`propostas.id_faturado` guarda o id, e o nome vive em `clientes`) e, desde
+ * 06/10/2026, a busca pelo nome fantasia do proprio cliente (`id_cliente`).
  * Somente leitura.
  */
 async function buscarIdsClientesPorNome(
@@ -515,12 +517,16 @@ async function buscarIdsClientesPorNome(
   termo: string
 ): Promise<number[]> {
   const alvo = termo.trim();
-  if (alvo.length < 2) return [];
+  const padrao = padraoBuscaSemAcento(alvo);
+  if (alvo.length < 2 || !padrao) return [];
+  // `imatch` no lugar do `ilike` (06/10/2026): alem da caixa, ignora o acento e
+  // o espaco sobrando — ver `padrao-busca.ts`.
+  const valor = valorParaOr(padrao);
   try {
     const { data, error } = await client
       .from("clientes")
       .select("id_cliente")
-      .or(`nome.ilike.%${alvo}%,fantasia.ilike.%${alvo}%,apelido.ilike.%${alvo}%`)
+      .or(`nome.imatch.${valor},fantasia.imatch.${valor},apelido.imatch.${valor}`)
       .limit(LIMITE_IDS_SOCIO_BUSCA);
 
     if (error) {
@@ -577,12 +583,13 @@ async function buscarIdsPedidosPorEvento(
   termo: string
 ): Promise<number[]> {
   const alvo = termo.trim();
-  if (alvo.length < 2) return [];
+  const padrao = padraoBuscaSemAcento(alvo);
+  if (alvo.length < 2 || !padrao) return [];
   try {
     const { data, error } = await client
       .from("pedidos_artes")
       .select("id_int")
-      .ilike("nome_evento", `%${alvo}%`)
+      .filter("nome_evento", "imatch", padrao)
       .limit(LIMITE_IDS_SOCIO_BUSCA);
 
     if (error) {
@@ -807,8 +814,20 @@ async function fetchPropostaRows(
         // id_cliente é integer (int4): fora da faixa o Postgres aborta a consulta inteira.
         if (num <= MAX_INT4) condicoes.push(`id_cliente.eq.${num}`);
       }
-      condicoes.push(`cliente.ilike.%${term}%`, `vendedor.ilike.%${term}%`);
+      // Nome do cliente e atendente: `imatch` com o padrao que ignora acento,
+      // caixa e espaco sobrando (06/10/2026). Com `ilike`, "grafica" nao achava
+      // "GRÁFICA", e uma virgula no termo quebrava o `.or()` inteiro.
+      const padrao = padraoBuscaSemAcento(term);
+      if (padrao) {
+        const valor = valorParaOr(padrao);
+        condicoes.push(`cliente.imatch.${valor}`, `vendedor.imatch.${valor}`);
+      }
       if (condicaoSocio) condicoes.push(condicaoSocio);
+      // O NOME QUE A LISTA MOSTRA para o cliente e o fantasia do cadastro de
+      // hoje, e `propostas.cliente` guarda a razao social congelada no pedido.
+      // Os mesmos ids achados em `clientes` dobram aqui como `id_cliente.in`,
+      // para a busca achar o pedido pelo nome que esta na tela.
+      if (idsSocio.length > 0) condicoes.push(`id_cliente.in.(${idsSocio.join(",")})`);
       if (condicaoEvento) condicoes.push(condicaoEvento);
       condicaoBusca = condicoes.join(",");
     }

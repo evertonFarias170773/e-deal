@@ -1,6 +1,6 @@
 # Pedidos (lista)
 
-> **Última revisão:** 03/10/2026
+> **Última revisão:** 06/10/2026
 > **Caminho no menu:** Pedidos (item direto do menu lateral, sem submenu; é o segundo, logo abaixo de Conferência)
 > **Endereço:** `/orcamentos`
 
@@ -37,7 +37,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Liberadas** (card) | Cards do topo, 4º | Liga ou desliga a lista dos pedidos com status "Liberado". |
 | **Revisão atendente** (card) | Cards do topo, 5º | Liga ou desliga a lista dos pedidos em REVISAO ATENDENTE. |
 | **Em produção** (card) | Cards do topo, 6º | Liga ou desliga a lista dos pedidos em produção e mostra o prazo do boletim na coluna Envio. |
-| **Buscar por proposta, cliente, ID cliente, valor ou OS Ideal** | Barra de filtros, campo de texto | Busca pedidos em todos os períodos. |
+| **Buscar por número, cliente, ID do cliente, nota fiscal, atendente ou evento** | Barra de filtros, campo de texto | Busca pedidos em todos os períodos. Enquanto procura, a lupa vira um círculo girando e aparece **Buscando...** ao lado. |
 | **Todos status** | Barra de filtros | Filtra por status do pedido e desliga o card que estiver ligado. |
 | **Todos modelos** | Barra de filtros | Filtra por AVULSO, PROPOSTA ou ENCERRADOS (teste). |
 | **Todos produtos** | Barra de filtros | Abre a lista de produtos, com o campo **Código ou nome**, e filtra os pedidos que têm o produto escolhido. |
@@ -97,8 +97,8 @@ Os cards respeitam os filtros de modelo, vendedor e tipo de cobrança.
 
 ### Procurar um pedido
 
-1. Digite no campo **Buscar por proposta, cliente, ID cliente, valor ou OS Ideal**. A lista atualiza sozinha depois de uma pequena pausa na digitação.
-2. A busca procura na base inteira por: número do pedido, código do cliente, nome do cliente, nome do atendente, nome de quem está indicado para a nota fiscal e nome do evento.
+1. Digite no campo **Buscar por número, cliente, ID do cliente, nota fiscal, atendente ou evento**. A lista atualiza sozinha depois de uma pequena pausa na digitação. Enquanto a busca está em andamento, o campo mostra **Buscando...** e a lista fica em carregamento; "Nenhuma proposta encontrada" só aparece depois que a resposta chega.
+2. A busca procura na base inteira por: número do pedido, código do cliente, nome do cliente (a razão social gravada no pedido e o nome fantasia que a lista mostra), nome do atendente, nome de quem está indicado para a nota fiscal e nome do evento. Não importa maiúscula ou minúscula, acento, espaço sobrando nem digitar só parte do nome: "grafica rapida", "GRÁFICA RÁPIDA" e "afica rap" acham os mesmos pedidos.
 3. Com texto na busca, o período deixa de valer (os cards passam a mostrar "Soma em todos os períodos") e os pedidos entregues e os testes encerrados voltam a aparecer.
 4. Para voltar ao normal, clique em **Limpar filtros**.
 
@@ -210,7 +210,7 @@ As datas pequenas aparecem como dia/mês e hora, no horário de Brasília.
 - Não dá para gerar PDF, OC nem cobrança de pedido sem cliente cadastrado.
 - Não dá para gerar cobrança de proposta que já foi totalmente cobrada.
 - Encerrar um teste tira o pedido da Produção, do Kanban, da fila de impressão e da Expedição. Ele continua nesta lista, com a marca, e segue contando no faturamento. Esta é a única tela de onde dá para reabrir.
-- A busca por nome de quem recebe a nota fiscal e por nome do evento precisa de pelo menos duas letras e é desligada quando o termo é comum demais (casa com 200 nomes ou mais). A busca por número, cliente e atendente continua funcionando.
+- A busca por nome de quem recebe a nota fiscal, por nome fantasia do cliente e por nome do evento precisa de pelo menos duas letras e é desligada quando o termo é comum demais (casa com 200 nomes ou mais). A busca por número, pela razão social do cliente gravada no pedido e por atendente continua funcionando.
 
 ## O que não confundir
 
@@ -245,7 +245,7 @@ As datas pequenas aparecem como dia/mês e hora, no horário de Brasília.
 | "Sem permissão para retirar da produção (propostas.release_producao)." | Seu perfil não tem a permissão "Liberar para Produção". | Peça a quem tem a permissão. |
 | "Sem permissão para liberar para produção (propostas.release_producao)." | Seu perfil não tem a permissão "Liberar para Produção". | Peça a liberação a quem tem a permissão, ou peça ao administrador para incluí-la no seu perfil. |
 | "Nenhuma proposta encontrada" | Os filtros não trazem nenhum pedido, ou o pedido está escondido (entregue, teste encerrado, cancelado). | Clique em **Limpar filtros** e busque pelo número. Veja "Achar o que a lista esconde". |
-| Busquei pelo valor ou pela OS Ideal e o pedido não veio | A busca na base inteira é por número, código e nome do cliente, atendente, nome de quem recebe a nota e nome do evento. Valor e OS só refinam o que já está na tela. | Busque pelo número do pedido ou pelo nome do cliente. |
+| Busquei pelo valor ou pela OS Ideal e o pedido não veio | A busca na base inteira é por número, código e nome do cliente, atendente, nome de quem recebe a nota e nome do evento. Valor e OS Ideal não fazem parte da busca. | Busque pelo número do pedido ou pelo nome do cliente. |
 | O número do card não bate com o total do rodapé | Os cards Pedidos, Liberadas, Revisão atendente e Em produção contam só a página carregada. | Use o "Total de propostas encontradas" do rodapé ou ligue o card para ver a lista. |
 | "Geração de PDF bloqueada" | O pedido não tem cliente cadastrado. | Cadastre ou vincule um cliente à proposta e gere o PDF de novo. |
 | "Empresa inválida" | A empresa da proposta não é aceita para gerar PDF ou OC. A grafia com ou sem acento não importa ("Gráfica", "Birô"). | Use Ideal Grafica, Ideal Biro ou E3 Brindes na proposta. |
@@ -283,6 +283,8 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/features/orcamentos/OrcamentosListPageReal.tsx`
 - `src/features/orcamentos/lib/empresa-pdf.ts`
 - `src/features/orcamentos/services/orcamentos.service.ts`
+- `src/features/orcamentos/lib/padrao-busca.ts`
+- `src/features/orcamentos/hooks/useOrcamentosReadOnlyData.ts`
 - `src/features/orcamentos/mappers.ts`
 - `src/features/orcamentos/components/FiltroProdutoDrop.tsx`
 - `src/features/orcamentos/components/LiberarProducaoModal.tsx`
