@@ -109,7 +109,7 @@ export function ConferenciaDespacho({
               confirmado manda, senao o vinculo do orcamento. */}
           <p className={rotulo}>Forma de envio</p>
           <p className={medio}>
-            <span className="font-semibold">{a.transportadoraExibida}</span>
+            <span className="font-semibold">{a.formaDeEnvioExibida}</span>
           </p>
         </div>
 

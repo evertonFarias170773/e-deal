@@ -11,7 +11,12 @@ import {
   categoriaPorNomeConhecido,
   ehCategoriaFrete
 } from "@/features/orcamentos/lib/categoria-frete";
-import { labelTipoFrete, normalizarTipoFrete } from "../lib/tipo-frete";
+import {
+  cifPorTransportadora,
+  cifTransportadoraBarradaPorPrepostagem,
+  labelTipoFrete,
+  normalizarTipoFrete
+} from "../lib/tipo-frete";
 import { temPagadorDistinto } from "../lib/destinatario-etiqueta";
 import { idEnderecoEntregaVigente } from "../lib/endereco-entrega";
 import {
@@ -684,7 +689,46 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
     const prometidoHoje = emAberto && promessaDia === hoje && !jaSaiu;
 
     const expConfirmado = despachoConfirmado ? exp : null;
-    const tipoFrete: TipoFreteNormalizado = expConfirmado?.tipoFrete ?? normalizarTipoFrete(frete?.servico);
+
+    const modalidadeOrcamento = (p.modalidade_frete as ModalidadeFrete | null) ?? null;
+    const idTransportadoraOrcamento =
+      p.id_transportadora_cliente !== null && p.id_transportadora_cliente !== undefined
+        ? Number(p.id_transportadora_cliente)
+        : null;
+    const transportadoraOrcamento =
+      idTransportadoraOrcamento !== null
+        ? nomeTransportadoraCadastro(
+            (() => {
+              const cadastro = clienteMap.get(idTransportadoraOrcamento);
+              return cadastro ? { id_cliente: idTransportadoraOrcamento, ...cadastro } : null;
+            })()
+          )
+        : null;
+
+    /**
+     * CIF COM TRANSPORTADORA DECLARADA (07/10/2026) — o predicado único de
+     * `lib/tipo-frete.ts`, resolvido UMA VEZ por pedido. A lista, o Kanban, o
+     * modal Despachar e a rota de prepostagem decidem pela mesma função; aqui o
+     * resultado também segue pronto no pedido, para a tela não recalcular.
+     *
+     * Só leitura: nada é gravado. Com despacho confirmado os dois são falsos e
+     * `expedicoes` continua soberana.
+     */
+    const entradaCif = {
+      modalidade: modalidadeOrcamento,
+      despachoConfirmado,
+      idTransportadora: idTransportadoraOrcamento,
+      nomeTransportadora: transportadoraOrcamento,
+      tipoFreteCotado: normalizarTipoFrete(frete?.servico),
+      correiosIdPrepostagem: exp?.correiosIdPrepostagem ?? null,
+      prepostagemCanceladaEm: exp?.prepostagemCanceladaEm ?? null
+    };
+    const porTransportadoraEmCif = cifPorTransportadora(entradaCif);
+    const transportadoraComPrepostagemViva = cifTransportadoraBarradaPorPrepostagem(entradaCif);
+
+    const tipoFrete: TipoFreteNormalizado = porTransportadoraEmCif
+      ? "TRANSPORTADORA"
+      : (expConfirmado?.tipoFrete ?? normalizarTipoFrete(frete?.servico));
     /**
      * AGUARDANDO COLETA, derivado UMA VEZ (02/09/2026, Etapa 7).
      *
@@ -702,21 +746,6 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
       !exp?.coletadoEm &&
       etapa === "PRONTO" &&
       (tipoFrete === "TRANSPORTADORA" || tipoFrete === "MOTOBOY");
-
-    const modalidadeOrcamento = (p.modalidade_frete as ModalidadeFrete | null) ?? null;
-    const idTransportadoraOrcamento =
-      p.id_transportadora_cliente !== null && p.id_transportadora_cliente !== undefined
-        ? Number(p.id_transportadora_cliente)
-        : null;
-    const transportadoraOrcamento =
-      idTransportadoraOrcamento !== null
-        ? nomeTransportadoraCadastro(
-            (() => {
-              const cadastro = clienteMap.get(idTransportadoraOrcamento);
-              return cadastro ? { id_cliente: idTransportadoraOrcamento, ...cadastro } : null;
-            })()
-          )
-        : null;
 
     /**
      * O DEGRAU 4 DA CATEGORIA: derivação NA LEITURA, sem gravar nada.
@@ -746,12 +775,13 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
      */
     const nomeParaCategoria =
       expConfirmado?.transportadoraNome ||
+      (porTransportadoraEmCif ? transportadoraOrcamento : null) ||
       nomeTransporteEfetivo(frete?.servico, modalidadeOrcamento, transportadoraOrcamento) ||
       "";
     const modalidadeParaCategoria = expConfirmado?.modalidadeFrete ?? modalidadeOrcamento;
     const servicoParaCategoria = despachoConfirmado
       ? tipoFrete
-      : modalidadeParaCategoria === "FOB"
+      : modalidadeParaCategoria === "FOB" || porTransportadoraEmCif
         ? null
         : (frete?.servico ?? null);
     /**
@@ -863,13 +893,21 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
        */
       /** Entregue dentro da janela do card. Ver as duas janelas no topo. */
       entregueNaJanelaDoCard,
+      // CIF por transportadora: "CORREIOS" gravado na proposta ou no rascunho é o
+      // resíduo do serviço cotado (o próprio Corrigir frete o regrava), e não
+      // pode prender o pedido na coluna dos Correios. Qualquer outra categoria
+      // gravada continua valendo.
       categoriaFrete: categoriaFreteVigente(
-        ehCategoriaFrete(p.categoria_frete) ? p.categoria_frete : null,
-        exp?.categoriaFrete ?? null,
+        ehCategoriaFrete(p.categoria_frete) && !(porTransportadoraEmCif && p.categoria_frete === "CORREIOS")
+          ? p.categoria_frete
+          : null,
+        porTransportadoraEmCif && exp?.categoriaFrete === "CORREIOS" ? null : (exp?.categoriaFrete ?? null),
         despachoConfirmado,
         categoriaDerivadaNaLeitura
       ),
       idTransportadoraOrcamento,
+      cifPorTransportadora: porTransportadoraEmCif,
+      cifTransportadoraComPrepostagemViva: transportadoraComPrepostagemViva,
       // `freteServico` continua sendo o texto CRU da cotação: é o "frete cotado"
       // que o DespacharModal mostra como referência, e mexer nele apagaria a
       // evidência de com o que o frete foi calculado.
@@ -880,6 +918,7 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
       // "SEDEX" num pedido que os Correios nunca vão tocar.
       transportadoraNome:
         expConfirmado?.transportadoraNome ||
+        (porTransportadoraEmCif ? transportadoraOrcamento : null) ||
         nomeTransporteEfetivo(frete?.servico, modalidadeOrcamento, transportadoraOrcamento) ||
         "",
       /**
@@ -921,7 +960,7 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
        */
       rotuloTransporte:
         expConfirmado?.transportadoraNome ||
-        (tipoFrete === "INDEFINIDO" ? transportadoraOrcamento : null) ||
+        (tipoFrete === "INDEFINIDO" || porTransportadoraEmCif ? transportadoraOrcamento : null) ||
         nomeTransporteEfetivo(frete?.servico, modalidadeOrcamento, transportadoraOrcamento) ||
         transportadoraOrcamento ||
         labelTipoFrete(tipoFrete),

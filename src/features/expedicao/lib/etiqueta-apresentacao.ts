@@ -80,6 +80,12 @@ export type ApresentacaoEtiqueta = {
   cidadeUfLinha: string;
   /** Transportadora em caixa alta, "A DEFINIR" quando vazia. */
   transportadoraExibida: string;
+  /**
+   * O que a conferência do despacho escreve em "Forma de envio". Igual a
+   * `transportadoraExibida`, exceto em CIF com transportadora declarada, quando
+   * diz "TRANSPORTADORA — <nome>". O papel da etiqueta segue só com o nome.
+   */
+  formaDeEnvioExibida: string;
   /** "Fone: (51) 99110-7694" — vazia quando nao ha telefone, e ai a linha nao sai. */
   telefoneLinha: string;
   /** Observacao cortada e em caixa alta — vazia quando nao ha, e ai o bloco nao sai. */
@@ -96,6 +102,9 @@ export function apresentacaoEtiqueta(vm: EtiquetaViewModel): ApresentacaoEtiquet
   return {
     cidadeUfLinha: cidadeUfLinha || "—",
     transportadoraExibida: (vm.transportadora || "A DEFINIR").toUpperCase(),
+    formaDeEnvioExibida: vm.envioPorTransportadoraDeclarada
+      ? `TRANSPORTADORA — ${(vm.transportadora || "A DEFINIR").toUpperCase()}`
+      : (vm.transportadora || "A DEFINIR").toUpperCase(),
     telefoneLinha: vm.destinatario.telefone ? `Fone: ${vm.destinatario.telefone}` : "",
     observacaoImpressa: vm.obsEtiqueta ? cortarObservacao(vm.obsEtiqueta).toUpperCase() : "",
     nfExibida: String(vm.nfNumero ?? "").trim() || "—",

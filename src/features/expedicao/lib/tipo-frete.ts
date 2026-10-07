@@ -199,3 +199,98 @@ export function correiosResiduoDeCotacaoFob(p: PedidoExpedicao): boolean {
     p.idTransportadoraOrcamento !== null
   );
 }
+
+/**
+ * O cadastro vinculado como "transportadora" é o dos próprios Correios?
+ *
+ * Existe cadastro de transportadora que É os Correios ("CORREIOS SEDE"): em
+ * 07/10/2026 seis pedidos CIF em produção tinham esse vínculo com cotação
+ * SEDEX. Para eles a transportadora declarada não muda nada — o envio é dos
+ * Correios mesmo.
+ */
+export function transportadoraEhOsCorreios(nome: string | null | undefined): boolean {
+  const s = (nome ?? "")
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toUpperCase();
+  return s.includes("CORREIO") || normalizarTipoFrete(s) === "CORREIOS";
+}
+
+/** Há prepostagem dos Correios gerada e não cancelada. */
+export function prepostagemViva(
+  correiosIdPrepostagem: string | null | undefined,
+  prepostagemCanceladaEm: string | null | undefined
+): boolean {
+  return Boolean(String(correiosIdPrepostagem ?? "").trim()) && !prepostagemCanceladaEm;
+}
+
+/** O que o predicado de CIF por transportadora precisa saber do pedido. */
+export type EntradaCifPorTransportadora = {
+  /** A modalidade que vale antes do despacho: `propostas.modalidade_frete`. */
+  modalidade: ModalidadeFrete | null | undefined;
+  /** `expedicoes.data_despacho` preenchida. Com despacho confirmado nada muda. */
+  despachoConfirmado: boolean;
+  /** `propostas.id_transportadora_cliente`. */
+  idTransportadora: number | null | undefined;
+  /** Nome do cadastro vinculado. Sem nome não há como saber se é os Correios. */
+  nomeTransportadora: string | null | undefined;
+  /** `normalizarTipoFrete(cotacao_frete.servico)` — o tipo que o texto cotado dá. */
+  tipoFreteCotado: TipoFreteNormalizado;
+  correiosIdPrepostagem?: string | null;
+  prepostagemCanceladaEm?: string | null;
+};
+
+/**
+ * CIF COM TRANSPORTADORA DECLARADA QUE NÃO É OS CORREIOS (07/10/2026).
+ *
+ * O "Corrigir frete" grava a transportadora em `propostas.id_transportadora_cliente`
+ * também em CIF, mas todo leitor do despacho derivava "por onde vai" do texto de
+ * `cotacao_frete.servico`. O pedido 23083 (CIF, cotado SEDEX, transportadora
+ * escolhida) seguia mostrando "SEDEX" e oferecendo prepostagem dos Correios.
+ *
+ * Esta é a parte da regra que NÃO olha a prepostagem; os dois predicados abaixo
+ * a completam. Vale quando:
+ *   - a modalidade é CIF (em FOB e RETIRA nada muda — FOB tem a sua própria
+ *     regra, `correiosResiduoDeCotacaoFob`);
+ *   - o despacho ainda não foi confirmado (depois dele manda `expedicoes`);
+ *   - há transportadora vinculada, com nome, e ela não é os Correios;
+ *   - o texto cotado NÃO é motoboy, transportadora nem retirada. Motoboy cotado
+ *     com transportadora vinculada segue motoboy (8 pedidos em 07/10/2026), e
+ *     cotação que já é de transportadora não precisa de correção. Sobram
+ *     Correios, "sem custo" e texto não reconhecido — os casos em que o modal
+ *     abria em Correios.
+ *
+ * SÓ LEITURA: nada é gravado para o predicado valer, e tirar a transportadora
+ * (vínculo nulo) o desliga sozinho.
+ */
+export function cifComTransportadoraDeclarada(e: EntradaCifPorTransportadora): boolean {
+  if (e.modalidade !== "CIF" || e.despachoConfirmado) return false;
+  if (e.idTransportadora === null || e.idTransportadora === undefined) return false;
+  const nome = String(e.nomeTransportadora ?? "").trim();
+  if (!nome || transportadoraEhOsCorreios(nome)) return false;
+  return e.tipoFreteCotado === "CORREIOS" || e.tipoFreteCotado === "SEM_CUSTO" || e.tipoFreteCotado === "INDEFINIDO";
+}
+
+/**
+ * O PREDICADO ÚNICO: o envio é por TRANSPORTADORA, não pelos Correios.
+ *
+ * Lido pela lista da Expedição, pelo modal "Despachar pedido", pela prévia da
+ * etiqueta e pela rota de prepostagem. Quando vale: o tipo de frete é
+ * TRANSPORTADORA, a forma de envio mostra o nome do cadastro e a prepostagem
+ * dos Correios não é oferecida nem aceita.
+ *
+ * Prepostagem viva o desliga: o objeto já existe do lado dos Correios, então o
+ * pedido segue como Correios até alguém cancelá-la — ver o predicado abaixo.
+ */
+export function cifPorTransportadora(e: EntradaCifPorTransportadora): boolean {
+  return cifComTransportadoraDeclarada(e) && !prepostagemViva(e.correiosIdPrepostagem, e.prepostagemCanceladaEm);
+}
+
+/** A transportadora foi declarada, mas há prepostagem viva: segue Correios, com aviso. */
+export function cifTransportadoraBarradaPorPrepostagem(e: EntradaCifPorTransportadora): boolean {
+  return cifComTransportadoraDeclarada(e) && prepostagemViva(e.correiosIdPrepostagem, e.prepostagemCanceladaEm);
+}
+
+/** O aviso do modal quando `cifTransportadoraBarradaPorPrepostagem` vale. */
+export const AVISO_PREPOSTAGEM_VIVA_COM_TRANSPORTADORA =
+  "Já há prepostagem dos Correios gerada; cancele-a para despachar por transportadora";

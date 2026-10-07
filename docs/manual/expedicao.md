@@ -1,6 +1,6 @@
 # Expedição
 
-> **Última revisão:** 02/10/2026
+> **Última revisão:** 07/10/2026
 > **Caminho no menu:** Expedição (item direto do menu lateral, sem subitens; é o quarto, depois de Conferência, Pedidos e Clientes). Também se chega pela aba **Expedição** no topo do Kanban e da Fila de impressão da Produção.
 > **Endereço:** `/expedicao`
 
@@ -82,7 +82,7 @@ Os itens aparecem nesta ordem, cada um só quando se aplica.
 | **Confirmo: este pedido deixa de ir pelos Correios.** | Caixa de marcar no aviso amarelo, em pedido FOB que estava definido para os Correios | Troca o transporte para transportadora |
 | **Recotar frete** | Bloco "Recotar frete", em pedido CIF Na Expedição | Cota de novo e registra o resultado. Não altera a proposta |
 | **Aplicar** | Ao lado de cada opção recotada | Grava o frete novo na proposta. Fica apagado sem liberação ou quando a opção encarece |
-| **Gerar prepostagem SEDEX** | Abaixo do rastreio, em envio CIF pelos Correios | Cria a prepostagem SEDEX e preenche o rastreio |
+| **Gerar prepostagem SEDEX** | Abaixo do rastreio, em envio CIF pelos Correios. Não aparece quando o pedido tem transportadora escolhida que não é os Correios | Cria a prepostagem SEDEX e preenche o rastreio |
 | **PAC** | Ao lado do botão acima | Cria a prepostagem PAC |
 | **Gerar SEDEX** / **Gerar PAC** | Confirmação "Gerar outra prepostagem?" | Gera outra prepostagem em pedido que já tinha uma |
 | **Gerar etiqueta 10x15** | Botão azul largo, abaixo das observações | Salva o formulário e abre a etiqueta de envio |
@@ -163,7 +163,7 @@ O pedido também chega à Expedição pela Revisão do boletim da produção.
 ### Conferir o pedido (peso e volumes)
 
 1. No pedido com status Na Expedição, clique em **Despachar**.
-2. Confira o quadro do topo: **Destinatário**, **Endereço**, **Bairro**, **Fone**, **CEP**, **Cidade/UF**, **Forma de envio** e **Observações**. Endereço e transportadora vêm da proposta e não são trocados aqui.
+2. Confira o quadro do topo: **Destinatário**, **Endereço**, **Bairro**, **Fone**, **CEP**, **Cidade/UF**, **Forma de envio** e **Observações**. Endereço e transportadora vêm da proposta e não são trocados aqui. Em pedido CIF com transportadora escolhida, **Forma de envio** mostra "TRANSPORTADORA" e o nome dela, mesmo que o frete tenha sido cotado como SEDEX ou PAC.
 3. Preencha **Peso aferido (kg)**. O campo já vem com a soma do peso medido nos setores, quando existe. Abaixo dele aparecem o peso previsto e, se algum setor ficou sem pesar, o aviso para conferir na balança.
 4. Preencha **Qtd. volumes** (de 1 a 50) e **Tipo de volume** (Pacote, Caixa, Envelope ou Outro).
 5. Se não há nota autorizada, digite o número em **Nº da nota fiscal** quando houver. Com nota autorizada o campo vem preenchido e não é editável.
@@ -303,6 +303,8 @@ Os retornos possíveis são: Entregue volta para Em Trânsito (ou para A Retirar
 - A etiqueta e a prepostagem exigem os mesmos dados do despacho enquanto o pedido ainda não saiu. Imprimir etiqueta de um envio que ninguém terminou de declarar não é permitido.
 - **Salvar sem despachar** e **Salvar dados** não exigem os campos mínimos: servem para guardar ou corrigir.
 - Não dá para trocar o endereço de entrega nem a transportadora na Expedição. Os dois vêm da proposta. A modalidade também, quando já está definida; ela se corrige na aba Fretes da proposta ou em **Corrigir frete**.
+- Pedido CIF com transportadora escolhida (no orçamento ou em **Corrigir frete**) vai por transportadora, mesmo com frete cotado como SEDEX ou PAC: a **Forma de envio** mostra a transportadora, os botões de prepostagem dos Correios não aparecem e o sistema recusa gerar prepostagem. Isso não vale quando a transportadora escolhida é o próprio cadastro dos Correios, nem quando o frete foi cotado como motoboy. Tirar a transportadora em **Corrigir frete** volta o pedido ao serviço cotado.
+- Se o pedido já tem prepostagem dos Correios gerada e não cancelada, ele continua como Correios e a janela avisa: "Já há prepostagem dos Correios gerada; cancele-a para despachar por transportadora". Cancele a prepostagem e marque-a como cancelada para o pedido passar a ir pela transportadora.
 - Falta de nota autorizada não bloqueia o despacho, mas exige marcar a confirmação.
 - A trava de frete só vale em CIF. Quando o CEP de entrega ou o transporte são diferentes dos cotados, vale a última recotação feita para o CEP atual: até R$ 4,00 acima do frete da proposta só avisa; acima disso, ou sem recotação, o despacho e a prepostagem ficam bloqueados até a liberação de um administrador da Expedição.
 - Peso acima do cotado (além de 200 g ou 5%, o que for maior) gera o aviso "O frete cobrado pode não refletir este envio", mas não bloqueia.

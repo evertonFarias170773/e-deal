@@ -6,6 +6,7 @@ import { useAppToast } from "@/components/common/AppToast";
 import { getTransportadoras } from "@/features/nfe/services/nfe.service";
 import { formatCurrency } from "@/lib/formatters/currency";
 import {
+  AVISO_PREPOSTAGEM_VIVA_COM_TRANSPORTADORA,
   correiosResiduoDeCotacaoFob,
   labelTipoFrete,
   modalidadeInicialDoDespacho,
@@ -94,7 +95,13 @@ function transporteInicial(
    * outros dois, importado de `lib/tipo-frete` — a regra não está duplicada, e
    * ela já se desliga sozinha em despacho confirmado e em CIF.
    */
-  const base = correiosResiduoDeCotacaoFob(pedido) ? "TRANSPORTADORA" : tipo;
+  // CIF com transportadora declarada (07/10/2026): mesmo cuidado do resíduo de
+  // FOB, pelo predicado único de `lib/tipo-frete`. Vence também o rascunho de
+  // `expedicoes.tipo_frete`, que não tem mais gesto na tela para ser trocado.
+  const base =
+    correiosResiduoDeCotacaoFob(pedido) || (modalidade === "CIF" && pedido.cifPorTransportadora)
+      ? "TRANSPORTADORA"
+      : tipo;
 
   /**
    * DEGRAU 2 — O SELECT NUNCA MENTE, em nenhum caso.
@@ -1655,6 +1662,12 @@ export function DespacharModal({
               {/* Prepostagem é sempre CIF: sai pelo cartão de postagem da
                   empresa. A modalidade entra na condição de propósito, para um
                   pedido legado marcado FOB nunca reabrir o botão. */}
+              {modalidade === "CIF" && pedido.cifTransportadoraComPrepostagemViva && (
+                <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
+                  {AVISO_PREPOSTAGEM_VIVA_COM_TRANSPORTADORA}
+                  {pedido.transportadoraNome ? ` (${pedido.transportadoraNome}).` : "."}
+                </p>
+              )}
               {modalidade === "CIF" && tipoFrete === "CORREIOS" && correiosOk && (
                 <div className="space-y-2">
                   <div className="flex items-center gap-2">

@@ -3,6 +3,7 @@ import { resolverPesoExpedicao } from "../lib/peso";
 import { idDestinatarioEtiquetaVigente, nomeDestinatarioVigente } from "../lib/destinatario-etiqueta";
 import { idEnderecoEntregaVigente } from "../lib/endereco-entrega";
 import { telefoneDestinatario } from "../lib/telefone-destinatario";
+import { cifPorTransportadora, normalizarTipoFrete } from "../lib/tipo-frete";
 import { nomeTransporteEfetivo } from "@/features/orcamentos/lib/modalidade-frete";
 import type { ModalidadeFrete } from "../types";
 import { escolherNotaAutorizadaDoPedido, COLUNAS_NOTA_DO_PEDIDO } from "@/lib/fiscal/nota-do-pedido";
@@ -19,6 +20,12 @@ export type EtiquetaViewModel = {
   volumes: number;
   pesoKg: string;
   transportadora: string;
+  /**
+   * CIF com transportadora declarada que não é os Correios e sem prepostagem
+   * viva (`cifPorTransportadora`): `transportadora` já traz o nome do cadastro, e
+   * a conferência do despacho escreve "TRANSPORTADORA — <nome>" na forma de envio.
+   */
+  envioPorTransportadoraDeclarada?: boolean;
   codigoRastreamento: string;
   obs: string;
   /** Número da NF-e autorizada; vazio quando a remessa vai sem nota. */
@@ -164,7 +171,7 @@ export async function montarEtiquetaViewModel(
     supabase
       .from("expedicoes")
       .select(
-        "peso_kg, peso_bruto_kg, qtd_volumes, tipo_volume, transportadora_nome, id_transportadora_cliente, codigo_rastreamento, id_endereco_entrega, id_cliente_destinatario_etiqueta, obs, obs_etiqueta, nf_numero_manual, data_despacho"
+        "peso_kg, peso_bruto_kg, qtd_volumes, tipo_volume, transportadora_nome, id_transportadora_cliente, codigo_rastreamento, id_endereco_entrega, id_cliente_destinatario_etiqueta, obs, obs_etiqueta, nf_numero_manual, data_despacho, correios_id_prepostagem, prepostagem_cancelada_em"
       )
       .eq("id_int", idInt)
       .maybeSingle(),
@@ -274,6 +281,24 @@ export async function montarEtiquetaViewModel(
       .maybeSingle();
     nomeTransportadoraOrcamento = String(transpOrc?.fantasia || transpOrc?.nome || "").trim();
   }
+
+  /**
+   * CIF COM TRANSPORTADORA DECLARADA (07/10/2026): o mesmo predicado da lista e
+   * do modal Despachar. Em CIF `nomeTransporteEfetivo` devolve o serviço cotado,
+   * e a prévia mostrava "SEDEX" num pedido que vai por transportadora.
+   */
+  const porTransportadoraEmCif = cifPorTransportadora({
+    modalidade: proposta.modalidade_frete as ModalidadeFrete | null | undefined,
+    despachoConfirmado: Boolean(expConfirmado),
+    idTransportadora:
+      proposta.id_transportadora_cliente !== null && proposta.id_transportadora_cliente !== undefined
+        ? Number(proposta.id_transportadora_cliente)
+        : null,
+    nomeTransportadora: nomeTransportadoraOrcamento,
+    tipoFreteCotado: normalizarTipoFrete(frete?.servico as string | null | undefined),
+    correiosIdPrepostagem: (exp?.correios_id_prepostagem as string | null | undefined) ?? null,
+    prepostagemCanceladaEm: (exp?.prepostagem_cancelada_em as string | null | undefined) ?? null
+  });
 
   /**
    * ENDERECO ESCOLHIDO TEM PRECEDENCIA ABSOLUTA (24/08/2026).
@@ -422,12 +447,14 @@ export async function montarEtiquetaViewModel(
     transportadora:
       nomeTransportadoraCadastro ||
       expConfirmado?.transportadora_nome ||
+      (porTransportadoraEmCif ? nomeTransportadoraOrcamento : "") ||
       nomeTransporteEfetivo(
         frete?.servico as string | null | undefined,
         proposta.modalidade_frete as ModalidadeFrete | null | undefined,
         nomeTransportadoraOrcamento
       ) ||
       "",
+    envioPorTransportadoraDeclarada: porTransportadoraEmCif,
     codigoRastreamento: expConfirmado?.codigo_rastreamento || os?.codigo_rastreamento || "",
     obs: expConfirmado?.obs || "",
     /**

@@ -11,6 +11,8 @@ import { criarPrepostagem, correiosConfigurado } from "@/lib/correios/cws";
 import { resolverEmpresaRemetente } from "@/lib/correios/empresa-remetente";
 import { resolverPesoExpedicao } from "@/features/expedicao/lib/peso";
 import { telefoneDestinatario } from "@/features/expedicao/lib/telefone-destinatario";
+import { cifPorTransportadora, normalizarTipoFrete } from "@/features/expedicao/lib/tipo-frete";
+import type { ModalidadeFrete } from "@/features/expedicao/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -50,7 +52,9 @@ export async function POST(request: Request) {
   // Dados do pedido: mesmas fontes da etiqueta interna.
   const { data: proposta } = await supabase
     .from("propostas")
-    .select("id_int, cliente, id_cliente, id_faturado, empresa, cep, id_endereco_ent")
+    .select(
+      "id_int, cliente, id_cliente, id_faturado, empresa, cep, id_endereco_ent, modalidade_frete, id_transportadora_cliente"
+    )
     .eq("id_int", idInt)
     .maybeSingle();
   if (!proposta) return NextResponse.json({ success: false, message: "Pedido não encontrado." }, { status: 404 });
@@ -67,7 +71,7 @@ export async function POST(request: Request) {
       .maybeSingle(),
     supabase
       .from("cotacao_frete")
-      .select("peso, altura, largura, comprimento, cep")
+      .select("servico, peso, altura, largura, comprimento, cep")
       .eq("id_int", idInt)
       .eq("escolhido", true)
       .limit(1)
@@ -77,6 +81,50 @@ export async function POST(request: Request) {
       .select("nome_produto, modelo_descri, qtd, valor_unt, valor_sub_total")
       .eq("id_int", idInt)
   ]);
+
+  // CIF COM TRANSPORTADORA DECLARADA (07/10/2026): não é envio dos Correios.
+  //
+  // A tela já esconde os botões de prepostagem nesse caso, mas a proteção não
+  // pode morar só nela — esta rota aceitava qualquer pedido com endereço. Mesmo
+  // predicado da lista e do modal (`lib/tipo-frete.ts`), e ANTES de falar com
+  // os Correios, para não deixar objeto órfão do lado deles. Com prepostagem
+  // viva o predicado é falso e a regeração segue como sempre; depois do
+  // despacho confirmado também.
+  const idTransportadoraProposta =
+    proposta.id_transportadora_cliente !== null && proposta.id_transportadora_cliente !== undefined
+      ? Number(proposta.id_transportadora_cliente)
+      : null;
+  let nomeTransportadoraProposta = "";
+  if (idTransportadoraProposta !== null) {
+    const { data: transp } = await supabase
+      .from("clientes")
+      .select("nome, fantasia")
+      .eq("id_cliente", idTransportadoraProposta)
+      .maybeSingle();
+    nomeTransportadoraProposta = String(transp?.fantasia || transp?.nome || "").trim();
+  }
+  if (
+    cifPorTransportadora({
+      modalidade: proposta.modalidade_frete as ModalidadeFrete | null | undefined,
+      despachoConfirmado: Boolean(exp?.data_despacho),
+      idTransportadora: idTransportadoraProposta,
+      nomeTransportadora: nomeTransportadoraProposta,
+      tipoFreteCotado: normalizarTipoFrete(frete?.servico as string | null | undefined),
+      correiosIdPrepostagem: exp?.correios_id_prepostagem as string | null | undefined,
+      prepostagemCanceladaEm: exp?.prepostagem_cancelada_em as string | null | undefined
+    })
+  ) {
+    return NextResponse.json(
+      {
+        success: false,
+        code: "ENVIO_POR_TRANSPORTADORA",
+        message:
+          `Este pedido vai por transportadora (${nomeTransportadoraProposta}), não pelos Correios. ` +
+          "Para postar pelos Correios, tire a transportadora em Corrigir frete."
+      },
+      { status: 409 }
+    );
+  }
 
   // Endereço do destinatário (o escolhido no despacho; senão por CEP; senão o mais novo)
   const idCliente = proposta.id_cliente !== null ? Number(proposta.id_cliente) : null;

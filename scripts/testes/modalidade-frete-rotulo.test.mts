@@ -20,6 +20,7 @@ import {
   faltaTransportadoraEmFob,
   aplicarModalidadeNosFretes
 } from "../../src/features/orcamentos/lib/modalidade-frete.ts";
+import { cifPorTransportadora, normalizarTipoFrete } from "../../src/features/expedicao/lib/tipo-frete.ts";
 import type { PropostaFrete } from "../../src/features/orcamentos/types.ts";
 import { createFretesMock } from "../../src/features/orcamentos/orcamento-utils.ts";
 import type { CadastroEndereco } from "../../src/features/cadastros/types.ts";
@@ -47,7 +48,26 @@ checar("FOB sem transportadora resolvida NÃO cai de volta no serviço cotado",
 checar("FOB com transportadora só de espaços também não cai no cotado",
   nomeTransporteEfetivo("SEDEX", "FOB", "   "), TRANSPORTADORA_FOB_INDEFINIDA);
 
-checar("CIF mantém o serviço cotado", nomeTransporteEfetivo("SEDEX", "CIF", "AVI AZUL"), "SEDEX");
+// CIF (07/10/2026). O RÓTULO DO ORÇAMENTO continua sendo o serviço cotado: é o
+// que o saveProposta, a OS e o PDF gravam e imprimem. O que mudou é o DESPACHO:
+// lá, CIF com transportadora declarada que não é os Correios vai por
+// TRANSPORTADORA, e quem decide é `cifPorTransportadora` — não esta função.
+checar("CIF no ORÇAMENTO mantém o serviço cotado", nomeTransporteEfetivo("SEDEX", "CIF", "AVI AZUL"), "SEDEX");
+{
+  const despacho = {
+    modalidade: "CIF" as const,
+    despachoConfirmado: false,
+    idTransportadora: 1,
+    nomeTransportadora: "AVI AZUL",
+    tipoFreteCotado: normalizarTipoFrete("SEDEX")
+  };
+  checar("CIF no DESPACHO, com transportadora declarada: vai por transportadora, não pelo serviço cotado",
+    cifPorTransportadora(despacho), true);
+  checar("CIF no DESPACHO, sem transportadora: segue o serviço cotado",
+    cifPorTransportadora({ ...despacho, idTransportadora: null, nomeTransportadora: null }), false);
+  checar("CIF no DESPACHO, com o cadastro dos Correios: segue o serviço cotado",
+    cifPorTransportadora({ ...despacho, nomeTransportadora: "CORREIOS SEDE" }), false);
+}
 checar("RETIRA mantém o serviço cotado", nomeTransporteEfetivo("SEDEX", "RETIRA", "AVI AZUL"), "SEDEX");
 checar("modalidade nula (proposta anterior a 18/08/2026) mantém o cotado",
   nomeTransporteEfetivo("SEDEX", null, "AVI AZUL"), "SEDEX");

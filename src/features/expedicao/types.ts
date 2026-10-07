@@ -308,6 +308,18 @@ export interface PedidoExpedicao {
   categoriaFrete: CategoriaFrete | null;
   /** `propostas.id_transportadora_cliente` — transportadora definida no orçamento. */
   idTransportadoraOrcamento: number | null;
+  /**
+   * CIF com transportadora declarada que não é os Correios e sem prepostagem
+   * viva (`cifPorTransportadora`, em `lib/tipo-frete.ts`). Resolvido uma vez no
+   * service: quando verdadeiro, `tipoFrete` já é TRANSPORTADORA e os nomes já
+   * são os do cadastro. O modal Despachar o lê para não abrir em Correios.
+   */
+  cifPorTransportadora: boolean;
+  /**
+   * A transportadora foi declarada em CIF, mas há prepostagem dos Correios viva:
+   * o pedido segue como Correios e o modal avisa que é preciso cancelá-la.
+   */
+  cifTransportadoraComPrepostagemViva: boolean;
   /** Texto cru do serviço cotado (ex: "SEDEX", "FRETE INCLUSO"). */
   freteServico: string;
   /** CEP da cotação escolhida — usado no default do endereço de entrega. */
