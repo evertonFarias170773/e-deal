@@ -1352,7 +1352,9 @@ export function NotasFiscaisPage() {
   }
 
   function getNfseActions(item: NfseReadModel) {
-    const actions = [
+    // Tipo declarado: a lista mistura itens com ação e o "Cancelar NFS-e", que é
+    // desligado e não tem `onClick`.
+    const actions: (ActionMenuItem & { icon?: typeof Copy })[] = [
       {
         label: "Copiar Ref",
         onClick: () => {
