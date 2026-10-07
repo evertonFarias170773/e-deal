@@ -1,5 +1,6 @@
 import { getSupabaseClient } from "@/lib/supabase/client";
-import { mensagemDoRetornoBancario, resolverPagadorDoBoletoC6 } from "@/features/cobrancas/services/boleto-c6";
+import { resolverPagadorDoBoletoC6 } from "@/features/cobrancas/services/boleto-c6";
+import { destinoDaRespostaDoCancelamento } from "@/features/cobrancas/services/cancelamento-c6";
 import { nfeMocks } from "@/lib/mocks/nfe.mock";
 import { mapSupabaseNfeRowToReadModel } from "../mappers";
 import type { SupabaseNfeRow, NfeReadModel, SupabaseNfeItemRow, SupabaseNfePagamentoRow } from "../types";
@@ -2762,60 +2763,46 @@ export async function deleteBoletoFromBankViaN8n(
     semBaixaLocal?: boolean;
   }
 ) {
-  // Mesmo roteamento server-side do registro. O `idEmpresa` recebido aqui é
-  // apenas informativo: quem decide é o servidor, relendo do banco.
-  const roteamento = await chamarRotaBoletoFaturado("/api/cobrancas/cancelar-boleto-faturado", {
-    boletoId,
-    motivo: String(motivo || "").trim() || "Cancelamento solicitado no Registro de Recebiveis."
-  });
+  // O CANCELAMENTO NO BANCO É INTEIRO DO SERVIDOR (07/10/2026), para as três
+  // empresas: a rota confere a permissão, relê o título e chama o banco (Inter
+  // na Birô, C6 nas outras duas). Até então, nas empresas 1 e 3, ESTA função
+  // chamava o webhook `del-boleto-vibe` do n8n direto do navegador.
+  //
+  // Daqui não sai mais chamada ao banco, em caso nenhum — é o que garante que
+  // não exista cancelamento duplo. `idBoletoC6` e `idEmpresa` ficaram na
+  // assinatura para não mexer nos chamadores, mas não são enviados: quem
+  // decide é o servidor, relendo do banco de dados.
+  void idBoletoC6;
+  void idEmpresa;
 
-  if (!roteamento.delegarLegado) {
-    return { success: true, data: roteamento as Record<string, unknown> };
-  }
+  const client = getSupabaseClient();
+  if (!client) throw new Error("Supabase client not initialized");
 
-  const response = await fetch("https://10074.hostoo.net.br/webhook/del-boleto-vibe", {
+  const sessao = await client.auth.getSession();
+  const token = sessao.data.session?.access_token || "";
+
+  const resposta = await fetch("/api/cobrancas/cancelar-boleto-faturado", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
+    headers: { "content-type": "application/json", "Authorization": `Bearer ${token}` },
     body: JSON.stringify({
-      boleto_id: boletoId,
-      cod_C6: idBoletoC6,
-      id_empresa: idEmpresa
+      boletoId,
+      motivo: String(motivo || "").trim() || "Cancelamento solicitado no Registro de Recebiveis."
     })
   });
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    let legivel = "";
-    try {
-      legivel = mensagemDoRetornoBancario(JSON.parse(errorText), "");
-    } catch {
-      legivel = "";
-    }
-    const recusaHttp = legivel || errorText || `Erro no processamento da exclusão do boleto: ${response.statusText}`;
-    if (opcoes?.semBaixaLocal) throw new Error(recusaHttp);
-    return await resolverRecusaDoBanco(recusaHttp, boletoId);
-  }
+  const resultado = (await resposta.json().catch(() => null)) as Record<string, unknown> | null;
 
-  let resData;
-  try {
-    resData = await response.json();
-  } catch {
-    throw new Error("A resposta do servidor não é um JSON válido.");
-  }
+  // A regra do que fazer com a resposta mora em `cancelamento-c6.ts`, testada
+  // sem navegador: só a recusa DO BANCO abre os dois caminhos de recusa.
+  const destino = destinoDaRespostaDoCancelamento({ ok: resposta.ok, resultado }, opcoes);
 
-  if (!resData) {
-    throw new Error("Resposta do banco vazia ou inválida.");
+  if (destino.acao === "SUCESSO") {
+    return { success: true, data: destino.data };
   }
-
-  if (resData.error || resData.message || resData.status === "error" || resData.success === false) {
-    const recusa = mensagemDoRetornoBancario(resData.error ?? resData.message, "Erro retornado pelo webhook.");
-    if (opcoes?.semBaixaLocal) throw new Error(recusa);
-    return await resolverRecusaDoBanco(recusa, boletoId);
+  if (destino.acao === "RELATAR_RECUSA") {
+    return await resolverRecusaDoBanco(destino.motivo, boletoId);
   }
-
-  return { success: true, data: resData };
+  throw new Error(destino.mensagem);
 }
 
 /**
@@ -2834,8 +2821,10 @@ export async function deleteBoletoFromBankViaN8n(
  * confirmação de que não houve pagamento, que é o que separa "saiu de
  * circulação" de "foi pago". Esta função só RELATA a recusa do banco.
  *
- * O webhook do C6 continua sendo chamado daqui porque trazê-lo para o servidor
- * é rodada própria; por isso o relato precisa existir.
+ * Desde 07/10/2026 o webhook do C6 é chamado pela rota
+ * `cancelar-boleto-faturado`, e não mais daqui. O relato continua existindo
+ * porque a decisão de dar baixa local segue em rota própria: a rota de
+ * cancelamento devolve a recusa (`RECUSA_DO_BANCO`) e esta função a entrega.
  */
 async function resolverRecusaDoBanco(motivo: string, boletoId: string) {
   const client = getSupabaseClient();

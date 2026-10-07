@@ -4,6 +4,12 @@ import { avaliarCancelamentoNoServidor } from "@/features/cobrancas/services/can
 import { RECUSAS_CANCELAMENTO_TITULO } from "@/features/cobrancas/cancelamento-elegibilidade";
 import { resolverCobrancaDoTitulo } from "@/features/cobrancas/services/cobranca-do-titulo";
 import { verificarPermissaoServerSide } from "@/lib/auth/verificar-permissao";
+import { cabecalhosWebhookN8n } from "@/lib/n8n/webhook-segredo";
+import {
+  cancelarTituloNoC6,
+  corpoDoCancelamentoC6,
+  respostaDaRotaParaOCancelamentoC6
+} from "@/features/cobrancas/services/cancelamento-c6";
 
 /**
  * Cancelamento de UM título faturado do Registro de Recebíveis.
@@ -12,9 +18,30 @@ import { verificarPermissaoServerSide } from "@/lib/auth/verificar-permissao";
  * que opera sobre a cobrança inteira de pagamentos_v2 — num faturado de N
  * parcelas isso cancelaria todas.
  *
- * Empresa 2 (Ideal Birô) vai para o Inter. Empresas 1 e 3 seguem no fluxo
- * legado: a rota devolve `delegarLegado: true` e o cliente chama
- * `deleteBoletoFromBankViaN8n` exatamente como antes.
+ * Empresa 2 (Ideal Birô) vai para o Inter.
+ *
+ * EMPRESAS 1 E 3 (C6) — DESDE 07/10/2026 A CHAMADA AO BANCO É DAQUI
+ *   Até essa data a rota devolvia `delegarLegado: true` e o NAVEGADOR chamava o
+ *   webhook `del-boleto-vibe` do n8n, sem segredo. Agora a rota chama, com
+ *   `cabecalhosWebhookN8n()` e os dados RELIDOS do título (`id_boleto_c6`,
+ *   `id_empresa`) — nunca o que a tela mandou. Nada mais muda: a permissão, o
+ *   bloqueio de título pago e o vínculo ambíguo são conferidos antes, como já
+ *   eram; e o webhook continua sem gravar nada no banco de dados, então a baixa
+ *   no ERP segue sendo de quem chamou.
+ *
+ *   A resposta separa a RECUSA DO BANCO das outras falhas (ver
+ *   `services/cancelamento-c6.ts`):
+ *     200 { success, canceladoNoC6, data }             o C6 cancelou;
+ *     409 { code: "RECUSA_DO_BANCO", message }         o C6 respondeu e recusou;
+ *                                                      `message` é o motivo dele,
+ *                                                      sem prefixo nem corte;
+ *     502 { code: "BANCO_INDISPONIVEL" }               rede ou tempo esgotado (25 s);
+ *     502 { code: "RESPOSTA_INVALIDA" }                200 que não dá para ler.
+ *   Só `RECUSA_DO_BANCO` leva o navegador a `titulo-inativo-no-banco` (ou ao
+ *   erro simples, no "Refazer boleto"). `delegarLegado` não é mais devolvido.
+ *
+ *   Título sem código do banco NÃO é recusado aqui: vai vazio, o C6 recusa, e o
+ *   caso segue pela recusa do banco — o comportamento de sempre.
  *
  * O QUE O WORKFLOW REALMENTE FAZ (lido no fluxo vivo em 25 e 26/08/2026,
  * `8ahqXY8sASxqOETd`, 45 nós):
@@ -43,6 +70,10 @@ import { verificarPermissaoServerSide } from "@/lib/auth/verificar-permissao";
 const WEBHOOK_CANCELA_BIRO_FATURADO = "https://10074.hostoo.net.br/webhook/cancela-boleto-fat-inter";
 
 const EMPRESA_BIRO = 2;
+
+export const runtime = "nodejs";
+// Teto da rota. A chamada ao n8n tem o seu, menor: TEMPO_LIMITE_CANCELAMENTO_C6_MS (25 s).
+export const maxDuration = 60;
 
 const STATUS_BLOQUEIA = new Set(["PAID", "CANCELADO", "CANCELADA", "EXTORNADO", "RECUSADO"]);
 
@@ -233,7 +264,21 @@ export async function POST(request: Request) {
   //    delegação passou para DEPOIS das checagens: o que muda para elas nesta
   //    etapa é só isso, ganharem verificação antes de acionar o banco.
   if (idEmpresa !== EMPRESA_BIRO) {
-    return NextResponse.json({ success: true, delegarLegado: true, idEmpresa });
+    // C6 (empresas 1 e 3). A rota chama o banco; o navegador não chama mais.
+    const resultadoC6 = await cancelarTituloNoC6({
+      corpo: corpoDoCancelamentoC6(boleto),
+      cabecalhos: cabecalhosWebhookN8n()
+    });
+
+    if (resultadoC6.tipo !== "SUCESSO") {
+      console.error(
+        `[CancelarBoletoFaturado] C6 nao cancelou o titulo ${boletoId} (empresa ${idEmpresa}): ${resultadoC6.tipo}` +
+          (resultadoC6.tipo === "INDISPONIVEL" ? ` tempoEsgotado=${resultadoC6.tempoEsgotado}` : "")
+      );
+    }
+
+    const respostaC6 = respostaDaRotaParaOCancelamentoC6(resultadoC6);
+    return NextResponse.json(respostaC6.corpo, { status: respostaC6.status });
   }
 
   // 4. Sem identificador bancário não há o que cancelar no Inter.

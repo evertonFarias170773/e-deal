@@ -26,6 +26,11 @@ const REF_INEXISTENTE = "PROVA-SEGREDO-WEBHOOK-REF-INEXISTENTE";
 
 const WEBHOOKS: Array<{ caminho: string; corpo: Record<string, unknown> }> = [
   { caminho: "boletos-vibe", corpo: { id_empresa: 0, prova: PROVA } },
+  // Mesmo fluxo do `boletos-vibe`. O seletor só segue com `id_empresa` 1 ou 3
+  // (NÚMERO, comparação estrita); com 0 a execução acaba nele, sem pedir token
+  // nem cancelar nada no C6. Com 1 ou 3 o fluxo SEMPRE chama o C6, mesmo com
+  // código falso — por isso o corpo não leva `cod_C6` nem `boleto_id`.
+  { caminho: "del-boleto-vibe", corpo: { id_empresa: 0, prova: PROVA } },
   { caminho: "carta-correcao", corpo: { id_empresa: 0, prova: PROVA } },
   { caminho: "cancelamento", corpo: { id_empresa: 0, prova: PROVA } },
   { caminho: "cancelamento-nfse", corpo: { id_empresa: 0, prova: PROVA } },

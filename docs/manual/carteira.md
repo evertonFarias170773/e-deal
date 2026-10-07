@@ -1,6 +1,6 @@
 # Carteira (contas a receber)
 
-> **Última revisão:** 02/10/2026
+> **Última revisão:** 07/10/2026
 > **Caminho no menu:** Financeiro → Carteira
 > **Endereço:** `/contas-a-receber`
 
@@ -321,6 +321,9 @@ O boleto é cancelado no banco e o título continua ativo, agora como **Depósit
 | "O título original já não está em situação de prorrogação (pode já ter sido prorrogado). Nenhum novo título foi criado." | O título mudou de situação durante a prorrogação. | Recarregue a página e confira a situação da parcela antes de tentar de novo. |
 | "Sem permissão para cancelar título" | Seu perfil não pode cancelar cobrança no banco. | Peça a um administrador. |
 | "Erro no cancelamento bancário" | O banco recusou ou a integração falhou. Nada foi alterado. | Leia o motivo no aviso e tente de novo. Se persistir, acione o administrador. |
+| "O banco não respondeu a tempo. Não é possível afirmar se o título foi cancelado: confira no banco antes de tentar de novo." | O banco demorou mais de 25 segundos para responder ao cancelamento. Nada foi alterado no Vibe. | Confira a situação do boleto no banco. Se ainda estiver ativo, tente de novo. |
+| "Não foi possível contatar a integração bancária. Não é possível afirmar se o título foi cancelado: confira antes de tentar de novo." | A chamada ao banco falhou no caminho. Nada foi alterado no Vibe. | Confira a situação do boleto no banco e tente de novo. Se persistir, acione o administrador. |
+| "O sistema foi atualizado enquanto esta tela estava aberta. Nada foi cancelado no banco: recarregue a página e tente de novo." | A tela ficou aberta durante uma atualização do Vibe. | Recarregue a página e repita o cancelamento. |
 
 ## Veja também
 
@@ -347,6 +350,7 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/features/cobrancas/recusa-bancaria.ts`
 - `src/features/nfe/services/nfe.service.ts`
 - `src/app/api/cobrancas/cancelar-boleto-faturado/route.ts`
+- `src/features/cobrancas/services/cancelamento-c6.ts`
 - `src/app/api/cobrancas/titulo-inativo-no-banco/route.ts`
 - `src/components/common/ActionsMenu.tsx`
 - `src/components/common/PermissionGuard.tsx`
