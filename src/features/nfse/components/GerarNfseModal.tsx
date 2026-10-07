@@ -11,11 +11,19 @@
  *
  * O que ela mostra depende do que o pedido já tem (`decidirNfseDoPedido`, a
  * mesma função que as rotas usam):
- *   sem nota viva        → formulário (endereço, valor, descrição);
- *   rascunho             → a nota, os alertas e o botão de emitir;
+ *   sem nota viva        → composição (endereço, serviço, itens, valor, descrição);
+ *   rascunho             → a nota, a validação e o botão de emitir;
  *   erro de envio        → a mesma nota, com "Reenviar";
  *   em análise           → acompanhamento;
- *   autorizada           → leitura, com PDF e XML.
+ *   autorizada           → leitura, com os documentos.
+ *
+ * DESENHO (07/10/2026)
+ *   Segue a tela de rascunho da NF-e: cabeçalho com referência e selo, resumo em
+ *   três cartões, seções em cartões com ícone de conferido, pagamento só para
+ *   conferência e o banner verde de validado. As peças são próprias
+ *   (components/PecasNfse) e as regras do que aparece ficam em
+ *   lib/composicao-nfse. O que vai para as rotas não mudou: pedido, endereço,
+ *   serviço, descrição e valor.
  *
  * Rascunho não se edita: errou, cria outro ("Criar outro rascunho").
  *
@@ -30,7 +38,7 @@
  *     "Copiar detalhes".
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AlertTriangle, Copy, Download, ExternalLink, Loader2, X } from "lucide-react";
+import { ChevronDown, ChevronRight, Copy, Download, ExternalLink, Loader2, MoreHorizontal, X } from "lucide-react";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import { fetchComSessao, SessaoExpiradaError } from "@/lib/supabase/sessao";
 import { abrirLinkDeDocumentoFiscal } from "@/lib/fiscal/documento-nota";
@@ -42,10 +50,34 @@ import {
   conferirDescricao,
   conferirServico,
   conferirValor,
+  descricaoDosItens,
   nomeDoArquivoNfse,
-  situacaoDoStatus,
-  valorDifereDoPedido
+  situacaoDoStatus
 } from "@/features/nfse/lib/regras-emissao";
+import {
+  alternarItemMarcado,
+  enderecoInicial,
+  fatorDoDesconto,
+  opcoesDeEndereco,
+  pagamentosParaConferencia,
+  seloDaNota,
+  separarAlertas,
+  somaDosItensMarcados,
+  valorSugeridoDaNota
+} from "@/features/nfse/lib/composicao-nfse";
+import {
+  AvisoEmDestaque,
+  BOTAO_PRIMARIO_NFSE,
+  BOTAO_SECUNDARIO_NFSE,
+  BannerValidado,
+  CAMPO_NFSE,
+  CartaoDeResumo,
+  FaixaDoAmbiente,
+  LinhaDeResumo,
+  ROTULO_NFSE,
+  SecaoNfse,
+  SeloDeStatus
+} from "@/features/nfse/components/PecasNfse";
 import {
   LIMITE_DA_CHAMADA_MS,
   chaveDoErroGuardado,
@@ -75,23 +107,6 @@ type Modo =
   | { tipo: "FALHA"; mensagem: string }
   | { tipo: "FORMULARIO"; novo: boolean }
   | { tipo: "NOTA"; nota: NotaDeServicoLida; acompanhando: boolean };
-
-const ROTULO_DO_STATUS: Record<string, string> = {
-  PENDENTE: "Rascunho",
-  PRONTA_PARA_ENVIO: "Pronta para envio",
-  PROCESSANDO: "Em processamento",
-  AUTORIZADA: "Autorizada",
-  ERRO_ENVIO: "Erro de envio",
-  ERRO_VALIDACAO: "Bloqueada na conferência",
-  ERRO_AUTORIZACAO: "Recusada pela prefeitura",
-  CANCELADA: "Cancelada",
-  REJEITADA: "Rejeitada"
-};
-
-function rotuloDoStatus(status: string | null): string {
-  const chave = String(status ?? "").toUpperCase();
-  return ROTULO_DO_STATUS[chave] ?? (situacaoDoStatus(status) === "EM_ANALISE" ? "Em análise" : chave || "Sem status");
-}
 
 async function lerJson(resposta: Response): Promise<Record<string, unknown>> {
   try {
@@ -144,6 +159,13 @@ export function GerarNfseModal({
   const [baixando, setBaixando] = useState<null | "pdf" | "xml">(null);
   const [valorTexto, setValorTexto] = useState("");
   const [descricao, setDescricao] = useState("");
+  /** Itens do pedido que entram na nota. Todos vêm marcados; ao menos um fica. */
+  const [marcados, setMarcados] = useState<Set<number>>(new Set());
+  /** Quem digitou no valor ou na descrição: a janela para de regerar aquele campo. */
+  const [valorMexido, setValorMexido] = useState(false);
+  const [descricaoMexida, setDescricaoMexida] = useState(false);
+  const [avisosAbertos, setAvisosAbertos] = useState(false);
+  const [maisAcoes, setMaisAcoes] = useState(false);
   const [alertas, setAlertas] = useState<Alerta[]>([]);
   const [ocupado, setOcupado] = useState<null | "criar" | "emitir" | "consultar">(null);
   /** Falha de uma chamada: fica na janela (e no navegador) até ser dispensada. */
@@ -247,6 +269,22 @@ export function GerarNfseModal({
     return { contexto: c.dados as unknown as ContextoNfseDoPedido };
   }, [chamar, idInt]);
 
+  /** Abre a composição: todos os itens marcados, valor e descrição gerados deles. */
+  const iniciarFormulario = useCallback((lido: ContextoNfseDoPedido, novo: boolean) => {
+    const todos = new Set(lido.itens.map((item) => item.id));
+    const sugerido = valorSugeridoDaNota(lido.itens, todos, lido.valorDosProdutos);
+    setMarcados(todos);
+    setIdEndereco(enderecoInicial(opcoesDeEndereco(lido.enderecos)));
+    setValorTexto(sugerido > 0 ? sugerido.toFixed(2).replace(".", ",") : "");
+    setDescricao(descricaoDosItens(lido.idInt, lido.itens));
+    setValorMexido(false);
+    setDescricaoMexida(false);
+    setAlertas([]);
+    setValidacao(null);
+    setMaisAcoes(false);
+    setModo({ tipo: "FORMULARIO", novo });
+  }, []);
+
   /** Mostra o que o pedido tem: formulário, rascunho, acompanhamento ou a nota autorizada. */
   const aplicarContexto = useCallback(
     (lido: ContextoNfseDoPedido, opcoes?: { acompanhar?: boolean }) => {
@@ -255,13 +293,10 @@ export function GerarNfseModal({
       setIdServico((atual) => (atual !== null && lido.servicos.some((sv) => sv.id === atual) ? atual : lido.idServicoPadrao));
 
       if (lido.decisao.acao === "CRIAR") {
-        setIdEndereco(lido.enderecos.length === 1 ? lido.enderecos[0].id : "");
-        setValorTexto(lido.totalDoPedido > 0 ? lido.totalDoPedido.toFixed(2).replace(".", ",") : "");
-        setDescricao(lido.descricaoSugerida);
-        setAlertas([]);
-        setModo({ tipo: "FORMULARIO", novo: false });
+        iniciarFormulario(lido, false);
         return;
       }
+      setMaisAcoes(false);
 
       const nota = lido.decisao.nota;
       const emAnalise = lido.decisao.acao === "EM_ANALISE";
@@ -269,8 +304,20 @@ export function GerarNfseModal({
       if (lido.decisao.acao === "REABRIR_RASCUNHO" || lido.decisao.acao === "REENVIAR") void carregarAlertas(nota.ref);
       else setAlertas([]);
     },
-    [carregarAlertas]
+    [carregarAlertas, iniciarFormulario]
   );
+
+  /** Marca ou desmarca um item; valor e descrição acompanham enquanto ninguém os digitou. */
+  function alternarItem(id: number) {
+    if (!contexto) return;
+    const novo = alternarItemMarcado(marcados, id);
+    setMarcados(novo);
+    if (!valorMexido) {
+      const sugerido = valorSugeridoDaNota(contexto.itens, novo, contexto.valorDosProdutos);
+      setValorTexto(sugerido > 0 ? sugerido.toFixed(2).replace(".", ",") : "");
+    }
+    if (!descricaoMexida) setDescricao(descricaoDosItens(contexto.idInt, contexto.itens.filter((item) => novo.has(item.id))));
+  }
 
   /** Lê e mostra. Usado ao abrir a janela e nos botões que voltam ao estado do pedido. */
   const carregar = useCallback(
@@ -364,6 +411,7 @@ export function GerarNfseModal({
     const valor = conferirValor(valorTexto);
     if (!valor.ok) return setValidacao(valor.motivo);
     if (contexto.enderecos.length > 0 && !idEndereco) return setValidacao("Escolha o endereço do tomador.");
+    if (contexto.itens.length > 0 && marcados.size === 0) return setValidacao("Marque pelo menos um item do pedido.");
     const servicoDoRascunho = conferirServico(contexto.servicos.find((sv) => sv.id === idServico) ?? null);
     if (!servicoDoRascunho.ok) return setValidacao(servicoDoRascunho.motivo);
 
@@ -544,10 +592,34 @@ export function GerarNfseModal({
   const servicoEscolhido = contexto?.servicos.find((sv) => sv.id === idServico) ?? null;
   const servicoConferido = conferirServico(servicoEscolhido);
   const ambiente = contexto?.empresa.ambiente ?? null;
-  const enderecoEscolhido = contexto?.enderecos.find((e) => e.id === idEndereco) ?? null;
   const valorConferido = conferirValor(valorTexto);
   const caracteres = descricao.replace(/\r\n/g, "\n").trim().length;
   const descricaoEstourou = caracteres > LIMITE_DESCRICAO_NFSE;
+
+  const opcoesDoEndereco = contexto ? opcoesDeEndereco(contexto.enderecos) : [];
+  const opcaoEscolhida = opcoesDoEndereco.find((o) => o.id === idEndereco) ?? null;
+  const somaDeTodos = contexto ? somaDosItensMarcados(contexto.itens, new Set(contexto.itens.map((i) => i.id))) : 0;
+  const somaMarcada = contexto ? somaDosItensMarcados(contexto.itens, marcados) : 0;
+  const sugerido = contexto ? valorSugeridoDaNota(contexto.itens, marcados, contexto.valorDosProdutos) : 0;
+  const temDesconto = contexto ? fatorDoDesconto(contexto.valorDosProdutos, somaDeTodos) < 1 : false;
+  const pagamentos = contexto ? pagamentosParaConferencia(contexto.cobrancas) : [];
+  const alertasSeparados = separarAlertas(alertas);
+
+  const notaAberta = modo.tipo === "NOTA" ? modo.nota : null;
+  const situacaoDaNota = notaAberta ? situacaoDoStatus(notaAberta.status) : null;
+  const selo = seloDaNota(situacaoDaNota);
+  const emFormulario = contexto !== null && modo.tipo === "FORMULARIO" && contexto.empresa.liberada;
+  const podeEmitir =
+    contexto !== null && notaAberta !== null && contexto.empresa.liberada && modo.tipo === "NOTA" && !modo.acompanhando &&
+    (situacaoDaNota === "RASCUNHO" || situacaoDaNota === "REENVIAR");
+  const totalDaNota = notaAberta ? Number(notaAberta.valor_servicos) || 0 : valorConferido.ok ? valorConferido.valor : 0;
+  const enderecoDaNota = contexto && notaAberta ? contexto.enderecos.find((e) => e.id === notaAberta.id_endereco_tomador) ?? null : null;
+  const rotuloDoAmbiente = ambiente === "producao" ? "Produção" : ambiente === "homologacao" ? "Homologação" : "não definido";
+  const dataFormatada = (iso: string | null) => {
+    if (!iso) return "não informada";
+    const data = new Date(iso);
+    return Number.isNaN(data.getTime()) ? iso : data.toLocaleString("pt-BR");
+  };
 
   return (
     <div
@@ -556,28 +628,45 @@ export function GerarNfseModal({
       aria-modal="true"
       aria-labelledby="gerar-nfse-titulo"
     >
-      <div className="flex max-h-[92vh] w-full max-w-2xl flex-col rounded-3xl bg-white p-6 shadow-2xl">
-        <div className="flex items-start justify-between gap-4 border-b border-slate-100 pb-4">
-          <div>
-            <h2 id="gerar-nfse-titulo" className="text-xl font-semibold text-slate-950">
-              Gerar NFS-e
-            </h2>
-            <p className="mt-1 text-sm text-slate-500">
-              Pedido <span className="font-semibold text-slate-700">#{idInt}</span> · nota fiscal de serviço
-            </p>
+      <div className="flex max-h-[94vh] w-full max-w-[980px] flex-col overflow-hidden rounded-3xl bg-slate-50 shadow-2xl">
+        {/* Cabeçalho: pedido, referência, selo e ambiente */}
+        <div className="space-y-3 border-b border-slate-200 bg-white px-6 py-5">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h2 id="gerar-nfse-titulo" className="text-xl font-bold text-slate-950">
+                NFS-e · Pedido #{idInt}
+              </h2>
+              <p className="mt-1 text-sm text-slate-500">
+                {notaAberta ? (
+                  <>
+                    Referência <span className="font-semibold text-slate-700">{notaAberta.ref}</span>
+                    {notaAberta.numero_nfse ? ` · NFS-e nº ${notaAberta.numero_nfse}` : ""}
+                  </>
+                ) : (
+                  "Nota fiscal de serviço ainda sem rascunho"
+                )}
+              </p>
+            </div>
+            <div className="flex items-center gap-3">
+              {contexto && modo.tipo !== "CARREGANDO" && modo.tipo !== "FALHA" && (
+                <SeloDeStatus rotulo={notaAberta ? selo.rotulo : "Rascunho"} tom={notaAberta ? selo.tom : "neutro"} statusReal={notaAberta ? String(notaAberta.status ?? "") : "SEM_RASCUNHO"} />
+              )}
+              <button
+                type="button"
+                onClick={onClose}
+                disabled={ocupado !== null}
+                aria-label="Fechar"
+                className="rounded-xl p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 disabled:opacity-40"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={ocupado !== null}
-            aria-label="Fechar"
-            className="rounded-xl p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 disabled:opacity-40"
-          >
-            <X className="h-5 w-5" />
-          </button>
+          {contexto && modo.tipo !== "CARREGANDO" && modo.tipo !== "FALHA" && <FaixaDoAmbiente ambiente={ambiente} />}
         </div>
 
-        <div className="mt-4 min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
+        {/* Corpo, com rolagem própria */}
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-5">
           {modo.tipo === "CARREGANDO" && (
             <p className="flex items-center gap-2 p-4 text-sm text-slate-500">
               <Loader2 className="h-4 w-4 animate-spin" /> Lendo os dados do pedido...
@@ -602,266 +691,390 @@ export function GerarNfseModal({
 
           {contexto && modo.tipo !== "CARREGANDO" && modo.tipo !== "FALHA" && (
             <>
-              <div
-                data-ambiente={ambiente ?? "indefinido"}
-                className={
-                  ambiente === "producao"
-                    ? "rounded-2xl border-2 border-red-700 bg-red-600 p-3 text-center text-base font-extrabold tracking-wide text-white"
-                    : "rounded-2xl border border-amber-300 bg-amber-50 p-3 text-sm font-bold text-amber-900"
+              {!contexto.empresa.liberada && (
+                <AvisoEmDestaque tom="impede">A emissão de NFS-e pelo Vibe não está liberada para {contexto.empresa.nome}.</AvisoEmDestaque>
+              )}
+
+              {/* Resumo: três cartões, como no rascunho da NF-e */}
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-3" data-resumo-nfse>
+                <CartaoDeResumo titulo="Informações gerais">
+                  <LinhaDeResumo rotulo="Empresa emissora">{contexto.empresa.nome}</LinhaDeResumo>
+                  <LinhaDeResumo rotulo="Ambiente">{rotuloDoAmbiente}</LinhaDeResumo>
+                  <LinhaDeResumo rotulo="Serviço fiscal">
+                    <span data-servico-escolhido>
+                      {notaAberta
+                        ? `${notaAberta.codigo_servico || "não informado"} · NBS ${notaAberta.codigo_nbs || "não informado"}`
+                        : servicoEscolhido
+                          ? `${servicoEscolhido.codigo || "não informado"} · NBS ${servicoEscolhido.nbs || "não informado"}`
+                          : "não escolhido"}
+                    </span>
+                  </LinhaDeResumo>
+                </CartaoDeResumo>
+
+                <CartaoDeResumo titulo="Valores">
+                  {!notaAberta && contexto.itens.length > 0 && <LinhaDeResumo rotulo="Itens marcados">{formatCurrency(somaMarcada)}</LinhaDeResumo>}
+                  {!notaAberta && temDesconto && <LinhaDeResumo rotulo="Desconto do pedido">-{formatCurrency(Math.max(0, somaMarcada - sugerido))}</LinhaDeResumo>}
+                  <LinhaDeResumo rotulo="Serviços">{formatCurrency(totalDaNota)}</LinhaDeResumo>
+                  <LinhaDeResumo rotulo="Total da nota" forte>
+                    <span data-total-da-nota>{formatCurrency(totalDaNota)}</span>
+                  </LinhaDeResumo>
+                </CartaoDeResumo>
+
+                <CartaoDeResumo titulo="Tomador">
+                  <p className="text-sm font-bold text-slate-900">{contexto.tomador.nome}</p>
+                  <p className="text-xs text-slate-500">
+                    {contexto.tomador.tipoDocumento ?? "Documento"}: {contexto.tomador.documento || "não informado"}
+                  </p>
+                  <p className="text-xs text-slate-500">E-mail: {contexto.tomador.email}</p>
+                  <p className="text-xs text-slate-500">Telefone: {contexto.tomador.telefone}</p>
+                </CartaoDeResumo>
+              </div>
+
+              {emFormulario && !contexto.tomador.documentoOk && (
+                <AvisoEmDestaque tom="impede">
+                  O cliente não tem CPF (11 dígitos) ou CNPJ (14 dígitos) no cadastro. Corrija o cadastro do cliente para gerar a NFS-e.
+                </AvisoEmDestaque>
+              )}
+
+              {/* Endereço do tomador */}
+              <SecaoNfse
+                titulo="Endereço do tomador"
+                data-secao="endereco"
+                estado={
+                  emFormulario
+                    ? opcoesDoEndereco.length === 0 || (opcaoEscolhida && !opcaoEscolhida.municipioReconhecido) || !idEndereco
+                      ? "atencao"
+                      : "ok"
+                    : enderecoDaNota && enderecoDaNota.municipioReconhecido
+                      ? "ok"
+                      : "atencao"
                 }
               >
-                {ambiente === "producao" && "PRODUÇÃO: NOTA COM VALOR FISCAL"}
-                {ambiente === "homologacao" && "HOMOLOGAÇÃO: NOTA DE TESTE, sem valor fiscal"}
-                {ambiente === null && "Ambiente da NFS-e não definido no cadastro da empresa"}
-              </div>
-
-              <div data-servico-nfse>
-                <label htmlFor="nfse-servico" className="text-xs font-semibold uppercase text-slate-400">
-                  Serviço
-                </label>
-                {modo.tipo === "FORMULARIO" ? (
-                  <>
-                    <select
-                      id="nfse-servico"
-                      value={idServico ?? ""}
-                      onChange={(e) => setIdServico(Number(e.target.value) || null)}
-                      disabled={contexto.servicos.length === 0 || ocupado !== null}
-                      className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-teal-400 disabled:bg-slate-50"
-                    >
-                      {contexto.servicos.length === 0 && <option value="">Nenhum serviço disponível</option>}
-                      {contexto.servicos.map((sv) => (
-                        <option key={sv.id} value={sv.id}>
-                          {[sv.codigo, sv.nome].filter(Boolean).join(" · ")}
-                        </option>
-                      ))}
-                    </select>
-                    {servicoEscolhido && (
-                      <p className="mt-1 text-xs text-slate-600" data-servico-escolhido>
-                        Código de tributação <strong>{servicoEscolhido.codigo || "não informado"}</strong> · NBS{" "}
-                        <strong>{servicoEscolhido.nbs || "não informado"}</strong>
-                        {servicoEscolhido.descricao ? ` · ${servicoEscolhido.descricao}` : ""}
-                      </p>
-                    )}
-                    {!servicoConferido.ok && (
-                      <p role="alert" className="mt-1 text-xs font-semibold text-red-700">
-                        {contexto.servicos.length === 0
-                          ? "Não foi possível ler os serviços da NFS-e. Sem serviço, o rascunho não é criado."
-                          : servicoConferido.motivo}
-                      </p>
-                    )}
-                  </>
+                {emFormulario ? (
+                  opcoesDoEndereco.length === 0 ? (
+                    <p className="text-sm text-amber-700">O cliente não tem endereço cadastrado. A nota sairá sem o endereço do tomador.</p>
+                  ) : (
+                    <>
+                      <label htmlFor="nfse-endereco" className={ROTULO_NFSE}>
+                        Endereço que vai na nota
+                      </label>
+                      <select
+                        id="nfse-endereco"
+                        value={idEndereco}
+                        onChange={(e) => setIdEndereco(e.target.value)}
+                        disabled={ocupado !== null}
+                        className={CAMPO_NFSE}
+                      >
+                        {opcoesDoEndereco.length > 1 && <option value="">Escolha o endereço do tomador...</option>}
+                        {opcoesDoEndereco.length === 1 && opcoesDoEndereco[0].incompleto && <option value="">Nenhum endereço utilizável</option>}
+                        {opcoesDoEndereco.map((o) => (
+                          <option key={o.id} value={o.id} disabled={o.incompleto}>
+                            {o.rotulo}
+                            {o.incompleto ? " (cadastro incompleto)" : ""}
+                          </option>
+                        ))}
+                      </select>
+                      {opcoesDoEndereco.some((o) => o.incompleto) && (
+                        <p className="mt-1.5 text-xs text-slate-500">
+                          Endereço marcado como &quot;cadastro incompleto&quot; tem texto inválido em algum campo e não pode ser usado. Corrija-o no cadastro do cliente.
+                        </p>
+                      )}
+                      {opcaoEscolhida && !opcaoEscolhida.municipioReconhecido && (
+                        <p role="status" className="mt-2 text-xs font-semibold text-amber-700">
+                          O município deste endereço não foi reconhecido. A nota sairá sem o endereço do tomador.
+                        </p>
+                      )}
+                    </>
+                  )
                 ) : (
-                  <p className="mt-1 text-sm text-slate-900" data-servico-escolhido>
-                    {modo.tipo === "NOTA"
-                      ? `Código de tributação ${modo.nota.codigo_servico || "não informado"} · NBS ${modo.nota.codigo_nbs || "não informado"}`
-                      : ""}
+                  <p className="text-sm text-slate-700" data-endereco-da-nota>
+                    {enderecoDaNota
+                      ? `${opcoesDeEndereco([enderecoDaNota])[0].rotulo}${enderecoDaNota.municipioReconhecido ? "" : " — município não reconhecido: a nota sai sem endereço"}`
+                      : "Esta nota não tem endereço do tomador gravado."}
                   </p>
                 )}
-              </div>
+              </SecaoNfse>
 
-              <dl className="grid grid-cols-1 gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
-                <div>
-                  <dt className="text-xs font-semibold uppercase text-slate-400">Tomador</dt>
-                  <dd className="font-semibold text-slate-900">{contexto.tomador.nome}</dd>
-                  <dd className="text-xs text-slate-500">
-                    {contexto.tomador.documentoOk ? `${contexto.tomador.tipoDocumento} no cadastro` : "Sem CPF ou CNPJ válido"}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-xs font-semibold uppercase text-slate-400">Empresa emissora</dt>
-                  <dd className="font-semibold text-slate-900">{contexto.empresa.nome}</dd>
-                </div>
-              </dl>
-
-              {!contexto.empresa.liberada && (
-                <p className="rounded-2xl border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700">
-                  A emissão de NFS-e pelo Vibe não está liberada para {contexto.empresa.nome}.
-                </p>
-              )}
-            </>
-          )}
-
-          {contexto && modo.tipo === "FORMULARIO" && contexto.empresa.liberada && (
-            <>
-              {!contexto.tomador.documentoOk && (
-                <p className="rounded-2xl border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700">
-                  O cliente não tem CPF (11 dígitos) ou CNPJ (14 dígitos) no cadastro. Corrija o cadastro do cliente para
-                  gerar a NFS-e.
-                </p>
-              )}
-
-              <fieldset>
-                <legend className="text-xs font-semibold uppercase text-slate-400">Endereço do tomador</legend>
-                {contexto.enderecos.length === 0 ? (
-                  <p className="mt-1 text-sm text-amber-700">
-                    O cliente não tem endereço cadastrado. A nota sairá sem o endereço do tomador.
-                  </p>
-                ) : (
-                  <div className="mt-1 space-y-1.5">
-                    {contexto.enderecos.map((e) => (
-                      <label
-                        key={e.id}
-                        className="flex cursor-pointer items-start gap-2 rounded-xl border border-slate-200 p-2.5 text-sm hover:border-teal-300"
-                      >
-                        <input
-                          type="radio"
-                          name="endereco-tomador"
-                          className="mt-1"
-                          checked={idEndereco === e.id}
-                          onChange={() => setIdEndereco(e.id)}
-                        />
-                        <span>
-                          <span className="font-semibold text-slate-900">{e.linha}</span>
-                          <span className="block text-xs text-slate-500">
-                            {[e.cidade && e.uf ? `${e.cidade}/${e.uf}` : e.cidade || e.uf, e.cep && `CEP ${e.cep}`, e.tipo]
-                              .filter(Boolean)
-                              .join(" · ")}
-                          </span>
-                        </span>
+              {/* Serviço e itens */}
+              <SecaoNfse
+                titulo="Serviço e itens"
+                data-secao="servico"
+                estado={emFormulario ? (servicoConferido.ok && valorConferido.ok && !descricaoEstourou && caracteres > 0 ? "ok" : "atencao") : "ok"}
+                detalhe={emFormulario && contexto.itens.length > 0 ? `${marcados.size} de ${contexto.itens.length} item(ns)` : undefined}
+              >
+                {emFormulario ? (
+                  <div className="space-y-4">
+                    <div>
+                      <label htmlFor="nfse-servico" className={ROTULO_NFSE}>
+                        Serviço fiscal
                       </label>
-                    ))}
+                      <select
+                        id="nfse-servico"
+                        value={idServico ?? ""}
+                        onChange={(e) => setIdServico(Number(e.target.value) || null)}
+                        disabled={contexto.servicos.length === 0 || ocupado !== null}
+                        className={CAMPO_NFSE}
+                      >
+                        {contexto.servicos.length === 0 && <option value="">Nenhum serviço disponível</option>}
+                        {contexto.servicos.map((sv) => (
+                          <option key={sv.id} value={sv.id}>
+                            {[sv.codigo, sv.nome].filter(Boolean).join(" · ")}
+                          </option>
+                        ))}
+                      </select>
+                      {servicoEscolhido && (
+                        <p className="mt-1.5 text-xs text-slate-600">
+                          Código de tributação <strong>{servicoEscolhido.codigo || "não informado"}</strong> · NBS{" "}
+                          <strong>{servicoEscolhido.nbs || "não informado"}</strong>
+                          {servicoEscolhido.descricao ? ` · ${servicoEscolhido.descricao}` : ""}
+                        </p>
+                      )}
+                      {!servicoConferido.ok && (
+                        <p role="alert" className="mt-1.5 text-xs font-semibold text-red-700">
+                          {contexto.servicos.length === 0
+                            ? "Não foi possível ler os serviços da NFS-e. Sem serviço, o rascunho não é criado."
+                            : servicoConferido.motivo}
+                        </p>
+                      )}
+                    </div>
+
+                    {contexto.itens.length > 0 && (
+                      <div className="overflow-x-auto rounded-2xl border border-slate-200">
+                        <table className="w-full text-sm" data-itens-nfse>
+                          <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                            <tr>
+                              <th className="w-10 px-3 py-2 text-left">
+                                <span className="sr-only">Entra na nota</span>
+                              </th>
+                              <th className="px-3 py-2 text-left">Produto</th>
+                              <th className="px-3 py-2 text-right">Quantidade</th>
+                              <th className="px-3 py-2 text-right">Valor unitário</th>
+                              <th className="px-3 py-2 text-right">Subtotal</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {contexto.itens.map((item) => {
+                              const marcado = marcados.has(item.id);
+                              const ultimo = marcado && marcados.size === 1;
+                              return (
+                                <tr key={item.id} className={marcado ? "border-t border-slate-100" : "border-t border-slate-100 text-slate-400"}>
+                                  <td className="px-3 py-2">
+                                    <input
+                                      type="checkbox"
+                                      aria-label={`Incluir ${item.nome} na nota`}
+                                      checked={marcado}
+                                      disabled={ocupado !== null || ultimo}
+                                      title={ultimo ? "Pelo menos um item tem de ficar na nota." : undefined}
+                                      onChange={() => alternarItem(item.id)}
+                                    />
+                                  </td>
+                                  <td className="px-3 py-2 font-medium">{item.nome}</td>
+                                  <td className="px-3 py-2 text-right">{item.quantidade.toLocaleString("pt-BR")}</td>
+                                  <td className="px-3 py-2 text-right">{formatCurrency(item.valorUnitario)}</td>
+                                  <td className="px-3 py-2 text-right font-semibold">{formatCurrency(item.subtotal)}</td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                          <tfoot className="bg-slate-50 text-sm">
+                            <tr className="border-t border-slate-200">
+                              <td colSpan={4} className="px-3 py-2 text-right text-slate-600">
+                                Soma dos itens marcados
+                                {temDesconto ? " (com o desconto do pedido)" : ""}
+                              </td>
+                              <td className="px-3 py-2 text-right font-bold text-slate-900" data-soma-dos-itens>
+                                {formatCurrency(sugerido)}
+                              </td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
+                    )}
+                    {contexto.itens.length > 0 && (
+                      <p className="text-xs text-slate-500">
+                        O subtotal do item é o que está gravado no pedido (inclui o valor fixo, quando há).
+                        {contexto.freteDoPedido > 0 ? ` O frete do pedido (${formatCurrency(contexto.freteDoPedido)}) não entra na nota de serviço.` : ""} Total do pedido:{" "}
+                        {formatCurrency(contexto.totalDoPedido)}.
+                      </p>
+                    )}
+
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-[220px_1fr]">
+                      <div>
+                        <label htmlFor="nfse-valor" className={ROTULO_NFSE}>
+                          Valor da nota (R$)
+                        </label>
+                        <input
+                          id="nfse-valor"
+                          inputMode="decimal"
+                          value={valorTexto}
+                          disabled={ocupado !== null}
+                          onChange={(e) => {
+                            setValorMexido(true);
+                            setValorTexto(e.target.value);
+                          }}
+                          className={CAMPO_NFSE}
+                        />
+                        {valorConferido.ok && contexto.itens.length > 0 && Math.round(valorConferido.valor * 100) !== Math.round(sugerido * 100) && (
+                          <p role="status" data-aviso-valor className="mt-1.5 text-xs font-semibold text-amber-700">
+                            O valor difere da soma dos itens marcados ({formatCurrency(sugerido)}).{" "}
+                            <button
+                              type="button"
+                              className="underline"
+                              onClick={() => {
+                                setValorMexido(false);
+                                setValorTexto(sugerido > 0 ? sugerido.toFixed(2).replace(".", ",") : "");
+                              }}
+                            >
+                              Usar a soma
+                            </button>
+                          </p>
+                        )}
+                      </div>
+                      <div>
+                        <label htmlFor="nfse-descricao" className={ROTULO_NFSE}>
+                          Descrição do serviço
+                        </label>
+                        <textarea
+                          id="nfse-descricao"
+                          rows={6}
+                          value={descricao}
+                          disabled={ocupado !== null}
+                          onChange={(e) => {
+                            setDescricaoMexida(true);
+                            setDescricao(e.target.value);
+                          }}
+                          className={CAMPO_NFSE}
+                        />
+                        <p data-contador-descricao className={descricaoEstourou ? "mt-1 text-xs font-semibold text-red-600" : "mt-1 text-xs text-slate-500"}>
+                          {caracteres} de {LIMITE_DESCRICAO_NFSE} caracteres
+                          {descricaoEstourou && ": reduza o texto para criar o rascunho."}
+                          {descricaoMexida && contexto.itens.length > 0 && (
+                            <>
+                              {" · "}
+                              <button
+                                type="button"
+                                className="underline"
+                                onClick={() => {
+                                  setDescricaoMexida(false);
+                                  setDescricao(descricaoDosItens(contexto.idInt, contexto.itens.filter((item) => marcados.has(item.id))));
+                                }}
+                              >
+                                Refazer a partir dos itens
+                              </button>
+                            </>
+                          )}
+                        </p>
+                      </div>
+                    </div>
+                    <p className="text-xs text-slate-500">Depois de criado, o rascunho não é editado. Se precisar corrigir, crie outro.</p>
+                  </div>
+                ) : notaAberta ? (
+                  <div className="space-y-3" data-ref-nfse={notaAberta.ref}>
+                    <p className="text-sm text-slate-700">
+                      Código de tributação <strong>{notaAberta.codigo_servico || "não informado"}</strong> · NBS{" "}
+                      <strong>{notaAberta.codigo_nbs || "não informado"}</strong>
+                    </p>
+                    <p className="text-sm text-slate-700">
+                      Valor do serviço: <strong>{formatCurrency(totalDaNota)}</strong>
+                    </p>
+                    <div>
+                      <p className={ROTULO_NFSE}>Descrição do serviço</p>
+                      <p className="whitespace-pre-wrap rounded-xl bg-slate-50 p-3 text-sm text-slate-700">{notaAberta.discriminacao}</p>
+                    </div>
+                  </div>
+                ) : null}
+              </SecaoNfse>
+
+              {/* Pagamento do pedido: só leitura */}
+              <SecaoNfse titulo="Pagamento do pedido" estado="neutro" data-secao="pagamento">
+                <p className="mb-3 text-xs text-slate-500">A NFS-e nacional não leva parcelas; esta informação é só para conferência.</p>
+                {pagamentos.length === 0 ? (
+                  <p className="text-sm text-slate-600">O pedido não tem cobrança ativa.</p>
+                ) : (
+                  <div className="overflow-x-auto rounded-2xl border border-slate-200">
+                    <table className="w-full text-sm" data-pagamento-nfse>
+                      <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                        <tr>
+                          <th className="px-3 py-2 text-left">Forma</th>
+                          <th className="px-3 py-2 text-left">Parcela</th>
+                          <th className="px-3 py-2 text-left">Vencimento</th>
+                          <th className="px-3 py-2 text-right">Valor</th>
+                          <th className="px-3 py-2 text-left">Situação</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {pagamentos.flatMap((pg, i) =>
+                          pg.vencimentos.map((v) => (
+                            <tr key={`${i}-${v.numero}`} className="border-t border-slate-100">
+                              <td className="px-3 py-2 font-medium text-slate-800">{v.numero === 1 ? pg.forma : ""}</td>
+                              <td className="px-3 py-2 text-slate-600">
+                                {v.numero}/{v.total}
+                              </td>
+                              <td className="px-3 py-2 text-slate-600">
+                                {v.vencimento ? v.vencimento.split("-").reverse().join("/") : "a definir"}
+                              </td>
+                              <td className="px-3 py-2 text-right font-semibold text-slate-900">{formatCurrency(v.valor)}</td>
+                              <td className="px-3 py-2 text-slate-600">{v.numero === 1 ? pg.situacao : ""}</td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
                   </div>
                 )}
-                {enderecoEscolhido && !enderecoEscolhido.municipioReconhecido && (
-                  <p role="status" className="mt-2 text-xs font-semibold text-amber-700">
-                    O município deste endereço não foi reconhecido. A nota sairá sem o endereço do tomador.
-                  </p>
-                )}
-              </fieldset>
+              </SecaoNfse>
 
-              <div>
-                <label htmlFor="nfse-valor" className="text-xs font-semibold uppercase text-slate-400">
-                  Valor do serviço (R$)
-                </label>
-                <input
-                  id="nfse-valor"
-                  inputMode="decimal"
-                  value={valorTexto}
-                  onChange={(e) => setValorTexto(e.target.value)}
-                  className="mt-1 w-48 rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900 outline-none focus:border-teal-400"
-                />
-                {valorConferido.ok && valorDifereDoPedido(valorConferido.valor, contexto.totalDoPedido) && (
-                  <p role="status" className="mt-1 text-xs font-semibold text-amber-700">
-                    O valor difere do total do pedido ({formatCurrency(contexto.totalDoPedido)}).
-                  </p>
-                )}
-              </div>
-
-              <div>
-                <label htmlFor="nfse-descricao" className="text-xs font-semibold uppercase text-slate-400">
-                  Descrição do serviço
-                </label>
-                <textarea
-                  id="nfse-descricao"
-                  rows={7}
-                  value={descricao}
-                  onChange={(e) => setDescricao(e.target.value)}
-                  className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900 outline-none focus:border-teal-400"
-                />
-                <p
-                  data-contador-descricao
-                  className={descricaoEstourou ? "text-xs font-semibold text-red-600" : "text-xs text-slate-500"}
-                >
-                  {caracteres} de {LIMITE_DESCRICAO_NFSE} caracteres
-                  {descricaoEstourou && ": reduza o texto para criar o rascunho."}
-                </p>
-                <p className="mt-1 text-xs text-slate-500">
-                  Depois de criado, o rascunho não é editado. Se precisar corrigir, crie outro.
-                </p>
-              </div>
-            </>
-          )}
-
-          {contexto && modo.tipo === "NOTA" && (
-            <div className="space-y-3 rounded-2xl border border-slate-200 p-4 text-sm" data-ref-nfse={modo.nota.ref}>
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="font-bold text-slate-900">
-                  {modo.nota.numero_nfse ? `NFS-e nº ${modo.nota.numero_nfse}` : modo.nota.ref}
-                </span>
-                <span
-                  data-status-nfse={String(modo.nota.status ?? "")}
-                  className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700"
-                >
-                  {rotuloDoStatus(modo.nota.status)}
-                </span>
-              </div>
-              <p className="text-xs text-slate-500">
-                Referência {modo.nota.ref}
-                {modo.nota.ambiente ? ` · gravada em ${modo.nota.ambiente}` : ""}
-              </p>
-              <p>
-                Valor do serviço: <strong>{formatCurrency(Number(modo.nota.valor_servicos) || 0)}</strong>
-              </p>
-              <p className="whitespace-pre-wrap rounded-xl bg-slate-50 p-3 text-xs text-slate-700">{modo.nota.discriminacao}</p>
-              <p className="text-xs text-slate-500">
-                Endereço do tomador:{" "}
-                {(() => {
-                  const e = contexto.enderecos.find((x) => x.id === modo.nota.id_endereco_tomador);
-                  if (!e) return "não gravado nesta nota";
-                  return `${e.linha} · ${e.cidade}/${e.uf}${e.municipioReconhecido ? "" : " (município não reconhecido: a nota sai sem endereço)"}`;
-                })()}
-              </p>
-
-              {(modo.nota.mensagem_prefeitura || modo.nota.erro_mensagem) && situacaoDoStatus(modo.nota.status) !== "AUTORIZADA" && (
-                <p className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs font-semibold text-red-700">
-                  {modo.nota.mensagem_prefeitura || modo.nota.erro_mensagem}
-                </p>
+              {/* Validação: só com a nota (o banco confere o rascunho gravado) */}
+              {notaAberta && (situacaoDaNota === "RASCUNHO" || situacaoDaNota === "REENVIAR") && (
+                <SecaoNfse titulo="Validação" data-secao="validacao" estado={alertasSeparados.validado ? "ok" : "atencao"}>
+                  <div className="space-y-2" data-alertas-nfse>
+                    {alertasSeparados.validado ? (
+                      <BannerValidado>Rascunho validado, sem erros bloqueantes.</BannerValidado>
+                    ) : (
+                      alertasSeparados.bloqueios.map((al) => (
+                        <AvisoEmDestaque key={al.codigo} tom="impede">
+                          {al.mensagem} A integração vai recusar o envio enquanto isso não for corrigido.
+                        </AvisoEmDestaque>
+                      ))
+                    )}
+                    {alertasSeparados.atencao.map((al) => (
+                      <AvisoEmDestaque key={al.codigo} tom="atencao">
+                        {al.mensagem}
+                      </AvisoEmDestaque>
+                    ))}
+                    {alertasSeparados.informativos.length > 0 && (
+                      <div className="rounded-xl border border-slate-200 bg-white">
+                        <button
+                          type="button"
+                          onClick={() => setAvisosAbertos((v) => !v)}
+                          aria-expanded={avisosAbertos}
+                          className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-semibold text-slate-600"
+                        >
+                          {avisosAbertos ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                          Avisos informativos ({alertasSeparados.informativos.length})
+                        </button>
+                        {avisosAbertos && (
+                          <ul className="space-y-1 border-t border-slate-100 px-4 py-3 text-xs text-slate-600">
+                            {alertasSeparados.informativos.map((al) => (
+                              <li key={al.codigo}>{al.mensagem}</li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </SecaoNfse>
               )}
 
-              {situacaoDoStatus(modo.nota.status) === "AUTORIZADA" && (
-                <div className="flex flex-wrap gap-2">
-                  {modo.nota.url_pdf && (
-                    <button
-                      type="button"
-                      onClick={() => abrirLinkDeDocumentoFiscal(modo.nota.url_pdf)}
-                      className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                    >
-                      <ExternalLink className="h-3.5 w-3.5" /> Abrir PDF
-                    </button>
-                  )}
-                  {modo.nota.url_xml && (
-                    <button
-                      type="button"
-                      onClick={() => abrirLinkDeDocumentoFiscal(modo.nota.url_xml)}
-                      className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                    >
-                      <ExternalLink className="h-3.5 w-3.5" /> Abrir XML
-                    </button>
-                  )}
-                  {modo.nota.url_pdf && (
-                    <button
-                      type="button"
-                      onClick={() => void baixar(modo.nota, "pdf")}
-                      disabled={baixando !== null}
-                      className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-                    >
-                      {baixando === "pdf" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
-                      Baixar PDF
-                    </button>
-                  )}
-                  {modo.nota.url_xml && (
-                    <button
-                      type="button"
-                      onClick={() => void baixar(modo.nota, "xml")}
-                      disabled={baixando !== null}
-                      className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-                    >
-                      {baixando === "xml" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
-                      Baixar XML
-                    </button>
-                  )}
-                  {!modo.nota.url_pdf && !modo.nota.url_xml && (
-                    <span className="text-xs text-slate-500">PDF e XML ainda não disponíveis.</span>
-                  )}
-                </div>
+              {/* Acompanhamento e erro da nota */}
+              {notaAberta && situacaoDaNota !== "AUTORIZADA" && (notaAberta.mensagem_prefeitura || notaAberta.erro_mensagem) && (
+                <AvisoEmDestaque tom="impede">{notaAberta.mensagem_prefeitura || notaAberta.erro_mensagem}</AvisoEmDestaque>
               )}
-
-              {modo.acompanhando && (
-                <p role="status" className="flex items-center gap-2 text-xs font-semibold text-slate-600">
+              {modo.tipo === "NOTA" && modo.acompanhando && (
+                <p role="status" data-acompanhando className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white p-3 text-sm font-semibold text-slate-600">
                   {consultas < MAXIMO_DE_CONSULTAS_NFSE ? (
                     <>
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" /> Aguardando o retorno da prefeitura. A janela consulta
-                      sozinha a cada 15 segundos.
+                      <Loader2 className="h-4 w-4 animate-spin" /> Aguardando o retorno da prefeitura. A janela consulta sozinha a cada 15 segundos.
                     </>
                   ) : (
                     "A nota continua em análise. Consulte depois."
@@ -869,49 +1082,73 @@ export function GerarNfseModal({
                 </p>
               )}
 
-              {alertas.length > 0 && (
-                <ul className="space-y-1" data-alertas-nfse>
-                  {alertas.map((a) => (
-                    <li
-                      key={a.codigo}
-                      className={
-                        a.bloqueia_envio
-                          ? "flex gap-2 text-xs font-semibold text-red-700"
-                          : "flex gap-2 text-xs text-amber-700"
-                      }
-                    >
-                      <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                      <span>
-                        {a.mensagem}
-                        {a.bloqueia_envio && " A integração vai recusar o envio enquanto isso não for corrigido."}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
+              {/* Documentos, depois de autorizada */}
+              {notaAberta && situacaoDaNota === "AUTORIZADA" && (
+                <SecaoNfse titulo="Documentos" data-secao="documentos">
+                  <dl className="grid grid-cols-1 gap-x-6 gap-y-2 text-sm sm:grid-cols-3">
+                    <div>
+                      <dt className={ROTULO_NFSE}>Número da NFS-e</dt>
+                      <dd className="font-bold text-slate-900">{notaAberta.numero_nfse || "não informado"}</dd>
+                    </div>
+                    <div>
+                      <dt className={ROTULO_NFSE}>Data de emissão</dt>
+                      <dd className="text-slate-800">{dataFormatada(notaAberta.data_emissao)}</dd>
+                    </div>
+                    <div className="sm:col-span-3">
+                      <dt className={ROTULO_NFSE}>Chave de acesso</dt>
+                      <dd className="break-all font-mono text-xs text-slate-800" data-chave-nfse>
+                        {notaAberta.codigo_verificacao || "não informada"}
+                      </dd>
+                    </div>
+                  </dl>
+                  <div className="mt-4 flex flex-wrap gap-2" data-documentos-nfse>
+                    {notaAberta.url_pdf && (
+                      <button type="button" onClick={() => abrirLinkDeDocumentoFiscal(notaAberta.url_pdf)} className={BOTAO_SECUNDARIO_NFSE}>
+                        <ExternalLink className="h-4 w-4" /> Abrir PDF
+                      </button>
+                    )}
+                    {notaAberta.url_pdf && (
+                      <button type="button" onClick={() => void baixar(notaAberta, "pdf")} disabled={baixando !== null} className={BOTAO_SECUNDARIO_NFSE}>
+                        {baixando === "pdf" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />} Baixar PDF
+                      </button>
+                    )}
+                    {notaAberta.url_xml && (
+                      <button type="button" onClick={() => abrirLinkDeDocumentoFiscal(notaAberta.url_xml)} className={BOTAO_SECUNDARIO_NFSE}>
+                        <ExternalLink className="h-4 w-4" /> Abrir XML
+                      </button>
+                    )}
+                    {notaAberta.url_xml && (
+                      <button type="button" onClick={() => void baixar(notaAberta, "xml")} disabled={baixando !== null} className={BOTAO_SECUNDARIO_NFSE}>
+                        {baixando === "xml" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />} Baixar XML
+                      </button>
+                    )}
+                    {!notaAberta.url_pdf && !notaAberta.url_xml && <span className="text-sm text-slate-500">PDF e XML ainda não disponíveis.</span>}
+                  </div>
+                </SecaoNfse>
               )}
-            </div>
+
+              {/* Confirmação de PRODUÇÃO: uma, com o resumo */}
+              {notaAberta && confirmando && (
+                <div data-confirmacao-producao className="rounded-2xl border-2 border-red-700 bg-red-50 p-4 text-sm text-slate-900">
+                  <p className="rounded-xl bg-red-600 px-3 py-2 text-center text-base font-extrabold tracking-wide text-white">PRODUÇÃO</p>
+                  <p className="mt-3 font-semibold">Esta nota tem valor fiscal. Confira antes de emitir:</p>
+                  <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
+                    <dt className="text-slate-500">Empresa</dt>
+                    <dd className="font-semibold">{contexto.empresa.nome}</dd>
+                    <dt className="text-slate-500">Tomador</dt>
+                    <dd className="font-semibold">{contexto.tomador.nome}</dd>
+                    <dt className="text-slate-500">Valor</dt>
+                    <dd className="font-semibold">{formatCurrency(totalDaNota)}</dd>
+                  </dl>
+                </div>
+              )}
+            </>
           )}
 
           {aviso && (
             <p role="status" className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-xs font-semibold text-amber-800">
               {aviso}
             </p>
-          )}
-          {contexto && modo.tipo === "NOTA" && confirmando && (
-            <div data-confirmacao-producao className="rounded-2xl border-2 border-red-700 bg-red-50 p-4 text-sm text-slate-900">
-              <p className="rounded-xl bg-red-600 px-3 py-2 text-center text-base font-extrabold tracking-wide text-white">
-                PRODUÇÃO
-              </p>
-              <p className="mt-3 font-semibold">Esta nota tem valor fiscal. Confira antes de emitir:</p>
-              <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
-                <dt className="text-slate-500">Empresa</dt>
-                <dd className="font-semibold">{contexto.empresa.nome}</dd>
-                <dt className="text-slate-500">Tomador</dt>
-                <dd className="font-semibold">{contexto.tomador.nome}</dd>
-                <dt className="text-slate-500">Valor</dt>
-                <dd className="font-semibold">{formatCurrency(Number(modo.nota.valor_servicos) || 0)}</dd>
-              </dl>
-            </div>
           )}
 
           {validacao && (
@@ -947,110 +1184,112 @@ export function GerarNfseModal({
           )}
         </div>
 
-        <div className="mt-4 flex flex-wrap items-center justify-end gap-2 border-t border-slate-100 pt-4">
+        {/* Rodapé fixo */}
+        <div className="flex flex-wrap items-center justify-end gap-2 border-t border-slate-200 bg-white px-6 py-4" data-rodape-nfse>
           {emEspera && (
             <p role="status" data-espera className="mr-auto flex items-center gap-2 text-sm font-semibold text-slate-700">
               <Loader2 className="h-4 w-4 animate-spin" /> {textoDeEspera(decorrido)}
             </p>
           )}
-          {contexto && modo.tipo === "NOTA" && contexto.empresa.liberada && !modo.acompanhando &&
-            (situacaoDoStatus(modo.nota.status) === "RASCUNHO" || situacaoDoStatus(modo.nota.status) === "REENVIAR") && (
-              <>
-                <button
-                  type="button"
-                  disabled={ocupado !== null}
-                  onClick={() => {
-                    setValidacao(null);
-                    setConfirmando(false);
-                    setIdEndereco(contexto.enderecos.length === 1 ? contexto.enderecos[0].id : "");
-                    setValorTexto(contexto.totalDoPedido > 0 ? contexto.totalDoPedido.toFixed(2).replace(".", ",") : "");
-                    setDescricao(contexto.descricaoSugerida);
-                    setModo({ tipo: "FORMULARIO", novo: true });
-                  }}
-                  className="mr-auto rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-                >
-                  Criar outro rascunho
-                </button>
-                {confirmando ? (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => setConfirmando(false)}
-                      disabled={ocupado !== null}
-                      className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-                    >
-                      Voltar
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => void emitir(modo.nota)}
-                      disabled={ocupado !== null}
-                      className="inline-flex items-center gap-2 rounded-2xl bg-red-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-red-700 disabled:opacity-50"
-                    >
-                      {rotuloDoBotaoDeEmitir("producao", situacaoDoStatus(modo.nota.status) === "REENVIAR")}
-                    </button>
-                  </>
-                ) : (
+
+          {!emEspera && podeEmitir && contexto && (
+            <div className="relative mr-auto">
+              <button
+                type="button"
+                onClick={() => setMaisAcoes((v) => !v)}
+                aria-haspopup="menu"
+                aria-expanded={maisAcoes}
+                className={BOTAO_SECUNDARIO_NFSE}
+              >
+                <MoreHorizontal className="h-4 w-4" /> Mais ações
+              </button>
+              {maisAcoes && (
+                <div role="menu" className="absolute bottom-full left-0 z-10 mb-2 w-64 rounded-2xl border border-slate-200 bg-white p-1.5 shadow-xl">
                   <button
                     type="button"
-                    // Homologação emite direto. Só produção abre a confirmação — uma.
-                    onClick={() => (emissaoPedeConfirmacao(ambiente) ? setConfirmando(true) : void emitir(modo.nota))}
-                    disabled={ocupado !== null}
-                    className="inline-flex items-center gap-2 rounded-2xl bg-[#0b2f4a] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#061d2e] disabled:opacity-50"
+                    role="menuitem"
+                    onClick={() => {
+                      setConfirmando(false);
+                      iniciarFormulario(contexto, true);
+                    }}
+                    className="w-full rounded-xl px-3 py-2 text-left text-sm font-medium text-slate-700 hover:bg-slate-50"
                   >
-                    {situacaoDoStatus(modo.nota.status) === "REENVIAR" ? "Reenviar NFS-e" : "Emitir NFS-e"}
+                    Criar outro rascunho
+                    <span className="block text-xs font-normal text-slate-500">O rascunho atual fica sem uso.</span>
                   </button>
-                )}
-              </>
-            )}
+                </div>
+              )}
+            </div>
+          )}
 
-          {modo.tipo === "NOTA" && (modo.acompanhando || situacaoDoStatus(modo.nota.status) === "EM_ANALISE") && (
+          {!emEspera && emFormulario && modo.tipo === "FORMULARIO" && modo.novo && (
             <button
               type="button"
-              onClick={() => void consultar(modo.nota.ref, true)}
-              disabled={ocupado !== null}
-              className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              onClick={() => {
+                setValidacao(null);
+                void carregar();
+              }}
+              className={`mr-auto ${BOTAO_SECUNDARIO_NFSE}`}
             >
+              Voltar ao rascunho atual
+            </button>
+          )}
+
+          {modo.tipo === "NOTA" && (modo.acompanhando || situacaoDaNota === "EM_ANALISE") && (
+            <button type="button" onClick={() => void consultar(modo.nota.ref, true)} disabled={ocupado !== null} className={BOTAO_SECUNDARIO_NFSE}>
               {ocupado === "consultar" && <Loader2 className="h-4 w-4 animate-spin" />}
               Consultar agora
             </button>
           )}
 
-          {contexto && modo.tipo === "FORMULARIO" && contexto.empresa.liberada && (
+          <button type="button" onClick={onClose} disabled={ocupado !== null} className={BOTAO_SECUNDARIO_NFSE}>
+            Fechar
+          </button>
+
+          {emFormulario && modo.tipo === "FORMULARIO" && contexto && (
+            <button
+              type="button"
+              onClick={() => void criarRascunho(modo.novo)}
+              disabled={ocupado !== null || !contexto.tomador.documentoOk || descricaoEstourou || !servicoConferido.ok}
+              className={BOTAO_PRIMARIO_NFSE}
+            >
+              {ocupado === "criar" && <Loader2 className="h-4 w-4 animate-spin" />}
+              Criar rascunho
+            </button>
+          )}
+
+          {podeEmitir && notaAberta && confirmando && (
             <>
-              {modo.novo && (
-                <button
-                  type="button"
-                  disabled={ocupado !== null}
-                  onClick={() => {
-                    setValidacao(null);
-                    void carregar();
-                  }}
-                  className="mr-auto rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-                >
-                  Voltar ao rascunho atual
-                </button>
-              )}
+              <button type="button" onClick={() => setConfirmando(false)} disabled={ocupado !== null} className={BOTAO_SECUNDARIO_NFSE}>
+                Voltar
+              </button>
               <button
                 type="button"
-                onClick={() => void criarRascunho(modo.novo)}
-                disabled={ocupado !== null || !contexto.tomador.documentoOk || descricaoEstourou || !servicoConferido.ok}
-                className="inline-flex items-center gap-2 rounded-2xl bg-[#0b2f4a] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#061d2e] disabled:opacity-50"
+                onClick={() => void emitir(notaAberta)}
+                disabled={ocupado !== null}
+                className="inline-flex items-center gap-2 rounded-2xl bg-red-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-red-700 disabled:opacity-50"
               >
-                {ocupado === "criar" && <Loader2 className="h-4 w-4 animate-spin" />}
-                Criar rascunho
+                {rotuloDoBotaoDeEmitir("producao", situacaoDaNota === "REENVIAR")}
               </button>
             </>
           )}
 
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={ocupado !== null}
-            className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-          >
-            Fechar
-          </button>
+          {podeEmitir && notaAberta && !confirmando && (
+            <button
+              type="button"
+              // Homologação emite direto. Só produção abre a confirmação — uma.
+              onClick={() => {
+                setMaisAcoes(false);
+                if (emissaoPedeConfirmacao(ambiente)) setConfirmando(true);
+                else void emitir(notaAberta);
+              }}
+              disabled={ocupado !== null}
+              className={BOTAO_PRIMARIO_NFSE}
+            >
+              {ocupado === "emitir" && <Loader2 className="h-4 w-4 animate-spin" />}
+              {situacaoDaNota === "REENVIAR" ? "Reenviar NFS-e" : "Emitir NFS-e"}
+            </button>
+          )}
         </div>
       </div>
     </div>

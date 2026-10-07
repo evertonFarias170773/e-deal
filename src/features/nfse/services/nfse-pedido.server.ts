@@ -13,6 +13,12 @@ import {
   type DecisaoDoPedido,
   type ServicoNfse
 } from "@/features/nfse/lib/regras-emissao";
+import {
+  contatoOuNaoInformado,
+  documentoFormatado,
+  type CobrancaDoPedido,
+  type ItemDoPedido
+} from "@/features/nfse/lib/composicao-nfse";
 
 /**
  * NFS-e pela Fila — o que as rotas `/api/fiscal/rascunho-nfse` e
@@ -33,7 +39,9 @@ type Cliente = SupabaseClient<any, any, any>;
 export const COLUNAS_DA_NOTA_DE_SERVICO =
   "id, ref, id_int, id_empresa, status, status_focus, numero_nfse, url_pdf, url_xml, valor_servicos, discriminacao, " +
   "id_endereco_tomador, mensagem_prefeitura, erro_mensagem, ambiente, tentativas_envio, created_at, " +
-  "id_servico_padrao, codigo_servico, codigo_nbs";
+  "id_servico_padrao, codigo_servico, codigo_nbs, codigo_verificacao, " +
+  // Só a data da emissão sai do retorno da Focus; o resto do payload não vem para a tela.
+  "data_emissao:payload_retorno->>data_emissao";
 
 export type NotaDeServicoLida = {
   id: string;
@@ -56,11 +64,18 @@ export type NotaDeServicoLida = {
   id_servico_padrao: number | null;
   codigo_servico: string | null;
   codigo_nbs: string | null;
+  /** A chave de acesso da NFS-e nacional (50 dígitos), gravada na autorização. */
+  codigo_verificacao: string | null;
+  data_emissao: string | null;
 };
 
 export type EnderecoDoTomador = {
   id: string;
   linha: string;
+  logradouro: string;
+  numero: string;
+  complemento: string;
+  bairro: string;
   cidade: string;
   uf: string;
   cep: string;
@@ -72,8 +87,25 @@ export type EnderecoDoTomador = {
 export type ContextoNfseDoPedido = {
   idInt: number;
   totalDoPedido: number;
+  /** `propostas.valor`: os itens já com o desconto geral do pedido, sem o frete. */
+  valorDosProdutos: number;
+  /** `propostas.valor_frete`. Não entra na nota de serviço; aparece só para explicar a diferença. */
+  freteDoPedido: number;
   empresa: { id: number; nome: string; ambiente: AmbienteDaEmpresa; liberada: boolean };
-  tomador: { idCliente: number | null; nome: string; documentoOk: boolean; tipoDocumento: "CPF" | "CNPJ" | null };
+  tomador: {
+    idCliente: number | null;
+    nome: string;
+    documentoOk: boolean;
+    tipoDocumento: "CPF" | "CNPJ" | null;
+    /** CPF ou CNPJ com máscara, para conferência. */
+    documento: string;
+    email: string;
+    telefone: string;
+  };
+  /** Os itens ativos do pedido (cancelado não vem), com o subtotal gravado. */
+  itens: ItemDoPedido[];
+  /** As cobranças do pedido, SÓ para conferência na tela. Nada daqui vai para a nota. */
+  cobrancas: CobrancaDoPedido[];
   /** Os serviços ATIVOS de `nfse_servicos_padrao`. Vazio se o servidor não pôde ler o cadastro. */
   servicos: ServicoNfse[];
   /** O serviço que a janela traz escolhido. */
@@ -182,7 +214,7 @@ export async function lerContextoNfseDoPedido(
 ): Promise<{ ok: true; contexto: ContextoNfseDoPedido } | Falha> {
   const { data: propostaRow, error: propostaError } = await supabase
     .from("propostas")
-    .select("id_int, id_cliente, cliente, empresa, valor, valor_total")
+    .select("id_int, id_cliente, cliente, empresa, valor, valor_total, valor_frete")
     .eq("id_int", idInt)
     .maybeSingle();
   if (propostaError) {
@@ -197,14 +229,19 @@ export async function lerContextoNfseDoPedido(
     empresa: string | null;
     valor: number | null;
     valor_total: number | null;
+    valor_frete: number | null;
   };
   const idEmpresa = empresaEmitenteDoTexto(proposta.empresa);
   const idCliente = proposta.id_cliente != null && Number(proposta.id_cliente) > 0 ? Number(proposta.id_cliente) : null;
 
-  const [empresaRes, clienteRes, enderecosRes, itensRes, notasRes] = await Promise.all([
+  const [empresaRes, clienteRes, enderecosRes, itensRes, notasRes, cobrancasRes] = await Promise.all([
     supabase.from("empresas").select("id, nome_fantasia, ambiente_nfse").eq("id", idEmpresa).maybeSingle(),
     idCliente
-      ? supabase.from("clientes").select("id_cliente, nome, fantasia, documento").eq("id_cliente", idCliente).maybeSingle()
+      ? supabase
+          .from("clientes")
+          .select("id_cliente, nome, fantasia, documento, email_financeiro, email_contato, email, telefone_fixo, whatsapp_1, whatsapp_2")
+          .eq("id_cliente", idCliente)
+          .maybeSingle()
       : Promise.resolve({ data: null, error: null }),
     idCliente
       ? supabase
@@ -212,8 +249,18 @@ export async function lerContextoNfseDoPedido(
           .select("id, cep, endereco, numero, complemento, bairro, cidade, uf, tipo_endereco")
           .eq("id_cliente", idCliente)
       : Promise.resolve({ data: [], error: null }),
-    supabase.from("produtos_proposta").select("id, nome_produto, qtd, valor_unt, status_item").eq("id_int", idInt).order("id"),
-    supabase.from("notas_servico").select(COLUNAS_DA_NOTA_DE_SERVICO).eq("id_int", idInt)
+    supabase
+      .from("produtos_proposta")
+      .select("id, nome_produto, qtd, valor_unt, valor_sub_total, status_item")
+      .eq("id_int", idInt)
+      .order("id"),
+    supabase.from("notas_servico").select(COLUNAS_DA_NOTA_DE_SERVICO).eq("id_int", idInt),
+    // SÓ LEITURA, para a seção "Pagamento do pedido". Nunca escreve em pagamentos_v2.
+    supabase
+      .from("pagamentos_v2")
+      .select("tipo_cobranca, forma_pgto, valor, vencimento, status, confirmado, p_qtd_parcelas, cartao_parcelas, p_intervalo, p_valor_entrada, created_at")
+      .eq("id_int", idInt)
+      .order("created_at", { ascending: true })
   ]);
 
   const falhou = [empresaRes, clienteRes, enderecosRes, itensRes, notasRes].find((r) => r.error);
@@ -223,7 +270,9 @@ export async function lerContextoNfseDoPedido(
   }
 
   const empresa = (empresaRes.data ?? null) as { nome_fantasia?: string | null; ambiente_nfse?: string | null } | null;
-  const cliente = (clienteRes.data ?? null) as { nome?: string | null; fantasia?: string | null; documento?: string | null } | null;
+  const cliente = (clienteRes.data ?? null) as Record<string, string | null> | null;
+  // O pagamento é conferência: se a leitura falhar, a janela abre sem a seção.
+  if (cobrancasRes.error) console.warn("[API][Nfse] Não foi possível ler as cobranças do pedido:", cobrancasRes.error.message);
   const documento = documentoDoTomador(cliente?.documento);
 
   const enderecosBrutos = (enderecosRes.data ?? []) as Record<string, unknown>[];
@@ -249,6 +298,10 @@ export async function lerContextoNfseDoPedido(
     return {
       id: texto(e.id),
       linha: linha || "(endereço sem logradouro)",
+      logradouro: texto(e.endereco),
+      numero: texto(e.numero),
+      complemento: texto(e.complemento),
+      bairro: texto(e.bairro),
       cidade,
       uf,
       cep: texto(e.cep),
@@ -257,13 +310,33 @@ export async function lerContextoNfseDoPedido(
     };
   });
 
-  const itens = ((itensRes.data ?? []) as Record<string, unknown>[])
+  // Item cancelado (inativação lógica de pedido pago) não entra na nota.
+  const itens: ItemDoPedido[] = ((itensRes.data ?? []) as Record<string, unknown>[])
     .filter((i) => texto(i.status_item).toUpperCase() !== "CANCELADO")
-    .map((i) => ({
-      nome: texto(i.nome_produto) || null,
-      quantidade: i.qtd == null ? null : Number(i.qtd),
-      valorUnitario: i.valor_unt == null ? null : Number(i.valor_unt)
-    }));
+    .map((i) => {
+      const quantidade = Number(i.qtd) || 0;
+      const valorUnitario = Number(i.valor_unt) || 0;
+      return {
+        id: Number(i.id),
+        nome: texto(i.nome_produto) || `Item ${i.id}`,
+        quantidade,
+        valorUnitario,
+        // O subtotal gravado inclui o valor fixo do item; sem ele, vale quantidade × unitário.
+        subtotal: i.valor_sub_total == null ? Math.round(quantidade * valorUnitario * 100) / 100 : Number(i.valor_sub_total) || 0
+      };
+    });
+
+  const cobrancas: CobrancaDoPedido[] = ((cobrancasRes.error ? [] : cobrancasRes.data ?? []) as Record<string, unknown>[]).map((c) => ({
+    tipo: texto(c.tipo_cobranca) || null,
+    forma: texto(c.forma_pgto) || null,
+    valor: c.valor == null ? null : Number(c.valor),
+    vencimento: texto(c.vencimento) || null,
+    status: texto(c.status) || null,
+    confirmado: c.confirmado === true,
+    parcelas: Number(c.p_qtd_parcelas) || Number(c.cartao_parcelas) || null,
+    intervaloDias: c.p_intervalo == null ? null : Number(c.p_intervalo),
+    valorEntrada: c.p_valor_entrada == null ? null : Number(c.p_valor_entrada)
+  }));
 
   const servicos = await lerServicosNfse(servico);
 
@@ -277,6 +350,8 @@ export async function lerContextoNfseDoPedido(
     contexto: {
       idInt,
       totalDoPedido: Number(proposta.valor_total) || Number(proposta.valor) || 0,
+      valorDosProdutos: Number(proposta.valor) || 0,
+      freteDoPedido: Number(proposta.valor_frete) || 0,
       empresa: {
         id: idEmpresa,
         nome: texto(empresa?.nome_fantasia) || `Empresa ${idEmpresa}`,
@@ -287,8 +362,13 @@ export async function lerContextoNfseDoPedido(
         idCliente,
         nome: texto(cliente?.nome) || texto(cliente?.fantasia) || texto(proposta.cliente) || "(cliente sem nome)",
         documentoOk: documento.ok,
-        tipoDocumento: documento.tipo
+        tipoDocumento: documento.tipo,
+        documento: documentoFormatado(cliente?.documento),
+        email: contatoOuNaoInformado(cliente?.email_financeiro || cliente?.email_contato || cliente?.email),
+        telefone: contatoOuNaoInformado(cliente?.telefone_fixo || cliente?.whatsapp_1 || cliente?.whatsapp_2)
       },
+      itens,
+      cobrancas,
       servicos,
       idServicoPadrao: servicos.some((s) => s.id === SERVICO_NFSE.id) ? SERVICO_NFSE.id : (servicos[0]?.id ?? SERVICO_NFSE.id),
       enderecos,

@@ -39,14 +39,20 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | Nome do cliente (dica "Abrir o cadastro do cliente") | Aba Fila, coluna **Cliente / Destinatário** | Abre o cadastro do cliente em edição. |
 | **Nota emitida no sistema antigo** | Aba Fila, coluna **Ação** | Marca o pedido como faturado no sistema antigo e o tira da fila. Enquanto grava mostra "Marcando...". |
 | **NFS-e** | Aba Fila, coluna **Ação**, entre **Nota emitida no sistema antigo** e **Faturar**; só em pedido da **BIRÔ IDEAL** | Abre a janela **Gerar NFS-e**. O texto muda com a nota de serviço do pedido: **NFS-e** (sem nota ou com rascunho), **NFS-e nº N** (autorizada), **NFS-e em análise** e **NFS-e (reenviar)** (o envio falhou). |
-| **Serviço** (lista) | Janela **Gerar NFS-e**, no topo | Escolhe o serviço da nota entre os serviços ativos do cadastro. Abaixo aparecem o código de tributação e o NBS do escolhido. Hoje há um serviço só (13.05.01). |
+| **Endereço que vai na nota** (lista) | Janela **Gerar NFS-e**, seção **Endereço do tomador** | Escolhe o endereço do tomador entre os do cliente. Endereços iguais aparecem uma vez só; endereço com "cadastro incompleto" fica apagado. |
+| **Serviço fiscal** (lista) | Janela **Gerar NFS-e**, seção **Serviço e itens** | Escolhe o serviço da nota entre os serviços ativos do cadastro. Abaixo aparecem o código de tributação e o NBS do escolhido. Hoje há um serviço só (13.05.01). |
+| Caixa de marcar de cada item | Janela **Gerar NFS-e**, tabela de itens | Diz se o item do pedido entra na nota. Todos vêm marcados, e pelo menos um tem de ficar. |
+| **Usar a soma** | Janela **Gerar NFS-e**, abaixo do **Valor da nota** | Volta o valor para a soma dos itens marcados. Aparece quando o valor foi alterado. |
+| **Refazer a partir dos itens** | Janela **Gerar NFS-e**, abaixo da **Descrição do serviço** | Refaz a descrição com os itens marcados. Aparece quando a descrição foi alterada. |
+| **Avisos informativos (N)** | Janela **Gerar NFS-e**, seção **Validação** | Abre e fecha a lista dos avisos que só informam. |
+| **Mais ações** | Janela **Gerar NFS-e**, rodapé, com o rascunho aberto | Abre o menu com **Criar outro rascunho**. |
 | **Criar rascunho** | Janela **Gerar NFS-e** | Grava o rascunho da nota de serviço com o serviço, o endereço, o valor e a descrição da janela. Não transmite nada. |
 | **Emitir NFS-e** / **Reenviar NFS-e** | Janela **Gerar NFS-e**, com o rascunho aberto | Em homologação, envia a nota na hora, sem pedir confirmação. Em produção, abre a confirmação com o resumo da nota. |
 | **Emitir em PRODUÇÃO** / **Voltar** | Janela **Gerar NFS-e**, na confirmação de produção | **Emitir em PRODUÇÃO** envia a nota com valor fiscal; **Voltar** fecha a confirmação sem enviar. |
 | **Copiar detalhes** | Janela **Gerar NFS-e**, no quadro vermelho de erro | Copia o pedido, a referência da nota, a etapa, a hora e o código do erro, para mandar a quem vai investigar. |
 | **Dispensar** | Janela **Gerar NFS-e**, no quadro vermelho de erro | Tira o erro da janela. Sem isso ele continua aparecendo, mesmo fechando e abrindo a janela. |
 | **Ler de novo** | Janela **Gerar NFS-e**, quando os dados do pedido não carregam | Tenta ler os dados do pedido outra vez. |
-| **Criar outro rascunho** | Janela **Gerar NFS-e**, com o rascunho aberto | Abre o formulário de novo para criar um rascunho novo. O anterior fica sem uso. |
+| **Criar outro rascunho** | Janela **Gerar NFS-e**, menu **Mais ações** | Abre a composição de novo para criar um rascunho novo. O anterior fica sem uso. |
 | **Voltar ao rascunho atual** | Janela **Gerar NFS-e**, no formulário aberto por **Criar outro rascunho** | Desiste do rascunho novo e volta ao que já existe. |
 | **Consultar agora** | Janela **Gerar NFS-e**, com a nota em análise | Pergunta o status da nota na hora, sem esperar a consulta automática. |
 | **Abrir PDF** / **Abrir XML** | Janela **Gerar NFS-e**, com a nota autorizada | Abre o PDF ou o XML da nota de serviço. |
@@ -192,19 +198,23 @@ Outros botões do cabeçalho da nota:
 Só para pedido da **BIRÔ IDEAL** e para quem tem a permissão **Emitir NFS-e (Serviço)**.
 
 1. Na aba **Fila Faturamento**, ache o pedido e clique em **NFS-e**, entre **Nota emitida no sistema antigo** e **Faturar**.
-2. A janela **Gerar NFS-e** abre com a faixa do ambiente no topo. Em homologação ela diz "HOMOLOGAÇÃO: NOTA DE TESTE, sem valor fiscal".
-3. Confira o **Serviço** escolhido na lista do topo, com o código de tributação e o NBS, e depois o **Tomador** (o cliente do pedido) e a **Empresa emissora**.
-4. Em **Endereço do tomador**, escolha um dos endereços do cliente. A escolha é obrigatória quando o cliente tem endereço.
-5. Confira o **Valor do serviço**. Ele vem do total do pedido e pode ser alterado; se ficar diferente do pedido, a janela avisa.
-6. Confira a **Descrição do serviço**. Ela vem com os itens do pedido (nome, quantidade e valor unitário) e pode ser alterada. O contador mostra quantos caracteres já foram usados, de 1000.
-7. Clique em **Criar rascunho**. A janela passa a mostrar o rascunho, com a referência (por exemplo NFS-22760-001), o valor, a descrição e os alertas da conferência.
+2. A janela abre com o título **NFS-e · Pedido #N**, o selo do status (Rascunho, Em análise, Autorizada ou Erro) e a faixa do ambiente. Em homologação a faixa é amarela e diz "HOMOLOGAÇÃO: NOTA DE TESTE, sem valor fiscal"; em produção é vermelha.
+3. Confira os três quadros do resumo: **Informações gerais** (empresa emissora, ambiente e serviço fiscal), **Valores** (serviços e total da nota) e **Tomador** (nome, CPF ou CNPJ, e-mail e telefone do cliente do pedido).
+4. Em **Endereço do tomador**, escolha o endereço na lista. Com um endereço só, ele já vem escolhido; com vários, a escolha é obrigatória.
+5. Em **Serviço e itens**, confira o **Serviço fiscal** e a tabela dos itens do pedido (produto, quantidade, valor unitário e subtotal). Desmarque o item que não entra nesta nota.
+6. Confira o **Valor da nota**. Ele é a soma dos itens marcados, já com o desconto do pedido, e pode ser alterado; se ficar diferente da soma, a janela avisa.
+7. Confira a **Descrição do serviço**. Ela é gerada com os itens marcados (quantidade, nome e valor unitário) e pode ser alterada. O contador mostra quantos caracteres já foram usados, de 1000. Depois clique em **Criar rascunho**: a janela passa a mostrar o rascunho, com a referência (por exemplo NFS-22760-001) e a seção **Validação**.
 8. Clique em **Emitir NFS-e**. Em homologação a nota é enviada na hora, sem confirmação. Em produção aparece uma confirmação com a faixa **PRODUÇÃO**, a empresa, o tomador e o valor: confira e clique em **Emitir em PRODUÇÃO**.
-9. A janela acompanha a nota sozinha: consulta a cada 15 segundos, por até 5 minutos. Quando a prefeitura responde, aparecem o número da NFS-e e os botões **Abrir PDF**, **Abrir XML**, **Baixar PDF** e **Baixar XML**.
+9. A janela acompanha a nota sozinha: consulta a cada 15 segundos, por até 5 minutos. Quando a prefeitura responde, aparece a seção **Documentos**, com o número da NFS-e, a data de emissão, a chave de acesso e os botões **Abrir PDF**, **Baixar PDF**, **Abrir XML** e **Baixar XML**.
 10. Se passar dos 5 minutos, a janela mostra "A nota continua em análise. Consulte depois.". Clique em **Consultar agora**, ou feche e volte mais tarde pelo botão **NFS-e em análise** da fila.
 
 O pedido continua na fila depois da NFS-e emitida, com o botão **NFS-e nº N**. Clicar nele abre a nota só para leitura, com os mesmos botões de abrir e de baixar o PDF e o XML.
 
-O rascunho não é editado depois de criado. Se o endereço, o valor ou a descrição ficaram errados, clique em **Criar outro rascunho**: o anterior fica sem uso e a nota sai pelo novo.
+O rascunho não é editado depois de criado. Se o endereço, o valor ou a descrição ficaram errados, abra **Mais ações** e clique em **Criar outro rascunho**: o anterior fica sem uso e a nota sai pelo novo.
+
+A seção **Pagamento do pedido** mostra a forma, as parcelas, os vencimentos e os valores das cobranças ativas do pedido. É só para conferência: a NFS-e nacional não leva parcelas, e nada dali vai para a nota.
+
+Na seção **Validação**, o quadro verde "Rascunho validado, sem erros bloqueantes." diz que a nota pode ser enviada. Aviso em vermelho impede o envio; aviso em amarelo pede uma conferida e não impede; os que só informam ficam recolhidos em **Avisos informativos (N)**.
 
 Enquanto a janela trabalha (lendo o pedido, criando o rascunho, emitindo ou consultando), os botões ficam apagados e aparece "Aguarde, não clique de novo". Depois de 15 segundos o aviso muda para "Ainda processando. Não feche nem clique de novo". A emissão pode levar vários segundos: espere.
 
@@ -335,6 +345,13 @@ Nos dois casos a confirmação lista as notas autorizadas que o pedido já tem. 
   - com erro de envio, reenvia a mesma nota;
   - com nota recusada pela prefeitura ou cancelada, permite um rascunho novo.
 - O cliente precisa ter CPF (11 dígitos) ou CNPJ (14 dígitos) no cadastro. Sem isso o rascunho não é criado.
+- O valor sugerido para a nota é a soma dos itens marcados, com o desconto do pedido na mesma proporção. O frete do pedido não entra na nota de serviço.
+- O subtotal de cada item é o que está gravado no pedido e inclui o valor fixo do item, quando há. Por isso pode ser maior que quantidade vezes valor unitário.
+- Item cancelado no pedido não aparece na tabela. Pelo menos um item tem de ficar marcado.
+- Endereços iguais do cliente (mesmo logradouro, número e CEP) aparecem uma vez só na lista.
+- Endereço com texto inválido em algum campo ("NULL", "[object Object]" ou "<RUA>") aparece como "cadastro incompleto" e não pode ser escolhido. Corrija o cadastro do cliente.
+- Não existe a opção de emitir sem endereço para cliente que tem endereço cadastrado: a escolha de um endereço é obrigatória.
+- A seção **Pagamento do pedido** é só leitura e não é enviada na nota.
 - O serviço escolhido precisa estar ativo e ter código de tributação e NBS de 9 dígitos no cadastro. Sem isso o **Criar rascunho** fica apagado.
 - Só entra na nota serviço com o NBS 121011000. Serviço com outro NBS é recusado até o banco ser ajustado para gravar o NBS do serviço.
 - Os serviços da lista vêm do cadastro de serviços da NFS-e. A janela não cadastra nem altera serviço.
@@ -430,7 +447,9 @@ Nos dois casos a confirmação lista as notas autorizadas que o pedido já tem. 
 | "Esta nota ainda não tem PDF guardado." (ou XML) | A nota foi autorizada, mas o arquivo ainda não chegou ao armazenamento. | Clique em **Consultar agora** no Histórico ou tente mais tarde. |
 | "O PDF desta nota não foi encontrado no armazenamento." (ou XML) | O arquivo não está onde deveria. | Avise o administrador. |
 | "O município deste endereço não foi reconhecido. A nota sairá sem o endereço do tomador." | A cidade ou a UF do endereço não confere com a lista oficial de municípios. | Pode seguir. Para a nota sair com endereço, corrija a cidade e a UF no cadastro do cliente antes de criar o rascunho. |
-| "O valor difere do total do pedido (R$ ...)." | O valor digitado não é o total do pedido. | Confirme se é isso mesmo. Não bloqueia. |
+| "O valor difere da soma dos itens marcados (R$ ...)." | O valor digitado não é a soma dos itens marcados. | Confirme se é isso mesmo, ou clique em **Usar a soma**. Não bloqueia. |
+| "O endereço escolhido está com o cadastro incompleto." | O endereço tem texto inválido em algum campo. | Escolha outro endereço ou corrija o cadastro do cliente. |
+| "Marque pelo menos um item do pedido." | Nenhum item ficou marcado. | Marque o item que entra na nota. |
 | "N de 1000 caracteres: reduza o texto para criar o rascunho." | A descrição passou do limite. | Encurte a descrição. |
 | "Este pedido já tem NFS-e autorizada (nº N)." | Alguém já emitiu a nota deste pedido. | Use a nota existente. A janela passa a mostrá-la. |
 | "A NFS-e ... deste pedido está em análise. Aguarde o desfecho antes de criar outra." | Há uma nota do pedido sem resposta da prefeitura. | Clique em **Consultar agora** ou volte mais tarde. |
@@ -468,6 +487,8 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/features/nfse/components/GerarNfseModal.tsx`
 - `src/features/nfse/lib/regras-emissao.ts`
 - `src/features/nfse/lib/janela-nfse.ts`
+- `src/features/nfse/lib/composicao-nfse.ts`
+- `src/features/nfse/components/PecasNfse.tsx`
 - `src/features/nfse/services/nfse-pedido.server.ts`
 - `src/app/api/fiscal/rascunho-nfse/route.ts`
 - `src/app/api/fiscal/consultar-nfse/route.ts`

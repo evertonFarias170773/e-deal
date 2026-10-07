@@ -7,6 +7,7 @@ import {
   lerServicosNfse,
   respostaDeErro
 } from "@/features/nfse/services/nfse-pedido.server";
+import { enderecoComCadastroIncompleto } from "@/features/nfse/lib/composicao-nfse";
 import {
   SERVICO_NFSE,
   conferirDescricao,
@@ -140,6 +141,14 @@ export async function POST(request: Request) {
 
     const endereco = conferirEndereco(corpo?.id_endereco, enderecos.map((e) => e.id));
     if (!endereco.ok) return respostaDeErro(422, endereco.motivo, { code: "ENDERECO_INVALIDO" });
+    // Endereço com texto de cadastro quebrado ("[object Object]", "NULL", "<RUA>")
+    // aparece desligado na janela; aqui a mesma regra recusa.
+    const escolhido = enderecos.find((e) => e.id === endereco.idEndereco);
+    if (escolhido && enderecoComCadastroIncompleto(escolhido)) {
+      return respostaDeErro(422, "O endereço escolhido está com o cadastro incompleto. Corrija o cadastro do cliente ou escolha outro endereço.", {
+        code: "ENDERECO_INCOMPLETO"
+      });
+    }
 
     const descricao = conferirDescricao(corpo?.descricao);
     if (!descricao.ok) return respostaDeErro(422, descricao.motivo, { code: "DESCRICAO_INVALIDA" });
