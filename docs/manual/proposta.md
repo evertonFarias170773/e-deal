@@ -1,6 +1,6 @@
 # Proposta: visão geral e abas
 
-> **Última revisão:** 03/10/2026
+> **Última revisão:** 07/10/2026
 > **Caminho no menu:** Pedidos → **+ Nova proposta** (proposta nova) ou Pedidos → abrir um pedido → **Editar proposta**
 > **Endereço:** `/orcamentos/novo` e `/orcamentos/<número>/editar`
 
@@ -263,7 +263,7 @@ O aviso some quando você clica em **Entendi** ou quando a cópia ganha cobranç
 - Em FOB, não dá para salvar sem transportadora ou sem marcar **Motoboy**: é o dado que a Expedição usa no despacho.
 - O status não é editável. Ele muda com as cobranças, os pagamentos, as artes e as etapas da produção e da expedição.
 - Com cobrança ativa e sem a permissão de editar proposta paga, produtos, valores, descontos e frete ficam travados.
-- Com cobrança enviada e ainda não paga, não dá para alterar o valor da proposta, nem com permissão. Cancele a cobrança antes.
+- Com cobrança enviada e ainda não paga, não dá para alterar o valor da proposta, nem com permissão. Cancele a cobrança antes. Salvar só arte, observação ou modelos não muda o valor e passa normalmente.
 - Proposta avulsa já paga não pode ser alterada por ninguém. A exceção é a avulsa com faturado a vencer, porque o dinheiro ainda não entrou.
 - Com cobrança de retrabalho, permuta ou amostra, o total pode subir sem cancelar a cobrança: ela fica como está e a diferença vira saldo a cobrar, com uma segunda cobrança na aba Pagamentos.
 - Não dá para trocar o cliente manual por um cadastrado enquanto houver cobrança ativa ou pagamento confirmado.

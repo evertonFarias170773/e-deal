@@ -88,6 +88,24 @@ function difere(a: unknown, b: unknown): boolean {
   return Math.abs(x - y) > TOLERANCIA;
 }
 
+/**
+ * O valor unitário CHEIO de um item do formulário: preço base + acréscimo das
+ * variações escolhidas. É a mesma soma de `calculateItemSubtotal` e a que o
+ * save grava (`valor_base` + `valor_extra`), então casa com `valor_unt` do
+ * banco. Trocar a variação, ou o acréscimo dela, muda este número.
+ * Número ilegível vira NaN — e NaN diverge.
+ */
+export function valorUnitarioCheioDoItem(item: {
+  valorUnitario?: unknown;
+  variacoesEscolhidas?: readonly { tipo?: { v_extra?: unknown } | null }[] | null;
+}): number {
+  const acrescimo = (item.variacoesEscolhidas ?? []).reduce((total, escolha) => {
+    const extra = escolha?.tipo?.v_extra;
+    return total + (extra === null || extra === undefined || extra === "" ? 0 : num(extra));
+  }, 0);
+  return num(item.valorUnitario) + acrescimo;
+}
+
 function ativo(statusItem: string | null | undefined): boolean {
   return String(statusItem ?? "PENDENTE").toUpperCase() !== "CANCELADO";
 }
@@ -225,8 +243,14 @@ export function divergenciasFinanceiras(
     if (difere(item.quantidade, banco.quantidade)) {
       out.push({ campo: `quantidade de "${item.nome}"`, antes: String(banco.quantidade), depois: String(item.quantidade) });
     }
-    if (difere(item.valorUnitario, banco.valorUnitario)) {
-      out.push({ campo: `valor unitário de "${item.nome}"`, antes: String(banco.valorUnitario), depois: String(item.valorUnitario) });
+    // Valor unitário CHEIO dos dois lados (07/10/2026). No formulário
+    // `valorUnitario` é o preço BASE, sem variações; no banco `valor_unt` é
+    // base + acréscimo das variações (o gatilho calcular_valor_sub_total soma).
+    // Comparar base com cheio acusava "valor unitário mudou" em todo item com
+    // variação paga — e mandava cancelar a cobrança de quem só trocou a arte.
+    const unitarioCheio = valorUnitarioCheioDoItem(item);
+    if (difere(unitarioCheio, banco.valorUnitario)) {
+      out.push({ campo: `valor unitário de "${item.nome}"`, antes: String(banco.valorUnitario), depois: String(unitarioCheio) });
     }
     if (difere(item.valorFixo, banco.valorFixo)) {
       out.push({ campo: `valor fixo de "${item.nome}"`, antes: String(banco.valorFixo), depois: String(item.valorFixo) });

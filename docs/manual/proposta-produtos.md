@@ -1,6 +1,6 @@
 # Proposta: aba Orçamento (produtos)
 
-> **Última revisão:** 03/10/2026
+> **Última revisão:** 07/10/2026
 > **Caminho no menu:** Pedidos → abrir um pedido → aba **Orçamento**
 > **Endereço:** `/orcamentos/<número>/editar?tab=produtos` (em proposta nova, `/orcamentos/novo`)
 
@@ -149,7 +149,7 @@ A marcação de prateleira é guardada no item no momento em que ele entra na pr
 - Com a proposta em AGUARDANDO, a lixeira fica desabilitada para quem não tem a permissão de editar proposta paga: "Item não pode ser removido neste status".
 - Com cobrança ativa, não dá para remover produto sem a permissão. Cancele a cobrança pendente antes.
 - Mesmo com permissão, não dá para inativar produto que já tem pedido, arte ou produção vinculada. Cancele ou conclua a produção (e a nota, se houver) antes.
-- Com cobrança enviada ao cliente e ainda não paga, não dá para mudar quantidade, preço, produto ou desconto: o link de pagamento tem valor fixo. Cancele a cobrança, altere e gere outra.
+- Com cobrança enviada ao cliente e ainda não paga, não dá para mudar quantidade, preço, produto ou desconto: o link de pagamento tem valor fixo. Cancele a cobrança, altere e gere outra. O que conta é o valor: o preço unitário é comparado já com o acréscimo das variações escolhidas, então salvar só arte, observação ou modelos não aciona o bloqueio, mesmo em item com variação paga. Trocar a variação por outra de acréscimo diferente muda o valor e aciona.
 - Em proposta paga, quem tem permissão altera os produtos, e a diferença de valor é tratada ao salvar. Veja [Proposta: visão geral e abas](proposta.md).
 - Proposta avulsa já paga não pode ser alterada por ninguém.
 - Com cobrança ativa, os campos do item não gravam sozinhos ao sair do campo. A gravação é pelo **Salvar item**, que mostra os avisos financeiros.
@@ -215,3 +215,4 @@ A marcação de prateleira é guardada no item no momento em que ele entra na pr
 - `src/features/orcamentos/services/status-engine.service.ts`
 - `src/features/orcamentos/OrcamentosListPageReal.tsx`
 - `src/app/api/orcamentos/editar-paga/route.ts`
+- `src/features/orcamentos/lib/edicao-financeira.ts`
