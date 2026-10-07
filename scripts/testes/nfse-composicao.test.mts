@@ -25,6 +25,9 @@ import {
   pagamentosParaConferencia,
   rotuloDoEndereco,
   seloDaNota,
+  seloDoCabecalho,
+  rotuloDosItensMarcados,
+  mostraLinhaDeServicos,
   separarAlertas,
   somaDosItensMarcados,
   textoDeCadastroInvalido,
@@ -151,6 +154,18 @@ checar(
   (["RASCUNHO", "EM_ANALISE", "AUTORIZADA", "REENVIAR", "ENCERRADA", null] as const).map((s) => seloDaNota(s).rotulo),
   ["Rascunho", "Em análise", "Autorizada", "Erro", "Erro", "Rascunho"]
 );
+checar(
+  "selo do cabecalho: sem rascunho diz Novo; com nota segue a situacao",
+  [seloDoCabecalho(false, null), seloDoCabecalho(true, "RASCUNHO").rotulo, seloDoCabecalho(true, "EM_ANALISE").rotulo, seloDoCabecalho(true, "AUTORIZADA").rotulo, seloDoCabecalho(true, "REENVIAR").rotulo],
+  [{ rotulo: "Novo", tom: "neutro" }, "Rascunho", "Em análise", "Autorizada", "Erro"]
+);
+checar("valores: rotulo Itens marcados (N)", [rotuloDosItensMarcados(3), rotuloDosItensMarcados(1), rotuloDosItensMarcados(0)], ["Itens marcados (3)", "Itens marcados (1)", "Itens marcados (0)"]);
+checar(
+  "valores: Servicos some quando repete Itens marcados e aparece quando difere",
+  [mostraLinhaDeServicos(true, 684.52, 684.52), mostraLinhaDeServicos(true, 684.52, 684.519999), mostraLinhaDeServicos(true, 100, 90), mostraLinhaDeServicos(true, 100, 0)],
+  [false, false, true, true]
+);
+checar("valores: sem a linha dos itens (nota criada ou pedido sem item) Servicos continua", [mostraLinhaDeServicos(false, 0, 100), mostraLinhaDeServicos(false, 100, 100)], [true, true]);
 const a = (codigo: string, bloqueia_envio = false) => ({ tipo: bloqueia_envio ? "ERRO" : "ALERTA", codigo, mensagem: codigo, bloqueia_envio });
 {
   const s = separarAlertas([a("INSCRICAO_MUNICIPAL_NFSE_NAO_INFORMADA"), a("NATUREZA_OPERACAO_NAO_INFORMADA"), a("CODIGO_MUNICIPIO_TOMADOR_NAO_INFORMADO"), a("EMAIL_TOMADOR_NAO_INFORMADO")]);

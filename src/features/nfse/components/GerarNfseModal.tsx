@@ -70,7 +70,9 @@ import {
   pagamentosParaConferencia,
   tamanhoDasInformacoesComplementares,
   textoDoPagamentoParaNota,
-  seloDaNota,
+  mostraLinhaDeServicos,
+  rotuloDosItensMarcados,
+  seloDoCabecalho,
   separarAlertas,
   somaDosItensMarcados,
   valorSugeridoDaNota
@@ -630,12 +632,14 @@ export function GerarNfseModal({
 
   const notaAberta = modo.tipo === "NOTA" ? modo.nota : null;
   const situacaoDaNota = notaAberta ? situacaoDoStatus(notaAberta.status) : null;
-  const selo = seloDaNota(situacaoDaNota);
+  const selo = seloDoCabecalho(notaAberta !== null, situacaoDaNota);
   const emFormulario = contexto !== null && modo.tipo === "FORMULARIO" && contexto.empresa.liberada;
   const podeEmitir =
     contexto !== null && notaAberta !== null && contexto.empresa.liberada && modo.tipo === "NOTA" && !modo.acompanhando &&
     (situacaoDaNota === "RASCUNHO" || situacaoDaNota === "REENVIAR");
   const totalDaNota = notaAberta ? Number(notaAberta.valor_servicos) || 0 : valorConferido.ok ? valorConferido.valor : 0;
+  /** A linha "Itens marcados (N)" do cartão Valores: só na composição, e com item no pedido. */
+  const itensMarcadosNaTela = !notaAberta && contexto !== null && contexto.itens.length > 0;
   const enderecoDaNota = contexto && notaAberta ? contexto.enderecos.find((e) => e.id === notaAberta.id_endereco_tomador) ?? null : null;
   const rotuloDoAmbiente = ambiente === "producao" ? "Produção" : ambiente === "homologacao" ? "Homologação" : "não definido";
   const dataFormatada = (iso: string | null) => {
@@ -672,7 +676,7 @@ export function GerarNfseModal({
             </div>
             <div className="flex items-center gap-3">
               {contexto && modo.tipo !== "CARREGANDO" && modo.tipo !== "FALHA" && (
-                <SeloDeStatus rotulo={notaAberta ? selo.rotulo : "Rascunho"} tom={notaAberta ? selo.tom : "neutro"} statusReal={notaAberta ? String(notaAberta.status ?? "") : "SEM_RASCUNHO"} />
+                <SeloDeStatus rotulo={selo.rotulo} tom={selo.tom} statusReal={notaAberta ? String(notaAberta.status ?? "") : "SEM_RASCUNHO"} />
               )}
               <button
                 type="button"
@@ -735,9 +739,11 @@ export function GerarNfseModal({
                 </CartaoDeResumo>
 
                 <CartaoDeResumo titulo="Valores">
-                  {!notaAberta && contexto.itens.length > 0 && <LinhaDeResumo rotulo="Itens marcados">{formatCurrency(somaMarcada)}</LinhaDeResumo>}
+                  {itensMarcadosNaTela && <LinhaDeResumo rotulo={rotuloDosItensMarcados(marcados.size)}>{formatCurrency(somaMarcada)}</LinhaDeResumo>}
                   {!notaAberta && temDesconto && <LinhaDeResumo rotulo="Desconto do pedido">-{formatCurrency(Math.max(0, somaMarcada - sugerido))}</LinhaDeResumo>}
-                  <LinhaDeResumo rotulo="Serviços">{formatCurrency(totalDaNota)}</LinhaDeResumo>
+                  {mostraLinhaDeServicos(itensMarcadosNaTela, somaMarcada, totalDaNota) && (
+                    <LinhaDeResumo rotulo="Serviços">{formatCurrency(totalDaNota)}</LinhaDeResumo>
+                  )}
                   <LinhaDeResumo rotulo="Total da nota" forte>
                     <span data-total-da-nota>{formatCurrency(totalDaNota)}</span>
                   </LinhaDeResumo>

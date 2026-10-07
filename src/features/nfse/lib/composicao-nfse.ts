@@ -387,7 +387,7 @@ export function informacoesComplementaresDaNota(gravado: string | null | undefin
 
 /* ------------------------------------------------------------------ status */
 
-export type SeloDaNota = { rotulo: "Rascunho" | "Em análise" | "Autorizada" | "Erro"; tom: "neutro" | "aviso" | "sucesso" | "erro" };
+export type SeloDaNota = { rotulo: "Novo" | "Rascunho" | "Em análise" | "Autorizada" | "Erro"; tom: "neutro" | "aviso" | "sucesso" | "erro" };
 
 /** O selo do cabeçalho, a partir da situação da nota (lib/regras-emissao). */
 export function seloDaNota(situacao: "AUTORIZADA" | "RASCUNHO" | "EM_ANALISE" | "REENVIAR" | "ENCERRADA" | null): SeloDaNota {
@@ -395,6 +395,36 @@ export function seloDaNota(situacao: "AUTORIZADA" | "RASCUNHO" | "EM_ANALISE" | 
   if (situacao === "EM_ANALISE") return { rotulo: "Em análise", tom: "aviso" };
   if (situacao === "REENVIAR" || situacao === "ENCERRADA") return { rotulo: "Erro", tom: "erro" };
   return { rotulo: "Rascunho", tom: "neutro" };
+}
+
+/**
+ * O selo do cabeçalho da janela. Antes de criar o rascunho não existe nota: o
+ * selo diz "Novo" — "Rascunho" ali contradizia o subtítulo "ainda sem rascunho".
+ */
+export function seloDoCabecalho(
+  temNota: boolean,
+  situacao: Parameters<typeof seloDaNota>[0]
+): SeloDaNota {
+  return temNota ? seloDaNota(situacao) : { rotulo: "Novo", tom: "neutro" };
+}
+
+/* ------------------------------------------------------- cartão de valores */
+
+/** "Itens marcados (N)": quantos itens do pedido entram na nota. */
+export function rotuloDosItensMarcados(quantos: number): string {
+  return `Itens marcados (${Math.max(0, Math.trunc(Number(quantos) || 0))})`;
+}
+
+/**
+ * A linha "Serviços" do cartão Valores aparece?
+ * Quando a linha "Itens marcados" está na tela e tem o MESMO valor (em
+ * centavos), "Serviços" só repetiria o número: some. Com valor diferente
+ * (desconto do pedido, valor digitado à mão) ela aparece. Sem a linha dos itens
+ * (nota já criada, pedido sem item) nada muda: "Serviços" continua.
+ */
+export function mostraLinhaDeServicos(itensMarcadosNaTela: boolean, somaDosItens: number, valorDosServicos: number): boolean {
+  if (!itensMarcadosNaTela) return true;
+  return Math.round((Number(somaDosItens) || 0) * 100) !== Math.round((Number(valorDosServicos) || 0) * 100);
 }
 
 /* ----------------------------------------------------------------- alertas */
