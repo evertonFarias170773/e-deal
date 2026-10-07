@@ -1,6 +1,6 @@
 # Conferência
 
-> **Última revisão:** 02/10/2026
+> **Última revisão:** 07/10/2026
 > **Caminho no menu:** Conferência (primeiro item do menu lateral; é um link direto, sem subitens)
 > **Endereço:** `/cobrancas` (o detalhe de uma cobrança abre em `/cobrancas/<cobrança>`)
 
@@ -53,7 +53,8 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Copiar linha digitável** | Menu de ações (não aparece em cartão parcelado) | Copia a linha digitável do boleto. Desabilitado quando não há boleto. |
 | **Nova tarefa** | Menu de ações | Cria uma tarefa para um colega, já com o pedido, o cliente e a descrição da cobrança. |
 | **Cancelar cobrança** | Menu de ações (em vermelho) e **Ações Administrativas** do detalhe | Abre a janela **Cancelar Cobrança**. |
-| **Confirmar Liberação** | Janela **Confirmar Liberação Operacional** | Confirma a conferência da cobrança. |
+| **Confirmar Liberação** | Janela **Confirmar Liberação Operacional** | Confirma a conferência da cobrança. Enquanto confirma, o botão mostra "Confirmando..." e fica apagado; a janela fecha assim que a confirmação é gravada. |
+| Aviso **Atualizando a lista...** | Na linha das abas, à direita | Aparece depois de uma confirmação, enquanto a lista inteira é recarregada. Não é preciso esperar: a tela continua liberada. |
 | **Cancelar** | Janelas **Confirmar Liberação Operacional**, **Análise de Faturamento** e **Atualizar empresa** | Fecha a janela sem gravar. |
 | **Entendi, voltar** | Alerta **Não é possível confirmar esta cobrança** | Fecha o alerta. |
 | **Aprovar**, **Alterar**, **Reprovar** | Abas da janela **Análise de Faturamento** | Escolhem o que fazer com a condição pedida pelo vendedor. |
@@ -84,11 +85,12 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 1. Na aba **Fila de Conferência**, localize a cobrança.
 2. Abra o menu de ações da linha e clique em **Confirmar Conferência**.
 3. Confira cliente, proposta e valor na janela **Confirmar Liberação Operacional**.
-4. Clique em **Confirmar Liberação**.
+4. Clique em **Confirmar Liberação**. A janela fecha assim que a confirmação é gravada.
 
 O que acontece depois:
 
-- A cobrança sai da fila e passa para **Cobranças Confirmadas**, com a data e o seu nome.
+- A cobrança sai da fila e passa para **Cobranças Confirmadas**, com a data e o seu nome. Essa linha e os totais dos cards mudam na hora.
+- O resto da lista é recarregado em seguida, sem travar a tela. Enquanto isso aparece o aviso **Atualizando a lista...** ao lado das abas. Você já pode confirmar a próxima cobrança.
 - E-Permuta, E-Amostra e E-Retrabalho passam a constar como pagos na hora, porque não geram título para receber depois. O E-Faturado continua a vencer: quem liquida é o título, lançado no Registro de recebíveis.
 - O chat da proposta recebe a mensagem "Cobrança conferida e liberada para os próximos fluxos operacionais: expedição, fiscal, boletos e produção."
 - O status do pedido é reavaliado:
@@ -294,6 +296,8 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/features/cobrancas/CobrancaStatusBadge.tsx`
 - `src/features/cobrancas/CobrancaHistoricoPanel.tsx`
 - `src/features/cobrancas/ConfirmarLiberacaoModal.tsx`
+- `src/features/cobrancas/lib/confirmar-conferencia.ts`
+- `src/features/cobrancas/lib/recarga-em-ordem.ts`
 - `src/features/cobrancas/ConferenciaFinanceiraAlertaModal.tsx`
 - `src/features/cobrancas/AutorizarFaturamentoModal.tsx`
 - `src/features/cobrancas/AnaliseCreditoModal.tsx`

@@ -890,6 +890,33 @@ export async function updatePagamentoV2StatusConfirmacao(
   };
 }
 
+/**
+ * Relê UMA cobrança, com as mesmas colunas e o mesmo mapeamento da lista.
+ *
+ * Serve à confirmação da Conferência: a rota responde só `success`, e a linha
+ * da lista é atualizada por esta leitura, sem esperar a recarga completa.
+ * Devolve `null` quando a leitura falha ou a cobrança não existe — quem chama
+ * segue com a recarga completa, que acerta a linha de qualquer forma.
+ */
+export async function lerCobrancaPorId(id: string): Promise<Cobranca | null> {
+  const client = getSupabaseClient();
+  if (!client || !id) {
+    return null;
+  }
+
+  const { data, error } = await client
+    .from("pagamentos_v2")
+    .select(PAGAMENTOS_V2_SELECT)
+    .eq("id", id)
+    .returns<SupabasePagamentoV2Row[]>();
+
+  if (error || !Array.isArray(data) || data.length !== 1) {
+    return null;
+  }
+
+  return mapSupabasePagamentoV2RowToCobranca(data[0]) ?? null;
+}
+
 export async function consultarDetalhesBoletoC6(idBoletoC6: string, idEmpresa: number) {
   const response = await fetch("https://10074.hostoo.net.br/webhook/consulta-paid-c6", {
     method: "POST",

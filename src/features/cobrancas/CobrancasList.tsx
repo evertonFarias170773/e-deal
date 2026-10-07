@@ -212,7 +212,7 @@ function getInitialDates() {
 
 export function CobrancasList() {
   const router = useRouter();
-  const { cobrancasStats, source, refreshCobrancas, existingBoletoIdInts, hasBoletoHistoryIdInts } = useCobrancas();
+  const { cobrancasStats, source, refreshCobrancas, existingBoletoIdInts, hasBoletoHistoryIdInts, recarregandoEmSegundoPlano } = useCobrancas();
   const { showToast } = useAppToast();
   const initialDates = useMemo(() => getInitialDates(), []);
 
@@ -773,6 +773,17 @@ export function CobrancasList() {
         >
           Cobranças Confirmadas
         </button>
+        {recarregandoEmSegundoPlano ? (
+          <span
+            data-recarga-em-segundo-plano
+            role="status"
+            aria-live="polite"
+            className="ml-auto flex items-center gap-2 self-center pr-1 text-xs font-medium text-slate-500"
+          >
+            <span className="h-3 w-3 animate-spin rounded-full border-2 border-slate-300 border-t-[#0f9f9a]" aria-hidden="true" />
+            Atualizando a lista...
+          </span>
+        ) : null}
       </div>
 
       <section className="rounded-3xl border border-[#d7e5e8] bg-white p-4 shadow-sm">

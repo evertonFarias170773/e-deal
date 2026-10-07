@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { X, ShieldCheck } from "lucide-react";
 import { useCobrancas } from "@/features/cobrancas/CobrancasProvider";
 import { useAuth } from "@/features/auth/AuthProvider";
@@ -8,6 +8,7 @@ import { useAppToast } from "@/components/common/AppToast";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import type { Cobranca } from "@/features/cobrancas/types";
 import { ConferenciaFinanceiraAlertaModal } from "./ConferenciaFinanceiraAlertaModal";
+import { executarConfirmacaoDaConferencia, type TravaDeEnvio } from "./lib/confirmar-conferencia";
 
 interface ConfirmarLiberacaoModalProps {
   isOpen: boolean;
@@ -17,11 +18,13 @@ interface ConfirmarLiberacaoModalProps {
 }
 
 export function ConfirmarLiberacaoModal({ isOpen, onClose, cobranca, onSuccess }: ConfirmarLiberacaoModalProps) {
-  const { liberarCobrancaReal } = useCobrancas();
+  const { confirmarConferenciaReal } = useCobrancas();
   const { user } = useAuth();
   const { showToast } = useAppToast();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [bloqueioSituacao, setBloqueioSituacao] = useState<any>(null);
+  // Uma chamada por vez, mesmo com dois cliques antes de o botão desligar.
+  const travaDeEnvio = useRef<TravaDeEnvio>({ ocupada: false });
 
   useEffect(() => {
     if (!isOpen) return;
@@ -34,34 +37,16 @@ export function ConfirmarLiberacaoModal({ isOpen, onClose, cobranca, onSuccess }
 
   if (!isOpen) return null;
 
+  /**
+   * A ordem está em `executarConfirmacaoDaConferencia`: a janela fecha assim
+   * que a rota responde; a linha da lista, a recarga completa e a mensagem do
+   * chat vêm depois, sem segurar a tela.
+   */
   async function handleConfirm() {
-    setIsSubmitting(true);
-    try {
-      const operador = user?.name || "Operador Financeiro";
-      
-      const success = await liberarCobrancaReal(cobranca.id, operador);
-
-      if (success) {
-        const client = getSupabaseClient();
-        if (client) {
-          try {
-            await client.from("propostas_chat").insert([
-              {
-                id_int: cobranca.id_int,
-                id_cliente: cobranca.id_cliente,
-                mensagem: "Cobrança conferida e liberada para os próximos fluxos operacionais: expedição, fiscal, boletos e produção.",
-                tipo: "SISTEMA",
-                autor_nome: user?.name || "Sistema",
-                autor_email: user?.email || null,
-                setor: "Financeiro",
-                visivel_externo: false
-              }
-            ]);
-          } catch (chatErr) {
-            console.warn("[ConfirmarLiberacaoModal] Erro ao gravar mensagem no chat:", chatErr);
-          }
-        }
-
+    await executarConfirmacaoDaConferencia(travaDeEnvio.current, {
+      confirmar: () => confirmarConferenciaReal(cobranca, user?.name || "Operador Financeiro"),
+      aoMudarEnvio: setIsSubmitting,
+      aoConfirmar: () => {
         showToast({
           type: "success",
           title: "Conferência confirmada",
@@ -70,26 +55,45 @@ export function ConfirmarLiberacaoModal({ isOpen, onClose, cobranca, onSuccess }
 
         onSuccess?.();
         onClose();
-      } else {
-        showToast({
-          type: "error",
-          title: "Erro ao confirmar",
-          description: "Não foi possível concluir a liberação. Tente novamente."
-        });
+      },
+      aoFalhar: (err: any) => {
+        if (err === null) {
+          showToast({
+            type: "error",
+            title: "Erro ao confirmar",
+            description: "Não foi possível concluir a liberação. Tente novamente."
+          });
+        } else if (err?.name === "ConferenciaBloqueadaError" && err.situacao) {
+          setBloqueioSituacao(err.situacao);
+        } else {
+          showToast({
+            type: "error",
+            title: "Erro inesperado",
+            description: err instanceof Error ? err.message : (err?.message || "Erro desconhecido.")
+          });
+        }
+      },
+      gravarChat: async () => {
+        const client = getSupabaseClient();
+        if (!client) return;
+        const { error } = await client.from("propostas_chat").insert([
+          {
+            id_int: cobranca.id_int,
+            id_cliente: cobranca.id_cliente,
+            mensagem: "Cobrança conferida e liberada para os próximos fluxos operacionais: expedição, fiscal, boletos e produção.",
+            tipo: "SISTEMA",
+            autor_nome: user?.name || "Sistema",
+            autor_email: user?.email || null,
+            setor: "Financeiro",
+            visivel_externo: false
+          }
+        ]);
+        if (error) throw error;
+      },
+      registrarFalhaDoChat: (chatErr) => {
+        console.warn("[ConfirmarLiberacaoModal] Erro ao gravar mensagem no chat:", chatErr);
       }
-    } catch (err: any) {
-      if (err?.name === "ConferenciaBloqueadaError" && err.situacao) {
-        setBloqueioSituacao(err.situacao);
-      } else {
-        showToast({
-          type: "error",
-          title: "Erro inesperado",
-          description: err instanceof Error ? err.message : (err?.message || "Erro desconhecido.")
-        });
-      }
-    } finally {
-      setIsSubmitting(false);
-    }
+    });
   }
 
   const formattedValor = new Intl.NumberFormat("pt-BR", {

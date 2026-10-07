@@ -11,6 +11,7 @@ import { getSupabaseClient } from "@/lib/supabase/client";
 import { useAuth } from "@/features/auth/AuthProvider";
 import {
   getCobrancasReadOnlyData,
+  lerCobrancaPorId,
   updatePagamentoV2StatusConfirmacao,
   type CobrancasReadResult,
   type CobrancasReadSource
@@ -20,6 +21,7 @@ import {
   createPropostaChatMentions
 } from "@/features/orcamentos/services/orcamentos.service";
 import { PROPOSTA_STATUS_PROTEGIDOS } from "@/features/orcamentos/services/status-protegidos";
+import { criarControleDeRecarga, manterDadosDaRecarga } from "@/features/cobrancas/lib/recarga-em-ordem";
 import type { DestinoValorCancelado, MotivoCancelamentoPago } from "@/features/cobrancas/cancelamento-pago";
 
 /** Payload do cancelamento de cobrança JÁ PAGA — espelha o objeto que o
@@ -83,6 +85,13 @@ type CobrancasContextValue = {
   getCobrancaByToken: (token: string) => Cobranca | undefined;
   getCobrancasByProposta: (idInt: number) => Cobranca[];
   liberarCobrancaReal: (id: string, confirmadoPor: string, status?: string, confirmado?: boolean, acao?: string) => Promise<boolean>;
+  /**
+   * "Confirmar Conferência": devolve assim que a rota responde. A linha da
+   * cobrança e a recarga completa vêm depois, em segundo plano.
+   */
+  confirmarConferenciaReal: (cobranca: Cobranca, confirmadoPor: string) => Promise<boolean>;
+  /** `true` enquanto a recarga em segundo plano de uma confirmação está rodando. */
+  recarregandoEmSegundoPlano: boolean;
   voltarCobrancaFilaReal: (id: string) => Promise<boolean>;
   emitirBoletoReal: (id: string) => Promise<{ success: boolean; errorMessage?: string }>;
   alterarCondicaoCobrancaReal: (id: string, novoModelo: ModeloCobranca, operador: string, obs?: string) => Promise<{ success: boolean; errorMessage?: string }>;
@@ -365,6 +374,69 @@ async function acionarCartaoAsas(client: SupabaseClient, cobrancaId: string): Pr
   }
 }
 
+/**
+ * O que a releitura de UMA cobrança não traz: vem de outras tabelas, só na
+ * recarga completa. A linha atualizada na confirmação mantém o que já tinha.
+ */
+const CAMPOS_SO_DA_RECARGA = [
+  "cliente_restricao",
+  "cliente_limite_credito",
+  "cliente_credito",
+  "cliente_principal_id",
+  "cliente_principal_nome",
+  "socio_pagador_nome",
+  "url_pdf"
+] as const satisfies readonly (keyof Cobranca)[];
+
+/**
+ * Chama `POST /api/cobrancas/confirmar`. Lança em qualquer desfecho que não
+ * seja sucesso; a recusa por quitação parcial sai como `ConferenciaBloqueadaError`,
+ * com a situação, para o modal mostrar o alerta.
+ */
+async function confirmarNaRota(id: string, confirmadoPor: string, acao?: string): Promise<void> {
+  const client = getSupabaseClient();
+  if (!client) {
+    throw new Error("Sistema indisponível no momento. Tente novamente.");
+  }
+  const sessionResponse = await client.auth.getSession();
+  const token = sessionResponse.data.session?.access_token || "";
+  if (!token) {
+    throw new Error("Sessão não encontrada. Faça login novamente.");
+  }
+
+  // Chama a nova API Server-Side para validar regras de quitação de proposta
+  const response = await fetch("/api/cobrancas/confirmar", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${token}`
+    },
+    body: JSON.stringify({
+      idCobranca: id,
+      confirmadoPor,
+      acao
+    })
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    if (response.status === 422 && data.isConferenciaBloqueada) {
+      // Lançar um erro estruturado para o modal capturar
+      throw {
+        name: "ConferenciaBloqueadaError",
+        message: data.error || "Confirmação bloqueada",
+        situacao: data.situacao
+      };
+    }
+    throw new Error(data.error || "Falha ao confirmar cobrança via API.");
+  }
+
+  if (!data.success) {
+    throw new Error(data.error || "Falha lógica na confirmação da API.");
+  }
+}
+
 export function CobrancasProvider({ children }: { children: ReactNode }) {
   const [cobrancas, setCobrancas] = useState<Cobranca[]>(createInitialState);
   const [cobrancasStats, setCobrancasStats] = useState<Cobranca[]>(createInitialState);
@@ -375,9 +447,13 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
   const [existingBoletoIdInts, setExistingBoletoIdInts] = useState<Set<number>>(new Set());
   const [hasBoletoHistoryIdInts, setHasBoletoHistoryIdInts] = useState<Set<number>>(new Set());
   const isMountedRef = useRef(true);
+  // Ordem das recargas e das linhas atualizadas sozinhas (ver recarga-em-ordem).
+  const controleDeRecarga = useRef(criarControleDeRecarga<Cobranca>());
+  const [recargasEmSegundoPlano, setRecargasEmSegundoPlano] = useState(0);
 
   const loadData = useCallback(async (filters?: any): Promise<CobrancasReadResult> => {
     const stored = readStoredCobrancas();
+    const inicioDaCarga = controleDeRecarga.current.iniciarCarga();
     const result = await getCobrancasReadOnlyData(filters);
 
     if (!isMountedRef.current) {
@@ -399,9 +475,16 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
       return result;
     }
 
+    // Recarga que termina depois de outra mais nova não mexe na tela; a que é
+    // aplicada recebe por cima as linhas atualizadas depois do início dela.
+    const fimDaCarga = controleDeRecarga.current.concluirCarga(inicioDaCarga);
+    if (!fimDaCarga.aplicar) {
+      return result;
+    }
+
     if (result.source === "supabase") {
-      setCobrancas(result.cobrancas);
-      setCobrancasStats(result.cobrancasStats);
+      setCobrancas(fimDaCarga.sobrepor(result.cobrancas));
+      setCobrancasStats(fimDaCarga.sobrepor(result.cobrancasStats));
       setSource("supabase");
       // `source` vira "supabase" mesmo com conjunto vazio — foi por isso que a
       // guarda da tela (`cobrancasIndefinidas`) se desarmava numa carga vazia.
@@ -1532,47 +1615,7 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
     const isAutorizacao = acao === "autorizar_faturamento";
 
     if (source === "supabase") {
-      const client = getSupabaseClient();
-      if (!client) {
-        throw new Error("Sistema indisponível no momento. Tente novamente.");
-      }
-      const sessionResponse = await client.auth.getSession();
-      const token = sessionResponse.data.session?.access_token || "";
-      if (!token) {
-        throw new Error("Sessão não encontrada. Faça login novamente.");
-      }
-
-      // Chama a nova API Server-Side para validar regras de quitação de proposta
-      const response = await fetch("/api/cobrancas/confirmar", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          idCobranca: id,
-          confirmadoPor,
-          acao
-        })
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        if (response.status === 422 && data.isConferenciaBloqueada) {
-          // Lançar um erro estruturado para o modal capturar
-          throw { 
-            name: "ConferenciaBloqueadaError", 
-            message: data.error || "Confirmação bloqueada", 
-            situacao: data.situacao 
-          };
-        }
-        throw new Error(data.error || "Falha ao confirmar cobrança via API.");
-      }
-
-      if (!data.success) {
-        throw new Error(data.error || "Falha lógica na confirmação da API.");
-      }
+      await confirmarNaRota(id, confirmadoPor, acao);
 
       // Atualiza os dados localmente para refletir a mudança imediata na interface
       await refreshCobrancas();
@@ -1582,6 +1625,50 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
     // Mock fallback (não mais usado na real, mas mantido)
     return true;
   }, [source, refreshCobrancas]);
+
+  /**
+   * O que roda DEPOIS de a confirmação da Conferência responder, sem ninguém
+   * esperando: a linha confirmada é relida sozinha e trocada na lista, e a
+   * recarga completa vem em seguida. Nunca lança — a confirmação já valeu, e
+   * uma falha aqui só adia a atualização da tela.
+   */
+  const atualizarDepoisDeConfirmar = useCallback(async (anterior: Cobranca) => {
+    setRecargasEmSegundoPlano((n) => n + 1);
+    try {
+      const relida = await lerCobrancaPorId(anterior.id).catch(() => null);
+      if (relida && isMountedRef.current) {
+        const linha = manterDadosDaRecarga(relida, anterior, CAMPOS_SO_DA_RECARGA);
+        controleDeRecarga.current.registrarLinha(linha);
+        const trocar = (lista: Cobranca[]) => lista.map((item) => (item.id === linha.id ? linha : item));
+        setCobrancas(trocar);
+        setCobrancasStats(trocar);
+      }
+
+      await loadData();
+    } catch (erro) {
+      console.warn("[CobrancasProvider] Recarga em segundo plano apos a confirmacao falhou:", erro);
+    } finally {
+      if (isMountedRef.current) {
+        setRecargasEmSegundoPlano((n) => Math.max(0, n - 1));
+      }
+    }
+  }, [loadData]);
+
+  const confirmarConferenciaReal = useCallback(async (cobranca: Cobranca, confirmadoPor: string): Promise<boolean> => {
+    if (!cobranca?.id) {
+      throw new Error("ID de cobranca invalido.");
+    }
+
+    if (source === "supabase") {
+      await confirmarNaRota(cobranca.id, confirmadoPor);
+      // Sem `await`, de propósito: quem chamou fecha o modal agora.
+      void atualizarDepoisDeConfirmar(cobranca);
+      return true;
+    }
+
+    // Mock fallback, como em `liberarCobrancaReal`.
+    return true;
+  }, [source, atualizarDepoisDeConfirmar]);
 
   const voltarCobrancaFilaReal = useCallback(async (id: string): Promise<boolean> => {
     if (!id) {
@@ -2083,6 +2170,8 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
       // 7.339 propostas), entao a copia e irrelevante perto do O(n) que saiu.
       getCobrancasByProposta: (idInt: number) => cobrancasPorProposta.get(idInt)?.slice() ?? [],
       liberarCobrancaReal,
+      confirmarConferenciaReal,
+      recarregandoEmSegundoPlano: recargasEmSegundoPlano > 0,
       voltarCobrancaFilaReal,
       emitirBoletoReal,
       alterarCondicaoCobrancaReal,
@@ -2106,6 +2195,8 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
       liberarParaPedido,
       refreshCobrancas,
       liberarCobrancaReal,
+      confirmarConferenciaReal,
+      recargasEmSegundoPlano,
       voltarCobrancaFilaReal,
       emitirBoletoReal,
       alterarCondicaoCobrancaReal,
