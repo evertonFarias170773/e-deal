@@ -98,6 +98,10 @@ Como a colagem é lida: a quantidade é o último número da linha e a cor é tu
 2. Para remover, clique na lixeira da linha.
 3. Clique em **Gravar lote**. Só então a cópia passa a existir e o modelo removido é apagado.
 
+Ao gravar, o sistema primeiro remove os modelos, depois acerta a quantidade do produto e por fim grava os modelos alterados e os novos. Se a remoção for recusada, nada é gravado: a quantidade e o valor do pedido ficam como estavam.
+
+Modelo de ingresso com **QR de controle de acesso reservado** não pode ser removido por aqui. A mensagem diz qual é o modelo. Peça a liberação ao parceiro do controle de acesso e só depois remova e grave de novo.
+
 ### Trocar a quantidade
 
 1. Altere a **Qtd** dos modelos, acrescente ou remova linhas. A barra mostra "quantidade do item: X → Y".
@@ -217,6 +221,11 @@ O PDF é sempre o do mapa como está hoje no sistema de mapas. Quem publica o PD
 | "Mapa sem cadeiras" | Nenhum setor do mapa tem cadeiras. | Confira o mapa no sistema de mapas. |
 | "Mapa Teatro não gravado", com o motivo | A gravação foi recusada. Os setores ficam na lista, sem gravar. | Corrija o que a mensagem aponta e clique em **Gravar lote**. |
 | "O setor informado nao pertence ao mapa ..." | O mapa mudou entre abrir a janela e gravar. | Abra **Mapa Teatro** de novo e escolha o mapa. |
+| "Este modelo tem QR de controle de acesso reservado e não pode ser excluído por aqui. Peça a liberação ao parceiro e depois exclua o lote.", com o número e o nome do modelo | O modelo tem QR de ingresso reservado no controle de acesso. Nada foi gravado. | Peça a liberação do modelo ao parceiro e, depois dela, remova o modelo e clique em **Gravar lote**. |
+| "Não foi possível remover os lotes. Nada foi gravado." | A remoção falhou por outro motivo. Quantidade e valor não mudaram. | Clique em **Gravar lote** de novo. Se continuar, avise o administrador. |
+| "... A quantidade do item voltou para N e o valor da proposta voltou a R$ ..." | Um modelo não pôde ser alterado ou incluído depois de a quantidade ser gravada. O sistema devolveu a quantidade. A mensagem diz o que já tinha sido gravado. | Confira a lista e clique em **Gravar lote** de novo. |
+| "... a quantidade do item ficou em N e não pôde ser devolvida ..." ou "... o valor da proposta ficou em R$ ... : confira." | A gravação falhou no meio e o sistema não conseguiu desfazer tudo. | Confira a quantidade do produto e o valor do pedido, e avise o administrador. |
+| "N lote(s) foram removidos, mas a quantidade do item não foi gravada" | Os modelos saíram, mas a quantidade do produto ficou a antiga. | Clique em **Gravar lote** de novo. |
 | "Salve a proposta uma vez antes de montar os lotes deste produto." | O produto foi incluído e o pedido ainda não foi salvo. | Clique em **Salvar alterações** e volte à aba. |
 | "N lote(s) ainda sem os obrigatórios — não são gravados até ficarem completos." | Há linha nova sem Modelo, Qtd ou Cor papel (a cor só conta quando o campo tem asterisco). | Complete a linha ou remova-a. |
 | "Complete os campos obrigatórios do modelo #... para voltar a gravar." | Um modelo que já existia ficou sem campo obrigatório. | Preencha o campo naquele modelo e grave de novo. |
@@ -256,5 +265,6 @@ O PDF é sempre o do mapa como está hoje no sistema de mapas. Quem publica o PD
 - `src/features/orcamentos/lib/checklist-lote.ts`
 - `src/features/orcamentos/lib/divergencia-lotes.ts`
 - `src/app/api/pedidos/lotes-em-massa/route.ts`
+- `src/features/orcamentos/services/gravar-lotes.server.ts`
 - `src/features/orcamentos/OrcamentoFormPage.tsx`
 - `src/features/usuarios-perfis/catalogo-permissoes.ts`

@@ -9,12 +9,19 @@
  *   então distribuir uma lista nova exigia ir antes à aba Orçamento aumentar a
  *   quantidade, voltar, e repetir a cada ajuste.
  *
- * A INVERSÃO QUE FAZ ISSO FUNCIONAR
- *   A ordem das escritas: a quantidade do item é gravada PRIMEIRO, com a soma
- *   dos lotes, e só então os lotes. Assim a validação de saldo que já existe
- *   (`validarSaldoModelo`) não precisa ser afrouxada nem removida — quando os
- *   lotes chegam, o saldo já foi aberto. Nada é desligado; ela apenas deixa de
- *   estar no caminho da grade e continua protegendo as outras portas.
+ * A QUANTIDADE DO ITEM É GRAVADA AQUI
+ *   A rota grava a quantidade do item com a soma dos lotes, junto com os
+ *   lotes. A validação de saldo que já existe (`validarSaldoModelo`) não é
+ *   afrouxada nem removida: ela é do serviço do card, não está no caminho da
+ *   grade e continua protegendo as outras portas. Não há regra de saldo no banco.
+ *
+ * A ORDEM DAS ESCRITAS (desde 07/10/2026 — services/gravar-lotes.server.ts)
+ *   Remoções primeiro, num comando só; depois a quantidade do item; depois
+ *   alterações e inclusões. Até essa data a quantidade vinha primeiro, e uma
+ *   remoção recusada deixava a quantidade (e o valor da proposta) alterados
+ *   com o lote ainda lá — foi o pedido 23063, em que o modelo tinha reserva de
+ *   QR de controle de acesso. Agora remoção recusada não grava nada, e falha
+ *   posterior devolve a quantidade.
  *
  * CONSOLIDA `propostas.valor` E `valor_total` (desde 28/09/2026)
  *   Ate essa data a rota nao recalculava a proposta, de proposito: o preco
@@ -67,11 +74,8 @@
 import { NextResponse } from "next/server";
 import { createClient as createSupabaseClient, type SupabaseClient } from "@supabase/supabase-js";
 import { avaliarFreteParaCobranca, mensagemFreteDesatualizado } from "@/features/orcamentos/services/frete-desatualizado";
-import {
-  anularColunasEscondidas,
-  checklistVisivel,
-  omitirColunasEscondidas
-} from "@/features/orcamentos/lib/checklist-lote";
+import { checklistVisivel } from "@/features/orcamentos/lib/checklist-lote";
+import { gravarLotesDoItem } from "@/features/orcamentos/services/gravar-lotes.server";
 import { calcularTotaisPelaRegraDaTela } from "@/features/orcamentos/services/totais-proposta.server";
 import {
   lerSetoresDoMapaTeatro,
@@ -79,9 +83,6 @@ import {
   revisaoDoMapaTeatro,
   type RetratoDoSetor
 } from "@/features/orcamentos/lib/mapa-teatro";
-
-/** Espelha STATUS_INICIAL_MODELO de orcamento-utils: lote novo nasce pendente. */
-const STATUS_INICIAL_MODELO = "PENDENTE";
 
 const STATUS_COBRANCA_INATIVA = ["CANCELADO", "CANCELADA", "EXTORNADO", "RECUSADO"];
 
@@ -361,123 +362,23 @@ export async function POST(request: Request) {
     );
   }
 
-  // 5. Quantidade do item PRIMEIRO — é o que abre o saldo para os lotes.
-  //    SÓ QUANDO A SOMA MUDOU DE FATO (decisão do dono, 23/09/2026): a lista
-  //    rápida grava a cada campo, e regravar a mesma quantidade a cada troca
-  //    de cor, bloco ou numerador dispararia os triggers de produtos_proposta
-  //    (status financeiro, totais) sem nada ter mudado.
-  if (soma !== qtdAtual) {
-    const { error: erroQtd } = await supabase
-      .from("produtos_proposta")
-      .update({ qtd: soma })
-      .eq("id", idProdutoProposta)
-      .eq("id_int", idInt);
-
-    if (erroQtd) {
-      return erro("INTERNO", `Nao foi possivel gravar a quantidade do item: ${erroQtd.message}`, 500);
-    }
-  }
-
-  // 6. Lotes removidos.
-  if (removerIds.length > 0) {
-    const { error: erroRemover } = await supabase
-      .from("pedidos_modelos")
-      .delete()
-      .in("id", removerIds)
-      .eq("id_produto_proposta_origem", idProdutoProposta);
-
-    if (erroRemover) {
-      return erro("PARCIAL", `Quantidade gravada, mas os lotes removidos falharam: ${erroRemover.message}`, 500);
-    }
-  }
-
-  // 7. Lotes existentes: UPDATE campo a campo, nunca apagar e recriar — os
-  //    status de arte e produção e as amostras vivem nessas linhas.
-  const agora = new Date().toISOString();
-  for (const lote of lotes.filter((l) => Number.isFinite(Number(l.id)) && Number(l.id) > 0)) {
-    // Coluna que o produto nao imprime SAI do patch: o valor gravado no lote
-    // fica como esta. As demais seguem a montagem de sempre.
-    const patch = omitirColunasEscondidas(
-      {
-        nome_modelo: String(lote.nome_modelo).trim(),
-        quantidade: Number(lote.quantidade),
-        padrao: lote.padrao?.trim() || null,
-        tipo_numeracao: lote.tipo_numeracao || "SEM_NUMERACAO",
-        numeracao_inicio: lote.numeracao_inicio ?? null,
-        numeracao_fim: lote.numeracao_fim ?? null,
-        verso_tipo: lote.verso_tipo?.trim() || null,
-        bloco: lote.bloco?.trim() || null,
-        gabarito_operacional: lote.gabarito_operacional?.trim() || null,
-        variacoes_texto: lote.variacoes_texto?.trim() || null,
-        Q_CAM: lote.Q_CAM ?? null,
-        L_CAM: lote.L_CAM ?? null,
-        C_INI: lote.C_INI ?? null,
-        updated_at: agora
-      },
-      visivel
-    );
-
-    const { error: erroUpdate } = await supabase
-      .from("pedidos_modelos")
-      .update(patch)
-      .eq("id", Number(lote.id))
-      .eq("id_produto_proposta_origem", idProdutoProposta);
-
-    if (erroUpdate) {
-      return erro("PARCIAL", `Quantidade gravada, mas o lote "${lote.nome_modelo}" falhou: ${erroUpdate.message}`, 500);
-    }
-  }
-
-  // 8. Lotes novos, em um insert só.
-  const novos = lotes.filter((l) => !Number.isFinite(Number(l.id)) || Number(l.id) <= 0);
-  if (novos.length > 0) {
-    const { data: maiorOrdem } = await supabase
-      .from("pedidos_modelos")
-      .select("ordem")
-      .eq("id_int", idInt)
-      .order("ordem", { ascending: false })
-      .limit(1)
-      .returns<{ ordem: number | null }[]>();
-
-    let proximaOrdem = (maiorOrdem && maiorOrdem[0] ? Number(maiorOrdem[0].ordem) || 0 : 0) + 1;
-
-    // Coluna que o produto nao imprime nasce NULL — inclusive tipo_numeracao,
-    // que nao vira "SEM_NUMERACAO" quando escondido. O valor que a requisicao
-    // mandou nessas colunas e descartado.
-    const { error: erroInsert } = await supabase.from("pedidos_modelos").insert(
-      novos.map((lote) => {
-        // Setor de Mapa de Teatro: o vinculo resolvido no passo 2c, e sem
-        // numeracao gerada. Lote comum nao ganha nenhuma dessas chaves.
-        const vinculo = vinculos.get(lote);
-        return { ...anularColunasEscondidas({
-        id_int: idInt,
-        id_produto_proposta_origem: idProdutoProposta,
-        nome_modelo: String(lote.nome_modelo).trim(),
-        padrao: lote.padrao?.trim() || null,
-        quantidade: Number(lote.quantidade),
-        tipo_numeracao: lote.tipo_numeracao || "SEM_NUMERACAO",
-        numeracao_inicio: lote.numeracao_inicio ?? null,
-        numeracao_fim: lote.numeracao_fim ?? null,
-        verso_tipo: lote.verso_tipo?.trim() || null,
-        bloco: lote.bloco?.trim() || null,
-        gabarito_operacional: lote.gabarito_operacional?.trim() || null,
-        variacoes_texto: lote.variacoes_texto?.trim() || null,
-        Q_CAM: lote.Q_CAM ?? null,
-        L_CAM: lote.L_CAM ?? null,
-        C_INI: lote.C_INI ?? null,
-        status_arte: STATUS_INICIAL_MODELO,
-        status_producao: STATUS_INICIAL_MODELO,
-        ordem: proximaOrdem++,
-        created_at: agora,
-        updated_at: agora
-      }, visivel), ...(vinculo ? { ...vinculo, numeracao_inicio: null, numeracao_fim: null } : {}) };
-      })
-    );
-
-    if (erroInsert) {
-      return erro("PARCIAL", `Quantidade gravada, mas os lotes novos falharam: ${erroInsert.message}`, 500);
-    }
-  }
+  // 5 a 8. As escritas, em services/gravar-lotes.server.ts: REMOÇÕES primeiro
+  //    (um comando só: todos ou nenhum), depois a quantidade do item, depois
+  //    alterações e inclusões. Remoção recusada = nada gravado. Falha depois da
+  //    quantidade = a quantidade volta e a resposta diz o que ficou.
+  const gravacao = await gravarLotesDoItem(supabase, {
+    idInt,
+    idProdutoProposta,
+    lotes,
+    removerIds,
+    vinculos,
+    visivel,
+    qtdAtual,
+    soma,
+    agora: new Date().toISOString(),
+    reconsolidar: () => consolidarTotaisDaProposta(supabase, idInt)
+  });
+  if (!gravacao.ok) return erro(gravacao.code, gravacao.message, gravacao.status, gravacao.extra);
 
   // 9. Consolidar a proposta — so quando a quantidade mudou, porque so ela
   //    altera o preco. Mesma regra e mesma guarda de frete do saveProposta.
