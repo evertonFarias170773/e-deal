@@ -1,6 +1,7 @@
 /**
  * Janela "Gerar NFS-e" — a COMPOSIÇÃO da nota: endereços do tomador, itens do
- * pedido, valor, pagamento (só leitura) e a triagem dos alertas.
+ * pedido, valor, pagamento (conferência e o texto das informações complementares)
+ * e a triagem dos alertas.
  *
  * Módulo puro (sem imports). A janela mostra o que estas funções devolvem; o
  * que vai para as rotas continua sendo valor, descrição, endereço e serviço.
@@ -189,6 +190,8 @@ export type CobrancaDoPedido = {
   parcelas: number | null;
   intervaloDias: number | null;
   valorEntrada: number | null;
+  /** `pagamentos_v2.paid_at`, quando a cobrança já foi paga. */
+  pagoEm?: string | null;
 };
 
 export type ParcelaDaCobranca = { numero: number; total: number; vencimento: string | null; valor: number };
@@ -218,6 +221,27 @@ function somarDias(dataIso: string, dias: number): string {
   return data.toISOString().slice(0, 10);
 }
 
+/**
+ * As parcelas de uma cobrança: a 1ª no vencimento da cobrança e as demais de
+ * `intervaloDias` em `intervaloDias`; sem intervalo, só a 1ª tem data. A última
+ * parcela leva o que sobrou do arredondamento.
+ */
+function parcelasDaCobranca(c: CobrancaDoPedido): { total: number; valor: number; entrada: number; vencimentos: ParcelaDaCobranca[] } {
+  const total = Math.max(1, Math.trunc(Number(c.parcelas) || 1));
+  const valor = Math.round((Number(c.valor) || 0) * 100) / 100;
+  const entrada = Math.max(0, Math.round((Number(c.valorEntrada) || 0) * 100) / 100);
+  const intervalo = Math.max(0, Math.trunc(Number(c.intervaloDias) || 0));
+  const porParcela = Math.round(((valor - entrada) / total) * 100) / 100;
+
+  const vencimentos: ParcelaDaCobranca[] = [];
+  for (let i = 0; i < total; i += 1) {
+    const data = c.vencimento ? (i === 0 ? c.vencimento.slice(0, 10) : intervalo > 0 ? somarDias(c.vencimento, intervalo * i) : null) : null;
+    const valorDaParcela = i === total - 1 ? Math.round((valor - entrada - porParcela * (total - 1)) * 100) / 100 : porParcela;
+    vencimentos.push({ numero: i + 1, total, vencimento: data, valor: valorDaParcela });
+  }
+  return { total, valor, entrada, vencimentos };
+}
+
 /** Cobrança cancelada não entra na conferência. */
 export function cobrancaAtiva(c: CobrancaDoPedido): boolean {
   return !["CANCELADO", "CANCELADA"].includes(String(c.status ?? "").trim().toUpperCase());
@@ -237,19 +261,7 @@ export function pagamentosParaConferencia(cobrancas: readonly CobrancaDoPedido[]
     const tipo = String(c.tipo ?? "").trim().toUpperCase();
     const nome = NOME_DA_FORMA[tipo] ?? (tipo || "Não informada");
     const condicao = String(c.forma ?? "").trim();
-    const total = Math.max(1, Math.trunc(Number(c.parcelas) || 1));
-    const valor = Math.round((Number(c.valor) || 0) * 100) / 100;
-    const entrada = Math.max(0, Math.round((Number(c.valorEntrada) || 0) * 100) / 100);
-    const intervalo = Math.max(0, Math.trunc(Number(c.intervaloDias) || 0));
-    const porParcela = Math.round(((valor - entrada) / total) * 100) / 100;
-
-    const vencimentos: ParcelaDaCobranca[] = [];
-    for (let i = 0; i < total; i += 1) {
-      const data = c.vencimento ? (i === 0 ? c.vencimento.slice(0, 10) : intervalo > 0 ? somarDias(c.vencimento, intervalo * i) : null) : null;
-      // A última parcela leva o que sobrou do arredondamento.
-      const valorDaParcela = i === total - 1 ? Math.round((valor - entrada - porParcela * (total - 1)) * 100) / 100 : porParcela;
-      vencimentos.push({ numero: i + 1, total, vencimento: data, valor: valorDaParcela });
-    }
+    const { total, valor, vencimentos } = parcelasDaCobranca(c);
 
     const status = String(c.status ?? "").trim().toUpperCase();
     const situacao =
@@ -263,6 +275,114 @@ export function pagamentosParaConferencia(cobrancas: readonly CobrancaDoPedido[]
       vencimentos
     };
   });
+}
+
+/* ------------------------------------------------ informações complementares */
+
+/** Limite do campo `xInfComp` da NFS-e nacional. */
+export const LIMITE_INFORMACOES_COMPLEMENTARES_NFSE = 2000;
+
+const reais = (valor: number) => `R$ ${valor.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+/** "AAAA-MM-DD" → "DD/MM/AAAA". Data civil: não passa por `Date`, para não andar um dia. */
+function dataCivil(iso: string | null | undefined): string | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso ?? ""));
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : null;
+}
+
+/** O dia, em Brasília, de um instante gravado no banco (`paid_at`). */
+function diaEmBrasilia(instante: string | null | undefined): string | null {
+  const texto = String(instante ?? "").trim();
+  if (!texto) return null;
+  const data = new Date(texto);
+  if (Number.isNaN(data.getTime())) return null;
+  return new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", year: "numeric" }).format(data);
+}
+
+function listaComE(itens: string[]): string {
+  return itens.length <= 1 ? itens.join("") : `${itens.slice(0, -1).join(", ")} e ${itens[itens.length - 1]}`;
+}
+
+/**
+ * A frase de UMA cobrança, do jeito que sai escrita na nota. Só diz o que a
+ * tela sabe: sem data gravada, a data não aparece; cartão não ganha vencimento
+ * de parcela, porque quem define é a operadora.
+ */
+function fraseDaCobranca(c: CobrancaDoPedido): string {
+  const tipo = String(c.tipo ?? "").trim().toUpperCase();
+  const nome = NOME_DA_FORMA[tipo] ?? (String(c.tipo ?? "").trim() || "Não informada");
+  const { total, valor, entrada, vencimentos } = parcelasDaCobranca(c);
+  const pago = String(c.status ?? "").trim().toUpperCase() === "PAID";
+  const pagoEm = pago ? diaEmBrasilia(c.pagoEm) : null;
+  const quantas = `${total} ${total === 1 ? "parcela" : "parcelas"}`;
+
+  if (tipo === "CARD_PARCELADO") {
+    const cabeca = `Forma de pagamento: ${nome}, ${quantas}`;
+    return pagoEm ? `${cabeca}. Pago em ${pagoEm} (${reais(valor)}).` : `${cabeca} (${reais(valor)}).`;
+  }
+
+  if (pago) {
+    return pagoEm ? `Forma de pagamento: ${nome}. Pago em ${pagoEm} (${reais(valor)}).` : `Forma de pagamento: ${nome} (${reais(valor)}).`;
+  }
+
+  const comEntrada = entrada > 0 ? ` Entrada: ${reais(entrada)}.` : "";
+  const datadas = vencimentos.map((v) => ({ data: dataCivil(v.vencimento), valor: v.valor }));
+  const aPrazo = tipo === "E-FATURADO" || total > 1;
+
+  if (!aPrazo) {
+    // PIX e boleto em aberto: uma cobrança só, com o vencimento quando existe.
+    return datadas[0].data
+      ? `Forma de pagamento: ${nome}.${comEntrada} Vencimento: ${datadas[0].data} (${reais(datadas[0].valor)}).`
+      : `Forma de pagamento: ${nome} (${reais(valor)}).${comEntrada}`;
+  }
+  if (datadas.some((v) => v.data === null)) return `Forma de pagamento: ${nome}. ${quantas} (${reais(valor)}).${comEntrada}`;
+  const lista = listaComE(datadas.map((v) => `${v.data} (${reais(v.valor)})`));
+  return `Forma de pagamento: ${nome}. ${quantas}.${comEntrada} ${total === 1 ? "Vencimento" : "Vencimentos"}: ${lista}.`;
+}
+
+/**
+ * O texto que a janela PROPÕE para as informações complementares: a condição
+ * de pagamento do pedido, uma cobrança ativa por linha. Sem cobrança ativa, o
+ * campo vem vazio. Quem emite pode editar antes de criar o rascunho.
+ */
+export function textoDoPagamentoParaNota(cobrancas: readonly CobrancaDoPedido[]): string {
+  return cobrancas.filter(cobrancaAtiva).map(fraseDaCobranca).join("\n");
+}
+
+/**
+ * O texto como vai para o banco: sem as bordas em branco, sem caractere de
+ * controle (a quebra de linha fica; a tabulação vira espaço) e com no máximo
+ * 2.000 caracteres. Vazio vira `null`, e a nota nasce sem texto.
+ */
+export function limparInformacoesComplementares(texto: unknown): string | null {
+  if (typeof texto !== "string") return null;
+  const limpo = limparSemCortar(texto).slice(0, LIMITE_INFORMACOES_COMPLEMENTARES_NFSE).trim();
+  return limpo || null;
+}
+
+/** Quantos caracteres o texto ocupa, contado como a rota conta. */
+export function tamanhoDasInformacoesComplementares(texto: string): number {
+  return limparSemCortar(texto).length;
+}
+
+function limparSemCortar(texto: string): string {
+  return texto
+    .replace(/\r\n?/g, "\n")
+    .replace(/\t/g, " ")
+    .replace(/[\u0000-\u0009\u000B-\u001F\u007F]/g, "")
+    .trim();
+}
+
+/**
+ * O texto GRAVADO na nota, para mostrar na janela. A coluna nunca fica vazia: o
+ * banco grava a reserva "NBS:" e o código quando não há texto. Reserva não é
+ * informação complementar — volta `null`, e a janela diz "Sem informações
+ * complementares".
+ */
+export function informacoesComplementaresDaNota(gravado: string | null | undefined): string | null {
+  const texto = String(gravado ?? "").trim();
+  if (!texto || /^NBS:\s*\d*$/i.test(texto)) return null;
+  return texto;
 }
 
 /* ------------------------------------------------------------------ status */

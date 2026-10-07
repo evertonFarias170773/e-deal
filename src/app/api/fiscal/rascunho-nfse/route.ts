@@ -7,7 +7,7 @@ import {
   lerServicosNfse,
   respostaDeErro
 } from "@/features/nfse/services/nfse-pedido.server";
-import { enderecoComCadastroIncompleto } from "@/features/nfse/lib/composicao-nfse";
+import { enderecoComCadastroIncompleto, limparInformacoesComplementares } from "@/features/nfse/lib/composicao-nfse";
 import {
   SERVICO_NFSE,
   conferirDescricao,
@@ -33,10 +33,17 @@ import {
  *   sessão e `fiscal.emit_nfse` — ANTES de usar a chave de serviço.
  *
  * O QUE VEM DO NAVEGADOR
- *   Só o pedido, o endereço escolhido, o serviço escolhido, a descrição e o
- *   valor. Cliente, empresa e autor saem do banco e da sessão. O serviço é
- *   relido de `nfse_servicos_padrao`: tem de existir, estar ativo e ter código
- *   de tributação e NBS válidos (`conferirServico`).
+ *   Só o pedido, o endereço escolhido, o serviço escolhido, a descrição, o
+ *   valor e o texto das informações complementares. Cliente, empresa e autor
+ *   saem do banco e da sessão. O serviço é relido de `nfse_servicos_padrao`: tem
+ *   de existir, estar ativo e ter código de tributação e NBS válidos
+ *   (`conferirServico`).
+ *
+ * INFORMAÇÕES COMPLEMENTARES (07/10/2026)
+ *   O texto sai escrito na NFS-e (`xInfComp`). A janela propõe a condição de
+ *   pagamento e quem emite pode editar. Aqui ele só é limpo (bordas, caracteres
+ *   de controle, corte em 2.000): o servidor NÃO recalcula o pagamento. Vazio
+ *   vai nulo, e a nota nasce sem texto.
  *
  * EMPRESA
  *   Lista fechada no código (`EMPRESAS_NFSE_LIBERADAS`, hoje só a Ideal Birô).
@@ -172,7 +179,8 @@ export async function POST(request: Request) {
       p_valor_servicos: valor.valor,
       p_discriminacao: descricao.texto,
       p_criado_por_nome: sessao.nomeDoUsuario,
-      p_id_endereco_tomador: endereco.idEndereco
+      p_id_endereco_tomador: endereco.idEndereco,
+      p_informacoes_complementares: limparInformacoesComplementares(corpo?.informacoes_complementares)
     });
 
     if (error) {

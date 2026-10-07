@@ -22,8 +22,14 @@
  *   três cartões, seções em cartões com ícone de conferido, pagamento só para
  *   conferência e o banner verde de validado. As peças são próprias
  *   (components/PecasNfse) e as regras do que aparece ficam em
- *   lib/composicao-nfse. O que vai para as rotas não mudou: pedido, endereço,
- *   serviço, descrição e valor.
+ *   lib/composicao-nfse. O que vai para as rotas: pedido, endereço, serviço,
+ *   descrição, valor e o texto das informações complementares.
+ *
+ * INFORMAÇÕES COMPLEMENTARES (07/10/2026)
+ *   A janela propõe a condição de pagamento do pedido, uma cobrança ativa por
+ *   linha, num campo editável de até 2.000 caracteres. É o texto que sai escrito
+ *   na NFS-e. Rascunho criado e nota autorizada mostram o texto gravado, só para
+ *   leitura; a reserva do banco ("NBS:" e o código) nunca aparece.
  *
  * Rascunho não se edita: errou, cria outro ("Criar outro rascunho").
  *
@@ -55,11 +61,15 @@ import {
   situacaoDoStatus
 } from "@/features/nfse/lib/regras-emissao";
 import {
+  LIMITE_INFORMACOES_COMPLEMENTARES_NFSE,
   alternarItemMarcado,
   enderecoInicial,
   fatorDoDesconto,
+  informacoesComplementaresDaNota,
   opcoesDeEndereco,
   pagamentosParaConferencia,
+  tamanhoDasInformacoesComplementares,
+  textoDoPagamentoParaNota,
   seloDaNota,
   separarAlertas,
   somaDosItensMarcados,
@@ -159,6 +169,9 @@ export function GerarNfseModal({
   const [baixando, setBaixando] = useState<null | "pdf" | "xml">(null);
   const [valorTexto, setValorTexto] = useState("");
   const [descricao, setDescricao] = useState("");
+  /** O texto que sai escrito na nota (xInfComp). Vem proposto do pagamento do pedido. */
+  const [infComp, setInfComp] = useState("");
+  const [infCompMexida, setInfCompMexida] = useState(false);
   /** Itens do pedido que entram na nota. Todos vêm marcados; ao menos um fica. */
   const [marcados, setMarcados] = useState<Set<number>>(new Set());
   /** Quem digitou no valor ou na descrição: a janela para de regerar aquele campo. */
@@ -277,8 +290,10 @@ export function GerarNfseModal({
     setIdEndereco(enderecoInicial(opcoesDeEndereco(lido.enderecos)));
     setValorTexto(sugerido > 0 ? sugerido.toFixed(2).replace(".", ",") : "");
     setDescricao(descricaoDosItens(lido.idInt, lido.itens));
+    setInfComp(textoDoPagamentoParaNota(lido.cobrancas));
     setValorMexido(false);
     setDescricaoMexida(false);
+    setInfCompMexida(false);
     setAlertas([]);
     setValidacao(null);
     setMaisAcoes(false);
@@ -414,6 +429,10 @@ export function GerarNfseModal({
     if (contexto.itens.length > 0 && marcados.size === 0) return setValidacao("Marque pelo menos um item do pedido.");
     const servicoDoRascunho = conferirServico(contexto.servicos.find((sv) => sv.id === idServico) ?? null);
     if (!servicoDoRascunho.ok) return setValidacao(servicoDoRascunho.motivo);
+    const tamanhoDoTexto = tamanhoDasInformacoesComplementares(infComp);
+    if (tamanhoDoTexto > LIMITE_INFORMACOES_COMPLEMENTARES_NFSE) {
+      return setValidacao(`As informações complementares têm ${tamanhoDoTexto} caracteres. O limite é ${LIMITE_INFORMACOES_COMPLEMENTARES_NFSE}.`);
+    }
 
     const refAntes = contexto.decisao.nota?.ref ?? null;
     setOcupado("criar");
@@ -427,6 +446,7 @@ export function GerarNfseModal({
           id_servico: idServico,
           descricao: desc.texto,
           valor: valor.valor,
+          informacoes_complementares: infComp,
           novo
         })
       });
@@ -595,6 +615,8 @@ export function GerarNfseModal({
   const valorConferido = conferirValor(valorTexto);
   const caracteres = descricao.replace(/\r\n/g, "\n").trim().length;
   const descricaoEstourou = caracteres > LIMITE_DESCRICAO_NFSE;
+  const caracteresDoTexto = tamanhoDasInformacoesComplementares(infComp);
+  const textoEstourou = caracteresDoTexto > LIMITE_INFORMACOES_COMPLEMENTARES_NFSE;
 
   const opcoesDoEndereco = contexto ? opcoesDeEndereco(contexto.enderecos) : [];
   const opcaoEscolhida = opcoesDoEndereco.find((o) => o.id === idEndereco) ?? null;
@@ -603,6 +625,7 @@ export function GerarNfseModal({
   const sugerido = contexto ? valorSugeridoDaNota(contexto.itens, marcados, contexto.valorDosProdutos) : 0;
   const temDesconto = contexto ? fatorDoDesconto(contexto.valorDosProdutos, somaDeTodos) < 1 : false;
   const pagamentos = contexto ? pagamentosParaConferencia(contexto.cobrancas) : [];
+  const textoProposto = contexto ? textoDoPagamentoParaNota(contexto.cobrancas) : "";
   const alertasSeparados = separarAlertas(alertas);
 
   const notaAberta = modo.tipo === "NOTA" ? modo.nota : null;
@@ -987,7 +1010,7 @@ export function GerarNfseModal({
 
               {/* Pagamento do pedido: só leitura */}
               <SecaoNfse titulo="Pagamento do pedido" estado="neutro" data-secao="pagamento">
-                <p className="mb-3 text-xs text-slate-500">A NFS-e nacional não leva parcelas; esta informação é só para conferência.</p>
+                <p className="mb-3 text-xs text-slate-500">A NFS-e nacional não leva parcelas; a tabela é só para conferência.</p>
                 {pagamentos.length === 0 ? (
                   <p className="text-sm text-slate-600">O pedido não tem cobrança ativa.</p>
                 ) : (
@@ -1022,6 +1045,62 @@ export function GerarNfseModal({
                     </table>
                   </div>
                 )}
+
+                {/* O texto que sai escrito na nota (xInfComp) */}
+                <div className="mt-4 border-t border-slate-200 pt-4" data-informacoes-complementares>
+                  <p className="mb-2 text-xs font-semibold text-slate-600">O texto abaixo sai escrito na NFS-e.</p>
+                  {emFormulario ? (
+                    <>
+                      <label htmlFor="nfse-informacoes-complementares" className={ROTULO_NFSE}>
+                        Informações complementares (saem na nota)
+                      </label>
+                      <textarea
+                        id="nfse-informacoes-complementares"
+                        rows={4}
+                        value={infComp}
+                        disabled={ocupado !== null}
+                        onChange={(e) => {
+                          setInfCompMexida(true);
+                          setInfComp(e.target.value);
+                        }}
+                        placeholder="Sem texto, a nota sai sem informações complementares."
+                        className={CAMPO_NFSE}
+                      />
+                      <p data-contador-informacoes className={textoEstourou ? "mt-1 text-xs font-semibold text-red-600" : "mt-1 text-xs text-slate-500"}>
+                        {caracteresDoTexto} de {LIMITE_INFORMACOES_COMPLEMENTARES_NFSE} caracteres
+                        {textoEstourou && ": reduza o texto para criar o rascunho."}
+                        {infCompMexida && infComp !== textoProposto && (
+                          <>
+                            {" · "}
+                            <button
+                              type="button"
+                              className="underline"
+                              onClick={() => {
+                                setInfCompMexida(false);
+                                setInfComp(textoProposto);
+                              }}
+                            >
+                              Refazer a partir do pagamento
+                            </button>
+                          </>
+                        )}
+                      </p>
+                    </>
+                  ) : notaAberta ? (
+                    <>
+                      <p className={ROTULO_NFSE}>Informações complementares</p>
+                      {informacoesComplementaresDaNota(notaAberta.informacoes_complementares) ? (
+                        <p className="whitespace-pre-wrap rounded-xl bg-slate-50 p-3 text-sm text-slate-700" data-texto-da-nota>
+                          {informacoesComplementaresDaNota(notaAberta.informacoes_complementares)}
+                        </p>
+                      ) : (
+                        <p className="text-sm text-slate-600" data-texto-da-nota>
+                          Sem informações complementares
+                        </p>
+                      )}
+                    </>
+                  ) : null}
+                </div>
               </SecaoNfse>
 
               {/* Validação: só com a nota (o banco confere o rascunho gravado) */}
@@ -1250,7 +1329,7 @@ export function GerarNfseModal({
             <button
               type="button"
               onClick={() => void criarRascunho(modo.novo)}
-              disabled={ocupado !== null || !contexto.tomador.documentoOk || descricaoEstourou || !servicoConferido.ok}
+              disabled={ocupado !== null || !contexto.tomador.documentoOk || descricaoEstourou || textoEstourou || !servicoConferido.ok}
               className={BOTAO_PRIMARIO_NFSE}
             >
               {ocupado === "criar" && <Loader2 className="h-4 w-4 animate-spin" />}

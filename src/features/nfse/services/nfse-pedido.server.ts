@@ -39,7 +39,7 @@ type Cliente = SupabaseClient<any, any, any>;
 export const COLUNAS_DA_NOTA_DE_SERVICO =
   "id, ref, id_int, id_empresa, status, status_focus, numero_nfse, url_pdf, url_xml, valor_servicos, discriminacao, " +
   "id_endereco_tomador, mensagem_prefeitura, erro_mensagem, ambiente, tentativas_envio, created_at, " +
-  "id_servico_padrao, codigo_servico, codigo_nbs, codigo_verificacao, " +
+  "id_servico_padrao, codigo_servico, codigo_nbs, codigo_verificacao, informacoes_complementares, " +
   // Só a data da emissão sai do retorno da Focus; o resto do payload não vem para a tela.
   "data_emissao:payload_retorno->>data_emissao";
 
@@ -66,6 +66,8 @@ export type NotaDeServicoLida = {
   codigo_nbs: string | null;
   /** A chave de acesso da NFS-e nacional (50 dígitos), gravada na autorização. */
   codigo_verificacao: string | null;
+  /** O texto gravado. Sem texto de quem emitiu, o banco guarda a reserva "NBS:" e o código. */
+  informacoes_complementares: string | null;
   data_emissao: string | null;
 };
 
@@ -104,7 +106,11 @@ export type ContextoNfseDoPedido = {
   };
   /** Os itens ativos do pedido (cancelado não vem), com o subtotal gravado. */
   itens: ItemDoPedido[];
-  /** As cobranças do pedido, SÓ para conferência na tela. Nada daqui vai para a nota. */
+  /**
+   * As cobranças do pedido, para conferência na tela e para a janela PROPOR o
+   * texto das informações complementares. O servidor não monta esse texto: ele
+   * vem do navegador, como a descrição.
+   */
   cobrancas: CobrancaDoPedido[];
   /** Os serviços ATIVOS de `nfse_servicos_padrao`. Vazio se o servidor não pôde ler o cadastro. */
   servicos: ServicoNfse[];
@@ -258,7 +264,7 @@ export async function lerContextoNfseDoPedido(
     // SÓ LEITURA, para a seção "Pagamento do pedido". Nunca escreve em pagamentos_v2.
     supabase
       .from("pagamentos_v2")
-      .select("tipo_cobranca, forma_pgto, valor, vencimento, status, confirmado, p_qtd_parcelas, cartao_parcelas, p_intervalo, p_valor_entrada, created_at")
+      .select("tipo_cobranca, forma_pgto, valor, vencimento, status, confirmado, p_qtd_parcelas, cartao_parcelas, p_intervalo, p_valor_entrada, paid_at, created_at")
       .eq("id_int", idInt)
       .order("created_at", { ascending: true })
   ]);
@@ -335,7 +341,8 @@ export async function lerContextoNfseDoPedido(
     confirmado: c.confirmado === true,
     parcelas: Number(c.p_qtd_parcelas) || Number(c.cartao_parcelas) || null,
     intervaloDias: c.p_intervalo == null ? null : Number(c.p_intervalo),
-    valorEntrada: c.p_valor_entrada == null ? null : Number(c.p_valor_entrada)
+    valorEntrada: c.p_valor_entrada == null ? null : Number(c.p_valor_entrada),
+    pagoEm: texto(c.paid_at) || null
   }));
 
   const servicos = await lerServicosNfse(servico);
