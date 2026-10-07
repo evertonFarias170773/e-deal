@@ -22,6 +22,7 @@ import {
 } from "@/features/orcamentos/services/orcamentos.service";
 import { PROPOSTA_STATUS_PROTEGIDOS } from "@/features/orcamentos/services/status-protegidos";
 import { criarControleDeRecarga, manterDadosDaRecarga } from "@/features/cobrancas/lib/recarga-em-ordem";
+import { mensagemDaLeituraDeCobrancas, statusDaLeituraDeCobrancas } from "@/features/cobrancas/lib/limite-da-carga";
 import type { DestinoValorCancelado, MotivoCancelamentoPago } from "@/features/cobrancas/cancelamento-pago";
 
 /** Payload do cancelamento de cobrança JÁ PAGA — espelha o objeto que o
@@ -60,9 +61,12 @@ export type CancelamentoPagoErrorCode =
  * - `OK`: leitura concluída com cobranças — o único estado em que a ausência de
  *   uma cobrança na lista significa que ela realmente não existe;
  * - `VAZIA`: leitura concluiu sem erro e sem nenhuma cobrança no conjunto;
- * - `FALHA`: a consulta falhou; o estado anterior foi preservado.
+ * - `FALHA`: a consulta falhou; o estado anterior foi preservado;
+ * - `INCOMPLETA`: a leitura bateu no limite de linhas e as cobranças mais
+ *   antigas ficaram de fora. A lista aparece, mas, como em `VAZIA`, ninguém
+ *   pode afirmar "esta proposta não tem cobrança".
  */
-export type StatusCargaCobrancas = "CARREGANDO" | "OK" | "VAZIA" | "FALHA";
+export type StatusCargaCobrancas = "CARREGANDO" | "OK" | "VAZIA" | "FALHA" | "INCOMPLETA";
 
 type CobrancasContextValue = {
   cobrancas: Cobranca[];
@@ -489,12 +493,13 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
       // `source` vira "supabase" mesmo com conjunto vazio — foi por isso que a
       // guarda da tela (`cobrancasIndefinidas`) se desarmava numa carga vazia.
       // O status separa os dois casos.
-      setStatusCarga(result.vazia || result.cobrancasStats.length === 0 ? "VAZIA" : "OK");
-      setMensagemCarga(
-        result.vazia || result.cobrancasStats.length === 0
-          ? "A última leitura não trouxe nenhuma cobrança."
-          : undefined
-      );
+      const statusDaLeitura = statusDaLeituraDeCobrancas({
+        total: result.cobrancasStats.length,
+        vazia: result.vazia,
+        incompleta: result.incompleta
+      });
+      setStatusCarga(statusDaLeitura);
+      setMensagemCarga(mensagemDaLeituraDeCobrancas(statusDaLeitura));
     } else if (stored) {
       setCobrancas(stored);
       setCobrancasStats(result.cobrancasStats);

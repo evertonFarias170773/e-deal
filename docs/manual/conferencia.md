@@ -55,6 +55,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Cancelar cobrança** | Menu de ações (em vermelho) e **Ações Administrativas** do detalhe | Abre a janela **Cancelar Cobrança**. |
 | **Confirmar Liberação** | Janela **Confirmar Liberação Operacional** | Confirma a conferência da cobrança. Enquanto confirma, o botão mostra "Confirmando..." e fica apagado; a janela fecha assim que a confirmação é gravada. |
 | Aviso **Atualizando a lista...** | Na linha das abas, à direita | Aparece depois de uma confirmação, enquanto a lista inteira é recarregada. Não é preciso esperar: a tela continua liberada. |
+| Aviso **Lista incompleta: há mais cobranças do que o limite carregado. Avise o suporte.** | Acima das abas, em faixa amarela | Aparece quando a tela carregou 30.000 cobranças e ainda há outras, mais antigas, que ficaram de fora. A lista e os cards do período continuam valendo; o que fica bloqueado está em Regras e bloqueios. |
 | **Cancelar** | Janelas **Confirmar Liberação Operacional**, **Análise de Faturamento** e **Atualizar empresa** | Fecha a janela sem gravar. |
 | **Entendi, voltar** | Alerta **Não é possível confirmar esta cobrança** | Fecha o alerta. |
 | **Aprovar**, **Alterar**, **Reprovar** | Abas da janela **Análise de Faturamento** | Escolhem o que fazer com a condição pedida pelo vendedor. |
@@ -183,6 +184,7 @@ O que entra e o que não entra na fila:
 - Cobrança cancelada só aparece no filtro **Cancelados**.
 - Cobrança já conferida sai da fila e passa para a aba **Cobranças Confirmadas**.
 - Faturamento só entra na fila depois de autorizado. O E-Faturado é autorizado sozinho, na criação, quando o cliente não tem restrição, não tem faturamento vencido e o limite de crédito comporta este e os demais faturamentos pendentes. E-Permuta, E-Amostra e E-Retrabalho sempre esperam a análise do financeiro.
+- A tela carrega no máximo 30.000 cobranças, das mais novas para as mais antigas. Se o total passar disso, aparece o aviso **Lista incompleta** e, até o suporte resolver, a aba Pagamentos das propostas não mostra as cobranças nem deixa gerar cobrança nova.
 - E-Amostra e E-Retrabalho já conferidos não aparecem na aba **Cobranças Confirmadas**, pelo mesmo motivo de não entrarem no faturamento. Para consultá-los, abra a proposta.
 
 Status mostrados na lista e no detalhe:
@@ -273,6 +275,7 @@ Outros:
 | "Liberação de pedido automática desativada nesta etapa de testes." | Clique em **Liberar para pedido** no detalhe. | Use **Confirmar Conferência**; é ela que faz o pedido andar. |
 | "Cobrança não encontrada" no detalhe | A cobrança não está entre as carregadas na tela. | Volte para a lista, localize pela busca e abra de novo. |
 | "Nenhuma cobrança encontrada" | Nada bate com os filtros, a aba e a busca. | Troque de aba, ajuste o período ou use **Limpar filtros**. |
+| "Lista incompleta: há mais cobranças do que o limite carregado. Avise o suporte." | A tela carrega no máximo 30.000 cobranças, das mais novas para as mais antigas, e o total passou disso. | Avise o suporte. Enquanto o aviso aparecer, a aba Pagamentos da proposta não mostra as cobranças nem deixa gerar cobrança nova, para não duplicar uma antiga que não foi carregada. |
 
 ## Veja também
 
@@ -298,6 +301,7 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/features/cobrancas/ConfirmarLiberacaoModal.tsx`
 - `src/features/cobrancas/lib/confirmar-conferencia.ts`
 - `src/features/cobrancas/lib/recarga-em-ordem.ts`
+- `src/features/cobrancas/lib/limite-da-carga.ts`
 - `src/features/cobrancas/ConferenciaFinanceiraAlertaModal.tsx`
 - `src/features/cobrancas/AutorizarFaturamentoModal.tsx`
 - `src/features/cobrancas/AnaliseCreditoModal.tsx`

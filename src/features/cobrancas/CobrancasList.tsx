@@ -12,6 +12,7 @@ import { ResponsiveList } from "@/components/common/ResponsiveList";
 import { CobrancaActionsMenu } from "@/features/cobrancas/CobrancaActionsMenu";
 import { CobrancaStatusBadge } from "@/features/cobrancas/CobrancaStatusBadge";
 import { useCobrancas } from "@/features/cobrancas/CobrancasProvider";
+import { AVISO_DE_CARGA_INCOMPLETA } from "@/features/cobrancas/lib/limite-da-carga";
 import {
   EMPRESAS_RECEBEDORAS_FIXAS,
   cobrancaMatchesSearch,
@@ -212,7 +213,7 @@ function getInitialDates() {
 
 export function CobrancasList() {
   const router = useRouter();
-  const { cobrancasStats, source, refreshCobrancas, existingBoletoIdInts, hasBoletoHistoryIdInts, recarregandoEmSegundoPlano } = useCobrancas();
+  const { cobrancasStats, source, refreshCobrancas, existingBoletoIdInts, hasBoletoHistoryIdInts, recarregandoEmSegundoPlano, statusCarga } = useCobrancas();
   const { showToast } = useAppToast();
   const initialDates = useMemo(() => getInitialDates(), []);
 
@@ -746,6 +747,16 @@ export function CobrancasList() {
             Os totais dos cards podem estar desatualizados.
           </p>
         </section>
+      ) : null}
+
+      {statusCarga === "INCOMPLETA" ? (
+        <p
+          data-carga-incompleta
+          role="status"
+          className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-2 text-xs font-medium text-amber-800"
+        >
+          {AVISO_DE_CARGA_INCOMPLETA}
+        </p>
       ) : null}
 
       <div className="flex gap-2 border-b border-slate-200 pb-1">

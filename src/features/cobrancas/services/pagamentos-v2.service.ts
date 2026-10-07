@@ -6,6 +6,7 @@ import type { SupabasePagamentoV2Row } from "@/features/cobrancas/types.supabase
 import { mapSupabasePagamentoV2RowToCobranca } from "@/features/cobrancas/mappers";
 import { getDataReferenciaCobranca, getEmpresaRecebedoraFixaById, FAMILIA_FATURADO_TIPOS } from "@/features/cobrancas/cobrancas-utils";
 import { resolverUrlPdfBoleto } from "@/lib/boletos/pdf-url";
+import { COBRANCAS_POR_PAGINA, LIMITE_DE_COBRANCAS_NA_CARGA, leituraBateuNoLimite } from "@/features/cobrancas/lib/limite-da-carga";
 
 export const PAGAMENTOS_V2_SELECT_COLUMNS = [
   "id",
@@ -72,6 +73,12 @@ export type CobrancasReadResult = {
    * proposta não tem cobrança".
    */
   vazia?: boolean;
+  /**
+   * A leitura bateu no limite de linhas (`LIMITE_DE_COBRANCAS_NA_CARGA`): há
+   * cobranças mais antigas que NÃO vieram. O conjunto serve para a lista, mas
+   * não autoriza afirmar "esta proposta não tem cobrança".
+   */
+  incompleta?: boolean;
 };
 
 export type UpdatePagamentoV2EmpresaResult = {
@@ -168,7 +175,7 @@ async function fetchPagamentosV2Rows(filters?: {
   idEmpresa?: number;
   atendente?: string;
   tipo?: string;
-}, limit = 10000) {
+}, limit = LIMITE_DE_COBRANCAS_NA_CARGA) {
   const client = getSupabaseClient();
 
   if (!client) {
@@ -176,7 +183,7 @@ async function fetchPagamentosV2Rows(filters?: {
   }
 
   const rows: SupabasePagamentoV2Row[] = [];
-  const pageSize = 1000;
+  const pageSize = COBRANCAS_POR_PAGINA;
 
   /**
    * Monta a consulta de UM lote. Colunas, filtros e ordenacao continuam
@@ -624,12 +631,25 @@ export async function getCobrancasReadOnlyData(filters?: {
     };
   }
 
+  // A leitura para no limite; chegar a ele significa que pode haver cobranças
+  // mais antigas de fora. Antes isso era silencioso e a carga saía como "OK".
+  const incompleta = leituraBateuNoLimite(rows.length);
+  if (incompleta) {
+    console.warn(
+      "[Cobrancas][CargaIncompleta] A leitura bateu no limite de " +
+        `${LIMITE_DE_COBRANCAS_NA_CARGA} cobranças: as mais antigas ficaram de fora.`,
+      { origem: "getCobrancasReadOnlyData", filtros: filters ?? "(sem filtros)", linhasRecebidas: rows.length, duracaoMs: Date.now() - inicioMs }
+    );
+  }
+
   return {
     source: "supabase",
     cobrancas,
     cobrancasStats,
+    incompleta,
     warnings: [
-      "Lista limitada aos 500 registros mais recentes. Os cards usam o conjunto completo carregado para manter os totais reais dentro do limite da consulta."
+      "Lista limitada aos 500 registros mais recentes. Os cards usam o conjunto completo carregado para manter os totais reais dentro do limite da consulta.",
+      ...(incompleta ? [`Carga incompleta: a leitura bateu no limite de ${LIMITE_DE_COBRANCAS_NA_CARGA} cobranças.`] : [])
     ]
   };
 }
