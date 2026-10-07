@@ -13,14 +13,23 @@ import type { NotaDeServicoDoPedido } from "@/features/nfse/lib/regras-emissao";
  *
  * `versao` muda quando a janela "Gerar NFS-e" cria, envia ou conclui uma nota:
  * a leitura é refeita.
+ *
+ * `pronta` diz se a leitura dos pedidos consultados AGORA chegou inteira. Enquanto
+ * carrega, ou se falhou, é `false` — e quem esconde linha da Fila por causa da
+ * NFS-e não esconde nada (lib/fila-nfse).
  */
 export type NotaDeServicoDaFila = NotaDeServicoDoPedido & { id_int: number };
 
 const TAMANHO_DO_LOTE = 200;
 const SEM_NOTAS: Map<number, NotaDeServicoDaFila[]> = new Map();
 
-export function useNfseDosPedidos(idsInt: readonly number[], ligado: boolean, versao: number) {
-  const [porPedido, setPorPedido] = useState<Map<number, NotaDeServicoDaFila[]>>(new Map());
+export function useNfseDosPedidos(
+  idsInt: readonly number[],
+  ligado: boolean,
+  versao: number
+): { porPedido: Map<number, NotaDeServicoDaFila[]>; pronta: boolean } {
+  // A leitura guarda PARA QUAIS pedidos ela vale: trocou a lista, deixa de valer.
+  const [lido, setLido] = useState<{ chave: string; porPedido: Map<number, NotaDeServicoDaFila[]> }>({ chave: "", porPedido: SEM_NOTAS });
   // A lista de ids vira texto para o efeito não rodar a cada render.
   const chave = ligado ? Array.from(new Set(idsInt)).sort((a, b) => a - b).join(",") : "";
 
@@ -50,14 +59,16 @@ export function useNfseDosPedidos(idsInt: readonly number[], ligado: boolean, ve
           mapa.set(idInt, lista);
         });
       }
-      if (ativo) setPorPedido(mapa);
+      if (ativo) setLido({ chave, porPedido: mapa });
     })();
     return () => {
       ativo = false;
     };
   }, [chave, versao]);
 
-  // Sem pedido para olhar (ou sem permissão), não há estado: o que ficou da
-  // leitura anterior não vale.
-  return chave ? porPedido : SEM_NOTAS;
+  // Sem pedido para olhar não há o que esperar: a leitura está pronta e vazia.
+  if (!chave) return { porPedido: SEM_NOTAS, pronta: ligado };
+  // Leitura de outra lista de pedidos (ou que ainda não chegou) não vale.
+  if (lido.chave !== chave) return { porPedido: SEM_NOTAS, pronta: false };
+  return { porPedido: lido.porPedido, pronta: true };
 }

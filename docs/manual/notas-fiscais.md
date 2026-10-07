@@ -35,6 +35,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Todas as Empresas Emitentes** | Filtros da Fila e dos dois Históricos | Filtra por **INGRESSO IDEAL**, **BIRÔ IDEAL** ou **E3 BRINDES**. |
 | **Todos os status do pedido (N)** | Aba Fila, filtros | Filtra a lista de pedidos pelo status do pedido; cada opção mostra quantos pedidos tem. |
 | **Só faturados (N)** — as cobranças do Financeiro | Aba Fila, caixa de marcar abaixo dos filtros | Deixa só os pedidos com cobrança do tipo **Faturado**. |
+| **Mostrar também pedidos com NFS-e emitida** — inclui pedidos que ainda podem ter NF-e a emitir | Aba Fila, caixa de marcar ao lado de **Só faturados** | Traz de volta os pedidos que saíram da fila por já terem NFS-e autorizada. Desmarcada por padrão. Quando há pedidos escondidos, mostra **(+M com NFS-e emitida)**. |
 | Número do pedido (**#N**, dica "Abrir a proposta") | Aba Fila, coluna **Pedido** | Abre a proposta do pedido. |
 | Nome do cliente (dica "Abrir o cadastro do cliente") | Aba Fila, coluna **Cliente / Destinatário** | Abre o cadastro do cliente em edição. |
 | **Nota emitida no sistema antigo** | Aba Fila, coluna **Ação** | Marca o pedido como faturado no sistema antigo e o tira da fila. Enquanto grava mostra "Marcando...". |
@@ -150,7 +151,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 
 1. Abra **Financeiro → Notas fiscais**. A tela já abre na aba **Fila Faturamento**, com a quantidade de pedidos entre parênteses.
 2. A primeira lista é a dos **pedidos** que esperam nota. Cada linha mostra **Pedido** (clique no número para abrir a proposta), **Cliente / Destinatário** (clique para abrir o cadastro; quando quem paga é outro cadastro, aparece **Sócio pagador**), **Em produção desde**, **Empresa Emitente**, **Valor Total**, **Tipo de cobrança** e **Status do pedido**.
-3. Use os filtros do topo: a busca **Buscar fila por Ref, ID Cliente ou Nome...** (também acha por sócio pagador e por vendedor), **Todas as Empresas Emitentes**, **Todos os status do pedido** e a caixa **Só faturados**, que deixa só os pedidos com cobrança do tipo faturado.
+3. Use os filtros do topo: a busca **Buscar fila por Ref, ID Cliente ou Nome...** (também acha por sócio pagador e por vendedor), **Todas as Empresas Emitentes**, **Todos os status do pedido** e a caixa **Só faturados**, que deixa só os pedidos com cobrança do tipo faturado. A caixa **Mostrar também pedidos com NFS-e emitida** traz de volta os pedidos que já têm nota de serviço autorizada.
 4. Abaixo vem a seção **Notas em processo**. Ela lista toda nota que ainda não é documento fiscal: pendente, pronta para envio, processando ou com erro. Os filtros do topo não escondem nada desta seção, de propósito.
 
 O status do pedido é só informação: ele não impede nem libera a emissão.
@@ -164,7 +165,14 @@ Sai da lista de pedidos quando:
 - o pedido ganha uma nota de venda que já saiu do rascunho (pronta para envio, processando, autorizada ou com erro). A nota passa a aparecer em **Notas em processo** ou no **Histórico**;
 - alguém marca **Nota emitida no sistema antigo**;
 - o cliente do pedido está com o interruptor **Nota** desligado no cadastro;
-- o pedido foi encerrado como teste.
+- o pedido foi encerrado como teste;
+- a **NFS-e** do pedido foi **autorizada**. Este é o único caso que dá para pedir de volta: marque **Mostrar também pedidos com NFS-e emitida**.
+
+O número da aba **Fila Faturamento (N)**, o de **Só faturados** e os do filtro de status contam só o que está na tela. Quando há pedidos escondidos por NFS-e emitida, aparece **(+M com NFS-e emitida)** ao lado do número da aba e da caixa.
+
+NFS-e em rascunho, em análise ou com erro não tira o pedido da fila: ainda há o que fazer nele. Se o Vibe não conseguir ler as notas de serviço, nenhum pedido é escondido.
+
+Se o pedido com NFS-e emitida ainda precisa de **NF-e** (venda de produto), marque a caixa para ele voltar e use **Faturar** normalmente.
 
 Volta para a lista quando a nota é **cancelada** ou **denegada**, quando o rascunho é **descartado** ou quando a marca de sistema antigo é desfeita. Rascunho ainda pendente e nota de remessa não tiram o pedido da fila.
 
@@ -208,7 +216,7 @@ Só para pedido da **BIRÔ IDEAL** e para quem tem a permissão **Emitir NFS-e (
 9. A janela acompanha a nota sozinha: consulta a cada 15 segundos, por até 5 minutos. Quando a prefeitura responde, aparece a seção **Documentos**, com o número da NFS-e, a data de emissão, a chave de acesso e os botões **Abrir PDF**, **Baixar PDF**, **Abrir XML** e **Baixar XML**.
 10. Se passar dos 5 minutos, a janela mostra "A nota continua em análise. Consulte depois.". Clique em **Consultar agora**, ou feche e volte mais tarde pelo botão **NFS-e em análise** da fila.
 
-O pedido continua na fila depois da NFS-e emitida, com o botão **NFS-e nº N**. Clicar nele abre a nota só para leitura, com os mesmos botões de abrir e de baixar o PDF e o XML.
+Depois da NFS-e autorizada o pedido sai da fila. Para vê-lo de novo, marque **Mostrar também pedidos com NFS-e emitida**: ele volta com o botão **NFS-e nº N**. Clicar nele abre a nota só para leitura, com os mesmos botões de abrir e de baixar o PDF e o XML. A nota também fica no **Histórico NFS-e**.
 
 O rascunho não é editado depois de criado. Se o endereço, o valor ou a descrição ficaram errados, abra **Mais ações** e clique em **Criar outro rascunho**: o anterior fica sem uso e a nota sai pelo novo.
 

@@ -55,6 +55,7 @@ import { resolverAmbienteFiscal } from "./services/ambiente-fiscal";
 import { GerarNfseModal } from "@/features/nfse/components/GerarNfseModal";
 import { useNfseDosPedidos } from "@/features/nfse/hooks/useNfseDosPedidos";
 import { decidirNfseDoPedido, empresaLiberadaParaNfse, rotuloDoBotaoNfse } from "@/features/nfse/lib/regras-emissao";
+import { pedidoOcultoPorNfse, rotuloDosOcultosPorNfse } from "@/features/nfse/lib/fila-nfse";
 import {
   FILTRO_AMBIENTE_NFSE,
   FILTRO_STATUS_NFSE,
@@ -237,6 +238,8 @@ export function NotasFiscaisPage() {
       "nfe-status": { codec: codecs.enumOf(STATUS_NFE), default: "" as const },
       // Fila: recorta para as cobranças do tipo faturado, que são as do Financeiro.
       "fila-so-faturados": { codec: codecs.booleano(), default: false },
+      // Fila: traz de volta os pedidos cuja NFS-e já foi autorizada (saem por padrão).
+      "fila-nfse-emitida": { codec: codecs.booleano(), default: false },
       // Fila: recorta por status do pedido. `texto` e não `enumOf` de propósito —
       // `propostas.status_interno` é texto livre, e a lista de opções nasce do
       // que está na fila, não de um enum que envelheceria em silêncio.
@@ -321,6 +324,7 @@ export function NotasFiscaisPage() {
   const nfseAmbiente = filters["nfse-amb"];
   const nfseEmpresa = filters["nfse-emp"];
   const soFaturados = filters["fila-so-faturados"];
+  const mostrarComNfseEmitida = filters["fila-nfse-emitida"];
   const filaStatus = filters["fila-status"];
 
   const [nfeSearch, setNfeSearch] = useDebouncedInput(filters["nfe-q"], (valor) =>
@@ -1853,8 +1857,26 @@ export function NotasFiscaisPage() {
     }
   }
 
+  /**
+   * As notas de serviço dos pedidos da Fila, lidas em lote de `notas_servico`.
+   *
+   * Leitura À PARTE: a consulta que monta a Fila (`getFaturaveisPropostas`) não
+   * muda e não sabe de NFS-e. Cobre TODOS os pedidos carregados de empresa
+   * liberada para NFS-e (hoje a Ideal Birô), e não só os que os filtros deixam
+   * na tela — é ela que diz quem sai da Fila e o texto do botão "NFS-e".
+   * Quem só visualiza a Fila também lê: a leitura esconde linha, e o botão
+   * continua exigindo `fiscal.emit_nfse`.
+   */
+  const pedidosComNfsePossivel = faturaveisList
+    .filter((item) => empresaLiberadaParaNfse(item.id_empresa) && Number(item.id_int) > 0)
+    .map((item) => Number(item.id_int));
+  const leituraDasNfse = useNfseDosPedidos(pedidosComNfsePossivel, true, nfseVersao);
+  const nfseDosPedidos = leituraDasNfse.porPedido;
+  /** Pedido com NFS-e AUTORIZADA sai da Fila, salvo com a caixa marcada. Leitura não pronta não esconde nada. */
+  const ocultoPorNfse = (item: FaturavelOrigem) => pedidoOcultoPorNfse(item.id_int, leituraDasNfse, mostrarComNfseEmitida);
+
   // Filtragem da Fila de Faturamento (Unificada: NF-e e NFS-e)
-  const filaFaturados = faturaveisList.filter((item) => ehFaturado(item.tipo_cobranca)).length;
+  const filaFaturados = faturaveisList.filter((item) => ehFaturado(item.tipo_cobranca) && !ocultoPorNfse(item)).length;
 
   /**
    * TODOS os filtros da fila MENOS o de status do pedido.
@@ -1871,7 +1893,7 @@ export function NotasFiscaisPage() {
    * uma segunda consulta de agregação. É também como os outros quatro filtros
    * desta aba já funcionam.
    */
-  const filaPassaNosOutrosFiltros = (item: FaturavelOrigem) => {
+  const filaPassaSemContarNfse = (item: FaturavelOrigem) => {
     // JÁ TEM NOTA VIVA: sai da fila, e não há como pedir de volta.
     //
     // Havia um checkbox que trazia esses pedidos de volta, para o faturamento
@@ -1925,6 +1947,13 @@ export function NotasFiscaisPage() {
    * o mapa espera underscore). Um enum cravado deixaria o operador escolher
    * opção que devolve zero, ou esconderia status que apareceu depois.
    */
+  /**
+   * Os outros filtros MAIS o recorte da NFS-e: é o que conta para a lista, para
+   * o número da aba e para a contagem de cada status — todos mostram o que está
+   * visível. `filaPassaSemContarNfse` fica à parte só para contar os ocultos.
+   */
+  const filaPassaNosOutrosFiltros = (item: FaturavelOrigem) => filaPassaSemContarNfse(item) && !ocultoPorNfse(item);
+
   const statusDaFila = opcoesStatusDaFila(faturaveisList, filaPassaNosOutrosFiltros, humanizeStatus);
 
   /** Ver `statusVigenteDaFila`: escolha que saiu da fila é ignorada, não zera a tela. */
@@ -1935,6 +1964,10 @@ export function NotasFiscaisPage() {
     filaStatusVigente
   );
 
+  /** Quantos pedidos os filtros atuais deixariam na tela, mas a NFS-e emitida escondeu. */
+  const ocultosPorNfse =
+    recortarPorStatus(faturaveisList.filter(filaPassaSemContarNfse), filaStatusVigente).length - filteredFilaNfe.length;
+
   /**
    * Botão "NFS-e" da linha do pedido.
    *
@@ -1943,16 +1976,10 @@ export function NotasFiscaisPage() {
    * aparece, nem desligado. A empresa é a que a própria Fila já resolveu
    * (`item.id_empresa`, mesma regra de `resolverEmpresaEmitente`).
    *
-   * O texto vem do estado da NFS-e do pedido, lido em lote de `notas_servico`
-   * só para as linhas visíveis — a consulta que monta a Fila não muda. O pedido
-   * continua na Fila depois de emitir: NFS-e não conta como nota do pedido aqui.
+   * O texto vem do estado da NFS-e do pedido (`nfseDosPedidos`, lido em lote
+   * logo acima). Pedido com NFS-e autorizada sai da Fila por padrão e volta com
+   * a caixa "Mostrar também pedidos com NFS-e emitida", com o botão "NFS-e nº N".
    */
-  const pedidosComBotaoNfse = canEmitNfse
-    ? filteredFilaNfe
-        .filter((item) => empresaLiberadaParaNfse(item.id_empresa) && Number(item.id_int) > 0)
-        .map((item) => Number(item.id_int))
-    : [];
-  const nfseDosPedidos = useNfseDosPedidos(pedidosComBotaoNfse, Boolean(canEmitNfse), nfseVersao);
 
   function renderBotaoNfse(item: FaturavelOrigem) {
     const idInt = Number(item.id_int);
@@ -2321,6 +2348,11 @@ export function NotasFiscaisPage() {
             }`}
           >
             Fila Faturamento ({filteredFilaNfe.length})
+            {ocultosPorNfse > 0 && (
+              <span data-ocultos-nfse className="ml-1.5 text-xs font-medium opacity-80">
+                {rotuloDosOcultosPorNfse(ocultosPorNfse)}
+              </span>
+            )}
           </button>
           <button
             type="button"
@@ -2400,6 +2432,20 @@ export function NotasFiscaisPage() {
                 Só faturados
                 <strong className="ml-1 font-semibold text-slate-800">({filaFaturados})</strong>
                 <span className="ml-1 text-xs text-slate-400">— as cobranças do Financeiro</span>
+              </span>
+            </label>
+            <label className="lg:col-span-3 flex items-center gap-2.5 text-sm text-slate-600 cursor-pointer select-none">
+              <input
+                id="fila-mostrar-nfse-emitida"
+                type="checkbox"
+                checked={mostrarComNfseEmitida}
+                onChange={(e) => setFilter("fila-nfse-emitida", e.target.checked)}
+                className="h-4 w-4 rounded border-[#d7e5e8] text-[#0b2f4a] focus:ring-[#0b2f4a]"
+              />
+              <span>
+                Mostrar também pedidos com NFS-e emitida
+                {ocultosPorNfse > 0 && <strong className="ml-1 font-semibold text-slate-800">{rotuloDosOcultosPorNfse(ocultosPorNfse)}</strong>}
+                <span className="ml-1 text-xs text-slate-400">— inclui pedidos que ainda podem ter NF-e a emitir</span>
               </span>
             </label>
           </div>
