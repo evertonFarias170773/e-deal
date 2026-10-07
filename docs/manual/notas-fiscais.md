@@ -1,6 +1,6 @@
 # Notas fiscais
 
-> **Última revisão:** 06/10/2026
+> **Última revisão:** 07/10/2026
 > **Caminho no menu:** Financeiro → Notas fiscais (primeiro item da seção Financeiro do menu lateral)
 > **Endereço:** `/notas-fiscais` (a nota aberta fica em `/notas-fiscais/[id]`)
 
@@ -15,7 +15,7 @@ Daqui se emite a NF-e de produto, se acompanha a autorização, se baixa o DANFE
 - Só vê a tela quem tem a permissão **Visualizar Painel Fiscal**. Sem ela, o item não abre.
 - **Emitir NF-e (Produto)**: mostra o botão **Faturar** na fila, o **Emitir NF-e** dentro da nota e o **Enviar para Focus** no menu da nota. Sem essa permissão a pessoa consegue abrir e conferir a nota, mas não transmite.
 - **Emitir NFS-e (Serviço)**: mostra o botão **NFS-e** na fila, só nos pedidos da **BIRÔ IDEAL**, e permite criar o rascunho, emitir e consultar a nota de serviço. O servidor confere a mesma permissão em cada passo.
-- **Cancelar Nota Fiscal**: mostra **Cancelar NF-e** e **Cancelar NFS-e** no menu da nota autorizada.
+- **Cancelar Nota Fiscal**: mostra **Cancelar NF-e** no menu da NF-e autorizada. O item **Cancelar NFS-e** também aparece, mas apagado: a NFS-e ainda não se cancela pelo Vibe.
 - **Liberar para Nota Fiscal**: mostra o botão **Nota emitida no sistema antigo** na fila e, na tela **Pedidos**, a ação que desfaz essa marca.
 - **Emitir Carta de Correção**: mostra **Carta de Correção** no menu da nota autorizada. O servidor confere a mesma permissão antes de enviar.
 - Hoje os perfis **Administrador** e **Financeiro** têm todas essas permissões, e o **Super Administrador** pode tudo. O perfil **Designer** só visualiza a tela.
@@ -83,9 +83,11 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Descartar rascunho** | Menu da nota que nunca foi transmitida | Pede confirmação e apaga o rascunho. |
 | **Copiar Ref** | Último item do menu de toda nota | Copia a referência da nota. |
 | **Buscar por Nº Nota, Ref, ID ou Nome...** | Histórico NF-e, filtros | Busca nas notas autorizadas e canceladas. |
-| **Todos os Status** | Histórico NF-e (Autorizada, Cancelada) e Histórico NFS-e (Pendente, Pronta para envio, Processando, Autorizada, Erro de Envio, Rejeitada, Cancelada) | Filtra pelo status da nota. |
+| **Todos os Status** | Histórico NF-e (Autorizada, Cancelada) e Histórico NFS-e (Pendente, Pronta para envio, Processando, Autorizada, Erro de Envio, Rejeitada, Cancelada, Em análise) | Filtra pelo status da nota. |
+| **Ambiente: Todos** | Histórico NFS-e, filtros | Filtra as notas de serviço por **Produção** ou **Homologação**. Começa em Todos. |
+| Selo **HOMOLOGAÇÃO** / **PRODUÇÃO** | Histórico NFS-e, coluna **Ambiente** | Diz em que ambiente a nota de serviço foi emitida. Homologação é nota de teste, sem valor fiscal. |
 | **Buscar por Nº NFS-e, Ref, ID ou Nome...** | Histórico NFS-e, filtros | Busca nas notas de serviço. |
-| **Cancelar NFS-e** | Menu da NFS-e Autorizada | Abre a janela **Cancelar NFS-e**. |
+| **Cancelar NFS-e** | Menu da NFS-e Autorizada | Aparece apagado e não faz nada. Parando o mouse sobre ele, a dica explica: o cancelamento de NFS-e ainda não está disponível no Vibe. |
 | **Abrir PDF** | Menu da NFS-e | Abre o PDF da nota de serviço. |
 | **Abrir para corrigir** | Janela **A nota não pode ser aberta ainda**, em cada pendência | Leva à tela onde o dado se corrige (proposta, cadastro ou produtos). |
 | **Reconferir** / **Fechar** | Janela **A nota não pode ser aberta ainda**, rodapé | Repete a conferência do pedido, ou fecha a janela. |
@@ -99,7 +101,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Gerar nota de remessa** / **Cancelar** | Janela "Gerar nota de REMESSA do pedido #N?" | Cria o rascunho da remessa, ou fecha. |
 | **Descartar rascunho** / **Cancelar** | Janela "Descartar o rascunho ...?" | Apaga o rascunho, ou fecha sem apagar. |
 | **Enviar CCe** / **Cancelar** | Janela **Carta de Correção (CCe)** | Envia a carta de correção, ou fecha. |
-| **Confirmar** / **Cancelar** | Janela **Cancelar NF-e** ou **Cancelar NFS-e** | **Confirmar** cancela a nota; **Cancelar** só fecha a janela. |
+| **Confirmar** / **Cancelar** | Janela **Cancelar NF-e** | **Confirmar** cancela a nota; **Cancelar** só fecha a janela. |
 | **Confirmar Lançamento** / **Cancelar** | Janela **Preparar Cobrança** | Cria os títulos no contas a receber e abre a Carteira, ou fecha. |
 | **Depósito em conta** | Janela **Preparar Cobrança**, em cada parcela | Marca a parcela para ser lançada como depósito, sem boleto. |
 | **Registrar boleto** | Janela **Revisar para Geração Bancária**, em cada parcela | Registra o boleto da parcela no banco. |
@@ -261,6 +263,8 @@ O ícone **Baixar DANFE** só aparece para nota autorizada em produção, com n�
 2. Informe a justificativa, com pelo menos 15 caracteres, e clique em **Confirmar**.
 3. Com **A nota fiscal foi cancelada com sucesso.**, a nota passa a Cancelada. Se o pedido não tiver outra nota de venda, ele volta para a lista da fila e pode ser faturado de novo.
 
+Isso vale para a NF-e. **A NFS-e (nota de serviço) não se cancela pelo Vibe**: o item **Cancelar NFS-e** do menu fica apagado. Para cancelar uma NFS-e, use o portal nacional (www.nfse.gov.br) e avise o fiscal.
+
 ### Lançar a nota no contas a receber e preparar a cobrança
 
 Vale para nota autorizada de pedido com cobrança do tipo **Faturado**. A coluna **Contas a Receber** da lista diz em que pé está: **Não lançado no contas a receber**, **Parcialmente lançado**, **Divergência**, **A receber criado — boleto não registrado**, **Boleto registrado**, **Depósito em conta** ou **Sem vencimentos fiscais**.
@@ -342,7 +346,10 @@ Nos dois casos a confirmação lista as notas autorizadas que o pedido já tem. 
 - Os alertas mostrados antes de emitir são informativos. Os marcados em vermelho apontam dado que a integração recusa: corrija o cadastro antes de enviar.
 - O número que identifica a nota de serviço é o **número da NFS-e**. A referência (NFS-pedido-sequência) é interna do Vibe.
 - NFS-e não conta como nota do pedido na fila: o pedido não sai da fila por causa dela.
-- No **Histórico NFS-e (Serviços)** ficam a busca, o filtro por empresa e por status, **Abrir PDF**, **Abrir XML**, **Copiar Link** e **Cancelar NFS-e** para nota autorizada.
+- No **Histórico NFS-e (Serviços)** ficam a busca, os filtros por empresa, por status e por ambiente, **Abrir PDF**, **Abrir XML** e **Copiar Link**.
+- Cada nota de serviço do histórico mostra o selo do ambiente: **HOMOLOGAÇÃO** ou **PRODUÇÃO**. Nota sem ambiente gravado aparece como HOMOLOGAÇÃO.
+- A NFS-e não se cancela pelo Vibe. O item **Cancelar NFS-e** aparece apagado na nota autorizada; o cancelamento é pelo portal nacional (www.nfse.gov.br), avisando o fiscal.
+- Nota de serviço com status que a tela não conhece (por exemplo, recusada pela prefeitura ou com retorno não reconhecido) aparece como **Em análise**. Parando o mouse sobre o status, a dica mostra o status real. Ela continua na lista e entra no filtro **Em análise**.
 
 ## O que não confundir
 

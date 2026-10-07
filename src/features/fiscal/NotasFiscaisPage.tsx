@@ -55,6 +55,17 @@ import { resolverAmbienteFiscal } from "./services/ambiente-fiscal";
 import { GerarNfseModal } from "@/features/nfse/components/GerarNfseModal";
 import { useNfseDosPedidos } from "@/features/nfse/hooks/useNfseDosPedidos";
 import { decidirNfseDoPedido, empresaLiberadaParaNfse, rotuloDoBotaoNfse } from "@/features/nfse/lib/regras-emissao";
+import {
+  FILTRO_AMBIENTE_NFSE,
+  FILTRO_STATUS_NFSE,
+  STATUS_CONHECIDOS_NFSE,
+  STATUS_EM_ANALISE,
+  itemCancelarNfse,
+  notaPassaNoFiltroDeAmbiente,
+  notaPassaNoFiltroDeStatus,
+  seloDoAmbiente,
+  statusExibidoDaNfse
+} from "@/features/nfse/lib/historico-nfse";
 import { parseFocusResponse } from "@/lib/fiscal/carta-correcao";
 
 
@@ -78,16 +89,9 @@ const EMPRESAS_EMITENTES = ["", "1", "2", "3"] as const;
  * `enumOf` recusa o valor desconhecido e cai no padrao, que e "todos".
  */
 const STATUS_NFE = ["", "AUTORIZADA", "CANCELADA"] as const;
-const STATUS_NFSE = [
-  "",
-  "PENDENTE",
-  "PRONTA_PARA_ENVIO",
-  "PROCESSANDO",
-  "AUTORIZADA",
-  "ERRO_ENVIO",
-  "REJEITADA",
-  "CANCELADA"
-] as const;
+// Histórico NFS-e: os status conhecidos e "Em análise", que agrupa o que a tela
+// não conhece (lib/historico-nfse).
+const STATUS_NFSE = FILTRO_STATUS_NFSE;
 
 /**
  * `E-Faturado` e `E-FATURADO` convivem na base — 173 e 104 registros. A leitura
@@ -239,7 +243,8 @@ export function NotasFiscaisPage() {
       "fila-status": { codec: codecs.texto(), default: "" },
       "nfse-q": { codec: codecs.texto(), default: "" },
       "nfse-emp": { codec: codecs.enumOf(EMPRESAS_EMITENTES), default: "" as const },
-      "nfse-status": { codec: codecs.enumOf(STATUS_NFSE), default: "" as const }
+      "nfse-status": { codec: codecs.enumOf(STATUS_NFSE), default: "" as const },
+      "nfse-amb": { codec: codecs.enumOf(FILTRO_AMBIENTE_NFSE), default: "" as const }
     }),
     []
   );
@@ -313,6 +318,7 @@ export function NotasFiscaisPage() {
   const nfeStatus = filters["nfe-status"];
   const nfeEmpresa = filters["nfe-emp"];
   const nfseStatus = filters["nfse-status"];
+  const nfseAmbiente = filters["nfse-amb"];
   const nfseEmpresa = filters["nfse-emp"];
   const soFaturados = filters["fila-so-faturados"];
   const filaStatus = filters["fila-status"];
@@ -616,16 +622,9 @@ export function NotasFiscaisPage() {
     setCancelModalOpen(true);
   };
 
-  const handleOpenCancelNfseModal = (note: NfseReadModel) => {
-    if (!note.id_empresa) {
-      showToast({ type: "error", title: "Empresa não identificada", description: "Não é possível cancelar NFS-e sem identificar a empresa emitente." });
-      return;
-    }
-    setCancelNoteNfse(note);
-    setCancelNoteNfe(null);
-    setCancelJustificativa("");
-    setCancelModalOpen(true);
-  };
+  // O "Cancelar NFS-e" do menu está desligado (lib/historico-nfse): o cancelamento
+  // de NFS-e ainda não funciona pelo Vibe. Quando voltar, o item reabre a janela de
+  // cancelamento com `setCancelNoteNfse(nota)`, como o da NF-e faz logo acima.
 
   const handleSendCce = async () => {
     if (!cceNote) return;
@@ -1366,11 +1365,10 @@ export function NotasFiscaisPage() {
     const nfseStatus = (item.status || "").toUpperCase();
     if (nfseStatus === "AUTORIZADA") {
       if (canCancelNf) {
-        actions.push({
-          label: "Cancelar NFS-e",
-          onClick: () => handleOpenCancelNfseModal(item),
-          icon: AlertTriangle
-        });
+        // À vista, DESLIGADO e sem ação: o cancelamento de NFS-e ainda não
+        // funciona pelo Vibe (o primeiro é pelo portal nacional). Não chama a
+        // rota. O cancelamento de NF-e é outro item e continua como está.
+        actions.push(itemCancelarNfse());
       }
     }
 
@@ -2237,12 +2235,50 @@ export function NotasFiscaisPage() {
       if (String(item.id_empresa) !== nfseEmpresa) return false;
     }
 
-    if (nfseStatus) {
-      if (item.status.toUpperCase() !== nfseStatus.toUpperCase()) return false;
-    }
+    // Status desconhecido conta como "Em análise": nunca some nem escapa do filtro.
+    if (!notaPassaNoFiltroDeStatus(item.status, nfseStatus)) return false;
+    if (!notaPassaNoFiltroDeAmbiente(item.ambiente, nfseAmbiente)) return false;
 
     return true;
   });
+
+  /** Selo do ambiente da nota de serviço: vazio ou desconhecido é HOMOLOGAÇÃO. */
+  const renderSeloDoAmbienteNfse = (ambiente: string | null | undefined) => {
+    const selo = seloDoAmbiente(ambiente);
+    return (
+      <span
+        data-ambiente-nfse={selo.ambiente}
+        className={
+          selo.ambiente === "producao"
+            ? "inline-flex items-center rounded-full border border-red-700 bg-red-600 px-2.5 py-1 text-[11px] font-bold tracking-wide text-white"
+            : "inline-flex items-center rounded-full border border-amber-300 bg-amber-50 px-2.5 py-1 text-[11px] font-bold tracking-wide text-amber-800"
+        }
+      >
+        {selo.rotulo}
+      </span>
+    );
+  };
+
+  /** Status da nota de serviço: o conhecido como sempre; o resto como "Em análise", com o real na dica. */
+  const renderStatusNfse = (status: string | null | undefined) => {
+    const exibido = statusExibidoDaNfse(status);
+    if (!exibido.emAnalise) {
+      return (
+        <span title={`Status: ${exibido.real}`} data-status-nfse-lista={exibido.chave}>
+          <StatusBadge status={exibido.real} tone={getStatusTone(exibido.real)} />
+        </span>
+      );
+    }
+    return (
+      <span
+        title={`Status real: ${exibido.real}`}
+        data-status-nfse-lista={exibido.chave}
+        className="inline-flex items-center rounded-full border border-orange-200 bg-orange-50 px-2.5 py-1 text-xs font-semibold text-orange-700"
+      >
+        {exibido.rotulo}
+      </span>
+    );
+  };
 
   return (
     <div className="space-y-6">
@@ -2769,7 +2805,7 @@ export function NotasFiscaisPage() {
       {activeTab === "HISTORICO_FISCAL" ? (
         <div className="space-y-4 mt-12">
           <h2 className="text-xl font-bold px-4 py-2 border-b">Histórico NFS-e (Serviços)</h2>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 rounded-3xl border border-[#d7e5e8] bg-white p-4 shadow-sm">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 rounded-3xl border border-[#d7e5e8] bg-white p-4 shadow-sm">
             <div className="relative">
               <input
                 type="text"
@@ -2798,13 +2834,25 @@ export function NotasFiscaisPage() {
                 className="w-full rounded-2xl border border-[#d7e5e8] bg-slate-50 px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-[#0b2f4a] focus:bg-white"
               >
                 <option value="">Todos os Status</option>
-                <option value="PENDENTE">Pendente</option>
-                <option value="PRONTA_PARA_ENVIO">Pronta para envio</option>
-                <option value="PROCESSANDO">Processando</option>
-                <option value="AUTORIZADA">Autorizada</option>
-                <option value="ERRO_ENVIO">Erro de Envio</option>
-                <option value="REJEITADA">Rejeitada</option>
-                <option value="CANCELADA">Cancelada</option>
+                {STATUS_CONHECIDOS_NFSE.map((s) => (
+                  <option key={s.valor} value={s.valor}>
+                    {s.rotulo}
+                  </option>
+                ))}
+                <option value={STATUS_EM_ANALISE}>Em análise</option>
+              </select>
+            </div>
+            <div>
+              <select
+                id="nfse-filtro-ambiente"
+                aria-label="Ambiente"
+                value={nfseAmbiente}
+                onChange={(e) => setFilter("nfse-amb", e.target.value as (typeof FILTRO_AMBIENTE_NFSE)[number])}
+                className="w-full rounded-2xl border border-[#d7e5e8] bg-slate-50 px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-[#0b2f4a] focus:bg-white"
+              >
+                <option value="">Ambiente: Todos</option>
+                <option value="producao">Produção</option>
+                <option value="homologacao">Homologação</option>
               </select>
             </div>
           </div>
@@ -2827,7 +2875,12 @@ export function NotasFiscaisPage() {
               },
               {
                 header: "Status",
-                cell: (item) => <StatusBadge status={item.status} tone={getStatusTone(item.status)} />,
+                cell: (item) => renderStatusNfse(item.status),
+                align: "center"
+              },
+              {
+                header: "Ambiente",
+                cell: (item) => renderSeloDoAmbienteNfse(item.ambiente),
                 align: "center"
               },
               {
@@ -2882,7 +2935,10 @@ export function NotasFiscaisPage() {
                     <h3 className="mt-2 font-semibold text-slate-950">{item.nome || item.fantasia || "Sem nome cadastrado"}</h3>
                     <p className="text-xs text-slate-500">Cliente ID: {item.id_cliente}</p>
                   </div>
-                  <StatusBadge status={item.status} tone={getStatusTone(item.status)} />
+                  <div className="flex flex-col items-end gap-1.5">
+                    {renderStatusNfse(item.status)}
+                    {renderSeloDoAmbienteNfse(item.ambiente)}
+                  </div>
                 </div>
                 <div className="grid grid-cols-2 gap-2 text-sm text-slate-600">
                   <p>Empresa: <strong>{getEmpresaName(item.id_empresa)}</strong></p>

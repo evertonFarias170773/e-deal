@@ -10,6 +10,8 @@ export type ActionMenuItem = {
   onClick?: () => void;
   destructive?: boolean;
   disabled?: boolean;
+  /** Dica do item (atributo `title`): o motivo de um item desligado, por exemplo. */
+  title?: string;
 };
 
 type ActionsMenuProps = {
@@ -221,6 +223,7 @@ export function ActionsMenu({ items, label = "Acoes", variant = "botao" }: Actio
               key={`${item.label}-${index}`}
               type="button"
               disabled={item.disabled}
+              title={item.title}
               onClick={() => handleAction(item)}
               className={cn(
                 "flex w-full items-center rounded-xl px-3 py-2 text-left text-sm transition",
@@ -291,6 +294,7 @@ export function ActionsMenu({ items, label = "Acoes", variant = "botao" }: Actio
                   key={`${item.label}-${index}`}
                   type="button"
                   disabled={item.disabled}
+                  title={item.title}
                   onClick={() => handleAction(item)}
                   className={cn(
                     "flex w-full items-center rounded-2xl px-4 py-3 text-left text-base font-medium transition",
