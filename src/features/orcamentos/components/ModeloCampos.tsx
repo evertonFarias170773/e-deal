@@ -58,6 +58,7 @@ import {
   type ChecklistVisivel
 } from "@/features/orcamentos/lib/checklist-lote";
 import { buscarArquivoCorPapel } from "@/features/orcamentos/services/pedidos-modelos.service";
+import { OPCOES_DE_VERSO } from "@/features/orcamentos/lib/verso-do-modelo";
 import {
   TIPO_CAMAROTE,
   TIPO_TICKET,
@@ -740,10 +741,9 @@ export function ModeloCampos({
           value={modelo.verso_tipo || ""}
           onChange={(e) => handleChange({ verso_tipo: e.target.value }, true)}
         >
-          <option value="SÓ FRENTE">SÓ FRENTE</option>
-          <option value="FRENTE E VERSO">FRENTE E VERSO</option>
-          <option value="VERSO FIXO">VERSO FIXO</option>
-          <option value="VERSO VARIÁVEL">VERSO VARIÁVEL</option>
+          {OPCOES_DE_VERSO.map((opcao) => (
+            <option key={opcao} value={opcao}>{opcao}</option>
+          ))}
         </select>
       </div>
       )}

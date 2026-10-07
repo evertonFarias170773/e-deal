@@ -1,6 +1,6 @@
 # Proposta: aba Pedido (Boletim Técnico & Lotes)
 
-> **Última revisão:** 06/10/2026
+> **Última revisão:** 07/10/2026
 > **Caminho no menu:** Pedidos → abrir um pedido → Editar proposta → aba Pedido
 > **Endereço:** `/orcamentos/[número]/editar?tab=pedido`
 
@@ -62,12 +62,18 @@ As colunas dependem do produto: campo que o produto não usa não aparece.
 3. **Nº Inicial** e **Nº Final**: a faixa de numeração. O Nº Final é sempre calculado. O Nº Inicial só pode ser digitado quando nenhuma das duas caixas da faixa **Numeração** está marcada.
 4. **Cor papel \***: escolha na lista. Só aparecem as cores do formato do produto. Em produto sem formato, ou com formato sem cores, o campo aparece como **Cor papel**, sem asterisco, fica apagado e não precisa ser preenchido.
 5. **Bloco**: Nenhum, 10, 15, 20, 25, 40, 50, 75, 100 ou **Outro** (que abre um campo para digitar, exemplo "50x2").
-6. **Verso**: SÓ FRENTE, FRENTE E VERSO, VERSO FIXO ou VERSO VARIÁVEL.
+6. **Verso**: SÓ FRENTE, FRENTE E VERSO, VERSO FIXO ou VERSO VARIÁVEL. O valor escolhido é gravado como está e pode ser trocado depois, com ou sem numeração ligada ao modelo.
 7. **Numerador**: escolha na lista. Numerador exclusivo de um cliente só aparece em pedido daquele cliente.
 
 Os campos com asterisco são obrigatórios: **Modelo**, **Qtd** e, quando o produto usa cor e tem cor para escolher, **Cor papel**.
 
-Linha nova já nasce com cor, numerador, verso (SÓ FRENTE) e bloco (50) preenchidos: ela copia a linha anterior e, quando não há anterior, usa o cadastro do produto. A **Qtd** nasce sempre em branco.
+Linha nova já nasce com cor, numerador, verso e bloco (50) preenchidos: ela copia a linha anterior e, quando não há anterior, usa o cadastro do produto. A **Qtd** nasce sempre em branco.
+
+O **Verso** do modelo novo vem do campo **Frente e Verso** do cadastro do produto (**Produtos → Catálogo → editar o produto → Dados principais**). Produto sem valor nesse campo: o modelo nasce **SÓ FRENTE**. Isso vale só na criação do modelo:
+
+- modelo que já existe não muda quando o cadastro do produto é alterado;
+- modelo duplicado leva o verso do modelo de origem, sem consultar o cadastro;
+- modelo criado pelo **Mapa Teatro** não usa esse campo.
 
 ### Montar os modelos digitando
 

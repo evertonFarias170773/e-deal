@@ -275,6 +275,7 @@ export function mapSupabaseProdutoRowToProduto(
     tipo_blocagem: pickText(raw, ["tipo_blocagem"]) || null,
     id_gabarito: pickNumber(raw, ["id_gabarito"]),
     setor_pcp: pickText(raw, ["setor_pcp"]) || null,
+    verso_padrao: pickText(raw, ["verso_padrao"]) || null,
     fotos,
     variacoes
   };

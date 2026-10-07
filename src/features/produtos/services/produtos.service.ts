@@ -66,7 +66,8 @@ type ProdutoWriteField =
   | "quantidade_minima_venda"
   | "tipo_blocagem"
   | "id_gabarito"
-  | "setor_pcp";
+  | "setor_pcp"
+  | "verso_padrao";
 
 export type ProdutoWriteInput = Partial<Record<ProdutoWriteField, string | number | boolean | string[] | null>>;
 
@@ -132,7 +133,8 @@ export const PRODUTOS_INSERT_FIELD_WHITELIST = [
   "cofins_situacao_tributaria",
   "informacoes_fiscais",
   "id_gabarito",
-  "setor_pcp"
+  "setor_pcp",
+  "verso_padrao"
 ] as const satisfies readonly ProdutoWriteField[];
 
 export const PRODUTOS_UPDATE_FIELD_WHITELIST = [
@@ -176,7 +178,8 @@ export const PRODUTOS_UPDATE_FIELD_WHITELIST = [
   "quantidade_minima_venda",
   "tipo_blocagem",
   "id_gabarito",
-  "setor_pcp"
+  "setor_pcp",
+  "verso_padrao"
 ] as const satisfies readonly ProdutoWriteField[];
 
 export const PRODUTOS_DELETE_BLOCKED_MESSAGE =
@@ -226,7 +229,8 @@ export const PRODUTOS_SELECT = [
   "quantidade_minima_venda",
   "tipo_blocagem",
   "id_gabarito",
-  "setor_pcp"
+  "setor_pcp",
+  "verso_padrao"
 ].join(",");
 
 const FOTOS_SELECT = "id,nomeProduto,imagensURL,idProduto";

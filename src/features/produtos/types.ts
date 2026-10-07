@@ -95,6 +95,8 @@ export type Produto = {
   tipo_blocagem?: string | null;
   id_gabarito?: number | null;
   setor_pcp?: string | null;
+  /** "Frente e Verso" do cadastro: o verso com que o modelo NOVO deste produto nasce. Nulo = SÓ FRENTE. */
+  verso_padrao?: string | null;
   fotos: ProdutoFoto[];
   variacoes: ProdutoVariacaoDetalhada[];
 };
@@ -143,6 +145,8 @@ export type ProdutoFormState = {
   tipo_blocagem: string;
   id_gabarito: string;
   setor_pcp: string;
+  /** Vazio = sem valor (nulo no banco). */
+  verso_padrao: string;
   fotos: ProdutoFoto[];
   variacoes: ProdutoVariacaoDetalhada[];
   /**

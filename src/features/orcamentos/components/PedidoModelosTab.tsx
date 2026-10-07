@@ -20,6 +20,7 @@ import {
   mostraCampo,
   type ChecklistVisivel
 } from "@/features/orcamentos/lib/checklist-lote";
+import { versoInicialDoModelo } from "@/features/orcamentos/lib/verso-do-modelo";
 import { listChecklistDeProdutos } from "@/features/produtos/services/produto-boletim-campos.service";
 import type { PedidoModeloRow, ModeloInput } from "@/features/orcamentos/services/pedidos-modelos.service";
 import {
@@ -92,7 +93,7 @@ type OpcaoCadastro = {
  * para escolher o que o cadastro do produto já sabia.
  */
 function padroesDeNovoLote(
-  produto: { id_modelo_cor?: unknown; id_gabarito?: unknown } | null | undefined,
+  produto: { id_modelo_cor?: unknown; id_gabarito?: unknown; verso_padrao?: unknown } | null | undefined,
   cores: OpcaoCadastro[],
   numeracoes: OpcaoCadastro[]
 ): PadroesDeLote {
@@ -110,7 +111,9 @@ function padroesDeNovoLote(
     // Sem numerador não há numeração — é o mesmo par que os cards mantêm.
     tipo_numeracao: nomeNumerador ? "SEQUENCIAL" : "SEM_NUMERACAO",
     numeracao_inicio: nomeNumerador ? 1 : null,
-    verso_tipo: "SÓ FRENTE",
+    // O "Frente e Verso" do cadastro do produto, lido agora, na criação. Sem
+    // valor no cadastro, SÓ FRENTE — como sempre foi (lib/verso-do-modelo).
+    verso_tipo: versoInicialDoModelo(produto?.verso_padrao),
     bloco: "50"
   };
 }

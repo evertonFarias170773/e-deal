@@ -119,6 +119,7 @@ import {
   type CorDoPapelOpcao
 } from "@/features/orcamentos/components/ModeloCampos";
 import type { PedidoModeloState } from "@/features/orcamentos/types";
+import { versoDaLinhaNova } from "@/features/orcamentos/lib/verso-do-modelo";
 import { MapaTeatroSeletor, type MapaTeatroEscolhido } from "@/features/orcamentos/components/MapaTeatroSeletor";
 
 /** Teto para a criação em lote: acima disso é engano de digitação, não pedido. */
@@ -540,7 +541,7 @@ export function LotesGrid({
       padrao: base?.padrao ?? padroes.padrao,
       tipo_numeracao: base?.tipo_numeracao ?? padroes.tipo_numeracao,
       numeracao_inicio: base?.numeracao_inicio ?? padroes.numeracao_inicio,
-      verso_tipo: base?.verso_tipo ?? padroes.verso_tipo,
+      verso_tipo: versoDaLinhaNova(base?.verso_tipo, padroes.verso_tipo),
       bloco: base?.bloco ?? padroes.bloco,
       gabarito_operacional: base?.gabarito_operacional ?? padroes.gabarito_operacional,
       variacoes_texto: base?.variacoes_texto ?? null

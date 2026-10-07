@@ -44,6 +44,7 @@ export type SupabaseProdutoRow = {
   tipo_blocagem?: SupabaseValue;
   id_gabarito?: SupabaseValue;
   setor_pcp?: SupabaseValue;
+  verso_padrao?: SupabaseValue;
 };
 
 export type SupabaseProdutoFotoRow = {

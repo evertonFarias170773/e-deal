@@ -49,6 +49,7 @@ import type {
   ProdutoVariacaoDetalhada
 } from "@/features/produtos/types";
 import { parseDecimalInput } from "@/features/produtos/mappers";
+import { opcoesDeVersoDoProduto, versoPadraoParaGravar } from "@/features/orcamentos/lib/verso-do-modelo";
 
 type ProdutoFormPageProps = {
   mode: "new" | "edit";
@@ -724,7 +725,8 @@ export function ProdutoFormPage({ mode, produto, duplicarDe }: ProdutoFormPagePr
       quantidade_minima_venda: form.quantidade_minima_venda ? Number(form.quantidade_minima_venda) : null,
       tipo_blocagem: form.tipo_blocagem ? form.tipo_blocagem.trim() : null,
       id_gabarito: form.id_gabarito ? Number(form.id_gabarito) : null,
-      setor_pcp: form.setor_pcp ? form.setor_pcp.trim() : null
+      setor_pcp: form.setor_pcp ? form.setor_pcp.trim() : null,
+      verso_padrao: versoPadraoParaGravar(form.verso_padrao)
     };
   }
 
@@ -1076,6 +1078,22 @@ export function ProdutoFormPage({ mode, produto, duplicarDe }: ProdutoFormPagePr
                 </option>
               ))}
             </select>
+          </Field>
+          <Field label="Frente e Verso">
+            <select
+              id="produto-verso-padrao"
+              value={form.verso_padrao}
+              onChange={(event) => updateField("verso_padrao", event.target.value)}
+              className={getInputClass(errorFields.includes("verso_padrao"))}
+            >
+              <option value="">Sem valor (o modelo nasce SÓ FRENTE)</option>
+              {opcoesDeVersoDoProduto(form.verso_padrao).map((opcao) => (
+                <option key={opcao} value={opcao}>{opcao}</option>
+              ))}
+            </select>
+            <span className="block text-[11px] font-normal normal-case tracking-normal text-slate-500">
+              Verso com que o modelo novo deste produto nasce na aba Pedido. Não muda modelo já criado.
+            </span>
           </Field>
           <div className="md:col-span-2 xl:col-span-4">
             <Field label="Descricao">
@@ -1706,6 +1724,7 @@ function createInitialState(produto?: Produto): ProdutoFormState {
     tipo_blocagem: produto?.tipo_blocagem ?? "",
     id_gabarito: produto?.id_gabarito?.toString() ?? "",
     setor_pcp: produto?.setor_pcp ?? "",
+    verso_padrao: produto?.verso_padrao ?? "",
     fotos: produto?.fotos ?? [],
     variacoes: produto?.variacoes ?? [],
     /**
