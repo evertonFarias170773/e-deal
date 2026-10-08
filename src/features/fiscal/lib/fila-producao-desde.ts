@@ -15,6 +15,14 @@
  *   de Pedidos (services/prazo-envio-lista). `prazo` é DATE, sem fuso: é o dia
  *   como foi digitado, então a string é fatiada — passar por `Date` tiraria um dia.
  *
+ * OS QUATRO ESTADOS DA LINHA 2 (08/10/2026) — o selo de components/SeloDaPrevisao
+ *   NO_PRAZO  a partir de amanhã   "Previsão: dd/mm/aa"
+ *   HOJE      o dia de hoje        "Previsão: hoje, dd/mm/aa" — na tabela, "Previsão: hoje"
+ *   ATRASADO  dia anterior ou antes "Atrasado: dd/mm/aa (N dias)" — na tabela,
+ *             onde não cabe, sai sem os dias (`textoCurto`) e os dias vão na dica
+ *   sem previsão                   "Sem previsão"
+ *   O texto diz o estado; a cor do selo só reforça.
+ *
  * FAIL-SAFE
  *   Enquanto a leitura das previsões não chegou, ou se ela falhou, a linha 2
  *   não aparece: a coluna mostra só data e hora, sem erro.
@@ -76,15 +84,28 @@ export type LeituraDasPrevisoes = {
   pronta: boolean;
 };
 
+export type EstadoDaPrevisao = "NO_PRAZO" | "HOJE" | "ATRASADO";
+
 export type LinhaDaPrevisao =
   /** Leitura não pronta: a linha 2 não aparece. */
   | { tipo: "OCULTA" }
   | { tipo: "SEM_PREVISAO"; texto: "Sem previsão" }
-  | { tipo: "PREVISAO"; texto: string; vencida: boolean };
+  | { tipo: "PREVISAO"; estado: EstadoDaPrevisao; texto: string; /** Para onde o espaço é curto (a tabela): sem a contagem de dias do atraso e sem repetir a data de hoje. */ textoCurto: string; diasDeAtraso: number };
+
+/** Dias inteiros entre dois dias civis "aaaa-mm-dd" (de → até); NaN se algum não for data. */
+export function diasEntre(de: string, ate: string): number {
+  const a = DATA_ISO.exec(de);
+  const b = DATA_ISO.exec(ate);
+  if (!a || !b) return NaN;
+  // Meio-dia UTC dos dois lados: dia civil não tem fuso nem horário de verão.
+  const ms = Date.UTC(Number(b[1]), Number(b[2]) - 1, Number(b[3]), 12) - Date.UTC(Number(a[1]), Number(a[2]) - 1, Number(a[3]), 12);
+  return Math.round(ms / 86_400_000);
+}
 
 /**
  * A segunda linha da célula. `hoje` é o dia em Brasília ("2026-10-08").
- * Vencida = a previsão é de um dia ANTERIOR a hoje; a do próprio dia ainda vale.
+ * Atrasado = a previsão é de um dia ANTERIOR a hoje; a do próprio dia é "hoje".
+ * Sem saber que dia é hoje, não há como dizer atraso: fica "no prazo".
  */
 export function linhaDaPrevisao(idInt: number | null | undefined, leitura: LeituraDasPrevisoes, hoje: string): LinhaDaPrevisao {
   if (!leitura.pronta) return { tipo: "OCULTA" };
@@ -93,5 +114,11 @@ export function linhaDaPrevisao(idInt: number | null | undefined, leitura: Leitu
   if (!achado) return { tipo: "SEM_PREVISAO", texto: "Sem previsão" };
   const [, ano, mes, dia] = achado;
   const diaIso = `${ano}-${mes}-${dia}`;
-  return { tipo: "PREVISAO", texto: `Previsão: ${dia}/${mes}/${ano.slice(-2)}`, vencida: Boolean(hoje) && diaIso < hoje };
+  const data = `${dia}/${mes}/${ano.slice(-2)}`;
+  const atraso = diasEntre(diaIso, hoje);
+  if (Number.isFinite(atraso) && atraso > 0) {
+    return { tipo: "PREVISAO", estado: "ATRASADO", texto: `Atrasado: ${data} (${atraso} ${atraso === 1 ? "dia" : "dias"})`, textoCurto: `Atrasado: ${data}`, diasDeAtraso: atraso };
+  }
+  if (atraso === 0) return { tipo: "PREVISAO", estado: "HOJE", texto: `Previsão: hoje, ${data}`, textoCurto: "Previsão: hoje", diasDeAtraso: 0 };
+  return { tipo: "PREVISAO", estado: "NO_PRAZO", texto: `Previsão: ${data}`, textoCurto: `Previsão: ${data}`, diasDeAtraso: 0 };
 }

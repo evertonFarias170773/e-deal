@@ -55,6 +55,7 @@ import { resolverAmbienteFiscal } from "./services/ambiente-fiscal";
 import { GerarNfseModal } from "@/features/nfse/components/GerarNfseModal";
 import { useNfseDosPedidos } from "@/features/nfse/hooks/useNfseDosPedidos";
 import { usePrevisaoDaProducao } from "@/features/fiscal/hooks/usePrevisaoDaProducao";
+import { SeloDaPrevisao } from "@/features/fiscal/components/SeloDaPrevisao";
 import { dataHoraDeBrasilia, hojeEmBrasilia, linhaDaPrevisao } from "@/features/fiscal/lib/fila-producao-desde";
 import { decidirNfseDoPedido, empresaLiberadaParaNfse, rotuloDoBotaoNfse } from "@/features/nfse/lib/regras-emissao";
 import { pedidoOcultoPorNfse, rotuloDosOcultosPorNfse } from "@/features/nfse/lib/fila-nfse";
@@ -1885,30 +1886,17 @@ export function NotasFiscaisPage() {
   );
   const hojeDeBrasilia = hojeEmBrasilia();
   /** As duas linhas de "Em produção desde": data e hora (Brasília) e, embaixo, a previsão. */
-  const renderEmProducaoDesde = (item: FaturavelOrigem) => {
+  const renderEmProducaoDesde = (item: FaturavelOrigem, compacto = false) => {
     const desde = dataHoraDeBrasilia(item.liberado_producao_em);
     const previsao = linhaDaPrevisao(item.id_int, leituraDasPrevisoes, hojeDeBrasilia);
     return (
-      <div className="flex flex-col" data-em-producao-desde>
+      <div className="flex flex-col items-start gap-1" data-em-producao-desde>
         {desde ? (
           <span className="whitespace-nowrap text-xs font-medium text-slate-700">{desde}</span>
         ) : (
           <span className="text-xs font-medium text-slate-400">-</span>
         )}
-        {previsao.tipo === "PREVISAO" && (
-          <span
-            data-previsao={previsao.vencida ? "vencida" : "no-prazo"}
-            title={previsao.vencida ? "A previsão de entrega da produção já passou" : "Previsão de entrega definida na produção"}
-            className={`whitespace-nowrap text-[11px] ${previsao.vencida ? "font-medium text-red-600" : "text-slate-500"}`}
-          >
-            {previsao.texto}
-          </span>
-        )}
-        {previsao.tipo === "SEM_PREVISAO" && (
-          <span data-previsao="sem" className="whitespace-nowrap text-[11px] text-slate-400">
-            {previsao.texto}
-          </span>
-        )}
+        <SeloDaPrevisao previsao={previsao} compacto={compacto} />
       </div>
     );
   };
@@ -2553,7 +2541,7 @@ export function NotasFiscaisPage() {
                  * entrega que a produção definiu — ver lib/fila-producao-desde.
                  */
                 header: "Em produção desde",
-                cell: (item) => renderEmProducaoDesde(item)
+                cell: (item) => renderEmProducaoDesde(item, true)
               },
               {
                 header: "Empresa Emitente",
@@ -2635,7 +2623,7 @@ export function NotasFiscaisPage() {
                 </div>
                 <div className="flex items-start justify-between gap-3 text-sm text-slate-600">
                   <span>Em produção desde</span>
-                  <div className="text-right">{renderEmProducaoDesde(item)}</div>
+                  <div className="[&>div]:items-end">{renderEmProducaoDesde(item)}</div>
                 </div>
                 <div className="flex flex-wrap justify-end gap-2 pt-2">
                   {renderBotaoFaturadoFora(item)}
