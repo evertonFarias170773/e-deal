@@ -43,23 +43,23 @@ function checar(nome: string, real: unknown, esperado: unknown) {
 }
 
 console.log("--- mapa de ids (ponto unico) ---");
-checar("CORREIOS", IDS.CORREIOS, 663);
+checar("CORREIOS", IDS.CORREIOS, 39975);
 checar("AZUL", IDS.AZUL, 808);
 checar("MOTOBOY", IDS.MOTOBOY, 997);
 checar("VEPPO", IDS.VEPPO, 120018);
 checar("SAO_MIGUEL", IDS.SAO_MIGUEL, 120026);
 
 console.log("\n--- card RECEM-COTADO (transportadora = constante do gerador) ---");
-checar("Correios SEDEX", resolverTransportadoraParceira({ transportadora: "Correios SEDEX", servico: "SEDEX" }), 663);
-checar("Correios PAC", resolverTransportadoraParceira({ transportadora: "Correios PAC", servico: "PAC" }), 663);
+checar("Correios SEDEX", resolverTransportadoraParceira({ transportadora: "Correios SEDEX", servico: "SEDEX" }), 39975);
+checar("Correios PAC", resolverTransportadoraParceira({ transportadora: "Correios PAC", servico: "PAC" }), 39975);
 checar("Azul Cargo", resolverTransportadoraParceira({ transportadora: "Azul Cargo", servico: "ECOMM" }), 808);
 checar("Sao Miguel", resolverTransportadoraParceira({ transportadora: "Transportadora São Miguel", servico: "SÃO MIGUEL" }), 120026);
 checar("Motoboy", resolverTransportadoraParceira({ transportadora: "Motoboy", servico: "MOTOBOY" }), 997);
 checar("VEPPO", resolverTransportadoraParceira({ transportadora: "VEPPO", servico: "VEPPO" }), 120018);
 
 console.log("\n--- card RELIDO do banco (transportadora reconstruida de servico) ---");
-checar("SEDEX", resolverTransportadoraParceira({ transportadora: "Correios SEDEX", servico: "SEDEX" }), 663);
-checar("sedex minusculo", resolverTransportadoraParceira({ transportadora: "sedex", servico: "sedex" }), 663);
+checar("SEDEX", resolverTransportadoraParceira({ transportadora: "Correios SEDEX", servico: "SEDEX" }), 39975);
+checar("sedex minusculo", resolverTransportadoraParceira({ transportadora: "sedex", servico: "sedex" }), 39975);
 checar("SÃO MIGUEL", resolverTransportadoraParceira({ transportadora: "SÃO MIGUEL", servico: "SÃO MIGUEL" }), 120026);
 checar("Expresso São Miguel", resolverTransportadoraParceira({ transportadora: "Expresso São Miguel", servico: "Expresso São Miguel" }), 120026);
 checar("MOTOBOY com espaco", resolverTransportadoraParceira({ transportadora: "MOTOBOY ", servico: "MOTOBOY " }), 997);
@@ -86,8 +86,9 @@ checar("RETIRA vence", resolverTransportadoraParceira({ transportadora: "RETIRA 
 
 console.log("\n--- canonizacao: cadastro substituido vira o legitimo ---");
 // 120001 = AGENCIA DE CORREIOS FRANQUEADA BELUNO. Nao pode constar como
-// transportador: quem consta e a ECT (663). 9 despachos ja apontam para ele.
-checar("120001 (Beluno) -> 663 (ECT)", canonizarTransportadora(120001), 663);
+// transportador: quem consta e a ECT. Desde 08/10/2026 o cadastro legitimo e o
+// 39975 (Superintendencia Estadual RS); 9 despachos ja apontam para o 120001.
+checar("120001 (Beluno) -> 39975 (ECT)", canonizarTransportadora(120001), 39975);
 checar("120001 e substituido", ehCadastroSubstituido(120001), true);
 checar("663 permanece 663", canonizarTransportadora(663), 663);
 checar("663 nao e substituido", ehCadastroSubstituido(663), false);

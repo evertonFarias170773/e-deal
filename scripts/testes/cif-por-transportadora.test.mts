@@ -63,12 +63,23 @@ checar("CIF 'sem custo' com transportadora", cifPorTransportadora(com({ tipoFret
 checar("sem aviso de prepostagem quando nao ha prepostagem", cifTransportadoraBarradaPorPrepostagem(base), false);
 
 // ── 2. O cadastro dos proprios Correios nao conta ───────────────────────────
-checar("nomes que sao os Correios",
-  ["CORREIOS SEDE", "Correios", "EMPRESA BRASILEIRA DE CORREIOS E TELEGRAFOS", "SEDEX", "correios - agência centro"].map(transportadoraEhOsCorreios),
+// Desde 08/10/2026 o predicado recebe (id, nome): o id decide primeiro, e o
+// nome fica como fallback para quem nao tem vinculo.
+checar("nomes que sao os Correios (sem id, pelo nome)",
+  ["CORREIOS SEDE", "Correios", "EMPRESA BRASILEIRA DE CORREIOS E TELEGRAFOS", "SEDEX", "correios - agência centro"].map((n) =>
+    transportadoraEhOsCorreios(null, n)),
   [true, true, true, true, true]);
-checar("nomes que nao sao os Correios",
-  ["TROCA TRANSPORTES LTDA", "SVT TRANSPORTES", "EXPRESSO SAO MIGUEL S/A", "BRASPRESS", "", null].map(transportadoraEhOsCorreios),
+checar("nomes que nao sao os Correios (sem id)",
+  ["TROCA TRANSPORTES LTDA", "SVT TRANSPORTES", "EXPRESSO SAO MIGUEL S/A", "BRASPRESS", "", null].map((n) =>
+    transportadoraEhOsCorreios(null, n)),
   [false, false, false, false, false, false]);
+// O cadastro novo dos Correios tem fantasia "SUPERINTENDENCIA ESTADUAL RS", que
+// nao tem a palavra Correios: so o id o reconhece.
+checar("os dois cadastros dos Correios, pelo id",
+  [transportadoraEhOsCorreios(39975, "SUPERINTENDENCIA ESTADUAL RS"), transportadoraEhOsCorreios(663, "CORREIOS SEDE")],
+  [true, true]);
+checar("transportadora de verdade, com id, nao e os Correios",
+  transportadoraEhOsCorreios(808, "SVT TRANSPORTES"), false);
 checar("CIF com o cadastro dos Correios: segue Correios", cifPorTransportadora(com({ nomeTransportadora: "CORREIOS SEDE" })), false);
 checar("CIF com o cadastro dos Correios: sem aviso", cifTransportadoraBarradaPorPrepostagem(com({ nomeTransportadora: "CORREIOS SEDE", correiosIdPrepostagem: "PR1" })), false);
 
