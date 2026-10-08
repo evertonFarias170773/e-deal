@@ -198,6 +198,13 @@ export interface PedidoExpedicao {
      * consumidas só para montar o `rotulo` acima.
      */
     cidadeUf: string;
+    /**
+     * O bairro do MESMO endereço (08/10/2026), já limpo por `bairroExibivel`:
+     * vazio quando o cadastro não tem ou tem lixo ("NULL", "[object Object]").
+     * O card só o escreve em entrega por motoboy — ver `lib/bairro-do-card.ts`.
+     * Zero consulta a mais: `bairro` já vinha no mesmo `in` de `enderecos`.
+     */
+    bairro: string;
     /** De onde veio, para a interface poder explicar. */
     origem: "PROPOSTA" | "DESPACHO";
   } | null;

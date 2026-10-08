@@ -14,6 +14,7 @@ import {
   LABEL_CATEGORIA_FRETE
 } from "@/features/orcamentos/lib/categoria-frete";
 import { rotuloCarimbo } from "../lib/carimbo-etapa";
+import { bairroDoCard } from "../lib/bairro-do-card";
 import type { EtapaExpedicao, PedidoExpedicao } from "../types";
 
 /**
@@ -617,6 +618,18 @@ export function KanbanTransportadoras({
                           title={p.enderecoEntrega.rotulo}
                         >
                           {p.enderecoEntrega.cidadeUf}
+                          {/* Só em entrega por motoboy, para montar a rota do dia
+                              (`lib/bairro-do-card.ts`). A linha já é `truncate`:
+                              nome longo corta com reticências, e o `title` do
+                              bairro mostra o nome inteiro. */}
+                          {bairroDoCard(p) && (
+                            <>
+                              {" · "}
+                              <strong className="font-bold text-slate-700 dark:text-slate-200" title={bairroDoCard(p)}>
+                                {bairroDoCard(p)}
+                              </strong>
+                            </>
+                          )}
                         </p>
                       )}
                       {p.pagador && (

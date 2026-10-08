@@ -45,6 +45,7 @@ import {
 } from "./lib/filtro-categoria";
 import { categoriaExibida, CATEGORIAS_FRETE, LABEL_CATEGORIA_FRETE } from "@/features/orcamentos/lib/categoria-frete";
 import { avisoEntregaCedoDemais } from "./lib/entrega-cedo";
+import { bairroDoCard } from "./lib/bairro-do-card";
 import { rotuloClienteComNumero } from "./lib/cliente-rotulo";
 import { DespacharModal } from "./components/DespacharModal";
 import { RetiradaModal } from "./components/RetiradaModal";
@@ -1329,8 +1330,20 @@ export function ExpedicaoPage() {
                   )}
                   {/* Mesma fonte do desktop: a cidade de ENTREGA. */}
                   {p.enderecoEntrega?.cidadeUf && (
-                    <p className="text-xs text-slate-500" title={p.enderecoEntrega.rotulo}>
+                    <p
+                      className={`text-xs text-slate-500${bairroDoCard(p) ? " truncate" : ""}`}
+                      title={p.enderecoEntrega.rotulo}
+                    >
                       {p.enderecoEntrega.cidadeUf}
+                      {/* Bairro só em entrega por motoboy — mesma regra do card do Kanban. */}
+                      {bairroDoCard(p) && (
+                        <>
+                          {" · "}
+                          <strong className="font-bold text-slate-700" title={bairroDoCard(p)}>
+                            {bairroDoCard(p)}
+                          </strong>
+                        </>
+                      )}
                     </p>
                   )}
                   {p.vendedor && <p className="text-xs text-slate-500">Vendedor: {p.vendedor}</p>}

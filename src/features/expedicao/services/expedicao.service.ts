@@ -11,6 +11,7 @@ import {
   categoriaPorNomeConhecido,
   ehCategoriaFrete
 } from "@/features/orcamentos/lib/categoria-frete";
+import { bairroExibivel } from "../lib/bairro-do-card";
 import {
   cifPorTransportadora,
   cifTransportadoraBarradaPorPrepostagem,
@@ -448,7 +449,7 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
     )
   );
 
-  const enderecoMap = new Map<string, { rotulo: string; cep: string | null; cidadeUf: string }>();
+  const enderecoMap = new Map<string, { rotulo: string; cep: string | null; cidadeUf: string; bairro: string }>();
   if (idsEndereco.length > 0) {
     const { data: enderecosData, error: enderecosErro } = await client
       .from("enderecos")
@@ -477,7 +478,9 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
       enderecoMap.set(String(e.id), {
         rotulo: `${linha}${cep ? ` (CEP ${cep})` : ""}`,
         cep,
-        cidadeUf: [e.cidade, e.uf].filter(Boolean).join("/")
+        cidadeUf: [e.cidade, e.uf].filter(Boolean).join("/"),
+        // O bairro da mesma linha, limpo: o card o mostra nas entregas por motoboy.
+        bairro: bairroExibivel(e.bairro)
       });
     }
   }
@@ -842,6 +845,7 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
             rotulo: enderecoResolvido.rotulo,
             cep: enderecoResolvido.cep,
             cidadeUf: enderecoResolvido.cidadeUf,
+            bairro: enderecoResolvido.bairro,
             origem: origemEndereco
           }
         : null,
