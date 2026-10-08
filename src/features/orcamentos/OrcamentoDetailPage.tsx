@@ -14,15 +14,38 @@ import { useCobrancas } from "@/features/cobrancas/CobrancasProvider";
 import { PropostaCobrancaPanel } from "@/features/cobrancas/PropostaCobrancaPanel";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { hasPermissao } from "@/features/auth/usuarios.service";
-import { getLiberacaoPedidoLabel, getLiberacaoPedidoStatus } from "@/features/cobrancas/cobrancas-utils";
 import { SummaryCard } from "@/components/common/SummaryCard";
 import { formatCurrency } from "@/lib/formatters/currency";
 import { formatDate } from "@/lib/formatters/date";
 import { formatWeightFromGrams } from "@/lib/formatters/weight";
-import type { Proposta, PropostaStatus } from "@/features/orcamentos/types";
+import type { Proposta } from "@/features/orcamentos/types";
 import { buildPropostaInformalText, getCobrancaLabel } from "@/features/orcamentos/orcamento-utils";
 import { bonusDaProposta } from "@/features/orcamentos/lib/bonus-da-proposta";
 import { idEmpresaDoPdf } from "@/features/orcamentos/lib/empresa-pdf";
+import { composeStatusEmArte } from "@/features/orcamentos/mappers";
+import { buscarStatusArteDaProposta, classeDoStatusArte } from "@/features/orcamentos/services/status-arte-lista.service";
+import { listarTitulosDaProposta } from "@/features/orcamentos/services/faturado-titulos.service";
+import type { TituloParaFaturado } from "@/features/orcamentos/services/faturado-editavel";
+import {
+  TITULO_DO_ESTADO_DE_EDICAO,
+  avaliarEstadoDeEdicao,
+  resumoDoEstadoDeEdicao,
+  tomDoStatusDoCabecalho
+} from "@/features/orcamentos/lib/estado-de-edicao";
+import {
+  contatoDaVisualizacao,
+  freteDaVisualizacao,
+  pagamentoDaVisualizacao,
+  prazoDeProducao,
+  situacaoDasCobrancas,
+  valoresDaTabelaEspecial,
+  type ValoresDaTabelaEspecial
+} from "@/features/orcamentos/lib/visualizacao-da-proposta";
+import {
+  SEM_COMPLEMENTO_DO_FRETE,
+  lerComplementoDoFrete,
+  type ComplementoDoFrete
+} from "@/features/orcamentos/services/visualizacao-proposta.service";
 
 import { useOrcamentoDetail } from "@/features/orcamentos/hooks/useOrcamentoDetail";
 import {
@@ -50,6 +73,35 @@ export function OrcamentoDetailPage({ idInt }: OrcamentoDetailPageProps) {
   const { openChat } = useGlobalChat();
   const { proposta, loading, error, reload } = useOrcamentoDetail(idInt);
   const [chatResumo, setChatResumo] = useState<PropostaChatResumo | null>(null);
+
+  // Leituras à parte, só para EXIBIR (08/10/2026): o nome da transportadora e o
+  // despacho (frete), os títulos (estado de edição) e o status da arte (selo).
+  // Enquanto não chegam, a tela usa o que o carregamento da proposta já tem.
+  const [complementoDoFrete, setComplementoDoFrete] = useState<ComplementoDoFrete>(SEM_COMPLEMENTO_DO_FRETE);
+  const [titulosDaProposta, setTitulosDaProposta] = useState<TituloParaFaturado[] | null>(null);
+  const [statusArte, setStatusArte] = useState<string | null>(null);
+  const idIntCarregado = proposta?.id_int ?? null;
+  const idTransportadoraCarregada = proposta?.idTransportadoraCliente ?? null;
+  useEffect(() => {
+    if (!idIntCarregado) return;
+    let ativo = true;
+    void lerComplementoDoFrete(Number(idIntCarregado), idTransportadoraCarregada).then((lido) => {
+      if (ativo) setComplementoDoFrete(lido);
+    });
+    void listarTitulosDaProposta(Number(idIntCarregado)).then((titulos) => {
+      if (ativo) setTitulosDaProposta(titulos);
+    });
+    void buscarStatusArteDaProposta(Number(idIntCarregado)).then((status) => {
+      if (ativo) setStatusArte(status);
+    });
+    return () => {
+      ativo = false;
+    };
+  }, [idIntCarregado, idTransportadoraCarregada]);
+
+  // Mesmas permissões que o formulário usa para o aviso de edição.
+  const canEditarPropostaPaga = Boolean(user?.isSuperAdmin || hasPermissao(user, "propostas.editar_paga"));
+  const canEditarFaturado = Boolean(canEditarPropostaPaga || hasPermissao(user, "propostas.editar_faturado"));
 
   const canCancelarProposta = Boolean(
     user?.isSuperAdmin ||
@@ -158,18 +210,51 @@ export function OrcamentoDetailPage({ idInt }: OrcamentoDetailPageProps) {
   const totalCobradoRealRounded = Math.round(totalCobradoReal * 100) / 100;
   const saldoRestante = Math.max(totalPropostaRounded - totalCobradoRealRounded, 0);
 
-  const liberacaoFinanceira = getLiberacaoPedidoLabel(getLiberacaoPedidoStatus(cobrancasDaProposta));
+  // ── O que a tela EXIBE — regras em lib/visualizacao-da-proposta e lib/estado-de-edicao ──
+  const itensAtivos = proposta.itens.filter((item) => item.statusItem !== "CANCELADO");
+  const bonusPercent = bonusDaProposta(proposta.bonusTabelaEspecial);
+  const frete = freteDaVisualizacao({
+    modalidade: proposta.modalidadeFrete,
+    transporteCategoria: proposta.transporteCategoria,
+    idTransportadora: proposta.idTransportadoraCliente,
+    nomeTransportadora: complementoDoFrete.nomeTransportadora,
+    cotacaoEscolhida: freteEscolhido ?? null,
+    despachoConfirmado: complementoDoFrete.despachoConfirmado,
+    correiosIdPrepostagem: complementoDoFrete.correiosIdPrepostagem,
+    prepostagemCanceladaEm: complementoDoFrete.prepostagemCanceladaEm,
+    idIntPedidoPrincipal: proposta.idIntPedidoPrincipal,
+    despacho: complementoDoFrete.despacho
+  });
+  const edicao = avaliarEstadoDeEdicao({
+    cobrancas: cobrancasDaProposta,
+    titulos: titulosDaProposta,
+    modoEdicao: true,
+    canEditarPropostaPaga,
+    canEditarFaturado,
+    isAvulso: proposta.is_avulso === true,
+    temProdutosAtivos: itensAtivos.length > 0
+  });
+  const tabelaEspecial = valoresDaTabelaEspecial(proposta.itens, proposta.resumo.subtotalProdutos, bonusPercent);
+  const contato = contatoDaVisualizacao(proposta.contato);
+  const statusExibido = composeStatusEmArte(proposta.status, complementoDoFrete.emArte);
+
+  const liberacaoFinanceira = situacaoDasCobrancas(cobrancasDaProposta, proposta.status_interno ?? proposta.status);
   const informalText = buildPropostaInformalText({
     id_int: proposta.id_int,
     clienteNome: proposta.cliente.nome,
     itens: proposta.itens,
     frete: freteEscolhido,
-    resumo: proposta.resumo,
+    // Subtotal bruto e desconto da tabela especial saem dos itens (o resumo do
+    // carregamento traz bruto = líquido e desconto zero). Se não der para
+    // derivar, o bônus vai como 0 e o texto não mostra as duas linhas.
+    resumo: tabelaEspecial.mostrar
+      ? { ...proposta.resumo, subtotalBrutoProdutos: tabelaEspecial.bruto, acrescimoBonus: tabelaEspecial.desconto }
+      : proposta.resumo,
     formaPagamento: proposta.formaPagamento,
     cidade: proposta.enderecoEntrega?.cidade,
     uf: proposta.enderecoEntrega?.uf,
     // O bônus gravado na proposta; sem ele, 0 (`bonusDaProposta`).
-    bonusPercent: bonusDaProposta(proposta.bonusTabelaEspecial),
+    bonusPercent: tabelaEspecial.mostrar ? bonusPercent : 0,
     modalidade: proposta.modalidadeFrete
   });
 
@@ -301,7 +386,16 @@ export function OrcamentoDetailPage({ idInt }: OrcamentoDetailPageProps) {
                 Gerar cobrança
               </button>
             )}
-            <StatusBadge status={proposta.status} tone={getStatusTone(proposta.status)} />
+            {/* Os mesmos selos do cabeçalho da edição: status (com " / EM ARTE") e status da arte. */}
+            <StatusBadge status={statusExibido} tone={tomDoStatusDoCabecalho(proposta.status)} />
+            {statusArte ? (
+              <span
+                title="Status da arte"
+                className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold whitespace-nowrap ${classeDoStatusArte(statusArte)}`}
+              >
+                {statusArte}
+              </span>
+            ) : null}
             {/* Pedido complementar: mesmo par de selos do cabecalho do formulario. */}
             {proposta.idIntPedidoPrincipal ? (
               <Link
@@ -359,11 +453,12 @@ export function OrcamentoDetailPage({ idInt }: OrcamentoDetailPageProps) {
         }
       />
 
-      {cobrancasDaProposta.length > 0 && (
-        <div className="rounded-3xl border border-amber-200 bg-amber-50 p-5 text-amber-800 shadow-sm flex flex-col gap-1.5">
-          <h2 className="font-semibold text-base">Edição Bloqueada</h2>
+      {/* O MESMO estado que a edição mostra (lib/estado-de-edicao). Cobrança cancelada não conta. */}
+      {edicao.estado !== "SEM_COBRANCA_ATIVA" && (
+        <div data-estado-de-edicao={edicao.estado} className="rounded-3xl border border-amber-200 bg-amber-50 p-5 text-amber-800 shadow-sm flex flex-col gap-1.5">
+          <h2 className="font-semibold text-base">{TITULO_DO_ESTADO_DE_EDICAO[edicao.estado]}</h2>
           <p className="text-sm font-semibold text-amber-700">
-            Esta proposta possui cobrança gerada. Para alterar, exclua primeiro a cobrança pendente.
+            {resumoDoEstadoDeEdicao(edicao.estado, edicao.elegibilidadeFaturado.elegivel ? null : edicao.elegibilidadeFaturado.mensagem)}
           </p>
         </div>
       )}
@@ -377,8 +472,8 @@ export function OrcamentoDetailPage({ idInt }: OrcamentoDetailPageProps) {
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <SummaryCard title="Subtotal produtos" value={formatCurrency(proposta.resumo.subtotalProdutos)} description="Soma dos itens da proposta." tone="info" icon={Package} />
-        <SummaryCard title="Frete escolhido" value={formatCurrency(proposta.resumo.frete)} description={freteEscolhido ? `${freteEscolhido.transportadora} - ${freteEscolhido.prazo}` : "Frete nao definido."} tone="warning" icon={Truck} />
-        <SummaryCard title="Total final" value={formatCurrency(proposta.resumo.valorTotal)} description={`Pagamento: ${proposta.formaPagamento}.`} tone="success" icon={FileText} />
+        <SummaryCard title="Frete escolhido" value={formatCurrency(proposta.resumo.frete)} description={frete.rotulo} tone="warning" icon={Truck} />
+        <SummaryCard title="Total final" value={formatCurrency(proposta.resumo.valorTotal)} description={`Pagamento: ${pagamentoDaVisualizacao(cobrancasDaProposta)}.`} tone="success" icon={FileText} />
         <SummaryCard
           title="Cobranças"
           value={cobrancasAtivas.length ? `${cobrancasAtivas.length} gerada(s)` : getCobrancaLabel(proposta.cobrancaStatus)}
@@ -460,7 +555,7 @@ export function OrcamentoDetailPage({ idInt }: OrcamentoDetailPageProps) {
               ) : (
                 <>
                   <InfoBox label="Cliente" value={`${proposta.cliente.nome} (#${proposta.cliente.idCliente})`} detail={proposta.cliente.documento} />
-                  <InfoBox label="Contato responsavel" value={proposta.contato.nome} detail={`${proposta.contato.whatsapp} - ${proposta.contato.email}`} />
+                  <InfoBox label="Contato responsavel" value={contato.nome} detail={contato.detalhe} />
                   <InfoBox label="Endereco de entrega" value={`${proposta.enderecoEntrega.endereco}, ${proposta.enderecoEntrega.numero}`} detail={`${proposta.enderecoEntrega.cidade}/${proposta.enderecoEntrega.uf} - CEP ${proposta.enderecoEntrega.cep}`} />
                   <InfoBox label="Comprador / autorizado" value={proposta.compradorAutorizado?.nome ?? "Cliente principal"} detail={proposta.compradorAutorizado?.tipoRelacao ?? "Sem vinculo comercial selecionado"} />
                 </>
@@ -496,27 +591,49 @@ export function OrcamentoDetailPage({ idInt }: OrcamentoDetailPageProps) {
           </DetailCard>
 
           <DetailCard title="Fretes disponiveis">
+            {/* O frete real não é nenhuma cotação (retirada, FOB, transportadora
+                declarada, motoboy, herdado): a nota diz qual é, e as cotações
+                ficam sem o selo ESCOLHIDO. */}
+            {frete.nota ? (
+              <p data-nota-do-frete className="mb-3 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm font-semibold text-sky-900">
+                {frete.nota}
+              </p>
+            ) : null}
+            {!frete.usaCotacao && !frete.nota ? (
+              <p data-nota-do-frete className="mb-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700">
+                Frete definido: {frete.rotulo}.
+              </p>
+            ) : null}
             <div className="grid gap-3 md:grid-cols-2">
-              {proposta.fretes.map((frete) => (
-                <div key={frete.id} className={`rounded-3xl border p-4 ${frete.escolhido ? "border-teal-200 bg-teal-50" : "border-slate-200 bg-slate-50"}`}>
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="font-semibold text-slate-950">{frete.transportadora}</p>
-                      <p className="text-sm text-slate-500">{frete.servico} - {frete.prazo}</p>
+              {proposta.fretes.map((cotacao) => {
+                const emUso = frete.usaCotacao && cotacao.escolhido;
+                return (
+                  <div key={cotacao.id} className={`rounded-3xl border p-4 ${emUso ? "border-teal-200 bg-teal-50" : "border-slate-200 bg-slate-50"}`}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="font-semibold text-slate-950">{cotacao.transportadora}</p>
+                        <p className="text-sm text-slate-500">{cotacao.servico} - {cotacao.prazo}</p>
+                      </div>
+                      {emUso ? <StatusBadge status="ESCOLHIDO" tone="success" /> : null}
                     </div>
-                    {frete.escolhido ? <StatusBadge status="ESCOLHIDO" tone="success" /> : null}
+                    <p className="mt-3 text-lg font-bold text-slate-950">{formatCurrency(cotacao.valor)}</p>
+                    <p className="mt-1 text-sm text-slate-500">{cotacao.observacao}</p>
                   </div>
-                  <p className="mt-3 text-lg font-bold text-slate-950">{formatCurrency(frete.valor)}</p>
-                  <p className="mt-1 text-sm text-slate-500">{frete.observacao}</p>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </DetailCard>
         </div>
 
         <div className="space-y-6">
           <DetailCard title="Resumo de valores">
-            <ResumoValores proposta={proposta} />
+            <ResumoValores
+              proposta={proposta}
+              tabelaEspecial={tabelaEspecial}
+              bonusPercent={bonusPercent}
+              prazoProducao={prazoDeProducao(proposta.itens)}
+              prazoEntrega={frete.prazoDeEntrega}
+            />
           </DetailCard>
 
           <DetailCard title="Proposta informal">
@@ -574,17 +691,35 @@ function InfoPill({ label, value }: { label: string; value: string }) {
   );
 }
 
-function ResumoValores({ proposta }: { proposta: Proposta }) {
-  const bonusPercent = bonusDaProposta(proposta.bonusTabelaEspecial);
-  const rows = [
-    ["Subtotal bruto", formatCurrency(proposta.resumo.subtotalBrutoProdutos)],
-    [`Tabela especial do cliente aplicada${bonusPercent > 0 ? ` (-${bonusPercent}%)` : ""}`, `-${formatCurrency(proposta.resumo.acrescimoBonus)}`],
+function ResumoValores({
+  proposta,
+  tabelaEspecial,
+  bonusPercent,
+  prazoProducao,
+  prazoEntrega
+}: {
+  proposta: Proposta;
+  tabelaEspecial: ValoresDaTabelaEspecial;
+  bonusPercent: number;
+  prazoProducao: string;
+  prazoEntrega: string;
+}) {
+  // Subtotal bruto e tabela especial só aparecem quando o pedido TEM tabela
+  // especial e os valores fecham com os itens. Nunca "-R$ 0,00" nem bruto igual
+  // ao líquido (lib/visualizacao-da-proposta).
+  const rows: [string, string][] = [
+    ...(tabelaEspecial.mostrar
+      ? ([
+          ["Subtotal bruto", formatCurrency(tabelaEspecial.bruto)],
+          [`Tabela especial do cliente aplicada (-${bonusPercent}%)`, `-${formatCurrency(tabelaEspecial.desconto)}`]
+        ] as [string, string][])
+      : []),
     ["Subtotal produtos", formatCurrency(proposta.resumo.subtotalProdutos)],
-    ["Desconto geral", `-${formatCurrency(proposta.resumo.descontoGeral)}`],
+    ...(proposta.resumo.descontoGeral > 0 ? ([["Desconto geral", `-${formatCurrency(proposta.resumo.descontoGeral)}`]] as [string, string][]) : []),
     ["Frete", formatCurrency(proposta.resumo.frete)],
     ["Peso total", formatWeightFromGrams(proposta.resumo.pesoTotal)],
-    ["Prazo de produção", proposta.resumo.prazoProducao],
-    ["Prazo de entrega", proposta.resumo.prazoEntrega]
+    ["Prazo de produção", prazoProducao],
+    ["Prazo de entrega", prazoEntrega]
   ];
 
   return (
@@ -607,11 +742,4 @@ function ResumoValores({ proposta }: { proposta: Proposta }) {
       </div>
     </div>
   );
-}
-
-function getStatusTone(status: PropostaStatus) {
-  if (status === "APROVADO") return "success";
-  if (status === "AGUARDANDO") return "warning";
-  if (status === "CANCELADO") return "neutral";
-  return "info";
 }

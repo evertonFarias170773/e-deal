@@ -1,6 +1,6 @@
 # Proposta: visão geral e abas
 
-> **Última revisão:** 07/10/2026
+> **Última revisão:** 08/10/2026
 > **Caminho no menu:** Pedidos → **+ Nova proposta** (proposta nova) ou Pedidos → abrir um pedido → **Editar proposta**
 > **Endereço:** `/orcamentos/novo` e `/orcamentos/<número>/editar`
 
@@ -147,6 +147,30 @@ Ao salvar pela barra do rodapé, os modelos que ainda estavam por gravar na list
 1. Ao clicar em outro menu, em **Cancelar**, em **Voltar ao detalhe** ou no botão voltar do navegador, a tela mostra **Existem alterações não salvas**.
 2. Escolha **Continuar editando**, **Sair sem salvar** ou **Salvar e sair**.
 3. Ao fechar a aba ou recarregar a página, o próprio navegador pergunta se você quer sair.
+
+### Ler o detalhe da proposta (visualização)
+
+O detalhe é a tela só de leitura, aberta por **Ver proposta**. Ele mostra o mesmo que a edição, sem deixar alterar nada.
+
+1. **Selos do cabeçalho:** o status do pedido e, ao lado, o status da arte, os mesmos da edição.
+2. **Aviso amarelo:** é o mesmo aviso da edição, pela mesma regra. Por exemplo, **Faturado a Vencer — Alteração Liberada** quando a cobrança faturada ainda não venceu. Cobrança cancelada não gera aviso.
+3. **Frete escolhido:** o frete que o pedido tem de fato.
+   - **Retira no balcão**, em pedido de retirada.
+   - **Cliente contrata: nome da transportadora** (ou **Motoboy**), em FOB, com R$ 0,00.
+   - **Transportadora: nome**, em CIF com transportadora definida que não é os Correios, ou depois que a Expedição despachou por transportadora.
+   - **Motoboy**, em CIF por motoboy.
+   - O serviço cotado (por exemplo "Correios SEDEX - 1 dia útil"), nos demais casos de CIF.
+   - **Herdado do pedido #N: modalidade**, em pedido complementar.
+4. **Fretes disponíveis:** só leva o selo **ESCOLHIDO** a cotação que é de fato o frete. Quando o frete é outro, aparece a nota "Frete definido: ... As cotações abaixo não estão em uso".
+5. **Total final → Pagamento:** a forma e o estado das cobranças ativas, como na aba Pagamentos (por exemplo "PIX (Confirmado)"). Sem cobrança ativa: "Sem cobrança".
+6. **Cobranças:** antes da liberação mostra a situação da liberação ("Pronta para liberar", "Aguardando pagamento"). Com o pedido já em produção ou depois, mostra o estado real da cobrança ("Confirmado", "A vencer").
+7. **Resumo de valores:**
+   - **Subtotal bruto** e **Tabela especial do cliente aplicada** só aparecem em pedido com tabela especial, com o valor do desconto.
+   - **Desconto geral** só aparece quando há desconto.
+   - **Prazo de produção** é o maior prazo, em dias úteis, entre os produtos do pedido.
+   - **Prazo de entrega** é o prazo da cotação quando ela é o frete; nos outros casos, "Não se aplica".
+8. **Contato responsável:** quando o contato está cadastrado sem nome, aparece "Contato sem nome cadastrado", com o telefone e o e-mail que existirem.
+9. **Copiar resumo para WhatsApp:** em pedido com tabela especial, o texto leva o subtotal bruto e o desconto corretos.
 
 ### Alterar proposta que já tem cobrança ou pagamento
 
@@ -349,6 +373,9 @@ O aviso some quando você clica em **Entendi** ou quando a cópia ganha cobranç
 - `src/app/(erp)/orcamentos/[id]/editar/page.tsx`
 - `src/features/orcamentos/OrcamentosListPageReal.tsx`
 - `src/features/orcamentos/OrcamentoDetailPage.tsx`
+- `src/features/orcamentos/lib/visualizacao-da-proposta.ts`
+- `src/features/orcamentos/lib/estado-de-edicao.ts`
+- `src/features/orcamentos/services/visualizacao-proposta.service.ts`
 - `src/features/orcamentos/mappers.ts`
 - `src/features/orcamentos/orcamento-utils.ts`
 - `src/features/orcamentos/services/orcamentos.service.ts`

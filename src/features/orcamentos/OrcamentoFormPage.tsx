@@ -81,6 +81,11 @@ import { useGlobalChat } from "@/features/chat/context/GlobalChatContext";
 import { salvarBriefingArtes } from "@/features/pedidos/services/pedidos-artes.service";
 import { useOrcamentoDetail } from "@/features/orcamentos/hooks/useOrcamentoDetail";
 import { composeStatusEmArte } from "@/features/orcamentos/mappers";
+import {
+  TITULO_DO_ESTADO_DE_EDICAO,
+  estadoDeEdicaoDaProposta,
+  tomDoStatusDoCabecalho
+} from "@/features/orcamentos/lib/estado-de-edicao";
 import { buscarStatusArteDaProposta, classeDoStatusArte } from "@/features/orcamentos/services/status-arte-lista.service";
 import { solicitarCotacaoSedex, solicitarCotacaoAzulCargo, solicitarCotacaoTransportadoras, solicitarCotacaoVeppo } from "@/features/orcamentos/services/frete.service";
 import { resolverTransportadoraParceira } from "@/features/orcamentos/lib/transportadoras-parceiras";
@@ -5352,6 +5357,20 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     !podeEditarPeloFaturado &&
     (Boolean(form.isAvulso) || !temProdutosAtivos);
 
+  // O estado do aviso amarelo, pela função única que a visualização também usa
+  // (lib/estado-de-edicao). As entradas são as variáveis de sempre deste
+  // formulário; a cadeia de decisão é a mesma, na mesma ordem.
+  const estadoDeEdicao = estadoDeEdicaoDaProposta({
+    hasActiveCobranca,
+    bloqueioAvulsaPaga,
+    podeEditarPeloFaturado,
+    canEditarFaturado,
+    canEditarPropostaPaga,
+    faturadoElegivel: elegibilidadeFaturado.elegivel,
+    motivoFaturado: elegibilidadeFaturado.elegivel ? null : elegibilidadeFaturado.motivo,
+    isPropostaPaga: isPropostaPagaAtual
+  });
+
   // Desbloqueado quando usuário tem permissão E há cobrança ativa E não há pendência aberta
   const isFormBloqueadoPorCobranca =
     (hasActiveCobranca && !canEditarPropostaPaga && !podeEditarPeloFaturado) ||
@@ -5378,11 +5397,8 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
    * AGUARDANDO e LIBERADO.
    */
   const statusExibido = composeStatusEmArte(form.status, form.emArte);
-  const statusTone =
-    form.status === "NOVO" ? "info"
-    : form.status === "APROVADO" ? "success"
-    : form.status === "AGUARDANDO" ? "warning"
-    : "neutral";
+  // O tom vem da mesma função que a visualização usa (lib/estado-de-edicao).
+  const statusTone = tomDoStatusDoCabecalho(form.status);
 
   /**
    * Status da arte no cabecalho, ao lado do status da proposta.
@@ -5491,8 +5507,8 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
 
       {/* Só considera cobrança CANCELADA como "sem cobrança" — nada aparece p/ proposta nova
           ou cuja única cobrança foi cancelada (ex.: teste/PIX cancelado). */}
-      {hasActiveCobranca && (
-        <div className={`rounded-3xl border p-4 shadow-sm flex items-start gap-3 ${
+      {estadoDeEdicao !== "SEM_COBRANCA_ATIVA" && (
+        <div data-estado-de-edicao={estadoDeEdicao} className={`rounded-3xl border p-4 shadow-sm flex items-start gap-3 ${
           canEditarPropostaPaga
             ? "border-amber-300 bg-amber-50 dark:border-amber-600/50 dark:bg-amber-900/30"
             : "border-amber-200 bg-amber-50"
@@ -5501,17 +5517,17 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
             canEditarPropostaPaga ? "text-amber-600 dark:text-amber-400" : "text-amber-600"
           }`} />
           <div>
-            {bloqueioAvulsaPaga ? (
+            {estadoDeEdicao === "AVULSA_PAGA_BLOQUEADA" ? (
               <>
-                <p className="text-sm font-bold text-amber-900 dark:text-amber-200">Proposta avulsa já paga não pode ser alterada</p>
+                <p className="text-sm font-bold text-amber-900 dark:text-amber-200">{TITULO_DO_ESTADO_DE_EDICAO.AVULSA_PAGA_BLOQUEADA}</p>
                 <p className="text-sm text-amber-700 dark:text-amber-300/80 mt-1">
                   Esta proposta {form.isAvulso ? "é avulsa" : "não possui produtos cadastrados"} e já possui pagamento confirmado.
                   A edição está bloqueada para todos os perfis (inclusive administrador). Visualização, Histórico e Pagamentos permanecem disponíveis.
                 </p>
               </>
-            ) : podeEditarPeloFaturado ? (
+            ) : estadoDeEdicao === "FATURADO_A_VENCER_LIBERADA" ? (
               <>
-                <p className="text-sm font-bold text-amber-900 dark:text-amber-200">Faturado a Vencer — Alteração Liberada</p>
+                <p className="text-sm font-bold text-amber-900 dark:text-amber-200">{TITULO_DO_ESTADO_DE_EDICAO.FATURADO_A_VENCER_LIBERADA}</p>
                 <p className="text-sm text-amber-700 dark:text-amber-300/80 mt-1">
                   O valor ainda não foi recebido, então o pedido pode ser alterado e a cobrança acompanha o novo total.
                   {elegibilidadeFaturado.elegivel && elegibilidadeFaturado.titulosParaExcluir.length > 0
@@ -5519,18 +5535,18 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                     : " Ao salvar, a cobrança volta para Registros de Recebíveis para ser registrada com o valor novo."}
                 </p>
               </>
-            ) : canEditarFaturado && !canEditarPropostaPaga && !elegibilidadeFaturado.elegivel && elegibilidadeFaturado.motivo !== "SEM_FATURADO" ? (
+            ) : estadoDeEdicao === "FATURADO_BLOQUEADA" && !elegibilidadeFaturado.elegivel ? (
               <>
                 {/* Financeiro tem a permissão do faturado, mas esta proposta
                     específica ficou de fora. Dizer o motivo evita o "por que
                     não me deixa editar?" — que é o caso mais comum, já que na
                     maioria das faturadas o título já foi quitado. */}
-                <p className="text-sm font-bold text-amber-900 dark:text-amber-200">Alteração Bloqueada</p>
+                <p className="text-sm font-bold text-amber-900 dark:text-amber-200">{TITULO_DO_ESTADO_DE_EDICAO.FATURADO_BLOQUEADA}</p>
                 <p className="text-sm text-amber-700 dark:text-amber-300/80 mt-1">{elegibilidadeFaturado.mensagem}</p>
               </>
-            ) : canEditarPropostaPaga && isPropostaPagaAtual ? (
+            ) : estadoDeEdicao === "EDICAO_AUTORIZADA_PAGA" ? (
               <>
-                <p className="text-sm font-bold text-amber-900 dark:text-amber-200">Modo Edição Autorizada — Proposta com Pagamento Confirmado</p>
+                <p className="text-sm font-bold text-amber-900 dark:text-amber-200">{TITULO_DO_ESTADO_DE_EDICAO.EDICAO_AUTORIZADA_PAGA}</p>
                 {/*
                   O texto anterior prometia que QUALQUER diferença exigiria
                   escolher uma ação antes de concluir. Isso só vale para
@@ -5551,16 +5567,16 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                   complementar ou abono.
                 </p>
               </>
-            ) : canEditarPropostaPaga && !isPropostaPagaAtual ? (
+            ) : estadoDeEdicao === "COBRANCA_ATIVA_NAO_CONFIRMADA" ? (
               <>
-                <p className="text-sm font-bold text-amber-900 dark:text-amber-200">Cobrança Ativa — Pagamento Ainda Não Confirmado</p>
+                <p className="text-sm font-bold text-amber-900 dark:text-amber-200">{TITULO_DO_ESTADO_DE_EDICAO.COBRANCA_ATIVA_NAO_CONFIRMADA}</p>
                 <p className="text-sm text-amber-700 dark:text-amber-300/80 mt-1">
                   Esta proposta possui uma cobrança em aberto que ainda não foi paga/confirmada. Revise antes de alterar valores para não gerar inconsistência com a cobrança emitida.
                 </p>
               </>
             ) : (
               <>
-                <p className="text-sm font-bold text-amber-800">Atenção: Cobranças Geradas</p>
+                <p className="text-sm font-bold text-amber-800">{TITULO_DO_ESTADO_DE_EDICAO.COBRANCAS_GERADAS}</p>
                 <p className="text-sm text-amber-700 mt-1">
                   Esta proposta possui cobranças geradas. Revise os pagamentos antes de reenviar ou alterar valores finais.
                 </p>
