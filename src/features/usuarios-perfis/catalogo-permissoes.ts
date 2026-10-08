@@ -85,7 +85,7 @@ export const CATALOGO_PERMISSOES: Record<string, PermissionDefinition[]> = {
     // Usada desde 13/08/2026 (rota editar-paga e tela do orcamento); entrou no catalogo em 01/10/2026.
     { key: "propostas.editar_faturado",  label: "Editar Proposta com Faturado a Vencer", desc: "Permite alterar proposta cuja cobranca e faturada a vencer e ainda nao recebida; ajusta o valor da cobranca. Nao abre proposta paga de verdade.", critica: true  },
     { key: "propostas.cancelar_cobranca_nao_paga", label: "Cancelar Cobrança Não Paga", desc: "Permite cancelar cobrança emitida e comprovadamente NÃO paga da própria proposta, para corrigir o orçamento e gerar outra. Não alcança cobrança paga, confirmada, conciliada ou vinculada à Conta Corrente.", critica: true },
-    { key: "propostas.complementar",     label: "Criar Pedido Complementar",       desc: "Permite criar, a partir de proposta paga e nao expedida, um pedido complementar do mesmo evento, com frete cobrado pela diferenca do peso somado.", critica: true },
+    { key: "propostas.complementar",     label: "Criar Complemento",               desc: "Permite criar, a partir de proposta paga e nao expedida, um pedido complementar do mesmo evento, com frete cobrado pela diferenca do peso somado.", critica: true },
     { key: "propostas.encerrar_teste",   label: "Encerrar pedido de teste",        desc: "Permite encerrar e reabrir pedido de TESTE (tira e devolve o pedido das listas operacionais). Nenhum perfil a recebe: so o Super Administrador, pelo curinga.", critica: true },
     // Permissões V1 mantidas para compatibilidade retroativa durante migração
     { key: "propostas.alterar_vendedor", label: "Alterar Vendedor",    desc: "Sera substituida por propostas.edit_vendedor na Fase 4.",     critica: true  },

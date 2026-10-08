@@ -1654,7 +1654,7 @@ Ela volta a aparecer nas listas operacionais.`
       item.isAvulsoRaw !== true &&
       item.idIntPedidoPrincipal == null &&
       STATUS_ACEITAM_PEDIDO_COMPLEMENTAR.includes(String(item.statusInterno || "").trim().toUpperCase())
-        ? [{ label: "Criar pedido complementar", onClick: () => setSelectedPropostaForComplemento(item) }]
+        ? [{ label: "Criar Complemento", onClick: () => setSelectedPropostaForComplemento(item) }]
         : []),
       {
         label: "Copiar proposta informal",

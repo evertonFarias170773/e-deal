@@ -19,7 +19,7 @@ interface CriarComplementoModalProps {
  * banco (com os numeros, quando ha) vai logo abaixo, sem o codigo na frente.
  */
 const TITULO_POR_CODIGO: Record<string, string> = {
-  PERM: "Sem permissão para criar pedido complementar",
+  PERM: "Sem permissão para Criar Complemento",
   COMPL_ORIGEM: "Proposta não encontrada",
   COMPL_AVULSA: "Proposta avulsa não aceita complemento",
   COMPL_ENCADEADO: "Esta proposta já é um complemento",
@@ -99,7 +99,7 @@ export function CriarComplementoModal({ isOpen, onClose, idInt, onSuccess }: Cri
 
         <div className="flex items-start justify-between border-b border-slate-100 pb-4">
           <div>
-            <h2 className="text-xl font-semibold text-slate-950">Criar pedido complementar</h2>
+            <h2 className="text-xl font-semibold text-slate-950">Criar Complemento</h2>
             <p className="text-sm text-slate-500 mt-1">A partir da proposta #{idInt}, mesmo evento.</p>
           </div>
           <button type="button" onClick={onClose} disabled={isSubmitting} className="rounded-2xl bg-slate-100 p-2 text-slate-700 hover:bg-slate-200 transition disabled:opacity-50">
@@ -155,7 +155,7 @@ export function CriarComplementoModal({ isOpen, onClose, idInt, onSuccess }: Cri
             disabled={isSubmitting}
             className="rounded-2xl bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50"
           >
-            {isSubmitting ? "Criando..." : "Criar pedido complementar"}
+            {isSubmitting ? "Criando..." : "Criar Complemento"}
           </button>
         </div>
       </div>

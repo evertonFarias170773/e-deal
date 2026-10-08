@@ -4386,7 +4386,7 @@ export async function duplicarProposta(
  * Status em que a proposta ainda NAO saiu da casa — a mesma lista do gate 6 da
  * funcao `criar_pedido_complementar` (migration 20260914_criar_pedido_complementar.sql).
  *
- * Aqui ela so decide se o item "Criar pedido complementar" aparece no menu da
+ * Aqui ela so decide se o item "Criar Complemento" aparece no menu da
  * lista. Quem tranca e o banco: pago integralmente, sem `data_despacho`, sem
  * complemento aberto e a permissao sao conferidos la, sob `FOR UPDATE`.
  * Mudou a lista na funcao, muda aqui.
@@ -4436,7 +4436,7 @@ export async function criarPedidoComplementar(
 
     if (error) {
       console.error("[OrcamentosService] Erro ao criar pedido complementar:", error);
-      const bruto = error.message || "Erro desconhecido ao criar pedido complementar.";
+      const bruto = error.message || "Erro desconhecido ao criar o complemento.";
       const casamento = bruto.match(/^([A-Z_]+):\s*([\s\S]*)$/);
       return casamento
         ? { success: false, codigo: casamento[1], errorMessage: casamento[2] }
@@ -4445,7 +4445,7 @@ export async function criarPedidoComplementar(
 
     const novoIdInt = Number(data);
     if (!novoIdInt || isNaN(novoIdInt)) {
-      return { success: false, errorMessage: "Retorno da criação do pedido complementar inválido." };
+      return { success: false, errorMessage: "Retorno da criação do complemento inválido." };
     }
 
     await Promise.allSettled([
