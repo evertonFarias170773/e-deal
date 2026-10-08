@@ -357,7 +357,8 @@ Nos dois casos a confirmação lista as notas autorizadas que o pedido já tem. 
 - Nota de remessa e nota de pedido pago por PIX, cartão, crédito ou boleto à vista não oferecem **Lançar no Contas a Receber**.
 - A empresa emitente é uma de três: **INGRESSO IDEAL**, **BIRÔ IDEAL** e **E3 BRINDES**. Ela vem do pedido e pode ser trocada no bloco Emitente enquanto a nota ainda puder ser editada.
 - NFS-e (nota de serviço): sai pelo botão **NFS-e** da fila, só para pedido da **BIRÔ IDEAL**. Para as outras empresas o botão não aparece e o servidor recusa.
-- A NFS-e só é emitida em homologação por enquanto. Com a empresa marcada para produção, o envio é recusado.
+- Hoje a NFS-e pelo Vibe sai em **HOMOLOGAÇÃO**: é nota de teste, sem valor fiscal (o DANFSe traz o aviso "sem validade jurídica").
+- A emissão em produção existe no sistema só para a **BIRÔ IDEAL** e ainda não foi ativada: a empresa continua em homologação. Enquanto a janela mostrar **HOMOLOGAÇÃO**, a nota não vale, e a NFS-e de verdade continua sendo emitida pelo portal nacional (www.nfse.gov.br).
 - Um pedido tem uma NFS-e viva por vez:
   - com nota autorizada, a janela só mostra a nota e não cria outra;
   - com nota em análise, é preciso esperar o desfecho;
@@ -385,7 +386,7 @@ Nos dois casos a confirmação lista as notas autorizadas que o pedido já tem. 
 - O erro fica na janela até você clicar em **Dispensar**, ou até a nota ser autorizada. Fechar a janela não o apaga.
 - Os alertas mostrados antes de emitir são informativos. Os marcados em vermelho apontam dado que a integração recusa: corrija o cadastro antes de enviar.
 - O número que identifica a nota de serviço é o **número da NFS-e**. A referência (NFS-pedido-sequência) é interna do Vibe.
-- NFS-e não conta como nota do pedido na fila: o pedido não sai da fila por causa dela.
+- Pedido com NFS-e **autorizada** sai da fila. A caixa **Mostrar também pedidos com NFS-e emitida** traz esses pedidos de volta. NFS-e em rascunho, em análise ou com erro mantém o pedido na fila. A nota de venda (NF-e) continua tirando o pedido da fila como antes, assim que sai do rascunho.
 - No **Histórico NFS-e (Serviços)** ficam a busca, os filtros por empresa, por status e por ambiente, **Abrir PDF**, **Abrir XML** e **Copiar Link**.
 - Cada nota de serviço do histórico mostra o selo do ambiente: **HOMOLOGAÇÃO** ou **PRODUÇÃO**. Nota sem ambiente gravado aparece como HOMOLOGAÇÃO.
 - A NFS-e não se cancela pelo Vibe. O item **Cancelar NFS-e** aparece apagado na nota autorizada; o cancelamento é pelo portal nacional (www.nfse.gov.br), avisando o fiscal.
@@ -487,7 +488,12 @@ Nos dois casos a confirmação lista as notas autorizadas que o pedido já tem. 
 | "A resposta não chegou e não foi possível conferir o estado da nota." | A conexão caiu e a releitura também falhou. | Feche a janela, abra de novo e confira o que aparece antes de repetir. |
 | "A leitura dos dados do pedido demorou demais." ou "Sem conexão com o servidor" | Os dados do pedido não carregaram. | Clique em **Ler de novo**. |
 | "Outra emissão desta mesma nota já está em andamento." | Duas pessoas clicaram em emitir a mesma nota. | Aguarde e clique em **Consultar agora**. |
-| "A empresa ... está marcada para emitir NFS-e em produção, mas a integração de NFS-e ainda transmite só para homologação." | O ambiente da empresa foi mudado para produção. | Avise o administrador. A emissão em produção ainda não está liberada. |
+| "Sem permissão para emitir NFS-e (fiscal.emit_nfse)." | Seu perfil não tem a permissão **Emitir NFS-e (Serviço)**. | Peça a emissão a quem tem a permissão, ou peça a permissão ao administrador. |
+| "A empresa ... está sem o ambiente de NFS-e definido ..." | O cadastro da empresa emitente está sem o ambiente de NFS-e. | Avise o administrador: o ambiente se define em Cadastros › Empresas. Depois emita de novo. |
+| "Esta nota de serviço já foi emitida (número N). Nova emissão bloqueada." | A nota já tem número de NFS-e. | Não reenvie. Use a nota existente; clique em **Consultar agora** para atualizar o que a janela mostra. |
+| "Esta NFS-e não pode ser enviada de novo: ..." | O retorno guardado da integração mostra que a prefeitura já processou esta nota. | Clique em **Consultar agora** para trazer o desfecho. Só crie outra nota se esta não tiver sido autorizada. |
+| "Emissão não permitida: a nota está em ..." | A nota já foi enviada ou está em um status que não aceita envio. | Clique em **Consultar agora** e aguarde o desfecho. |
+| "Não foi possível contatar a integração fiscal. A nota segue pronta para envio." | O Vibe não conseguiu falar com a integração fiscal. | Clique em **Consultar agora**; se a nota continuar como rascunho, clique em **Emitir NFS-e** de novo. Se repetir, avise o suporte. |
 | Faixa vermelha com a mensagem da prefeitura ou do envio | A nota foi recusada ou o envio falhou. | Leia a mensagem. Em erro de envio, corrija e clique em **Reenviar NFS-e**; em nota recusada pela prefeitura, abra a janela de novo e crie outro rascunho. |
 | "A integração fiscal não respondeu à consulta. O status mostrado é o último gravado." | A consulta não chegou à integração. | Tente **Consultar agora** em alguns minutos. |
 | "A nota continua em análise. Consulte depois." | Passaram 5 minutos sem resposta da prefeitura. | Clique em **Consultar agora** ou feche e volte pelo botão **NFS-e em análise**. |
@@ -558,3 +564,5 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/constants/navigation.ts`
 - `src/app/api/fiscal/carta-correcao/route.ts`
 - `src/lib/fiscal/carta-correcao.ts`
+
+> **Mudança desta revisão:** 08/10/2026 — texto da NFS-e alinhado ao que está publicado: pedido com NFS-e autorizada sai da fila, a emissão segue em homologação (produção só existe para a BIRÔ IDEAL e não foi ativada) e a tabela de erros da janela traz as recusas atuais. Só documentação, sem mudança de código (regra da fila: commit `fa1aa0f`).

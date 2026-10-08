@@ -146,7 +146,7 @@ Depois da liberação o campo **Valor cobrado (R$)** fica só para leitura: o va
 
 **O sintoma.** Ao gerar a cobrança do complementar aparece a janela "O frete precisa ser atualizado", com os botões **Voltar** e **Recalcular frete**. Na aba **Fretes**, ao clicar em **Aplicar** no frete complementar, aparece em vermelho que a opção escolhida não apareceu na cotação de agora. Um botão leva ao outro, e a cobrança não sai.
 
-**A causa.** As opções de **Motoboy**, **Transportadora São Miguel** e **VEPPO** tinham um identificador que mudava a cada cotação, então a aplicação não encontrava a opção escolhida. Corrigido em 08/10/2026, no commit `2387164`. Correios e Azul Cargo nunca foram afetados.
+**A causa.** As opções de **Motoboy**, **Transportadora São Miguel** e **VEPPO** tinham um identificador que mudava a cada cotação, então a aplicação não encontrava a opção escolhida. Corrigido em 08/10/2026. Correios e Azul Cargo nunca foram afetados.
 
 **O que fazer:**
 

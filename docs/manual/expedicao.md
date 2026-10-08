@@ -1,6 +1,6 @@
 # Expedição
 
-> **Última revisão:** 07/10/2026
+> **Última revisão:** 08/10/2026
 > **Caminho no menu:** Expedição (item direto do menu lateral, sem subitens; é o quarto, depois de Conferência, Pedidos e Clientes). Também se chega pela aba **Expedição** no topo do Kanban e da Fila de impressão da Produção.
 > **Endereço:** `/expedicao`
 
@@ -303,7 +303,7 @@ Os retornos possíveis são: Entregue volta para Em Trânsito (ou para A Retirar
 - A etiqueta e a prepostagem exigem os mesmos dados do despacho enquanto o pedido ainda não saiu. Imprimir etiqueta de um envio que ninguém terminou de declarar não é permitido.
 - **Salvar sem despachar** e **Salvar dados** não exigem os campos mínimos: servem para guardar ou corrigir.
 - Não dá para trocar o endereço de entrega nem a transportadora na Expedição. Os dois vêm da proposta. A modalidade também, quando já está definida; ela se corrige na aba Fretes da proposta ou em **Corrigir frete**.
-- Pedido CIF com transportadora escolhida (no orçamento ou em **Corrigir frete**) vai por transportadora, mesmo com frete cotado como SEDEX ou PAC: a **Forma de envio** mostra a transportadora, os botões de prepostagem dos Correios não aparecem e o sistema recusa gerar prepostagem. Isso não vale quando a transportadora escolhida é o próprio cadastro dos Correios, nem quando o frete foi cotado como motoboy. Tirar a transportadora em **Corrigir frete** volta o pedido ao serviço cotado.
+- Pedido CIF com transportadora escolhida (no orçamento ou em **Corrigir frete**) vai por transportadora, mesmo com frete cotado como SEDEX ou PAC: a **Forma de envio** mostra a transportadora, os botões de prepostagem dos Correios não aparecem e o sistema recusa gerar prepostagem. Isso não vale quando a transportadora escolhida é o próprio cadastro dos Correios, nem quando o frete foi cotado como motoboy. Tirar a transportadora em **Corrigir frete** volta o pedido ao serviço cotado. Na visualização do pedido (**Ver proposta**), esse frete aparece como **Transportadora: nome**.
 - Se o pedido já tem prepostagem dos Correios gerada e não cancelada, ele continua como Correios e a janela avisa: "Já há prepostagem dos Correios gerada; cancele-a para despachar por transportadora". Cancele a prepostagem e marque-a como cancelada para o pedido passar a ir pela transportadora.
 - Falta de nota autorizada não bloqueia o despacho, mas exige marcar a confirmação.
 - A trava de frete só vale em CIF. Quando o CEP de entrega ou o transporte são diferentes dos cotados, vale a última recotação feita para o CEP atual: até R$ 4,00 acima do frete da proposta só avisa; acima disso, ou sem recotação, o despacho e a prepostagem ficam bloqueados até a liberação de um administrador da Expedição.
@@ -430,3 +430,5 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/constants/navigation.ts`
 - `src/features/auth/usuarios.service.ts`
 - `src/features/usuarios-perfis/catalogo-permissoes.ts`
+
+> **Mudança desta revisão:** 08/10/2026 — acrescentado como o frete CIF com transportadora aparece na visualização do pedido (commit `4d7d52e`). A regra da Expedição é a de 07/10/2026 (commit `88eb4b0`).
