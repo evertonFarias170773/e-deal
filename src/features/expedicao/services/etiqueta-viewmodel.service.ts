@@ -4,7 +4,10 @@ import { idDestinatarioEtiquetaVigente, nomeDestinatarioVigente } from "../lib/d
 import { idEnderecoEntregaVigente } from "../lib/endereco-entrega";
 import { telefoneDestinatario } from "../lib/telefone-destinatario";
 import { cifPorTransportadora, normalizarTipoFrete } from "../lib/tipo-frete";
-import { nomeTransporteEfetivo } from "@/features/orcamentos/lib/modalidade-frete";
+import {
+  nomeTransporteEfetivo,
+  nomeTransportadoraCadastro as nomeDeCadastroDeTransportadora
+} from "@/features/orcamentos/lib/modalidade-frete";
 import type { ModalidadeFrete } from "../types";
 import { escolherNotaAutorizadaDoPedido, COLUNAS_NOTA_DO_PEDIDO } from "@/lib/fiscal/nota-do-pedido";
 import { resolverEmpresaRemetente } from "@/lib/correios/empresa-remetente";
@@ -258,7 +261,10 @@ export async function montarEtiquetaViewModel(
       .select("nome, fantasia")
       .eq("id_cliente", expConfirmado.id_transportadora_cliente)
       .maybeSingle();
-    nomeTransportadoraCadastro = String(transp?.fantasia || transp?.nome || "").trim();
+    nomeTransportadoraCadastro =
+      nomeDeCadastroDeTransportadora(
+        transp ? { id_cliente: Number(expConfirmado.id_transportadora_cliente), nome: transp.nome, fantasia: transp.fantasia } : null
+      ) ?? "";
   }
 
   /**
@@ -279,7 +285,10 @@ export async function montarEtiquetaViewModel(
       .select("nome, fantasia")
       .eq("id_cliente", proposta.id_transportadora_cliente)
       .maybeSingle();
-    nomeTransportadoraOrcamento = String(transpOrc?.fantasia || transpOrc?.nome || "").trim();
+    nomeTransportadoraOrcamento =
+      nomeDeCadastroDeTransportadora(
+        transpOrc ? { id_cliente: Number(proposta.id_transportadora_cliente), nome: transpOrc.nome, fantasia: transpOrc.fantasia } : null
+      ) ?? "";
   }
 
   /**

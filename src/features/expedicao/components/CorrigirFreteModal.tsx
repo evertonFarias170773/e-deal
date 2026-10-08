@@ -134,7 +134,7 @@ export function CorrigirFreteModal({
   }, []);
 
   const nomeExibicao = useCallback(
-    (t: Transportadora) => t.fantasia || t.nome || `#${t.id_cliente}`,
+    (t: Transportadora) => nomeTransportadoraCadastro(t) ?? `#${t.id_cliente}`,
     []
   );
 

@@ -12,6 +12,7 @@ import { resolverEmpresaRemetente } from "@/lib/correios/empresa-remetente";
 import { resolverPesoExpedicao } from "@/features/expedicao/lib/peso";
 import { telefoneDestinatario } from "@/features/expedicao/lib/telefone-destinatario";
 import { cifPorTransportadora, normalizarTipoFrete } from "@/features/expedicao/lib/tipo-frete";
+import { nomeTransportadoraCadastro } from "@/features/orcamentos/lib/modalidade-frete";
 import type { ModalidadeFrete } from "@/features/expedicao/types";
 
 export const runtime = "nodejs";
@@ -101,7 +102,10 @@ export async function POST(request: Request) {
       .select("nome, fantasia")
       .eq("id_cliente", idTransportadoraProposta)
       .maybeSingle();
-    nomeTransportadoraProposta = String(transp?.fantasia || transp?.nome || "").trim();
+    nomeTransportadoraProposta =
+      nomeTransportadoraCadastro(
+        transp ? { id_cliente: idTransportadoraProposta, nome: transp.nome, fantasia: transp.fantasia } : null
+      ) ?? "";
   }
   if (
     cifPorTransportadora({

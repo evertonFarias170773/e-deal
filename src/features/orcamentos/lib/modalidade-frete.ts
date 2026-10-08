@@ -24,6 +24,7 @@
 import type { ModalidadeFrete } from "@/features/expedicao/types";
 import { LABEL_MODALIDADE } from "@/features/expedicao/types";
 import type { PropostaFrete } from "../types";
+import { ehCadastroCorreios, NOME_EXIBIDO_CORREIOS } from "./transportadoras-parceiras";
 
 export type { ModalidadeFrete };
 export { LABEL_MODALIDADE };
@@ -206,11 +207,18 @@ export function nomeTransporteEfetivo(
  * `categoria = TRANSPORTADORA`). Fantasia primeiro, razão social depois, e o id
  * como último recurso — mesma ordem que a aba Fretes e o DespacharModal já usam,
  * para o vendedor e o expedidor lerem exatamente o mesmo texto.
+ *
+ * EXCEÇÃO DOS CORREIOS (08/10/2026). Os dois cadastros dos Correios aparecem
+ * como **Correios**, e nunca pela fantasia: a do cadastro novo é
+ * "SUPERINTENDENCIA ESTADUAL RS", que ninguém da operação reconhece, e a do
+ * antigo é "CORREIOS SEDE". É só EXIBIÇÃO — a NF-e continua levando a razão
+ * social do cadastro, montada no banco, sem passar por aqui.
  */
 export function nomeTransportadoraCadastro(
   cadastro: { id_cliente: number; nome?: string | null; fantasia?: string | null } | null | undefined
 ): string | null {
   if (!cadastro) return null;
+  if (ehCadastroCorreios(cadastro.id_cliente)) return NOME_EXIBIDO_CORREIOS;
   return cadastro.fantasia || cadastro.nome || `#${cadastro.id_cliente}`;
 }
 

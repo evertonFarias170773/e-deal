@@ -63,6 +63,7 @@
  */
 
 import {
+  ehCadastroCorreios,
   resolverTransportadoraParceira,
   TRANSPORTADORAS_PARCEIRAS
 } from "./transportadoras-parceiras";
@@ -358,9 +359,10 @@ export function categoriaDoServico(
   // ── 2. Parceira reconhecida ──────────────────────────────────────────────
   const parceira = resolverTransportadoraParceira({ transportadora, servico });
   if (parceira !== null) {
+    // Correios por `ehCadastroCorreios`, e não por um id só: o cadastro antigo
+    // (663) segue nos pedidos já gravados e continua sendo Correios.
+    if (ehCadastroCorreios(parceira)) return "CORREIOS";
     switch (parceira) {
-      case TRANSPORTADORAS_PARCEIRAS.CORREIOS:
-        return "CORREIOS";
       case TRANSPORTADORAS_PARCEIRAS.MOTOBOY:
         return "MOTOBOY";
       case TRANSPORTADORAS_PARCEIRAS.VEPPO:

@@ -49,8 +49,14 @@
 
 /** Cadastros em `clientes` das parceiras. Ponto único — não replicar ids. */
 export const TRANSPORTADORAS_PARCEIRAS = {
-  /** EMPRESA BRASILEIRA DE CORREIOS E TELEGRAFOS */
-  CORREIOS: 663,
+  /**
+   * EMPRESA BRASILEIRA DE CORREIOS E TELEGRAFOS — Superintendência Estadual RS
+   * (CNPJ 34028316002661, com inscrição estadual). É o cadastro que o orçamento
+   * passa a gravar em `propostas.id_transportadora_cliente` desde 08/10/2026,
+   * por decisão do dono. O cadastro antigo (663, a matriz em Brasília, sem
+   * inscrição estadual) continua reconhecido como Correios — ver `IDS_CORREIOS`.
+   */
+  CORREIOS: 39975,
   /** Loja parceira da Azul, cadastrada como SVT PROVEDOR LOGISTICO LTDA */
   AZUL: 808,
   /** B M EXPRESS SERVICOS DE TELE ENTREGA (motoboy) */
@@ -62,6 +68,30 @@ export const TRANSPORTADORAS_PARCEIRAS = {
 } as const;
 
 export type TransportadoraParceira = keyof typeof TRANSPORTADORAS_PARCEIRAS;
+
+/**
+ * TODOS os cadastros que SÃO os Correios, e a resposta única para
+ * "este cadastro é dos Correios?".
+ *
+ * POR QUE DOIS IDS (08/10/2026)
+ *   O orçamento passou a gravar o 39975, mas 63 propostas e 26 expedições já
+ *   gravadas apontam para o 663, e elas não são alteradas. Enquanto houver
+ *   pedido com o id antigo, os dois precisam ser lidos como Correios — senão o
+ *   envio viraria "transportadora" e a prepostagem sumiria do painel.
+ *
+ *   `TRANSPORTADORAS_PARCEIRAS.CORREIOS` responde "qual id gravar"; esta lista
+ *   responde "qual id reconhecer". Os números ficam SÓ aqui.
+ */
+export const IDS_CORREIOS: readonly number[] = [TRANSPORTADORAS_PARCEIRAS.CORREIOS, 663];
+
+/** Nome dos Correios na tela. A fantasia do cadastro não serve: ver `nomeTransportadoraCadastro`. */
+export const NOME_EXIBIDO_CORREIOS = "Correios";
+
+/** O cadastro vinculado é dos Correios? Vale para o id novo e para o antigo. */
+export function ehCadastroCorreios(id: number | null | undefined): boolean {
+  if (id === null || id === undefined || !Number.isFinite(Number(id))) return false;
+  return IDS_CORREIOS.includes(Number(id));
+}
 
 /**
  * Cadastros que NÃO devem constar como transportador, e para quem eles apontam.

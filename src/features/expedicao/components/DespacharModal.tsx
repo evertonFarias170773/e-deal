@@ -26,6 +26,7 @@ import type { EtiquetaViewModel } from "../services/etiqueta-viewmodel.service";
 import { ConferenciaDespacho } from "./ConferenciaDespacho";
 import { ConfirmarAcaoModal } from "./ConfirmarAcaoModal";
 import { camposMinimosDespacho, frasearFaltantes } from "../lib/campos-minimos-despacho";
+import { nomeTransportadoraCadastro } from "@/features/orcamentos/lib/modalidade-frete";
 import { divergenciaFreteDoDespacho, formatarCep } from "../lib/divergencia-frete-despacho";
 import {
   recotarFrete,
@@ -522,7 +523,7 @@ export function DespacharModal({
    * exigir campo agora impediria corrigir o que existe.
    */
   const nomeExibicao = useMemo(
-    () => (t: Transportadora) => t.fantasia || t.nome || `#${t.id_cliente}`,
+    () => (t: Transportadora) => nomeTransportadoraCadastro(t) ?? `#${t.id_cliente}`,
     []
   );
 
@@ -834,7 +835,7 @@ export function DespacharModal({
   const nomeTransportadoraOrcamento = useMemo(() => {
     if (pedido.idTransportadoraOrcamento === null) return null;
     const t = transportadoras.find((x) => x.id_cliente === pedido.idTransportadoraOrcamento);
-    return t ? t.fantasia || t.nome || `#${t.id_cliente}` : `#${pedido.idTransportadoraOrcamento}`;
+    return t ? (nomeTransportadoraCadastro(t) ?? `#${t.id_cliente}`) : `#${pedido.idTransportadoraOrcamento}`;
   }, [pedido.idTransportadoraOrcamento, transportadoras]);
 
   const modalidadeDivergente =
@@ -858,7 +859,7 @@ export function DespacharModal({
       // ficaria mostrando o texto da cotação, que pode dizer outra coisa.
       if (!exp?.transportadoraNome && idTransportadoraCliente !== null) {
         const t = transps.find((x) => x.id_cliente === idTransportadoraCliente);
-        if (t) setTransportadoraNome(t.fantasia || t.nome || `#${t.id_cliente}`);
+        if (t) setTransportadoraNome(nomeTransportadoraCadastro(t) ?? `#${t.id_cliente}`);
       }
     });
     void correiosStatus().then((s) => {

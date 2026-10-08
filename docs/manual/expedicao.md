@@ -82,7 +82,7 @@ Os itens aparecem nesta ordem, cada um só quando se aplica.
 | **Confirmo: este pedido deixa de ir pelos Correios.** | Caixa de marcar no aviso amarelo, em pedido FOB que estava definido para os Correios | Troca o transporte para transportadora |
 | **Recotar frete** | Bloco "Recotar frete", em pedido CIF Na Expedição | Cota de novo e registra o resultado. Não altera a proposta |
 | **Aplicar** | Ao lado de cada opção recotada | Grava o frete novo na proposta. Fica apagado sem liberação ou quando a opção encarece |
-| **Gerar prepostagem SEDEX** | Abaixo do rastreio, em envio CIF pelos Correios. Não aparece quando o pedido tem transportadora escolhida que não é os Correios | Cria a prepostagem SEDEX e preenche o rastreio |
+| **Gerar prepostagem SEDEX** | Abaixo do rastreio, em envio CIF pelos Correios. Não aparece quando o pedido tem transportadora escolhida que não é os Correios. Os dois cadastros dos Correios (o atual, da Superintendência Estadual RS, e o anterior, da sede) contam como Correios e mantêm o botão | Cria a prepostagem SEDEX e preenche o rastreio |
 | **PAC** | Ao lado do botão acima | Cria a prepostagem PAC |
 | **Gerar SEDEX** / **Gerar PAC** | Confirmação "Gerar outra prepostagem?" | Gera outra prepostagem em pedido que já tinha uma |
 | **Gerar etiqueta 10x15** | Botão azul largo, abaixo das observações | Salva o formulário e abre a etiqueta de envio |
@@ -180,6 +180,12 @@ O pedido também chega à Expedição pela Revisão do boletim da produção.
    - **Etiqueta Correios (oficial)** — Correios com prepostagem gerada.
 3. O sistema salva o que está na tela e abre o PDF.
 4. Para reimprimir depois, use **Editar dados de expedição** no menu do pedido e clique no mesmo botão.
+
+### Como a transportadora aparece
+
+Pedido com frete dos Correios mostra **Correios** na lista, no card da visão por transportadora, no modal **Despachar pedido** e na etiqueta — nunca a fantasia do cadastro. Vale para os dois cadastros dos Correios: o atual, da Superintendência Estadual RS, e o anterior, da sede. As demais transportadoras continuam aparecendo pelo nome do cadastro.
+
+Em CIF com transportadora escolhida que **não** é os Correios, o envio continua virando **Transportadora: nome**, sem prepostagem, como antes.
 
 ### Gerar a prepostagem dos Correios
 
@@ -431,4 +437,7 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/features/auth/usuarios.service.ts`
 - `src/features/usuarios-perfis/catalogo-permissoes.ts`
 
-> **Mudança desta revisão:** 08/10/2026 — acrescentado como o frete CIF com transportadora aparece na visualização do pedido (commit `4d7d52e`). A regra da Expedição é a de 07/10/2026 (commit `88eb4b0`).
+> **Mudanças de 08/10/2026:**
+>
+> - acrescentado como o frete CIF com transportadora aparece na visualização do pedido (commit `4d7d52e`); a regra da Expedição é a de 07/10/2026 (commit `88eb4b0`);
+> - o pedido novo com frete dos Correios aponta para o cadastro da Superintendência Estadual RS dos Correios, os dois cadastros dos Correios mantêm a prepostagem, e a transportadora aparece como **Correios** em vez da fantasia do cadastro.

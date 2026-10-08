@@ -157,7 +157,7 @@ O detalhe é a tela só de leitura, aberta por **Ver proposta**. Ele mostra o me
 3. **Frete escolhido:** o frete que o pedido tem de fato.
    - **Retira no balcão**, em pedido de retirada.
    - **Cliente contrata: nome da transportadora** (ou **Motoboy**), em FOB, com R$ 0,00.
-   - **Transportadora: nome**, em CIF com transportadora definida que não é os Correios, ou depois que a Expedição despachou por transportadora.
+   - **Transportadora: nome**, em CIF com transportadora definida que não é os Correios, ou depois que a Expedição despachou por transportadora. Quando a transportadora é os Correios, o nome exibido é **Correios**, e o envio continua mostrando o serviço cotado (SEDEX, PAC).
    - **Motoboy**, em CIF por motoboy.
    - O serviço cotado (por exemplo "Correios SEDEX - 1 dia útil"), nos demais casos de CIF.
    - **Herdado do pedido #N: modalidade**, em pedido complementar.
@@ -401,4 +401,7 @@ O aviso some quando você clica em **Entendi** ou quando a cópia ganha cobranç
 - `src/components/common/ActionsMenu.tsx`
 - `src/constants/navigation.ts`
 
-> **Mudança desta revisão:** 08/10/2026 — o identificador das opções de Motoboy, Transportadora São Miguel e VEPPO deixou de mudar a cada cotação, e por isso o frete complementar desses transportes volta a ser aplicado (commit `2387164`).
+> **Mudanças de 08/10/2026:**
+>
+> - o identificador das opções de Motoboy, Transportadora São Miguel e VEPPO deixou de mudar a cada cotação, e por isso o frete complementar desses transportes volta a ser aplicado (commit `2387164`);
+> - o pedido novo com frete dos Correios passa a apontar para o cadastro da Superintendência Estadual RS dos Correios, e a transportadora aparece como **Correios** em vez da fantasia do cadastro.

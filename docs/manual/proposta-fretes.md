@@ -197,6 +197,8 @@ Repetir **Aplicar** não duplica: a segunda tentativa devolve o mesmo frete comp
 - A lista **Corrigir a transportadora (admin)** troca a transportadora mesmo com o pedido já despachado. Ela mexe só em quem transporta.
 - O campo **Frete R$** não aceita valor em FOB nem em retirada, porque nessas modalidades o cliente não paga frete à empresa.
 - O valor negociado é recusado quando a proposta tem cobrança faturada a vencer, quando tem cobrança enviada ao cliente e ainda não paga (cancele a cobrança antes, na aba **Pagamentos**), quando é avulsa já paga, quando é pedido complementar, e quando o valor novo deixaria crédito a favor do cliente em proposta que não estava integralmente paga.
+- Escolher um card dos Correios (SEDEX ou PAC) vincula ao pedido o cadastro dos Correios, que desde 08/10/2026 é o da **Superintendência Estadual RS** (o anterior era o da sede em Brasília). É esse cadastro que vai para a nota fiscal como transportador. Pedido antigo continua com o cadastro anterior, e os dois seguem valendo como Correios no sistema.
+- Na tela, os dois cadastros dos Correios aparecem como **Correios**, e não pela fantasia do cadastro. As outras transportadoras continuam aparecendo pelo nome de sempre.
 - Em pedido complementar, a modalidade e a transportadora vêm do pedido principal e ficam travadas. Não há cards nem **Atualizar fretes**.
 - Pedido complementar fora de CIF não cobra frete: a tela mostra "... herdado do pedido #... — sem frete a cobrar neste pedido."
 - O frete complementar é só a diferença entre a cotação do peso somado e o frete que o pedido principal já cobra. Se o somado sair mais barato, este pedido cobra R$ 0,00 e nada é creditado. O pedido principal não é alterado.
@@ -275,5 +277,9 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/app/api/propostas/transportadora/route.ts`
 - `src/app/api/orcamentos/complementar/cotar-frete/route.ts`
 - `src/app/api/orcamentos/complementar/aplicar-frete/route.ts`
+- `src/features/orcamentos/lib/transportadoras-parceiras.ts`
 
-> **Mudança desta revisão:** 08/10/2026 — o identificador das opções de Motoboy, Transportadora São Miguel e VEPPO deixou de mudar a cada cotação, e por isso o frete complementar desses transportes volta a ser aplicado (commit `2387164`).
+> **Mudanças de 08/10/2026:**
+>
+> - o identificador das opções de Motoboy, Transportadora São Miguel e VEPPO deixou de mudar a cada cotação, e por isso o frete complementar desses transportes volta a ser aplicado (commit `2387164`);
+> - o pedido novo com frete dos Correios passa a apontar para o cadastro da Superintendência Estadual RS dos Correios, e a transportadora aparece como **Correios** em vez da fantasia do cadastro.

@@ -1,3 +1,4 @@
+import { ehCadastroCorreios } from "@/features/orcamentos/lib/transportadoras-parceiras";
 import type { ModalidadeFrete, PedidoExpedicao, TipoFreteNormalizado } from "../types";
 
 /** Ordem de exibição no select de filtro da tela. */
@@ -203,12 +204,22 @@ export function correiosResiduoDeCotacaoFob(p: PedidoExpedicao): boolean {
 /**
  * O cadastro vinculado como "transportadora" é o dos próprios Correios?
  *
- * Existe cadastro de transportadora que É os Correios ("CORREIOS SEDE"): em
- * 07/10/2026 seis pedidos CIF em produção tinham esse vínculo com cotação
- * SEDEX. Para eles a transportadora declarada não muda nada — o envio é dos
- * Correios mesmo.
+ * Existe cadastro de transportadora que É os Correios: em 07/10/2026 seis
+ * pedidos CIF em produção tinham esse vínculo com cotação SEDEX. Para eles a
+ * transportadora declarada não muda nada — o envio é dos Correios mesmo.
+ *
+ * O ID VEM PRIMEIRO (08/10/2026). O cadastro novo (39975) tem fantasia
+ * "SUPERINTENDENCIA ESTADUAL RS", que não contém a palavra "Correios": decidir
+ * só pelo nome faria todo SEDEX com ele virar "transportadora" e sumir com a
+ * prepostagem. `ehCadastroCorreios` conhece os dois cadastros. O nome continua
+ * valendo como fallback para quem não tem id — texto digitado no despacho,
+ * cotação antiga, cadastro fora da lista.
  */
-export function transportadoraEhOsCorreios(nome: string | null | undefined): boolean {
+export function transportadoraEhOsCorreios(
+  id: number | null | undefined,
+  nome: string | null | undefined
+): boolean {
+  if (ehCadastroCorreios(id)) return true;
   const s = (nome ?? "")
     .normalize("NFD")
     .replace(/[̀-ͯ]/g, "")
@@ -266,8 +277,9 @@ export type EntradaCifPorTransportadora = {
 export function cifComTransportadoraDeclarada(e: EntradaCifPorTransportadora): boolean {
   if (e.modalidade !== "CIF" || e.despachoConfirmado) return false;
   if (e.idTransportadora === null || e.idTransportadora === undefined) return false;
+  if (ehCadastroCorreios(e.idTransportadora)) return false;
   const nome = String(e.nomeTransportadora ?? "").trim();
-  if (!nome || transportadoraEhOsCorreios(nome)) return false;
+  if (!nome || transportadoraEhOsCorreios(e.idTransportadora, nome)) return false;
   return e.tipoFreteCotado === "CORREIOS" || e.tipoFreteCotado === "SEM_CUSTO" || e.tipoFreteCotado === "INDEFINIDO";
 }
 
