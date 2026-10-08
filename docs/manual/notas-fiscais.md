@@ -450,7 +450,7 @@ Nos dois casos a confirmação lista as notas autorizadas que o pedido já tem. 
 | Outra emissão desta mesma nota já está em andamento. | Duas pessoas ou dois cliques emitiram ao mesmo tempo. | Aguarde e use **Consultar status**. |
 | Esta nota já foi emitida. Nova emissão bloqueada. | A nota já tem número ou chave. | Não reenvie. Atualize o status da nota. |
 | Esta nota JÁ PARECE AUTORIZADA na SEFAZ | O retorno guardado indica autorização, mas a nota ficou sem número na tela. | Não emita de novo. Confira na SEFAZ e avise o administrador. |
-| Ambiente da empresa não definido | A empresa emitente está sem ambiente de NF-e configurado. | Peça ao administrador para definir o ambiente da empresa. |
+| Ambiente da empresa não definido | A empresa emitente está sem ambiente de NF-e configurado. | Avise a equipe técnica: hoje o ambiente da empresa (homologação ou produção) é definido direto no banco de dados, e não existe tela para isso. |
 | Os pagamentos precisam ser regenerados! | Itens ou frete mudaram depois das parcelas. | No bloco Pagamentos, clique em **Gerar Parcelas Fiscais**. |
 | Existe parcela com vencimento anterior à data de emissão. | Há parcela com data no passado. | Corrija o vencimento no bloco Pagamentos. |
 | Informe o vencimento do pagamento antes de salvar. | Parcela sem data. | Preencha o vencimento e salve. |
@@ -496,7 +496,7 @@ Nos dois casos a confirmação lista as notas autorizadas que o pedido já tem. 
 | "A leitura dos dados do pedido demorou demais." ou "Sem conexão com o servidor" | Os dados do pedido não carregaram. | Clique em **Ler de novo**. |
 | "Outra emissão desta mesma nota já está em andamento." | Duas pessoas clicaram em emitir a mesma nota. | Aguarde e clique em **Consultar agora**. |
 | "Sem permissão para emitir NFS-e (fiscal.emit_nfse)." | Seu perfil não tem a permissão **Emitir NFS-e (Serviço)**. | Peça a emissão a quem tem a permissão, ou peça a permissão ao administrador. |
-| "A empresa ... está sem o ambiente de NFS-e definido ..." | O cadastro da empresa emitente está sem o ambiente de NFS-e. | Avise o administrador: o ambiente se define em Cadastros › Empresas. Depois emita de novo. |
+| "A empresa ... está sem o ambiente de NFS-e definido ..." | O cadastro da empresa emitente está sem o ambiente de NFS-e. | Avise a equipe técnica: hoje o ambiente da empresa (homologação ou produção) é definido direto no banco de dados, e não existe tela para isso. Depois que a equipe técnica definir, emita de novo. |
 | "Esta nota de serviço já foi emitida (número N). Nova emissão bloqueada." | A nota já tem número de NFS-e. | Não reenvie. Use a nota existente; clique em **Consultar agora** para atualizar o que a janela mostra. |
 | "Esta NFS-e não pode ser enviada de novo: ..." | O retorno guardado da integração mostra que a prefeitura já processou esta nota. | Clique em **Consultar agora** para trazer o desfecho. Só crie outra nota se esta não tiver sido autorizada. |
 | "Emissão não permitida: a nota está em ..." | A nota já foi enviada ou está em um status que não aceita envio. | Clique em **Consultar agora** e aguarde o desfecho. |
@@ -572,4 +572,4 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/app/api/fiscal/carta-correcao/route.ts`
 - `src/lib/fiscal/carta-correcao.ts`
 
-> **Mudança desta revisão:** 08/10/2026 — texto da NFS-e alinhado ao que está publicado: pedido com NFS-e autorizada sai da fila, a emissão segue em homologação (produção só existe para a BIRÔ IDEAL e não foi ativada) e a tabela de erros da janela traz as recusas atuais. Só documentação, sem mudança de código (regra da fila: commit `fa1aa0f`).
+> **Mudança desta revisão:** 08/10/2026 — texto da NFS-e alinhado ao que está publicado: pedido com NFS-e autorizada sai da fila, a emissão segue em homologação (produção só existe para a BIRÔ IDEAL e não foi ativada) e a tabela de erros da janela traz as recusas atuais. O ambiente da empresa é definido direto no banco, pela equipe técnica: não existe tela para isso. Só documentação, sem mudança de código (regra da fila: commit `fa1aa0f`).
