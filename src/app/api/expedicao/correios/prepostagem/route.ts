@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { createClient as createServerSupabaseClient } from "@/lib/supabase/server";
 import { verificarPermissaoServerSide } from "@/lib/auth/verificar-permissao";
+import { consultarGateAcompanhar } from "@/features/expedicao/lib/gate-acompanhar";
 import {
   idDestinatarioEtiquetaVigente,
   nomeDestinatarioVigente
@@ -48,6 +49,12 @@ export async function POST(request: Request) {
   const temPermissao = await verificarPermissaoServerSide(supabase, authData.user.id, "expedicao.processar");
   if (!temPermissao) {
     return NextResponse.json({ success: false, message: "Sem permissão (expedicao.processar)." }, { status: 403 });
+  }
+
+  // Fase 5: pedido de grupo Acompanhar so tem prepostagem quando todos do grupo estao prontos.
+  const gateAcompanhar = await consultarGateAcompanhar(supabase, idInt, "a prepostagem");
+  if (gateAcompanhar.bloqueado) {
+    return NextResponse.json({ success: false, code: "ACOMPANHAR_PENDENTE", message: gateAcompanhar.mensagem }, { status: 409 });
   }
 
   // Dados do pedido: mesmas fontes da etiqueta interna.

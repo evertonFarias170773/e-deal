@@ -16,6 +16,15 @@ import {
 import { rotuloCarimbo } from "../lib/carimbo-etapa";
 import { bairroDoCard } from "../lib/bairro-do-card";
 import type { EtapaExpedicao, PedidoExpedicao } from "../types";
+import { ChipVinculados } from "./ChipVinculados";
+// Fase 5: vinculos do pedido (roxo = Complemento, rosa = Acompanhar).
+import {
+  CLASSE_CHIP_ROSA,
+  CLASSE_CHIP_ROXO,
+  classeFaixaDoCard,
+  destaqueDoCard,
+  type GrupoVinculado
+} from "../lib/vinculos-do-painel";
 
 /**
  * Visão "Por transportadora" da Expedição: a MESMA lista filtrada da tabela,
@@ -43,6 +52,12 @@ type KanbanTransportadorasProps = {
    * o selo precisa continuar aparecendo.
    */
   etapaFiltro: string;
+  /**
+   * Pedidos vinculados por card (`useVinculosDoPainel`). Opcional: sem a
+   * leitura, o card e o de sempre. Soma uma faixa lateral e o chip; as cores
+   * de fase (`faseDoCard`) nao mudam.
+   */
+  vinculosPorPedido?: Map<number, GrupoVinculado[]>;
 };
 
 type ColunaKanban = {
@@ -222,6 +237,15 @@ export function LegendaCoresKanban() {
           {fase.rotulo}
         </span>
       ))}
+      {/* Fase 5: o destaque de grupo e uma faixa lateral, somada a cor da fase. */}
+      <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-[12px] font-medium text-slate-600 dark:text-slate-400">
+        <span className={`h-4 w-4 shrink-0 rounded-[5px] border ${CLASSE_CHIP_ROXO}`} aria-hidden="true" />
+        com complemento
+      </span>
+      <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-[12px] font-medium text-slate-600 dark:text-slate-400">
+        <span className={`h-4 w-4 shrink-0 rounded-[5px] border ${CLASSE_CHIP_ROSA}`} aria-hidden="true" />
+        acompanhar
+      </span>
     </div>
   );
 }
@@ -314,7 +338,8 @@ export function KanbanTransportadoras({
   acaoPrimaria,
   itensMenu,
   formatarPeso,
-  etapaFiltro
+  etapaFiltro,
+  vinculosPorPedido
 }: KanbanTransportadorasProps) {
   /**
    * O KANBAN MOSTRA O QUE O RECORTE ENTREGAR (01/09/2026).
@@ -532,7 +557,7 @@ export function KanbanTransportadoras({
                   // levanta o card do fundo da página.
                   // A cor sai de `faseDoCard` (precedência) + `fase.classe`
                   // (tons) — a MESMA string que a legenda pinta no marcador.
-                  className={`rounded-2xl border p-3.5 shadow-sm ${faseDoCard(p).classe}`}
+                  className={`rounded-2xl border p-3.5 shadow-sm ${faseDoCard(p).classe} ${classeFaixaDoCard(destaqueDoCard(vinculosPorPedido?.get(p.idInt)))}`}
                 >
                   {/* Linha de identidade: número, cadastro e o menu, tudo em 36 px
                       de altura. O gatilho do menu é ICONE aqui — o botão com
@@ -704,6 +729,7 @@ export function KanbanTransportadoras({
                       ))}
                     </div>
                   )}
+                  <ChipVinculados grupos={vinculosPorPedido?.get(p.idInt)} />
                   {(mostrarSelo || ehAtrasado || p.prometidoHoje || prevista) && (
                     <div className="mt-3 flex flex-wrap items-center gap-1.5">
                       {mostrarSelo && <StatusBadge status={p.statusInterno} />}

@@ -7,6 +7,7 @@ import { verificarPermissaoServerSide } from "@/lib/auth/verificar-permissao";
 import { montarEtiquetaViewModel } from "@/features/expedicao/services/etiqueta-viewmodel.service";
 import { criarEtiquetaElement } from "@/features/expedicao/pdf/EtiquetaPdfDocument";
 import { SITE_QR_ETIQUETA } from "@/features/expedicao/lib/etiqueta-apresentacao";
+import { consultarGateAcompanhar } from "@/features/expedicao/lib/gate-acompanhar";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -53,6 +54,10 @@ export async function GET(request: Request) {
   if (!temPermissao) {
     return respostaErro(request, "Sem permissão para gerar etiquetas (expedicao.view).", 403);
   }
+
+  // Fase 5: pedido de grupo Acompanhar so tem etiqueta quando todos do grupo estao prontos.
+  const gate = await consultarGateAcompanhar(supabase, idInt, "a etiqueta");
+  if (gate.bloqueado) return respostaErro(request, gate.mensagem, 409);
 
   const vm = await montarEtiquetaViewModel(supabase, idInt);
   if (!vm) return respostaErro(request, `Pedido #${idInt} não encontrado.`, 404);
