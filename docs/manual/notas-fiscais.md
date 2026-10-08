@@ -240,6 +240,13 @@ Enquanto a janela trabalha (lendo o pedido, criando o rascunho, emitindo ou cons
 
 Se a resposta não chegar (demora ou queda de conexão), a janela não conclui que deu errado: ela relê a nota e mostra o que existe, por exemplo "A resposta não chegou, mas o envio saiu: a nota está em análise". Leia o quadro vermelho antes de clicar de novo.
 
+### Saber se a NFS-e emitida pelo Vibe vale (homologação ou produção)
+
+1. Abra a janela **Gerar NFS-e** do pedido e olhe a faixa do ambiente no topo. No **Histórico NFS-e (Serviços)**, olhe a coluna **Ambiente**.
+2. **HOMOLOGAÇÃO** quer dizer nota de teste, sem valor fiscal. Hoje toda NFS-e emitida pelo Vibe sai assim.
+3. Ainda não dá para emitir NFS-e em produção pelo Vibe. A emissão em produção existe no sistema só para a **BIRÔ IDEAL** e não foi ativada.
+4. Para ter uma NFS-e com valor fiscal, emita pelo portal nacional (www.nfse.gov.br). O cancelamento de NFS-e também é pelo portal.
+
 ### Conferir parcelas e duplicatas
 
 1. No bloco **Pagamentos**, escolha a **Forma de Pagamento**. Só **15 - Boleto Bancário** gera parcelas; as outras formas são tratadas como à vista, com um pagamento único no total da nota.
