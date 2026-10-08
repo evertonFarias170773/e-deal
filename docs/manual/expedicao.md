@@ -152,6 +152,8 @@ Os itens aparecem nesta ordem, cada um só quando se aplica.
 3. O selo âmbar **HOJE** aparece quando a promessa é para hoje e o pedido ainda não saiu. Na lista, a linha fica amarelada.
 4. Na lista, **SEM NF** aparece em vermelho para pedidos com status Na Expedição, A Retirar ou Em Trânsito sem nota autorizada.
 5. Os selos **Compl. de #X** e **+ compl. #Y** marcam pedido complementar. O **+ compl.** fica verde quando o complemento já está na Expedição e âmbar quando ainda não chegou.
+6. Pedidos de um mesmo grupo de complemento mostram o selo roxo **Vinculados: #A · #B** e uma faixa roxa na lateral do cartão. Cada número tem uma bolinha: verde quando aquele pedido já está pronto para expedir (ou já saiu), âmbar quando ainda não; passe o mouse no número para ver o status. A faixa e o selo só informam: não mudam o que o botão **Despachar** faz.
+7. **Acompanhar** (selo e faixa rosa, para pedidos que só devem sair quando todos do grupo estiverem prontos): em implantação, ainda não disponível.
 
 ### Marcar o pedido como pronto
 
@@ -436,8 +438,13 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/constants/navigation.ts`
 - `src/features/auth/usuarios.service.ts`
 - `src/features/usuarios-perfis/catalogo-permissoes.ts`
+- `src/features/expedicao/components/ChipVinculados.tsx`
+- `src/features/expedicao/hooks/useVinculosDoPainel.ts`
+- `src/features/expedicao/lib/vinculos-do-painel.ts`
 
 > **Mudanças de 08/10/2026:**
 >
 > - acrescentado como o frete CIF com transportadora aparece na visualização do pedido (commit `4d7d52e`); a regra da Expedição é a de 07/10/2026 (commit `88eb4b0`);
 > - o pedido novo com frete dos Correios aponta para o cadastro da Superintendência Estadual RS dos Correios, os dois cadastros dos Correios mantêm a prepostagem, e a transportadora aparece como **Correios** em vez da fantasia do cadastro.
+>
+> - pedidos de um mesmo grupo de complemento mostram o selo roxo **Vinculados: #A · #B**, com bolinha verde ou âmbar em cada número, e uma faixa roxa no cartão (commit `c62ef62`). O tipo **Acompanhar** ainda está em implantação.
