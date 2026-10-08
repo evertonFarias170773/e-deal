@@ -1,6 +1,6 @@
 # Proposta: aba Pagamentos
 
-> **Última revisão:** 02/10/2026
+> **Última revisão:** 08/10/2026
 > **Caminho no menu:** Pedidos → abrir um pedido → aba Pagamentos
 > **Endereço:** `/orcamentos/<número>/editar?tab=pagamentos`
 
@@ -120,6 +120,19 @@ O crédito é debitado do saldo do cliente na hora. A cobrança de E-Crédito na
 
 O débito fica reservado nesta cobrança e só é baixado na Conta Corrente quando o pagamento for confirmado. O aviso não aparece no E-Crédito.
 
+### Gerar a cobrança de um pedido complementar
+
+1. Antes de tudo, vá à aba **Fretes** do complementar e clique em **Cotar frete complementar**.
+2. Confira **A cobrar aqui**, que é a diferença: o frete do peso somado dos dois pedidos menos o que o pedido principal já cobra.
+3. Clique em **Aplicar** na opção escolhida. Repetir **Aplicar** não duplica.
+4. Volte à aba **Pagamentos** e gere a cobrança normalmente.
+
+Sem esse passo, o clique em **Gerar cobrança** abre a janela "O frete precisa ser atualizado", com **Recalcular frete**, que leva de volta à aba Fretes.
+
+O frete complementar é devido. O crédito do cliente na Conta Corrente pode ser usado para quitar a cobrança, pelo fluxo oficial e com autoria registrada, mas não dispensa o frete nem autoriza editar o valor da cobrança. Não gere a cobrança por outro caminho para driblar o bloqueio: ela sairia sem o frete.
+
+Complementar em **RETIRA** ou **FOB** não tem frete a cobrar e mesmo assim fica bloqueado nessa janela. É problema conhecido e sem solução publicada; peça ajuda em vez de contornar.
+
 ### Enviar o pagamento ao cliente
 
 1. Na linha da cobrança, use **Pix Copia e cola**, **Abrir boleto**, **Abrir checkout** ou **Copiar**.
@@ -188,7 +201,7 @@ Se a janela for fechada sem escolher, a proposta fica com a faixa **Revisão fin
 - Não dá para gerar cobrança de orçamento rápido, sem cliente cadastrado.
 - **Gerar cobrança** só aparece enquanto há saldo. O saldo é o total da proposta menos a soma das cobranças ativas, pagas ou não. O valor de uma cobrança não pode passar do saldo.
 - Não dá para gerar cobrança sem **OS Ideal**.
-- Não dá para gerar cobrança com o frete desatualizado (peso da proposta diferente do peso cotado) nem, em pedido complementar, sem o frete complementar aplicado.
+- Não dá para gerar cobrança com o frete desatualizado (peso da proposta diferente do peso cotado) nem, em pedido complementar, sem o frete complementar aplicado. No complementar em RETIRA ou FOB, que não tem frete a aplicar, esse bloqueio é um problema conhecido e sem solução publicada.
 - Cobrança real exige nome e CPF/CNPJ do cliente e endereço de entrega com logradouro, cidade, UF e CEP. Boleto exige também e-mail do cliente.
 - Boleto e cartão exigem telefone válido no cadastro de quem paga; o cartão exige celular. Sem isso abre a janela **Telefone do cliente impede a cobrança**, onde o telefone é corrigido na hora.
 - **Cartão de crédito** existe para a Ideal Gráfica e a E3 Brindes; a Ideal Birô não tem. **Cartão Asaas** é só da IDEAL GRÁFICA EXPRESSA EIRELI. PIX, boleto e a família do faturado valem para as três empresas.
@@ -243,7 +256,7 @@ Se a janela for fechada sem escolher, a proposta fica com a faixa **Revisão fin
 | "Selecione uma forma de pagamento." | Nenhuma forma marcada. | Escolha a forma. |
 | "Selecione uma condição de pagamento." | Faturado ou E-Permuta sem condição. | Escolha a **Condição de pagamento \***. |
 | "O valor da cobrança (R$ ...) não pode ser maior que o saldo restante (R$ ...)." | O valor digitado passa do saldo. | Reduza o valor. |
-| "O frete precisa ser atualizado" | O peso mudou depois da cotação, ou falta o frete complementar. | Clique em **Recalcular frete** e refaça o frete na aba Fretes. |
+| "O frete precisa ser atualizado" | O peso mudou depois da cotação, ou falta o frete complementar. | Clique em **Recalcular frete**, cote e aplique o frete na aba **Fretes** e volte para gerar a cobrança. Se ao aplicar aparecer em vermelho que a opção não está na cotação, recarregue a página e cote de novo: isso acontecia sempre com Motoboy, São Miguel e VEPPO até a correção de 08/10/2026 (commit `2387164`). |
 | "Cliente sem e-mail cadastrado para geração do boleto." | O contato e o cliente estão sem e-mail. | Preencha o e-mail no cadastro. |
 | "Documento (CPF/CNPJ) do cliente é obrigatório para gerar cobrança real." | Cadastro sem documento. | Complete o cadastro do cliente. |
 | "CEP do endereço de entrega é obrigatório para gerar cobrança real." (ou logradouro, cidade, UF) | Endereço de entrega incompleto. | Complete o endereço na aba Geral. |
@@ -325,3 +338,5 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/app/api/orcamentos/abonar-diferenca/route.ts`
 - `src/lib/formatters/status.ts`
 - `src/lib/mocks/pagamentos.mock.ts`
+
+> **Mudança desta revisão:** 08/10/2026 — o identificador das opções de Motoboy, Transportadora São Miguel e VEPPO deixou de mudar a cada cotação, e por isso o frete complementar desses transportes volta a ser aplicado (commit `2387164`).

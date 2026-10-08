@@ -1,6 +1,6 @@
 # Proposta: aba Fretes
 
-> **Última revisão:** 02/10/2026
+> **Última revisão:** 08/10/2026
 > **Caminho no menu:** Pedidos → abrir um pedido → aba Fretes
 > **Endereço:** `/orcamentos/<número>/editar?tab=fretes`
 
@@ -142,6 +142,37 @@ Depois da liberação o campo **Valor cobrado (R$)** fica só para leitura: o va
 4. Em cada opção, confira **A cobrar aqui** e clique em **Aplicar** na escolhida.
 5. A tela confirma com "Frete complementar aplicado" e o valor a cobrar neste pedido. O total do pedido complementar passa a incluir essa diferença.
 
+### Quando a cobrança do complementar fica presa no frete
+
+**O sintoma.** Ao gerar a cobrança do complementar aparece a janela "O frete precisa ser atualizado", com os botões **Voltar** e **Recalcular frete**. Na aba **Fretes**, ao clicar em **Aplicar** no frete complementar, aparece em vermelho que a opção escolhida não apareceu na cotação de agora. Um botão leva ao outro, e a cobrança não sai.
+
+**A causa.** As opções de **Motoboy**, **Transportadora São Miguel** e **VEPPO** tinham um identificador que mudava a cada cotação, então a aplicação não encontrava a opção escolhida. Corrigido em 08/10/2026, no commit `2387164`. Correios e Azul Cargo nunca foram afetados.
+
+**O que fazer:**
+
+1. Abra a aba **Fretes** do pedido complementar e clique em **Cotar frete complementar**.
+2. Confira **A cobrar aqui**: é a diferença, ou seja, o frete do peso somado dos dois pedidos menos o que o pedido principal já cobra.
+3. Clique em **Aplicar** na opção escolhida e espere a confirmação.
+4. Só então vá à aba **Pagamentos** e gere a cobrança.
+
+Repetir **Aplicar** não duplica: a segunda tentativa devolve o mesmo frete complementar que já está aplicado.
+
+**O frete complementar é devido.** O crédito do cliente na Conta Corrente pode ser usado para quitar a cobrança, pelo fluxo oficial e com autoria registrada, mas não dispensa o frete nem autoriza editar o valor da cobrança.
+
+**Casos parecidos, e como diferenciar:**
+
+- Complementar em **RETIRA** ou **FOB**: não há frete a cobrar, e o card diz isso. Ainda assim a cobrança fica bloqueada pela janela "O frete precisa ser atualizado". É problema conhecido e **sem solução publicada**: não existe caminho na tela para liberar. Registre e peça ajuda.
+- Complementar que vai por **Correios** ou **Azul Cargo**: segue o caminho normal, cotar e aplicar.
+
+**O que não fazer:** não insistir em **Aplicar** e em **Recalcular frete** em laço; não gerar a cobrança por outro caminho para driblar o bloqueio, porque ela sai sem o frete; não editar o valor da cobrança; não salvar o pedido para "consertar".
+
+| Pergunta do usuário | O que verificar | O que fazer | Quando chamar o suporte |
+|---|---|---|---|
+| "Não consigo gerar a cobrança deste pedido" | É pedido complementar? Tem frete complementar aplicado na aba **Fretes**? | Cotar, aplicar e só então gerar a cobrança | Se a aplicação recusar de novo depois de cotar outra vez |
+| "Aparece em vermelho que a opção não está na cotação" | Qual transporte, e a página está atualizada | Recarregar a página, cotar de novo e aplicar | Se repetir com a página recarregada |
+| "É retirada ou FOB e a cobrança não sai" | O card diz "sem frete a cobrar" | Não há frete a aplicar | Sempre: é problema conhecido, sem solução publicada |
+| "Apliquei duas vezes, cobrou em dobro?" | O frete no total do pedido complementar | Nada: repetir não duplica | Se o total mostrar o frete duas vezes |
+
 ## Regras e bloqueios
 
 - Retirada e FOB não cobram frete: o total da proposta sai sem frete, qualquer que seja a cotação. Só CIF cobra.
@@ -170,7 +201,8 @@ Depois da liberação o campo **Valor cobrado (R$)** fica só para leitura: o va
 - Pedido complementar fora de CIF não cobra frete: a tela mostra "... herdado do pedido #... — sem frete a cobrar neste pedido."
 - O frete complementar é só a diferença entre a cotação do peso somado e o frete que o pedido principal já cobra. Se o somado sair mais barato, este pedido cobra R$ 0,00 e nada é creditado. O pedido principal não é alterado.
 - O frete complementar só pode ser aplicado com o pedido complementar em NOVO ou AGUARDANDO, com o pedido principal entre LIBERADO e EXPEDICAO e ainda sem despacho, e com os dois pedidos no mesmo endereço de entrega.
-- Não dá para gerar cobrança de um pedido complementar antes de aplicar o frete complementar.
+- Não dá para gerar cobrança de um pedido complementar antes de aplicar o frete complementar. Isso vale também para o complementar em RETIRA ou FOB, que não tem frete a aplicar: hoje ele fica bloqueado, e é problema conhecido, sem solução publicada.
+- Clicar em **Aplicar** de novo no frete complementar não duplica: a segunda tentativa devolve o frete que já está aplicado.
 
 ## O que não confundir
 
@@ -208,7 +240,7 @@ Depois da liberação o campo **Valor cobrado (R$)** fica só para leitura: o va
 | "Frete não gravado" | O valor negociado foi recusado; a descrição diz o motivo (faturado a vencer, cobrança enviada e não paga, modalidade sem frete, entre outros). | Siga a orientação da mensagem. Nada foi alterado. |
 | "Frete gravado, mas com pendência" | O valor foi gravado, mas a diferença financeira não foi tratada. | Avise o financeiro e confira a aba **Pagamentos**. |
 | "O preço mudou desde a consulta: R$ ... agora, R$ ... na sua tela. Cote de novo para confirmar." | O frete complementar mudou de preço entre a cotação e o **Aplicar**. | Clique em **Cotar frete complementar** de novo e aplique. |
-| "A opção escolhida não apareceu na cotação de agora — cote e escolha de novo." | A opção sumiu na recotação feita ao aplicar. | Cote de novo e escolha outra opção. |
+| "A opção escolhida não apareceu na cotação de agora — cote e escolha de novo." | A opção não veio na recotação feita ao aplicar. Até 08/10/2026 isso acontecia sempre com Motoboy, Transportadora São Miguel e VEPPO, por causa do identificador que mudava a cada cotação (corrigido no commit `2387164`). Agora só acontece quando a opção de fato sumiu, ou quando a página ficou aberta desde antes da correção. | Recarregue a página, clique em **Cotar frete complementar** e aplique de novo. |
 | "Nenhuma transportadora devolveu cotação agora — tente de novo em instantes." | A cotação complementar voltou sem opções. | Tente de novo em instantes. |
 | "O frete complementar só entra em NOVO ou AGUARDANDO; o pedido #... está em ..." | O pedido complementar já avançou de status. | O frete complementar não pode mais ser aplicado nesse status. |
 | "O pedido #... já tem despacho registrado" | O pedido principal já saiu. | Não há mais frete somado a cotar; o pedido complementar precisa de frete próprio. |
@@ -243,3 +275,5 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/app/api/propostas/transportadora/route.ts`
 - `src/app/api/orcamentos/complementar/cotar-frete/route.ts`
 - `src/app/api/orcamentos/complementar/aplicar-frete/route.ts`
+
+> **Mudança desta revisão:** 08/10/2026 — o identificador das opções de Motoboy, Transportadora São Miguel e VEPPO deixou de mudar a cada cotação, e por isso o frete complementar desses transportes volta a ser aplicado (commit `2387164`).

@@ -250,8 +250,10 @@ Use quando o cliente pede itens a mais para o mesmo evento de um pedido já pago
 1. Na lista de Pedidos, abra o menu **Acoes** do pedido original e clique em **Criar pedido complementar**.
 2. Confira o resumo e clique em **Criar pedido complementar**.
 3. O sistema abre a proposta nova na aba **Orçamento**. Ela nasce sem itens: inclua os produtos e salve.
-4. Na aba **Fretes**, cote e aplique o frete complementar. Ele cobra só a diferença do peso somado dos dois pedidos.
-5. Siga o fluxo normal: cobrança, arte e produção próprias do complemento.
+4. Na aba **Fretes**, cote e aplique o frete complementar. Ele cobra só a diferença do peso somado dos dois pedidos. Repetir **Aplicar** não duplica.
+5. Siga o fluxo normal: cobrança, arte e produção próprias do complemento. A cobrança só sai depois do frete complementar aplicado; antes disso aparece a janela "O frete precisa ser atualizado".
+
+Se ao aplicar aparecer em vermelho que a opção escolhida não está na cotação de agora, recarregue a página e cote de novo: até 08/10/2026 isso acontecia sempre com **Motoboy**, **Transportadora São Miguel** e **VEPPO** (corrigido no commit `2387164`). O passo a passo completo, inclusive o caso do complementar em RETIRA ou FOB, está em [Proposta: aba Fretes](proposta-fretes.md).
 
 O complemento herda do pedido original o cliente, o endereço, o contato, o pagador, a modalidade e a transportadora, e esses campos ficam travados com o aviso **Herdado do pedido #<número>**.
 
@@ -293,6 +295,7 @@ O aviso some quando você clica em **Entendi** ou quando a cópia ganha cobranç
 - Não dá para trocar o cliente manual por um cadastrado enquanto houver cobrança ativa ou pagamento confirmado.
 - Não dá para cancelar a proposta com cobrança já paga ou título já liquidado. A proposta não é cancelada e o motivo aparece na mensagem de erro.
 - Não dá para cancelar o pedido original enquanto ele tiver pedido complementar aberto. Cancele ou desvincule o complemento antes.
+- Não dá para gerar a cobrança do pedido complementar antes de aplicar o frete complementar na aba **Fretes**. No complementar em RETIRA ou FOB, que não tem frete a aplicar, esse bloqueio é um problema conhecido e sem solução publicada.
 - O pedido complementar só é aceito quando o original está pago integralmente, não é avulso, não foi despachado, não é ele mesmo um complemento e não tem outro complemento aberto.
 - Sair da aba Pedido com modelo ainda não gravado na lista rápida descarta o que foi digitado. A tela pergunta antes.
 - Só duplica a proposta quem é o vendedor dela, o administrador ou quem vê todas as propostas.
@@ -397,3 +400,5 @@ O aviso some quando você clica em **Entendi** ou quando a cópia ganha cobranç
 - `src/app/api/orcamentos/editar-paga/route.ts`
 - `src/components/common/ActionsMenu.tsx`
 - `src/constants/navigation.ts`
+
+> **Mudança desta revisão:** 08/10/2026 — o identificador das opções de Motoboy, Transportadora São Miguel e VEPPO deixou de mudar a cada cotação, e por isso o frete complementar desses transportes volta a ser aplicado (commit `2387164`).
