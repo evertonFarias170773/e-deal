@@ -20,7 +20,7 @@ Esta página explica o que vale para a tela inteira: cabeçalho, abas, como salv
 - Na diferença financeira de uma proposta paga, as opções de devolver, bonificar e registrar débito futuro aparecem só para quem tem a permissão de cada uma.
 - **Cancelar proposta**: só quem tem a permissão de cancelar propostas.
 - **Duplicar proposta**: só o vendedor da proposta, o administrador ou quem vê todas as propostas. Para os demais a cópia é recusada com o aviso "Você só pode duplicar proposta em que é o vendedor".
-- **Criar pedido complementar**: perfis Administrador e Vendedor.
+- **Criar Complemento**: perfis Administrador e Vendedor.
 - **Retirar da Produção**: administrador ou perfil com a permissão de liberar para produção.
 
 ## Botões e ações da tela
@@ -71,14 +71,14 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Confirmar** | Mesma janela | Conclui a alteração com a opção escolhida. |
 | Botão **X** (dica: "Voltar para proposta") | Mesma janela | Fecha a janela sem resolver; a pendência continua aberta. |
 | **Excluir títulos e salvar** / **Salvar alterações** | Janela **Alterar proposta faturada** | Tira os títulos do Contas a Receber e salva a proposta. |
-| **Voltar** | Janelas **Alterar proposta faturada**, **Cancelar Proposta** e **Criar pedido complementar** | Fecha a janela sem fazer nada. |
+| **Voltar** | Janelas **Alterar proposta faturada**, **Cancelar Proposta** e **Criar Complemento** | Fecha a janela sem fazer nada. |
 | **Conversa** e **Tarefas** | Abas do painel do chat | Alternam entre as mensagens e as tarefas do pedido. |
 | Botão de anexo (dica: "Anexar arquivo (até 10MB)") | Painel do chat | Escolhe arquivos para enviar com a mensagem. |
 | Botão de envio (dica: "Enviar mensagem") | Painel do chat | Envia a mensagem. |
 | **Cancelar proposta** | Menu **Acoes** da lista de Pedidos (na lista em cartões o botão se chama **Mais**) e do detalhe da proposta | Abre a janela **Cancelar Proposta**. |
 | **Cancelar só a cobrança** / **Ver cobranças na aba Pagamentos** | Janela **Cancelar Proposta** | Cancela só a cobrança, ou leva à aba Pagamentos quando há mais de uma. |
 | **Confirmar Cancelamento** | Janela **Cancelar Proposta** | Cancela a proposta. |
-| **Criar pedido complementar** | Menu **Acoes** (ou **Mais**) da lista de Pedidos e botão da janela de mesmo nome | Cria a proposta complementar, vinculada ao pedido original. |
+| **Criar Complemento** | Menu **Acoes** (ou **Mais**) da lista de Pedidos e botão da janela de mesmo nome | Cria a proposta complementar, vinculada ao pedido original. |
 
 ## Passo a passo
 
@@ -243,12 +243,14 @@ O cancelamento não fica no menu de dentro da edição. Faça pela lista de Pedi
 4. Preencha o **Motivo do Cancelamento**.
 5. Clique em **Confirmar Cancelamento**. A ação é irreversível.
 
-### Criar um pedido complementar
+### Criar um Complemento
 
-Use quando o cliente pede itens a mais para o mesmo evento de um pedido já pago, para os dois saírem juntos.
+Use quando o cliente pede itens a mais para o mesmo evento de um pedido já pago, para os dois saírem juntos. A ação se chamava **Criar pedido complementar**; o nome mudou para **Criar Complemento** em 08/10/2026 (commit `dd9a110`), sem mudar o que ela faz.
 
-1. Na lista de Pedidos, abra o menu **Acoes** do pedido original e clique em **Criar pedido complementar**.
-2. Confira o resumo e clique em **Criar pedido complementar**.
+**O Complemento está em reformulação.** Está sendo revisto para aceitar mais de um complemento por pedido e para valer também antes da produção. Ainda não há mudança publicada, e não há data definida. Enquanto isso, vale o que esta ficha descreve: só em pedido pago, entre LIBERADO e EXPEDICAO, e com um complemento aberto por pedido. Quando a regra mudar, esta ficha muda junto.
+
+1. Na lista de Pedidos, abra o menu **Acoes** do pedido original e clique em **Criar Complemento**.
+2. Confira o resumo e clique em **Criar Complemento**.
 3. O sistema abre a proposta nova na aba **Orçamento**. Ela nasce sem itens: inclua os produtos e salve.
 4. Na aba **Fretes**, cote e aplique o frete complementar. Ele cobra só a diferença do peso somado dos dois pedidos. Repetir **Aplicar** não duplica.
 5. Siga o fluxo normal: cobrança, arte e produção próprias do complemento. A cobrança só sai depois do frete complementar aplicado; antes disso aparece a janela "O frete precisa ser atualizado".
@@ -313,7 +315,7 @@ O aviso some quando você clica em **Entendi** ou quando a cópia ganha cobranç
 - **Cancelar** x **Cancelar proposta** x **Cancelar só a cobrança**: **Cancelar** (rodapé) apenas sai da edição; **Cancelar proposta** encerra o pedido e é irreversível; **Cancelar só a cobrança** mantém o pedido e reabre o saldo para uma cobrança nova.
 - **Gerar PDF da proposta** x **Gerar OC**: o primeiro é o orçamento, com validade de 15 dias, para o cliente decidir; o segundo é a autorização de faturamento, que o cliente devolve assinada. Os dois saem com o modelo da empresa da proposta e entram na timeline como "PDF da proposta gerado." e "PDF da OC gerado.".
 - **Ver proposta** x **Editar proposta**: a primeira abre o detalhe, só para leitura; a segunda abre esta tela.
-- **Duplicar proposta** x **Criar pedido complementar**: duplicar abre uma cópia independente, com os produtos e os dados da original e frete a cotar; o complementar nasce sem itens, vinculado ao pedido original, e sai junto com ele na Expedição.
+- **Duplicar proposta** x **Criar Complemento**: duplicar abre uma cópia independente, com os produtos e os dados da original e frete a cotar; o complementar nasce sem itens, vinculado ao pedido original, e sai junto com ele na Expedição.
 - **Link pgto. externo** x **Copiar proposta informal** x **Copiar resumo para WhatsApp**: o primeiro copia o link da área do cliente; os outros dois copiam o mesmo texto informal da proposta.
 - Status da proposta x status da arte: são dois selos no cabeçalho. O primeiro diz em que etapa o pedido está; o segundo, em que pé está a arte.
 - **NOVO / EM ARTE** x **NOVO_ARTE_APROVADA**: no primeiro a arte ainda está em andamento; no segundo todas as artes já foram aprovadas e só falta o pagamento. O mesmo vale para AGUARDANDO.
@@ -404,4 +406,5 @@ O aviso some quando você clica em **Entendi** ou quando a cópia ganha cobranç
 > **Mudanças de 08/10/2026:**
 >
 > - o identificador das opções de Motoboy, Transportadora São Miguel e VEPPO deixou de mudar a cada cotação, e por isso o frete complementar desses transportes volta a ser aplicado (commit `2387164`);
-> - o pedido novo com frete dos Correios passa a apontar para o cadastro da Superintendência Estadual RS dos Correios, e a transportadora aparece como **Correios** em vez da fantasia do cadastro.
+> - o pedido novo com frete dos Correios passa a apontar para o cadastro da Superintendência Estadual RS dos Correios, e a transportadora aparece como **Correios** em vez da fantasia do cadastro;
+> - a ação **Criar pedido complementar** passou a se chamar **Criar Complemento** (commit `dd9a110`), só no nome.

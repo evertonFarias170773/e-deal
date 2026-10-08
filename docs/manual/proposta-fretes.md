@@ -14,7 +14,7 @@
 - Na fase de orçamento (proposta em NOVO ou AGUARDANDO, com ou sem arte), quem edita a proposta escolhe a modalidade e o frete livremente.
 - Depois que o pedido é liberado, trocar a modalidade, a transportadora ou o frete escolhido exige a permissão **Editar Proposta Paga**. Sem ela, os campos ficam apagados e a tela mostra o motivo.
 - O bloco **Corrigir a transportadora (admin)**, com o campo do valor negociado do frete, só aparece para quem tem a permissão **Configurar Expedição**.
-- Cotar e aplicar o frete complementar exige a permissão **Criar Pedido Complementar**.
+- Cotar e aplicar o frete complementar exige a permissão **Criar Complemento** (o mesmo botão que cria o complemento, antes chamado **Criar pedido complementar**). **O Complemento está em reformulação.** Está sendo revisto para aceitar mais de um complemento por pedido e para valer também antes da produção. Ainda não há mudança publicada, e não há data definida. Enquanto isso, vale o que esta ficha descreve: só em pedido pago, entre LIBERADO e EXPEDICAO, e com um complemento aberto por pedido. Quando a regra mudar, esta ficha muda junto.
 - Proposta com cobrança gerada fica com a aba inteira travada para quem não tem a permissão de editar proposta paga (nem a de editar proposta com faturado a vencer, quando é esse o caso). Também trava enquanto houver revisão financeira pendente e em proposta avulsa já paga.
 
 ## Botões e ações da tela
@@ -282,4 +282,5 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 > **Mudanças de 08/10/2026:**
 >
 > - o identificador das opções de Motoboy, Transportadora São Miguel e VEPPO deixou de mudar a cada cotação, e por isso o frete complementar desses transportes volta a ser aplicado (commit `2387164`);
-> - o pedido novo com frete dos Correios passa a apontar para o cadastro da Superintendência Estadual RS dos Correios, e a transportadora aparece como **Correios** em vez da fantasia do cadastro.
+> - o pedido novo com frete dos Correios passa a apontar para o cadastro da Superintendência Estadual RS dos Correios, e a transportadora aparece como **Correios** em vez da fantasia do cadastro;
+> - a ação **Criar pedido complementar** passou a se chamar **Criar Complemento** (commit `dd9a110`), só no nome.

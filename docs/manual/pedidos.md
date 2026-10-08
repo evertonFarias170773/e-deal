@@ -1,6 +1,6 @@
 # Pedidos (lista)
 
-> **Última revisão:** 06/10/2026
+> **Última revisão:** 08/10/2026
 > **Caminho no menu:** Pedidos (item direto do menu lateral, sem submenu; é o segundo, logo abaixo de Conferência)
 > **Endereço:** `/orcamentos`
 
@@ -17,7 +17,7 @@ No alto da tela o título aparece como "Orcamentos", com a etiqueta "Pedidos". �
 - Todo usuário logado vê o item **Pedidos** no menu e abre a tela. É também a página inicial de quem é vendedor e dos perfis que não têm outra página inicial definida.
 - Quem tem o perfil configurado para ver apenas as próprias propostas (por exemplo, o perfil Atendente) só enxerga os pedidos em que aparece como atendente. Quem vê todas as propostas (Gerente comercial, Super Administrador e perfis sem restrição de escopo) enxerga a lista inteira.
 - **Cancelar proposta**: só o Super Administrador e quem tem a permissão "Cancelar Propostas" (o perfil Gerente comercial já vem com ela).
-- **Criar pedido complementar**: só quem tem a permissão "Criar Pedido Complementar".
+- **Criar Complemento**: só quem tem a permissão "Criar Complemento".
 - **Duplicar proposta**: só o vendedor da proposta, o administrador ou quem vê todas as propostas. Para os demais a cópia é recusada com o aviso "Você só pode duplicar proposta em que é o vendedor".
 - **Liberar para Produção** e **Retirar da Produção**: só administrador, Super Administrador ou quem tem a permissão "Liberar para Produção". Sem ela, os dois itens não aparecem no menu, e o servidor recusa tanto a liberação quanto a retirada.
 - **Encerrar teste** e **Reabrir (desfazer encerramento de teste)**: só o Super Administrador.
@@ -55,7 +55,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Ver chat interno** (ou **Ver chat interno (N não lidas)**) | Menu da linha | Abre o chat interno do pedido. |
 | **Editar proposta** | Menu da linha | Abre a proposta em edição. |
 | **Duplicar proposta** | Menu da linha | Cria uma cópia da proposta, com os dados da original, e abre a cópia em edição. |
-| **Criar pedido complementar** | Menu da linha e botão da janela de confirmação | Cria um pedido novo do mesmo evento, vinculado a este. |
+| **Criar Complemento** | Menu da linha e botão da janela de confirmação | Cria um pedido novo do mesmo evento, vinculado a este. |
 | **Copiar proposta informal** | Menu da linha | Copia o resumo do pedido para colar no WhatsApp. |
 | **Link pgto. externo** | Menu da linha | Copia o link de pagamento da área do cliente. |
 | **Gerar PDF da proposta** | Menu da linha | Gera o PDF da proposta e abre em nova aba. |
@@ -158,7 +158,7 @@ As datas pequenas aparecem como dia/mês e hora, no horário de Brasília.
 2. **Ver chat interno**: abre o chat do pedido. Mostra quantas mensagens não lidas há.
 3. **Editar proposta**: abre a proposta em edição.
 4. **Duplicar proposta**: pede confirmação, cria uma cópia e abre a cópia em edição. A cópia traz da original os produtos, os modelos (com a mesma numeração e a arte pendente), o faturado, o endereço, o contato, as observações e a modalidade de frete; a cotação, a cobrança e a arte não vêm. O passo a passo está na página da Proposta.
-5. **Criar pedido complementar**: abre a confirmação para criar um pedido novo do mesmo evento. Aparece só em proposta que não é avulsa, não é ela mesma um complemento e está entre LIBERADO e EXPEDICAO.
+5. **Criar Complemento**: abre a confirmação para criar um pedido novo do mesmo evento. Aparece só em proposta que não é avulsa, não é ela mesma um complemento e está entre LIBERADO e EXPEDICAO.
 6. **Copiar proposta informal**: copia o resumo do pedido, pronto para colar no WhatsApp.
 7. **Link pgto. externo**: copia o link da área do cliente para pagamento.
 8. **Gerar PDF da proposta**: gera o PDF e abre em nova aba.
@@ -231,7 +231,7 @@ As datas pequenas aparecem como dia/mês e hora, no horário de Brasília.
 - **Encerrar teste** e **Cancelar proposta**: encerrar teste só esconde o pedido das listas operacionais, sem mudar o status, e pode ser desfeito; cancelar é irreversível.
 - **Encerrar teste** e **Retirar da Produção**: encerrar teste não mexe na liberação do pedido; retirar desfaz a entrada na fila da produção.
 - **Ver proposta** e **Editar proposta**: a primeira abre para leitura; a segunda abre em edição, que é também o que o clique na linha faz.
-- **Duplicar proposta** e **Criar pedido complementar**: duplicar cria uma cópia independente; o complementar nasce sem itens, vinculado ao pedido original, e sai junto com ele na Expedição.
+- **Duplicar proposta** e **Criar Complemento**: duplicar cria uma cópia independente; o complementar nasce sem itens, vinculado ao pedido original, e sai junto com ele na Expedição.
 - **Abrir DANFE (PDF)** do menu e o ícone de DANFE da linha: o menu abre só a nota que representa o pedido; o ícone lista todas as notas autorizadas, inclusive complementar e remessa.
 - Período **15 dias** e os meses: 15 dias olha quando o pedido foi alterado; os meses olham quando foi criado.
 - Data abaixo do valor e data abaixo do status: a primeira é do último registro de pagamento; a segunda é da última mudança de status.
@@ -303,3 +303,5 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/app/api/orcamentos/liberar-producao/`
 - `src/app/api/orcamentos/cancelar-proposta/`
 - `src/app/api/orcamentos/retirar-producao/route.ts`
+
+> **Mudança desta revisão:** 08/10/2026 — a ação **Criar pedido complementar** passou a se chamar **Criar Complemento** (commit `dd9a110`), só no nome. **O Complemento está em reformulação.** Está sendo revisto para aceitar mais de um complemento por pedido e para valer também antes da produção. Ainda não há mudança publicada, e não há data definida. Enquanto isso, vale o que esta ficha descreve: só em pedido pago, entre LIBERADO e EXPEDICAO, e com um complemento aberto por pedido. Quando a regra mudar, esta ficha muda junto.
