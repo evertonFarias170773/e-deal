@@ -38,6 +38,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Mostrar também pedidos com NFS-e emitida** — inclui pedidos que ainda podem ter NF-e a emitir | Aba Fila, caixa de marcar ao lado de **Só faturados** | Traz de volta os pedidos que saíram da fila por já terem NFS-e autorizada. Desmarcada por padrão. Quando há pedidos escondidos, mostra **(+M com NFS-e emitida)**. |
 | Número do pedido (**#N**, dica "Abrir a proposta") | Aba Fila, coluna **Pedido** | Abre a proposta do pedido. |
 | Nome do cliente (dica "Abrir o cadastro do cliente") | Aba Fila, coluna **Cliente / Destinatário** | Abre o cadastro do cliente em edição. |
+| Selo **Remessa necessária** (vermelho) ou **Conferir remessa** (âmbar) | Aba Fila, abaixo do nome do cliente; só em pedido com entrega em endereço diferente do da NF-e | Não abre nada: é um aviso. Passe o mouse para ver a frase e os dois endereços (o de entrega e o da NF-e) |
 | **Nota emitida no sistema antigo** | Aba Fila, coluna **Ação** | Marca o pedido como faturado no sistema antigo e o tira da fila. Enquanto grava mostra "Marcando...". |
 | **NFS-e** | Aba Fila, coluna **Ação**, entre **Nota emitida no sistema antigo** e **Faturar**; só em pedido da **BIRÔ IDEAL** | Abre a janela **Gerar NFS-e**. O texto muda com a nota de serviço do pedido: **NFS-e** (sem nota ou com rascunho), **NFS-e nº N** (autorizada), **NFS-e em análise** e **NFS-e (reenviar)** (o envio falhou). |
 | **Endereço que vai na nota** (lista) | Janela **Gerar NFS-e**, seção **Endereço do tomador** | Escolhe o endereço do tomador entre os do cliente. Endereços iguais aparecem uma vez só; endereço com "cadastro incompleto" fica apagado. |
@@ -152,7 +153,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 ### Entender a Fila Faturamento
 
 1. Abra **Financeiro → Notas fiscais**. A tela já abre na aba **Fila Faturamento**, com a quantidade de pedidos entre parênteses.
-2. A primeira lista é a dos **pedidos** que esperam nota. Cada linha mostra **Pedido** (clique no número para abrir a proposta), **Cliente / Destinatário** (clique para abrir o cadastro; quando quem paga é outro cadastro, aparece **Sócio pagador**), **Em produção desde**, **Empresa Emitente**, **Valor Total**, **Tipo de cobrança** e **Status do pedido**.
+2. A primeira lista é a dos **pedidos** que esperam nota. Cada linha mostra **Pedido** (clique no número para abrir a proposta), **Cliente / Destinatário** (clique para abrir o cadastro; quando quem paga é outro cadastro, aparece **Sócio pagador**), **Em produção desde**, **Empresa Emitente**, **Valor Total**, **Tipo de cobrança** e **Status do pedido**. Abaixo do nome do cliente pode aparecer o selo **Remessa necessária** ou **Conferir remessa**: o pedido é entregue em endereço diferente do que vai na NF-e.
 3. Use os filtros do topo: a busca **Buscar fila por Ref, ID Cliente ou Nome...** (também acha por sócio pagador e por vendedor), **Todas as Empresas Emitentes**, **Todos os status do pedido** e a caixa **Só faturados**, que deixa só os pedidos com cobrança do tipo faturado. A caixa **Mostrar também pedidos com NFS-e emitida** traz de volta os pedidos que já têm nota de serviço autorizada.
 4. Abaixo vem a seção **Notas em processo**. Ela lista toda nota que ainda não é documento fiscal: pendente, pronta para envio, processando ou com erro. Os filtros do topo não escondem nada desta seção, de propósito.
 
@@ -185,9 +186,9 @@ Volta para a lista quando a nota é **cancelada** ou **denegada**, quando o rasc
 3. Com tudo certo, abre o rascunho da nota. A referência segue o padrão `NFE-<pedido>-001`. Se o pedido já tinha um rascunho pendente, é ele que abre, e não um novo.
 4. No topo, o painel **Falta resolver N coisas antes de emitir** lista o que trava a emissão. Cada linha tem **Abrir em ...** (leva ao campo) ou **Abrir cadastro** (abre o cadastro do cliente em outra aba). Depois de corrigir o cadastro, clique em **Reconferir**.
 5. Confira os blocos da nota, na ordem da lateral:
-   - **Resumo**: empresa, a linha **Sairá em** (PRODUÇÃO ou HOMOLOGAÇÃO) e a **Natureza da operação**. A natureza define o CFOP e a situação tributária de todos os itens; a lista só oferece as naturezas compatíveis com a operação (dentro ou fora do estado).
+   - **Resumo**: empresa, a linha **Sairá em** (PRODUÇÃO ou HOMOLOGAÇÃO) e a **Natureza da operação**. A natureza define o CFOP e a situação tributária de todos os itens; a lista só oferece as naturezas compatíveis com a operação (dentro ou fora do estado). Quando o pedido é entregue em endereço diferente do da nota, uma faixa no alto do bloco avisa e mostra os dois endereços lado a lado.
    - **Emitente**: a **Empresa Emitente** vem do pedido e pode ser trocada aqui.
-   - **Destinatário**: a nota sai no nome de quem paga o pedido, com o endereço principal do cadastro. Confira **Consumidor Final** e **Tipo de Contribuinte**. A Inscrição Estadual vem do cadastro e só se corrige lá.
+   - **Destinatário**: a nota sai no nome de quem paga o pedido, com o endereço principal do cadastro. Confira **Consumidor Final** e **Tipo de Contribuinte**. A Inscrição Estadual vem do cadastro e só se corrige lá. A mesma faixa de aviso da remessa aparece aqui.
    - **Itens**: descrição, unidade, quantidade, valores, NCM e peso. O CFOP não se digita. O botão **CST** abre a situação tributária do item. **Adicionar Item Fiscal** inclui um item; **Salvar \*** grava a linha alterada; **Excluir** remove.
    - **Transporte/Frete**: **Modalidade do Frete**, transportadora, valor do frete, volumes e pesos.
    - **Pagamentos**: **Forma de Pagamento** e parcelas (veja a tarefa seguinte).
@@ -358,6 +359,10 @@ Nos dois casos a confirmação lista as notas autorizadas que o pedido já tem. 
 - O Vibe não confere prazo de cancelamento nem de carta de correção. Quem aceita ou recusa é a SEFAZ, e o motivo da recusa aparece no aviso.
 - Só dá para descartar rascunho que nunca foi transmitido. Não dá para desfazer o descarte.
 - Nota de remessa só pode ser gerada depois da nota de venda autorizada, e exige nome e CPF ou CNPJ do recebedor no endereço de entrega. Ela não tira o pedido da fila e não gera título.
+- **Aviso de nota de remessa.** O Vibe compara o endereço de entrega do pedido com o endereço que vai na NF-e de venda (o principal de quem paga). Município ou UF diferentes: **Nota de remessa necessária** (vermelho), com "Entrega em <cidade/UF>, diferente do endereço da NF-e (<cidade/UF>)". Mesmo município, mas CEP, número ou rua diferentes: aviso leve (âmbar), "Entrega em endereço diferente do faturamento: confira se precisa de nota de remessa". Bairro e complemento não entram na comparação; "Av." e "Avenida", acento e maiúsculas não fazem diferença.
+- O aviso aparece em três lugares: selo na Fila, faixa no rascunho da NF-e (blocos **Resumo** e **Destinatário**) e, quando a conferência do **Faturar** acha alguma pendência, na lista "Também vale conferir". É só aviso: não impede faturar nem emitir, e **não cria a nota de remessa**.
+- A nota de remessa continua sendo feita à mão: autorize a nota de venda e use **Gerar nota de remessa** no menu dela.
+- O aviso não aparece em pedido de retirada no balcão, em pedido sem endereço de entrega ou com endereço incompleto (sem rua, cidade, UF ou CEP), em pedido que já tem nota de remessa, na própria nota de remessa, em nota avulsa, em nota já transmitida e na NFS-e. Se o Vibe não conseguir ler os endereços, o selo e a faixa simplesmente não aparecem.
 - Cliente com o interruptor **Nota** desligado no cadastro não entra na fila. Vale o cliente do pedido, não o pagador. Esses pedidos não têm nota emitida pelo Vibe.
 - **Só faturados** e a coluna **Contas a Receber** existem porque só venda faturada vira título. **Lançar no Contas a Receber** só aparece em nota autorizada de pedido com cobrança faturada em aberto.
 - Não dá para lançar no contas a receber quando a soma das parcelas da nota difere do total faturado em aberto da proposta, nem quando a parcela já tem título ativo. Os valores não se ajustam na janela de lançamento: vêm da nota autorizada.
@@ -522,6 +527,10 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/app/(erp)/notas-fiscais/`
 - `src/features/fiscal/NotasFiscaisPage.tsx`
 - `src/features/fiscal/lib/fila-producao-desde.ts`
+- `src/features/fiscal/lib/aviso-remessa.ts`
+- `src/features/fiscal/services/aviso-remessa.service.ts`
+- `src/features/fiscal/hooks/useAvisoDeRemessa.ts`
+- `src/features/fiscal/components/AvisoDeRemessa.tsx`
 - `src/features/fiscal/components/SeloDaPrevisao.tsx`
 - `src/features/fiscal/hooks/usePrevisaoDaProducao.ts`
 - `src/features/fiscal/components/EmissaoNfeModal.tsx`
@@ -572,4 +581,4 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/app/api/fiscal/carta-correcao/route.ts`
 - `src/lib/fiscal/carta-correcao.ts`
 
-> **Mudança desta revisão:** 08/10/2026 — texto da NFS-e alinhado ao que está publicado: pedido com NFS-e autorizada sai da fila, a emissão segue em homologação (produção só existe para a BIRÔ IDEAL e não foi ativada) e a tabela de erros da janela traz as recusas atuais. O ambiente da empresa é definido direto no banco, pela equipe técnica: não existe tela para isso. Só documentação, sem mudança de código (regra da fila: commit `fa1aa0f`).
+> **Mudança desta revisão:** 08/10/2026 — aviso de nota de remessa: selo na Fila e faixa no rascunho da NF-e quando o pedido é entregue em endereço diferente do da nota. É só aviso; a remessa segue sendo gerada à mão, depois da venda autorizada.

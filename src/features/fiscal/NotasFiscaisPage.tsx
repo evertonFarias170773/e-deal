@@ -56,6 +56,9 @@ import { GerarNfseModal } from "@/features/nfse/components/GerarNfseModal";
 import { useNfseDosPedidos } from "@/features/nfse/hooks/useNfseDosPedidos";
 import { usePrevisaoDaProducao } from "@/features/fiscal/hooks/usePrevisaoDaProducao";
 import { SeloDaPrevisao } from "@/features/fiscal/components/SeloDaPrevisao";
+import { useAvisoDeRemessa } from "@/features/fiscal/hooks/useAvisoDeRemessa";
+import { SeloDeRemessa } from "@/features/fiscal/components/AvisoDeRemessa";
+import { avisoDeRemessaDaLinha } from "@/features/fiscal/lib/aviso-remessa";
 import { dataHoraDeBrasilia, hojeEmBrasilia, linhaDaPrevisao } from "@/features/fiscal/lib/fila-producao-desde";
 import { decidirNfseDoPedido, empresaLiberadaParaNfse, rotuloDoBotaoNfse } from "@/features/nfse/lib/regras-emissao";
 import { pedidoOcultoPorNfse, rotuloDosOcultosPorNfse } from "@/features/nfse/lib/fila-nfse";
@@ -1884,6 +1887,15 @@ export function NotasFiscaisPage() {
   const leituraDasPrevisoes = usePrevisaoDaProducao(
     faturaveisList.map((item) => Number(item.id_int)).filter((id) => Number.isFinite(id) && id > 0)
   );
+  /**
+   * O aviso de NOTA DE REMESSA (08/10/2026): pedido entregue em endereço
+   * diferente do que vai na NF-e. Leitura à parte, em lote, para os pedidos
+   * carregados — a consulta da Fila não muda. Se não chegar, o selo não aparece.
+   * É só aviso: não mexe no Faturar.
+   */
+  const leituraDosAvisosDeRemessa = useAvisoDeRemessa(
+    faturaveisList.map((item) => Number(item.id_int)).filter((id) => Number.isFinite(id) && id > 0)
+  );
   const hojeDeBrasilia = hojeEmBrasilia();
   /** As duas linhas de "Em produção desde": data e hora (Brasília) e, embaixo, a previsão. */
   const renderEmProducaoDesde = (item: FaturavelOrigem, compacto = false) => {
@@ -2522,12 +2534,15 @@ export function NotasFiscaisPage() {
               {
                 header: "Cliente / Destinatário",
                 cell: (item) => (
-                  <ClienteComSocio
-                    socio={item.socio_pagador_nome}
-                    clienteNome={item.cliente_nome}
-                    idCliente={item.id_cliente}
-                    aoAbrirCadastro={(id) => router.push(`/cadastros/${id}/editar`)}
-                  />
+                  <div className="flex flex-col items-start gap-1">
+                    <ClienteComSocio
+                      socio={item.socio_pagador_nome}
+                      clienteNome={item.cliente_nome}
+                      idCliente={item.id_cliente}
+                      aoAbrirCadastro={(id) => router.push(`/cadastros/${id}/editar`)}
+                    />
+                    <SeloDeRemessa aviso={avisoDeRemessaDaLinha(item.id_int, leituraDosAvisosDeRemessa)} />
+                  </div>
                 )
               },
               {
@@ -2601,12 +2616,13 @@ export function NotasFiscaisPage() {
                         <span className="text-xs text-slate-500 font-mono">OS: {item.os_ideal}</span>
                       )}
                     </div>
-                    <div className="mt-2">
+                    <div className="mt-2 flex flex-col items-start gap-1">
                       <ClienteComSocio
                         socio={item.socio_pagador_nome}
                         clienteNome={item.cliente_nome}
                         idCliente={item.id_cliente}
                       />
+                      <SeloDeRemessa aviso={avisoDeRemessaDaLinha(item.id_int, leituraDosAvisosDeRemessa)} />
                     </div>
                     <p className="mt-1 text-xs text-slate-500">
                       Vendedor: {String(item.vendedor || "").trim() || "-"}

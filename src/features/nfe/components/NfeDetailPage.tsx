@@ -32,6 +32,9 @@ import { formatCurrency } from "@/lib/formatters/currency";
 import { formatDateTime } from "@/lib/formatters/date";
 import { StatusBadge } from "@/components/common/StatusBadge";
 import { buscarEnderecoDestinatario, salvarRecebedorDoEndereco } from "@/features/nfe/services/remessa.service";
+import { lerAvisoDeRemessaDoPedido } from "@/features/fiscal/services/aviso-remessa.service";
+import { FaixaDeRemessa } from "@/features/fiscal/components/AvisoDeRemessa";
+import type { AvisoDeRemessa } from "@/features/fiscal/lib/aviso-remessa";
 import {
   getNfeById,
   getNfeItems,
@@ -237,6 +240,8 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
   // apontado no pedido. Antes esta tela decidia o CFOP pelo uf do cadastro do
   // cliente, que e outra coisa.
   const [destinoFiscal, setDestinoFiscal] = useState<DestinoFiscal | null>(null);
+  /** Aviso de nota de remessa: a última leitura, com o pedido para o qual ela vale. */
+  const [avisoDeRemessaLido, setAvisoDeRemessaLido] = useState<{ chave: string; aviso: AvisoDeRemessa | null }>({ chave: "", aviso: null });
   const [ufEmitente, setUfEmitente] = useState<string>("");
   const { user } = useAuth();
   const podeEmitirNfe = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "fiscal.emit_nfe");
@@ -908,6 +913,35 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
       setIsLoading(false);
     }
   }, [noteId, router, showToast]);
+
+  // AVISO DE NOTA DE REMESSA (08/10/2026), em efeito próprio e só de leitura.
+  // Vale para a nota de VENDA de um pedido que ainda pode ser editada: a própria
+  // remessa, a nota avulsa (sem pedido) e a nota já transmitida não o mostram.
+  const idIntParaAvisoDeRemessa = Number(note?.id_int);
+  const chaveDoAvisoDeRemessa =
+    Number.isFinite(idIntParaAvisoDeRemessa) &&
+    idIntParaAvisoDeRemessa > 0 &&
+    String(note?.tipo_nota ?? "").trim().toUpperCase() !== "REMESSA" &&
+    !isReadOnly
+      ? String(idIntParaAvisoDeRemessa)
+      : "";
+  useEffect(() => {
+    if (!chaveDoAvisoDeRemessa) return;
+    let vivo = true;
+    void lerAvisoDeRemessaDoPedido(Number(chaveDoAvisoDeRemessa))
+      .then((aviso) => {
+        if (vivo) setAvisoDeRemessaLido({ chave: chaveDoAvisoDeRemessa, aviso });
+      })
+      .catch(() => {
+        // Leitura que falhou não vira estado: a faixa simplesmente não aparece.
+      });
+    return () => {
+      vivo = false;
+    };
+  }, [chaveDoAvisoDeRemessa]);
+  /** Nulo enquanto lê, sem aviso, se a leitura falhou ou se a nota não é de venda editável. */
+  const avisoDeRemessa =
+    chaveDoAvisoDeRemessa && avisoDeRemessaLido.chave === chaveDoAvisoDeRemessa ? avisoDeRemessaLido.aviso : null;
 
   // Destino fiscal em efeito proprio: fica fora do loadData memoizado e depende
   // so do pedido e da empresa da nota.
@@ -2737,6 +2771,9 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
         <BlocoConferencia id="Resumo" estado={estadoDoBloco("Resumo")} resumo={resumoDoBloco("Resumo")} aberto={blocoAberto("Resumo")} onAlternar={() => alternarBloco("Resumo")}>
         {blocoAberto("Resumo") && (
           <div className="space-y-6">
+            {/* NOTA DE REMESSA (08/10/2026): o pedido é entregue em endereço diferente
+                do que vai nesta nota. Só aviso — não impede salvar nem emitir. */}
+            <FaixaDeRemessa aviso={avisoDeRemessa} />
             <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
               <ClipboardList className="h-5 w-5 text-[#0b2f4a]" /> Resumo do Rascunho
             </h2>
@@ -3032,6 +3069,10 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
               <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
                 <User className="h-5 w-5 text-[#0b2f4a]" /> Dados do Destinatário
               </h2>
+
+              {/* NOTA DE REMESSA (08/10/2026): o pedido é entregue em endereço diferente
+                  do que vai nesta nota. Só aviso — não impede salvar nem emitir. */}
+              <FaixaDeRemessa aviso={avisoDeRemessa} />
 
               {/* REMESSA: quem recebe vem do endereço de entrega, não do cadastro
                   do cliente. Os campos abaixo continuam mostrando o cliente do

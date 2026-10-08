@@ -1,5 +1,7 @@
 import { getSupabaseClient } from "@/lib/supabase/client";
 import { resolverEmpresaEmitente, ehEnderecoDeEntrega } from "@/features/nfe/services/nfe.service";
+import { lerAvisoDeRemessaDoPedido } from "@/features/fiscal/services/aviso-remessa.service";
+import { ACAO_DA_REMESSA } from "@/features/fiscal/lib/aviso-remessa";
 
 /**
  * Conferência do Faturar.
@@ -442,6 +444,20 @@ export async function conferirFaturamento(idInt: number): Promise<ResultadoConfe
       setor: "Comercial",
       onde: "Orçamento → Frete. Sem isso, a nota assume CIF.",
       rota: rotaProposta
+    });
+  }
+
+  // NOTA DE REMESSA (08/10/2026): entrega em endereço diferente do da NF-e.
+  // Mesma regra do selo da Fila e da faixa do rascunho; NUNCA bloqueia, e se a
+  // leitura falhar o aviso simplesmente não entra.
+  const avisoRemessa = await lerAvisoDeRemessaDoPedido(idInt).catch(() => null);
+  if (avisoRemessa && avisoRemessa.nivel !== "NENHUM") {
+    avisos.push({
+      codigo: avisoRemessa.nivel === "FORTE" ? "REMESSA_NECESSARIA" : "ENTREGA_EM_OUTRO_ENDERECO",
+      titulo: `${avisoRemessa.texto}.`,
+      encontrado: `entrega: ${avisoRemessa.entrega} · NF-e: ${avisoRemessa.nfe}`,
+      setor: "Fiscal",
+      onde: ACAO_DA_REMESSA
     });
   }
 
