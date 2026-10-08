@@ -54,6 +54,8 @@ import { ConfirmarAcaoModal } from "@/features/expedicao/components/ConfirmarAca
 import { resolverAmbienteFiscal } from "./services/ambiente-fiscal";
 import { GerarNfseModal } from "@/features/nfse/components/GerarNfseModal";
 import { useNfseDosPedidos } from "@/features/nfse/hooks/useNfseDosPedidos";
+import { usePrevisaoDaProducao } from "@/features/fiscal/hooks/usePrevisaoDaProducao";
+import { dataHoraDeBrasilia, hojeEmBrasilia, linhaDaPrevisao } from "@/features/fiscal/lib/fila-producao-desde";
 import { decidirNfseDoPedido, empresaLiberadaParaNfse, rotuloDoBotaoNfse } from "@/features/nfse/lib/regras-emissao";
 import { pedidoOcultoPorNfse, rotuloDosOcultosPorNfse } from "@/features/nfse/lib/fila-nfse";
 import {
@@ -1871,6 +1873,45 @@ export function NotasFiscaisPage() {
     .filter((item) => empresaLiberadaParaNfse(item.id_empresa) && Number(item.id_int) > 0)
     .map((item) => Number(item.id_int));
   const leituraDasNfse = useNfseDosPedidos(pedidosComNfsePossivel, true, nfseVersao);
+
+  /**
+   * A previsão de entrega da produção (a "data prevista de entrega" do boletim),
+   * lida em lote para TODOS os pedidos carregados — a segunda linha da coluna
+   * "Em produção desde". Leitura à parte, como a das NFS-e: a consulta da Fila
+   * não muda. Se não chegar, a coluna mostra só data e hora.
+   */
+  const leituraDasPrevisoes = usePrevisaoDaProducao(
+    faturaveisList.map((item) => Number(item.id_int)).filter((id) => Number.isFinite(id) && id > 0)
+  );
+  const hojeDeBrasilia = hojeEmBrasilia();
+  /** As duas linhas de "Em produção desde": data e hora (Brasília) e, embaixo, a previsão. */
+  const renderEmProducaoDesde = (item: FaturavelOrigem) => {
+    const desde = dataHoraDeBrasilia(item.liberado_producao_em);
+    const previsao = linhaDaPrevisao(item.id_int, leituraDasPrevisoes, hojeDeBrasilia);
+    return (
+      <div className="flex flex-col" data-em-producao-desde>
+        {desde ? (
+          <span className="whitespace-nowrap text-xs font-medium text-slate-700">{desde}</span>
+        ) : (
+          <span className="text-xs font-medium text-slate-400">-</span>
+        )}
+        {previsao.tipo === "PREVISAO" && (
+          <span
+            data-previsao={previsao.vencida ? "vencida" : "no-prazo"}
+            title={previsao.vencida ? "A previsão de entrega da produção já passou" : "Previsão de entrega definida na produção"}
+            className={`whitespace-nowrap text-[11px] ${previsao.vencida ? "font-medium text-red-600" : "text-slate-500"}`}
+          >
+            {previsao.texto}
+          </span>
+        )}
+        {previsao.tipo === "SEM_PREVISAO" && (
+          <span data-previsao="sem" className="whitespace-nowrap text-[11px] text-slate-400">
+            {previsao.texto}
+          </span>
+        )}
+      </div>
+    );
+  };
   const nfseDosPedidos = leituraDasNfse.porPedido;
   /** Pedido com NFS-e AUTORIZADA sai da Fila, salvo com a caixa marcada. Leitura não pronta não esconde nada. */
   const ocultoPorNfse = (item: FaturavelOrigem) => pedidoOcultoPorNfse(item.id_int, leituraDasNfse, mostrarComNfseEmitida);
@@ -2507,30 +2548,12 @@ export function NotasFiscaisPage() {
                  * da migration 20260827170336. Na fila de faturamento responde
                  * há quanto tempo o pedido está rodando sem virar nota.
                  *
-                 * Mesmo desenho da coluna "Liberado em" de PedidosListPage:
-                 * data acima, hora menor abaixo. Fuso local, e não UTC — o
-                 * carimbo é um instante real, não uma data solta como o prazo
-                 * de entrega.
+                 * Linha 1: data e hora juntas, no horário de Brasília (o carimbo
+                 * é um instante real, guardado em UTC). Linha 2: a previsão de
+                 * entrega que a produção definiu — ver lib/fila-producao-desde.
                  */
                 header: "Em produção desde",
-                cell: (item) => {
-                  const carimbo = item.liberado_producao_em;
-                  if (!carimbo) return <span className="text-xs font-medium text-slate-400">-</span>;
-                  const quando = new Date(carimbo);
-                  if (Number.isNaN(quando.getTime())) {
-                    return <span className="text-xs font-medium text-slate-400">-</span>;
-                  }
-                  return (
-                    <div className="flex flex-col">
-                      <span className="text-xs font-medium text-slate-700">
-                        {quando.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit" })}
-                      </span>
-                      <span className="text-[11px] text-slate-500">
-                        {quando.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
-                      </span>
-                    </div>
-                  );
-                }
+                cell: (item) => renderEmProducaoDesde(item)
               },
               {
                 header: "Empresa Emitente",
@@ -2609,6 +2632,10 @@ export function NotasFiscaisPage() {
                   <p>Empresa: <strong>{getEmpresaName(item.id_empresa)}</strong></p>
                   <p className="text-right">Valor: <strong>{formatCurrency(item.valor_total)}</strong></p>
                   <p>Data: {formatDate(item.created_at)}</p>
+                </div>
+                <div className="flex items-start justify-between gap-3 text-sm text-slate-600">
+                  <span>Em produção desde</span>
+                  <div className="text-right">{renderEmProducaoDesde(item)}</div>
                 </div>
                 <div className="flex flex-wrap justify-end gap-2 pt-2">
                   {renderBotaoFaturadoFora(item)}

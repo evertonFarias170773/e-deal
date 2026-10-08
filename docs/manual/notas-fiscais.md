@@ -1,6 +1,6 @@
 # Notas fiscais
 
-> **Última revisão:** 07/10/2026
+> **Última revisão:** 08/10/2026
 > **Caminho no menu:** Financeiro → Notas fiscais (primeiro item da seção Financeiro do menu lateral)
 > **Endereço:** `/notas-fiscais` (a nota aberta fica em `/notas-fiscais/[id]`)
 
@@ -419,7 +419,7 @@ Nos dois casos a confirmação lista as notas autorizadas que o pedido já tem. 
 - Cliente e **Sócio pagador**: o cliente é quem fez o pedido; a nota sai no nome de quem paga.
 - Endereço principal, **Usar endereço de entrega diferente** e **Endereço só nesta nota**: o principal é o do destinatário na nota; o de entrega é um segundo endereço informado na nota; "só nesta nota" apenas encurta o texto do endereço principal.
 - **Sairá em** e **Transmitida em**: Sairá em mostra o ambiente em que a empresa está hoje, para nota ainda não transmitida; Transmitida em mostra onde a nota já saiu.
-- **Data / Hora** da nota e **Em produção desde** do pedido: a primeira é quando a nota foi criada no Vibe, não a data da autorização; a segunda é quando o pedido foi liberado para produção.
+- **Data / Hora** da nota e **Em produção desde** do pedido: a primeira é quando a nota foi criada no Vibe, não a data da autorização; a segunda é quando o pedido foi liberado para produção, com data e hora na mesma linha (horário de Brasília). Logo abaixo vem a **Previsão**: a data prevista de entrega que a produção definiu no boletim do pedido. **Sem previsão** quer dizer que a produção ainda não definiu a data; a previsão aparece em vermelho quando o dia já passou e o pedido continua na fila. Se o Vibe não conseguir ler as previsões, a coluna mostra só a data e a hora.
 - **Abrir DANFE (PDF)** e **Copiar Link (PDF)**: abrir serve para ver agora; o link copiado é o que se manda a outra pessoa e vale por 7 dias.
 - **Histórico NF-e (Produtos)** e **Histórico NFS-e (Serviços)**: são listas separadas, cada uma com a própria busca e os próprios filtros.
 - Permissão **Liberar para Nota Fiscal** e entrada na fila: a permissão controla a marca de sistema antigo; quem põe o pedido na fila é a liberação para produção.
@@ -508,6 +508,8 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 
 - `src/app/(erp)/notas-fiscais/`
 - `src/features/fiscal/NotasFiscaisPage.tsx`
+- `src/features/fiscal/lib/fila-producao-desde.ts`
+- `src/features/fiscal/hooks/usePrevisaoDaProducao.ts`
 - `src/features/fiscal/components/EmissaoNfeModal.tsx`
 - `src/features/nfse/components/GerarNfseModal.tsx`
 - `src/features/nfse/lib/regras-emissao.ts`
