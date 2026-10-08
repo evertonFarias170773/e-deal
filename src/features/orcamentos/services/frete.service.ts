@@ -301,6 +301,25 @@ export function normalizeCityName(value: string): string {
 }
 
 /**
+ * IDENTIDADE ESTAVEL DA OPCAO (08/10/2026).
+ *
+ * O `id` e a identidade TRANSITORIA da opcao na cotacao: nada dele vai para
+ * `cotacao_frete` (a linha nasce com id proprio do banco) nem e lido de volta
+ * de `opcoes_cotadas`, que e so retrato de auditoria.
+ *
+ * Ele PRECISA ser o mesmo entre duas cotacoes iguais: quem aplica — a rota do
+ * frete complementar (`/api/orcamentos/complementar/aplicar-frete`) e a
+ * recotacao da Expedicao (`/api/expedicao/recotacao/aplicar`) — recota no
+ * servidor e procura a opcao escolhida PELO ID. Com `Date.now()` no id, as
+ * opcoes de Motoboy, Sao Miguel e VEPPO nunca eram encontradas e a aplicacao
+ * morria em "a opcao escolhida nao apareceu na cotacao de agora", fechando um
+ * beco no complementar de motoboy (pedido 23409, 07/10/2026).
+ *
+ * SEDEX e Azul ja eram estaveis (`frete_sedex_<servico>_<idx>` e
+ * `frete_azul_<servico>_<idx>`) e nao mudam. Cada fonte abaixo devolve no
+ * maximo UMA opcao por cotacao, entao o id fixo nao colide.
+ */
+/**
  * Request shipping carrier freight quotes from Supabase RPC.
  *
  * Sempre com o JWT do usuário: `calcular_frete_transportadora` roda como quem
@@ -359,7 +378,7 @@ export async function solicitarCotacaoTransportadoras(
   // sm = Transportadora São Miguel
   if (row.sm !== undefined && row.sm > 0) {
     results.push({
-      id: `frete_transp_sm_${Date.now()}`,
+      id: "frete_transp_sm",
       id_int: idIntNum,
       transportadora: "Transportadora São Miguel",
       servico: "SÃO MIGUEL",
@@ -383,7 +402,7 @@ export async function solicitarCotacaoTransportadoras(
   // mb = Motoboy
   if (row.mb !== undefined && row.mb > 0) {
     results.push({
-      id: `frete_transp_mb_${Date.now()}`,
+      id: "frete_transp_mb",
       id_int: idIntNum,
       transportadora: "Motoboy",
       servico: "MOTOBOY",
@@ -448,7 +467,7 @@ export async function solicitarCotacaoVeppo(input: {
     const idIntNum = typeof input.id_int === "number" ? input.id_int : (Number(input.id_int) || 0);
 
     return [{
-      id: `frete_veppo_${Date.now()}`,
+      id: "frete_veppo",
       id_int: idIntNum,
       transportadora: "VEPPO",
       servico: "VEPPO",
