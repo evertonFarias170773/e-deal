@@ -93,8 +93,10 @@ import { StatusBadge } from "@/components/common/StatusBadge";
 import { fetchComSessao, SessaoExpiradaError } from "@/lib/supabase/sessao";
 import { interpretarColagem, somaQuantidades, type CorOpcao } from "@/features/orcamentos/services/lotes-colagem";
 import {
+  avisoDoFimDivergente,
   calcularNumeracaoFim,
   derivarCamposNumeracao,
+  divergenciaDoFim,
   findNumeracaoByName,
   resolverMultiplicadorNumeracao,
   type ModeloNumeracaoCampos,
@@ -463,6 +465,25 @@ export function LotesGrid({
   // Faixa escondida: nenhum modo de numeração se aplica, e a linha fica como
   // está (lote novo sem Nº inicial não ganha faixa).
   const modoEfetivo = mostraFaixa ? modoNumeracao : null;
+
+  /**
+   * Nº FINAL GRAVADO × CALCULADO (09/10/2026).
+   * A grade refaz o Nº Final em memória ao abrir; o banco pode ter outro número
+   * (o numerador mudou depois da gravação — pedido 23161). Aqui a comparação é
+   * do que está GRAVADO (`linhasIniciais`, o retrato do banco que o pai mantém)
+   * com a conta de hoje. Só avisa: nada é gravado ao abrir, e o aviso some
+   * quando o modelo é salvo. Produto que não usa a faixa não é conferido.
+   */
+  const fimDivergentePorId = useMemo(() => {
+    const mapa = new Map<number, string>();
+    if (!mostraFaixa) return mapa;
+    for (const gravada of linhasIniciais) {
+      if (!gravada.id) continue;
+      const divergencia = divergenciaDoFim(gravada, numeracoes);
+      if (divergencia) mapa.set(gravada.id, avisoDoFimDivergente(divergencia));
+    }
+    return mapa;
+  }, [linhasIniciais, numeracoes, mostraFaixa]);
 
   const numerar = useCallback(
     (lista: Lote[], modo: ModoNumeracao | null): Lote[] => {
@@ -1279,6 +1300,12 @@ export function LotesGrid({
                 </button>
               </div>
             </div>
+
+            {linha.id && fimDivergentePorId.has(linha.id) && (
+              <p data-fim-divergente={linha.id} role="alert" className="mt-1 rounded-lg border border-red-200 bg-red-50 px-2 py-1 text-xs font-semibold text-red-700">
+                {fimDivergentePorId.get(linha.id)}
+              </p>
+            )}
 
             {linha.corNaoReconhecida && (
               <p className="mt-1 text-[11px] font-semibold text-red-600">

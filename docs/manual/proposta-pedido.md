@@ -1,6 +1,6 @@
 # Proposta: aba Pedido (Boletim Técnico & Lotes)
 
-> **Última revisão:** 07/10/2026
+> **Última revisão:** 09/10/2026
 > **Caminho no menu:** Pedidos → abrir um pedido → Editar proposta → aba Pedido
 > **Endereço:** `/orcamentos/[número]/editar?tab=pedido`
 
@@ -120,6 +120,17 @@ Modelo de ingresso com **QR de controle de acesso reservado** não pode ser remo
 
 Em numerador do tipo Camarote, aparecem os campos **Q CAM \***, **L CAM \*** e **C INI**, e a **Qtd** deixa de ser digitada: ela é Q CAM × L CAM. Em numerador do tipo Ticket, cada unidade consome mais de um número e o Nº Final leva isso em conta; a regra aparece escrita abaixo da linha.
 
+### Quando o Nº final gravado não bate com o calculado
+
+O **Nº Final** é calculado pela tela e gravado junto com o modelo. Se o cadastro do numerador mudar depois (por exemplo, um numerador de ticket que passa de 2 para 4 numerações por unidade), o número gravado fica velho: a lista mostra o valor novo, mas o pedido e a OS continuam com o antigo.
+
+1. Ao abrir a aba, o modelo nessa situação mostra um aviso vermelho: **Nº final gravado (X) difere do calculado (Y). Salve para corrigir antes de imprimir.**
+2. Confira se o numerador do modelo é o certo.
+3. Clique em **Gravar lote** (ou em **Salvar alterações**, em pedido com cobrança). O número calculado é gravado e o aviso some.
+4. Se a OS já foi impressa com o número antigo, imprima de novo.
+
+Nada é gravado só de abrir a aba. O aviso não aparece em modelo sem numerador, sem numeração ou criado por Mapa de Teatro.
+
 ### Criar os modelos a partir de um Mapa de Teatro
 
 1. No produto, clique em **Mapa Teatro**, ao lado de **Gravar lote**.
@@ -226,6 +237,7 @@ O PDF é sempre o do mapa como está hoje no sistema de mapas. Quem publica o PD
 | "... A quantidade do item voltou para N e o valor da proposta voltou a R$ ..." | Um modelo não pôde ser alterado ou incluído depois de a quantidade ser gravada. O sistema devolveu a quantidade. A mensagem diz o que já tinha sido gravado. | Confira a lista e clique em **Gravar lote** de novo. |
 | "... a quantidade do item ficou em N e não pôde ser devolvida ..." ou "... o valor da proposta ficou em R$ ... : confira." | A gravação falhou no meio e o sistema não conseguiu desfazer tudo. | Confira a quantidade do produto e o valor do pedido, e avise o administrador. |
 | "N lote(s) foram removidos, mas a quantidade do item não foi gravada" | Os modelos saíram, mas a quantidade do produto ficou a antiga. | Clique em **Gravar lote** de novo. |
+| "Nº final gravado (X) difere do calculado (Y). Salve para corrigir antes de imprimir." | O numerador do modelo mudou depois de o modelo ser gravado. | Confira o numerador e grave o lote. Reimprima a OS se ela já saiu. |
 | "Salve a proposta uma vez antes de montar os lotes deste produto." | O produto foi incluído e o pedido ainda não foi salvo. | Clique em **Salvar alterações** e volte à aba. |
 | "N lote(s) ainda sem os obrigatórios — não são gravados até ficarem completos." | Há linha nova sem Modelo, Qtd ou Cor papel (a cor só conta quando o campo tem asterisco). | Complete a linha ou remova-a. |
 | "Complete os campos obrigatórios do modelo #... para voltar a gravar." | Um modelo que já existia ficou sem campo obrigatório. | Preencha o campo naquele modelo e grave de novo. |
@@ -262,6 +274,7 @@ O PDF é sempre o do mapa como está hoje no sistema de mapas. Quem publica o PD
 - `src/app/api/pedidos/mapa-teatro/[mapaId]/pdf/route.ts`
 - `src/features/orcamentos/services/lotes-colagem.ts`
 - `src/features/orcamentos/services/lotes-numeracao.ts`
+- `src/features/orcamentos/numeracao-modelo-utils.ts`
 - `src/features/orcamentos/lib/checklist-lote.ts`
 - `src/features/orcamentos/lib/divergencia-lotes.ts`
 - `src/app/api/pedidos/lotes-em-massa/route.ts`

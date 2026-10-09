@@ -71,6 +71,8 @@ import {
   abrirAbaDesvinculada,
   type LayoutPdfOs
 } from "./services/imprimir-os.client";
+import { useFimDivergente } from "@/features/orcamentos/hooks/useFimDivergente";
+import { perguntaAntesDeImprimir } from "@/features/orcamentos/numeracao-modelo-utils";
 import { ActionsMenu } from "@/components/common/ActionsMenu";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import { PageHeader } from "@/components/common/PageHeader";
@@ -172,6 +174,8 @@ export function BoletimFormPage() {
   const modoParam = searchParams ? searchParams.get("modo") : null;
   const idIntParam = searchParams ? searchParams.get("id_int") : null;
   const isEditing = modoParam === "edicao" && !!idIntParam;
+  // Lido ao abrir a tela, para a pergunta antes de imprimir (ver `podeImprimirComOFimGravado`).
+  const fimDivergente = useFimDivergente(idIntParam ? [Number(idIntParam)] : []);
 
   const { user } = useAuth();
   const canEditDate = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "pedidos.edit_data");
@@ -1096,8 +1100,20 @@ export function BoletimFormPage() {
    * boletim, mesmo setor, mesmo aviso, mesma trava de `isPrintingOs`. Duas
    * copias do mesmo handler divergiriam no primeiro ajuste.
    */
+  /**
+   * Antes de imprimir: se algum modelo do pedido tem o Nº final gravado
+   * diferente do calculado pelo numerador de hoje, pergunta. Não bloqueia — o
+   * documento sai igual, com o número gravado. A resposta já está lida
+   * (`useFimDivergente`) porque a aba do PDF abre de forma síncrona no clique.
+   */
+  function podeImprimirComOFimGravado(): boolean {
+    const pergunta = perguntaAntesDeImprimir(fimDivergente.porPedido.get(Number(idIntParam)) ?? []);
+    return !pergunta || window.confirm(pergunta);
+  }
+
   async function imprimirOsDoBoletimAberto(layout: LayoutPdfOs) {
     if (isPrintingOs || !idIntParam) return;
+    if (!podeImprimirComOFimGravado()) return;
     setIsPrintingOs(true);
     // Imprime o boletim aberto: o PDF é do setor, não da proposta.
     const result = await abrirPdfOs(Number(idIntParam), boletimId, setorEfetivo, layout);
@@ -1118,6 +1134,7 @@ export function BoletimFormPage() {
 
   async function imprimirOsDeOutroSetor(boletimDoSetor: BoletimSetor, layout: LayoutPdfOs) {
     if (isPrintingOs || !idIntParam) return;
+    if (!podeImprimirComOFimGravado()) return;
     setIsPrintingOs(true);
     const r = await abrirPdfOs(Number(idIntParam), boletimDoSetor.id, boletimDoSetor.setor, layout);
     setIsPrintingOs(false);
@@ -1134,6 +1151,7 @@ export function BoletimFormPage() {
 
   async function baixarTodosOsBoletins(layout: LayoutPdfOs) {
     if (isPrintingOs || !idIntParam) return;
+    if (!podeImprimirComOFimGravado()) return;
     setIsPrintingOs(true);
     // Um arquivo por setor. Abrir N abas seria bloqueado pelo navegador depois
     // da primeira, então cada uma vira download.
@@ -1166,6 +1184,7 @@ export function BoletimFormPage() {
    */
   async function gerarPdfDoModal(quais: BoletimSetor[]) {
     if (gerandoPdf || !idIntParam) return;
+    if (!podeImprimirComOFimGravado()) return;
     setGerandoPdf(true);
 
     // UM documento, aberto para visualizar — não N downloads. Com um setor só,

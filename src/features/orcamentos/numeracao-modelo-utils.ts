@@ -163,3 +163,132 @@ export function derivarCamposNumeracao(
 
   return derivados;
 }
+
+/* ------------------------------------------------------------------------- */
+/* Nº FINAL GRAVADO × CALCULADO (09/10/2026)                                   */
+/* ------------------------------------------------------------------------- */
+
+/**
+ * O Nº Final é calculado na tela e GRAVADO no modelo. Nada o refaz quando o
+ * cadastro do numerador muda depois: no pedido 23161 o modelo foi gravado com
+ * 1–800 (400 un × 2) e o numerador passou a consumir 4 por unidade — a tela
+ * mostrava 1600, o banco e a OS impressa seguiam com 800.
+ *
+ * Estas funções só COMPARAM, com a mesma conta de cima (`calcularNumeracaoFim`
+ * + `resolverMultiplicadorNumeracao`). Não gravam e não corrigem nada: servem
+ * ao aviso da Lista rápida e à confirmação antes de imprimir a OS.
+ */
+export type ModeloComFaixaGravada = {
+  id?: number | null;
+  id_int?: number | null;
+  nome_modelo?: string | null;
+  quantidade?: number | string | null;
+  tipo_numeracao?: string | null;
+  numeracao_inicio?: number | string | null;
+  numeracao_fim?: number | string | null;
+  gabarito_operacional?: string | null;
+  /** Setor de Mapa de Teatro: os assentos são os do mapa, não há faixa a conferir. */
+  mapa_teatro_setor_id?: unknown;
+  mapa_teatro_id?: unknown;
+};
+
+export type FimDivergente = {
+  id: number | null;
+  idInt: number | null;
+  nome: string;
+  numerador: string;
+  gravado: number;
+  calculado: number;
+};
+
+/**
+ * O Nº Final que a conta dá HOJE para o que está gravado no modelo, ou `null`
+ * quando não há o que conferir — e aí NÃO há aviso. Não confere:
+ *   - lista de numeradores ainda não carregada;
+ *   - setor de Mapa de Teatro;
+ *   - modelo SEM_NUMERACAO, ou sem Nº Inicial, sem Nº Final ou sem quantidade;
+ *   - modelo sem numerador, ou com numerador que não está na lista (exclusivo de
+ *     outro cliente, apagado): sem ele não se sabe o multiplicador;
+ *   - numerador TICKET sem `ticket_qtd` válido.
+ * "Sequencial entre os modelos" e "Cada modelo começa do 1" não entram: a
+ * comparação usa o Nº Inicial GRAVADO, não o que o modo recalcula na tela.
+ */
+export function fimCalculadoDoGravado(modelo: ModeloComFaixaGravada, numeracoes: NumeracaoOpcao[]): number | null {
+  if (!Array.isArray(numeracoes) || numeracoes.length === 0) return null;
+  if (modelo.mapa_teatro_setor_id || modelo.mapa_teatro_id) return null;
+  if (String(modelo.tipo_numeracao ?? "").toUpperCase() === "SEM_NUMERACAO") return null;
+  if (modelo.numeracao_inicio === null || modelo.numeracao_inicio === undefined || modelo.numeracao_inicio === "") return null;
+  if (modelo.numeracao_fim === null || modelo.numeracao_fim === undefined || modelo.numeracao_fim === "") return null;
+  const gabarito = String(modelo.gabarito_operacional ?? "").trim();
+  if (!gabarito) return null;
+  const numeracao = findNumeracaoByName(numeracoes, gabarito);
+  if (!numeracao) return null;
+  const { multiplicador } = resolverMultiplicadorNumeracao(numeracao);
+  return calcularNumeracaoFim(Number(modelo.numeracao_inicio), Number(modelo.quantidade), multiplicador);
+}
+
+/** A divergência de UM modelo, ou `null` quando o gravado confere (ou não há o que conferir). */
+export function divergenciaDoFim(modelo: ModeloComFaixaGravada, numeracoes: NumeracaoOpcao[]): FimDivergente | null {
+  const calculado = fimCalculadoDoGravado(modelo, numeracoes);
+  if (calculado === null) return null;
+  const gravado = Number(modelo.numeracao_fim);
+  if (!Number.isFinite(gravado) || gravado === calculado) return null;
+  return {
+    id: modelo.id ?? null,
+    idInt: modelo.id_int ?? null,
+    nome: String(modelo.nome_modelo ?? "").trim(),
+    numerador: String(modelo.gabarito_operacional ?? "").trim(),
+    gravado,
+    calculado
+  };
+}
+
+/** Os modelos de uma lista cujo Nº Final gravado difere do calculado com o numerador de hoje. */
+export function modelosComFimDivergente(modelos: readonly ModeloComFaixaGravada[], numeracoes: NumeracaoOpcao[]): FimDivergente[] {
+  return modelos.map((m) => divergenciaDoFim(m, numeracoes)).filter((d): d is FimDivergente => d !== null);
+}
+
+/** O aviso vermelho de cada modelo na Lista rápida. */
+export function avisoDoFimDivergente(d: Pick<FimDivergente, "gravado" | "calculado">): string {
+  return `Nº final gravado (${d.gravado}) difere do calculado (${d.calculado}). Salve para corrigir antes de imprimir.`;
+}
+
+/**
+ * A pergunta antes de imprimir a OS ou o boletim. Vazio quando não há
+ * divergência — quem chama imprime direto. O documento NÃO muda: sai com o
+ * número gravado, e é isso que a pergunta avisa.
+ */
+export function perguntaAntesDeImprimir(divergentes: readonly FimDivergente[]): string {
+  if (divergentes.length === 0) return "";
+  const linhas = divergentes
+    .slice(0, 8)
+    .map((d) => `• ${d.id ? `#${d.id} ` : ""}${d.nome || "modelo"}: gravado ${d.gravado}, calculado ${d.calculado}${d.numerador ? ` (${d.numerador})` : ""}`);
+  const resto = divergentes.length > 8 ? [`• e mais ${divergentes.length - 8}`] : [];
+  return [
+    `Atenção: ${divergentes.length} modelo(s) deste pedido têm o Nº final gravado diferente do calculado pelo numerador de hoje.`,
+    "",
+    ...linhas,
+    ...resto,
+    "",
+    "O documento sai com o número GRAVADO. Para corrigir, reabra o pedido na aba Pedido e salve.",
+    "",
+    "Imprimir mesmo assim?"
+  ].join(String.fromCharCode(10));
+}
+
+/**
+ * Numerador alterado: os pedidos que precisam ser reabertos e salvos.
+ * Recebe os modelos que usam o numerador (de pedidos ainda não impressos nem
+ * entregues — o filtro é de quem consulta) e o numerador JÁ com o valor novo.
+ * Só lista; não corrige.
+ */
+export function pedidosAReabrirPeloNumerador(
+  modelos: readonly ModeloComFaixaGravada[],
+  numeradorNovo: NumeracaoOpcao
+): { texto: string; pedidos: number[]; modelos: FimDivergente[] } {
+  const nome = String(numeradorNovo?.name ?? "").trim();
+  const doNumerador = modelos.filter((m) => String(m.gabarito_operacional ?? "").trim() === nome);
+  const divergentes = modelosComFimDivergente(doNumerador, [numeradorNovo]);
+  const pedidos = Array.from(new Set(divergentes.map((d) => d.idInt).filter((id): id is number => id !== null))).sort((a, b) => a - b);
+  return { texto: pedidos.length ? "Estes pedidos precisam ser reabertos e salvos" : "", pedidos, modelos: divergentes };
+}

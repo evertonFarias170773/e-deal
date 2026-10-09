@@ -28,6 +28,8 @@ import {
   type LayoutPdfOs,
   type AbrirPdfOsResult
 } from "./services/imprimir-os.client";
+import { useFimDivergente } from "@/features/orcamentos/hooks/useFimDivergente";
+import { perguntaAntesDeImprimir } from "@/features/orcamentos/numeracao-modelo-utils";
 import { listarBoletinsDaProposta } from "./services/boletim-setores.service";
 import { encerrarTeste } from "./services/encerrar-teste.client";
 import { getSupabaseClient } from "@/lib/supabase/client";
@@ -83,6 +85,9 @@ export function PedidosListPage() {
   const router = useRouter();
   
   const [pedidos, setPedidos] = useState<PropostaOperacionalListItem[]>([]);
+  // Modelos com Nº final gravado diferente do calculado, por pedido da lista —
+  // lido em lote ao carregar, para a pergunta antes de imprimir a OS.
+  const fimDivergente = useFimDivergente(pedidos.map((p) => Number(p.id_int)));
   const [isLoaded, setIsLoaded] = useState(false);
   const [isDevolverModalOpen, setIsDevolverModalOpen] = useState(false);
   const [selectedPropostaForDevolver, setSelectedPropostaForDevolver] = useState<PropostaOperacionalListItem | null>(null);
@@ -211,6 +216,10 @@ export function PedidosListPage() {
 
   async function handleImprimirOS(proposta: PropostaOperacionalListItem, layout: LayoutPdfOs = "completo") {
     if (printingOsId !== null) return;
+    // Nº final gravado diferente do calculado: pergunta antes, sem bloquear. A
+    // resposta já está lida para os pedidos da lista (`useFimDivergente`).
+    const pergunta = perguntaAntesDeImprimir(fimDivergente.porPedido.get(Number(proposta.id_int)) ?? []);
+    if (pergunta && !window.confirm(pergunta)) return;
     setPrintingOsId(proposta.id_int);
 
     /**

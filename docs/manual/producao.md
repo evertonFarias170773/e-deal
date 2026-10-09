@@ -167,6 +167,8 @@ Nomes exatamente como aparecem na tela.
 
 ### Imprimir a OS
 
+Antes de abrir o PDF, o sistema confere a numeração dos modelos do pedido. Se algum modelo tem o **Nº final** gravado diferente do calculado pelo numerador de hoje, aparece uma pergunta com os modelos e os dois números. **OK** imprime mesmo assim, com o número gravado; **Cancelar** não imprime. Para corrigir, reabra o pedido na aba **Pedido** e grave: veja [Proposta: aba Pedido](proposta-pedido.md).
+
 1. No painel geral, abra **Ações** na linha do pedido.
 2. **Imprimir OS (PDF)** abre, em nova aba, um documento só com todos os setores do pedido, um setor por página.
 3. **Imprimir OS reduzida (PDF)** abre a versão resumida (lista de conferência, sem as imagens das artes). Pelo painel geral ela sai de um setor só; para o reduzido de cada setor, use a tela da OS.
@@ -303,6 +305,7 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 
 - `src/features/pedidos/PedidosListPage.tsx`
 - `src/features/pedidos/BoletimFormPage.tsx`
+- `src/features/orcamentos/hooks/useFimDivergente.ts`
 - `src/features/pedidos/PedidosKanbanPage.tsx`
 - `src/features/pedidos/PainelImpressaoPage.tsx`
 - `src/features/pedidos/components/SetorFaseChip.tsx`
