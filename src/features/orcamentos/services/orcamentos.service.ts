@@ -23,6 +23,12 @@ import {
 // O criterio de "pedido em aberto" e o da Expedicao. Nao duplicar a lista aqui.
 import { STATUS_PEDIDO_EM_ABERTO } from "@/features/expedicao/lib/pedido-em-aberto";
 import {
+  atualizarEnderecoDoOrcamento,
+  inserirEnderecoDoOrcamento,
+  salvarEnderecoDeEntrega,
+  type ResultadoEndereco
+} from "@/features/orcamentos/lib/endereco-entrega-proposta";
+import {
   categoriaDoServico,
   categoriaPorNomeConhecido,
   ehCategoriaFrete,
@@ -5208,52 +5214,29 @@ export async function insertEnderecoProposta(
     return { success: false, errorMessage: "Cliente Supabase indisponível." };
   }
 
-  const { data, error } = await client
-    .from("enderecos")
-    .insert([
-      {
-        id_cliente: endereco.id_cliente,
-        cep: endereco.cep,
-        endereco: endereco.endereco,
-        numero: endereco.numero,
-        complemento: endereco.complemento || null,
-        bairro: endereco.bairro,
-        cidade: endereco.cidade,
-        uf: endereco.uf,
-        tipo_endereco: endereco.tipo || "Entrega",
-        recebedor: endereco.recebedor || null,
-        cpf_recebedor: endereco.cpfRecebedor || null,
-        ie_recebedor: endereco.ieRecebedor || null,
-      },
-    ])
-    .select("id, cep, endereco, numero, complemento, bairro, cidade, uf, tipo_endereco, recebedor, cpf_recebedor, ie_recebedor")
-    .single();
-
-  if (error) {
-    console.error("[OrcamentosService] Erro ao salvar endereco:", error);
-    return { success: false, errorMessage: error.message || "Erro ao salvar endereço no banco." };
+  // Nunca cria PRINCIPAL e grava o tipo em maiusculas: lib/endereco-entrega-proposta.
+  const resultado = await inserirEnderecoDoOrcamento(client, endereco);
+  if (!resultado.success) {
+    console.error("[OrcamentosService] Erro ao salvar endereco:", resultado.errorMessage);
   }
+  return resultado;
+}
 
-  if (!data) {
-    return { success: false, errorMessage: "Endereço não retornado após inserção." };
+/**
+ * O "Salvar" do modal de endereco aberto sobre um endereco existente (botao
+ * "Salvar endereco" e lapis do bloco 5). Endereco PRINCIPAL nunca e alterado
+ * por aqui: o digitado vira um endereco de ENTREGA novo, ou reaproveita um
+ * igual. Regra e motivo (pedido 23320) em lib/endereco-entrega-proposta.
+ */
+export async function salvarEnderecoDeEntregaDaProposta(
+  idVinculado: string,
+  endereco: Omit<CadastroEndereco, "id">
+): Promise<ResultadoEndereco> {
+  const client = getSupabaseClient();
+  if (!client) {
+    return { success: false, errorMessage: "Cliente Supabase indisponível." };
   }
-
-  const mappedEndereco: CadastroEndereco = {
-    id: data.id,
-    cep: data.cep || "",
-    endereco: data.endereco || "",
-    numero: data.numero || "",
-    complemento: data.complemento || "",
-    bairro: data.bairro || "",
-    cidade: data.cidade || "",
-    uf: data.uf || "",
-    tipo: (data.tipo_endereco?.toLowerCase() as any) || "entrega",
-    recebedor: data.recebedor || "",
-    cpfRecebedor: data.cpf_recebedor || "",
-    ieRecebedor: data.ie_recebedor || "",
-  };
-
-  return { success: true, data: mappedEndereco };
+  return salvarEnderecoDeEntrega(client, idVinculado, endereco);
 }
 
 /**
@@ -5341,52 +5324,12 @@ export async function updateEnderecoProposta(
     return { success: false, errorMessage: "Cliente Supabase indisponível." };
   }
 
-  const { data, error } = await client
-    .from("enderecos")
-    .update({
-      cep: endereco.cep,
-      endereco: endereco.endereco,
-      numero: endereco.numero,
-      complemento: endereco.complemento || null,
-      bairro: endereco.bairro,
-      cidade: endereco.cidade,
-      uf: endereco.uf,
-      tipo_endereco: endereco.tipo || "Entrega",
-      recebedor: endereco.recebedor || null,
-      cpf_recebedor: endereco.cpfRecebedor || null,
-      ie_recebedor: endereco.ieRecebedor || null,
-    })
-    .eq("id", id)
-    .select("id, cep, endereco, numero, complemento, bairro, cidade, uf, tipo_endereco, recebedor, cpf_recebedor, ie_recebedor")
-    .single();
-
-  if (error) {
-    if (process.env.NODE_ENV === "development") {
-      console.error("[OrcamentosService] Erro ao atualizar endereco:", error);
-    }
-    return { success: false, errorMessage: error.message || "Erro ao atualizar endereço no banco." };
+  // Recusa linha PRINCIPAL (o endereco fiscal): lib/endereco-entrega-proposta.
+  const resultado = await atualizarEnderecoDoOrcamento(client, id, endereco);
+  if (!resultado.success && process.env.NODE_ENV === "development") {
+    console.error("[OrcamentosService] Erro ao atualizar endereco:", resultado.errorMessage);
   }
-
-  if (!data) {
-    return { success: false, errorMessage: "Endereço não retornado após atualização." };
-  }
-
-  const mappedEndereco: CadastroEndereco = {
-    id: data.id,
-    cep: data.cep || "",
-    endereco: data.endereco || "",
-    numero: data.numero || "",
-    complemento: data.complemento || "",
-    bairro: data.bairro || "",
-    cidade: data.cidade || "",
-    uf: data.uf || "",
-    recebedor: data.recebedor || "",
-    cpfRecebedor: data.cpf_recebedor || "",
-    ieRecebedor: data.ie_recebedor || "",
-    tipo: (data.tipo_endereco?.toLowerCase() as any) || "entrega",
-  };
-
-  return { success: true, data: mappedEndereco };
+  return resultado;
 }
 
 /**

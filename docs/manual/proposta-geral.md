@@ -45,9 +45,9 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Confirmar e usar como pagador** | Resultado "Sem cadastro — dados da Receita" | Cria o cadastro, o endereço principal e o vínculo, e usa como pagador. |
 | Linha de **Outras opções de entrega** | Bloco **5. Endereço de entrega** | Troca o endereço de entrega. |
 | Botão de copiar (dica: "Copiar endereço") | No endereço, selecionado ou da lista | Copia o endereço completo. |
-| **+ Adicionar novo endereço** / **Salvar endereço** | Bloco **5. Endereço de entrega** | Em proposta nova, abre um endereço em branco. Em proposta existente com endereço escolhido, o nome é **Salvar endereço** e abre o endereço selecionado para edição. |
+| **+ Adicionar novo endereço** / **Salvar endereço** | Bloco **5. Endereço de entrega** | Em proposta nova, abre um endereço em branco. Em proposta existente com endereço escolhido, o nome é **Salvar endereço** e abre o endereço selecionado. Se ele é de entrega, você edita; se é o principal do cliente, o que você alterar vira um endereço de entrega novo. |
 | **Validar** | Janela de endereço, ao lado de **CPF / CNPJ do Recebedor** | Consulta o documento e preenche os dados do recebedor. |
-| **Adicionar** / **Salvar** | Janela **Adicionar novo endereço** / **Editar endereço** | Grava o endereço na hora. |
+| **Adicionar** / **Salvar** | Janela **Adicionar novo endereço** / **Editar endereço** | Grava o endereço na hora. Sobre o endereço principal, **Salvar** cria um endereço de entrega e deixa o principal como está. |
 | **Confirmar** | Janela **Atenção** (endereço diferente do da nota) | Confirma o endereço de entrega escolhido. |
 | **Ciente, continuar** | Janela **Atenção à Carteira** | Mantém o cliente escolhido, de outra carteira. |
 | **Cancelar** | Todas as janelas acima e a busca de sócio | Fecha sem aplicar. Em **Atenção à Carteira**, limpa o cliente escolhido. |
@@ -140,6 +140,8 @@ O destino escolhido aparece também no topo do bloco **8. Resumo do orçamento**
 3. Preencha **Nome / Razão Social do Recebedor**, **CEP**, **Tipo**, **Logradouro**, **Número**, **Complemento**, **Bairro**, **Cidade** e **UF**. Ao mudar o CEP, logradouro, bairro, cidade e UF são preenchidos sozinhos.
 4. Clique em **Adicionar** (endereço novo) ou **Salvar** (edição). O endereço grava na hora no cadastro do cliente.
 5. O endereço novo já fica selecionado como entrega.
+6. **Entrega em lugar diferente do endereço principal:** abra o principal pelo **Salvar endereço** ou pelo lápis, digite o endereço da entrega e clique em **Salvar**. O sistema cria um endereço de entrega novo e passa o pedido para ele. O endereço principal não muda: ele é o que sai na nota fiscal e só se altera no cadastro do cliente. A janela avisa isso em azul antes de você salvar.
+7. Se o cliente já tem um endereço de entrega igual ao digitado (mesmo CEP, rua, número e complemento), o sistema usa esse em vez de criar outro. Se você não mudou nada, nada é gravado.
 
 ### Usar os blocos da coluna da direita
 
@@ -161,8 +163,9 @@ A escolha entre proposta avulsa e proposta com produtos do catálogo não fica n
 - Vendedor que escolhe cliente da carteira de outro vendedor vê o aviso **Atenção à Carteira**. Dá para continuar em **Ciente, continuar**; fechar o aviso limpa o cliente escolhido.
 - O sistema nunca escolhe o endereço de entrega no seu lugar depois da primeira seleção. Se o endereço escolhido sair da lista, o campo fica vazio até você escolher outro.
 - O modal de endereço não cria endereço do tipo Principal. O tipo de um endereço principal só muda na tela de Clientes.
+- A proposta nunca altera o endereço principal do cliente, nem o único endereço que ele tem. Entrega diferente cria um endereço de entrega novo; o principal só muda no cadastro do cliente.
 - O complemento do endereço tem limite de 60 caracteres, o mesmo da nota fiscal.
-- Editar um endereço usado por outros pedidos em aberto muda também as etiquetas deles. A tela avisa quantos são.
+- Editar um endereço de entrega usado por outros pedidos em aberto muda também as etiquetas deles. A tela avisa quantos são.
 - Não dá para vincular cliente cadastrado a um orçamento rápido que tenha cobrança ativa ou pagamento confirmado. Cancele as cobranças antes.
 - No pedido complementar, contato, pagador e endereço ficam travados com o aviso **Herdado do pedido #<número>**. Um endereço novo cadastrado ali vai para o cadastro do cliente, mas a entrega continua sendo a do pedido principal.
 - Com cobrança ativa e sem a permissão de editar proposta paga, alterações de vendedor, empresa, contato e endereço não são gravadas: o salvamento guarda só as observações e a orientação técnica.
@@ -173,7 +176,7 @@ A escolha entre proposta avulsa e proposta com produtos do catálogo não fica n
 - Contato responsável x recebedor: o contato recebe o orçamento e aparece na proposta enviada; o recebedor é quem recebe a mercadoria.
 - Endereço de entrega x endereço fiscal: o de entrega é o escolhido no bloco 5 e é o destino do frete; o fiscal é o endereço principal do pagador, mostrado no bloco 4, e não se escolhe aqui.
 - **Cliente não cadastrado / orçamento rápido** x **Proposta avulsa**: o orçamento rápido é proposta sem cliente no cadastro; a avulsa é proposta sem produtos do catálogo, marcada na aba Orçamento. Uma coisa não depende da outra.
-- **Salvar endereço** x **Salvar alterações**: **Salvar endereço** só abre a janela de edição do endereço selecionado; quem salva a proposta é **Salvar alterações**, no rodapé.
+- **Salvar endereço** x **Salvar alterações**: **Salvar endereço** só abre a janela do endereço selecionado; quem salva a proposta é **Salvar alterações**, no rodapé.
 - **Salvar** da janela de endereço x **Salvar** da janela de contato: o endereço grava na hora no cadastro do cliente; o contato corrigido fica na tela ("Modo Local") e o nome dele só vai para a proposta ao salvar.
 - Trocar o pagador x trocar o endereço: trocar o pagador muda a lista de endereços disponíveis, mas não escolhe o endereço de entrega por você.
 - Vendedor da proposta x vendedor do cadastro: o campo **Vendedor** nasce com o vendedor padrão do cliente; só quem tem permissão grava um vendedor diferente.
@@ -197,6 +200,7 @@ A escolha entre proposta avulsa e proposta com produtos do catálogo não fica n
 | **Endereço obrigatório** | Nenhum endereço de entrega selecionado. | Selecione um endereço no bloco 5. |
 | **Endereço incompleto** — "Preencha CEP, logradouro, número, cidade e UF." | Faltou campo na janela de endereço. | Complete os campos pedidos. |
 | **Cliente obrigatório** — "Selecione o cliente da proposta antes de adicionar um novo endereço." | Tentativa de criar endereço sem cliente. | Escolha o cliente primeiro. |
+| "O endereço principal é o fiscal e só se altera no cadastro do cliente." | A proposta tentou alterar o endereço principal. | Para entrega em outro lugar, salve o endereço digitado: ele vira um endereço de entrega. Para corrigir o principal, abra o cadastro do cliente. |
 | **Ação bloqueada** — "Não posso selecionar este endereço. Precisa incluir CPF do RECEBEDOR." | Endereço diferente do principal do pagador, sem CPF do recebedor. | Edite o endereço pelo lápis e informe o documento do recebedor. |
 | **Vendedor não vinculado** | O cliente não tem vendedor padrão no cadastro. | Selecione o vendedor ou peça para quem pode alterar. |
 | **Vendedor obrigatório** | Proposta sem vendedor. | Selecione o vendedor antes de salvar. |
@@ -228,6 +232,7 @@ A escolha entre proposta avulsa e proposta com produtos do catálogo não fica n
 - `src/features/orcamentos/components/ContactEditModal.tsx`
 - `src/features/cadastros/components/DocumentoRecebedorFields.tsx`
 - `src/features/orcamentos/services/orcamentos.service.ts`
+- `src/features/orcamentos/lib/endereco-entrega-proposta.ts`
 - `src/features/orcamentos/orcamento-utils.ts`
 - `src/lib/mocks/empresas.mock.ts`
 - `src/features/cadastros/CadastroDetailPage.tsx`

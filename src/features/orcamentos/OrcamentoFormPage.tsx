@@ -74,7 +74,7 @@ import { getCadastrosReadOnlyList, getCadastroCompleto } from "@/features/cadast
 import { listProdutos } from "@/features/produtos/services/produtos.service";
 import { listProdutoVariacaoVinculos } from "@/features/produtos/services/produto-variacoes.service";
 import { idEmpresaDoPdf } from "@/features/orcamentos/lib/empresa-pdf";
-import { saveProposta, listVendedoresReais, insertEnderecoProposta, updateEnderecoProposta, contarOutrosPedidosNoEndereco, updatePropostaFiscalDados, registrarMensagemSistemaProposta, gerarPDFProposta, duplicarProposta, retirarPropostaDaProducao, type UsuarioVendedor } from "@/features/orcamentos/services/orcamentos.service";
+import { saveProposta, listVendedoresReais, insertEnderecoProposta, salvarEnderecoDeEntregaDaProposta, contarOutrosPedidosNoEndereco, updatePropostaFiscalDados, registrarMensagemSistemaProposta, gerarPDFProposta, duplicarProposta, retirarPropostaDaProducao, type UsuarioVendedor } from "@/features/orcamentos/services/orcamentos.service";
 import { ActionsMenu } from "@/components/common/ActionsMenu";
 import { classificarTransporte } from "@/features/orcamentos/lib/transporte-categoria";
 import { useGlobalChat } from "@/features/chat/context/GlobalChatContext";
@@ -2828,12 +2828,54 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     if (addressModalMode === "edit" && editingAddressId) {
       setIsSavingAddress(true);
       try {
-        const { success, data, errorMessage } = await updateEnderecoProposta(editingAddressId, {
+        /*
+          ENDERECO PRINCIPAL NAO E ALTERADO POR AQUI (pedido 23320, 09/10/2026).
+          O servico decide: endereco de entrega e editado como sempre; principal
+          (ou o unico do cadastro) fica intacto e o digitado vira um endereco de
+          ENTREGA novo — ou reaproveita um igual. Nos dois ultimos casos o
+          pedido passa a apontar para ele, como em "Adicionar novo endereco".
+        */
+        const { success, data, errorMessage, acao } = await salvarEnderecoDeEntregaDaProposta(editingAddressId, {
           ...addressDraft,
         });
 
         if (!success || !data) {
           showToast({ type: "error", title: "Erro ao atualizar endereço", description: errorMessage || "Não foi possível atualizar o endereço no banco." });
+          return;
+        }
+
+        const fecharModalDeEndereco = () => {
+          setAddressDraft({ tipo: "entrega", cep: "", endereco: "", numero: "", complemento: "", bairro: "", cidade: "", uf: "", recebedor: "", cpfRecebedor: "" });
+          setEditingAddressId(null);
+          setAddressModalMode("create");
+          setIsAddressModalOpen(false);
+        };
+
+        if (acao === "sem_mudanca") {
+          fecharModalDeEndereco();
+          showToast({ type: "info", title: "Nada foi alterado no endereço." });
+          return;
+        }
+
+        if (acao === "criado" || acao === "reutilizado") {
+          // O endereco novo entra na mesma lista de onde veio o que foi aberto:
+          // a do pagador, quando o card era dele; senao, a do cliente.
+          const eraDoPagador = compradorAddresses.some((addr) => addr.id === editingAddressId);
+          const incluir = (current: CadastroEndereco[]) =>
+            current.some((addr) => addr.id === data.id)
+              ? current.map((addr) => (addr.id === data.id ? { ...addr, ...data } : addr))
+              : [...current, data];
+          if (eraDoPagador) setCompradorAddresses(incluir);
+          else setProposalAddresses(incluir);
+          setEnderecosRegravados((current) => ({ ...current, [data.id]: data }));
+          // Complemento: a entrega continua sendo a do pedido principal.
+          if (!ehComplemento) updateField("enderecoId", data.id);
+          fecharModalDeEndereco();
+          showToast({
+            type: "success",
+            title: acao === "criado" ? "Endereço de entrega criado." : "Endereço de entrega já cadastrado foi selecionado.",
+            description: "O endereço principal não foi alterado: ele é o fiscal e só muda no cadastro do cliente."
+          });
           return;
         }
 
@@ -9106,7 +9148,20 @@ function AddressModal({ draft, onChange, onClose, onSave, isSaving, mode = "crea
         a tela sabe e quem atende nao tem como adivinhar. Fica em silencio
         enquanto conta (`null`) e quando nao ha outro uso.
       */}
-      {mode === "edit" && (outrosPedidosEmAberto ?? 0) > 0 ? (
+      {/*
+        PRINCIPAL ABERTO PARA EDICAO (09/10/2026): o Salvar nao altera o
+        principal, cria um endereco de entrega. O aviso diz isso antes do clique.
+      */}
+      {mode === "edit" && draft.tipo === "principal" ? (
+        <div className="mb-4 flex gap-3 rounded-2xl border border-sky-200 bg-sky-50 p-4">
+          <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-sky-600" />
+          <p className="text-sm text-sky-900">
+            <span className="font-semibold">Este é o endereço principal do cliente, o que sai na nota fiscal.</span>{" "}
+            O que você alterar aqui será salvo como um novo endereço de entrega deste pedido. O principal não muda: ele só se altera no cadastro do cliente.
+          </p>
+        </div>
+      ) : null}
+      {mode === "edit" && draft.tipo !== "principal" && (outrosPedidosEmAberto ?? 0) > 0 ? (
         <div className="mb-4 flex gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4">
           <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
           <p className="text-sm text-amber-900">
