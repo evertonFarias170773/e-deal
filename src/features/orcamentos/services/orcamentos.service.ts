@@ -2262,6 +2262,7 @@ export async function getPropostaDetailById(idInt: number, overrideClient?: Supa
       cobrancaStatus: "NAO_GERADA",
       observacoes: proposalRow.obs_proposta || "",
       obsTecnica: proposalRow.obs_tecnica || "",
+      obsEntrega: proposalRow.obs_entrega || "",
       is_avulso: proposalRow.is_avulso === true,
       clienteNaoCadastrado: isClienteNaoCadastrado,
       id_faturado: proposalRow.id_faturado ?? null,
@@ -2849,7 +2850,10 @@ export async function saveProposta(
               // A orientacao tecnica acompanha o salvamento parcial: e o
               // unico texto que a producao le, e travar por causa de
               // cobranca ativa deixaria a bancada sem a instrucao.
-              obs_tecnica: formState.obsTecnica
+              obs_tecnica: formState.obsTecnica,
+              // As instrucoes de entrega seguem a mesma regra: a Expedicao
+              // precisa do texto mesmo com cobranca ativa.
+              obs_entrega: formState.obsEntrega
             })
             .eq("id_int", id_int);
 
@@ -3455,6 +3459,7 @@ export async function saveProposta(
       // O INSERT grava o status por conta propria, logo abaixo.
       obs_proposta: formState.observacoes,
       obs_tecnica: formState.obsTecnica,
+      obs_entrega: formState.obsEntrega,
       texto_whatsapp: informalText,
       contato: contatoNome,
       cep: cepText,

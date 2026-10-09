@@ -39,6 +39,7 @@ import {
   type PropostaLiberadaBoletim,
   atualizarOrientacoesBoletim,
   atualizarObsTecnicaProposta,
+  atualizarObsEntregaProposta,
   parsePedidosObs,
   serializePedidosObs,
   obterGabaritosOperacionais,
@@ -318,6 +319,8 @@ export function BoletimFormPage() {
   const [dadosEventoLocal, setDadosEventoLocal] = useState("");
 
   const [briefingOperacional, setBriefingOperacional] = useState("");
+  // Instrucoes de entrega (`propostas.obs_entrega`): mesmo desenho do Bloco 2.
+  const [instrucoesEntrega, setInstrucoesEntrega] = useState("");
   const [obsCriticas, setObsCriticas] = useState("");
 
   // Block 5 & 6 & 7: Technical Briefing, Design & Logistics & Finishes
@@ -443,6 +446,7 @@ export function BoletimFormPage() {
           // etiquetado da OS. E por isso que reabrir o boletim agora mostra o
           // que foi salvo: nao ha mais um blob para reidratar.
           setBriefingOperacional(pedido.obsTecnica || "");
+          setInstrucoesEntrega(pedido.obsEntrega || "");
 
           const parsed = parsePedidosObs(pedido.obs);
           setObsCriticas(parsed.obsCriticas || "");
@@ -1364,6 +1368,7 @@ export function BoletimFormPage() {
         // publicos diferentes, e misturar era o que fazia a instrucao de
         // fabrica se perder.
         setBriefingOperacional(details.obsTecnica || "");
+        setInstrucoesEntrega(details.obsEntrega || "");
         
         // Prazo de entrega, calculado UMA vez: maior `prazo_dias_uteis` entre os
         // produtos, contado por `soma_dias_uteis` a partir da entrada em
@@ -1758,6 +1763,19 @@ export function BoletimFormPage() {
           return;
         }
 
+        // 1a''. Instruções de entrega, na proposta. Mesma regra do Bloco 2:
+        // bloqueia em caso de erro, para a tela não dizer "salvo" sem o texto.
+        const entrega = await atualizarObsEntregaProposta(Number(idIntParam), instrucoesEntrega);
+        if (!entrega.success) {
+          showToast({
+            type: "error",
+            title: "Erro ao Salvar as Instruções de Entrega",
+            description: entrega.error || "Não foi possível gravar as instruções de entrega."
+          });
+          setLoadingDetails(false);
+          return;
+        }
+
         // 1b. Boletim do setor (setor/prazo/hora) — bloqueia em caso de erro,
         // porque a unicidade (proposta, setor) é garantida pelo banco.
         const dadosBoletim = await salvarBoletimSetor({
@@ -1988,6 +2006,19 @@ export function BoletimFormPage() {
           type: "error",
           title: "Erro ao Salvar a Orientação Técnica",
           description: tecnicaNova.error || "Não foi possível gravar o Bloco 2."
+        });
+        setLoadingDetails(false);
+        return;
+      }
+
+      // 2a'. Instruções de entrega, na proposta (mesmo registro da aba
+      // Produção / Expedição). Bloqueia em caso de erro, como o Bloco 2.
+      const entregaNova = await atualizarObsEntregaProposta(idInt, instrucoesEntrega);
+      if (!entregaNova.success) {
+        showToast({
+          type: "error",
+          title: "Erro ao Salvar as Instruções de Entrega",
+          description: entregaNova.error || "Não foi possível gravar as instruções de entrega."
         });
         setLoadingDetails(false);
         return;
@@ -2621,6 +2652,19 @@ export function BoletimFormPage() {
                   rows={4}
                   value={briefingOperacional}
                   onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setBriefingOperacional(e.target.value)}
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-sm text-slate-700 placeholder-slate-400 outline-none resize-y transition focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6]"
+                />
+              </div>
+              {/* Instruções de entrega (`propostas.obs_entrega`): campo próprio,
+                  o mesmo da aba Produção / Expedição da proposta. Sai na OS em
+                  bloco separado e aparece para o expedidor na Expedição. */}
+              <div className="space-y-2">
+                <label className="text-xs font-semibold text-slate-500 uppercase">Instruções de entrega · sai na OS impressa e na Expedição</label>
+                <textarea
+                  placeholder="O que a Expedição precisa saber para entregar. Ex: entregar na quinta pela manhã; ligar antes de sair..."
+                  rows={3}
+                  value={instrucoesEntrega}
+                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setInstrucoesEntrega(e.target.value)}
                   className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-sm text-slate-700 placeholder-slate-400 outline-none resize-y transition focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6]"
                 />
               </div>

@@ -44,6 +44,7 @@ import type {
 } from "../services/recotacao.client";
 import { LABEL_MODALIDADE, MODALIDADES_OFERECIDAS, TRANSPORTES_POR_MODALIDADE } from "../types";
 import type { ModalidadeFrete, PedidoExpedicao, TipoFreteNormalizado } from "../types";
+import { AvisoInstrucaoEntrega } from "./AvisoInstrucaoEntrega";
 
 const TIPOS_VOLUME = ["Pacote", "Caixa", "Envelope", "Outro"];
 
@@ -162,9 +163,16 @@ export function DespacharModal({
   ator,
   onClose,
   onDone,
-  podeLiberarDespacho = false
+  podeLiberarDespacho = false,
+  instrucaoEntrega
 }: {
   pedido: PedidoExpedicao;
+  /**
+   * Instrucoes de entrega do pedido (`propostas.obs_entrega`), lidas pelo
+   * painel. So leitura aqui: quem escreve e a proposta ou o boletim. Ausente
+   * ou vazia, a janela e a de sempre.
+   */
+  instrucaoEntrega?: string;
   modoEdicao: boolean;
   ator: AtorExpedicao;
   onClose: () => void;
@@ -1328,6 +1336,8 @@ export function DespacharModal({
             <X className="h-5 w-5" />
           </button>
         </div>
+        {/* Instrucoes de entrega: o texto inteiro, antes de qualquer campo. */}
+        <AvisoInstrucaoEntrega texto={instrucaoEntrega} formato="texto" className="mx-5 mt-4" />
 
         <div className="space-y-4 p-6">
           {/* A LINHA DE CABECALHO (cliente · cidade · frete cotado) SAIU em

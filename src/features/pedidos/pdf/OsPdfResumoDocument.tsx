@@ -1,6 +1,7 @@
 import React from "react";
 import { Document, Page, View, Text, StyleSheet } from "@react-pdf/renderer";
 import type { OsPdfViewModel, OsPdfProduto, OsPdfModelo } from "../services/os-viewmodel.service";
+import { textoDeEntrega } from "../lib/instrucoes-entrega";
 import {
   OsPdfBlocoCliente,
   OsPdfCabecalho,
@@ -266,6 +267,16 @@ export function OsPdfResumoDocument({ vm, qrDataUrl, logoDataUrl }: OsPdfResumoD
           <Text style={styles.obsTitulo}>Orientação técnica de produção:</Text>
           <OsPdfTextoMultilinha valor={vm.obsTecnica} estilo={styles.obsTexto} />
         </View>
+
+        {/* Instrucoes de entrega (`propostas.obs_entrega`) — bloco proprio, logo
+            abaixo da orientacao tecnica. So existe quando ha texto: sem texto
+            nao sai titulo nem espaco. Inteiro e sem `wrap={false}`, como acima. */}
+        {textoDeEntrega(vm.obsEntrega) ? (
+          <View style={styles.obsBox}>
+            <Text style={styles.obsTitulo}>Instruções de entrega:</Text>
+            <OsPdfTextoMultilinha valor={textoDeEntrega(vm.obsEntrega)} estilo={styles.obsTexto} />
+          </View>
+        ) : null}
 
         <View style={styles.obsBox} wrap={false}>
           <Text style={styles.obsTitulo}>Observações:</Text>

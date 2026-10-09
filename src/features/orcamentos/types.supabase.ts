@@ -22,6 +22,7 @@ export type SupabasePropostaRow = Record<string, SupabaseValue> & {
   texto_whatsapp?: SupabaseValue;
   obs_proposta?: SupabaseValue;
   obs_tecnica?: SupabaseValue;
+  obs_entrega?: SupabaseValue;
   proposta?: SupabaseValue;
   user_id?: SupabaseValue;
 

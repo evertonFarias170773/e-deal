@@ -1031,6 +1031,35 @@ export async function atualizarObsTecnicaProposta(
   return { success: true };
 }
 
+/**
+ * Grava as instrucoes de entrega em `public.propostas.obs_entrega`.
+ *
+ * Mesmo desenho de `atualizarObsTecnicaProposta`: e o MESMO registro que o
+ * vendedor edita na aba Producao / Expedicao da proposta, sem copia no boletim.
+ */
+export async function atualizarObsEntregaProposta(
+  idInt: number,
+  obsEntrega: string,
+  overrideClient?: SupabaseClient
+): Promise<{ success: boolean; error?: string }> {
+  const client = overrideClient ?? getSupabaseClient();
+  if (!client) {
+    return { success: false, error: "Conexao com o banco de dados nao disponivel." };
+  }
+
+  const { error } = await client
+    .from("propostas")
+    .update({ obs_entrega: obsEntrega })
+    .eq("id_int", idInt);
+
+  if (error) {
+    console.error("[BoletimPropostasService] Erro ao gravar obs_entrega:", error);
+    return { success: false, error: error.message || "Falha ao salvar as instrucoes de entrega." };
+  }
+
+  return { success: true };
+}
+
 export async function atualizarOrientacoesBoletim(
   idPedidoOuIdInt: string | number,
   obsText: string,

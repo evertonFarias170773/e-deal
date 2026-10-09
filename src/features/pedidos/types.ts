@@ -200,6 +200,8 @@ export interface PedidoProducaoListItem extends PedidoMock {
    * escreve na aba Produção e o gerente revisa no Bloco 2 do boletim.
    */
   obsTecnica?: string;
+  /** `propostas.obs_entrega` — instruções de entrega do pedido. Vem da PROPOSTA, como `obsTecnica`. */
+  obsEntrega?: string;
   status_pedido?: string;
   status_pagamento?: string;
   status_arte?: string;

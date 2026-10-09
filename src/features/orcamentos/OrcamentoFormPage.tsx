@@ -5962,6 +5962,28 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
               </p>
             </FormSection>
           )}
+          {/* Instrucoes de entrega (`propostas.obs_entrega`, 09/10/2026): campo
+              SEPARADO da orientacao tecnica, com a mesma gravacao. Quem le e a
+              Expedicao (cards e Despachar), alem do boletim e da OS. */}
+          {activeFormTab === "producao" && shouldShowRest && (
+            <FormSection
+              title="Instruções de entrega"
+              description="O que a Expedição precisa saber para entregar este pedido."
+            >
+              <textarea
+                value={form.obsEntrega}
+                onChange={(event) => updateField("obsEntrega", event.target.value)}
+                className={`${inputClass} min-h-32 resize-y`}
+                placeholder="Ex: entregar na quinta pela manhã; ligar antes de sair; deixar na portaria com o porteiro..."
+              />
+              <p className="mt-3 text-xs leading-5 text-slate-500">
+                Um campo por pedido, só para a entrega. Sai no boletim e nos dois PDFs da
+                OS, no bloco <strong>Instruções de entrega</strong>, e aparece para o
+                expedidor nos cards da Expedição e na janela Despachar. O que é de
+                fabricação continua na <strong>Orientação técnica de produção</strong>, acima.
+              </p>
+            </FormSection>
+          )}
           {activeFormTab === "boletim" && shouldShowRest && (
             <div className="rounded-3xl border border-dashed border-slate-300 bg-slate-50 p-10 text-center">
               <p className="text-sm font-semibold text-slate-600">Boletim</p>
@@ -9462,6 +9484,7 @@ function createInitialState(proposta?: Proposta): PropostaFormState {
     formaPagamento: proposta?.formaPagamento ?? "Pix a vista 3 dias",
     observacoes: proposta?.observacoes ?? "",
     obsTecnica: proposta?.obsTecnica ?? "",
+    obsEntrega: proposta?.obsEntrega ?? "",
     isAvulso,
     valorProdutosManual: isAvulso ? formatCurrencyWithoutPrefix(proposta?.resumo.subtotalProdutos ?? 0) : "",
     valorFreteManual: isAvulso ? formatCurrencyWithoutPrefix(proposta?.resumo.frete ?? 0) : "",

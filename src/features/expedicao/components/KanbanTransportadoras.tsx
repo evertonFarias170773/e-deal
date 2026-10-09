@@ -17,6 +17,7 @@ import { rotuloCarimbo } from "../lib/carimbo-etapa";
 import { bairroDoCard } from "../lib/bairro-do-card";
 import type { EtapaExpedicao, PedidoExpedicao } from "../types";
 import { ChipVinculados } from "./ChipVinculados";
+import { AvisoInstrucaoEntrega } from "./AvisoInstrucaoEntrega";
 // Fase 5: vinculos do pedido (roxo = Complemento, rosa = Acompanhar).
 import {
   CLASSE_CHIP_ROSA,
@@ -58,6 +59,12 @@ type KanbanTransportadorasProps = {
    * de fase (`faseDoCard`) nao mudam.
    */
   vinculosPorPedido?: Map<number, GrupoVinculado[]>;
+  /**
+   * Instrucoes de entrega por pedido (`useInstrucoesDeEntrega`). Opcional: sem
+   * a leitura, ou sem texto, o card e o de sempre. So acrescenta um icone de
+   * aviso ao lado do menu, com o texto na dica.
+   */
+  instrucoesPorPedido?: Map<number, string>;
   /** Admin da Expedicao: abre o "Soltar do grupo" no chip do Acompanhar. */
   onSoltarDoGrupo?: (idInt: number, grupo: GrupoVinculado) => void;
 };
@@ -342,6 +349,7 @@ export function KanbanTransportadoras({
   formatarPeso,
   etapaFiltro,
   vinculosPorPedido,
+  instrucoesPorPedido,
   onSoltarDoGrupo
 }: KanbanTransportadorasProps) {
   /**
@@ -588,6 +596,8 @@ export function KanbanTransportadoras({
                           no momento de fechar a caixa era sair da Expedição,
                           achar o pedido no Histórico e voltar. O ícone só
                           aparece quando há nota autorizada com número. */}
+                      {/* Instrucoes de entrega: so o icone; o texto esta na dica. */}
+                      <AvisoInstrucaoEntrega texto={instrucoesPorPedido?.get(p.idInt)} formato="icone" />
                       <BotaoDanfe danfes={p.danfes} tamanho="card" />
                       <ActionsMenu items={acoes} label="Ações" variant="icone" />
                     </span>

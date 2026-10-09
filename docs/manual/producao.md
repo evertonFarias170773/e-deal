@@ -138,7 +138,7 @@ Nomes exatamente como aparecem na tela.
 1. Abra o pedido clicando na linha, ou em **Ações → Editar OS / Boletim**.
 2. Confira a **Data Limite de Entrega** e a **Hora do Prazo**. Na primeira abertura elas vêm calculadas (veja "Regras e bloqueios"); se vierem vazias, preencha.
 3. Passe por cada aba de setor (PVC, LASER, FLEXO, TEXTIL) e confira os produtos e lotes daquele setor.
-4. Escreva em **BLOCO 2 — Orientação Técnica de Produção** o que a bancada precisa saber para fabricar. Esse texto sai na OS impressa e é o mesmo que o atendente vê na aba Produção / Expedição do pedido.
+4. Escreva em **BLOCO 2 — Orientação Técnica de Produção** o que a bancada precisa saber para fabricar. Esse texto sai na OS impressa e é o mesmo que o atendente vê na aba Produção / Expedição do pedido. Logo abaixo, no mesmo bloco, fica **Instruções de entrega**: o que a Expedição precisa saber para entregar (dia, horário, com quem deixar). Também é o mesmo texto da aba do pedido, sai na OS em bloco próprio e aparece para o expedidor na Expedição.
 5. Se precisar, preencha **Observações Técnicas de Impressão (Bloco 6)** e **Observações Técnicas de Acabamento (Bloco 7)**.
 6. Clique em **Salvar Alterações** (botão do cabeçalho ou o botão verde flutuante).
 7. Ao salvar, o pedido que estava em REVISAO PRODUCAO passa sozinho para **EM PRODUCAO**, e a linha deixa de ficar amarela.

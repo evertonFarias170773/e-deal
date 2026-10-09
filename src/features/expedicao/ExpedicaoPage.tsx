@@ -62,6 +62,8 @@ import { ChipVinculados } from "./components/ChipVinculados";
 import { SoltarDoGrupoModal } from "./components/SoltarDoGrupoModal";
 import type { GrupoVinculado } from "./lib/vinculos-do-painel";
 import { useVinculosDoPainel } from "./hooks/useVinculosDoPainel";
+import { useInstrucoesDeEntrega } from "./hooks/useInstrucoesDeEntrega";
+import { AvisoInstrucaoEntrega } from "./components/AvisoInstrucaoEntrega";
 import { classeFaixaDoCard, destaqueDoCard } from "./lib/vinculos-do-painel";
 import type { EtapaExpedicao, PedidoExpedicao, TipoFreteNormalizado } from "./types";
 
@@ -173,6 +175,9 @@ export function ExpedicaoPage() {
   const [pedidos, setPedidos] = useState<PedidoExpedicao[]>([]);
   // Fase 5: pedidos vinculados (Complemento / Acompanhar), leitura a parte.
   const vinculosPorPedido = useVinculosDoPainel(pedidos);
+  // Instrucoes de entrega (`propostas.obs_entrega`): leitura a parte, so dos
+  // pedidos carregados. Falhou ou nao ha texto: mapa vazio e nada aparece.
+  const instrucoesPorPedido = useInstrucoesDeEntrega(pedidos);
   // "Soltar do grupo" (Acompanhar): so expedicao.admin.
   const [soltarAlvo, setSoltarAlvo] = useState<{ idInt: number; grupo: GrupoVinculado } | null>(null);
   const podeSoltarDoGrupo = Boolean(user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "expedicao.admin"));
@@ -1085,6 +1090,7 @@ export function ExpedicaoPage() {
           formatarPeso={formatarPeso}
           etapaFiltro={filters.etapa}
           vinculosPorPedido={vinculosPorPedido}
+          instrucoesPorPedido={instrucoesPorPedido}
           onSoltarDoGrupo={podeSoltarDoGrupo ? (idInt, grupo) => setSoltarAlvo({ idInt, grupo }) : undefined}
         />
       ) : (
@@ -1124,6 +1130,8 @@ export function ExpedicaoPage() {
                     + compl. #{c.idInt}
                   </span>
                 ))}
+                {/* Instrucoes de entrega: na lista sai o texto inteiro. */}
+                <AvisoInstrucaoEntrega texto={instrucoesPorPedido.get(p.idInt)} formato="texto" className="mt-1.5 max-w-xs" />
               </div>
             )
           },
@@ -1329,8 +1337,10 @@ export function ExpedicaoPage() {
             >
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    #{p.idInt} · {p.empresa}
+                  <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    <span>#{p.idInt} · {p.empresa}</span>
+                    {/* Instrucoes de entrega: icone com o texto na dica, como no Kanban. */}
+                    <AvisoInstrucaoEntrega texto={instrucoesPorPedido.get(p.idInt)} formato="icone" />
                   </p>
                   <h3 className="mt-1 font-semibold text-slate-950 dark:text-slate-100" title={p.cliente}>
                     {rotuloClienteComNumero(p.idCliente, p.clienteExibicao)}
@@ -1429,6 +1439,7 @@ export function ExpedicaoPage() {
       {pedidoDespacho && (
         <DespacharModal
           pedido={pedidoDespacho.pedido}
+          instrucaoEntrega={instrucoesPorPedido.get(pedidoDespacho.pedido.idInt)}
           modoEdicao={pedidoDespacho.modo === "EDICAO"}
           ator={atorAtual()}
           podeLiberarDespacho={canAdminExpedicao}

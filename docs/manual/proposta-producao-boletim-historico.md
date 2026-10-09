@@ -26,7 +26,7 @@ Nomes exatamente como aparecem na tela.
 
 | Nome na tela | Onde fica | O que faz |
 |---|---|---|
-| **Produção / Expedição** | Barra de abas do pedido, entre **Artes** e **Pagamentos** | Abre a aba com o campo **Orientação técnica de produção**. |
+| **Produção / Expedição** | Barra de abas do pedido, entre **Artes** e **Pagamentos** | Abre a aba com os campos **Orientação técnica de produção** e **Instruções de entrega**. |
 | **Histórico** | Barra de abas do pedido, última aba | Abre a **Timeline da proposta** e os movimentos de crédito. |
 | **Salvar alterações** | Barra fixa no rodapé do pedido | Grava a orientação técnica junto com o resto do pedido. |
 | Ícone de clipe (dica "Anexar arquivo (até 10MB)") | Aba Histórico, rodapé da timeline | Escolhe arquivos para enviar com a mensagem. |
@@ -60,6 +60,20 @@ Nomes exatamente como aparecem na tela.
 3. Clique em **Salvar alterações**.
 
 É um campo só por pedido. O mesmo texto aparece na OS, em **BLOCO 2 — Orientação Técnica de Produção**, onde a produção pode revisá-lo, e sai por inteiro nos dois PDFs da OS.
+
+### Escrever as instruções de entrega (aba Produção / Expedição)
+
+1. Abra o pedido e clique na aba **Produção / Expedição**.
+2. No campo **Instruções de entrega**, logo abaixo da orientação técnica, escreva o que a Expedição precisa saber para entregar. Exemplo da própria tela: "entregar na quinta pela manhã; ligar antes de sair; deixar na portaria com o porteiro...".
+3. Clique em **Salvar alterações**.
+
+É um campo só por pedido, separado da orientação técnica, sem limite de tamanho e com as quebras de linha preservadas. Onde o texto aparece:
+
+- na OS, dentro do **BLOCO 2**, no campo **Instruções de entrega**, onde a produção pode revisá-lo (é o mesmo texto, não uma cópia);
+- nos dois PDFs da OS (completa e reduzida, inclusive no lote e na 2ª via), no bloco **Instruções de entrega**, logo abaixo da orientação técnica. Sem texto, o bloco não sai;
+- na Expedição: ícone de aviso no card e no cartão do celular, e o texto inteiro na lista e na janela **Despachar pedido**.
+
+As instruções de entrega não são copiadas quando o pedido é duplicado nem quando se cria um complemento: escreva de novo no pedido novo, se valerem para ele.
 
 ### Saber quando o pedido chega em REVISAO ATENDENTE
 
@@ -151,6 +165,7 @@ As mensagens são internas: o cliente não vê.
 - Menu **Produção** e aba **Produção / Expedição** são coisas diferentes. O menu é a tela da fábrica, com as OS; a aba, dentro do pedido, tem só o campo de orientação técnica.
 - Não existe aba **Boletim** no pedido. O endereço com `tab=boletim` mostra só "Boletim — Aguarde orientações.". O boletim de verdade é a OS, que abre pela tela Produção.
 - **Boletim Técnico & Lotes** é o título da aba **Pedido** (a divisão em modelos). Não é o boletim da OS.
+- **Orientação técnica de produção** e **Instruções de entrega** são dois campos da mesma aba: o primeiro é para quem fabrica, o segundo é para quem entrega. Os dois saem na OS, em blocos separados.
 - **Orientação técnica de produção** (aba Produção / Expedição) não é **Observações e Condições** (aba Geral). A primeira vai para a OS impressa; a segunda é comercial e não chega à produção.
 - **REVISAO ATENDENTE** e **REVISAO PRODUCAO** são etapas seguidas, de pessoas diferentes. Na primeira, o atendente confere e libera; na segunda, a produção confere a OS e, ao salvá-la, o pedido vira EM PRODUCAO.
 - **Liberar para Produção** não é **LIBERADO**. LIBERADO é o status de pedido pago, ainda no atendimento; a liberação para a produção é a ação que leva o pedido de REVISAO ATENDENTE para REVISAO PRODUCAO.
@@ -203,6 +218,7 @@ As mensagens são internas: o cliente não vê.
 - `src/features/orcamentos/components/LiberarProducaoModal.tsx`
 - `src/features/orcamentos/components/PropostaChatPanel.tsx`
 - `src/features/orcamentos/services/orcamentos.service.ts`
+- `src/features/pedidos/lib/instrucoes-entrega.ts`
 - `src/features/orcamentos/services/status-engine.service.ts`
 - `src/features/orcamentos/lib/divergencia-lotes.ts`
 - `src/app/api/orcamentos/liberar-producao/route.ts`

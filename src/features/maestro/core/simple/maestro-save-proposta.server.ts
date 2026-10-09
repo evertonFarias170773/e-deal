@@ -216,6 +216,7 @@ export async function salvarCotacaoComoPropostaReal(
     // O Maestro nao escreve orientacao tecnica: quem conhece a producao e o
     // vendedor na aba Producao ou o gerente no boletim.
     obsTecnica: '',
+    obsEntrega: '',
     isAvulso: false,
     clienteNaoCadastrado: false,
   };

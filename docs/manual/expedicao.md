@@ -155,6 +155,14 @@ Os itens aparecem nesta ordem, cada um só quando se aplica.
 6. Pedidos de um mesmo grupo de complemento mostram o selo roxo **Vinculados: #A · #B** e uma faixa roxa na lateral do cartão. Cada número tem uma bolinha: verde quando aquele pedido já está pronto para expedir (ou já saiu), âmbar quando ainda não; passe o mouse no número para ver o status. A faixa e o selo só informam: não mudam o que o botão **Despachar** faz.
 7. **Acompanhar** (selo e faixa rosa): pedidos ligados na aba **Fretes** da proposta, que só saem quando todos do grupo estão prontos para expedir (na Expedição, status Na Expedição ou já despachado). O administrador da Expedição vê no selo o botão **Soltar do grupo**: escolha o pedido a tirar e escreva o **Motivo** (obrigatório). Quando todos do grupo saem, o grupo se encerra sozinho. O grupo pode ter até 50 pedidos (acima de 10, o cartão do pedido avisa que um pedido parado segura todos). O vínculo pode ser feito desde o status NOVO; enquanto um pedido do grupo não chega à Expedição, os outros não despacham e o aviso mostra quem falta (por exemplo, "Faltam: #23457 (NOVO)"). Se esse pedido for cancelado, ele deixa de segurar o grupo; se for preciso liberar sem cancelar, o administrador usa **Soltar do grupo**.
 
+### Ler as instruções de entrega
+
+1. Pedido com **Instruções de entrega** escritas (na aba **Produção / Expedição** do pedido ou no boletim) mostra um ícone de aviso âmbar no card do Kanban, ao lado do menu de ações, e no cartão do celular, ao lado do número. Passe o mouse (ou toque e segure) para ler o texto.
+2. Na lista, o texto aparece inteiro na coluna **Pedido**, em um quadro âmbar **Instruções de entrega**.
+3. Na janela **Despachar pedido** (e em **Editar dados de expedição**), o mesmo quadro aparece no topo, antes dos campos.
+4. Pedido sem instruções não mostra nada: nem ícone, nem quadro.
+5. A Expedição só lê. Para mudar o texto, edite o pedido (aba **Produção / Expedição**) ou a OS (**BLOCO 2**).
+
 ### Marcar o pedido como pronto
 
 1. No pedido que ainda está em produção ou acabamento, clique em **Marcar pronto**.
@@ -441,6 +449,9 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/features/usuarios-perfis/catalogo-permissoes.ts`
 - `src/features/expedicao/components/ChipVinculados.tsx`
 - `src/features/expedicao/hooks/useVinculosDoPainel.ts`
+- `src/features/expedicao/hooks/useInstrucoesDeEntrega.ts`
+- `src/features/expedicao/components/AvisoInstrucaoEntrega.tsx`
+- `src/features/pedidos/lib/instrucoes-entrega.ts`
 - `src/features/expedicao/lib/vinculos-do-painel.ts`
 - `src/features/expedicao/components/SoltarDoGrupoModal.tsx`
 

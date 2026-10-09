@@ -142,6 +142,11 @@ export interface OsPdfViewModel {
    * mudaria o que a bancada faz.
    */
   obsTecnica: string;
+  /**
+   * Instruções de entrega (`propostas.obs_entrega`). Vem da PROPOSTA e sai
+   * INTEIRA no PDF, em bloco próprio, só quando há texto.
+   */
+  obsEntrega: string;
   frete: { transportadora: string | null; servico: string | null } | null;
   /**
    * PARA ONDE O PEDIDO VAI (18/09/2026) — o bloco de entrega do boletim.
@@ -907,6 +912,7 @@ export async function montarOsPdfViewModel(
       designer: designerBriefing || obs.designer?.nome || null,
       obs,
       obsTecnica: pedido.obsTecnica || "",
+      obsEntrega: pedido.obsEntrega || "",
       frete,
       entrega,
       produtos,

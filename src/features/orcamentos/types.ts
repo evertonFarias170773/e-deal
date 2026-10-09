@@ -203,6 +203,13 @@ export type Proposta = {
    * Nao se confunde com `observacoes` (`obs_proposta`), que e comercial.
    */
   obsTecnica: string;
+  /**
+   * `propostas.obs_entrega` — instrucoes de entrega do pedido ("entregar na
+   * quinta pela manha"). Mesmo desenho de `obsTecnica`: vendedor na aba
+   * Producao / Expedicao, gerente no boletim, os dois na MESMA coluna. Sai no
+   * boletim, nos PDFs da OS e nos cards da Expedicao.
+   */
+  obsEntrega: string;
   is_avulso?: boolean;
   clienteNaoCadastrado?: boolean;
   id_faturado?: number | null;
@@ -330,6 +337,8 @@ export type PropostaFormState = {
   observacoes: string;
   /** `propostas.obs_tecnica` — orientacao tecnica de producao (aba Producao). */
   obsTecnica: string;
+  /** `propostas.obs_entrega` — instrucoes de entrega (aba Producao / Expedicao). */
+  obsEntrega: string;
   isAvulso?: boolean;
   valorProdutosManual?: string;
   valorFreteManual?: string;

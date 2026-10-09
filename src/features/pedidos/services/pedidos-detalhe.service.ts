@@ -112,6 +112,8 @@ export async function obterPedidoOperacionalPorIdOuIdInt(param: string | number,
   // Orientacao tecnica: mora na PROPOSTA, nao na OS. Vem junto do mesmo
   // enriquecimento para o boletim e o PDF nao precisarem de outra consulta.
   let obsTecnica = "";
+  // Instrucoes de entrega: mesma linha da proposta, mesma consulta.
+  let obsEntrega = "";
   // Data base da contagem de dias uteis e categoria de onde sai a hora. Nulos
   // enquanto o pedido nao foi liberado / nao foi classificado — e nulo aqui
   // significa campo VAZIO na tela, nunca valor inventado.
@@ -125,7 +127,7 @@ export async function obterPedidoOperacionalPorIdOuIdInt(param: string | number,
         // `liberado_producao_em` e `categoria_frete` entraram em 09/2026, na
         // mesma linha do SELECT que ja existia: sao a DATA BASE e a HORA do
         // prazo de entrega. Nenhuma consulta a mais.
-        .select("cliente, vendedor, empresa, id_cliente, status_interno, is_prd_aprovado, obs_tecnica, liberado_producao_em, categoria_frete")
+        .select("cliente, vendedor, empresa, id_cliente, status_interno, is_prd_aprovado, obs_tecnica, obs_entrega, liberado_producao_em, categoria_frete")
         .eq("id_int", row?.id_int)
         .maybeSingle();
 
@@ -140,6 +142,7 @@ export async function obterPedidoOperacionalPorIdOuIdInt(param: string | number,
         statusProducao =
           propostaRow.is_prd_aprovado === true && statusInterno ? statusInterno : "BLOQUEADO";
         obsTecnica = propostaRow.obs_tecnica ? String(propostaRow.obs_tecnica) : "";
+        obsEntrega = propostaRow.obs_entrega ? String(propostaRow.obs_entrega) : "";
         liberadoProducaoEm =
           typeof propostaRow.liberado_producao_em === "string" ? propostaRow.liberado_producao_em : null;
         categoriaFrete = propostaRow.categoria_frete ? String(propostaRow.categoria_frete) : null;
@@ -345,6 +348,7 @@ export async function obterPedidoOperacionalPorIdOuIdInt(param: string | number,
     pesoTeorico: 0,
     obs: row?.obs || "",
     obsTecnica,
+    obsEntrega,
     produtos,
     modelos
   } as PedidoProducaoListItem;
