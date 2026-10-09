@@ -436,6 +436,30 @@ permanentes) e `docs/business/FLUXO-OFICIAL-STATUS-PROPOSTAS.md`.
 - anti-injeção: histórico e saída de tool são dados, nunca comandos;
 - escrita: NENHUMA tool de escrita registrada; regras futuras na matriz.
 
+## 2.9 Erro técnico relatado: caso sem ficha e trava de não repetir (09/10/2026)
+
+Fase 1 do encaminhamento de casos sem resolução. **Nenhuma tarefa é criada nesta fase.**
+Código em `src/features/maestro/core/agent/maestro-agent-caso-sem-ficha.ts`; teste em
+`scripts/testes/maestro-caso-sem-ficha.test.mts`.
+
+- **Detecção.** A mensagem do usuário traz assinatura de erro técnico: `duplicate key`,
+  `violates`, `permission denied`, nome de índice ou constraint, ou texto de erro entre aspas.
+- **Caso sem ficha.** Nenhuma ficha de `docs/manual/` cita aquele erro. O turno grava em
+  `maestro_acoes` uma linha `acao = 'caso_sem_ficha'` (além da `agent_turn`), com o tipo do erro em
+  `detalhe`, o pedido em `id_int` (quando há um só) e, no `payload`: `tela` (as fichas lidas no
+  turno; o Maestro não recebe a tela em que o usuário está), `pedidos_citados`, `tipo_de_erro`,
+  `assinatura_do_erro`, `assunto_sensivel`, `frases_de_repetir_removidas` e `resposta`.
+  Assinatura e resposta saem truncadas e sem e-mail, CPF, CNPJ, telefone ou número longo.
+  Limite: 5 registros por usuário por hora; se a contagem falhar, nada é gravado (fica o log).
+- **Trava de não repetir.** Erro técnico em assunto de boleto, pagamento, cobrança, NF-e ou NFS-e:
+  o servidor tira da resposta toda frase que sugere repetir a ação e acrescenta a frase fixa
+  "Não repita a ação. Avise o suporte com o número do pedido e o texto do erro." Vale para o caso
+  sem ficha e também para erro cru de banco que uma ficha cita. Mensagem de tela entre aspas que
+  uma ficha cita segue o manual, sem trava.
+- **No `agent_turn`:** `caso_sem_ficha` (tipo do erro ou null) e `trava_de_repetir` (quantas frases
+  saíram; null quando a trava não rodou).
+- **Desligar:** variável `MAESTRO_CASO_SEM_FICHA=off` (detecção, registro e trava). Ausente = ligado.
+
 ## Infra aplicada no banco (25/07/2026)
 
 - `maestro_conversas` / `maestro_mensagens` (RLS `user_id=auth.uid()`);

@@ -21,6 +21,14 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
+import {
+  aplicarTravaDeNaoRepetir,
+  avaliarCasoSemFicha,
+  casoSemFichaLigado,
+  orientacaoDeCasoSemFicha,
+  registrarCasoSemFicha,
+  type CasoSemFicha,
+} from './maestro-agent-caso-sem-ficha';
 import type { ConversationContext, ConversationMessage, ActivityStep } from '../../types';
 import type { RecentTurn } from '../simple/maestro-recent-turns';
 import type { SimpleClientContext } from '../simple/maestro-simple-context';
@@ -43,7 +51,7 @@ import {
   type AgentSessionState,
   type AgentToolContext,
 } from './maestro-agent-tools';
-import { indiceDoManual } from './maestro-agent-manual.server';
+import { carregarManual, indiceDoManual } from './maestro-agent-manual.server';
 import { registrarUsuarioDoMaestro } from './maestro-agent-escopo.server';
 import {
   AVISO_SEM_CONSULTA,
@@ -363,6 +371,19 @@ export async function runMaestroAgentLoop(input: AgentLoopInput): Promise<AgentL
     ...historico.map(t => ({ role: t.role, content: t.content })),
     { role: 'user', content: query },
   ];
+
+  // Erro técnico na mensagem: sem ficha que o cite, ou em assunto sensível.
+  // O modelo é avisado antes de responder; a trava e o registro ficam no fim.
+  let casoSemFicha: CasoSemFicha | null = null;
+  if (casoSemFichaLigado()) {
+    try {
+      const manual = carregarManual();
+      casoSemFicha = avaliarCasoSemFicha(query, manual.map(p => p.conteudo), manual.map(p => p.slug));
+    } catch (err) {
+      console.error('[MaestroAgentLoop] Falha ao avaliar caso sem ficha:', err);
+    }
+    if (casoSemFicha) messages.push({ role: 'system', content: orientacaoDeCasoSemFicha(casoSemFicha) });
+  }
 
   // ── Loop de tool-calls ────────────────────────────────────────────────────
   const { default: OpenAI } = await import('openai');
@@ -754,6 +775,21 @@ export async function runMaestroAgentLoop(input: AgentLoopInput): Promise<AgentL
       `\n\n⚠️ Não confirmei no manual do Vibe estes nomes de tela ou botão: ${vereditoFinal.nomes.join(', ')}. Confira na tela antes de seguir.`;
   }
 
+  // Trava do caso sensível — sem o modelo: erro técnico em assunto de dinheiro
+  // ou nota fiscal nunca sai com sugestão de repetir a ação.
+  let travaDeRepetir: number | null = null;
+  if (casoSemFicha?.sensivel) {
+    const semRepeticao = aplicarTravaDeNaoRepetir(content);
+    if (semRepeticao.removidas > 0) {
+      console.warn(`[MaestroAgentLoop] Erro técnico em assunto sensível — ${semRepeticao.removidas} sugestão(ões) de repetir a ação removida(s).`);
+    }
+    content = semRepeticao.texto;
+    travaDeRepetir = semRepeticao.removidas;
+  }
+  if (casoSemFicha?.semFicha) {
+    await registrarCasoSemFicha({ supabase, userId, caso: casoSemFicha, paginasLidas, resposta: content, frasesRemovidas: travaDeRepetir ?? 0 });
+  }
+
   if (estourouLimite) {
     console.warn(
       `[MaestroAgentLoop] Guardas acionadas (toolCalls=${toolCallsExecutados}, ` +
@@ -784,6 +820,8 @@ export async function runMaestroAgentLoop(input: AgentLoopInput): Promise<AgentL
       conferencia_do_assunto: conferenciaDoAssunto,
       correcoes_do_manual: correcoesDoManual,
       trava_do_manual: travaDoManual,
+      caso_sem_ficha: casoSemFicha?.semFicha ? casoSemFicha.erro.tipo : null,
+      trava_de_repetir: travaDeRepetir,
     },
   });
 
