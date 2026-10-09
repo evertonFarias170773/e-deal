@@ -182,6 +182,7 @@ O pedido também chega à Expedição pela Revisão do boletim da produção.
    - **Etiqueta Correios (oficial)** — Correios com prepostagem gerada.
 3. O sistema salva o que está na tela e abre o PDF.
 4. Para reimprimir depois, use **Editar dados de expedição** no menu do pedido e clique no mesmo botão.
+5. A etiqueta interna, a prepostagem e a **Etiqueta Correios (oficial)** também esperam o grupo **Acompanhar** (pedidos que só saem juntos): o sistema avisa quais pedidos do grupo faltam. Esse tipo de grupo ainda está em implantação e não está disponível.
 
 ### Como a transportadora aparece
 
@@ -448,3 +449,5 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 > - o pedido novo com frete dos Correios aponta para o cadastro da Superintendência Estadual RS dos Correios, os dois cadastros dos Correios mantêm a prepostagem, e a transportadora aparece como **Correios** em vez da fantasia do cadastro.
 >
 > - pedidos de um mesmo grupo de complemento mostram o selo roxo **Vinculados: #A · #B**, com bolinha verde ou âmbar em cada número, e uma faixa roxa no cartão (commit `c62ef62`). O tipo **Acompanhar** ainda está em implantação.
+>
+> - a etiqueta oficial dos Correios também espera o grupo **Acompanhar**, que ainda está em implantação.

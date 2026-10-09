@@ -4,6 +4,7 @@ import { createClient as createServerSupabaseClient } from "@/lib/supabase/serve
 import { verificarPermissaoServerSide } from "@/lib/auth/verificar-permissao";
 import { baixarRotuloPdf, correiosConfigurado } from "@/lib/correios/cws";
 import { resolverEmpresaRemetente } from "@/lib/correios/empresa-remetente";
+import { consultarGateAcompanhar } from "@/features/expedicao/lib/gate-acompanhar";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -41,6 +42,10 @@ export async function GET(request: Request) {
   if (authError || !authData.user) return respostaErro(request, "Sessão expirada. Faça login novamente.", 401);
   const temPermissao = await verificarPermissaoServerSide(supabase, authData.user.id, "expedicao.view");
   if (!temPermissao) return respostaErro(request, "Sem permissão (expedicao.view).", 403);
+
+  // Fase 7: a etiqueta oficial de pedido de grupo Acompanhar tambem espera o grupo.
+  const gate = await consultarGateAcompanhar(supabase, idInt, "a etiqueta");
+  if (gate.bloqueado) return respostaErro(request, gate.mensagem, 409);
 
   const [{ data: exp }, { data: proposta }] = await Promise.all([
     supabase.from("expedicoes").select("correios_id_prepostagem").eq("id_int", idInt).maybeSingle(),
