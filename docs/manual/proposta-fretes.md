@@ -1,6 +1,6 @@
 # Proposta: aba Fretes
 
-> **Última revisão:** 08/10/2026
+> **Última revisão:** 09/10/2026
 > **Caminho no menu:** Pedidos → abrir um pedido → aba Fretes
 > **Endereço:** `/orcamentos/<número>/editar?tab=fretes`
 
@@ -139,11 +139,12 @@ Depois da liberação o campo **Valor cobrado (R$)** fica só para leitura: o va
 Use quando pedidos do mesmo cliente (ou do mesmo pagador) devem sair da Expedição todos ao mesmo tempo, cada um com o seu próprio despacho, a sua etiqueta e a sua cobrança. Não existe divisão de frete nem vínculo financeiro entre eles.
 
 1. Na aba **Fretes**, logo abaixo da caixa **7. Fretes e Entrega**, marque **Acompanhar Pedido**. A tela mostra: "Os pedidos marcados só saem da Expedição juntos; cada um segue com o seu próprio despacho, a sua etiqueta e a sua cobrança".
-2. Escolha os pedidos na lista. Ela mostra até 10 pedidos do mesmo cliente ou pagador, entre APROVADO e EXPEDICAO e ainda não despachados, com número, cliente, status e data. Para achar outro, digite o número em **Buscar pedido por número**. Pedido que já está em outro grupo Acompanhar aparece apagado, com o motivo.
+2. Escolha os pedidos na lista. Ela mostra os 10 pedidos mais recentes do mesmo cliente ou pagador que ainda estão em aberto, com número, cliente, status e data. "Em aberto" vale desde o status NOVO: o vínculo pode ser feito antes de o pedido chegar à Expedição. Não entram pedidos cancelados, já despachados (A RETIRAR, EM TRANSITO, ENTREGUE, RECEBIDO), avulsos ou de teste encerrado. Para achar outro, digite o número em **Buscar pedido por número**: a busca procura entre todos os pedidos elegíveis, não só os 10 da lista. Pedido que já está em outro grupo Acompanhar aparece apagado, com o motivo.
 3. A escolha é gravada na hora, sem o **Salvar alterações**, e vale mesmo com a edição bloqueada por cobrança. O grupo aceita no máximo 10 pedidos.
 4. Nos outros pedidos do grupo a aba mostra o mesmo grupo marcado; marcar mais um pedido a partir de qualquer um deles entra no mesmo grupo.
 5. Para tirar um pedido do grupo, desmarque-o na lista. Desmarcar **Acompanhar Pedido** tira só este pedido. O grupo se desfaz quando sobra um pedido. Se a ligação foi criada por outra pessoa, só quem a criou ou o administrador da Expedição consegue soltar; fora disso a tela explica a recusa.
-6. Em pedido já despachado, cancelado ou fora do funil, a caixa fica só para leitura. Na visualização do pedido aparece a linha **Acompanha: #A, #B**.
+6. Em pedido cancelado, já despachado ou avulso, a caixa fica só para leitura e a tela diz o motivo (por exemplo "Pedido já despachado."). Na visualização do pedido aparece a linha **Acompanha: #A, #B**.
+   Se o pedido ainda não chegou à Expedição (por exemplo, está em NOVO), a tela avisa: "Este pedido ainda não chegou à Expedição: o grupo só despacha quando todos chegarem. Para soltar: peça a um administrador da Expedição." Pedido cancelado deixa de segurar o grupo.
 7. Na Expedição, os pedidos do grupo mostram o selo rosa **Vinculados**; nenhum deles é despachado nem tem etiqueta gerada até todos estarem prontos. Depois disso, cada um sai e imprime a sua etiqueta separadamente.
 
 ### Aplicar o frete complementar (pedido complementar)
@@ -301,3 +302,5 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 > - a ação **Criar pedido complementar** passou a se chamar **Criar Complemento** (commit `dd9a110`), só no nome.
 >
 > - nova seção **Acompanhar Pedido** na aba Fretes: pedidos do mesmo cliente ou pagador que só saem da Expedição juntos.
+>
+> - **09/10/2026:** o Acompanhar Pedido vale para qualquer pedido em aberto, inclusive em NOVO e AGUARDANDO (antes só de APROVADO até EXPEDICAO); a busca por número procura entre todos os pedidos elegíveis; a mensagem de só leitura diz o motivo real.

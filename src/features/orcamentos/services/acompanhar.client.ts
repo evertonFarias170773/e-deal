@@ -22,6 +22,8 @@ export type EstadoAcompanhar = {
   podeSoltarDeTerceiro: boolean;
   /** Motivo de so leitura (despachado, cancelado, fora do funil...) ou null. */
   somenteLeitura: string | null;
+  /** Status do proprio pedido (para dizer que ainda nao chegou a Expedicao). */
+  statusInterno: string;
   grupoId: string | null;
   /** Todos os pedidos ativos do grupo, inclusive o proprio. */
   membros: MembroAcompanhar[];

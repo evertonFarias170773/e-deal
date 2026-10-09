@@ -6,6 +6,8 @@ import {
   TETO_GRUPO,
   lerIds,
   mensagemDeErroAcompanhar,
+  STATUS_FORA_DE_ABERTO,
+  faixasDeBuscaPorNumero,
   montarCandidatos,
   motivoSomenteLeitura,
   podeSerCandidato,
@@ -178,22 +180,38 @@ async function montarEstado(sessao: Sessao, idInt: number, busca: string) {
   let candidatos: ReturnType<typeof montarCandidatos> = [];
   if (podeEditar && !somenteLeitura) {
     const ref = { idInt, idCliente: num(p.id_cliente), idFaturado: num(p.id_faturado) };
-    const filtros = [ref.idCliente !== null ? `id_cliente.eq.${ref.idCliente}` : null, ref.idFaturado !== null ? `id_faturado.eq.${ref.idFaturado}` : null].filter(Boolean);
-    if (filtros.length > 0) {
-      const termo = busca.replace(/\D/g, "");
-      let consulta = supabase.from("propostas").select(COLUNAS).or(filtros.join(",")).neq("id_int", idInt).order("id_int", { ascending: false }).limit(300);
-      if (termo && termo.length >= 1 && termo.length <= 9) {
-        // Busca por numero: acha qualquer elegivel, nao so os 300 mais novos.
-        consulta = supabase.from("propostas").select(COLUNAS).or(filtros.join(",")).neq("id_int", idInt).eq("id_int", Number(termo)).limit(1);
+    // Em aberto e decidido por `motivoDeNaoEstarEmAberto` (a unica definicao); aqui o servidor
+    // so adianta o corte dos status que nunca servem, para a janela nao encher de pedido encerrado.
+    const termo = busca.replace(/\D/g, "").slice(0, 9);
+    const consultas: PromiseLike<{ data: unknown }>[] = [];
+    for (const [coluna, valor] of [["id_cliente", ref.idCliente], ["id_faturado", ref.idFaturado]] as const) {
+      if (valor === null) continue;
+      let q = supabase
+        .from("propostas")
+        .select(COLUNAS)
+        .eq(coluna, valor)
+        .neq("id_int", idInt)
+        .is("encerrado_teste_em", null)
+        .not("is_avulso", "is", true)
+        .not("status_interno", "in", `(${STATUS_FORA_DE_ABERTO.map((s) => `"${s}"`).join(",")})`);
+      if (termo) {
+        // Busca por numero consulta TODOS os candidatos (nao so os mais novos): qualquer id que COMECE
+        // pelo que foi digitado, em faixas (ids tem ate 7 digitos).
+        const faixas = faixasDeBuscaPorNumero(termo);
+        if (faixas.length > 0) q = q.or(faixas.join(","));
       }
-      const { data } = await consulta;
-      const linhas = (data ?? []) as PropostaLinha[];
+      consultas.push(q.order("id_int", { ascending: false }).limit(termo ? 100 : 60));
+    }
+    const respostas = await Promise.all(consultas);
+    const unicas = new Map<number, PropostaLinha>();
+    for (const r of respostas) for (const l of ((r.data ?? []) as PropostaLinha[])) unicas.set(Number(l.id_int), l);
+    // Quem ja esta no grupo nao e candidato (ja aparece marcado); sai ANTES do teto de 10.
+    const doGrupo = new Set(membros.map((m) => m.idInt));
+    const linhas = [...unicas.values()].filter((l) => !doGrupo.has(Number(l.id_int)));
+    {
       const ids = linhas.map((l) => Number(l.id_int));
       const [desp, gr] = await Promise.all([despachadosEntre(supabase, ids), gruposAcompanhar(supabase, ids)]);
-      candidatos = montarCandidatos(linhas.map((l) => paraPedido(l, desp, gr)), ref, meu?.grupoId ?? null, undefined);
-      // Membros do proprio grupo nao sao "candidatos": ja estao marcados.
-      const doGrupo = new Set(membros.map((m) => m.idInt));
-      candidatos = candidatos.filter((c) => !doGrupo.has(c.idInt));
+      candidatos = montarCandidatos(linhas.map((l) => paraPedido(l, desp, gr)), ref, meu?.grupoId ?? null, termo || undefined);
     }
   }
 
@@ -202,6 +220,7 @@ async function montarEstado(sessao: Sessao, idInt: number, busca: string) {
     podeEditar,
     podeSoltarDeTerceiro: ehAdminExpedicao,
     somenteLeitura,
+    statusInterno: p.status_interno ?? "",
     grupoId: meu?.grupoId ?? null,
     membros,
     candidatos,
@@ -259,12 +278,21 @@ export async function POST(request: Request) {
     if (!ref) return NextResponse.json({ success: false, message: `Pedido #${idInt} nao encontrado.` }, { status: 404 });
     const ids = linhas.map((l) => Number(l.id_int));
     const [desp, gr] = await Promise.all([despachadosEntre(supabase, ids), gruposAcompanhar(supabase, ids)]);
+    const motivoProprio = motivoSomenteLeitura({
+      statusInterno: ref.status_interno ?? "",
+      despachado: desp.has(idInt),
+      avulso: ref.is_avulso === true,
+      encerradoTeste: Boolean(ref.encerrado_teste_em)
+    });
+    if (motivoProprio) {
+      return NextResponse.json({ success: false, code: "SOMENTE_LEITURA", message: motivoProprio }, { status: 422 });
+    }
     for (const id of novos) {
       const l = linhas.find((x) => Number(x.id_int) === id);
       const ped = l ? paraPedido(l, desp, gr) : null;
       if (!ped || !podeSerCandidato(ped, { idInt, idCliente: num(ref.id_cliente), idFaturado: num(ref.id_faturado) })) {
         return NextResponse.json(
-          { success: false, code: "NAO_ELEGIVEL", message: `O pedido #${id} nao pode entrar no grupo (precisa ser do mesmo cliente ou pagador, estar entre APROVADO e EXPEDICAO e nao ter sido despachado).` },
+          { success: false, code: "NAO_ELEGIVEL", message: `O pedido #${id} nao pode entrar no grupo (precisa ser do mesmo cliente ou pagador, estar em aberto: nao cancelado, nao despachado, nao avulso).` },
           { status: 422 }
         );
       }

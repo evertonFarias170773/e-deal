@@ -11,6 +11,9 @@
 import {
   TETO_CANDIDATOS,
   TETO_GRUPO,
+  AVISO_AINDA_NAO_CHEGOU,
+  aindaNaoChegouAExpedicao,
+  faixasDeBuscaPorNumero,
   mensagemDeErroAcompanhar,
   montarCandidatos,
   motivoSomenteLeitura,
@@ -52,10 +55,15 @@ checar("outro cliente e outro pagador nao entra", podeSerCandidato(ped({ idInt: 
 checar("pagador nulo nao casa com pagador nulo", podeSerCandidato(ped({ idInt: 4, idCliente: 99, idFaturado: null }), { ...ref, idFaturado: null }), false);
 checar("o proprio pedido nao e candidato", podeSerCandidato(ped({ idInt: 100 }), ref), false);
 checar("cancelado nao entra", podeSerCandidato(ped({ idInt: 5, statusInterno: "CANCELADO" }), ref), false);
-checar("NOVO (antes do APROVADO) nao entra", podeSerCandidato(ped({ idInt: 6, statusInterno: "NOVO" }), ref), false);
+checar("NOVO entra (o vinculo vale antes da Expedicao)", podeSerCandidato(ped({ idInt: 6, statusInterno: "NOVO" }), ref), true);
+
 checar("APROVADO entra", podeSerCandidato(ped({ idInt: 7, statusInterno: "APROVADO" }), ref), true);
 checar("EXPEDICAO entra", podeSerCandidato(ped({ idInt: 8, statusInterno: "EXPEDICAO" }), ref), true);
 checar("EM TRANSITO nao entra", podeSerCandidato(ped({ idInt: 9, statusInterno: "EM TRANSITO" }), ref), false);
+checar("ENTREGUE e RECEBIDO nao entram", [podeSerCandidato(ped({ idInt: 13, statusInterno: "ENTREGUE" }), ref), podeSerCandidato(ped({ idInt: 14, statusInterno: "RECEBIDO" }), ref)], [false, false]);
+for (const st of ["NOVO", "AGUARDANDO", "APROVADO", "LIBERADO", "REVISAO ATENDENTE", "REVISAO PRODUCAO", "EM PRODUCAO", "EM IMPRESSAO", "EM ACABAMENTO", "EXPEDICAO"]) {
+  checar(`aberto: ${st}`, podeSerCandidato(ped({ idInt: 20, statusInterno: st }), ref), true);
+}
 checar("despachado nao entra", podeSerCandidato(ped({ idInt: 10, despachado: true }), ref), false);
 checar("avulso nao entra", podeSerCandidato(ped({ idInt: 11, avulso: true }), ref), false);
 checar("teste encerrado nao entra", podeSerCandidato(ped({ idInt: 12, encerradoTeste: true }), ref), false);
@@ -65,24 +73,41 @@ const muitos = Array.from({ length: 25 }, (_, i) => ped({ idInt: 200 + i }));
 const lista = montarCandidatos(muitos, ref, null);
 checar("teto de candidatos", lista.length, TETO_CANDIDATOS);
 checar("mais novos primeiro", lista.slice(0, 2).map((c) => c.idInt), [224, 223]);
-checar("busca por numero acha o pedido fora do teto", montarCandidatos(muitos, ref, null, "200").map((c) => c.idInt), [200]);
+checar("busca por numero acha o pedido fora do teto (o servidor entrega todos os elegiveis)", montarCandidatos(muitos, ref, null, "200").map((c) => c.idInt), [200]);
 checar("busca sem resultado", montarCandidatos(muitos, ref, null, "999").length, 0);
 
 // ── pedido em OUTRO grupo aparece desabilitado, com o motivo
 const emOutro = montarCandidatos([ped({ idInt: 300, grupoAcompanhar: { grupoId: "gB", membros: [300, 301, 302] } })], ref, "gA");
 checar("em outro grupo: desabilitado", emOutro[0].desabilitado, true);
-checar("em outro grupo: motivo cita os outros", emOutro[0].motivo, "Ja esta em outro grupo Acompanhar (#301, #302)");
+checar("em outro grupo: motivo cita os outros", emOutro[0].motivo, "Já está em outro grupo Acompanhar (#301, #302)");
 const noMesmo = montarCandidatos([ped({ idInt: 301, grupoAcompanhar: { grupoId: "gA", membros: [100, 301] } })], ref, "gA");
 checar("no mesmo grupo: nao desabilita", noMesmo[0].desabilitado, false);
+
+// ── busca por numero no servidor: alcanca qualquer id que comece pelo digitado
+checar("busca 2345 cobre 2345 e 23450-23459 ... ate 7 digitos", faixasDeBuscaPorNumero("2345"), ["and(id_int.gte.2345,id_int.lte.2345)", "and(id_int.gte.23450,id_int.lte.23459)", "and(id_int.gte.234500,id_int.lte.234599)", "and(id_int.gte.2345000,id_int.lte.2345999)"]);
+checar("busca vazia ou so letras: sem faixa", [faixasDeBuscaPorNumero(""), faixasDeBuscaPorNumero("abc")], [[], []]);
+checar("busca de 7 digitos: so o proprio", faixasDeBuscaPorNumero("2345678"), ["and(id_int.gte.2345678,id_int.lte.2345678)"]);
 
 // ── so leitura
 const base = { statusInterno: "EM PRODUCAO", despachado: false, avulso: false, encerradoTeste: false };
 checar("pedido normal: editavel", motivoSomenteLeitura(base), null);
-checar("despachado: so leitura", motivoSomenteLeitura({ ...base, despachado: true }), "Pedido ja despachado.");
-checar("EM TRANSITO: so leitura", motivoSomenteLeitura({ ...base, statusInterno: "EM TRANSITO" }), "Pedido ja despachado.");
+checar("pedido em NOVO: editavel (checkbox habilitado)", motivoSomenteLeitura({ ...base, statusInterno: "NOVO" }), null);
+checar("pedido em AGUARDANDO: editavel", motivoSomenteLeitura({ ...base, statusInterno: "AGUARDANDO" }), null);
+checar("despachado: so leitura", motivoSomenteLeitura({ ...base, despachado: true }), "Pedido já despachado.");
+checar("EM TRANSITO: so leitura", motivoSomenteLeitura({ ...base, statusInterno: "EM TRANSITO" }), "Pedido já despachado.");
+checar("A RETIRAR: so leitura", motivoSomenteLeitura({ ...base, statusInterno: "A RETIRAR" }), "Pedido já despachado.");
+checar("ENTREGUE: so leitura", motivoSomenteLeitura({ ...base, statusInterno: "ENTREGUE" }), "Pedido já despachado.");
 checar("cancelado: so leitura", motivoSomenteLeitura({ ...base, statusInterno: "CANCELADO" }), "Pedido cancelado.");
-checar("fora do funil: so leitura", motivoSomenteLeitura({ ...base, statusInterno: "AGUARDANDO" }), "Pedido fora do funil da Expedicao.");
-checar("avulso: so leitura", motivoSomenteLeitura({ ...base, avulso: true }), "Pedido avulso nao vai para a Expedicao.");
+checar("avulso: so leitura", motivoSomenteLeitura({ ...base, avulso: true }), "Pedido avulso não vai para a Expedição.");
+checar("o motivo nunca diz 'funil'", ["CANCELADO", "EM TRANSITO", "ENTREGUE"].every((s) => !String(motivoSomenteLeitura({ ...base, statusInterno: s })).includes("funil")), true);
+checar("aviso do pedido em NOVO", [aindaNaoChegouAExpedicao("NOVO"), aindaNaoChegouAExpedicao("EXPEDICAO")], [true, false]);
+checar("texto do aviso", AVISO_AINDA_NAO_CHEGOU, "Este pedido ainda não chegou à Expedição: o grupo só despacha quando todos chegarem. Para soltar: peça a um administrador da Expedição.");
+
+// a MESMA definicao vale no pedido editado e nos candidatos
+for (const cenario of [{ despachado: true }, { avulso: true }, { encerradoTeste: true }, { statusInterno: "CANCELADO" }, { statusInterno: "EM TRANSITO" }, { statusInterno: "NOVO" }]) {
+  const sit = { ...base, ...cenario };
+  checar(`mesma definicao: ${JSON.stringify(cenario)}`, podeSerCandidato(ped({ idInt: 30, ...sit }), ref), motivoSomenteLeitura(sit) === null);
+}
 
 // ── marcar / desmarcar e simetria
 const m1 = planejarMudancaDoSeletor([], [101, 102], 100);

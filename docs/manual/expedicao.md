@@ -1,6 +1,6 @@
 # Expedição
 
-> **Última revisão:** 08/10/2026
+> **Última revisão:** 09/10/2026
 > **Caminho no menu:** Expedição (item direto do menu lateral, sem subitens; é o quarto, depois de Conferência, Pedidos e Clientes). Também se chega pela aba **Expedição** no topo do Kanban e da Fila de impressão da Produção.
 > **Endereço:** `/expedicao`
 
@@ -153,7 +153,7 @@ Os itens aparecem nesta ordem, cada um só quando se aplica.
 4. Na lista, **SEM NF** aparece em vermelho para pedidos com status Na Expedição, A Retirar ou Em Trânsito sem nota autorizada.
 5. Os selos **Compl. de #X** e **+ compl. #Y** marcam pedido complementar. O **+ compl.** fica verde quando o complemento já está na Expedição e âmbar quando ainda não chegou.
 6. Pedidos de um mesmo grupo de complemento mostram o selo roxo **Vinculados: #A · #B** e uma faixa roxa na lateral do cartão. Cada número tem uma bolinha: verde quando aquele pedido já está pronto para expedir (ou já saiu), âmbar quando ainda não; passe o mouse no número para ver o status. A faixa e o selo só informam: não mudam o que o botão **Despachar** faz.
-7. **Acompanhar** (selo e faixa rosa): pedidos ligados na aba **Fretes** da proposta, que só saem quando todos do grupo estão prontos para expedir (na Expedição, status Na Expedição ou já despachado). O administrador da Expedição vê no selo o botão **Soltar do grupo**: escolha o pedido a tirar e escreva o **Motivo** (obrigatório). Quando todos do grupo saem, o grupo se encerra sozinho.
+7. **Acompanhar** (selo e faixa rosa): pedidos ligados na aba **Fretes** da proposta, que só saem quando todos do grupo estão prontos para expedir (na Expedição, status Na Expedição ou já despachado). O administrador da Expedição vê no selo o botão **Soltar do grupo**: escolha o pedido a tirar e escreva o **Motivo** (obrigatório). Quando todos do grupo saem, o grupo se encerra sozinho. O vínculo pode ser feito desde o status NOVO; enquanto um pedido do grupo não chega à Expedição, os outros não despacham e o aviso mostra quem falta (por exemplo, "Faltam: #23457 (NOVO)"). Se esse pedido for cancelado, ele deixa de segurar o grupo; se for preciso liberar sem cancelar, o administrador usa **Soltar do grupo**.
 
 ### Marcar o pedido como pronto
 
@@ -454,3 +454,5 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 > - a etiqueta oficial dos Correios também espera o grupo **Acompanhar**, que ainda está em implantação.
 >
 > - o tipo **Acompanhar** passa a estar disponível: criado na aba Fretes da proposta, trava o despacho e as etiquetas até todos do grupo estarem prontos, e o administrador pode usar **Soltar do grupo**.
+>
+> - **09/10/2026:** o Acompanhar Pedido vale para qualquer pedido em aberto, inclusive em NOVO e AGUARDANDO (antes só de APROVADO até EXPEDICAO); a busca por número procura entre todos os pedidos elegíveis; a mensagem de só leitura diz o motivo real.

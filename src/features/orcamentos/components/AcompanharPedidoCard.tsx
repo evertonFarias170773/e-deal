@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { AVISO_AINDA_NAO_CHEGOU, aindaNaoChegouAExpedicao } from "../lib/acompanhar-pedido";
 import {
   buscarEstadoAcompanhar,
   soltarAcompanhar,
@@ -145,6 +146,12 @@ export function AcompanharPedidoCard({ idInt }: { idInt: number }) {
         </p>
       )}
 
+      {noGrupo && !estado.somenteLeitura && aindaNaoChegouAExpedicao(estado.statusInterno) && (
+        <p className="text-[12px] font-medium text-amber-800 dark:text-amber-300" data-testid="aviso-nao-chegou">
+          {AVISO_AINDA_NAO_CHEGOU}
+        </p>
+      )}
+
       {estado.somenteLeitura && <p className="text-[12px] text-slate-500">Somente leitura: {estado.somenteLeitura}</p>}
       {!estado.somenteLeitura && !estado.podeEditar && (
         <p className="text-[12px] text-slate-500">Somente leitura: você não tem permissão para alterar o grupo.</p>
@@ -199,7 +206,7 @@ export function AcompanharPedidoCard({ idInt }: { idInt: number }) {
             )}
           </ul>
           <p className="text-[11px] text-slate-500">
-            Mostra até 10 pedidos do mesmo cliente ou pagador (APROVADO até EXPEDICAO, ainda não despachados); use a busca para achar outro pelo número.
+            Mostra os 10 mais recentes do mesmo cliente ou pagador que ainda estão em aberto (inclusive NOVO e AGUARDANDO); a busca por número procura entre todos.
           </p>
         </div>
       )}

@@ -11,17 +11,50 @@
  * decisoes que nao dependem do banco: quem e candidato, quando e so leitura,
  * o que mudou no seletor e como traduzir a recusa.
  */
-import { STATUS_FUNIL_EXPEDICAO } from "@/features/expedicao/lib/pedido-em-aberto";
-
 /** Candidatos mostrados de uma vez (a busca por numero acha qualquer elegivel). */
 export const TETO_CANDIDATOS = 10;
 /** Pedidos por grupo. */
 export const TETO_GRUPO = 10;
 
-/** APROVADO ate EXPEDICAO: o que ainda nao saiu da bancada. */
-export const STATUS_CANDIDATO_ACOMPANHAR: readonly string[] = STATUS_FUNIL_EXPEDICAO.filter(
-  (s) => s !== "A RETIRAR" && s !== "EM TRANSITO" && s !== "ENTREGUE"
-);
+/**
+ * Status em que o pedido JA NAO esta em aberto: cancelado ou ja despachado. O vinculo
+ * pode ser criado desde o NOVO, antes de o pedido chegar a Expedicao (o funil
+ * APROVADO..EXPEDICAO era estreito demais). A lista do banco, em `vincular_pedidos`,
+ * recusa exatamente estes.
+ */
+export const STATUS_FORA_DE_ABERTO: readonly string[] = [
+  "CANCELADO",
+  "CANCELADA",
+  "A RETIRAR",
+  "EM TRANSITO",
+  "ENTREGUE",
+  "RECEBIDO"
+];
+
+export type SituacaoDoPedido = { statusInterno: string; despachado: boolean; avulso: boolean; encerradoTeste: boolean };
+
+/**
+ * A UNICA definicao de "em aberto" para o Acompanhar: nao cancelado, sem
+ * despacho, status fora de A RETIRAR/EM TRANSITO/ENTREGUE/RECEBIDO, nao avulso,
+ * sem teste encerrado. Devolve o motivo REAL de nao estar em aberto, ou null.
+ * Card, rota e candidatos usam so esta funcao.
+ */
+export function motivoDeNaoEstarEmAberto(p: SituacaoDoPedido): string | null {
+  const st = (p.statusInterno || "").toUpperCase();
+  if (st === "CANCELADO" || st === "CANCELADA") return "Pedido cancelado.";
+  if (p.despachado || STATUS_FORA_DE_ABERTO.includes(st)) return "Pedido já despachado.";
+  if (p.avulso) return "Pedido avulso não vai para a Expedição.";
+  if (p.encerradoTeste) return "Pedido de teste encerrado.";
+  return null;
+}
+
+/** Pedido em grupo que ainda nao chegou a Expedicao: o grupo so despacha quando todos chegarem. */
+export function aindaNaoChegouAExpedicao(statusInterno: string): boolean {
+  return (statusInterno || "").toUpperCase() !== "EXPEDICAO";
+}
+
+export const AVISO_AINDA_NAO_CHEGOU =
+  "Este pedido ainda não chegou à Expedição: o grupo só despacha quando todos chegarem. Para soltar: peça a um administrador da Expedição.";
 
 export type PedidoReferencia = {
   idInt: number;
@@ -62,16 +95,14 @@ export function mesmoClienteOuPagador(a: PedidoReferencia, b: PedidoReferencia):
 }
 
 /**
- * Pode entrar no grupo? Funil APROVADO..EXPEDICAO, sem despacho, nao avulso,
- * sem teste encerrado, diferente do proprio pedido, nao cancelado. A regra de
- * cliente/pagador tambem e conferida no banco; aqui evita a ida e volta.
+ * Pode entrar no grupo? Em aberto (`motivoDeNaoEstarEmAberto`), do mesmo cliente
+ * ou pagador, e diferente do proprio pedido. Cliente/pagador tambem e conferido
+ * no banco; aqui evita a ida e volta.
  */
 export function podeSerCandidato(p: PedidoParaAcompanhar, ref: PedidoReferencia): boolean {
   if (p.idInt === ref.idInt) return false;
   if (!mesmoClienteOuPagador(ref, p)) return false;
-  if (!STATUS_CANDIDATO_ACOMPANHAR.includes((p.statusInterno || "").toUpperCase())) return false;
-  if (p.despachado || p.avulso || p.encerradoTeste) return false;
-  return true;
+  return motivoDeNaoEstarEmAberto(p) === null;
 }
 
 function listaDe(ids: readonly number[]): string {
@@ -103,30 +134,17 @@ export function montarCandidatos(
         statusInterno: p.statusInterno,
         criadoEm: p.criadoEm,
         desabilitado: Boolean(outro),
-        motivo: outro ? `Ja esta em outro grupo Acompanhar (${listaDe(outro.membros.filter((m) => m !== p.idInt))})` : null
+        motivo: outro ? `Já está em outro grupo Acompanhar (${listaDe(outro.membros.filter((m) => m !== p.idInt))})` : null
       };
     });
 }
 
 /**
- * Quando o checkbox e o seletor viram so leitura. Devolve o motivo ou null.
- * Pedido despachado, cancelado ou fora do funil nao entra nem sai por aqui.
+ * Quando o checkbox e o seletor viram so leitura: o pedido editado nao esta em
+ * aberto. E a MESMA definicao dos candidatos; devolve o motivo real ou null.
  */
-export function motivoSomenteLeitura(p: {
-  statusInterno: string;
-  despachado: boolean;
-  avulso: boolean;
-  encerradoTeste: boolean;
-}): string | null {
-  const st = (p.statusInterno || "").toUpperCase();
-  if (st === "CANCELADO" || st === "CANCELADA") return "Pedido cancelado.";
-  if (p.despachado || st === "A RETIRAR" || st === "EM TRANSITO" || st === "ENTREGUE" || st === "RECEBIDO") {
-    return "Pedido ja despachado.";
-  }
-  if (p.avulso) return "Pedido avulso nao vai para a Expedicao.";
-  if (p.encerradoTeste) return "Pedido de teste encerrado.";
-  if (!STATUS_CANDIDATO_ACOMPANHAR.includes(st)) return "Pedido fora do funil da Expedicao.";
-  return null;
+export function motivoSomenteLeitura(p: SituacaoDoPedido): string | null {
+  return motivoDeNaoEstarEmAberto(p);
 }
 
 export type MudancaDoSeletor = { vincular: number[]; soltar: number[]; erro: string | null };
@@ -160,6 +178,22 @@ export function mensagemDeErroAcompanhar(status: number, code: string | null | u
   }
   if (texto) return texto.replace(/^VINC_[A-Z_]+:\s*/, "");
   return "Nao foi possivel atualizar o grupo Acompanhar.";
+}
+
+/**
+ * Faixas de id_int para a busca por numero no servidor: todo id que COMECA pelo que foi
+ * digitado (ids tem ate 7 digitos). Assim a busca alcanca qualquer candidato, nao so os
+ * 10 mais recentes. Formato do filtro `or` do PostgREST.
+ */
+export function faixasDeBuscaPorNumero(termo: string): string[] {
+  const t = termo.replace(/\D/g, "").slice(0, 9).replace(/^0+/, "");
+  if (!t) return [];
+  const faixas: string[] = [];
+  for (let k = 0; k <= Math.max(0, 7 - t.length); k += 1) {
+    const base = Number(t) * 10 ** k;
+    faixas.push(`and(id_int.gte.${base},id_int.lte.${base + 10 ** k - 1})`);
+  }
+  return faixas;
 }
 
 /** Normaliza um membro/candidato vindo do JSON da rota. */
