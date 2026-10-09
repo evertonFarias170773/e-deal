@@ -153,7 +153,7 @@ Os itens aparecem nesta ordem, cada um só quando se aplica.
 4. Na lista, **SEM NF** aparece em vermelho para pedidos com status Na Expedição, A Retirar ou Em Trânsito sem nota autorizada.
 5. Os selos **Compl. de #X** e **+ compl. #Y** marcam pedido complementar. O **+ compl.** fica verde quando o complemento já está na Expedição e âmbar quando ainda não chegou.
 6. Pedidos de um mesmo grupo de complemento mostram o selo roxo **Vinculados: #A · #B** e uma faixa roxa na lateral do cartão. Cada número tem uma bolinha: verde quando aquele pedido já está pronto para expedir (ou já saiu), âmbar quando ainda não; passe o mouse no número para ver o status. A faixa e o selo só informam: não mudam o que o botão **Despachar** faz.
-7. **Acompanhar** (selo e faixa rosa, para pedidos que só devem sair quando todos do grupo estiverem prontos): em implantação, ainda não disponível.
+7. **Acompanhar** (selo e faixa rosa): pedidos ligados na aba **Fretes** da proposta, que só saem quando todos do grupo estão prontos para expedir (na Expedição, status Na Expedição ou já despachado). O administrador da Expedição vê no selo o botão **Soltar do grupo**: escolha o pedido a tirar e escreva o **Motivo** (obrigatório). Quando todos do grupo saem, o grupo se encerra sozinho.
 
 ### Marcar o pedido como pronto
 
@@ -182,7 +182,7 @@ O pedido também chega à Expedição pela Revisão do boletim da produção.
    - **Etiqueta Correios (oficial)** — Correios com prepostagem gerada.
 3. O sistema salva o que está na tela e abre o PDF.
 4. Para reimprimir depois, use **Editar dados de expedição** no menu do pedido e clique no mesmo botão.
-5. A etiqueta interna, a prepostagem e a **Etiqueta Correios (oficial)** também esperam o grupo **Acompanhar** (pedidos que só saem juntos): o sistema avisa quais pedidos do grupo faltam. Esse tipo de grupo ainda está em implantação e não está disponível.
+5. A etiqueta interna, a prepostagem e a **Etiqueta Correios (oficial)** também esperam o grupo **Acompanhar** (pedidos que só saem juntos): o sistema avisa quais pedidos do grupo faltam. O botão **Despachar** também recusa até todos estarem prontos. Depois disso, cada pedido despacha e imprime a sua etiqueta separadamente.
 
 ### Como a transportadora aparece
 
@@ -442,6 +442,7 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/features/expedicao/components/ChipVinculados.tsx`
 - `src/features/expedicao/hooks/useVinculosDoPainel.ts`
 - `src/features/expedicao/lib/vinculos-do-painel.ts`
+- `src/features/expedicao/components/SoltarDoGrupoModal.tsx`
 
 > **Mudanças de 08/10/2026:**
 >
@@ -451,3 +452,5 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 > - pedidos de um mesmo grupo de complemento mostram o selo roxo **Vinculados: #A · #B**, com bolinha verde ou âmbar em cada número, e uma faixa roxa no cartão (commit `c62ef62`). O tipo **Acompanhar** ainda está em implantação.
 >
 > - a etiqueta oficial dos Correios também espera o grupo **Acompanhar**, que ainda está em implantação.
+>
+> - o tipo **Acompanhar** passa a estar disponível: criado na aba Fretes da proposta, trava o despacho e as etiquetas até todos do grupo estarem prontos, e o administrador pode usar **Soltar do grupo**.

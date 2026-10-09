@@ -134,6 +134,18 @@ Depois da liberação o campo **Valor cobrado (R$)** fica só para leitura: o va
 3. Para mudar o valor que o cliente paga, digite no campo **Frete R$** e pressione Enter ou saia do campo. O frete e o total da proposta são gravados juntos.
 4. Leia o aviso que aparece: ele mostra o total anterior e o novo, o saldo a cobrar na aba **Pagamentos** quando houver, e a mudança de status quando houver.
 
+### Acompanhar Pedido (pedidos que saem juntos)
+
+Use quando pedidos do mesmo cliente (ou do mesmo pagador) devem sair da Expedição todos ao mesmo tempo, cada um com o seu próprio despacho, a sua etiqueta e a sua cobrança. Não existe divisão de frete nem vínculo financeiro entre eles.
+
+1. Na aba **Fretes**, logo abaixo da caixa **7. Fretes e Entrega**, marque **Acompanhar Pedido**. A tela mostra: "Os pedidos marcados só saem da Expedição juntos; cada um segue com o seu próprio despacho, a sua etiqueta e a sua cobrança".
+2. Escolha os pedidos na lista. Ela mostra até 10 pedidos do mesmo cliente ou pagador, entre APROVADO e EXPEDICAO e ainda não despachados, com número, cliente, status e data. Para achar outro, digite o número em **Buscar pedido por número**. Pedido que já está em outro grupo Acompanhar aparece apagado, com o motivo.
+3. A escolha é gravada na hora, sem o **Salvar alterações**, e vale mesmo com a edição bloqueada por cobrança. O grupo aceita no máximo 10 pedidos.
+4. Nos outros pedidos do grupo a aba mostra o mesmo grupo marcado; marcar mais um pedido a partir de qualquer um deles entra no mesmo grupo.
+5. Para tirar um pedido do grupo, desmarque-o na lista. Desmarcar **Acompanhar Pedido** tira só este pedido. O grupo se desfaz quando sobra um pedido. Se a ligação foi criada por outra pessoa, só quem a criou ou o administrador da Expedição consegue soltar; fora disso a tela explica a recusa.
+6. Em pedido já despachado, cancelado ou fora do funil, a caixa fica só para leitura. Na visualização do pedido aparece a linha **Acompanha: #A, #B**.
+7. Na Expedição, os pedidos do grupo mostram o selo rosa **Vinculados**; nenhum deles é despachado nem tem etiqueta gerada até todos estarem prontos. Depois disso, cada um sai e imprime a sua etiqueta separadamente.
+
 ### Aplicar o frete complementar (pedido complementar)
 
 1. Abra o pedido complementar e inclua os produtos na aba **Orçamento**. Salve.
@@ -267,6 +279,9 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/features/orcamentos/lib/categoria-frete.ts`
 - `src/features/orcamentos/lib/servicos-transportadora.ts`
 - `src/features/orcamentos/components/FreteComplementarCard.tsx`
+- `src/features/orcamentos/components/AcompanharPedidoCard.tsx`
+- `src/features/orcamentos/lib/acompanhar-pedido.ts`
+- `src/app/api/orcamentos/acompanhar/route.ts`
 - `src/features/orcamentos/services/frete.service.ts`
 - `src/features/orcamentos/services/frete-desatualizado.ts`
 - `src/features/orcamentos/services/valor-frete-negociado.ts`
@@ -284,3 +299,5 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 > - o identificador das opções de Motoboy, Transportadora São Miguel e VEPPO deixou de mudar a cada cotação, e por isso o frete complementar desses transportes volta a ser aplicado (commit `2387164`);
 > - o pedido novo com frete dos Correios passa a apontar para o cadastro da Superintendência Estadual RS dos Correios, e a transportadora aparece como **Correios** em vez da fantasia do cadastro;
 > - a ação **Criar pedido complementar** passou a se chamar **Criar Complemento** (commit `dd9a110`), só no nome.
+>
+> - nova seção **Acompanhar Pedido** na aba Fretes: pedidos do mesmo cliente ou pagador que só saem da Expedição juntos.

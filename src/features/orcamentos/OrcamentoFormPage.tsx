@@ -127,6 +127,7 @@ import {
 } from "@/features/cadastros/components/DocumentoRecebedorFields";
 import { DiferencaFinanceiraModal } from "@/features/orcamentos/components/DiferencaFinanceiraModal";
 import { FreteComplementarCard } from "@/features/orcamentos/components/FreteComplementarCard";
+import { AcompanharPedidoCard } from "@/features/orcamentos/components/AcompanharPedidoCard";
 import { TarefasDoPedido } from "@/features/tarefas/components/TarefasDoPedido";
 import { SocioPagadorInline, type SocioConfirmado } from "@/features/orcamentos/components/SocioPagadorInline";
 import type { AcaoFinanceiraDiferenca } from "@/features/cobrancas/types";
@@ -6974,6 +6975,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
       )}
 
       {activeFormTab === "fretes" && (
+        <>
         <fieldset disabled={isFormBloqueadoPorCobranca} className="group space-y-6">
           <FormSection 
             title="7. Fretes e Entrega" 
@@ -7599,6 +7601,13 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
             )}
           </FormSection>
                 </fieldset>
+                {/* ACOMPANHAR PEDIDO: grava na hora, por rota propria, sem o Salvar e sem tocar em
+                    propostas. Fica FORA do fieldset acima de proposito: o bloqueio por cobranca
+                    desabilitaria o checkbox, e este vinculo nao tem efeito financeiro. */}
+                {form.id_int !== "NOVO" && !form.isAvulso && Number(form.id_int) > 0 ? (
+                  <AcompanharPedidoCard idInt={Number(form.id_int)} />
+                ) : null}
+        </>
               )}
 
               {activeFormTab === "pagamentos" && (
