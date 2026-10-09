@@ -7,7 +7,14 @@ import { classeChipDoTipo, dicaDoMembro, destaqueDoCard, textoVinculados } from 
  * ambar = ainda nao; a dica mostra o status. Pedido nos dois tipos: o chip
  * roxo ganha uma bolinha rosa pequena de marcador.
  */
-export function ChipVinculados({ grupos }: { grupos: readonly GrupoVinculado[] | undefined }) {
+export function ChipVinculados({
+  grupos,
+  onSoltar
+}: {
+  grupos: readonly GrupoVinculado[] | undefined;
+  /** So o expedicao.admin recebe: abre o "Soltar do grupo" (grupo Acompanhar). */
+  onSoltar?: (grupo: GrupoVinculado) => void;
+}) {
   if (!grupos || grupos.length === 0) return null;
   const nosDois = destaqueDoCard(grupos) === "AMBOS";
   return (
@@ -33,6 +40,16 @@ export function ChipVinculados({ grupos }: { grupos: readonly GrupoVinculado[] |
             </span>
           ))}
           <span className="sr-only">{textoVinculados(g)}</span>
+          {onSoltar && g.tipo === "ACOMPANHAR" && (
+            <button
+              type="button"
+              onClick={() => onSoltar(g)}
+              className="ml-1 rounded border border-rose-300 bg-white px-1.5 text-[11px] font-bold text-rose-700 hover:bg-rose-100 dark:border-rose-800 dark:bg-slate-900 dark:text-rose-300"
+              title="Tirar um pedido do grupo Acompanhar (com motivo)"
+            >
+              Soltar do grupo
+            </button>
+          )}
         </span>
       ))}
     </div>

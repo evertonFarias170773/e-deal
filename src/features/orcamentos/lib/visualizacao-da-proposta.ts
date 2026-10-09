@@ -272,3 +272,14 @@ export function contatoDaVisualizacao(contato: { nome?: string | null; whatsapp?
   if (semNome) return { nome: dados.length ? "Contato sem nome cadastrado" : "Sem contato cadastrado", detalhe: dados.join(" - ") };
   return { nome, detalhe: dados.join(" - ") };
 }
+
+/* ------------------------------------------------------------------ acompanhar */
+
+/**
+ * A linha "Acompanha: #A, #B" da visualizacao: so leitura, sem acionar nada.
+ * `ids` sao os OUTROS pedidos do grupo Acompanhar (sem o proprio). Sem grupo, nao ha linha.
+ */
+export function linhaAcompanha(ids: readonly number[] | null | undefined): string | null {
+  const lista = Array.from(new Set((ids ?? []).filter((i) => Number.isInteger(i) && i > 0)));
+  return lista.length > 0 ? `Acompanha: ${lista.map((i) => `#${i}`).join(", ")}` : null;
+}

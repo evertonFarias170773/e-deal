@@ -58,6 +58,8 @@ type KanbanTransportadorasProps = {
    * de fase (`faseDoCard`) nao mudam.
    */
   vinculosPorPedido?: Map<number, GrupoVinculado[]>;
+  /** Admin da Expedicao: abre o "Soltar do grupo" no chip do Acompanhar. */
+  onSoltarDoGrupo?: (idInt: number, grupo: GrupoVinculado) => void;
 };
 
 type ColunaKanban = {
@@ -339,7 +341,8 @@ export function KanbanTransportadoras({
   itensMenu,
   formatarPeso,
   etapaFiltro,
-  vinculosPorPedido
+  vinculosPorPedido,
+  onSoltarDoGrupo
 }: KanbanTransportadorasProps) {
   /**
    * O KANBAN MOSTRA O QUE O RECORTE ENTREGAR (01/09/2026).
@@ -729,7 +732,7 @@ export function KanbanTransportadoras({
                       ))}
                     </div>
                   )}
-                  <ChipVinculados grupos={vinculosPorPedido?.get(p.idInt)} />
+                  <ChipVinculados grupos={vinculosPorPedido?.get(p.idInt)} onSoltar={onSoltarDoGrupo ? (grupo) => onSoltarDoGrupo(p.idInt, grupo) : undefined} />
                   {(mostrarSelo || ehAtrasado || p.prometidoHoje || prevista) && (
                     <div className="mt-3 flex flex-wrap items-center gap-1.5">
                       {mostrarSelo && <StatusBadge status={p.statusInterno} />}

@@ -58,6 +58,7 @@ import {
 import { useGlobalChat } from "@/features/chat/context/GlobalChatContext";
 import { CancelPropostaModal } from "@/features/orcamentos/components/CancelPropostaModal";
 import { TarefasDoPedido } from "@/features/tarefas/components/TarefasDoPedido";
+import { LinhaAcompanha } from "@/features/orcamentos/components/LinhaAcompanha";
 
 type OrcamentoDetailPageProps = {
   idInt: number;
@@ -416,6 +417,8 @@ export function OrcamentoDetailPage({ idInt }: OrcamentoDetailPageProps) {
                 Complemento: #{complemento.idInt} · {complemento.statusInterno}
               </Link>
             ))}
+            {/* Acompanhar Pedido: so leitura, quem sai junto com este pedido. */}
+            <LinhaAcompanha idInt={Number(proposta.id_int)} />
             <ActionsMenu
               items={[
                 {

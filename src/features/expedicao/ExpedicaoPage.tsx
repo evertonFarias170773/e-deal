@@ -59,6 +59,8 @@ import { STATUS_CORRIGIVEIS } from "./services/corrigir-frete-simulacao";
 import type { RespostaConfirmacao } from "./services/corrigir-frete.client";
 import { KanbanTransportadoras, LegendaCoresKanban, PontoEstadoKanban } from "./components/KanbanTransportadoras";
 import { ChipVinculados } from "./components/ChipVinculados";
+import { SoltarDoGrupoModal } from "./components/SoltarDoGrupoModal";
+import type { GrupoVinculado } from "./lib/vinculos-do-painel";
 import { useVinculosDoPainel } from "./hooks/useVinculosDoPainel";
 import { classeFaixaDoCard, destaqueDoCard } from "./lib/vinculos-do-painel";
 import type { EtapaExpedicao, PedidoExpedicao, TipoFreteNormalizado } from "./types";
@@ -171,6 +173,9 @@ export function ExpedicaoPage() {
   const [pedidos, setPedidos] = useState<PedidoExpedicao[]>([]);
   // Fase 5: pedidos vinculados (Complemento / Acompanhar), leitura a parte.
   const vinculosPorPedido = useVinculosDoPainel(pedidos);
+  // "Soltar do grupo" (Acompanhar): so expedicao.admin.
+  const [soltarAlvo, setSoltarAlvo] = useState<{ idInt: number; grupo: GrupoVinculado } | null>(null);
+  const podeSoltarDoGrupo = Boolean(user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "expedicao.admin"));
   const [isLoaded, setIsLoaded] = useState(false);
   const canOperar = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "expedicao.processar");
   /**
@@ -1080,6 +1085,7 @@ export function ExpedicaoPage() {
           formatarPeso={formatarPeso}
           etapaFiltro={filters.etapa}
           vinculosPorPedido={vinculosPorPedido}
+          onSoltarDoGrupo={podeSoltarDoGrupo ? (idInt, grupo) => setSoltarAlvo({ idInt, grupo }) : undefined}
         />
       ) : (
       <ResponsiveList<PedidoExpedicao>
@@ -1102,7 +1108,7 @@ export function ExpedicaoPage() {
               <div className="flex flex-col">
                 <span className="font-semibold text-slate-950 dark:text-slate-100">#{p.idInt}</span>
                 <span className="text-[11px] text-slate-500">{p.empresa}</span>
-                <ChipVinculados grupos={vinculosPorPedido.get(p.idInt)} />
+                <ChipVinculados grupos={vinculosPorPedido.get(p.idInt)} onSoltar={podeSoltarDoGrupo ? (grupo) => setSoltarAlvo({ idInt: p.idInt, grupo }) : undefined} />
                 {/* PEDIDO COMPLEMENTAR: o par do mesmo evento. */}
                 {p.pedidoPrincipal ? (
                   <span className="mt-1 inline-flex items-center rounded-lg border border-sky-300 bg-sky-50 px-2 py-0.5 text-[12px] font-bold text-sky-800 dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-200 w-fit" title={`Pedido complementar do #${p.pedidoPrincipal.idInt}`}>
@@ -1329,7 +1335,7 @@ export function ExpedicaoPage() {
                   <h3 className="mt-1 font-semibold text-slate-950 dark:text-slate-100" title={p.cliente}>
                     {rotuloClienteComNumero(p.idCliente, p.clienteExibicao)}
                   </h3>
-                  <ChipVinculados grupos={vinculosPorPedido.get(p.idInt)} />
+                  <ChipVinculados grupos={vinculosPorPedido.get(p.idInt)} onSoltar={podeSoltarDoGrupo ? (grupo) => setSoltarAlvo({ idInt: p.idInt, grupo }) : undefined} />
                   {/* Mesma leitura do desktop: pagador entre o nome e a cidade. */}
                   {p.pagador && (
                     <p className="text-xs font-medium text-indigo-700" title={`Pagador: ${p.pagador}`}>
@@ -1436,6 +1442,14 @@ export function ExpedicaoPage() {
           ator={atorAtual()}
           onClose={() => setPedidoRetirada(null)}
           onDone={() => { setPedidoRetirada(null); void recarregar(); }}
+        />
+      )}
+      {soltarAlvo && (
+        <SoltarDoGrupoModal
+          idInt={soltarAlvo.idInt}
+          grupo={soltarAlvo.grupo}
+          onClose={() => setSoltarAlvo(null)}
+          onDone={() => { setSoltarAlvo(null); void recarregar(); }}
         />
       )}
       {pedidoVoltar && (
