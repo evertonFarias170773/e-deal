@@ -524,6 +524,8 @@ O QR impresso é um só e continua público — o celular do chão de fábrica n
 
 Depende de `OS_QR_PUBLICO_ENABLED=true`, `OS_QR_TOKEN_SECRET` (o mesmo valor em todos os ambientes — trocar invalida os QRs já impressos) e `SUPABASE_SERVICE_ROLE_KEY`, aplicadas na Vercel em 17/08/2026.
 
+> **Desde 09/10/2026 o QR impresso na OS traz só o número do pedido** (`propostas.id_int`, só dígitos; `src/features/pedidos/lib/qr-do-boletim.ts`), por decisão da gerência: os terminais dos setores e da Expedição leem o QR em vez de digitar o número. A rota `imprimir-os` não monta mais link nem emite token. A página `/os`, as rotas `/api/os-qr/*` e as funções `os_qr_*` não mudaram e continuam atendendo as vias impressas antes, que têm o QR antigo (link do boletim ou `/os?t=<token>`); nenhuma delas aceita o número do pedido. Medido no dia: o QR público tinha 3 usos na história (último em 28/07/2026) e só 6 pedidos com token.
+
 ---
 
 # 8-A. Encerramento de Pedido de Teste (20/08/2026)

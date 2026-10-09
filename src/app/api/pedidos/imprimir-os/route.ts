@@ -18,7 +18,7 @@ import { OsPdfResumoDocument } from "@/features/pedidos/pdf/OsPdfResumoDocument"
 import { EMPRESA_LOGO_FILES } from "@/features/pedidos/pdf/os-pdf-assets";
 import { carregarImagemComoDataUrl } from "@/features/pedidos/pdf/os-pdf-images";
 import { nomeArquivoOs } from "@/features/pedidos/services/os-nome-arquivo";
-import { osQrFlagAtiva, obterOuEmitirTokenOsQr } from "@/features/pedidos/services/os-qr-token.server";
+import { OPCOES_QR_DO_BOLETIM, conteudoQrDoBoletim } from "@/features/pedidos/lib/qr-do-boletim";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -36,42 +36,6 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 const MAX_MINIATURAS_POR_MODELO = 2;
-
-/**
- * Resolve a base canônica do QR Code.
- * Produção: exige APP_URL https válida sem path/query; ausente/inválida → null (PDF sem QR).
- * Dev: fallback para o origin da request, com aviso.
- */
-function resolverBaseUrlCanonica(request: Request): string | null {
-  const raw = (process.env.APP_URL || "").trim();
-  const isProd = process.env.NODE_ENV === "production";
-
-  if (raw) {
-    try {
-      const url = new URL(raw);
-      const protocoloOk = url.protocol === "https:" || (!isProd && url.protocol === "http:");
-      const semPathQuery = (url.pathname === "/" || url.pathname === "") && !url.search;
-      if (protocoloOk && semPathQuery) {
-        return url.origin;
-      }
-      console.error("[imprimir-os] APP_URL inválida (protocolo/path):", raw);
-    } catch {
-      console.error("[imprimir-os] APP_URL não é uma URL válida:", raw);
-    }
-  }
-
-  if (!isProd) {
-    console.warn("[imprimir-os] APP_URL ausente/inválida em dev — usando origin da request para o QR.");
-    try {
-      return new URL(request.url).origin;
-    } catch {
-      return null;
-    }
-  }
-
-  console.error("[imprimir-os] APP_URL ausente/inválida em produção — PDF emitido SEM QR Code.");
-  return null;
-}
 
 function mimeDoLogo(fileName: string): string {
   return fileName.toLowerCase().endsWith(".png") ? "image/png" : "image/jpeg";
@@ -300,28 +264,16 @@ export async function GET(request: Request) {
     console.warn("[imprimir-os] Falha ao carregar logo da empresa (não-fatal):", e);
   }
 
-  // QR Code — sob OS_QR_PUBLICO_ENABLED aponta para a página pública de produção
-  // (/os?t=<token> — query string: sobrevive a leitores de QR que descartam o
-  // fragment; o client remove o token da URL imediatamente após capturar; rotas
-  // com no-store/no-referrer/noindex). Caso contrário mantém o destino
-  // autenticado do boletim. Sem base canônica válida → sem QR.
+  // QR Code — só o número do pedido (decisão da gerência, 09/10/2026): os
+  // terminais dos setores e da Expedição leem o QR em vez de digitar o número.
+  // Conteúdo e opções em lib/qr-do-boletim. Não depende mais de APP_URL nem do
+  // token do QR público: a página /os e as rotas os-qr seguem como estão, e as
+  // vias impressas antes desta mudança continuam valendo com o QR que têm.
   let qrDataUrl: string | null = null;
-  const baseUrl = resolverBaseUrlCanonica(request);
-  if (baseUrl) {
-    let qrUrl = `${baseUrl}/pedidos/boletim?id_int=${idInt}&modo=edicao`;
-    if (osQrFlagAtiva()) {
-      const tokenResult = await obterOuEmitirTokenOsQr(token, authData.user.id, idInt);
-      if (tokenResult.success) {
-        qrUrl = `${baseUrl}/os?t=${tokenResult.token}`;
-      } else {
-        console.error("[imprimir-os] Token do QR público indisponível (fallback p/ boletim):", tokenResult.error);
-      }
-    }
+  const qrConteudo = conteudoQrDoBoletim(idInt);
+  if (qrConteudo) {
     try {
-      qrDataUrl = await QRCode.toDataURL(qrUrl, {
-        margin: 1,
-        width: 256,
-      });
+      qrDataUrl = await QRCode.toDataURL(qrConteudo, OPCOES_QR_DO_BOLETIM);
     } catch (e) {
       console.warn("[imprimir-os] Falha ao gerar QR Code (não-fatal):", e);
     }

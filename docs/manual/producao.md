@@ -1,6 +1,6 @@
 # Produção (ordens de serviço)
 
-> **Última revisão:** 02/10/2026
+> **Última revisão:** 09/10/2026
 > **Caminho no menu:** Produção (item direto do menu lateral, sem submenu). A OS de cada pedido abre a partir da lista. O Kanban e a Fila de impressão não estão no menu: chega-se a eles pelo endereço ou pelas abas **Fila Geral / Kanban Board / Fila de Impressão / Expedição** que aparecem no topo dessas duas telas.
 > **Endereço:** `/pedidos` (painel geral). OS: `/pedidos/boletim`. Kanban: `/pedidos/kanban` (e `/os-producao`). Fila de impressão: `/pedidos/impressao`.
 
@@ -174,9 +174,21 @@ Nomes exatamente como aparecem na tela.
 5. Dentro da OS, no bloco de produtos de outro setor, **Abrir PDF do SETOR** e **reduzido** imprimem aquele setor sem trocar de aba.
 6. Depois de **Salvar Alterações**, a pergunta **Abrir para imprimir?** abre o documento completo. Se o pedido já foi impresso antes, a pergunta vira **Reimprimir o boletim?** e oferece **Abrir os N setores** ou **Abrir só SETOR** (o setor que você acabou de editar).
 7. O aviso "Gerando o PDF na nova aba" indica que o documento está sendo montado. A primeira impressão do dia costuma demorar mais.
-8. A OS impressa não mostra valores. No cabeçalho ela traz o número da OS, o setor, o prazo com a hora e o QR code.
+8. A OS impressa não mostra valores. No cabeçalho ela traz o número da OS, o setor, o prazo com a hora e o QR code. O QR traz só o número do pedido; os PDFs impressos antes desta mudança (09/10/2026) têm o QR antigo.
 
 ### Usar o QR code da OS
+
+O QR traz só o número do pedido; os PDFs impressos antes desta mudança (09/10/2026) têm o QR antigo.
+
+**QR novo (OS gerada a partir de 09/10/2026)**
+
+1. Serve para não errar a digitação do número no terminal. Clique no campo de busca da tela (Produção, Kanban ou Expedição) e leia o QR com o leitor: o número do pedido entra no campo e a lista filtra.
+2. O QR novo não abre página nenhuma e não muda status. Lido pelo celular, ele mostra só o número.
+3. Gerar a OS de novo (2ª via, outro setor, **Baixar todos**) já sai com o QR novo.
+
+**QR antigo (vias impressas antes)**
+
+As vias antigas continuam valendo como eram. O QR delas é um link: lido no terminal, ele digita o endereço inteiro no campo de busca e a lista fica vazia; nesse caso digite o número. Quando a via antiga traz o QR da página de troca de status, os passos são estes:
 
 1. Leia o QR impresso na OS com o celular. Não precisa de login.
 2. A página mostra **OS #número**, o resumo do produto e o **Status atual**.
@@ -185,7 +197,7 @@ Nomes exatamente como aparecem na tela.
 5. Escolha o destino, preencha **Motivo (opcional)** se quiser e toque em **Confirmar ...**. O status só muda ao confirmar.
 6. Para ENTREGUE o sistema pede dois toques: **Confirmar entrega** e depois **Confirmar ENTREGUE agora**. Depois disso o QR não permite novas mudanças.
 7. Quem lê o QR já logado no sistema e com acesso à Produção é levado direto para a tela da OS, em vez da página de troca de status.
-8. Se a via impressa se perder ou vazar, use **Ações → Gerar novo QR (invalida o anterior)** e reimprima a OS. O QR antigo passa a mostrar "QR substituído".
+8. Se uma via antiga se perder ou vazar, use **Ações → Gerar novo QR (invalida o anterior)**: o QR antigo passa a mostrar "QR substituído". A OS reimpressa sai com o QR novo, que traz só o número.
 
 ### Devolver o pedido para o atendente
 
@@ -311,6 +323,7 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/app/(erp)/os-producao/page.tsx`
 - `src/app/os/os-qr-client.tsx`
 - `src/app/api/pedidos/imprimir-os/route.ts`
+- `src/features/pedidos/lib/qr-do-boletim.ts`
 - `src/app/api/pedidos/os-qr/rotacionar/route.ts`
 - `src/constants/navigation.ts`
 - `src/features/auth/usuarios.service.ts`
