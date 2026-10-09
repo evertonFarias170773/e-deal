@@ -5,6 +5,17 @@ import { verificarEscopoPropostaServerSide } from "@/lib/auth/verificar-escopo-p
 import { isPropostaStatusProtegido } from "@/features/orcamentos/services/status-protegidos";
 import { aplicarStatusRecomendadoProposta } from "@/features/orcamentos/services/status-writer.service";
 import { avaliarCancelamentoNoServidor } from "@/features/cobrancas/services/cancelamento-elegibilidade.server";
+import { cabecalhosWebhookN8n } from "@/lib/n8n/webhook-segredo";
+import {
+  MENSAGEM_PIX_NAO_CANCELADO_NO_BANCO,
+  chamarCancelamentoDePix,
+  corpoDoCancelamentoPix,
+  decidirCancelamentoDePix
+} from "@/features/cobrancas/services/cancelamento-pix";
+
+// Teto da rota. A chamada de cancelamento de PIX tem o seu, menor (25 s).
+export const runtime = "nodejs";
+export const maxDuration = 60;
 
 /**
  * Não existe coluna de provedor em pagamentos_v2. O cartão Asaas é reconhecido
@@ -559,25 +570,42 @@ export async function POST(request: Request) {
         );
       }
 
-      const webhookUrl = "https://10074.hostoo.net.br/webhook/del-pix-vibe";
-      console.log("[cancelar-externo][PIX] chamando n8n", { cod_validador: codC6Final, id_empresa: idEmpresaCobranca });
+      // PASSO A (09/10/2026) — regra em services/cancelamento-pix.
+      // Até aqui a rota só conferia o HTTP, e o fluxo do n8n responde 200 mesmo
+      // quando o banco recusa: o Vibe gravava CANCELADO com o PIX ainda valendo
+      // no banco. Agora vão o motivo FIXO (o Inter exige e nunca recebia), o
+      // cabeçalho do segredo e um teto de tempo. No C6 a cobrança só é cancelada
+      // com a confirmação do banco; no Inter a decisão segue pelo HTTP, como
+      // antes, até o n8n ser corrigido, e fica registrado o que a regra nova diria.
+      const respostaPix = await chamarCancelamentoDePix({
+        corpo: corpoDoCancelamentoPix({ codigoDoBanco: codC6Final, idEmpresa: idEmpresaCobranca }),
+        cabecalhos: cabecalhosWebhookN8n()
+      });
+      const decisaoPix = decidirCancelamentoDePix(idEmpresaCobranca, respostaPix);
 
-      const webhookResponse = await fetch(webhookUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cod_validador: codC6Final, id_empresa: String(idEmpresaCobranca) })
+      // Sem dado de cliente: empresa, regra e desfecho. O corpo da resposta vai
+      // cortado, só para diagnóstico do formato.
+      console.log("[cancelar-externo][PIX] banco", {
+        id_empresa: idEmpresaCobranca,
+        regra: decisaoPix.regra,
+        desfecho: decisaoPix.desfecho,
+        confirmacao: decisaoPix.confirmacao,
+        cancelaNoVibe: decisaoPix.cancelarNoVibe,
+        cancelariaPelaConfirmacao: decisaoPix.cancelariaPelaConfirmacao,
+        http: respostaPix.tipo === "RESPOSTA" ? respostaPix.status : null,
+        corpo: respostaPix.tipo === "RESPOSTA" ? respostaPix.texto.slice(0, 200) : null
       });
 
-      const responseStatus = webhookResponse.status;
-      const responseBody = await webhookResponse.text();
-      console.log("[cancelar-externo][PIX] status n8n", responseStatus);
-      console.log("[cancelar-externo][PIX] body n8n", responseBody);
-
-      if (!webhookResponse.ok) {
-        console.error("[API][CancelarExterno] Erro HTTP no n8n:", responseStatus, responseBody);
+      if (!decisaoPix.cancelarNoVibe) {
+        console.error(`[API][CancelarExterno] PIX nao cancelado no banco (${decisaoPix.desfecho}). Nenhuma alteracao local.`);
         return NextResponse.json(
-          { success: false, message: "A API externa recusou o cancelamento do PIX. Nenhuma alteração local foi feita." },
-          { status: responseStatus }
+          {
+            success: false,
+            code: "PIX_NAO_CANCELADO_NO_BANCO",
+            desfecho: decisaoPix.desfecho,
+            message: MENSAGEM_PIX_NAO_CANCELADO_NO_BANCO
+          },
+          { status: decisaoPix.statusHttp }
         );
       }
       provedorResultado = "ok";

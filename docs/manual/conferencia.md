@@ -259,6 +259,7 @@ Outros:
 | "Sem permissão para confirmar cobrança." | O perfil não tem **Confirmar Pagamento**. | Peça a um administrador para ajustar o perfil ou fazer a confirmação. |
 | "Não é possível confirmar uma cobrança com status inválido." | A cobrança foi cancelada enquanto a tela estava aberta. | Atualize a tela. |
 | "Esta cobrança foi cancelada e consta como paga. Não confirme: o dinheiro pode ter entrado em duplicidade. Avise a gestão para decidir entre reativar ou devolver." | A cobrança foi cancelada e depois o banco informou o pagamento dela. Na lista ela aparece com o selo vermelho **Cancelada e paga: não confirmar**. | Não confirme e não gere outra cobrança. Avise a gestão, com o número do pedido. |
+| "Não foi possível cancelar o PIX no banco. A cobrança continua ativa: não gere outra cobrança para este pedido." | O banco não confirmou o cancelamento do PIX (recusou, não respondeu a tempo ou a ligação falhou). O Vibe só cancela a cobrança quando o banco confirma. | Não gere outra cobrança. Tente de novo em alguns minutos; se o cliente pode ter pago, aguarde a baixa. Persistindo, avise a gestão. |
 | "Esta cobrança já foi recebida em (data). Cancelar não devolve o dinheiro — o caso é devolução, não cancelamento." | A cobrança já está paga. | A tela não cancela cobrança paga. Trate como devolução, com o financeiro. |
 | "O título ... desta cobrança ... foi liquidado ... A cobrança inteira vira devolução — não cancele por aqui." | Um título ligado à cobrança já foi pago. | Trate como devolução. |
 | "A proposta ... tem NF-e nº ... autorizada. Cancele a nota em Fiscal › Notas Fiscais antes de cancelar a cobrança." | O pedido tem nota fiscal autorizada. | Use **Ir para Notas Fiscais**, cancele a nota e volte. |
@@ -305,6 +306,7 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/features/cobrancas/lib/recarga-em-ordem.ts`
 - `src/features/cobrancas/lib/limite-da-carga.ts`
 - `src/features/cobrancas/lib/cancelada-que-consta-paga.ts`
+- `src/features/cobrancas/services/cancelamento-pix.ts`
 - `src/features/cobrancas/ConferenciaFinanceiraAlertaModal.tsx`
 - `src/features/cobrancas/AutorizarFaturamentoModal.tsx`
 - `src/features/cobrancas/AnaliseCreditoModal.tsx`
