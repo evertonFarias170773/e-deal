@@ -21,6 +21,7 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { camposDeMedicao, medicaoDoTurnoLigada, novaMedicao, somarUso } from './maestro-agent-medicao';
 import {
   aplicarTravaDeNaoRepetir,
   avaliarCasoSemFicha,
@@ -392,6 +393,9 @@ export async function runMaestroAgentLoop(input: AgentLoopInput): Promise<AgentL
   // em vez de segurar o usuário por ~20s de retries.
   const openai = new OpenAI({ apiKey, maxRetries: 1 });
   const model = getAgentModel();
+  // Medição do turno: tokens, idas ao modelo e tempo (vai para a auditoria).
+  const medicao = novaMedicao();
+  const inicioDoTurno = Date.now();
   const maxIterations = getAgentMaxIterations();
   const maxToolCalls = getAgentMaxToolCalls();
 
@@ -497,6 +501,7 @@ export async function runMaestroAgentLoop(input: AgentLoopInput): Promise<AgentL
       throw err;
     }
     clearTimeout(timeoutId);
+    somarUso(medicao, completion.usage);
 
     const msg = completion.choices[0]?.message;
     if (!msg) break;
@@ -690,6 +695,7 @@ export async function runMaestroAgentLoop(input: AgentLoopInput): Promise<AgentL
           { signal: controller.signal }
         );
         clearTimeout(timeoutId);
+        somarUso(medicao, completion.usage);
         finalContent = completion.choices[0]?.message?.content?.trim() || null;
       } catch {
         finalContent = null;
@@ -750,6 +756,7 @@ export async function runMaestroAgentLoop(input: AgentLoopInput): Promise<AgentL
       model,
       { pergunta: query, historico, paginasLidas, resposta: content },
       deadline - Date.now() - 1_000,
+      usage => somarUso(medicao, usage),
     );
     if (conferenciaDoAssunto === 'outra_tarefa') {
       console.warn(`[MaestroAgentLoop] A página lida (${paginasLidas.join(', ')}) ensina outra tarefa — resposta substituída.`);
@@ -833,6 +840,8 @@ export async function runMaestroAgentLoop(input: AgentLoopInput): Promise<AgentL
       trava_do_manual: travaDoManual,
       caso_sem_ficha: casoSemFicha?.semFicha ? casoSemFicha.erro.tipo : null,
       trava_de_repetir: travaDeRepetir,
+      // Modelo, tokens, idas e tempo — nunca o texto da pergunta ou da resposta.
+      ...(medicaoDoTurnoLigada() ? camposDeMedicao(medicao, model, Date.now() - inicioDoTurno) : {}),
     },
   });
 

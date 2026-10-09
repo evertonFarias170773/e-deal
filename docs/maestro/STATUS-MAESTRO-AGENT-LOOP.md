@@ -471,6 +471,20 @@ Ajustes de 09/10/2026, depois da prova com cinco erros reais:
 - **`consultar_pedido` sem número não roda.** O servidor recusa a chamada sem número inteiro
   positivo antes de executar: não conta como consulta e não entra na auditoria.
 
+## 2.10 Juiz com os trechos da ficha e medição do turno (09/10/2026)
+
+- **Conferência de assunto.** O juiz recebia só a pergunta, a resposta e os títulos da página, e
+  barrava resposta certa quando a ficha diz que algo não existe ou ainda não dá (5 falsos em 114
+  turnos de prova). Agora recebe também os parágrafos da ficha que a resposta usou, até 4 mil
+  caracteres no total, e a regra de que "não existe" e "ainda não dá" são a mesma tarefa. Página
+  restrita a administradores não manda trecho. Código em `maestro-agent-conferencia.server.ts`.
+  **Desligar:** `MAESTRO_CONFERENCIA_TRECHO=off` (volta ao pedido só com os títulos, sem a regra).
+- **Medição.** O `agent_turn` de `maestro_acoes` passa a levar no `payload`: `modelo`,
+  `tokens_entrada`, `tokens_saida`, `tokens_cache`, `idas_ao_modelo` e `tempo_ms`. Soma todas as
+  chamadas do turno (agente, resposta parcial e juiz). Não leva texto da pergunta nem da resposta.
+  Sem migration. Código em `maestro-agent-medicao.ts`. **Desligar:** `MAESTRO_MEDICAO_TURNO=off`.
+- Teste: `scripts/testes/maestro-conferencia-e-medicao.test.mts`.
+
 ## Infra aplicada no banco (25/07/2026)
 
 - `maestro_conversas` / `maestro_mensagens` (RLS `user_id=auth.uid()`);
