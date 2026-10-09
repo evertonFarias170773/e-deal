@@ -26,6 +26,7 @@
  *        scripts/testes/maestro-caso-sem-ficha.test.mts
  */
 import { readFileSync, readdirSync } from "node:fs";
+import { chamadaTemNumeroDePedido } from "../../src/features/maestro/core/agent/maestro-agent-trava-pedido.ts";
 import {
   ACAO_CASO_SEM_FICHA,
   AVISO_NAO_REPITA,
@@ -123,7 +124,21 @@ for (const pergunta of [
 
   const daFicha = 'apareceu o erro "Outra emissão desta mesma nota já está em andamento." na NFS-e do pedido 23083';
   checar("erro que a ficha cita é detectado como erro...", detectarErroTecnico(daFicha)?.tipo, "erro_entre_aspas");
-  checar("...mas não é caso sem ficha: vale o manual", avaliarCasoSemFicha(daFicha, MANUAL), null);
+  const comFicha = avaliarCasoSemFicha(daFicha, MANUAL, SLUGS);
+  checar("...com ficha: não registra e não trava (vale o manual), e aponta a ficha", [comFicha?.semFicha, comFicha?.trava, comFicha?.fichas], [false, false, ["notas-fiscais"]]);
+  checar("23181: erro cru de banco com ficha, em assunto sensível, trava", avaliarCasoSemFicha(PERGUNTA_23181, MANUAL)?.trava, true);
+  checar("erro sem ficha em assunto comum não trava", comum?.trava, false);
+
+  // Aspas simples (09/10/2026): a prova das perguntas reais mostrou que
+  // 'This page couldn't load' passava sem ser visto.
+  const boletim = "O boletim do pedido não abre e aparece 'This page couldn't load'. O que pode ser?";
+  checar("aspas simples: o apóstrofo de couldn't não fecha a citação", detectarErroTecnico(boletim)?.termos, ["this page couldn't load"]);
+  checar("'This page couldn't load' tem ficha (boletim)", avaliarCasoSemFicha(boletim, MANUAL, SLUGS)?.fichas, ["proposta-producao-boletim-historico"]);
+  const fk = "Apareceu o erro 'violates foreign key constraint producao_acesso_qr_contratos_modelo_fkey' ao excluir um lote no pedido. O que eu faço?";
+  const casoFk = avaliarCasoSemFicha(fk, MANUAL, SLUGS);
+  checar("foreign key do contrato de QR: violação, com ficha (aba Pedido), sem trava", [casoFk?.erro.tipo, casoFk?.fichas, casoFk?.trava], ["violacao", ["proposta-pedido"], false]);
+  checar("aspas simples sem erro não disparam", avaliarCasoSemFicha("como uso o botão 'Gerar etiqueta 10x15' da expedição?", MANUAL), null);
+  checar("apóstrofo solto não dispara", avaliarCasoSemFicha("o cliente d'Ávila pediu 2000 pulseiras, como faço o orçamento?", MANUAL), null);
   checar("assunto sensível", ["boleto", "NF-e", "nfse", "cobrança", "pagamento", "produção"].map(assuntoSensivel), [true, true, true, true, true, false]);
 }
 
@@ -173,6 +188,14 @@ for (const pergunta of [
   checar("a resposta registrada sai sem o e-mail", String(p.resposta).includes("fulano@"), false);
   checar("no limite: não grava", [noLimite.desfecho, noLimite.gravados.length], ["limite_por_hora", 0]);
   checar("contagem falhou: não grava", [semContagem.desfecho, semContagem.gravados.length], ["limite_nao_conferido", 0]);
+}
+
+// ─── 6b. Consulta de pedido sem número não roda ──────────────────────────────
+{
+  checar("consultar_pedido: só roda com número inteiro positivo",
+    ['{"numero":23181}', '{"numero":"23181"}', "{}", '{"numero":null}', '{"numero":0}', '{"numero":-5}', '{"numero":1.5}', '{"numero":"abc"}', '{"secoes":["situacao"]}', "não é json", ""]
+      .map(chamadaTemNumeroDePedido),
+    [true, true, false, false, false, false, false, false, false, false, false]);
 }
 
 // ─── 7. Flag ─────────────────────────────────────────────────────────────────

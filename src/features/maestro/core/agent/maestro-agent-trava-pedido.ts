@@ -39,6 +39,22 @@ export function coletarNumerosDosArgumentos(json: string, destino: Set<string>):
  * Diferente de `extrairNumerosDePropostaCitados` (do loop), não pega número
  * solto: quantidade, valor e código de cliente não entram aqui.
  */
+/**
+ * A chamada de consultar_pedido traz um número de pedido de verdade? Recebe os
+ * argumentos como o modelo mandou (JSON). Sem número, zero, negativo, fracionado
+ * ou texto que não é número: falso — a consulta não deve nem rodar.
+ */
+export function chamadaTemNumeroDePedido(argumentosJson: string | null | undefined): boolean {
+  let numero: unknown;
+  try {
+    numero = (JSON.parse(argumentosJson || '{}') as { numero?: unknown }).numero;
+  } catch {
+    return false;
+  }
+  if (typeof numero === 'string' && /^\d{1,9}$/.test(numero.trim())) numero = Number(numero.trim());
+  return typeof numero === 'number' && Number.isInteger(numero) && numero > 0;
+}
+
 export function extrairPedidosCitados(texto: string): string[] {
   const achados = new Set<string>();
   const padroes = [

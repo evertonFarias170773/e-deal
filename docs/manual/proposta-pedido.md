@@ -232,7 +232,7 @@ O PDF é sempre o do mapa como está hoje no sistema de mapas. Quem publica o PD
 | "Mapa sem cadeiras" | Nenhum setor do mapa tem cadeiras. | Confira o mapa no sistema de mapas. |
 | "Mapa Teatro não gravado", com o motivo | A gravação foi recusada. Os setores ficam na lista, sem gravar. | Corrija o que a mensagem aponta e clique em **Gravar lote**. |
 | "O setor informado nao pertence ao mapa ..." | O mapa mudou entre abrir a janela e gravar. | Abra **Mapa Teatro** de novo e escolha o mapa. |
-| "Este modelo tem QR de controle de acesso reservado e não pode ser excluído por aqui. Peça a liberação ao parceiro e depois exclua o lote.", com o número e o nome do modelo | O modelo tem QR de ingresso reservado no controle de acesso. Nada foi gravado. | Peça a liberação do modelo ao parceiro e, depois dela, remova o modelo e clique em **Gravar lote**. |
+| "Este modelo tem QR de controle de acesso reservado e não pode ser excluído por aqui. Peça a liberação ao parceiro e depois exclua o lote.", com o número e o nome do modelo. O mesmo erro pode aparecer pelo texto técnico: "violates foreign key constraint producao_acesso_qr_contratos_modelo_fkey" | O modelo tem QR de ingresso reservado no controle de acesso. Nada foi gravado. | Peça a liberação do modelo ao parceiro e, depois dela, remova o modelo e clique em **Gravar lote**. |
 | "Não foi possível remover os lotes. Nada foi gravado." | A remoção falhou por outro motivo. Quantidade e valor não mudaram. | Clique em **Gravar lote** de novo. Se continuar, avise o administrador. |
 | "... A quantidade do item voltou para N e o valor da proposta voltou a R$ ..." | Um modelo não pôde ser alterado ou incluído depois de a quantidade ser gravada. O sistema devolveu a quantidade. A mensagem diz o que já tinha sido gravado. | Confira a lista e clique em **Gravar lote** de novo. |
 | "... a quantidade do item ficou em N e não pôde ser devolvida ..." ou "... o valor da proposta ficou em R$ ... : confira." | A gravação falhou no meio e o sistema não conseguiu desfazer tudo. | Confira a quantidade do produto e o valor do pedido, e avise o administrador. |
@@ -281,3 +281,5 @@ O PDF é sempre o do mapa como está hoje no sistema de mapas. Quem publica o PD
 - `src/features/orcamentos/services/gravar-lotes.server.ts`
 - `src/features/orcamentos/OrcamentoFormPage.tsx`
 - `src/features/usuarios-perfis/catalogo-permissoes.ts`
+
+> **Mudança desta revisão:** 09/10/2026 — o erro de excluir modelo com QR de controle de acesso reservado passa a citar também o texto técnico da restrição do banco. Só documentação.

@@ -460,6 +460,17 @@ Código em `src/features/maestro/core/agent/maestro-agent-caso-sem-ficha.ts`; te
   saíram; null quando a trava não rodou).
 - **Desligar:** variável `MAESTRO_CASO_SEM_FICHA=off` (detecção, registro e trava). Ausente = ligado.
 
+Ajustes de 09/10/2026, depois da prova com cinco erros reais:
+
+- **Aspas simples.** O texto de erro entre aspas simples também é reconhecido; apóstrofo no meio
+  de palavra ("couldn't") não fecha a citação.
+- **Consulta obrigatória ao manual.** Todo erro técnico detectado, com ou sem ficha, força a
+  primeira chamada do turno a ser `consultar_manual`. O Maestro não diz mais "não tenho esse passo
+  a passo" diante de um erro sem ter lido o manual. Quando uma ficha cita o erro, o recado ao
+  modelo traz o nome dela.
+- **`consultar_pedido` sem número não roda.** O servidor recusa a chamada sem número inteiro
+  positivo antes de executar: não conta como consulta e não entra na auditoria.
+
 ## Infra aplicada no banco (25/07/2026)
 
 - `maestro_conversas` / `maestro_mensagens` (RLS `user_id=auth.uid()`);

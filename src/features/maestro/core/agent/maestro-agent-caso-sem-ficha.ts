@@ -64,8 +64,10 @@ const RE_INDICE = /\b(?:(?:idx|uq|uk|fk|pk|chk)_[a-z0-9]+(?:_[a-z0-9]+)+|[a-z0-9
 const RE_DUPLICADA = /duplicate\s+key/i;
 const RE_VIOLACAO = /\bviolates\b|viola(?:[çc][aã]o)?\s+(?:de\s+|a\s+)?(?:restri[çc][aã]o|constraint|chave)/i;
 const RE_PERMISSAO = /permission\s+denied|row-level\s+security/i;
-const RE_ASPAS = /["“”«]([^"“”«»\n]{8,300})["“”»]/g;
-const RE_PALAVRA_DE_ERRO = /\b(?:erro|error|errors|falha|falhou|failed|failure|exception|exce[çc][aã]o|invalid|inv[aá]lid[oa]|denied|recusad[oa]|rejeitad[oa]|n[aã]o\s+foi\s+poss[ií]vel|timeout|unexpected)\b/i;
+// Aspas duplas, ou aspas simples que não sejam apóstrofo no meio de palavra
+// ('This page couldn't load': o apóstrofo de "couldn't" não fecha a citação).
+const RE_ASPAS = /["“”«]([^"“”«»\n]{8,300})["“”»]|(?<![\wÀ-ú])['‘]([^\n]{8,300}?)['’](?![\wÀ-ú])/g;
+const RE_PALAVRA_DE_ERRO = /\b(?:erro|error|errors|falha|falhou|failed|failure|exception|exce[çc][aã]o|invalid|inv[aá]lid[oa]|denied|recusad[oa]|rejeitad[oa]|n[aã]o\s+foi\s+poss[ií]vel|n[aã]o\s+abre|n[aã]o\s+carrega|timeout|unexpected|couldn['’]?t|could\s+not|cannot|can['’]t|unable|not\s+found)\b/i;
 
 /**
  * Tira dado pessoal de um texto que vai para o registro: e-mail, CPF, CNPJ,
@@ -126,7 +128,7 @@ export function detectarErroTecnico(mensagem: string): ErroTecnico | null {
   RE_ASPAS.lastIndex = 0;
   let aspas: RegExpExecArray | null;
   while ((aspas = RE_ASPAS.exec(texto)) !== null) {
-    const citado = aspas[1].trim();
+    const citado = (aspas[1] ?? aspas[2] ?? '').trim();
     if (RE_PALAVRA_DE_ERRO.test(citado) || (falaEmErro && citado.split(/\s+/).length >= 3)) {
       RE_ASPAS.lastIndex = 0;
       return montar('erro_entre_aspas', aspas.index, [normalizar(citado)]);
@@ -229,16 +231,21 @@ export interface CasoSemFicha {
   semFicha: boolean;
   /** Assunto de dinheiro ou nota fiscal: vale a trava de não repetir. */
   sensivel: boolean;
+  /**
+   * A trava de não repetir roda: assunto sensível, e o erro não tem ficha ou é
+   * erro cru de banco. Mensagem de tela que uma ficha cita segue o manual.
+   */
+  trava: boolean;
   /** Fichas que citam o erro (identificadores), quando o chamador os informou. */
   fichas: string[];
   pedidos: string[];
 }
 
 /**
- * O erro relatado pede algum tratamento? `textosDoManual` = conteúdo de todas
- * as fichas. Devolve null quando não há erro técnico na mensagem, quando o
- * erro é mensagem de tela que uma ficha cita, e quando a ficha cita o erro e o
- * assunto não é sensível.
+ * O erro técnico relatado na mensagem, com o que o manual sabe dele.
+ * `textosDoManual` = conteúdo de todas as fichas. Devolve null só quando a
+ * mensagem não traz erro técnico. Todo erro detectado obriga uma consulta ao
+ * manual antes da resposta; `semFicha` decide o registro e `trava` a trava.
  */
 export function avaliarCasoSemFicha(
   mensagem: string,
@@ -250,22 +257,39 @@ export function avaliarCasoSemFicha(
   const citam = textosDoManual.map((texto, i) => (manualCitaOErro(erro, [texto]) ? i : -1)).filter(i => i >= 0);
   const semFicha = citam.length === 0;
   const sensivel = assuntoSensivel(mensagem);
-  if (!semFicha && (erro.tipo === 'erro_entre_aspas' || !sensivel)) return null;
+  const trava = sensivel && (semFicha || erro.tipo !== 'erro_entre_aspas');
   const fichas = citam.map(i => slugs[i]).filter((s): s is string => Boolean(s));
-  return { erro, semFicha, sensivel, fichas, pedidos: extrairPedidosCitados(mensagem) };
+  return { erro, semFicha, sensivel, trava, fichas, pedidos: extrairPedidosCitados(mensagem) };
 }
 
-/** Recado ao modelo, antes de ele responder, quando o caso foi detectado. */
+/**
+ * Recado ao modelo, antes de ele responder. O servidor obriga a primeira
+ * chamada a ser consultar_manual (ver o loop): ninguém diz "não tenho esse
+ * passo a passo" diante de um erro sem ter olhado o manual.
+ */
 export function orientacaoDeCasoSemFicha(caso: CasoSemFicha): string {
-  return [
-    caso.semFicha
-      ? 'O usuário relata um ERRO TÉCNICO que nenhuma página do manual do Vibe explica. Diga com honestidade que você não tem a solução deste erro. Não invente causa nem correção.'
-      : `O usuário relata um ERRO TÉCNICO de banco que o manual do Vibe cita${caso.fichas.length > 0 ? ` (páginas: ${caso.fichas.join(', ')})` : ''}. Chame consultar_manual com essa página ANTES de responder e explique a causa só pelo que ela diz, sem inventar.`,
-    caso.sensivel
-      ? 'O assunto envolve boleto, pagamento, cobrança ou nota fiscal: NÃO sugira repetir, refazer, registrar ou emitir de novo, nem "tentar mais tarde". Repetir pode duplicar título ou nota.'
-      : 'Não sugira repetir a ação como solução.',
-    'Você pode consultar o pedido citado e mostrar a situação real dele. Oriente avisar o suporte com o número do pedido e o texto do erro.',
-  ].join(' ');
+  const partes: string[] = [];
+  if (caso.semFicha) {
+    partes.push(
+      'O usuário relata um ERRO TÉCNICO, e nenhuma página do manual do Vibe traz o texto exato dele.',
+      'Consulte o manual pela tela e pela ação que o usuário descreveu: a página pode explicar a mesma situação com outra mensagem.',
+      'Se a página lida explicar a situação, responda só pelo que ela diz. Se não explicar, diga com honestidade que você não tem a solução deste erro.',
+      'Não invente causa nem correção, e não use regra de outra situação da página para explicar este erro.',
+    );
+  } else {
+    partes.push(
+      `O usuário relata um ERRO que o manual do Vibe cita${caso.fichas.length > 0 ? ` (páginas: ${caso.fichas.join(', ')})` : ''}.`,
+      'Consulte essa página e explique a causa e o que fazer só pelo que ela diz, sem inventar.',
+    );
+  }
+  if (caso.trava) {
+    partes.push('O assunto envolve boleto, pagamento, cobrança ou nota fiscal: NÃO sugira repetir, refazer, registrar ou emitir de novo, nem "tentar mais tarde". Repetir pode duplicar título ou nota.');
+  } else if (caso.semFicha) {
+    partes.push('Não sugira repetir a ação como solução.');
+  }
+  if (caso.semFicha || caso.trava) partes.push('Oriente avisar o suporte com o número do pedido e o texto do erro.');
+  partes.push('Só chame consultar_pedido se o usuário informou o número do pedido.');
+  return partes.join(' ');
 }
 
 export interface RegistroDeCasoSemFicha {

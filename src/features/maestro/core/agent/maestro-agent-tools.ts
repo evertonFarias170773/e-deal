@@ -2014,7 +2014,9 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
       function: {
         name: 'consultar_pedido',
         description:
-          'Situação REAL de UM pedido/proposta pelo NÚMERO, lida agora no ERP — NÃO exige cliente ativo. Use sempre que a pergunta citar um número de pedido ' +
+          'Situação REAL de UM pedido/proposta pelo NÚMERO, lida agora no ERP — NÃO exige cliente ativo. ' +
+          'NUNCA chame sem o número: se o usuário não informou o número do pedido nesta conversa, não chame e, se precisar, peça o número. ' +
+          'Use sempre que a pergunta citar um número de pedido ' +
           '("os boletos do pedido 22812", "em que pé está o 21500", "a nota do 22000 saiu?", "já despachou?"). Peça só as partes necessárias em secoes: ' +
           'situacao (status, cliente, vendedor, valor, frete), cobrancas (cobranças do pedido: tipo, valor, paga/a vencer/cancelada, se já gerou títulos), ' +
           'titulos (boletos e depósitos da Carteira: parcela, valor, vencimento, pago/vencido/cancelado, registrado no banco, qual banco), ' +
@@ -2025,7 +2027,7 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
         parameters: {
           type: 'object',
           properties: {
-            numero: { type: 'number', description: 'Número do pedido/proposta (id_int), como o usuário informou.' },
+            numero: { type: 'integer', minimum: 1, description: 'Número do pedido/proposta (id_int), como o usuário informou. Obrigatório: sem número, não chame.' },
             secoes: {
               type: 'array',
               items: { type: 'string', enum: [...SECOES_DO_PEDIDO] },

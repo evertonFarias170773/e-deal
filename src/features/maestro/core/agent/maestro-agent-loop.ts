@@ -56,6 +56,7 @@ import { registrarUsuarioDoMaestro } from './maestro-agent-escopo.server';
 import {
   AVISO_SEM_CONSULTA,
   citaFonteSemConsulta,
+  chamadaTemNumeroDePedido,
   coletarNumerosDosArgumentos,
   correcaoDePedidoSemConsulta,
   pedidosCitadosSemConsulta,
@@ -470,7 +471,12 @@ export async function runMaestroAgentLoop(input: AgentLoopInput): Promise<AgentL
           temperature: 0.1,
           max_tokens: 900,
           tools: AGENT_TOOL_SCHEMAS,
-          tool_choice: 'auto',
+          // Erro técnico relatado: a primeira chamada é obrigatoriamente ao
+          // manual. Ninguém diz "não tenho esse passo a passo" sem ter olhado.
+          tool_choice:
+            casoSemFicha && iter === 0 && toolCallsExecutados === 0
+              ? { type: 'function', function: { name: 'consultar_manual' } }
+              : 'auto',
           messages: messages as never,
         },
         { signal: controller.signal }
@@ -582,6 +588,11 @@ export async function runMaestroAgentLoop(input: AgentLoopInput): Promise<AgentL
         estourouLimite = true;
         resultadoParaModelo = JSON.stringify({
           erro: 'Limite de consultas deste turno atingido. Responda com o que já foi obtido e avise que a consulta ficou parcial.',
+        });
+      } else if (tc.function.name === 'consultar_pedido' && !chamadaTemNumeroDePedido(tc.function.arguments)) {
+        // Consulta de pedido sem número: não roda, não conta e não entra na auditoria.
+        resultadoParaModelo = JSON.stringify({
+          erro: 'consultar_pedido não foi executada: o usuário não informou o número do pedido. Não chame esta ferramenta sem número. Responda com o que já tem e, se o número for necessário, peça-o.',
         });
       } else {
         let args: Record<string, unknown> = {};
@@ -778,7 +789,7 @@ export async function runMaestroAgentLoop(input: AgentLoopInput): Promise<AgentL
   // Trava do caso sensível — sem o modelo: erro técnico em assunto de dinheiro
   // ou nota fiscal nunca sai com sugestão de repetir a ação.
   let travaDeRepetir: number | null = null;
-  if (casoSemFicha?.sensivel) {
+  if (casoSemFicha?.trava) {
     const semRepeticao = aplicarTravaDeNaoRepetir(content);
     if (semRepeticao.removidas > 0) {
       console.warn(`[MaestroAgentLoop] Erro técnico em assunto sensível — ${semRepeticao.removidas} sugestão(ões) de repetir a ação removida(s).`);

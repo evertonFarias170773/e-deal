@@ -198,6 +198,19 @@ As mensagens são internas: o cliente não vê.
 | "Arquivo muito grande" — "O arquivo "..." excede o limite de 10MB." | O anexo do chat passa de 10 MB. | Reduza o arquivo. |
 | "Tipo não suportado" — "O tipo de "..." não é permitido no chat." | O tipo do arquivo não é aceito no chat. | Envie em PDF, imagem, Word, Excel, ZIP, RAR ou texto. |
 | "Boletim — Aguarde orientações." | O endereço foi aberto com `tab=boletim`, que não tem conteúdo. | Abra a OS pela tela Produção. |
+| "This page couldn't load" | Erro de carregamento da página. | Recarregue uma vez. Se repetir, avise o suporte com o número do pedido, o endereço da página e a hora. Veja a seção abaixo. |
+
+### A página do boletim mostra "This page couldn't load"
+
+É um erro de carregamento da página: a tela não chegou a abrir. Não é bloqueio de permissão nem depende do status do pedido.
+
+Causa já vista: uma data inválida no pedido, por exemplo ano com 5 dígitos na data do evento da aba **Artes**. Hoje o sistema trata esse caso e a tela abre. Outras causas não estão mapeadas.
+
+O que fazer:
+
+1. Recarregue a página uma vez.
+2. Se repetir, avise o suporte com o número do pedido, o endereço da página e a hora em que aconteceu.
+3. Não tente outras abas nem limpe o cache do navegador: isso não resolve e atrasa o diagnóstico.
 
 ## Veja também
 
@@ -230,3 +243,5 @@ As mensagens são internas: o cliente não vê.
 - `src/features/pedidos/services/boletim-propostas.service.ts`
 - `src/features/usuarios-perfis/catalogo-permissoes.ts`
 - `src/app/api/orcamentos/retirar-producao/route.ts`
+
+> **Mudança desta revisão:** 09/10/2026 — nova seção sobre a página que mostra a mensagem This page could not load: é erro de carregamento, com a causa já vista (data inválida no pedido, tratada no commit `6693958`) e o que fazer.
