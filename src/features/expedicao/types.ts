@@ -121,6 +121,10 @@ export interface ExpedicaoRegistro {
   obsEtiqueta: string | null;
   /** `expedicoes.nf_numero_manual` — fallback; `notas_fiscais.numero_nf` vence. */
   nfNumeroManual: string | null;
+  /** `expedicoes.azul_awb` — AWB da Azul Logistica emitida pela Expedição (uma por pedido). */
+  azulAwb: string | null;
+  /** `expedicoes.azul_status` — EMITINDO | EMITIDA | INCERTA; nulo = sem emissão. */
+  azulStatus: string | null;
   /**
    * `expedicoes.telefone_etiqueta` NÃO é lida (04/09/2026). A coluna existe no
    * banco — houve um campo de telefone editável por remessa, removido por

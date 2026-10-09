@@ -23,7 +23,7 @@ import { SummaryCard } from "@/components/common/SummaryCard";
 import { StatusBadge } from "@/components/common/StatusBadge";
 import { ResponsiveList } from "@/components/common/ResponsiveList";
 import { EmptyState } from "@/components/common/EmptyState";
-import { ActionsMenu } from "@/components/common/ActionsMenu";
+import { ActionsMenu, type ActionMenuItem } from "@/components/common/ActionsMenu";
 import { useAppToast } from "@/components/common/AppToast";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { hasPermissao } from "@/features/auth/usuarios.service";
@@ -53,6 +53,8 @@ import { VoltarStatusModal } from "./components/VoltarStatusModal";
 import { TransportadorasModal } from "./components/TransportadorasModal";
 import { RastreioModal } from "./components/RastreioModal";
 import { CorrigirFreteModal } from "./components/CorrigirFreteModal";
+import { AzulAwbModal } from "./components/AzulAwbModal";
+import { estadoBotaoAzul } from "./lib/azul-awb";
 import { DiferencaFinanceiraModal } from "@/features/orcamentos/components/DiferencaFinanceiraModal";
 import type { AcaoFinanceiraDiferenca } from "@/features/cobrancas/types";
 import { STATUS_CORRIGIVEIS } from "./services/corrigir-frete-simulacao";
@@ -212,6 +214,7 @@ export function ExpedicaoPage() {
    * modal não deve seguir aberto sobre um pedido que não está mais na lista.
    */
   const [corrigirFreteId, setCorrigirFreteId] = useState<number | null>(null);
+  const [azulAwbId, setAzulAwbId] = useState<number | null>(null);
   const pedidoCorrigirFrete = useMemo(
     () => (corrigirFreteId === null ? null : (pedidos.find((p) => p.idInt === corrigirFreteId) ?? null)),
     [corrigirFreteId, pedidos]
@@ -426,6 +429,28 @@ export function ExpedicaoPage() {
     }
   }
 
+  function itemAzul(p: PedidoExpedicao): ActionMenuItem[] {
+    const estado = estadoBotaoAzul({
+      transportadoraAzul: /azul/i.test(`${p.transportadoraNome} ${p.freteServico}`),
+      modalidade: p.expedicao?.modalidadeFrete,
+      nfAutorizada: p.nfStatus === "AUTORIZADA",
+      podeOperar: Boolean(canOperar),
+      azulAwb: p.expedicao?.azulAwb,
+      azulStatus: p.expedicao?.azulStatus,
+      temExpedicao: Boolean(p.expedicao)
+    });
+    if (!estado.visivel) return [];
+    if (estado.awb) return [{ label: `AWB Azul ${estado.awb}`, disabled: true, onClick: () => {} }];
+    return [
+      {
+        label: "Emitir AWB Azul",
+        disabled: !estado.habilitado,
+        title: estado.motivo ?? undefined,
+        onClick: () => setAzulAwbId(p.idInt)
+      }
+    ];
+  }
+
   /** Itens do menu "⋯" contextual — compartilhado entre a coluna "Ações" e o card mobile. */
   function itensMenu(p: PedidoExpedicao) {
     return [
@@ -515,6 +540,10 @@ export function ExpedicaoPage() {
       ...(podeCorrigirFrete(p)
         ? [{ label: "Corrigir frete", onClick: () => setCorrigirFreteId(p.idInt) }]
         : []),
+      // AWB da Azul Logistica (09/10/2026). So aparece nos cards que vao pela Azul;
+      // habilita com CIF + NF-e autorizada + sem AWB. Com AWB, o numero ocupa o
+      // lugar do botao. A rota reconfere tudo (inclusive a permissao) no servidor.
+      ...itemAzul(p),
       // Sem retorno definido a partir de PRODUCAO/ACABAMENTO no service (voltarStatus) — affordance morta.
       ...(canOperar && p.etapa !== "PRODUCAO" && p.etapa !== "ACABAMENTO"
         ? [{ label: "Voltar status", destructive: true, onClick: () => setPedidoVoltar(p) }]
@@ -1487,6 +1516,23 @@ export function ExpedicaoPage() {
             void recarregar();
           }}
           onCreditoAberto={(res) => abrirDestinoDoCredito(pedidoCorrigirFrete, res)}
+        />
+      )}
+      {azulAwbId !== null && (
+        <AzulAwbModal
+          idInt={azulAwbId}
+          clienteExibicao={pedidos.find((x) => x.idInt === azulAwbId)?.clienteExibicao ?? ""}
+          onClose={() => setAzulAwbId(null)}
+          onDone={(awb, ambiente) => {
+            const id = azulAwbId;
+            setAzulAwbId(null);
+            showToast({
+              type: "success",
+              title: `AWB Azul emitida em #${id}`,
+              description: `AWB ${awb}${ambiente === "sandbox" ? " (teste — sandbox)" : ""}`
+            });
+            void recarregar();
+          }}
         />
       )}
       {diferencaModal && (

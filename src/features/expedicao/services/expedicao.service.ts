@@ -200,7 +200,7 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
     client
       .from("expedicoes")
       .select(
-        "id_int, modalidade_frete, tipo_frete, categoria_frete, transportadora_nome, id_transportadora_cliente, peso_kg, peso_bruto_kg, qtd_volumes, tipo_volume, id_endereco_entrega, id_cliente_destinatario_etiqueta, codigo_rastreamento, correios_id_prepostagem, correios_codigo_objeto, prepostagem_cancelada_em, correios_id_prepostagem_anterior, correios_codigo_objeto_anterior, data_pronto, data_despacho, coletado_em, data_entrega, despachado_por, retirado_por, obs, obs_etiqueta, nf_numero_manual, etiqueta_impressa_em"
+        "id_int, modalidade_frete, tipo_frete, categoria_frete, transportadora_nome, id_transportadora_cliente, peso_kg, peso_bruto_kg, qtd_volumes, tipo_volume, id_endereco_entrega, id_cliente_destinatario_etiqueta, codigo_rastreamento, correios_id_prepostagem, correios_codigo_objeto, prepostagem_cancelada_em, correios_id_prepostagem_anterior, correios_codigo_objeto_anterior, data_pronto, data_despacho, coletado_em, data_entrega, despachado_por, retirado_por, obs, obs_etiqueta, nf_numero_manual, etiqueta_impressa_em, azul_awb, azul_status"
       )
       .in("id_int", ids),
     idsCliente.length > 0
@@ -383,7 +383,9 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
       obs: row.obs ?? null,
       obsEtiqueta: row.obs_etiqueta ?? null,
       nfNumeroManual: row.nf_numero_manual ?? null,
-      etiquetaImpressaEm: row.etiqueta_impressa_em ?? null
+      etiquetaImpressaEm: row.etiqueta_impressa_em ?? null,
+      azulAwb: row.azul_awb ?? null,
+      azulStatus: row.azul_status ?? null
     });
   }
 

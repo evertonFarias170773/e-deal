@@ -113,6 +113,10 @@ Os itens aparecem nesta ordem, cada um só quando se aplica.
 | **Rodoviário** / **Aéreo** | Janela **Corrigir frete**, pergunta "Como vai o transporte?" | Define a coluna do Kanban quando o sistema não reconhece a transportadora |
 | **Confirmar correção** | Rodapé da janela **Corrigir frete** | Grava a correção. Vira **Nada a corrigir** (apagado) quando nada mudou |
 | **Revisar o crédito** → **Gravar e escolher o destino** | Mesmo botão, quando sobra valor a favor do cliente | Mostra o crédito e, no segundo clique, grava a correção |
+| **Emitir AWB Azul** | Menu ⋯ do card, nos pedidos que vão pela Azul | Abre a janela de emissão da AWB. Fica apagado, com a explicação ao passar o mouse, quando o frete não é CIF, falta NF-e autorizada, a emissão está em andamento ou ficou incerta. Depois de emitida, o item vira **AWB Azul** seguido do número |
+| **Serviço** / **Tipo de entrega** / **Natureza do produto** / **Base de destino** | Janela **Emitir AWB Azul** | Serviço (EXPRESSO ou STANDARD), entrega (Domicílio ou Aeroporto), descrição específica da mercadoria e sigla da base da Azul no destino (vem preenchida pelo CEP; se a Azul não localizar, digite) |
+| **Altura / Largura / Compr. / Peso kg / Qtd** | Janela **Emitir AWB Azul**, uma linha por volume | As medidas começam vazias e o peso abre com o peso da expedição dividido pelos volumes; confira e ajuste. Volumes iguais podem ser agrupados na **Qtd**. **Adicionar volume** inclui uma linha |
+| **Emitir AWB** | Rodapé da janela **Emitir AWB Azul** | Cria a AWB na Azul e grava o número no pedido |
 | **Manter crédito para uso futuro** / **Devolver ao cliente (solicitar ao Financeiro)** / **Abater débito existente** | Janela "Diferença Financeira — Crédito ao Cliente", depois da correção | Escolhe o destino do crédito. **Confirmar** registra |
 
 ## Passo a passo
@@ -340,6 +344,8 @@ Os retornos possíveis são: Entregue volta para Em Trânsito (ou para A Retirar
 - Marcar a prepostagem como cancelada não apaga o código: ele só deixa de aparecer na tela.
 - Pedido de teste encerrado continua acessível por busca e por endereço direto, e segue contando no faturamento.
 
+- **AWB da Azul:** só em frete CIF com NF-e autorizada, e uma AWB por pedido — a emissão cria contrato e cobrança reais na Azul e não pode ser repetida. Em FOB o cliente contrata a Azul. A Azul recebe da NF-e só a chave, a data de emissão e o valor. As medidas, os pesos e a natureza digitados na janela vão para a Azul e não ficam guardados no pedido. A janela não deixa emitir com altura + largura + comprimento abaixo de 45 cm em algum volume, nem com natureza genérica ("peças", "amostras", "brindes"). Se o cadastro do cliente não tem inscrição estadual, digite-a ou marque **Isento**. Se a Azul recusar, o texto dela aparece e o pedido fica livre para tentar de novo. Se a Azul não responder, o pedido fica **travado como incerto** até alguém conferir no portal da Azul se a AWB foi criada.
+
 ## O que não confundir
 
 - **Colunas do Kanban x cartões do topo.** As colunas dizem por onde o pedido vai (Correios, Motoboy, Retira balcão, Rodoviário, Aéreo, Veppo, Extras). Os cartões dizem em que etapa ele está. Despachar muda o cartão e a cor do pedido; a coluna continua sendo o transporte.
@@ -393,6 +399,9 @@ Os retornos possíveis são: Entregue volta para Em Trânsito (ou para A Retirar
 | "…" não tem o formato de um objeto dos Correios… | O código não é dos Correios | Consultar no site da transportadora |
 | Objeto … não foi encontrado em nenhum dos contratos… | Etiqueta recém-gerada ou código errado | Aguardar alguns minutos e atualizar |
 | Peso inválido / Volumes inválidos | Peso zerado ou negativo; volumes fora de 1 a 50 | Corrigir o valor |
+| A AWB exige NF-e autorizada | O pedido não tem NF-e de produção autorizada | Emitir a NF-e e tentar de novo |
+| Emissão incerta: a Azul não respondeu | A Azul não devolveu a AWB a tempo e pode ter criado a AWB | Conferir no portal da Azul; o pedido segue travado até essa conferência |
+| Cadastro da empresa emitente incompleto / Endereço de entrega incompleto | Falta CEP, número, bairro, telefone ou outro dado de cadastro | Completar o cadastro indicado e abrir a janela de novo |
 
 ## Veja também
 
@@ -416,6 +425,7 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/features/expedicao/components/ConferenciaDespacho.tsx`
 - `src/features/expedicao/components/ConfirmarAcaoModal.tsx`
 - `src/features/expedicao/components/CorrigirFreteModal.tsx`
+- `src/features/expedicao/components/AzulAwbModal.tsx`
 - `src/features/expedicao/components/RastreioModal.tsx`
 - `src/features/expedicao/components/RetiradaModal.tsx`
 - `src/features/expedicao/components/VoltarStatusModal.tsx`
@@ -423,9 +433,12 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/features/expedicao/services/expedicao.service.ts`
 - `src/features/expedicao/services/expedicao-acoes.service.ts`
 - `src/features/expedicao/services/recotacao.client.ts`
+- `src/features/expedicao/services/azul.client.ts`
+- `src/features/expedicao/services/azul-awb.server.ts`
 - `src/features/expedicao/services/corrigir-frete-simulacao.ts`
 - `src/features/expedicao/services/corrigir-frete-gravacao.ts`
 - `src/features/expedicao/services/rastro.service.ts`
+- `src/features/expedicao/lib/azul-awb.ts`
 - `src/features/expedicao/lib/campos-minimos-despacho.ts`
 - `src/features/expedicao/lib/carimbo-etapa.ts`
 - `src/features/expedicao/lib/destino-despacho.ts`
