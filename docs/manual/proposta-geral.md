@@ -148,7 +148,7 @@ O destino escolhido aparece também no topo do bloco **8. Resumo do orçamento**
 1. **8. Resumo do orçamento** mostra **Entrega em**, **Subtotal bruto**, o abatimento da tabela especial, **Subtotal produtos**, **Desconto geral**, **Frete escolhido**, **Peso total** e **Total final**.
 2. Para dar desconto na proposta inteira, escolha o **Tipo** (**%** ou **R$**) e digite o valor em **Desconto geral**. O desconto nunca passa do subtotal dos produtos.
 3. **9. Envio do orçamento** traz o texto informal da proposta. Clique em **Copiar resumo para WhatsApp**. O botão só libera depois que um frete foi escolhido.
-4. **10. Observações e Condições** é o texto comercial da proposta. Ele não chega à produção: a instrução para a bancada fica na aba Produção.
+4. **10. Observações e Condições** é o texto comercial da proposta. Ele não chega à produção: a instrução para a bancada fica na aba Produção / Expedição.
 
 ### Proposta avulsa x proposta com produtos
 
@@ -184,7 +184,7 @@ A escolha entre proposta avulsa e proposta com produtos do catálogo não fica n
 - Quadro **Tabela especial** x **Desconto geral**: a tabela especial vem do cadastro do cliente e entra sozinha em cada item; o desconto geral é digitado na proposta e exige permissão.
 - **Limite Faturado / Risco** x **Saldo na Conta Corrente**: o primeiro mostra o limite e o risco que estão no cadastro do cliente; o segundo é crédito que o cliente já tem a usar e aparece em aviso verde no topo da tela.
 - Selo **Endereço de sócio** x selo **REQUER NOTA DE TRANSPORTE**: o primeiro só diz de quem é o endereço; o segundo avisa que a entrega é em cidade diferente da do endereço principal do pagador.
-- **Observações e Condições** x orientação técnica da aba Produção: a primeira é comercial e não chega à produção.
+- **Observações e Condições** x orientação técnica da aba Produção / Expedição: a primeira é comercial e não chega à produção.
 - **id_int** x código do cliente: **id_int** é o número da proposta; o código do cliente é o número que aparece com `#` ao lado do nome dele.
 
 ## Erros comuns
@@ -220,7 +220,7 @@ A escolha entre proposta avulsa e proposta com produtos do catálogo não fica n
 - [Proposta: aba Orçamento (produtos)](proposta-produtos.md)
 - [Proposta: aba Fretes](proposta-fretes.md)
 - [Proposta: aba Pagamentos](proposta-pagamentos.md)
-- [Proposta: abas Produção, Boletim e Histórico](proposta-producao-boletim-historico.md)
+- [Proposta: abas Produção / Expedição, Boletim e Histórico](proposta-producao-boletim-historico.md)
 - [Pedidos (lista)](pedidos.md)
 - [Notas fiscais](notas-fiscais.md)
 - [Expedição](expedicao.md)

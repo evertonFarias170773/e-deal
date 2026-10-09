@@ -291,7 +291,7 @@ Se a janela for fechada sem escolher, a proposta fica com a faixa **Revisão fin
 - [Proposta: visão geral e abas](proposta.md)
 - [Proposta: aba Geral](proposta-geral.md)
 - [Proposta: aba Fretes](proposta-fretes.md)
-- [Proposta: abas Produção, Boletim e Histórico](proposta-producao-boletim-historico.md)
+- [Proposta: abas Produção / Expedição, Boletim e Histórico](proposta-producao-boletim-historico.md)
 - [Conferência](conferencia.md)
 - [Carteira (contas a receber)](carteira.md)
 - [Registro de recebíveis](registro-de-recebiveis.md)

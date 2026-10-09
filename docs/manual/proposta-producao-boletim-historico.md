@@ -1,18 +1,18 @@
-# Proposta: abas Produção, Boletim e Histórico
+# Proposta: abas Produção / Expedição, Boletim e Histórico
 
-> **Última revisão:** 02/10/2026
-> **Caminho no menu:** Pedidos → abrir um pedido → Editar proposta → aba Produção ou aba Histórico. Não existe aba Boletim na barra de abas: a OS (boletim) abre pelo menu Produção → clicar no pedido.
-> **Endereço:** `/orcamentos/[número]/editar?tab=producao` e `/orcamentos/[número]/editar?tab=historico`. A OS fica em `/pedidos/boletim?id_int=[número]&modo=edicao`.
+> **Última revisão:** 09/10/2026
+> **Caminho no menu:** Pedidos → abrir um pedido → Editar proposta → aba Produção / Expedição ou aba Histórico. Não existe aba Boletim na barra de abas: a OS (boletim) abre pelo menu Produção → clicar no pedido.
+> **Endereço:** `/orcamentos/[número]/editar?tab=producao` e `/orcamentos/[número]/editar?tab=historico`. A aba se chamava **Produção** até 09/10/2026; só o nome mudou, o endereço `?tab=producao` é o mesmo. A OS fica em `/pedidos/boletim?id_int=[número]&modo=edicao`.
 
 ## Para que serve
 
-A aba **Produção** guarda a orientação técnica do pedido: o que a bancada precisa saber para fabricar. A aba **Histórico** mostra tudo o que aconteceu com o pedido (mensagens da equipe, registros automáticos do sistema e os movimentos de crédito).
+A aba **Produção / Expedição** guarda a orientação técnica do pedido: o que a bancada precisa saber para fabricar. A aba **Histórico** mostra tudo o que aconteceu com o pedido (mensagens da equipe, registros automáticos do sistema e os movimentos de crédito).
 
 Esta página explica também como o pedido sai do atendimento e entra na fábrica: a liberação para a produção, a passagem de REVISAO ATENDENTE para REVISAO PRODUCAO e a OS (boletim), onde ficam a data e a hora de entrega e a impressão.
 
 ## Quem acessa
 
-- Quem abre a edição do pedido vê as abas **Produção** e **Histórico**. A aba Produção aparece também em proposta avulsa e em pedido só de prateleira.
+- Quem abre a edição do pedido vê as abas **Produção / Expedição** e **Histórico**. A aba Produção / Expedição aparece também em proposta avulsa e em pedido só de prateleira.
 - **Liberar para Produção** fica na lista de Pedidos e aparece só para Administrador, Super Administrador ou quem tem a permissão **Liberar para Produção** no perfil, quando o pedido está em REVISAO ATENDENTE. O servidor confere a mesma permissão e, depois, pagamento, arte e modelos. A liberação automática de pedido só de prateleira, que acontece quando o pagamento é confirmado, não depende dessa permissão.
 - **Retirar da Produção** aparece só para Administrador, Super Administrador ou quem tem a permissão **Liberar para Produção** no perfil. O servidor confere a mesma permissão antes de retirar.
 - **Voltar para Revisão Atendente** (tela Produção) aparece só para Administrador, Super Administrador ou quem tem a permissão **Ações Administrativas de OS**.
@@ -26,7 +26,7 @@ Nomes exatamente como aparecem na tela.
 
 | Nome na tela | Onde fica | O que faz |
 |---|---|---|
-| **Produção** | Barra de abas do pedido, entre **Artes** e **Pagamentos** | Abre a aba com o campo **Orientação técnica de produção**. |
+| **Produção / Expedição** | Barra de abas do pedido, entre **Artes** e **Pagamentos** | Abre a aba com o campo **Orientação técnica de produção**. |
 | **Histórico** | Barra de abas do pedido, última aba | Abre a **Timeline da proposta** e os movimentos de crédito. |
 | **Salvar alterações** | Barra fixa no rodapé do pedido | Grava a orientação técnica junto com o resto do pedido. |
 | Ícone de clipe (dica "Anexar arquivo (até 10MB)") | Aba Histórico, rodapé da timeline | Escolhe arquivos para enviar com a mensagem. |
@@ -53,9 +53,9 @@ Nomes exatamente como aparecem na tela.
 
 ## Passo a passo
 
-### Escrever a orientação técnica (aba Produção)
+### Escrever a orientação técnica (aba Produção / Expedição)
 
-1. Abra o pedido e clique na aba **Produção**.
+1. Abra o pedido e clique na aba **Produção / Expedição**.
 2. No campo **Orientação técnica de produção**, escreva o que a bancada precisa saber. Exemplo da própria tela: "pulseira de pino sem o pino; entregar em bobina de 100; conferir a cor contra a amostra aprovada...".
 3. Clique em **Salvar alterações**.
 
@@ -148,10 +148,10 @@ As mensagens são internas: o cliente não vê.
 
 ## O que não confundir
 
-- Menu **Produção** e aba **Produção** são coisas diferentes. O menu é a tela da fábrica, com as OS; a aba, dentro do pedido, tem só o campo de orientação técnica.
+- Menu **Produção** e aba **Produção / Expedição** são coisas diferentes. O menu é a tela da fábrica, com as OS; a aba, dentro do pedido, tem só o campo de orientação técnica.
 - Não existe aba **Boletim** no pedido. O endereço com `tab=boletim` mostra só "Boletim — Aguarde orientações.". O boletim de verdade é a OS, que abre pela tela Produção.
 - **Boletim Técnico & Lotes** é o título da aba **Pedido** (a divisão em modelos). Não é o boletim da OS.
-- **Orientação técnica de produção** (aba Produção) não é **Observações e Condições** (aba Geral). A primeira vai para a OS impressa; a segunda é comercial e não chega à produção.
+- **Orientação técnica de produção** (aba Produção / Expedição) não é **Observações e Condições** (aba Geral). A primeira vai para a OS impressa; a segunda é comercial e não chega à produção.
 - **REVISAO ATENDENTE** e **REVISAO PRODUCAO** são etapas seguidas, de pessoas diferentes. Na primeira, o atendente confere e libera; na segunda, a produção confere a OS e, ao salvá-la, o pedido vira EM PRODUCAO.
 - **Liberar para Produção** não é **LIBERADO**. LIBERADO é o status de pedido pago, ainda no atendimento; a liberação para a produção é a ação que leva o pedido de REVISAO ATENDENTE para REVISAO PRODUCAO.
 - **Retirar da Produção** não é **Voltar para Revisão Atendente**. Retirar só tira da fila e mantém o status; voltar para revisão tira da fila e devolve o status para REVISAO ATENDENTE.

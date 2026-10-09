@@ -5783,7 +5783,8 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
             { id: "fretes", label: "Fretes" },
             { id: "pedido", label: "Pedido" },
             { id: "artes", label: "Artes" },
-            { id: "producao", label: "Produção" },
+            // So o rotulo mudou (09/10/2026): o id e o ?tab=producao continuam os mesmos.
+            { id: "producao", label: "Produção / Expedição" },
             { id: "pagamentos", label: "Pagamentos" },
             { id: "historico", label: "Histórico" }
           ].filter(tab => {

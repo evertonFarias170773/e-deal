@@ -260,7 +260,7 @@ O PDF é sempre o do mapa como está hoje no sistema de mapas. Quem publica o PD
 - [Proposta: aba Produtos](proposta-produtos.md)
 - [Proposta: aba Fretes](proposta-fretes.md)
 - [Proposta: aba Artes](proposta-artes.md)
-- [Proposta: abas Produção, Boletim e Histórico](proposta-producao-boletim-historico.md)
+- [Proposta: abas Produção / Expedição, Boletim e Histórico](proposta-producao-boletim-historico.md)
 - [Produção (ordens de serviço)](producao.md)
 
 ## Arquivos de origem

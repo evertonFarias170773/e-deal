@@ -392,7 +392,7 @@ Os retornos possíveis são: Entregue volta para Em Trânsito (ou para A Retirar
 - [Produção (ordens de serviço)](producao.md)
 - [Proposta: aba Fretes](proposta-fretes.md)
 - [Proposta: aba Pagamentos](proposta-pagamentos.md)
-- [Proposta: abas Produção, Boletim e Histórico](proposta-producao-boletim-historico.md)
+- [Proposta: abas Produção / Expedição, Boletim e Histórico](proposta-producao-boletim-historico.md)
 - [Notas fiscais](notas-fiscais.md)
 - [Carteira (contas a receber)](carteira.md)
 - [Conferência](conferencia.md)

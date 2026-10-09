@@ -138,7 +138,7 @@ Nomes exatamente como aparecem na tela.
 1. Abra o pedido clicando na linha, ou em **Ações → Editar OS / Boletim**.
 2. Confira a **Data Limite de Entrega** e a **Hora do Prazo**. Na primeira abertura elas vêm calculadas (veja "Regras e bloqueios"); se vierem vazias, preencha.
 3. Passe por cada aba de setor (PVC, LASER, FLEXO, TEXTIL) e confira os produtos e lotes daquele setor.
-4. Escreva em **BLOCO 2 — Orientação Técnica de Produção** o que a bancada precisa saber para fabricar. Esse texto sai na OS impressa e é o mesmo que o atendente vê na aba Produção do pedido.
+4. Escreva em **BLOCO 2 — Orientação Técnica de Produção** o que a bancada precisa saber para fabricar. Esse texto sai na OS impressa e é o mesmo que o atendente vê na aba Produção / Expedição do pedido.
 5. Se precisar, preencha **Observações Técnicas de Impressão (Bloco 6)** e **Observações Técnicas de Acabamento (Bloco 7)**.
 6. Clique em **Salvar Alterações** (botão do cabeçalho ou o botão verde flutuante).
 7. Ao salvar, o pedido que estava em REVISAO PRODUCAO passa sozinho para **EM PRODUCAO**, e a linha deixa de ficar amarela.
@@ -251,7 +251,7 @@ As vias antigas continuam valendo como eram. O QR delas é um link: lido no term
 ## O que não confundir
 
 - **Menu Produção x menu Pedidos:** o menu Produção abre a lista da fábrica (só pedidos liberados); o menu Pedidos abre a lista comercial, com todos os pedidos, onde se libera para produção.
-- **Menu Produção x aba Produção do pedido:** a aba **Produção** fica dentro de um pedido, na tela de Pedidos, e é do atendente; o menu Produção é a lista da fábrica.
+- **Menu Produção x aba Produção / Expedição do pedido:** a aba **Produção / Expedição** fica dentro de um pedido, na tela de Pedidos, e é do atendente; o menu Produção é a lista da fábrica.
 - **OS x boletim:** são a mesma tela. A OS é do pedido inteiro; cada setor tem a sua parte (o boletim daquele setor), que aparece como uma aba e sai como uma página do PDF.
 - **Número da OS x número do pedido:** é o mesmo número. A coluna **OS** mostra o número do pedido.
 - **Status do pedido x fase do setor:** a fase é de cada setor (chip na coluna Setores); o status é do pedido inteiro e segue o setor mais atrasado.
@@ -293,7 +293,7 @@ As vias antigas continuam valendo como eram. O QR delas é um link: lido no term
 
 - [Pedidos (lista)](pedidos.md)
 - [Proposta: aba Pedido (Boletim Técnico & Lotes)](proposta-pedido.md)
-- [Proposta: abas Produção, Boletim e Histórico](proposta-producao-boletim-historico.md)
+- [Proposta: abas Produção / Expedição, Boletim e Histórico](proposta-producao-boletim-historico.md)
 - [Proposta: aba Artes](proposta-artes.md)
 - [Expedição](expedicao.md)
 - [Tarefas](tarefas.md)

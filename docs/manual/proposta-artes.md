@@ -23,7 +23,7 @@ Nomes exatamente como aparecem na tela.
 
 | Nome na tela | Onde fica | O que faz |
 |---|---|---|
-| **Artes** | Barra de abas do pedido, entre **Pedido** e **Produção** | Abre a aba. Antes de abrir, confere se os modelos da aba Pedido estão completos. |
+| **Artes** | Barra de abas do pedido, entre **Pedido** e **Produção / Expedição** | Abre a aba. Antes de abrir, confere se os modelos da aba Pedido estão completos. |
 | **Entendi** | Janela **Modelos incompletos** | Fecha a janela. Você continua na aba em que estava. |
 | **Nome do Evento / Tema** | Bloco **Briefing Base do Evento** | Campo de texto. Obrigatório para enviar para arte. |
 | **Data do Evento** | Bloco **Briefing Base do Evento** | Campo de data do evento. |
@@ -171,7 +171,7 @@ O bloco **Últimos pedidos** lista as cinco propostas mais recentes do mesmo cli
 
 - [Proposta: visão geral e abas](proposta.md)
 - [Proposta: aba Pedido (Boletim Técnico & Lotes)](proposta-pedido.md)
-- [Proposta: abas Produção, Boletim e Histórico](proposta-producao-boletim-historico.md)
+- [Proposta: abas Produção / Expedição, Boletim e Histórico](proposta-producao-boletim-historico.md)
 - [Proposta: aba Produtos](proposta-produtos.md)
 - [Pedidos (lista)](pedidos.md)
 - [Produção (ordens de serviço)](producao.md)
