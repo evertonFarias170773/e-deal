@@ -10,6 +10,7 @@ import { useAppToast } from "@/components/common/AppToast";
 import { useAuth } from "@/features/auth/AuthProvider";
 import type { Cobranca, ModeloCobranca } from "@/features/cobrancas/types";
 import { listarModelosCobranca, parcelasDoModelo } from "@/features/cobrancas/services/modelos-cobranca";
+import { referenciaDoBoleto, referenciaRepetida, referenciasDoLancamento } from "@/features/cobrancas/lib/referencia-do-boleto";
 import {
   escolherNotaAutorizadaDoPedido,
   COLUNAS_NOTA_DO_PEDIDO,
@@ -639,8 +640,25 @@ export function PrepararBoletosModal({
       const client = getSupabaseClient();
       if (!client) throw new Error("Sistema indisponivel no momento. Tente novamente.");
 
+      // A referência de cada parcela (regra em lib/referencia-do-boleto). Vai
+      // igual em `ext_reference` e `n_doc_boleto`, e tem de ser única: duas
+      // linhas com a mesma referência colidem em `idx_boletos_n_doc_boleto_ativo`.
+      const referencias = referenciasDoLancamento(installments, {
+        idInt: cobranca.id_int,
+        refDaNotaDeOrigem: origemNfe ? origemNfe.ref : null,
+        refDaNotaDoPedido: hasNfe ? extReference : null
+      });
+      const repetida = referenciaRepetida(referencias);
+      if (repetida) {
+        setValidationError(
+          `Duas parcelas deste lançamento ficaram com a mesma referência (${repetida}). Nada foi gravado. Avise o suporte.`
+        );
+        setIsSaving(false);
+        return;
+      }
+
       // 4. Inserir boletos
-      const payloadBoletos = installments.map((item) => {
+      const payloadBoletos = installments.map((item, indice) => {
         /*
          * A mesma referência vai em `ext_reference` e em `n_doc_boleto`.
          *
@@ -656,26 +674,24 @@ export function PrepararBoletosModal({
          * mas condicional, ignorando cancelados, para não travar o refaturamento
          * de uma parcela cancelada (migration 20260817).
          */
-        const referencia = hasNfe
-          ? extReference
-          : `P${item.parcela}${item.total_parcelas}${cobranca.id_int}`;
-
         /*
-         * `ext_reference` e `n_doc_boleto` recebem O MESMO valor — a ref da nota,
-         * no caminho da NF. Não é redundância: é invariante do link público.
+         * `ext_reference` e `n_doc_boleto` recebem O MESMO valor. Não é
+         * redundância: é invariante do link público.
          *
          * As rotas de registro mandam `ext_reference` ao banco emissor
          * (registrar-boleto-faturado e registerBoletoViaN8n), o n8n usa esse
          * valor como `codigo` do link, e a Edge Function `boleto-publico` acha o
          * título por `n_doc_boleto`, com match EXATO. Divergir os dois campos
-         * devolve 404 ao cliente — foi o que um sufixo por parcela causaria.
-         * Nas linhas em que ambos existem hoje, são idênticos em 100% dos casos.
+         * devolve 404 ao cliente.
          *
-         * A consequência é que nota com duas parcelas ou mais não passa por aqui:
-         * o mesmo valor colidiria em `idx_boletos_n_doc_boleto_ativo`. O bloqueio
-         * está em `notaParcelada`, avaliado antes deste INSERT.
+         * Aberta pela NOTA, a referência é a ref da nota — e nota com duas
+         * parcelas ou mais não passa por aqui (`notaParcelada`, antes deste
+         * INSERT). Aberta pela COBRANÇA, com duas parcelas ou mais a referência é
+         * sempre `P` + parcela + total + pedido, com ou sem nota: desde
+         * 09/10/2026 (pedido 23181), quando a ref da nota repetida nas três
+         * parcelas colidiu no índice único.
          */
-        const referenciaFinal = origemNfe ? origemNfe.ref : referencia;
+        const referenciaFinal = referencias[indice];
 
         return {
           id_int: cobranca.id_int,
@@ -1450,7 +1466,17 @@ export function PrepararBoletosModal({
               <button
                 type="button"
                 onClick={() => {
-                  onSuccess(hasNfe ? extReference : `P1${installments.length}${cobranca.id_int}`);
+                  // A referência da 1ª parcela, pela mesma regra do que foi gravado.
+                  onSuccess(
+                    referenciaDoBoleto({
+                      idInt: cobranca.id_int,
+                      parcela: 1,
+                      totalParcelas: installments[0]?.total_parcelas ?? installments.length,
+                      quantidadeDeParcelas: installments.length,
+                      refDaNotaDeOrigem: origemNfe ? origemNfe.ref : null,
+                      refDaNotaDoPedido: hasNfe ? extReference : null
+                    })
+                  );
                 }}
                 className="px-5 py-2.5 text-xs font-bold text-white bg-[#0b2f4a] hover:bg-[#061d2e] rounded-xl shadow-sm transition flex items-center justify-center"
               >

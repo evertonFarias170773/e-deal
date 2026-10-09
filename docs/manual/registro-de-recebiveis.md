@@ -1,6 +1,6 @@
 # Registro de recebíveis
 
-> **Última revisão:** 02/10/2026
+> **Última revisão:** 09/10/2026
 > **Caminho no menu:** Financeiro → Registro de recebíveis
 > **Endereço:** `/contas-a-receber/registro`
 
@@ -115,6 +115,7 @@ Use só quando o parcelamento inteiro precisa ser refeito. Para trocar o boleto 
 
 ## Regras e bloqueios
 
+- Referência do título: é o código que identifica cada parcela no banco e no link do boleto, e não pode se repetir entre títulos ativos. Em faturado de duas parcelas ou mais, cada parcela recebe a sua, no formato P + parcela + total de parcelas + número da proposta (a parcela 2 de 3 da proposta 23181 é P2323181), com ou sem nota fiscal; o número da nota continua aparecendo no título. Só o faturado de parcela única usa a referência da nota, quando ela já está autorizada.
 - Não dá para gerar títulos de uma cobrança com **Empresa a definir**. Regularize a empresa da cobrança antes.
 - A cobrança só volta para esta lista quando a proposta não tem mais nenhum título ativo. Cancelar só uma parcela de um parcelamento não a traz de volta: as outras parcelas ainda estão ativas. É por isso que cancelar só uma parcela não deixa relançar.
 - Se alguma parcela da proposta já foi paga, a cobrança não volta para esta lista, porque título pago não pode ser cancelado. Para trocar o boleto de uma parcela sem perder as outras, use os caminhos da Carteira: **Refazer boleto** (o indicado), **Prorrogar vencimento** quando só a data muda, ou **Cancelar boleto** seguido de **Transformar em boleto** quando o valor muda.
@@ -156,6 +157,7 @@ Use só quando o parcelamento inteiro precisa ser refeito. Para trocar o boleto 
 | "A parcela N/N deve ter valor superior a zero." | Parcela zerada ou negativa. | Corrija o valor. |
 | "Selecione a empresa recebedora antes de confirmar o lançamento." | Nenhuma empresa válida escolhida. | Escolha a **Empresa recebedora**. |
 | "Duplicidade detectada! A parcela N desta origem já possui um boleto ativo no Contas a Receber..." | Já existe título ativo para essa parcela na proposta. | Cancele o título atual na Carteira antes de lançar de novo. |
+| "duplicate key value violates unique constraint \"idx_boletos_n_doc_boleto_ativo\"" ou "Duas parcelas deste lançamento ficaram com a mesma referência" | Dois títulos ativos ficariam com a mesma referência. Acontecia em faturado parcelado preparado depois de a nota fiscal sair; corrigido em 09/10/2026. | Nada foi gravado e nenhum boleto foi criado no banco. Recarregue a página e gere os títulos de novo. Se repetir, não insista: avise o suporte com o número da proposta. |
 | "Selecione a data de vencimento da parcela única." | Parcela única marcada sem data. | Informe o **Vencimento da parcela única**. |
 | "Aviso de Sincronização" | Os títulos foram criados, mas a cobrança não foi marcada como lançada. Ela pode continuar na lista. | Não gere de novo. Confira os títulos na Carteira e avise o administrador. |
 | "Não foi possível carregar os recebíveis pendentes de registro." | Falha ao buscar a lista. | Clique em **Tentar novamente**. |
@@ -175,6 +177,7 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/app/(erp)/contas-a-receber/registro/page.tsx`
 - `src/features/contas-a-receber/registro-recebiveis/`
 - `src/features/cobrancas/PrepararBoletosModal.tsx`
+- `src/features/cobrancas/lib/referencia-do-boleto.ts`
 - `src/features/contas-a-receber/ContasReceberPage.tsx`
 - `src/components/common/PermissionGuard.tsx`
 - `src/features/usuarios-perfis/catalogo-permissoes.ts`

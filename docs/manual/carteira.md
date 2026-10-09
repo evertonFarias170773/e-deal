@@ -1,6 +1,6 @@
 # Carteira (contas a receber)
 
-> **Última revisão:** 07/10/2026
+> **Última revisão:** 09/10/2026
 > **Caminho no menu:** Financeiro → Carteira
 > **Endereço:** `/contas-a-receber`
 
@@ -233,6 +233,10 @@ O boleto é cancelado no banco e o título continua ativo, agora como **Depósit
 
 ## Regras e bloqueios
 
+### Referência do título no faturado parcelado
+
+- Referência do título: é o código que identifica cada parcela no banco e no link do boleto, e não pode se repetir entre títulos ativos. Em faturado de duas parcelas ou mais, cada parcela recebe a sua, no formato P + parcela + total de parcelas + número da proposta (a parcela 2 de 3 da proposta 23181 é P2323181), com ou sem nota fiscal; o número da nota continua aparecendo no título. Só o faturado de parcela única usa a referência da nota, quando ela já está autorizada.
+
 ### Cancelar só uma parcela não deixa relançar
 
 - Ao cancelar um título faturado com **Cancelar recebível**, a cobrança é liberada para voltar ao [Registro de recebíveis](registro-de-recebiveis.md). Mas o Registro só mostra a cobrança quando a proposta não tem mais **nenhum** título ativo. Enquanto existir outra parcela a vencer, vencida ou paga na mesma proposta, a cobrança não aparece lá, e não há como gerar a parcela de novo. Isso vale mesmo com o aviso dizendo que a cobrança volta para o Registro.
@@ -321,6 +325,7 @@ O boleto é cancelado no banco e o título continua ativo, agora como **Depósit
 | "O título original já não está em situação de prorrogação (pode já ter sido prorrogado). Nenhum novo título foi criado." | O título mudou de situação durante a prorrogação. | Recarregue a página e confira a situação da parcela antes de tentar de novo. |
 | "Sem permissão para cancelar título" | Seu perfil não pode cancelar cobrança no banco. | Peça a um administrador. |
 | "Erro no cancelamento bancário" | O banco recusou ou a integração falhou. Nada foi alterado. | Leia o motivo no aviso e tente de novo. Se persistir, acione o administrador. |
+| "duplicate key value violates unique constraint \"idx_boletos_n_doc_boleto_ativo\"" ou "Duas parcelas deste lançamento ficaram com a mesma referência" | Dois títulos ativos ficariam com a mesma referência. Acontecia em faturado parcelado preparado depois de a nota fiscal sair; corrigido em 09/10/2026. | Nada foi gravado e nenhum boleto foi criado no banco. Recarregue a página e gere os títulos de novo. Se repetir, não insista: avise o suporte com o número da proposta. |
 | "O banco não respondeu a tempo. Não é possível afirmar se o título foi cancelado: confira no banco antes de tentar de novo." | O banco demorou mais de 25 segundos para responder ao cancelamento. Nada foi alterado no Vibe. | Confira a situação do boleto no banco. Se ainda estiver ativo, tente de novo. |
 | "Não foi possível contatar a integração bancária. Não é possível afirmar se o título foi cancelado: confira antes de tentar de novo." | A chamada ao banco falhou no caminho. Nada foi alterado no Vibe. | Confira a situação do boleto no banco e tente de novo. Se persistir, acione o administrador. |
 | "O sistema foi atualizado enquanto esta tela estava aberta. Nada foi cancelado no banco: recarregue a página e tente de novo." | A tela ficou aberta durante uma atualização do Vibe. | Recarregue a página e repita o cancelamento. |
@@ -345,6 +350,7 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/features/contas-a-receber/mappers.ts`
 - `src/features/contas-a-receber/registro-recebiveis/services/registro-recebiveis.service.ts`
 - `src/features/cobrancas/PrepararBoletosModal.tsx`
+- `src/features/cobrancas/lib/referencia-do-boleto.ts`
 - `src/features/cobrancas/services/cobranca-do-titulo.ts`
 - `src/features/cobrancas/services/pagamentos-v2.service.ts`
 - `src/features/cobrancas/recusa-bancaria.ts`
