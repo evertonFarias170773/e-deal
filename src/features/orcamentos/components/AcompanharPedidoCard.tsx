@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AVISO_AINDA_NAO_CHEGOU, aindaNaoChegouAExpedicao } from "../lib/acompanhar-pedido";
+import { AVISO_AINDA_NAO_CHEGOU, AVISO_GRUPO_GRANDE, aindaNaoChegouAExpedicao, grupoEhGrande } from "../lib/acompanhar-pedido";
 import {
   buscarEstadoAcompanhar,
   soltarAcompanhar,
@@ -149,6 +149,12 @@ export function AcompanharPedidoCard({ idInt }: { idInt: number }) {
       {noGrupo && !estado.somenteLeitura && aindaNaoChegouAExpedicao(estado.statusInterno) && (
         <p className="text-[12px] font-medium text-amber-800 dark:text-amber-300" data-testid="aviso-nao-chegou">
           {AVISO_AINDA_NAO_CHEGOU}
+        </p>
+      )}
+
+      {grupoEhGrande(estado.membros.length) && (
+        <p className="text-[12px] font-medium text-amber-800 dark:text-amber-300" data-testid="aviso-grupo-grande">
+          {AVISO_GRUPO_GRANDE}
         </p>
       )}
 

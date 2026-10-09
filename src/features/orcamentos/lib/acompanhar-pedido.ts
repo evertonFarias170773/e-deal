@@ -13,8 +13,23 @@
  */
 /** Candidatos mostrados de uma vez (a busca por numero acha qualquer elegivel). */
 export const TETO_CANDIDATOS = 10;
-/** Pedidos por grupo. */
-export const TETO_GRUPO = 10;
+/**
+ * Limite TECNICO de seguranca de pedidos por grupo (a diretoria nao pediu limite). O banco so
+ * limita cada chamada a 50 pedidos; a soma das chamadas e conferida pela rota.
+ */
+export const TETO_GRUPO = 50;
+/** Acima disto o card avisa que um pedido parado segura o grupo todo. */
+export const GRUPO_GRANDE_ACIMA_DE = 10;
+export const AVISO_GRUPO_GRANDE =
+  "Grupo grande: se um pedido ficar parado, todos esperam. Um administrador da Expedição pode soltá-lo.";
+
+export function grupoEhGrande(totalDeMembros: number): boolean {
+  return totalDeMembros > GRUPO_GRANDE_ACIMA_DE;
+}
+
+export function mensagemTetoDoGrupo(): string {
+  return `O grupo aceita no máximo ${TETO_GRUPO} pedidos. Para ampliar além disso, fale com o suporte.`;
+}
 
 /**
  * Status em que o pedido JA NAO esta em aberto: cancelado ou ja despachado. O vinculo
@@ -43,6 +58,7 @@ export function motivoDeNaoEstarEmAberto(p: SituacaoDoPedido): string | null {
   const st = (p.statusInterno || "").toUpperCase();
   if (st === "CANCELADO" || st === "CANCELADA") return "Pedido cancelado.";
   if (p.despachado || STATUS_FORA_DE_ABERTO.includes(st)) return "Pedido já despachado.";
+  if (st === "") return "Pedido sem status definido: avise o suporte.";
   if (p.avulso) return "Pedido avulso não vai para a Expedição.";
   if (p.encerradoTeste) return "Pedido de teste encerrado.";
   return null;
@@ -162,7 +178,7 @@ export function planejarMudancaDoSeletor(antes: readonly number[], depois: reado
   const soltar = [...a].filter((i) => !d.has(i)).sort((x, y) => x - y);
   const total = d.size + 1;
   if (vincular.length > 0 && total > TETO_GRUPO) {
-    return { vincular: [], soltar: [], erro: `O grupo aceita no maximo ${TETO_GRUPO} pedidos.` };
+    return { vincular: [], soltar: [], erro: mensagemTetoDoGrupo() };
   }
   return { vincular, soltar, erro: null };
 }

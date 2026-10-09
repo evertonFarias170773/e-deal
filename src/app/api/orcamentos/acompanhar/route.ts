@@ -4,6 +4,7 @@ import { createClient as createServerSupabaseClient } from "@/lib/supabase/serve
 import { verificarPermissaoServerSide } from "@/lib/auth/verificar-permissao";
 import {
   TETO_GRUPO,
+  mensagemTetoDoGrupo,
   lerIds,
   mensagemDeErroAcompanhar,
   STATUS_FORA_DE_ABERTO,
@@ -269,7 +270,7 @@ export async function POST(request: Request) {
     const atuais = (await gruposAcompanhar(supabase, [idInt])).get(idInt)?.membros ?? [idInt];
     const novos = outros.filter((i) => !atuais.includes(i));
     if (atuais.length + novos.length > TETO_GRUPO) {
-      return NextResponse.json({ success: false, code: "TETO", message: `O grupo aceita no maximo ${TETO_GRUPO} pedidos.` }, { status: 422 });
+      return NextResponse.json({ success: false, code: "TETO", message: mensagemTetoDoGrupo() }, { status: 422 });
     }
     // Funil, despacho, avulso e teste: conferidos aqui. Cliente/pagador, o banco confere.
     const { data: dados } = await supabase.from("propostas").select(COLUNAS).in("id_int", [idInt, ...outros]);

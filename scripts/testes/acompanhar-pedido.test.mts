@@ -11,6 +11,9 @@
 import {
   TETO_CANDIDATOS,
   TETO_GRUPO,
+  AVISO_GRUPO_GRANDE,
+  grupoEhGrande,
+  mensagemTetoDoGrupo,
   AVISO_AINDA_NAO_CHEGOU,
   aindaNaoChegouAExpedicao,
   faixasDeBuscaPorNumero,
@@ -123,7 +126,24 @@ const cheio = planejarMudancaDoSeletor(
   [...Array.from({ length: TETO_GRUPO - 1 }, (_, i) => 500 + i), 999],
   100
 );
-checar("grupo cheio: recusa", [cheio.vincular, cheio.erro], [[], `O grupo aceita no maximo ${TETO_GRUPO} pedidos.`]);
+checar("grupo cheio: recusa", [cheio.vincular, cheio.erro], [[], mensagemTetoDoGrupo()]);
+checar("limite tecnico e 50", TETO_GRUPO, 50);
+checar("mensagem do limite", mensagemTetoDoGrupo(), "O grupo aceita no máximo 50 pedidos. Para ampliar além disso, fale com o suporte.");
+// grupo com mais de 10 membros: aceita ate 50
+const g12 = Array.from({ length: 12 }, (_, i) => 700 + i);
+const m12 = planejarMudancaDoSeletor(g12, [...g12, 800], 100);
+checar("grupo de 13 aceita mais um (nao ha limite de 10)", [m12.vincular, m12.erro], [[800], null]);
+const g49 = Array.from({ length: 48 }, (_, i) => 900 + i);
+checar("48 + o proprio = 49: aceita o 50o", planejarMudancaDoSeletor(g49, [...g49, 999], 100).erro, null);
+checar("50 + o 51o: recusa", planejarMudancaDoSeletor([...g49, 999], [...g49, 999, 998], 100).erro, mensagemTetoDoGrupo());
+checar("aviso de grupo grande: so acima de 10", [grupoEhGrande(10), grupoEhGrande(11), grupoEhGrande(50)], [false, true, true]);
+checar("texto do aviso de grupo grande", AVISO_GRUPO_GRANDE, "Grupo grande: se um pedido ficar parado, todos esperam. Um administrador da Expedição pode soltá-lo.");
+// status vazio: nao esta em aberto nos DOIS lados (pedido editado e candidato)
+const vazio = { ...base, statusInterno: "" };
+checar("status vazio: pedido editado em leitura com o motivo", motivoSomenteLeitura(vazio), "Pedido sem status definido: avise o suporte.");
+checar("status vazio: nao e candidato", podeSerCandidato(ped({ idInt: 40, statusInterno: "" }), ref), false);
+checar("status vazio nulo tratado como vazio", motivoSomenteLeitura({ ...base, statusInterno: undefined as unknown as string }), "Pedido sem status definido: avise o suporte.");
+checar("status vazio e despachado: diz despachado", motivoSomenteLeitura({ ...vazio, despachado: true }), "Pedido já despachado.");
 
 // ── mensagens (sem permissao, ligacao de outra pessoa, sessao)
 checar("403 sem permissao", mensagemDeErroAcompanhar(403, "SEM_PERMISSAO", null), "Voce nao tem permissao para alterar o grupo Acompanhar (propostas.edit).");

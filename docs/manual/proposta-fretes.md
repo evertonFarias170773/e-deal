@@ -140,10 +140,10 @@ Use quando pedidos do mesmo cliente (ou do mesmo pagador) devem sair da Expediç
 
 1. Na aba **Fretes**, logo abaixo da caixa **7. Fretes e Entrega**, marque **Acompanhar Pedido**. A tela mostra: "Os pedidos marcados só saem da Expedição juntos; cada um segue com o seu próprio despacho, a sua etiqueta e a sua cobrança".
 2. Escolha os pedidos na lista. Ela mostra os 10 pedidos mais recentes do mesmo cliente ou pagador que ainda estão em aberto, com número, cliente, status e data. "Em aberto" vale desde o status NOVO: o vínculo pode ser feito antes de o pedido chegar à Expedição. Não entram pedidos cancelados, já despachados (A RETIRAR, EM TRANSITO, ENTREGUE, RECEBIDO), avulsos ou de teste encerrado. Para achar outro, digite o número em **Buscar pedido por número**: a busca procura entre todos os pedidos elegíveis, não só os 10 da lista. Pedido que já está em outro grupo Acompanhar aparece apagado, com o motivo.
-3. A escolha é gravada na hora, sem o **Salvar alterações**, e vale mesmo com a edição bloqueada por cobrança. O grupo aceita no máximo 10 pedidos.
+3. A escolha é gravada na hora, sem o **Salvar alterações**, e vale mesmo com a edição bloqueada por cobrança. Não há limite de 10 pedidos por grupo: a lista mostra os 10 mais recentes, mas a busca por número alcança qualquer pedido elegível. O limite de segurança é de 50 pedidos por grupo; passando disso a tela avisa. Acima de 10 pedidos aparece o aviso "Grupo grande: se um pedido ficar parado, todos esperam. Um administrador da Expedição pode soltá-lo." Um pedido fica em no máximo um grupo Acompanhar; para ampliar o grupo, marque outros pedidos a partir de qualquer membro dele.
 4. Nos outros pedidos do grupo a aba mostra o mesmo grupo marcado; marcar mais um pedido a partir de qualquer um deles entra no mesmo grupo.
 5. Para tirar um pedido do grupo, desmarque-o na lista. Desmarcar **Acompanhar Pedido** tira só este pedido. O grupo se desfaz quando sobra um pedido. Se a ligação foi criada por outra pessoa, só quem a criou ou o administrador da Expedição consegue soltar; fora disso a tela explica a recusa.
-6. Em pedido cancelado, já despachado ou avulso, a caixa fica só para leitura e a tela diz o motivo (por exemplo "Pedido já despachado."). Na visualização do pedido aparece a linha **Acompanha: #A, #B**.
+6. Em pedido cancelado, já despachado ou avulso, a caixa fica só para leitura e a tela diz o motivo (por exemplo "Pedido já despachado."). Pedido sem status definido também fica só para leitura: "Pedido sem status definido: avise o suporte.". Na visualização do pedido aparece a linha **Acompanha: #A, #B**.
    Se o pedido ainda não chegou à Expedição (por exemplo, está em NOVO), a tela avisa: "Este pedido ainda não chegou à Expedição: o grupo só despacha quando todos chegarem. Para soltar: peça a um administrador da Expedição." Pedido cancelado deixa de segurar o grupo.
 7. Na Expedição, os pedidos do grupo mostram o selo rosa **Vinculados**; nenhum deles é despachado nem tem etiqueta gerada até todos estarem prontos. Depois disso, cada um sai e imprime a sua etiqueta separadamente.
 
@@ -304,3 +304,5 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 > - nova seção **Acompanhar Pedido** na aba Fretes: pedidos do mesmo cliente ou pagador que só saem da Expedição juntos.
 >
 > - **09/10/2026:** o Acompanhar Pedido vale para qualquer pedido em aberto, inclusive em NOVO e AGUARDANDO (antes só de APROVADO até EXPEDICAO); a busca por número procura entre todos os pedidos elegíveis; a mensagem de só leitura diz o motivo real.
+>
+> - **09/10/2026 (adendo):** o grupo Acompanhar deixa de ter limite de 10 pedidos (limite de segurança de 50, com aviso acima de 10); pedido com status vazio fica só para leitura.
