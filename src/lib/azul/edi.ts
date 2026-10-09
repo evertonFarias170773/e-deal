@@ -26,7 +26,16 @@ const HOST_PRODUCAO = "ediapi.onlineapp.com.br";
 
 /** O token vale 8h; renova 30 min antes para nao usar um que expira no meio da chamada. */
 const VALIDADE_TOKEN_MS = (8 * 60 - 30) * 60 * 1000;
-const TIMEOUT_MS = 30_000;
+/**
+ * Timeouts. Só o Enviar cria algo na Azul e pode demorar: 30 s. Autenticação e
+ * consulta de base são leituras: 10 s. A função da Vercel tem 60 s (maxDuration);
+ * o pior caso com renovação de token — 10 (auth) + 30 (Enviar recusado com 401)
+ * + 10 (auth) + 30 (Enviar) — só passa de 60 s se o primeiro Enviar demorar quase
+ * o timeout inteiro para responder 401, o que não é o comportamento esperado.
+ * Timeout do Enviar não repete: vira "incerto".
+ */
+const TIMEOUT_LEITURA_MS = 10_000;
+const TIMEOUT_ENVIO_MS = 30_000;
 
 export type ConfigAzul = {
   email: string;
@@ -111,7 +120,7 @@ export type RespostaAzul =
 
 type CorpoPadrao = { HasErrors?: boolean; ErrorText?: string | null; Value?: unknown };
 
-async function chamar(config: ConfigAzul, caminho: string, corpo: unknown): Promise<RespostaAzul> {
+async function chamar(config: ConfigAzul, caminho: string, corpo: unknown, timeoutMs: number): Promise<RespostaAzul> {
   let res: Response;
   try {
     res = await fetch(`${config.baseUrl}${caminho}`, {
@@ -119,7 +128,7 @@ async function chamar(config: ConfigAzul, caminho: string, corpo: unknown): Prom
       headers: { "Content-Type": "application/json", Accept: "application/json" },
       body: JSON.stringify(corpo),
       cache: "no-store",
-      signal: AbortSignal.timeout(TIMEOUT_MS)
+      signal: AbortSignal.timeout(timeoutMs)
     });
   } catch (e) {
     const nome = e instanceof Error ? e.name : "";
@@ -161,7 +170,7 @@ async function obterToken(config: ConfigAzul, forcar: boolean): Promise<{ token:
   const guardado = cacheToken.get(chave);
   if (!forcar && guardado && guardado.expiraEm > Date.now()) return { token: guardado.token };
 
-  const r = await chamar(config, "/api/Autenticacao/AutenticarUsuario", { Email: config.email, Senha: config.senha });
+  const r = await chamar(config, "/api/Autenticacao/AutenticarUsuario", { Email: config.email, Senha: config.senha }, TIMEOUT_LEITURA_MS);
   if (r.desfecho !== "ok" || typeof r.value !== "string" || !r.value) {
     return { erro: r.desfecho === "ok" ? "A Azul não devolveu o token de acesso." : `Autenticação na Azul falhou: ${r.texto}` };
   }
@@ -181,12 +190,13 @@ function tokenRecusado(r: RespostaAzul): boolean {
 export async function chamarAzul(
   config: ConfigAzul,
   caminho: string,
-  corpo: Record<string, unknown>
+  corpo: Record<string, unknown>,
+  timeoutMs: number = TIMEOUT_ENVIO_MS
 ): Promise<RespostaAzul> {
   for (const forcar of [false, true]) {
     const t = await obterToken(config, forcar);
     if ("erro" in t) return { desfecho: "erro", texto: t.erro, http: 0 };
-    const r = await chamar(config, caminho, { ...corpo, Token: t.token });
+    const r = await chamar(config, caminho, { ...corpo, Token: t.token }, timeoutMs);
     if (!forcar && tokenRecusado(r)) {
       cacheToken.delete(chaveCache(config));
       continue;
@@ -198,7 +208,7 @@ export async function chamarAzul(
 
 /** Base de destino por CEP (`Unidades/LocalizarUnidades`, Pais vazio como na doc); nulo se nao localizar. */
 export async function localizarBaseDestino(config: ConfigAzul, cep: string): Promise<string | null> {
-  const r = await chamarAzul(config, "/api/Unidades/LocalizarUnidades", { Pais: "", Cep: cep.replace(/\D/g, "") });
+  const r = await chamarAzul(config, "/api/Unidades/LocalizarUnidades", { Pais: "", Cep: cep.replace(/\D/g, "") }, TIMEOUT_LEITURA_MS);
   if (r.desfecho !== "ok" || !Array.isArray(r.value)) return null;
   const primeira = r.value.find((u): u is { Base?: unknown } => typeof u === "object" && u !== null);
   const base = String(primeira?.Base ?? "").trim();
