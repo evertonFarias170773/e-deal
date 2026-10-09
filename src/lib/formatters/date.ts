@@ -1,10 +1,25 @@
+/**
+ * Data que o `Date` não entende (ano de 5 dígitos, texto solto, vazio) devolve
+ * o próprio valor como texto, em vez de lançar. `Intl.DateTimeFormat.format`
+ * estoura com `RangeError: Invalid time value`, e dentro de um render isso
+ * derruba a tela inteira — o boletim do 23380 (data do evento gravada como
+ * 20206-11-07) ficou sem abrir em 09/10/2026. O valor cru na tela mostra o
+ * erro para quem pode corrigir. Data válida não muda.
+ */
+function dataOuTextoCru(value: string | Date): Date | string {
+  const data = new Date(value);
+  return Number.isNaN(data.getTime()) ? String(value ?? "") : data;
+}
+
 export function formatDate(value: string | Date) {
+  const data = dataOuTextoCru(value);
+  if (typeof data === "string") return data;
   return new Intl.DateTimeFormat("pt-BR", {
     timeZone: "America/Sao_Paulo",
     day: "2-digit",
     month: "2-digit",
     year: "numeric"
-  }).format(new Date(value));
+  }).format(data);
 }
 
 /**
@@ -31,6 +46,8 @@ export function hojeEmSaoPaulo() {
 }
 
 export function formatDateTime(value: string | Date) {
+  const data = dataOuTextoCru(value);
+  if (typeof data === "string") return data;
   return new Intl.DateTimeFormat("pt-BR", {
     timeZone: "America/Sao_Paulo",
     day: "2-digit",
@@ -38,5 +55,5 @@ export function formatDateTime(value: string | Date) {
     year: "numeric",
     hour: "2-digit",
     minute: "2-digit"
-  }).format(new Date(value));
+  }).format(data);
 }

@@ -4,6 +4,7 @@ import { Calendar, MapPin, Clock, FileText, AlignLeft } from "lucide-react";
 import { FormSection } from "@/features/orcamentos/OrcamentoFormPage";
 import { RichTextEditor } from "@/components/common/RichTextEditor";
 import type { PropostaItem } from "@/features/orcamentos/types";
+import { DATA_EVENTO_MAX, DATA_EVENTO_MIN } from "@/features/orcamentos/lib/data-do-evento";
 
 interface ArtesDadosEventoCardProps {
   itens: PropostaItem[];
@@ -58,6 +59,8 @@ export function ArtesDadosEventoCard({
             </label>
             <input
               type="date"
+              min={DATA_EVENTO_MIN}
+              max={DATA_EVENTO_MAX}
               value={dataEvento}
               onChange={(e) => setDataEvento(e.target.value)}
               className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-semibold text-slate-900 transition focus:border-teal-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-teal-500/10"

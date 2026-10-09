@@ -1,6 +1,6 @@
 # Proposta: aba Artes
 
-> **Última revisão:** 06/10/2026
+> **Última revisão:** 09/10/2026
 > **Caminho no menu:** Pedidos → abrir um pedido → Editar proposta → aba Artes
 > **Endereço:** `/orcamentos/[número]/editar?tab=artes`
 
@@ -130,6 +130,7 @@ O bloco **Últimos pedidos** lista as cinco propostas mais recentes do mesmo cli
 - A trava só cobra o campo que o produto usa. Se o produto não tem verso ou numeração, esses campos nem aparecem na aba Pedido e não são cobrados aqui. Modelo de produto removido do pedido também não é cobrado.
 - Não dá para iniciar a arte de um pedido sem modelos. A aba mostra o aviso e nada mais.
 - Não dá para enviar para arte sem o **Nome do Evento / Tema**.
+- A **Data do Evento** só aceita ano entre 1900 e 9999. Com o ano digitado errado (por exemplo 20206 no lugar de 2026), o botão flutuante avisa **Data do evento inválida: confira o ano** e não grava.
 - Não dá para anexar arquivo nem salvar o briefing em pedido que ainda não foi salvo pela primeira vez. Salve o pedido antes.
 - Só entram JPEG, PNG e PDF como arquivo de referência, com até 10 MB cada.
 - O botão flutuante sempre grava o status junto. Clicar em **Enviar para arte** em um pedido cuja arte já andou (por exemplo, já em Em Aprovação) volta o status para **EM ARTE**; clicar em **Salvar dados da arte** volta para **AGUARDANDO**. Para só corrigir o texto do briefing, use o **Salvar alterações** do pedido.
@@ -185,6 +186,7 @@ O bloco **Últimos pedidos** lista as cinco propostas mais recentes do mesmo cli
 - `src/features/pedidos/services/pedidos-artes.service.ts`
 - `src/features/orcamentos/services/status-arte-lista.service.ts`
 - `src/features/orcamentos/lib/checklist-lote.ts`
+- `src/features/orcamentos/lib/data-do-evento.ts`
 - `src/features/orcamentos/OrcamentoFormPage.tsx`
 - `src/features/orcamentos/OrcamentosListPageReal.tsx`
 - `src/features/orcamentos/orcamento-utils.ts`

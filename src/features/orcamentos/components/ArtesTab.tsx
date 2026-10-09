@@ -10,6 +10,7 @@ import { carregarBriefingArtes, salvarBriefingArtes, listarArquivosDaProposta } 
 import { useAppToast } from "@/components/common/AppToast";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { Save, Send } from "lucide-react";
+import { dataDoEventoNoIntervalo, MENSAGEM_DATA_EVENTO_FORA } from "@/features/orcamentos/lib/data-do-evento";
 
 export interface BriefingArtesDraft {
   nome_evento: string;
@@ -136,6 +137,11 @@ export function ArtesTab({ form, onBriefingChange }: ArtesTabProps) {
     // Validação de obrigatoriedade ao enviar para arte
     if (selectedDesignerId && !nomeEvento.trim()) {
       showToast({ type: "warning", title: "Atenção", description: "Informe o Nome do Evento / Tema antes de enviar para arte." });
+      return;
+    }
+
+    if (!dataDoEventoNoIntervalo(dataEvento)) {
+      showToast({ type: "warning", title: "Atenção", description: MENSAGEM_DATA_EVENTO_FORA });
       return;
     }
 

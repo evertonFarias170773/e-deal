@@ -1,5 +1,6 @@
 import { getSupabaseClient } from "@/lib/supabase/client";
 import type { PedidoArte } from "@/features/producao/types";
+import { dataDoEventoNoIntervalo, MENSAGEM_DATA_EVENTO_FORA } from "@/features/orcamentos/lib/data-do-evento";
 
 function isValidUuid(uuid: string | undefined): boolean {
   if (!uuid) return false;
@@ -62,6 +63,12 @@ export async function carregarBriefingArtes(idInt: number): Promise<PedidoArte |
  * Salva (UPSERT) o registro de artes da proposta.
  */
 export async function salvarBriefingArtes(idInt: number, payload: Partial<PedidoArte>): Promise<PedidoArte | null> {
+  // Ano fora de 1900–9999 não é gravado, venha de onde vier (aba Artes ou o
+  // "Salvar alterações" da proposta): lib/data-do-evento.
+  if (!dataDoEventoNoIntervalo(payload.data_evento)) {
+    throw new Error(MENSAGEM_DATA_EVENTO_FORA);
+  }
+
   const client = getSupabaseClient();
   if (!client) return null;
 
