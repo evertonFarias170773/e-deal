@@ -14,6 +14,11 @@ import { chamarAzul, lerConfigAzul, localizarBaseDestino } from "@/lib/azul/edi"
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+// Teto da funcao: a emissao encadeia autenticacao (ate 30 s) e Enviar (ate 30 s).
+// Sem isto a Vercel pode cortar a rota no meio do Enviar, deixando o pedido em
+// EMITINDO com a AWB possivelmente criada na Azul. 60 s e o teto ja usado pelas
+// rotas fiscais deste projeto.
+export const maxDuration = 60;
 
 /**
  * Emite a AWB da Azul Logistica para uma expedicao.

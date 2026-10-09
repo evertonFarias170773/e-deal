@@ -5,6 +5,8 @@ import { lerConfigAzul, localizarBaseDestino, naturezaProdutoPadrao } from "@/li
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+// Autenticacao + LocalizarUnidades, cada uma com timeout de 30 s.
+export const maxDuration = 60;
 
 /**
  * Prepara o modal "Emitir AWB Azul": le o pedido, confere as regras e devolve o

@@ -196,9 +196,9 @@ export async function chamarAzul(
   return { desfecho: "erro", texto: "A Azul recusou o token de acesso.", http: 401 };
 }
 
-/** Base de destino por CEP (`Unidades/LocalizarUnidades`); vazio se nao localizar. */
+/** Base de destino por CEP (`Unidades/LocalizarUnidades`, Pais vazio como na doc); nulo se nao localizar. */
 export async function localizarBaseDestino(config: ConfigAzul, cep: string): Promise<string | null> {
-  const r = await chamarAzul(config, "/api/Unidades/LocalizarUnidades", { Pais: "BR", Cep: cep.replace(/\D/g, "") });
+  const r = await chamarAzul(config, "/api/Unidades/LocalizarUnidades", { Pais: "", Cep: cep.replace(/\D/g, "") });
   if (r.desfecho !== "ok" || !Array.isArray(r.value)) return null;
   const primeira = r.value.find((u): u is { Base?: unknown } => typeof u === "object" && u !== null);
   const base = String(primeira?.Base ?? "").trim();
