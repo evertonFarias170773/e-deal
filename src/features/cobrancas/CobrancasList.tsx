@@ -13,6 +13,7 @@ import { CobrancaActionsMenu } from "@/features/cobrancas/CobrancaActionsMenu";
 import { CobrancaStatusBadge } from "@/features/cobrancas/CobrancaStatusBadge";
 import { useCobrancas } from "@/features/cobrancas/CobrancasProvider";
 import { AVISO_DE_CARGA_INCOMPLETA } from "@/features/cobrancas/lib/limite-da-carga";
+import { MENSAGEM_CANCELADA_E_PAGA, SELO_CANCELADA_E_PAGA, ehCanceladaQueConstaPaga } from "@/features/cobrancas/lib/cancelada-que-consta-paga";
 import {
   EMPRESAS_RECEBEDORAS_FIXAS,
   cobrancaMatchesSearch,
@@ -209,6 +210,24 @@ function getInitialDates() {
     start: format(firstDay),
     end: format(lastDay)
   };
+}
+
+/**
+ * Selo vermelho da cobrança que foi cancelada e hoje consta como paga. Fica ao
+ * lado do status para o financeiro ver ANTES de abrir o menu: a rota de
+ * confirmar recusa essas cobranças, e o selo diz por quê.
+ */
+function SeloCanceladaEPaga({ cobranca }: { cobranca: Cobranca }) {
+  if (!ehCanceladaQueConstaPaga(cobranca)) return null;
+  return (
+    <span
+      data-cancelada-e-paga
+      title={MENSAGEM_CANCELADA_E_PAGA}
+      className="inline-flex items-center rounded-full border border-red-300 bg-red-50 px-2.5 py-0.5 text-[11px] font-bold leading-tight text-red-700"
+    >
+      {SELO_CANCELADA_E_PAGA}
+    </span>
+  );
 }
 
 export function CobrancasList() {
@@ -947,7 +966,12 @@ export function CobrancasList() {
           },
           {
             header: "Status",
-            cell: (cobranca) => <CobrancaStatusBadge cobranca={cobranca} />,
+            cell: (cobranca) => (
+              <div className="flex flex-col items-center gap-1">
+                <CobrancaStatusBadge cobranca={cobranca} />
+                <SeloCanceladaEPaga cobranca={cobranca} />
+              </div>
+            ),
             align: "center"
           },
           { header: "Empresa", cell: (cobranca) => renderEmpresaEditavel(cobranca) },
@@ -1017,7 +1041,10 @@ export function CobrancasList() {
                   </p>
                 )}
               </div>
-              <CobrancaStatusBadge cobranca={cobranca} />
+              <div className="flex flex-col items-end gap-1">
+                <CobrancaStatusBadge cobranca={cobranca} />
+                <SeloCanceladaEPaga cobranca={cobranca} />
+              </div>
             </div>
 
             <div className="mt-4 grid gap-2 text-sm text-slate-600">

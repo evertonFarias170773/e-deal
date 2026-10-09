@@ -6,6 +6,11 @@ import { aplicarStatusRecomendadoProposta } from "@/features/orcamentos/services
 import { validarStatusProposta } from "@/features/orcamentos/services/status-shadow.service";
 import { liberarPropostaParaProducao, sendPropostaChatMessage } from "@/features/orcamentos/services/orcamentos.service";
 import { linhaDaDivergencia } from "@/features/orcamentos/lib/divergencia-lotes";
+import {
+  CODIGO_CANCELADA_E_PAGA,
+  MENSAGEM_CANCELADA_E_PAGA,
+  confirmacaoDeveSerRecusada
+} from "@/features/cobrancas/lib/cancelada-que-consta-paga";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 type UsuarioMinRow = {
@@ -93,6 +98,22 @@ export async function POST(request: NextRequest) {
 
     if (cobError || !cobranca) {
       return NextResponse.json({ success: false, error: "Cobrança não encontrada." }, { status: 404 });
+    }
+
+    // Cobrança cancelada — ou que FOI cancelada e voltou a constar como paga —
+    // não é confirmada (09/10/2026). O caso real: o vendedor cancela, o PIX
+    // segue valendo no banco, o cliente paga e a integração grava PAID sem
+    // olhar o status; a cobrança reaparece na fila como paga, e em quatro
+    // pedidos o cliente tinha pago duas vezes. O rastro é `motivo_cancela`, que
+    // só é gravado no cancelamento e que a reativação oficial limpa. Vem antes
+    // de tudo, inclusive do retorno "já estava confirmada": confirmar uma
+    // dessas não pode responder sucesso. A regra mora em
+    // lib/cancelada-que-consta-paga.
+    if (confirmacaoDeveSerRecusada(cobranca)) {
+      return NextResponse.json(
+        { success: false, code: CODIGO_CANCELADA_E_PAGA, error: MENSAGEM_CANCELADA_E_PAGA },
+        { status: 409 }
+      );
     }
 
     if (cobranca.status === "CANCELADO" || cobranca.status === "CANCELADA" || cobranca.status === "EXTORNADO" || cobranca.status === "RECUSADO") {

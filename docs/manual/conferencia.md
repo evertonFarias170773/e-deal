@@ -1,6 +1,6 @@
 # Conferência
 
-> **Última revisão:** 07/10/2026
+> **Última revisão:** 09/10/2026
 > **Caminho no menu:** Conferência (primeiro item do menu lateral; é um link direto, sem subitens)
 > **Endereço:** `/cobrancas` (o detalhe de uma cobrança abre em `/cobrancas/<cobrança>`)
 
@@ -179,6 +179,7 @@ O bloco **Histórico da cobrança**, no detalhe, ainda mostra "Histórico ainda 
 O que entra e o que não entra na fila:
 
 - Entra na **Fila de Conferência** a cobrança já paga e ainda não conferida (status **Pago / A liberar**) e o faturamento já autorizado e ainda não conferido (status **Faturamento autorizado / A liberar**).
+- Cobrança com o selo vermelho **Cancelada e paga: não confirmar** foi cancelada e voltou a constar como paga: a confirmação é recusada, e quem decide entre reativar e devolver é a gestão.
 - Cobrança que o cliente ainda não pagou (PIX, boleto ou cartão em aberto) não aparece na lista. Ela só chega à fila depois do pagamento.
 - Faturamento que ainda espera a análise do financeiro não entra na fila. Fica no card **Pendentes de aprovação** (ou no filtro **Pendentes aprovação**), com o status **Aguardando financeiro**.
 - Cobrança cancelada só aparece no filtro **Cancelados**.
@@ -257,6 +258,7 @@ Outros:
 | "Não é possível confirmar esta cobrança — A soma das cobranças é inferior ao total da proposta." | O pedido tem mais de uma cobrança e, mesmo contando esta, o total não é coberto. | Veja o resumo no alerta. Cadastre a cobrança que falta na proposta ou corrija o valor do pedido, e confirme de novo. |
 | "Sem permissão para confirmar cobrança." | O perfil não tem **Confirmar Pagamento**. | Peça a um administrador para ajustar o perfil ou fazer a confirmação. |
 | "Não é possível confirmar uma cobrança com status inválido." | A cobrança foi cancelada enquanto a tela estava aberta. | Atualize a tela. |
+| "Esta cobrança foi cancelada e consta como paga. Não confirme: o dinheiro pode ter entrado em duplicidade. Avise a gestão para decidir entre reativar ou devolver." | A cobrança foi cancelada e depois o banco informou o pagamento dela. Na lista ela aparece com o selo vermelho **Cancelada e paga: não confirmar**. | Não confirme e não gere outra cobrança. Avise a gestão, com o número do pedido. |
 | "Esta cobrança já foi recebida em (data). Cancelar não devolve o dinheiro — o caso é devolução, não cancelamento." | A cobrança já está paga. | A tela não cancela cobrança paga. Trate como devolução, com o financeiro. |
 | "O título ... desta cobrança ... foi liquidado ... A cobrança inteira vira devolução — não cancele por aqui." | Um título ligado à cobrança já foi pago. | Trate como devolução. |
 | "A proposta ... tem NF-e nº ... autorizada. Cancele a nota em Fiscal › Notas Fiscais antes de cancelar a cobrança." | O pedido tem nota fiscal autorizada. | Use **Ir para Notas Fiscais**, cancele a nota e volte. |
@@ -302,6 +304,7 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/features/cobrancas/lib/confirmar-conferencia.ts`
 - `src/features/cobrancas/lib/recarga-em-ordem.ts`
 - `src/features/cobrancas/lib/limite-da-carga.ts`
+- `src/features/cobrancas/lib/cancelada-que-consta-paga.ts`
 - `src/features/cobrancas/ConferenciaFinanceiraAlertaModal.tsx`
 - `src/features/cobrancas/AutorizarFaturamentoModal.tsx`
 - `src/features/cobrancas/AnaliseCreditoModal.tsx`
