@@ -37,7 +37,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Liberadas** (card) | Cards do topo, 4º | Liga ou desliga a lista dos pedidos com status "Liberado". |
 | **Revisão atendente** (card) | Cards do topo, 5º | Liga ou desliga a lista dos pedidos em REVISAO ATENDENTE. |
 | **Em produção** (card) | Cards do topo, 6º | Liga ou desliga a lista dos pedidos em produção e mostra o prazo do boletim na coluna Envio. |
-| **Buscar por número, cliente, ID do cliente, nota fiscal, atendente ou evento** | Barra de filtros, campo de texto | Busca pedidos em todos os períodos. Enquanto procura, a lupa vira um círculo girando e aparece **Buscando...** ao lado. |
+| **Buscar por número, cliente, CPF/CNPJ, ID do cliente, nota fiscal, atendente ou evento** | Barra de filtros, campo de texto | Busca pedidos em todos os períodos. Enquanto procura, a lupa vira um círculo girando e aparece **Buscando...** ao lado. |
 | **Todos status** | Barra de filtros | Filtra por status do pedido e desliga o card que estiver ligado. |
 | **Todos modelos** | Barra de filtros | Filtra por AVULSO, PROPOSTA ou ENCERRADOS (teste). |
 | **Todos produtos** | Barra de filtros | Abre a lista de produtos, com o campo **Código ou nome**, e filtra os pedidos que têm o produto escolhido. |
@@ -97,10 +97,11 @@ Os cards respeitam os filtros de modelo, vendedor e tipo de cobrança.
 
 ### Procurar um pedido
 
-1. Digite no campo **Buscar por número, cliente, ID do cliente, nota fiscal, atendente ou evento**. A lista atualiza sozinha depois de uma pequena pausa na digitação. Enquanto a busca está em andamento, o campo mostra **Buscando...** e a lista fica em carregamento; "Nenhuma proposta encontrada" só aparece depois que a resposta chega.
-2. A busca procura na base inteira por: número do pedido, código do cliente, nome do cliente (a razão social gravada no pedido e o nome fantasia que a lista mostra), nome do atendente, nome de quem está indicado para a nota fiscal e nome do evento. Não importa maiúscula ou minúscula, acento, espaço sobrando nem digitar só parte do nome: "grafica rapida", "GRÁFICA RÁPIDA" e "afica rap" acham os mesmos pedidos.
-3. Com texto na busca, o período deixa de valer (os cards passam a mostrar "Soma em todos os períodos") e os pedidos entregues e os testes encerrados voltam a aparecer.
-4. Para voltar ao normal, clique em **Limpar filtros**.
+1. Digite no campo **Buscar por número, cliente, CPF/CNPJ, ID do cliente, nota fiscal, atendente ou evento**. A lista atualiza sozinha depois de uma pequena pausa na digitação. Enquanto a busca está em andamento, o campo mostra **Buscando...** e a lista fica em carregamento; "Nenhuma proposta encontrada" só aparece depois que a resposta chega.
+2. A busca procura na base inteira por: número do pedido, código do cliente, nome do cliente (a razão social gravada no pedido e o nome fantasia que a lista mostra), CPF ou CNPJ do cliente, nome do atendente, nome de quem está indicado para a nota fiscal e nome do evento. Não importa maiúscula ou minúscula, acento, espaço sobrando nem digitar só parte do nome: "grafica rapida", "GRÁFICA RÁPIDA" e "afica rap" acham os mesmos pedidos.
+3. Para achar pelo CPF ou CNPJ, digite um trecho do número, com ou sem ponto, traço e barra: "123.456" e "123456" acham o mesmo cliente. Sem pontuação, a busca pelo documento começa a partir de 6 dígitos (com menos, o número é tratado como número de pedido); com ponto, traço ou barra, 4 dígitos já bastam. O documento não aparece em nenhuma coluna da lista.
+4. Com texto na busca, o período deixa de valer (os cards passam a mostrar "Soma em todos os períodos") e os pedidos entregues e os testes encerrados voltam a aparecer.
+5. Para voltar ao normal, clique em **Limpar filtros**.
 
 ### Filtrar a lista
 
@@ -212,7 +213,7 @@ As datas pequenas aparecem como dia/mês e hora, no horário de Brasília.
 - Não dá para gerar PDF, OC nem cobrança de pedido sem cliente cadastrado.
 - Não dá para gerar cobrança de proposta que já foi totalmente cobrada.
 - Encerrar um teste tira o pedido da Produção, do Kanban, da fila de impressão e da Expedição. Ele continua nesta lista, com a marca, e segue contando no faturamento. Esta é a única tela de onde dá para reabrir.
-- A busca por nome de quem recebe a nota fiscal, por nome fantasia do cliente e por nome do evento precisa de pelo menos duas letras e é desligada quando o termo é comum demais (casa com 200 nomes ou mais). A busca por número, pela razão social do cliente gravada no pedido e por atendente continua funcionando.
+- A busca por nome de quem recebe a nota fiscal, por nome fantasia do cliente e por nome do evento precisa de pelo menos duas letras e é desligada quando o termo é comum demais (casa com 200 nomes ou mais). A busca pelo CPF ou CNPJ também é desligada quando o trecho casa com 200 clientes ou mais; digite mais dígitos. A busca por número, pela razão social do cliente gravada no pedido e por atendente continua funcionando.
 
 ## O que não confundir
 

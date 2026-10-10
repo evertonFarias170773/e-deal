@@ -9,6 +9,7 @@
  * src/features/orcamentos/lib/padrao-busca.ts.
  */
 import {
+  digitosDeDocumentoParaBusca,
   normalizarTermoDeBusca,
   padraoBuscaSemAcento,
   valorParaOr
@@ -61,6 +62,23 @@ checar("normalizacao", normalizarTermoDeBusca("  GRÁFICA   Rápida "), "grafica
 const perigoso = padraoBuscaSemAcento('a"b\\c]d^e') ?? "";
 checar("sem aspas nem barra invertida no padrao", /["\\]/.test(perigoso), false);
 checar("valor do filtro vai entre aspas", valorParaOr("gr[aá]fica, rapida"), '"gr[aá]fica, rapida"');
+
+// — Documento do cliente (CPF/CNPJ) —
+checar("documento: com e sem pontuacao dao os mesmos digitos", digitosDeDocumentoParaBusca("123.456"), digitosDeDocumentoParaBusca("123456"));
+checar("documento: 123.456 vira 123456", digitosDeDocumentoParaBusca("123.456"), "123456");
+checar("documento: CPF completo formatado", digitosDeDocumentoParaBusca("123.456.789-09"), "12345678909");
+checar("documento: CNPJ completo formatado", digitosDeDocumentoParaBusca("12.345.678/0001-95"), "12345678000195");
+checar("documento: espacos nas pontas", digitosDeDocumentoParaBusca("  123456 "), "123456");
+checar("documento: numero de pedido (5 digitos) nao vira busca de documento", digitosDeDocumentoParaBusca("23512"), null);
+checar("documento: 5 digitos com ponto ja nao e pedido", digitosDeDocumentoParaBusca("23.512"), "23512");
+checar("documento: 3 digitos com ponto e pouco", digitosDeDocumentoParaBusca("12.3"), null);
+checar("documento: 4 digitos com ponto entra", digitosDeDocumentoParaBusca("123.4"), "1234");
+checar("documento: 6 digitos sem pontuacao entra", digitosDeDocumentoParaBusca("234567"), "234567");
+checar("documento: letra no termo e busca por nome", digitosDeDocumentoParaBusca("ltda 123456"), null);
+checar("documento: nome nao vira documento", digitosDeDocumentoParaBusca("grafica rapida"), null);
+checar("documento: vazio", digitosDeDocumentoParaBusca("   "), null);
+checar("documento: mais de 14 digitos nao existe", digitosDeDocumentoParaBusca("123456789012345"), null);
+checar("documento: so pontuacao", digitosDeDocumentoParaBusca("..."), null);
 
 if (falhas > 0) {
   console.log(`\n${falhas} falha(s).`);

@@ -58,6 +58,33 @@ export function padraoBuscaSemAcento(termo: string): string | null {
 }
 
 /**
+ * BUSCA PELO DOCUMENTO DO CLIENTE (10/10/2026)
+ *   `clientes.documento` guarda só os dígitos do CPF/CNPJ (conferido: 66.282 de
+ *   66.286 linhas, nenhuma com ponto, traço ou barra). Por isso a busca tira a
+ *   pontuação do termo e compara os dígitos: "123.456" e "123456" acham o mesmo.
+ *
+ *   O limite mínimo existe porque o campo de busca também aceita o NÚMERO DO
+ *   PEDIDO: "23512" casa com o CPF/CNPJ de 4 clientes e traria pedidos que não
+ *   têm nada a ver. Sem pontuação, só entra a partir de 6 dígitos (o maior
+ *   número de pedido tem 5); com ponto, traço ou barra o termo já não é número
+ *   de pedido, e 4 dígitos bastam.
+ */
+const MIN_DIGITOS_DOCUMENTO_SEM_PONTUACAO = 6;
+const MIN_DIGITOS_DOCUMENTO_COM_PONTUACAO = 4;
+const MAX_DIGITOS_DOCUMENTO = 14;
+
+/** Dígitos para comparar com `clientes.documento`; `null` quando o termo não é um trecho de CPF/CNPJ. */
+export function digitosDeDocumentoParaBusca(termo: string): string | null {
+  const texto = String(termo ?? "").trim();
+  // Só dígitos e a pontuação de documento: uma letra no termo é busca por nome.
+  if (!texto || !/^[0-9.\-/\s]+$/.test(texto)) return null;
+  const digitos = texto.replace(/\D/g, "");
+  const minimo = /[.\-/]/.test(texto) ? MIN_DIGITOS_DOCUMENTO_COM_PONTUACAO : MIN_DIGITOS_DOCUMENTO_SEM_PONTUACAO;
+  if (digitos.length < minimo || digitos.length > MAX_DIGITOS_DOCUMENTO) return null;
+  return digitos;
+}
+
+/**
  * O padrão como valor de um filtro dentro de `.or()`. As aspas impedem que a
  * vírgula, o ponto e os parênteses do padrão sejam lidos como sintaxe do filtro.
  */

@@ -1934,7 +1934,7 @@ Ela volta a aparecer nas listas operacionais.`
               value={buscaDigitada}
               onChange={(event) => setBuscaDigitada(event.target.value)}
               className="w-full bg-transparent text-sm text-slate-900 outline-none"
-              placeholder="Buscar por número, cliente, ID do cliente, nota fiscal, atendente ou evento"
+              placeholder="Buscar por número, cliente, CPF/CNPJ, ID do cliente, nota fiscal, atendente ou evento"
               aria-busy={buscando}
             />
             {buscando ? <span className="shrink-0 text-xs font-medium text-[#0f9f9a]">Buscando...</span> : null}

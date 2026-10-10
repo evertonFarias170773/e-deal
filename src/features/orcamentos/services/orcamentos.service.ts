@@ -91,7 +91,7 @@ import {
   type DivergenciaDeLote
 } from "@/features/orcamentos/lib/divergencia-lotes";
 import { danfesDoPedido } from "@/lib/fiscal/danfes-do-pedido";
-import { padraoBuscaSemAcento, valorParaOr } from "@/features/orcamentos/lib/padrao-busca";
+import { padraoBuscaSemAcento, valorParaOr, digitosDeDocumentoParaBusca } from "@/features/orcamentos/lib/padrao-busca";
 // Grupos "Aguardando financeiro" e "Pago / A liberar" da lista de Pedidos: a
 // MESMA regra que a Conferencia usa por cobranca, sem copia.
 import { getConferenciaStatusLabel } from "@/features/cobrancas/cobrancas-utils";
@@ -571,6 +571,56 @@ async function buscarIdsClientesPorNome(
 }
 
 /**
+ * IDs de clientes cujo DOCUMENTO (CPF/CNPJ) contem os digitos do termo
+ * (10/10/2026). Serve so a busca pelo cliente do pedido (`id_cliente`); o socio
+ * pagador continua achado pelo nome. `clientes.documento` guarda so digitos, e
+ * `digitosDeDocumentoParaBusca` tira a pontuacao do termo e recusa o que e
+ * numero de pedido ou nome — ver `padrao-busca.ts`. Somente leitura, sem
+ * indice novo (varredura de `clientes`, a mesma tabela que a busca por nome ja
+ * varre).
+ */
+async function buscarIdsClientesPorDocumento(
+  client: NonNullable<ReturnType<typeof getSupabaseClient>>,
+  termo: string
+): Promise<number[]> {
+  const digitos = digitosDeDocumentoParaBusca(termo);
+  if (!digitos) return [];
+  try {
+    const { data, error } = await client
+      .from("clientes")
+      .select("id_cliente")
+      .like("documento", `%${digitos}%`)
+      .limit(LIMITE_IDS_SOCIO_BUSCA);
+
+    if (error) {
+      console.warn("[OrcamentosService] Falha ao resolver documento na busca:", error.message);
+      return [];
+    }
+    const ids = Array.from(
+      new Set(
+        (data ?? [])
+          .map((linha) => Number(linha.id_cliente))
+          .filter((id) => Number.isFinite(id) && id > 0)
+      )
+    );
+
+    // Mesmo teto e mesma decisao da busca por nome: no limite, desiste da
+    // ampliacao em vez de aplicar um recorte arbitrario.
+    if (ids.length >= LIMITE_IDS_SOCIO_BUSCA) {
+      console.warn(
+        `[OrcamentosService] Termo de documento casa com ${LIMITE_IDS_SOCIO_BUSCA}+ clientes; ` +
+          `a busca por DOCUMENTO foi desligada para este termo. Digite mais digitos.`
+      );
+      return [];
+    }
+    return ids;
+  } catch (e) {
+    console.warn("[OrcamentosService] Excecao ao resolver documento na busca:", e);
+    return [];
+  }
+}
+
+/**
  * IDs de pedidos cujo NOME DO EVENTO casa com o termo (18/09/2026).
  *
  * O evento mora em `pedidos_artes.nome_evento`, e a lista so o lia por PAGINA —
@@ -813,6 +863,10 @@ async function fetchPropostaRows(
       const idsEvento = await buscarIdsPedidosPorEvento(client, term);
       const condicaoEvento = idsEvento.length > 0 ? `id_int.in.(${idsEvento.join(",")})` : null;
 
+      // DOCUMENTO do cliente (10/10/2026): CPF/CNPJ por trecho, com ou sem
+      // pontuacao. Soma ao `.or()` como `id_cliente.in`, igual ao nome fantasia.
+      const idsDocumento = await buscarIdsClientesPorDocumento(client, term);
+
       const condicoes: string[] = [];
       if (Number.isInteger(num) && num > 0) {
         // id_int (nº da proposta) e id_cliente são colunas numéricas → comparação exata,
@@ -835,6 +889,7 @@ async function fetchPropostaRows(
       // Os mesmos ids achados em `clientes` dobram aqui como `id_cliente.in`,
       // para a busca achar o pedido pelo nome que esta na tela.
       if (idsSocio.length > 0) condicoes.push(`id_cliente.in.(${idsSocio.join(",")})`);
+      if (idsDocumento.length > 0) condicoes.push(`id_cliente.in.(${idsDocumento.join(",")})`);
       if (condicaoEvento) condicoes.push(condicaoEvento);
       condicaoBusca = condicoes.join(",");
     }
