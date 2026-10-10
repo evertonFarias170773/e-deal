@@ -14,6 +14,7 @@ No topo da tela, o título é **Conferência de pagamentos**. A lista tem as col
 
 - Vê a tela quem tem a permissão **Visualizar Conferência** no perfil, além de administradores.
 - **Confirmar Conferência** e **Voltar para lista principal** aparecem no menu de ações para administradores e para quem tem a permissão **Confirmar Pagamento**.
+- O administrador também confirma a conferência pelo menu de ações da lista de Pedidos ([Pedidos](pedidos.md)): é a mesma ação, com a mesma janela e a mesma regra de Fila.
 - **Analisar condição** (aprovar, alterar ou reprovar um faturamento) aparece para administradores e para quem tem a permissão **Liberar OS / Confirmar**. Para a aprovação ser gravada, o usuário também precisa da permissão **Confirmar Pagamento**.
 - **Autorizar e conferir**, na aba **Aprovar** da mesma janela, exige as duas permissões: **Liberar OS / Confirmar** e **Confirmar Pagamento** (administradores têm as duas). O botão só aparece para quem tem as duas, e o servidor confere de novo.
 - **Cancelar cobrança** de uma cobrança que ainda não foi paga fica habilitado para administradores e para quem tem **Cancelar / Estornar Cobranças** ou **Cancelar Cobrança Não Paga**. Além da permissão, é preciso ter acesso à proposta daquela cobrança.

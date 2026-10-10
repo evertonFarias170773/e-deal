@@ -140,6 +140,34 @@ export function isPendenteAprovacao(
   return true; // Todos os outros casos (como A_RECEBER, ou A_VENCER sem autorização explícita) são pendentes
 }
 
+/**
+ * A cobrança está na FILA DE CONFERÊNCIA?
+ *
+ * Morava dentro de `CobrancasList` (a tela da Conferência) e subiu para cá em
+ * 10/10/2026, JUNTO de `isPendenteAprovacao`, de que depende, para a lista de
+ * Pedidos mostrar "Confirmar Conferência" pelo MESMO critério da Fila — e não
+ * por uma cópia dele. A regra não mudou: só o endereço (e o tipo do parâmetro,
+ * que agora é o mínimo que a regra lê; uma `Cobranca` inteira continua servindo).
+ */
+export type CobrancaParaAFila = Parameters<typeof isPendenteAprovacao>[0];
+
+// Regra definitiva: status PAID/A_VENCER indica condição financeira. confirmado=false indica aguardando conferência humana. confirmado=true indica liberado para produção.
+export function isFilaPadrao(cobranca: CobrancaParaAFila) {
+  const status = (cobranca.status || "").trim().toUpperCase();
+
+  if (status === "CANCELADO") return false;
+
+  if (status === "PAID" && cobranca.confirmado === false) {
+    return true;
+  }
+
+  if (status === "A_VENCER" && cobranca.confirmado === false) {
+    return !isPendenteAprovacao(cobranca);
+  }
+
+  return false;
+}
+
 
 
 export function getDataHoraListaCobranca(cobranca: Pick<Cobranca, "status" | "paid_at" | "created_at">) {

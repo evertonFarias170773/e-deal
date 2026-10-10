@@ -165,12 +165,13 @@ As datas pequenas aparecem como dia/mês e hora, no horário de Brasília.
 9. **Gerar OC**: gera a OC do pedido e abre em nova aba. Mesmo conteúdo do PDF, com o título "Autorização de faturamento", a entrega, o envio e o campo de assinatura do cliente. As exigências são as mesmas do PDF.
 10. **Abrir DANFE (PDF)** e **Baixar XML**: aparecem quando o pedido tem nota autorizada.
 11. **Gerar cobrança**: abre a geração de cobrança. Não aparece em pedido sem cliente cadastrado.
-12. **Cancelar proposta**: abre a janela de cancelamento, que exige o **Motivo do Cancelamento**.
-13. **Liberar para Produção**: aparece para quem tem a permissão "Liberar para Produção", em pedido não avulso que está em REVISAO ATENDENTE e ainda não foi liberado. Depois de liberado, no lugar dela fica o aviso **✓ Liberada para produção**, que não é clicável.
-14. **Rastrear objeto**: aparece quando o envio é pelos Correios e já existe código de rastreio.
-15. **Encerrar teste** ou **Reabrir (desfazer encerramento de teste)**.
-16. **Voltar para a Fila de Faturamento (desfazer nota no sistema antigo)**: aparece só no pedido com a marca "faturado no sistema antigo".
-17. **Retirar da Produção**: último item do menu, só em pedido já liberado.
+12. **Confirmar Conferência**: aparece só para administrador, no pedido que tem cobrança na Fila de Conferência (paga e ainda não conferida, ou faturado a vencer já autorizado). É a mesma ação da tela Conferência: abre a janela **Confirmar Liberação Operacional**, e **Confirmar Liberação** grava a conferência pela rota oficial, que confere a permissão no servidor. Com mais de uma cobrança na Fila, o menu traz uma opção por cobrança, com a forma e o valor. Depois de confirmar, a lista atualiza e a opção some do pedido. Se a cobrança já foi conferida por outra pessoa, o sistema avisa e só atualiza a lista.
+13. **Cancelar proposta**: abre a janela de cancelamento, que exige o **Motivo do Cancelamento**.
+14. **Liberar para Produção**: aparece para quem tem a permissão "Liberar para Produção", em pedido não avulso que está em REVISAO ATENDENTE e ainda não foi liberado. Depois de liberado, no lugar dela fica o aviso **✓ Liberada para produção**, que não é clicável.
+15. **Rastrear objeto**: aparece quando o envio é pelos Correios e já existe código de rastreio.
+16. **Encerrar teste** ou **Reabrir (desfazer encerramento de teste)**.
+17. **Voltar para a Fila de Faturamento (desfazer nota no sistema antigo)**: aparece só no pedido com a marca "faturado no sistema antigo".
+18. **Retirar da Produção**: último item do menu, só em pedido já liberado.
 
 ### Liberar um pedido para a produção
 
@@ -282,6 +283,7 @@ As datas pequenas aparecem como dia/mês e hora, no horário de Brasília.
 Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê esta lista: quando um deles muda e a ficha não, ele avisa. Um caminho por item, entre crases, a partir da raiz do repositório; pasta termina com `/` e vale para tudo dentro dela.
 
 - `src/features/orcamentos/OrcamentosListPageReal.tsx`
+- `src/features/orcamentos/lib/cobrancas-na-fila.ts`
 - `src/features/orcamentos/lib/empresa-pdf.ts`
 - `src/features/orcamentos/services/orcamentos.service.ts`
 - `src/features/orcamentos/lib/padrao-busca.ts`

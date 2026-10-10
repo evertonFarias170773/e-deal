@@ -61,6 +61,14 @@ import { useDebouncedInput } from "@/hooks/useDebouncedValue";
 import { PropostaCobrancaPanel } from "@/features/cobrancas/PropostaCobrancaPanel";
 import { LiberarProducaoModal } from "@/features/orcamentos/components/LiberarProducaoModal";
 import { CancelPropostaModal } from "@/features/orcamentos/components/CancelPropostaModal";
+import { ConfirmarLiberacaoModal } from "@/features/cobrancas/ConfirmarLiberacaoModal";
+import { isFilaPadrao } from "@/features/cobrancas/cobrancas-utils";
+import { lerCobrancaPorId } from "@/features/cobrancas/services/pagamentos-v2.service";
+import type { Cobranca } from "@/features/cobrancas/types";
+import {
+  podeVerConfirmarConferenciaNaLista,
+  rotuloDaOpcaoDeConferencia
+} from "@/features/orcamentos/lib/cobrancas-na-fila";
 import { CriarComplementoModal } from "@/features/orcamentos/components/CriarComplementoModal";
 import type { Proposta } from "@/features/orcamentos/types";
 import { copiarLinkPagamentoExterno } from "@/features/area-cliente/lib/copiar-link-pagamento";
@@ -465,6 +473,10 @@ export function OrcamentosListPageReal() {
   const [selectedPropostaForCancel, setSelectedPropostaForCancel] = useState<OrcamentoListItem | null>(null);
 
   const [selectedPropostaForComplemento, setSelectedPropostaForComplemento] = useState<OrcamentoListItem | null>(null);
+
+  // "Confirmar Conferência" no menu Ações: a cobrança aberta no modal da Conferência.
+  const [cobrancaParaConferir, setCobrancaParaConferir] = useState<Cobranca | null>(null);
+  const [abrindoConferenciaId, setAbrindoConferenciaId] = useState<string | null>(null);
 
   // 100, e nao 200: a consulta custa menos de 1 ms, mas cada linha e DOM e
   // payload — 200 linhas eram ~96 kB e o dobro de render antes de a tela ficar
@@ -1338,6 +1350,39 @@ export function OrcamentosListPageReal() {
     }
   }
 
+  /**
+   * "Confirmar Conferência" pelo menu Ações — a MESMA ação da Conferência.
+   *
+   * Aqui só se ABRE o mesmo modal (`ConfirmarLiberacaoModal`), que confirma pela
+   * rota oficial `POST /api/cobrancas/confirmar`: permissão conferida no
+   * servidor, cobrança já confirmada responde "já estava confirmada" sem gravar
+   * de novo, `confirmado_por` e `data_confirmacao` gravados pela rota, e o
+   * alerta de quitação quando a cobrança não fecha o pedido. A opção só aparece
+   * para a cobrança que a Fila da Conferência (`isFilaPadrao`) aponta.
+   *
+   * A cobrança é relida antes de abrir: o modal precisa do objeto completo, e
+   * se ela já saiu da Fila (outra pessoa conferiu) a lista só é atualizada.
+   */
+  async function abrirConferenciaDaCobranca(idCobranca: string) {
+    if (abrindoConferenciaId) return;
+    setAbrindoConferenciaId(idCobranca);
+    try {
+      const cobranca = await lerCobrancaPorId(idCobranca);
+      if (!cobranca) {
+        showToast({ type: "error", title: "Não foi possível abrir a conferência", description: "A cobrança não foi encontrada. Atualize a lista e tente de novo." });
+        return;
+      }
+      if (!isFilaPadrao(cobranca)) {
+        showToast({ type: "info", title: "Esta cobrança já não está na Fila de Conferência", description: "A lista foi atualizada." });
+        triggerRefresh();
+        return;
+      }
+      setCobrancaParaConferir(cobranca);
+    } finally {
+      setAbrindoConferenciaId(null);
+    }
+  }
+
   async function handleOpenCobrancaModal(item: OrcamentoListItem) {
     if (isLoadingCobrancaProposta) return;
     setIsLoadingCobrancaProposta(true);
@@ -1498,6 +1543,8 @@ export function OrcamentosListPageReal() {
   const canLiberarProducao = Boolean(
     user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "propostas.release_producao")
   );
+  // Só ADM vê "Confirmar Conferência" aqui; a rota confere a permissão no servidor.
+  const canConfirmarConferenciaNaLista = podeVerConfirmarConferenciaNaLista(user);
   const [encerrandoTesteId, setEncerrandoTesteId] = useState<number | null>(null);
 
   async function handleEncerrarTeste(item: OrcamentoListItem, encerrar: boolean) {
@@ -1687,6 +1734,14 @@ Ela volta a aparecer nas listas operacionais.`
           }]
         : []),
       ...(!isClienteNaoCadastrado ? [{ label: "Gerar cobrança", onClick: () => void handleOpenCobrancaModal(item) }] : []),
+      // Uma opção por cobrança que está na Fila de Conferência (ver `abrirConferenciaDaCobranca`).
+      ...(canConfirmarConferenciaNaLista
+        ? item.cobrancasNaFila.map((cobrancaNaFila) => ({
+            label: rotuloDaOpcaoDeConferencia(cobrancaNaFila, item.cobrancasNaFila.length),
+            disabled: abrindoConferenciaId !== null,
+            onClick: () => void abrirConferenciaDaCobranca(cobrancaNaFila.id)
+          }))
+        : []),
       ...(canCancelarProposta && item.status !== "CANCELADO" ? [{
         label: "Cancelar proposta",
         destructive: true,
@@ -2549,6 +2604,16 @@ Ela volta a aparecer nas listas operacionais.`
             setSelectedPropostaForCancel(null);
             triggerRefresh();
           }}
+        />
+      )}
+
+      {cobrancaParaConferir && (
+        <ConfirmarLiberacaoModal
+          isOpen
+          cobranca={cobrancaParaConferir}
+          onClose={() => setCobrancaParaConferir(null)}
+          // A rota já respondeu quando o modal chama isto: a lista relê e a opção some do pedido.
+          onSuccess={() => triggerRefresh()}
         />
       )}
 

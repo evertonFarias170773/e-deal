@@ -16,6 +16,7 @@ import {
 } from "@/features/orcamentos/lib/bonus-da-proposta";
 import { gravarBonusDaVenda, lerBonusGravado } from "@/features/orcamentos/services/bonus-da-proposta.service";
 import { totaisDaProposta } from "@/features/orcamentos/lib/total-da-proposta";
+import { cobrancasNaFilaPorPedido, type CobrancaNaFilaDaLista } from "@/features/orcamentos/lib/cobrancas-na-fila";
 import {
   congelarChecklistDosItensNovos,
   type ItemNovoParaCongelar
@@ -1178,6 +1179,8 @@ async function fetchPropostaRows(
      * lista exibir ao lado dele.
      */
     const pagoAConfirmarSet = new Set<string>();
+    // Cobranças na Fila de Conferência, por pedido (menu Ações da lista).
+    let cobrancasNaFilaPorId = new Map<string, CobrancaNaFilaDaLista[]>();
     // Registro mais recente de `pagamentos_v2` de cada pedido (26/09/2026): a data
     // abaixo do valor na lista. Qualquer status conta — e o ultimo registro.
     const ultimoPagamentoPorId = new Map<string, string>();
@@ -1185,11 +1188,15 @@ async function fetchPropostaRows(
     if (proposalIds.length) {
       const { data: paymentData, error: paymentError } = await client
         .from("pagamentos_v2")
-        .select("id_int,tipo_cobranca,status,confirmado,created_at")
+        // `id`, `confirmado_por`, `paid_at` e `valor` entram na MESMA leitura (nenhuma
+        // consulta a mais): a Fila de Conferência (`isFilaPadrao`) precisa dos três
+        // primeiros, e o menu Ações do valor.
+        .select("id,id_int,tipo_cobranca,status,confirmado,confirmado_por,paid_at,valor,created_at")
         .in("id_int", proposalIds)
         .returns<SupabasePagamentoTipoCobrancaRow[]>();
 
       if (!paymentError && Array.isArray(paymentData)) {
+        cobrancasNaFilaPorId = cobrancasNaFilaPorPedido(paymentData);
         paymentData.forEach((row) => {
           const idDoRegistro = row.id_int === null || row.id_int === undefined ? "" : String(row.id_int);
           const criadoEm = row.created_at ? String(row.created_at) : "";
@@ -1298,6 +1305,7 @@ async function fetchPropostaRows(
       ...row,
       tipos_cobranca: paymentMap.get(String(row.id_int ?? "")) ?? [],
       pago_a_confirmar: pagoAConfirmarSet.has(String(row.id_int ?? "")),
+      cobrancas_na_fila: cobrancasNaFilaPorId.get(String(row.id_int ?? "")) ?? [],
       ultimo_pagamento_em: ultimoPagamentoPorId.get(String(row.id_int ?? "")) ?? null,
       grupo_conferencia: idsAguardandoFinanceiro.has(Number(row.id_int))
         ? "AGUARDANDO_FINANCEIRO"

@@ -2,6 +2,7 @@ import type { SupabasePropostaRow } from "@/features/orcamentos/types.supabase";
 import { nomeTransporteEfetivo } from "@/features/orcamentos/lib/modalidade-frete";
 import type { ModalidadeFrete } from "@/features/orcamentos/lib/modalidade-frete";
 import type { DanfeDoPedido } from "@/lib/fiscal/danfes-do-pedido";
+import type { CobrancaNaFilaDaLista } from "@/features/orcamentos/lib/cobrancas-na-fila";
 
 export function composeStatusEmArte(baseStatus: string, emArte: boolean | undefined): string {
   if (!baseStatus) return "SEM_STATUS";
@@ -64,6 +65,12 @@ export type OrcamentoListItem = {
    * "não pagou" de "pagou e falta confirmar".
    */
   pagoAConfirmar: boolean;
+  /**
+   * As cobranças deste pedido que estão na FILA DE CONFERÊNCIA hoje, pelo mesmo
+   * critério da Conferência (`isFilaPadrao`). Alimenta "Confirmar Conferência"
+   * no menu Ações. Vazio = o pedido não está na Fila.
+   */
+  cobrancasNaFila: CobrancaNaFilaDaLista[];
   /**
    * A nota fiscal AUTORIZADA que representa a proposta, ou `null`.
    *
@@ -455,6 +462,9 @@ function mapRowToListItem(row: SupabasePropostaRow): OrcamentoListItem | null {
     tiposCobranca,
     tipoCobrancaLabel: getTipoCobrancaLabel(tiposCobranca),
     pagoAConfirmar: (row as { pago_a_confirmar?: unknown }).pago_a_confirmar === true,
+    cobrancasNaFila: Array.isArray((row as { cobrancas_na_fila?: unknown }).cobrancas_na_fila)
+      ? ((row as { cobrancas_na_fila: CobrancaNaFilaDaLista[] }).cobrancas_na_fila)
+      : [],
     // Ja vem resolvido do service: a escolha entre varias notas do mesmo
     // pedido acontece la, junto da carga em lote, e nao por linha aqui.
     notaEmitida:

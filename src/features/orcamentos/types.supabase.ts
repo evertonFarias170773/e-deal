@@ -35,10 +35,14 @@ export type SupabasePropostaRow = Record<string, SupabaseValue> & {
 };
 
 export type SupabasePagamentoTipoCobrancaRow = {
+  id?: SupabaseValue;
   id_int?: SupabaseValue;
   tipo_cobranca?: SupabaseValue;
   status?: SupabaseValue;
   confirmado?: SupabaseValue;
+  confirmado_por?: SupabaseValue;
+  paid_at?: SupabaseValue;
+  valor?: SupabaseValue;
   created_at?: SupabaseValue;
 };
 

@@ -31,6 +31,7 @@ import {
   contaNoFaturamento,
   isCobrancaEFaturado,
   isFamiliaFaturado,
+  isFilaPadrao,
   isPendenteAprovacao,
   montarTextoConferenciaOsIdeal
 } from "@/features/cobrancas/cobrancas-utils";
@@ -74,23 +75,6 @@ const tipoFiltroOptions: Array<{ value: TipoFiltro; label: string }> = [
 function isEmpresaValida(cobranca: Pick<Cobranca, "id_empresa">) {
   const idEmpresa = Number(cobranca.id_empresa);
   return Number.isFinite(idEmpresa) && idEmpresa !== 0;
-}
-
-// Regra definitiva: status PAID/A_VENCER indica condição financeira. confirmado=false indica aguardando conferência humana. confirmado=true indica liberado para produção.
-function isFilaPadrao(cobranca: Cobranca) {
-  const status = (cobranca.status || "").trim().toUpperCase();
-
-  if (status === "CANCELADO") return false;
-
-  if (status === "PAID" && cobranca.confirmado === false) {
-    return true;
-  }
-
-  if (status === "A_VENCER" && cobranca.confirmado === false) {
-    return !isPendenteAprovacao(cobranca);
-  }
-
-  return false;
 }
 
 // confirmado=true em pagamentos_v2 representa liberação operacional da cobrança para os próximos fluxos. Não significa criação de pedido de produção nem geração de OS física.
