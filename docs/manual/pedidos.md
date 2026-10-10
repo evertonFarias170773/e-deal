@@ -105,6 +105,8 @@ Os cards respeitam os filtros de modelo, vendedor e tipo de cobrança.
 
 ### Filtrar a lista
 
+Cada filtro da barra tem um título pequeno acima dele, com o nome do que ele filtra: **Status**, **Modelo**, **Produto**, **Vendedor**, **Cobrança** e **Período**. Embaixo do título fica o valor escolhido, como "Todos status" ou "15 dias".
+
 1. **Todos status**: escolha um status para ver só os pedidos nele. A opção EM ARTE traz todos os que têm "/ EM ARTE" no status. Escolher um status desliga o card que estiver ligado.
 2. **Todos modelos**: AVULSO, PROPOSTA ou ENCERRADOS (teste). Esta última mostra só os pedidos de teste encerrados.
 3. **Todos produtos**: abre uma lista com busca por **Código ou nome**. Mostra os pedidos que têm pelo menos um item daquele produto. Produtos desativados aparecem com a marca "inativo".

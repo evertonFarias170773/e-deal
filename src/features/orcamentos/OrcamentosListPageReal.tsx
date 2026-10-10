@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { BadgeCheck, CalendarDays, CreditCard, FileText, Loader2, Search, WalletCards, MessageSquare, Paperclip, Palette, Printer, Link as LinkIcon } from "lucide-react";
 import { ActionsMenu } from "@/components/common/ActionsMenu";
@@ -75,6 +75,37 @@ import { copiarLinkPagamentoExterno } from "@/features/area-cliente/lib/copiar-l
 
 
 const filterClass = "rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none";
+/** Largura cheia dentro do bloco do rotulo: sem o grid esticando, o select voltaria ao tamanho do texto. */
+const filterSelectClass = `${filterClass} w-full`;
+
+/**
+ * Titulo pequeno acima de um filtro da barra (10/10/2026). Os filtros so mostravam
+ * o valor escolhido ("Todos status", "15 dias"), e nao dava para saber o que cada
+ * um filtra. Mesmo estilo de rotulo de campo das demais telas. Com `htmlFor` e um
+ * `<label>`; sem ele (o filtro de produto e um botao proprio) e um grupo rotulado.
+ */
+function CampoFiltro({ titulo, htmlFor, children }: { titulo: string; htmlFor?: string; children: ReactNode }) {
+  const classeTitulo = "text-[11px] font-bold uppercase tracking-wider text-slate-500";
+  if (htmlFor) {
+    return (
+      <div className="flex min-w-0 flex-col gap-1">
+        <label htmlFor={htmlFor} className={classeTitulo}>
+          {titulo}
+        </label>
+        {children}
+      </div>
+    );
+  }
+  const idTitulo = `titulo-filtro-${titulo.toLowerCase()}`;
+  return (
+    <div className="flex min-w-0 flex-col gap-1" role="group" aria-labelledby={idTitulo}>
+      <span id={idTitulo} className={classeTitulo}>
+        {titulo}
+      </span>
+      {children}
+    </div>
+  );
+}
 
 /**
  * Proposta parada esperando o atendente olhar. É a fila que trava o fluxo, e por
@@ -1923,7 +1954,7 @@ Ela volta a aparecer nas listas operacionais.`
       )}
 
       <section className="rounded-3xl border border-[#d7e5e8] bg-white p-4 shadow-sm">
-        <div className="grid gap-3 xl:grid-cols-[1fr_170px_170px_190px_170px_150px_auto]">
+        <div className="grid gap-3 xl:grid-cols-[1fr_170px_170px_190px_170px_150px_auto] xl:items-end">
           <label className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
             {buscando ? (
               <Loader2 className="h-4 w-4 shrink-0 animate-spin text-[#0f9f9a]" aria-hidden="true" />
@@ -1940,61 +1971,74 @@ Ela volta a aparecer nas listas operacionais.`
             {buscando ? <span className="shrink-0 text-xs font-medium text-[#0f9f9a]">Buscando...</span> : null}
           </label>
 
-          <select
-            value={status}
-            onChange={(event) => setFilters({ status: event.target.value, card: null })}
-            className={filterClass}
-          >
-            <option value="TODOS">Todos status</option>
-            {statusOptions.filter((item) => item !== "TODOS").map((option) => (
-              <option key={option} value={option}>
-                {option}
-              </option>
-            ))}
-          </select>
+          <CampoFiltro titulo="Status" htmlFor="filtro-status">
+            <select
+              id="filtro-status"
+              value={status}
+              onChange={(event) => setFilters({ status: event.target.value, card: null })}
+              className={filterSelectClass}
+            >
+              <option value="TODOS">Todos status</option>
+              {statusOptions.filter((item) => item !== "TODOS").map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
+          </CampoFiltro>
 
-          <select value={modelo} onChange={(event) => setFilter("modelo", event.target.value)} className={filterClass}>
-            {modeloOptions.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
+          <CampoFiltro titulo="Modelo" htmlFor="filtro-modelo">
+            <select id="filtro-modelo" value={modelo} onChange={(event) => setFilter("modelo", event.target.value)} className={filterSelectClass}>
+              {modeloOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </CampoFiltro>
 
-          <FiltroProdutoDrop
-            opcoes={opcoesProduto}
-            selecionado={idProdutoFiltro}
-            onSelecionar={(id) => setFilter("prod", id === null ? "TODOS" : String(id))}
-            className={filterClass}
-            carregando={carregandoProdutos}
-          />
+          <CampoFiltro titulo="Produto">
+            <FiltroProdutoDrop
+              opcoes={opcoesProduto}
+              selecionado={idProdutoFiltro}
+              onSelecionar={(id) => setFilter("prod", id === null ? "TODOS" : String(id))}
+              className={`${filterSelectClass} h-12`}
+              carregando={carregandoProdutos}
+            />
+          </CampoFiltro>
 
-          <select value={vendedor} onChange={(event) => setFilter("vend", event.target.value)} className={filterClass}>
-            <option value="TODOS">Todos vendedores</option>
-            {vendedorOptions.map((option) => (
-              <option key={option} value={option}>
-                {option}
-              </option>
-            ))}
-          </select>
+          <CampoFiltro titulo="Vendedor" htmlFor="filtro-vendedor">
+            <select id="filtro-vendedor" value={vendedor} onChange={(event) => setFilter("vend", event.target.value)} className={filterSelectClass}>
+              <option value="TODOS">Todos vendedores</option>
+              {vendedorOptions.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
+          </CampoFiltro>
 
-          <select value={filterTipoCobranca} onChange={(event) => setFilter("cob", event.target.value as TipoCobrancaFiltro)} className={filterClass}>
-            <option value="TODOS">Todas cobranças</option>
-            <option value="PIX">PIX</option>
-            <option value="BOLETO">BOLETO</option>
-            <option value="E-FATURADO">E-FATURADO</option>
-            <option value="CARTAO">CARTÃO</option>
-          </select>
+          <CampoFiltro titulo="Cobrança" htmlFor="filtro-cobranca">
+            <select id="filtro-cobranca" value={filterTipoCobranca} onChange={(event) => setFilter("cob", event.target.value as TipoCobrancaFiltro)} className={filterSelectClass}>
+              <option value="TODOS">Todas cobranças</option>
+              <option value="PIX">PIX</option>
+              <option value="BOLETO">BOLETO</option>
+              <option value="E-FATURADO">E-FATURADO</option>
+              <option value="CARTAO">CARTÃO</option>
+            </select>
+          </CampoFiltro>
 
-          <select value={periodo} onChange={(event) => setFilter("periodo", event.target.value)} className={filterClass}>
-            {periodOptions.map((option) => (
-              <option key={option.value} value={option.value}>
-                {/* Curto quando existe; o `value` nao muda, e o rodape dos cards
-                    segue com o `label` por extenso. */}
-                {option.labelCurto ?? option.label}
-              </option>
-            ))}
-          </select>
+          <CampoFiltro titulo="Período" htmlFor="filtro-periodo">
+            <select id="filtro-periodo" value={periodo} onChange={(event) => setFilter("periodo", event.target.value)} className={filterSelectClass}>
+              {periodOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {/* Curto quando existe; o `value` nao muda, e o rodape dos cards
+                      segue com o `label` por extenso. */}
+                  {option.labelCurto ?? option.label}
+                </option>
+              ))}
+            </select>
+          </CampoFiltro>
 
           <button
             type="button"
