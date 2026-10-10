@@ -1,6 +1,6 @@
 # Conferência
 
-> **Última revisão:** 09/10/2026
+> **Última revisão:** 10/10/2026
 > **Caminho no menu:** Conferência (primeiro item do menu lateral; é um link direto, sem subitens)
 > **Endereço:** `/cobrancas` (o detalhe de uma cobrança abre em `/cobrancas/<cobrança>`)
 
@@ -15,6 +15,7 @@ No topo da tela, o título é **Conferência de pagamentos**. A lista tem as col
 - Vê a tela quem tem a permissão **Visualizar Conferência** no perfil, além de administradores.
 - **Confirmar Conferência** e **Voltar para lista principal** aparecem no menu de ações para administradores e para quem tem a permissão **Confirmar Pagamento**.
 - **Analisar condição** (aprovar, alterar ou reprovar um faturamento) aparece para administradores e para quem tem a permissão **Liberar OS / Confirmar**. Para a aprovação ser gravada, o usuário também precisa da permissão **Confirmar Pagamento**.
+- **Autorizar e conferir**, na aba **Aprovar** da mesma janela, exige as duas permissões: **Liberar OS / Confirmar** e **Confirmar Pagamento** (administradores têm as duas). O botão só aparece para quem tem as duas, e o servidor confere de novo.
 - **Cancelar cobrança** de uma cobrança que ainda não foi paga fica habilitado para administradores e para quem tem **Cancelar / Estornar Cobranças** ou **Cancelar Cobrança Não Paga**. Além da permissão, é preciso ter acesso à proposta daquela cobrança.
 - **Cancelar cobrança** de uma cobrança já paga só fica habilitado para super administrador, e mesmo para ele a tela recusa o cancelamento (veja "Regras e bloqueios").
 - As demais ações do menu (ver cobrança, abrir proposta, ver cliente, chat, copiar PIX, copiar linha digitável, nova tarefa) ficam disponíveis para quem vê a tela.
@@ -60,6 +61,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Entendi, voltar** | Alerta **Não é possível confirmar esta cobrança** | Fecha o alerta. |
 | **Aprovar**, **Alterar**, **Reprovar** | Abas da janela **Análise de Faturamento** | Escolhem o que fazer com a condição pedida pelo vendedor. |
 | **Confirmar Autorização** | Janela **Análise de Faturamento**, aba **Aprovar** | Autoriza o faturamento e o envia para a Fila de Conferência. |
+| **Autorizar e conferir** | Janela **Análise de Faturamento**, aba **Aprovar**, ao lado de **Confirmar Autorização**; só em faturamento que espera a autorização | Autoriza o faturamento e já confirma a conferência, sem passar pela Fila de Conferência. |
 | **Alterar Condição** | Janela **Análise de Faturamento**, aba **Alterar** | Troca a condição de pagamento; a cobrança continua aguardando análise. |
 | **Reprovar e cancelar cobrança** | Janela **Análise de Faturamento**, aba **Reprovar** | Reprova a condição, cancela a cobrança e devolve a proposta para NOVO. |
 | **Salvar empresa** | Janela **Atualizar empresa** | Grava a empresa escolhida na cobrança pendente. |
@@ -115,6 +117,7 @@ A cobrança perde a data e o nome de quem confirmou e volta para a **Fila de Con
 2. Abra o menu de ações da linha e clique em **Analisar condição**. Abre a janela **Análise de Faturamento**, com cliente, proposta, valor e a **Condição Solicitada** pelo vendedor.
 3. Escolha uma das três abas:
    - **Aprovar**: escreva uma observação, se quiser, e clique em **Confirmar Autorização**. A cobrança passa para **Faturamento autorizado / A liberar** e entra na Fila de Conferência. A aprovação vale só para esta cobrança; não altera o limite de crédito do cliente.
+   - **Aprovar e já conferir**: na mesma aba, clique em **Autorizar e conferir** em vez de **Confirmar Autorização**. A cobrança é autorizada e conferida de uma vez: não passa pela Fila de Conferência e vai direto para **Cobranças Confirmadas**, com o seu nome como autor da autorização e da conferência. O chat da proposta recebe uma mensagem só, dizendo que o faturamento foi autorizado e conferido. O que acontece com o pedido é o mesmo de **Confirmar Conferência** (veja acima). A trava de valor também é a mesma: se a conferência seria recusada por a soma das cobranças ser menor que o total do pedido, aparece o alerta e nada é gravado.
    - **Alterar**: escolha a **Nova Condição de Pagamento** e clique em **Alterar Condição**. A condição muda, a troca fica registrada no chat da proposta e a cobrança continua aguardando análise.
    - **Reprovar**: preencha o **Motivo da Reprovação (Obrigatório)** e clique em **Reprovar e cancelar cobrança**. A cobrança é cancelada, a proposta volta para **NOVO** e o vendedor é avisado no chat, com o motivo.
 
@@ -184,6 +187,7 @@ O que entra e o que não entra na fila:
 - Faturamento que ainda espera a análise do financeiro não entra na fila. Fica no card **Pendentes de aprovação** (ou no filtro **Pendentes aprovação**), com o status **Aguardando financeiro**.
 - Cobrança cancelada só aparece no filtro **Cancelados**.
 - Cobrança já conferida sai da fila e passa para a aba **Cobranças Confirmadas**.
+- **Autorizar e conferir** só aparece em faturamento que espera a autorização (**Aguardando financeiro**). Faturamento já autorizado, que está na fila, se confere pelo **Confirmar Conferência**: a autorização de quem aprovou antes não é refeita. Clicar de novo, ou duas pessoas ao mesmo tempo, não gera segunda confirmação: a segunda chamada não grava nada e o chat não repete a mensagem.
 - Faturamento só entra na fila depois de autorizado. O E-Faturado é autorizado sozinho, na criação, quando o cliente não tem restrição, não tem faturamento vencido e o limite de crédito comporta este e os demais faturamentos pendentes. E-Permuta, E-Amostra e E-Retrabalho sempre esperam a análise do financeiro.
 - A tela carrega no máximo 30.000 cobranças, das mais novas para as mais antigas. Se o total passar disso, aparece o aviso **Lista incompleta** e, até o suporte resolver, a aba Pagamentos das propostas não mostra as cobranças nem deixa gerar cobrança nova.
 - E-Amostra e E-Retrabalho já conferidos não aparecem na aba **Cobranças Confirmadas**, pelo mesmo motivo de não entrarem no faturamento. Para consultá-los, abra a proposta.
@@ -233,6 +237,7 @@ Outros:
 
 ## O que não confundir
 
+- **Confirmar Autorização** e **Autorizar e conferir**: o primeiro só autoriza, e a cobrança ainda espera a conferência na fila; o segundo autoriza e confere de uma vez, e a cobrança não passa pela fila.
 - **Analisar condição** e **Confirmar Conferência**: a primeira autoriza (ou altera, ou reprova) a condição de um faturamento; a segunda confere a cobrança e faz o pedido andar. Autorizar não é conferir: depois de autorizado, o faturamento ainda precisa da conferência.
 - **Analisar condição** e **Analisar crédito**: a primeira decide sobre a condição de pagamento desta cobrança; a segunda mostra o limite e a situação de crédito do cliente e permite mudar o limite.
 - **Aguardando financeiro** e **Faturamento autorizado / A liberar**: no primeiro o faturamento ainda espera a autorização; no segundo já foi autorizado e espera a conferência.
@@ -256,6 +261,9 @@ Outros:
 | O que aparece | Por que acontece | O que fazer |
 |---|---|---|
 | "Não é possível confirmar esta cobrança — A soma das cobranças é inferior ao total da proposta." | O pedido tem mais de uma cobrança e, mesmo contando esta, o total não é coberto. | Veja o resumo no alerta. Cadastre a cobrança que falta na proposta ou corrija o valor do pedido, e confirme de novo. |
+| "Esta cobrança não está aguardando a autorização do financeiro. Atualize a lista; se ela já foi autorizada, confirme pela Fila de Conferência." | Ao clicar em **Autorizar e conferir**, a cobrança já tinha sido autorizada, confirmada ou paga por outra pessoa. | Atualize a lista. Se ela estiver na fila, use **Confirmar Conferência**. |
+| "A cobrança mudou enquanto era processada. Atualize a lista e confira o estado antes de tentar de novo." | Alguém mudou a cobrança (por exemplo, cancelou) no mesmo instante em que você autorizava e conferia. Nada foi gravado. | Atualize a lista e confira o estado da cobrança. |
+| "Sem permissão para autorizar faturamento." | Ao usar **Autorizar e conferir**, o perfil não tem **Liberar OS / Confirmar**. | Peça a um administrador para ajustar o perfil ou fazer a autorização. |
 | "Sem permissão para confirmar cobrança." | O perfil não tem **Confirmar Pagamento**. | Peça a um administrador para ajustar o perfil ou fazer a confirmação. |
 | "Não é possível confirmar uma cobrança com status inválido." | A cobrança foi cancelada enquanto a tela estava aberta. | Atualize a tela. |
 | "Esta cobrança foi cancelada e consta como paga. Não confirme: o dinheiro pode ter entrado em duplicidade. Avise a gestão para decidir entre reativar ou devolver." | A cobrança foi cancelada e depois o banco informou o pagamento dela. Na lista ela aparece com o selo vermelho **Cancelada e paga: não confirmar**. | Não confirme e não gere outra cobrança. Avise a gestão, com o número do pedido. |
@@ -303,6 +311,7 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/features/cobrancas/CobrancaHistoricoPanel.tsx`
 - `src/features/cobrancas/ConfirmarLiberacaoModal.tsx`
 - `src/features/cobrancas/lib/confirmar-conferencia.ts`
+- `src/features/cobrancas/lib/autorizar-e-conferir.ts`
 - `src/features/cobrancas/lib/recarga-em-ordem.ts`
 - `src/features/cobrancas/lib/limite-da-carga.ts`
 - `src/features/cobrancas/lib/cancelada-que-consta-paga.ts`

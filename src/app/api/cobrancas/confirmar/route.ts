@@ -11,6 +11,11 @@ import {
   MENSAGEM_CANCELADA_E_PAGA,
   confirmacaoDeveSerRecusada
 } from "@/features/cobrancas/lib/cancelada-que-consta-paga";
+import {
+  ACAO_AUTORIZAR_E_CONFERIR,
+  montarPayloadAutorizarEConferir,
+  podeAutorizarEConferir
+} from "@/features/cobrancas/lib/autorizar-e-conferir";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 type UsuarioMinRow = {
@@ -45,6 +50,9 @@ export async function POST(request: NextRequest) {
 
   // 1. Validar permissão (conferencia.confirm)
   let temPermissao = false;
+  // cobrancas.aprovar (ou administrador): quem abre a Análise de Faturamento.
+  // Só a ação "autorizar e conferir" exige, além de conferencia.confirm.
+  let temAprovarCobranca = false;
   {
     const { data: usuarioData } = await supabase
       .from("usuarios")
@@ -56,6 +64,7 @@ export async function POST(request: NextRequest) {
       const row = usuarioData as UsuarioMinRow;
       if (row.is_super_adm || row.is_admin) {
         temPermissao = true;
+        temAprovarCobranca = true;
       } else if (row.id_perfil != null) {
         const { data: perfilData } = await supabase
           .from("perfis")
@@ -66,6 +75,7 @@ export async function POST(request: NextRequest) {
         if (perfilData) {
           const permissoes: string[] = Array.isArray(perfilData.permissoes) ? perfilData.permissoes : [];
           temPermissao = permissoes.includes("*") || permissoes.includes("conferencia.confirm");
+          temAprovarCobranca = permissoes.includes("*") || permissoes.includes("cobrancas.aprovar");
         }
       }
     }
@@ -86,6 +96,23 @@ export async function POST(request: NextRequest) {
   const { idCobranca, confirmadoPor, acao } = body;
   if (!idCobranca) {
     return NextResponse.json({ success: false, error: "idCobranca obrigatório." }, { status: 400 });
+  }
+
+  // "Autorizar e conferir" (10/10/2026, ver lib/autorizar-e-conferir): a
+  // permissão é checada AQUI, não só no botão. Quem confere (conferencia.confirm,
+  // acima) tem de poder também autorizar (cobrancas.aprovar ou administrador),
+  // e a autoria precisa de nome: confirmado_por é obrigatório no banco.
+  const ehAutorizarEConferir = acao === ACAO_AUTORIZAR_E_CONFERIR;
+  if (ehAutorizarEConferir) {
+    if (!temAprovarCobranca) {
+      return NextResponse.json(
+        { success: false, error: "Sem permissão para autorizar faturamento." },
+        { status: 403 }
+      );
+    }
+    if (!String(confirmadoPor ?? "").trim()) {
+      return NextResponse.json({ success: false, error: "Informe quem está autorizando." }, { status: 400 });
+    }
   }
 
   try {
@@ -122,7 +149,23 @@ export async function POST(request: NextRequest) {
 
     const isAutorizacao = acao === "autorizar_faturamento";
     if (!isAutorizacao && cobranca.confirmado) {
-      return NextResponse.json({ success: true, message: "Cobrança já estava confirmada." }); // Idempotente
+      // Idempotente. `jaConfirmada` deixa quem chamou saber que NÃO foi esta
+      // chamada que confirmou (a tela não repete a mensagem do chat).
+      return NextResponse.json({ success: true, jaConfirmada: true, message: "Cobrança já estava confirmada." });
+    }
+
+    // "Autorizar e conferir" só vale para faturamento que espera a autorização
+    // do financeiro e que, autorizado, iria para a Fila de Conferência. Fora
+    // disso o fluxo é o de sempre (Confirmar Conferência).
+    if (ehAutorizarEConferir && !podeAutorizarEConferir(cobranca)) {
+      return NextResponse.json(
+        {
+          success: false,
+          code: "NAO_PENDENTE_DE_AUTORIZACAO",
+          error: "Esta cobrança não está aguardando a autorização do financeiro. Atualize a lista; se ela já foi autorizada, confirme pela Fila de Conferência."
+        },
+        { status: 409 }
+      );
     }
 
     // 4. Executar helper (calcularSituacaoQuitacaoProposta) para bloquear se parcial
@@ -143,6 +186,17 @@ export async function POST(request: NextRequest) {
     if (isAutorizacao) {
       payloadUpdate.status = "A_VENCER";
       payloadUpdate.aprovado_por = confirmadoPor;
+    } else if (ehAutorizarEConferir) {
+      // Os dois passos num UPDATE só: a mesma soma do que a autorização e a
+      // confirmação gravam separadas (ver lib/autorizar-e-conferir).
+      Object.assign(
+        payloadUpdate,
+        montarPayloadAutorizarEConferir(cobranca, {
+          confirmadoPor: String(confirmadoPor).trim(),
+          agoraIso: new Date().toISOString(),
+          quitaNaLiberacao: quitaNaLiberacao(cobranca.tipo_cobranca)
+        })
+      );
     } else {
       const agora = new Date().toISOString();
       payloadUpdate.confirmado = true;
@@ -164,13 +218,53 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const { error: updateErr } = await supabase
-      .from("pagamentos_v2")
-      .update(payloadUpdate)
-      .eq("id", idCobranca);
+    if (ehAutorizarEConferir) {
+      // Só grava se a linha AINDA é a que foi lida: mesmo status e ainda não
+      // confirmada. É o que faz um segundo clique (ou um clique concorrente)
+      // não gerar segunda confirmação, e não pisar numa troca de status feita
+      // no meio, como um cancelamento.
+      const { data: gravadas, error: erroGravacao } = await supabase
+        .from("pagamentos_v2")
+        .update(payloadUpdate)
+        .eq("id", idCobranca)
+        .eq("status", cobranca.status)
+        .or("confirmado.is.null,confirmado.eq.false")
+        .select("id");
 
-    if (updateErr) {
-      throw updateErr;
+      if (erroGravacao) {
+        throw erroGravacao;
+      }
+
+      if (!gravadas || gravadas.length === 0) {
+        const { data: atual } = await supabase
+          .from("pagamentos_v2")
+          .select("status, confirmado")
+          .eq("id", idCobranca)
+          .maybeSingle();
+
+        // Outra chamada confirmou primeiro: o mesmo desfecho do segundo clique.
+        // Nada é gravado aqui — nem abatimento, nem status, nem prateleira.
+        if (atual?.confirmado === true) {
+          return NextResponse.json({ success: true, jaConfirmada: true, message: "Cobrança já estava confirmada." });
+        }
+        return NextResponse.json(
+          {
+            success: false,
+            code: "COBRANCA_MUDOU",
+            error: "A cobrança mudou enquanto era processada. Atualize a lista e confira o estado antes de tentar de novo."
+          },
+          { status: 409 }
+        );
+      }
+    } else {
+      const { error: updateErr } = await supabase
+        .from("pagamentos_v2")
+        .update(payloadUpdate)
+        .eq("id", idCobranca);
+
+      if (updateErr) {
+        throw updateErr;
+      }
     }
 
     // ── 6. Abatimento de débito da conta corrente ──────────────────────────

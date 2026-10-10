@@ -1,12 +1,16 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { X, AlertTriangle, ShieldCheck, RefreshCw, XCircle } from "lucide-react";
 import { useCobrancas } from "@/features/cobrancas/CobrancasProvider";
 import { useAuth } from "@/features/auth/AuthProvider";
+import { hasPermissao } from "@/features/auth/usuarios.service";
 import { useAppToast } from "@/components/common/AppToast";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import type { Cobranca, ModeloCobranca } from "@/features/cobrancas/types";
+import { ConferenciaFinanceiraAlertaModal } from "./ConferenciaFinanceiraAlertaModal";
+import { podeAutorizarEConferir } from "./lib/autorizar-e-conferir";
+import { executarConfirmacaoDaConferencia, type TravaDeEnvio } from "./lib/confirmar-conferencia";
 
 interface AutorizarFaturamentoModalProps {
   isOpen: boolean;
@@ -18,15 +22,19 @@ interface AutorizarFaturamentoModalProps {
 type TabType = "aprovar" | "alterar" | "reprovar";
 
 export function AutorizarFaturamentoModal({ isOpen, onClose, cobranca, onSuccess }: AutorizarFaturamentoModalProps) {
-  const { liberarCobrancaReal, alterarCondicaoCobrancaReal, reprovarCondicaoCobrancaReal } = useCobrancas();
+  const { liberarCobrancaReal, alterarCondicaoCobrancaReal, reprovarCondicaoCobrancaReal, autorizarEConferirReal } = useCobrancas();
   const { user } = useAuth();
   const { showToast } = useAppToast();
-  
+
   const [activeTab, setActiveTab] = useState<TabType>("aprovar");
   const [observacao, setObservacao] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [modelosCobranca, setModelosCobranca] = useState<ModeloCobranca[]>([]);
   const [novoModeloId, setNovoModeloId] = useState("");
+  const [bloqueioSituacao, setBloqueioSituacao] = useState<any>(null);
+  // Uma chamada por vez de "Autorizar e conferir", mesmo com dois cliques antes
+  // de o botão desligar.
+  const travaDeEnvio = useRef<TravaDeEnvio>({ ocupada: false });
 
   useEffect(() => {
     if (isOpen) {
@@ -114,6 +122,72 @@ export function AutorizarFaturamentoModal({ isOpen, onClose, cobranca, onSuccess
     }
   }
 
+  /**
+   * "Autorizar e conferir": o que "Confirmar Autorização" faz e a confirmação
+   * da Conferência, numa chamada só à rota oficial. A ordem dos passos é a da
+   * própria Conferência (`executarConfirmacaoDaConferencia`): uma chamada por
+   * vez, a janela fecha quando a rota confirma, a mensagem do chat vem depois.
+   * Se a rota achar a cobrança já confirmada (segundo clique), nada foi gravado
+   * e o chat não repete a mensagem.
+   */
+  async function handleAutorizarEConferir() {
+    const operador = user?.name || "Administrador";
+    let jaConfirmada = false;
+
+    await executarConfirmacaoDaConferencia(travaDeEnvio.current, {
+      confirmar: async () => {
+        const resultado = await autorizarEConferirReal(cobranca, operador);
+        jaConfirmada = resultado.jaConfirmada;
+        return true;
+      },
+      aoMudarEnvio: setIsSubmitting,
+      aoConfirmar: () => {
+        showToast({
+          type: "success",
+          title: jaConfirmada ? "Cobrança já estava confirmada" : "Faturamento autorizado e conferido",
+          description: jaConfirmada
+            ? "Nenhuma alteração foi feita."
+            : "A cobrança foi autorizada e conferida, sem passar pela Fila de Conferência."
+        });
+        onSuccess?.();
+        onClose();
+      },
+      aoFalhar: (err: any) => {
+        if (err?.name === "ConferenciaBloqueadaError" && err.situacao) {
+          setBloqueioSituacao(err.situacao);
+        } else {
+          showToast({
+            type: "error",
+            title: "Erro ao autorizar e conferir",
+            description: err instanceof Error ? err.message : (err?.message || "Não foi possível concluir. Tente novamente.")
+          });
+        }
+      },
+      gravarChat: async () => {
+        if (jaConfirmada) return;
+        const client = getSupabaseClient();
+        if (!client) return;
+        const obsSuffix = observacao.trim() ? ` Obs: ${observacao.trim()}` : "";
+        const { error } = await client.from("propostas_chat").insert([
+          {
+            id_int: cobranca.id_int,
+            id_cliente: cobranca.id_cliente,
+            mensagem: `Faturamento autorizado e conferido em uma só ação por ${operador}. Exceção pontual, sem alteração da regra global do cliente. Cobrança liberada para os próximos fluxos operacionais: expedição, fiscal, boletos e produção.${obsSuffix}`,
+            tipo: "SISTEMA",
+            autor_nome: user?.name || "Sistema",
+            autor_email: user?.email || null,
+            setor: "Financeiro",
+            visivel_externo: false
+          }
+        ]);
+        if (error) throw error;
+      },
+      registrarFalhaDoChat: (chatErr) => {
+        console.warn("[AutorizarFaturamentoModal] Erro ao gravar mensagem no chat:", chatErr);
+      }
+    });
+  }
+
   async function handleAlterar() {
     if (!novoModeloId) {
       showToast({ type: "warning", title: "Selecione uma condição", description: "Por favor, escolha uma nova condição de pagamento." });
@@ -178,8 +252,22 @@ export function AutorizarFaturamentoModal({ isOpen, onClose, cobranca, onSuccess
     currency: "BRL"
   }).format(cobranca.valor);
 
+  // "Autorizar e conferir" só aparece em faturamento que espera a autorização e
+  // que, autorizado, iria para a Fila de Conferência, e para quem pode conferir
+  // (a rota confere de novo: a permissão não depende do botão).
+  const mostrarAutorizarEConferir =
+    podeAutorizarEConferir(cobranca) &&
+    Boolean(user?.isAdmin || user?.isSuperAdmin || hasPermissao(user, "conferencia.confirm"));
+
   return (
     <div className="fixed inset-0 z-[90] bg-slate-950/60 p-4 flex items-center justify-center animate-fade-in" role="dialog" aria-modal="true">
+      {/* Mesmo alerta da Conferência, quando a quitação da proposta não fecha. */}
+      <ConferenciaFinanceiraAlertaModal
+        isOpen={!!bloqueioSituacao}
+        onClose={() => setBloqueioSituacao(null)}
+        situacao={bloqueioSituacao}
+        cobrancaAlvoId={cobranca.id}
+      />
       <div className="w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl space-y-6 flex flex-col transform transition-all scale-100">
         
         {/* Header */}
@@ -257,6 +345,12 @@ export function AutorizarFaturamentoModal({ isOpen, onClose, cobranca, onSuccess
                 <p className="mt-1 leading-relaxed">
                   Essa autorização aprova a condição solicitada pelo vendedor. Não altera o limite de crédito do cliente de forma global.
                 </p>
+                {mostrarAutorizarEConferir && (
+                  <p className="mt-2 leading-relaxed">
+                    <span className="font-semibold">Confirmar Autorização</span> envia a cobrança para a Fila de Conferência.{" "}
+                    <span className="font-semibold">Autorizar e conferir</span> autoriza e já confirma a conferência, sem passar pela fila.
+                  </p>
+                )}
               </div>
             </div>
           )}
@@ -304,6 +398,16 @@ export function AutorizarFaturamentoModal({ isOpen, onClose, cobranca, onSuccess
           >
             Cancelar
           </button>
+          {activeTab === "aprovar" && mostrarAutorizarEConferir && (
+            <button
+              type="button"
+              onClick={() => void handleAutorizarEConferir()}
+              disabled={isSubmitting}
+              className="rounded-2xl bg-teal-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-teal-700 disabled:opacity-50"
+            >
+              {isSubmitting ? "Processando..." : "Autorizar e conferir"}
+            </button>
+          )}
           {activeTab === "aprovar" && (
             <button
               type="button"

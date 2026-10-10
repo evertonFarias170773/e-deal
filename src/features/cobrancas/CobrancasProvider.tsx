@@ -22,6 +22,7 @@ import {
 } from "@/features/orcamentos/services/orcamentos.service";
 import { PROPOSTA_STATUS_PROTEGIDOS } from "@/features/orcamentos/services/status-protegidos";
 import { criarControleDeRecarga, manterDadosDaRecarga } from "@/features/cobrancas/lib/recarga-em-ordem";
+import { ACAO_AUTORIZAR_E_CONFERIR } from "@/features/cobrancas/lib/autorizar-e-conferir";
 import { mensagemDaLeituraDeCobrancas, statusDaLeituraDeCobrancas } from "@/features/cobrancas/lib/limite-da-carga";
 import type { DestinoValorCancelado, MotivoCancelamentoPago } from "@/features/cobrancas/cancelamento-pago";
 
@@ -94,6 +95,11 @@ type CobrancasContextValue = {
    * cobrança e a recarga completa vêm depois, em segundo plano.
    */
   confirmarConferenciaReal: (cobranca: Cobranca, confirmadoPor: string) => Promise<boolean>;
+  /**
+   * "Autorizar e conferir": autorização + conferência numa chamada só.
+   * `jaConfirmada` = a rota não gravou nada porque já estava confirmada.
+   */
+  autorizarEConferirReal: (cobranca: Cobranca, confirmadoPor: string) => Promise<{ jaConfirmada: boolean }>;
   /** `true` enquanto a recarga em segundo plano de uma confirmação está rodando. */
   recarregandoEmSegundoPlano: boolean;
   voltarCobrancaFilaReal: (id: string) => Promise<boolean>;
@@ -396,8 +402,11 @@ const CAMPOS_SO_DA_RECARGA = [
  * Chama `POST /api/cobrancas/confirmar`. Lança em qualquer desfecho que não
  * seja sucesso; a recusa por quitação parcial sai como `ConferenciaBloqueadaError`,
  * com a situação, para o modal mostrar o alerta.
+ *
+ * Devolve `jaConfirmada: true` quando a rota achou a cobrança já confirmada e
+ * não gravou nada (segundo clique, ou outra pessoa confirmou antes).
  */
-async function confirmarNaRota(id: string, confirmadoPor: string, acao?: string): Promise<void> {
+async function confirmarNaRota(id: string, confirmadoPor: string, acao?: string): Promise<{ jaConfirmada: boolean }> {
   const client = getSupabaseClient();
   if (!client) {
     throw new Error("Sistema indisponível no momento. Tente novamente.");
@@ -439,6 +448,8 @@ async function confirmarNaRota(id: string, confirmadoPor: string, acao?: string)
   if (!data.success) {
     throw new Error(data.error || "Falha lógica na confirmação da API.");
   }
+
+  return { jaConfirmada: data.jaConfirmada === true };
 }
 
 export function CobrancasProvider({ children }: { children: ReactNode }) {
@@ -1675,6 +1686,31 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
     return true;
   }, [source, atualizarDepoisDeConfirmar]);
 
+  /**
+   * "Autorizar e conferir" (Análise de Faturamento): autoriza o faturamento e
+   * confirma a conferência numa chamada só à rota oficial, que grava os dois
+   * efeitos num UPDATE (ver lib/autorizar-e-conferir). Atualiza a lista depois,
+   * em segundo plano, como a confirmação da Conferência. `jaConfirmada` diz que
+   * a rota não gravou nada por já estar confirmada.
+   */
+  const autorizarEConferirReal = useCallback(async (
+    cobranca: Cobranca,
+    confirmadoPor: string
+  ): Promise<{ jaConfirmada: boolean }> => {
+    if (!cobranca?.id) {
+      throw new Error("ID de cobranca invalido.");
+    }
+
+    if (source === "supabase") {
+      const resultado = await confirmarNaRota(cobranca.id, confirmadoPor, ACAO_AUTORIZAR_E_CONFERIR);
+      void atualizarDepoisDeConfirmar(cobranca);
+      return resultado;
+    }
+
+    // Mock fallback, como em `liberarCobrancaReal`.
+    return { jaConfirmada: false };
+  }, [source, atualizarDepoisDeConfirmar]);
+
   const voltarCobrancaFilaReal = useCallback(async (id: string): Promise<boolean> => {
     if (!id) {
       throw new Error("ID de cobranca invalido.");
@@ -2176,6 +2212,7 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
       getCobrancasByProposta: (idInt: number) => cobrancasPorProposta.get(idInt)?.slice() ?? [],
       liberarCobrancaReal,
       confirmarConferenciaReal,
+      autorizarEConferirReal,
       recarregandoEmSegundoPlano: recargasEmSegundoPlano > 0,
       voltarCobrancaFilaReal,
       emitirBoletoReal,
@@ -2201,6 +2238,7 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
       refreshCobrancas,
       liberarCobrancaReal,
       confirmarConferenciaReal,
+      autorizarEConferirReal,
       recargasEmSegundoPlano,
       voltarCobrancaFilaReal,
       emitirBoletoReal,
