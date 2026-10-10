@@ -135,7 +135,7 @@ Com o card **Em arte** ligado, a ordem passa a ser primeiro pelo Status Arte, e 
 7. Em Arte.
 8. Os demais.
 
-No celular a lista vira cartões, e só a revisão atendente ganha fundo azul.
+No celular a lista vira cartões, e só a revisão atendente ganha fundo azul. O cartão mostra o status do pedido e, quando o pedido tem arte, o selo **Arte** com a situação dela, o mesmo da coluna Status Arte.
 
 ### Ler as colunas e saber para onde cada clique leva
 
@@ -143,7 +143,7 @@ No celular a lista vira cartões, e só a revisão atendente ganha fundo azul.
 2. **id - Cliente**: código e nome fantasia do cliente (ou a razão social, quando não há fantasia). Sem cliente cadastrado aparece a marca "Sem cadastro". Abaixo podem aparecer "Nota fiscal:" com o nome de quem vai receber a nota, quando é outra pessoa que não o cliente, e o nome do evento, quando o pedido tem arte. Clicar nesta coluna abre o cadastro do cliente; sem cadastro, abre a proposta.
 3. **Tipo cobrança / Valor total**: o tipo de cobrança ("Não gerada" quando ainda não há cobrança), o valor total e, abaixo, a data e a hora do registro de pagamento mais recente. Clicar abre a proposta na aba Pagamentos.
 4. **Atendente**: o atendente e, abaixo, o designer, quando o pedido tem arte.
-5. **Status**: o status do pedido e, abaixo, a data e a hora da última mudança de status (ou a data de criação, se o status nunca mudou). Podem aparecer ainda: o selo **Pago / A liberar** (o cliente pagou e o financeiro ainda não confirmou; quando o status é só "Aguardando", ele aparece no lugar do status), o texto "Nota emitida · nº", e as marcas "teste encerrado", "faturado no sistema antigo" e "Compl. de #" (pedido complementar de outro).
+5. **Status**: o status do pedido, sem o complemento de arte (a situação da arte fica na coluna **Status Arte**), e, abaixo, a data e a hora da última mudança de status (ou a data de criação, se o status nunca mudou). Podem aparecer ainda: o selo **Pago / A liberar** (o cliente pagou e o financeiro ainda não confirmou; quando o status é "Aguardando", ele aparece no lugar do status), o texto "Nota emitida · nº", e as marcas "teste encerrado", "faturado no sistema antigo" e "Compl. de #" (pedido complementar de outro).
 6. **Status Arte**: a situação da arte e, abaixo, a data e a hora da última mudança dela. Fica vazio em pedido sem arte. O botão ao lado, quando existe, abre o painel do cliente em nova aba.
 7. **Envio**: o transporte do pedido (SEDEX, RETIRADA, a transportadora, o motoboy); "—" em pedido antigo sem essa informação. Com o card **Em produção** ligado, aparece abaixo o prazo e a hora do boletim. Clicar abre a proposta na aba Fretes.
 8. **Ações**: o botão do chat interno (muda de cor com mensagem não lida, pendência ou recusa, e mostra a quantidade de não lidas), o botão de baixar a DANFE (quando há nota autorizada; com mais de uma nota ele abre a lista para escolher) e o menu da linha.
@@ -199,9 +199,10 @@ As datas pequenas aparecem como dia/mês e hora, no horário de Brasília.
 - Com um card ligado, esses quatro cards passam a contar só o que o card ligado trouxe para a lista. Por exemplo, com **Em produção** ligado, **Pedidos** mostra a quantidade de pedidos em produção carregados e **Liberadas** e **Revisão atendente** caem para zero. **Em arte** e **Arte Aprovada** não mudam. Para comparar os números dos cards, desligue o card.
 - Com busca ou com qualquer filtro de status, modelo, produto, vendedor ou cobrança, o período é ignorado e a lista traz no máximo 100 pedidos, sem outras páginas. Se o que você procura não aparecer, refine a busca.
 - O período **15 dias** olha a data da última alteração do pedido; os meses olham a data de criação. Por isso um pedido antigo que foi mexido esta semana aparece em 15 dias e não aparece no mês atual.
+- A lista não mostra mais o complemento de arte no status do pedido ("/ EM ARTE" e "/ Arte aprovada"): aparece só "Novo", "Aguardando" ou "Liberado", e a arte fica na coluna Status Arte. O complemento continua existindo no status do pedido, e é por ele que valem o card **Liberadas** e a opção EM ARTE do filtro, citados abaixo; ele segue visível na tela da proposta.
 - O card **Em arte** olha o Status Arte, e não o "/ EM ARTE" do status do pedido. Os dois podem divergir: um pedido pode mostrar "/ EM ARTE" no status e estar fora do card, e o contrário.
 - O card **Liberadas** não conta os pedidos "Liberado / EM ARTE". Eles aparecem em **Em arte**, se o Status Arte for um dos que entram naquele card.
-- O selo **Pago / A liberar** não muda o status do pedido: ele continua "Aguardando" até o financeiro confirmar. O selo existe para ninguém mexer na proposta achando que o dinheiro não entrou. Na lista, o pedido pago a conferir mostra só **Pago / A liberar**, sem o "Aguardando" ao lado; "Aguardando / Arte aprovada" e "Aguardando / EM ARTE" continuam aparecendo junto com ele.
+- O selo **Pago / A liberar** não muda o status do pedido: ele continua "Aguardando" até o financeiro confirmar. O selo existe para ninguém mexer na proposta achando que o dinheiro não entrou. Na lista, o pedido pago a conferir mostra só **Pago / A liberar**, sem o "Aguardando" ao lado.
 - Não dá para liberar para a produção um pedido que não está em REVISAO ATENDENTE, que é avulso ou que já foi liberado. A liberação também é recusada se houver pagamento não confirmado, arte que não está APROVADO ou produto cuja quantidade vendida não bate com a soma dos lotes.
 - **Retirar da Produção** não é o contrário inofensivo de liberar: o pedido sai da lista de Ordens de Serviço e volta a ficar parado, mesmo que o cliente já tenha pago. Por isso a ação fica no fim do menu e pede confirmação com esse aviso.
 - Não dá para cancelar uma proposta sem informar o motivo, nem enquanto ela tiver pedido complementar aberto. Cobrança já paga ou título já liquidado também bloqueiam o cancelamento. As cobranças pendentes são canceladas junto com a proposta.

@@ -22,7 +22,7 @@ import { desmarcarFaturadoNoSistemaAntigo } from "@/features/fiscal/services/fat
 import { buscarRastreioDasPropostas, type RastreioDaProposta } from "@/features/orcamentos/services/rastreio-lista.service";
 import { buscarPrazoEnvioDosPedidos } from "@/features/orcamentos/services/prazo-envio-lista.service";
 import { idEmpresaDoPdf } from "@/features/orcamentos/lib/empresa-pdf";
-import { mostraSeloDoStatusNaLista } from "@/features/orcamentos/lib/selo-aguardando-da-lista";
+import { mostraSeloDoStatusNaLista, statusDoPedidoSemArte } from "@/features/orcamentos/lib/selo-aguardando-da-lista";
 import { RastreioPropostaModal } from "@/features/orcamentos/components/RastreioPropostaModal";
 import { buscarNomesDosSocios } from "@/features/orcamentos/services/socio-pagador.service";
 import { FiltroProdutoDrop, type OpcaoProduto } from "@/features/orcamentos/components/FiltroProdutoDrop";
@@ -2079,10 +2079,15 @@ Ela volta a aparecer nas listas operacionais.`
             header: "Status",
             cell: (proposta) => (
               <div className="flex flex-col items-center gap-1">
-                {/* "Aguardando" puro some quando o pedido esta pago a conferir:
-                    fica so o "Pago / A liberar" (lib/selo-aguardando-da-lista). */}
+                {/* So o status do pedido, sem " / EM ARTE" nem " / Arte aprovada":
+                    a arte tem a coluna dela. E "Aguardando" some quando o pedido
+                    esta pago a conferir, ficando so o "Pago / A liberar"
+                    (lib/selo-aguardando-da-lista). A cor sai do rotulo exibido. */}
                 {mostraSeloDoStatusNaLista(proposta.statusLabel, proposta.pagoAConfirmar) ? (
-                  <StatusBadge status={proposta.statusLabel} tone={getStatusTone(proposta.status)} />
+                  <StatusBadge
+                    status={statusDoPedidoSemArte(proposta.statusLabel)}
+                    tone={getStatusTone(statusDoPedidoSemArte(proposta.statusLabel))}
+                  />
                 ) : null}
                 {/* Ultima mudanca real de status (26/09/2026) — `status_alterado_em`. */}
                 {proposta.statusAlteradoEm || proposta.createdAt ? (
@@ -2320,7 +2325,25 @@ Ela volta a aparecer nas listas operacionais.`
               <div className="flex flex-col items-end gap-1">
                 {/* Mesma regra da tabela (card do mobile). */}
                 {mostraSeloDoStatusNaLista(proposta.statusLabel, proposta.pagoAConfirmar) ? (
-                  <StatusBadge status={proposta.statusLabel} tone={getStatusTone(proposta.status)} />
+                  <StatusBadge
+                    status={statusDoPedidoSemArte(proposta.statusLabel)}
+                    tone={getStatusTone(statusDoPedidoSemArte(proposta.statusLabel))}
+                  />
+                ) : null}
+                {/* Status Arte: o mesmo selo da coluna da tabela, com o dado que a
+                    lista ja carrega (`statusArtePorId`). Entrou aqui em 10/10/2026,
+                    quando o complemento de arte saiu do selo do status: sem isto o
+                    cartao deixaria de dizer como esta a arte. Pedido sem arte: nada. */}
+                {statusArtePorId[proposta.id_int] ? (
+                  <span data-status-arte-do-cartao className="flex items-center gap-1.5">
+                    {/* No cartao nao ha cabecalho de coluna: a palavra diz de que e o selo. */}
+                    <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Arte</span>
+                    <span
+                      className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold whitespace-nowrap ${classeDoStatusArte(statusArtePorId[proposta.id_int])}`}
+                    >
+                      {statusArtePorId[proposta.id_int]}
+                    </span>
+                  </span>
                 ) : null}
                 {/* Mesmo sinal do layout de tabela (card do mobile). */}
                 {proposta.pagoAConfirmar ? <StatusBadge status="PAGO_A_LIBERAR" tone="info" /> : null}
