@@ -22,6 +22,7 @@ import { desmarcarFaturadoNoSistemaAntigo } from "@/features/fiscal/services/fat
 import { buscarRastreioDasPropostas, type RastreioDaProposta } from "@/features/orcamentos/services/rastreio-lista.service";
 import { buscarPrazoEnvioDosPedidos } from "@/features/orcamentos/services/prazo-envio-lista.service";
 import { idEmpresaDoPdf } from "@/features/orcamentos/lib/empresa-pdf";
+import { mostraSeloDoStatusNaLista } from "@/features/orcamentos/lib/selo-aguardando-da-lista";
 import { RastreioPropostaModal } from "@/features/orcamentos/components/RastreioPropostaModal";
 import { buscarNomesDosSocios } from "@/features/orcamentos/services/socio-pagador.service";
 import { FiltroProdutoDrop, type OpcaoProduto } from "@/features/orcamentos/components/FiltroProdutoDrop";
@@ -2078,7 +2079,11 @@ Ela volta a aparecer nas listas operacionais.`
             header: "Status",
             cell: (proposta) => (
               <div className="flex flex-col items-center gap-1">
-                <StatusBadge status={proposta.statusLabel} tone={getStatusTone(proposta.status)} />
+                {/* "Aguardando" puro some quando o pedido esta pago a conferir:
+                    fica so o "Pago / A liberar" (lib/selo-aguardando-da-lista). */}
+                {mostraSeloDoStatusNaLista(proposta.statusLabel, proposta.pagoAConfirmar) ? (
+                  <StatusBadge status={proposta.statusLabel} tone={getStatusTone(proposta.status)} />
+                ) : null}
                 {/* Ultima mudanca real de status (26/09/2026) — `status_alterado_em`. */}
                 {proposta.statusAlteradoEm || proposta.createdAt ? (
                   <span className="text-[11px] text-slate-500">{diaMesHora(proposta.statusAlteradoEm || proposta.createdAt)}</span>
@@ -2313,7 +2318,10 @@ Ela volta a aparecer nas listas operacionais.`
                 <p className="mt-1 text-sm text-slate-500">{proposta.vendedor}</p>
               </div>
               <div className="flex flex-col items-end gap-1">
-                <StatusBadge status={proposta.statusLabel} tone={getStatusTone(proposta.status)} />
+                {/* Mesma regra da tabela (card do mobile). */}
+                {mostraSeloDoStatusNaLista(proposta.statusLabel, proposta.pagoAConfirmar) ? (
+                  <StatusBadge status={proposta.statusLabel} tone={getStatusTone(proposta.status)} />
+                ) : null}
                 {/* Mesmo sinal do layout de tabela (card do mobile). */}
                 {proposta.pagoAConfirmar ? <StatusBadge status="PAGO_A_LIBERAR" tone="info" /> : null}
                 {/* NOTA EMITIDA (11/09/2026) — texto pequeno, nao badge: os
