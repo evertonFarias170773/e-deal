@@ -292,6 +292,11 @@ export interface PedidoExpedicao {
    * `expedicao.service.ts` — não reimplemente aqui nem na tela.
    */
   prometidoHoje: boolean;
+  /**
+   * Previsão de envio POSTERIOR a hoje e o pedido ainda não saiu: o card "Próximos dias".
+   * Mesma regra de `prometidoHoje` (`lib/promessa-do-card.ts`), só a comparação de data muda.
+   */
+  prometidoFuturo: boolean;
   /** expedicoes.tipo_frete (definido no despacho) > normalização da cotação. */
   tipoFrete: TipoFreteNormalizado;
   /**

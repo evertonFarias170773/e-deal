@@ -8,6 +8,7 @@ import {
   Bike,
   Building2,
   CheckCircle2,
+  CalendarDays,
   Clock,
   Copy,
   LayoutGrid,
@@ -135,6 +136,17 @@ function ehExpedicaoDoDia(p: PedidoExpedicao): boolean {
  * sair hoje".
  */
 const ETAPA_DIA = "DIA";
+
+/**
+ * O recorte do card "Proximos dias": a MESMA regra do "Expedicao do dia" (pedido em aberto, ainda
+ * nao saiu, previsao de envio = `data_termino`, hoje em America/Sao_Paulo), com a data POSTERIOR a
+ * hoje. A regra vive em `lib/promessa-do-card` e o service decide `prometidoFuturo`; contagem do
+ * card e filtro do clique leem esta mesma funcao. Nao e etapa: atravessa o funil.
+ */
+const ETAPA_PROXIMOS = "PROXIMOS";
+function ehProximosDias(p: PedidoExpedicao): boolean {
+  return p.prometidoFuturo;
+}
 const ETAPA_INICIAL = ETAPA_DIA;
 
 /**
@@ -745,6 +757,7 @@ export function ExpedicaoPage() {
       // "Expedicao do dia" nao passa por `contar`: ele nao recorta etapa, e sim
       // promessa. Conta sobre o conjunto todo, como os demais.
       dia: pedidos.filter(ehExpedicaoDoDia).length,
+      proximos: pedidos.filter(ehProximosDias).length,
       pronto: contar(["PRONTO"]),
       aRetirar: contar(["A_RETIRAR"]),
       emTransito: contar(["EM_TRANSITO"]),
@@ -770,6 +783,7 @@ export function ExpedicaoPage() {
       // promessa, e por isso atravessa o funil inteiro. Os demais continuam
       // casando 1 para 1 com `p.etapa`.
       if (filters.etapa === ETAPA_DIA && !ehExpedicaoDoDia(p)) return false;
+      if (filters.etapa === ETAPA_PROXIMOS && !ehProximosDias(p)) return false;
       // ENTREGUE tambem nao casa 1 para 1 com a etapa: o cartao conta os dos
       // ultimos 7 dias, e o clique tem de abrir exatamente esse conjunto. Sem
       // esta linha a lista mostraria os 30 dias de exibicao e desmentiria o
@@ -779,6 +793,7 @@ export function ExpedicaoPage() {
         filters.etapa !== "ATIVOS" &&
         filters.etapa !== "TODAS" &&
         filters.etapa !== ETAPA_DIA &&
+        filters.etapa !== ETAPA_PROXIMOS &&
         p.etapa !== filters.etapa
       )
         return false;
@@ -941,7 +956,7 @@ export function ExpedicaoPage() {
 
       {/* Cards do funil (clicáveis = filtro de etapa) */}
       {isLoaded && (
-        <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+        <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-6">
           {/* O card que abre a tela: o que tem de sair hoje — atrasado ou
               prometido para hoje —, em qualquer etapa do funil. Nao recorta
               etapa de proposito: pedido atrasado ainda na fabrica conta. */}
@@ -968,6 +983,17 @@ export function ExpedicaoPage() {
             icon={PackageCheck}
             onClick={() => selecionarEtapa("PRONTO")}
             ativo={filters.etapa === "PRONTO"}
+          />
+          {/* Previsao de envio DEPOIS de hoje: mesma regra do card do dia, so a data muda.
+              Pedido pronto com previsao futura conta aqui e em "Pronto p/ expedir". */}
+          <SummaryCard
+            title="Próximos Dias"
+            value={porEtapa.proximos.toString()}
+            description="Previsão de envio futura"
+            tone="neutral"
+            icon={CalendarDays}
+            onClick={() => selecionarEtapa(ETAPA_PROXIMOS)}
+            ativo={filters.etapa === ETAPA_PROXIMOS}
           />
           <SummaryCard
             title="A retirar"

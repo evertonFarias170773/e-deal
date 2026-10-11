@@ -28,6 +28,7 @@ import {
 import { danfesDoPedido, COLUNAS_DANFE_DO_PEDIDO, type DanfeDoPedido } from "@/lib/fiscal/danfes-do-pedido";
 import { resolverPesoExpedicao } from "../lib/peso";
 import { STATUS_FUNIL_EXPEDICAO } from "../lib/pedido-em-aberto";
+import { promessaNoDia } from "../lib/promessa-do-card";
 import type {
   ContatoDestinatario,
   EtapaExpedicao,
@@ -691,7 +692,11 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
      */
     const jaSaiu = foraDaBancada && Boolean(saidaDaBancada);
 
-    const prometidoHoje = emAberto && promessaDia === hoje && !jaSaiu;
+    // Mesma regra, so a comparacao de data muda (lib/promessa-do-card): o card "Proximos dias" le
+    // `prometidoFuturo`, com a MESMA referencia de `hoje` e o mesmo corte de "ja saiu".
+    const entradaPromessa = { emAberto, promessaDia, hoje, jaSaiu };
+    const prometidoHoje = promessaNoDia(entradaPromessa, "IGUAL_A_HOJE");
+    const prometidoFuturo = promessaNoDia(entradaPromessa, "POSTERIOR_A_HOJE");
 
     const expConfirmado = despachoConfirmado ? exp : null;
 
@@ -886,6 +891,7 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
       dataPromessa,
       atrasadoDias,
       prometidoHoje,
+      prometidoFuturo,
       tipoFrete,
       // O que o VENDEDOR declarou no orçamento. Não vira `tipoFrete` nem
       // sobrescreve nada: é a referência que o despacho pré-seleciona e contra

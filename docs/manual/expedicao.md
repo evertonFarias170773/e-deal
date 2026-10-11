@@ -1,6 +1,6 @@
 # Expedição
 
-> **Última revisão:** 09/10/2026
+> **Última revisão:** 11/10/2026
 > **Caminho no menu:** Expedição (item direto do menu lateral, sem subitens; é o quarto, depois de Conferência, Pedidos e Clientes). Também se chega pela aba **Expedição** no topo do Kanban e da Fila de impressão da Produção.
 > **Endereço:** `/expedicao`
 
@@ -30,6 +30,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Transportadoras** | Cabeçalho, à direita do título | Abre a lista de transportadoras cadastradas |
 | **Expedição do dia** | Cartão do topo ("Atrasados e prometidos hoje") | Filtra atrasados e prometidos para hoje, em qualquer etapa. É o filtro com que a tela abre |
 | **Pronto p/ expedir** | Cartão do topo ("A despachar e aguardando coleta") | Filtra os pedidos com status Na Expedição |
+| **Próximos Dias** | Cartão do topo ("Previsão de envio futura"), entre Pronto p/ expedir e A retirar | Filtra os pedidos em aberto, ainda não despachados, com previsão de envio depois de hoje |
 | **A retirar** | Cartão do topo ("Cliente busca no balcão") | Filtra os pedidos com status A Retirar |
 | **Em trânsito** | Cartão do topo ("Com a transportadora") | Filtra os pedidos com status Em Trânsito |
 | **Entregues** | Cartão do topo ("Últimos 7 dias") | Filtra os pedidos entregues nos últimos 7 dias, do mais recente para o mais antigo |
@@ -123,9 +124,10 @@ Os itens aparecem nesta ordem, cada um só quando se aplica.
 
 ### Entender a tela
 
-1. No topo ficam cinco cartões, e cada um é um filtro. A tela abre em **Expedição do dia**.
+1. No topo ficam seis cartões, e cada um é um filtro. A tela abre em **Expedição do dia**.
    - **Expedição do dia** — atrasados e prometidos para hoje, em qualquer etapa, inclusive os que ainda estão na fábrica.
    - **Pronto p/ expedir** — pedidos com status Na Expedição: os que ainda vão ser despachados e os já despachados que aguardam a coleta.
+   - **Próximos Dias** — pedidos com previsão de envio depois de hoje (data de hoje no horário de Brasília), que ainda não saíram. É a mesma regra do cartão Expedição do dia, só que com a data futura em vez da de hoje; a contagem e a lista são as mesmas. Um pedido pronto com previsão futura aparece neste cartão e também em Pronto p/ expedir.
    - **A retirar** — pedidos com status A Retirar: estão no balcão esperando o cliente buscar.
    - **Em trânsito** — pedidos com status Em Trânsito: já saíram com Correios, transportadora ou motoboy.
    - **Entregues** — pedidos com status Entregue nos últimos 7 dias. O pedido entregue continua no painel e na busca por 30 dias.
@@ -467,6 +469,7 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/features/pedidos/lib/instrucoes-entrega.ts`
 - `src/features/expedicao/lib/vinculos-do-painel.ts`
 - `src/features/expedicao/components/SoltarDoGrupoModal.tsx`
+- `src/features/expedicao/lib/promessa-do-card.ts`
 
 > **Mudanças de 08/10/2026:**
 >
@@ -482,3 +485,5 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 > - **09/10/2026:** o Acompanhar Pedido vale para qualquer pedido em aberto, inclusive em NOVO e AGUARDANDO (antes só de APROVADO até EXPEDICAO); a busca por número procura entre todos os pedidos elegíveis; a mensagem de só leitura diz o motivo real.
 >
 > - **09/10/2026 (adendo):** o grupo Acompanhar deixa de ter limite de 10 pedidos (limite de segurança de 50, com aviso acima de 10); pedido com status vazio fica só para leitura.
+>
+> - **11/10/2026:** novo cartão **Próximos Dias** (previsão de envio depois de hoje), entre Pronto p/ expedir e A retirar.
