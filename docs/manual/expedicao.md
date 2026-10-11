@@ -369,6 +369,7 @@ Os retornos possíveis são: Entregue volta para Em Trânsito (ou para A Retirar
 - **Segunda linha colorida abaixo do nome do cliente.** É o pagador, quando quem paga não é o cliente do pedido.
 - **Confirmar entrega nas duas janelas.** Na janela **Confirmar retirada** o botão conclui a retirada no balcão; na janela **Confirmar entrega** conclui a entrega de um pedido Em Trânsito. As duas levam ao status Entregue.
 - **Entregues (7 dias) x permanência no painel (30 dias).** O cartão conta só a última semana. O pedido entregue segue na busca por 30 dias.
+- **Pedido marcado como entregue pela lista de Pedidos.** O administrador pode marcar como entregue, pela lista de Pedidos ([Pedidos](pedidos.md)), um pedido LIBERADO que terminou no sistema antigo. Ele ganha a data de entrega do dia da marcação e segue a regra de cima: conta no cartão **Entregues** por 7 dias e sai do painel depois de 30. Não passou por despacho nem por retirada, então não tem dados de frete nem de despacho aqui.
 - **Status na tela x status nos avisos.** O selo mostra "Na Expedição", "A Retirar", "Em Trânsito" e "Entregue". Vários avisos escrevem os mesmos status em maiúsculas e sem acento: EXPEDICAO, A RETIRAR, EM TRANSITO, ENTREGUE.
 - **Expedição x Produção x Pedidos.** O link **Voltar para Fila Geral (OS)** abre a tela que o menu lateral chama de **Produção**. Quando um aviso fala em "Orçamentos", é a tela que o menu chama de **Pedidos**.
 - **"menu Ações" nos avisos.** É o menu **⋯** do pedido nesta tela, que na lista aparece escrito **Acoes**.

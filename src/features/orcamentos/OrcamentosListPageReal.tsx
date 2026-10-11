@@ -23,6 +23,9 @@ import { buscarRastreioDasPropostas, type RastreioDaProposta } from "@/features/
 import { buscarPrazoEnvioDosPedidos } from "@/features/orcamentos/services/prazo-envio-lista.service";
 import { idEmpresaDoPdf } from "@/features/orcamentos/lib/empresa-pdf";
 import { montarOpcoesDeVendedor } from "@/features/orcamentos/lib/opcoes-vendedor";
+import { podeVerMarcarComoEntregue } from "@/features/orcamentos/lib/marcar-entregue";
+import { marcarPedidoComoEntreguePeloServidor } from "@/features/orcamentos/services/marcar-entregue.service";
+import { MarcarEntregueModal } from "@/features/orcamentos/components/MarcarEntregueModal";
 import { listarNomesDeVendedores } from "@/features/orcamentos/services/vendedores-do-filtro.service";
 import {
   STATUS_ATIVOS,
@@ -1677,6 +1680,35 @@ export function OrcamentosListPageReal() {
   );
   // Só ADM vê "Confirmar Conferência" aqui; a rota confere a permissão no servidor.
   const canConfirmarConferenciaNaLista = podeVerConfirmarConferenciaNaLista(user);
+
+  // "Marcar como entregue" (11/10/2026, paliativo da migracao): so ADM e so em
+  // LIBERADO. Quem grava e a rota `/api/orcamentos/marcar-entregue`, que confere
+  // o ADM no servidor; aqui so o modal e a atualizacao da lista.
+  const [pedidoParaMarcarEntregue, setPedidoParaMarcarEntregue] = useState<OrcamentoListItem | null>(null);
+  const [marcandoEntregue, setMarcandoEntregue] = useState(false);
+
+  async function confirmarMarcarEntregue() {
+    if (!pedidoParaMarcarEntregue || marcandoEntregue) return;
+    const idInt = pedidoParaMarcarEntregue.id_int;
+    setMarcandoEntregue(true);
+    try {
+      const resposta = await marcarPedidoComoEntreguePeloServidor(idInt);
+      if (!resposta.success) {
+        showToast({ type: "error", title: "Não foi possível marcar como entregue", description: resposta.message });
+      } else if (resposta.idempotente) {
+        showToast({ type: "info", title: "Já estava entregue", description: resposta.message });
+      } else if (resposta.aviso) {
+        showToast({ type: "warning", title: `Proposta #${idInt} marcada como entregue, com aviso`, description: resposta.aviso });
+      } else {
+        showToast({ type: "success", title: "Pedido marcado como entregue", description: resposta.message });
+      }
+      // Em qualquer desfecho a lista relê: o pedido pode ter mudado de status por outro caminho.
+      setPedidoParaMarcarEntregue(null);
+      triggerRefresh();
+    } finally {
+      setMarcandoEntregue(false);
+    }
+  }
   const [encerrandoTesteId, setEncerrandoTesteId] = useState<number | null>(null);
 
   async function handleEncerrarTeste(item: OrcamentoListItem, encerrar: boolean) {
@@ -1928,6 +1960,14 @@ Ela volta a aparecer nas listas operacionais.`
               ? "Voltando para a fila..."
               : "Voltar para a Fila de Faturamento (desfazer nota no sistema antigo)",
             onClick: () => void handleDesmarcarFaturadoFora(item)
+          }]
+        : []),
+      // Paliativo da migracao (11/10/2026): so ADM, so em LIBERADO, sem "desmarcar".
+      ...(podeVerMarcarComoEntregue(user, item.statusInterno)
+        ? [{
+            label: "Marcar como entregue",
+            destructive: true,
+            onClick: () => setPedidoParaMarcarEntregue(item)
           }]
         : []),
       /**
@@ -2753,6 +2793,16 @@ Ela volta a aparecer nas listas operacionais.`
             setSelectedPropostaForCancel(null);
             triggerRefresh();
           }}
+        />
+      )}
+
+      {pedidoParaMarcarEntregue && (
+        <MarcarEntregueModal
+          isOpen
+          propostaId={pedidoParaMarcarEntregue.id_int}
+          isSubmitting={marcandoEntregue}
+          onClose={() => setPedidoParaMarcarEntregue(null)}
+          onConfirm={() => void confirmarMarcarEntregue()}
         />
       )}
 

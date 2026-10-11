@@ -1,0 +1,81 @@
+import React from "react";
+import { X, AlertTriangle } from "lucide-react";
+
+type MarcarEntregueModalProps = {
+  propostaId: number;
+  isOpen: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+  isSubmitting?: boolean;
+};
+
+/**
+ * Confirmacao do atalho "Marcar como entregue" (11/10/2026), da lista de
+ * Pedidos. Paliativo: o pedido terminou no sistema antigo. Nao ha "Desmarcar".
+ */
+export function MarcarEntregueModal({
+  propostaId,
+  isOpen,
+  onClose,
+  onConfirm,
+  isSubmitting = false
+}: MarcarEntregueModalProps) {
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-[70] bg-slate-950/50 p-4 flex items-center justify-center" role="dialog" aria-modal="true">
+      <div className="w-full max-w-lg rounded-3xl bg-white shadow-2xl overflow-hidden">
+        <div className="flex items-center justify-between border-b border-slate-100 p-5">
+          <h2 className="text-lg font-semibold text-slate-950">Marcar como entregue?</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={isSubmitting}
+            className="rounded-2xl bg-slate-100 p-2 text-slate-700 hover:bg-slate-200 transition disabled:opacity-50"
+            aria-label="Fechar"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="p-6 space-y-4 text-slate-700">
+          <p>
+            Você vai marcar a proposta <strong>#{propostaId}</strong> como <strong>ENTREGUE</strong>. Use só para pedido que
+            terminou no sistema antigo.
+          </p>
+
+          <div className="bg-amber-50 text-amber-900 p-4 rounded-xl flex gap-3 text-sm border border-amber-200">
+            <AlertTriangle className="h-5 w-5 shrink-0 text-amber-600" />
+            <div className="space-y-1.5">
+              <p><strong>Atenção:</strong></p>
+              <ul className="list-disc pl-4 space-y-1">
+                <li>O status passa de LIBERADO para <strong>ENTREGUE</strong>, e a data de entrega gravada é a de hoje.</li>
+                <li>Nada muda em faturamento, cobranças, boletos, Conta Corrente nem Conferência.</li>
+                <li>Não existe &quot;desmarcar&quot; por aqui. Seu nome e a data ficam registrados.</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <div className="border-t border-slate-100 p-5 bg-slate-50 flex items-center justify-end gap-3">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={isSubmitting}
+            className="rounded-2xl bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 shadow-sm border border-slate-200 hover:bg-slate-50 transition disabled:opacity-50"
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={isSubmitting}
+            className="rounded-2xl bg-[#0b2f4a] px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#123f61] transition disabled:opacity-50"
+          >
+            {isSubmitting ? "Marcando..." : "Marcar como entregue"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}

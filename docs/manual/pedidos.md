@@ -22,6 +22,7 @@ No alto da tela o título aparece como "Orcamentos", com a etiqueta "Pedidos". �
 - **Liberar para Produção** e **Retirar da Produção**: só administrador, Super Administrador ou quem tem a permissão "Liberar para Produção". Sem ela, os dois itens não aparecem no menu, e o servidor recusa tanto a liberação quanto a retirada.
 - **Encerrar teste** e **Reabrir (desfazer encerramento de teste)**: só o Super Administrador.
 - **Voltar para a Fila de Faturamento (desfazer nota no sistema antigo)**: só administrador, Super Administrador ou quem tem a permissão "Liberar para Nota Fiscal".
+- **Marcar como entregue**: só administrador ou Super Administrador, e só em pedido com status LIBERADO. O servidor confere o administrador; esconder o item na tela não é a proteção.
 - As demais ações do menu da linha aparecem para qualquer usuário que vê o pedido. O que cada um consegue alterar dentro da proposta é decidido na própria proposta.
 
 ## Botões e ações da tela
@@ -70,6 +71,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Encerrar teste** | Menu da linha | Marca o pedido como teste encerrado e o tira das listas operacionais. |
 | **Reabrir (desfazer encerramento de teste)** | Menu da linha | Devolve o pedido de teste às listas operacionais. |
 | **Voltar para a Fila de Faturamento (desfazer nota no sistema antigo)** | Menu da linha | Remove a marca "faturado no sistema antigo" e devolve o pedido à Fila de Faturamento. |
+| **Marcar como entregue** | Menu da linha, antes de **Retirar da Produção** | Só administrador, só em pedido LIBERADO. Abre uma confirmação e, ao confirmar, muda o status para ENTREGUE e grava a data de entrega de hoje. Paliativo para pedido que terminou no sistema antigo. |
 | **Retirar da Produção** | Menu da linha, último item | Tira o pedido da fila de produção. |
 | **Confirmar liberação** / **Cancelar** | Janela "Liberar proposta para Produção?" | Confirma a liberação, ou fecha sem liberar. |
 | **Confirmar Cancelamento** / **Voltar** | Janela "Cancelar Proposta" | Cancela a proposta (exige motivo), ou fecha sem cancelar. |
@@ -174,7 +176,8 @@ As datas pequenas aparecem como dia/mês e hora, no horário de Brasília.
 15. **Rastrear objeto**: aparece quando o envio é pelos Correios e já existe código de rastreio.
 16. **Encerrar teste** ou **Reabrir (desfazer encerramento de teste)**.
 17. **Voltar para a Fila de Faturamento (desfazer nota no sistema antigo)**: aparece só no pedido com a marca "faturado no sistema antigo".
-18. **Retirar da Produção**: último item do menu, só em pedido já liberado.
+18. **Marcar como entregue**: aparece só para administrador, em pedido com status LIBERADO. Abre a janela **Marcar como entregue?**; ao confirmar, o status vira ENTREGUE e a **data de entrega** gravada é a de hoje (dia de São Paulo; se o pedido já tinha data de entrega, ela é mantida). O pedido sai de **Ativos** e segue a regra normal de saída da Expedição (aparece lá como entregue por 30 dias). Não mexe em faturamento, cobranças, boletos, Conta Corrente nem Conferência, e **não existe desmarcar** por aqui. Seu nome e a data ficam registrados no histórico de status. Apertar de novo num pedido que já está ENTREGUE não grava nada.
+19. **Retirar da Produção**: último item do menu, só em pedido já liberado.
 
 ### Liberar um pedido para a produção
 
@@ -294,6 +297,11 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/features/orcamentos/mappers.ts`
 - `src/features/orcamentos/components/FiltroProdutoDrop.tsx`
 - `src/features/orcamentos/components/LiberarProducaoModal.tsx`
+- `src/features/orcamentos/components/MarcarEntregueModal.tsx`
+- `src/features/orcamentos/lib/marcar-entregue.ts`
+- `src/features/orcamentos/services/marcar-entregue.server.ts`
+- `src/features/orcamentos/services/marcar-entregue.service.ts`
+- `src/app/api/orcamentos/marcar-entregue/route.ts`
 - `src/features/orcamentos/components/CancelPropostaModal.tsx`
 - `src/features/orcamentos/components/CriarComplementoModal.tsx`
 - `src/features/orcamentos/services/prazo-envio-lista.service.ts`
