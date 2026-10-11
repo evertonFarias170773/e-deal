@@ -22,6 +22,8 @@ import { desmarcarFaturadoNoSistemaAntigo } from "@/features/fiscal/services/fat
 import { buscarRastreioDasPropostas, type RastreioDaProposta } from "@/features/orcamentos/services/rastreio-lista.service";
 import { buscarPrazoEnvioDosPedidos } from "@/features/orcamentos/services/prazo-envio-lista.service";
 import { idEmpresaDoPdf } from "@/features/orcamentos/lib/empresa-pdf";
+import { montarOpcoesDeVendedor } from "@/features/orcamentos/lib/opcoes-vendedor";
+import { listarNomesDeVendedores } from "@/features/orcamentos/services/vendedores-do-filtro.service";
 import {
   STATUS_ATIVOS,
   STATUS_PADRAO_DA_LISTA,
@@ -803,26 +805,49 @@ export function OrcamentosListPageReal() {
     return ["TODOS", ...ordered];
   }, [propostas]);
 
-  const vendedorOptions = useMemo(() => {
-    const nomes = propostas.map((item) => item.vendedor).filter(Boolean);
+  /**
+   * Opções do filtro Vendedor (11/10/2026): os usuários com `is_vendedor`, e nao
+   * mais os nomes das linhas carregadas — ver `lib/opcoes-vendedor.ts`. Escopo
+   * restrito (own/team/company): so o proprio nome, que tambem permite acionar a
+   * busca ampla mesmo sem proposta no periodo; o cadastro nem e lido para ele.
+   */
+  const escopoRestritoDoVendedor =
+    getDataScope(user, "propostas") !== "all" && Boolean(getNomeParaEscopo(user).trim());
+  const [nomesDeVendedores, setNomesDeVendedores] = useState<string[] | null>(null);
+  const [leituraDeVendedoresFalhou, setLeituraDeVendedoresFalhou] = useState(false);
 
-    // Escopo restrito (own/team/company): o próprio nome precisa estar na lista
-    // mesmo quando o período atual não trouxe nenhuma proposta dele — senão o
-    // usuário não consegue selecionar a si mesmo e acionar a busca ampla.
-    // Não amplia acesso: o nome já é dele e o filtro de escopo segue valendo.
-    const escopo = getDataScope(user, "propostas");
-    const meuNome = getNomeParaEscopo(user).trim();
-    if (escopo !== "all" && meuNome) {
-      nomes.push(meuNome);
-    }
+  // So depois de saber quem e o usuario: antes disso o escopo ainda nao esta
+  // resolvido e um perfil restrito leria o cadastro sem precisar.
+  const usuarioCarregado = Boolean(user);
 
-    // Mantém o valor selecionado na lista para ele não sumir do select.
-    if (vendedor !== "TODOS") {
-      nomes.push(vendedor);
-    }
+  useEffect(() => {
+    if (!usuarioCarregado || escopoRestritoDoVendedor) return;
+    let ativo = true;
+    void (async () => {
+      const nomes = await listarNomesDeVendedores();
+      if (!ativo) return;
+      setNomesDeVendedores(nomes);
+      setLeituraDeVendedoresFalhou(nomes === null);
+    })();
+    return () => {
+      ativo = false;
+    };
+  }, [usuarioCarregado, escopoRestritoDoVendedor]);
 
-    return Array.from(new Set(nomes)).sort((a, b) => a.localeCompare(b, "pt-BR"));
-  }, [propostas, user, vendedor]);
+  const vendedorOptions = useMemo(
+    () =>
+      montarOpcoesDeVendedor({
+        nomesDoCadastro: nomesDeVendedores,
+        // So entram se a leitura do cadastro falhou: melhor o que a pagina tem do
+        // que um filtro vazio.
+        nomesDasLinhas: leituraDeVendedoresFalhou ? propostas.map((item) => item.vendedor).filter(Boolean) : [],
+        leituraFalhou: leituraDeVendedoresFalhou,
+        escopoRestrito: escopoRestritoDoVendedor,
+        meuNome: getNomeParaEscopo(user),
+        selecionado: vendedor
+      }),
+    [nomesDeVendedores, leituraDeVendedoresFalhou, propostas, escopoRestritoDoVendedor, user, vendedor]
+  );
 
   const modeloOptions = useMemo(
     () => [

@@ -41,7 +41,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Ativos** (padrão) / **Todos status** | Barra de filtros | A tela abre em **Ativos**, a visão de trabalho: tira os pedidos ENTREGUE, EM TRANSITO e CANCELADO e os dos modelos Avulso e Encerrados. **Todos status** mostra tudo (como a lista era antes). Escolher um status específico filtra por ele e desliga o card que estiver ligado. |
 | **Todos modelos** | Barra de filtros | Filtra por AVULSO, PROPOSTA ou ENCERRADOS (teste). |
 | **Todos produtos** | Barra de filtros | Abre a lista de produtos, com o campo **Código ou nome**, e filtra os pedidos que têm o produto escolhido. Só produtos ativos aparecem. |
-| **Todos vendedores** | Barra de filtros | Filtra por atendente. |
+| **Todos vendedores** | Barra de filtros | Filtra por atendente. As opções são os usuários marcados como vendedor no cadastro, sempre os mesmos e em ordem alfabética. |
 | **Todas cobranças** | Barra de filtros | Filtra por PIX, BOLETO, E-FATURADO ou CARTÃO. |
 | **15 dias** (e os meses, como "Out/26") | Barra de filtros, último seletor | Troca o período da lista e dos cards. |
 | **Limpar filtros** | Barra de filtros, à direita | Devolve todos os filtros ao padrão e desliga o card. |
@@ -110,7 +110,7 @@ Cada filtro da barra tem um título pequeno acima dele, com o nome do que ele fi
 1. **Status**: a tela abre em **Ativos**, que mostra tudo o que está em andamento: ficam de fora ENTREGUE, EM TRANSITO e CANCELADO e os pedidos dos modelos Avulso e Encerrados. Se você escolher um modelo no filtro **Modelo** (inclusive Avulso ou Encerrados), os pedidos daquele modelo aparecem, ainda sem entregues, em trânsito e cancelados. Com texto na busca, **Ativos** não esconde nada: você acha o pedido pelo número ou pelo nome mesmo que esteja entregue ou seja avulso. **Todos status** não recorta por status. Escolha um status para ver só os pedidos nele. A opção EM ARTE traz todos os que têm "/ EM ARTE" no status. Escolher um status desliga o card que estiver ligado.
 2. **Todos modelos**: AVULSO, PROPOSTA ou ENCERRADOS (teste). Esta última mostra só os pedidos de teste encerrados.
 3. **Todos produtos**: abre uma lista com busca por **Código ou nome**. Mostra os pedidos que têm pelo menos um item daquele produto. Só os produtos ativos aparecem, na lista e na pesquisa; produto inativo fica de fora, então os pedidos antigos dele não são achados por este filtro. Um link antigo que traga um produto inativo volta sozinho para **Todos produtos**.
-4. **Todos vendedores**: escolha um atendente.
+4. **Todos vendedores**: escolha um atendente. As opções são os usuários marcados como vendedor no cadastro de usuários, em ordem alfabética, e não mudam com o status, os outros filtros nem a página. Quem tem o escopo restrito (só vê o que é dele) vê só o próprio nome. Um link antigo com um vendedor que não está no cadastro continua funcionando: o nome aparece como opção. Quem tem pedidos mas não está marcado como vendedor (por exemplo, um diretor) não aparece na lista; para achar os pedidos dele, use a busca.
 5. **Todas cobranças**: PIX, BOLETO, E-FATURADO ou CARTÃO.
 6. **Período**: a tela abre em **15 dias**, que traz os pedidos alterados nos últimos 15 dias (não os criados). As outras opções são os seis últimos meses e trazem os pedidos criados naquele mês.
 7. Os filtros se combinam. **Limpar filtros** devolve tudo ao padrão, inclusive o Status em **Ativos**. Um link antigo com `status=TODOS` continua mostrando todos os status; um link sem status abre em **Ativos**.
