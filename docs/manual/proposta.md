@@ -1,6 +1,6 @@
 # Proposta: visão geral e abas
 
-> **Última revisão:** 09/10/2026
+> **Última revisão:** 11/10/2026
 > **Caminho no menu:** Pedidos → **+ Nova proposta** (proposta nova) ou Pedidos → abrir um pedido → **Editar proposta**
 > **Endereço:** `/orcamentos/novo` e `/orcamentos/<número>/editar`
 
@@ -55,8 +55,8 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Histórico** | Barra de abas | Timeline da proposta e movimentos de crédito. |
 | **Salvar proposta** / **Salvar alterações** | Barra fixa do rodapé | Salva a proposta inteira. Enquanto grava, mostra **Salvando...** |
 | **Cancelar** | Barra fixa do rodapé | Sai da edição sem salvar. Não cancela a proposta. |
-| **Copiar resumo para WhatsApp** | Bloco **9. Envio do orçamento**, coluna da direita | Copia o texto informal da proposta. |
-| **Tipo** (**%** ou **R$**) e **Desconto geral** | Bloco **8. Resumo do orçamento**, coluna da direita | Aplicam desconto sobre o subtotal dos produtos. |
+| **Copiar resumo para WhatsApp** | Bloco **9. Envio do orçamento**, coluna da direita (abas Geral, Orçamento, Pedido e Histórico) | Copia o texto informal da proposta. |
+| **Tipo** (**%** ou **R$**) e **Desconto geral** | Bloco **8. Resumo do orçamento**, coluna da direita (abas Geral, Orçamento e Pagamentos) | Aplicam desconto sobre o subtotal dos produtos. |
 | **Resolver agora** | Aviso vermelho **Revisão financeira pendente** | Abre a janela para escolher o destino da diferença. |
 | **Consolidar Total Oficial** | Aviso vermelho **Revisão financeira pendente** | Abre a confirmação para recalcular o total pelos itens ativos. |
 | **Confirmar Consolidação** | Janela **Consolidar Total Oficial** | Recalcula o total e recarrega a tela. |
@@ -111,7 +111,20 @@ A aba de produtos aparece na tela com o nome **Orçamento**.
 
 **Boletim** não é aba visível: a barra não tem botão com esse nome. Quem abre o endereço da proposta com `?tab=boletim` vê só o quadro "Boletim — Aguarde orientações."
 
-Na coluna da direita, em todas as abas, ficam três blocos: **8. Resumo do orçamento** (valores, peso, destino da entrega e o desconto geral), **9. Envio do orçamento** (texto pronto, com o botão **Copiar resumo para WhatsApp**) e **10. Observações e Condições**.
+Na coluna da direita ficam até quatro blocos, e **cada aba mostra só os que lhe cabem**: **5. Endereço de entrega**, **8. Resumo do orçamento** (valores, peso, destino da entrega e o desconto geral), **9. Envio do orçamento** (texto pronto, com o botão **Copiar resumo para WhatsApp**) e **10. Observações e Condições**.
+
+| Aba | Blocos na coluna da direita |
+|---|---|
+| Geral | 8, 9 e 10 (o bloco 5 fica no corpo da própria aba) |
+| Orçamento | 8, 9 e 10 |
+| Fretes | 5 e 10 |
+| Pedido | 9 e 10 |
+| Artes | só o 10, em tamanho maior |
+| Produção / Expedição | só o 10, em tamanho maior |
+| Pagamentos | 8 e 10 |
+| Histórico | 9 e 10 |
+
+Os blocos que saem da lateral não perdem nada: o que foi digitado (desconto geral, observações) continua na proposta e vale no **Salvar alterações** de qualquer aba. O bloco 5 da aba Fretes é o mesmo da aba Geral: escolher, editar ou salvar um endereço numa aba vale na outra.
 
 Quando uma aba some ou não abre:
 
@@ -374,6 +387,7 @@ O aviso some quando você clica em **Entendi** ou quando a cópia ganha cobranç
 ## Arquivos de origem
 
 - `src/features/orcamentos/OrcamentoFormPage.tsx`
+- `src/features/orcamentos/lib/boxes-da-lateral.ts`
 - `src/app/(erp)/orcamentos/novo/page.tsx`
 - `src/app/(erp)/orcamentos/[id]/editar/page.tsx`
 - `src/features/orcamentos/OrcamentosListPageReal.tsx`

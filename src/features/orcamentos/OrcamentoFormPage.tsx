@@ -104,6 +104,7 @@ import {
   valorFreteEfetivo
 } from "@/features/orcamentos/lib/modalidade-frete";
 import { contarModelosCopiados, copiaLevouCabecalho, montarAvisoDaCopia } from "@/features/orcamentos/lib/aviso-copia";
+import { box10Expandido, boxEstaNaLateral } from "@/features/orcamentos/lib/boxes-da-lateral";
 import {
   freteEhDoServico,
   servicoDoFrete,
@@ -5460,6 +5461,250 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
    * e NENHUM selo aparece.
    */
 
+  /**
+   * BOX 5 - Endereco de entrega (11/10/2026). Desenhado AQUI, uma vez so, e usado em
+   * dois lugares: na aba Geral (onde sempre esteve) e na lateral de Fretes. E o
+   * mesmo bloco, sobre o mesmo estado e os mesmos handlers do formulario — escolher,
+   * editar e salvar um endereco numa aba vale na outra, e as duas nao divergem. Os
+   * modais de endereco ficam na raiz da pagina, entao abrem de qualquer aba.
+   *
+   * O conteudo do bloco e o de antes, linha por linha (inclusive o "Salvar endereco").
+   */
+  const renderBoxEnderecoEntrega = () =>
+    !form.clienteNaoCadastrado ? (
+                    <FormSection title="5. Endereço de entrega" description="Endereço usado para frete, PDF e expedição futura.">
+                    {combinedAddresses.length > 0 ? (
+                      <SelectorPainel
+                        items={combinedAddresses}
+                        selectedId={form.enderecoId}
+                        onSelect={handleSelectEndereco}
+                        disabled={ehComplemento}
+                        avisoDesabilitado={`Herdado do pedido #${form.idIntPedidoPrincipal}`}
+                        rotuloOutros="Outras opções de entrega"
+                        onEdit={(item, e) => {
+                          e.stopPropagation();
+                          setAddressModalMode("edit");
+                          setEditingAddressId(item.id);
+                          setAddressDraft({
+                            tipo: (item.tipo as any) || "entrega",
+                            cep: item.cep || "",
+                            endereco: item.endereco || "",
+                            numero: item.numero || "",
+                            complemento: item.complemento || "",
+                            bairro: item.bairro || "",
+                            cidade: item.cidade || "",
+                            uf: item.uf || "",
+                            recebedor: item.recebedor || "",
+                            cpfRecebedor: item.cpfRecebedor || "",
+                            // Sem isto o rascunho abre sem IE e o UPDATE grava null por cima.
+                            ieRecebedor: item.ieRecebedor || "",
+                            obs: item.obs || ""
+                          });
+                          setIsAddressModalOpen(true);
+                        }}
+                        onCopy={async (item, e) => {
+                          e.stopPropagation();
+                          const texts = [];
+                          if (item.recebedor) texts.push(`Responsável: ${item.recebedor}`);
+                          else texts.push(`Responsável: não informado`);
+                          
+                          if (item.cpfRecebedor) {
+                            const maskCpf = (v: string) => {
+                              let c = v.replace(/\D/g, "");
+                              if (c.length > 11) c = c.slice(0, 11);
+                              return c.replace(/(\d{3})(\d)/, "$1.$2").replace(/(\d{3})(\d)/, "$1.$2").replace(/(\d{3})(\d{1,2})$/, "$1-$2");
+                            };
+                            texts.push(`CPF do responsável: ${maskCpf(item.cpfRecebedor)}`);
+                          }
+                          
+                          if (item.endereco && item.numero) texts.push(`Endereço: ${item.endereco}, ${item.numero}`);
+                          else if (item.endereco) texts.push(`Endereço: ${item.endereco}`);
+                          
+                          if (item.complemento) texts.push(`Complemento: ${item.complemento}`);
+                          if (item.bairro) texts.push(`Bairro: ${item.bairro}`);
+                          if (item.cidade && item.uf) texts.push(`Cidade/UF: ${item.cidade}/${item.uf}`);
+                          
+                          if (item.cep) {
+                            const maskCep = (v: string) => {
+                              const c = v.replace(/\D/g, "");
+                              return c.replace(/^(\d{5})(\d)/, "$1-$2").slice(0, 9);
+                            };
+                            texts.push(`CEP: ${maskCep(item.cep)}`);
+                          }
+                          
+                          if ((item as any).obs) texts.push(`Referência: ${(item as any).obs}`);
+                          if (item.tipo) texts.push(`Tipo: ${item.tipo}`);
+                          
+                          const textToCopy = texts.join("\n");
+                          
+                          try {
+                            if (navigator.clipboard && window.isSecureContext) {
+                              await navigator.clipboard.writeText(textToCopy);
+                            } else {
+                              const textArea = document.createElement("textarea");
+                              textArea.value = textToCopy;
+                              textArea.style.position = "absolute";
+                              textArea.style.left = "-999999px";
+                              document.body.prepend(textArea);
+                              textArea.select();
+                              document.execCommand("copy");
+                              textArea.remove();
+                            }
+                            showToast({ type: "success", title: "Copiado", description: "Endereço copiado para a área de transferência." });
+                          } catch (err) {
+                            showToast({ type: "error", title: "Erro", description: "Não foi possível copiar o endereço." });
+                          }
+                        }}
+                        painel={(endereco) => {
+                          const isSocioAddr = (endereco as { _isSocioAddr?: boolean })._isSocioAddr === true;
+                          const donoText = isSocioAddr ? "Endereço do pagador selecionado" : "Endereço do comprador";
+                          const cidadeUf = [endereco.cidade, endereco.uf].filter(Boolean).join("/");
+                          const logradouro = [endereco.endereco, endereco.numero].filter(Boolean).join(", ");
+                          return {
+                            kicker: `Endereço de entrega selecionado · ${donoText}`,
+                            titulo: endereco.recebedor ? `${endereco.recebedor} — ${logradouro} — ${cidadeUf}` : `${logradouro} — ${cidadeUf}`,
+                            campos: [
+                              { rotulo: "Recebedor", valor: endereco.recebedor || "—", apagado: !endereco.recebedor, span: 2 },
+                              {
+                                rotulo: "CPF do recebedor",
+                                valor: endereco.cpfRecebedor ? formatDocument(endereco.cpfRecebedor) : "—",
+                                apagado: !endereco.cpfRecebedor
+                              },
+                              { rotulo: "Tipo", valor: endereco.tipo || "Tipo não informado", apagado: !endereco.tipo },
+                              { rotulo: "Endereço", valor: logradouro || "—", apagado: !logradouro, span: 2 },
+                              { rotulo: "Complemento", valor: semTraco(endereco.complemento) || "—", apagado: !semTraco(endereco.complemento) },
+                              { rotulo: "Bairro", valor: endereco.bairro || "—", apagado: !endereco.bairro },
+                              { rotulo: "Cidade / UF", valor: cidadeUf || "—", apagado: !cidadeUf },
+                              { rotulo: "CEP", valor: cepExibicao(endereco.cep) || "—", apagado: !endereco.cep },
+                              { rotulo: "Referência", valor: endereco.obs || "—", apagado: !endereco.obs, span: 2 }
+                            ]
+                          };
+                        }}
+                        linha={(endereco) => {
+                          const cidadeUf = [endereco.cidade, endereco.uf].filter(Boolean).join("/");
+                          const logradouro = [endereco.endereco, endereco.numero].filter(Boolean).join(", ");
+                          const tipoExibido = endereco.tipo ? endereco.tipo : "Tipo não informado";
+                          return [
+                            endereco.recebedor
+                              ? { principal: endereco.recebedor, secundaria: logradouro }
+                              : { principal: logradouro, secundaria: semTraco(endereco.complemento) || endereco.bairro || "" },
+                            {
+                              principal: cidadeUf || "—",
+                              secundaria: [tipoExibido, endereco.cep ? `CEP ${cepExibicao(endereco.cep)}` : ""].filter(Boolean).join(" · ")
+                            },
+                            {
+                              principal: endereco.cpfRecebedor ? formatDocument(endereco.cpfRecebedor) : "—",
+                              secundaria: "CPF do recebedor"
+                            }
+                          ];
+                        }}
+                        extraClassNameForItem={(endereco) => {
+                          const isCompradorAddress = (endereco as any)._isSocioAddr === true;
+                          const isSelected = form.enderecoId === endereco.id;
+                          if (isSelected) {
+                            if (isCompradorAddress) {
+                              return "!bg-[#4b78b7] !border-[#4b78b7] !text-white";
+                            }
+                            return "!bg-[#3d9790] !border-[#3d9790] !text-white";
+                          }
+                          return "border-blue-100 bg-blue-50/40 text-slate-700 hover:bg-blue-50/70";
+                        }}
+                        badgeForItem={(endereco) => {
+                          const isCompradorAddress = (endereco as any)._isSocioAddr === true;
+                          const isSelected = form.enderecoId === endereco.id;
+                          const isSocio = form.compradorId && form.compradorId !== form.clienteId;
+                          
+                          let badgeText = null;
+                          if (isCompradorAddress) {
+                            const vinculo = cliente?.vinculosComerciais?.find((v) => v.id === form.compradorId);
+                            const isPartner = vinculo?.tipoRelacao.toLowerCase().includes("sócio") || vinculo?.tipoRelacao.toLowerCase().includes("socio");
+                            badgeText = isPartner ? "Endereço de sócio" : "Endereço de vínculo comercial";
+                          }
+
+                          let requerNota = false;
+                          if (isSelected && isSocio) {
+                            const principalAddr = compradorAddresses.find(a => (a.tipo || "").trim().toLowerCase() === "principal") || compradorAddresses[0];
+                            if (principalAddr && endereco.id !== principalAddr.id) {
+                              const cidadeSelecionada = (endereco.cidade || "").trim().toLowerCase();
+                              const cidadePrincipal = (principalAddr.cidade || "").trim().toLowerCase();
+                              if (cidadeSelecionada !== cidadePrincipal) {
+                                requerNota = true;
+                              }
+                            }
+                          }
+
+                          return (
+                            <div className="flex gap-1 items-center">
+                              {badgeText && (
+                                <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-semibold text-blue-800 border border-blue-200">
+                                  {badgeText}
+                                </span>
+                              )}
+                              {requerNota && (
+                                <span className="inline-flex items-center gap-1 rounded-full bg-red-500 px-2 py-0.5 text-[10px] font-bold text-white shadow-sm">
+                                  REQUER NOTA DE TRANSPORTE
+                                </span>
+                              )}
+                            </div>
+                          );
+                        }}
+                        searchPlaceholder="Pesquisar endereço por responsável, rua, bairro, cidade ou CEP..."
+                        searchTextForItem={(endereco) => [
+                          endereco.recebedor,
+                          endereco.endereco,
+                          endereco.numero,
+                          endereco.complemento,
+                          endereco.bairro,
+                          endereco.cidade,
+                          endereco.uf,
+                          endereco.cep,
+                          endereco.tipo
+                        ].filter(Boolean).join(" ")}
+                      />
+                    ) : (
+                      <p className="text-sm text-slate-500 bg-slate-50 rounded-2xl p-4">Nenhum endereço disponível para entrega.</p>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (mode === "edit" && form.enderecoId) {
+                          // Proposta edit mode: open the linked address for UPDATE
+                          const linkedAddr = combinedAddresses.find((a) => a.id === form.enderecoId);
+                          if (linkedAddr) {
+                            setAddressModalMode("edit");
+                            setEditingAddressId(linkedAddr.id);
+                            setAddressDraft({
+                              tipo: (linkedAddr.tipo as AddressDraft["tipo"]) || "entrega",
+                              cep: linkedAddr.cep || "",
+                              endereco: linkedAddr.endereco || "",
+                              numero: linkedAddr.numero || "",
+                              complemento: linkedAddr.complemento || "",
+                              bairro: linkedAddr.bairro || "",
+                              cidade: linkedAddr.cidade || "",
+                              uf: linkedAddr.uf || "",
+                              recebedor: linkedAddr.recebedor || "",
+                              cpfRecebedor: linkedAddr.cpfRecebedor || "",
+                              // Idem: a IE precisa ir no rascunho para sobreviver ao UPDATE.
+                              ieRecebedor: linkedAddr.ieRecebedor || "",
+                              obs: linkedAddr.obs || "",
+                            });
+                            setIsAddressModalOpen(true);
+                            return;
+                          }
+                        }
+                        // Default: open empty create form
+                        setAddressModalMode("create");
+                        setEditingAddressId(null);
+                        setAddressDraft({ tipo: "entrega", cep: "", endereco: "", numero: "", complemento: "", bairro: "", cidade: "", uf: "", recebedor: "", cpfRecebedor: "" });
+                        setIsAddressModalOpen(true);
+                      }}
+                      className="mt-4 rounded-2xl border border-[#d7e5e8] bg-white px-4 py-3 text-sm font-semibold text-[#0b2f4a]"
+                    >
+                      {mode === "edit" && form.enderecoId ? "Salvar endereço" : "+ Adicionar novo endereço"}
+                    </button>
+                  </FormSection>
+    ) : null;
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -6586,239 +6831,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                   </FormSection>
                   )}
 
-                  {!form.clienteNaoCadastrado && (
-                    <FormSection title="5. Endereço de entrega" description="Endereço usado para frete, PDF e expedição futura.">
-                    {combinedAddresses.length > 0 ? (
-                      <SelectorPainel
-                        items={combinedAddresses}
-                        selectedId={form.enderecoId}
-                        onSelect={handleSelectEndereco}
-                        disabled={ehComplemento}
-                        avisoDesabilitado={`Herdado do pedido #${form.idIntPedidoPrincipal}`}
-                        rotuloOutros="Outras opções de entrega"
-                        onEdit={(item, e) => {
-                          e.stopPropagation();
-                          setAddressModalMode("edit");
-                          setEditingAddressId(item.id);
-                          setAddressDraft({
-                            tipo: (item.tipo as any) || "entrega",
-                            cep: item.cep || "",
-                            endereco: item.endereco || "",
-                            numero: item.numero || "",
-                            complemento: item.complemento || "",
-                            bairro: item.bairro || "",
-                            cidade: item.cidade || "",
-                            uf: item.uf || "",
-                            recebedor: item.recebedor || "",
-                            cpfRecebedor: item.cpfRecebedor || "",
-                            // Sem isto o rascunho abre sem IE e o UPDATE grava null por cima.
-                            ieRecebedor: item.ieRecebedor || "",
-                            obs: item.obs || ""
-                          });
-                          setIsAddressModalOpen(true);
-                        }}
-                        onCopy={async (item, e) => {
-                          e.stopPropagation();
-                          const texts = [];
-                          if (item.recebedor) texts.push(`Responsável: ${item.recebedor}`);
-                          else texts.push(`Responsável: não informado`);
-                          
-                          if (item.cpfRecebedor) {
-                            const maskCpf = (v: string) => {
-                              let c = v.replace(/\D/g, "");
-                              if (c.length > 11) c = c.slice(0, 11);
-                              return c.replace(/(\d{3})(\d)/, "$1.$2").replace(/(\d{3})(\d)/, "$1.$2").replace(/(\d{3})(\d{1,2})$/, "$1-$2");
-                            };
-                            texts.push(`CPF do responsável: ${maskCpf(item.cpfRecebedor)}`);
-                          }
-                          
-                          if (item.endereco && item.numero) texts.push(`Endereço: ${item.endereco}, ${item.numero}`);
-                          else if (item.endereco) texts.push(`Endereço: ${item.endereco}`);
-                          
-                          if (item.complemento) texts.push(`Complemento: ${item.complemento}`);
-                          if (item.bairro) texts.push(`Bairro: ${item.bairro}`);
-                          if (item.cidade && item.uf) texts.push(`Cidade/UF: ${item.cidade}/${item.uf}`);
-                          
-                          if (item.cep) {
-                            const maskCep = (v: string) => {
-                              const c = v.replace(/\D/g, "");
-                              return c.replace(/^(\d{5})(\d)/, "$1-$2").slice(0, 9);
-                            };
-                            texts.push(`CEP: ${maskCep(item.cep)}`);
-                          }
-                          
-                          if ((item as any).obs) texts.push(`Referência: ${(item as any).obs}`);
-                          if (item.tipo) texts.push(`Tipo: ${item.tipo}`);
-                          
-                          const textToCopy = texts.join("\n");
-                          
-                          try {
-                            if (navigator.clipboard && window.isSecureContext) {
-                              await navigator.clipboard.writeText(textToCopy);
-                            } else {
-                              const textArea = document.createElement("textarea");
-                              textArea.value = textToCopy;
-                              textArea.style.position = "absolute";
-                              textArea.style.left = "-999999px";
-                              document.body.prepend(textArea);
-                              textArea.select();
-                              document.execCommand("copy");
-                              textArea.remove();
-                            }
-                            showToast({ type: "success", title: "Copiado", description: "Endereço copiado para a área de transferência." });
-                          } catch (err) {
-                            showToast({ type: "error", title: "Erro", description: "Não foi possível copiar o endereço." });
-                          }
-                        }}
-                        painel={(endereco) => {
-                          const isSocioAddr = (endereco as { _isSocioAddr?: boolean })._isSocioAddr === true;
-                          const donoText = isSocioAddr ? "Endereço do pagador selecionado" : "Endereço do comprador";
-                          const cidadeUf = [endereco.cidade, endereco.uf].filter(Boolean).join("/");
-                          const logradouro = [endereco.endereco, endereco.numero].filter(Boolean).join(", ");
-                          return {
-                            kicker: `Endereço de entrega selecionado · ${donoText}`,
-                            titulo: endereco.recebedor ? `${endereco.recebedor} — ${logradouro} — ${cidadeUf}` : `${logradouro} — ${cidadeUf}`,
-                            campos: [
-                              { rotulo: "Recebedor", valor: endereco.recebedor || "—", apagado: !endereco.recebedor, span: 2 },
-                              {
-                                rotulo: "CPF do recebedor",
-                                valor: endereco.cpfRecebedor ? formatDocument(endereco.cpfRecebedor) : "—",
-                                apagado: !endereco.cpfRecebedor
-                              },
-                              { rotulo: "Tipo", valor: endereco.tipo || "Tipo não informado", apagado: !endereco.tipo },
-                              { rotulo: "Endereço", valor: logradouro || "—", apagado: !logradouro, span: 2 },
-                              { rotulo: "Complemento", valor: semTraco(endereco.complemento) || "—", apagado: !semTraco(endereco.complemento) },
-                              { rotulo: "Bairro", valor: endereco.bairro || "—", apagado: !endereco.bairro },
-                              { rotulo: "Cidade / UF", valor: cidadeUf || "—", apagado: !cidadeUf },
-                              { rotulo: "CEP", valor: cepExibicao(endereco.cep) || "—", apagado: !endereco.cep },
-                              { rotulo: "Referência", valor: endereco.obs || "—", apagado: !endereco.obs, span: 2 }
-                            ]
-                          };
-                        }}
-                        linha={(endereco) => {
-                          const cidadeUf = [endereco.cidade, endereco.uf].filter(Boolean).join("/");
-                          const logradouro = [endereco.endereco, endereco.numero].filter(Boolean).join(", ");
-                          const tipoExibido = endereco.tipo ? endereco.tipo : "Tipo não informado";
-                          return [
-                            endereco.recebedor
-                              ? { principal: endereco.recebedor, secundaria: logradouro }
-                              : { principal: logradouro, secundaria: semTraco(endereco.complemento) || endereco.bairro || "" },
-                            {
-                              principal: cidadeUf || "—",
-                              secundaria: [tipoExibido, endereco.cep ? `CEP ${cepExibicao(endereco.cep)}` : ""].filter(Boolean).join(" · ")
-                            },
-                            {
-                              principal: endereco.cpfRecebedor ? formatDocument(endereco.cpfRecebedor) : "—",
-                              secundaria: "CPF do recebedor"
-                            }
-                          ];
-                        }}
-                        extraClassNameForItem={(endereco) => {
-                          const isCompradorAddress = (endereco as any)._isSocioAddr === true;
-                          const isSelected = form.enderecoId === endereco.id;
-                          if (isSelected) {
-                            if (isCompradorAddress) {
-                              return "!bg-[#4b78b7] !border-[#4b78b7] !text-white";
-                            }
-                            return "!bg-[#3d9790] !border-[#3d9790] !text-white";
-                          }
-                          return "border-blue-100 bg-blue-50/40 text-slate-700 hover:bg-blue-50/70";
-                        }}
-                        badgeForItem={(endereco) => {
-                          const isCompradorAddress = (endereco as any)._isSocioAddr === true;
-                          const isSelected = form.enderecoId === endereco.id;
-                          const isSocio = form.compradorId && form.compradorId !== form.clienteId;
-                          
-                          let badgeText = null;
-                          if (isCompradorAddress) {
-                            const vinculo = cliente?.vinculosComerciais?.find((v) => v.id === form.compradorId);
-                            const isPartner = vinculo?.tipoRelacao.toLowerCase().includes("sócio") || vinculo?.tipoRelacao.toLowerCase().includes("socio");
-                            badgeText = isPartner ? "Endereço de sócio" : "Endereço de vínculo comercial";
-                          }
-
-                          let requerNota = false;
-                          if (isSelected && isSocio) {
-                            const principalAddr = compradorAddresses.find(a => (a.tipo || "").trim().toLowerCase() === "principal") || compradorAddresses[0];
-                            if (principalAddr && endereco.id !== principalAddr.id) {
-                              const cidadeSelecionada = (endereco.cidade || "").trim().toLowerCase();
-                              const cidadePrincipal = (principalAddr.cidade || "").trim().toLowerCase();
-                              if (cidadeSelecionada !== cidadePrincipal) {
-                                requerNota = true;
-                              }
-                            }
-                          }
-
-                          return (
-                            <div className="flex gap-1 items-center">
-                              {badgeText && (
-                                <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-semibold text-blue-800 border border-blue-200">
-                                  {badgeText}
-                                </span>
-                              )}
-                              {requerNota && (
-                                <span className="inline-flex items-center gap-1 rounded-full bg-red-500 px-2 py-0.5 text-[10px] font-bold text-white shadow-sm">
-                                  REQUER NOTA DE TRANSPORTE
-                                </span>
-                              )}
-                            </div>
-                          );
-                        }}
-                        searchPlaceholder="Pesquisar endereço por responsável, rua, bairro, cidade ou CEP..."
-                        searchTextForItem={(endereco) => [
-                          endereco.recebedor,
-                          endereco.endereco,
-                          endereco.numero,
-                          endereco.complemento,
-                          endereco.bairro,
-                          endereco.cidade,
-                          endereco.uf,
-                          endereco.cep,
-                          endereco.tipo
-                        ].filter(Boolean).join(" ")}
-                      />
-                    ) : (
-                      <p className="text-sm text-slate-500 bg-slate-50 rounded-2xl p-4">Nenhum endereço disponível para entrega.</p>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (mode === "edit" && form.enderecoId) {
-                          // Proposta edit mode: open the linked address for UPDATE
-                          const linkedAddr = combinedAddresses.find((a) => a.id === form.enderecoId);
-                          if (linkedAddr) {
-                            setAddressModalMode("edit");
-                            setEditingAddressId(linkedAddr.id);
-                            setAddressDraft({
-                              tipo: (linkedAddr.tipo as AddressDraft["tipo"]) || "entrega",
-                              cep: linkedAddr.cep || "",
-                              endereco: linkedAddr.endereco || "",
-                              numero: linkedAddr.numero || "",
-                              complemento: linkedAddr.complemento || "",
-                              bairro: linkedAddr.bairro || "",
-                              cidade: linkedAddr.cidade || "",
-                              uf: linkedAddr.uf || "",
-                              recebedor: linkedAddr.recebedor || "",
-                              cpfRecebedor: linkedAddr.cpfRecebedor || "",
-                              // Idem: a IE precisa ir no rascunho para sobreviver ao UPDATE.
-                              ieRecebedor: linkedAddr.ieRecebedor || "",
-                              obs: linkedAddr.obs || "",
-                            });
-                            setIsAddressModalOpen(true);
-                            return;
-                          }
-                        }
-                        // Default: open empty create form
-                        setAddressModalMode("create");
-                        setEditingAddressId(null);
-                        setAddressDraft({ tipo: "entrega", cep: "", endereco: "", numero: "", complemento: "", bairro: "", cidade: "", uf: "", recebedor: "", cpfRecebedor: "" });
-                        setIsAddressModalOpen(true);
-                      }}
-                      className="mt-4 rounded-2xl border border-[#d7e5e8] bg-white px-4 py-3 text-sm font-semibold text-[#0b2f4a]"
-                    >
-                      {mode === "edit" && form.enderecoId ? "Salvar endereço" : "+ Adicionar novo endereço"}
-                    </button>
-                  </FormSection>
-                  )}
+                  {renderBoxEnderecoEntrega()}
                 </div>
               )}
 
@@ -7667,7 +7680,12 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
         </div>
 
         {shouldShowRest && (
-          <div className="space-y-6 xl:sticky xl:top-6 xl:self-start">
+          // Quais boxes aparecem em cada aba vem de `lib/boxes-da-lateral.ts` (um mapa so).
+          // Com o box 5 (Fretes) a lateral pode passar da altura da tela: ela rola por dentro
+          // em vez de cortar o fim, que o `sticky` deixaria inalcancavel.
+          <div className={`space-y-6 xl:sticky xl:top-6 xl:self-start ${boxEstaNaLateral(activeFormTab, 5) ? "xl:max-h-[calc(100vh-3rem)] xl:overflow-y-auto" : ""}`}>
+            {boxEstaNaLateral(activeFormTab, 5) && renderBoxEnderecoEntrega()}
+            {boxEstaNaLateral(activeFormTab, 8) && (
             <FormSection title="8. Resumo do orçamento" description="Resumo consolidado incluindo pesos e valores extras das variações.">
               <ResumoValores resumo={resumo} bonusPercent={bonusPercent} destino={destinoDoResumo} />
               <fieldset disabled={isFormBloqueadoPorCobranca} className="group mt-4">
@@ -7701,7 +7719,9 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                 )}
               </fieldset>
             </FormSection>
+            )}
 
+            {boxEstaNaLateral(activeFormTab, 9) && (
             <FormSection title="9. Envio do orçamento" description="Texto informal para envio via WhatsApp.">
               <textarea readOnly value={informalText} className="min-h-72 w-full resize-y rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-700 outline-none" />
               <button 
@@ -7715,10 +7735,14 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                 Copiar resumo para WhatsApp
               </button>
             </FormSection>
+            )}
 
+            {boxEstaNaLateral(activeFormTab, 10) && (
             <FormSection title="10. Observações e Condições" description="Notas internas ou termos da proposta comercial.">
-              <textarea value={form.observacoes} onChange={(event) => updateField("observacoes", event.target.value)} className={`${inputClass} min-h-36 resize-y`} placeholder="Ex: Prazo de entrega estendido por conta de logística do frete..." />
+              {/* Expandido (min-h-72, a altura do box 9) nas abas em que e o unico da lateral. */}
+              <textarea value={form.observacoes} onChange={(event) => updateField("observacoes", event.target.value)} className={`${inputClass} ${box10Expandido(activeFormTab) ? "min-h-72" : "min-h-36"} resize-y`} placeholder="Ex: Prazo de entrega estendido por conta de logística do frete..." />
             </FormSection>
+            )}
           </div>
         )}
       </section>

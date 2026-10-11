@@ -1,6 +1,6 @@
 # Proposta: aba Fretes
 
-> **Última revisão:** 09/10/2026
+> **Última revisão:** 11/10/2026
 > **Caminho no menu:** Pedidos → abrir um pedido → aba Fretes
 > **Endereço:** `/orcamentos/<número>/editar?tab=fretes`
 
@@ -42,7 +42,8 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Aplicar** (vira **Aplicando...**) | Em cada opção da cotação complementar | Grava a diferença de frete neste pedido. |
 | **Serviço / Transportadora \*** | Proposta avulsa | Campo de texto com o nome do transporte. |
 | **Valor do frete (R$) \*** | Proposta avulsa | Campo com o valor do frete da proposta avulsa. |
-| **Copiar resumo para WhatsApp** | Bloco **9. Envio do orçamento**, na lateral | Copia o texto do orçamento. Fica apagado, com a dica "Escolha um frete primeiro", enquanto não há frete escolhido. |
+| **Endereço de entrega** (escolher outro endereço, copiar, editar e **Salvar endereço**) | Bloco **5. Endereço de entrega**, na lateral da aba Fretes | É o mesmo bloco da aba Geral, com tudo o que ele faz: escolher, editar ou salvar o endereço aqui vale também lá, e o contrário. |
+| **Copiar resumo para WhatsApp** | Bloco **9. Envio do orçamento**; **não aparece na aba Fretes** | A lateral de Fretes traz só o endereço de entrega e as observações. Para copiar o resumo, use as abas Geral, Orçamento, Pedido ou Histórico; o botão fica apagado, com a dica "Escolha um frete primeiro", enquanto não há frete escolhido. |
 | **Salvar alterações** (em proposta nova: **Salvar proposta**) | Barra fixa no rodapé | Grava a proposta, com a modalidade, a transportadora e o frete escolhido. |
 | **Cancelar** | Barra fixa no rodapé | Sai da edição. |
 | **Recalcular frete** | Aviso **O frete precisa ser atualizado**, que aparece ao gerar cobrança | Traz você para esta aba para refazer o frete. |
@@ -53,7 +54,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 
 1. Abra a aba **Fretes**.
 2. Na caixa **Modalidade do frete — quem paga**, clique em **Retira no balcão**, **FOB — por conta do cliente** ou **CIF — por conta da empresa**.
-3. O bloco **8. Resumo do orçamento** muda na hora: em retirada e em FOB o frete zera; em CIF entra o valor do frete escolhido.
+3. O bloco **8. Resumo do orçamento** (visível nas abas Geral, Orçamento e Pagamentos, não na aba Fretes) muda na hora: em retirada e em FOB o frete zera; em CIF entra o valor do frete escolhido.
 4. Clique em **Salvar alterações**. Enquanto não salvar, a tela mostra o aviso "Modalidade ainda não gravada: salve o orçamento para ela valer na OS e na Expedição."
 
 ### Cotar e escolher um frete (CIF)
@@ -276,6 +277,7 @@ Repetir **Aplicar** não duplica: a segunda tentativa devolve o mesmo frete comp
 Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê esta lista: quando um deles muda e a ficha não, ele avisa. Um caminho por item, entre crases, a partir da raiz do repositório; pasta termina com `/` e vale para tudo dentro dela.
 
 - `src/features/orcamentos/OrcamentoFormPage.tsx`
+- `src/features/orcamentos/lib/boxes-da-lateral.ts`
 - `src/features/orcamentos/lib/modalidade-frete.ts`
 - `src/features/orcamentos/lib/categoria-frete.ts`
 - `src/features/orcamentos/lib/servicos-transportadora.ts`

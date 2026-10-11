@@ -1,6 +1,6 @@
 # Proposta: aba Geral
 
-> **Última revisão:** 09/10/2026
+> **Última revisão:** 11/10/2026
 > **Caminho no menu:** Pedidos → abrir um pedido → aba **Geral**
 > **Endereço:** `/orcamentos/<número>/editar` (em proposta nova, `/orcamentos/novo`)
 
@@ -145,6 +145,8 @@ O destino escolhido aparece também no topo do bloco **8. Resumo do orçamento**
 
 ### Usar os blocos da coluna da direita
 
+Aqui na aba Geral aparecem os blocos 8, 9 e 10. As outras abas mostram só alguns deles (o quadro completo está em [Proposta](proposta.md)). O bloco 5, **Endereço de entrega**, fica no corpo desta aba e também aparece na lateral da aba Fretes, como o mesmo bloco.
+
 1. **8. Resumo do orçamento** mostra **Entrega em**, **Subtotal bruto**, o abatimento da tabela especial, **Subtotal produtos**, **Desconto geral**, **Frete escolhido**, **Peso total** e **Total final**.
 2. Para dar desconto na proposta inteira, escolha o **Tipo** (**%** ou **R$**) e digite o valor em **Desconto geral**. O desconto nunca passa do subtotal dos produtos.
 3. **9. Envio do orçamento** traz o texto informal da proposta. Clique em **Copiar resumo para WhatsApp**. O botão só libera depois que um frete foi escolhido.
@@ -228,6 +230,7 @@ A escolha entre proposta avulsa e proposta com produtos do catálogo não fica n
 ## Arquivos de origem
 
 - `src/features/orcamentos/OrcamentoFormPage.tsx`
+- `src/features/orcamentos/lib/boxes-da-lateral.ts`
 - `src/features/orcamentos/components/SocioPagadorInline.tsx`
 - `src/features/orcamentos/components/ContactEditModal.tsx`
 - `src/features/cadastros/components/DocumentoRecebedorFields.tsx`
