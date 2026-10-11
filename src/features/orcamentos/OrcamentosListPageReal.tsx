@@ -978,27 +978,33 @@ export function OrcamentosListPageReal() {
   }, [filteredPropostas]);
 
   /**
-   * Prazo de envio (27/09/2026): so com o card "Em Producao" ligado, abaixo da
-   * forma de envio. Fonte e formato em `buscarPrazoEnvioDosPedidos`. Nos outros
-   * filtros nada e buscado e a coluna segue como antes.
+   * Previsao de envio, abaixo da forma de envio, em TODAS as linhas (11/10/2026).
+   * Antes so aparecia com o card "Em Producao" ligado (27/09/2026). Fonte e
+   * formato em `buscarPrazoEnvioDosPedidos`: UMA leitura pequena das linhas da
+   * pagina (propostas_os_setores tem poucas linhas por pedido). Pedido sem
+   * previsao nao entra no mapa e a celula nao mostra nada alem da forma de envio.
+   *
+   * A chave e a lista de numeros, e nao o array: `filteredPropostas` e refeito a
+   * cada enriquecimento da tela, e sem a chave cada um refaria a leitura.
    */
   const [prazoEnvioPorId, setPrazoEnvioPorId] = useState<Record<number, string>>({});
-  const idsPrazoEnvio = useMemo(
-    () => (activeCard === "EM_PRODUCAO" ? filteredPropostas.map((p) => p.id_int) : []),
-    [activeCard, filteredPropostas]
+  const chaveIdsPrazoEnvio = useMemo(
+    () => filteredPropostas.map((p) => p.id_int).join(","),
+    [filteredPropostas]
   );
 
   useEffect(() => {
-    if (idsPrazoEnvio.length === 0) return;
+    if (!chaveIdsPrazoEnvio) return;
+    const ids = chaveIdsPrazoEnvio.split(",").map(Number);
     let ativo = true;
     void (async () => {
-      const mapa = await buscarPrazoEnvioDosPedidos(idsPrazoEnvio);
+      const mapa = await buscarPrazoEnvioDosPedidos(ids);
       if (ativo) setPrazoEnvioPorId(mapa);
     })();
     return () => {
       ativo = false;
     };
-  }, [idsPrazoEnvio, rawPropostas]);
+  }, [chaveIdsPrazoEnvio, rawPropostas]);
 
   /**
    * Rastreio das linhas da pagina. Consulta a parte porque nem o tipo de frete
@@ -2209,43 +2215,6 @@ Ela volta a aparecer nas listas operacionais.`
             }
           },
           {
-            // As duas viram uma: o tipo em cima, o valor embaixo e em negrito.
-            header: "Tipo cobrança / Valor total",
-            // Clique da coluna (25/09/2026): abre o pedido na aba Pagamentos.
-            onCellClick: (proposta) => router.push(`/orcamentos/${proposta.id_int}/editar?tab=pagamentos`),
-            cell: (proposta) => (
-              <div className="flex flex-col items-center">
-                <span>{rotuloCobrancaNaTela(proposta.tipoCobrancaLabel)}</span>
-                <span className={`font-bold ${grupoDaLinha(proposta) === 1 ? "text-emerald-800" : "text-slate-950"}`}>
-                  {formatCurrency(proposta.total)}
-                </span>
-                {/* Registro mais recente de pagamentos_v2 (26/09/2026); sem pagamento, nada. */}
-                {proposta.ultimoPagamentoEm ? (
-                  <span className="text-[11px] text-slate-500">{diaMesHora(proposta.ultimoPagamentoEm)}</span>
-                ) : null}
-              </div>
-            ),
-            align: "center"
-          },
-          {
-            // `min-w` no conteudo: a tabela e `w-full` com largura automatica, e
-            // este piso e o que da a folga de ~50% pedida — a coluna media 115px
-            // e passa a nao ficar abaixo de 176px (136px + os 40px de padding).
-            // `whitespace-nowrap` cumpre o "sem quebrar" mesmo em nome comprido,
-            // e o nome do designer, quando existe, alarga a coluna sozinho.
-            header: "Atendente",
-            cell: (proposta) => (
-              <div className="min-w-[8.5rem]">
-                <p className="whitespace-nowrap">{proposta.vendedor}</p>
-                {/* Designer do pedido (`pedidos_artes.designer_nome`), da mesma
-                    consulta do status da arte. Pedido sem arte nao tem designer. */}
-                {designerPorId[proposta.id_int] ? (
-                  <p className="whitespace-nowrap text-xs text-slate-500">{designerPorId[proposta.id_int]}</p>
-                ) : null}
-              </div>
-            )
-          },
-          {
             header: "Status",
             cell: (proposta) => (
               <div className="flex flex-col items-center gap-1">
@@ -2311,8 +2280,46 @@ Ela volta a aparecer nas listas operacionais.`
             align: "center"
           },
           {
+            // As duas viram uma: o tipo em cima, o valor embaixo e em negrito.
+            header: "Tipo cobrança / Valor total",
+            // Clique da coluna (25/09/2026): abre o pedido na aba Pagamentos.
+            onCellClick: (proposta) => router.push(`/orcamentos/${proposta.id_int}/editar?tab=pagamentos`),
+            cell: (proposta) => (
+              <div className="flex flex-col items-center">
+                <span>{rotuloCobrancaNaTela(proposta.tipoCobrancaLabel)}</span>
+                <span className={`font-bold ${grupoDaLinha(proposta) === 1 ? "text-emerald-800" : "text-slate-950"}`}>
+                  {formatCurrency(proposta.total)}
+                </span>
+                {/* Registro mais recente de pagamentos_v2 (26/09/2026); sem pagamento, nada. */}
+                {proposta.ultimoPagamentoEm ? (
+                  <span className="text-[11px] text-slate-500">{diaMesHora(proposta.ultimoPagamentoEm)}</span>
+                ) : null}
+              </div>
+            ),
+            align: "center"
+          },
+          {
+            // `min-w` no conteudo: a tabela e `w-full` com largura automatica, e
+            // este piso e o que da a folga de ~50% pedida — a coluna media 115px
+            // e passa a nao ficar abaixo de 176px (136px + os 40px de padding).
+            // `whitespace-nowrap` cumpre o "sem quebrar" mesmo em nome comprido,
+            // e o nome do designer, quando existe, alarga a coluna sozinho.
+            header: "Atendente",
+            cell: (proposta) => (
+              <div className="min-w-[8.5rem]">
+                <p className="whitespace-nowrap">{proposta.vendedor}</p>
+                {/* Designer do pedido (`pedidos_artes.designer_nome`), da mesma
+                    consulta do status da arte. Pedido sem arte nao tem designer. */}
+                {designerPorId[proposta.id_int] ? (
+                  <p className="whitespace-nowrap text-xs text-slate-500">{designerPorId[proposta.id_int]}</p>
+                ) : null}
+              </div>
+            )
+          },
+          {
             /**
-             * Status da arte ao lado do Status, sem substitui-lo. O sufixo
+             * Status da arte, sem substituir o Status (que fica logo depois de
+             * id - Cliente; esta coluna nao mudou de lugar). O sufixo
              * " / EM ARTE" do Status diz APENAS que ha arte pendente; em que pe
              * ela esta so se descobria abrindo a proposta.
              *
@@ -2385,12 +2392,14 @@ Ela volta a aparecer nas listas operacionais.`
             // Clique da coluna (25/09/2026): abre o pedido na aba Fretes.
             onCellClick: (proposta) => router.push(`/orcamentos/${proposta.id_int}/editar?tab=fretes`),
             cell: (proposta) => {
-              const prazoEnvio = activeCard === "EM_PRODUCAO" ? prazoEnvioPorId[proposta.id_int] : undefined;
+              // Previsao de envio (data e hora do boletim) em toda linha que tem;
+              // sem previsao, so a forma de envio — sem traco nem texto de ausencia.
+              const prazoEnvio = prazoEnvioPorId[proposta.id_int];
               if (!prazoEnvio) return proposta.envio || "—";
               return (
                 <div className="flex flex-col items-center gap-1">
                   <span>{proposta.envio || "—"}</span>
-                  <span className="text-[11px] text-slate-500">{prazoEnvio}</span>
+                  <span title="Previsão de envio" className="text-[11px] text-slate-500">{prazoEnvio}</span>
                 </div>
               );
             },

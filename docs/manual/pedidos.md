@@ -36,7 +36,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Arte Aprovada** (card) | Cards do topo, 3º | Liga ou desliga a lista dos pedidos com arte aprovada que ainda não foram para a produção. |
 | **Liberadas** (card) | Cards do topo, 4º | Liga ou desliga a lista dos pedidos com status "Liberado". |
 | **Revisão atendente** (card) | Cards do topo, 5º | Liga ou desliga a lista dos pedidos em REVISAO ATENDENTE. |
-| **Em produção** (card) | Cards do topo, 6º | Liga ou desliga a lista dos pedidos em produção e mostra o prazo do boletim na coluna Envio. |
+| **Em produção** (card) | Cards do topo, 6º | Liga ou desliga a lista dos pedidos em produção. |
 | **Buscar por número, cliente, CPF/CNPJ, ID do cliente, nota fiscal, atendente ou evento** | Barra de filtros, campo de texto | Busca pedidos em todos os períodos. Enquanto procura, a lupa vira um círculo girando e aparece **Buscando...** ao lado. |
 | **Ativos** (padrão) / **Todos status** | Barra de filtros | A tela abre em **Ativos**, a visão de trabalho: tira os pedidos ENTREGUE, EM TRANSITO e CANCELADO e os dos modelos Avulso e Encerrados. **Todos status** mostra tudo (como a lista era antes). Escolher um status específico filtra por ele e desliga o card que estiver ligado. |
 | **Todos modelos** | Barra de filtros | Filtra por AVULSO, PROPOSTA ou ENCERRADOS (teste). |
@@ -144,11 +144,11 @@ No celular a lista vira cartões, e só a revisão atendente ganha fundo azul. O
 
 1. **N°**: número do pedido.
 2. **id - Cliente**: código e nome fantasia do cliente (ou a razão social, quando não há fantasia). Sem cliente cadastrado aparece a marca "Sem cadastro". Abaixo podem aparecer "Nota fiscal:" com o nome de quem vai receber a nota, quando é outra pessoa que não o cliente, e o nome do evento, quando o pedido tem arte. Clicar nesta coluna abre o cadastro do cliente; sem cadastro, abre a proposta.
-3. **Tipo cobrança / Valor total**: o tipo de cobrança ("Não gerada" quando ainda não há cobrança), o valor total e, abaixo, a data e a hora do registro de pagamento mais recente. Clicar abre a proposta na aba Pagamentos.
-4. **Atendente**: o atendente e, abaixo, o designer, quando o pedido tem arte.
-5. **Status**: o status do pedido, sem o complemento de arte (a situação da arte fica na coluna **Status Arte**), e, abaixo, a data e a hora da última mudança de status (ou a data de criação, se o status nunca mudou). Podem aparecer ainda: o selo **Pago / A liberar** (o cliente pagou e o financeiro ainda não confirmou; quando o status é "Aguardando", ele aparece no lugar do status), o texto "Nota emitida · nº", e as marcas "teste encerrado", "faturado no sistema antigo" e "Compl. de #" (pedido complementar de outro).
+3. **Status**: o status do pedido, sem o complemento de arte (a situação da arte fica na coluna **Status Arte**), e, abaixo, a data e a hora da última mudança de status (ou a data de criação, se o status nunca mudou). Podem aparecer ainda: o selo **Pago / A liberar** (o cliente pagou e o financeiro ainda não confirmou; quando o status é "Aguardando", ele aparece no lugar do status), o texto "Nota emitida · nº", e as marcas "teste encerrado", "faturado no sistema antigo" e "Compl. de #" (pedido complementar de outro).
+4. **Tipo cobrança / Valor total**: o tipo de cobrança ("Não gerada" quando ainda não há cobrança), o valor total e, abaixo, a data e a hora do registro de pagamento mais recente. Clicar abre a proposta na aba Pagamentos.
+5. **Atendente**: o atendente e, abaixo, o designer, quando o pedido tem arte.
 6. **Status Arte**: a situação da arte e, abaixo, a data e a hora da última mudança dela. Fica vazio em pedido sem arte. O botão ao lado, quando existe, abre o painel do cliente em nova aba.
-7. **Envio**: o transporte do pedido (SEDEX, RETIRADA, a transportadora, o motoboy); "—" em pedido antigo sem essa informação. Com o card **Em produção** ligado, aparece abaixo o prazo e a hora do boletim. Clicar abre a proposta na aba Fretes.
+7. **Envio**: o transporte do pedido (SEDEX, RETIRADA, a transportadora, o motoboy); "—" em pedido antigo sem essa informação. Abaixo, em toda linha que tem, aparece a previsão de envio com data e hora (a do boletim de produção); sem previsão, não aparece nada. Clicar abre a proposta na aba Fretes.
 8. **Ações**: o botão do chat interno (muda de cor com mensagem não lida, pendência ou recusa, e mostra a quantidade de não lidas), o botão de baixar a DANFE (quando há nota autorizada; com mais de uma nota ele abre a lista para escolher) e o menu da linha.
 
 Clicar em qualquer outro ponto da linha abre a proposta em edição, na aba Produtos (na aba Pagamentos, se for avulsa).

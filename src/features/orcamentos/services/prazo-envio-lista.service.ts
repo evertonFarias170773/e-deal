@@ -1,8 +1,8 @@
 import { getSupabaseClient } from "@/lib/supabase/client";
 
 /**
- * Prazo de envio exibido na coluna ENVIO da lista de Pedidos com o card
- * "Em Producao" ligado (27/09/2026).
+ * Previsao de envio exibida na coluna ENVIO da lista de Pedidos (27/09/2026 com
+ * o card "Em Producao" ligado; desde 11/10/2026 em todas as linhas).
  *
  * FONTE: `propostas_os_setores.prazo` + `hora` — o prazo e a hora do boletim.
  *   O boletim grava a MESMA "data prevista de entrega" em dois lugares:
