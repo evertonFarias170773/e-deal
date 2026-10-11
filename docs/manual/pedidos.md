@@ -86,14 +86,14 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 
 Cada card mostra uma quantidade e, embaixo, "Soma em" seguido do período e do valor total. Clicar no card filtra a lista; clicar de novo desliga o filtro. Ligar um card volta o filtro de status para **Todos status**, menos em **Ativos**: com **Ativos** o card continua em **Ativos**, e as quantidades e somas dos cards seguem a mesma exclusão (sem entregues, em trânsito, cancelados, avulsos e encerrados).
 
-1. **Pedidos**: tudo o que a lista trouxe. Com este card ligado, os pedidos entregues também entram na lista.
+1. **Pedidos**: todos os pedidos do período, no recorte da lista (em **Ativos**, só os ativos; em **Todos status**, os que a lista padrão mostra). Com este card ligado, os pedidos entregues também entram na lista.
 2. **Em arte**: pedidos cujo Status Arte é Em Arte, Enviar Arte, Em Aprovação, Em Alteração, Apr Parcial (ou Aprovado Parcial), Dados Pendentes, Corrigir Dados ou Pendente Informação. O card fica laranja quando pelo menos um dos pedidos contados está em Pendente Informação ou Corrigir Dados.
 3. **Arte Aprovada**: pedidos com Status Arte APROVADO que ainda não foram liberados para a produção. Saem do card os que já estão em produção, na expedição, a retirar, em trânsito ou entregues.
 4. **Liberadas**: pedidos com status exatamente "Liberado". Os que aparecem como "Liberado / EM ARTE" não entram aqui.
 5. **Revisão atendente**: pedidos em REVISAO ATENDENTE, que esperam o atendente conferir e liberar para a produção.
 6. **Em produção**: pedidos em REVISAO PRODUCAO, EM PRODUCAO, EM IMPRESSAO ou EM ACABAMENTO (com ou sem "/ PENDENTE").
 
-Os cards respeitam os filtros de modelo, vendedor e tipo de cobrança.
+Os seis cards contam o período inteiro do filtro, e não só as 100 linhas da página: a quantidade e a soma são as mesmas em qualquer página e não mudam com a ordem da lista. Respeitam os filtros de modelo, vendedor e tipo de cobrança e o status **Ativos**. Escolher um status específico no filtro **Status** não muda os cards (é o mesmo que acontece ao clicar num card, que zera o status). Ao abrir a tela ou trocar um filtro, os cards mostram primeiro o número da página carregada e se acertam em alguns segundos, quando a leitura do período inteiro termina. Com texto na busca ou com modelo, vendedor, cobrança ou produto escolhido, o período deixa de valer e cada leitura traz no máximo 100 pedidos: nesse caso os cards contam no máximo 100. O card **Liberadas** conta também os pedidos que aparecem como "Liberado" por serem do status antigo APROVADO, mas ao clicar nele a lista traz só os que estão gravados como LIBERADO.
 
 ### Procurar um pedido
 
@@ -221,7 +221,7 @@ As datas pequenas aparecem como dia/mês e hora, no horário de Brasília.
 
 - **Pedidos** (menu) e **Produção** (menu): Pedidos é esta lista de propostas, no endereço `/orcamentos`; Produção é o painel das ordens de serviço, no endereço `/pedidos`.
 - Título "Orcamentos" e item de menu **Pedidos**: são a mesma tela; o menu mudou de nome e o título do cabeçalho não.
-- Card **Pedidos** e o "Total de propostas encontradas" do rodapé: o card conta só a página carregada; o rodapé dá o total de todas as páginas.
+- Card **Pedidos** e o "Total de propostas encontradas" do rodapé: o card conta o período inteiro sem considerar um status específico escolhido; o rodapé dá o total da lista como está filtrada.
 - Card **Em arte** e opção EM ARTE do filtro de status: o card olha a coluna Status Arte; o filtro olha o "/ EM ARTE" escrito no status do pedido.
 - Card **Arte Aprovada** e status "Novo / Arte aprovada" ou "Aguardando / Arte aprovada": o card olha o Status Arte APROVADO de pedido ainda não liberado para a produção; os outros são status do pedido.
 - Card **Liberadas** e linha verde: o card conta só o status exatamente "Liberado"; a linha verde vale para todo pedido não avulso com financeiro liberado, inclusive "Liberado / EM ARTE".
@@ -251,7 +251,7 @@ As datas pequenas aparecem como dia/mês e hora, no horário de Brasília.
 | "Sem permissão para liberar para produção (propostas.release_producao)." | Seu perfil não tem a permissão "Liberar para Produção". | Peça a liberação a quem tem a permissão, ou peça ao administrador para incluí-la no seu perfil. |
 | "Nenhuma proposta encontrada" | Os filtros não trazem nenhum pedido, ou o pedido está escondido (entregue, teste encerrado, cancelado). | Clique em **Limpar filtros** e busque pelo número. Veja "Achar o que a lista esconde". |
 | Busquei pelo valor ou pela OS Ideal e o pedido não veio | A busca na base inteira é por número, código e nome do cliente, atendente, nome de quem recebe a nota e nome do evento. Valor e OS Ideal não fazem parte da busca. | Busque pelo número do pedido ou pelo nome do cliente. |
-| O número do card não bate com o total do rodapé | Os cards Pedidos, Liberadas, Revisão atendente e Em produção contam só a página carregada. | Use o "Total de propostas encontradas" do rodapé ou ligue o card para ver a lista. |
+| O número do card não bate com o total do rodapé | O card ignora o status específico escolhido no filtro Status, ou a leitura do período inteiro ainda não terminou (alguns segundos depois de abrir), ou há busca ou filtro específico ligado (no máximo 100 pedidos). | Espere os cards se acertarem, use **Ativos** ou **Todos status**, ou use o "Total de propostas encontradas" do rodapé. |
 | "Geração de PDF bloqueada" | O pedido não tem cliente cadastrado. | Cadastre ou vincule um cliente à proposta e gere o PDF de novo. |
 | "Empresa inválida" | A empresa da proposta não é aceita para gerar PDF ou OC. A grafia com ou sem acento não importa ("Gráfica", "Birô"). | Use Ideal Grafica, Ideal Biro ou E3 Brindes na proposta. |
 | "Ação bloqueada: Esta proposta já foi totalmente cobrada (saldo restante é R$ 0,00)." | Tentativa de gerar cobrança em proposta sem saldo a cobrar. | Para refazer, cancele a cobrança existente na aba Pagamentos da proposta. |

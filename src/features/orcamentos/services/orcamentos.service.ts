@@ -1723,15 +1723,46 @@ export async function listarPropostasDoCardArteAprovada(
   return listarPropostasDoCard("ARTE_APROVADA", periodo, filters);
 }
 
+/**
+ * Base da contagem e da soma dos cards PEDIDOS, LIBERADAS, REVISAO ATENDENTE e EM
+ * PRODUCAO (11/10/2026): o periodo inteiro, nao so as linhas da pagina carregada.
+ * Antes eles contavam as ate 100 linhas da pagina, e o numero mudava com o filtro
+ * e com a ordem da lista (Em producao: 40 em Ativos e 28 em Todos status, com 53
+ * no banco nos dois).
+ *
+ * UMA leitura serve aos quatro: a lista como o usuario a ve, SEM card ligado, e
+ * cada card conta sobre ela com o mesmo predicado de sempre (a tela os aplica).
+ * Pelo caminho de card, o "Pedidos" nao serve: o ramo de card nao esconde os
+ * ENTREGUE, e em Todos status a leitura passava de 5 mil linhas e 20 s. Sem card
+ * o servidor aplica as mesmas regras da lista — inclusive a de "Ativos" — e a
+ * leitura do periodo padrao tem de 200 a 700 linhas (de 1 a 3 s, em segundo plano).
+ *
+ * Mesmo laco e mesmo recalculo de total da lista e dos cards de Arte; o total de
+ * cada linha sai do mesmo `totaisDaProposta`. `null` quando a leitura falha.
+ */
+export async function listarPropostasDaBaseDosCards(
+  periodo: string,
+  filters?: OrcamentosReadFilters
+): Promise<OrcamentoListItem[] | null> {
+  return lerTodasAsPaginas(periodo, { ...filters, activeCard: null });
+}
+
 async function listarPropostasDoCard(
   card: "EM_ARTE" | "ARTE_APROVADA",
   periodo: string,
   filters?: OrcamentosReadFilters
 ): Promise<OrcamentoListItem[] | null> {
-  const filtrosDoCard: OrcamentosReadFilters = { ...filters, activeCard: card };
+  return lerTodasAsPaginas(periodo, { ...filters, activeCard: card });
+}
+
+/** Percorre as paginas da lista com os filtros dados, ate o fim. Na busca ampla o lote e unico, como na lista. */
+async function lerTodasAsPaginas(
+  periodo: string,
+  filtros: OrcamentosReadFilters
+): Promise<OrcamentoListItem[] | null> {
   const itens: OrcamentoListItem[] = [];
   for (let pagina = 1; ; pagina++) {
-    const resultado = await getOrcamentosReadOnlyData(periodo, pagina, 200, filtrosDoCard);
+    const resultado = await getOrcamentosReadOnlyData(periodo, pagina, 200, filtros);
     if (resultado.errorMessage) return null;
     itens.push(...resultado.propostas);
     if (resultado.propostas.length === 0 || pagina >= (resultado.totalPages ?? 1)) break;

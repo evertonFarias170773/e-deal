@@ -51,6 +51,7 @@ import {
   liberarPropostaParaProducaoPeloServidor,
   retirarPropostaDaProducao,
   PERIODO_ULTIMOS_15_DIAS,
+  listarPropostasDaBaseDosCards,
   listarPropostasDoCardEmArte,
   grupoStatusArteDoCardEmArte,
   listarPropostasDoCardArteAprovada,
@@ -692,6 +693,13 @@ export function OrcamentosListPageReal() {
     [queryFilters, search, status, modelo, vendedor, filterTipoCobranca, produtoFiltro]
   );
   const [baseCardEmArte, setBaseCardEmArte] = useState<OrcamentoListItem[]>([]);
+  /**
+   * Base dos cards PEDIDOS, LIBERADAS, REVISAO ATENDENTE e EM PRODUCAO (11/10/2026):
+   * o periodo inteiro, com os MESMOS filtros das bases de Arte (os que a lista tera
+   * depois do clique em um card). `null` enquanto nao chegou ou se a leitura falhou:
+   * ai os cards contam as linhas da pagina, como antes, em vez de zerar.
+   */
+  const [baseCardsDeStatus, setBaseCardsDeStatus] = useState<OrcamentoListItem[] | null>(null);
 
   useEffect(() => {
     let ativo = true;
@@ -699,6 +707,18 @@ export function OrcamentosListPageReal() {
       const itens = await listarPropostasDoCardEmArte(periodo, filtrosDoCardEmArte);
       if (!ativo) return;
       setBaseCardEmArte(filtrarPeloEscopo(itens ?? [], user));
+    })();
+    return () => {
+      ativo = false;
+    };
+  }, [periodo, filtrosDoCardEmArte, rawPropostas, user]);
+
+  useEffect(() => {
+    let ativo = true;
+    void (async () => {
+      const itens = await listarPropostasDaBaseDosCards(periodo, filtrosDoCardEmArte);
+      if (!ativo) return;
+      setBaseCardsDeStatus(itens === null ? null : filtrarPeloEscopo(itens, user));
     })();
     return () => {
       ativo = false;
@@ -1251,10 +1271,14 @@ export function OrcamentosListPageReal() {
     };
   }, [visibleIdInts, user]);
 
-  // Com o período ignorado, o rótulo das somas precisa dizer a verdade.
+  // Com o período ignorado, o rótulo das somas precisa dizer a verdade. Os seis
+  // cards contam sobre as bases de `filtrosDoCardEmArte`, cujo `ignorarPeriodo` e
+  // calculado SEM o status do select (o clique no card o zera): com um status
+  // específico escolhido a lista ignora o período, mas os cards seguem no período.
+  const cardsIgnoramPeriodo = Boolean(filtrosDoCardEmArte.ignorarPeriodo);
   const periodoSelecionadoLabel = useMemo(
-    () => (ignorarPeriodo ? "todos os períodos" : getSelectedPeriodLabel(periodo, periodOptions)),
-    [ignorarPeriodo, periodOptions, periodo]
+    () => (cardsIgnoramPeriodo ? "todos os períodos" : getSelectedPeriodLabel(periodo, periodOptions)),
+    [cardsIgnoramPeriodo, periodOptions, periodo]
   );
 
   const cardsSummary = useMemo(() => {
@@ -1268,7 +1292,9 @@ export function OrcamentosListPageReal() {
 
     const filtrosDosCards = { modelo, vendedor, filterTipoCobranca, status, temBusca };
 
-    for (const item of propostas) {
+    // O periodo inteiro (`baseCardsDeStatus`), nao so a pagina: os mesmos predicados
+    // de sempre sobre outra base. Sem ela (carregando ou leitura falha), a pagina.
+    for (const item of baseCardsDeStatus ?? propostas) {
       if (!passaFiltrosDosCards(item, filtrosDosCards)) continue;
 
       const v = Number(item.total) || 0;
@@ -1316,7 +1342,7 @@ export function OrcamentosListPageReal() {
       revisao:    { count: revisaoCnt,     total: revisaoTotal    },
       producao:   { count: producaoCnt,    total: producaoTotal   }
     };
-  }, [propostas, baseCardEmArte, baseCardArteAprovada, modelo, vendedor, filterTipoCobranca, status, temBusca]);
+  }, [propostas, baseCardsDeStatus, baseCardEmArte, baseCardArteAprovada, modelo, vendedor, filterTipoCobranca, status, temBusca]);
 
   useEffect(() => {
     console.info("[Orcamentos][ReadOnly]", {
