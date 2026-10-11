@@ -8,7 +8,7 @@ import { ChevronDown, Search, X } from "lucide-react";
  * unica (18/09/2026).
  *
  * POR QUE UM COMPONENTE, E NAO UM `<select>`
- *   Sao 89 produtos cadastrados e o operador procura por CODIGO ("102") ou por
+ *   Sao dezenas de produtos ativos e o operador procura por CODIGO ("102") ou por
  *   parte do nome ("colorband"). Um `<select>` nativo so casa pelo comeco do
  *   texto e nao aceita busca por pedaco — na pratica obrigaria a rolar a lista
  *   inteira. Os outros drops da barra continuam `<select>`: eles tem 4 ou 5
@@ -20,15 +20,15 @@ import { ChevronDown, Search, X } from "lucide-react";
  * necessario para este filtro — abre, filtra, escolhe, limpa, fecha no clique
  * fora e no Esc.
  *
- * INATIVOS ENTRAM NA LISTA: ha orcamento antigo com produto hoje inativo, e sem
- * eles esses pedidos ficariam inalcancaveis. O rotulo avisa qual e qual.
+ * SO PRODUTOS ATIVOS (11/10/2026): quem monta as opcoes traz `ativo = true`.
+ * Produto inativo fica fora da lista e da pesquisa, por decisao do dono — os
+ * pedidos antigos dele deixam de ser achados por este filtro.
  */
 
 export type OpcaoProduto = {
   /** `produtos.id_produto` — o codigo que aparece no rotulo. */
   id: number;
   nome: string;
-  ativo: boolean;
 };
 
 type Props = {
@@ -165,11 +165,6 @@ export function FiltroProdutoDrop({ opcoes, selecionado, onSelecionar, className
                   }`}
                 >
                   <span className="truncate">{rotuloProduto(opcao)}</span>
-                  {!opcao.ativo ? (
-                    <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-slate-500">
-                      inativo
-                    </span>
-                  ) : null}
                 </button>
               ))
             )}

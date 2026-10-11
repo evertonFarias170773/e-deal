@@ -1142,9 +1142,10 @@ export function OrcamentosListPageReal() {
   }
 
   /**
-   * Opcoes do drop "Todos produtos": UMA consulta na abertura da tela, com os
-   * inativos junto — ha orcamento antigo de produto ja desativado, e sem eles
-   * esses pedidos ficariam inalcancaveis pelo filtro.
+   * Opcoes do drop "Todos produtos": UMA consulta na abertura da tela, so com os
+   * produtos ATIVOS (`ativo = true`; 11/10/2026). Antes os inativos entravam
+   * para os pedidos antigos continuarem alcancaveis por produto; o dono decidiu
+   * tirar: produto inativo nao aparece na lista nem na pesquisa do filtro.
    */
   const [opcoesProduto, setOpcoesProduto] = useState<OpcaoProduto[]>([]);
   const [carregandoProdutos, setCarregandoProdutos] = useState(true);
@@ -1157,9 +1158,10 @@ export function OrcamentosListPageReal() {
         if (!client) return;
         const { data, error } = await client
           .from("produtos")
-          .select("id_produto, nomeReal, ativo")
+          .select("id_produto, nomeReal")
+          .eq("ativo", true)
           .order("id_produto", { ascending: true })
-          .returns<{ id_produto: number | null; nomeReal: string | null; ativo: boolean | null }[]>();
+          .returns<{ id_produto: number | null; nomeReal: string | null }[]>();
         if (!ativo) return;
         if (error) {
           console.warn("[OrcamentosListPageReal] Falha ao carregar produtos do filtro:", error.message);
@@ -1169,8 +1171,7 @@ export function OrcamentosListPageReal() {
           (data ?? [])
             .map((linha) => ({
               id: Number(linha.id_produto),
-              nome: String(linha.nomeReal ?? "").trim() || `Produto ${linha.id_produto}`,
-              ativo: linha.ativo !== false
+              nome: String(linha.nomeReal ?? "").trim() || `Produto ${linha.id_produto}`
             }))
             .filter((o) => Number.isFinite(o.id) && o.id > 0)
         );
@@ -1184,6 +1185,17 @@ export function OrcamentosListPageReal() {
       ativo = false;
     };
   }, []);
+
+  // Produto da URL que nao esta entre as opcoes (inativo, apagado ou valor
+  // invalido, como num link antigo): sem isto a lista ficaria filtrada por ele
+  // enquanto o drop mostra "Todos produtos". Volta ao padrao, o que o tira da
+  // URL. So age com as opcoes carregadas: se a consulta falhou, nao limpa nada.
+  useEffect(() => {
+    if (carregandoProdutos || opcoesProduto.length === 0) return;
+    if (produtoFiltro === "TODOS") return;
+    if (opcoesProduto.some((opcao) => opcao.id === idProdutoFiltro)) return;
+    setFilter("prod", "TODOS");
+  }, [carregandoProdutos, opcoesProduto, produtoFiltro, idProdutoFiltro, setFilter]);
 
   const fetchedChatIdsRef = useRef<Set<number>>(new Set());
 

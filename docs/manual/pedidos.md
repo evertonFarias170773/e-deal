@@ -40,7 +40,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Buscar por número, cliente, CPF/CNPJ, ID do cliente, nota fiscal, atendente ou evento** | Barra de filtros, campo de texto | Busca pedidos em todos os períodos. Enquanto procura, a lupa vira um círculo girando e aparece **Buscando...** ao lado. |
 | **Todos status** | Barra de filtros | Filtra por status do pedido e desliga o card que estiver ligado. |
 | **Todos modelos** | Barra de filtros | Filtra por AVULSO, PROPOSTA ou ENCERRADOS (teste). |
-| **Todos produtos** | Barra de filtros | Abre a lista de produtos, com o campo **Código ou nome**, e filtra os pedidos que têm o produto escolhido. |
+| **Todos produtos** | Barra de filtros | Abre a lista de produtos, com o campo **Código ou nome**, e filtra os pedidos que têm o produto escolhido. Só produtos ativos aparecem. |
 | **Todos vendedores** | Barra de filtros | Filtra por atendente. |
 | **Todas cobranças** | Barra de filtros | Filtra por PIX, BOLETO, E-FATURADO ou CARTÃO. |
 | **15 dias** (e os meses, como "Out/26") | Barra de filtros, último seletor | Troca o período da lista e dos cards. |
@@ -109,7 +109,7 @@ Cada filtro da barra tem um título pequeno acima dele, com o nome do que ele fi
 
 1. **Todos status**: escolha um status para ver só os pedidos nele. A opção EM ARTE traz todos os que têm "/ EM ARTE" no status. Escolher um status desliga o card que estiver ligado.
 2. **Todos modelos**: AVULSO, PROPOSTA ou ENCERRADOS (teste). Esta última mostra só os pedidos de teste encerrados.
-3. **Todos produtos**: abre uma lista com busca por **Código ou nome**. Mostra os pedidos que têm pelo menos um item daquele produto. Produtos desativados aparecem com a marca "inativo".
+3. **Todos produtos**: abre uma lista com busca por **Código ou nome**. Mostra os pedidos que têm pelo menos um item daquele produto. Só os produtos ativos aparecem, na lista e na pesquisa; produto inativo fica de fora, então os pedidos antigos dele não são achados por este filtro. Um link antigo que traga um produto inativo volta sozinho para **Todos produtos**.
 4. **Todos vendedores**: escolha um atendente.
 5. **Todas cobranças**: PIX, BOLETO, E-FATURADO ou CARTÃO.
 6. **Período**: a tela abre em **15 dias**, que traz os pedidos alterados nos últimos 15 dias (não os criados). As outras opções são os seis últimos meses e trazem os pedidos criados naquele mês.
