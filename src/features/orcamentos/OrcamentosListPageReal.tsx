@@ -22,6 +22,14 @@ import { desmarcarFaturadoNoSistemaAntigo } from "@/features/fiscal/services/fat
 import { buscarRastreioDasPropostas, type RastreioDaProposta } from "@/features/orcamentos/services/rastreio-lista.service";
 import { buscarPrazoEnvioDosPedidos } from "@/features/orcamentos/services/prazo-envio-lista.service";
 import { idEmpresaDoPdf } from "@/features/orcamentos/lib/empresa-pdf";
+import {
+  STATUS_ATIVOS,
+  STATUS_PADRAO_DA_LISTA,
+  STATUS_TODOS,
+  passaAtivos,
+  statusEhAtivos,
+  statusEhEspecifico
+} from "@/features/orcamentos/lib/status-ativos";
 import { mostraSeloDoStatusNaLista, statusDoPedidoSemArte } from "@/features/orcamentos/lib/selo-aguardando-da-lista";
 import { RastreioPropostaModal } from "@/features/orcamentos/components/RastreioPropostaModal";
 import { buscarNomesDosSocios } from "@/features/orcamentos/services/socio-pagador.service";
@@ -424,15 +432,18 @@ function filtrarPeloEscopo(lista: OrcamentoListItem[], user: Parameters<typeof g
 }
 
 /**
- * Os recortes que TODOS os cards respeitam na contagem: modelo, vendedor e tipo
- * de cobranca. Saiu do laco de `cardsSummary` sem mudar nada, para o card EM
- * ARTE — que conta sobre outra base — aplicar exatamente os mesmos.
+ * Os recortes que TODOS os cards respeitam na contagem: modelo, vendedor, tipo
+ * de cobranca e, com o status "Ativos" (11/10/2026), a exclusao de status e de
+ * modelo dos Ativos (`passaAtivos`, a mesma regra da lista). Saiu do laco de
+ * `cardsSummary` sem mudar nada, para o card EM ARTE — que conta sobre outra
+ * base — aplicar exatamente os mesmos.
  */
 function passaFiltrosDosCards(
   item: OrcamentoListItem,
-  filtros: { modelo: string; vendedor: string; filterTipoCobranca: string }
+  filtros: { modelo: string; vendedor: string; filterTipoCobranca: string; status: string; temBusca: boolean }
 ): boolean {
   const { modelo, vendedor, filterTipoCobranca } = filtros;
+  if (!passaAtivos(item, { status: filtros.status, modelo, temBusca: filtros.temBusca })) return false;
   // ENCERRADOS nao recorta por is_avulso: a consulta ja trouxe so encerrados,
   // e cair no `else` da ternaria (item.isAvulsoRaw !== true) sumiria com as
   // avulsas encerradas — tanto da lista quanto da contagem dos cards.
@@ -527,7 +538,10 @@ export function OrcamentosListPageReal() {
   const filtrosSchema = useMemo(
     () => ({
       q: { codec: codecs.texto(), default: "" },
-      status: { codec: codecs.texto(), default: "TODOS" },
+      // Abre em "Ativos" (11/10/2026). "TODOS" continua valendo: por nao ser mais
+      // o padrao, aparece na URL como `status=TODOS`, e um link antigo com ele
+      // segue mostrando todos os status.
+      status: { codec: codecs.texto(), default: STATUS_PADRAO_DA_LISTA },
       modelo: { codec: codecs.texto(), default: "TODOS_MODELOS" },
       // `prod` guarda o `produtos.id_produto` como texto, do mesmo jeito que os
       // vizinhos: "TODOS" e o padrao e, por ser o default do schema, sai da URL
@@ -557,6 +571,13 @@ export function OrcamentosListPageReal() {
   const periodo = filters.periodo;
   const search = filters.q;
   const status = filters.status;
+  /**
+   * Status que o select assume ao ligar ou desligar um card. O card e uma escolha
+   * de status por si so, entao o select volta a "Todos status" — menos em
+   * "Ativos", que o clique mantem: a lista do card e as somas dos cards seguem
+   * com a exclusao dos Ativos (a base dos cards EM ARTE e ARTE APROVADA tambem).
+   */
+  const statusAoLigarCard = statusEhAtivos(status) ? STATUS_ATIVOS : STATUS_TODOS;
   const modelo = filters.modelo;
   const vendedor = filters.vend;
   const filterTipoCobranca = filters.cob;
@@ -581,6 +602,8 @@ export function OrcamentosListPageReal() {
   // Termo digitado que ainda nao virou consulta (a pausa da digitacao). Conta
   // como busca em andamento: a lista de baixo ainda e a do termo anterior.
   const buscaPendente = buscaDigitada.trim() !== search.trim();
+  /** Texto na busca: com ele o status "Ativos" nao recorta nada (ver `status-ativos.ts`). */
+  const temBusca = Boolean(search.trim());
 
   // Busca ampla: pesquisa textual ou dropdown específico selecionado pelo usuário.
   // Nesse modo o período deixa de recortar a consulta — senão não há como achar
@@ -589,7 +612,7 @@ export function OrcamentosListPageReal() {
   // as somas deles são declaradamente por período.
   const ignorarPeriodo = Boolean(
     search.trim() ||
-    status !== "TODOS" ||
+    statusEhEspecifico(status) ||
     modelo !== "TODOS_MODELOS" ||
     vendedor !== "TODOS" ||
     filterTipoCobranca !== "TODOS" ||
@@ -645,7 +668,9 @@ export function OrcamentosListPageReal() {
    * Base da contagem e da soma do card EM ARTE: o PERIODO INTEIRO, e nao a
    * pagina carregada — ver `listarPropostasDoCardEmArte`. Os filtros sao os que
    * a lista tera DEPOIS do clique no card, que zera o select de status; por isso
-   * `status` sai e `ignorarPeriodo` e recalculado sem ele.
+   * `status` sai e `ignorarPeriodo` e recalculado sem ele. A unica excecao e o
+   * status "Ativos": o clique no card o mantem (ver `statusAoLigarCard`), e a
+   * base aplica a mesma exclusao dos Ativos que a lista.
    *
    * Recarrega junto com a lista (`rawPropostas` muda a cada leitura, inclusive
    * no `triggerRefresh` das acoes), para o contador nao ficar para tras.
@@ -653,7 +678,7 @@ export function OrcamentosListPageReal() {
   const filtrosDoCardEmArte = useMemo(
     () => ({
       ...queryFilters,
-      status: undefined,
+      status: statusEhAtivos(status) ? STATUS_ATIVOS : undefined,
       ignorarPeriodo:
         Boolean(
           search.trim() ||
@@ -664,7 +689,7 @@ export function OrcamentosListPageReal() {
         ) ||
         undefined
     }),
-    [queryFilters, search, modelo, vendedor, filterTipoCobranca, produtoFiltro]
+    [queryFilters, search, status, modelo, vendedor, filterTipoCobranca, produtoFiltro]
   );
   const [baseCardEmArte, setBaseCardEmArte] = useState<OrcamentoListItem[]>([]);
 
@@ -848,11 +873,18 @@ export function OrcamentosListPageReal() {
           matchesStatus = ["REVISAO PRODUCAO", "EM PRODUCAO", "EM IMPRESSAO", "EM IMPRESSAO / PENDENTE", "EM ACABAMENTO", "EM ACABAMENTO / PENDENTE"].includes(s);
         }
       } else {
-        matchesStatus = status === "TODOS"
+        // "Ativos" e "Todos status" nao escolhem um status; a exclusao dos Ativos
+        // vem logo abaixo, e vale tambem com um card ligado.
+        matchesStatus = status === STATUS_TODOS || statusEhAtivos(status)
           ? item.status !== "CANCELADO"
           : (status === "EM ARTE" ? item.status?.includes("EM ARTE") : item.status === status);
       }
       if (!matchesStatus) continue;
+
+      // Status "Ativos" (11/10/2026): sem ENTREGUE, EM TRANSITO e CANCELADO e, se
+      // nenhum modelo foi escolhido, sem Avulso e Encerrados — a mesma regra que o
+      // servidor aplica (`status-ativos.ts`).
+      if (!passaAtivos(item, { status, modelo, temBusca })) continue;
 
       // ENCERRADOS nao recorta por is_avulso: a consulta ja trouxe so encerrados,
       // e cair no `else` da ternaria (item.isAvulsoRaw !== true) sumiria com as
@@ -919,7 +951,7 @@ export function OrcamentosListPageReal() {
       const dateB = new Date(b.statusAlteradoEm || b.createdAt).getTime();
       return dateB - dateA;
     });
-  }, [modelo, periodo, ignorarPeriodo, propostas, status, vendedor, activeCard, filterTipoCobranca, statusArtePorId]);
+  }, [modelo, periodo, ignorarPeriodo, propostas, status, temBusca, vendedor, activeCard, filterTipoCobranca, statusArtePorId]);
 
   const visibleIdInts = useMemo(() => {
     return filteredPropostas.slice(0, 100).map((p) => p.id_int);
@@ -1234,7 +1266,7 @@ export function OrcamentosListPageReal() {
     let revisaoCnt = 0, revisaoTotal = 0;
     let producaoCnt = 0, producaoTotal = 0;
 
-    const filtrosDosCards = { modelo, vendedor, filterTipoCobranca };
+    const filtrosDosCards = { modelo, vendedor, filterTipoCobranca, status, temBusca };
 
     for (const item of propostas) {
       if (!passaFiltrosDosCards(item, filtrosDosCards)) continue;
@@ -1284,7 +1316,7 @@ export function OrcamentosListPageReal() {
       revisao:    { count: revisaoCnt,     total: revisaoTotal    },
       producao:   { count: producaoCnt,    total: producaoTotal   }
     };
-  }, [propostas, baseCardEmArte, baseCardArteAprovada, modelo, vendedor, filterTipoCobranca]);
+  }, [propostas, baseCardEmArte, baseCardArteAprovada, modelo, vendedor, filterTipoCobranca, status, temBusca]);
 
   useEffect(() => {
     console.info("[Orcamentos][ReadOnly]", {
@@ -1878,7 +1910,7 @@ Ela volta a aparecer nas listas operacionais.`
         </section>
       ) : (
         <section className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6">
-          <div onClick={() => setFilters({ card: activeCard === "ORCAMENTOS" ? null : "ORCAMENTOS", status: "TODOS" })} className={`cursor-pointer transition rounded-3xl ${activeCard === "ORCAMENTOS" ? "ring-4 ring-teal-500 scale-[1.02]" : "hover:scale-[1.02]"}`}>
+          <div onClick={() => setFilters({ card: activeCard === "ORCAMENTOS" ? null : "ORCAMENTOS", status: statusAoLigarCard })} className={`cursor-pointer transition rounded-3xl ${activeCard === "ORCAMENTOS" ? "ring-4 ring-teal-500 scale-[1.02]" : "hover:scale-[1.02]"}`}>
             <SummaryCard
               title="Pedidos"
               value={cardsSummary.orcamentos.count.toString()}
@@ -1892,7 +1924,7 @@ Ela volta a aparecer nas listas operacionais.`
               icon={FileText}
             />
           </div>
-          <div onClick={() => setFilters({ card: activeCard === "EM_ARTE" ? null : "EM_ARTE", status: "TODOS" })} className={`cursor-pointer transition rounded-3xl ${activeCard === "EM_ARTE" ? "ring-4 ring-teal-500 scale-[1.02]" : "hover:scale-[1.02]"}`}>
+          <div onClick={() => setFilters({ card: activeCard === "EM_ARTE" ? null : "EM_ARTE", status: statusAoLigarCard })} className={`cursor-pointer transition rounded-3xl ${activeCard === "EM_ARTE" ? "ring-4 ring-teal-500 scale-[1.02]" : "hover:scale-[1.02]"}`}>
             <SummaryCard
               title="Em arte"
               value={cardsSummary.emArte.count.toString()}
@@ -1906,7 +1938,7 @@ Ela volta a aparecer nas listas operacionais.`
               icon={Palette}
             />
           </div>
-          <div onClick={() => setFilters({ card: activeCard === "ARTE_APROVADA" ? null : "ARTE_APROVADA", status: "TODOS" })} className={`cursor-pointer transition rounded-3xl ${activeCard === "ARTE_APROVADA" ? "ring-4 ring-teal-500 scale-[1.02]" : "hover:scale-[1.02]"}`}>
+          <div onClick={() => setFilters({ card: activeCard === "ARTE_APROVADA" ? null : "ARTE_APROVADA", status: statusAoLigarCard })} className={`cursor-pointer transition rounded-3xl ${activeCard === "ARTE_APROVADA" ? "ring-4 ring-teal-500 scale-[1.02]" : "hover:scale-[1.02]"}`}>
             <SummaryCard
               title="Arte Aprovada"
               value={cardsSummary.arteAprovada.count.toString()}
@@ -1920,7 +1952,7 @@ Ela volta a aparecer nas listas operacionais.`
               icon={BadgeCheck}
             />
           </div>
-          <div onClick={() => setFilters({ card: activeCard === "LIBERADAS" ? null : "LIBERADAS", status: "TODOS" })} className={`cursor-pointer transition rounded-3xl ${activeCard === "LIBERADAS" ? "ring-4 ring-teal-500 scale-[1.02]" : "hover:scale-[1.02]"}`}>
+          <div onClick={() => setFilters({ card: activeCard === "LIBERADAS" ? null : "LIBERADAS", status: statusAoLigarCard })} className={`cursor-pointer transition rounded-3xl ${activeCard === "LIBERADAS" ? "ring-4 ring-teal-500 scale-[1.02]" : "hover:scale-[1.02]"}`}>
             <SummaryCard
               title="Liberadas"
               value={cardsSummary.liberadas.count.toString()}
@@ -1934,7 +1966,7 @@ Ela volta a aparecer nas listas operacionais.`
               icon={WalletCards}
             />
           </div>
-          <div onClick={() => setFilters({ card: activeCard === "REVISAO_ATENDENTE" ? null : "REVISAO_ATENDENTE", status: "TODOS" })} className={`cursor-pointer transition rounded-3xl ${activeCard === "REVISAO_ATENDENTE" ? "ring-4 ring-teal-500 scale-[1.02]" : "hover:scale-[1.02]"}`}>
+          <div onClick={() => setFilters({ card: activeCard === "REVISAO_ATENDENTE" ? null : "REVISAO_ATENDENTE", status: statusAoLigarCard })} className={`cursor-pointer transition rounded-3xl ${activeCard === "REVISAO_ATENDENTE" ? "ring-4 ring-teal-500 scale-[1.02]" : "hover:scale-[1.02]"}`}>
             <SummaryCard
               title="Revisão atendente"
               value={cardsSummary.revisao.count.toString()}
@@ -1948,7 +1980,7 @@ Ela volta a aparecer nas listas operacionais.`
               icon={CalendarDays}
             />
           </div>
-          <div onClick={() => setFilters({ card: activeCard === "EM_PRODUCAO" ? null : "EM_PRODUCAO", status: "TODOS" })} className={`cursor-pointer transition rounded-3xl ${activeCard === "EM_PRODUCAO" ? "ring-4 ring-teal-500 scale-[1.02]" : "hover:scale-[1.02]"}`}>
+          <div onClick={() => setFilters({ card: activeCard === "EM_PRODUCAO" ? null : "EM_PRODUCAO", status: statusAoLigarCard })} className={`cursor-pointer transition rounded-3xl ${activeCard === "EM_PRODUCAO" ? "ring-4 ring-teal-500 scale-[1.02]" : "hover:scale-[1.02]"}`}>
             <SummaryCard
               title="Em produção"
               value={cardsSummary.producao.count.toString()}
@@ -1990,7 +2022,8 @@ Ela volta a aparecer nas listas operacionais.`
               onChange={(event) => setFilters({ status: event.target.value, card: null })}
               className={filterSelectClass}
             >
-              <option value="TODOS">Todos status</option>
+              <option value={STATUS_ATIVOS}>Ativos</option>
+              <option value={STATUS_TODOS}>Todos status</option>
               {statusOptions.filter((item) => item !== "TODOS").map((option) => (
                 <option key={option} value={option}>
                   {option}

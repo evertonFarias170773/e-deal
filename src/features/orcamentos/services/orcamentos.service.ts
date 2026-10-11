@@ -92,6 +92,11 @@ import {
 } from "@/features/orcamentos/lib/divergencia-lotes";
 import { danfesDoPedido } from "@/lib/fiscal/danfes-do-pedido";
 import { padraoBuscaSemAcento, valorParaOr, digitosDeDocumentoParaBusca } from "@/features/orcamentos/lib/padrao-busca";
+import {
+  ativosValem,
+  condicoesDosAtivosParaOServidor,
+  statusEhEspecifico
+} from "@/features/orcamentos/lib/status-ativos";
 // Grupos "Aguardando financeiro" e "Pago / A liberar" da lista de Pedidos: a
 // MESMA regra que a Conferencia usa por cobranca, sem copia.
 import { getConferenciaStatusLabel } from "@/features/cobrancas/cobrancas-utils";
@@ -1017,6 +1022,17 @@ async function fetchPropostaRows(
         query = query.is("encerrado_teste_em", null);
       }
 
+      // STATUS "ATIVOS" (11/10/2026): sem ENTREGUE, EM TRANSITO e CANCELADO e,
+      // se nenhum modelo foi escolhido, sem avulsos (os encerrados ja saem pela
+      // visibilidade acima). Vale com ou sem card ligado, para a lista do card e
+      // as bases dos cards seguirem a lista. Com texto na busca nao recorta. A
+      // regra e a de `status-ativos.ts`, a mesma que a tela confere.
+      if (ativosValem({ status: filters?.status, temBusca: Boolean(condicaoBusca) })) {
+        const ativos = condicoesDosAtivosParaOServidor({ modelo: filters?.modelo });
+        query = query.or(ativos.status);
+        if (ativos.modelo) query = query.or(ativos.modelo);
+      }
+
       if (filters?.activeCard) {
         const card = filters.activeCard;
         // CANCELADA FORA DE QUALQUER CARD (30/09/2026). O `neq CANCELADO` da lista
@@ -1044,7 +1060,7 @@ async function fetchPropostaRows(
         } else if (card === "EM_PRODUCAO") {
           query = query.in("status_interno", ["REVISAO PRODUCAO", "EM PRODUCAO", "EM IMPRESSAO", "EM IMPRESSAO / PENDENTE", "EM ACABAMENTO", "EM ACABAMENTO / PENDENTE"]);
         }
-      } else if (filters?.status && filters.status !== "TODOS") {
+      } else if (filters?.status && statusEhEspecifico(filters.status)) {
         if (filters.status === "EM ARTE") {
           query = query.or("status_interno.ilike.%EM ARTE%,em_arte.eq.true");
         } else {

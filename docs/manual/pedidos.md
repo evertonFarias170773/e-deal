@@ -1,6 +1,6 @@
 # Pedidos (lista)
 
-> **Última revisão:** 10/10/2026
+> **Última revisão:** 11/10/2026
 > **Caminho no menu:** Pedidos (item direto do menu lateral, sem submenu; é o segundo, logo abaixo de Conferência)
 > **Endereço:** `/orcamentos`
 
@@ -38,7 +38,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Revisão atendente** (card) | Cards do topo, 5º | Liga ou desliga a lista dos pedidos em REVISAO ATENDENTE. |
 | **Em produção** (card) | Cards do topo, 6º | Liga ou desliga a lista dos pedidos em produção e mostra o prazo do boletim na coluna Envio. |
 | **Buscar por número, cliente, CPF/CNPJ, ID do cliente, nota fiscal, atendente ou evento** | Barra de filtros, campo de texto | Busca pedidos em todos os períodos. Enquanto procura, a lupa vira um círculo girando e aparece **Buscando...** ao lado. |
-| **Todos status** | Barra de filtros | Filtra por status do pedido e desliga o card que estiver ligado. |
+| **Ativos** (padrão) / **Todos status** | Barra de filtros | A tela abre em **Ativos**, a visão de trabalho: tira os pedidos ENTREGUE, EM TRANSITO e CANCELADO e os dos modelos Avulso e Encerrados. **Todos status** mostra tudo (como a lista era antes). Escolher um status específico filtra por ele e desliga o card que estiver ligado. |
 | **Todos modelos** | Barra de filtros | Filtra por AVULSO, PROPOSTA ou ENCERRADOS (teste). |
 | **Todos produtos** | Barra de filtros | Abre a lista de produtos, com o campo **Código ou nome**, e filtra os pedidos que têm o produto escolhido. Só produtos ativos aparecem. |
 | **Todos vendedores** | Barra de filtros | Filtra por atendente. |
@@ -84,7 +84,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 
 ### Entender os cards do topo
 
-Cada card mostra uma quantidade e, embaixo, "Soma em" seguido do período e do valor total. Clicar no card filtra a lista; clicar de novo desliga o filtro. Ligar um card volta o filtro de status para **Todos status**.
+Cada card mostra uma quantidade e, embaixo, "Soma em" seguido do período e do valor total. Clicar no card filtra a lista; clicar de novo desliga o filtro. Ligar um card volta o filtro de status para **Todos status**, menos em **Ativos**: com **Ativos** o card continua em **Ativos**, e as quantidades e somas dos cards seguem a mesma exclusão (sem entregues, em trânsito, cancelados, avulsos e encerrados).
 
 1. **Pedidos**: tudo o que a lista trouxe. Com este card ligado, os pedidos entregues também entram na lista.
 2. **Em arte**: pedidos cujo Status Arte é Em Arte, Enviar Arte, Em Aprovação, Em Alteração, Apr Parcial (ou Aprovado Parcial), Dados Pendentes, Corrigir Dados ou Pendente Informação. O card fica laranja quando pelo menos um dos pedidos contados está em Pendente Informação ou Corrigir Dados.
@@ -107,13 +107,13 @@ Os cards respeitam os filtros de modelo, vendedor e tipo de cobrança.
 
 Cada filtro da barra tem um título pequeno acima dele, com o nome do que ele filtra: **Status**, **Modelo**, **Produto**, **Vendedor**, **Cobrança** e **Período**. Embaixo do título fica o valor escolhido, como "Todos status" ou "15 dias".
 
-1. **Todos status**: escolha um status para ver só os pedidos nele. A opção EM ARTE traz todos os que têm "/ EM ARTE" no status. Escolher um status desliga o card que estiver ligado.
+1. **Status**: a tela abre em **Ativos**, que mostra tudo o que está em andamento: ficam de fora ENTREGUE, EM TRANSITO e CANCELADO e os pedidos dos modelos Avulso e Encerrados. Se você escolher um modelo no filtro **Modelo** (inclusive Avulso ou Encerrados), os pedidos daquele modelo aparecem, ainda sem entregues, em trânsito e cancelados. Com texto na busca, **Ativos** não esconde nada: você acha o pedido pelo número ou pelo nome mesmo que esteja entregue ou seja avulso. **Todos status** não recorta por status. Escolha um status para ver só os pedidos nele. A opção EM ARTE traz todos os que têm "/ EM ARTE" no status. Escolher um status desliga o card que estiver ligado.
 2. **Todos modelos**: AVULSO, PROPOSTA ou ENCERRADOS (teste). Esta última mostra só os pedidos de teste encerrados.
 3. **Todos produtos**: abre uma lista com busca por **Código ou nome**. Mostra os pedidos que têm pelo menos um item daquele produto. Só os produtos ativos aparecem, na lista e na pesquisa; produto inativo fica de fora, então os pedidos antigos dele não são achados por este filtro. Um link antigo que traga um produto inativo volta sozinho para **Todos produtos**.
 4. **Todos vendedores**: escolha um atendente.
 5. **Todas cobranças**: PIX, BOLETO, E-FATURADO ou CARTÃO.
 6. **Período**: a tela abre em **15 dias**, que traz os pedidos alterados nos últimos 15 dias (não os criados). As outras opções são os seis últimos meses e trazem os pedidos criados naquele mês.
-7. Os filtros se combinam. **Limpar filtros** devolve tudo ao padrão.
+7. Os filtros se combinam. **Limpar filtros** devolve tudo ao padrão, inclusive o Status em **Ativos**. Um link antigo com `status=TODOS` continua mostrando todos os status; um link sem status abre em **Ativos**.
 
 Os filtros ficam guardados no endereço da página: continuam valendo ao atualizar a tela, ao sair e voltar, e num link copiado para outra pessoa.
 
@@ -198,7 +198,7 @@ As datas pequenas aparecem como dia/mês e hora, no horário de Brasília.
 ## Regras e bloqueios
 
 - Proposta cancelada nunca aparece em card nenhum, nem na contagem nem na lista do card.
-- A lista padrão esconde os pedidos cancelados, os entregues e os testes encerrados. Entregue já saiu do fluxo; teste encerrado não é pedido de verdade.
+- A lista padrão (**Ativos**) esconde os pedidos cancelados, os entregues, os em trânsito, os avulsos e os testes encerrados. Entregue já saiu do fluxo; teste encerrado não é pedido de verdade. Para ver tudo, escolha **Todos status** (que ainda esconde cancelados, entregues e testes encerrados) ou busque pelo número.
 - Os cards **Em arte** e **Arte Aprovada** contam o período inteiro. Os cards **Pedidos**, **Liberadas**, **Revisão atendente** e **Em produção** contam apenas os pedidos carregados na página atual (até 100). Com mais de uma página, o número desses quatro cards é menor que o total real; o total está no rodapé, em "Total de propostas encontradas".
 - Com um card ligado, esses quatro cards passam a contar só o que o card ligado trouxe para a lista. Por exemplo, com **Em produção** ligado, **Pedidos** mostra a quantidade de pedidos em produção carregados e **Liberadas** e **Revisão atendente** caem para zero. **Em arte** e **Arte Aprovada** não mudam. Para comparar os números dos cards, desligue o card.
 - Com busca ou com qualquer filtro de status, modelo, produto, vendedor ou cobrança, o período é ignorado e a lista traz no máximo 100 pedidos, sem outras páginas. Se o que você procura não aparecer, refine a busca.
