@@ -3,7 +3,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import type { ReactNode } from "react";
-import { useMemo, useState, useEffect, useRef, useCallback } from "react";
+import { Fragment, useMemo, useState, useEffect, useRef, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useUrlFilters } from "@/hooks/useUrlFilters";
 import { codecs } from "@/lib/url-state";
@@ -105,6 +105,8 @@ import {
 } from "@/features/orcamentos/lib/modalidade-frete";
 import { contarModelosCopiados, copiaLevouCabecalho, montarAvisoDaCopia } from "@/features/orcamentos/lib/aviso-copia";
 import { box10Expandido, boxEstaNaLateral } from "@/features/orcamentos/lib/boxes-da-lateral";
+import { cepExibicao, semTraco } from "@/features/orcamentos/lib/campos-do-endereco";
+import { CartaoEndereco } from "@/features/orcamentos/components/CartaoEndereco";
 import {
   freteEhDoServico,
   servicoDoFrete,
@@ -5555,60 +5557,20 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                             showToast({ type: "error", title: "Erro", description: "Não foi possível copiar o endereço." });
                           }
                         }}
-                        painel={(endereco) => {
-                          const isSocioAddr = (endereco as { _isSocioAddr?: boolean })._isSocioAddr === true;
-                          const donoText = isSocioAddr ? "Endereço do pagador selecionado" : "Endereço do comprador";
-                          const cidadeUf = [endereco.cidade, endereco.uf].filter(Boolean).join("/");
-                          const logradouro = [endereco.endereco, endereco.numero].filter(Boolean).join(", ");
-                          return {
-                            kicker: `Endereço de entrega selecionado · ${donoText}`,
-                            titulo: endereco.recebedor ? `${endereco.recebedor} — ${logradouro} — ${cidadeUf}` : `${logradouro} — ${cidadeUf}`,
-                            campos: [
-                              { rotulo: "Recebedor", valor: endereco.recebedor || "—", apagado: !endereco.recebedor, span: 2 },
-                              {
-                                rotulo: "CPF do recebedor",
-                                valor: endereco.cpfRecebedor ? formatDocument(endereco.cpfRecebedor) : "—",
-                                apagado: !endereco.cpfRecebedor
-                              },
-                              { rotulo: "Tipo", valor: endereco.tipo || "Tipo não informado", apagado: !endereco.tipo },
-                              { rotulo: "Endereço", valor: logradouro || "—", apagado: !logradouro, span: 2 },
-                              { rotulo: "Complemento", valor: semTraco(endereco.complemento) || "—", apagado: !semTraco(endereco.complemento) },
-                              { rotulo: "Bairro", valor: endereco.bairro || "—", apagado: !endereco.bairro },
-                              { rotulo: "Cidade / UF", valor: cidadeUf || "—", apagado: !cidadeUf },
-                              { rotulo: "CEP", valor: cepExibicao(endereco.cep) || "—", apagado: !endereco.cep },
-                              { rotulo: "Referência", valor: endereco.obs || "—", apagado: !endereco.obs, span: 2 }
-                            ]
-                          };
-                        }}
-                        linha={(endereco) => {
-                          const cidadeUf = [endereco.cidade, endereco.uf].filter(Boolean).join("/");
-                          const logradouro = [endereco.endereco, endereco.numero].filter(Boolean).join(", ");
-                          const tipoExibido = endereco.tipo ? endereco.tipo : "Tipo não informado";
-                          return [
-                            endereco.recebedor
-                              ? { principal: endereco.recebedor, secundaria: logradouro }
-                              : { principal: logradouro, secundaria: semTraco(endereco.complemento) || endereco.bairro || "" },
-                            {
-                              principal: cidadeUf || "—",
-                              secundaria: [tipoExibido, endereco.cep ? `CEP ${cepExibicao(endereco.cep)}` : ""].filter(Boolean).join(" · ")
-                            },
-                            {
-                              principal: endereco.cpfRecebedor ? formatDocument(endereco.cpfRecebedor) : "—",
-                              secundaria: "CPF do recebedor"
-                            }
-                          ];
-                        }}
-                        extraClassNameForItem={(endereco) => {
-                          const isCompradorAddress = (endereco as any)._isSocioAddr === true;
-                          const isSelected = form.enderecoId === endereco.id;
-                          if (isSelected) {
-                            if (isCompradorAddress) {
-                              return "!bg-[#4b78b7] !border-[#4b78b7] !text-white";
-                            }
-                            return "!bg-[#3d9790] !border-[#3d9790] !text-white";
-                          }
-                          return "border-blue-100 bg-blue-50/40 text-slate-700 hover:bg-blue-50/70";
-                        }}
+                        // UM cartao fechado para o selecionado e para cada outra opcao (12/10/2026):
+                        // todos os campos do endereco, e o destaque e a unica diferenca. Troca, edicao,
+                        // copia, badges e busca sao os de sempre; so o desenho mudou.
+                        renderCartao={(endereco, opcoes) => (
+                          <CartaoEndereco
+                            endereco={endereco}
+                            origem={endereco._isSocioAddr === true ? "Endereço do pagador selecionado" : "Endereço do comprador"}
+                            destaque={opcoes.destaque}
+                            badge={opcoes.badge}
+                            onClick={opcoes.onClick}
+                            onCopy={opcoes.onCopy}
+                            onEdit={opcoes.onEdit}
+                          />
+                        )}
                         badgeForItem={(endereco) => {
                           const isCompradorAddress = (endereco as any)._isSocioAddr === true;
                           const isSelected = form.enderecoId === endereco.id;
@@ -5658,7 +5620,11 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                           endereco.cidade,
                           endereco.uf,
                           endereco.cep,
-                          endereco.tipo
+                          endereco.tipo,
+                          endereco.cpfRecebedor,
+                          endereco.cpfRecebedor ? formatDocument(endereco.cpfRecebedor) : "",
+                          endereco.ieRecebedor,
+                          endereco.obs
                         ].filter(Boolean).join(" ")}
                       />
                     ) : (
@@ -8563,10 +8529,26 @@ type SelectorPainelProps<T> = {
   items: T[];
   selectedId: string;
   onSelect: (id: string) => void;
-  /** Painel do selecionado: faixa colorida + campos rotulados, sem truncar. */
-  painel: (item: T) => PainelConteudo;
-  /** Linha compacta de cada opção NÃO selecionada: até 3 colunas. */
-  linha: (item: T) => ColunaLinha[];
+  /** Painel do selecionado: faixa colorida + campos rotulados, sem truncar. Dispensável com `renderCartao`. */
+  painel?: (item: T) => PainelConteudo;
+  /** Linha compacta de cada opção NÃO selecionada: até 3 colunas. Dispensável com `renderCartao`. */
+  linha?: (item: T) => ColunaLinha[];
+  /**
+   * CARTAO PROPRIO (12/10/2026, só o box 5 usa): desenha o selecionado E cada opção
+   * com o MESMO cartão, no lugar do painel e da linha. Quem escolhe, edita, copia, a
+   * busca, a lista, o contador, os avisos e o travamento seguem os de sempre — só o
+   * desenho de cada item muda. Os boxes 3 e 4 não passam isto e ficam como estão.
+   */
+  renderCartao?: (
+    item: T,
+    opcoes: {
+      destaque: boolean;
+      badge: React.ReactNode;
+      onClick?: () => void;
+      onCopy?: (event: React.MouseEvent) => void;
+      onEdit?: (event: React.MouseEvent) => void;
+    }
+  ) => React.ReactNode;
   /** Cabeçalho da lista das demais opções ("Outros contatos"...). */
   rotuloOutros: string;
   /** Botões extras na faixa do selecionado (ex.: Copiar dados, Abrir cadastro). */
@@ -8618,17 +8600,6 @@ function rotuloDoDocumento(documento: string | null | undefined): string {
  */
 function rotuloDaRelacao(tipoRelacao: string): string {
   return tipoRelacao === "vinculo_comercial" ? "Vínculo comercial" : tipoRelacao;
-}
-
-/** Campo preenchido só com um traço é vazio para exibição (ex.: complemento "-"). */
-function semTraco(valor: string | null | undefined): string {
-  const texto = (valor ?? "").trim();
-  return texto === "-" || texto === "—" ? "" : texto;
-}
-
-function cepExibicao(cep: string | null | undefined): string {
-  const digitos = (cep ?? "").replace(/\D/g, "").slice(0, 8);
-  return digitos.length === 8 ? `${digitos.slice(0, 5)}-${digitos.slice(5)}` : cep ?? "";
 }
 
 /**
@@ -8706,6 +8677,7 @@ function SelectorPainel<T extends { id: string }>({
   onSelect,
   painel,
   linha,
+  renderCartao,
   rotuloOutros,
   acoesDoPainel,
   onEdit,
@@ -8726,11 +8698,11 @@ function SelectorPainel<T extends { id: string }>({
   const termo = busca.trim().toLowerCase();
   const filtrados = termo
     ? outros.filter((item) => {
-        const conteudo = painel(item);
+        const conteudo = painel?.(item);
         const alvo = [
-          textoDe(conteudo.titulo),
-          textoDe(conteudo.subtitulo),
-          ...linha(item).flatMap((coluna) => [textoDe(coluna.principal), textoDe(coluna.secundaria)]),
+          textoDe(conteudo?.titulo),
+          textoDe(conteudo?.subtitulo),
+          ...(linha?.(item) ?? []).flatMap((coluna) => [textoDe(coluna.principal), textoDe(coluna.secundaria)]),
           searchTextForItem ? searchTextForItem(item) : ""
         ]
           .join(" ")
@@ -8742,14 +8714,23 @@ function SelectorPainel<T extends { id: string }>({
   return (
     <div>
       {selecionado ? (
-        <PainelSelecionado
-          conteudo={painel(selecionado)}
-          badge={badgeForItem ? badgeForItem(selecionado) : null}
-          acoes={acoesDoPainel ? acoesDoPainel(selecionado) : null}
-          extraClass={extraClassNameForItem ? extraClassNameForItem(selecionado) : ""}
-          onCopy={onCopy ? (event) => onCopy(selecionado, event) : undefined}
-          onEdit={onEdit ? (event) => onEdit(selecionado, event) : undefined}
-        />
+        renderCartao ? (
+          renderCartao(selecionado, {
+            destaque: true,
+            badge: badgeForItem ? badgeForItem(selecionado) : null,
+            onCopy: onCopy ? (event) => onCopy(selecionado, event) : undefined,
+            onEdit: onEdit ? (event) => onEdit(selecionado, event) : undefined
+          })
+        ) : painel ? (
+          <PainelSelecionado
+            conteudo={painel(selecionado)}
+            badge={badgeForItem ? badgeForItem(selecionado) : null}
+            acoes={acoesDoPainel ? acoesDoPainel(selecionado) : null}
+            extraClass={extraClassNameForItem ? extraClassNameForItem(selecionado) : ""}
+            onCopy={onCopy ? (event) => onCopy(selecionado, event) : undefined}
+            onEdit={onEdit ? (event) => onEdit(selecionado, event) : undefined}
+          />
+        ) : null
       ) : (
         <div className="rounded-3xl border border-dashed border-slate-300 bg-white px-4 py-3 text-sm text-slate-500">
           Nenhuma opção selecionada — escolha uma abaixo.
@@ -8795,17 +8776,29 @@ function SelectorPainel<T extends { id: string }>({
                 Nenhuma opção encontrada para “{busca.trim()}”.
               </p>
             ) : (
-              filtrados.map((item) => (
-                <LinhaOpcao
-                  key={item.id}
-                  colunas={linha(item)}
-                  badge={badgeForItem ? badgeForItem(item) : null}
-                  extraClass={extraClassNameForItem ? extraClassNameForItem(item) : ""}
-                  onClick={() => onSelect(item.id)}
-                  onCopy={onCopy ? (event) => onCopy(item, event) : undefined}
-                  onEdit={onEdit ? (event) => onEdit(item, event) : undefined}
-                />
-              ))
+              filtrados.map((item) =>
+                renderCartao ? (
+                  <Fragment key={item.id}>
+                    {renderCartao(item, {
+                      destaque: false,
+                      badge: badgeForItem ? badgeForItem(item) : null,
+                      onClick: () => onSelect(item.id),
+                      onCopy: onCopy ? (event) => onCopy(item, event) : undefined,
+                      onEdit: onEdit ? (event) => onEdit(item, event) : undefined
+                    })}
+                  </Fragment>
+                ) : (
+                  <LinhaOpcao
+                    key={item.id}
+                    colunas={linha ? linha(item) : []}
+                    badge={badgeForItem ? badgeForItem(item) : null}
+                    extraClass={extraClassNameForItem ? extraClassNameForItem(item) : ""}
+                    onClick={() => onSelect(item.id)}
+                    onCopy={onCopy ? (event) => onCopy(item, event) : undefined}
+                    onEdit={onEdit ? (event) => onEdit(item, event) : undefined}
+                  />
+                )
+              )
             )}
           </div>
         </>

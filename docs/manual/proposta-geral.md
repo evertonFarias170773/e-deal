@@ -1,6 +1,6 @@
 # Proposta: aba Geral
 
-> **Última revisão:** 11/10/2026
+> **Última revisão:** 12/10/2026
 > **Caminho no menu:** Pedidos → abrir um pedido → aba **Geral**
 > **Endereço:** `/orcamentos/<número>/editar` (em proposta nova, `/orcamentos/novo`)
 
@@ -124,11 +124,11 @@ O nome do contato é o que aparece na proposta enviada ao cliente.
 
 ### Escolher o endereço de entrega (bloco 5. Endereço de entrega)
 
-1. O endereço selecionado aparece no painel de cima, com recebedor, CPF do recebedor, tipo, endereço, complemento, bairro, cidade, CEP e referência.
-2. Para trocar, clique em outro endereço em **Outras opções de entrega**. Quando o pagador é um sócio, os endereços dele aparecem com o selo **Endereço de sócio** ou **Endereço de vínculo comercial**.
+1. O endereço selecionado e cada opção de **Outras opções de entrega** aparecem no mesmo cartão, todos com os mesmos campos: **Endereço** (rua e número), **Complemento**, **Bairro**, **Cidade / UF**, **CEP** e **Tipo**, mais **Recebedor**, **CPF do recebedor**, **IE do recebedor** e **Referência** quando o endereço tem. Campo vazio aparece como "—". O selecionado vem em destaque, com fundo escuro e texto claro; a única diferença entre os cartões é essa.
+2. Para trocar, clique no cartão de outro endereço em **Outras opções de entrega**. Quando o pagador é um sócio, os endereços dele aparecem com o selo **Endereço de sócio** ou **Endereço de vínculo comercial**.
 3. Com pagador diferente do cliente, ao escolher um endereço que não é o principal do pagador a tela pergunta: "Endereço de ENTREGA não corresponde ao endereço constante na Nota Fiscal". Clique em **Confirmar** para seguir. O endereço precisa ter o CPF do recebedor.
 4. Se a cidade da entrega for diferente da cidade do endereço principal do pagador, o endereço ganha o selo **REQUER NOTA DE TRANSPORTE**.
-5. O ícone de copiar leva o endereço completo para a área de transferência. O lápis abre a edição.
+5. O ícone de copiar leva o endereço completo para a área de transferência. O lápis, que existe no cartão selecionado e em cada opção, abre a edição.
 6. Trocar o endereço muda o destino do frete. As cotações são refeitas e a escolha anterior de frete é descartada.
 
 O destino escolhido aparece também no topo do bloco **8. Resumo do orçamento**, em **Entrega em**.
@@ -230,6 +230,8 @@ A escolha entre proposta avulsa e proposta com produtos do catálogo não fica n
 ## Arquivos de origem
 
 - `src/features/orcamentos/OrcamentoFormPage.tsx`
+- `src/features/orcamentos/components/CartaoEndereco.tsx`
+- `src/features/orcamentos/lib/campos-do-endereco.ts`
 - `src/features/orcamentos/lib/boxes-da-lateral.ts`
 - `src/features/orcamentos/components/SocioPagadorInline.tsx`
 - `src/features/orcamentos/components/ContactEditModal.tsx`
