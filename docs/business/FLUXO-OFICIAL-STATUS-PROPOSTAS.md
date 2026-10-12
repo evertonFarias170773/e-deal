@@ -2,7 +2,7 @@
 
 Versão: 3.5  
 Status: Oficial  
-Última atualização: 28/09/2026  
+Última atualização: 12/10/2026  
 Projeto: Vibe
 
 ---
@@ -618,6 +618,8 @@ Representa entrega concluída.
 
 Uma reabertura precisa de fluxo específico e auditoria, executado exclusivamente pelo ERP.
 
+Desde 11/10/2026 existe um atalho para chegar a `ENTREGUE` sem passar pela produção nem pela Expedição: **Marcar como entregue**, no menu Ações da lista de Pedidos, só para administrador e só a partir de `LIBERADO` (commit `c818220`). Ele grava `expedicoes.data_entrega` com o dia da marcação (uma data existente não é sobrescrita), muda o status e registra em `os_status_log` com a origem `ATALHO_LISTA_ENTREGUE`. Não toca em faturamento, cobranças, boletos, Conta Corrente nem Conferência, e não tem desmarcar.
+
 ## 6.17 `CANCELADO`
 
 Representa encerramento cancelado da proposta.
@@ -1120,6 +1122,7 @@ Não permitir:
 | `EXPEDICAO` | `EM TRANSITO` | Coleta confirmada | Manual (ERP ou QR de Produção) |
 | `A RETIRAR` | `ENTREGUE` | Retirada confirmada | Manual (ERP ou QR de Produção) |
 | `EM TRANSITO` | `ENTREGUE` | Entrega confirmada | Manual (ERP ou QR de Produção) |
+| `LIBERADO` | `ENTREGUE` | Pedido que terminou no sistema antigo (paliativo da migração, 11/10/2026) | Manual, só administrador: **Marcar como entregue** no menu Ações da lista de Pedidos (`POST /api/orcamentos/marcar-entregue`) |
 
 “Controlada” significa que a transição deve passar pelo serviço oficial e pelas validações do projeto.
 

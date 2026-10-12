@@ -2,7 +2,7 @@
 
 Versão: 1.7
 Status: Oficial — Correios em produção (prepostagens reais emitidas em 16/08/2026)
-Última atualização: 14/09/2026
+Última atualização: 12/10/2026
 Projeto: Vibe
 
 ---
@@ -24,6 +24,7 @@ O status oficial do pedido continua em `public.propostas.status_interno`, confor
 - Universo do painel: propostas com `is_prd_aprovado = true` e `status_interno` num dos status do funil (`STATUS_FUNIL_EXPEDICAO`, em `expedicao.service.ts`) — desde `APROVADO`/`LIBERADO`, passando pelas etapas de produção e acabamento, até `EXPEDICAO`, `A RETIRAR`, `EM TRANSITO` e `ENTREGUE`.
 - Cada `status_interno` é agrupado numa `EtapaExpedicao` (tipo em `src/features/expedicao/types.ts`) para exibição: `PRODUCAO`, `ACABAMENTO`, `PRONTO` (o status real por trás é `EXPEDICAO`), `A_RETIRAR`, `EM_TRANSITO`, `ENTREGUE`.
 - 6 cards de resumo (`SummaryCard`), um por etapa — clicar num card filtra a lista por aquela etapa (`toggleEtapa`).
+- **Estado em 12/10/2026 (o código vence os dois itens ao redor):** os cartões do topo são seis — Expedição do dia, Pronto p/ expedir, Próximos Dias, A retirar, Em trânsito e Entregues — e a tela abre em **Expedição do dia** (`ETAPA_INICIAL = "DIA"` em `ExpedicaoPage.tsx`). O cartão **Próximos Dias** (11/10/2026, commit `bd89b71`) usa a mesma regra do cartão do dia, com a previsão de envio (`propostas_os.data_termino`) depois de hoje no fuso de São Paulo (`lib/promessa-do-card.ts`). Pedido marcado como entregue pela lista de Pedidos (commit `c818220`) entra aqui como `ENTREGUE`, sem dados de despacho, e segue a regra de saída dos entregues. A descrição de uso está em `docs/manual/expedicao.md`.
 - 4 chips de alerta — Atrasados, Prometidos hoje, Sem NF, Frete a definir — cada um filtra a lista (`toggleAlerta`).
 - Filtros (busca, etapa, alerta, tipo de frete, empresa) e a visão da lista vivem na URL (`q`, `etapa`, `alerta`, `frete`, `emp`, `visao`), no padrão de `PADRAO-FILTROS-URL-NAVEGACAO.md`. Não existe seletor global de empresa: o filtro `emp` segue o mesmo padrão da Fila Geral — opções derivadas dos próprios dados carregados, não de um cadastro à parte.
 - Padrão da lista: `etapa=ATIVOS` (oculta `ENTREGUE`); pedidos entregues somem do painel depois de 30 dias (seção 3).

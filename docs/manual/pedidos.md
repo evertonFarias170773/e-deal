@@ -1,6 +1,6 @@
 # Pedidos (lista)
 
-> **Última revisão:** 11/10/2026
+> **Última revisão:** 12/10/2026
 > **Caminho no menu:** Pedidos (item direto do menu lateral, sem submenu; é o segundo, logo abaixo de Conferência)
 > **Endereço:** `/orcamentos`
 
@@ -22,6 +22,7 @@ No alto da tela o título aparece como "Orcamentos", com a etiqueta "Pedidos". �
 - **Liberar para Produção** e **Retirar da Produção**: só administrador, Super Administrador ou quem tem a permissão "Liberar para Produção". Sem ela, os dois itens não aparecem no menu, e o servidor recusa tanto a liberação quanto a retirada.
 - **Encerrar teste** e **Reabrir (desfazer encerramento de teste)**: só o Super Administrador.
 - **Voltar para a Fila de Faturamento (desfazer nota no sistema antigo)**: só administrador, Super Administrador ou quem tem a permissão "Liberar para Nota Fiscal".
+- **Confirmar Conferência**: só administrador ou Super Administrador, e só em pedido com cobrança na Fila de Conferência. O servidor confere a permissão de novo ao gravar.
 - **Marcar como entregue**: só administrador ou Super Administrador, e só em pedido com status LIBERADO. O servidor confere o administrador; esconder o item na tela não é a proteção.
 - As demais ações do menu da linha aparecem para qualquer usuário que vê o pedido. O que cada um consegue alterar dentro da proposta é decidido na própria proposta.
 
@@ -32,14 +33,14 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | Nome na tela | Onde fica | O que faz |
 |---|---|---|
 | **+ Nova proposta** | Cabeçalho da tela, à direita | Abre a criação de uma proposta nova. |
-| **Pedidos** (card) | Cards do topo, 1º | Liga ou desliga o filtro do card; ligado, a lista traz tudo menos cancelados, inclusive entregues. |
+| **Pedidos** (card) | Cards do topo, 1º | Liga ou desliga o filtro do card. Em **Ativos**, a lista segue só com os ativos; em **Todos status**, ligado ele traz tudo menos cancelados, inclusive entregues. |
 | **Em arte** (card) | Cards do topo, 2º | Liga ou desliga a lista dos pedidos com arte em andamento, na ordem por Status Arte. |
 | **Arte Aprovada** (card) | Cards do topo, 3º | Liga ou desliga a lista dos pedidos com arte aprovada que ainda não foram para a produção. |
 | **Liberadas** (card) | Cards do topo, 4º | Liga ou desliga a lista dos pedidos com status "Liberado". |
 | **Revisão atendente** (card) | Cards do topo, 5º | Liga ou desliga a lista dos pedidos em REVISAO ATENDENTE. |
 | **Em produção** (card) | Cards do topo, 6º | Liga ou desliga a lista dos pedidos em produção. |
 | **Buscar por número, cliente, CPF/CNPJ, ID do cliente, nota fiscal, atendente ou evento** | Barra de filtros, campo de texto | Busca pedidos em todos os períodos. Enquanto procura, a lupa vira um círculo girando e aparece **Buscando...** ao lado. |
-| **Ativos** (padrão) / **Todos status** | Barra de filtros | A tela abre em **Ativos**, a visão de trabalho: tira os pedidos ENTREGUE, EM TRANSITO e CANCELADO e os dos modelos Avulso e Encerrados. **Todos status** mostra tudo (como a lista era antes). Escolher um status específico filtra por ele e desliga o card que estiver ligado. |
+| **Ativos** (padrão) / **Todos status** | Barra de filtros | A tela abre em **Ativos**, a visão de trabalho: tira os pedidos ENTREGUE, EM TRANSITO e CANCELADO e os dos modelos Avulso e Encerrados. **Todos status** não recorta por status e é a lista como era antes: mostra também em trânsito e avulsos, e continua escondendo cancelados, entregues e testes encerrados. Escolher um status específico filtra por ele e desliga o card que estiver ligado. |
 | **Todos modelos** | Barra de filtros | Filtra por AVULSO, PROPOSTA ou ENCERRADOS (teste). |
 | **Todos produtos** | Barra de filtros | Abre a lista de produtos, com o campo **Código ou nome**, e filtra os pedidos que têm o produto escolhido. Só produtos ativos aparecem. |
 | **Todos vendedores** | Barra de filtros | Filtra por atendente. As opções são os usuários marcados como vendedor no cadastro, sempre os mesmos e em ordem alfabética. |
@@ -64,6 +65,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Abrir DANFE (PDF)** | Menu da linha | Abre a DANFE da nota que representa o pedido. |
 | **Baixar XML** | Menu da linha | Baixa o XML da nota. |
 | **Gerar cobrança** | Menu da linha | Abre a geração de cobrança da proposta. |
+| **Confirmar Conferência** (com mais de uma cobrança na Fila: **Confirmar Conferência — forma valor**, uma opção por cobrança) | Menu da linha, depois de **Gerar cobrança**; só administrador, em pedido com cobrança na Fila de Conferência | Abre a janela **Confirmar Liberação Operacional**, a mesma da tela Conferência. |
 | **Cancelar proposta** | Menu da linha | Abre a janela **Cancelar Proposta**. |
 | **Liberar para Produção** | Menu da linha | Abre a confirmação "Liberar proposta para Produção?". |
 | **✓ Liberada para produção** | Menu da linha | Não faz nada: é só o aviso de que o pedido já foi liberado. |
@@ -88,7 +90,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 
 Cada card mostra uma quantidade e, embaixo, "Soma em" seguido do período e do valor total. Clicar no card filtra a lista; clicar de novo desliga o filtro. Ligar um card volta o filtro de status para **Todos status**, menos em **Ativos**: com **Ativos** o card continua em **Ativos**, e as quantidades e somas dos cards seguem a mesma exclusão (sem entregues, em trânsito, cancelados, avulsos e encerrados).
 
-1. **Pedidos**: todos os pedidos do período, no recorte da lista (em **Ativos**, só os ativos; em **Todos status**, os que a lista padrão mostra). Com este card ligado, os pedidos entregues também entram na lista.
+1. **Pedidos**: todos os pedidos do período, no recorte da lista (em **Ativos**, só os ativos; em **Todos status**, os que a lista padrão mostra, sem entregues). Ligar este card em **Todos status** traz também os entregues para a lista, que não estão no número do card; em **Ativos**, a lista continua sem entregues.
 2. **Em arte**: pedidos cujo Status Arte é Em Arte, Enviar Arte, Em Aprovação, Em Alteração, Apr Parcial (ou Aprovado Parcial), Dados Pendentes, Corrigir Dados ou Pendente Informação. O card fica laranja quando pelo menos um dos pedidos contados está em Pendente Informação ou Corrigir Dados.
 3. **Arte Aprovada**: pedidos com Status Arte APROVADO que ainda não foram liberados para a produção. Saem do card os que já estão em produção, na expedição, a retirar, em trânsito ou entregues.
 4. **Liberadas**: pedidos com status exatamente "Liberado". Os que aparecem como "Liberado / EM ARTE" não entram aqui.
@@ -176,7 +178,7 @@ As datas pequenas aparecem como dia/mês e hora, no horário de Brasília.
 15. **Rastrear objeto**: aparece quando o envio é pelos Correios e já existe código de rastreio.
 16. **Encerrar teste** ou **Reabrir (desfazer encerramento de teste)**.
 17. **Voltar para a Fila de Faturamento (desfazer nota no sistema antigo)**: aparece só no pedido com a marca "faturado no sistema antigo".
-18. **Marcar como entregue**: aparece só para administrador, em pedido com status LIBERADO. Abre a janela **Marcar como entregue?**; ao confirmar, o status vira ENTREGUE e a **data de entrega** gravada é a de hoje (dia de São Paulo; se o pedido já tinha data de entrega, ela é mantida). O pedido sai de **Ativos** e segue a regra normal de saída da Expedição (aparece lá como entregue por 30 dias). Não mexe em faturamento, cobranças, boletos, Conta Corrente nem Conferência, e **não existe desmarcar** por aqui. Seu nome e a data ficam registrados no histórico de status. Apertar de novo num pedido que já está ENTREGUE não grava nada.
+18. **Marcar como entregue**: aparece só para administrador, em pedido com status LIBERADO. Abre a janela **Marcar como entregue?**; ao confirmar, o status vira ENTREGUE e a **data de entrega** gravada é a de hoje (dia de São Paulo; se o pedido já tinha data de entrega, ela é mantida). O pedido sai de **Ativos** e segue a regra normal de saída da Expedição (aparece lá como entregue por 30 dias). Não mexe em faturamento, cobranças, boletos, Conta Corrente nem Conferência: se o pedido esperava nota, ele continua na Fila de Faturamento, agora com o status Entregue, que lá é só informação. **Não existe desmarcar** por aqui. Seu nome e a data ficam registrados no histórico de status. Apertar de novo num pedido que já está ENTREGUE não grava nada.
 19. **Retirar da Produção**: último item do menu, só em pedido já liberado.
 
 ### Liberar um pedido para a produção
@@ -188,7 +190,7 @@ As datas pequenas aparecem como dia/mês e hora, no horário de Brasília.
 
 ### Achar o que a lista esconde
 
-1. **Entregues**: escolha ENTREGUE no filtro de status, digite algo na busca ou ligue o card **Pedidos**.
+1. **Entregues**: escolha ENTREGUE no filtro de status, digite algo na busca ou, em **Todos status**, ligue o card **Pedidos**. Em **Ativos**, o card não traz entregues.
 2. **Testes encerrados**: escolha **ENCERRADOS (teste)** no filtro de modelos, ou digite algo na busca. Eles aparecem com a marca "teste encerrado".
 3. **Pedidos de outro mês**: troque o período, ou use a busca ou qualquer outro filtro, que passam a procurar em todos os períodos.
 4. **Cancelados**: não aparecem nesta lista. O filtro de status não tem a opção CANCELADO e a busca não os traz.
@@ -202,9 +204,8 @@ As datas pequenas aparecem como dia/mês e hora, no horário de Brasília.
 
 - Proposta cancelada nunca aparece em card nenhum, nem na contagem nem na lista do card.
 - A lista padrão (**Ativos**) esconde os pedidos cancelados, os entregues, os em trânsito, os avulsos e os testes encerrados. Entregue já saiu do fluxo; teste encerrado não é pedido de verdade. Para ver tudo, escolha **Todos status** (que ainda esconde cancelados, entregues e testes encerrados) ou busque pelo número.
-- Os cards **Em arte** e **Arte Aprovada** contam o período inteiro. Os cards **Pedidos**, **Liberadas**, **Revisão atendente** e **Em produção** contam apenas os pedidos carregados na página atual (até 100). Com mais de uma página, o número desses quatro cards é menor que o total real; o total está no rodapé, em "Total de propostas encontradas".
-- Com um card ligado, esses quatro cards passam a contar só o que o card ligado trouxe para a lista. Por exemplo, com **Em produção** ligado, **Pedidos** mostra a quantidade de pedidos em produção carregados e **Liberadas** e **Revisão atendente** caem para zero. **Em arte** e **Arte Aprovada** não mudam. Para comparar os números dos cards, desligue o card.
-- Com busca ou com qualquer filtro de status, modelo, produto, vendedor ou cobrança, o período é ignorado e a lista traz no máximo 100 pedidos, sem outras páginas. Se o que você procura não aparecer, refine a busca.
+- Os seis cards contam o período inteiro, e não só a página carregada. Ligar ou desligar um card não muda os números dos outros. O único caso em que eles contam menos é o da busca ou de filtro de modelo, produto, vendedor ou cobrança, em que cada leitura traz no máximo 100 pedidos (veja "Entender os cards do topo").
+- Com busca ou com um status específico, modelo, produto, vendedor ou cobrança escolhido, o período é ignorado e a lista traz no máximo 100 pedidos, sem outras páginas. Se o que você procura não aparecer, refine a busca.
 - O período **15 dias** olha a data da última alteração do pedido; os meses olham a data de criação. Por isso um pedido antigo que foi mexido esta semana aparece em 15 dias e não aparece no mês atual.
 - A lista não mostra mais o complemento de arte no status do pedido ("/ EM ARTE" e "/ Arte aprovada"): aparece só "Novo", "Aguardando" ou "Liberado", e a arte fica na coluna Status Arte. O complemento continua existindo no status do pedido, e é por ele que valem o card **Liberadas** e a opção EM ARTE do filtro, citados abaixo; ele segue visível na tela da proposta.
 - O card **Em arte** olha o Status Arte, e não o "/ EM ARTE" do status do pedido. Os dois podem divergir: um pedido pode mostrar "/ EM ARTE" no status e estar fora do card, e o contrário.
@@ -253,7 +254,7 @@ As datas pequenas aparecem como dia/mês e hora, no horário de Brasília.
 | "Sem permissão para retirar da produção (propostas.release_producao)." | Seu perfil não tem a permissão "Liberar para Produção". | Peça a quem tem a permissão. |
 | "Sem permissão para liberar para produção (propostas.release_producao)." | Seu perfil não tem a permissão "Liberar para Produção". | Peça a liberação a quem tem a permissão, ou peça ao administrador para incluí-la no seu perfil. |
 | "Nenhuma proposta encontrada" | Os filtros não trazem nenhum pedido, ou o pedido está escondido (entregue, teste encerrado, cancelado). | Clique em **Limpar filtros** e busque pelo número. Veja "Achar o que a lista esconde". |
-| Busquei pelo valor ou pela OS Ideal e o pedido não veio | A busca na base inteira é por número, código e nome do cliente, atendente, nome de quem recebe a nota e nome do evento. Valor e OS Ideal não fazem parte da busca. | Busque pelo número do pedido ou pelo nome do cliente. |
+| Busquei pelo valor ou pela OS Ideal e o pedido não veio | A busca na base inteira é por número, código e nome do cliente, CPF ou CNPJ do cliente, atendente, nome de quem recebe a nota e nome do evento. Valor e OS Ideal não fazem parte da busca. | Busque pelo número do pedido, pelo nome ou pelo CPF/CNPJ do cliente. |
 | O número do card não bate com o total do rodapé | O card ignora o status específico escolhido no filtro Status, ou a leitura do período inteiro ainda não terminou (alguns segundos depois de abrir), ou há busca ou filtro específico ligado (no máximo 100 pedidos). | Espere os cards se acertarem, use **Ativos** ou **Todos status**, ou use o "Total de propostas encontradas" do rodapé. |
 | "Geração de PDF bloqueada" | O pedido não tem cliente cadastrado. | Cadastre ou vincule um cliente à proposta e gere o PDF de novo. |
 | "Empresa inválida" | A empresa da proposta não é aceita para gerar PDF ou OC. A grafia com ou sem acento não importa ("Gráfica", "Birô"). | Use Ideal Grafica, Ideal Biro ou E3 Brindes na proposta. |
@@ -319,3 +320,5 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/app/api/orcamentos/retirar-producao/route.ts`
 
 > **Mudança desta revisão:** 08/10/2026 — a ação **Criar pedido complementar** passou a se chamar **Criar Complemento** (commit `dd9a110`), só no nome. **O Complemento está em reformulação.** Está sendo revisto para aceitar mais de um complemento por pedido e para valer também antes da produção. Ainda não há mudança publicada, e não há data definida. Enquanto isso, vale o que esta ficha descreve: só em pedido pago, entre LIBERADO e EXPEDICAO, e com um complemento aberto por pedido. Quando a regra mudar, esta ficha muda junto.
+
+> **Mudança desta revisão:** 12/10/2026 — conferência da ficha contra o que foi publicado de 10 a 12/10 (commits `3c6711f`, `225be82`, `fe920e2`, `a67ff98`, `c818220`): **Confirmar Conferência** entrou na tabela de ações e em quem acessa; saíram os trechos antigos que diziam que quatro cards contavam só a página; o card **Pedidos** e os entregues ficaram descritos conforme **Ativos** e **Todos status**; a busca por CPF/CNPJ entrou na tabela de erros; e o pedido marcado como entregue continua na Fila de Faturamento. Só documentação.

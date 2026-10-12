@@ -1,6 +1,6 @@
 # Notas fiscais
 
-> **Última revisão:** 08/10/2026
+> **Última revisão:** 12/10/2026
 > **Caminho no menu:** Financeiro → Notas fiscais (primeiro item da seção Financeiro do menu lateral)
 > **Endereço:** `/notas-fiscais` (a nota aberta fica em `/notas-fiscais/[id]`)
 
@@ -157,7 +157,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 3. Use os filtros do topo: a busca **Buscar fila por Ref, ID Cliente ou Nome...** (também acha por sócio pagador e por vendedor), **Todas as Empresas Emitentes**, **Todos os status do pedido** e a caixa **Só faturados**, que deixa só os pedidos com cobrança do tipo faturado. A caixa **Mostrar também pedidos com NFS-e emitida** traz de volta os pedidos que já têm nota de serviço autorizada.
 4. Abaixo vem a seção **Notas em processo**. Ela lista toda nota que ainda não é documento fiscal: pendente, pronta para envio, processando ou com erro. Os filtros do topo não escondem nada desta seção, de propósito.
 
-O status do pedido é só informação: ele não impede nem libera a emissão.
+O status do pedido é só informação: ele não impede nem libera a emissão. Por isso o pedido que o administrador marca como entregue pela lista de Pedidos ([Pedidos](pedidos.md)) continua na fila enquanto esperar nota, com o status Entregue.
 
 ### O que põe e o que tira um pedido da fila
 
@@ -582,3 +582,5 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/lib/fiscal/carta-correcao.ts`
 
 > **Mudança desta revisão:** 08/10/2026 — aviso de nota de remessa: selo na Fila e faixa no rascunho da NF-e quando o pedido é entregue em endereço diferente do da nota. É só aviso; a remessa segue sendo gerada à mão, depois da venda autorizada.
+
+> **Mudança desta revisão:** 12/10/2026 — pedido marcado como entregue pela lista de Pedidos (commit `c818220`) continua na Fila de Faturamento enquanto esperar nota. Só documentação.
