@@ -95,7 +95,20 @@ checar("os boxes 3 e 4 seguem com painel e linha de antes", contar(pagina, "pain
 const semComentarios = cartao.replace(/\/\*[\s\S]*?\*\//g, "");
 checar("o destaque e UM par de cores, o do sistema (fundo escuro e texto branco), aplicado so no contêiner", contar(semComentarios, '"border-[#0b2f4a] bg-[#0b2f4a] text-white"'), 1);
 checar("fora do contêiner nao ha cor fixa de texto (rotulos, valores e botoes herdam)", [/text-white/.test(semComentarios.replace('"border-[#0b2f4a] bg-[#0b2f4a] text-white"', "")), /bg-\[#0b2f4a\]/.test(semComentarios.replace('"border-[#0b2f4a] bg-[#0b2f4a] text-white"', ""))], [false, false]);
-checar("o selo do selecionado tem fundo solido no tema escuro (nao some no azul claro)", semComentarios.includes('dark:bg-[var(--card)]'), true);
+// Selos: layout so no cartao (cores, textos e regras de quando aparecem vem de badgeForItem, na pagina)
+const iLinha = semComentarios.indexOf("{badge ? (");
+const linhaDosSelos = semComentarios.slice(iLinha, semComentarios.indexOf("{badge}", iLinha));
+checar("os selos ficam numa linha propria com flex-wrap", linhaDosSelos.includes("flex flex-wrap"), true);
+checar("o grupo de selos vira item da linha (div com display: contents)", linhaDosSelos.includes("[&>div]:contents"), true);
+checar("cada selo e retangulo arredondado, nao pilula", [linhaDosSelos.includes("[&_span]:rounded-md"), linhaDosSelos.includes("rounded-full")], [true, false]);
+checar("os dois selos tem a mesma altura (o vermelho ganha borda transparente como a do azul)", linhaDosSelos.includes("[&_span.bg-red-500]:border-transparent"), true);
+checar("a linha dos selos esta FORA da coluna entre o icone e os botoes (usa a largura inteira do cartao)", semComentarios.indexOf("{badge ? (") > semComentarios.indexOf("</dl>") - 99999 && semComentarios.indexOf("{badge ? (") < semComentarios.indexOf("<dl "), true);
+checar("fonte e altura uniformes nos selos", ["[&_span]:text-[10px]", "[&_span]:font-semibold", "[&_span]:leading-4", "[&_span]:min-h-6"].map((c) => linhaDosSelos.includes(c)), [true, true, true, true]);
+checar("texto do selo quebra so se nao couber (max-w-full, sem nowrap)", [linhaDosSelos.includes("[&_span]:max-w-full"), linhaDosSelos.includes("whitespace-nowrap")], [true, false]);
+checar("a linha dos selos fica abaixo do cabecalho, na coluna do texto", semComentarios.indexOf("{badge ? (") > semComentarios.indexOf("{destaque ? \"Selecionado\" : \"Opção\"}"), true);
+checar("o selo azul do selecionado ganha fundo solido no tema escuro (nao some no azul claro)", linhaDosSelos.includes("dark:[&_span.bg-blue-100]:!bg-[color-mix(in_srgb,#60a5fa_16%,var(--card))]"), true);
+// os selos em si nao foram mexidos: mesmos textos, cores e regras na pagina
+checar("selos na pagina: textos e cores intactos", ["Endereço de sócio", "Endereço de vínculo comercial", "REQUER NOTA DE TRANSPORTE", "bg-blue-100 px-2 py-0.5 text-[10px] font-semibold text-blue-800", "bg-red-500 px-2 py-0.5 text-[10px] font-bold text-white"].map((c) => pagina.includes(c)), [true, true, true, true, true]);
 checar("o cartao tem os botoes Copiar e Editar", cartao.includes('aria-label="Copiar endereço"') && cartao.includes('aria-label="Editar"'), true);
 checar("opcao clicavel tem role=option e teclado", cartao.includes('role: "option"') && cartao.includes('event.key === "Enter"'), true);
 

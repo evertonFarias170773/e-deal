@@ -86,8 +86,6 @@ export function CartaoEndereco({
             <p className="text-[10px] font-bold uppercase tracking-wider opacity-80">
               {destaque ? "Selecionado" : "Opção"} · {origem}
             </p>
-            {/* No tema escuro o destaque vira azul claro e o selo (cores proprias, translucídas) sumia nele: um fundo sólido atrás o devolve ao contraste que tem no cartão comum. */}
-            {badge ? <span className={`inline-flex rounded-full ${destaque ? "dark:bg-[var(--card)]" : ""}`}>{badge}</span> : null}
           </div>
         </div>
         {(onCopy || onEdit) && (
@@ -123,6 +121,33 @@ export function CartaoEndereco({
           </div>
         )}
       </div>
+
+      {/*
+        SELOS (12/10/2026): numa linha PROPRIA, abaixo do cabecalho, alinhada a esquerda do
+        texto. Antes ficavam ao lado do cabecalho dentro de um `div` sem quebra de linha, e na
+        lateral estreita de Fretes o texto de cada selo se partia em 3 linhas dentro de uma
+        pilula. Os selos chegam prontos de `badgeForItem` (cores, textos e regras de quando
+        aparecem sao de la e nao mudam); aqui so o LAYOUT. A linha ocupa a LARGURA INTEIRA do
+        cartao, logo abaixo do cabecalho (e nao a coluna entre o icone e os botoes, que no
+        celular deixava ~110 px e quebrava o texto em 3 linhas):
+          - `[&>div]:contents` desfaz o `div` que agrupa os selos, para cada selo virar item
+            da linha e o `flex-wrap` poder joga-los um por linha quando o espaco e curto;
+          - cada selo e um retangulo arredondado (nao pilula), com a mesma altura minima, a
+            mesma fonte e o mesmo padding (o selo vermelho ganha uma borda transparente, como a do
+            azul, para os dois terem a mesma altura sem mudar a cor); `max-w-full` faz o texto ficar numa linha quando
+            cabe e quebrar no maximo em duas quando nao cabe.
+        No tema escuro, sobre o azul claro do destaque, o selo azul (cores proprias e
+        translucidas) sumia: ganha atras o mesmo tom que tem no cartao comum, so que solido.
+      */}
+      {badge ? (
+        <div
+          className={`mt-2 flex flex-wrap items-start gap-1.5 [&>div]:contents [&_span]:min-h-6 [&_span]:max-w-full [&_span]:items-center [&_span]:rounded-md [&_span]:px-2.5 [&_span]:py-1 [&_span]:text-left [&_span]:text-[10px] [&_span]:font-semibold [&_span]:leading-4 [&_span]:whitespace-normal [&_span]:break-words [&_span.bg-red-500]:border [&_span.bg-red-500]:border-transparent ${
+            destaque ? "dark:[&_span.bg-blue-100]:!bg-[color-mix(in_srgb,#60a5fa_16%,var(--card))]" : ""
+          }`}
+        >
+          {badge}
+        </div>
+      ) : null}
 
       <dl className="mt-2.5 grid grid-cols-1 gap-x-4 gap-y-2 @md:grid-cols-2 @2xl:grid-cols-3">
         {campos.map((campo) => (
