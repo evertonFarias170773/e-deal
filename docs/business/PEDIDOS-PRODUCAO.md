@@ -551,7 +551,7 @@ Também **não reaproveita `is_prd_aprovado`**, que continua com um só signific
 
 | Ação | O que faz | Reversão |
 |---|---|---|
-| **Retirar da Produção** | `is_prd_aprovado = false`. O pedido deixa de ser pedido de fábrica. | Só pelo fluxo oficial, que exige `status_interno = REVISAO ATENDENTE`. Um pedido `EM TRANSITO` não volta. |
+| **Retirar da Produção** | `is_prd_aprovado = false` **e** `status_interno = REVISAO ATENDENTE`, na mesma gravação (a mesma do "Devolver para o atendente"), desde 13/10/2026. O pedido deixa de ser pedido de fábrica e volta ao atendente. | Só em `REVISAO PRODUCAO` e sem `propostas_os` nem `propostas_os_setores`; de `EM PRODUCAO` em diante a devolução é da produção e a rota recusa (409). Idempotente: já em `REVISAO ATENDENTE` não grava. Autoria em `os_status_log` (origem `RETIRAR_PRODUCAO`). Um pedido `EM TRANSITO` não volta. |
 | **Encerrar teste** | Grava `encerrado_teste_em`. Some das filas, sem tocar em status nem em `is_prd_aprovado`. | Imediata: "Reabrir", em Orçamentos. |
 
 ## Onde o pedido some — e onde não some

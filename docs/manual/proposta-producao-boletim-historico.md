@@ -1,6 +1,6 @@
 # Proposta: abas Produção / Expedição, Boletim e Histórico
 
-> **Última revisão:** 09/10/2026
+> **Última revisão:** 13/10/2026
 > **Caminho no menu:** Pedidos → abrir um pedido → Editar proposta → aba Produção / Expedição ou aba Histórico. Não existe aba Boletim na barra de abas: a OS (boletim) abre pelo menu Produção → clicar no pedido.
 > **Endereço:** `/orcamentos/[número]/editar?tab=producao` e `/orcamentos/[número]/editar?tab=historico`. A aba se chamava **Produção** até 09/10/2026; só o nome mudou, o endereço `?tab=producao` é o mesmo. A OS fica em `/pedidos/boletim?id_int=[número]&modo=edicao`.
 
@@ -14,7 +14,7 @@ Esta página explica também como o pedido sai do atendimento e entra na fábric
 
 - Quem abre a edição do pedido vê as abas **Produção / Expedição** e **Histórico**. A aba Produção / Expedição aparece também em proposta avulsa e em pedido só de prateleira.
 - **Liberar para Produção** fica na lista de Pedidos e aparece só para Administrador, Super Administrador ou quem tem a permissão **Liberar para Produção** no perfil, quando o pedido está em REVISAO ATENDENTE. O servidor confere a mesma permissão e, depois, pagamento, arte e modelos. A liberação automática de pedido só de prateleira, que acontece quando o pagamento é confirmado, não depende dessa permissão.
-- **Retirar da Produção** aparece só para Administrador, Super Administrador ou quem tem a permissão **Liberar para Produção** no perfil. O servidor confere a mesma permissão antes de retirar.
+- **Retirar da Produção** aparece só para Administrador, Super Administrador ou quem tem a permissão **Liberar para Produção** no perfil, e só em pedido em REVISAO PRODUCAO. O servidor confere a mesma permissão antes de retirar e recusa o pedido que já é da produção.
 - **Voltar para Revisão Atendente** (tela Produção) aparece só para Administrador, Super Administrador ou quem tem a permissão **Ações Administrativas de OS**.
 - A OS (boletim) abre para quem tem a permissão **Visualizar Pedidos e OS**.
 - **Data Limite de Entrega** e **Hora do Prazo**, em OS que já existe, só são alteradas por Administrador, Super Administrador ou quem tem a permissão **Editar Datas de Entrega**.
@@ -32,7 +32,7 @@ Nomes exatamente como aparecem na tela.
 | Ícone de clipe (dica "Anexar arquivo (até 10MB)") | Aba Histórico, rodapé da timeline | Escolhe arquivos para enviar com a mensagem. |
 | Ícone de enviar (dica "Enviar mensagem") | Aba Histórico, rodapé da timeline | Envia a mensagem e os anexos. |
 | **Ver chat interno** | Menu de ações do cabeçalho do pedido | Abre o mesmo chat da timeline em um painel lateral. |
-| **Retirar da Produção** | Menu de ações do cabeçalho do pedido e fim do menu **Ações** da lista de Pedidos, em pedido liberado | Tira o pedido da fila da produção. |
+| **Retirar da Produção** | Menu de ações do cabeçalho do pedido e fim do menu **Ações** da lista de Pedidos, em pedido em REVISAO PRODUCAO | Abre uma confirmação e devolve o pedido ao atendente: sai da fila da produção e o status volta para REVISAO ATENDENTE. |
 | **Liberar para Produção** | Lista de Pedidos, menu **Ações** da linha, em pedido em REVISAO ATENDENTE | Abre a janela **Liberar proposta para Produção?**. |
 | **Confirmar liberação** | Janela **Liberar proposta para Produção?** | Faz as conferências e libera o pedido. Enquanto processa, mostra "Liberando...". |
 | **Cancelar** | Janela **Liberar proposta para Produção?** | Fecha a janela sem liberar. |
@@ -120,7 +120,7 @@ Pedido só com produtos de prateleira pode ser liberado pelo próprio sistema, n
 
 ### Tirar um pedido da produção
 
-1. **Retirar da Produção** (menu de ações do pedido ou da lista de Pedidos): tira o pedido da fila da produção e **não muda o status** dele. Confirme a pergunta.
+1. **Retirar da Produção** (menu de ações do pedido ou da lista de Pedidos): Retirar da Produção **devolve o pedido ao atendente**: ele sai da fila de Produção e o status volta para REVISAO ATENDENTE, juntos. Só vale em pedido em REVISAO PRODUCAO que ainda não tem OS; de EM PRODUCAO em diante, ou com OS, quem devolve o pedido é a produção e o sistema recusa com essa mensagem. Antes de retirar, uma janela explica o que acontece (o foco fica em **Cancelar**), e o nome de quem retirou e a data ficam registrados. Retirar de novo um pedido que já voltou ao atendente não grava nada.
 2. **Voltar para Revisão Atendente** (tela Produção, menu **Ações**): tira o pedido da produção e volta o status para REVISAO ATENDENTE. Depois é preciso liberar de novo.
 
 ### Ler o histórico (aba Histórico)
@@ -169,7 +169,7 @@ As mensagens são internas: o cliente não vê.
 - **Orientação técnica de produção** (aba Produção / Expedição) não é **Observações e Condições** (aba Geral). A primeira vai para a OS impressa; a segunda é comercial e não chega à produção.
 - **REVISAO ATENDENTE** e **REVISAO PRODUCAO** são etapas seguidas, de pessoas diferentes. Na primeira, o atendente confere e libera; na segunda, a produção confere a OS e, ao salvá-la, o pedido vira EM PRODUCAO.
 - **Liberar para Produção** não é **LIBERADO**. LIBERADO é o status de pedido pago, ainda no atendimento; a liberação para a produção é a ação que leva o pedido de REVISAO ATENDENTE para REVISAO PRODUCAO.
-- **Retirar da Produção** não é **Voltar para Revisão Atendente**. Retirar só tira da fila e mantém o status; voltar para revisão tira da fila e devolve o status para REVISAO ATENDENTE.
+- **Retirar da Produção** e **Voltar para Revisão Atendente** fazem a mesma gravação (tiram da fila e devolvem o status para REVISAO ATENDENTE). A diferença é onde valem: retirar é para o pedido em REVISAO PRODUCAO e sem OS; **Voltar para Revisão Atendente**, na tela Produção, é como a produção devolve o pedido que já está em produção.
 - **Retirar da Produção** não desfaz um engano de liberação recém-feita: é a ação oposta. Depois de liberar, o menu mostra **✓ Liberada para produção**.
 - **Data Limite de Entrega** (OS) não é **Data do Evento** (briefing da aba Artes). A primeira é o prazo da fábrica; a segunda é o dia da festa.
 - **Salvar alterações** (pedido) e **Salvar Alterações** (OS) são botões de telas diferentes. O da OS é o que move o pedido para EM PRODUCAO.
@@ -243,5 +243,8 @@ O que fazer:
 - `src/features/pedidos/services/boletim-propostas.service.ts`
 - `src/features/usuarios-perfis/catalogo-permissoes.ts`
 - `src/app/api/orcamentos/retirar-producao/route.ts`
+- `src/features/orcamentos/lib/retirar-producao.ts`
+- `src/features/orcamentos/services/retirar-producao.server.ts`
+- `src/features/orcamentos/components/RetirarProducaoModal.tsx`
 
 > **Mudança desta revisão:** 09/10/2026 — nova seção sobre a página que mostra a mensagem This page could not load: é erro de carregamento, com a causa já vista (data inválida no pedido, tratada no commit `6693958`) e o que fazer.

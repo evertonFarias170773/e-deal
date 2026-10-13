@@ -105,6 +105,8 @@ import {
 } from "@/features/orcamentos/lib/modalidade-frete";
 import { contarModelosCopiados, copiaLevouCabecalho, montarAvisoDaCopia } from "@/features/orcamentos/lib/aviso-copia";
 import { box10Expandido, boxEstaNaLateral } from "@/features/orcamentos/lib/boxes-da-lateral";
+import { RetirarProducaoModal } from "@/features/orcamentos/components/RetirarProducaoModal";
+import { podeVerRetirarDaProducao } from "@/features/orcamentos/lib/retirar-producao";
 import { cepExibicao, semTraco } from "@/features/orcamentos/lib/campos-do-endereco";
 import { CartaoEndereco } from "@/features/orcamentos/components/CartaoEndereco";
 import {
@@ -4324,18 +4326,28 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     }
   }
 
+  /**
+   * "Retirar da Produção" (13/10/2026): abre o modal; o clique no menu não retira. Quem
+   * grava é a rota, que devolve o pedido ao atendente e recusa o que já é da produção.
+   */
+  const [retirarModalAberto, setRetirarModalAberto] = useState(false);
+
   async function handleRetirarDaProducaoNaProposta() {
     if (!proposta || acaoEmCurso) return;
-    if (!window.confirm(`Deseja RETIRAR a proposta #${proposta.id_int} da fila de producao?`)) return;
     setAcaoEmCurso("retirar");
     try {
       const res = await retirarPropostaDaProducao(proposta.id_int);
-      if (res.success) {
-        showToast({ type: "success", title: "Proposta retirada", description: "Saiu da lista de Producao." });
-        if (onReload) onReload(true);
+      if (!res.success) {
+        showToast({ type: "error", title: "Não foi possível retirar", description: res.errorMessage || "Nao foi possivel retirar." });
+      } else if (res.idempotente) {
+        showToast({ type: "info", title: "Já estava com o atendente", description: "O pedido já está em REVISAO ATENDENTE. Nada foi gravado." });
+      } else if (res.aviso) {
+        showToast({ type: "warning", title: "Proposta retirada, com aviso", description: res.aviso });
       } else {
-        showToast({ type: "error", title: "Erro ao retirar", description: res.errorMessage || "Nao foi possivel retirar." });
+        showToast({ type: "success", title: "Proposta retirada", description: "Saiu da fila de Produção e voltou para o atendente (REVISAO ATENDENTE)." });
       }
+      setRetirarModalAberto(false);
+      if (res.success && onReload) onReload(true);
     } finally {
       setAcaoEmCurso(null);
     }
@@ -4377,11 +4389,12 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
         label: acaoEmCurso === "oc" ? "Gerando OC..." : "Gerar OC",
         onClick: () => void handleGerarPdfDaProposta("oc")
       },
-      ...(proposta.is_prd_aprovado && podeRetirar
+      // Ultimo item do menu. So onde a retirada vale (REVISAO PRODUCAO com a flag ligada).
+      ...(podeRetirar && podeVerRetirarDaProducao({ statusInterno: proposta.status_interno, isPrdAprovado: proposta.is_prd_aprovado })
         ? [{
             label: acaoEmCurso === "retirar" ? "Retirando..." : "Retirar da Produção",
             destructive: true,
-            onClick: () => void handleRetirarDaProducaoNaProposta()
+            onClick: () => setRetirarModalAberto(true)
           }]
         : [])
     ];
@@ -7724,6 +7737,16 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
           </div>
         </div>
       )}
+
+      {retirarModalAberto && proposta ? (
+        <RetirarProducaoModal
+          isOpen
+          propostaId={proposta.id_int}
+          isSubmitting={acaoEmCurso === "retirar"}
+          onClose={() => setRetirarModalAberto(false)}
+          onConfirm={() => void handleRetirarDaProducaoNaProposta()}
+        />
+      ) : null}
 
       {isContactModalOpen ? <ContactModal draft={contactDraft} onChange={setContactDraft} onClose={() => setIsContactModalOpen(false)} onSave={addContact} /> : null}
       {editingContactId ? (

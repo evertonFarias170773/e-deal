@@ -1,6 +1,6 @@
 # Pedidos (lista)
 
-> **Última revisão:** 12/10/2026
+> **Última revisão:** 13/10/2026
 > **Caminho no menu:** Pedidos (item direto do menu lateral, sem submenu; é o segundo, logo abaixo de Conferência)
 > **Endereço:** `/orcamentos`
 
@@ -19,7 +19,7 @@ No alto da tela o título aparece como "Orcamentos", com a etiqueta "Pedidos". �
 - **Cancelar proposta**: só o Super Administrador e quem tem a permissão "Cancelar Propostas" (o perfil Gerente comercial já vem com ela).
 - **Criar Complemento**: só quem tem a permissão "Criar Complemento".
 - **Duplicar proposta**: só o vendedor da proposta, o administrador ou quem vê todas as propostas. Para os demais a cópia é recusada com o aviso "Você só pode duplicar proposta em que é o vendedor".
-- **Liberar para Produção** e **Retirar da Produção**: só administrador, Super Administrador ou quem tem a permissão "Liberar para Produção". Sem ela, os dois itens não aparecem no menu, e o servidor recusa tanto a liberação quanto a retirada.
+- **Liberar para Produção** e **Retirar da Produção**: só administrador, Super Administrador ou quem tem a permissão "Liberar para Produção". Sem ela, os dois itens não aparecem no menu, e o servidor recusa tanto a liberação quanto a retirada. **Retirar da Produção** só aparece em pedido em REVISAO PRODUCAO.
 - **Encerrar teste** e **Reabrir (desfazer encerramento de teste)**: só o Super Administrador.
 - **Voltar para a Fila de Faturamento (desfazer nota no sistema antigo)**: só administrador, Super Administrador ou quem tem a permissão "Liberar para Nota Fiscal".
 - **Confirmar Conferência**: só administrador ou Super Administrador, e só em pedido com cobrança na Fila de Conferência. O servidor confere a permissão de novo ao gravar.
@@ -74,7 +74,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Reabrir (desfazer encerramento de teste)** | Menu da linha | Devolve o pedido de teste às listas operacionais. |
 | **Voltar para a Fila de Faturamento (desfazer nota no sistema antigo)** | Menu da linha | Remove a marca "faturado no sistema antigo" e devolve o pedido à Fila de Faturamento. |
 | **Marcar como entregue** | Menu da linha, antes de **Retirar da Produção** | Só administrador, só em pedido LIBERADO. Abre uma confirmação e, ao confirmar, muda o status para ENTREGUE e grava a data de entrega de hoje. Paliativo para pedido que terminou no sistema antigo. |
-| **Retirar da Produção** | Menu da linha, último item | Tira o pedido da fila de produção. |
+| **Retirar da Produção** | Menu da linha, último item, só em pedido em REVISAO PRODUCAO | Abre uma confirmação e, ao confirmar, devolve o pedido ao atendente: sai da fila de Produção e o status volta para REVISAO ATENDENTE. Não vale de EM PRODUCAO em diante nem com OS (aí a devolução é da produção). |
 | **Confirmar liberação** / **Cancelar** | Janela "Liberar proposta para Produção?" | Confirma a liberação, ou fecha sem liberar. |
 | **Confirmar Cancelamento** / **Voltar** | Janela "Cancelar Proposta" | Cancela a proposta (exige motivo), ou fecha sem cancelar. |
 | **Cancelar só a cobrança** | Janela "Cancelar Proposta", quando há uma única cobrança ativa | Troca para o cancelamento só da cobrança, sem cancelar o pedido. |
@@ -179,7 +179,7 @@ As datas pequenas aparecem como dia/mês e hora, no horário de Brasília.
 16. **Encerrar teste** ou **Reabrir (desfazer encerramento de teste)**.
 17. **Voltar para a Fila de Faturamento (desfazer nota no sistema antigo)**: aparece só no pedido com a marca "faturado no sistema antigo".
 18. **Marcar como entregue**: aparece só para administrador, em pedido com status LIBERADO. Abre a janela **Marcar como entregue?**; ao confirmar, o status vira ENTREGUE e a **data de entrega** gravada é a de hoje (dia de São Paulo; se o pedido já tinha data de entrega, ela é mantida). O pedido sai de **Ativos** e segue a regra normal de saída da Expedição (aparece lá como entregue por 30 dias). Não mexe em faturamento, cobranças, boletos, Conta Corrente nem Conferência: se o pedido esperava nota, ele continua na Fila de Faturamento, agora com o status Entregue, que lá é só informação. **Não existe desmarcar** por aqui. Seu nome e a data ficam registrados no histórico de status. Apertar de novo num pedido que já está ENTREGUE não grava nada.
-19. **Retirar da Produção**: último item do menu, só em pedido já liberado.
+19. **Retirar da Produção**: último item do menu, só em pedido em REVISAO PRODUCAO. Retirar da Produção **devolve o pedido ao atendente**: ele sai da fila de Produção e o status volta para REVISAO ATENDENTE, juntos. Só vale em pedido em REVISAO PRODUCAO que ainda não tem OS; de EM PRODUCAO em diante, ou com OS, quem devolve o pedido é a produção e o sistema recusa com essa mensagem. Antes de retirar, uma janela explica o que acontece (o foco fica em **Cancelar**), e o nome de quem retirou e a data ficam registrados. Retirar de novo um pedido que já voltou ao atendente não grava nada.
 
 ### Liberar um pedido para a produção
 
@@ -212,7 +212,7 @@ As datas pequenas aparecem como dia/mês e hora, no horário de Brasília.
 - O card **Liberadas** não conta os pedidos "Liberado / EM ARTE". Eles aparecem em **Em arte**, se o Status Arte for um dos que entram naquele card.
 - O selo **Pago / A liberar** não muda o status do pedido: ele continua "Aguardando" até o financeiro confirmar. O selo existe para ninguém mexer na proposta achando que o dinheiro não entrou. Na lista, o pedido pago a conferir mostra só **Pago / A liberar**, sem o "Aguardando" ao lado.
 - Não dá para liberar para a produção um pedido que não está em REVISAO ATENDENTE, que é avulso ou que já foi liberado. A liberação também é recusada se houver pagamento não confirmado, arte que não está APROVADO ou produto cuja quantidade vendida não bate com a soma dos lotes.
-- **Retirar da Produção** não é o contrário inofensivo de liberar: o pedido sai da lista de Ordens de Serviço e volta a ficar parado, mesmo que o cliente já tenha pago. Por isso a ação fica no fim do menu e pede confirmação com esse aviso.
+- **Retirar da Produção** não é o contrário inofensivo de liberar: o pedido sai da fila de Produção e volta ao atendente, que precisa liberá-lo de novo, mesmo que o cliente já tenha pago. Por isso a ação fica no fim do menu e abre uma janela que explica isso, com o foco em **Cancelar**. Até 13/10/2026 ela só desligava a fila e deixava o status em REVISAO PRODUCAO, e o pedido ficava parado sem saída pela tela.
 - Não dá para cancelar uma proposta sem informar o motivo, nem enquanto ela tiver pedido complementar aberto. Cobrança já paga ou título já liquidado também bloqueiam o cancelamento. As cobranças pendentes são canceladas junto com a proposta.
 - Se a intenção é só refazer a cobrança, não cancele a proposta: na janela de cancelamento use **Cancelar só a cobrança** (ou **Ver cobranças na aba Pagamentos**, quando há mais de uma). O pedido continua de pé e o saldo reabre.
 - Pedido complementar só é aceito em proposta paga integralmente, não avulsa, ainda não despachada e sem outro complemento aberto. O sistema confere isso na hora de criar e mostra o motivo da recusa na própria janela.
@@ -230,7 +230,7 @@ As datas pequenas aparecem como dia/mês e hora, no horário de Brasília.
 - Card **Arte Aprovada** e status "Novo / Arte aprovada" ou "Aguardando / Arte aprovada": o card olha o Status Arte APROVADO de pedido ainda não liberado para a produção; os outros são status do pedido.
 - Card **Liberadas** e linha verde: o card conta só o status exatamente "Liberado"; a linha verde vale para todo pedido não avulso com financeiro liberado, inclusive "Liberado / EM ARTE".
 - Card **Liberadas** e **✓ Liberada para produção**: o primeiro é a liberação do financeiro (status "Liberado"); o segundo é o pedido que já entrou na fila da produção.
-- **Liberar para Produção** e **Retirar da Produção**: são ações opostas; retirar deixa o pedido parado fora da fila, mesmo pago.
+- **Liberar para Produção** e **Retirar da Produção**: são ações opostas; retirar devolve o pedido ao atendente (REVISAO ATENDENTE), fora da fila, mesmo pago.
 - Card **Revisão atendente** e status REVISAO PRODUCAO: o primeiro espera o atendente liberar; o segundo já foi liberado e está com a produção, e conta no card **Em produção**.
 - Selo **Pago / A liberar** e status "Liberado": o selo diz que o cliente pagou e o financeiro ainda não confirmou; "Liberado" é depois da confirmação.
 - Linha amarela (Aguardando financeiro) e linha azul bem claro (Pago / A liberar): as duas vêm da situação da cobrança na Conferência; se o pedido tem cobranças nas duas situações, vale Aguardando financeiro.
@@ -238,7 +238,7 @@ As datas pequenas aparecem como dia/mês e hora, no horário de Brasília.
 - Fundo laranja da linha (Enviar Arte) e card **Em arte** laranja: a linha fica laranja por Enviar Arte, só com o card ligado; o card fica laranja quando há pedido em Pendente Informação ou Corrigir Dados.
 - **Cancelar proposta** e **Cancelar só a cobrança**: a primeira encerra o pedido e não tem volta; a segunda mantém o pedido e reabre o saldo para uma cobrança nova.
 - **Encerrar teste** e **Cancelar proposta**: encerrar teste só esconde o pedido das listas operacionais, sem mudar o status, e pode ser desfeito; cancelar é irreversível.
-- **Encerrar teste** e **Retirar da Produção**: encerrar teste não mexe na liberação do pedido; retirar desfaz a entrada na fila da produção.
+- **Encerrar teste** e **Retirar da Produção**: encerrar teste não mexe na liberação do pedido; retirar desfaz a entrada na fila da produção e devolve o pedido ao atendente.
 - **Ver proposta** e **Editar proposta**: a primeira abre para leitura; a segunda abre em edição, que é também o que o clique na linha faz.
 - **Duplicar proposta** e **Criar Complemento**: duplicar cria uma cópia independente; o complementar nasce sem itens, vinculado ao pedido original, e sai junto com ele na Expedição.
 - **Abrir DANFE (PDF)** do menu e o ícone de DANFE da linha: o menu abre só a nota que representa o pedido; o ícone lista todas as notas autorizadas, inclusive complementar e remessa.
@@ -318,6 +318,9 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/app/api/orcamentos/liberar-producao/`
 - `src/app/api/orcamentos/cancelar-proposta/`
 - `src/app/api/orcamentos/retirar-producao/route.ts`
+- `src/features/orcamentos/lib/retirar-producao.ts`
+- `src/features/orcamentos/services/retirar-producao.server.ts`
+- `src/features/orcamentos/components/RetirarProducaoModal.tsx`
 
 > **Mudança desta revisão:** 08/10/2026 — a ação **Criar pedido complementar** passou a se chamar **Criar Complemento** (commit `dd9a110`), só no nome. **O Complemento está em reformulação.** Está sendo revisto para aceitar mais de um complemento por pedido e para valer também antes da produção. Ainda não há mudança publicada, e não há data definida. Enquanto isso, vale o que esta ficha descreve: só em pedido pago, entre LIBERADO e EXPEDICAO, e com um complemento aberto por pedido. Quando a regra mudar, esta ficha muda junto.
 

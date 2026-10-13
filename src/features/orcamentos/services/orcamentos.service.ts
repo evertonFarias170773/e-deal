@@ -92,6 +92,7 @@ import {
 } from "@/features/orcamentos/lib/divergencia-lotes";
 import { danfesDoPedido } from "@/lib/fiscal/danfes-do-pedido";
 import { padraoBuscaSemAcento, valorParaOr, digitosDeDocumentoParaBusca } from "@/features/orcamentos/lib/padrao-busca";
+import { PAYLOAD_DEVOLUCAO_AO_ATENDENTE } from "@/features/orcamentos/lib/retirar-producao";
 import {
   ativosValem,
   condicoesDosAtivosParaOServidor,
@@ -5761,8 +5762,13 @@ export async function liberarPropostaParaProducaoPeloServidor(idInt: number): Pr
  * o que sobra dessa passagem, então ele NÃO entra neste UPDATE. Quem lê a coluna
  * com `is_prd_aprovado = false` está lendo histórico, não estado atual — as duas
  * se leem juntas, como diz o `comment on column` da migration.
+ *
+ * Desde 13/10/2026 a rota também devolve o STATUS ao atendente (REVISAO ATENDENTE),
+ * como o "Devolver para o atendente"; só vale em REVISAO PRODUCAO sem OS.
  */
-export async function retirarPropostaDaProducao(idInt: number): Promise<{ success: boolean; errorMessage?: string }> {
+export async function retirarPropostaDaProducao(
+  idInt: number
+): Promise<{ success: boolean; errorMessage?: string; idempotente?: boolean; aviso?: string | null }> {
   // Pela rota do servidor (02/10/2026), que confere a sessão e a permissão
   // "Liberar para Produção". Até então a gravação saía direto do navegador.
   const client = getSupabaseClient();
@@ -5782,7 +5788,11 @@ export async function retirarPropostaDaProducao(idInt: number): Promise<{ succes
     if (!response.ok || !data?.success) {
       return { success: false, errorMessage: data?.message || "Erro ao retirar proposta da produção." };
     }
-    return { success: true };
+    return {
+      success: true,
+      idempotente: data.idempotente === true,
+      aviso: typeof data.aviso === "string" ? data.aviso : null
+    };
   } catch {
     return { success: false, errorMessage: "Erro ao retirar proposta da produção." };
   }
@@ -5799,7 +5809,8 @@ export async function devolverPropostaParaRevisaoAtendente(idInt: number): Promi
 
   const { error: updateErr } = await client
     .from("propostas")
-    .update({ is_prd_aprovado: false, status_interno: "REVISAO ATENDENTE" })
+    // A MESMA gravação da retirada da produção (rota retirar-producao): uma definicao so.
+    .update({ ...PAYLOAD_DEVOLUCAO_AO_ATENDENTE })
     .eq("id_int", idInt);
 
   if (updateErr) return { success: false, errorMessage: "Erro ao devolver proposta para revisão." };

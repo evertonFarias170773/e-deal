@@ -1,6 +1,6 @@
 # Proposta: visão geral e abas
 
-> **Última revisão:** 11/10/2026
+> **Última revisão:** 13/10/2026
 > **Caminho no menu:** Pedidos → **+ Nova proposta** (proposta nova) ou Pedidos → abrir um pedido → **Editar proposta**
 > **Endereço:** `/orcamentos/novo` e `/orcamentos/<número>/editar`
 
@@ -21,7 +21,7 @@ Esta página explica o que vale para a tela inteira: cabeçalho, abas, como salv
 - **Cancelar proposta**: só quem tem a permissão de cancelar propostas.
 - **Duplicar proposta**: só o vendedor da proposta, o administrador ou quem vê todas as propostas. Para os demais a cópia é recusada com o aviso "Você só pode duplicar proposta em que é o vendedor".
 - **Criar Complemento**: perfis Administrador e Vendedor.
-- **Retirar da Produção**: administrador ou perfil com a permissão de liberar para produção.
+- **Retirar da Produção**: administrador ou perfil com a permissão de liberar para produção, e só em pedido em REVISAO PRODUCAO.
 
 ## Botões e ações da tela
 
@@ -40,7 +40,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Link pgto. externo** | Menu **Acoes** | Copia o link da área do cliente daquele pedido. |
 | **Gerar PDF da proposta** | Menu **Acoes** | Gera o PDF do orçamento e abre em outra aba. |
 | **Gerar OC** | Menu **Acoes**, logo abaixo de **Gerar PDF da proposta** (na edição e no detalhe da proposta) | Gera a OC, a autorização de faturamento que o cliente assina, e abre em outra aba. |
-| **Retirar da Produção** | Menu **Acoes**, só em pedido já liberado para a produção | Tira o pedido da fila da produção. |
+| **Retirar da Produção** | Menu **Acoes**, só em pedido em REVISAO PRODUCAO | Abre uma confirmação e devolve o pedido ao atendente: sai da fila da produção e o status volta para REVISAO ATENDENTE. |
 | Botão com o ícone do Ideal Imposition (dica: "Abrir no Ideal Imposition") | Cabeçalho, em proposta que já tem número | Abre o pedido no sistema de imposição. |
 | **Voltar ao detalhe** / **Voltar para lista** | Cabeçalho | Sai da edição. Em proposta nova o nome é **Voltar para lista**. |
 | **Complemento do #<número>** | Selo no cabeçalho do pedido complementar | Abre o pedido principal. |
@@ -89,7 +89,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 3. Se a proposta é um pedido complementar, aparece o selo **Complemento do #<número>**, que leva ao pedido principal. No pedido principal aparece **Complemento: #<número> · <status>**.
 4. O botão com o ícone do Ideal Imposition abre o pedido no sistema de imposição. Ele só aparece em proposta que já tem número.
 5. **Voltar ao detalhe** (ou **Voltar para lista**, em proposta nova) sai da edição.
-6. O botão **Acoes**, no canto direito, abre o menu de ações: **Ver proposta**, **Ver chat interno**, **Editar proposta**, **Duplicar proposta**, **Copiar proposta informal**, **Link pgto. externo**, **Gerar PDF da proposta**, **Gerar OC** e, em pedido já liberado para a produção, **Retirar da Produção**.
+6. O botão **Acoes**, no canto direito, abre o menu de ações: **Ver proposta**, **Ver chat interno**, **Editar proposta**, **Duplicar proposta**, **Copiar proposta informal**, **Link pgto. externo**, **Gerar PDF da proposta**, **Gerar OC** e, em pedido em REVISAO PRODUCAO, **Retirar da Produção**.
 7. Abaixo do cabeçalho podem aparecer avisos: sobre cobrança gerada, **Saldo na Conta Corrente** (cliente com crédito), **Cliente com débito em aberto** e **Revisão financeira pendente**. Também fica ali o bloco de tarefas da equipe ligadas ao pedido.
 
 ### Navegar pelas abas
@@ -295,7 +295,7 @@ O aviso some quando você clica em **Entendi** ou quando a cópia ganha cobranç
 1. **Copiar proposta informal**: copia o mesmo texto do bloco **9. Envio do orçamento**.
 2. **Gerar PDF da proposta**: abre o PDF do orçamento em nova aba. Precisa de cliente cadastrado e de empresa válida.
 3. **Gerar OC**: abre em nova aba a **Autorização de faturamento** do pedido. Tem o mesmo conteúdo do orçamento: empresa emissora com CNPJ e endereço, **Orçado por**, data, validade, cliente, CPF/CNPJ, produtos, subtotal, frete, total, observações e a frase da entrega. Abaixo de CPF/CNPJ, só a OC traz **ENTREGA:** (o endereço de entrega da proposta, ou "Retira no balcão") e **ENVIO:** (a modalidade e o mesmo envio da coluna Envio da lista de Pedidos, por exemplo "CIF — SEDEX" ou "FOB — BRASPRESS"; na retirada, "Retira no balcão", como na linha ENTREGA). Muda também o título, a ordem do bloco de cima e o bloco de assinatura, para o cliente devolver assinado e carimbado. Na OC, **Dados para faturamento:** introduz os dados do cliente (CLIENTE, CPF/CNPJ, ENTREGA e ENVIO); depois vêm **Orçado por** e, por último, a empresa emissora com o endereço. Precisa de cliente cadastrado e de empresa válida, como o PDF.
-4. **Retirar da Produção**: tira o pedido da fila da produção, depois de confirmar.
+4. **Retirar da Produção**: abre uma janela de confirmação; ao confirmar, devolve o pedido ao atendente (status REVISAO ATENDENTE) e o tira da fila da produção. Não vale de EM PRODUCAO em diante nem com OS.
 
 ## Regras e bloqueios
 

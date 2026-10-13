@@ -1,15 +1,22 @@
 import { NextResponse } from "next/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { verificarPermissaoServerSide } from "@/lib/auth/verificar-permissao";
+import { retirarPedidoDaProducao } from "@/features/orcamentos/services/retirar-producao.server";
 
 /**
  * POST /api/orcamentos/retirar-producao — tira a proposta da fila da produção.
  *
- * Até 02/10/2026 a gravação saía direto do navegador (`propostas.is_prd_aprovado
- * = false`), e a permissão existia só no menu. Aqui a sessão e a chave
- * "Liberar para Produção" — a mesma que libera — são conferidas no servidor.
+ * Até 02/10/2026 a gravação saía direto do navegador, e a permissão existia só no
+ * menu. Aqui a sessão e a chave "Liberar para Produção" — a mesma que libera — são
+ * conferidas no servidor.
  *
- * A gravação é a de sempre: só `is_prd_aprovado` vira falso. Nada mais muda.
+ * DESDE 13/10/2026 retirar é DEVOLVER AO ATENDENTE: grava `is_prd_aprovado = false`
+ * E `status_interno = 'REVISAO ATENDENTE'` juntos (a mesma gravação do "Devolver
+ * para o atendente"). Antes só a flag caía, e o pedido ficava em REVISAO PRODUCAO
+ * sem saída pela tela. Só vale em REVISAO PRODUCAO e sem OS: de EM PRODUCAO em
+ * diante, ou com OS/setores, a devolução é da produção e a rota recusa (409). É
+ * idempotente: com o pedido já em REVISAO ATENDENTE não grava nada. A regra está em
+ * `lib/retirar-producao.ts` e a gravação em `services/retirar-producao.server.ts`.
  */
 
 const PERMISSAO = "propostas.release_producao";
@@ -59,19 +66,26 @@ export async function POST(request: Request) {
     );
   }
 
-  const { data: alteradas, error: updateErr } = await supabase
-    .from("propostas")
-    .update({ is_prd_aprovado: false })
-    .eq("id_int", idInt)
-    .select("id_int");
+  const { data: usuario } = await supabase
+    .from("usuarios")
+    .select("nome_usuario")
+    .eq("user_id", authData.user.id)
+    .maybeSingle();
 
-  if (updateErr) {
-    console.error("[API][RetirarProducao] Falha ao gravar:", updateErr.message);
-    return NextResponse.json({ success: false, message: "Erro ao retirar proposta da produção." }, { status: 500 });
-  }
-  if (!alteradas || alteradas.length === 0) {
-    return NextResponse.json({ success: false, code: "NAO_ENCONTRADA", message: "Proposta não encontrada." }, { status: 404 });
-  }
+  const resultado = await retirarPedidoDaProducao(supabase, {
+    idInt,
+    autor: {
+      uid: authData.user.id,
+      nome: String(usuario?.nome_usuario ?? "").trim() || authData.user.email || "Usuário"
+    }
+  });
 
-  return NextResponse.json({ success: true });
+  if (!resultado.success) {
+    if (resultado.httpStatus >= 500) console.error("[API][RetirarProducao]", resultado.code, resultado.message);
+    return NextResponse.json(
+      { success: false, code: resultado.code, message: resultado.message },
+      { status: resultado.httpStatus }
+    );
+  }
+  return NextResponse.json(resultado);
 }

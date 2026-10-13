@@ -26,6 +26,8 @@ import { montarOpcoesDeVendedor } from "@/features/orcamentos/lib/opcoes-vendedo
 import { podeVerMarcarComoEntregue } from "@/features/orcamentos/lib/marcar-entregue";
 import { marcarPedidoComoEntreguePeloServidor } from "@/features/orcamentos/services/marcar-entregue.service";
 import { MarcarEntregueModal } from "@/features/orcamentos/components/MarcarEntregueModal";
+import { RetirarProducaoModal } from "@/features/orcamentos/components/RetirarProducaoModal";
+import { podeVerRetirarDaProducao } from "@/features/orcamentos/lib/retirar-producao";
 import { listarNomesDeVendedores } from "@/features/orcamentos/services/vendedores-do-filtro.service";
 import {
   STATUS_ATIVOS,
@@ -1606,47 +1608,43 @@ export function OrcamentosListPageReal() {
     }
   }
 
-  async function handleRetirarProducao(item: OrcamentoListItem) {
-    /**
-     * Texto reforçado em 01/09/2026. O anterior — "Deseja RETIRAR a proposta
-     * #N da fila de produção?" — era curto o bastante para ser confirmado no
-     * automático por quem achava estar repetindo a LIBERAÇÃO. Foi o que
-     * aconteceu com a 21330. Agora o diálogo diz o que se perde, e diz
-     * explicitamente que esta não é a ação de liberar.
-     */
-    const ok = window.confirm(
-      `RETIRAR a proposta #${item.id_int} da fila de produção?\n\n` +
-        `Ela sai da lista de Ordens de Serviço e a OS deixa de ser criada.\n` +
-        `O pedido volta a ficar parado, mesmo que o cliente já tenha pago.\n\n` +
-        `Esta NÃO é a ação de liberar. Se você acabou de liberar, a proposta já está na produção.`
-    );
-    if (!ok) return;
+  /**
+   * "Retirar da Produção" (13/10/2026): o clique só ABRE o modal; quem grava é a rota
+   * `/api/orcamentos/retirar-producao`, que devolve o pedido ao atendente
+   * (REVISAO ATENDENTE) e recusa o que já é da produção. O modal substitui o
+   * `window.confirm`: diz o que acontece e põe o foco em "Cancelar".
+   */
+  const [pedidoParaRetirar, setPedidoParaRetirar] = useState<OrcamentoListItem | null>(null);
+  const [retirandoDaProducao, setRetirandoDaProducao] = useState(false);
 
-    showToast({
-      type: "info",
-      title: "Atualizando status",
-      description: "Aguarde..."
-    });
-
+  async function confirmarRetirarProducao() {
+    if (!pedidoParaRetirar || retirandoDaProducao) return;
+    const idInt = pedidoParaRetirar.id_int;
+    setRetirandoDaProducao(true);
     try {
-      const res = await retirarPropostaDaProducao(item.id_int);
-      if (res.success) {
+      const res = await retirarPropostaDaProducao(idInt);
+      if (!res.success) {
+        showToast({
+          type: "error",
+          title: "Não foi possível retirar da produção",
+          description: res.errorMessage || "Erro desconhecido."
+        });
+      } else if (res.idempotente) {
+        showToast({ type: "info", title: "Já estava com o atendente", description: `A proposta #${idInt} já está em REVISAO ATENDENTE. Nada foi gravado.` });
+      } else if (res.aviso) {
+        showToast({ type: "warning", title: `Proposta #${idInt} retirada, com aviso`, description: res.aviso });
+      } else {
         showToast({
           type: "success",
           title: "Proposta retirada",
-          description: "A proposta foi retirada da lista de Produção."
+          description: "Saiu da fila de Produção e voltou para o atendente (REVISAO ATENDENTE)."
         });
-        triggerRefresh();
-      } else {
-        throw new Error(res.errorMessage || "Erro desconhecido.");
       }
-    } catch (err) {
-      console.error("[OrcamentosListPageReal] Error removing from production:", err);
-      showToast({
-        type: "error",
-        title: "Erro ao retirar",
-        description: err instanceof Error ? err.message : "Não foi possível remover da produção."
-      });
+      // Em qualquer desfecho a lista relê: o pedido pode ter mudado de status por outro caminho.
+      setPedidoParaRetirar(null);
+      triggerRefresh();
+    } finally {
+      setRetirandoDaProducao(false);
     }
   }
 
@@ -1978,7 +1976,12 @@ Ela volta a aparecer nas listas operacionais.`
        *
        * Condicao, permissao e o que ela grava: tudo intocado.
        */
-      ...(item.is_prd_aprovado && canLiberarProducao ? [{ label: "Retirar da Produção", destructive: true, onClick: () => void handleRetirarProducao(item) }] : [])
+      // So onde a retirada vale (REVISAO PRODUCAO com a flag ligada): de EM PRODUCAO em
+      // diante o item some em vez de oferecer o que o servidor recusaria. Ja e o ULTIMO
+      // item do menu, longe das acoes do dia a dia.
+      ...(canLiberarProducao && podeVerRetirarDaProducao({ statusInterno: item.statusInterno, isPrdAprovado: item.is_prd_aprovado })
+        ? [{ label: "Retirar da Produção", destructive: true, onClick: () => setPedidoParaRetirar(item) }]
+        : [])
     ];
   }
 
@@ -2793,6 +2796,16 @@ Ela volta a aparecer nas listas operacionais.`
             setSelectedPropostaForCancel(null);
             triggerRefresh();
           }}
+        />
+      )}
+
+      {pedidoParaRetirar && (
+        <RetirarProducaoModal
+          isOpen
+          propostaId={pedidoParaRetirar.id_int}
+          isSubmitting={retirandoDaProducao}
+          onClose={() => setPedidoParaRetirar(null)}
+          onConfirm={() => void confirmarRetirarProducao()}
         />
       )}
 
