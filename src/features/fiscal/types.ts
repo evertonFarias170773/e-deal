@@ -45,6 +45,8 @@ export interface FaturavelOrigem {
    * migration 20260827170336, que criou a coluna.
    */
   liberado_producao_em?: string | null;
+  /** `propostas.is_prd_aprovado`: o pedido está na produção. Falso em quem foi só à Fila de Faturamento. */
+  is_prd_aprovado?: boolean;
   /**
    * Nome do sócio pagador, quando `propostas.id_faturado` aponta para OUTRO
    * cadastro que não o `id_cliente`. `id_faturado` preenchido e igual ao cliente

@@ -1728,6 +1728,7 @@ interface SupabasePropostaSimple {
   empresa: string;
   created_at: string;
   libera_nf?: boolean | null;
+  is_prd_aprovado?: boolean | null;
   /** `propostas.liberado_producao_em` — quando o pedido entrou em producao. */
   liberado_producao_em?: string | null;
 }
@@ -1852,7 +1853,7 @@ export async function getFaturaveisPropostas(): Promise<FaturavelOrigem[]> {
   try {
     const { data, error } = await client
       .from("propostas")
-      .select("id,id_int,id_cliente,cliente,valor,valor_total,vendedor,status_interno,empresa,created_at,libera_nf,id_faturado,liberado_producao_em")
+      .select("id,id_int,id_cliente,cliente,valor,valor_total,vendedor,status_interno,empresa,created_at,libera_nf,is_prd_aprovado,id_faturado,liberado_producao_em")
       .eq("libera_nf", true)
       // Pedido cuja nota foi emitida no SISTEMA ANTIGO sai da fila (migration
       // 20260914_propostas_faturado_fora). Corte a mais, sem mexer nos outros:
@@ -1979,7 +1980,9 @@ export async function getFaturaveisPropostas(): Promise<FaturavelOrigem[]> {
         // `ref_origem` por regex quando alguem precisava dele. Sai explicito
         // para os links nao dependerem do formato de um rotulo.
         id_int: Number(row.id_int),
-        liberado_producao_em: row.liberado_producao_em ?? null
+        liberado_producao_em: row.liberado_producao_em ?? null,
+        // Para o "Marcar como entregue" da Fila (13/10/2026): toda linha daqui tem libera_nf ligada.
+        is_prd_aprovado: row.is_prd_aprovado === true
       };
     });
   } catch (err) {

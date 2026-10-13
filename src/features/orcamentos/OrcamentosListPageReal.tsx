@@ -26,6 +26,9 @@ import { montarOpcoesDeVendedor } from "@/features/orcamentos/lib/opcoes-vendedo
 import { podeVerMarcarComoEntregue } from "@/features/orcamentos/lib/marcar-entregue";
 import { marcarPedidoComoEntreguePeloServidor } from "@/features/orcamentos/services/marcar-entregue.service";
 import { MarcarEntregueModal } from "@/features/orcamentos/components/MarcarEntregueModal";
+import { EnviarFilaFaturamentoModal } from "@/features/orcamentos/components/EnviarFilaFaturamentoModal";
+import { estaNaFilaSemProducao, podeVerEnviarParaFila } from "@/features/orcamentos/lib/enviar-fila-faturamento";
+import { enviarPedidoParaFilaPeloServidor } from "@/features/orcamentos/services/enviar-fila-faturamento.service";
 import { RetirarProducaoModal } from "@/features/orcamentos/components/RetirarProducaoModal";
 import { podeVerRetirarDaProducao } from "@/features/orcamentos/lib/retirar-producao";
 import { useNotasQueImpedemDevolucao } from "@/features/orcamentos/hooks/useNotasQueImpedemDevolucao";
@@ -1724,6 +1727,36 @@ export function OrcamentosListPageReal() {
       setMarcandoEntregue(false);
     }
   }
+  /**
+   * "Enviar para Fila de Faturamento" (13/10/2026): só ADM, só em REVISAO ATENDENTE
+   * fora da fila e fora da produção. O clique ABRE o modal; quem grava (só
+   * `libera_nf`) é a rota `/api/orcamentos/enviar-fila-faturamento`.
+   */
+  const [pedidoParaEnviarAFila, setPedidoParaEnviarAFila] = useState<OrcamentoListItem | null>(null);
+  const [enviandoAFila, setEnviandoAFila] = useState(false);
+
+  async function confirmarEnviarAFila() {
+    if (!pedidoParaEnviarAFila || enviandoAFila) return;
+    const idInt = pedidoParaEnviarAFila.id_int;
+    setEnviandoAFila(true);
+    try {
+      const resposta = await enviarPedidoParaFilaPeloServidor(idInt);
+      if (!resposta.success) {
+        showToast({ type: "error", title: "Não foi possível enviar à Fila de Faturamento", description: resposta.message });
+      } else if (resposta.idempotente) {
+        showToast({ type: "info", title: "Já estava na fila", description: resposta.message });
+      } else if (resposta.aviso) {
+        showToast({ type: "warning", title: `Proposta #${idInt} enviada à fila, com aviso`, description: resposta.aviso });
+      } else {
+        showToast({ type: "success", title: "Enviado à Fila de Faturamento", description: "O pedido não passa pela Produção nem pela Expedição." });
+      }
+      // Em qualquer desfecho a lista relê: o pedido pode ter mudado por outro caminho.
+      setPedidoParaEnviarAFila(null);
+      triggerRefresh();
+    } finally {
+      setEnviandoAFila(false);
+    }
+  }
   const [encerrandoTesteId, setEncerrandoTesteId] = useState<number | null>(null);
 
   async function handleEncerrarTeste(item: OrcamentoListItem, encerrar: boolean) {
@@ -1946,6 +1979,10 @@ Ela volta a aparecer nas listas operacionais.`
        */
       ...(!item.is_prd_aprovado && item.isAvulsoRaw !== true && item.statusInterno === "REVISAO ATENDENTE" && canLiberarProducao ? [{ label: "Liberar para Produção", onClick: () => void handleLiberarProducao(item) }] : []),
       ...(item.is_prd_aprovado && item.isAvulsoRaw !== true ? [{ label: "✓ Liberada para produção", disabled: true }] : []),
+      // So a Fila de Faturamento, sem Producao nem Expedicao (13/10/2026). So ADM; some depois de enviado.
+      ...(podeVerEnviarParaFila(user, { statusInterno: item.statusInterno, liberaNf: item.libera_nf, isPrdAprovado: item.is_prd_aprovado })
+        ? [{ label: "Enviar para Fila de Faturamento", onClick: () => setPedidoParaEnviarAFila(item) }]
+        : []),
       // Rastrear: so quando o frete e Correios E ha codigo gravado. Sem uma das
       // duas coisas o item nem aparece — botao que abre modal para dizer "sem
       // codigo" e ruido.
@@ -1977,8 +2014,9 @@ Ela volta a aparecer nas listas operacionais.`
             onClick: () => void handleDesmarcarFaturadoFora(item)
           }]
         : []),
-      // Paliativo da migracao (11/10/2026): so ADM, so em LIBERADO, sem "desmarcar".
-      ...(podeVerMarcarComoEntregue(user, item.statusInterno)
+      // So ADM, sem "desmarcar": em LIBERADO (paliativo da migracao, 11/10/2026) ou no pedido que foi
+      // so a Fila de Faturamento, sem producao (13/10/2026).
+      ...(podeVerMarcarComoEntregue(user, item.statusInterno, { liberaNf: item.libera_nf, isPrdAprovado: item.is_prd_aprovado })
         ? [{
             label: "Marcar como entregue",
             destructive: true,
@@ -2821,6 +2859,16 @@ Ela volta a aparecer nas listas operacionais.`
         />
       )}
 
+      {pedidoParaEnviarAFila && (
+        <EnviarFilaFaturamentoModal
+          isOpen
+          propostaId={pedidoParaEnviarAFila.id_int}
+          isSubmitting={enviandoAFila}
+          onClose={() => setPedidoParaEnviarAFila(null)}
+          onConfirm={() => void confirmarEnviarAFila()}
+        />
+      )}
+
       {pedidoParaRetirar && (
         <RetirarProducaoModal
           isOpen
@@ -2835,6 +2883,11 @@ Ela volta a aparecer nas listas operacionais.`
         <MarcarEntregueModal
           isOpen
           propostaId={pedidoParaMarcarEntregue.id_int}
+          daFilaSemProducao={estaNaFilaSemProducao({
+            statusInterno: pedidoParaMarcarEntregue.statusInterno,
+            liberaNf: pedidoParaMarcarEntregue.libera_nf,
+            isPrdAprovado: pedidoParaMarcarEntregue.is_prd_aprovado
+          })}
           isSubmitting={marcandoEntregue}
           onClose={() => setPedidoParaMarcarEntregue(null)}
           onConfirm={() => void confirmarMarcarEntregue()}

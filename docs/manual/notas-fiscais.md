@@ -1,6 +1,6 @@
 # Notas fiscais
 
-> **Última revisão:** 12/10/2026
+> **Última revisão:** 13/10/2026
 > **Caminho no menu:** Financeiro → Notas fiscais (primeiro item da seção Financeiro do menu lateral)
 > **Endereço:** `/notas-fiscais` (a nota aberta fica em `/notas-fiscais/[id]`)
 
@@ -40,6 +40,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | Nome do cliente (dica "Abrir o cadastro do cliente") | Aba Fila, coluna **Cliente / Destinatário** | Abre o cadastro do cliente em edição. |
 | Selo **Remessa necessária** (vermelho) ou **Conferir remessa** (âmbar) | Aba Fila, abaixo do nome do cliente; só em pedido com entrega em endereço diferente do da NF-e | Não abre nada: é um aviso. Passe o mouse para ver a frase e os dois endereços (o de entrega e o da NF-e) |
 | **Nota emitida no sistema antigo** | Aba Fila, coluna **Ação** | Marca o pedido como faturado no sistema antigo e o tira da fila. Enquanto grava mostra "Marcando...". |
+| **Marcar como entregue** | Aba Fila, coluna **Ação**, ao lado de **Nota emitida no sistema antigo**; só administrador | Aparece em pedido LIBERADO e em pedido que foi só à Fila de Faturamento, sem produção (status REVISAO ATENDENTE). Abre a janela **Marcar como entregue?**; ao confirmar, o status vira ENTREGUE e a data de entrega gravada é a de hoje. O pedido continua na fila. Não há desmarcar. |
 | **NFS-e** | Aba Fila, coluna **Ação**, entre **Nota emitida no sistema antigo** e **Faturar**; só em pedido da **BIRÔ IDEAL** | Abre a janela **Gerar NFS-e**. O texto muda com a nota de serviço do pedido: **NFS-e** (sem nota ou com rascunho), **NFS-e nº N** (autorizada), **NFS-e em análise** e **NFS-e (reenviar)** (o envio falhou). |
 | **Endereço que vai na nota** (lista) | Janela **Gerar NFS-e**, seção **Endereço do tomador** | Escolhe o endereço do tomador entre os do cliente. Endereços iguais aparecem uma vez só; endereço com "cadastro incompleto" fica apagado. |
 | **Serviço fiscal** (lista) | Janela **Gerar NFS-e**, seção **Serviço e itens** | Escolhe o serviço da nota entre os serviços ativos do cadastro. Abaixo aparecem o código de tributação e o NBS do escolhido. Hoje há um serviço só (13.05.01). |
@@ -167,6 +168,7 @@ Sai da lista de pedidos quando:
 
 - o pedido ganha uma nota de venda que já saiu do rascunho (pronta para envio, processando, autorizada ou com erro). A nota passa a aparecer em **Notas em processo** ou no **Histórico**;
 - alguém marca **Nota emitida no sistema antigo**;
+- entra também o pedido que um administrador enviou por **Enviar para Fila de Faturamento** (lista de Pedidos ou tela da proposta): ele fica na fila em REVISAO ATENDENTE, sem passar pela Produção nem pela Expedição, e a coluna **Em produção desde** fica vazia;
 - o cliente do pedido está com o interruptor **Nota** desligado no cadastro;
 - o pedido foi encerrado como teste;
 - a **NFS-e** do pedido foi **autorizada**. Este é o único caso que dá para pedir de volta: marque **Mostrar também pedidos com NFS-e emitida**.

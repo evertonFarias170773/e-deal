@@ -36,6 +36,9 @@ import { RevisarGeracaoBancariaModal } from "@/features/contas-a-receber/compone
 import { useAuth } from "@/features/auth/AuthProvider";
 import { hasPermissao } from "@/features/auth/usuarios.service";
 import { marcarFaturadoNoSistemaAntigo } from "@/features/fiscal/services/faturado-fora.client";
+import { MarcarEntregueModal } from "@/features/orcamentos/components/MarcarEntregueModal";
+import { podeVerMarcarComoEntregue } from "@/features/orcamentos/lib/marcar-entregue";
+import { marcarPedidoComoEntreguePeloServidor } from "@/features/orcamentos/services/marcar-entregue.service";
 import { criarRascunhoRemessa } from "@/features/nfe/services/remessa.service";
 import { COLUNAS_NOTA_DO_PEDIDO } from "@/lib/fiscal/nota-do-pedido";
 import { danfesDoPedido, type DanfeDoPedido } from "@/lib/fiscal/danfes-do-pedido";
@@ -1623,6 +1626,51 @@ export function NotasFiscaisPage() {
     }
   }
 
+  /**
+   * "Marcar como entregue" na Fila (13/10/2026): só ADM. Aparece no pedido LIBERADO e
+   * no que foi só à Fila de Faturamento, sem produção (REVISAO ATENDENTE com a flag
+   * de produção desligada; toda linha daqui já tem `libera_nf`). Mesma rota, mesmo
+   * modal e mesmos efeitos da lista de Pedidos; a linha continua na Fila.
+   */
+  const [filaParaMarcarEntregue, setFilaParaMarcarEntregue] = useState<FaturavelOrigem | null>(null);
+  const [marcandoEntregueNaFila, setMarcandoEntregueNaFila] = useState(false);
+
+  async function confirmarMarcarEntregueNaFila() {
+    if (!filaParaMarcarEntregue || marcandoEntregueNaFila) return;
+    const idInt = Number(filaParaMarcarEntregue.id_int);
+    setMarcandoEntregueNaFila(true);
+    try {
+      const resposta = await marcarPedidoComoEntreguePeloServidor(idInt);
+      if (!resposta.success) {
+        showToast({ type: "error", title: "Não foi possível marcar como entregue", description: resposta.message });
+      } else {
+        if (resposta.idempotente) showToast({ type: "info", title: "Já estava entregue", description: resposta.message });
+        else if (resposta.aviso) showToast({ type: "warning", title: `Proposta #${idInt} marcada como entregue, com aviso`, description: resposta.aviso });
+        else showToast({ type: "success", title: "Pedido marcado como entregue", description: resposta.message });
+        // A linha fica na Fila; so o status exibido muda.
+        setFaturaveisList((lista) => lista.map((f) => (Number(f.id_int) === idInt ? { ...f, status_interno: "ENTREGUE" } : f)));
+      }
+      setFilaParaMarcarEntregue(null);
+    } finally {
+      setMarcandoEntregueNaFila(false);
+    }
+  }
+
+  function renderBotaoMarcarEntregue(item: FaturavelOrigem) {
+    if (!podeVerMarcarComoEntregue(user, item.status_interno, { liberaNf: true, isPrdAprovado: item.is_prd_aprovado })) return null;
+    return (
+      <button
+        type="button"
+        onClick={() => setFilaParaMarcarEntregue(item)}
+        disabled={marcandoEntregueNaFila || isFaturando}
+        title="Só administrador. Marca o pedido como ENTREGUE, com a data de hoje. Não há desmarcar."
+        className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-xl border border-[#d7e5e8] bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50 transition"
+      >
+        Marcar como entregue
+      </button>
+    );
+  }
+
   function renderBotaoFaturadoFora(item: FaturavelOrigem) {
     if (!canMarcarFaturadoFora) return null;
     const marcando = marcandoFaturadoForaId === Number(item.id_int);
@@ -2587,6 +2635,7 @@ export function NotasFiscaisPage() {
                 cell: (item) => (
                   <div className="flex items-center justify-end gap-2">
                     {renderBotaoFaturadoFora(item)}
+                    {renderBotaoMarcarEntregue(item)}
                     {renderBotaoNfse(item)}
                     {canEmitNfe ? (
                       <button
@@ -2643,6 +2692,7 @@ export function NotasFiscaisPage() {
                 </div>
                 <div className="flex flex-wrap justify-end gap-2 pt-2">
                   {renderBotaoFaturadoFora(item)}
+                  {renderBotaoMarcarEntregue(item)}
                   {renderBotaoNfse(item)}
                   {canEmitNfe && (
                     <button
@@ -3288,6 +3338,17 @@ export function NotasFiscaisPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {filaParaMarcarEntregue && (
+        <MarcarEntregueModal
+          isOpen
+          propostaId={Number(filaParaMarcarEntregue.id_int)}
+          daFilaSemProducao={String(filaParaMarcarEntregue.status_interno || "").trim().toUpperCase() !== "LIBERADO"}
+          isSubmitting={marcandoEntregueNaFila}
+          onClose={() => setFilaParaMarcarEntregue(null)}
+          onConfirm={() => void confirmarMarcarEntregueNaFila()}
+        />
       )}
     </div>
   );

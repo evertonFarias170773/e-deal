@@ -7,6 +7,8 @@ type MarcarEntregueModalProps = {
   onClose: () => void;
   onConfirm: () => void;
   isSubmitting?: boolean;
+  /** Pedido na Fila de Faturamento sem produção (REVISAO ATENDENTE): muda só o texto. */
+  daFilaSemProducao?: boolean;
 };
 
 /**
@@ -18,7 +20,8 @@ export function MarcarEntregueModal({
   isOpen,
   onClose,
   onConfirm,
-  isSubmitting = false
+  isSubmitting = false,
+  daFilaSemProducao = false
 }: MarcarEntregueModalProps) {
   if (!isOpen) return null;
 
@@ -40,8 +43,10 @@ export function MarcarEntregueModal({
 
         <div className="p-6 space-y-4 text-slate-700">
           <p>
-            Você vai marcar a proposta <strong>#{propostaId}</strong> como <strong>ENTREGUE</strong>. Use só para pedido que
-            terminou no sistema antigo.
+            Você vai marcar a proposta <strong>#{propostaId}</strong> como <strong>ENTREGUE</strong>.{" "}
+            {daFilaSemProducao
+              ? "Use para pedido que foi só à Fila de Faturamento, sem Produção nem Expedição, depois de emitida a nota."
+              : "Use só para pedido que terminou no sistema antigo."}
           </p>
 
           <div className="bg-amber-50 text-amber-900 p-4 rounded-xl flex gap-3 text-sm border border-amber-200">
@@ -49,7 +54,7 @@ export function MarcarEntregueModal({
             <div className="space-y-1.5">
               <p><strong>Atenção:</strong></p>
               <ul className="list-disc pl-4 space-y-1">
-                <li>O status passa de LIBERADO para <strong>ENTREGUE</strong>, e a data de entrega gravada é a de hoje.</li>
+                <li>O status passa de {daFilaSemProducao ? "REVISAO ATENDENTE" : "LIBERADO"} para <strong>ENTREGUE</strong>, e a data de entrega gravada é a de hoje.</li>
                 <li>Nada muda em faturamento, cobranças, boletos, Conta Corrente nem Conferência.</li>
                 <li>Não existe &quot;desmarcar&quot; por aqui. Seu nome e a data ficam registrados.</li>
               </ul>

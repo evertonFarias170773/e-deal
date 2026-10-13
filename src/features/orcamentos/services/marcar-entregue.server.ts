@@ -3,7 +3,8 @@ import {
   ORIGEM_LOG_ATALHO_ENTREGUE,
   STATUS_DESTINO_ATALHO_ENTREGUE,
   STATUS_ORIGEM_ATALHO_ENTREGUE,
-  diaDaMarcacaoSaoPaulo
+  diaDaMarcacaoSaoPaulo,
+  statusDePartidaDoAtalhoEntregue
 } from "@/features/orcamentos/lib/marcar-entregue";
 
 /**
@@ -23,6 +24,11 @@ import {
  *      status de antes.
  *   3. `os_status_log` — a autoria. Falhar aqui nao desfaz as outras duas (a
  *      trilha e observabilidade), mas a resposta AVISA, nao fica silencioso.
+ *
+ * DOIS ESTADOS DE PARTIDA (13/10/2026): LIBERADO, como sempre, e REVISAO ATENDENTE
+ * com `libera_nf` ligada e `is_prd_aprovado` desligada (pedido na Fila de Faturamento
+ * sem producao). No segundo, o UPDATE do passo 2 e guardado tambem pelas duas flags.
+ * Em LIBERADO a guarda e a de antes, so o status.
  *
  * O que NAO e tocado: `data_despacho` (os tres gatilhos de `expedicoes` so agem
  * quando ela muda), frete, financeiro, cobrancas, boletos, `encerrado_teste_em`.
@@ -49,7 +55,7 @@ type Cliente = SupabaseClient;
 const CODIGO_VIOLACAO_UNICA = "23505";
 
 async function lerStatus(supabase: Cliente, idInt: number) {
-  return supabase.from("propostas").select("id_int, status_interno").eq("id_int", idInt).maybeSingle();
+  return supabase.from("propostas").select("id_int, status_interno, libera_nf, is_prd_aprovado").eq("id_int", idInt).maybeSingle();
 }
 
 export async function marcarPedidoComoEntregue(
@@ -74,14 +80,24 @@ export async function marcarPedidoComoEntregue(
     // Repetir o clique (ou outra pessoa ter chegado primeiro): nada a gravar.
     return { success: true, idempotente: true, message: `A proposta #${idInt} já está ENTREGUE. Nada foi gravado.` };
   }
-  if (statusAtual !== STATUS_ORIGEM_ATALHO_ENTREGUE) {
+  // De onde o atalho parte: LIBERADO, ou REVISAO ATENDENTE na Fila de Faturamento sem producao.
+  const statusOrigem = statusDePartidaDoAtalhoEntregue({
+    statusInterno: proposta.status_interno,
+    liberaNf: proposta.libera_nf,
+    isPrdAprovado: proposta.is_prd_aprovado
+  });
+  if (statusOrigem === null) {
     return {
       success: false,
       httpStatus: 409,
       code: "STATUS_NAO_LIBERADO",
-      message: `Só dá para marcar como entregue o pedido LIBERADO. A proposta #${idInt} está em ${statusAtual || "sem status"}.`
+      message:
+        `Só dá para marcar como entregue o pedido LIBERADO ou o que está na Fila de Faturamento sem produção ` +
+        `(REVISAO ATENDENTE, enviado à fila e não liberado para a produção). A proposta #${idInt} está em ${statusAtual || "sem status"}.`
     };
   }
+  const partiuDaFila = statusOrigem !== STATUS_ORIGEM_ATALHO_ENTREGUE;
+  const flagProducaoLida = proposta.is_prd_aprovado as boolean | null;
 
   // ── 1. expedicoes.data_entrega ─────────────────────────────────────────────
   const { data: expedicao, error: erroExpedicao } = await supabase
@@ -112,7 +128,7 @@ export async function marcarPedidoComoEntregue(
         success: false,
         httpStatus: 500,
         code: "EXPEDICAO_NAO_GRAVADA",
-        message: `Não foi possível gravar a data de entrega (${erroInsert.message}). Nada foi alterado; o pedido segue LIBERADO.`
+        message: `Não foi possível gravar a data de entrega (${erroInsert.message}). Nada foi alterado; o pedido segue ${statusOrigem}.`
       };
     }
   }
@@ -130,7 +146,7 @@ export async function marcarPedidoComoEntregue(
         success: false,
         httpStatus: 500,
         code: "EXPEDICAO_NAO_GRAVADA",
-        message: `Não foi possível gravar a data de entrega (${erroUpdate.message}). Nada foi alterado; o pedido segue LIBERADO.`
+        message: `Não foi possível gravar a data de entrega (${erroUpdate.message}). Nada foi alterado; o pedido segue ${statusOrigem}.`
       };
     }
     if (gravadas && gravadas.length > 0) {
@@ -156,12 +172,17 @@ export async function marcarPedidoComoEntregue(
   };
 
   // ── 2. propostas.status_interno, guardado por LIBERADO ─────────────────────
-  const { data: gravado, error: erroStatus } = await supabase
+  let consultaStatus = supabase
     .from("propostas")
     .update({ status_interno: STATUS_DESTINO_ATALHO_ENTREGUE })
     .eq("id_int", idInt)
-    .eq("status_interno", STATUS_ORIGEM_ATALHO_ENTREGUE)
-    .select("id_int");
+    .eq("status_interno", statusOrigem);
+  if (partiuDaFila) {
+    // Partindo da Fila sem producao, as duas flags tambem guardam: se o pedido foi liberado para a producao no meio, nao grava.
+    consultaStatus = consultaStatus.eq("libera_nf", true);
+    consultaStatus = flagProducaoLida === null ? consultaStatus.is("is_prd_aprovado", null) : consultaStatus.eq("is_prd_aprovado", flagProducaoLida);
+  }
+  const { data: gravado, error: erroStatus } = await consultaStatus.select("id_int");
 
   if (erroStatus) {
     const falhaAoDesfazer = await desfazerData();
@@ -172,7 +193,7 @@ export async function marcarPedidoComoEntregue(
       message: falhaAoDesfazer
         ? `Não foi possível mudar o status (${erroStatus.message}) e a data de entrega gravada não pôde ser desfeita (${falhaAoDesfazer}). ` +
           `Estado inconsistente na proposta #${idInt}: confira expedicoes.data_entrega e corrija pelo "Editar dados de expedição".`
-        : `Não foi possível mudar o status (${erroStatus.message}). Nada foi alterado; o pedido segue LIBERADO.`
+        : `Não foi possível mudar o status (${erroStatus.message}). Nada foi alterado; o pedido segue ${statusOrigem}.`
     };
   }
 
@@ -199,13 +220,15 @@ export async function marcarPedidoComoEntregue(
   // ── 3. os_status_log: a autoria ────────────────────────────────────────────
   const dia = diaDaMarcacaoSaoPaulo(agora);
   const motivo =
-    `Entrega marcada pelo atalho da lista de Pedidos (paliativo da migração: o pedido terminou no sistema antigo). ` +
+    (partiuDaFila
+      ? `Entrega marcada pelo atalho do ADM em pedido que foi só à Fila de Faturamento, sem Produção nem Expedição. `
+      : `Entrega marcada pelo atalho da lista de Pedidos (paliativo da migração: o pedido terminou no sistema antigo). `) +
     `Dia da marcação: ${dia}. ` +
     (gravouData ? "data_entrega gravada agora." : "data_entrega já existia e foi mantida.");
 
   const { error: erroLog } = await supabase.from("os_status_log").insert({
     id_int: idInt,
-    status_anterior: STATUS_ORIGEM_ATALHO_ENTREGUE,
+    status_anterior: statusOrigem,
     status_novo: STATUS_DESTINO_ATALHO_ENTREGUE,
     resultado: "sucesso",
     motivo,

@@ -106,6 +106,9 @@ import {
 import { contarModelosCopiados, copiaLevouCabecalho, montarAvisoDaCopia } from "@/features/orcamentos/lib/aviso-copia";
 import { box10Expandido, boxEstaNaLateral } from "@/features/orcamentos/lib/boxes-da-lateral";
 import { RetirarProducaoModal } from "@/features/orcamentos/components/RetirarProducaoModal";
+import { EnviarFilaFaturamentoModal } from "@/features/orcamentos/components/EnviarFilaFaturamentoModal";
+import { podeVerEnviarParaFila } from "@/features/orcamentos/lib/enviar-fila-faturamento";
+import { enviarPedidoParaFilaPeloServidor } from "@/features/orcamentos/services/enviar-fila-faturamento.service";
 import { podeVerRetirarDaProducao } from "@/features/orcamentos/lib/retirar-producao";
 import { useNotasQueImpedemDevolucao } from "@/features/orcamentos/hooks/useNotasQueImpedemDevolucao";
 import { cepExibicao, semTraco } from "@/features/orcamentos/lib/campos-do-endereco";
@@ -4332,6 +4335,34 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
    * grava é a rota, que devolve o pedido ao atendente e recusa o que já é da produção.
    */
   const [retirarModalAberto, setRetirarModalAberto] = useState(false);
+
+  /**
+   * "Enviar para Fila de Faturamento" (13/10/2026): só ADM, só em REVISAO ATENDENTE
+   * fora da fila e fora da produção. O clique abre o modal; quem grava é a rota.
+   */
+  const [enviarFilaModalAberto, setEnviarFilaModalAberto] = useState(false);
+  const [enviandoAFila, setEnviandoAFila] = useState(false);
+
+  async function handleEnviarParaFilaNaProposta() {
+    if (!proposta || enviandoAFila) return;
+    setEnviandoAFila(true);
+    try {
+      const resposta = await enviarPedidoParaFilaPeloServidor(proposta.id_int);
+      if (!resposta.success) {
+        showToast({ type: "error", title: "Não foi possível enviar à Fila de Faturamento", description: resposta.message });
+      } else if (resposta.idempotente) {
+        showToast({ type: "info", title: "Já estava na fila", description: resposta.message });
+      } else if (resposta.aviso) {
+        showToast({ type: "warning", title: "Enviado à fila, com aviso", description: resposta.aviso });
+      } else {
+        showToast({ type: "success", title: "Enviado à Fila de Faturamento", description: "O pedido não passa pela Produção nem pela Expedição." });
+      }
+      setEnviarFilaModalAberto(false);
+      if (resposta.success && onReload) onReload(true);
+    } finally {
+      setEnviandoAFila(false);
+    }
+  }
   // Nota fiscal emitida trava a retirada: o item fica desligado, com o motivo. A trava de verdade é a da rota.
   const propostaPodeSerRetirada = Boolean(
     proposta && podeVerRetirarDaProducao({ statusInterno: proposta.status_interno, isPrdAprovado: proposta.is_prd_aprovado })
@@ -4395,6 +4426,10 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
         label: acaoEmCurso === "oc" ? "Gerando OC..." : "Gerar OC",
         onClick: () => void handleGerarPdfDaProposta("oc")
       },
+      // So a Fila de Faturamento, sem Producao nem Expedicao (13/10/2026). So ADM; some depois de enviado.
+      ...(podeVerEnviarParaFila(user, { statusInterno: proposta.status_interno, liberaNf: proposta.libera_nf, isPrdAprovado: proposta.is_prd_aprovado })
+        ? [{ label: "Enviar para Fila de Faturamento", onClick: () => setEnviarFilaModalAberto(true) }]
+        : []),
       // Ultimo item do menu. So onde a retirada vale (REVISAO PRODUCAO com a flag ligada).
       ...(podeRetirar && podeVerRetirarDaProducao({ statusInterno: proposta.status_interno, isPrdAprovado: proposta.is_prd_aprovado })
         ? [
@@ -7747,6 +7782,16 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
           </div>
         </div>
       )}
+
+      {enviarFilaModalAberto && proposta ? (
+        <EnviarFilaFaturamentoModal
+          isOpen
+          propostaId={proposta.id_int}
+          isSubmitting={enviandoAFila}
+          onClose={() => setEnviarFilaModalAberto(false)}
+          onConfirm={() => void handleEnviarParaFilaNaProposta()}
+        />
+      ) : null}
 
       {retirarModalAberto && proposta ? (
         <RetirarProducaoModal

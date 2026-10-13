@@ -804,7 +804,7 @@ async function fetchPropostaRows(
     // consulta — a lista nao ganha nenhuma ida extra ao banco por causa delas.
     // `status_alterado_em` (26/09/2026): ultima mudanca REAL de `status_interno`,
     // de `vw_propostas_lista` — ver a migration 20260926_lista_pedidos_status_alterado_em.
-    const columnsToSelect = "id, id_int, id_cliente, cliente, created_at, updated_at, status_alterado_em, vendedor, status_interno, valor_total, valor, is_avulso, empresa, valor_frete, em_arte, is_prd_aprovado, encerrado_teste_em, encerrado_teste_por, faturado_fora_em, faturado_fora_por, id_faturado, id_int_pedido_principal, modalidade_frete, frete_escolhido";
+    const columnsToSelect = "id, id_int, id_cliente, cliente, created_at, updated_at, status_alterado_em, vendedor, status_interno, valor_total, valor, is_avulso, empresa, valor_frete, em_arte, is_prd_aprovado, libera_nf, encerrado_teste_em, encerrado_teste_por, faturado_fora_em, faturado_fora_por, id_faturado, id_int_pedido_principal, modalidade_frete, frete_escolhido";
 
     // ── Pre-consultas: rodam UMA vez e viram listas de id_int. A consulta da
     //    lista e montada depois, quantas vezes a ordenacao por grupo precisar.
@@ -2378,6 +2378,7 @@ export async function getPropostaDetailById(idInt: number, overrideClient?: Supa
       id_faturado: proposalRow.id_faturado ?? null,
       status_interno: proposalRow.status_interno,
       is_prd_aprovado: proposalRow.is_prd_aprovado === true,
+      libera_nf: proposalRow.libera_nf === true,
       frete_escolhido: (proposalRow.frete_escolhido as string | null) ?? null,
       // So o valor canonico entra; lixo na coluna cai para null e a tela trata
       // como "ninguem escolheu", em vez de exibir categoria invalida.

@@ -100,6 +100,8 @@ export type OrcamentoListItem = {
   source: OrcamentoListSource;
   rawColumns?: string[];
   is_prd_aprovado?: boolean;
+  /** `propostas.libera_nf`: o pedido esta na Fila de Faturamento. Para "Enviar para Fila de Faturamento" e "Marcar como entregue". */
+  libera_nf?: boolean;
   /**
    * `propostas.encerrado_teste_em`. Preenchido, o pedido e um TESTE encerrado:
    * saiu dos paineis operacionais mas continua aqui, com badge — Orcamentos e o
@@ -474,6 +476,7 @@ function mapRowToListItem(row: SupabasePropostaRow): OrcamentoListItem | null {
     source: "supabase",
     rawColumns: Object.keys(row),
     is_prd_aprovado: row.is_prd_aprovado === true,
+    libera_nf: (row as { libera_nf?: boolean | null }).libera_nf === true,
     encerradoTesteEm: typeof row.encerrado_teste_em === "string" ? row.encerrado_teste_em : null,
     encerradoTestePor: typeof row.encerrado_teste_por === "string" ? row.encerrado_teste_por : null,
     faturadoForaEm: typeof row.faturado_fora_em === "string" ? row.faturado_fora_em : null,

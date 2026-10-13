@@ -220,6 +220,8 @@ export type Proposta = {
    * acoes, com a MESMA condicao que a lista usa.
    */
   is_prd_aprovado?: boolean;
+  /** `propostas.libera_nf` — o pedido esta na Fila de Faturamento. Para "Enviar para Fila de Faturamento". */
+  libera_nf?: boolean;
   /**
    * `propostas.transporte_categoria` — lista fechada (RETIRA/MOTOBOY/CORREIOS/
    * TRANSPORTADORA). Nula quando ninguem escolheu, inclusive em toda proposta
