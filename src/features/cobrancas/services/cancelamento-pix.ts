@@ -23,6 +23,21 @@
  *     devolve `cancelado: false` até quando o banco cancela; a regra rígida ali
  *     depende de o n8n ser corrigido antes (passo B).
  *
+ * AJUSTE DE 13/10/2026 (pedido 23481)
+ *   De 09 a 13/10 o C6 respondeu REMOVIDA_PELO_USUARIO_RECEBEDOR em TODAS as
+ *   tentativas (6 cobranças, 16 chamadas) e o Vibe recusou todas: o nó de
+ *   resposta do n8n devolve TEXTO montado com um objeto, e o texto chega sem o
+ *   campo `cancelado`. O PIX saía do banco e a cobrança ficava ativa aqui.
+ *   - O STATUS do banco passa a valer como confirmação, junto de `cancelado`:
+ *     REMOVIDA_PELO_USUARIO_RECEBEDOR é cancelamento, inclusive quando o PIX já
+ *     estava removido de uma tentativa anterior (a repetição devolve o mesmo
+ *     status, só com a `revisao` maior) e quando estava vencido e não pago.
+ *   - CONCLUIDA (pago) e ATIVA nunca cancelam, digam o que disserem os outros
+ *     campos.
+ *   - Cada desfecho tem a sua mensagem (`mensagemDoDesfechoPix`).
+ *   Isto só passa a destravar a tela quando o n8n devolver o status no corpo —
+ *   a correção do nó está descrita em scratch/cancelar-pix-no-banco.
+ *
  * Sem `next/server` e sem variável de ambiente: roda em teste.
  */
 
@@ -43,8 +58,14 @@ export const TEMPO_LIMITE_CANCELAMENTO_PIX_MS = 25_000;
  */
 export const MOTIVO_FIXO_DE_CANCELAMENTO = "ACERTOS";
 
+/** Texto genérico, de quando o desfecho não tem mensagem própria. */
 export const MENSAGEM_PIX_NAO_CANCELADO_NO_BANCO =
   "Não foi possível cancelar o PIX no banco. A cobrança continua ativa: não gere outra cobrança para este pedido.";
+
+/** Status da cobrança PIX no C6 (API `/v2/pix/cob`), como chegam na resposta. */
+export const STATUS_PIX_REMOVIDO = "REMOVIDA_PELO_USUARIO_RECEBEDOR";
+export const STATUS_PIX_PAGO = "CONCLUIDA";
+export const STATUS_PIX_ATIVO = "ATIVA";
 
 /** Empresa cujo PIX sai pelo Banco Inter. As outras (1 e 3) saem pelo C6. */
 const EMPRESA_INTER = 2;
@@ -99,6 +120,15 @@ export async function chamarCancelamentoDePix(entrada: {
 export type ConfirmacaoDoBanco = "CANCELOU" | "NAO_CANCELOU" | "SEM_INFORMACAO";
 
 /**
+ * O status da cobrança que o banco devolveu, quando o texto o traz.
+ * Mesma leitura tolerante de `cancelado`: procura o campo no texto.
+ */
+export function statusDoPixNaResposta(texto: string): string | null {
+  const achado = /"?\bstatus\b"?\s*:\s*"([A-Z_]+)"/.exec(String(texto ?? ""));
+  return achado ? achado[1] : null;
+}
+
+/**
  * O que a resposta diz sobre o cancelamento no banco.
  *
  * O fluxo monta `{ success, cancelado, status, txid, mensagem }`. O corpo chega
@@ -109,6 +139,11 @@ export type ConfirmacaoDoBanco = "CANCELOU" | "NAO_CANCELOU" | "SEM_INFORMACAO";
  * `SEM_INFORMACAO`: o campo não aparece. Não é confirmação.
  */
 export function confirmacaoDoBancoNaResposta(texto: string): ConfirmacaoDoBanco {
+  // O status do banco manda. Pago ou ativo NUNCA é cancelamento, mesmo que o
+  // texto traga `cancelado: true`; removido é cancelamento, mesmo sem o campo.
+  const status = statusDoPixNaResposta(texto);
+  if (status === STATUS_PIX_PAGO || status === STATUS_PIX_ATIVO) return "NAO_CANCELOU";
+  if (status === STATUS_PIX_REMOVIDO) return "CANCELOU";
   const achado = /"?\bcancelado\b"?\s*:\s*(true|false)\b/i.exec(String(texto ?? ""));
   if (!achado) return "SEM_INFORMACAO";
   return achado[1].toLowerCase() === "true" ? "CANCELOU" : "NAO_CANCELOU";
@@ -127,6 +162,8 @@ export type DecisaoDoCancelamentoPix = {
   desfecho:
     | "BANCO_CONFIRMOU"
     | "BANCO_RECUSOU"
+    | "PIX_PAGO_NO_BANCO"
+    | "PIX_ATIVO_NO_BANCO"
     | "RESPOSTA_SEM_CONFIRMACAO"
     | "ERRO_HTTP"
     | "REDE"
@@ -165,12 +202,50 @@ export function decidirCancelamentoDePix(idEmpresa: number | null | undefined, r
   if (confirmacao === "CANCELOU") {
     return { cancelarNoVibe: true, regra, cancelariaPelaConfirmacao: true, confirmacao, statusHttp: 200, desfecho: "BANCO_CONFIRMOU" };
   }
+  const status = statusDoPixNaResposta(resposta.texto);
   return {
     cancelarNoVibe: false,
     regra,
     cancelariaPelaConfirmacao: false,
     confirmacao,
     statusHttp: 409,
-    desfecho: confirmacao === "NAO_CANCELOU" ? "BANCO_RECUSOU" : "RESPOSTA_SEM_CONFIRMACAO"
+    desfecho:
+      status === STATUS_PIX_PAGO
+        ? "PIX_PAGO_NO_BANCO"
+        : status === STATUS_PIX_ATIVO
+          ? "PIX_ATIVO_NO_BANCO"
+          : confirmacao === "NAO_CANCELOU"
+            ? "BANCO_RECUSOU"
+            : "RESPOSTA_SEM_CONFIRMACAO"
   };
+}
+
+const NAO_GERE_OUTRA = "A cobrança continua ativa: não gere outra cobrança para este pedido.";
+
+/**
+ * O que a tela mostra quando o PIX NÃO é cancelado, por desfecho.
+ *
+ * Até 13/10/2026 os cinco desfechos mostravam o mesmo texto, e quem lia não
+ * sabia se o banco tinha recusado, se o PIX estava pago ou se a resposta nem
+ * tinha chegado. Todas terminam dizendo que a cobrança segue ativa aqui.
+ */
+export function mensagemDoDesfechoPix(desfecho: DecisaoDoCancelamentoPix["desfecho"]): string {
+  switch (desfecho) {
+    case "BANCO_RECUSOU":
+      return `O banco não cancelou o PIX. ${NAO_GERE_OUTRA}`;
+    case "PIX_PAGO_NO_BANCO":
+      return "Este PIX consta como pago no banco e não pode ser cancelado. A cobrança continua ativa: aguarde a baixa do pagamento e não gere outra cobrança.";
+    case "PIX_ATIVO_NO_BANCO":
+      return `O banco respondeu que o PIX continua ativo. ${NAO_GERE_OUTRA}`;
+    case "RESPOSTA_SEM_CONFIRMACAO":
+      return "O cancelamento foi enviado ao banco, mas a resposta veio sem a confirmação: o PIX pode já ter sido removido no banco. A cobrança continua ativa no sistema: não gere outra cobrança e avise o administrador para conferir.";
+    case "ERRO_HTTP":
+      return `O serviço de cancelamento respondeu com erro. ${NAO_GERE_OUTRA}`;
+    case "REDE":
+      return `Não foi possível falar com o serviço de cancelamento. ${NAO_GERE_OUTRA}`;
+    case "TEMPO_ESGOTADO":
+      return "O banco não respondeu a tempo, e não se sabe se o PIX foi cancelado. A cobrança continua ativa no sistema: não gere outra cobrança e tente de novo em alguns minutos.";
+    default:
+      return MENSAGEM_PIX_NAO_CANCELADO_NO_BANCO;
+  }
 }

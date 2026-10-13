@@ -36,7 +36,9 @@ const {
   confirmacaoDoBancoNaResposta,
   corpoDoCancelamentoPix,
   decidirCancelamentoDePix,
-  regraDoCancelamentoPix
+  mensagemDoDesfechoPix,
+  regraDoCancelamentoPix,
+  statusDoPixNaResposta
 } = await import("../../src/features/cobrancas/services/cancelamento-pix.ts");
 
 let falhas = 0;
@@ -62,6 +64,40 @@ confere("corpo vazio nao e confirmacao", confirmacaoDoBancoNaResposta("") === "S
 confere("success true sem o campo cancelado nao e confirmacao", confirmacaoDoBancoNaResposta('{"success":true}') === "SEM_INFORMACAO");
 confere("a frase 'nao foi cancelada' sozinha nao decide", confirmacaoDoBancoNaResposta('{"mensagem":"Cobrança PIX cancelada com sucesso"}') === "SEM_INFORMACAO");
 confere("campo de outro nome (pagamento_cancelado) nao conta", confirmacaoDoBancoNaResposta('{"pagamento_cancelado":true}') === "SEM_INFORMACAO");
+
+// ── A2. o status do banco como confirmação (13/10/2026, pedido 23481) ──────
+console.log("== A2. status do banco na resposta");
+// O que o C6 devolve no PATCH /v2/pix/cob/{txid} — só os campos que importam.
+const REMOVIDA_1 = { txid: "QRS2TX0001", revisao: 1, status: "REMOVIDA_PELO_USUARIO_RECEBEDOR", calendario: { criacao: "2026-10-13T14:40:32.785Z", expiracao: 259200 } };
+const REMOVIDA_2 = { ...REMOVIDA_1, revisao: 2 };
+const PAGA = { txid: "QRS2TX0001", revisao: 1, status: "CONCLUIDA" };
+const ATIVA = { txid: "QRS2TX0001", revisao: 0, status: "ATIVA" };
+confere("le o status em JSON puro", statusDoPixNaResposta(JSON.stringify(REMOVIDA_1)) === "REMOVIDA_PELO_USUARIO_RECEBEDOR");
+confere("le o status embrulhado pelo n8n", statusDoPixNaResposta(`=[Object: ${JSON.stringify(REMOVIDA_1)}]`) === "REMOVIDA_PELO_USUARIO_RECEBEDOR");
+confere("sem status no texto -> nulo", statusDoPixNaResposta("=[object Object]") === null && statusDoPixNaResposta("") === null);
+confere("status numerico (HTTP) nao e status de PIX", statusDoPixNaResposta('{"status":404,"mensagem":"x"}') === null);
+confere("REMOVIDA sem o campo cancelado -> CANCELOU", confirmacaoDoBancoNaResposta(JSON.stringify(REMOVIDA_1)) === "CANCELOU");
+confere("REMOVIDA de novo (revisao 2, ja estava removido) -> CANCELOU", confirmacaoDoBancoNaResposta(JSON.stringify(REMOVIDA_2)) === "CANCELOU");
+confere("CONCLUIDA (pago) -> NAO_CANCELOU", confirmacaoDoBancoNaResposta(JSON.stringify(PAGA)) === "NAO_CANCELOU");
+confere("CONCLUIDA mesmo com cancelado true no texto -> NAO_CANCELOU", confirmacaoDoBancoNaResposta(JSON.stringify({ ...PAGA, cancelado: true })) === "NAO_CANCELOU");
+confere("ATIVA -> NAO_CANCELOU", confirmacaoDoBancoNaResposta(JSON.stringify(ATIVA)) === "NAO_CANCELOU");
+confere("ATIVA mesmo com cancelado true no texto -> NAO_CANCELOU", confirmacaoDoBancoNaResposta(JSON.stringify({ ...ATIVA, cancelado: true })) === "NAO_CANCELOU");
+for (const emp of [1, 3]) {
+  const txt = (o: unknown) => ({ tipo: "RESPOSTA" as const, ok: true, status: 200, texto: JSON.stringify(o) });
+  confere(`C6 emp ${emp}: REMOVIDA revisao 1 -> cancela`, decidirCancelamentoDePix(emp, txt(REMOVIDA_1)).cancelarNoVibe === true);
+  confere(`C6 emp ${emp}: REMOVIDA revisao 2 (repetida) -> cancela`, (() => { const d = decidirCancelamentoDePix(emp, txt(REMOVIDA_2)); return d.cancelarNoVibe && d.desfecho === "BANCO_CONFIRMOU"; })());
+  confere(`C6 emp ${emp}: CONCLUIDA -> NAO cancela (PIX_PAGO_NO_BANCO, 409)`, (() => { const d = decidirCancelamentoDePix(emp, txt(PAGA)); return !d.cancelarNoVibe && d.desfecho === "PIX_PAGO_NO_BANCO" && d.statusHttp === 409; })());
+  confere(`C6 emp ${emp}: ATIVA -> NAO cancela (PIX_ATIVO_NO_BANCO)`, (() => { const d = decidirCancelamentoDePix(emp, txt(ATIVA)); return !d.cancelarNoVibe && d.desfecho === "PIX_ATIVO_NO_BANCO"; })());
+  confere(`C6 emp ${emp}: erro HTTP com REMOVIDA no corpo -> NAO cancela`, decidirCancelamentoDePix(emp, { tipo: "RESPOSTA", ok: false, status: 500, texto: JSON.stringify(REMOVIDA_1) }).cancelarNoVibe === false);
+}
+{
+  const desfechos = ["BANCO_RECUSOU", "PIX_PAGO_NO_BANCO", "PIX_ATIVO_NO_BANCO", "RESPOSTA_SEM_CONFIRMACAO", "ERRO_HTTP", "REDE", "TEMPO_ESGOTADO"] as const;
+  const textos = desfechos.map((d) => mensagemDoDesfechoPix(d));
+  confere("cada desfecho tem a sua mensagem", new Set(textos).size === desfechos.length, textos);
+  confere("todas dizem que a cobranca continua ativa e para nao gerar outra", textos.every((t) => /continua ativa/.test(t) && /n[aã]o gere outra cobran[cç]a/.test(t)), textos);
+  confere("a do PIX pago diz que esta pago", /pago/.test(mensagemDoDesfechoPix("PIX_PAGO_NO_BANCO")));
+  confere("a da resposta sem confirmacao avisa que o PIX pode ja ter saido do banco", /pode j[aá] ter sido removido/.test(mensagemDoDesfechoPix("RESPOSTA_SEM_CONFIRMACAO")));
+}
 
 // ── B. a decisão ────────────────────────────────────────────────────────────
 console.log("== B. decisao por empresa");
@@ -156,7 +192,7 @@ async function cancelar(cobranca: Record<string, unknown>, motivoDigitado = "mot
   return { status: resposta.status, corpo, cancelouNoVibe, escritas, aoBanco: chamadas.filter((c) => c.url === WEBHOOK_CANCELA_PIX) };
 }
 const recusada = (r: Awaited<ReturnType<typeof cancelar>>) =>
-  r.corpo.success === false && r.corpo.message === MENSAGEM_PIX_NAO_CANCELADO_NO_BANCO && r.corpo.code === "PIX_NAO_CANCELADO_NO_BANCO" && !r.cancelouNoVibe && r.escritas.length === 0;
+  r.corpo.success === false && r.corpo.message === mensagemDoDesfechoPix(r.corpo.desfecho as Parameters<typeof mensagemDoDesfechoPix>[0]) && /continua ativa/.test(String(r.corpo.message)) && /n[aã]o gere outra cobran[cç]a/.test(String(r.corpo.message)) && r.corpo.code === "PIX_NAO_CANCELADO_NO_BANCO" && !r.cancelouNoVibe && r.escritas.length === 0;
 
 // 1. confirmado
 {
@@ -196,6 +232,22 @@ const recusada = (r: Awaited<ReturnType<typeof cancelar>>) =>
   fetchFalso({ corpo: "" });
   const r = await cancelar({ ...COBRANCA });
   confere("200 com corpo vazio: cobranca ATIVA", recusada(r), r);
+}
+// 3b. status do banco pela rota
+{
+  fetchFalso({ corpo: { txid: "QRS1TXCODIGODOBANCO", revisao: 2, status: "REMOVIDA_PELO_USUARIO_RECEBEDOR" } });
+  const r = await cancelar({ ...COBRANCA });
+  confere("REMOVIDA repetida (revisao 2, sem o campo cancelado): cancela no Vibe", r.status === 200 && r.corpo.success === true && r.cancelouNoVibe, r);
+}
+{
+  fetchFalso({ corpo: { txid: "QRS1TXCODIGODOBANCO", status: "CONCLUIDA", cancelado: true } });
+  const r = await cancelar({ ...COBRANCA });
+  confere("PIX PAGO no banco: cobranca ATIVA, mensagem de pago, nada gravado", recusada(r) && r.status === 409 && r.corpo.desfecho === "PIX_PAGO_NO_BANCO" && /pago/.test(String(r.corpo.message)), r);
+}
+{
+  fetchFalso({ corpo: { txid: "QRS1TXCODIGODOBANCO", status: "ATIVA" } });
+  const r = await cancelar({ ...COBRANCA });
+  confere("PIX ATIVO no banco: cobranca ATIVA, nada gravado", recusada(r) && r.corpo.desfecho === "PIX_ATIVO_NO_BANCO", r);
 }
 // 4. rede
 {

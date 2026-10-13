@@ -7,10 +7,10 @@ import { aplicarStatusRecomendadoProposta } from "@/features/orcamentos/services
 import { avaliarCancelamentoNoServidor } from "@/features/cobrancas/services/cancelamento-elegibilidade.server";
 import { cabecalhosWebhookN8n } from "@/lib/n8n/webhook-segredo";
 import {
-  MENSAGEM_PIX_NAO_CANCELADO_NO_BANCO,
   chamarCancelamentoDePix,
   corpoDoCancelamentoPix,
-  decidirCancelamentoDePix
+  decidirCancelamentoDePix,
+  mensagemDoDesfechoPix
 } from "@/features/cobrancas/services/cancelamento-pix";
 
 // Teto da rota. A chamada de cancelamento de PIX tem o seu, menor (25 s).
@@ -577,6 +577,8 @@ export async function POST(request: Request) {
       // cabeçalho do segredo e um teto de tempo. No C6 a cobrança só é cancelada
       // com a confirmação do banco; no Inter a decisão segue pelo HTTP, como
       // antes, até o n8n ser corrigido, e fica registrado o que a regra nova diria.
+      // Desde 13/10/2026 o status do banco também confirma (REMOVIDA, inclusive
+      // repetida), pago ou ativo nunca cancelam, e cada desfecho tem a sua mensagem.
       const respostaPix = await chamarCancelamentoDePix({
         corpo: corpoDoCancelamentoPix({ codigoDoBanco: codC6Final, idEmpresa: idEmpresaCobranca }),
         cabecalhos: cabecalhosWebhookN8n()
@@ -603,7 +605,7 @@ export async function POST(request: Request) {
             success: false,
             code: "PIX_NAO_CANCELADO_NO_BANCO",
             desfecho: decisaoPix.desfecho,
-            message: MENSAGEM_PIX_NAO_CANCELADO_NO_BANCO
+            message: mensagemDoDesfechoPix(decisaoPix.desfecho)
           },
           { status: decisaoPix.statusHttp }
         );
