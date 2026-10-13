@@ -1,6 +1,6 @@
 # Conferência
 
-> **Última revisão:** 10/10/2026
+> **Última revisão:** 13/10/2026
 > **Caminho no menu:** Conferência (primeiro item do menu lateral; é um link direto, sem subitens)
 > **Endereço:** `/cobrancas` (o detalhe de uma cobrança abre em `/cobrancas/<cobrança>`)
 
