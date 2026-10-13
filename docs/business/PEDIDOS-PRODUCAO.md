@@ -552,6 +552,8 @@ Também **não reaproveita `is_prd_aprovado`**, que continua com um só signific
 | Ação | O que faz | Reversão |
 |---|---|---|
 | **Retirar da Produção** | `is_prd_aprovado = false` **e** `status_interno = REVISAO ATENDENTE`, na mesma gravação (a mesma do "Devolver para o atendente"), desde 13/10/2026. O pedido deixa de ser pedido de fábrica e volta ao atendente. | Só em `REVISAO PRODUCAO` e sem `propostas_os` nem `propostas_os_setores`; de `EM PRODUCAO` em diante a devolução é da produção e a rota recusa (409). Idempotente: já em `REVISAO ATENDENTE` não grava. Autoria em `os_status_log` (origem `RETIRAR_PRODUCAO`). Um pedido `EM TRANSITO` não volta. |
+| **Voltar para Revisão Atendente** (tela Produção) | A mesma gravação, pela rota `/api/orcamentos/devolver-atendente` desde 13/10/2026 (antes era um UPDATE direto do navegador). | Em qualquer status. Permissão conferida no servidor, igual à do botão: perfil ativo com `*`, `admin.usuarios.view` ou `pedidos.admin`. Idempotente. Autoria em `os_status_log` (origem `DEVOLVER_ATENDENTE`). |
+| **Nota emitida trava as duas voltas** | Nada é gravado: as duas rotas respondem 409 `NOTA_EMITIDA`, dizendo qual nota. | Nota emitida = `status = AUTORIZADA` e `ambiente = producao` em `notas_fiscais` (venda ou remessa) ou `notas_servico`, pelo `id_int`. É a mesma regra do cancelamento de cobrança (`isNotaImpeditiva`), num helper único (`recusaPorNotaEmitida`). Cancelada, erro, pendente e homologação não travam. A trava é das rotas do app: a tabela `propostas` ainda aceita UPDATE direto de usuário logado. |
 | **Encerrar teste** | Grava `encerrado_teste_em`. Some das filas, sem tocar em status nem em `is_prd_aprovado`. | Imediata: "Reabrir", em Orçamentos. |
 
 ## Onde o pedido some — e onde não some

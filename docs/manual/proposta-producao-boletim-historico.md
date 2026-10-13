@@ -15,7 +15,8 @@ Esta página explica também como o pedido sai do atendimento e entra na fábric
 - Quem abre a edição do pedido vê as abas **Produção / Expedição** e **Histórico**. A aba Produção / Expedição aparece também em proposta avulsa e em pedido só de prateleira.
 - **Liberar para Produção** fica na lista de Pedidos e aparece só para Administrador, Super Administrador ou quem tem a permissão **Liberar para Produção** no perfil, quando o pedido está em REVISAO ATENDENTE. O servidor confere a mesma permissão e, depois, pagamento, arte e modelos. A liberação automática de pedido só de prateleira, que acontece quando o pagamento é confirmado, não depende dessa permissão.
 - **Retirar da Produção** aparece só para Administrador, Super Administrador ou quem tem a permissão **Liberar para Produção** no perfil, e só em pedido em REVISAO PRODUCAO. O servidor confere a mesma permissão antes de retirar e recusa o pedido que já é da produção.
-- **Voltar para Revisão Atendente** (tela Produção) aparece só para Administrador, Super Administrador ou quem tem a permissão **Ações Administrativas de OS**.
+- **Voltar para Revisão Atendente** (tela Produção) aparece só para Administrador, Super Administrador ou quem tem a permissão **Ações Administrativas de OS**. O servidor confere a mesma permissão.
+- **Retirar da Produção** e **Voltar para Revisão Atendente** ficam desligados em pedido com nota fiscal emitida, até a nota ser cancelada.
 - A OS (boletim) abre para quem tem a permissão **Visualizar Pedidos e OS**.
 - **Data Limite de Entrega** e **Hora do Prazo**, em OS que já existe, só são alteradas por Administrador, Super Administrador ou quem tem a permissão **Editar Datas de Entrega**.
 - **Imprimir OS** aparece para Administrador, Super Administrador ou quem tem a permissão **Imprimir OS (PDF de produção)**, e só em pedido já liberado para a produção.
@@ -121,7 +122,8 @@ Pedido só com produtos de prateleira pode ser liberado pelo próprio sistema, n
 ### Tirar um pedido da produção
 
 1. **Retirar da Produção** (menu de ações do pedido ou da lista de Pedidos): Retirar da Produção **devolve o pedido ao atendente**: ele sai da fila de Produção e o status volta para REVISAO ATENDENTE, juntos. Só vale em pedido em REVISAO PRODUCAO que ainda não tem OS; de EM PRODUCAO em diante, ou com OS, quem devolve o pedido é a produção e o sistema recusa com essa mensagem. Antes de retirar, uma janela explica o que acontece (o foco fica em **Cancelar**), e o nome de quem retirou e a data ficam registrados. Retirar de novo um pedido que já voltou ao atendente não grava nada.
-2. **Voltar para Revisão Atendente** (tela Produção, menu **Ações**): tira o pedido da produção e volta o status para REVISAO ATENDENTE. Depois é preciso liberar de novo.
+2. **Voltar para Revisão Atendente** (tela Produção, menu **Ações**): tira o pedido da produção e volta o status para REVISAO ATENDENTE. Depois é preciso liberar de novo. O nome de quem devolveu fica registrado.
+3. Pedido com **nota fiscal emitida** (NF-e ou NFS-e autorizada, de produção, inclusive nota de remessa) não volta ao atendente: o item aparece desligado, com "(nota emitida)", e ao passar o mouse mostra qual nota trava. Cancele a nota em Fiscal › Notas Fiscais e a ação volta a funcionar. Nota cancelada, com erro, pendente ou de homologação não trava. Vale para as duas ações acima.
 
 ### Ler o histórico (aba Histórico)
 

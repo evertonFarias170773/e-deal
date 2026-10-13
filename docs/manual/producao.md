@@ -1,6 +1,6 @@
 # Produção (ordens de serviço)
 
-> **Última revisão:** 09/10/2026
+> **Última revisão:** 13/10/2026
 > **Caminho no menu:** Produção (item direto do menu lateral, sem submenu). A OS de cada pedido abre a partir da lista. O Kanban e a Fila de impressão não estão no menu: chega-se a eles pelo endereço ou pelas abas **Fila Geral / Kanban Board / Fila de Impressão / Expedição** que aparecem no topo dessas duas telas.
 > **Endereço:** `/pedidos` (painel geral). OS: `/pedidos/boletim`. Kanban: `/pedidos/kanban` (e `/os-producao`). Fila de impressão: `/pedidos/impressao`.
 
@@ -16,7 +16,7 @@ Dela você abre a OS (o boletim) de cada pedido para conferir prazo, instruçõe
 - Quem vê a lista consegue mover a fase de um setor e abrir a OS. Não há permissão separada para isso.
 - **Imprimir OS** aparece para quem tem a permissão **Imprimir OS (PDF de produção)**.
 - **Data Limite de Entrega** e **Hora do Prazo**, depois de gravadas, só mudam por Administrador, Super Administrador ou quem tem a permissão **Editar Datas de Entrega**.
-- **Voltar para Revisão Atendente** aparece para Administrador, Super Administrador ou quem tem a permissão **Ações Administrativas de OS**.
+- **Voltar para Revisão Atendente** aparece para Administrador, Super Administrador ou quem tem a permissão **Ações Administrativas de OS**. O servidor confere a mesma permissão antes de devolver.
 - **Gerar novo QR (invalida o anterior)** aparece para quem tem a permissão **Revogar/Gerar novo QR da OS**.
 - **Encerrar teste** aparece só para o Super Administrador.
 - As permissões de cada perfil são definidas em Configurações → Perfis e Permissões.
@@ -48,7 +48,7 @@ Nomes exatamente como aparecem na tela.
 | **Baixar XML** | Menu **Ações** da linha | Baixa o XML da nota do pedido. Só aparece quando há nota autorizada. |
 | **Ver chat interno** | Menu **Ações** da linha | Abre o chat interno do pedido. |
 | **Detalhes da proposta** | Menu **Ações** da linha | Abre o pedido na tela de Pedidos. |
-| **Voltar para Revisão Atendente** | Menu **Ações** da linha | Abre a confirmação para devolver o pedido ao atendente. |
+| **Voltar para Revisão Atendente** | Menu **Ações** da linha | Abre a confirmação para devolver o pedido ao atendente. Em pedido com nota fiscal emitida fica desligado, como **Voltar para Revisão Atendente (nota emitida)**. |
 | **Encerrar teste** | Menu **Ações** da linha | Tira o pedido de teste das filas, depois de uma confirmação. |
 | **Cancelar** / **Confirmar devolução** | Janela "Devolver proposta para Revisão?" | Desiste ou confirma a devolução ao atendente. |
 | **Editar OS** (ou **Criar OS**) / **Detalhes** / **Voltar p/ Revisão** | Cartão do pedido, no celular | Mesmas ações do menu da linha: abrir a OS, abrir o pedido e devolver ao atendente. |
@@ -205,7 +205,9 @@ As vias antigas continuam valendo como eram. O QR delas é um link: lido no term
 
 1. No painel geral, abra **Ações → Voltar para Revisão Atendente**.
 2. Leia o aviso: o pedido sai da lista de Produção, o status volta para REVISAO ATENDENTE e será preciso liberar de novo.
-3. Clique em **Confirmar devolução**.
+3. Clique em **Confirmar devolução**. O nome de quem devolveu e a data ficam registrados.
+4. Pedido com **nota fiscal emitida** (NF-e ou NFS-e autorizada, de produção, inclusive nota de remessa) não volta ao atendente: o item aparece desligado, com "(nota emitida)", e ao passar o mouse mostra qual nota trava. Cancele a nota em Fiscal › Notas Fiscais e a ação volta a funcionar. Nota cancelada, com erro, pendente ou de homologação não trava. No cartão do celular o botão aparece como **Voltar p/ Revisão (nota emitida)**.
+5. Devolver de novo um pedido que já está com o atendente não grava nada.
 
 ### Abrir a OS de um pedido que ainda não tem lotes
 

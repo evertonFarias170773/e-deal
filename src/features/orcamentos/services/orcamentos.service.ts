@@ -92,7 +92,6 @@ import {
 } from "@/features/orcamentos/lib/divergencia-lotes";
 import { danfesDoPedido } from "@/lib/fiscal/danfes-do-pedido";
 import { padraoBuscaSemAcento, valorParaOr, digitosDeDocumentoParaBusca } from "@/features/orcamentos/lib/padrao-busca";
-import { PAYLOAD_DEVOLUCAO_AO_ATENDENTE } from "@/features/orcamentos/lib/retirar-producao";
 import {
   ativosValem,
   condicoesDosAtivosParaOServidor,
@@ -5803,16 +5802,35 @@ export async function retirarPropostaDaProducao(
  * fila, não desfaz o fato de ele ter sido liberado. Se ele voltar,
  * `liberarPropostaParaProducao` sobrescreve o carimbo com a data nova.
  */
-export async function devolverPropostaParaRevisaoAtendente(idInt: number): Promise<{ success: boolean; errorMessage?: string }> {
+export async function devolverPropostaParaRevisaoAtendente(
+  idInt: number
+): Promise<{ success: boolean; errorMessage?: string; idempotente?: boolean; aviso?: string | null }> {
+  // Pela rota do servidor (13/10/2026): confere a sessão e quem pode, recusa pedido
+  // com nota fiscal emitida e registra quem devolveu. Até então era um UPDATE direto
+  // do navegador. A gravação é a mesma (`PAYLOAD_DEVOLUCAO_AO_ATENDENTE`).
   const client = getSupabaseClient();
   if (!client) return { success: false, errorMessage: "Cliente Supabase indisponível." };
 
-  const { error: updateErr } = await client
-    .from("propostas")
-    // A MESMA gravação da retirada da produção (rota retirar-producao): uma definicao so.
-    .update({ ...PAYLOAD_DEVOLUCAO_AO_ATENDENTE })
-    .eq("id_int", idInt);
+  const sessionResponse = await client.auth.getSession();
+  const token = sessionResponse.data.session?.access_token || "";
+  if (!token) return { success: false, errorMessage: "Sessão não encontrada. Faça login novamente." };
 
-  if (updateErr) return { success: false, errorMessage: "Erro ao devolver proposta para revisão." };
-  return { success: true };
+  try {
+    const response = await fetch("/api/orcamentos/devolver-atendente", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ id_int: idInt })
+    });
+    const data = await response.json().catch(() => null);
+    if (!response.ok || !data?.success) {
+      return { success: false, errorMessage: data?.message || "Erro ao devolver proposta para revisão." };
+    }
+    return {
+      success: true,
+      idempotente: data.idempotente === true,
+      aviso: typeof data.aviso === "string" ? data.aviso : null
+    };
+  } catch {
+    return { success: false, errorMessage: "Erro ao devolver proposta para revisão." };
+  }
 }

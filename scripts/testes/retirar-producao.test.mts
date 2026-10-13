@@ -29,7 +29,7 @@ function checar(nome: string, real: unknown, esperado: unknown) {
 // ───────────── Supabase falso ─────────────
 type Valor = string | number | boolean | null | undefined;
 type Linha = Record<string, Valor>;
-type Banco = { propostas: Linha[]; propostas_os: Linha[]; propostas_os_setores: Linha[]; os_status_log: Linha[] };
+type Banco = { propostas: Linha[]; propostas_os: Linha[]; propostas_os_setores: Linha[]; os_status_log: Linha[]; notas_fiscais: Linha[]; notas_servico: Linha[] };
 type Cliente = Parameters<typeof retirarPedidoDaProducao>[0];
 type Opcoes = {
   falhas?: Record<string, { code?: string; message: string }>;
@@ -107,6 +107,8 @@ const novoBanco = (status: string | null = "REVISAO PRODUCAO", flag: boolean | n
   propostas_os: [],
   propostas_os_setores: [],
   os_status_log: [],
+  notas_fiscais: [],
+  notas_servico: [],
   ...extra
 });
 const rodar = (banco: Banco, opcoes: Opcoes = {}, idInt = 100) => {
@@ -231,23 +233,60 @@ for (const status of ["NOVO", "AGUARDANDO", "LIBERADO", "CANCELADO", null]) {
   checar("log falhou: a retirada vale e a resposta avisa", [banco.propostas[0].status_interno, r.success && !r.idempotente ? [r.logGravado, Boolean(r.aviso)] : null], ["REVISAO ATENDENTE", [false, true]]);
 }
 
+// ── 5b. Nota fiscal emitida trava a retirada (13/10/2026) ──
+{
+  const banco = novoBanco("REVISAO PRODUCAO", true, { notas_fiscais: [{ id_int: 100, numero_nf: "7501", status: "AUTORIZADA", ambiente: "producao" }] });
+  const { r, escritas } = await rodar(banco);
+  checar("nota autorizada de producao: 409 NOTA_EMITIDA e nada gravado", [r.success, !r.success && r.httpStatus, !r.success && r.code, escritas, banco.propostas[0].status_interno, banco.propostas[0].is_prd_aprovado], [false, 409, "NOTA_EMITIDA", [], "REVISAO PRODUCAO", true]);
+  checar("nota autorizada: a mensagem diz qual nota e manda cancelar", !r.success && r.message, "Este pedido tem nota fiscal emitida (NF-e 7501). Cancele a nota antes de devolvê-lo ao atendente.");
+}
+{
+  const banco = novoBanco("REVISAO PRODUCAO", true, { notas_fiscais: [{ id_int: 100, numero_nf: "7501", status: "CANCELADA", ambiente: "producao" }, { id_int: 100, numero_nf: "9", status: "AUTORIZADA", ambiente: "homologacao" }, { id_int: 100, numero_nf: null, status: "ERRO_AUTORIZACAO", ambiente: "producao" }] });
+  const { r } = await rodar(banco);
+  checar("so cancelada, homologacao e erro: retira normalmente", [r.success, banco.propostas[0].status_interno, banco.propostas[0].is_prd_aprovado], [true, "REVISAO ATENDENTE", false]);
+}
+{
+  const banco = novoBanco("REVISAO PRODUCAO", true, { notas_fiscais: [{ id_int: 200, numero_nf: "1", status: "AUTORIZADA", ambiente: "producao" }] });
+  const { r } = await rodar(banco);
+  checar("nota de OUTRO pedido nao trava este", [r.success, banco.propostas[0].status_interno], [true, "REVISAO ATENDENTE"]);
+}
+{
+  const banco = novoBanco("REVISAO PRODUCAO", true);
+  const { r, escritas } = await rodar(banco, { falhas: { "notas_fiscais.select": { message: "sem acesso" } } });
+  checar("nao conseguiu ler as notas: recusa e nao grava", [r.success, !r.success && r.code, escritas, banco.propostas[0].status_interno], [false, "LEITURA_NOTAS_FALHOU", [], "REVISAO PRODUCAO"]);
+}
+{
+  const banco = novoBanco("REVISAO ATENDENTE", false, { notas_fiscais: [{ id_int: 100, numero_nf: "7501", status: "AUTORIZADA", ambiente: "producao" }] });
+  const { r, escritas } = await rodar(banco);
+  checar("ja com o atendente e com nota: continua idempotente, sem escrita", [r.success, r.success && r.idempotente, escritas], [true, true, []]);
+}
+{
+  const banco = novoBanco("EM PRODUCAO", true, { propostas_os: [{ id_int: 100 }], notas_fiscais: [{ id_int: 100, numero_nf: "7501", status: "AUTORIZADA", ambiente: "producao" }] });
+  const { r } = await rodar(banco);
+  checar("EM PRODUCAO com nota: a recusa continua sendo a da producao", !r.success && r.code, "DEVOLUCAO_PELA_PRODUCAO");
+}
+
 // ── 6. Estrutura ──
 const le = (c: string) => readFileSync(c, "utf8").replace(/\r\n/g, "\n");
 const servico = le("src/features/orcamentos/services/orcamentos.service.ts");
 const rota = le("src/app/api/orcamentos/retirar-producao/route.ts");
 const servidor = le("src/features/orcamentos/services/retirar-producao.server.ts");
+const gravacao = le("src/features/orcamentos/services/devolver-atendente.server.ts");
 const lista = le("src/features/orcamentos/OrcamentosListPageReal.tsx");
 const proposta = le("src/features/orcamentos/OrcamentoFormPage.tsx");
 const modal = le("src/features/orcamentos/components/RetirarProducaoModal.tsx");
 
 const iDevolver = servico.indexOf("export async function devolverPropostaParaRevisaoAtendente");
 const corpoDevolver = servico.slice(iDevolver, servico.indexOf("\n}\n", iDevolver));
-checar('"Devolver para o atendente" grava pelo payload compartilhado', corpoDevolver.includes("...PAYLOAD_DEVOLUCAO_AO_ATENDENTE") && !corpoDevolver.includes('status_interno: "REVISAO ATENDENTE"'), true);
-checar("a retirada grava pelo MESMO payload compartilhado (sem copia)", servidor.includes("...PAYLOAD_DEVOLUCAO_AO_ATENDENTE") && !servidor.includes('"REVISAO ATENDENTE"'), true);
+checar('"Devolver para o atendente" nao grava mais do navegador: chama a rota', [corpoDevolver.includes('fetch("/api/orcamentos/devolver-atendente"'), corpoDevolver.includes(".update(")], [true, false]);
+checar("a retirada grava pela gravacao compartilhada (sem copia do UPDATE)", [servidor.includes("gravarDevolucaoAoAtendente(supabase, {"), servidor.includes(".update("), servidor.includes('"REVISAO ATENDENTE"')], [true, false, false]);
+checar("a gravacao compartilhada usa o payload unico", gravacao.includes(".update({ ...PAYLOAD_DEVOLUCAO_AO_ATENDENTE })") && !gravacao.includes('"REVISAO ATENDENTE"'), true);
+checar("a retirada confere nota emitida pelo helper unico, antes de gravar", servidor.indexOf("recusaPorNotaEmitida(supabase, idInt)") > 0 && servidor.indexOf("recusaPorNotaEmitida(supabase, idInt)") < servidor.indexOf("gravarDevolucaoAoAtendente(supabase, {"), true);
 checar("a rota nao grava mais so a flag: chama o servico da retirada", rota.includes("retirarPedidoDaProducao(") && !rota.includes(".update("), true);
 checar("a rota continua conferindo sessao e permissao no servidor", rota.includes("verificarPermissaoServerSide") && rota.includes("propostas.release_producao") && rota.includes("SEM_PERMISSAO"), true);
-checar("o UPDATE e guardado pelo status e pela flag lidos", ['.eq("status_interno", statusLido)', 'consulta.eq("is_prd_aprovado", flagLida)', 'consulta.is("is_prd_aprovado", null)'].map((t) => servidor.includes(t)), [true, true, true]);
-checar("o carimbo liberado_producao_em fica de fora da gravacao (o UPDATE leva so o payload compartilhado)", servidor.includes(".update({ ...PAYLOAD_DEVOLUCAO_AO_ATENDENTE })") && !JSON.stringify(PAYLOAD_DEVOLUCAO_AO_ATENDENTE).includes("liberado_producao_em"), true);
+checar("o UPDATE e guardado pelo status e pela flag lidos", ['consulta.eq("status_interno", statusLido)', 'consulta.eq("is_prd_aprovado", flagLida)', 'consulta.is("is_prd_aprovado", null)'].map((t) => gravacao.includes(t)), [true, true, true]);
+checar("o carimbo liberado_producao_em fica de fora da gravacao (o UPDATE leva so o payload compartilhado)", !JSON.stringify(PAYLOAD_DEVOLUCAO_AO_ATENDENTE).includes("liberado_producao_em"), true);
+checar("lista e proposta: com nota emitida o item fica desligado, com o motivo", [lista, proposta].map((t) => t.includes('label: "Retirar da Produção (nota emitida)", destructive: true, disabled: true, title: notaQueImpedeRetirar.get(')), [true, true]);
 
 checar("lista: o menu abre o modal (nao retira no clique) e nao usa window.confirm para retirar", [lista.includes("onClick: () => setPedidoParaRetirar(item)"), /RETIRAR a proposta #/.test(lista)], [true, false]);
 checar("lista: o modal chama a rota so no Confirmar", [lista.includes("<RetirarProducaoModal"), lista.includes("onConfirm={() => void confirmarRetirarProducao()}")], [true, true]);

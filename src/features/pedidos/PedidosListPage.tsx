@@ -35,6 +35,7 @@ import { encerrarTeste } from "./services/encerrar-teste.client";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import { devolverPropostaParaRevisaoAtendente } from "@/features/orcamentos/services/orcamentos.service";
 import { DevolverRevisaoModal } from "./components/DevolverRevisaoModal";
+import { useNotasQueImpedemDevolucao } from "@/features/orcamentos/hooks/useNotasQueImpedemDevolucao";
 import { criarPedidoParaBoletim } from "./services/boletim-propostas.service";
 import { dataLimitePorPrazosOuNulo } from "./prazo-producao";
 import { urlDownloadXmlNfe } from "@/lib/fiscal/download-xml-nfe";
@@ -108,6 +109,16 @@ export function PedidosListPage() {
    * tranca é POST /api/pedidos/encerrar-teste.
    */
   const canEncerrarTeste = hasPermissao(user, "propostas.encerrar_teste");
+
+  /**
+   * "Voltar para Revisão Atendente" (13/10/2026): quem vê é o mesmo de sempre; a
+   * gravação passou para a rota /api/orcamentos/devolver-atendente, que confere essa
+   * mesma permissão no servidor. Pedido com nota fiscal emitida não volta enquanto a
+   * nota não for cancelada: a ação fica desligada, com o motivo, e a rota recusa.
+   */
+  const canVoltarRevisao = Boolean(user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "pedidos.admin"));
+  const idsDosPedidos = useMemo(() => pedidos.map((p) => p.id_int), [pedidos]);
+  const notaQueImpedeDevolver = useNotasQueImpedemDevolucao(idsDosPedidos, canVoltarRevisao);
   const [encerrandoTesteId, setEncerrandoTesteId] = useState<number | null>(null);
   async function handleEncerrarTeste(proposta: PropostaOperacionalListItem) {
     if (encerrandoTesteId !== null) return;
@@ -452,11 +463,17 @@ export function PedidosListPage() {
     try {
       const res = await devolverPropostaParaRevisaoAtendente(selectedPropostaForDevolver.id_int);
       if (res.success) {
-        showToast({
-          type: "success",
-          title: "Proposta devolvida",
-          description: "A proposta voltou para Revisão Atendente."
-        });
+        if (res.idempotente) {
+          showToast({ type: "info", title: "Já estava com o atendente", description: "A proposta já está em Revisão Atendente. Nada foi gravado." });
+        } else if (res.aviso) {
+          showToast({ type: "warning", title: "Proposta devolvida, com aviso", description: res.aviso });
+        } else {
+          showToast({
+            type: "success",
+            title: "Proposta devolvida",
+            description: "A proposta voltou para Revisão Atendente."
+          });
+        }
         setIsDevolverModalOpen(false);
         setSelectedPropostaForDevolver(null);
         void load();
@@ -828,7 +845,7 @@ export function PedidosListPage() {
           {
             header: "Ações",
             cell: (proposta) => {
-              const canVoltarRevisao = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "pedidos.admin");
+              const motivoNota = notaQueImpedeDevolver.get(proposta.id_int);
 
               const actions = [
                 {
@@ -885,14 +902,16 @@ export function PedidosListPage() {
                   onClick: () => router.push(`/orcamentos/${proposta.id_int}`)
                 },
                 ...(canVoltarRevisao ? [
-                  {
-                    label: "Voltar para Revisão Atendente",
-                    destructive: true,
-                    onClick: () => {
-                      setSelectedPropostaForDevolver(proposta);
-                      setIsDevolverModalOpen(true);
-                    }
-                  }
+                  motivoNota
+                    ? { label: "Voltar para Revisão Atendente (nota emitida)", destructive: true, disabled: true, title: motivoNota }
+                    : {
+                        label: "Voltar para Revisão Atendente",
+                        destructive: true,
+                        onClick: () => {
+                          setSelectedPropostaForDevolver(proposta);
+                          setIsDevolverModalOpen(true);
+                        }
+                      }
                 ] : []),
                 ...(canEncerrarTeste ? [{
                   label: encerrandoTesteId === proposta.id_int ? "Encerrando teste..." : "Encerrar teste",
@@ -974,16 +993,18 @@ export function PedidosListPage() {
               >
                 Detalhes
               </button>
-              {(user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "pedidos.admin")) && (
+              {canVoltarRevisao && (
                 <button
                   type="button"
+                  disabled={notaQueImpedeDevolver.has(proposta.id_int)}
+                  title={notaQueImpedeDevolver.get(proposta.id_int)}
                   onClick={() => {
                     setSelectedPropostaForDevolver(proposta);
                     setIsDevolverModalOpen(true);
                   }}
-                  className="rounded-2xl bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-600 border border-rose-200 hover:bg-rose-100 transition"
+                  className="rounded-2xl bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-600 border border-rose-200 hover:bg-rose-100 transition disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  Voltar p/ Revisão
+                  {notaQueImpedeDevolver.has(proposta.id_int) ? "Voltar p/ Revisão (nota emitida)" : "Voltar p/ Revisão"}
                 </button>
               )}
             </div>

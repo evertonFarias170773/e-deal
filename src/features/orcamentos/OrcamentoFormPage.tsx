@@ -107,6 +107,7 @@ import { contarModelosCopiados, copiaLevouCabecalho, montarAvisoDaCopia } from "
 import { box10Expandido, boxEstaNaLateral } from "@/features/orcamentos/lib/boxes-da-lateral";
 import { RetirarProducaoModal } from "@/features/orcamentos/components/RetirarProducaoModal";
 import { podeVerRetirarDaProducao } from "@/features/orcamentos/lib/retirar-producao";
+import { useNotasQueImpedemDevolucao } from "@/features/orcamentos/hooks/useNotasQueImpedemDevolucao";
 import { cepExibicao, semTraco } from "@/features/orcamentos/lib/campos-do-endereco";
 import { CartaoEndereco } from "@/features/orcamentos/components/CartaoEndereco";
 import {
@@ -4331,6 +4332,11 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
    * grava é a rota, que devolve o pedido ao atendente e recusa o que já é da produção.
    */
   const [retirarModalAberto, setRetirarModalAberto] = useState(false);
+  // Nota fiscal emitida trava a retirada: o item fica desligado, com o motivo. A trava de verdade é a da rota.
+  const propostaPodeSerRetirada = Boolean(
+    proposta && podeVerRetirarDaProducao({ statusInterno: proposta.status_interno, isPrdAprovado: proposta.is_prd_aprovado })
+  );
+  const notaQueImpedeRetirar = useNotasQueImpedemDevolucao(proposta ? [proposta.id_int] : [], propostaPodeSerRetirada);
 
   async function handleRetirarDaProducaoNaProposta() {
     if (!proposta || acaoEmCurso) return;
@@ -4391,11 +4397,15 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
       },
       // Ultimo item do menu. So onde a retirada vale (REVISAO PRODUCAO com a flag ligada).
       ...(podeRetirar && podeVerRetirarDaProducao({ statusInterno: proposta.status_interno, isPrdAprovado: proposta.is_prd_aprovado })
-        ? [{
-            label: acaoEmCurso === "retirar" ? "Retirando..." : "Retirar da Produção",
-            destructive: true,
-            onClick: () => setRetirarModalAberto(true)
-          }]
+        ? [
+            notaQueImpedeRetirar.has(idInt)
+              ? { label: "Retirar da Produção (nota emitida)", destructive: true, disabled: true, title: notaQueImpedeRetirar.get(idInt) }
+              : {
+                  label: acaoEmCurso === "retirar" ? "Retirando..." : "Retirar da Produção",
+                  destructive: true,
+                  onClick: () => setRetirarModalAberto(true)
+                }
+          ]
         : [])
     ];
   }

@@ -1,10 +1,11 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { ORIGEM_LOG_RETIRAR_PRODUCAO, STATUS_APOS_RETIRAR, decidirRetirada } from "@/features/orcamentos/lib/retirar-producao";
 import {
-  ORIGEM_LOG_RETIRAR_PRODUCAO,
-  PAYLOAD_DEVOLUCAO_AO_ATENDENTE,
-  STATUS_APOS_RETIRAR,
-  decidirRetirada
-} from "@/features/orcamentos/lib/retirar-producao";
+  gravarDevolucaoAoAtendente,
+  jaEstaComOAtendente,
+  lerPropostaParaDevolucao
+} from "@/features/orcamentos/services/devolver-atendente.server";
+import { recusaPorNotaEmitida } from "@/features/orcamentos/services/nota-impede-devolucao.server";
 
 /**
  * Grava "Retirar da Produção" (13/10/2026). Roda no SERVIDOR, com a sessão do
@@ -16,7 +17,13 @@ import {
  *   juntos (o mesmo payload do "Devolver para o atendente"), GUARDADO pelo status e
  *   pela flag que acabaram de ser lidos: se mudaram no meio, nada é gravado. Depois,
  *   uma linha em `os_status_log` com o autor — a mesma trilha das ações da Expedição.
- *   Falhar o log não desfaz a retirada, mas a resposta AVISA.
+ *   Falhar o log não desfaz a retirada, mas a resposta AVISA. A gravação é a de
+ *   `gravarDevolucaoAoAtendente`, a mesma do "Voltar para Revisão Atendente".
+ *
+ * NOTA EMITIDA TRAVA (13/10/2026): pedido com NF-e ou NFS-e autorizada de produção
+ * não volta ao atendente enquanto a nota não for cancelada (`recusaPorNotaEmitida`,
+ * a mesma checagem da rota devolver-atendente). Vem depois das outras recusas e da
+ * idempotência: repetir a ação num pedido que já voltou continua sem gravar.
  *
  * O que NÃO é tocado: `liberado_producao_em` (o carimbo da passagem pela fila),
  * cobranças, financeiro, `libera_nf`, `em_arte`.
@@ -36,10 +43,6 @@ export type ResultadoDaRetirada =
 
 type Cliente = SupabaseClient;
 
-async function lerProposta(supabase: Cliente, idInt: number) {
-  return supabase.from("propostas").select("id_int, status_interno, is_prd_aprovado").eq("id_int", idInt).maybeSingle();
-}
-
 /** O pedido tem linha na tabela? (`limit(1)`: so interessa se existe.) */
 async function existeLinha(supabase: Cliente, tabela: "propostas_os" | "propostas_os_setores", idInt: number) {
   const { data, error } = await supabase.from(tabela).select("id_int").eq("id_int", idInt).limit(1);
@@ -52,7 +55,7 @@ export async function retirarPedidoDaProducao(
 ): Promise<ResultadoDaRetirada> {
   const { idInt, autor } = entrada;
 
-  const { data: proposta, error: erroProposta } = await lerProposta(supabase, idInt);
+  const { data: proposta, error: erroProposta } = await lerPropostaParaDevolucao(supabase, idInt);
   if (erroProposta) {
     return { success: false, httpStatus: 500, code: "LEITURA_FALHOU", message: erroProposta.message || "Erro ao ler a proposta." };
   }
@@ -84,59 +87,46 @@ export async function retirarPedidoDaProducao(
     return { success: true, idempotente: true, message: `A proposta #${idInt} já está em ${STATUS_APOS_RETIRAR}. Nada foi gravado.` };
   }
 
+  // Nota emitida trava a volta ao atendente. So chega aqui o pedido que SERIA retirado.
+  const recusaPorNota = await recusaPorNotaEmitida(supabase, idInt);
+  if (recusaPorNota) return recusaPorNota;
+
   const statusLido = String(proposta.status_interno ?? "");
-  const flagLida = proposta.is_prd_aprovado as boolean | null;
 
-  // UPDATE guardado pelo status e pela flag lidos: so vale se ninguem mexeu no meio.
-  let consulta = supabase
-    .from("propostas")
-    .update({ ...PAYLOAD_DEVOLUCAO_AO_ATENDENTE })
-    .eq("id_int", idInt)
-    .eq("status_interno", statusLido);
-  consulta = flagLida === null ? consulta.is("is_prd_aprovado", null) : consulta.eq("is_prd_aprovado", flagLida);
-  const { data: gravadas, error: erroUpdate } = await consulta.select("id_int");
+  const desfecho = await gravarDevolucaoAoAtendente(supabase, {
+    idInt,
+    statusLido,
+    flagLida: proposta.is_prd_aprovado,
+    autor,
+    origem: ORIGEM_LOG_RETIRAR_PRODUCAO,
+    motivo: "Retirado da fila de Produção: o pedido voltou para o atendente (is_prd_aprovado desligada e status em REVISAO ATENDENTE, na mesma gravação)."
+  });
 
-  if (erroUpdate) {
-    return { success: false, httpStatus: 500, code: "RETIRADA_NAO_GRAVADA", message: `Não foi possível retirar da produção (${erroUpdate.message}). Nada foi alterado.` };
+  if (desfecho.tipo === "erro") {
+    return { success: false, httpStatus: 500, code: "RETIRADA_NAO_GRAVADA", message: `Não foi possível retirar da produção (${desfecho.message}). Nada foi alterado.` };
   }
 
-  if (!gravadas || gravadas.length === 0) {
+  if (desfecho.tipo === "mudou") {
     // Mudou entre a leitura e a gravacao: se ja voltou ao atendente (outro clique), e idempotente.
-    const { data: agora } = await lerProposta(supabase, idInt);
-    if (String(agora?.status_interno ?? "").trim().toUpperCase() === STATUS_APOS_RETIRAR && agora?.is_prd_aprovado !== true) {
+    if (jaEstaComOAtendente(desfecho.agora)) {
       return { success: true, idempotente: true, message: `A proposta #${idInt} já está em ${STATUS_APOS_RETIRAR}. Nada foi gravado.` };
     }
     return {
       success: false,
       httpStatus: 409,
       code: "STATUS_MUDOU",
-      message: `O pedido mudou de status durante a ação (agora: ${agora?.status_interno ?? "sem status"}). Nada foi alterado; confira e tente de novo.`
+      message: `O pedido mudou de status durante a ação (agora: ${desfecho.agora?.status_interno ?? "sem status"}). Nada foi alterado; confira e tente de novo.`
     };
   }
-
-  const { error: erroLog } = await supabase.from("os_status_log").insert({
-    id_int: idInt,
-    status_anterior: statusLido,
-    status_novo: STATUS_APOS_RETIRAR,
-    resultado: "sucesso",
-    motivo: "Retirado da fila de Produção: o pedido voltou para o atendente (is_prd_aprovado desligada e status em REVISAO ATENDENTE, na mesma gravação).",
-    origem: ORIGEM_LOG_RETIRAR_PRODUCAO,
-    ator_tipo: "USUARIO",
-    ator_uid: autor.uid,
-    ator_nome: autor.nome,
-    tipo_transicao: "RETORNO"
-  });
-  const aviso = erroLog
-    ? `O pedido foi retirado da produção e voltou ao atendente, mas o registro de autoria no log falhou (${erroLog.message}).`
-    : null;
-  if (erroLog) console.error(`[retirar-producao] Falha ao gravar os_status_log da proposta #${idInt}:`, erroLog.message);
 
   return {
     success: true,
     idempotente: false,
     message: `Proposta #${idInt} retirada da produção e devolvida ao atendente.`,
     statusAnterior: statusLido,
-    logGravado: !erroLog,
-    aviso
+    logGravado: desfecho.erroDoLog === null,
+    aviso: desfecho.erroDoLog
+      ? `O pedido foi retirado da produção e voltou ao atendente, mas o registro de autoria no log falhou (${desfecho.erroDoLog}).`
+      : null
   };
 }

@@ -28,6 +28,7 @@ import { marcarPedidoComoEntreguePeloServidor } from "@/features/orcamentos/serv
 import { MarcarEntregueModal } from "@/features/orcamentos/components/MarcarEntregueModal";
 import { RetirarProducaoModal } from "@/features/orcamentos/components/RetirarProducaoModal";
 import { podeVerRetirarDaProducao } from "@/features/orcamentos/lib/retirar-producao";
+import { useNotasQueImpedemDevolucao } from "@/features/orcamentos/hooks/useNotasQueImpedemDevolucao";
 import { listarNomesDeVendedores } from "@/features/orcamentos/services/vendedores-do-filtro.service";
 import {
   STATUS_ATIVOS,
@@ -1679,6 +1680,22 @@ export function OrcamentosListPageReal() {
   // Só ADM vê "Confirmar Conferência" aqui; a rota confere a permissão no servidor.
   const canConfirmarConferenciaNaLista = podeVerConfirmarConferenciaNaLista(user);
 
+  /**
+   * Nota fiscal emitida trava "Retirar da Produção" (13/10/2026): o item fica
+   * desligado, com o motivo. Só olha os pedidos onde o item apareceria. A trava de
+   * verdade é a da rota; sem esta leitura o item fica ligado e o servidor recusa.
+   */
+  const idsQuePodemSerRetirados = useMemo(
+    () =>
+      canLiberarProducao
+        ? filteredPropostas
+            .filter((p) => podeVerRetirarDaProducao({ statusInterno: p.statusInterno, isPrdAprovado: p.is_prd_aprovado }))
+            .map((p) => p.id_int)
+        : [],
+    [canLiberarProducao, filteredPropostas]
+  );
+  const notaQueImpedeRetirar = useNotasQueImpedemDevolucao(idsQuePodemSerRetirados, canLiberarProducao);
+
   // "Marcar como entregue" (11/10/2026, paliativo da migracao): so ADM e so em
   // LIBERADO. Quem grava e a rota `/api/orcamentos/marcar-entregue`, que confere
   // o ADM no servidor; aqui so o modal e a atualizacao da lista.
@@ -1980,7 +1997,12 @@ Ela volta a aparecer nas listas operacionais.`
       // diante o item some em vez de oferecer o que o servidor recusaria. Ja e o ULTIMO
       // item do menu, longe das acoes do dia a dia.
       ...(canLiberarProducao && podeVerRetirarDaProducao({ statusInterno: item.statusInterno, isPrdAprovado: item.is_prd_aprovado })
-        ? [{ label: "Retirar da Produção", destructive: true, onClick: () => setPedidoParaRetirar(item) }]
+        ? [
+            notaQueImpedeRetirar.has(item.id_int)
+              ? // Com nota fiscal emitida o item fica desligado e diz por que.
+                { label: "Retirar da Produção (nota emitida)", destructive: true, disabled: true, title: notaQueImpedeRetirar.get(item.id_int) }
+              : { label: "Retirar da Produção", destructive: true, onClick: () => setPedidoParaRetirar(item) }
+          ]
         : [])
     ];
   }
