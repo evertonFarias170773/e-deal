@@ -304,6 +304,10 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/features/orcamentos/components/FiltroProdutoDrop.tsx`
 - `src/features/orcamentos/components/LiberarProducaoModal.tsx`
 - `src/features/orcamentos/components/MarcarEntregueModal.tsx`
+- `src/features/orcamentos/components/EnviarFilaFaturamentoModal.tsx`
+- `src/features/orcamentos/lib/enviar-fila-faturamento.ts`
+- `src/features/orcamentos/services/enviar-fila-faturamento.server.ts`
+- `src/app/api/orcamentos/enviar-fila-faturamento/route.ts`
 - `src/features/orcamentos/lib/marcar-entregue.ts`
 - `src/features/orcamentos/services/marcar-entregue.server.ts`
 - `src/features/orcamentos/services/marcar-entregue.service.ts`
