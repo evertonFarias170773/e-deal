@@ -1,6 +1,6 @@
 # Proposta: aba Fretes
 
-> **Última revisão:** 12/10/2026
+> **Última revisão:** 13/10/2026
 > **Caminho no menu:** Pedidos → abrir um pedido → aba Fretes
 > **Endereço:** `/orcamentos/<número>/editar?tab=fretes`
 
@@ -194,6 +194,7 @@ Repetir **Aplicar** não duplica: a segunda tentativa devolve o mesmo frete comp
 - Sem modalidade marcada, a tela não mostra cards e pede: "Escolha a modalidade do frete acima para continuar."
 - Trocar de modalidade limpa a transportadora (fora de FOB) e desfaz a escolha de retirada. Confira a caixa da modalidade depois de trocar.
 - A modalidade e a transportadora só valem depois do **Salvar alterações**.
+- O peso de um item conta cada variação uma vez só. Ao reabrir uma proposta e mexer num item, o frete é recotado se o peso atual ficou diferente do peso que a cotação gravada usou (tolerância de 1 g); só abrir a proposta não recota.
 - A cotação usa o CEP do endereço de entrega e o peso total da proposta. Os volumes são calculados pelo sistema, um a cada 14,5 kg.
 - O botão **Atualizar fretes** fica apagado sem CEP válido de 8 dígitos, sem produto com peso ou sem endereço de entrega escolhido.
 - A Azul Cargo não é cotada para entrega no Rio Grande do Sul.
@@ -310,3 +311,5 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 > - **09/10/2026:** o Acompanhar Pedido vale para qualquer pedido em aberto, inclusive em NOVO e AGUARDANDO (antes só de APROVADO até EXPEDICAO); a busca por número procura entre todos os pedidos elegíveis; a mensagem de só leitura diz o motivo real.
 >
 > - **09/10/2026 (adendo):** o grupo Acompanhar deixa de ter limite de 10 pedidos (limite de segurança de 50, com aviso acima de 10); pedido com status vazio fica só para leitura.
+>
+> - **13/10/2026:** o peso de um item com variação deixou de ser contado em dobro ao reabrir a proposta (o frete saía cotado com peso maior), e o frete é recotado ao mexer num item quando o peso difere do da cotação gravada.

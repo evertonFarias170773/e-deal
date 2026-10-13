@@ -61,6 +61,7 @@ import {
   calculateItemSubtotal,
   calculateItemWeight,
   calculateResumo,
+  pesoDivergeDaCotacao,
   createFretesMock,
   createItemFromProduto,
   formatVariacoesItem,
@@ -258,19 +259,22 @@ function getDestinationKey(
   }
 }
 
-function getShipmentKey(
-  pesoTotal: number,
-  volumes: number,
-  itens: PropostaItem[]
-): string {
-  const itemsStr = (itens || []).map((it) => {
+function getItensKey(itens: PropostaItem[]): string {
+  return (itens || []).map((it) => {
     const varStr = (it.variacoesEscolhidas || [])
       .map((v) => v.id_variacao)
       .sort((a, b) => a - b)
       .join(",");
     return `${it.id_produto}:${it.quantidade}:${varStr}`;
   }).join("|");
-  return `${pesoTotal.toFixed(3)}_${volumes}_${itemsStr}`;
+}
+
+function getShipmentKey(
+  pesoTotal: number,
+  volumes: number,
+  itens: PropostaItem[]
+): string {
+  return `${pesoTotal.toFixed(3)}_${volumes}_${getItensKey(itens)}`;
 }
 
 /**
@@ -1183,6 +1187,16 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
   // capturada no início da cotação com a atual — sem isso, uma cotação do
   // destino antigo sobrescreveria os fretes do estado restaurado.
   const cotacaoEpochRef = useRef(0);
+  /**
+   * PESO DA COTACAO GRAVADA x RECOTAR (13/10/2026). A chave de embarque guarda o peso da
+   * ABERTURA da tela; se a cotacao gravada ja estava com outro peso (23542: 2.757 g gravados
+   * para 1.939,5 g reais), mexer num item nao recotava, ou recotava com peso inflado. Agora,
+   * depois que um item foi mexido, o peso atual e comparado ao `pesoUsado` do frete escolhido.
+   * Abrir a tela NAO recota sozinho. `pesoJaCotadoRef` evita repetir a tentativa para o mesmo
+   * peso quando a cotacao falha.
+   */
+  const itensKeyNaAberturaRef = useRef<string>(getItensKey(proposta?.itens ?? []));
+  const pesoJaCotadoRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (mode === "new" && !cliente && searchInputRef.current) {
@@ -2087,9 +2101,16 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     );
     const currentShipKey = getShipmentKey(resumo.pesoTotal, volumes, form.itens);
 
-    if (currentDestKey === lastDestinationKey && currentShipKey === lastShipmentKey) {
+    const freteEscolhidoAtual = form.fretes.find((f) => f.id === form.freteEscolhidoId || f.escolhido);
+    const cotacaoComPesoDefasado =
+      getItensKey(form.itens) !== itensKeyNaAberturaRef.current &&
+      pesoDivergeDaCotacao(resumo.pesoTotal, freteEscolhidoAtual?.pesoUsado) &&
+      pesoJaCotadoRef.current !== resumo.pesoTotal;
+
+    if (currentDestKey === lastDestinationKey && currentShipKey === lastShipmentKey && !cotacaoComPesoDefasado) {
       return;
     }
+    if (cotacaoComPesoDefasado) pesoJaCotadoRef.current = resumo.pesoTotal;
 
     const isDestChanged = currentDestKey !== lastDestinationKey;
 

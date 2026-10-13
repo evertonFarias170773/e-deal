@@ -309,9 +309,44 @@ export function calculateItemSubtotal(
   };
 }
 
+/**
+ * Peso de UM item: `pesoUnitario` e o peso BASE do produto (sem variacoes) e cada variacao
+ * escolhida entra UMA vez, vezes a quantidade.
+ *
+ * ATENCAO: `produtos_proposta.peso_uni` guarda base + variacoes (ver `montarDadosItemProposta`).
+ * Ao carregar um item gravado, o `pesoUnitario` tem de voltar a ser so a base —
+ * `pesoUnitarioSemVariacoes` — senao a variacao e somada duas vezes (pedido 23542: 1.939,5 g
+ * reais viravam 2.757 g na cotacao).
+ */
 export function calculateItemWeight(item: Pick<PropostaItem, "quantidade" | "pesoUnitario" | "variacoesEscolhidas">) {
   const variationWeight = item.variacoesEscolhidas.reduce((total, escolha) => total + escolha.tipo.peso * item.quantidade, 0);
   return item.quantidade * item.pesoUnitario + variationWeight;
+}
+
+/**
+ * O peso base de um item gravado: o `peso_uni` do banco (base + variacoes) menos o peso das
+ * variacoes escolhidas. Com isso `calculateItemWeight` devolve exatamente o peso gravado,
+ * sem contar a variacao duas vezes. Nunca negativo.
+ */
+export function pesoUnitarioSemVariacoes(
+  pesoUniGravado: number,
+  variacoesEscolhidas: ReadonlyArray<{ tipo?: { peso?: number | null } | null }>
+): number {
+  const dasVariacoes = (variacoesEscolhidas || []).reduce((total, escolha) => total + (Number(escolha.tipo?.peso) || 0), 0);
+  return Math.max(0, (Number(pesoUniGravado) || 0) - dasVariacoes);
+}
+
+/** Mesma tolerancia da checagem do banco/rota de frete desatualizado (`frete-desatualizado.ts`): 1 g. */
+export const TOLERANCIA_PESO_COTACAO_GRAMAS = 1;
+
+/**
+ * A decisao de recotar olha o peso GRAVADO NA COTACAO (o `pesoUsado` do frete escolhido), nao
+ * o peso da abertura da tela. Sem peso gravado (frete manual, retirada) nao ha o que comparar.
+ */
+export function pesoDivergeDaCotacao(pesoAtualGramas: number, pesoGravadoNaCotacaoGramas: number | null | undefined): boolean {
+  const gravado = Number(pesoGravadoNaCotacaoGramas);
+  if (!Number.isFinite(gravado) || gravado <= 0) return false;
+  return Math.abs((Number(pesoAtualGramas) || 0) - gravado) >= TOLERANCIA_PESO_COTACAO_GRAMAS;
 }
 
 /**

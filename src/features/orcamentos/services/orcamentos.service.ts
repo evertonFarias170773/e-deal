@@ -64,7 +64,7 @@ import {
 import { getCadastroCompleto } from "@/features/cadastros/services/cadastros.service";
 import { getProdutoByIdProduto } from "@/features/produtos/services/produtos.service";
 import { listVariacoesGlobais } from "@/features/produtos/services/produto-variacoes.service";
-import { buildPropostaInformalText, formatVariacoesItem, getClienteBonusPercent, isItemPrateleira, STATUS_INICIAL_MODELO } from "@/features/orcamentos/orcamento-utils";
+import { buildPropostaInformalText, formatVariacoesItem, getClienteBonusPercent, isItemPrateleira, pesoUnitarioSemVariacoes, STATUS_INICIAL_MODELO } from "@/features/orcamentos/orcamento-utils";
 import { listarCotacoesFrete } from "@/features/orcamentos/services/frete.service";
 import { parseCurrencyBR } from "@/lib/formatters/currency";
 import type { Cadastro, CadastroEndereco } from "@/features/cadastros/types";
@@ -2045,7 +2045,9 @@ export async function getPropostaDetailById(idInt: number, overrideClient?: Supa
         acrescimoBonus: 0,
         subtotal: item.valor_sub_total || 0,
         prazo: finalProduct.prazo || "7 dias",
-        pesoUnitario: item.peso_uni || 0,
+        // `peso_uni` gravado = base + variacoes; o formulario soma as variacoes de novo em
+        // `calculateItemWeight`, entao aqui volta a ser so a base (23542: 1.939,5 g, nao 2.757 g).
+        pesoUnitario: pesoUnitarioSemVariacoes(item.peso_uni || 0, variacoesEscolhidas),
         pesoTotal: item.peso_total || 0,
         variacoesEscolhidas,
         statusItem: item.status_item || "PENDENTE"
