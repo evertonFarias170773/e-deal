@@ -10,14 +10,18 @@ export function useNfeReadOnlyData() {
   });
   const [isLoading, setIsLoading] = useState(true);
 
-  const refresh = useCallback(async () => {
-    setIsLoading(true);
+  /**
+   * `silencioso` (14/10/2026): rele sem o estado de carga, para o Historico se
+   * atualizar ao trocar de aba ou ao voltar para a janela sem piscar a lista.
+   */
+  const refresh = useCallback(async (opcoes?: { silencioso?: boolean }) => {
+    if (!opcoes?.silencioso) setIsLoading(true);
     try {
       const result = await getNfeReadOnlyList();
       setState(result);
       return result;
     } finally {
-      setIsLoading(false);
+      if (!opcoes?.silencioso) setIsLoading(false);
     }
   }, []);
 

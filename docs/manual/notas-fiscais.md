@@ -30,7 +30,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 |---|---|---|
 | **Nova nota avulsa** | Cabeçalho da tela, à direita | Abre a janela **Nova nota avulsa**, para criar uma NF-e que não nasce de pedido. |
 | **Fila Faturamento (N)** (aba) | Abas do topo, 1ª | Mostra os pedidos a faturar e a seção **Notas em processo**. O número conta só os pedidos. |
-| **Histórico NF-e / NFS-e** (aba) | Abas do topo, 2ª | Mostra **Histórico NF-e (Produtos)** e, abaixo, **Histórico NFS-e (Serviços)**. |
+| **Histórico NF-e / NFS-e** (aba) | Abas do topo, 2ª | Mostra **Histórico NF-e (Produtos)** e, abaixo, **Histórico NFS-e (Serviços)**. As duas listas se atualizam sozinhas ao abrir a aba, ao voltar para a janela do navegador e quando a janela da NFS-e conclui ou fecha; não precisa de F5. |
 | **Buscar fila por Ref, ID Cliente ou Nome...** | Aba Fila, filtros | Busca na lista de pedidos por número, código ou nome do cliente, sócio pagador e vendedor. |
 | **Todas as Empresas Emitentes** | Filtros da Fila e dos dois Históricos | Filtra por **INGRESSO IDEAL**, **BIRÔ IDEAL** ou **E3 BRINDES**. |
 | **Todos os status do pedido (N)** | Aba Fila, filtros | Filtra a lista de pedidos pelo status do pedido; cada opção mostra quantos pedidos tem. |

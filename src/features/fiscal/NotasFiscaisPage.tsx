@@ -347,14 +347,39 @@ export function NotasFiscaisPage() {
    * Trocar de aba limpa os filtros de NF-e, como já era antes da migração — os
    * de NFS-e continuam intocados de propósito. Tudo numa escrita só.
    */
-  const trocarAba = (aba: ActiveTab) => {
-    setNfeSearch("");
-    setFilters({ aba, "nfe-q": "", "nfe-emp": "", "nfe-status": "" });
-  };
-
   // Hooks de leitura original do banco
   const nfeData = useNfeReadOnlyData();
   const nfseData = useNfseReadOnlyData();
+
+  /**
+   * HISTORICO SEMPRE ATUAL (14/10/2026). As duas listas eram lidas uma vez, na
+   * abertura da pagina: a NFS-e emitida pela Fila (NFS-23733-001) so aparecia
+   * no Historico com F5. Agora o Historico se rele, sem piscar a lista, ao
+   * entrar na aba, ao voltar para a janela do navegador e quando a janela da
+   * NFS-e conclui ou fecha (logo abaixo, no GerarNfseModal).
+   */
+  const nfeRefresh = nfeData.refresh;
+  const nfseRefresh = nfseData.refresh;
+  const atualizarHistorico = useCallback(() => {
+    void nfeRefresh({ silencioso: true });
+    void nfseRefresh({ silencioso: true });
+  }, [nfeRefresh, nfseRefresh]);
+
+  const trocarAba = (aba: ActiveTab) => {
+    setNfeSearch("");
+    setFilters({ aba, "nfe-q": "", "nfe-emp": "", "nfe-status": "" });
+    if (aba === "HISTORICO_FISCAL" && activeTab !== "HISTORICO_FISCAL") atualizarHistorico();
+  };
+
+  // A nota pode ter sido emitida em outra aba do navegador (rascunho da NF-e).
+  useEffect(() => {
+    if (activeTab !== "HISTORICO_FISCAL") return;
+    const aoVoltar = () => {
+      if (document.visibilityState === "visible") atualizarHistorico();
+    };
+    document.addEventListener("visibilitychange", aoVoltar);
+    return () => document.removeEventListener("visibilitychange", aoVoltar);
+  }, [activeTab, atualizarHistorico]);
 
   // Históricos adicionados localmente via simulação (Fase 1 MVP)
   // Sem lista simulada: o que a tela mostra vem do banco, e so.
@@ -2467,8 +2492,14 @@ export function NotasFiscaisPage() {
       {nfsePedidoAberto !== null && (
         <GerarNfseModal
           idInt={nfsePedidoAberto}
-          onClose={() => setNfsePedidoAberto(null)}
-          onMudou={() => setNfseVersao((v) => v + 1)}
+          onClose={() => {
+            setNfsePedidoAberto(null);
+            void nfseData.refresh({ silencioso: true });
+          }}
+          onMudou={() => {
+            setNfseVersao((v) => v + 1);
+            void nfseData.refresh({ silencioso: true });
+          }}
         />
       )}
 
