@@ -21,7 +21,11 @@ type Resposta = { data: unknown; error: { message: string; code?: string } | nul
 
 const estado = {
   chamadas: [] as Chamada[],
-  respostas: new Map<string, Resposta>()
+  respostas: new Map<string, Resposta>(),
+  // Respostas em SEQUENCIA para a mesma chave: cada consulta consome a proxima e
+  // a ultima se repete. Serve a quem precisa que o "banco" mude entre duas
+  // leituras (por exemplo, uma corrida entre dois cliques).
+  sequencias: new Map<string, Resposta[]>()
 };
 
 /** O que o teste inspeciona e combina. */
@@ -32,9 +36,13 @@ export const falso = {
   responder(chave: string, resposta: Resposta) {
     estado.respostas.set(chave, resposta);
   },
+  responderEmSequencia(chave: string, respostas: Resposta[]) {
+    estado.sequencias.set(chave, [...respostas]);
+  },
   zerar() {
     estado.chamadas = [];
     estado.respostas.clear();
+    estado.sequencias.clear();
   }
 };
 
@@ -51,8 +59,12 @@ function construtor(tabela: string) {
     }
   };
 
-  const resposta = (): Resposta =>
-    estado.respostas.get(`${tabela}:${chamada.op}`) ?? { data: chamada.op === "select" ? [] : null, error: null };
+  const resposta = (): Resposta => {
+    const chave = `${tabela}:${chamada.op}`;
+    const fila = estado.sequencias.get(chave);
+    if (fila && fila.length > 0) return fila.length > 1 ? (fila.shift() as Resposta) : fila[0];
+    return estado.respostas.get(chave) ?? { data: chamada.op === "select" ? [] : null, error: null };
+  };
 
   const b: Record<string, unknown> = {
     select() {

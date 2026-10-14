@@ -109,8 +109,12 @@ console.log("== 1. caminho feliz ==");
   confere("autoria nos DOIS campos", p.aprovado_por === "Marielle Fonseca" && p.confirmado_por === "Marielle Fonseca", p);
   confere("data_confirmacao e um instante valido", !Number.isNaN(Date.parse(String(p.data_confirmacao))), p.data_confirmacao);
   confere("nao escreve nada alem destes campos", Object.keys(p).sort().join(",") === "aprovado_por,confirmado,confirmado_por,data_confirmacao,status", Object.keys(p));
-  const filtros = (r.updates[0]?.filtros ?? []).map((f) => f[0]);
-  confere("so grava se a linha ainda e a lida (eq id, eq status, or confirmado)", filtros.includes("eq") && filtros.includes("or"), r.updates[0]?.filtros);
+  const filtros = (r.updates[0]?.filtros ?? []) as [string, unknown[]][];
+  const eqs = filtros.filter((f) => f[0] === "eq").map((f) => `${f[1][0]}=${JSON.stringify(f[1][1])}`);
+  confere("so grava se a linha ainda e a lida: eq id, eq status (o lido) e eq confirmado=false",
+    eqs.includes(`id=${JSON.stringify(COBRANCA.id)}`) && eqs.includes(`status=${JSON.stringify("A_VENCER")}`) && eqs.includes("confirmado=false"), eqs);
+  confere("e SEM or/and: o PostgREST repete esses filtros no SELECT externo e quebra com 42703",
+    filtros.every((f) => f[0] !== "or" && f[0] !== "and"), filtros.map((f) => f[0]));
   confere("nenhuma outra tabela e gravada", r.gravacoes.every((g) => g.tabela === "pagamentos_v2"), r.gravacoes.map((g) => g.tabela));
 }
 {
@@ -194,6 +198,49 @@ console.log("== 3. idempotencia ==");
   confere("e nenhum abatimento, status ou prateleira e gravado depois", gravou.every((g) => g.tabela === "pagamentos_v2" && g.op === "update") && gravou.length === 1, gravou.map((g) => `${g.tabela}:${g.op}`));
 }
 
+// ------------------------------------------------- 3b. O MESMO CLIQUE DUAS VEZES
+console.log("== 3b. o mesmo clique duas vezes: grava uma vez so ==");
+async function chamarJa(cobrancaId: string) {
+  const requisicao = new Request("http://localhost/api/cobrancas/confirmar", {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: "Bearer token-de-teste" },
+    body: JSON.stringify({ idCobranca: cobrancaId, confirmadoPor: "Marielle Fonseca", acao: COMBINADA })
+  });
+  const resposta = await POST(requisicao as never);
+  return { status: resposta.status, corpo: (await resposta.json()) as Record<string, any> };
+}
+const confirmadaDepois = { ...COBRANCA, status: "A_VENCER", confirmado: true, aprovado_por: "Marielle Fonseca", confirmado_por: "Marielle Fonseca" };
+{
+  // Dois cliques em sequencia: o primeiro grava; no segundo o banco ja mostra a cobranca confirmada.
+  prepararBanco({ ...COBRANCA });
+  const primeiro = await chamarJa(COBRANCA.id);
+  const gravouNoPrimeiro = falso.chamadas.filter((c) => c.tabela === "pagamentos_v2" && c.op === "update").length;
+  prepararBanco(confirmadaDepois);
+  const segundo = await chamarJa(COBRANCA.id);
+  const gravouNoSegundo = falso.chamadas.filter((c) => c.op !== "select").length;
+  confere("1o clique: sucesso e UM UPDATE", primeiro.status === 200 && primeiro.corpo.jaConfirmada !== true && gravouNoPrimeiro === 1, { primeiro, gravouNoPrimeiro });
+  confere("2o clique: sucesso, tratado como ja confirmado", segundo.status === 200 && segundo.corpo.jaConfirmada === true, segundo);
+  confere("2o clique: NENHUMA gravacao (nem UPDATE, nem abatimento, nem status, nem chat)", gravouNoSegundo === 0, gravouNoSegundo);
+  confere("somados, os dois cliques gravam UMA vez so", gravouNoPrimeiro + gravouNoSegundo === 1, gravouNoPrimeiro + gravouNoSegundo);
+}
+{
+  // Corrida: o 2o clique leu a linha ANTES de o 1o gravar; o UPDATE condicional nao pega a linha
+  // (confirmado ja e true) e a releitura mostra a cobranca confirmada.
+  prepararBanco({ ...COBRANCA });
+  const lista = Object.assign([{ ...COBRANCA }], { ...COBRANCA });
+  falso.responderEmSequencia("pagamentos_v2:select", [
+    { data: lista, error: null },                                  // leitura inicial (velha)
+    { data: lista, error: null },                                  // trava de quitacao
+    { data: { status: "A_VENCER", confirmado: true }, error: null } // releitura depois do UPDATE vazio
+  ]);
+  falso.responder("pagamentos_v2:update", { data: [], error: null });
+  const r = await chamarJa(COBRANCA.id);
+  const gravacoes = falso.chamadas.filter((c) => c.op !== "select");
+  confere("corrida: responde ja confirmada", r.status === 200 && r.corpo.success === true && r.corpo.jaConfirmada === true, r);
+  confere("corrida: a unica gravacao e a tentativa condicional que nao pegou a linha (sem efeitos depois)",
+    gravacoes.length === 1 && gravacoes[0].tabela === "pagamentos_v2" && gravacoes[0].op === "update", gravacoes.map((g) => `${g.tabela}:${g.op}`));
+}
+
 // ------------------------------------------------------- 4. SERVIDOR DECIDE
 console.log("== 4. o servidor decide a permissao ==");
 {
@@ -228,6 +275,27 @@ console.log("== 5. quando nao se aplica ==");
 {
   const r = await chamar(COMBINADA, { ...COBRANCA, status: "CANCELADO", motivo_cancela: "duplicado" });
   confere("cancelada: 409 da trava de sempre, nada gravado", r.status === 409 && r.gravacoes.length === 0, r);
+}
+
+// -------------------------------- 6. AS DUAS ACOES DE SEMPRE SEGUEM IGUAIS
+console.log("== 6. Confirmar Autorizacao e Confirmar Conferencia: iguais a antes ==");
+{
+  const r = await chamar("autorizar_faturamento", { ...COBRANCA, status: "A_RECEBER" });
+  const p = (r.updates[0]?.payload ?? {}) as Record<string, unknown>;
+  const filtros = (r.updates[0]?.filtros ?? []) as [string, unknown[]][];
+  confere("Confirmar Autorizacao: 200 e UM UPDATE", r.status === 200 && r.corpo.success === true && r.updates.length === 1, r);
+  confere("Confirmar Autorizacao: grava so status A_VENCER e aprovado_por (nao confirma)",
+    JSON.stringify(Object.keys(p).sort()) === JSON.stringify(["aprovado_por", "status"]) && p.status === "A_VENCER" && p.aprovado_por === "Marielle Fonseca", p);
+  confere("Confirmar Autorizacao: filtra so por id, sem filtro novo", JSON.stringify(filtros.map((f) => [f[0], f[1][0]])) === JSON.stringify([["eq", "id"]]), filtros);
+}
+{
+  const r = await chamar(undefined, { ...COBRANCA, aprovado_por: "Marielle Fonseca", confirmado_por: "Marielle Fonseca" });
+  const p = (r.updates[0]?.payload ?? {}) as Record<string, unknown>;
+  const filtros = (r.updates[0]?.filtros ?? []) as [string, unknown[]][];
+  confere("Confirmar Conferencia: 200 e UM UPDATE", r.status === 200 && r.corpo.success === true && r.updates.length === 1, r);
+  confere("Confirmar Conferencia: grava so confirmado, confirmado_por e data_confirmacao (E-FATURADO fica A_VENCER)",
+    JSON.stringify(Object.keys(p).sort()) === JSON.stringify(["confirmado", "confirmado_por", "data_confirmacao"]) && p.confirmado === true, p);
+  confere("Confirmar Conferencia: filtra so por id, sem filtro novo", JSON.stringify(filtros.map((f) => [f[0], f[1][0]])) === JSON.stringify([["eq", "id"]]), filtros);
 }
 
 console.log(falhas === 0 ? "\nTODOS OS TESTES PASSARAM" : `\n${falhas} FALHA(S)`);

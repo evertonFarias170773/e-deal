@@ -238,12 +238,23 @@ export async function POST(request: NextRequest) {
       // confirmada. É o que faz um segundo clique (ou um clique concorrente)
       // não gerar segunda confirmação, e não pisar numa troca de status feita
       // no meio, como um cancelamento.
+      //
+      // `.eq("confirmado", false)` e NÃO `.or("confirmado.is.null,...")`. Em PATCH
+      // que devolve linhas, o PostgREST repete o filtro `or`/`and` no SELECT
+      // EXTERNO, que lê de uma CTE aliasada com o nome da tabela e só tem as
+      // colunas do `.select(...)`. Com `.select("id")` a CTE não tem `confirmado`
+      // e o banco responde 42703 ("column pagamentos_v2.confirmado does not
+      // exist") — foi o erro do 23681 (14/10/2026). Filtro `eq` não é repetido.
+      // `confirmado` nunca é nulo na prática (default false; 0 nulos em 10.170
+      // linhas); se um dia vier nulo, a linha não é pega e cai em COBRANCA_MUDOU,
+      // sem gravar nada. O retorno é só `id`, o bastante para saber se a linha
+      // foi pega.
       const { data: gravadas, error: erroGravacao } = await supabase
         .from("pagamentos_v2")
         .update(payloadUpdate)
         .eq("id", idCobranca)
         .eq("status", cobranca.status)
-        .or("confirmado.is.null,confirmado.eq.false")
+        .eq("confirmado", false)
         .select("id");
 
       if (erroGravacao) {
