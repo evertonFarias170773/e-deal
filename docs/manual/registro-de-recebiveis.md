@@ -76,7 +76,7 @@ Os cartões do topo somam a lista inteira, sem olhar a busca e o filtro de empre
 1. Localize a cobrança e clique em **Gerar títulos**. Abre a janela **Preparar Cobrança**.
 2. Confira **Cliente**, **Documento** e **Valor Total**. Em **Empresa recebedora**, mantenha ou troque a empresa. Trocar muda o banco que emite o boleto e o faturamento da cobrança.
 3. Em **Condição de Pagamento**, escolha uma condição. Ela preenche **Qtd de parcelas futuras**, **Dias para 1ª parcela** e **Intervalo entre parcelas (Dias)**, que você pode ajustar. O parcelamento combinado na venda já vem preenchido.
-4. Se quiser, informe o **Número da NF (opcional)**. Quando a proposta tem nota fiscal autorizada, o número já vem preenchido.
+4. Se quiser, informe o **Número da NF (opcional)**. Quando a proposta tem nota fiscal autorizada, o número já vem preenchido. Sem NF-e autorizada, vale a NFS-e autorizada de produção do pedido: o número dela vem preenchido e, em parcela única, a referência do título é a da NFS-e (ex.: NFS-23733-001).
 5. Clique em **Gerar Parcelas**.
 6. Em **Parcelas do Contas a Receber**, revise cada parcela: **Valor**, **Vencimento**, **Descrição**, **Multa (%)** e **Juros/Dia (%)**.
 7. Confira o quadro **Revisão do lançamento**. A linha **Soma das parcelas** precisa mostrar "Confere com o total".
