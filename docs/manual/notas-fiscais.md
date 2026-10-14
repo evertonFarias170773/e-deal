@@ -310,7 +310,7 @@ Isso vale para a NF-e. **A NFS-e (nota de serviço) não se cancela pelo Vibe**:
 
 ### Lançar a nota no contas a receber e preparar a cobrança
 
-Vale para nota autorizada de pedido com cobrança do tipo **Faturado**. A coluna **Contas a Receber** da lista diz em que pé está: **Não lançado no contas a receber**, **Parcialmente lançado**, **Divergência**, **A receber criado — boleto não registrado**, **Boleto registrado**, **Depósito em conta** ou **Sem vencimentos fiscais**.
+Vale para nota autorizada de pedido com cobrança do tipo **Faturado**. A coluna **Contas a Receber** da lista diz em que pé está: **Não lançado no contas a receber**, **Parcialmente lançado**, **Divergência**, **A receber criado — boleto não registrado**, **Boleto registrado**, **Depósito em conta** ou **Sem vencimentos fiscais**. O **Histórico NFS-e** tem a mesma coluna, para NFS-e autorizada de produção com cobrança faturada: **Não lançado no contas a receber** enquanto não há título do pedido e, com título, o mesmo selo da NF-e calculado sobre os títulos do pedido.
 
 1. No **Histórico**, abra o menu da nota e clique em **Lançar no Contas a Receber**.
 2. Abre a janela **Preparar Cobrança**, com o aviso **Parcelas definidas pela NF-e nº ...**. Vencimento e valor vêm da nota e não podem ser alterados aqui.

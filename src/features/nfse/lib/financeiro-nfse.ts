@@ -78,3 +78,18 @@ export function acoesFinanceirasDaNfse(entrada: {
 
   return { lancar: faltaLancar, revisar: temTitulo, verContasAReceber: temTitulo };
 }
+
+/**
+ * O selo "Contas a Receber" da linha da NFS-e (14/10/2026), pelas mesmas
+ * condicoes do menu:
+ *   - `pelos_titulos`: ja ha titulo ativo — o selo e o da NF-e, calculado sobre
+ *     os titulos do pedido (registrado, a receber criado, parcial...);
+ *   - `nao_lancado`: faturado em aberto e nenhum titulo — "Nao lancado no
+ *     contas a receber";
+ *   - `null`: nada a mostrar (nao faturado, homologacao, nota nao autorizada).
+ */
+export function seloFinanceiroDaNfse(acoes: AcoesFinanceirasDaNfse): "pelos_titulos" | "nao_lancado" | null {
+  if (acoes.revisar) return "pelos_titulos";
+  if (acoes.lancar) return "nao_lancado";
+  return null;
+}

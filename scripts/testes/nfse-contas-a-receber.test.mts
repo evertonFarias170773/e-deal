@@ -11,7 +11,7 @@
  *      por títulos ativos; "Revisar" e "Ver contas a receber" com título ativo; nada
  *      em homologação nem em nota não autorizada.
  */
-import { acoesFinanceirasDaNfse, escolherNfseAutorizadaDoPedido } from "../../src/features/nfse/lib/financeiro-nfse.ts";
+import { acoesFinanceirasDaNfse, escolherNfseAutorizadaDoPedido, seloFinanceiroDaNfse } from "../../src/features/nfse/lib/financeiro-nfse.ts";
 import { referenciaDoBoleto, referenciasDoLancamento } from "../../src/features/cobrancas/lib/referencia-do-boleto.ts";
 
 let falhas = 0;
@@ -57,6 +57,18 @@ checar("faturado ainda sem leitura: nao oferece", acoesFinanceirasDaNfse({ ...ba
   { lancar: false, revisar: false, verContasAReceber: false });
 checar("homologacao: nada", acoesFinanceirasDaNfse({ ...base, ambiente: "homologacao" }), { lancar: false, revisar: false, verContasAReceber: false });
 checar("nao autorizada: nada", acoesFinanceirasDaNfse({ ...base, status: "PROCESSANDO" }), { lancar: false, revisar: false, verContasAReceber: false });
+
+// ── 4. Selo "Contas a Receber" da linha ─────────────────────────────────────
+checar("faturado em aberto sem titulo: Nao lancado", seloFinanceiroDaNfse(acoesFinanceirasDaNfse(base)), "nao_lancado");
+checar("com titulo ativo: o selo da NF-e pelos titulos",
+  seloFinanceiroDaNfse(acoesFinanceirasDaNfse({ ...base, titulosAtivos: { qtd: 1, soma: 90 } })), "pelos_titulos");
+checar("lancado em parte: pelos titulos (a NF-e mostra Parcialmente lancado)",
+  seloFinanceiroDaNfse(acoesFinanceirasDaNfse({ ...base, faturadoEmAberto: { qtd: 2, soma: 180 }, titulosAtivos: { qtd: 1, soma: 90 } })), "pelos_titulos");
+checar("sem faturado, homologacao ou nao autorizada: sem selo",
+  [seloFinanceiroDaNfse(acoesFinanceirasDaNfse({ ...base, faturadoEmAberto: { qtd: 0, soma: 0 } })),
+   seloFinanceiroDaNfse(acoesFinanceirasDaNfse({ ...base, ambiente: "homologacao" })),
+   seloFinanceiroDaNfse(acoesFinanceirasDaNfse({ ...base, status: "PENDENTE" }))],
+  [null, null, null]);
 
 console.log(falhas === 0 ? "\nTUDO OK" : `\n${falhas} FALHA(S)`);
 process.exitCode = falhas === 0 ? 0 : 1;

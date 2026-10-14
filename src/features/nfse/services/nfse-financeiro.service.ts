@@ -4,13 +4,19 @@ import { mapSupabasePagamentoV2RowToCobranca } from "@/features/cobrancas/mapper
 import type { SupabasePagamentoV2Row } from "@/features/cobrancas/types.supabase";
 import type { Cobranca } from "@/features/cobrancas/types";
 import { ehCobrancaFaturadaEmAberto } from "@/features/nfe/services/nfe.service";
+import type { SupabaseBoletoRow } from "@/features/contas-a-receber/types.supabase";
 
 /**
  * Leituras do financeiro para o Histórico NFS-e (14/10/2026). Só leitura.
  * Regra do que o menu oferece em lib/financeiro-nfse.
  */
 
-export type TitulosAtivos = { qtd: number; soma: number };
+/**
+ * `boletos` leva as linhas ativas com o que o selo "Contas a Receber" da NF-e
+ * le (valor, deposito em conta e marcas de registro): a NFS-e mostra o mesmo
+ * indicativo, pela mesma funcao, sobre os titulos do pedido.
+ */
+export type TitulosAtivos = { qtd: number; soma: number; boletos: SupabaseBoletoRow[] };
 
 /**
  * Títulos ATIVOS de contas a receber por pedido (`boletos` fora de
@@ -26,9 +32,9 @@ export async function getTitulosAtivosPorIdInt(idInts: number[]): Promise<Record
   for (let i = 0; i < unicos.length; i += LOTE) {
     const { data, error } = await client
       .from("boletos")
-      .select("id_int, valor, status")
+      .select("id, id_int, valor, status, deposito_conta, id_boleto_c6, nosso_numero, linha_digitavel")
       .in("id_int", unicos.slice(i, i + LOTE))
-      .returns<Array<{ id_int: number | null; valor: number | null; status: string | null }>>();
+      .returns<SupabaseBoletoRow[]>();
     if (error) {
       console.error("[NfseFinanceiro] getTitulosAtivosPorIdInt failed:", error);
       return mapa;
@@ -37,9 +43,10 @@ export async function getTitulosAtivosPorIdInt(idInts: number[]): Promise<Record
       const idInt = Number(linha.id_int);
       if (!Number.isFinite(idInt) || idInt <= 0) continue;
       if (String(linha.status ?? "").trim().toUpperCase() === "CANCELADO") continue;
-      const atual = mapa[idInt] || { qtd: 0, soma: 0 };
+      const atual = mapa[idInt] || { qtd: 0, soma: 0, boletos: [] };
       atual.qtd += 1;
       atual.soma = Math.round((atual.soma + (Number(linha.valor) || 0)) * 100) / 100;
+      atual.boletos.push(linha);
       mapa[idInt] = atual;
     }
   }

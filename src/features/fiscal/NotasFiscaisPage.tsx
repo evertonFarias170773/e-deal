@@ -24,7 +24,7 @@ import { useNfeReadOnlyData } from "@/features/nfe/hooks/useNfeReadOnlyData";
 import { useNfseReadOnlyData } from "@/features/nfse/hooks/useNfseReadOnlyData";
 import type { NfeReadModel } from "@/features/nfe/types";
 import type { NfseReadModel } from "@/features/nfse/types";
-import { acoesFinanceirasDaNfse } from "@/features/nfse/lib/financeiro-nfse";
+import { acoesFinanceirasDaNfse, seloFinanceiroDaNfse } from "@/features/nfse/lib/financeiro-nfse";
 import { getCobrancaFaturadaParaLancar, getTitulosAtivosPorIdInt, type TitulosAtivos } from "@/features/nfse/services/nfse-financeiro.service";
 import type { SupabaseBoletoRow } from "@/features/contas-a-receber/types.supabase";
 import { useRouter } from "next/navigation";
@@ -489,7 +489,7 @@ export function NotasFiscaisPage() {
       setTitulosNfseMap((prev) => {
         const proximo = { ...prev };
         idInts.forEach((id) => {
-          proximo[id] = mapa[id] ?? { qtd: 0, soma: 0 };
+          proximo[id] = mapa[id] ?? { qtd: 0, soma: 0, boletos: [] };
         });
         return proximo;
       });
@@ -508,7 +508,7 @@ export function NotasFiscaisPage() {
         setTitulosNfseMap((prev) => {
           const proximo = { ...prev };
           idInts.forEach((id) => {
-            proximo[id] = mapa[id] ?? { qtd: 0, soma: 0 };
+            proximo[id] = mapa[id] ?? { qtd: 0, soma: 0, boletos: [] };
           });
           return proximo;
         });
@@ -1166,6 +1166,34 @@ export function NotasFiscaisPage() {
       label: "A receber criado — boleto não registrado",
       tone: "warning" as const
     };
+  }
+
+  /**
+   * Selo "Contas a Receber" da NFS-e (14/10/2026): o MESMO selo e a MESMA
+   * funcao da NF-e. Sem titulo e com faturado em aberto, "Nao lancado no contas
+   * a receber"; com titulo ativo, o indicativo da NF-e sobre os titulos do
+   * pedido. A NFS-e nao tem parcelas fiscais: a contagem passa como 1 para a
+   * funcao seguir para os titulos. Regra em lib/financeiro-nfse.
+   */
+  function seloFinanceiroNfse(item: NfseReadModel) {
+    const idInt = Number(item.id_int);
+    const titulos = titulosNfseMap[idInt];
+    const situacao = seloFinanceiroDaNfse(
+      acoesFinanceirasDaNfse({
+        status: item.status,
+        ambiente: item.ambiente,
+        faturadoEmAberto: faturadoEmAbertoMap[idInt],
+        titulosAtivos: titulos
+      })
+    );
+    if (!situacao) return null;
+    const finStatus = getFinanceiroStatus(
+      item.ref,
+      Number(item.valor_servicos) || 0,
+      1,
+      situacao === "pelos_titulos" ? titulos?.boletos : []
+    );
+    return <StatusBadge status={finStatus.label} tone={finStatus.tone} />;
   }
 
   function getNfeActions(item: NfeReadModel) {
@@ -3201,6 +3229,11 @@ export function NotasFiscaisPage() {
                 align: "right"
               },
               {
+                header: "Contas a Receber",
+                cell: (item) => seloFinanceiroNfse(item) ?? <span className="text-slate-400 font-medium">-</span>,
+                align: "center"
+              },
+              {
                 header: "Data / Hora",
                 cell: (item) => (
                   <div className="flex flex-col items-center">
@@ -3232,6 +3265,7 @@ export function NotasFiscaisPage() {
                   <div className="flex flex-col items-end gap-1.5">
                     {renderStatusNfse(item.status)}
                     {renderSeloDoAmbienteNfse(item.ambiente)}
+                    {seloFinanceiroNfse(item)}
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-2 text-sm text-slate-600">
