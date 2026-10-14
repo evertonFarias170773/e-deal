@@ -1268,7 +1268,7 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
         name: 'analise_credito_cliente',
         description:
           'ANÁLISE DE CRÉDITO oficial do cliente ativo (RPC do ERP): limite, utilizado, saldo em carteira, ' +
-          'disponível, status/risco de crédito, histórico de atrasos (média/maior/quantidade), pedidos aprovados ' +
+          'disponível, status/risco de crédito, quantidade de títulos vencidos em aberto, média e maior atraso do histórico de pagamentos, pedidos aprovados ' +
           'e ticket médio. Use para "posso vender a prazo?", "como está o crédito", "análise de crédito". ' +
           'Exige permissão do módulo de crédito — se negada, explique com naturalidade.',
         parameters: { type: 'object', properties: { ...ID_CLIENTE_PROP }, additionalProperties: false },
