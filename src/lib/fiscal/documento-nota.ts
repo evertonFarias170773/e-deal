@@ -95,7 +95,10 @@ export function abrirDocumentoDaNota(ref: string, arquivo: ArquivoDaNota): void 
   }
 
   void pedirLinkNovo(ref, arquivo, "abrir")
-    .then((url) => {
+    .then((recebida) => {
+      // Desde 14/10/2026 o link de abrir e o GET da propria rota (mesma origem,
+      // com nome de arquivo): relativo, entao resolvido contra esta pagina.
+      const url = new URL(recebida, window.location.origin).href;
       if (janela) janela.location.href = url;
       else window.open(url, "_blank", "noopener,noreferrer");
     })

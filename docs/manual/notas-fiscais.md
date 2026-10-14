@@ -79,7 +79,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Atualizar status** | Menu da nota Rejeitada ou com erro de envio | Consulta a situação da nota. Não emite. |
 | **Gerar outra nota de venda (faturamento parcial)** | Menu da nota de venda Autorizada em produção | Pede confirmação e abre o rascunho de uma segunda nota de venda do pedido. |
 | **Gerar nota de remessa** | Menu da nota de venda Autorizada em produção | Pede confirmação e abre o rascunho da nota de remessa do pedido. |
-| **Abrir DANFE (PDF)** | Menu da nota Autorizada | Abre a DANFE desta nota em outra aba. |
+| **Abrir DANFE (PDF)** | Menu da nota Autorizada | Abre a DANFE desta nota em outra aba. O botão de baixar do visualizador salva com o nome "NF-e-N-Pedido-P.pdf"; o link da aba vale 60 minutos. |
 | **Copiar Link (PDF)** | Menu da nota Autorizada; menu da NFS-e | Copia um link do PDF que vale por 7 dias. |
 | **Baixar XML** | Menu da nota Autorizada; janela de emissão | Baixa o XML da nota. |
 | **Copiar Link (XML)** | Menu da nota Autorizada; menu da NFS-e | Copia um link do XML que vale por 7 dias. |
@@ -99,7 +99,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | Selo **HOMOLOGAÇÃO** / **PRODUÇÃO** | Histórico NFS-e, coluna **Ambiente** | Diz em que ambiente a nota de serviço foi emitida. Homologação é nota de teste, sem valor fiscal. |
 | **Buscar por Nº NFS-e, Ref, ID ou Nome...** | Histórico NFS-e, filtros | Busca nas notas de serviço. |
 | **Cancelar NFS-e** | Menu da NFS-e Autorizada | Aparece apagado e não faz nada. Parando o mouse sobre ele, a dica explica: o cancelamento de NFS-e ainda não está disponível no Vibe. |
-| **Abrir PDF** | Menu da NFS-e | Abre o PDF da nota de serviço. |
+| **Abrir PDF** | Menu da NFS-e | Abre o PDF da nota de serviço em outra aba. O botão de baixar do visualizador salva com o nome "NFS-e-N-Pedido-P.pdf"; o link da aba vale 60 minutos. |
 | **Abrir para corrigir** | Janela **A nota não pode ser aberta ainda**, em cada pendência | Leva à tela onde o dado se corrige (proposta, cadastro ou produtos). |
 | **Reconferir** / **Fechar** | Janela **A nota não pode ser aberta ainda**, rodapé | Repete a conferência do pedido, ou fecha a janela. |
 | **Emitir NF-e** / **Cancelar** | Janela **Emitir NF-e** | Transmite a nota, ou fecha sem transmitir. Durante a conferência o botão mostra "Conferindo...". |
