@@ -10,8 +10,9 @@
  *   3. "Sem previsão" quando a produção não definiu.
  *   4. Os estados do selo: no prazo, hoje e atrasado, com a contagem de dias.
  *   5. Falha ou carga da leitura: a linha 2 não aparece.
+ *   6. A ordem da Fila pela previsão: atrasados e hoje, futuros, sem previsão no fim.
  */
-import { dataHoraDeBrasilia, diasEntre, hojeEmBrasilia, linhaDaPrevisao, previsaoPorPedido } from "../../src/features/fiscal/lib/fila-producao-desde.ts";
+import { dataHoraDeBrasilia, diasEntre, hojeEmBrasilia, linhaDaPrevisao, ordenarPelaPrevisao, previsaoPorPedido } from "../../src/features/fiscal/lib/fila-producao-desde.ts";
 
 let falhas = 0;
 function checar(nome: string, obtido: unknown, esperado: unknown) {
@@ -81,6 +82,32 @@ checar(
 // 5. Leitura carregando ou com falha
 checar("leitura nao pronta: a linha 2 nao aparece, com ou sem dado", [linhaDaPrevisao(23248, { porPedido: mapa, pronta: false }, HOJE), linhaDaPrevisao(23309, { porPedido: new Map(), pronta: false }, HOJE)], [{ tipo: "OCULTA" }, { tipo: "OCULTA" }]);
 checar("leitura pronta e vazia: todos Sem previsao", linhaDaPrevisao(23248, { porPedido: new Map(), pronta: true }, HOJE).tipo, "SEM_PREVISAO");
+
+// 6. A ORDEM DA FILA pela previsao (14/10/2026): atrasados e hoje (mais atrasado no topo), futuros (mais proximo primeiro), sem previsao no fim
+{
+  const H = "2026-10-14";
+  const prazos = new Map<number, string>([
+    [1, "2026-10-20"], // futuro, mais distante
+    [2, "2026-10-10"], // atrasado 4 dias
+    [3, "2026-10-14"], // hoje
+    [4, "2026-10-01"], // atrasado 13 dias: o mais atrasado
+    [5, "2026-10-15"], // futuro, amanha
+    [7, "2026-10-10"] // atrasado 4 dias, empata com o 2
+  ]);
+  const leitura = { porPedido: prazos, pronta: true };
+  // A ordem que vem da consulta e por id_int decrescente; 6 e 8 nao tem previsao.
+  const fila = [8, 7, 6, 5, 4, 3, 2, 1].map((id) => ({ id_int: id }));
+  const ids = (l: { id_int?: number | null }[]) => l.map((i) => i.id_int);
+  checar("ordem: atrasados (mais atrasado no topo), hoje, futuros (mais proximo primeiro), sem previsao no fim", ids(ordenarPelaPrevisao(fila, leitura, H)), [4, 7, 2, 3, 5, 1, 8, 6]);
+  checar("ordem: empate de data e os sem previsao mantem a ordem que veio", ids(ordenarPelaPrevisao(fila, leitura, H)).filter((id) => [7, 2, 8, 6].includes(Number(id))), [7, 2, 8, 6]);
+  checar("ordem: o do dia vem depois dos atrasados e antes do de amanha", ids(ordenarPelaPrevisao([{ id_int: 5 }, { id_int: 3 }, { id_int: 2 }], leitura, H)), [2, 3, 5]);
+  checar("ordem: no dia seguinte a ordem segue certa sem gravar nada", ids(ordenarPelaPrevisao([{ id_int: 5 }, { id_int: 1 }, { id_int: 3 }], leitura, "2026-10-16")), [3, 5, 1]);
+  checar("ordem: pedido que ganha data sobe sozinho (mesma lista, leitura nova)", ids(ordenarPelaPrevisao([{ id_int: 5 }, { id_int: 8 }], { porPedido: new Map([...prazos, [8, "2026-10-12"]]), pronta: true }, H)), [8, 5]);
+  checar("ordem: leitura nao pronta mantem a ordem que veio", ids(ordenarPelaPrevisao(fila, { porPedido: prazos, pronta: false }, H)), [8, 7, 6, 5, 4, 3, 2, 1]);
+  checar("ordem: leitura pronta e vazia mantem a ordem que veio", ids(ordenarPelaPrevisao(fila, { porPedido: new Map(), pronta: true }, H)), [8, 7, 6, 5, 4, 3, 2, 1]);
+  checar("ordem: nao altera a lista recebida nem perde item", [ids(fila), ordenarPelaPrevisao(fila, leitura, H).length], [[8, 7, 6, 5, 4, 3, 2, 1], 8]);
+  checar("ordem: sem saber que dia e hoje, ainda ordena pela data", ids(ordenarPelaPrevisao([{ id_int: 1 }, { id_int: 6 }, { id_int: 4 }], leitura, "")), [4, 1, 6]);
+}
 
 console.log(falhas === 0 ? "\nTODOS OS TESTES PASSARAM" : `\n${falhas} TESTE(S) FALHARAM`);
 process.exitCode = falhas === 0 ? 0 : 1;

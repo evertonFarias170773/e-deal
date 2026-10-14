@@ -122,3 +122,36 @@ export function linhaDaPrevisao(idInt: number | null | undefined, leitura: Leitu
   if (atraso === 0) return { tipo: "PREVISAO", estado: "HOJE", texto: `Previsão: hoje, ${data}`, textoCurto: "Previsão: hoje", diasDeAtraso: 0 };
   return { tipo: "PREVISAO", estado: "NO_PRAZO", texto: `Previsão: ${data}`, textoCurto: `Previsão: ${data}`, diasDeAtraso: 0 };
 }
+
+/**
+ * A ORDEM DA FILA PELA PREVISÃO DE ENTREGA (14/10/2026, pedido da Edina).
+ *
+ *   1. atrasados e os do dia (previsão até hoje, em Brasília), o mais atrasado no topo;
+ *   2. depois os de data futura, do mais próximo ao mais distante;
+ *   3. no fim, os pedidos sem previsão ainda (ex.: REVISAO ATENDENTE, sem boletim).
+ *
+ * A data é a de AGORA, lida de `propostas_os_setores.prazo` (a mesma do selo da
+ * coluna), e nada é gravado: o pedido sobe sozinho quando a produção define a data.
+ * Empate (mesma data, ou os dois sem previsão) mantém a ordem que veio — a sort é
+ * estável. Enquanto a leitura das previsões não chegou, a ordem que veio é mantida,
+ * para a lista não pular de "todos sem previsão" para a ordem certa.
+ */
+export function ordenarPelaPrevisao<T extends { id_int?: number | null }>(
+  itens: readonly T[],
+  leitura: LeituraDasPrevisoes,
+  hoje: string
+): T[] {
+  if (!leitura.pronta) return [...itens];
+  const chave = (item: T): { grupo: number; dia: string } => {
+    const prazo = leitura.porPedido.get(Number(item.id_int));
+    const achado = prazo ? DATA_ISO.exec(prazo) : null;
+    if (!achado) return { grupo: 2, dia: "" };
+    const dia = `${achado[1]}-${achado[2]}-${achado[3]}`;
+    // Sem saber que dia é hoje, toda data conta como futura; a ordem pela data continua certa.
+    return { grupo: hoje && dia <= hoje ? 0 : 1, dia };
+  };
+  return itens
+    .map((item, posicao) => ({ item, posicao, ...chave(item) }))
+    .sort((a, b) => a.grupo - b.grupo || (a.dia < b.dia ? -1 : a.dia > b.dia ? 1 : 0) || a.posicao - b.posicao)
+    .map((x) => x.item);
+}

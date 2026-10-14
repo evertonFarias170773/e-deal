@@ -62,7 +62,7 @@ import { SeloDaPrevisao } from "@/features/fiscal/components/SeloDaPrevisao";
 import { useAvisoDeRemessa } from "@/features/fiscal/hooks/useAvisoDeRemessa";
 import { SeloDeRemessa } from "@/features/fiscal/components/AvisoDeRemessa";
 import { avisoDeRemessaDaLinha } from "@/features/fiscal/lib/aviso-remessa";
-import { dataHoraDeBrasilia, hojeEmBrasilia, linhaDaPrevisao } from "@/features/fiscal/lib/fila-producao-desde";
+import { dataHoraDeBrasilia, hojeEmBrasilia, linhaDaPrevisao, ordenarPelaPrevisao } from "@/features/fiscal/lib/fila-producao-desde";
 import { decidirNfseDoPedido, empresaLiberadaParaNfse, rotuloDoBotaoNfse } from "@/features/nfse/lib/regras-emissao";
 import { pedidoOcultoPorNfse, rotuloDosOcultosPorNfse } from "@/features/nfse/lib/fila-nfse";
 import {
@@ -2053,6 +2053,14 @@ export function NotasFiscaisPage() {
     filaStatusVigente
   );
 
+  /**
+   * A ORDEM da lista (14/10/2026): pela previsão de entrega da produção — atrasados e
+   * os do dia no topo (o mais atrasado primeiro), depois as datas futuras, e os sem
+   * previsão no fim. Calculada na leitura, nada gravado. Só a ordem: quem entra na
+   * fila, as contagens e as ações não mudam. Regra em `ordenarPelaPrevisao`.
+   */
+  const filaOrdenadaPelaPrevisao = ordenarPelaPrevisao(filteredFilaNfe, leituraDasPrevisoes, hojeDeBrasilia);
+
   /** Quantos pedidos os filtros atuais deixariam na tela, mas a NFS-e emitida escondeu. */
   const ocultosPorNfse =
     recortarPorStatus(faturaveisList.filter(filaPassaSemContarNfse), filaStatusVigente).length - filteredFilaNfe.length;
@@ -2540,7 +2548,7 @@ export function NotasFiscaisPage() {
           </div>
 
           <ResponsiveList<FaturavelOrigem>
-            items={filteredFilaNfe}
+            items={filaOrdenadaPelaPrevisao}
             getKey={(item) => `fila-nfe-${item.id}`}
             isLoading={isLoading}
             emptyTitle="Nenhuma proposta disponível para faturamento"
