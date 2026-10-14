@@ -11,6 +11,7 @@ import { useAuth } from "@/features/auth/AuthProvider";
 import type { Cobranca, ModeloCobranca } from "@/features/cobrancas/types";
 import { listarModelosCobranca, parcelasDoModelo } from "@/features/cobrancas/services/modelos-cobranca";
 import { referenciaDoBoleto, referenciaRepetida, referenciasDoLancamento } from "@/features/cobrancas/lib/referencia-do-boleto";
+import { COLUNAS_NFSE_DO_PEDIDO, escolherNfseAutorizadaDoPedido, type NfseCandidata } from "@/features/nfse/lib/financeiro-nfse";
 import {
   escolherNotaAutorizadaDoPedido,
   COLUNAS_NOTA_DO_PEDIDO,
@@ -157,6 +158,8 @@ export function PrepararBoletosModal({
   const [extReference, setExtReference] = useState("");
   const [numeroNf, setNumeroNf] = useState<string | null>(null);
   const [hasNfe, setHasNfe] = useState(false);
+  /** A nota achada pela cobrança é NFS-e (sem NF-e autorizada no pedido). */
+  const [notaEhNfse, setNotaEhNfse] = useState(false);
 
   // Empresa recebedora: o financeiro pode emitir por outra empresa do grupo.
   // A escolha vale para o lançamento inteiro e acompanha a cobrança, porque o
@@ -281,10 +284,32 @@ export function PrepararBoletosModal({
           (notasDoPedido ?? []) as Array<NotaCandidata & { ref: string | null }>
         );
 
+        // NFS-e FATURADA (14/10/2026, pedido 23733): sem NF-e autorizada, a
+        // NFS-e autorizada de produção do pedido faz o papel da nota — a ref
+        // dela vira a referência em parcela única e o número vai para `n_nf`.
+        // Com NF-e, a NF-e vale. Parcelado segue `P…` (lib/referencia-do-boleto).
+        let nfse: (NfseCandidata & { ref: string | null }) | null = null;
+        if (!nfe) {
+          const { data: servicosDoPedido, error: erroNfse } = await client
+            .from("notas_servico")
+            .select(COLUNAS_NFSE_DO_PEDIDO)
+            .eq("id_int", cobranca.id_int);
+          if (erroNfse) {
+            console.error("[PrepararBoletosModal] Erro ao buscar NFS-e:", erroNfse);
+          }
+          nfse = escolherNfseAutorizadaDoPedido((servicosDoPedido ?? []) as Array<NfseCandidata & { ref: string | null }>);
+        }
+
         if (nfe) {
           setExtReference(nfe.ref || "");
           setNumeroNf(nfe.numero_nf ? String(nfe.numero_nf) : null);
           setHasNfe(true);
+          setNotaEhNfse(false);
+        } else if (nfse) {
+          setExtReference(String(nfse.ref ?? ""));
+          setNumeroNf(String(nfse.numero_nfse ?? "").trim() || null);
+          setHasNfe(true);
+          setNotaEhNfse(true);
         } else {
           // Safe origin fallback (no fake NFE- simulated)
           let fallbackRef = "";
@@ -298,6 +323,7 @@ export function PrepararBoletosModal({
           setExtReference(fallbackRef);
           setNumeroNf(null);
           setHasNfe(false);
+          setNotaEhNfse(false);
         }
       } catch (err) {
         console.error("[PrepararBoletosModal] Falha ao carregar detalhes:", err);
@@ -1033,7 +1059,9 @@ export function PrepararBoletosModal({
                     />
                     <p className="text-[10px] text-slate-400 mt-1">
                       {hasNfe
-                        ? "NF-e localizada automaticamente. Você pode ajustar."
+                        ? notaEhNfse
+                          ? `NFS-e ${extReference} localizada automaticamente. Você pode ajustar.`
+                          : "NF-e localizada automaticamente. Você pode ajustar."
                         : "Sem NF vinculada. O fiscal pode complementar depois."}
                     </p>
                   </div>

@@ -24,6 +24,8 @@ import { useNfeReadOnlyData } from "@/features/nfe/hooks/useNfeReadOnlyData";
 import { useNfseReadOnlyData } from "@/features/nfse/hooks/useNfseReadOnlyData";
 import type { NfeReadModel } from "@/features/nfe/types";
 import type { NfseReadModel } from "@/features/nfse/types";
+import { acoesFinanceirasDaNfse } from "@/features/nfse/lib/financeiro-nfse";
+import { getCobrancaFaturadaParaLancar, getTitulosAtivosPorIdInt, type TitulosAtivos } from "@/features/nfse/services/nfse-financeiro.service";
 import type { SupabaseBoletoRow } from "@/features/contas-a-receber/types.supabase";
 import { useRouter } from "next/navigation";
 import { createOrReuseNfeDraft, getFaturaveisPropostas, updateNfeDraft, previewNfeRascunho, getNfeFinanceiroStatus, getFaturadoEmAbertoPorIdInt, getNfePagamentos, getNfeDisplayStatus, prepararEnvioNfe, insertNotaEvento, getNotaEventosForRefs, excluirRascunhoNfe, STATUS_DESCARTAVEIS_NFE, type FaturadoEmAberto, type SupabaseNotaEventoRow } from "@/features/nfe/services/nfe.service";
@@ -454,7 +456,12 @@ export function NotasFiscaisPage() {
 
   useEffect(() => {
     let active = true;
-    const idInts = nfeListCombined.map((n) => Number(n.id_int)).filter((n) => Number.isFinite(n) && n > 0);
+    // Os pedidos das NFS-e entram no mesmo mapa (14/10/2026): o menu do
+    // Historico NFS-e decide o "Lancar no Contas a Receber" pela mesma regra.
+    // A chave e o id_int: o valor de um pedido e o mesmo nas duas listas.
+    const idInts = [...nfeListCombined, ...nfseListCombined]
+      .map((n) => Number(n.id_int))
+      .filter((n) => Number.isFinite(n) && n > 0);
     if (idInts.length === 0) return;
 
     void (async () => {
@@ -469,7 +476,50 @@ export function NotasFiscaisPage() {
     return () => {
       active = false;
     };
-  }, [nfeListCombined]);
+  }, [nfeListCombined, nfseListCombined]);
+
+  /**
+   * Titulos ATIVOS de contas a receber por pedido das NFS-e (14/10/2026).
+   * Por pedido, e nao pela ref da nota: parcelado usa a referencia `P...`.
+   */
+  const [titulosNfseMap, setTitulosNfseMap] = useState<Record<number, TitulosAtivos>>({});
+  const recarregarTitulosNfse = useCallback(async (idInts: number[]) => {
+    try {
+      const mapa = await getTitulosAtivosPorIdInt(idInts);
+      setTitulosNfseMap((prev) => {
+        const proximo = { ...prev };
+        idInts.forEach((id) => {
+          proximo[id] = mapa[id] ?? { qtd: 0, soma: 0 };
+        });
+        return proximo;
+      });
+    } catch (err) {
+      console.error("[NotasFiscaisPage] loadTitulosNfse failed:", err);
+    }
+  }, []);
+  useEffect(() => {
+    let active = true;
+    const idInts = nfseListCombined.map((n) => Number(n.id_int)).filter((n) => Number.isFinite(n) && n > 0);
+    if (idInts.length === 0) return;
+    void (async () => {
+      try {
+        const mapa = await getTitulosAtivosPorIdInt(idInts);
+        if (!active) return;
+        setTitulosNfseMap((prev) => {
+          const proximo = { ...prev };
+          idInts.forEach((id) => {
+            proximo[id] = mapa[id] ?? { qtd: 0, soma: 0 };
+          });
+          return proximo;
+        });
+      } catch (err) {
+        console.error("[NotasFiscaisPage] loadTitulosNfse failed:", err);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [nfseListCombined]);
 
   const [cceEventsMap, setCceEventsMap] = useState<Record<string, SupabaseNotaEventoRow[]>>({});
 
@@ -624,6 +674,50 @@ export function NotasFiscaisPage() {
   const handleOpenReviewModal = (item: NfeReadModel) => {
     setSelectedNfeForReview(item);
     setReviewModalOpen(true);
+  };
+
+  /**
+   * NFS-E FATURADA -> CONTAS A RECEBER (14/10/2026, nota 138 do 23733). Entra
+   * pela PORTA DA COBRANCA: a janela "Preparar boletos" recebe so a cobranca
+   * faturada em aberto e acha a NFS-e do pedido sozinha (sem NF-e autorizada).
+   * Nao ha parcelas fiscais de NFS-e: as parcelas saem da condicao da cobranca.
+   */
+  const [lancamentoNfse, setLancamentoNfse] = useState<{ cobranca: Cobranca; idInt: number; ref: string } | null>(null);
+  const [revisaoNfse, setRevisaoNfse] = useState<NfseReadModel | null>(null);
+
+  const handleLancarNfse = async (item: NfseReadModel) => {
+    if (isPreparandoLancamento) return;
+    setIsPreparandoLancamento(true);
+    try {
+      const idInt = Number(item.id_int);
+      const cobranca = await getCobrancaFaturadaParaLancar(idInt);
+      if (!cobranca) {
+        showToast({
+          type: "warning",
+          title: "Sem faturado em aberto",
+          description: "Esta proposta não tem cobrança faturada em aberto. Só venda faturada entra em contas a receber."
+        });
+        setFaturadoEmAbertoMap((prev) => ({ ...prev, [idInt]: { qtd: 0, soma: 0 } }));
+        return;
+      }
+      setLancamentoNfse({ cobranca, idInt, ref: item.ref });
+    } catch (err) {
+      console.error("[NotasFiscaisPage] failed to prepare launch from NFS-e:", err);
+      showToast({
+        type: "error",
+        title: "Erro ao preparar o lançamento",
+        description: err instanceof Error ? err.message : String(err)
+      });
+    } finally {
+      setIsPreparandoLancamento(false);
+    }
+  };
+
+  const atualizarFinanceiroDoPedidoNfse = (idInt: number) => {
+    void recarregarTitulosNfse([idInt]);
+    void getFaturadoEmAbertoPorIdInt([idInt])
+      .then((mapa) => setFaturadoEmAbertoMap((prev) => ({ ...prev, [idInt]: mapa[idInt] ?? { qtd: 0, soma: 0 } })))
+      .catch((err: unknown) => console.error("[NotasFiscaisPage] refresh faturado NFS-e failed:", err));
   };
 
   // States para Carta de Correção (CCe)
@@ -1410,6 +1504,38 @@ export function NotasFiscaisPage() {
         // rota. O cancelamento de NF-e é outro item e continua como está.
         actions.push(itemCancelarNfse());
       }
+    }
+
+    // Contas a receber da NFS-e faturada (lib/financeiro-nfse): mesma condicao
+    // da NF-e, com os titulos contados por pedido.
+    const financeiroNfse = acoesFinanceirasDaNfse({
+      status: item.status,
+      ambiente: item.ambiente,
+      faturadoEmAberto: faturadoEmAbertoMap[Number(item.id_int)],
+      titulosAtivos: titulosNfseMap[Number(item.id_int)]
+    });
+    if (financeiroNfse.lancar) {
+      actions.push({
+        label: "Lançar no Contas a Receber",
+        onClick: () => {
+          void handleLancarNfse(item);
+        }
+      });
+    }
+    if (financeiroNfse.revisar) {
+      actions.push({
+        label: "Revisar para gerar boletos",
+        onClick: () => setRevisaoNfse(item)
+      });
+    }
+    if (financeiroNfse.verContasAReceber) {
+      actions.push({
+        label: "Ver contas a receber",
+        onClick: () => {
+          // Pelo pedido: parcelado tem referencia `P...`, que nao traz a ref da nota.
+          router.push(`/contas-a-receber?search=${encodeURIComponent(String(item.id_int))}`);
+        }
+      });
     }
 
     if (item.url_pdf) {
@@ -3232,6 +3358,37 @@ export function NotasFiscaisPage() {
           onSuccess={(extReference) => {
             void refreshFinanceiroStatusForRef(extReference);
           }}
+        />
+      )}
+
+      {/* NFS-e faturada: mesma janela, pela porta da cobranca (sem origemNfe). */}
+      {lancamentoNfse && (
+        <PrepararBoletosModal
+          key={lancamentoNfse.ref}
+          isOpen
+          onClose={() => {
+            atualizarFinanceiroDoPedidoNfse(lancamentoNfse.idInt);
+            setLancamentoNfse(null);
+          }}
+          cobranca={lancamentoNfse.cobranca}
+          onSuccess={() => {
+            atualizarFinanceiroDoPedidoNfse(lancamentoNfse.idInt);
+          }}
+        />
+      )}
+
+      {revisaoNfse && (
+        <RevisarGeracaoBancariaModal
+          isOpen
+          onClose={() => {
+            atualizarFinanceiroDoPedidoNfse(Number(revisaoNfse.id_int));
+            setRevisaoNfse(null);
+          }}
+          extReference={revisaoNfse.ref}
+          nomeCliente={revisaoNfse.nome || revisaoNfse.fantasia || undefined}
+          valorTotalNf={revisaoNfse.valor_servicos}
+          idInt={Number(revisaoNfse.id_int) || undefined}
+          onSaveSuccess={() => atualizarFinanceiroDoPedidoNfse(Number(revisaoNfse.id_int))}
         />
       )}
 

@@ -2609,6 +2609,22 @@ const STATUS_COBRANCA_QUITADA_OU_MORTA = new Set([
 const normalizarTipoCobranca = (valor: unknown): string =>
   String(valor ?? "").trim().toUpperCase().replace(/_/g, "-");
 
+/**
+ * A mesma regra de `getFaturadoEmAbertoPorIdInt`, linha a linha, para quem
+ * precisa da cobrança e não só do total (lançamento da NFS-e, 14/10/2026).
+ */
+export function ehCobrancaFaturadaEmAberto(linha: {
+  tipo_cobranca?: unknown;
+  status?: unknown;
+  paid_at?: unknown;
+}): boolean {
+  return (
+    TIPOS_COBRANCA_FATURADA.has(normalizarTipoCobranca(linha.tipo_cobranca)) &&
+    !STATUS_COBRANCA_QUITADA_OU_MORTA.has(String(linha.status ?? "").trim().toUpperCase()) &&
+    !linha.paid_at
+  );
+}
+
 export type FaturadoEmAberto = {
   /** Quantas cobranças faturadas não pagas existem para o id_int. */
   qtd: number;

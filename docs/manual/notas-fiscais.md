@@ -100,6 +100,8 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Buscar por Nº NFS-e, Ref, ID ou Nome...** | Histórico NFS-e, filtros | Busca nas notas de serviço. |
 | **Cancelar NFS-e** | Menu da NFS-e Autorizada | Aparece apagado e não faz nada. Parando o mouse sobre ele, a dica explica: o cancelamento de NFS-e ainda não está disponível no Vibe. |
 | **Abrir PDF** | Menu da NFS-e | Abre o PDF da nota de serviço em outra aba. O botão de baixar do visualizador salva com o nome "NFS-e-N-Pedido-P.pdf"; o link da aba vale 60 minutos. |
+| **Lançar no Contas a Receber** | Menu da NFS-e autorizada de produção com cobrança faturada em aberto | Abre a janela **Preparar boletos** com a cobrança faturada do pedido. As parcelas saem da condição da cobrança. Em parcela única o boleto usa a referência da NFS-e (ex.: NFS-23733-001) e o número da NFS-e vai como número da NF; com 2 ou mais parcelas a referência é P + parcela + total + pedido. Se o pedido também tem NF-e autorizada, vale a NF-e. |
+| **Revisar para gerar boletos** / **Ver contas a receber** | Menu da NFS-e com título já lançado | Abre a revisão dos boletos do pedido / abre o Contas a Receber filtrado pelo número do pedido. |
 | **Abrir para corrigir** | Janela **A nota não pode ser aberta ainda**, em cada pendência | Leva à tela onde o dado se corrige (proposta, cadastro ou produtos). |
 | **Reconferir** / **Fechar** | Janela **A nota não pode ser aberta ainda**, rodapé | Repete a conferência do pedido, ou fecha a janela. |
 | **Emitir NF-e** / **Cancelar** | Janela **Emitir NF-e** | Transmite a nota, ou fecha sem transmitir. Durante a conferência o botão mostra "Conferindo...". |
