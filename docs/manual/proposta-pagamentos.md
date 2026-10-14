@@ -1,6 +1,6 @@
 # Proposta: aba Pagamentos
 
-> **Última revisão:** 08/10/2026
+> **Última revisão:** 14/10/2026
 > **Caminho no menu:** Pedidos → abrir um pedido → aba Pagamentos
 > **Endereço:** `/orcamentos/<número>/editar?tab=pagamentos`
 
@@ -87,7 +87,7 @@ No cartão, o cliente escolhe as parcelas na página de pagamento; depois disso 
 
 1. Na janela **Criar cobrança**, escolha **Faturado**.
 2. Em **Campos mínimos do faturado**, escolha a **Condição de pagamento \***. A condição do cadastro de quem paga já vem marcada. Ela define a quantidade de parcelas, os dias até a primeira e o intervalo.
-3. Leia os quadros de crédito: **Limite de crédito**, **Utilizado**, **Disponível**, **Valor solicitado**, **Faturamentos vencidos** e **Risco de crédito**.
+3. Leia os quadros de crédito: **Limite de crédito**, **Utilizado**, **Disponível**, **Valor solicitado**, **Faturamentos vencidos** e **Risco de crédito**. **Faturamentos vencidos** conta os títulos do cliente que estão **Vencido** e em aberto na Carteira; pagamento feito com atraso no passado não entra.
 4. Clique em **Gerar cobrança**.
 5. Se o cliente tem faturamento vencido, aparece o **Aviso de Pendência**. Clique em **Enviar para avaliação** para seguir, ou em **Voltar**.
 6. O sistema responde **Faturamento liberado** (crédito disponível e sem vencidos; a cobrança segue para a Conferência) ou **Faturamento em análise** (o financeiro precisa avaliar).
@@ -159,7 +159,7 @@ Cobrança cancelada sai da lista.
 ### Analisar o crédito e ajustar o limite (financeiro)
 
 1. No detalhe da cobrança, abra **Acoes** e clique em **Analisar crédito**. O item só fica ativo em cobrança com crédito pendente.
-2. A janela **Análise de Crédito** mostra **Limite de Crédito**, **Utilizado**, **Disponível**, **Saldo de Carteira**, **Faturamentos Vencidos** e **Risco de Crédito**.
+2. A janela **Análise de Crédito** mostra **Limite de Crédito**, **Utilizado**, **Disponível**, **Saldo de Carteira**, **Faturamentos Vencidos** e **Risco de Crédito**. **Faturamentos Vencidos** conta os títulos do cliente que estão **Vencido** e em aberto na Carteira; pagamento feito com atraso no passado não entra.
 3. Para mudar o limite, digite o valor em **Atualizar Limite de Crédito** e clique em **Atualizar Limite**.
 4. Se com o novo limite o cliente fica aprovado, o faturamento é liberado sozinho. Se ainda houver impedimento, a tela avisa: "Limite atualizado, mas a cobrança permanece pendente por impedimento financeiro."
 

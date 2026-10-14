@@ -131,7 +131,7 @@ A cobrança perde a data e o nome de quem confirmou e volta para a **Fila de Con
 ### Analisar o crédito do cliente
 
 1. No menu de ações de um faturamento ainda não conferido, clique em **Analisar crédito**.
-2. A janela **Análise de Crédito** mostra **Limite de Crédito**, **Utilizado**, **Disponível**, **Saldo de Carteira**, **Faturamentos Vencidos** e **Risco de Crédito**, com a conclusão embaixo: **Crédito Operacional Disponível** ou **Aguardando Análise Financeira**.
+2. A janela **Análise de Crédito** mostra **Limite de Crédito**, **Utilizado**, **Disponível**, **Saldo de Carteira**, **Faturamentos Vencidos** e **Risco de Crédito**, com a conclusão embaixo: **Crédito Operacional Disponível** ou **Aguardando Análise Financeira**. **Faturamentos Vencidos** conta os títulos do cliente que estão **Vencido** e em aberto na Carteira; pagamento feito com atraso no passado não entra.
 3. Para mudar o limite, preencha **Atualizar Limite de Crédito** e clique em **Atualizar Limite**.
 4. Se, com o novo limite, o cliente ficar com crédito suficiente e sem impedimento, o faturamento é autorizado na hora ("Faturamento aprovado automaticamente (limite suficiente)!") e segue para a Fila de Conferência. Se não, aparece o aviso "Limite atualizado, mas a cobrança permanece pendente por impedimento financeiro."
 5. O botão **Ver Contas a Receber do Cliente** abre a Carteira já filtrada pelo cliente.
