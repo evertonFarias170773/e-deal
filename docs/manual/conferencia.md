@@ -1,6 +1,6 @@
 # Conferência
 
-> **Última revisão:** 13/10/2026
+> **Última revisão:** 14/10/2026
 > **Caminho no menu:** Conferência (primeiro item do menu lateral; é um link direto, sem subitens)
 > **Endereço:** `/cobrancas` (o detalhe de uma cobrança abre em `/cobrancas/<cobrança>`)
 
@@ -264,6 +264,7 @@ Outros:
 | "Não é possível confirmar esta cobrança — A soma das cobranças é inferior ao total da proposta." | O pedido tem mais de uma cobrança e, mesmo contando esta, o total não é coberto. | Veja o resumo no alerta. Cadastre a cobrança que falta na proposta ou corrija o valor do pedido, e confirme de novo. |
 | "Esta cobrança não está aguardando a autorização do financeiro. Atualize a lista; se ela já foi autorizada, confirme pela Fila de Conferência." | Ao clicar em **Autorizar e conferir**, a cobrança já tinha sido autorizada, confirmada ou paga por outra pessoa. | Atualize a lista. Se ela estiver na fila, use **Confirmar Conferência**. |
 | "A cobrança mudou enquanto era processada. Atualize a lista e confira o estado antes de tentar de novo." | Alguém mudou a cobrança (por exemplo, cancelou) no mesmo instante em que você autorizava e conferia. Nada foi gravado. | Atualize a lista e confira o estado da cobrança. |
+| Mensagem de **Autorizar e conferir** terminada em "(Etapa: ...; código ...; dica: ...)" | O botão falhou e o sistema mostra em que passo: leitura da cobrança, trava de quitação, gravação da autorização e da conferência, ou o que roda depois da gravação (abatimento, status do pedido, prateleira). O código e a dica são os do banco, sem dado pessoal. | Mande a mensagem inteira ao suporte. Se ela disser **A gravação já tinha valido**, a cobrança JÁ está autorizada e conferida: confira na lista antes de tentar de novo. |
 | "Sem permissão para autorizar faturamento." | Ao usar **Autorizar e conferir**, o perfil não tem **Liberar OS / Confirmar**. | Peça a um administrador para ajustar o perfil ou fazer a autorização. |
 | "Sem permissão para confirmar cobrança." | O perfil não tem **Confirmar Pagamento**. | Peça a um administrador para ajustar o perfil ou fazer a confirmação. |
 | "Não é possível confirmar uma cobrança com status inválido." | A cobrança foi cancelada enquanto a tela estava aberta. | Atualize a tela. |

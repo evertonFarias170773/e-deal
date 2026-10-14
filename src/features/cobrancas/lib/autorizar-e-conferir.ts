@@ -82,6 +82,135 @@ export function podeAutorizarEConferir(cobranca: CobrancaDaAutorizacao): boolean
  * Quem autoriza e quem confere é a mesma pessoa, então os dois campos de
  * autoria levam o mesmo nome.
  */
+// ===========================================================================
+// DIAGNÓSTICO DE FALHA (14/10/2026)
+// ===========================================================================
+// No 23681 o botão falhou com "column pagamentos_v2.confirmado does not exist"
+// e a rota devolveu só a mensagem: não dava para saber qual comando quebrou. Na
+// ação combinada, a falha agora volta para a tela e para o log com a ETAPA, o
+// código, os detalhes e a dica do banco. O que SAI é limpo: sem e-mail, sem
+// CPF/CNPJ, sem token ou chave, sem a linha que o banco cita no detalhe.
+//
+// Só a ação combinada ganha isso. Em qualquer outra ação (Confirmar Conferência,
+// Confirmar Autorização) a resposta de falha continua exatamente a de antes.
+
+/**
+ * Onde a falha aconteceu. A autorização e a conferência são UM UPDATE só, então
+ * uma falha na gravação vale para as duas ao mesmo tempo; o que vem depois
+ * (abatimento, status do pedido, prateleira) é a parte da conferência que roda
+ * com a cobrança JÁ gravada.
+ */
+export type EtapaDaFalha =
+  | "LEITURA_DA_COBRANCA"
+  | "TRAVA_DE_QUITACAO"
+  | "GRAVACAO_AUTORIZACAO_E_CONFERENCIA"
+  | "RELEITURA_APOS_CORRIDA"
+  | "POS_GRAVACAO_RECONCILIACAO";
+
+export const DESCRICAO_DA_ETAPA: Record<EtapaDaFalha, string> = {
+  LEITURA_DA_COBRANCA: "leitura da cobrança",
+  TRAVA_DE_QUITACAO: "trava de quitação (soma das cobranças da proposta)",
+  GRAVACAO_AUTORIZACAO_E_CONFERENCIA: "gravação da autorização e da conferência (um UPDATE só)",
+  RELEITURA_APOS_CORRIDA: "releitura depois de a gravação não achar a linha",
+  POS_GRAVACAO_RECONCILIACAO: "depois da gravação: abatimento, status do pedido ou liberação de prateleira"
+};
+
+/**
+ * Tira de um texto de erro o que não pode sair: token, chave, e-mail,
+ * CPF/CNPJ, números longos e a linha que o banco cita ("Failing row contains
+ * (...)"). Aparar para `max` caracteres. Nulo se não sobrar nada.
+ */
+export function limparTextoDeDiagnostico(texto: unknown, max = 300): string | null {
+  if (texto === null || texto === undefined) return null;
+  let t = String(texto).replace(/\s+/g, " ").trim();
+  if (!t) return null;
+
+  t = t
+    .replace(/Failing row contains \([^)]*\)/gi, "Failing row contains ([omitido])")
+    .replace(/Bearer\s+[A-Za-z0-9._~+/=-]+/gi, "Bearer [chave]")
+    .replace(/eyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}(?:\.[A-Za-z0-9_-]*)?/g, "[chave]")
+    .replace(/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g, "[e-mail]")
+    .replace(/\b\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2}\b/g, "[documento]")
+    .replace(/\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b/g, "[documento]")
+    .replace(/\b[A-Za-z0-9_-]{32,}\b/g, "[chave]")
+    .replace(/\d{9,}/g, "[número]");
+
+  return t.length > max ? `${t.slice(0, max - 1)}…` : t;
+}
+
+export type DiagnosticoDeFalha = {
+  success: false;
+  /** Código do Postgres/PostgREST (42703, 23505, PGRST...), ou nulo. */
+  code: string | null;
+  etapa: EtapaDaFalha;
+  etapa_descricao: string;
+  error: string;
+  details: string | null;
+  hint: string | null;
+  /** `true` quando o UPDATE já tinha valido: a cobrança ESTÁ autorizada e conferida. */
+  gravada: boolean;
+};
+
+/** Monta o diagnóstico de uma falha, já limpo. Aceita Error, PostgrestError ou qualquer coisa lançada. */
+export function diagnosticarFalha(erro: unknown, etapa: EtapaDaFalha): DiagnosticoDeFalha {
+  const e = (erro && typeof erro === "object" ? erro : {}) as Record<string, unknown>;
+  const codigoBruto = typeof e.code === "string" ? e.code : "";
+  return {
+    success: false,
+    code: /^[A-Za-z0-9_]{2,16}$/.test(codigoBruto) ? codigoBruto : null,
+    etapa,
+    etapa_descricao: DESCRICAO_DA_ETAPA[etapa],
+    error: limparTextoDeDiagnostico(e.message ?? (typeof erro === "string" ? erro : null)) ?? "Falha ao autorizar e conferir.",
+    details: limparTextoDeDiagnostico(e.details),
+    hint: limparTextoDeDiagnostico(e.hint),
+    gravada: etapa === "POS_GRAVACAO_RECONCILIACAO"
+  };
+}
+
+/**
+ * A resposta de falha da rota (`catch` do POST /api/cobrancas/confirmar).
+ *
+ * Fora da ação combinada devolve EXATAMENTE o que a rota sempre devolveu:
+ * `{ success: false, error: err.message }` com status 500. É isto que garante
+ * que "Confirmar Conferência" e "Confirmar Autorização" seguem iguais.
+ */
+export function respostaDeFalhaDaRota(
+  ehAutorizarEConferir: boolean,
+  erro: unknown,
+  etapa: EtapaDaFalha
+): { status: number; corpo: Record<string, unknown> } {
+  if (!ehAutorizarEConferir) {
+    return { status: 500, corpo: { success: false, error: (erro as { message?: unknown } | null)?.message } };
+  }
+  return { status: 500, corpo: { ...diagnosticarFalha(erro, etapa) } };
+}
+
+/**
+ * O texto que a tela mostra. Resposta sem `etapa` (qualquer outra ação) sai
+ * como veio: só a mensagem.
+ */
+export function mensagemDeFalhaParaATela(corpo: {
+  error?: unknown;
+  etapa?: unknown;
+  etapa_descricao?: unknown;
+  code?: unknown;
+  hint?: unknown;
+  details?: unknown;
+  gravada?: unknown;
+}): string {
+  const base = String(corpo.error ?? "").trim();
+  if (!corpo.etapa) return base;
+
+  const partes = [`Etapa: ${String(corpo.etapa_descricao || corpo.etapa)}`];
+  if (corpo.code) partes.push(`código ${String(corpo.code)}`);
+  if (corpo.hint) partes.push(`dica: ${String(corpo.hint)}`);
+  if (corpo.details) partes.push(`detalhes: ${String(corpo.details)}`);
+  const aviso = corpo.gravada === true
+    ? " A gravação já tinha valido: confira a cobrança antes de tentar de novo."
+    : "";
+  return `${base || "Falha ao autorizar e conferir."} (${partes.join("; ")}).${aviso}`;
+}
+
 export function montarPayloadAutorizarEConferir(
   cobranca: Pick<CobrancaDaAutorizacao, "paid_at">,
   op: { confirmadoPor: string; agoraIso: string; quitaNaLiberacao: boolean }

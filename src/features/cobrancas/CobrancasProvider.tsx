@@ -22,7 +22,7 @@ import {
 } from "@/features/orcamentos/services/orcamentos.service";
 import { PROPOSTA_STATUS_PROTEGIDOS } from "@/features/orcamentos/services/status-protegidos";
 import { criarControleDeRecarga, manterDadosDaRecarga } from "@/features/cobrancas/lib/recarga-em-ordem";
-import { ACAO_AUTORIZAR_E_CONFERIR } from "@/features/cobrancas/lib/autorizar-e-conferir";
+import { ACAO_AUTORIZAR_E_CONFERIR, mensagemDeFalhaParaATela } from "@/features/cobrancas/lib/autorizar-e-conferir";
 import { mensagemDaLeituraDeCobrancas, statusDaLeituraDeCobrancas } from "@/features/cobrancas/lib/limite-da-carga";
 import type { DestinoValorCancelado, MotivoCancelamentoPago } from "@/features/cobrancas/cancelamento-pago";
 
@@ -441,6 +441,21 @@ async function confirmarNaRota(id: string, confirmadoPor: string, acao?: string)
         message: data.error || "Confirmação bloqueada",
         situacao: data.situacao
       };
+    }
+    // Falha da ação "autorizar e conferir": a rota manda a etapa, o código, os
+    // detalhes e a dica, já limpos. A tela mostra tudo e o console guarda o
+    // mesmo conteúdo. Respostas sem `etapa` (as outras ações) seguem abaixo.
+    if (data.etapa) {
+      const falha = new Error(mensagemDeFalhaParaATela(data)) as Error & { diagnostico?: unknown };
+      falha.diagnostico = {
+        etapa: data.etapa,
+        code: data.code ?? null,
+        details: data.details ?? null,
+        hint: data.hint ?? null,
+        gravada: data.gravada === true
+      };
+      console.error("[CobrancasProvider] Autorizar e conferir falhou:", falha.diagnostico, "-", data.error);
+      throw falha;
     }
     throw new Error(data.error || "Falha ao confirmar cobrança via API.");
   }

@@ -14,7 +14,9 @@ import {
 import {
   ACAO_AUTORIZAR_E_CONFERIR,
   montarPayloadAutorizarEConferir,
-  podeAutorizarEConferir
+  podeAutorizarEConferir,
+  respostaDeFalhaDaRota,
+  type EtapaDaFalha
 } from "@/features/cobrancas/lib/autorizar-e-conferir";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -115,6 +117,10 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  // Em que passo estamos. Só serve ao diagnóstico da ação combinada: se algo
+  // lançar, o `catch` diz a etapa (ver lib/autorizar-e-conferir).
+  let etapa: EtapaDaFalha = "LEITURA_DA_COBRANCA";
+
   try {
     // 3. Revalidação da cobrança
     const { data: cobranca, error: cobError } = await supabase
@@ -122,6 +128,13 @@ export async function POST(request: NextRequest) {
       .select("*")
       .eq("id", idCobranca)
       .single();
+
+    // Na ação combinada, erro do banco que não seja "não achou a linha" não
+    // vira "Cobrança não encontrada": sai com o diagnóstico. As outras ações
+    // seguem como sempre.
+    if (ehAutorizarEConferir && cobError && cobError.code !== "PGRST116") {
+      throw cobError;
+    }
 
     if (cobError || !cobranca) {
       return NextResponse.json({ success: false, error: "Cobrança não encontrada." }, { status: 404 });
@@ -169,6 +182,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 4. Executar helper (calcularSituacaoQuitacaoProposta) para bloquear se parcial
+    etapa = "TRAVA_DE_QUITACAO";
     const situacao = await calcularSituacaoQuitacaoProposta(supabase, cobranca.id_int, idCobranca);
 
     // Se é uma liberação normal (não autorização) e a regra bloqueou:
@@ -218,6 +232,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    etapa = "GRAVACAO_AUTORIZACAO_E_CONFERENCIA";
     if (ehAutorizarEConferir) {
       // Só grava se a linha AINDA é a que foi lida: mesmo status e ainda não
       // confirmada. É o que faz um segundo clique (ou um clique concorrente)
@@ -236,11 +251,16 @@ export async function POST(request: NextRequest) {
       }
 
       if (!gravadas || gravadas.length === 0) {
-        const { data: atual } = await supabase
+        etapa = "RELEITURA_APOS_CORRIDA";
+        const { data: atual, error: erroReleitura } = await supabase
           .from("pagamentos_v2")
           .select("status, confirmado")
           .eq("id", idCobranca)
           .maybeSingle();
+
+        if (erroReleitura) {
+          throw erroReleitura;
+        }
 
         // Outra chamada confirmou primeiro: o mesmo desfecho do segundo clique.
         // Nada é gravado aqui — nem abatimento, nem status, nem prateleira.
@@ -266,6 +286,10 @@ export async function POST(request: NextRequest) {
         throw updateErr;
       }
     }
+
+    // A gravação valeu. O que lançar daqui para baixo, na ação combinada, sai
+    // com `gravada: true`: a cobrança ESTÁ autorizada e conferida.
+    etapa = "POS_GRAVACAO_RECONCILIACAO";
 
     // ── 6. Abatimento de débito da conta corrente ──────────────────────────
     // Se esta cobrança foi criada incluindo abatimento de débito (marcador em
@@ -348,7 +372,17 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: true });
 
   } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+    // Fora da ação combinada a resposta é a de sempre ({ success, error }).
+    // Na combinada ela leva etapa, código, detalhes e dica, já limpos, e o
+    // mesmo conteúdo vai para o log do servidor (sem e-mail, documento ou chave).
+    const { status, corpo } = respostaDeFalhaDaRota(ehAutorizarEConferir, err, etapa);
+    if (ehAutorizarEConferir) {
+      console.error(
+        "[confirmar][autorizar_e_conferir] falha",
+        JSON.stringify({ idCobranca: String(idCobranca).slice(0, 64), ...corpo })
+      );
+    }
+    return NextResponse.json(corpo, { status });
   }
 }
 
