@@ -348,7 +348,7 @@ Nos dois casos a confirmação lista as notas autorizadas que o pedido já tem. 
 
 ## Regras e bloqueios
 
-- Não dá para abrir a nota enquanto o pedido tiver pendência de origem: CPF ou CNPJ inválido de quem paga, tipo de contribuinte não definido, CNPJ contribuinte de ICMS sem Inscrição Estadual, endereço do pedido ausente ou incompleto, item sem NCM de 8 dígitos ou sem produto cadastrado, valor total zerado, pedido sem cobrança registrada ou empresa não habilitada para NF-e. A correção é feita na origem (cadastro, orçamento ou produto), não no fiscal.
+- Não dá para abrir a nota enquanto o pedido tiver pendência de origem: CPF ou CNPJ inválido de quem paga, tipo de contribuinte não definido, CNPJ contribuinte de ICMS sem Inscrição Estadual, endereço do pedido ausente ou incompleto, item sem NCM de 8 dígitos ou sem produto cadastrado, valor total zerado, pedido sem cobrança registrada ou empresa não habilitada para NF-e. A correção é feita na origem (cadastro, orçamento ou produto), não no fiscal. Exceção: o NCM conferido é o do item dentro do pedido, copiado na venda; corrigir o cadastro do produto não destrava pedido já fechado. Nesse caso, avise o Everton.
 - O botão **Emitir NF-e** fica desabilitado enquanto houver pendência que impede a emissão. Avisos não travam.
 - Não dá para emitir com a soma das parcelas diferente do total da nota, nem com parcela vencendo antes da data de emissão.
 - Nome, logradouro, número, complemento, bairro e município do destinatário, dados da transportadora e natureza da operação aceitam no máximo 60 caracteres na NF-e; a descrição do item, 120. Passando disso, a nota não é transmitida e a tela diz qual campo encurtar. Nada é cortado automaticamente.

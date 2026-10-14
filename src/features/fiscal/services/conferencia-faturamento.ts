@@ -334,14 +334,20 @@ export async function conferirFaturamento(idInt: number): Promise<ResultadoConfe
     if (semNcm.length > 0) {
       bloqueios.push({
         codigo: "ITEM_SEM_NCM",
-        titulo: `${semNcm.length} ${semNcm.length === 1 ? "item está" : "itens estão"} sem NCM de 8 dígitos.`,
+        titulo: `${semNcm.length} ${semNcm.length === 1 ? "item do pedido está" : "itens do pedido estão"} sem NCM de 8 dígitos.`,
         encontrado: semNcm
           .slice(0, 3)
           .map((item) => `${item.nome_produto || "item"}: ${item.ncm?.trim() || "vazio"}`)
           .join(" · "),
         setor: "Comercial",
-        onde: "Cadastro do produto → Dados fiscais → NCM",
-        rota: "/produtos"
+        /*
+          O NCM conferido e o do ITEM DO PEDIDO (`produtos_proposta.ncm`),
+          copiado do cadastro na venda. Apontar para o cadastro do produto
+          fazia corrigir o lugar errado (22911, 23115, 23435, 23522 e 23537,
+          14/10/2026). Nao ha tela que corrija o NCM do item no pedido: sem
+          `rota`, o modal nao mostra o "Abrir para corrigir".
+        */
+        onde: "O NCM conferido é o do item dentro do pedido, copiado na venda. Corrigir o cadastro do produto não altera pedido já fechado. Avise o Everton para corrigir o NCM do item no pedido."
       });
     }
 
