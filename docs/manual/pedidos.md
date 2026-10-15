@@ -1,6 +1,6 @@
 # Pedidos (lista)
 
-> **Última revisão:** 13/10/2026
+> **Última revisão:** 15/10/2026
 > **Caminho no menu:** Pedidos (item direto do menu lateral, sem submenu; é o segundo, logo abaixo de Conferência)
 > **Endereço:** `/orcamentos`
 
@@ -24,7 +24,7 @@ No alto da tela o título aparece como "Orcamentos", com a etiqueta "Pedidos". �
 - **Voltar para a Fila de Faturamento (desfazer nota no sistema antigo)**: só administrador, Super Administrador ou quem tem a permissão "Liberar para Nota Fiscal".
 - **Confirmar Conferência**: só administrador ou Super Administrador, e só em pedido com cobrança na Fila de Conferência. O servidor confere a permissão de novo ao gravar.
 - **Marcar como entregue**: só administrador ou Super Administrador, em pedido com status LIBERADO ou em pedido que foi só à Fila de Faturamento (REVISAO ATENDENTE, enviado à fila e não liberado para a produção). O servidor confere o administrador; esconder o item na tela não é a proteção.
-- **Enviar para Fila de Faturamento**: só administrador ou Super Administrador, em pedido REVISAO ATENDENTE que não está na fila nem na produção. O servidor confere o administrador.
+- **Enviar para Fila de Faturamento**: só administrador ou Super Administrador, em pedido REVISAO ATENDENTE ou Liberado que não está na fila nem na produção. O servidor confere o administrador.
 - As demais ações do menu da linha aparecem para qualquer usuário que vê o pedido. O que cada um consegue alterar dentro da proposta é decidido na própria proposta.
 
 ## Botões e ações da tela
@@ -69,7 +69,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Confirmar Conferência** (com mais de uma cobrança na Fila: **Confirmar Conferência — forma valor**, uma opção por cobrança) | Menu da linha, depois de **Gerar cobrança**; só administrador, em pedido com cobrança na Fila de Conferência | Abre a janela **Confirmar Liberação Operacional**, a mesma da tela Conferência. |
 | **Cancelar proposta** | Menu da linha | Abre a janela **Cancelar Proposta**. |
 | **Liberar para Produção** | Menu da linha | Abre a confirmação "Liberar proposta para Produção?". |
-| **Enviar para Fila de Faturamento** | Menu da linha (tabela e cartão), só administrador, só em pedido REVISAO ATENDENTE fora da fila e da produção | Abre uma confirmação e, ao confirmar, põe o pedido só na Fila de Faturamento. Ele não passa pela Produção nem pela Expedição e o status não muda. |
+| **Enviar para Fila de Faturamento** | Menu da linha (tabela e cartão), só administrador, em pedido REVISAO ATENDENTE ou Liberado fora da fila e da produção | Abre uma confirmação e, ao confirmar, põe o pedido só na Fila de Faturamento. Ele não passa pela Produção nem pela Expedição e o status não muda. |
 | **✓ Liberada para produção** | Menu da linha | Não faz nada: é só o aviso de que o pedido já foi liberado. |
 | **Rastrear objeto** | Menu da linha | Abre o rastreio dos Correios do pedido. |
 | **Encerrar teste** | Menu da linha | Marca o pedido como teste encerrado e o tira das listas operacionais. |
@@ -180,7 +180,7 @@ As datas pequenas aparecem como dia/mês e hora, no horário de Brasília.
 15. **Rastrear objeto**: aparece quando o envio é pelos Correios e já existe código de rastreio.
 16. **Encerrar teste** ou **Reabrir (desfazer encerramento de teste)**.
 17. **Voltar para a Fila de Faturamento (desfazer nota no sistema antigo)**: aparece só no pedido com a marca "faturado no sistema antigo".
-18. **Enviar para Fila de Faturamento**: para pedido que só precisa da nota e depois é marcado como entregue, sem produção. Aparece só para administrador, em pedido REVISAO ATENDENTE que ainda não está na fila nem na produção. Abre a janela **Enviar para Fila de Faturamento?** (o foco fica em **Cancelar**); ao confirmar, o pedido entra na Fila de Faturamento e **não passa pela Produção nem pela Expedição**: não aparece em nenhum dos dois painéis e o status continua REVISAO ATENDENTE. Nada muda em cobranças nem no boletim. Depois de enviado o item some, e **Marcar como entregue** passa a aparecer. Não existe "tirar da fila"; o nome de quem enviou e a data ficam registrados.
+18. **Enviar para Fila de Faturamento**: para pedido que só precisa da nota e depois é marcado como entregue, sem produção. Vale também em pedido **Liberado** (APROVADO ou LIBERADO no banco, o caso da cobrança confirmada que nunca passa por REVISAO ATENDENTE), desde que não esteja na fila nem na produção, não tenha OS, não tenha NF-e ou NFS-e autorizada e não esteja marcado como nota emitida no sistema antigo; o servidor confere e recusa dizendo o motivo. O status não muda. Aparece só para administrador, em pedido REVISAO ATENDENTE que ainda não está na fila nem na produção. Abre a janela **Enviar para Fila de Faturamento?** (o foco fica em **Cancelar**); ao confirmar, o pedido entra na Fila de Faturamento e **não passa pela Produção nem pela Expedição**: não aparece em nenhum dos dois painéis e o status continua REVISAO ATENDENTE. Nada muda em cobranças nem no boletim. Depois de enviado o item some, e **Marcar como entregue** passa a aparecer. Não existe "tirar da fila"; o nome de quem enviou e a data ficam registrados.
 18. **Marcar como entregue**: aparece só para administrador, em pedido com status LIBERADO ou em pedido que foi só à Fila de Faturamento (REVISAO ATENDENTE, enviado à fila, fora da produção); a mesma ação existe na Fila de Faturamento. Abre a janela **Marcar como entregue?**; ao confirmar, o status vira ENTREGUE e a **data de entrega** gravada é a de hoje (dia de São Paulo; se o pedido já tinha data de entrega, ela é mantida). O pedido sai de **Ativos** e segue a regra normal de saída da Expedição (aparece lá como entregue por 30 dias). Não mexe em faturamento, cobranças, boletos, Conta Corrente nem Conferência: se o pedido esperava nota, ele continua na Fila de Faturamento, agora com o status Entregue, que lá é só informação. **Não existe desmarcar** por aqui. Seu nome e a data ficam registrados no histórico de status. Apertar de novo num pedido que já está ENTREGUE não grava nada.
 19. **Retirar da Produção**: último item do menu, só em pedido em REVISAO PRODUCAO. Retirar da Produção **devolve o pedido ao atendente**: ele sai da fila de Produção e o status volta para REVISAO ATENDENTE, juntos. Só vale em pedido em REVISAO PRODUCAO que ainda não tem OS; de EM PRODUCAO em diante, ou com OS, quem devolve o pedido é a produção e o sistema recusa com essa mensagem. Antes de retirar, uma janela explica o que acontece (o foco fica em **Cancelar**), e o nome de quem retirou e a data ficam registrados. Retirar de novo um pedido que já voltou ao atendente não grava nada.
 

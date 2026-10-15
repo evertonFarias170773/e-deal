@@ -24,26 +24,40 @@ const texto = (v: string | number | null) => (v === null || v === undefined ? nu
 
 /** `null` = nenhuma nota trava; senao, a recusa pronta para a rota devolver. */
 export async function recusaPorNotaEmitida(supabase: SupabaseClient, idInt: number): Promise<RecusaPorNota | null> {
+  const lidas = await lerNotasDoPedido(supabase, idInt);
+  if (!lidas.ok) {
+    return {
+      success: false,
+      httpStatus: 500,
+      code: CODIGO_LEITURA_NOTAS_FALHOU,
+      message: `Não foi possível conferir as notas fiscais do pedido (${lidas.erro}). Nada foi alterado.`
+    };
+  }
+  const message = mensagemNotaImpedeDevolucao(lidas.notas);
+  return message ? { success: false, httpStatus: 409, code: CODIGO_NOTA_EMITIDA, message } : null;
+}
+
+/**
+ * Todas as notas do pedido (NF-e e NFS-e), como vieram, pelo `id_int`. Usada tambem
+ * pelo "Enviar para Fila de Faturamento" (15/10/2026). Falha de leitura vem como erro,
+ * nunca como "nao ha nota".
+ */
+export async function lerNotasDoPedido(
+  supabase: SupabaseClient,
+  idInt: number
+): Promise<{ ok: true; notas: NotaDoPedido[] } | { ok: false; erro: string }> {
   const [nfe, nfse] = await Promise.all([
     supabase.from("notas_fiscais").select("numero_nf, status, ambiente").eq("id_int", idInt),
     supabase.from("notas_servico").select("numero_nfse, status, ambiente").eq("id_int", idInt)
   ]);
 
   const erro = nfe.error ?? nfse.error;
-  if (erro) {
-    return {
-      success: false,
-      httpStatus: 500,
-      code: CODIGO_LEITURA_NOTAS_FALHOU,
-      message: `Não foi possível conferir as notas fiscais do pedido (${erro.message}). Nada foi alterado.`
-    };
-  }
+  if (erro) return { ok: false, erro: erro.message };
 
   const notas: NotaDoPedido[] = [
     ...((nfe.data ?? []) as LinhaNfe[]).map((l): NotaDoPedido => ({ tipo: "NFE", numero: texto(l.numero_nf), status: l.status, ambiente: l.ambiente })),
     ...((nfse.data ?? []) as LinhaNfse[]).map((l): NotaDoPedido => ({ tipo: "NFSE", numero: texto(l.numero_nfse), status: l.status, ambiente: l.ambiente }))
   ];
 
-  const message = mensagemNotaImpedeDevolucao(notas);
-  return message ? { success: false, httpStatus: 409, code: CODIGO_NOTA_EMITIDA, message } : null;
+  return { ok: true, notas };
 }

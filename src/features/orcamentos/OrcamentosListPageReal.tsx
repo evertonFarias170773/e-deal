@@ -1980,7 +1980,7 @@ Ela volta a aparecer nas listas operacionais.`
       ...(!item.is_prd_aprovado && item.isAvulsoRaw !== true && item.statusInterno === "REVISAO ATENDENTE" && canLiberarProducao ? [{ label: "Liberar para Produção", onClick: () => void handleLiberarProducao(item) }] : []),
       ...(item.is_prd_aprovado && item.isAvulsoRaw !== true ? [{ label: "✓ Liberada para produção", disabled: true }] : []),
       // So a Fila de Faturamento, sem Producao nem Expedicao (13/10/2026). So ADM; some depois de enviado.
-      ...(podeVerEnviarParaFila(user, { statusInterno: item.statusInterno, liberaNf: item.libera_nf, isPrdAprovado: item.is_prd_aprovado })
+      ...(podeVerEnviarParaFila(user, { statusInterno: item.statusInterno, liberaNf: item.libera_nf, isPrdAprovado: item.is_prd_aprovado, faturadoForaEm: item.faturadoForaEm })
         ? [{ label: "Enviar para Fila de Faturamento", onClick: () => setPedidoParaEnviarAFila(item) }]
         : []),
       // Rastrear: so quando o frete e Correios E ha codigo gravado. Sem uma das

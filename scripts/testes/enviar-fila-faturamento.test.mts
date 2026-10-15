@@ -40,7 +40,7 @@ checar("regra: REVISAO ATENDENTE com as duas flags desligadas envia", decidirEnv
 checar("regra: flags nulas contam como desligadas", decidirEnvioParaFila(est("REVISAO ATENDENTE", null, null)).acao, "enviar");
 checar("regra: caixa e espaco no status nao enganam", decidirEnvioParaFila(est(" revisao atendente ")).acao, "enviar");
 checar("regra: libera_nf ja ligada (ja enviado) e idempotente", decidirEnvioParaFila(est("REVISAO ATENDENTE", true, false)).acao, "idempotente");
-for (const s of ["NOVO", "AGUARDANDO", "EM ARTE", "REVISAO PRODUCAO", "EM PRODUCAO", "EXPEDICAO", "LIBERADO", "ENTREGUE", "CANCELADO", "", null]) {
+for (const s of ["NOVO", "AGUARDANDO", "EM ARTE", "REVISAO PRODUCAO", "EM PRODUCAO", "EXPEDICAO", "ENTREGUE", "CANCELADO", "", null]) {
   const d = decidirEnvioParaFila(est(s));
   checar(`regra: status ${JSON.stringify(s)} e recusado`, [d.acao, d.acao === "recusar" && d.code], ["recusar", "FORA_DE_REVISAO_ATENDENTE"]);
 }
@@ -61,8 +61,8 @@ checar("menu Enviar: so ADM e so no estado certo", [
   podeVerEnviarParaFila(ADM, est("REVISAO ATENDENTE", true, false)), // ja enviado: some
   podeVerEnviarParaFila(ADM, est("REVISAO ATENDENTE", false, true)),
   podeVerEnviarParaFila(ADM, est("REVISAO PRODUCAO")),
-  podeVerEnviarParaFila(ADM, est("LIBERADO"))
-], [true, true, false, false, false, false, false, false]);
+  podeVerEnviarParaFila(ADM, est("LIBERADO")) // desde 15/10/2026 vale tambem em LIBERADO
+], [true, true, false, false, false, false, false, true]);
 checar("ADM no servidor: is_admin ou is_super_adm; sem nenhum, recusado", [ehAdmNoServidor({ is_admin: true }), ehAdmNoServidor({ is_super_adm: true }), ehAdmNoServidor({ is_admin: false, is_super_adm: false }), ehAdmNoServidor(null)], [true, true, false, false]);
 
 // ── 2. A regra pura do "Marcar como entregue" ampliado ──
@@ -84,7 +84,7 @@ checar("menu Entregue: com as flags, LIBERADO e a fila sem producao; so ADM", [
 // ── 3. Supabase falso ──
 type Valor = string | number | boolean | null | undefined;
 type Linha = Record<string, Valor>;
-type Banco = { propostas: Linha[]; expedicoes: Linha[]; os_status_log: Linha[] };
+type Banco = { propostas: Linha[]; expedicoes: Linha[]; os_status_log: Linha[]; propostas_os: Linha[]; propostas_os_setores: Linha[]; notas_fiscais: Linha[]; notas_servico: Linha[] };
 type Cliente = Parameters<typeof enviarPedidoParaFilaDeFaturamento>[0];
 type Opcoes = { falhas?: Record<string, { code?: string; message: string }>; antes?: Record<string, (banco: Banco) => void> };
 
@@ -120,6 +120,7 @@ function criarFalso(banco: Banco, opcoes: Opcoes = {}) {
     update(p: Linha) { this.modo = "update"; this.payload = p; return this; }
     eq(c: string, v: Valor) { this.filtros.push(["eq", c, v]); return this; }
     is(c: string, v: Valor) { this.filtros.push(["is", c, v]); return this; }
+    limit() { return this; }
     maybeSingle() {
       const r = executar(this.tabela, "select", null, this.filtros, false);
       const linha = ((r.data as Linha[] | null) ?? [])[0];
@@ -151,9 +152,13 @@ function criarFalso(banco: Banco, opcoes: Opcoes = {}) {
 
 const AUTOR = { uid: "uid-adm", nome: "ADM Teste" };
 const novoBanco = (status: string | null = "REVISAO ATENDENTE", liberaNf: boolean | null = false, flag: boolean | null = false): Banco => ({
-  propostas: [{ id_int: 100, status_interno: status, libera_nf: liberaNf, is_prd_aprovado: flag, liberado_producao_em: null, valor_total: 1500 }],
+  propostas: [{ id_int: 100, status_interno: status, libera_nf: liberaNf, is_prd_aprovado: flag, liberado_producao_em: null, valor_total: 1500, faturado_fora_em: null }],
   expedicoes: [],
-  os_status_log: []
+  os_status_log: [],
+  propostas_os: [],
+  propostas_os_setores: [],
+  notas_fiscais: [],
+  notas_servico: []
 });
 const enviar = (banco: Banco, opcoes: Opcoes = {}, idInt = 100) => {
   const f = criarFalso(banco, opcoes);
@@ -190,7 +195,7 @@ const linha = (b: Banco) => b.propostas[0];
 }
 
 // ── 5. Envio: recusas, nada e gravado ──
-for (const status of ["NOVO", "AGUARDANDO", "REVISAO PRODUCAO", "EM PRODUCAO", "LIBERADO", "ENTREGUE", "CANCELADO", null]) {
+for (const status of ["NOVO", "AGUARDANDO", "REVISAO PRODUCAO", "EM PRODUCAO", "ENTREGUE", "CANCELADO", null]) {
   const banco = novoBanco(status);
   const { r, escritas } = await enviar(banco);
   checar(`status ${JSON.stringify(status)}: 409 e nada gravado`, [r.success, !r.success && r.httpStatus, !r.success && r.code, escritas, linha(banco).libera_nf], [false, 409, "FORA_DE_REVISAO_ATENDENTE", [], false]);
@@ -230,6 +235,67 @@ for (const [status, liberaNf] of [["REVISAO ATENDENTE", false], ["REVISAO ATENDE
   const banco = novoBanco();
   const { r } = await enviar(banco, { falhas: { "os_status_log.insert": { message: "sem permissao" } } });
   checar("log falhou: o envio vale e a resposta avisa", [linha(banco).libera_nf, r.success && !r.idempotente ? [r.logGravado, Boolean(r.aviso)] : null], [true, [false, true]]);
+}
+
+// ── 6b. APROVADO e LIBERADO (15/10/2026) ──
+checar("regra: APROVADO e LIBERADO com as flags desligadas enviam", [decidirEnvioParaFila(est("APROVADO")).acao, decidirEnvioParaFila(est("LIBERADO")).acao, decidirEnvioParaFila(est(" aprovado ")).acao], ["enviar", "enviar", "enviar"]);
+checar("regra: APROVADO com OS, nota ou faturado fora recusa", [
+  decidirEnvioParaFila({ ...est("APROVADO"), temOs: true }),
+  decidirEnvioParaFila({ ...est("APROVADO"), notasEmitidas: ["NF-e 7540"] }),
+  decidirEnvioParaFila({ ...est("LIBERADO"), faturadoForaEm: "2026-10-14T18:00:00Z" })
+].map((d) => d.acao === "recusar" && d.code), ["TEM_OS", "NOTA_EMITIDA", "FATURADO_NO_SISTEMA_ANTIGO"]);
+checar("regra: APROVADO com a flag de producao ligada recusa; com libera_nf ligada e idempotente", [decidirEnvioParaFila(est("APROVADO", false, true)).acao, decidirEnvioParaFila(est("APROVADO", true, false)).acao], ["recusar", "idempotente"]);
+checar("regra: REVISAO ATENDENTE segue igual (OS, nota e faturado fora nao contam ali)", decidirEnvioParaFila({ ...est("REVISAO ATENDENTE"), temOs: true, notasEmitidas: ["NF-e 1"], faturadoForaEm: "2026-10-14" }).acao, "enviar");
+checar("menu: APROVADO aparece para ADM e some com faturado fora ou para nao ADM", [podeVerEnviarParaFila(ADM, est("APROVADO")), podeVerEnviarParaFila(ADM, { ...est("APROVADO"), faturadoForaEm: "2026-10-14" }), podeVerEnviarParaFila(COMUM, est("APROVADO"))], [true, false, false]);
+checar("marcar entregue NAO muda: APROVADO na fila nao e o estado aceito (so LIBERADO e REVISAO ATENDENTE)", [statusDePartidaDoAtalhoEntregue(est("APROVADO", true, false)), statusDePartidaDoAtalhoEntregue(est("LIBERADO", true, false))], [null, "LIBERADO"]);
+for (const status of ["APROVADO", "LIBERADO"]) {
+  const banco = novoBanco(status);
+  const { r, escritas, payloads } = await enviar(banco);
+  checar(`${status} sem OS, sem nota e sem faturado fora: envia, grava so libera_nf e o status nao muda`, [r.success, payloads, linha(banco).status_interno, linha(banco).is_prd_aprovado, escritas], [true, [{ libera_nf: true }], status, false, ["propostas.update", "os_status_log.insert"]]);
+  checar(`${status}: o log registra o status lido como anterior e novo`, [banco.os_status_log[0].status_anterior, banco.os_status_log[0].status_novo, banco.os_status_log[0].origem], [status, status, ORIGEM_LOG_ENVIO_FILA_FATURAMENTO]);
+  const repetida = await enviar(banco);
+  checar(`${status}: repetir e idempotente e nao grava`, [repetida.r.success && repetida.r.idempotente, repetida.escritas], [true, []]);
+}
+for (const [rotulo, extra, code] of [
+  ["com OS", { propostas_os: [{ id_int: 100 }] }, "TEM_OS"],
+  ["com setores de OS", { propostas_os_setores: [{ id_int: 100 }] }, "TEM_OS"],
+  ["com NF-e autorizada de producao", { notas_fiscais: [{ id_int: 100, numero_nf: "7540", status: "AUTORIZADA", ambiente: "producao" }] }, "NOTA_EMITIDA"],
+  ["com NFS-e autorizada de producao", { notas_servico: [{ id_int: 100, numero_nfse: "21", status: "AUTORIZADA", ambiente: "producao" }] }, "NOTA_EMITIDA"]
+] as Array<[string, Partial<Banco>, string]>) {
+  const banco = { ...novoBanco("APROVADO"), ...extra };
+  const { r, escritas } = await enviar(banco);
+  checar(`APROVADO ${rotulo}: 409 ${code} e nada gravado`, [r.success, !r.success && r.httpStatus, !r.success && r.code, escritas, linha(banco).libera_nf], [false, 409, code, [], false]);
+}
+{
+  const banco = { ...novoBanco("APROVADO"), notas_fiscais: [{ id_int: 100, numero_nf: "7540", status: "CANCELADA", ambiente: "producao" }, { id_int: 100, numero_nf: "9", status: "AUTORIZADA", ambiente: "homologacao" }] };
+  const { r } = await enviar(banco);
+  checar("APROVADO so com nota cancelada ou de homologacao: envia", [r.success, linha(banco).libera_nf], [true, true]);
+}
+{
+  const banco = novoBanco("APROVADO");
+  linha(banco).faturado_fora_em = "2026-10-14T18:00:00Z";
+  const { r, escritas } = await enviar(banco);
+  checar("APROVADO com faturado no sistema antigo: 409 e nada gravado", [r.success, !r.success && r.code, escritas], [false, "FATURADO_NO_SISTEMA_ANTIGO", []]);
+}
+{
+  const banco = novoBanco("LIBERADO", false, true);
+  const { r, escritas } = await enviar(banco);
+  checar("LIBERADO com a flag de producao ligada: 409 JA_NA_PRODUCAO e nada gravado", [r.success, !r.success && r.code, escritas], [false, "JA_NA_PRODUCAO", []]);
+}
+{
+  const banco = novoBanco("APROVADO");
+  const { r, escritas } = await enviar(banco, { falhas: { "notas_fiscais.select": { message: "sem acesso" } } });
+  checar("APROVADO sem conseguir ler as notas: recusa (500) e nao grava", [r.success, !r.success && r.httpStatus, escritas], [false, 500, []]);
+}
+{
+  const banco = novoBanco("REVISAO ATENDENTE");
+  const { r, escritas } = await enviar(banco, { falhas: { "notas_fiscais.select": { message: "sem acesso" } } });
+  checar("REVISAO ATENDENTE nem le as notas (segue igual): envia mesmo com a leitura de notas falhando", [r.success, escritas], [true, ["propostas.update", "os_status_log.insert"]]);
+}
+{
+  const banco = novoBanco("APROVADO");
+  const { r } = await enviar(banco, { antes: { "propostas.update": (b) => { b.propostas[0].faturado_fora_em = "2026-10-15T10:00:00Z"; } } });
+  checar("APROVADO marcado faturado fora no meio: a guarda barra, nada gravado", [r.success, linha(banco).libera_nf, banco.os_status_log.length], [false, false, 0]);
 }
 
 // ── 7. Marcar como entregue: LIBERADO (como antes) e o novo estado ──
@@ -292,7 +358,7 @@ checar("servidor: so toca em propostas e os_status_log", Array.from(new Set((ser
 checar("entregue: em LIBERADO a guarda continua sendo so o status; as flags entram so no novo estado", [servidorEntregue.includes('.eq("status_interno", statusOrigem)'), servidorEntregue.includes("if (partiuDaFila) {"), servidorEntregue.includes('consultaStatus.eq("libera_nf", true)')], [true, true, true]);
 checar("liberarPropostaParaProducao intocada: continua gravando as quatro colunas", liberar.includes('      is_prd_aprovado: true,\n      status_interno: "REVISAO PRODUCAO",\n      libera_nf: true,\n      liberado_producao_em: new Date().toISOString()'), true);
 
-checar("lista: o item abre o modal (nao envia no clique) e so aparece pelo teste unico", [lista.includes('{ label: "Enviar para Fila de Faturamento", onClick: () => setPedidoParaEnviarAFila(item) }'), lista.includes("podeVerEnviarParaFila(user, { statusInterno: item.statusInterno, liberaNf: item.libera_nf, isPrdAprovado: item.is_prd_aprovado })")], [true, true]);
+checar("lista: o item abre o modal (nao envia no clique) e so aparece pelo teste unico", [lista.includes('{ label: "Enviar para Fila de Faturamento", onClick: () => setPedidoParaEnviarAFila(item) }'), lista.includes("podeVerEnviarParaFila(user, { statusInterno: item.statusInterno, liberaNf: item.libera_nf, isPrdAprovado: item.is_prd_aprovado, faturadoForaEm: item.faturadoForaEm })")], [true, true]);
 checar("lista: a rota so e chamada no Confirmar do modal", [lista.includes("<EnviarFilaFaturamentoModal"), lista.includes("onConfirm={() => void confirmarEnviarAFila()}"), (lista.match(/enviarPedidoParaFilaPeloServidor\(/g) ?? []).length], [true, true, 1]);
 checar("lista: Marcar como entregue recebe as duas flags", lista.includes("podeVerMarcarComoEntregue(user, item.statusInterno, { liberaNf: item.libera_nf, isPrdAprovado: item.is_prd_aprovado })"), true);
 checar("proposta: o item abre o modal e a rota so e chamada no Confirmar", [proposta.includes('{ label: "Enviar para Fila de Faturamento", onClick: () => setEnviarFilaModalAberto(true) }'), proposta.includes("onConfirm={() => void handleEnviarParaFilaNaProposta()}"), (proposta.match(/enviarPedidoParaFilaPeloServidor\(/g) ?? []).length], [true, true, 1]);

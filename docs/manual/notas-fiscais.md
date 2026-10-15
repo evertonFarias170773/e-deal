@@ -171,7 +171,7 @@ Sai da lista de pedidos quando:
 
 - o pedido ganha uma nota de venda que já saiu do rascunho (pronta para envio, processando, autorizada ou com erro). A nota passa a aparecer em **Notas em processo** ou no **Histórico**;
 - alguém marca **Nota emitida no sistema antigo**;
-- entra também o pedido que um administrador enviou por **Enviar para Fila de Faturamento** (lista de Pedidos ou tela da proposta): ele fica na fila em REVISAO ATENDENTE, sem passar pela Produção nem pela Expedição, e a coluna **Em produção desde** fica vazia;
+- entra também o pedido que um administrador enviou por **Enviar para Fila de Faturamento** (lista de Pedidos ou tela da proposta): ele fica na fila em REVISAO ATENDENTE ou Liberado, sem passar pela Produção nem pela Expedição, e a coluna **Em produção desde** fica vazia;
 - o cliente do pedido está com o interruptor **Nota** desligado no cadastro;
 - o pedido foi encerrado como teste;
 - a **NFS-e** do pedido foi **autorizada**. Este é o único caso que dá para pedir de volta: marque **Mostrar também pedidos com NFS-e emitida**.
