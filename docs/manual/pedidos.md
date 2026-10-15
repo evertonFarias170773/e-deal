@@ -298,6 +298,7 @@ As datas pequenas aparecem como dia/mês e hora, no horário de Brasília.
 Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê esta lista: quando um deles muda e a ficha não, ele avisa. Um caminho por item, entre crases, a partir da raiz do repositório; pasta termina com `/` e vale para tudo dentro dela.
 
 - `src/features/orcamentos/OrcamentosListPageReal.tsx`
+- `src/features/cobrancas/CobrancasSobDemanda.tsx`
 - `src/features/orcamentos/lib/cobrancas-na-fila.ts`
 - `src/features/orcamentos/lib/empresa-pdf.ts`
 - `src/features/orcamentos/services/orcamentos.service.ts`
