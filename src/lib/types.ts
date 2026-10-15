@@ -49,6 +49,12 @@ export type MockUser = {
    * confundir com `isSeller`, que sai da permissao `propostas.create`.
    */
   isVendedorMarcado?: boolean;
+  /**
+   * `usuarios.is_admin` OU `usuarios.is_super_adm`, direto das colunas, sem o perfil.
+   * E o MESMO teste de ADM que o servidor faz em "Marcar como entregue" (15/10/2026).
+   * `isAdmin`/`isSuperAdmin` continuam saindo do perfil e valem para o resto.
+   */
+  isAdmNoCadastro?: boolean;
   /** Slug do perfil atribuído via public.perfis. Opcional — fallback via flags legadas. */
   perfilSlug?: PerfilSlug | string;
   /** Permissões resolvidas do perfil ou fallback legado. */

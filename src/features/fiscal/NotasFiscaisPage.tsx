@@ -1806,7 +1806,8 @@ export function NotasFiscaisPage() {
   }
 
   /**
-   * "Marcar como entregue" na Fila (13/10/2026): só ADM. Aparece no pedido LIBERADO e
+   * "Marcar como entregue" na Fila (13/10/2026): só ADM do cadastro (`isAdmNoCadastro`, o
+   * mesmo teste do servidor, desde 15/10/2026). Aparece no pedido LIBERADO ou APROVADO e
    * no que foi só à Fila de Faturamento, sem produção (REVISAO ATENDENTE com a flag
    * de produção desligada; toda linha daqui já tem `libera_nf`). Mesma rota, mesmo
    * modal e mesmos efeitos da lista de Pedidos; a linha continua na Fila.
@@ -3574,7 +3575,7 @@ export function NotasFiscaisPage() {
         <MarcarEntregueModal
           isOpen
           propostaId={Number(filaParaMarcarEntregue.id_int)}
-          daFilaSemProducao={String(filaParaMarcarEntregue.status_interno || "").trim().toUpperCase() !== "LIBERADO"}
+          daFilaSemProducao={String(filaParaMarcarEntregue.status_interno || "").trim().toUpperCase() === "REVISAO ATENDENTE"}
           isSubmitting={marcandoEntregueNaFila}
           onClose={() => setFilaParaMarcarEntregue(null)}
           onConfirm={() => void confirmarMarcarEntregueNaFila()}

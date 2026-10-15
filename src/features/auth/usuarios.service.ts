@@ -338,6 +338,8 @@ export async function fetchUsuarioEnriquecido(
       isSeller: perfilResolvido ? permissoes.includes("propostas.create") : fallback.isSeller,
       // A marca "vende", direto da coluna: nao depende do perfil e nao restringe nada.
       isVendedorMarcado: row.is_vendedor === true,
+      // O ADM do cadastro, sem o perfil: so "Marcar como entregue" usa (o mesmo teste do servidor).
+      isAdmNoCadastro: row.is_admin === true || row.is_super_adm === true,
       isGerente: perfilResolvido ? permissoes.includes("*") || permissoes.includes("pedidos.admin") : (row.is_admin || row.is_super_adm),
       perfilSlug,
       permissoes,

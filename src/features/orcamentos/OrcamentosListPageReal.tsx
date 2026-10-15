@@ -2026,8 +2026,9 @@ Ela volta a aparecer nas listas operacionais.`
             onClick: () => void handleDesmarcarFaturadoFora(item)
           }]
         : []),
-      // So ADM, sem "desmarcar": em LIBERADO (paliativo da migracao, 11/10/2026) ou no pedido que foi
-      // so a Fila de Faturamento, sem producao (13/10/2026).
+      // So ADM do cadastro (is_admin / is_super_adm, o mesmo teste do servidor), sem "desmarcar": em
+      // LIBERADO (11/10/2026), no pedido que foi so a Fila de Faturamento (13/10/2026) e em APROVADO
+      // sem producao (15/10/2026; OS e nota o servidor confere).
       ...(podeVerMarcarComoEntregue(user, item.statusInterno, { liberaNf: item.libera_nf, isPrdAprovado: item.is_prd_aprovado })
         ? [{
             label: "Marcar como entregue",

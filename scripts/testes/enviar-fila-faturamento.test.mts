@@ -18,7 +18,8 @@ import {
   ORIGEM_LOG_ATALHO_ENTREGUE,
   ehAdmNoServidor,
   podeVerMarcarComoEntregue,
-  statusDePartidaDoAtalhoEntregue
+  statusDePartidaDoAtalhoEntregue,
+  travaDoAprovado
 } from "../../src/features/orcamentos/lib/marcar-entregue.ts";
 import { enviarPedidoParaFilaDeFaturamento } from "../../src/features/orcamentos/services/enviar-fila-faturamento.server.ts";
 import { marcarPedidoComoEntregue } from "../../src/features/orcamentos/services/marcar-entregue.server.ts";
@@ -70,15 +71,17 @@ checar("entregue: LIBERADO parte de LIBERADO, com qualquer flag", [statusDeParti
 checar("entregue: REVISAO ATENDENTE na fila sem producao parte de REVISAO ATENDENTE", statusDePartidaDoAtalhoEntregue(est("REVISAO ATENDENTE", true, false)), "REVISAO ATENDENTE");
 checar("entregue: REVISAO ATENDENTE fora da fila nao vale", [statusDePartidaDoAtalhoEntregue(est("REVISAO ATENDENTE", false, false)), statusDePartidaDoAtalhoEntregue(est("REVISAO ATENDENTE", null, false))], [null, null]);
 checar("entregue: REVISAO ATENDENTE com a flag de producao ligada nao vale", statusDePartidaDoAtalhoEntregue(est("REVISAO ATENDENTE", true, true)), null);
-checar("entregue: outros status com libera_nf nao valem", ["REVISAO PRODUCAO", "EM PRODUCAO", "EXPEDICAO", "NOVO", "APROVADO"].map((s) => statusDePartidaDoAtalhoEntregue(est(s, true, false))), [null, null, null, null, null]);
+checar("entregue: outros status com libera_nf nao valem", ["REVISAO PRODUCAO", "EM PRODUCAO", "EXPEDICAO", "NOVO"].map((s) => statusDePartidaDoAtalhoEntregue(est(s, true, false))), [null, null, null, null]);
 checar("estaNaFilaSemProducao", [estaNaFilaSemProducao(est("REVISAO ATENDENTE", true, false)), estaNaFilaSemProducao(est("REVISAO ATENDENTE", true, null)), estaNaFilaSemProducao(est("REVISAO ATENDENTE", false, false)), estaNaFilaSemProducao(est("REVISAO ATENDENTE", true, true)), estaNaFilaSemProducao(est("LIBERADO", true, false))], [true, true, false, false, false]);
-checar("menu Entregue: sem as flags, so LIBERADO (como antes)", [podeVerMarcarComoEntregue(ADM, "LIBERADO"), podeVerMarcarComoEntregue(ADM, "REVISAO ATENDENTE"), podeVerMarcarComoEntregue(COMUM, "LIBERADO")], [true, false, false]);
+const ADM_CAD = { isAdmNoCadastro: true };
+const SEM_ADM_CAD = { isAdmNoCadastro: false };
+checar("menu Entregue: sem as flags, so LIBERADO (como antes)", [podeVerMarcarComoEntregue(ADM_CAD, "LIBERADO"), podeVerMarcarComoEntregue(ADM_CAD, "REVISAO ATENDENTE"), podeVerMarcarComoEntregue(ADM_CAD, "APROVADO"), podeVerMarcarComoEntregue(SEM_ADM_CAD, "LIBERADO")], [true, false, false, false]);
 checar("menu Entregue: com as flags, LIBERADO e a fila sem producao; so ADM", [
-  podeVerMarcarComoEntregue(ADM, "LIBERADO", { liberaNf: false, isPrdAprovado: false }),
-  podeVerMarcarComoEntregue(ADM, "REVISAO ATENDENTE", { liberaNf: true, isPrdAprovado: false }),
-  podeVerMarcarComoEntregue(ADM, "REVISAO ATENDENTE", { liberaNf: false, isPrdAprovado: false }),
-  podeVerMarcarComoEntregue(ADM, "REVISAO ATENDENTE", { liberaNf: true, isPrdAprovado: true }),
-  podeVerMarcarComoEntregue(COMUM, "REVISAO ATENDENTE", { liberaNf: true, isPrdAprovado: false })
+  podeVerMarcarComoEntregue(ADM_CAD, "LIBERADO", { liberaNf: false, isPrdAprovado: false }),
+  podeVerMarcarComoEntregue(ADM_CAD, "REVISAO ATENDENTE", { liberaNf: true, isPrdAprovado: false }),
+  podeVerMarcarComoEntregue(ADM_CAD, "REVISAO ATENDENTE", { liberaNf: false, isPrdAprovado: false }),
+  podeVerMarcarComoEntregue(ADM_CAD, "REVISAO ATENDENTE", { liberaNf: true, isPrdAprovado: true }),
+  podeVerMarcarComoEntregue(SEM_ADM_CAD, "REVISAO ATENDENTE", { liberaNf: true, isPrdAprovado: false })
 ], [true, true, false, false, false]);
 
 // ── 3. Supabase falso ──
@@ -247,7 +250,7 @@ checar("regra: APROVADO com OS, nota ou faturado fora recusa", [
 checar("regra: APROVADO com a flag de producao ligada recusa; com libera_nf ligada e idempotente", [decidirEnvioParaFila(est("APROVADO", false, true)).acao, decidirEnvioParaFila(est("APROVADO", true, false)).acao], ["recusar", "idempotente"]);
 checar("regra: REVISAO ATENDENTE segue igual (OS, nota e faturado fora nao contam ali)", decidirEnvioParaFila({ ...est("REVISAO ATENDENTE"), temOs: true, notasEmitidas: ["NF-e 1"], faturadoForaEm: "2026-10-14" }).acao, "enviar");
 checar("menu: APROVADO aparece para ADM e some com faturado fora ou para nao ADM", [podeVerEnviarParaFila(ADM, est("APROVADO")), podeVerEnviarParaFila(ADM, { ...est("APROVADO"), faturadoForaEm: "2026-10-14" }), podeVerEnviarParaFila(COMUM, est("APROVADO"))], [true, false, false]);
-checar("marcar entregue NAO muda: APROVADO na fila nao e o estado aceito (so LIBERADO e REVISAO ATENDENTE)", [statusDePartidaDoAtalhoEntregue(est("APROVADO", true, false)), statusDePartidaDoAtalhoEntregue(est("LIBERADO", true, false))], [null, "LIBERADO"]);
+checar("marcar entregue: APROVADO parte de APROVADO desde 15/10/2026, com ou sem libera_nf", [statusDePartidaDoAtalhoEntregue(est("APROVADO", true, false)), statusDePartidaDoAtalhoEntregue(est("APROVADO", false, false)), statusDePartidaDoAtalhoEntregue(est("LIBERADO", true, false))], ["APROVADO", "APROVADO", "LIBERADO"]);
 for (const status of ["APROVADO", "LIBERADO"]) {
   const banco = novoBanco(status);
   const { r, escritas, payloads } = await enviar(banco);
@@ -335,6 +338,73 @@ for (const [status, liberaNf, flag, rotulo] of [
   const banco = novoBanco("REVISAO ATENDENTE", true, false);
   const { r } = await entregar(banco, { antes: { "propostas.update": (b) => { b.propostas[0].is_prd_aprovado = true; } } });
   checar("entregue: so a flag de producao ligou no meio (status igual) -> a guarda das flags barra", [r.success, linha(banco).status_interno, banco.os_status_log.length], [false, "REVISAO ATENDENTE", 0]);
+}
+
+// ── 7b. Marcar como entregue em APROVADO (15/10/2026) ──
+checar("trava APROVADO: limpa passa; producao, OS e nota recusam", [
+  travaDoAprovado({ isPrdAprovado: false }),
+  travaDoAprovado({ isPrdAprovado: true })?.code,
+  travaDoAprovado({ isPrdAprovado: false, temOs: true })?.code,
+  travaDoAprovado({ isPrdAprovado: null, notasEmitidas: ["NF-e 7540"] })?.code
+], [null, "JA_NA_PRODUCAO", "TEM_OS", "NOTA_EMITIDA"]);
+checar("tela: APROVADO sem producao aparece para ADM do cadastro; com producao ou sem ADM do cadastro, nao", [
+  podeVerMarcarComoEntregue(ADM_CAD, "APROVADO", { liberaNf: false, isPrdAprovado: false }),
+  podeVerMarcarComoEntregue(ADM_CAD, "APROVADO", { liberaNf: true, isPrdAprovado: null }),
+  podeVerMarcarComoEntregue(ADM_CAD, "APROVADO", { liberaNf: false, isPrdAprovado: true }),
+  podeVerMarcarComoEntregue(SEM_ADM_CAD, "APROVADO", { liberaNf: false, isPrdAprovado: false })
+], [true, true, false, false]);
+checar("tela: ADM so no cadastro ve; ADM so no perfil (isAdmin/isSuperAdmin do perfil) nao ve", [
+  podeVerMarcarComoEntregue({ isAdmNoCadastro: true }, "LIBERADO", { liberaNf: false, isPrdAprovado: false }),
+  podeVerMarcarComoEntregue({ isAdmin: true, isSuperAdmin: true, isAdmNoCadastro: false } as { isAdmNoCadastro: boolean }, "LIBERADO", { liberaNf: false, isPrdAprovado: false }),
+  podeVerMarcarComoEntregue({ isAdmin: true, isSuperAdmin: true } as { isAdmNoCadastro?: boolean }, "LIBERADO", { liberaNf: false, isPrdAprovado: false })
+], [true, false, false]);
+{
+  const banco = novoBanco("APROVADO", false, false);
+  const { r, escritas, payloads } = await entregar(banco);
+  checar("entregue em APROVADO limpo: aceita e vira ENTREGUE com a mesma gravacao", [r.success, linha(banco).status_interno, payloads[0], escritas], [true, "ENTREGUE", { status_interno: "ENTREGUE" }, ["expedicoes.insert", "propostas.update", "os_status_log.insert"]]);
+  checar("entregue em APROVADO: data de entrega gravada, flags intocadas, log parte de APROVADO", [banco.expedicoes[0]?.data_entrega, linha(banco).libera_nf, linha(banco).is_prd_aprovado, banco.os_status_log[0].status_anterior, banco.os_status_log[0].origem], ["2026-10-13T15:00:00.000Z", false, false, "APROVADO", ORIGEM_LOG_ATALHO_ENTREGUE]);
+  const repetida = await entregar(banco);
+  checar("entregue em APROVADO: repetir e idempotente, sem escrita", [repetida.r.success && repetida.r.idempotente, repetida.escritas], [true, []]);
+}
+{
+  const banco = novoBanco("APROVADO", true, false);
+  const { r } = await entregar(banco);
+  checar("entregue em APROVADO ja na Fila (libera_nf ligada): aceita", [r.success, linha(banco).status_interno], [true, "ENTREGUE"]);
+}
+for (const [rotulo, extra, flag, code] of [
+  ["com a flag de producao", {}, true, "JA_NA_PRODUCAO"],
+  ["com OS", { propostas_os: [{ id_int: 100 }] }, false, "TEM_OS"],
+  ["com setores de OS", { propostas_os_setores: [{ id_int: 100 }] }, false, "TEM_OS"],
+  ["com NF-e autorizada de producao", { notas_fiscais: [{ id_int: 100, numero_nf: "7540", status: "AUTORIZADA", ambiente: "producao" }] }, false, "NOTA_EMITIDA"],
+  ["com NFS-e autorizada de producao", { notas_servico: [{ id_int: 100, numero_nfse: "21", status: "AUTORIZADA", ambiente: "producao" }] }, false, "NOTA_EMITIDA"]
+] as Array<[string, Partial<Banco>, boolean, string]>) {
+  const banco = { ...novoBanco("APROVADO", false, flag), ...extra };
+  const { r, escritas } = await entregar(banco);
+  checar(`entregue em APROVADO ${rotulo}: 409 ${code}, nada gravado`, [r.success, !r.success && r.httpStatus, !r.success && r.code, escritas, linha(banco).status_interno, banco.expedicoes.length], [false, 409, code, [], "APROVADO", 0]);
+}
+{
+  const banco = { ...novoBanco("APROVADO"), notas_fiscais: [{ id_int: 100, numero_nf: "1", status: "CANCELADA", ambiente: "producao" }, { id_int: 100, numero_nf: "2", status: "AUTORIZADA", ambiente: "homologacao" }] };
+  const { r } = await entregar(banco);
+  checar("entregue em APROVADO so com nota cancelada ou de homologacao: aceita", [r.success, linha(banco).status_interno], [true, "ENTREGUE"]);
+}
+{
+  const banco = novoBanco("APROVADO");
+  const { r, escritas } = await entregar(banco, { falhas: { "notas_servico.select": { message: "sem acesso" } } });
+  checar("entregue em APROVADO sem conseguir ler as notas: 500, nada gravado", [r.success, !r.success && r.httpStatus, escritas], [false, 500, []]);
+}
+{
+  const banco = novoBanco("APROVADO");
+  const { r } = await entregar(banco, { antes: { "propostas.update": (b) => { b.propostas[0].is_prd_aprovado = true; } } });
+  checar("entregue em APROVADO: flag de producao ligou no meio -> a guarda barra e a data e desfeita", [r.success, linha(banco).status_interno, banco.expedicoes[0]?.data_entrega ?? null, banco.os_status_log.length], [false, "APROVADO", null, 0]);
+}
+{
+  // LIBERADO e REVISAO ATENDENTE seguem sem as travas novas: com OS e nota, continuam aceitos como antes.
+  const comTudo = { propostas_os: [{ id_int: 100 }], notas_fiscais: [{ id_int: 100, numero_nf: "7540", status: "AUTORIZADA", ambiente: "producao" }] };
+  const lib = { ...novoBanco("LIBERADO", false, true), ...comTudo };
+  const ra = { ...novoBanco("REVISAO ATENDENTE", true, false), ...comTudo };
+  const r1 = await entregar(lib);
+  const r2 = await entregar(ra);
+  checar("LIBERADO e REVISAO ATENDENTE seguem iguais: OS, nota e flag de producao nao travam ali", [r1.r.success, linha(lib).status_interno, r2.r.success, linha(ra).status_interno], [true, "ENTREGUE", true, "ENTREGUE"]);
 }
 
 // ── 8. Estrutura ──

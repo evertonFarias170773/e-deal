@@ -152,8 +152,8 @@ const rodar = (banco: Banco, opcoes: Opcoes = {}, idInt = 100) => {
   checar("linha sem data: data_despacho e frete intactos", [banco.expedicoes[0].data_despacho, banco.expedicoes[0].tipo_frete], ["2026-08-30T12:00:00Z", "CORREIOS"]);
 }
 
-// ── 5. So LIBERADO ──
-for (const status of ["REVISAO ATENDENTE", "EM PRODUCAO", "NOVO", "APROVADO", "CANCELADO", null]) {
+// ── 5. So LIBERADO (APROVADO e REVISAO ATENDENTE na fila tem testes em enviar-fila-faturamento.test.mts) ──
+for (const status of ["REVISAO ATENDENTE", "EM PRODUCAO", "NOVO", "CANCELADO", null]) {
   const banco = novoBanco({ propostas: [{ id_int: 100, status_interno: status }] });
   const { r, escritas } = await rodar(banco);
   checar(`status ${status}: recusa 409 sem escrever nada`, [r.success, !r.success && r.httpStatus, !r.success && r.code, escritas], [false, 409, "STATUS_NAO_LIBERADO", []]);
@@ -223,12 +223,12 @@ for (const status of ["REVISAO ATENDENTE", "EM PRODUCAO", "NOVO", "APROVADO", "C
 }
 
 // ── 13. Regras da tela e do servidor ──
-checar("tela: ADM + LIBERADO ve", podeVerMarcarComoEntregue({ isAdmin: true }, "LIBERADO"), true);
-checar("tela: super ADM + LIBERADO ve", podeVerMarcarComoEntregue({ isSuperAdmin: true }, "LIBERADO"), true);
-checar("tela: nao-ADM nao ve", podeVerMarcarComoEntregue({ isAdmin: false, isSuperAdmin: false }, "LIBERADO"), false);
+// Desde 15/10/2026 a tela usa o ADM do CADASTRO (isAdmNoCadastro = is_admin ou is_super_adm), como o servidor.
+checar("tela: ADM do cadastro + LIBERADO ve", podeVerMarcarComoEntregue({ isAdmNoCadastro: true }, "LIBERADO"), true);
+checar("tela: sem ADM no cadastro nao ve", podeVerMarcarComoEntregue({ isAdmNoCadastro: false }, "LIBERADO"), false);
 checar("tela: sem usuario nao ve", [podeVerMarcarComoEntregue(null, "LIBERADO"), podeVerMarcarComoEntregue(undefined, "LIBERADO")], [false, false]);
-for (const s of ["APROVADO", "ENTREGUE", "REVISAO ATENDENTE", "NOVO", "LIBERADO / EM ARTE", null, ""]) {
-  checar(`tela: ADM com status ${JSON.stringify(s)} nao ve`, podeVerMarcarComoEntregue({ isAdmin: true }, s), false);
+for (const s of ["ENTREGUE", "REVISAO ATENDENTE", "NOVO", "LIBERADO / EM ARTE", null, ""]) {
+  checar(`tela: ADM com status ${JSON.stringify(s)} nao ve`, podeVerMarcarComoEntregue({ isAdmNoCadastro: true }, s), false);
 }
 checar("servidor: ADM so por is_admin ou is_super_adm", [ehAdmNoServidor({ is_admin: true }), ehAdmNoServidor({ is_super_adm: true }), ehAdmNoServidor({ is_admin: false, is_super_adm: false }), ehAdmNoServidor(null)], [true, true, false, false]);
 

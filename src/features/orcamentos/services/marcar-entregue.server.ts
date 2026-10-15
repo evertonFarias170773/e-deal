@@ -2,10 +2,14 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   ORIGEM_LOG_ATALHO_ENTREGUE,
   STATUS_DESTINO_ATALHO_ENTREGUE,
+  STATUS_LEGADO_APROVADO,
   STATUS_ORIGEM_ATALHO_ENTREGUE,
   diaDaMarcacaoSaoPaulo,
-  statusDePartidaDoAtalhoEntregue
+  statusDePartidaDoAtalhoEntregue,
+  travaDoAprovado
 } from "@/features/orcamentos/lib/marcar-entregue";
+import { notasQueImpedemDevolucao, rotuloDaNota } from "@/features/orcamentos/lib/nota-impede-devolucao";
+import { lerNotasDoPedido } from "@/features/orcamentos/services/nota-impede-devolucao.server";
 
 /**
  * Grava o atalho "Marcar como entregue" (11/10/2026). Roda no SERVIDOR, com a
@@ -29,6 +33,12 @@ import {
  * com `libera_nf` ligada e `is_prd_aprovado` desligada (pedido na Fila de Faturamento
  * sem producao). No segundo, o UPDATE do passo 2 e guardado tambem pelas duas flags.
  * Em LIBERADO a guarda e a de antes, so o status.
+ *
+ * APROVADO (15/10/2026): o legado de LIBERADO tambem parte daqui, mas antes de gravar
+ * o servidor recusa com a flag de producao ligada, com OS ou setores de OS, ou com
+ * NF-e/NFS-e autorizada de producao (409 JA_NA_PRODUCAO, TEM_OS, NOTA_EMITIDA). Sem
+ * conseguir ler OS ou notas, recusa (500). O UPDATE do passo 2 e guardado tambem pela
+ * flag de producao lida. LIBERADO e REVISAO ATENDENTE nao passam por essas travas.
  *
  * O que NAO e tocado: `data_despacho` (os tres gatilhos de `expedicoes` so agem
  * quando ela muda), frete, financeiro, cobrancas, boletos, `encerrado_teste_em`.
@@ -92,12 +102,37 @@ export async function marcarPedidoComoEntregue(
       httpStatus: 409,
       code: "STATUS_NAO_LIBERADO",
       message:
-        `Só dá para marcar como entregue o pedido LIBERADO ou o que está na Fila de Faturamento sem produção ` +
-        `(REVISAO ATENDENTE, enviado à fila e não liberado para a produção). A proposta #${idInt} está em ${statusAtual || "sem status"}.`
+        `Só dá para marcar como entregue o pedido LIBERADO (ou APROVADO, o mesmo "Liberado" da tela) ou o que está na Fila de ` +
+        `Faturamento sem produção (REVISAO ATENDENTE, enviado à fila e não liberado para a produção). A proposta #${idInt} está em ${statusAtual || "sem status"}.`
     };
   }
-  const partiuDaFila = statusOrigem !== STATUS_ORIGEM_ATALHO_ENTREGUE;
+  const partiuDoAprovado = statusOrigem === STATUS_LEGADO_APROVADO;
+  const partiuDaFila = statusOrigem !== STATUS_ORIGEM_ATALHO_ENTREGUE && !partiuDoAprovado;
   const flagProducaoLida = proposta.is_prd_aprovado as boolean | null;
+
+  // ── APROVADO: as travas a mais (producao, OS, nota), antes de qualquer escrita ──
+  if (partiuDoAprovado) {
+    const pelaFlag = travaDoAprovado({ isPrdAprovado: proposta.is_prd_aprovado });
+    if (pelaFlag) return { success: false, httpStatus: 409, code: pelaFlag.code, message: pelaFlag.message };
+    const [os, setores, notas] = await Promise.all([
+      supabase.from("propostas_os").select("id_int").eq("id_int", idInt).limit(1),
+      supabase.from("propostas_os_setores").select("id_int").eq("id_int", idInt).limit(1),
+      lerNotasDoPedido(supabase, idInt)
+    ]);
+    const erroOs = os.error ?? setores.error;
+    if (erroOs) {
+      return { success: false, httpStatus: 500, code: "LEITURA_OS_FALHOU", message: `Não foi possível conferir a OS do pedido (${erroOs.message}). Nada foi alterado.` };
+    }
+    if (!notas.ok) {
+      return { success: false, httpStatus: 500, code: "LEITURA_NOTAS_FALHOU", message: `Não foi possível conferir as notas fiscais do pedido (${notas.erro}). Nada foi alterado.` };
+    }
+    const trava = travaDoAprovado({
+      isPrdAprovado: proposta.is_prd_aprovado,
+      temOs: Boolean(os.data?.length) || Boolean(setores.data?.length),
+      notasEmitidas: Array.from(new Set(notasQueImpedemDevolucao(notas.notas).map(rotuloDaNota)))
+    });
+    if (trava) return { success: false, httpStatus: 409, code: trava.code, message: trava.message };
+  }
 
   // ── 1. expedicoes.data_entrega ─────────────────────────────────────────────
   const { data: expedicao, error: erroExpedicao } = await supabase
@@ -182,6 +217,10 @@ export async function marcarPedidoComoEntregue(
     consultaStatus = consultaStatus.eq("libera_nf", true);
     consultaStatus = flagProducaoLida === null ? consultaStatus.is("is_prd_aprovado", null) : consultaStatus.eq("is_prd_aprovado", flagProducaoLida);
   }
+  if (partiuDoAprovado) {
+    // APROVADO: a flag de producao lida tambem guarda.
+    consultaStatus = flagProducaoLida === null ? consultaStatus.is("is_prd_aprovado", null) : consultaStatus.eq("is_prd_aprovado", flagProducaoLida);
+  }
   const { data: gravado, error: erroStatus } = await consultaStatus.select("id_int");
 
   if (erroStatus) {
@@ -222,7 +261,9 @@ export async function marcarPedidoComoEntregue(
   const motivo =
     (partiuDaFila
       ? `Entrega marcada pelo atalho do ADM em pedido que foi só à Fila de Faturamento, sem Produção nem Expedição. `
-      : `Entrega marcada pelo atalho da lista de Pedidos (paliativo da migração: o pedido terminou no sistema antigo). `) +
+      : partiuDoAprovado
+        ? `Entrega marcada pelo atalho do ADM em pedido APROVADO (legado de LIBERADO), sem produção, OS nem nota emitida. `
+        : `Entrega marcada pelo atalho da lista de Pedidos (paliativo da migração: o pedido terminou no sistema antigo). `) +
     `Dia da marcação: ${dia}. ` +
     (gravouData ? "data_entrega gravada agora." : "data_entrega já existia e foi mantida.");
 
