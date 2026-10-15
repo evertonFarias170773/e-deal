@@ -1,6 +1,6 @@
 # Proposta: aba Pagamentos
 
-> **Última revisão:** 14/10/2026
+> **Última revisão:** 15/10/2026
 > **Caminho no menu:** Pedidos → abrir um pedido → aba Pagamentos
 > **Endereço:** `/orcamentos/<número>/editar?tab=pagamentos`
 
@@ -285,6 +285,7 @@ Se a janela for fechada sem escolher, a proposta fica com a faixa **Revisão fin
 | "Não foi possível gerar o link." | A área do cliente está desligada no ambiente ou a proposta não foi encontrada. | Leia a descrição do aviso e avise o administrador. |
 | Na área do cliente: "O valor deste pedido está em revisão. Fale com seu atendente." | O total gravado do pedido não bate com a soma dos itens. | Abra a proposta, confira os itens e o total e salve. |
 | Na área do cliente: "Este pedido já está em andamento." | O pedido já passou da fase de pagamento. | Cobre o saldo por esta aba. |
+| Na área do cliente: "O serviço do banco está indisponível no momento. Tente novamente em alguns minutos." | O serviço que emite o PIX não respondeu em 20 segundos. A cobrança fica aberta, sem código de PIX, e a página não tenta de novo sozinha. | Peça ao cliente para tentar em alguns minutos. Se o aviso se repetir, confira na aba Pagamentos se o PIX não apareceu antes de gerar outro, porque o banco pode ter criado a cobrança depois do corte. |
 
 ## Veja também
 

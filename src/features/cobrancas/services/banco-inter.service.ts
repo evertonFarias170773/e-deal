@@ -24,12 +24,22 @@ function roundMoney(value: number): number {
   return Math.round((value + Number.EPSILON) * 100) / 100;
 }
 
+export interface GerarPixOpcoes {
+  /**
+   * Limite de espera pela resposta do n8n, em milissegundos. Sem valor, a
+   * chamada espera sem limite (comportamento original de gerar-pix e
+   * pagamento-combinado). Estourado, nada é gravado na cobrança.
+   */
+  timeoutMs?: number;
+}
+
 /**
  * Executa a chamada real ao Webhook do Banco Inter e salva as credenciais do PIX na cobrança.
  */
 export async function gerarPixBancoInter(
   supabase: SupabaseClient,
-  params: GerarPixParams
+  params: GerarPixParams,
+  opcoes: GerarPixOpcoes = {}
 ): Promise<{
   success: boolean;
   error?: string;
@@ -39,6 +49,13 @@ export async function gerarPixBancoInter(
    * chama NÃO pode oferecer nova tentativa: reemitir cria outra cobrança real.
    */
   cobrancaEmitida?: boolean;
+  /**
+   * `true` quando o n8n não respondeu dentro de `opcoes.timeoutMs`. Nada foi
+   * gravado na cobrança. O pedido já saiu para o n8n, então a cobrança PODE ter
+   * nascido no banco emissor depois do corte: quem chama não reemite na mesma
+   * requisição.
+   */
+  tempoEsgotado?: boolean;
 }> {
   const {
     cobrancaId,
@@ -87,20 +104,43 @@ export async function gerarPixBancoInter(
     return { success: false, error: `Criacao de cobranca real nao suportada para empresa ID ${idEmpresa}.` };
   }
 
-  try {
-    const webhookResponse = await fetch(webhookUrl, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(webhookBody)
-    });
+  // Só existe limite quando quem chama pede (hoje, a área do cliente). O limite
+  // vale para a resposta inteira (cabeçalho e corpo) e é desligado antes de
+  // qualquer gravação: o corte nunca acontece no meio de um UPDATE.
+  const limite = opcoes.timeoutMs && opcoes.timeoutMs > 0 ? new AbortController() : null;
+  const relogio = limite ? setTimeout(() => limite.abort(), opcoes.timeoutMs) : null;
 
-    // Lê sempre como texto primeiro — nunca chamar .json() direto numa
-    // resposta que pode vir vazia (n8n/webhook sem corpo) ou com texto
-    // inválido (ex.: página de erro HTML de um proxy/timeout): nesses casos
-    // .json() lança SyntaxError ("Unexpected end of JSON input") sem
-    // contexto nenhum para diagnóstico, e sem esse try/catch o erro cru
-    // vazava até o cliente.
-    const rawText = await webhookResponse.text();
+  try {
+    let rawText: string;
+    let webhookResponse: Response;
+    try {
+      webhookResponse = await fetch(webhookUrl, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(webhookBody),
+        ...(limite ? { signal: limite.signal } : {})
+      });
+
+      // Lê sempre como texto primeiro — nunca chamar .json() direto numa
+      // resposta que pode vir vazia (n8n/webhook sem corpo) ou com texto
+      // inválido (ex.: página de erro HTML de um proxy/timeout): nesses casos
+      // .json() lança SyntaxError ("Unexpected end of JSON input") sem
+      // contexto nenhum para diagnóstico, e sem esse try/catch o erro cru
+      // vazava até o cliente.
+      rawText = await webhookResponse.text();
+    } catch (erroDaChamada: unknown) {
+      if (limite?.signal.aborted) {
+        console.error(`[BancoInter] Webhook sem resposta em ${opcoes.timeoutMs} ms; nada gravado. url=${webhookUrl} cobranca=${cobrancaId}`);
+        return {
+          success: false,
+          tempoEsgotado: true,
+          error: `O serviço do banco não respondeu em ${Math.round((opcoes.timeoutMs ?? 0) / 1000)} s.`
+        };
+      }
+      throw erroDaChamada;
+    } finally {
+      if (relogio) clearTimeout(relogio);
+    }
     // Preview truncado só para log/erro — o payload de resposta do PIX
     // (txid, pix_copia_e_cola) não é credencial, mas o corte evita log
     // gigante e qualquer excesso de exposição em caso de resposta anômala.

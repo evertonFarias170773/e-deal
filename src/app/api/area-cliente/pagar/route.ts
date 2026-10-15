@@ -12,7 +12,9 @@ import { rateLimitCheck } from "@/lib/security/rate-limit-memory";
 
 /**
  * "Pagar" da área do cliente: cria ou reaproveita a cobrança do valor que
- * falta e aciona o provedor (PIX Inter ou Cartão Asas).
+ * falta e, no PIX, aciona o n8n para emitir (Inter/C6). O cartão não chama
+ * provedor aqui: a cobrança nasce com a URL da página pública, e o checkout
+ * do C6 é criado lá, no clique do cliente.
  *
  * O corpo só diz o método. Valor, pagador, empresa e vencimento saem do banco,
  * no servidor — nada do navegador vira dado da cobrança.
@@ -20,7 +22,8 @@ import { rateLimitCheck } from "@/lib/security/rate-limit-memory";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-// O Cartão Asas espera o n8n gravar o checkout: até 6 leituras de 1,5 s.
+// O caminho mais longo é o PIX: a emissão pelo n8n espera no máximo 20 s
+// (TEMPO_LIMITE_PIX_MS em area-cliente.server.ts), e o resto é leitura no banco.
 export const maxDuration = 30;
 
 type Corpo = {

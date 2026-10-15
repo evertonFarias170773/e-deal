@@ -50,6 +50,12 @@ import { calcularTotaisPelaRegraDaTela } from "@/features/orcamentos/services/to
 const VERSAO_TOKEN = 1;
 const ATENDENTE_AREA_CLIENTE = "Area do cliente";
 const DIAS_VENCIMENTO = 3;
+/**
+ * Espera máxima pelo n8n ao emitir o PIX. Em dia normal ele responde em ~1 s
+ * (máximo de 9,5 s medido); sem limite, com o n8n parado, a rota ficava presa
+ * até a Vercel cortar em 30 s e o cliente não recebia resposta (15/10/2026).
+ */
+const TEMPO_LIMITE_PIX_MS = 20_000;
 
 /** Empresas com PIX no painel do vendedor (PropostaCobrancaPanel, opção PIX). */
 const EMPRESAS_COM_PIX = new Set([1, 2, 3]);
@@ -679,7 +685,18 @@ export async function iniciarPagamentoAreaCliente(
         cidade: endereco?.cidade || "",
         uf: endereco?.uf || "",
         cep: endereco?.cep || ""
-      });
+      }, { timeoutMs: TEMPO_LIMITE_PIX_MS });
+
+      if (resPix.tempoEsgotado) {
+        // O n8n não respondeu a tempo. Nada foi gravado: a linha segue em
+        // A_RECEBER, sem código de PIX, e esta requisição não tenta de novo.
+        console.error(`[area-cliente] PIX sem resposta do n8n para ${linha.id} (pedido ${idInt}):`, resPix.error);
+        return {
+          ok: false,
+          codigo: "PROVEDOR",
+          mensagem: "O serviço do banco está indisponível no momento. Tente novamente em alguns minutos."
+        };
+      }
 
       if (!resPix.success) {
         // A cobrança fica preservada em A_RECEBER para nova tentativa, como no painel.
