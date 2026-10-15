@@ -10,6 +10,7 @@ import QRCode from "qrcode";
 import { renderToBuffer } from "@react-pdf/renderer";
 import { verificarPermissaoServerSide } from "@/lib/auth/verificar-permissao";
 import { verificarEscopoPropostaServerSide } from "@/lib/auth/verificar-escopo-proposta";
+import { PERMISSAO_ACESSO_PRODUCAO } from "@/lib/auth/alcance-impressao-os";
 import { montarOsPdfViewModel } from "@/features/pedidos/services/os-viewmodel.service";
 import type { OsPdfArteRef, OsPdfModelo, OsPdfViewModel } from "@/features/pedidos/services/os-viewmodel.service";
 import { OsPdfDocument } from "@/features/pedidos/pdf/OsPdfDocument";
@@ -212,10 +213,17 @@ export async function GET(request: Request) {
     );
   }
 
-  const escopoOk = await verificarEscopoPropostaServerSide(supabase, authData.user.id, {
-    empresa: proposta.empresa,
-    vendedor: proposta.vendedor,
-  });
+  // Alcance (15/10/2026): o acesso de produção (`producao.view`) imprime
+  // qualquer OS liberada, sem `propostas.view_*` — é o que o perfil Produção
+  // já faz ao entrar na OS e editar o prazo. Sem ele, vale o alcance de
+  // proposta de sempre. Regra e motivo em lib/auth/alcance-impressao-os.ts;
+  // `verificarEscopoPropostaServerSide` não muda para as outras rotas.
+  const escopoOk =
+    (await verificarPermissaoServerSide(supabase, authData.user.id, PERMISSAO_ACESSO_PRODUCAO)) ||
+    (await verificarEscopoPropostaServerSide(supabase, authData.user.id, {
+      empresa: proposta.empresa,
+      vendedor: proposta.vendedor,
+    }));
   if (!escopoOk) {
     return respostaErro(request, "Acesso negado a esta proposta.", 403);
   }

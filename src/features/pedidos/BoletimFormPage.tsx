@@ -87,6 +87,7 @@ import {
 } from "./services/revisao-expedicao.service";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { hasPermissao } from "@/features/auth/usuarios.service";
+import { podeImprimirOsNaTela } from "@/lib/auth/alcance-impressao-os";
 // A data do evento é gravada como meia-noite em UTC: lida com `new Date` ela
 // aparecia com um dia a menos. É data civil — vale o que foi digitado.
 import { formatDataCivil } from "@/lib/formatters/date";
@@ -181,7 +182,8 @@ export function BoletimFormPage() {
   const { user } = useAuth();
   const canEditDate = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "pedidos.edit_data");
   const canEditObs = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "pedidos.edit_obs");
-  const canPrintOS = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "pedidos.print_os");
+  // Mesma regra do servidor (lib/auth/alcance-impressao-os): print_os e alcance.
+  const canPrintOS = podeImprimirOsNaTela(user);
   const lockDate = isEditing && !canEditDate;
   const lockObs = isEditing && !canEditObs;
 

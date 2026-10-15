@@ -14,6 +14,7 @@ import { ActionsMenu } from "@/components/common/ActionsMenu";
 import { EmptyState } from "@/components/common/EmptyState";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { hasPermissao } from "@/features/auth/usuarios.service";
+import { podeImprimirOsNaTela } from "@/lib/auth/alcance-impressao-os";
 import { useAppToast } from "@/components/common/AppToast";
 import { codecs } from "@/lib/url-state";
 import { useUrlFilters } from "@/hooks/useUrlFilters";
@@ -98,7 +99,8 @@ export function PedidosListPage() {
 
   // Autorização (V2.1 + Legado V1)
   const canView = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "pedidos.view");
-  const canPrintOS = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "pedidos.print_os");
+  // Mesma regra do servidor (lib/auth/alcance-impressao-os): print_os e alcance.
+  const canPrintOS = podeImprimirOsNaTela(user);
 
   /**
    * Encerrar pedido de teste. Chave `propostas.encerrar_teste` (14/09/2026), que

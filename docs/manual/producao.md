@@ -1,6 +1,6 @@
 # Produção (ordens de serviço)
 
-> **Última revisão:** 13/10/2026
+> **Última revisão:** 15/10/2026
 > **Caminho no menu:** Produção (item direto do menu lateral, sem submenu). A OS de cada pedido abre a partir da lista. O Kanban e a Fila de impressão não estão no menu: chega-se a eles pelo endereço ou pelas abas **Fila Geral / Kanban Board / Fila de Impressão / Expedição** que aparecem no topo dessas duas telas.
 > **Endereço:** `/pedidos` (painel geral). OS: `/pedidos/boletim`. Kanban: `/pedidos/kanban` (e `/os-producao`). Fila de impressão: `/pedidos/impressao`.
 
@@ -14,7 +14,7 @@ Dela você abre a OS (o boletim) de cada pedido para conferir prazo, instruçõe
 
 - Vê a tela quem tem a permissão **Visualizar Pedidos e OS** no perfil, além de Administrador e Super Administrador. Sem ela aparece "Acesso Negado".
 - Quem vê a lista consegue mover a fase de um setor e abrir a OS. Não há permissão separada para isso.
-- **Imprimir OS** aparece para quem tem a permissão **Imprimir OS (PDF de produção)**.
+- **Imprimir OS** aparece para quem tem a permissão **Imprimir OS (PDF de produção)** e alcance sobre o pedido: a permissão **Visualizar Kanban** (o perfil Produção tem) imprime a OS de qualquer pedido liberado para produção; sem ela, vale o alcance de propostas do perfil (todas, da empresa, da equipe ou as próprias). O servidor confere a mesma regra. Administrador e Super Administrador imprimem como sempre.
 - **Data Limite de Entrega** e **Hora do Prazo**, depois de gravadas, só mudam por Administrador, Super Administrador ou quem tem a permissão **Editar Datas de Entrega**.
 - **Voltar para Revisão Atendente** aparece para Administrador, Super Administrador ou quem tem a permissão **Ações Administrativas de OS**. O servidor confere a mesma permissão antes de devolver.
 - **Gerar novo QR (invalida o anterior)** aparece para quem tem a permissão **Revogar/Gerar novo QR da OS**.
@@ -328,6 +328,7 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/app/(erp)/os-producao/page.tsx`
 - `src/app/os/os-qr-client.tsx`
 - `src/app/api/pedidos/imprimir-os/route.ts`
+- `src/lib/auth/alcance-impressao-os.ts`
 - `src/features/pedidos/lib/qr-do-boletim.ts`
 - `src/app/api/pedidos/os-qr/rotacionar/route.ts`
 - `src/constants/navigation.ts`
