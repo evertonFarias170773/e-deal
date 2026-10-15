@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { Inter } from "next/font/google";
+import { SpeedInsights } from "@vercel/speed-insights/next";
 import "./globals.css";
 import { AppProviders } from "@/components/app-shell/AppProviders";
 import { APP_DESCRIPTION, APP_NAME } from "@/constants/brand";
@@ -42,6 +43,9 @@ export default function RootLayout({
       </head>
       <body>
         <AppProviders>{children}</AppProviders>
+        {/* Medida de tempo no navegador (Vercel Speed Insights). Fica FORA dos
+            providers de propósito: não depende de sessão nem de dado do ERP. */}
+        <SpeedInsights />
       </body>
     </html>
   );
