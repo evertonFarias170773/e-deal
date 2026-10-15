@@ -74,7 +74,7 @@ import {
 import { useGlobalChat } from "@/features/chat/context/GlobalChatContext";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { hasPermissao, getDataScope, getNomeParaEscopo } from "@/features/auth/usuarios.service";
-import { useCobrancas } from "@/features/cobrancas/CobrancasProvider";
+import { CobrancasSobDemanda } from "@/features/cobrancas/CobrancasSobDemanda";
 import { codecs, type ParamCodec } from "@/lib/url-state";
 import { useUrlFilters } from "@/hooks/useUrlFilters";
 import { useDebouncedInput } from "@/hooks/useDebouncedValue";
@@ -83,7 +83,7 @@ import { LiberarProducaoModal } from "@/features/orcamentos/components/LiberarPr
 import { CancelPropostaModal } from "@/features/orcamentos/components/CancelPropostaModal";
 import { ConfirmarLiberacaoModal } from "@/features/cobrancas/ConfirmarLiberacaoModal";
 import { isFilaPadrao } from "@/features/cobrancas/cobrancas-utils";
-import { lerCobrancaPorId } from "@/features/cobrancas/services/pagamentos-v2.service";
+import { lerCobrancaPorId, listarCobrancasDaProposta } from "@/features/cobrancas/services/pagamentos-v2.service";
 import type { Cobranca } from "@/features/cobrancas/types";
 import {
   podeVerConfirmarConferenciaNaLista,
@@ -498,7 +498,6 @@ export function OrcamentosListPageReal() {
   const router = useRouter();
   const { showToast } = useAppToast();
   const { user } = useAuth();
-  const { getCobrancasByProposta } = useCobrancas();
 
   const canCancelarProposta = Boolean(
     user?.isSuperAdmin ||
@@ -1534,9 +1533,22 @@ export function OrcamentosListPageReal() {
     });
 
     try {
-      const data = await getPropostaDetailById(item.id_int);
+      // Cobranças da proposta pela consulta POR PROPOSTA: desde 15/10/2026 a lista
+      // não carrega mais o pagamentos_v2 inteiro. Falha de leitura não vira "sem
+      // cobranças" — sem saber o que já foi cobrado, o painel não abre.
+      const [data, cobrancasDaProposta] = await Promise.all([
+        getPropostaDetailById(item.id_int),
+        listarCobrancasDaProposta(item.id_int)
+      ]);
       if (data) {
-        const cobrancasDaProposta = getCobrancasByProposta(item.id_int);
+        if (!cobrancasDaProposta) {
+          showToast({
+            type: "error",
+            title: "Não foi possível conferir as cobranças",
+            description: "As cobranças desta proposta não carregaram. Tente de novo em instantes."
+          });
+          return;
+        }
         const cobrancasAtivas = cobrancasDaProposta.filter((c) => c.status !== "CANCELADO");
         const totalCobradoReal = cobrancasAtivas.reduce((total, c) => total + (c.cartao_valor_final ?? c.valor), 0);
         const totalPropostaRounded = Math.round(data.resumo.valorTotal * 100) / 100;
@@ -2821,17 +2833,27 @@ Ela volta a aparecer nas listas operacionais.`
         </section>
       ) : null}
 
+      {/* As três ações que usam a lista completa de cobranças (painel de cobrança,
+          Cancelar proposta e Confirmar Conferência) montam o provider SÓ quando
+          abrem, e só aparecem com a carga completa — ver CobrancasSobDemanda. */}
       {isCobrancaModalOpen && selectedPropostaForCobranca && (
-        <PropostaCobrancaPanel
-          proposta={selectedPropostaForCobranca}
-          isModalOpen={isCobrancaModalOpen}
-          onOpenModal={() => setIsCobrancaModalOpen(true)}
-          onCloseModal={() => {
+        <CobrancasSobDemanda
+          onFechar={() => {
             setIsCobrancaModalOpen(false);
             setSelectedPropostaForCobranca(null);
           }}
-          onlyModal={true}
-        />
+        >
+          <PropostaCobrancaPanel
+            proposta={selectedPropostaForCobranca}
+            isModalOpen={isCobrancaModalOpen}
+            onOpenModal={() => setIsCobrancaModalOpen(true)}
+            onCloseModal={() => {
+              setIsCobrancaModalOpen(false);
+              setSelectedPropostaForCobranca(null);
+            }}
+            onlyModal={true}
+          />
+        </CobrancasSobDemanda>
       )}
 
       {selectedPropostaForLiberar && (
@@ -2844,19 +2866,26 @@ Ela volta a aparecer nas listas operacionais.`
         />
       )}
 
-      {selectedPropostaForCancel && (
-        <CancelPropostaModal
-          isOpen={isCancelPropostaModalOpen}
-          idInt={selectedPropostaForCancel.id_int}
-          onClose={() => {
+      {selectedPropostaForCancel && isCancelPropostaModalOpen && (
+        <CobrancasSobDemanda
+          onFechar={() => {
             setIsCancelPropostaModalOpen(false);
             setSelectedPropostaForCancel(null);
           }}
-          onSuccess={() => {
-            setSelectedPropostaForCancel(null);
-            triggerRefresh();
-          }}
-        />
+        >
+          <CancelPropostaModal
+            isOpen={isCancelPropostaModalOpen}
+            idInt={selectedPropostaForCancel.id_int}
+            onClose={() => {
+              setIsCancelPropostaModalOpen(false);
+              setSelectedPropostaForCancel(null);
+            }}
+            onSuccess={() => {
+              setSelectedPropostaForCancel(null);
+              triggerRefresh();
+            }}
+          />
+        </CobrancasSobDemanda>
       )}
 
       {pedidoParaEnviarAFila && (
@@ -2895,13 +2924,15 @@ Ela volta a aparecer nas listas operacionais.`
       )}
 
       {cobrancaParaConferir && (
-        <ConfirmarLiberacaoModal
-          isOpen
-          cobranca={cobrancaParaConferir}
-          onClose={() => setCobrancaParaConferir(null)}
-          // A rota já respondeu quando o modal chama isto: a lista relê e a opção some do pedido.
-          onSuccess={() => triggerRefresh()}
-        />
+        <CobrancasSobDemanda onFechar={() => setCobrancaParaConferir(null)}>
+          <ConfirmarLiberacaoModal
+            isOpen
+            cobranca={cobrancaParaConferir}
+            onClose={() => setCobrancaParaConferir(null)}
+            // A rota já respondeu quando o modal chama isto: a lista relê e a opção some do pedido.
+            onSuccess={() => triggerRefresh()}
+          />
+        </CobrancasSobDemanda>
       )}
 
       {selectedPropostaForComplemento && (

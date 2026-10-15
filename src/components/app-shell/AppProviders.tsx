@@ -4,7 +4,6 @@ import type { ReactNode } from "react";
 import { usePathname } from "next/navigation";
 import { AppToastProvider } from "@/components/common/AppToast";
 import { AuthProvider } from "@/features/auth/AuthProvider";
-import { CobrancasProvider } from "@/features/cobrancas/CobrancasProvider";
 import { CompanyProvider } from "@/features/companies/CompanyProvider";
 
 /**
@@ -52,12 +51,16 @@ export function AppProviders({ children }: { children: ReactNode }) {
     );
   }
 
+  // O CobrancasProvider NÃO fica aqui desde 15/10/2026. Ele lê o pagamentos_v2
+  // inteiro (≈10 mil linhas, mais propostas, clientes e boletos) e, no topo,
+  // fazia isso ao abrir qualquer tela. Agora monta só onde a lista completa é
+  // usada: layouts de /cobrancas, /contas-a-receber, /orcamentos/novo,
+  // /orcamentos/[id] e /pagamento; a página /notas-fiscais; e, na lista de
+  // Pedidos, sob demanda (CobrancasSobDemanda) nas três ações que precisam dela.
   return (
     <AuthProvider>
       <CompanyProvider>
-        <CobrancasProvider>
-          <AppToastProvider>{children}</AppToastProvider>
-        </CobrancasProvider>
+        <AppToastProvider>{children}</AppToastProvider>
       </CompanyProvider>
     </AuthProvider>
   );

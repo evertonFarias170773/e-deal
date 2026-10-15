@@ -937,6 +937,35 @@ export async function lerCobrancaPorId(id: string): Promise<Cobranca | null> {
   return mapSupabasePagamentoV2RowToCobranca(data[0]) ?? null;
 }
 
+/**
+ * Todas as cobranças de UMA proposta, com as mesmas colunas e o mesmo
+ * mapeamento da lista completa — o mesmo conjunto que `getCobrancasByProposta`
+ * do provider devolvia (a carga completa não tem filtro fixo, só ordem).
+ *
+ * Serve à lista de Pedidos, que desde 15/10/2026 não carrega mais a base
+ * inteira ao abrir. Devolve `null` quando a leitura falha: quem chama NÃO pode
+ * tratar falha como "sem cobranças".
+ */
+export async function listarCobrancasDaProposta(idInt: number): Promise<Cobranca[] | null> {
+  const client = getSupabaseClient();
+  if (!client || !Number.isFinite(idInt) || idInt <= 0) {
+    return null;
+  }
+
+  const { data, error } = await client
+    .from("pagamentos_v2")
+    .select(PAGAMENTOS_V2_SELECT)
+    .eq("id_int", idInt)
+    .order("created_at", { ascending: false })
+    .returns<SupabasePagamentoV2Row[]>();
+
+  if (error || !Array.isArray(data)) {
+    return null;
+  }
+
+  return mapRowsToCobrancas(data);
+}
+
 export async function consultarDetalhesBoletoC6(idBoletoC6: string, idEmpresa: number) {
   const response = await fetch("https://10074.hostoo.net.br/webhook/consulta-paid-c6", {
     method: "POST",
