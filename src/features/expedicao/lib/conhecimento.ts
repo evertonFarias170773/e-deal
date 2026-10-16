@@ -37,6 +37,15 @@ export function despachoEhCorreios(d: DespachoDoCodigo): boolean {
   return false;
 }
 
+/**
+ * "Ver conhecimento" nos menus de Acoes: so despacho TRANSPORTADORA ou MOTOBOY com o campo
+ * preenchido, e nunca quando a regra do despacho diz Correios (ai o item e "Rastrear objeto").
+ * Os dois menus (cards da Expedicao e lista de Pedidos) usam esta mesma funcao.
+ */
+export function podeVerConhecimento(d: DespachoDoCodigo): boolean {
+  return String(d.codigo ?? "").trim() !== "" && ehConhecimento(d.tipoFrete) && !despachoEhCorreios(d);
+}
+
 /** O campo e "Conhecimento" quando o despacho e de transportadora ou motoboy. */
 export function ehConhecimento(tipoFrete: string | null | undefined): boolean {
   const tipo = String(tipoFrete ?? "").trim().toUpperCase();

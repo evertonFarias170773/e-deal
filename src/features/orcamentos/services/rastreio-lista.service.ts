@@ -1,6 +1,6 @@
 import { getSupabaseClient } from "@/lib/supabase/client";
 import { normalizarTipoFrete } from "@/features/expedicao/lib/tipo-frete";
-import { despachoEhCorreios } from "@/features/expedicao/lib/conhecimento";
+import { despachoEhCorreios, podeVerConhecimento } from "@/features/expedicao/lib/conhecimento";
 
 /**
  * Dados de rastreio das propostas exibidas na lista de Orcamentos.
@@ -34,6 +34,8 @@ import { despachoEhCorreios } from "@/features/expedicao/lib/conhecimento";
 export interface RastreioDaProposta {
   codigo: string;
   ehCorreios: boolean;
+  /** Despacho TRANSPORTADORA/MOTOBOY com o numero preenchido: o menu oferece "Ver conhecimento". */
+  ehConhecimento: boolean;
 }
 
 export async function buscarRastreioDasPropostas(
@@ -87,12 +89,12 @@ export async function buscarRastreioDasPropostas(
     if (!codigo) continue;
     // So o despacho decide (ver o bloco no topo): tipo CORREIOS, objeto de prepostagem ou, sem
     // despacho registrado, o formato oficial.
-    const ehCorreios = despachoEhCorreios({
+    const despacho = {
       tipoFrete: tipoDespachoPorId.get(id) ?? null,
       correiosCodigoObjeto: temObjetoCorreios.has(id) ? "objeto" : null,
       codigo
-    });
-    resultado[id] = { codigo, ehCorreios };
+    };
+    resultado[id] = { codigo, ehCorreios: despachoEhCorreios(despacho), ehConhecimento: podeVerConhecimento(despacho) };
   }
   return resultado;
 }

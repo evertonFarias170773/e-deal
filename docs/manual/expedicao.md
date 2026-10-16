@@ -64,6 +64,7 @@ Os itens aparecem nesta ordem, cada um só quando se aplica.
 | Nome na tela | Onde fica | O que faz |
 |---|---|---|
 | **Rastrear objeto** | Menu de ações; só em envio pelos Correios com código de rastreio | Abre a janela **Rastreamento** |
+| **Ver conhecimento** | Menu de ações; só em envio por transportadora ou motoboy com o conhecimento preenchido | Mostra o número do conhecimento e o botão **Copiar**. Só leitura: não consulta os Correios; para corrigir, use **Editar dados de expedição** |
 | **Marcar prepostagem como cancelada** | Menu de ações; só administrador da Expedição, com prepostagem ainda não marcada | Registra que a prepostagem foi cancelada no portal dos Correios |
 | **Editar dados de expedição** | Menu de ações; pedido com etiqueta gerada ou já despachado | Abre a mesma janela do despacho em modo de edição |
 | **Declaração de conteúdo** | Menu de ações; pedido que já chegou à Expedição e não tem nota autorizada | Abre o PDF da declaração |
@@ -473,6 +474,7 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/features/expedicao/components/SoltarDoGrupoModal.tsx`
 - `src/features/expedicao/lib/promessa-do-card.ts`
 - `src/features/expedicao/lib/conhecimento.ts`
+- `src/features/expedicao/components/VerConhecimentoModal.tsx`
 - `src/features/expedicao/services/conhecimento-autoria.ts`
 
 > **Mudanças de 08/10/2026:**
@@ -493,3 +495,5 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 > - **11/10/2026:** novo cartão **Próximos Dias** (previsão de envio depois de hoje), entre Pronto p/ expedir e A retirar.
 >
 > - **15/10/2026:** campo **Conhecimento** para envios por transportadora e motoboy (salvar e corrigir também depois do despacho, com registro de quem alterou); **Rastrear objeto** só em envio pelos Correios.
+>
+> - **15/10/2026:** novo item **Ver conhecimento** no menu de ações (Expedição e lista de Pedidos), só leitura, para despacho por transportadora ou motoboy.

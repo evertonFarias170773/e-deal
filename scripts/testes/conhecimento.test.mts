@@ -12,6 +12,7 @@ import {
   ehConhecimento,
   motivoDoConhecimento,
   pareceObjetoCorreios,
+  podeVerConhecimento,
   rotuloDoCampoCodigo
 } from "../../src/features/expedicao/lib/conhecimento.ts";
 import { registrarAutoriaConhecimento } from "../../src/features/expedicao/services/conhecimento-autoria.ts";
@@ -86,6 +87,15 @@ checar("sem mudanca: nada registrado", c.gravadas.length, 0);
 c = cliente("falha de rede");
 r = await registrarAutoriaConhecimento(c, { idInt: 7, statusAtual: "EXPEDICAO", tipoEfetivo: "MOTOBOY", antes: null, depois: "55", ator });
 checar("falha no log: devolve aviso, nao estoura", [r.registrou, r.aviso], [false, "falha de rede"]);
+
+// ── "Ver conhecimento" nos menus (Expedicao e lista de Pedidos usam a MESMA funcao)
+checar("motoboy com conhecimento (ex.: 23551): mostra", podeVerConhecimento({ tipoFrete: "MOTOBOY", codigo: "55123" }), true);
+checar("transportadora com conhecimento: mostra", podeVerConhecimento({ tipoFrete: "TRANSPORTADORA", codigo: "CTE 9" }), true);
+checar("transportadora SEM conhecimento: nao mostra", [podeVerConhecimento({ tipoFrete: "TRANSPORTADORA", codigo: "" }), podeVerConhecimento({ tipoFrete: "TRANSPORTADORA", codigo: null }), podeVerConhecimento({ tipoFrete: "MOTOBOY", codigo: "  " })], [false, false, false]);
+checar("CORREIOS: nao mostra (segue com Rastrear objeto)", podeVerConhecimento({ tipoFrete: "CORREIOS", codigo: "AD123456789BR" }), false);
+checar("CORREIOS e Rastrear objeto sao excludentes", [despachoEhCorreios({ tipoFrete: "CORREIOS", codigo: "AD123456789BR" }), podeVerConhecimento({ tipoFrete: "CORREIOS", codigo: "AD123456789BR" })], [true, false]);
+checar("transportadora com prepostagem viva: segue a regra do despacho (Correios), sem o novo item", [despachoEhCorreios({ tipoFrete: "TRANSPORTADORA", correiosIdPrepostagem: "P1", codigo: "9" }), podeVerConhecimento({ tipoFrete: "TRANSPORTADORA", correiosIdPrepostagem: "P1", codigo: "9" })], [true, false]);
+checar("retirada no balcao e sem despacho registrado: nao mostra", [podeVerConhecimento({ tipoFrete: "RETIRA_BALCAO", codigo: "1" }), podeVerConhecimento({ tipoFrete: null, codigo: "123" })], [false, false]);
 
 console.log(falhas === 0 ? "\nTUDO OK" : `\n${falhas} FALHA(S)`);
 process.exitCode = falhas === 0 ? 0 : 1;

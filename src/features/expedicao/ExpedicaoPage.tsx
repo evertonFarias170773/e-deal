@@ -63,7 +63,8 @@ import type { RespostaConfirmacao } from "./services/corrigir-frete.client";
 import { KanbanTransportadoras, LegendaCoresKanban, PontoEstadoKanban } from "./components/KanbanTransportadoras";
 import { ChipVinculados } from "./components/ChipVinculados";
 import { SoltarDoGrupoModal } from "./components/SoltarDoGrupoModal";
-import { despachoEhCorreios } from "./lib/conhecimento";
+import { despachoEhCorreios, podeVerConhecimento } from "./lib/conhecimento";
+import { VerConhecimentoModal } from "./components/VerConhecimentoModal";
 import type { GrupoVinculado } from "./lib/vinculos-do-painel";
 import { useVinculosDoPainel } from "./hooks/useVinculosDoPainel";
 import { useInstrucoesDeEntrega } from "./hooks/useInstrucoesDeEntrega";
@@ -214,6 +215,8 @@ export function ExpedicaoPage() {
   const [pedidoRetirada, setPedidoRetirada] = useState<PedidoExpedicao | null>(null);
   const [pedidoVoltar, setPedidoVoltar] = useState<PedidoExpedicao | null>(null);
   const [pedidoRastreio, setPedidoRastreio] = useState<PedidoExpedicao | null>(null);
+  // "Ver conhecimento": so leitura do numero de transportadora/motoboy.
+  const [pedidoConhecimento, setPedidoConhecimento] = useState<PedidoExpedicao | null>(null);
   /**
    * O PEDIDO DA CORREÇÃO É DERIVADO DA LISTA, não uma cópia dele.
    *
@@ -475,6 +478,15 @@ export function ExpedicaoPage() {
         codigo: p.codigoRastreamento
       })
         ? [{ label: "Rastrear objeto", onClick: () => setPedidoRastreio(p) }]
+        : []),
+      // Despacho de TRANSPORTADORA ou MOTOBOY com conhecimento: so mostra e copia (nao consulta os Correios).
+      ...(podeVerConhecimento({
+        tipoFrete: p.expedicao?.tipoFrete,
+        correiosIdPrepostagem: p.expedicao?.correiosIdPrepostagem,
+        correiosCodigoObjeto: p.expedicao?.correiosCodigoObjeto,
+        codigo: p.codigoRastreamento
+      })
+        ? [{ label: "Ver conhecimento", onClick: () => setPedidoConhecimento(p) }]
         : []),
       // Marcar que a prepostagem foi cancelada NO PORTAL dos Correios. So faz
       // sentido enquanto existe prepostagem e ela ainda nao foi marcada; a
@@ -1515,6 +1527,13 @@ export function ExpedicaoPage() {
           ator={atorAtual()}
           onClose={() => setPedidoRetirada(null)}
           onDone={() => { setPedidoRetirada(null); void recarregar(); }}
+        />
+      )}
+      {pedidoConhecimento && (
+        <VerConhecimentoModal
+          idInt={pedidoConhecimento.idInt}
+          numero={pedidoConhecimento.codigoRastreamento}
+          onClose={() => setPedidoConhecimento(null)}
         />
       )}
       {soltarAlvo && (

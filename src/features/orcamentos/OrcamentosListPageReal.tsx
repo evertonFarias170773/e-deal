@@ -20,6 +20,7 @@ import type { OrcamentoListItem } from "@/features/orcamentos/mappers";
 import { encerrarTeste, reabrirTeste } from "@/features/pedidos/services/encerrar-teste.client";
 import { desmarcarFaturadoNoSistemaAntigo } from "@/features/fiscal/services/faturado-fora.client";
 import { buscarRastreioDasPropostas, type RastreioDaProposta } from "@/features/orcamentos/services/rastreio-lista.service";
+import { VerConhecimentoModal } from "@/features/expedicao/components/VerConhecimentoModal";
 import { buscarPrazoEnvioDosPedidos } from "@/features/orcamentos/services/prazo-envio-lista.service";
 import { idEmpresaDoPdf } from "@/features/orcamentos/lib/empresa-pdf";
 import { montarOpcoesDeVendedor } from "@/features/orcamentos/lib/opcoes-vendedor";
@@ -1059,6 +1060,8 @@ export function OrcamentosListPageReal() {
   );
   const [rastreioPorId, setRastreioPorId] = useState<Record<number, RastreioDaProposta>>({});
   const [pedidoRastreio, setPedidoRastreio] = useState<{ idInt: number; codigo: string } | null>(null);
+  // "Ver conhecimento": so leitura do numero de transportadora/motoboy (nao consulta os Correios).
+  const [pedidoConhecimento, setPedidoConhecimento] = useState<{ idInt: number; codigo: string } | null>(null);
   const fetchedRastreioIdsRef = useRef<Set<number>>(new Set());
 
   useEffect(() => {
@@ -2004,6 +2007,12 @@ Ela volta a aparecer nas listas operacionais.`
             onClick: () => setPedidoRastreio({ idInt: item.id_int, codigo: rastreio.codigo })
           }]
         : []),
+      ...(rastreio?.ehConhecimento && rastreio.codigo
+        ? [{
+            label: "Ver conhecimento",
+            onClick: () => setPedidoConhecimento({ idInt: item.id_int, codigo: rastreio.codigo })
+          }]
+        : []),
       ...(canEncerrarTeste ? [
         item.encerradoTesteEm
           ? {
@@ -2941,6 +2950,14 @@ Ela volta a aparecer nas listas operacionais.`
           isOpen
           idInt={selectedPropostaForComplemento.id_int}
           onClose={() => setSelectedPropostaForComplemento(null)}
+        />
+      )}
+
+      {pedidoConhecimento && (
+        <VerConhecimentoModal
+          idInt={pedidoConhecimento.idInt}
+          numero={pedidoConhecimento.codigo}
+          onClose={() => setPedidoConhecimento(null)}
         />
       )}
 
