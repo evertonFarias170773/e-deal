@@ -16,6 +16,7 @@ import {
 import {
   contatoOuNaoInformado,
   documentoFormatado,
+  fatorDoDesconto,
   type CobrancaDoPedido,
   type ItemDoPedido
 } from "@/features/nfse/lib/composicao-nfse";
@@ -118,6 +119,12 @@ export type ContextoNfseDoPedido = {
   idServicoPadrao: number;
   enderecos: EnderecoDoTomador[];
   descricaoSugerida: string;
+  /**
+   * O desconto do pedido, para a descricao mostrar "Desconto tabela especial
+   * (10%)" (16/10/2026). Leitura de `desconto_proposta`; o valor do desconto
+   * nao vem daqui: a janela o deriva do total (lib/regras-emissao).
+   */
+  descontoDoPedido: { percentualTabelaEspecial: number | null; temOutroDesconto: boolean };
   notas: NotaDeServicoLida[];
   decisao: DecisaoDoPedido<NotaDeServicoLida>;
 };
@@ -240,7 +247,7 @@ export async function lerContextoNfseDoPedido(
   const idEmpresa = empresaEmitenteDoTexto(proposta.empresa);
   const idCliente = proposta.id_cliente != null && Number(proposta.id_cliente) > 0 ? Number(proposta.id_cliente) : null;
 
-  const [empresaRes, clienteRes, enderecosRes, itensRes, notasRes, cobrancasRes] = await Promise.all([
+  const [empresaRes, clienteRes, enderecosRes, itensRes, notasRes, cobrancasRes, descontosRes] = await Promise.all([
     supabase.from("empresas").select("id, nome_fantasia, ambiente_nfse").eq("id", idEmpresa).maybeSingle(),
     idCliente
       ? supabase
@@ -266,7 +273,9 @@ export async function lerContextoNfseDoPedido(
       .from("pagamentos_v2")
       .select("tipo_cobranca, forma_pgto, valor, vencimento, status, confirmado, p_qtd_parcelas, cartao_parcelas, p_intervalo, p_valor_entrada, paid_at, created_at")
       .eq("id_int", idInt)
-      .order("created_at", { ascending: true })
+      .order("created_at", { ascending: true }),
+    // SO LEITURA: o rotulo do desconto na descricao. Falha aqui so tira o rotulo.
+    supabase.from("desconto_proposta").select("tipo_desconto, valor_percentual, valor_nominal").eq("id_int", idInt)
   ]);
 
   const falhou = [empresaRes, clienteRes, enderecosRes, itensRes, notasRes].find((r) => r.error);
@@ -347,6 +356,15 @@ export async function lerContextoNfseDoPedido(
 
   const servicos = await lerServicosNfse(servico);
 
+  const descontos = (descontosRes.error ? [] : descontosRes.data ?? []) as Record<string, unknown>[];
+  const tabela = descontos.find((d) => texto(d.tipo_desconto).toUpperCase() === "TABELA_ESPECIAL");
+  const descontoDoPedido = {
+    percentualTabelaEspecial: tabela && Number(tabela.valor_percentual) > 0 ? Number(tabela.valor_percentual) : null,
+    temOutroDesconto: descontos.some(
+      (d) => texto(d.tipo_desconto).toUpperCase() !== "TABELA_ESPECIAL" && (Number(d.valor_percentual) > 0 || Number(d.valor_nominal) > 0)
+    )
+  };
+
   const notas = ((notasRes.data ?? []) as unknown as NotaDeServicoLida[]).map((n) => ({
     ...n,
     numero_nfse: n.numero_nfse == null ? null : String(n.numero_nfse)
@@ -379,7 +397,11 @@ export async function lerContextoNfseDoPedido(
       servicos,
       idServicoPadrao: servicos.some((s) => s.id === SERVICO_NFSE.id) ? SERVICO_NFSE.id : (servicos[0]?.id ?? SERVICO_NFSE.id),
       enderecos,
-      descricaoSugerida: descricaoDosItens(idInt, itens),
+      descricaoSugerida: descricaoDosItens(idInt, itens, {
+        fator: fatorDoDesconto(Number(proposta.valor) || 0, itens.reduce((soma, item) => soma + (Number(item.subtotal) || 0), 0)),
+        ...descontoDoPedido
+      }),
+      descontoDoPedido,
       notas,
       decisao: decidirNfseDoPedido(notas)
     }

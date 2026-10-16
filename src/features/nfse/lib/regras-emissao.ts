@@ -239,18 +239,69 @@ export function rotuloDoBotaoNfse(decisao: DecisaoDoPedido<NotaDeServicoDoPedido
 /** Limite da Focus para `descricao_servico`, que é onde `discriminacao` vai. */
 export const LIMITE_DESCRICAO_NFSE = 1000;
 
-export type ItemDoPedidoParaNfse = { nome: string | null; quantidade: number | null; valorUnitario: number | null };
+export type ItemDoPedidoParaNfse = {
+  nome: string | null;
+  quantidade: number | null;
+  valorUnitario: number | null;
+  /** Subtotal gravado do item (quantidade × unitário + fixo). Usado só quando há desconto. */
+  subtotal?: number | null;
+};
+
+/**
+ * O desconto do pedido para a descrição (16/10/2026, nota 138 do 23733).
+ *
+ * O desconto de TABELA ESPECIAL não é gravado por item: sobrevive só no total
+ * do pedido. A janela o DERIVA: `fator` é `propostas.valor` dividido pela soma
+ * dos subtotais (o mesmo `fatorDoDesconto` do valor sugerido), e o desconto é
+ * a diferença entre o bruto dos itens e o total. O rótulo diz "tabela especial"
+ * só quando o pedido tem SÓ esse desconto e o percentual derivado bate com o
+ * cadastrado; senão sai "Desconto (x%)".
+ */
+export type DescontoParaDescricao = {
+  fator: number;
+  percentualTabelaEspecial: number | null;
+  temOutroDesconto: boolean;
+};
+
+/**
+ * O "Valor Unit R$ …" que alguns produtos de serviço trazem no NOME do
+ * cadastro ("* Horas Tratam de Imagem - Valor Unit R$ 190,00"). É o preço de
+ * tabela, não o cobrado: sai da descrição da nota.
+ */
+export function nomeSemValorUnitDoCadastro(nome: string | null | undefined): string {
+  return String(nome ?? "")
+    .replace(/\s*-?\s*Valor\s+Unit\.?\s*(R\$)?\s*[\d.]+(,\d{1,2})?\s*$/i, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function percentualFormatado(valor: number): string {
+  const arredondado = Math.round(valor * 100) / 100;
+  return Number.isInteger(arredondado) ? String(arredondado) : arredondado.toFixed(2).replace(".", ",");
+}
 
 function moeda(valor: number): string {
   const [inteiro, centavos] = (Math.round(valor * 100) / 100).toFixed(2).split(".");
   return `R$ ${inteiro.replace(/\B(?=(\d{3})+(?!\d))/g, ".")},${centavos}`;
 }
 
-/** Uma linha por item: "100 x Ingresso MOBI - R$ 1,50 un.". Texto de partida, editável. */
-export function descricaoDosItens(idInt: number, itens: readonly ItemDoPedidoParaNfse[]): string {
+/**
+ * Uma linha por item: "100 x Ingresso MOBI - R$ 1,50 un.". Texto de partida, editável.
+ *
+ * Com desconto derivável (`desconto.fator` < 1 e subtotal em todos os itens),
+ * cada item sai com o subtotal e o texto fecha com o desconto e o total:
+ *   1 x Horas Tratam de Imagem - R$ 100,00
+ *   Desconto tabela especial (10%): - R$ 10,00
+ *   Total: R$ 90,00
+ * Sem desconto, ou sem como derivar, fica o texto simples.
+ */
+export function descricaoDosItens(idInt: number, itens: readonly ItemDoPedidoParaNfse[], desconto?: DescontoParaDescricao | null): string {
+  const comDesconto = linhasComDesconto(itens, desconto);
+  if (comDesconto) return [`Pedido ${idInt}`, ...comDesconto].join("\n");
+
   const linhas = itens
     .map((item) => {
-      const nome = String(item.nome ?? "").replace(/\s+/g, " ").trim();
+      const nome = nomeSemValorUnitDoCadastro(item.nome);
       if (!nome) return "";
       const quantidade = Number(item.quantidade);
       const unitario = Number(item.valorUnitario);
@@ -260,6 +311,38 @@ export function descricaoDosItens(idInt: number, itens: readonly ItemDoPedidoPar
     })
     .filter(Boolean);
   return [`Pedido ${idInt}`, ...linhas].join("\n");
+}
+
+/** As linhas da descrição com desconto, ou `null` quando não há desconto a mostrar. */
+function linhasComDesconto(itens: readonly ItemDoPedidoParaNfse[], desconto?: DescontoParaDescricao | null): string[] | null {
+  if (!desconto) return null;
+  const fator = Number(desconto.fator);
+  if (!(fator > 0 && fator < 1)) return null;
+
+  const validos = itens.filter((item) => nomeSemValorUnitDoCadastro(item.nome) !== "");
+  if (validos.length === 0) return null;
+  // Sem subtotal em algum item não dá para derivar o bruto com segurança.
+  if (validos.some((item) => !(Number(item.subtotal) > 0))) return null;
+
+  const brutoCentavos = validos.reduce((soma, item) => soma + Math.round(Number(item.subtotal) * 100), 0);
+  const totalCentavos = Math.round((brutoCentavos / 100) * fator * 100);
+  const descontoCentavos = brutoCentavos - totalCentavos;
+  if (descontoCentavos <= 0) return null;
+
+  const percentualDerivado = (descontoCentavos / brutoCentavos) * 100;
+  const tabela = Number(desconto.percentualTabelaEspecial);
+  const ehTabelaEspecial =
+    tabela > 0 && !desconto.temOutroDesconto && Math.abs(percentualDerivado - tabela) <= 0.05;
+  const rotulo = ehTabelaEspecial
+    ? `Desconto tabela especial (${percentualFormatado(tabela)}%)`
+    : `Desconto (${percentualFormatado(percentualDerivado)}%)`;
+
+  const linhas = validos.map((item) => {
+    const quantidade = Number(item.quantidade);
+    const qtd = Number.isFinite(quantidade) && quantidade > 0 ? `${quantidade.toLocaleString("pt-BR")} x ` : "";
+    return `${qtd}${nomeSemValorUnitDoCadastro(item.nome)} - ${moeda(Number(item.subtotal))}`;
+  });
+  return [...linhas, `${rotulo}: - ${moeda(descontoCentavos / 100)}`, `Total: ${moeda(totalCentavos / 100)}`];
 }
 
 export type ConferenciaDaDescricao = { ok: true; texto: string } | { ok: false; motivo: string };

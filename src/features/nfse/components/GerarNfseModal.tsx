@@ -60,6 +60,7 @@ import {
   descricaoDosItens,
   conferirNbsDigitado,
   nbsEditavelNaNota,
+  type DescontoParaDescricao,
   nomeDoArquivoNfse,
   situacaoDoStatus
 } from "@/features/nfse/lib/regras-emissao";
@@ -151,6 +152,15 @@ function notaRelida(contexto: ContextoNfseDoPedido): NotaRelida {
 
 const SEM_COMO_CONFIRMAR =
   "A resposta não chegou e não foi possível conferir o estado da nota. Feche a janela, abra de novo e confira antes de tentar outra vez.";
+
+/**
+ * O desconto que a descricao sugerida mostra (16/10/2026): o fator e o MESMO
+ * do valor sugerido (todos os itens do pedido), e o rotulo vem do servidor.
+ */
+function descontoParaDescricao(lido: ContextoNfseDoPedido): DescontoParaDescricao {
+  const todos = lido.itens.reduce((soma, item) => soma + (Number(item.subtotal) || 0), 0);
+  return { fator: fatorDoDesconto(lido.valorDosProdutos, todos), ...lido.descontoDoPedido };
+}
 
 function mensagemDaFalha(falha: unknown, padrao: string): string {
   if (falha instanceof SessaoExpiradaError) return falha.message;
@@ -298,7 +308,7 @@ export function GerarNfseModal({
     setMarcados(todos);
     setIdEndereco(enderecoInicial(opcoesDeEndereco(lido.enderecos)));
     setValorTexto(sugerido > 0 ? sugerido.toFixed(2).replace(".", ",") : "");
-    setDescricao(descricaoDosItens(lido.idInt, lido.itens));
+    setDescricao(descricaoDosItens(lido.idInt, lido.itens, descontoParaDescricao(lido)));
     setInfComp(textoDoPagamentoParaNota(lido.cobrancas));
     setValorMexido(false);
     setDescricaoMexida(false);
@@ -340,7 +350,7 @@ export function GerarNfseModal({
       const sugerido = valorSugeridoDaNota(contexto.itens, novo, contexto.valorDosProdutos);
       setValorTexto(sugerido > 0 ? sugerido.toFixed(2).replace(".", ",") : "");
     }
-    if (!descricaoMexida) setDescricao(descricaoDosItens(contexto.idInt, contexto.itens.filter((item) => novo.has(item.id))));
+    if (!descricaoMexida) setDescricao(descricaoDosItens(contexto.idInt, contexto.itens.filter((item) => novo.has(item.id)), descontoParaDescricao(contexto)));
   }
 
   /** Lê e mostra. Usado ao abrir a janela e nos botões que voltam ao estado do pedido. */
@@ -1013,7 +1023,7 @@ export function GerarNfseModal({
                                 className="underline"
                                 onClick={() => {
                                   setDescricaoMexida(false);
-                                  setDescricao(descricaoDosItens(contexto.idInt, contexto.itens.filter((item) => marcados.has(item.id))));
+                                  setDescricao(descricaoDosItens(contexto.idInt, contexto.itens.filter((item) => marcados.has(item.id)), descontoParaDescricao(contexto)));
                                 }}
                               >
                                 Refazer a partir dos itens
