@@ -310,6 +310,34 @@ export function calculateItemSubtotal(
 }
 
 /**
+ * Os itens com o subtotal refeito pelo bonus que o SALVAR vai gravar (16/10/2026).
+ *
+ * POR QUE: o formulario carrega os itens com o bonus da linha TABELA_ESPECIAL (sem
+ * linha, 0) e so os recalcula quando um item e editado ou o cliente e trocado. Mas o
+ * salvar grava na linha o bonus vigente do cliente (`bonusDaEdicao`). Numa proposta
+ * aberta sem a linha — a COPIA, que nao leva o bonus — os itens chegavam brutos (120),
+ * o salvar gravava a linha com 10% e somava 120; o gatilho do frete
+ * (`recalcular_proposta_v3`, que le a linha) regravava 108; e a consolidacao final do
+ * salvar voltava para 120. Pedido 23873, 16/10: 120 -> 108 -> 120 -> 108 -> 120.
+ *
+ * A REGRA: com bonus > 0, ou com item que carregou com bonus, o subtotal de cada item
+ * e refeito por `calculateItemSubtotal` com o bonus do salvar — a mesma conta do
+ * formulario e do banco. Sem bonus em lugar nenhum, os itens voltam como vieram:
+ * proposta sem tabela especial nao muda.
+ */
+export function itensComOBonusDoSalvar<T extends Pick<PropostaItem, "quantidade" | "valorUnitario" | "valorFixo" | "variacoesEscolhidas" | "subtotal" | "subtotalBruto" | "acrescimoBonus">>(
+  itens: readonly T[],
+  bonusPercent: number
+): T[] {
+  const bonus = Number.isFinite(bonusPercent) && bonusPercent > 0 ? bonusPercent : 0;
+  return itens.map((item) => {
+    if (bonus === 0 && !(Number(item.acrescimoBonus) > 0)) return item;
+    const totais = calculateItemSubtotal(item, bonus);
+    return { ...item, subtotalBruto: totais.subtotalBruto, acrescimoBonus: totais.acrescimoBonus, subtotal: totais.subtotal };
+  });
+}
+
+/**
  * Peso de UM item: `pesoUnitario` e o peso BASE do produto (sem variacoes) e cada variacao
  * escolhida entra UMA vez, vezes a quantidade.
  *

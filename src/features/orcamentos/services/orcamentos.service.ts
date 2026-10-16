@@ -7,7 +7,7 @@ import {
   ehTransporteCategoria,
   type TransporteCategoria
 } from "@/features/orcamentos/lib/transporte-categoria";
-import { calculateResumo, calculateItemSubtotal } from "@/features/orcamentos/orcamento-utils";
+import { calculateResumo, calculateItemSubtotal, itensComOBonusDoSalvar } from "@/features/orcamentos/orcamento-utils";
 import {
   TIPO_DESCONTO_TABELA_ESPECIAL,
   bonusDaEdicao,
@@ -3406,8 +3406,35 @@ export async function saveProposta(
       ? "Motoboy"
       : nomeTransporteEfetivo(freteNome, modalidadeVigente, nomeTransportadoraDeclarada);
 
+    // O BÔNUS DA VENDA — `bonusDaEdicao`, a mesma regra do formulário
+    // (`bonusDoFormulario`):
+    //   sem pagamento confirmado → o bônus vigente do cliente, que este salvar
+    //   grava na linha TABELA_ESPECIAL (mais abaixo, antes da cotação);
+    //   com pagamento confirmado → a linha está CONGELADA: vale o gravado (sem
+    //   linha, 0) e ela não é tocada — nem se o bônus do cliente mudar, nem se
+    //   o cliente for trocado nesta edição.
+    // O TOTAL vem dos subtotais dos itens REFEITOS com este mesmo percentual
+    // (`itensComOBonusDoSalvar`, 16/10/2026): o formulario so recalcula item
+    // editado, e a copia chega sem a linha. Somar o subtotal com outro bonus que
+    // nao o gravado fazia o total oscilar com o gatilho do frete (23873).
+    let bonusCongelado = false;
+    let percentualDaLinhaAtual: number | null = null;
+    if (isUpdate && id_int) {
+      const gravado = await lerBonusGravado(client, id_int);
+      bonusCongelado = gravado.congelada;
+      percentualDaLinhaAtual = gravado.percentualDaLinha;
+    }
+    const bonusDaVenda = formState.isAvulso
+      ? 0
+      : bonusDaEdicao({
+          congelada: bonusCongelado,
+          percentualDaLinha: percentualDaLinhaAtual,
+          bonusDoCliente: cadastro ? getClienteBonusPercent(cadastro as any) : 0
+        });
+
     // Calculo de valores resumo e totais
-    const activeItens = formState.itens.filter((item) => item.statusItem !== "CANCELADO");
+    const activeItensDoFormulario = formState.itens.filter((item) => item.statusItem !== "CANCELADO");
+    const activeItens = formState.isAvulso ? activeItensDoFormulario : itensComOBonusDoSalvar(activeItensDoFormulario, bonusDaVenda);
 
     const subtotalProdutosBase = formState.isAvulso
       ? (parseCurrencyBR(formState.valorProdutosManual) ?? 0)
@@ -3469,30 +3496,6 @@ export async function saveProposta(
     if (hasWeightAndCep && cotacaoObrigatoria && !chosenFrete && !ehComplemento) {
       return { success: false, errorMessage: "Selecione ou informe o frete antes de salvar o orçamento." };
     }
-
-    // O BÔNUS DA VENDA — `bonusDaEdicao`, a mesma regra do formulário
-    // (`bonusDoFormulario`):
-    //   sem pagamento confirmado → o bônus vigente do cliente, que este salvar
-    //   grava na linha TABELA_ESPECIAL (mais abaixo, antes da cotação);
-    //   com pagamento confirmado → a linha está CONGELADA: vale o gravado (sem
-    //   linha, 0) e ela não é tocada — nem se o bônus do cliente mudar, nem se
-    //   o cliente for trocado nesta edição.
-    // O TOTAL vem dos subtotais dos itens, que o formulário já calculou com
-    // este mesmo percentual.
-    let bonusCongelado = false;
-    let percentualDaLinhaAtual: number | null = null;
-    if (isUpdate && id_int) {
-      const gravado = await lerBonusGravado(client, id_int);
-      bonusCongelado = gravado.congelada;
-      percentualDaLinhaAtual = gravado.percentualDaLinha;
-    }
-    const bonusDaVenda = formState.isAvulso
-      ? 0
-      : bonusDaEdicao({
-          congelada: bonusCongelado,
-          percentualDaLinha: percentualDaLinhaAtual,
-          bonusDoCliente: cadastro ? getClienteBonusPercent(cadastro as any) : 0
-        });
 
     // Generate informal WhatsApp text
     const informalText = buildPropostaInformalText({
