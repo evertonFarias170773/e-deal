@@ -12,7 +12,10 @@
  */
 const { falso, getSupabaseClient } = await import("./_supabase-falso.mts");
 const {
+  CORTE_PEDIDO_VIBE_ISO,
   MENSAGEM_OS_IDEAL_OBRIGATORIA,
+  decidirMarcaVibe,
+  gravarMarcaVibePelaAreaCliente,
   checkboxInicialSistemaAntigo,
   decidirGravacaoMarca,
   gravarMarcaSistemaAntigo,
@@ -105,6 +108,58 @@ async function gravar(
 {
   const { r, updates } = await gravar(null, true);
   confere("proposta nao encontrada: nenhum update", r.decisao === "SEM_PROPOSTA" && updates.length === 0, { r, updates });
+}
+
+// ── C. a área do cliente (cobrança criada fora do modal) ────────────────────
+console.log("== C. a area do cliente");
+const NOVA = "2026-10-16T15:30:00+00:00";
+const ANTIGA = "2026-10-16T14:49:59+00:00";
+confere("o corte e 16/10/2026 14:50 UTC", CORTE_PEDIDO_VIBE_ISO === "2026-10-16T14:50:00Z");
+confere("nova e NULL: grava", decidirMarcaVibe({ isSistemaAntigo: null, isAvulso: false, valorTotal: 120, createdAt: NOVA }) === "GRAVAR");
+confere("criada exatamente no corte: grava", decidirMarcaVibe({ isSistemaAntigo: null, isAvulso: false, valorTotal: 120, createdAt: "2026-10-16T14:50:00+00:00" }) === "GRAVAR");
+confere("anterior ao corte (1 s antes): NAO grava", decidirMarcaVibe({ isSistemaAntigo: null, isAvulso: false, valorTotal: 120, createdAt: ANTIGA }) === "ANTERIOR_AO_CORTE");
+confere("sem created_at: NAO grava", decidirMarcaVibe({ isSistemaAntigo: null, isAvulso: false, valorTotal: 120, createdAt: null }) === "ANTERIOR_AO_CORTE");
+confere("true ja gravado: NAO sobrescreve", decidirMarcaVibe({ isSistemaAntigo: true, isAvulso: false, valorTotal: 120, createdAt: NOVA }) === "JA_MARCADA");
+confere("false ja gravado: NAO regrava", decidirMarcaVibe({ isSistemaAntigo: false, isAvulso: false, valorTotal: 120, createdAt: NOVA }) === "JA_MARCADA");
+confere("avulsa nova sem valor_total: NAO grava", decidirMarcaVibe({ isSistemaAntigo: null, isAvulso: true, valorTotal: null, createdAt: NOVA }) === "AVULSA_SEM_TOTAL");
+
+async function gravarArea(linha: Record<string, unknown> | null, respostaUpdate: RespostaUpdate = { data: [{ id_int: 23900 }], error: null }) {
+  falso.zerar();
+  falso.responder("propostas:select", { data: linha, error: null });
+  falso.responder("propostas:update", respostaUpdate);
+  const r = await gravarMarcaVibePelaAreaCliente(client, 23900);
+  const updates = falso.chamadas.filter((c) => c.tabela === "propostas" && c.op === "update");
+  return { r, updates };
+}
+{
+  const { r, updates } = await gravarArea({ is_sistema_antigo: null, is_avulso: false, valor_total: 120, created_at: NOVA });
+  confere("proposta nova NULL vira false: UM update", r.gravou && updates.length === 1, { r, updates });
+  confere("o update leva SO is_sistema_antigo=false (nada de valor_total nem status)", JSON.stringify(updates[0]?.payload) === JSON.stringify({ is_sistema_antigo: false }), updates[0]?.payload);
+  const f = JSON.stringify(updates[0]?.filtros);
+  confere("as tres condicoes vao DENTRO do update: is null, created_at >= corte e trava da avulsa",
+    f.includes('["eq",["id_int",23900]]') && f.includes('["is",["is_sistema_antigo",null]]') &&
+    f.includes('["gte",["created_at","2026-10-16T14:50:00Z"]]') && f.includes("valor_total.gt.0"), updates[0]?.filtros);
+}
+for (const [nome, linha] of [
+  ["anterior ao corte fica NULL", { is_sistema_antigo: null, is_avulso: false, valor_total: 120, created_at: ANTIGA }],
+  ["true existente nao muda", { is_sistema_antigo: true, is_avulso: false, valor_total: 120, created_at: NOVA }],
+  ["false existente nao recebe outro update", { is_sistema_antigo: false, is_avulso: false, valor_total: 120, created_at: NOVA }],
+  ["avulsa sem valor_total nao recebe update", { is_sistema_antigo: null, is_avulso: true, valor_total: null, created_at: NOVA }]
+] as const) {
+  const { r, updates } = await gravarArea(linha as Record<string, unknown>);
+  confere(`${nome}: nenhum update`, updates.length === 0 && r.gravou === false && !r.erro, { r, updates });
+}
+{
+  const { r } = await gravarArea({ is_sistema_antigo: null, is_avulso: false, valor_total: 120, created_at: NOVA }, { data: null, error: { message: "falha simulada" } });
+  confere("erro do banco na marca: devolve o erro, nao lanca (a cobranca segue)", r.gravou === false && r.erro === "falha simulada", r);
+}
+{
+  falso.zerar();
+  const quebrado = { from: () => { throw new Error("cliente quebrado"); } } as never;
+  let lancou = false;
+  let r: Awaited<ReturnType<typeof gravarMarcaVibePelaAreaCliente>> | null = null;
+  try { r = await gravarMarcaVibePelaAreaCliente(quebrado, 23900); } catch { lancou = true; }
+  confere("excecao inesperada tambem nao lanca (a cobranca segue)", !lancou && r?.erro === "cliente quebrado", r);
 }
 
 console.log(falhas === 0 ? "\nTODOS OS TESTES PASSARAM" : `\n${falhas} TESTE(S) FALHARAM`);

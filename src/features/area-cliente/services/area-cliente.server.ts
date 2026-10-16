@@ -8,6 +8,7 @@ import {
   montarUrlPublicaCobranca,
   resolveEmpresaIdFromTexto
 } from "@/features/cobrancas/cobrancas-utils";
+import { gravarMarcaVibePelaAreaCliente } from "@/features/cobrancas/lib/sistema-antigo";
 import { calcularTotaisPelaRegraDaTela } from "@/features/orcamentos/services/totais-proposta.server";
 
 /**
@@ -638,6 +639,12 @@ export async function iniciarPagamentoAreaCliente(
         console.error(`[area-cliente] token/url publicos nao gravados em ${criada.id}:`, urlErr.message);
       } else {
         linha = { ...criada, token_publico: tokenPublico, url_cobranca: montarUrlPublicaCobranca({ tipoCobranca, tokenPublico }) };
+      }
+      // Pedido novo pago pelo link é 100% Vibe: marca false, só de NULL e só a
+      // partir do corte (lib/sistema-antigo). Falha aqui não derruba a cobrança.
+      const marca = await gravarMarcaVibePelaAreaCliente(service, idInt);
+      if (marca.erro) {
+        console.warn(`[area-cliente] marca is_sistema_antigo nao gravada no pedido ${idInt}:`, marca.erro);
       }
     }
   }

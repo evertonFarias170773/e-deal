@@ -120,3 +120,77 @@ export async function gravarMarcaSistemaAntigo(
   if (error) return { decisao, gravou: false, erro: error.message };
   return { decisao, gravou: Array.isArray(data) && data.length > 0 };
 }
+
+/**
+ * Corte da marca automática: deploy do modal com o checkbox (16/10/2026, ~14:50
+ * UTC). Proposta criada a partir daqui nasceu no Vibe; a anterior fica NULL (não
+ * classificada) e segue em conferência manual, mesmo paga pelo link.
+ */
+export const CORTE_PEDIDO_VIBE_ISO = "2026-10-16T14:50:00Z";
+
+export type DecisaoMarcaVibe = "GRAVAR" | "JA_MARCADA" | "ANTERIOR_AO_CORTE" | "AVULSA_SEM_TOTAL" | "SEM_PROPOSTA";
+
+export type PropostaParaMarcaVibe = {
+  isSistemaAntigo: boolean | null;
+  isAvulso: boolean | null;
+  valorTotal: number | null;
+  createdAt: string | null;
+};
+
+/**
+ * Cobrança criada fora do modal (área do cliente, 16/10/2026): só NULL vira
+ * false, só em proposta criada a partir do corte, nunca em avulsa sem
+ * valor_total. Diferente do modal, nunca sobrescreve uma marca já gravada —
+ * nem true, nem false.
+ */
+export function decidirMarcaVibe(proposta: PropostaParaMarcaVibe): DecisaoMarcaVibe {
+  if (proposta.isSistemaAntigo !== null) return "JA_MARCADA";
+  const criada = proposta.createdAt ? Date.parse(proposta.createdAt) : NaN;
+  if (!Number.isFinite(criada) || criada < Date.parse(CORTE_PEDIDO_VIBE_ISO)) return "ANTERIOR_AO_CORTE";
+  if (proposta.isAvulso === true && !(proposta.valorTotal != null && proposta.valorTotal > 0)) return "AVULSA_SEM_TOTAL";
+  return "GRAVAR";
+}
+
+/**
+ * Grava `is_sistema_antigo = false` depois que a área do cliente criou a
+ * cobrança. Lê antes para não mandar UPDATE à toa, e repete as três condições
+ * DENTRO do UPDATE (marca nula, criada a partir do corte, trava da avulsa), para
+ * o banco recusar a linha se ela mudou entre a leitura e a escrita. O retorno
+ * traz as colunas de todos os filtros (ver patch-sem-or-em-retorno-estreito).
+ * Nunca lança: quem chama só registra o desfecho no log.
+ */
+export async function gravarMarcaVibePelaAreaCliente(
+  client: SupabaseClient,
+  idInt: number
+): Promise<{ decisao: DecisaoMarcaVibe; gravou: boolean; erro?: string }> {
+  try {
+    const { data: lida, error: erroLeitura } = await client
+      .from("propostas")
+      .select("is_sistema_antigo, is_avulso, valor_total, created_at")
+      .eq("id_int", idInt)
+      .maybeSingle();
+    if (erroLeitura) return { decisao: "SEM_PROPOSTA", gravou: false, erro: erroLeitura.message };
+    if (!lida) return { decisao: "SEM_PROPOSTA", gravou: false };
+    const linha = lida as Record<string, unknown>;
+    const decisao = decidirMarcaVibe({
+      isSistemaAntigo: typeof linha.is_sistema_antigo === "boolean" ? linha.is_sistema_antigo : null,
+      isAvulso: typeof linha.is_avulso === "boolean" ? linha.is_avulso : null,
+      valorTotal: paraNumero(linha.valor_total),
+      createdAt: typeof linha.created_at === "string" ? linha.created_at : null
+    });
+    if (decisao !== "GRAVAR") return { decisao, gravou: false };
+
+    const { data, error } = await client
+      .from("propostas")
+      .update({ is_sistema_antigo: false })
+      .eq("id_int", idInt)
+      .is("is_sistema_antigo", null)
+      .gte("created_at", CORTE_PEDIDO_VIBE_ISO)
+      .or("is_avulso.is.null,is_avulso.is.false,valor_total.gt.0")
+      .select("id_int, is_sistema_antigo, created_at, is_avulso, valor_total");
+    if (error) return { decisao, gravou: false, erro: error.message };
+    return { decisao, gravou: Array.isArray(data) && data.length > 0 };
+  } catch (erro) {
+    return { decisao: "SEM_PROPOSTA", gravou: false, erro: erro instanceof Error ? erro.message : String(erro) };
+  }
+}
