@@ -49,6 +49,7 @@ import { getSupabaseClient } from "@/lib/supabase/client";
 import { fetchComSessao, SessaoExpiradaError } from "@/lib/supabase/sessao";
 import { abrirLinkDeDocumentoFiscal } from "@/lib/fiscal/documento-nota";
 import { formatCurrency } from "@/lib/formatters/currency";
+import { useAuth } from "@/features/auth/AuthProvider";
 import {
   INTERVALO_CONSULTA_NFSE_MS,
   LIMITE_DESCRICAO_NFSE,
@@ -57,6 +58,8 @@ import {
   conferirServico,
   conferirValor,
   descricaoDosItens,
+  conferirNbsDigitado,
+  nbsEditavelNaNota,
   nomeDoArquivoNfse,
   situacaoDoStatus
 } from "@/features/nfse/lib/regras-emissao";
@@ -166,6 +169,10 @@ export function GerarNfseModal({
 }) {
   const [contexto, setContexto] = useState<ContextoNfseDoPedido | null>(null);
   const [modo, setModo] = useState<Modo>({ tipo: "CARREGANDO" });
+  // NBS editavel (16/10/2026): o campo so aparece para administrador; quem
+  // grava e confere de novo e o servidor (PATCH /api/fiscal/rascunho-nfse).
+  const { user } = useAuth();
+  const ehAdministrador = Boolean(user?.isSuperAdmin || user?.isAdmin);
   const [idEndereco, setIdEndereco] = useState("");
   const [idServico, setIdServico] = useState<number | null>(null);
   const [baixando, setBaixando] = useState<null | "pdf" | "xml">(null);
@@ -419,6 +426,27 @@ export function GerarNfseModal({
     }, INTERVALO_CONSULTA_NFSE_MS);
     return () => window.clearTimeout(relogio);
   }, [refAcompanhada, consultas, consultar]);
+
+  /**
+   * Grava o NBS do rascunho. Devolve a mensagem de recusa, ou `null` quando
+   * gravou — e entao a janela rele a nota do banco.
+   */
+  async function salvarNbs(nota: NotaDeServicoLida, digitado: string): Promise<string | null> {
+    const conferido = conferirNbsDigitado(digitado);
+    if (!conferido.ok) return conferido.motivo;
+    const c = await chamar("carregar", "/api/fiscal/rascunho-nfse", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id_int: nota.id_int ?? idInt, ref: nota.ref, codigo_nbs: conferido.nbs })
+    });
+    if (!ativo.current) return null;
+    if (c.tipo === "sessao") return c.mensagem;
+    if (c.tipo === "sem_resposta") return "Sem resposta do servidor. Leia a nota de novo antes de tentar outra vez.";
+    if (!c.ok || c.dados.success !== true) return String(c.dados.message ?? "Não foi possível gravar o NBS.");
+    onMudouRef.current();
+    await carregar();
+    return null;
+  }
 
   async function criarRascunho(novo: boolean) {
     if (!contexto || ocupado) return;
@@ -999,10 +1027,20 @@ export function GerarNfseModal({
                   </div>
                 ) : notaAberta ? (
                   <div className="space-y-3" data-ref-nfse={notaAberta.ref}>
-                    <p className="text-sm text-slate-700">
-                      Código de tributação <strong>{notaAberta.codigo_servico || "não informado"}</strong> · NBS{" "}
-                      <strong>{notaAberta.codigo_nbs || "não informado"}</strong>
-                    </p>
+                    {ehAdministrador && nbsEditavelNaNota(notaAberta) ? (
+                      <EditorDeNbs
+                        key={`${notaAberta.ref}:${notaAberta.codigo_nbs ?? ""}`}
+                        codigoServico={notaAberta.codigo_servico}
+                        nbsAtual={notaAberta.codigo_nbs}
+                        desabilitado={ocupado !== null}
+                        onSalvar={(digitado) => salvarNbs(notaAberta, digitado)}
+                      />
+                    ) : (
+                      <p className="text-sm text-slate-700">
+                        Código de tributação <strong>{notaAberta.codigo_servico || "não informado"}</strong> · NBS{" "}
+                        <strong>{notaAberta.codigo_nbs || "não informado"}</strong>
+                      </p>
+                    )}
                     <p className="text-sm text-slate-700">
                       Valor do serviço: <strong>{formatCurrency(totalDaNota)}</strong>
                     </p>
@@ -1377,6 +1415,79 @@ export function GerarNfseModal({
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * O NBS do rascunho em edição, para administrador (16/10/2026). Campo livre de
+ * 9 dígitos; nada é gravado até "Salvar NBS". A `key` de quem usa é a ref mais
+ * o NBS gravado: gravou, o campo renasce com o valor relido do banco.
+ */
+function EditorDeNbs({
+  codigoServico,
+  nbsAtual,
+  desabilitado,
+  onSalvar
+}: {
+  codigoServico: string | null;
+  nbsAtual: string | null;
+  desabilitado: boolean;
+  onSalvar: (digitado: string) => Promise<string | null>;
+}) {
+  const [texto, setTexto] = useState(nbsAtual ?? "");
+  const [salvando, setSalvando] = useState(false);
+  const [recusa, setRecusa] = useState<string | null>(null);
+  const mudou = texto.trim() !== String(nbsAtual ?? "").trim();
+  const valido = conferirNbsDigitado(texto).ok;
+
+  async function salvar() {
+    setSalvando(true);
+    setRecusa(null);
+    try {
+      const motivo = await onSalvar(texto);
+      if (motivo) setRecusa(motivo);
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  return (
+    <div className="space-y-1.5">
+      <p className="text-sm text-slate-700">
+        Código de tributação <strong>{codigoServico || "não informado"}</strong>
+      </p>
+      <label htmlFor="nfse-nbs" className={ROTULO_NFSE}>
+        NBS (só administrador, só em rascunho)
+      </label>
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          id="nfse-nbs"
+          value={texto}
+          onChange={(e) => {
+            setTexto(e.target.value.replace(/\D/g, "").slice(0, 9));
+            setRecusa(null);
+          }}
+          inputMode="numeric"
+          maxLength={9}
+          placeholder="9 dígitos"
+          className={`${CAMPO_NFSE} w-40 font-mono`}
+          disabled={desabilitado || salvando}
+        />
+        <button
+          type="button"
+          onClick={() => void salvar()}
+          disabled={desabilitado || salvando || !mudou || !valido}
+          className={BOTAO_SECUNDARIO_NFSE}
+        >
+          {salvando ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+          Salvar NBS
+        </button>
+      </div>
+      {!valido && texto.trim() !== "" ? (
+        <p className="text-xs text-amber-700">O NBS tem de ter exatamente 9 dígitos.</p>
+      ) : null}
+      {recusa ? <p className="text-xs text-rose-700">{recusa}</p> : null}
     </div>
   );
 }

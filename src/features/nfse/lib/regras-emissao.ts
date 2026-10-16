@@ -343,3 +343,46 @@ export function ambienteDaEmpresa(valor: string | null | undefined): AmbienteDaE
   const texto = String(valor ?? "").trim().toLowerCase();
   return texto === "producao" || texto === "homologacao" ? texto : null;
 }
+
+/* ----------------------------------------------------------- NBS editável */
+
+/**
+ * NBS EDITÁVEL PELO ADMINISTRADOR (16/10/2026).
+ *
+ * Só em rascunho: os status que ainda não viraram documento nem estão em
+ * trânsito, e sem número de NFS-e. É a mesma lista fechada que
+ * `fn_definir_nbs_rascunho_nfse` confere no banco. Quem não é administrador
+ * continua com o NBS que a nota tem.
+ */
+export const STATUS_COM_NBS_EDITAVEL = ["PENDENTE", "PRONTA_PARA_ENVIO", "ERRO_VALIDACAO", "ERRO_ENVIO"] as const;
+
+export function nbsEditavelNaNota(nota: { status: string | null | undefined; numero_nfse?: string | number | null }): boolean {
+  const status = String(nota.status ?? "").trim().toUpperCase();
+  return (
+    (STATUS_COM_NBS_EDITAVEL as readonly string[]).includes(status) &&
+    String(nota.numero_nfse ?? "").trim() === ""
+  );
+}
+
+/** NBS digitado: exatamente 9 dígitos numéricos (espaços nas pontas ignorados). */
+export function conferirNbsDigitado(valor: string | null | undefined): { ok: true; nbs: string } | { ok: false; motivo: string } {
+  const nbs = String(valor ?? "").trim();
+  if (!/^[0-9]{9}$/.test(nbs)) return { ok: false, motivo: "O NBS tem de ter exatamente 9 dígitos numéricos, sem pontos." };
+  return { ok: true, nbs };
+}
+
+/** A recusa de `fn_definir_nbs_rascunho_nfse`, em texto para quem está na tela. */
+export function mensagemDaRecusaDoNbs(motivo: string | null | undefined): string {
+  switch (String(motivo ?? "")) {
+    case "NBS_INVALIDO":
+      return "O NBS tem de ter exatamente 9 dígitos numéricos, sem pontos.";
+    case "STATUS_NAO_EDITAVEL":
+      return "O NBS só muda em rascunho. Esta nota já foi enviada ou autorizada.";
+    case "NOTA_NAO_ENCONTRADA":
+      return "Nota de serviço não encontrada.";
+    case "NOTA_MUDOU":
+      return "A nota mudou desde que a janela foi aberta. Nada foi gravado; leia de novo e confira.";
+    default:
+      return "Não foi possível gravar o NBS.";
+  }
+}

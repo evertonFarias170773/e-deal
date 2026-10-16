@@ -395,6 +395,7 @@ Nos dois casos a confirmação lista as notas autorizadas que o pedido já tem. 
 - Alterar o pagamento do pedido depois de criar o rascunho não muda o texto já gravado. Para atualizar, crie outro rascunho.
 - O serviço escolhido precisa estar ativo e ter código de tributação e NBS de 9 dígitos no cadastro. Sem isso o **Criar rascunho** fica apagado.
 - Só entra na nota serviço com o NBS 121011000. Serviço com outro NBS é recusado até o banco ser ajustado para gravar o NBS do serviço.
+- **NBS do rascunho:** super administrador e administrador veem o campo **NBS** e o botão **Salvar NBS** no rascunho (ou na nota com erro de envio), antes de emitir. O NBS precisa ter exatamente 9 dígitos, sem pontos. Nota autorizada, em análise, recusada ou cancelada não muda. Para os outros usuários o NBS aparece só para leitura. A alteração fica registrada com o nome de quem mudou.
 - Os serviços da lista vêm do cadastro de serviços da NFS-e. A janela não cadastra nem altera serviço.
 - A descrição do serviço tem de 1 a 1000 caracteres. Acima disso o **Criar rascunho** fica apagado.
 - Quando o município do endereço escolhido não é reconhecido, a nota sai sem o endereço do tomador. A janela avisa e não bloqueia. O mesmo vale para cliente sem endereço cadastrado.

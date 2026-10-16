@@ -14,8 +14,12 @@ import {
   conferirEndereco,
   conferirServico,
   conferirValor,
-  decisaoPermiteRascunhoNovo
+  conferirNbsDigitado,
+  decisaoPermiteRascunhoNovo,
+  mensagemDaRecusaDoNbs,
+  nbsEditavelNaNota
 } from "@/features/nfse/lib/regras-emissao";
+import { ehAdministradorServerSide } from "@/lib/auth/verificar-permissao";
 
 /**
  * Rascunho de NFS-e a partir de um pedido da Fila.
@@ -203,5 +207,84 @@ export async function POST(request: Request) {
   } catch (err) {
     console.error("[API][RascunhoNfse] Erro inesperado:", err);
     return respostaDeErro(500, "Erro inesperado ao criar o rascunho da NFS-e.");
+  }
+}
+
+/**
+ * PATCH — o administrador corrige o NBS de um rascunho (16/10/2026).
+ *
+ * Corpo: { id_int, ref, codigo_nbs }. Três portas, nesta ordem:
+ *   1. sessão e `fiscal.emit_nfse` (as mesmas do resto da rota);
+ *   2. super administrador ou administrador, conferido AQUI no servidor;
+ *   3. a nota relida do pedido: tem de ser rascunho, sem número de NFS-e.
+ * A escrita é `fn_definir_nbs_rascunho_nfse`, chamada com o token DO USUÁRIO:
+ * o banco confere administrador de novo, faz compare-and-swap pelo status lido
+ * e a auditoria de `notas_servico` registra quem mudou.
+ */
+export async function PATCH(request: Request) {
+  try {
+    const sessao = await autenticarEmissorDeNfse(request);
+    if (sessao instanceof NextResponse) return sessao;
+
+    const administrador = await ehAdministradorServerSide(sessao.supabase, sessao.userId);
+    if (!administrador) {
+      return respostaDeErro(403, "Só administrador altera o NBS da NFS-e.", { code: "SEM_PERMISSAO_NBS" });
+    }
+
+    let corpo: Record<string, unknown>;
+    try {
+      corpo = (await request.json()) as Record<string, unknown>;
+    } catch {
+      return respostaDeErro(400, "Corpo da requisição inválido.");
+    }
+
+    const idInt = lerIdInt(corpo?.id_int);
+    const ref = String(corpo?.ref ?? "").trim().toUpperCase();
+    if (!idInt || !ref) return respostaDeErro(400, "Pedido ou referência da nota ausente.");
+
+    const nbs = conferirNbsDigitado(String(corpo?.codigo_nbs ?? ""));
+    if (!nbs.ok) return respostaDeErro(422, nbs.motivo, { code: "NBS_INVALIDO" });
+
+    // A nota relida do pedido, com o JWT do usuário: nunca o que a tela mandou.
+    const { data: lida, error: erroLeitura } = await sessao.supabase
+      .from("notas_servico")
+      .select("id, ref, id_int, status, numero_nfse")
+      .eq("ref", ref)
+      .eq("id_int", idInt)
+      .maybeSingle();
+    if (erroLeitura) {
+      console.error("[API][RascunhoNfse] Falha ao reler a nota para o NBS:", erroLeitura.message);
+      return respostaDeErro(500, "Não foi possível ler a nota de serviço.");
+    }
+    const nota = lida as { id: string; status: string | null; numero_nfse: string | null } | null;
+    if (!nota) return respostaDeErro(404, "Nota de serviço não encontrada neste pedido.");
+    if (!nbsEditavelNaNota(nota)) {
+      return respostaDeErro(409, mensagemDaRecusaDoNbs("STATUS_NAO_EDITAVEL"), { code: "STATUS_NAO_EDITAVEL" });
+    }
+
+    const { data: resultado, error } = await sessao.supabase.rpc("fn_definir_nbs_rascunho_nfse", {
+      p_id: nota.id,
+      p_codigo_nbs: nbs.nbs,
+      p_status_lido: String(nota.status ?? "").trim().toUpperCase()
+    });
+    if (error) {
+      // Função ainda não criada no banco (migration 20261016 não aplicada).
+      if (error.code === "PGRST202" || /fn_definir_nbs_rascunho_nfse/.test(error.message ?? "")) {
+        console.error("[API][RascunhoNfse] fn_definir_nbs_rascunho_nfse indisponível:", error.message);
+        return respostaDeErro(503, "A edição do NBS ainda não está disponível no banco.", { code: "NBS_INDISPONIVEL" });
+      }
+      if (error.code === "42501") return respostaDeErro(403, "Só administrador altera o NBS da NFS-e.", { code: "SEM_PERMISSAO_NBS" });
+      console.error("[API][RascunhoNfse] Falha ao gravar o NBS:", error.message);
+      return respostaDeErro(500, "Não foi possível gravar o NBS.");
+    }
+
+    const saida = (resultado ?? {}) as { alterada?: boolean; motivo?: string; codigo_nbs?: string };
+    if (saida.alterada !== true) {
+      return respostaDeErro(409, mensagemDaRecusaDoNbs(saida.motivo), { code: saida.motivo || "NBS_NAO_GRAVADO" });
+    }
+    return NextResponse.json({ success: true, ref, codigo_nbs: saida.codigo_nbs ?? nbs.nbs }, { headers: SEM_CACHE });
+  } catch (err) {
+    console.error("[API][RascunhoNfse] Erro inesperado ao gravar o NBS:", err);
+    return respostaDeErro(500, "Erro inesperado ao gravar o NBS.");
   }
 }
