@@ -21,6 +21,14 @@ import { getSupabaseClient } from "@/lib/supabase/client";
 import { fetchComSessao, obterAccessToken, SessaoExpiradaError } from "@/lib/supabase/sessao";
 import { resolverTelefonePagador } from "@/lib/telefone/telefone-br";
 import {
+  ROTULO_SISTEMA_ANTIGO,
+  checkboxInicialSistemaAntigo,
+  gravarMarcaSistemaAntigo,
+  lerMarcaSistemaAntigo,
+  osIdealDaCobranca,
+  validarOsIdeal
+} from "@/features/cobrancas/lib/sistema-antigo";
+import {
   getLiberacaoPedidoLabel,
   getLiberacaoPedidoStatus,
   getLiberacaoPedidoTone,
@@ -421,6 +429,43 @@ export function PropostaCobrancaPanel({
   }
 
   const [form, setForm] = useState<CriarCobrancaFormValues>(buildInitialFormState);
+  // "Pedido do sistema antigo" (16/10/2026): desmarcado por padrão; só a OS
+  // Ideal depende dele. Abre marcado quando a proposta já está gravada como do
+  // sistema antigo. A regra mora em lib/sistema-antigo.
+  const [sistemaAntigo, setSistemaAntigo] = useState(false);
+
+  useEffect(() => {
+    let ativo = true;
+    setSistemaAntigo(false);
+    const client = getSupabaseClient();
+    if (!client || !proposta.id_int) return;
+    void lerMarcaSistemaAntigo(client, proposta.id_int).then((gravada) => {
+      if (ativo) setSistemaAntigo(checkboxInicialSistemaAntigo(gravada));
+    });
+    return () => {
+      ativo = false;
+    };
+  }, [proposta.id_int]);
+
+  // Grava a marca na proposta depois que a cobrança foi criada, só quando o
+  // valor muda e nunca em avulsa sem valor_total (ver lib/sistema-antigo).
+  // Falhar aqui não desfaz a cobrança: só avisa.
+  async function registrarMarcaSistemaAntigo() {
+    const client = getSupabaseClient();
+    if (!client || source !== "supabase") return;
+    try {
+      const resultado = await gravarMarcaSistemaAntigo(client, proposta.id_int, sistemaAntigo);
+      if (resultado.erro) {
+        showToast({
+          type: "warning",
+          title: "Cobrança criada, mas a marca do sistema antigo não foi gravada",
+          description: resultado.erro
+        });
+      }
+    } catch (erro) {
+      console.warn("[PropostaCobrancaPanel] Nao foi possivel gravar a marca do sistema antigo:", erro);
+    }
+  }
 
   useEffect(() => {
     setIsUserEditingValor(false);
@@ -950,8 +995,9 @@ export function PropostaCobrancaPanel({
       return;
     }
 
-    if (!form.osIdeal.trim()) {
-      showToast({ type: "error", title: "Informe a OS Ideal temporária para gerar a cobrança." });
+    const erroOsIdeal = validarOsIdeal(sistemaAntigo, form.osIdeal);
+    if (erroOsIdeal) {
+      showToast({ type: "error", title: erroOsIdeal });
       return;
     }
 
@@ -1171,6 +1217,8 @@ export function PropostaCobrancaPanel({
             }
         }
 
+        await registrarMarcaSistemaAntigo();
+
         // Recarrega as cobranças ANTES de fechar o modal — vale tanto para o
         // sucesso total quanto para o parcial (o E-Crédito já foi gravado mesmo
         // quando a segunda parte falha). Sem isso, `cobrancasStats` continuava
@@ -1338,6 +1386,8 @@ export function PropostaCobrancaPanel({
     const payload: CriarCobrancaFormValues = {
       ...form,
       ...extraPayload,
+      // Desmarcado, a cobrança sai sem OS mesmo com o campo pré-preenchido.
+      osIdeal: osIdealDaCobranca(sistemaAntigo, form.osIdeal),
       vencimento: payloadVencimento,
       valor: valorComDebito,
       observacao: observacaoComMarcador,
@@ -1363,6 +1413,7 @@ export function PropostaCobrancaPanel({
       console.log("[DEBUG CRIAR COBRANÇA] payload completo: ", payload);
 
       const created = await createCobranca(payload, proposta);
+      await registrarMarcaSistemaAntigo();
 
       const isFaturadoPayload = ["E-FATURADO", "E-RETRABALHO", "E-PERMUTA", "E-AMOSTRA"].includes(payload.tipoCobranca);
       if (isFaturadoPayload && !created?.paid_at) {
@@ -1604,17 +1655,28 @@ export function PropostaCobrancaPanel({
                 <Field label="Forma de pagamento selecionada">
                   <input readOnly value={getRotuloModalidadeExibicao(form.tipoCobranca, form.cartaoFluxo)} className={`${inputClass} cursor-not-allowed bg-slate-100 text-slate-500`} />
                 </Field>
-                <Field label="OS Ideal *">
+                <label className="flex items-center gap-2 self-end pb-2 text-sm font-semibold text-slate-700">
                   <input
-                    value={form.osIdeal}
-                    onChange={(event) => {
-                      const onlyNumbers = event.target.value.replace(/\D/g, "");
-                      patchForm({ osIdeal: onlyNumbers });
-                    }}
-                    className={inputClass}
-                    placeholder="Ex.: 2101"
+                    type="checkbox"
+                    checked={sistemaAntigo}
+                    onChange={(event) => setSistemaAntigo(event.target.checked)}
+                    className="h-4 w-4 rounded border-slate-300"
                   />
-                </Field>
+                  {ROTULO_SISTEMA_ANTIGO}
+                </label>
+                {sistemaAntigo && (
+                  <Field label="OS Ideal *">
+                    <input
+                      value={form.osIdeal}
+                      onChange={(event) => {
+                        const onlyNumbers = event.target.value.replace(/\D/g, "");
+                        patchForm({ osIdeal: onlyNumbers });
+                      }}
+                      className={inputClass}
+                      placeholder="Ex.: 2101"
+                    />
+                  </Field>
+                )}
                 <Field label="Valor da cobrança *">
                   <input
                     type="number"
@@ -2148,17 +2210,28 @@ export function PropostaCobrancaPanel({
                   <Field label="Forma de pagamento selecionada">
                     <input readOnly value={getRotuloModalidadeExibicao(form.tipoCobranca, form.cartaoFluxo)} className={`${inputClass} cursor-not-allowed bg-slate-100 text-slate-500`} />
                   </Field>
-                  <Field label="OS Ideal *">
+                  <label className="flex items-center gap-2 self-end pb-2 text-sm font-semibold text-slate-700">
                     <input
-                      value={form.osIdeal}
-                      onChange={(event) => {
-                        const onlyNumbers = event.target.value.replace(/\D/g, "");
-                        patchForm({ osIdeal: onlyNumbers });
-                      }}
-                      className={inputClass}
-                      placeholder="Ex.: 2101"
+                      type="checkbox"
+                      checked={sistemaAntigo}
+                      onChange={(event) => setSistemaAntigo(event.target.checked)}
+                      className="h-4 w-4 rounded border-slate-300"
                     />
-                  </Field>
+                    {ROTULO_SISTEMA_ANTIGO}
+                  </label>
+                  {sistemaAntigo && (
+                    <Field label="OS Ideal *">
+                      <input
+                        value={form.osIdeal}
+                        onChange={(event) => {
+                          const onlyNumbers = event.target.value.replace(/\D/g, "");
+                          patchForm({ osIdeal: onlyNumbers });
+                        }}
+                        className={inputClass}
+                        placeholder="Ex.: 2101"
+                      />
+                    </Field>
+                  )}
                   <Field label="Valor da cobrança *">
                     <input
                       type="number"

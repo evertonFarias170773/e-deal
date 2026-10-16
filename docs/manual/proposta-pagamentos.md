@@ -1,6 +1,6 @@
 # Proposta: aba Pagamentos
 
-> **Última revisão:** 15/10/2026
+> **Última revisão:** 16/10/2026
 > **Caminho no menu:** Pedidos → abrir um pedido → aba Pagamentos
 > **Endereço:** `/orcamentos/<número>/editar?tab=pagamentos`
 
@@ -39,7 +39,8 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Ver cobrança** (no celular: **Ver**) | Linha de cobrança | Abre o detalhe da cobrança dentro da aba. |
 | **Excluir** | Linha de cobrança | Abre a janela **Cancelar Cobrança**. |
 | **Empresa recebedora** | Janela **Criar cobrança** | Escolhe a empresa que recebe: IDEAL GRÁFICA EXPRESSA EIRELI, IDEAL BIRÔ SERV. GRAFICOS ou E3 BRINDES LTDA. |
-| **OS Ideal \*** | Janela **Criar cobrança** | Número da OS, só dígitos. Obrigatório. |
+| **Pedido do sistema antigo** | Janela **Criar cobrança** | Marque quando o pedido veio do sistema antigo. Vem desmarcado; numa proposta já marcada antes, vem marcado. |
+| **OS Ideal \*** | Janela **Criar cobrança** | Número da OS no sistema antigo, só dígitos. Só aparece, e só é obrigatório, com **Pedido do sistema antigo** marcado. |
 | **Valor da cobrança \*** | Janela **Criar cobrança** | Valor desta cobrança. Vem preenchido com o saldo restante. |
 | **Observações (opcional)** | Janela **Criar cobrança** | Texto livre gravado na cobrança. |
 | **PIX**, **Boleto**, **Cartão de crédito**, **Cartão Asaas**, **Faturado**, **E-Permuta**, **E-Amostra**, **E-Retrabalho**, **E-Crédito** | Quadro **Forma de pagamento** da janela | Escolhe a forma. Forma que a empresa recebedora não aceita aparece como **Indisponível**. |
@@ -75,7 +76,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 2. Clique em **Gerar cobrança**.
 3. Na janela **Criar cobrança**, confira o cabeçalho: empresa, total, já cobrado, saldo e situação. O nome no título é o de quem paga, definido na aba Geral.
 4. Confira a **Empresa recebedora**. Ela vem da empresa da proposta; se a proposta não tem, do padrão do cliente.
-5. Preencha **OS Ideal \***.
+5. Se o pedido veio do sistema antigo, marque **Pedido do sistema antigo** e preencha **OS Ideal \***. Pedido feito no Vibe não tem OS: deixe desmarcado.
 6. Confira o **Valor da cobrança \***. Ele vem com o saldo restante; para cobrar só uma parte, digite um valor menor.
 7. Escolha a forma em **Forma de pagamento**: **PIX**, **Boleto**, **Cartão de crédito** ou **Cartão Asaas**. A forma padrão do cadastro de quem paga já vem marcada.
 8. Clique em **Gerar cobrança**.
@@ -200,7 +201,7 @@ Se a janela for fechada sem escolher, a proposta fica com a faixa **Revisão fin
 - Não dá para entrar na aba enquanto houver diferença financeira pendente: "Resolva a diferença financeira pendente antes de acessar Pagamentos."
 - Não dá para gerar cobrança de orçamento rápido, sem cliente cadastrado.
 - **Gerar cobrança** só aparece enquanto há saldo. O saldo é o total da proposta menos a soma das cobranças ativas, pagas ou não. O valor de uma cobrança não pode passar do saldo.
-- Não dá para gerar cobrança sem **OS Ideal**.
+- Com **Pedido do sistema antigo** marcado, não dá para gerar cobrança sem **OS Ideal**. A marca fica gravada no pedido e volta na próxima cobrança.
 - Não dá para gerar cobrança com o frete desatualizado (peso da proposta diferente do peso cotado) nem, em pedido complementar, sem o frete complementar aplicado. No complementar em RETIRA ou FOB, que não tem frete a aplicar, esse bloqueio é um problema conhecido e sem solução publicada.
 - Cobrança real exige nome e CPF/CNPJ do cliente e endereço de entrega com logradouro, cidade, UF e CEP. Boleto exige também e-mail do cliente.
 - Boleto e cartão exigem telefone válido no cadastro de quem paga; o cartão exige celular. Sem isso abre a janela **Telefone do cliente impede a cobrança**, onde o telefone é corrigido na hora.
@@ -252,7 +253,7 @@ Se a janela for fechada sem escolher, a proposta fica com a faixa **Revisão fin
 | "Não foi possível carregar as cobranças desta proposta." | A lista de cobranças não carregou. | Clique em **Recarregar cobranças** antes de gerar qualquer cobrança, para não duplicar. |
 | "Cadastre ou vincule um cliente antes de gerar cobrança." | A proposta é orçamento rápido, sem cliente cadastrado. | Vincule um cliente cadastrado na aba Geral. |
 | "Esta proposta já foi totalmente cobrada (saldo restante é R$ 0,00)." | As cobranças ativas já somam o total. | Cancele a cobrança errada antes de gerar outra. |
-| "Informe a OS Ideal temporária para gerar a cobrança." | **OS Ideal \*** em branco. | Preencha o número da OS. |
+| "Informe a OS Ideal do sistema antigo para gerar a cobrança." | **Pedido do sistema antigo** marcado e **OS Ideal \*** em branco. | Preencha o número da OS, ou desmarque se o pedido é do Vibe. |
 | "Selecione uma forma de pagamento." | Nenhuma forma marcada. | Escolha a forma. |
 | "Selecione uma condição de pagamento." | Faturado ou E-Permuta sem condição. | Escolha a **Condição de pagamento \***. |
 | "O valor da cobrança (R$ ...) não pode ser maior que o saldo restante (R$ ...)." | O valor digitado passa do saldo. | Reduza o valor. |
