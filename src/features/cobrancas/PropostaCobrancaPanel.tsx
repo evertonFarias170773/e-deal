@@ -1655,46 +1655,62 @@ export function PropostaCobrancaPanel({
                 <Field label="Forma de pagamento selecionada">
                   <input readOnly value={getRotuloModalidadeExibicao(form.tipoCobranca, form.cartaoFluxo)} className={`${inputClass} cursor-not-allowed bg-slate-100 text-slate-500`} />
                 </Field>
-                <label className="flex items-center gap-2 self-end pb-2 text-sm font-semibold text-slate-700">
-                  <input
-                    type="checkbox"
-                    checked={sistemaAntigo}
-                    onChange={(event) => setSistemaAntigo(event.target.checked)}
-                    className="h-4 w-4 rounded border-slate-300"
-                  />
-                  {ROTULO_SISTEMA_ANTIGO}
-                </label>
-                {sistemaAntigo && (
-                  <Field label="OS Ideal *">
-                    <input
-                      value={form.osIdeal}
-                      onChange={(event) => {
-                        const onlyNumbers = event.target.value.replace(/\D/g, "");
-                        patchForm({ osIdeal: onlyNumbers });
-                      }}
-                      className={inputClass}
-                      placeholder="Ex.: 2101"
-                    />
-                  </Field>
-                )}
-                <Field label="Valor da cobrança *">
-                  <input
-                    type="number"
-                    min={0}
-                    step="0.01"
-                    value={form.valor}
-                    onChange={(event) => {
-                      setIsUserEditingValor(true);
-                      patchForm({ valor: Number(event.target.value) || 0 });
-                    }}
-                    className={inputClass}
-                  />
-                  {saldoRestante < totalPropostaRounded && (
-                    <p className="mt-1.5 text-xs text-amber-700 font-semibold bg-amber-50/70 border border-amber-100 rounded-xl p-2.5">
-                      ⚠️ Cobrança complementar. Saldo restante: {formatCurrency(saldoRestante)}.
-                    </p>
-                  )}
-                </Field>
+                {/* Checkbox, OS Ideal e Valor na mesma linha e sempre nesta ordem. O
+                    espaço da OS Ideal existe mesmo desmarcado (invisível e desabilitado),
+                    para o Valor não mudar de lugar ao marcar. Em tela estreita, quebra. */}
+                <div className="flex flex-wrap items-start gap-4 md:col-span-2">
+                  <div className="shrink-0 space-y-2">
+                    <span aria-hidden="true" className="invisible block text-xs font-semibold uppercase tracking-wide">
+                      Origem
+                    </span>
+                    <label className="flex h-[46px] items-center gap-2 text-sm font-semibold text-slate-700">
+                      <input
+                        type="checkbox"
+                        checked={sistemaAntigo}
+                        onChange={(event) => setSistemaAntigo(event.target.checked)}
+                        className="h-4 w-4 rounded border-slate-300"
+                      />
+                      {ROTULO_SISTEMA_ANTIGO}
+                    </label>
+                  </div>
+                  <div className={`w-32 shrink-0 ${sistemaAntigo ? "" : "invisible"}`} aria-hidden={!sistemaAntigo}>
+                    <Field label="OS Ideal *">
+                      <input
+                        value={form.osIdeal}
+                        disabled={!sistemaAntigo}
+                        inputMode="numeric"
+                        pattern="[0-9]*"
+                        maxLength={6}
+                        onChange={(event) => {
+                          const onlyNumbers = event.target.value.replace(/\D/g, "").slice(0, 6);
+                          patchForm({ osIdeal: onlyNumbers });
+                        }}
+                        className={inputClass}
+                        placeholder="Ex.: 270122"
+                      />
+                    </Field>
+                  </div>
+                  <div className="min-w-[12rem] flex-1">
+                    <Field label="Valor da cobrança *">
+                      <input
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        value={form.valor}
+                        onChange={(event) => {
+                          setIsUserEditingValor(true);
+                          patchForm({ valor: Number(event.target.value) || 0 });
+                        }}
+                        className={inputClass}
+                      />
+                      {saldoRestante < totalPropostaRounded && (
+                        <p className="mt-1.5 text-xs text-amber-700 font-semibold bg-amber-50/70 border border-amber-100 rounded-xl p-2.5">
+                          ⚠️ Cobrança complementar. Saldo restante: {formatCurrency(saldoRestante)}.
+                        </p>
+                      )}
+                    </Field>
+                  </div>
+                </div>
                 
 
                 <div className="md:col-span-2">
@@ -2210,46 +2226,62 @@ export function PropostaCobrancaPanel({
                   <Field label="Forma de pagamento selecionada">
                     <input readOnly value={getRotuloModalidadeExibicao(form.tipoCobranca, form.cartaoFluxo)} className={`${inputClass} cursor-not-allowed bg-slate-100 text-slate-500`} />
                   </Field>
-                  <label className="flex items-center gap-2 self-end pb-2 text-sm font-semibold text-slate-700">
-                    <input
-                      type="checkbox"
-                      checked={sistemaAntigo}
-                      onChange={(event) => setSistemaAntigo(event.target.checked)}
-                      className="h-4 w-4 rounded border-slate-300"
-                    />
-                    {ROTULO_SISTEMA_ANTIGO}
-                  </label>
-                  {sistemaAntigo && (
-                    <Field label="OS Ideal *">
-                      <input
-                        value={form.osIdeal}
-                        onChange={(event) => {
-                          const onlyNumbers = event.target.value.replace(/\D/g, "");
-                          patchForm({ osIdeal: onlyNumbers });
-                        }}
-                        className={inputClass}
-                        placeholder="Ex.: 2101"
-                      />
-                    </Field>
-                  )}
-                  <Field label="Valor da cobrança *">
-                    <input
-                      type="number"
-                      min={0}
-                      step="0.01"
-                      value={form.valor}
-                      onChange={(event) => {
-                        setIsUserEditingValor(true);
-                        patchForm({ valor: Number(event.target.value) || 0 });
-                      }}
-                      className={inputClass}
-                    />
-                    {saldoRestante < totalPropostaRounded && (
-                      <p className="mt-1.5 text-xs text-amber-700 font-semibold bg-amber-50/70 border border-amber-100 rounded-xl p-2.5">
-                        ⚠️ Cobrança complementar. Saldo restante: {formatCurrency(saldoRestante)}.
-                      </p>
-                    )}
-                  </Field>
+                  {/* Checkbox, OS Ideal e Valor na mesma linha e sempre nesta ordem. O
+                      espaço da OS Ideal existe mesmo desmarcado (invisível e desabilitado),
+                      para o Valor não mudar de lugar ao marcar. Em tela estreita, quebra. */}
+                  <div className="flex flex-wrap items-start gap-4 md:col-span-2">
+                    <div className="shrink-0 space-y-2">
+                      <span aria-hidden="true" className="invisible block text-xs font-semibold uppercase tracking-wide">
+                        Origem
+                      </span>
+                      <label className="flex h-[46px] items-center gap-2 text-sm font-semibold text-slate-700">
+                        <input
+                          type="checkbox"
+                          checked={sistemaAntigo}
+                          onChange={(event) => setSistemaAntigo(event.target.checked)}
+                          className="h-4 w-4 rounded border-slate-300"
+                        />
+                        {ROTULO_SISTEMA_ANTIGO}
+                      </label>
+                    </div>
+                    <div className={`w-32 shrink-0 ${sistemaAntigo ? "" : "invisible"}`} aria-hidden={!sistemaAntigo}>
+                      <Field label="OS Ideal *">
+                        <input
+                          value={form.osIdeal}
+                          disabled={!sistemaAntigo}
+                          inputMode="numeric"
+                          pattern="[0-9]*"
+                          maxLength={6}
+                          onChange={(event) => {
+                            const onlyNumbers = event.target.value.replace(/\D/g, "").slice(0, 6);
+                            patchForm({ osIdeal: onlyNumbers });
+                          }}
+                          className={inputClass}
+                          placeholder="Ex.: 270122"
+                        />
+                      </Field>
+                    </div>
+                    <div className="min-w-[12rem] flex-1">
+                      <Field label="Valor da cobrança *">
+                        <input
+                          type="number"
+                          min={0}
+                          step="0.01"
+                          value={form.valor}
+                          onChange={(event) => {
+                            setIsUserEditingValor(true);
+                            patchForm({ valor: Number(event.target.value) || 0 });
+                          }}
+                          className={inputClass}
+                        />
+                        {saldoRestante < totalPropostaRounded && (
+                          <p className="mt-1.5 text-xs text-amber-700 font-semibold bg-amber-50/70 border border-amber-100 rounded-xl p-2.5">
+                            ⚠️ Cobrança complementar. Saldo restante: {formatCurrency(saldoRestante)}.
+                          </p>
+                        )}
+                      </Field>
+                    </div>
+                  </div>
 
                   <div className="md:col-span-2">
                     <Field label="Observações (opcional)">

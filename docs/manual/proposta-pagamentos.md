@@ -40,7 +40,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Excluir** | Linha de cobrança | Abre a janela **Cancelar Cobrança**. |
 | **Empresa recebedora** | Janela **Criar cobrança** | Escolhe a empresa que recebe: IDEAL GRÁFICA EXPRESSA EIRELI, IDEAL BIRÔ SERV. GRAFICOS ou E3 BRINDES LTDA. |
 | **Pedido do sistema antigo** | Janela **Criar cobrança** | Marque quando o pedido veio do sistema antigo. Vem desmarcado; numa proposta já marcada antes, vem marcado. |
-| **OS Ideal \*** | Janela **Criar cobrança** | Número da OS no sistema antigo, só dígitos. Só aparece, e só é obrigatório, com **Pedido do sistema antigo** marcado. |
+| **OS Ideal \*** | Janela **Criar cobrança** | Número da OS no sistema antigo, só dígitos, até 6. Fica na mesma linha do valor; só aparece, e só é obrigatório, com **Pedido do sistema antigo** marcado. |
 | **Valor da cobrança \*** | Janela **Criar cobrança** | Valor desta cobrança. Vem preenchido com o saldo restante. |
 | **Observações (opcional)** | Janela **Criar cobrança** | Texto livre gravado na cobrança. |
 | **PIX**, **Boleto**, **Cartão de crédito**, **Cartão Asaas**, **Faturado**, **E-Permuta**, **E-Amostra**, **E-Retrabalho**, **E-Crédito** | Quadro **Forma de pagamento** da janela | Escolhe a forma. Forma que a empresa recebedora não aceita aparece como **Indisponível**. |
