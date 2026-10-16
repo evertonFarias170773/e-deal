@@ -51,9 +51,10 @@ for (const liberaNf of [false, true]) {
 }
 checar("regra: outro status com libera_nf ligada e recusado, nao idempotente", decidirEnvioParaFila(est("EM PRODUCAO", true, false)).acao, "recusar");
 
-const ADM = { isAdmin: true, isSuperAdmin: false };
-const SUPER = { isAdmin: false, isSuperAdmin: true };
-const COMUM = { isAdmin: false, isSuperAdmin: false };
+// Desde 16/10/2026 a tela do envio usa o ADM do CADASTRO (isAdmNoCadastro), como a rota.
+const ADM = { isAdmNoCadastro: true };
+const SUPER = { isAdmNoCadastro: true };
+const COMUM = { isAdmNoCadastro: false };
 checar("menu Enviar: so ADM e so no estado certo", [
   podeVerEnviarParaFila(ADM, est("REVISAO ATENDENTE")),
   podeVerEnviarParaFila(SUPER, est("REVISAO ATENDENTE")),
@@ -64,6 +65,11 @@ checar("menu Enviar: so ADM e so no estado certo", [
   podeVerEnviarParaFila(ADM, est("REVISAO PRODUCAO")),
   podeVerEnviarParaFila(ADM, est("LIBERADO")) // desde 15/10/2026 vale tambem em LIBERADO
 ], [true, true, false, false, false, false, false, true]);
+checar("menu Enviar: ADM so no cadastro ve; ADM so no perfil (isAdmin/isSuperAdmin) nao ve", [
+  podeVerEnviarParaFila({ isAdmNoCadastro: true }, est("REVISAO ATENDENTE")),
+  podeVerEnviarParaFila({ isAdmin: true, isSuperAdmin: true, isAdmNoCadastro: false } as { isAdmNoCadastro: boolean }, est("REVISAO ATENDENTE")),
+  podeVerEnviarParaFila({ isAdmin: true, isSuperAdmin: true } as { isAdmNoCadastro?: boolean }, est("APROVADO"))
+], [true, false, false]);
 checar("ADM no servidor: is_admin ou is_super_adm; sem nenhum, recusado", [ehAdmNoServidor({ is_admin: true }), ehAdmNoServidor({ is_super_adm: true }), ehAdmNoServidor({ is_admin: false, is_super_adm: false }), ehAdmNoServidor(null)], [true, true, false, false]);
 
 // ── 2. A regra pura do "Marcar como entregue" ampliado ──

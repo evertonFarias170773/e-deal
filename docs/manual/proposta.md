@@ -1,6 +1,6 @@
 # Proposta: visão geral e abas
 
-> **Última revisão:** 15/10/2026
+> **Última revisão:** 16/10/2026
 > **Caminho no menu:** Pedidos → **+ Nova proposta** (proposta nova) ou Pedidos → abrir um pedido → **Editar proposta**
 > **Endereço:** `/orcamentos/novo` e `/orcamentos/<número>/editar`
 
@@ -40,7 +40,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Link pgto. externo** | Menu **Acoes** | Copia o link da área do cliente daquele pedido. |
 | **Gerar PDF da proposta** | Menu **Acoes** | Gera o PDF do orçamento e abre em outra aba. |
 | **Gerar OC** | Menu **Acoes**, logo abaixo de **Gerar PDF da proposta** (na edição e no detalhe da proposta) | Gera a OC, a autorização de faturamento que o cliente assina, e abre em outra aba. |
-| **Enviar para Fila de Faturamento** | Menu **Acoes**, só administrador, em pedido REVISAO ATENDENTE ou Liberado fora da fila e da produção | Abre uma confirmação e põe o pedido só na Fila de Faturamento. Ele não passa pela Produção nem pela Expedição e o status não muda. |
+| **Enviar para Fila de Faturamento** | Menu **Acoes**, só administrador (marca de administrador no cadastro do usuário, não o perfil), em pedido REVISAO ATENDENTE ou Liberado fora da fila e da produção | Abre uma confirmação e põe o pedido só na Fila de Faturamento. Ele não passa pela Produção nem pela Expedição e o status não muda. |
 | **Retirar da Produção** | Menu **Acoes**, só em pedido em REVISAO PRODUCAO | Abre uma confirmação e devolve o pedido ao atendente: sai da fila da produção e o status volta para REVISAO ATENDENTE. |
 | Botão com o ícone do Ideal Imposition (dica: "Abrir no Ideal Imposition") | Cabeçalho, em proposta que já tem número | Abre o pedido no sistema de imposição. |
 | **Voltar ao detalhe** / **Voltar para lista** | Cabeçalho | Sai da edição. Em proposta nova o nome é **Voltar para lista**. |

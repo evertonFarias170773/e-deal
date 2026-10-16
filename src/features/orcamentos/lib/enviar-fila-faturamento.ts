@@ -117,14 +117,18 @@ export function decidirEnvioParaFila(estado: EstadoDoPedido & ConferenciasDoEnvi
   return { acao: "enviar" };
 }
 
-type UsuarioDaTela = { isSuperAdmin?: boolean | null; isAdmin?: boolean | null } | null | undefined;
+/** O usuario da tela: o ADM vem do CADASTRO (`isAdmNoCadastro`), nao do perfil. */
+type UsuarioDaTela = { isAdmNoCadastro?: boolean | null } | null | undefined;
 
 /**
- * O item aparece no menu? So para ADM (o mesmo teste do "Marcar como entregue") e so
- * onde o envio vale, com o que a tela sabe (OS e nota so o servidor confere). Depois de enviado, o item some (`libera_nf` ja ligada). Esconder
- * nao protege nada: quem tranca e a rota.
+ * O item aparece no menu? So para ADM do CADASTRO (`usuarios.is_admin` ou
+ * `is_super_adm`, lido de `user.isAdmNoCadastro`) — o MESMO teste da rota e do
+ * "Marcar como entregue" (16/10/2026; antes a tela usava o perfil e divergia da rota).
+ * E so onde o envio vale, com o que a tela sabe (OS e nota so o servidor confere).
+ * Depois de enviado, o item some (`libera_nf` ja ligada). Esconder nao protege nada:
+ * quem tranca e a rota.
  */
 export function podeVerEnviarParaFila(usuario: UsuarioDaTela, estado: EstadoDoPedido & ConferenciasDoEnvio): boolean {
-  const adm = Boolean(usuario?.isSuperAdmin || usuario?.isAdmin);
+  const adm = usuario?.isAdmNoCadastro === true;
   return adm && decidirEnvioParaFila(estado).acao === "enviar";
 }

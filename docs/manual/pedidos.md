@@ -1,6 +1,6 @@
 # Pedidos (lista)
 
-> **Última revisão:** 15/10/2026
+> **Última revisão:** 16/10/2026
 > **Caminho no menu:** Pedidos (item direto do menu lateral, sem submenu; é o segundo, logo abaixo de Conferência)
 > **Endereço:** `/orcamentos`
 
@@ -24,7 +24,7 @@ No alto da tela o título aparece como "Orcamentos", com a etiqueta "Pedidos". �
 - **Voltar para a Fila de Faturamento (desfazer nota no sistema antigo)**: só administrador, Super Administrador ou quem tem a permissão "Liberar para Nota Fiscal".
 - **Confirmar Conferência**: só administrador ou Super Administrador, e só em pedido com cobrança na Fila de Conferência. O servidor confere a permissão de novo ao gravar.
 - **Marcar como entregue**: só administrador ou Super Administrador, em pedido Liberado (LIBERADO ou o legado APROVADO) ou em pedido que foi só à Fila de Faturamento (REVISAO ATENDENTE, enviado à fila e não liberado para a produção). Administrador aqui é quem tem a marca de administrador no cadastro do usuário (Administrador ou Super Administrador), não o perfil: a tela e o servidor usam o mesmo teste. O servidor confere o administrador; esconder o item na tela não é a proteção.
-- **Enviar para Fila de Faturamento**: só administrador ou Super Administrador, em pedido REVISAO ATENDENTE ou Liberado que não está na fila nem na produção. O servidor confere o administrador.
+- **Enviar para Fila de Faturamento**: só administrador ou Super Administrador, em pedido REVISAO ATENDENTE ou Liberado que não está na fila nem na produção. Como em **Marcar como entregue**, vale a marca de administrador no cadastro do usuário, não o perfil, na tela e no servidor.
 - As demais ações do menu da linha aparecem para qualquer usuário que vê o pedido. O que cada um consegue alterar dentro da proposta é decidido na própria proposta.
 
 ## Botões e ações da tela
