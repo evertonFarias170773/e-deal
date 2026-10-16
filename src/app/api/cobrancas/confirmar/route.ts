@@ -294,7 +294,13 @@ export async function POST(request: NextRequest) {
       await executarPosConfirmacao(supabase, cobranca, {
         idCobranca,
         confirmadoPor,
-        autorReconciliacao: { uid: userId, nome: confirmadoPor || authData.user.email || "Sistema", email: authData.user.email || "" },
+        // A engine vai SEM uid, com o nome de quem clicou (16/10/2026). O aviso
+        // de tentativa da engine sai pelo chat do servidor, que grava como anon;
+        // com uid, o gatilho trg_preencher_autor_propostas_chat lê usuarios como
+        // anon, recebe 42501 (sem SELECT desde 29/09, 750ba06) e a engine
+        // retorna antes do UPDATE — o pedido parava em APROVADO. Sem uid o
+        // gatilho não consulta usuarios, como na conferência automática.
+        autorReconciliacao: { uid: "", nome: confirmadoPor || authData.user.email || "Sistema", email: authData.user.email || "" },
         usuarioPrateleira: { uid: userId, email: authData.user.email || "" }
       });
     }

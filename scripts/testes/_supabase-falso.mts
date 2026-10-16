@@ -25,7 +25,12 @@ const estado = {
   // Respostas em SEQUENCIA para a mesma chave: cada consulta consome a proxima e
   // a ultima se repete. Serve a quem precisa que o "banco" mude entre duas
   // leituras (por exemplo, uma corrida entre dois cliques).
-  sequencias: new Map<string, Resposta[]>()
+  sequencias: new Map<string, Resposta[]>(),
+  // Opcional: decide a resposta olhando o payload (ex.: imitar um gatilho que
+  // recusa certo INSERT). Devolver `undefined` cai na resposta combinada.
+  interceptadores: new Map<string, (payload: unknown) => Resposta | undefined>(),
+  // Opcional: id do usuário de `auth.getUser()` (padrão "usuario-de-teste").
+  usuarioId: "usuario-de-teste"
 };
 
 /** O que o teste inspeciona e combina. */
@@ -39,10 +44,18 @@ export const falso = {
   responderEmSequencia(chave: string, respostas: Resposta[]) {
     estado.sequencias.set(chave, [...respostas]);
   },
+  interceptar(chave: string, decidir: (payload: unknown) => Resposta | undefined) {
+    estado.interceptadores.set(chave, decidir);
+  },
+  definirUsuario(id: string) {
+    estado.usuarioId = id;
+  },
   zerar() {
     estado.chamadas = [];
     estado.respostas.clear();
     estado.sequencias.clear();
+    estado.interceptadores.clear();
+    estado.usuarioId = "usuario-de-teste";
   }
 };
 
@@ -61,6 +74,8 @@ function construtor(tabela: string) {
 
   const resposta = (): Resposta => {
     const chave = `${tabela}:${chamada.op}`;
+    const interceptada = estado.interceptadores.get(chave)?.(chamada.payload);
+    if (interceptada) return interceptada;
     const fila = estado.sequencias.get(chave);
     if (fila && fila.length > 0) return fila.length > 1 ? (fila.shift() as Resposta) : fila[0];
     return estado.respostas.get(chave) ?? { data: chamada.op === "select" ? [] : null, error: null };
@@ -116,7 +131,7 @@ const clienteFalso = {
     return Promise.resolve(estado.respostas.get(`rpc:${nome}`) ?? { data: null, error: null });
   },
   auth: {
-    getUser: async () => ({ data: { user: { id: "usuario-de-teste" } }, error: null }),
+    getUser: async () => ({ data: { user: { id: estado.usuarioId } }, error: null }),
     getSession: async () => ({ data: { session: null }, error: null })
   }
 };
