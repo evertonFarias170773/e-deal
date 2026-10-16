@@ -46,6 +46,7 @@ import {
   tituloPago,
 } from '../simple/maestro-regra-titulos';
 import { statusDoPedidoParaExibir } from './maestro-agent-status';
+import { despachoEhCorreios } from '@/features/expedicao/lib/conhecimento';
 
 export const SECOES_DO_PEDIDO = ['situacao', 'cobrancas', 'titulos', 'nota_fiscal', 'producao', 'expedicao', 'tarefas'] as const;
 export type SecaoDoPedido = (typeof SECOES_DO_PEDIDO)[number];
@@ -498,7 +499,7 @@ async function secaoExpedicao(supabase: SupabaseClient, numero: number, p: Linha
   const { data, error } = await supabase
     .from('expedicoes')
     .select(
-      'tipo_frete, transportadora_nome, modalidade_frete, categoria_frete, qtd_volumes, peso_kg, peso_bruto_kg, codigo_rastreamento, ' +
+      'tipo_frete, transportadora_nome, modalidade_frete, categoria_frete, qtd_volumes, peso_kg, peso_bruto_kg, codigo_rastreamento, correios_id_prepostagem, ' +
         'correios_codigo_objeto, data_pronto, data_despacho, data_entrega, coletado_em, etiqueta_impressa_em, ' +
         'correios_ultimo_evento, correios_ultimo_evento_em, prepostagem_cancelada_em'
     )
@@ -528,7 +529,16 @@ async function secaoExpedicao(supabase: SupabaseClient, numero: number, p: Linha
       coletado_em: dataHoraBR(e.coletado_em),
       despachado_em: dataHoraBR(e.data_despacho),
       entregue_em: dataHoraBR(e.data_entrega),
-      codigo_de_rastreio: txt(e.correios_codigo_objeto) ?? txt(e.codigo_rastreamento),
+      // So o despacho dos Correios tem "codigo de rastreio". O numero de TRANSPORTADORA ou
+      // MOTOBOY (que vive na mesma coluna) e o conhecimento: nao se rastreia nos Correios.
+      ...(despachoEhCorreios({
+        tipoFrete: e.tipo_frete as string | null,
+        correiosIdPrepostagem: e.correios_id_prepostagem as string | null,
+        correiosCodigoObjeto: e.correios_codigo_objeto as string | null,
+        codigo: e.codigo_rastreamento as string | null
+      })
+        ? { codigo_de_rastreio: txt(e.correios_codigo_objeto) ?? txt(e.codigo_rastreamento) }
+        : { numero_do_conhecimento_da_transportadora: txt(e.codigo_rastreamento) }),
       ultimo_evento_dos_correios: txt(e.correios_ultimo_evento),
       ultimo_evento_em: dataHoraBR(e.correios_ultimo_evento_em),
       prepostagem_cancelada: e.prepostagem_cancelada_em != null,

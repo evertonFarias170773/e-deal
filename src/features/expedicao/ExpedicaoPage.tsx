@@ -63,6 +63,7 @@ import type { RespostaConfirmacao } from "./services/corrigir-frete.client";
 import { KanbanTransportadoras, LegendaCoresKanban, PontoEstadoKanban } from "./components/KanbanTransportadoras";
 import { ChipVinculados } from "./components/ChipVinculados";
 import { SoltarDoGrupoModal } from "./components/SoltarDoGrupoModal";
+import { despachoEhCorreios } from "./lib/conhecimento";
 import type { GrupoVinculado } from "./lib/vinculos-do-painel";
 import { useVinculosDoPainel } from "./hooks/useVinculosDoPainel";
 import { useInstrucoesDeEntrega } from "./hooks/useInstrucoesDeEntrega";
@@ -466,7 +467,13 @@ export function ExpedicaoPage() {
   /** Itens do menu "⋯" contextual — compartilhado entre a coluna "Ações" e o card mobile. */
   function itensMenu(p: PedidoExpedicao) {
     return [
-      ...(p.codigoRastreamento
+      // So Correios e rastreado: o numero de transportadora ("Conhecimento") nunca vai para a consulta.
+      ...(p.codigoRastreamento && despachoEhCorreios({
+        tipoFrete: p.expedicao?.tipoFrete,
+        correiosIdPrepostagem: p.expedicao?.correiosIdPrepostagem,
+        correiosCodigoObjeto: p.expedicao?.correiosCodigoObjeto,
+        codigo: p.codigoRastreamento
+      })
         ? [{ label: "Rastrear objeto", onClick: () => setPedidoRastreio(p) }]
         : []),
       // Marcar que a prepostagem foi cancelada NO PORTAL dos Correios. So faz

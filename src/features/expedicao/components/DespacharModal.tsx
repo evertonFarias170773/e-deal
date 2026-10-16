@@ -28,6 +28,7 @@ import { ConfirmarAcaoModal } from "./ConfirmarAcaoModal";
 import { camposMinimosDespacho, frasearFaltantes } from "../lib/campos-minimos-despacho";
 import { nomeTransportadoraCadastro } from "@/features/orcamentos/lib/modalidade-frete";
 import { divergenciaFreteDoDespacho, formatarCep } from "../lib/divergencia-frete-despacho";
+import { campoCodigoVisivel, ehConhecimento, rotuloDoCampoCodigo } from "../lib/conhecimento";
 import {
   recotarFrete,
   aplicarRecotacao,
@@ -1014,7 +1015,7 @@ export function DespacharModal({
 
     setSalvando(true);
     const res = modoEdicao
-      ? await salvarDadosExpedicao(pedido.idInt, input)
+      ? await salvarDadosExpedicao(pedido.idInt, input, ator)
       : await despachar(pedido.idInt, input, ator);
     setSalvando(false);
 
@@ -1114,7 +1115,7 @@ export function DespacharModal({
       // vence e o manual nem e enviado — nao ha como sobrescrever o
       // numero de uma nota emitida.
       nfNumeroManual: temNotaAutorizada ? "" : nfNumeroManual.trim()
-    });
+    }, ator);
     setSalvando(false);
     return res;
   }
@@ -1208,7 +1209,7 @@ export function DespacharModal({
       // vence e o manual nem e enviado — nao ha como sobrescrever o
       // numero de uma nota emitida.
       nfNumeroManual: temNotaAutorizada ? "" : nfNumeroManual.trim()
-    });
+    }, ator);
     if (!salvo.success) {
       setGerandoPrepostagem(false);
       showToast({ type: "error", title: "Não foi possível salvar antes de gerar", description: salvo.error });
@@ -1660,14 +1661,20 @@ export function DespacharModal({
                   )}
                 </div>
               )}
-              {/* Rastreio e coisa dos Correios: motoboy e transportadora nao
-                  emitem codigo que este campo saiba tratar, e o campo aberto so
-                  convidava a inventar. Valor ja gravado NAO e apagado — some da
-                  tela, permanece no banco. */}
-              {tipoFrete === "CORREIOS" && (
+              {/* CORREIOS: codigo de rastreio, como sempre. TRANSPORTADORA e MOTOBOY: o
+                  "Conhecimento", que costuma ser conhecido so depois do despacho e por isso
+                  tambem se salva e corrige em "Editar dados de expedicao". Mesmo campo
+                  (`expedicoes.codigo_rastreamento`); so Correios e rastreado
+                  (lib/conhecimento). Valor ja gravado NAO e apagado ao trocar o tipo. */}
+              {campoCodigoVisivel(tipoFrete) && (
               <div>
-                <label className={labelClass}>Código de rastreio (manual)</label>
-                <input value={codigoRastreamento} onChange={(e) => setCodigoRastreamento(e.target.value)} placeholder="Ex.: AD173823345BR — ou gere pelos Correios na Fase 4" className={inputClass} />
+                <label className={labelClass}>{rotuloDoCampoCodigo(tipoFrete)}</label>
+                <input
+                  value={codigoRastreamento}
+                  onChange={(e) => setCodigoRastreamento(e.target.value)}
+                  placeholder={ehConhecimento(tipoFrete) ? "Número do conhecimento da transportadora" : "Ex.: AD173823345BR — ou gere pelos Correios na Fase 4"}
+                  className={inputClass}
+                />
               </div>
               )}
               {/* Prepostagem é sempre CIF: sai pelo cartão de postagem da

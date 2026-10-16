@@ -5,6 +5,7 @@ import { CheckCircle2, MapPin, RefreshCw, X } from "lucide-react";
 import { rastrearObjeto } from "../services/rastro.service";
 import type { RastroResultado } from "../services/rastro.service";
 import type { PedidoExpedicao } from "../types";
+import { despachoEhCorreios } from "../lib/conhecimento";
 
 export function RastreioModal({
   pedido,
@@ -26,7 +27,20 @@ export function RastreioModal({
   // TransportadorasModal, generalizado para múltiplos pontos de disparo.
   const geracaoRef = useRef(0);
 
+  // Defesa em profundidade: o menu ja so oferece Correios, mas o numero de transportadora
+  // ("Conhecimento") jamais pode ser consultado na API dos Correios.
+  const ehCorreios = despachoEhCorreios({
+    tipoFrete: pedido.expedicao?.tipoFrete,
+    correiosIdPrepostagem: pedido.expedicao?.correiosIdPrepostagem,
+    correiosCodigoObjeto: pedido.expedicao?.correiosCodigoObjeto,
+    codigo: pedido.codigoRastreamento
+  });
+
   async function consultar() {
+    if (!ehCorreios) {
+      setResultado({ ok: false, erro: "Este número é o conhecimento da transportadora: só objetos dos Correios são rastreados aqui.", detalhe: null });
+      return;
+    }
     const minhaGeracao = ++geracaoRef.current;
     setResultado(null);
     const res = await rastrearObjeto(pedido.codigoRastreamento, pedido.idInt);

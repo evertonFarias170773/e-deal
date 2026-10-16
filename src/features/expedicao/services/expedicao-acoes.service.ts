@@ -1,3 +1,4 @@
+import { registrarAutoriaConhecimento } from "./conhecimento-autoria";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import {
   categoriaDoServico,
@@ -152,6 +153,48 @@ async function transicionar(
   if (logError) console.warn("[expedicao-acoes] Falha ao gravar os_status_log:", logError);
 
   return { success: true };
+}
+
+/**
+ * O conhecimento (ou rastreio) gravado e o status do pedido, ANTES de uma escrita que pode
+ * muda-los: alimenta a trilha de autoria do conhecimento (valor antigo -> novo).
+ * Leitura que falha devolve nulos: a autoria e observabilidade e nunca bloqueia o salvar.
+ */
+async function lerEstadoDoConhecimento(
+  idInt: number
+): Promise<{ codigo: string | null; tipo: string | null; status: string }> {
+  const client = getSupabaseClient();
+  if (!client) return { codigo: null, tipo: null, status: "" };
+  const [{ data: exp }, { data: prop }] = await Promise.all([
+    client.from("expedicoes").select("codigo_rastreamento, tipo_frete").eq("id_int", idInt).maybeSingle(),
+    client.from("propostas").select("status_interno").eq("id_int", idInt).maybeSingle()
+  ]);
+  return {
+    codigo: (exp?.codigo_rastreamento as string | null | undefined) ?? null,
+    tipo: (exp?.tipo_frete as string | null | undefined) ?? null,
+    status: String((prop as { status_interno?: string | null } | null)?.status_interno ?? "")
+  };
+}
+
+/** Grava a autoria do conhecimento sem nunca falhar o salvar (so avisa no console). */
+async function registrarConhecimento(
+  idInt: number,
+  antes: { codigo: string | null; tipo: string | null; status: string },
+  tipoEfetivo: string | null | undefined,
+  depois: string | null | undefined,
+  ator: AtorExpedicao
+): Promise<void> {
+  const client = getSupabaseClient();
+  if (!client) return;
+  const r = await registrarAutoriaConhecimento(client, {
+    idInt,
+    statusAtual: antes.status,
+    tipoEfetivo,
+    antes: antes.codigo,
+    depois,
+    ator
+  });
+  if (r.aviso) console.warn("[expedicao-acoes] Falha ao gravar a autoria do conhecimento:", r.aviso);
 }
 
 /** Upsert em expedicoes por id_int (linha nasce no primeiro gesto do expedidor). */
@@ -623,6 +666,7 @@ export async function despachar(
 
   // Um ISO só: o complemento que sai junto recebe exatamente a mesma data.
   const dataDespacho = new Date().toISOString();
+  const estadoAntes = await lerEstadoDoConhecimento(idInt);
   const up = await upsertExpedicao(idInt, {
     modalidade_frete: input.modalidadeFrete,
     tipo_frete: input.tipoFrete,
@@ -644,6 +688,7 @@ export async function despachar(
     data_despacho: dataDespacho,
     despachado_por: ator.nome
   });
+  if (up.success) await registrarConhecimento(idInt, estadoAntes, input.tipoFrete, input.codigoRastreamento || null, ator);
   if (!up.success) {
     return { success: false, error: `Não foi possível gravar os dados do despacho (${up.error}). O pedido segue em EXPEDICAO.` };
   }
@@ -925,7 +970,8 @@ export async function voltarStatus(
 /** Edita dados de execução sem mexer no status. */
 export async function salvarDadosExpedicao(
   idInt: number,
-  dados: Partial<Omit<DespachoInput, "tipoEntrega">>
+  dados: Partial<Omit<DespachoInput, "tipoEntrega">>,
+  ator: AtorExpedicao = { uid: null, nome: null }
 ): Promise<ResultadoAcao> {
   const campos: Record<string, unknown> = {};
   if (dados.modalidadeFrete !== undefined) campos.modalidade_frete = dados.modalidadeFrete;
@@ -962,5 +1008,11 @@ export async function salvarDadosExpedicao(
   if (dados.obs !== undefined) campos.obs = dados.obs || null;
   if (dados.obsEtiqueta !== undefined) campos.obs_etiqueta = dados.obsEtiqueta.trim() || null;
   if (dados.nfNumeroManual !== undefined) campos.nf_numero_manual = dados.nfNumeroManual.trim() || null;
-  return upsertExpedicao(idInt, campos);
+  // Autoria do conhecimento: so quando o codigo vem no patch.
+  const estadoAntes = dados.codigoRastreamento !== undefined ? await lerEstadoDoConhecimento(idInt) : null;
+  const resultado = await upsertExpedicao(idInt, campos);
+  if (resultado.success && estadoAntes) {
+    await registrarConhecimento(idInt, estadoAntes, dados.tipoFrete ?? estadoAntes.tipo, dados.codigoRastreamento || null, ator);
+  }
+  return resultado;
 }

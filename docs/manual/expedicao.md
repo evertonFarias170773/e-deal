@@ -1,6 +1,6 @@
 # Expedição
 
-> **Última revisão:** 11/10/2026
+> **Última revisão:** 15/10/2026
 > **Caminho no menu:** Expedição (item direto do menu lateral, sem subitens; é o quarto, depois de Conferência, Pedidos e Clientes). Também se chega pela aba **Expedição** no topo do Kanban e da Fila de impressão da Produção.
 > **Endereço:** `/expedicao`
 
@@ -63,7 +63,7 @@ Os itens aparecem nesta ordem, cada um só quando se aplica.
 
 | Nome na tela | Onde fica | O que faz |
 |---|---|---|
-| **Rastrear objeto** | Menu de ações; só com código de rastreio | Abre a janela **Rastreamento** |
+| **Rastrear objeto** | Menu de ações; só em envio pelos Correios com código de rastreio | Abre a janela **Rastreamento** |
 | **Marcar prepostagem como cancelada** | Menu de ações; só administrador da Expedição, com prepostagem ainda não marcada | Registra que a prepostagem foi cancelada no portal dos Correios |
 | **Editar dados de expedição** | Menu de ações; pedido com etiqueta gerada ou já despachado | Abre a mesma janela do despacho em modo de edição |
 | **Declaração de conteúdo** | Menu de ações; pedido que já chegou à Expedição e não tem nota autorizada | Abre o PDF da declaração |
@@ -211,7 +211,7 @@ Em CIF com transportadora escolhida que **não** é os Correios, o envio continu
 3. O rastreio é preenchido sozinho e aparece o aviso "Prepostagem criada". A partir daí o botão da etiqueta vira **Etiqueta Correios (oficial)**.
 4. Se o pedido já tinha prepostagem, o sistema pergunta "Gerar outra prepostagem?" e mostra os códigos. Copie o código que vai sair do registro se ainda precisar cancelá-lo no portal, e confirme em **Gerar SEDEX** ou **Gerar PAC**.
 
-Também é possível digitar o código em **Código de rastreio (manual)**, que só aparece em envio pelos Correios.
+Também é possível digitar o código em **Código de rastreio (manual)**, que aparece em envio pelos Correios. Em envio por transportadora ou motoboy o mesmo espaço se chama **Conhecimento** (veja "Informar o rastreio e rastrear").
 
 ### Cancelar a prepostagem
 
@@ -271,8 +271,9 @@ Serve para trocar a modalidade (quem paga) e a transportadora de um pedido que j
 ### Informar o rastreio e rastrear
 
 1. O código de rastreio entra pela prepostagem ou pelo campo **Código de rastreio (manual)**, em envio pelos Correios.
+   Em envio por **transportadora** ou **motoboy**, o campo se chama **Conhecimento**: digite o número do conhecimento no modal **Despachar pedido** ou, depois do despacho (A Retirar, Em Trânsito ou Entregue), em **Editar dados de expedição**. O número pode ser corrigido a qualquer momento por quem opera a Expedição. Cada gravação ou correção registra quem fez e o valor antigo e o novo no histórico do pedido, sem mudar valor nem status.
 2. Na lista, clique no código para copiá-lo.
-3. No menu do pedido, clique em **Rastrear objeto**. A janela mostra a situação atual e os eventos; o botão de atualizar refaz a consulta.
+3. No menu do pedido, clique em **Rastrear objeto**. Só aparece em envio pelos Correios: o conhecimento de transportadora ou motoboy não é rastreado. A janela mostra a situação atual e os eventos; o botão de atualizar refaz a consulta.
 4. Quando os Correios confirmam a entrega de um pedido Em Trânsito, aparece o botão **Correios confirmam a entrega — marcar ENTREGUE no sistema**.
 
 ### Confirmar a retirada no balcão
@@ -471,6 +472,8 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/features/expedicao/lib/vinculos-do-painel.ts`
 - `src/features/expedicao/components/SoltarDoGrupoModal.tsx`
 - `src/features/expedicao/lib/promessa-do-card.ts`
+- `src/features/expedicao/lib/conhecimento.ts`
+- `src/features/expedicao/services/conhecimento-autoria.ts`
 
 > **Mudanças de 08/10/2026:**
 >
@@ -488,3 +491,5 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 > - **09/10/2026 (adendo):** o grupo Acompanhar deixa de ter limite de 10 pedidos (limite de segurança de 50, com aviso acima de 10); pedido com status vazio fica só para leitura.
 >
 > - **11/10/2026:** novo cartão **Próximos Dias** (previsão de envio depois de hoje), entre Pronto p/ expedir e A retirar.
+>
+> - **15/10/2026:** campo **Conhecimento** para envios por transportadora e motoboy (salvar e corrigir também depois do despacho, com registro de quem alterou); **Rastrear objeto** só em envio pelos Correios.
