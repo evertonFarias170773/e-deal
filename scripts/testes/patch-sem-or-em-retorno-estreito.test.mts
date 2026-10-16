@@ -138,7 +138,7 @@ export function examinar(src: string, arquivo: string): Exame {
     }
     const cols = colunasDoSelect(retorno);
     const fora = cols === "*" ? [] : colunasDoFiltro(filtro).filter((c) => !cols.includes(c));
-    examinados.push(`${onde} (filtro em ${colunasDoFiltro(filtro).join(", ")}; retorno ${cols === "*" ? "*" : "inclui as colunas"})`);
+    examinados.push(`${onde} (filtro em ${colunasDoFiltro(filtro).join(", ")}; retorno ${cols === "*" ? "*" : fora.length ? `SEM ${fora.join(", ")}` : "inclui as colunas"})`);
     if (fora.length) achados.push({ onde, filtro, colunasFora: fora, retorno });
   }
 
@@ -155,7 +155,7 @@ export function examinar(src: string, arquivo: string): Exame {
     if (!mSel) { examinados.push(`${onde} (sem select)`); continue; }
     const cols = colunasDoSelect(mSel[1].slice(1, -1));
     const fora = cols === "*" ? [] : colunasDoFiltro(filtro).filter((c) => !cols.includes(c));
-    examinados.push(`${onde} (filtro em ${colunasDoFiltro(filtro).join(", ")}; retorno ${cols === "*" ? "*" : "inclui as colunas"})`);
+    examinados.push(`${onde} (filtro em ${colunasDoFiltro(filtro).join(", ")}; retorno ${cols === "*" ? "*" : fora.length ? `SEM ${fora.join(", ")}` : "inclui as colunas"})`);
     if (fora.length) achados.push({ onde, filtro, colunasFora: fora, retorno: mSel[1].slice(1, -1) });
   }
   return { achados, examinados };
@@ -225,6 +225,24 @@ console.log("== 1. controles: o bug e flagrado, o correto passa ==");
   confere("PATCH montado na mao (buildRestUrl) com or e select estreito e flagrado", examinar(url, "url.ts").achados.length === 1);
   const urlOk = `const url = buildRestUrl("pagamentos_v2", { id: "eq.1", or: "(confirmado.is.null,confirmado.eq.false)", select: "id,confirmado" });`;
   confere("buildRestUrl com a coluna no select passa", examinar(urlOk, "url-ok.ts").achados.length === 0);
+}
+{
+  // 16/10/2026: a marca do sistema antigo (lib/sistema-antigo) nunca gravava.
+  // O teste ja acusava; o erro foi publicar sem roda-lo. Fica o caso exato.
+  const marca = `
+    const { data, error } = await client
+      .from("propostas")
+      .update({ is_sistema_antigo: novo })
+      .eq("id_int", idInt)
+      .or("is_avulso.is.null,is_avulso.is.false,valor_total.gt.0")
+      .select("id_int");`;
+  const r = examinar(marca, "marca.ts");
+  confere("a marca do sistema antigo (.or em is_avulso/valor_total + .select(\"id_int\")) e flagrada",
+    r.achados.length === 1 && r.achados[0].colunasFora.sort().join(",") === "is_avulso,valor_total", r);
+  confere("a etiqueta do caso flagrado diz SEM as colunas (nao \"inclui as colunas\")",
+    r.examinados.some((e) => e.includes("SEM is_avulso, valor_total")), r.examinados);
+  const corrigida = marca.replace('.select("id_int")', '.select("id_int, is_avulso, valor_total")');
+  confere("a correcao (retorno com is_avulso e valor_total) passa", examinar(corrigida, "marca-ok.ts").achados.length === 0);
 }
 {
   const naoResolvido = `await supabase.from("t").update(p).eq("id", i).or("a.is.null,a.eq.1").select(listaMontadaEmTempoDeExecucao);`;

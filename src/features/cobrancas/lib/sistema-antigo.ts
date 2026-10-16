@@ -92,6 +92,13 @@ export async function lerMarcaSistemaAntigo(
  * modal pode ter ficado aberto) e só escreve quando o valor muda. O UPDATE leva
  * de novo a condição da avulsa no filtro, para o banco recusar a linha mesmo se
  * ela tiver mudado entre a leitura e a escrita.
+ *
+ * O retorno traz as colunas do `.or()` DE PROPÓSITO. Em escrita que devolve
+ * linhas, o PostgREST repete o `or` no SELECT externo, que só enxerga as colunas
+ * do `.select(...)`; com `.select("id_int")` o banco respondia 42703 ("column
+ * propostas.is_avulso does not exist") e a marca nunca era gravada (16/10/2026,
+ * provado por EXPLAIN com o papel authenticated). Mesma armadilha do 23681; o
+ * teste patch-sem-or-em-retorno-estreito acusa o caso.
  */
 export async function gravarMarcaSistemaAntigo(
   client: SupabaseClient,
@@ -109,7 +116,7 @@ export async function gravarMarcaSistemaAntigo(
     .update({ is_sistema_antigo: novo })
     .eq("id_int", idInt)
     .or("is_avulso.is.null,is_avulso.is.false,valor_total.gt.0")
-    .select("id_int");
+    .select("id_int, is_avulso, valor_total");
   if (error) return { decisao, gravou: false, erro: error.message };
   return { decisao, gravou: Array.isArray(data) && data.length > 0 };
 }

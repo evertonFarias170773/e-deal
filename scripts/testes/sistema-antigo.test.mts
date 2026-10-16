@@ -50,10 +50,15 @@ confere("avulsa com valor_total preenchido: grava", decidirGravacaoMarca({ isSis
 
 const client = getSupabaseClient() as never;
 
-async function gravar(linha: Record<string, unknown> | null, novo: boolean) {
+type RespostaUpdate = { data: unknown; error: { message: string; code?: string } | null };
+async function gravar(
+  linha: Record<string, unknown> | null,
+  novo: boolean,
+  respostaUpdate: RespostaUpdate = { data: [{ id_int: 23800, is_avulso: false, valor_total: 350 }], error: null }
+) {
   falso.zerar();
   falso.responder("propostas:select", { data: linha, error: null });
-  falso.responder("propostas:update", { data: [{ id_int: 23800 }], error: null });
+  falso.responder("propostas:update", respostaUpdate);
   const r = await gravarMarcaSistemaAntigo(client, 23800, novo);
   const updates = falso.chamadas.filter((c) => c.tabela === "propostas" && c.op === "update");
   return { r, updates };
@@ -77,6 +82,25 @@ async function gravar(linha: Record<string, unknown> | null, novo: boolean) {
 {
   const { r, updates } = await gravar({ is_sistema_antigo: null, is_avulso: true, valor_total: null }, false);
   confere("avulsa antiga sem valor_total: nenhum update (a proposta nao e tocada)", r.decisao === "AVULSA_SEM_TOTAL" && updates.length === 0, { r, updates });
+}
+{
+  // O modal so mostra "Cobranca criada, mas a marca do sistema antigo nao foi
+  // gravada" quando `erro` vem preenchido (PropostaCobrancaPanel).
+  const { r } = await gravar({ is_sistema_antigo: null, is_avulso: false, valor_total: 350 }, false, {
+    data: null,
+    error: { message: "column propostas.is_avulso does not exist", code: "42703" }
+  });
+  confere("UPDATE com erro do banco: devolve o erro (o aviso aparece)", r.gravou === false && r.erro === "column propostas.is_avulso does not exist", r);
+}
+{
+  const { r } = await gravar({ is_sistema_antigo: null, is_avulso: false, valor_total: 350 }, true);
+  confere("UPDATE que grava: sem erro (o aviso NAO aparece)", r.gravou === true && r.erro === undefined, r);
+}
+{
+  // A linha virou avulsa sem total entre a leitura e a escrita: a trava do
+  // UPDATE a recusa. Nada gravado, e isso nao e falha.
+  const { r } = await gravar({ is_sistema_antigo: null, is_avulso: false, valor_total: 350 }, true, { data: [], error: null });
+  confere("UPDATE recusado pela trava (zero linhas, sem erro): nao grava e o aviso NAO aparece", r.gravou === false && r.erro === undefined, r);
 }
 {
   const { r, updates } = await gravar(null, true);
