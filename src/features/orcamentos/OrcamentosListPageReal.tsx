@@ -17,6 +17,7 @@ import { formatDateTime } from "@/lib/formatters/date";
 import { buildPropostaInformalText } from "@/features/orcamentos/orcamento-utils";
 import { useOrcamentosReadOnlyData } from "@/features/orcamentos/hooks/useOrcamentosReadOnlyData";
 import type { OrcamentoListItem } from "@/features/orcamentos/mappers";
+import { COR_RETRABALHO, ROTULO_RETRABALHO } from "@/lib/retrabalho";
 import { encerrarTeste, reabrirTeste } from "@/features/pedidos/services/encerrar-teste.client";
 import { desmarcarFaturadoNoSistemaAntigo } from "@/features/fiscal/services/faturado-fora.client";
 import { buscarRastreioDasPropostas, type RastreioDaProposta } from "@/features/orcamentos/services/rastreio-lista.service";
@@ -2291,6 +2292,8 @@ Ela volta a aparecer nas listas operacionais.`
         }}
         emptyTitle="Nenhuma proposta encontrada"
         emptyDescription="Ajuste os filtros ou crie uma nova proposta para comecar."
+        // Retrabalho (17/10/2026): contorno por cima do destaque de status, que continua valendo.
+        getRowOutline={(proposta) => (proposta.isRetrabalho ? COR_RETRABALHO : null)}
         getRowHighlight={(proposta) => {
           if (activeCard === "EM_ARTE") {
             const arte = grupoStatusArteDoCardEmArte(proposta.statusArteDoCard);
@@ -2307,7 +2310,8 @@ Ela volta a aparecer nas listas operacionais.`
         columns={[
           // Dois pontos maior que o corpo da tabela (text-sm, 14px) e em negrito:
           // o numero do pedido e por onde a operacao inteira se refere a linha.
-          { header: "N°", cell: (proposta) => <span className="text-base font-bold text-slate-950">{proposta.id_int}</span> },
+          // Retrabalho: numero na cor do token e selo de texto (o destaque nao depende so da cor).
+          { header: "N°", cell: (proposta) => <NumeroDoPedido idInt={proposta.id_int} retrabalho={proposta.isRetrabalho} /> },
           {
             header: "id - Cliente",
             // Clique da coluna (25/09/2026): abre a edicao do cadastro do cliente,
@@ -2622,15 +2626,25 @@ Ela volta a aparecer nas listas operacionais.`
           // ficaria evidente só no desktop.
           <article
             key={proposta.id}
+            data-retrabalho={proposta.isRetrabalho ? "sim" : undefined}
             className={`rounded-3xl border p-5 shadow-sm ${
               ehRevisaoAtendente(proposta)
                 ? "border-blue-200 bg-blue-50"
                 : "border-[#d7e5e8] bg-white"
             }`}
+            // Retrabalho: contorno na cor do token, por cima da borda do status.
+            style={proposta.isRetrabalho ? { outline: `2px solid ${COR_RETRABALHO}`, outlineOffset: "-2px" } : undefined}
           >
             <div className="flex items-start justify-between gap-3">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">N° {proposta.id_int}</p>
+                {proposta.isRetrabalho ? (
+                  <p className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-wide text-[var(--retrabalho)]">
+                    N° {proposta.id_int}
+                    <SeloRetrabalho />
+                  </p>
+                ) : (
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">N° {proposta.id_int}</p>
+                )}
                 <h3 className="mt-2 font-semibold text-slate-950">
                   {(!proposta.clienteId || proposta.clienteId === "0") ? (
                     <>
@@ -2969,5 +2983,31 @@ Ela volta a aparecer nas listas operacionais.`
         />
       )}
     </div>
+  );
+}
+
+/** Selo de texto do retrabalho (17/10/2026): o destaque nunca depende so da cor. */
+function SeloRetrabalho() {
+  return (
+    <span
+      data-selo-retrabalho
+      className="inline-flex items-center rounded-md border border-[var(--retrabalho)] px-1.5 py-0.5 text-[11px] font-bold normal-case tracking-normal text-[var(--retrabalho)]"
+    >
+      {ROTULO_RETRABALHO}
+    </span>
+  );
+}
+
+/**
+ * O numero do pedido na coluna N°. Retrabalho: na cor do token e com o selo. A classe
+ * troca (e nao se sobrepoe): no tema escuro `.text-slate-950` e `!important`.
+ */
+function NumeroDoPedido({ idInt, retrabalho }: { idInt: number; retrabalho: boolean }) {
+  if (!retrabalho) return <span className="text-base font-bold text-slate-950">{idInt}</span>;
+  return (
+    <span className="flex flex-col items-start gap-1">
+      <span data-numero-retrabalho className="text-base font-bold text-[var(--retrabalho)]">{idInt}</span>
+      <SeloRetrabalho />
+    </span>
   );
 }

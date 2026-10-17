@@ -30,6 +30,12 @@ type ResponsiveListProps<T> = {
    * Retorne `null` para deixar a linha com o fundo padrão.
    */
   getRowHighlight?: (item: T) => { base: string; hover: string } | null;
+  /**
+   * Contorno da linha (desktop), por cima do destaque de fundo: devolve a COR (um
+   * token, ex. `var(--retrabalho)`) ou `null`. Usado pelo retrabalho na lista de
+   * Pedidos (17/10/2026). Quem nao passa, nao muda nada.
+   */
+  getRowOutline?: (item: T) => string | null;
 };
 
 const alignClass = {
@@ -60,7 +66,8 @@ export function ResponsiveList<T>({
   emptyTitle,
   emptyDescription,
   onRowClick,
-  getRowHighlight
+  getRowHighlight,
+  getRowOutline
 }: ResponsiveListProps<T>) {
   if (isLoading) {
     return (
@@ -108,7 +115,11 @@ export function ResponsiveList<T>({
               <tr
                 key={getKey(item)}
                 className={`transition ${onRowClick ? "cursor-pointer" : ""}`}
-                style={{ borderBottom: "1px solid var(--border)", background: getRowHighlight?.(item)?.base }}
+                style={{
+                  borderBottom: "1px solid var(--border)",
+                  background: getRowHighlight?.(item)?.base,
+                  ...(getRowOutline?.(item) ? { outline: `2px solid ${getRowOutline(item)}`, outlineOffset: "-2px" } : {})
+                }}
                 // Acessibilidade: linha clicável é focável e responde a Enter/Espaço.
                 {...(onRowClick
                   ? {

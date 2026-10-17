@@ -86,6 +86,12 @@
   --action-danger-hover: #991b1b;
   --action-danger-fg:    #ffffff;
 
+  /* --- Retrabalho (17/10/2026): pedido com cobranca E-RETRABALHO viva ---
+     Contorno, numero do pedido e selo. Sobre #ffffff ~6,5:1.
+     Os mesmos valores estao em src/lib/retrabalho.ts (COR_RETRABALHO_CLARO /
+     COR_RETRABALHO_ESCURO), para o PDF, que nao le CSS. Mudou aqui, muda la. */
+  --retrabalho:          #b91c1c;
+
   /* --- Sidebar LIGHT — fundo branco, textos contrastados ---
      sidebar-text: #1a3050 sobre #ffffff → ratio ~9.8:1 ✅
      sidebar-text-muted: #4a6680 sobre #ffffff → ratio ~5.3:1 ✅
@@ -199,6 +205,9 @@
   --action-danger:       #f87171;
   --action-danger-hover: #fca5a5;
   --action-danger-fg:    #1a0505;
+
+  /* Retrabalho no tema escuro (par do claro, mesmo valor de COR_RETRABALHO_ESCURO). */
+  --retrabalho:          #f87171;
 
   /* --- Sidebar DARK — azul muito escura ---
      sidebar-text: #c8dff0 sobre #060e18 → ratio ~10.2:1 ✅

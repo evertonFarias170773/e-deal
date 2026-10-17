@@ -1,6 +1,6 @@
 # Pedidos (lista)
 
-> **Última revisão:** 16/10/2026
+> **Última revisão:** 17/10/2026
 > **Caminho no menu:** Pedidos (item direto do menu lateral, sem submenu; é o segundo, logo abaixo de Conferência)
 > **Endereço:** `/orcamentos`
 
@@ -143,6 +143,8 @@ Com o card **Em arte** ligado, a ordem passa a ser primeiro pelo Status Arte, e 
 6. Apr Parcial e Aprovado Parcial.
 7. Em Arte.
 8. Os demais.
+
+Pedido de **retrabalho** (com cobrança E-Retrabalho que não foi cancelada) aparece com contorno vermelho, o número do pedido em vermelho e o selo **Retrabalho** logo abaixo do número, na tabela e no cartão do celular, nos temas claro e escuro. E-Amostra e E-Permuta não ganham esse destaque.
 
 No celular a lista vira cartões, e só a revisão atendente ganha fundo azul. O cartão mostra o status do pedido e, quando o pedido tem arte, o selo **Arte** com a situação dela, o mesmo da coluna Status Arte.
 
