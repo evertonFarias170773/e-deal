@@ -442,6 +442,11 @@ export interface PedidoExpedicao {
    */
   danfes?: DanfeDoPedido[];
   liberaNf: boolean;
+  /**
+   * Tem cobranca E-RETRABALHO viva (`lib/retrabalho`, 19/10/2026): contorno, numero
+   * em vermelho e selo no card. Opcional porque nem toda origem monta (mocks).
+   */
+  isRetrabalho?: boolean;
   codigoRastreamento: string;
   obsOs: string;
   /** Já existe etiqueta/rastreio para o envio: prepostagem Correios OU rastreio OU 10x15 gerada. */

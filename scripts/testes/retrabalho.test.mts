@@ -118,6 +118,25 @@ checar("tela: opcao no enum e no dropdown, e os dois filtros do cliente usam isR
   (tela.match(/filtroCobranca: filterTipoCobranca/g) ?? []).length
 ], [true, true, 2, 2]);
 
+// ── 6. Expedicao (19/10/2026) ──
+{
+  const exp = readFileSync("src/features/expedicao/services/expedicao.service.ts", "utf8").replace(/\r\n/g, "\n");
+  const kanban = readFileSync("src/features/expedicao/components/KanbanTransportadoras.tsx", "utf8");
+  const pagina = readFileSync("src/features/expedicao/ExpedicaoPage.tsx", "utf8");
+  const iAll = exp.indexOf("] = await Promise.all([");
+  const iFim = exp.indexOf("]);", iAll);
+  const dentro = exp.slice(iAll, iFim);
+  checar("expedicao: a leitura do retrabalho e UMA consulta, no mesmo Promise.all, por id_int", [dentro.includes('.from("pagamentos_v2")'), dentro.includes('.ilike("tipo_cobranca", FORMA_RETRABALHO)'), (exp.match(/from\("pagamentos_v2"\)/g) ?? []).length], [true, true, 1]);
+  checar("expedicao: regra viva aplicada e campo no pedido", [exp.includes(".filter(cobrancaEhRetrabalho)"), exp.includes("isRetrabalho: idsComRetrabalho.has(idInt),")], [true, true]);
+  checar("expedicao: Kanban com contorno, numero e selo", [kanban.includes("style={p.isRetrabalho ? CONTORNO_RETRABALHO : undefined}"), kanban.includes('p.isRetrabalho ? "text-[var(--retrabalho)]"'), kanban.includes("{p.isRetrabalho ? <SeloRetrabalho /> : null}")], [true, true, true]);
+  checar("expedicao: lista (contorno da linha) e celular (contorno do card), com selo", [pagina.includes('getRowOutline={(p) => (p.isRetrabalho ? "var(--retrabalho)" : null)}'), pagina.includes("style={p.isRetrabalho ? CONTORNO_RETRABALHO : undefined}"), (pagina.match(/<SeloRetrabalho \/>/g) ?? []).length], [true, true, 2]);
+  const linhas = [
+    { id_int: 23773, tipo_cobranca: "E-RETRABALHO", status: "PAID" },
+    { id_int: 23610, tipo_cobranca: "E-RETRABALHO", status: "CANCELADO" }
+  ];
+  checar("expedicao: na leitura em lote, viva conta e cancelada nao", linhas.filter(cobrancaEhRetrabalho).map((l) => l.id_int), [23773]);
+}
+
 if (falhas > 0) {
   console.log(`\n${falhas} falha(s).`);
   process.exitCode = 1;

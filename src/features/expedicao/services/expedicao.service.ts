@@ -1,4 +1,5 @@
 import { getSupabaseClient } from "@/lib/supabase/client";
+import { FORMA_RETRABALHO, cobrancaEhRetrabalho } from "@/lib/retrabalho";
 import { formatDocument } from "@/lib/formatters/document";
 import { telefoneDestinatario } from "../lib/telefone-destinatario";
 import {
@@ -183,7 +184,8 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
     liberacoesRes,
     recotacoesRes,
     setoresRes,
-    complementosRes
+    complementosRes,
+    retrabalhoRes
   ] = await Promise.all([
     client
       .from("propostas_os")
@@ -242,12 +244,29 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
       .from("propostas")
       .select("id_int, id_int_pedido_principal, status_interno")
       .in("id_int_pedido_principal", ids)
-      .neq("status_interno", "CANCELADO")
+      .neq("status_interno", "CANCELADO"),
+    // RETRABALHO (19/10/2026): as cobrancas E-RETRABALHO dos pedidos do painel, NO
+    // MESMO lote (em paralelo, sem ida e volta a mais). O status vem junto para a
+    // regra da cobranca viva (`cobrancaEhRetrabalho`). Falhou, o card fica sem o
+    // destaque — nada mais depende disto.
+    client
+      .from("pagamentos_v2")
+      .select("id_int, tipo_cobranca, status")
+      .in("id_int", ids)
+      .ilike("tipo_cobranca", FORMA_RETRABALHO)
   ]);
 
   if (fretesRes.error) {
     console.error("[expedicao.service] Erro ao buscar cotacao_frete (frete ficará 'A definir'):", fretesRes.error);
   }
+  if (retrabalhoRes.error) {
+    console.warn("[expedicao.service] Nao foi possivel ler as cobrancas de retrabalho (cards sem o destaque):", retrabalhoRes.error.message);
+  }
+  const idsComRetrabalho = new Set(
+    ((retrabalhoRes.data ?? []) as { id_int: number | null; tipo_cobranca: string | null; status: string | null }[])
+      .filter(cobrancaEhRetrabalho)
+      .map((c) => Number(c.id_int))
+  );
   for (const [nome, res] of [
     ["propostas_os", osRes],
     ["notas_fiscais", nfsRes],
@@ -1000,6 +1019,7 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
       nfNumero: nf?.numero ?? null,
       danfes: danfesPorPedido.get(idInt) ?? [],
       liberaNf: p.libera_nf === true,
+      isRetrabalho: idsComRetrabalho.has(idInt),
       // Prepostagem marcada como cancelada: a lista passa a se comportar como
       // "sem rastreio" — some da coluna, some da busca e o item "Rastrear
       // objeto" nao aparece. O banco NAO muda: `expedicoes.codigo_rastreamento`

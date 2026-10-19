@@ -17,7 +17,8 @@ import { formatDateTime } from "@/lib/formatters/date";
 import { buildPropostaInformalText } from "@/features/orcamentos/orcamento-utils";
 import { useOrcamentosReadOnlyData } from "@/features/orcamentos/hooks/useOrcamentosReadOnlyData";
 import type { OrcamentoListItem } from "@/features/orcamentos/mappers";
-import { COR_RETRABALHO, ROTULO_RETRABALHO } from "@/lib/retrabalho";
+import { COR_RETRABALHO } from "@/lib/retrabalho";
+import { SeloRetrabalho } from "@/components/common/SeloRetrabalho";
 import { encerrarTeste, reabrirTeste } from "@/features/pedidos/services/encerrar-teste.client";
 import { desmarcarFaturadoNoSistemaAntigo } from "@/features/fiscal/services/faturado-fora.client";
 import { buscarRastreioDasPropostas, type RastreioDaProposta } from "@/features/orcamentos/services/rastreio-lista.service";
@@ -2993,18 +2994,6 @@ Ela volta a aparecer nas listas operacionais.`
         />
       )}
     </div>
-  );
-}
-
-/** Selo de texto do retrabalho (17/10/2026): o destaque nunca depende so da cor. */
-function SeloRetrabalho() {
-  return (
-    <span
-      data-selo-retrabalho
-      className="inline-flex items-center rounded-md border border-[var(--retrabalho)] px-1.5 py-0.5 text-[11px] font-bold normal-case tracking-normal text-[var(--retrabalho)]"
-    >
-      {ROTULO_RETRABALHO}
-    </span>
   );
 }
 

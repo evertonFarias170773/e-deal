@@ -1,5 +1,6 @@
 "use client";
 
+import { CONTORNO_RETRABALHO, SeloRetrabalho } from "@/components/common/SeloRetrabalho";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Truck } from "lucide-react";
 import { ActionsMenu } from "@/components/common/ActionsMenu";
@@ -569,6 +570,9 @@ export function KanbanTransportadoras({
                   // A cor sai de `faseDoCard` (precedência) + `fase.classe`
                   // (tons) — a MESMA string que a legenda pinta no marcador.
                   className={`rounded-2xl border p-3.5 shadow-sm ${faseDoCard(p).classe} ${classeFaixaDoCard(destaqueDoCard(vinculosPorPedido?.get(p.idInt)))}`}
+                  // Retrabalho (19/10/2026): contorno por cima da cor da fase, que continua.
+                  data-retrabalho={p.isRetrabalho ? "sim" : undefined}
+                  style={p.isRetrabalho ? CONTORNO_RETRABALHO : undefined}
                 >
                   {/* Linha de identidade: número, cadastro e o menu, tudo em 36 px
                       de altura. O gatilho do menu é ICONE aqui — o botão com
@@ -576,9 +580,13 @@ export function KanbanTransportadoras({
                       linhas neste card. */}
                   <div className="flex items-center justify-between gap-2">
                     <span className="flex min-w-0 items-baseline gap-2">
-                      <span className="text-[17px] font-bold tracking-tight text-[#0b2f4a] dark:text-sky-400">
+                      <span
+                        data-numero-retrabalho={p.isRetrabalho ? "sim" : undefined}
+                        className={`text-[17px] font-bold tracking-tight ${p.isRetrabalho ? "text-[var(--retrabalho)]" : "text-[#0b2f4a] dark:text-sky-400"}`}
+                      >
                         #{p.idInt}
                       </span>
+                      {p.isRetrabalho ? <SeloRetrabalho /> : null}
                       {/* Cadastro do cliente: a conferência de bancada casa o volume
                           pelo número do cadastro, não pelo nome — homônimos existem. */}
                       {/* Mesmo corpo do `#id`, sem negrito: o cadastro é tão

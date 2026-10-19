@@ -1,5 +1,6 @@
 "use client";
 
+import { CONTORNO_RETRABALHO, SeloRetrabalho } from "@/components/common/SeloRetrabalho";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -1174,6 +1175,8 @@ export function ExpedicaoPage() {
         isLoading={!isLoaded}
         emptyTitle="Nenhum pedido no recorte"
         emptyDescription="Ajuste os filtros ou confira se há pedidos aprovados para produção."
+        // Retrabalho (19/10/2026): contorno por cima do destaque de atraso/prometido.
+        getRowOutline={(p) => (p.isRetrabalho ? "var(--retrabalho)" : null)}
         getRowHighlight={(p) =>
           p.atrasadoDias > 0 && p.etapa !== "ENTREGUE"
             ? { base: "rgba(239,68,68,0.08)", hover: "rgba(239,68,68,0.15)" }
@@ -1186,7 +1189,14 @@ export function ExpedicaoPage() {
             header: "Pedido",
             cell: (p) => (
               <div className="flex flex-col">
-                <span className="font-semibold text-slate-950 dark:text-slate-100">#{p.idInt}</span>
+                {p.isRetrabalho ? (
+                  <span className="flex flex-wrap items-center gap-1.5">
+                    <span data-numero-retrabalho="sim" className="font-semibold text-[var(--retrabalho)]">#{p.idInt}</span>
+                    <SeloRetrabalho />
+                  </span>
+                ) : (
+                  <span className="font-semibold text-slate-950 dark:text-slate-100">#{p.idInt}</span>
+                )}
                 <span className="text-[11px] text-slate-500">{p.empresa}</span>
                 <ChipVinculados grupos={vinculosPorPedido.get(p.idInt)} onSoltar={podeSoltarDoGrupo ? (grupo) => setSoltarAlvo({ idInt: p.idInt, grupo }) : undefined} />
                 {/* PEDIDO COMPLEMENTAR: o par do mesmo evento. */}
@@ -1408,11 +1418,22 @@ export function ExpedicaoPage() {
                     ? "border-amber-300 dark:border-amber-900"
                     : "border-[#d7e5e8] dark:border-slate-800"
               }`}
+              data-retrabalho={p.isRetrabalho ? "sim" : undefined}
+              style={p.isRetrabalho ? CONTORNO_RETRABALHO : undefined}
             >
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    <span>#{p.idInt} · {p.empresa}</span>
+                  <p className="flex flex-wrap items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    {p.isRetrabalho ? (
+                      <>
+                        <span>
+                          <span data-numero-retrabalho="sim" className="text-[var(--retrabalho)]">#{p.idInt}</span> · {p.empresa}
+                        </span>
+                        <SeloRetrabalho />
+                      </>
+                    ) : (
+                      <span>#{p.idInt} · {p.empresa}</span>
+                    )}
                     {/* Instrucoes de entrega: icone com o texto na dica, como no Kanban. */}
                     <AvisoInstrucaoEntrega texto={instrucoesPorPedido.get(p.idInt)} formato="icone" />
                   </p>
