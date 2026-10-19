@@ -137,6 +137,18 @@ checar("tela: opcao no enum e no dropdown, e os dois filtros do cliente usam isR
   checar("expedicao: na leitura em lote, viva conta e cancelada nao", linhas.filter(cobrancaEhRetrabalho).map((l) => l.id_int), [23773]);
 }
 
+// ── 7. Producao e Fila de Faturamento (19/10/2026) ──
+{
+  const prodSrv = readFileSync("src/features/pedidos/services/pedidos-producao.service.ts", "utf8");
+  const prodTela = readFileSync("src/features/pedidos/PedidosListPage.tsx", "utf8");
+  const nfe = readFileSync("src/features/nfe/services/nfe.service.ts", "utf8");
+  const fila = readFileSync("src/features/fiscal/NotasFiscaisPage.tsx", "utf8");
+  checar("producao: uma leitura em lote, iniciada cedo e esperada antes das linhas", [prodSrv.includes("const retrabalhoEmCurso = client"), prodSrv.includes('.ilike("tipo_cobranca", FORMA_RETRABALHO)'), prodSrv.indexOf("const retrabalhoLido = await retrabalhoEmCurso;") < prodSrv.indexOf("for (const p of propostasRows)"), prodSrv.includes("isRetrabalho: idsComRetrabalho.has(Number(p.id_int)),")], [true, true, true, true]);
+  checar("producao: tabela (contorno da linha) e cartao (contorno), numero e selo", [prodTela.includes('getRowOutline={(proposta) => (proposta.isRetrabalho ? "var(--retrabalho)" : null)}'), prodTela.includes("style={proposta.isRetrabalho ? CONTORNO_RETRABALHO : undefined}"), (prodTela.match(/<SeloRetrabalho \/>/g) ?? []).length], [true, true, 2]);
+  checar("fila: a MESMA leitura de pagamentos_v2 traz o status; regra viva; tipo exibido intocado", [nfe.includes('.select("id_int,tipo_cobranca,status,created_at")'), nfe.includes("if (Number.isFinite(idInt) && cobrancaEhRetrabalho(linha)) idsComRetrabalho.add(idInt);"), nfe.includes("cobrancaPorProposta.set(idInt, tipo);")], [true, true, true]);
+  checar("fila: contorno, numero e selo na tabela e no cartao; ordem e itens intocados", [fila.includes('getRowOutline={(item) => (item.isRetrabalho ? "var(--retrabalho)" : null)}'), fila.includes("style={item.isRetrabalho ? CONTORNO_RETRABALHO : undefined}"), (fila.match(/\{item\.isRetrabalho \? <SeloRetrabalho \/> : null\}/g) ?? []).length, fila.includes("items={filaOrdenadaPelaPrevisao}")], [true, true, 2, true]);
+}
+
 if (falhas > 0) {
   console.log(`\n${falhas} falha(s).`);
   process.exitCode = 1;

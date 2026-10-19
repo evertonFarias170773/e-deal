@@ -1,6 +1,6 @@
 # Produção (ordens de serviço)
 
-> **Última revisão:** 15/10/2026
+> **Última revisão:** 19/10/2026
 > **Caminho no menu:** Produção (item direto do menu lateral, sem submenu). A OS de cada pedido abre a partir da lista. O Kanban e a Fila de impressão não estão no menu: chega-se a eles pelo endereço ou pelas abas **Fila Geral / Kanban Board / Fila de Impressão / Expedição** que aparecem no topo dessas duas telas.
 > **Endereço:** `/pedidos` (painel geral). OS: `/pedidos/boletim`. Kanban: `/pedidos/kanban` (e `/os-producao`). Fila de impressão: `/pedidos/impressao`.
 
@@ -226,6 +226,8 @@ As vias antigas continuam valendo como eram. O QR delas é um link: lido no term
 5. O endereço `/pedidos/` seguido de um número não abre uma tela de detalhe: ele volta para o painel geral. O detalhe do pedido na Produção é a tela da OS.
 
 ## Regras e bloqueios
+
+- Pedido de **retrabalho** (cobrança E-Retrabalho não cancelada) aparece com contorno vermelho, o número do pedido em vermelho e o selo **Retrabalho**, na tabela e no cartão do celular. E-Amostra e E-Permuta não ganham o destaque. O destaque de Revisão continua por baixo.
 
 - Pedido não liberado não aparece na Produção, mesmo com pagamento confirmado ou arte aprovada. O que conta é a liberação.
 - A linha amarela marca pedido em REVISAO PRODUCAO: ele chegou e ninguém salvou a OS ainda. Esses pedidos ficam sempre no topo da lista.

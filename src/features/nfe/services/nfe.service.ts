@@ -1,4 +1,5 @@
 import { getSupabaseClient } from "@/lib/supabase/client";
+import { cobrancaEhRetrabalho } from "@/lib/retrabalho";
 import { resolverPagadorDoBoletoC6 } from "@/features/cobrancas/services/boleto-c6";
 import { destinoDaRespostaDoCancelamento } from "@/features/cobrancas/services/cancelamento-c6";
 import { nfeMocks } from "@/lib/mocks/nfe.mock";
@@ -1893,10 +1894,14 @@ export async function getFaturaveisPropostas(): Promise<FaturavelOrigem[]> {
     // faturado sem abrir nada. Uma consulta para toda a fila — a paginação não
     // muda, porque a lista continua vindo inteira de `propostas`.
     const cobrancaPorProposta = new Map<number, string>();
+    // RETRABALHO (19/10/2026): na MESMA leitura, com o status, para a regra da
+    // cobranca viva (`cobrancaEhRetrabalho`). O tipo exibido (a cobranca mais
+    // recente, logo abaixo) nao muda.
+    const idsComRetrabalho = new Set<number>();
     if (idsInt.length > 0) {
       const { data: cobrancas, error: cobrancasError } = await client
         .from("pagamentos_v2")
-        .select("id_int,tipo_cobranca,created_at")
+        .select("id_int,tipo_cobranca,status,created_at")
         .in("id_int", idsInt)
         .order("created_at", { ascending: true });
 
@@ -1904,8 +1909,9 @@ export async function getFaturaveisPropostas(): Promise<FaturavelOrigem[]> {
         console.warn("[NfeService] Nao foi possivel ler as cobrancas da fila:", cobrancasError.message);
       } else {
         // Ordem crescente: a última escrita vence, que é a cobrança mais recente.
-        (cobrancas ?? []).forEach((linha: { id_int: number | null; tipo_cobranca: string | null }) => {
+        (cobrancas ?? []).forEach((linha: { id_int: number | null; tipo_cobranca: string | null; status?: string | null }) => {
           const idInt = Number(linha.id_int);
+          if (Number.isFinite(idInt) && cobrancaEhRetrabalho(linha)) idsComRetrabalho.add(idInt);
           const tipo = String(linha.tipo_cobranca ?? "").trim();
           if (!Number.isFinite(idInt) || !tipo) return;
           cobrancaPorProposta.set(idInt, tipo);
@@ -1982,7 +1988,8 @@ export async function getFaturaveisPropostas(): Promise<FaturavelOrigem[]> {
         id_int: Number(row.id_int),
         liberado_producao_em: row.liberado_producao_em ?? null,
         // Para o "Marcar como entregue" da Fila (13/10/2026): toda linha daqui tem libera_nf ligada.
-        is_prd_aprovado: row.is_prd_aprovado === true
+        is_prd_aprovado: row.is_prd_aprovado === true,
+        isRetrabalho: idsComRetrabalho.has(Number(row.id_int))
       };
     });
   } catch (err) {

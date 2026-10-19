@@ -1,5 +1,6 @@
 "use client";
 
+import { CONTORNO_RETRABALHO, SeloRetrabalho } from "@/components/common/SeloRetrabalho";
 import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { useGlobalChat } from "@/features/chat/context/GlobalChatContext";
@@ -683,6 +684,8 @@ export function PedidosListPage() {
         getKey={(proposta) => proposta.id_int.toString()}
         isLoading={!isLoaded}
         getRowHighlight={(proposta) => (ehRevisaoProducao(proposta) ? DESTAQUE_REVISAO_PRODUCAO : null)}
+        // Retrabalho (19/10/2026): contorno por cima do destaque de revisao, que continua.
+        getRowOutline={(proposta) => (proposta.isRetrabalho ? "var(--retrabalho)" : null)}
         onRowClick={(proposta) => {
           // Segundo caminho para o boletim, além do menu de ações. Clique em
           // controle (chip de setor, menu, botão) não conta como clique na
@@ -694,7 +697,15 @@ export function PedidosListPage() {
         columns={[
           {
             header: "OS",
-            cell: (proposta) => <span className="font-semibold text-slate-950">{proposta.id_int}</span>
+            cell: (proposta) =>
+              proposta.isRetrabalho ? (
+                <span className="flex flex-col items-start gap-1">
+                  <span data-numero-retrabalho="sim" className="font-semibold text-[var(--retrabalho)]">{proposta.id_int}</span>
+                  <SeloRetrabalho />
+                </span>
+              ) : (
+                <span className="font-semibold text-slate-950">{proposta.id_int}</span>
+              )
           },
           {
             header: "Cliente",
@@ -939,10 +950,19 @@ export function PedidosListPage() {
                 ? "border-amber-200 bg-[var(--row-highlight)]"
                 : "border-[#d7e5e8] bg-white"
             }`}
+            data-retrabalho={proposta.isRetrabalho ? "sim" : undefined}
+            style={proposta.isRetrabalho ? CONTORNO_RETRABALHO : undefined}
           >
             <div className="flex items-start justify-between gap-3">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">N° {proposta.id_int}</p>
+                {proposta.isRetrabalho ? (
+                  <p className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-wide">
+                    <span data-numero-retrabalho="sim" className="text-[var(--retrabalho)]">N° {proposta.id_int}</span>
+                    <SeloRetrabalho />
+                  </p>
+                ) : (
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">N° {proposta.id_int}</p>
+                )}
                 <h3 className="mt-2 font-semibold text-slate-950">
                   {proposta.clienteNome}
                 </h3>

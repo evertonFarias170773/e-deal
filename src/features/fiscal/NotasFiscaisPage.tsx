@@ -1,5 +1,6 @@
 "use client";
 
+import { CONTORNO_RETRABALHO, SeloRetrabalho } from "@/components/common/SeloRetrabalho";
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import { useUrlFilters } from "@/hooks/useUrlFilters";
@@ -2736,6 +2737,8 @@ export function NotasFiscaisPage() {
           <ResponsiveList<FaturavelOrigem>
             items={filaOrdenadaPelaPrevisao}
             getKey={(item) => `fila-nfe-${item.id}`}
+            // Retrabalho (19/10/2026): so o contorno; nenhuma acao, ordem ou filtro muda.
+            getRowOutline={(item) => (item.isRetrabalho ? "var(--retrabalho)" : null)}
             isLoading={isLoading}
             emptyTitle="Nenhuma proposta disponível para faturamento"
             emptyDescription="Nenhum pedido aprovado aguardando faturamento."
@@ -2754,7 +2757,12 @@ export function NotasFiscaisPage() {
                         <button
                           type="button"
                           onClick={() => router.push(`/orcamentos/${idInt}`)}
-                          className="w-fit font-medium text-[#0b2f4a] underline decoration-[#0b2f4a]/30 underline-offset-2 transition hover:decoration-[#0b2f4a]"
+                          data-numero-retrabalho={item.isRetrabalho ? "sim" : undefined}
+                          className={`w-fit font-medium underline underline-offset-2 transition ${
+                            item.isRetrabalho
+                              ? "text-[var(--retrabalho)] decoration-[var(--retrabalho)]"
+                              : "text-[#0b2f4a] decoration-[#0b2f4a]/30 hover:decoration-[#0b2f4a]"
+                          }`}
                           title="Abrir a proposta"
                         >
                           #{idInt}
@@ -2762,6 +2770,7 @@ export function NotasFiscaisPage() {
                       ) : (
                         <span className="font-medium text-slate-950">{item.ref_origem}</span>
                       )}
+                      {item.isRetrabalho ? <SeloRetrabalho /> : null}
                       {item.os_ideal && (
                         <span className="text-xs text-slate-500 font-mono">OS: {item.os_ideal}</span>
                       )}
@@ -2848,13 +2857,22 @@ export function NotasFiscaisPage() {
               }
             ]}
             renderCard={(item) => (
-              <article key={`fila-nfe-card-${item.id}`} className="rounded-3xl border border-[#d7e5e8] bg-white p-5 shadow-sm space-y-4">
+              <article
+                key={`fila-nfe-card-${item.id}`}
+                className="rounded-3xl border border-[#d7e5e8] bg-white p-5 shadow-sm space-y-4"
+                data-retrabalho={item.isRetrabalho ? "sim" : undefined}
+                style={item.isRetrabalho ? CONTORNO_RETRABALHO : undefined}
+              >
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-semibold px-2 py-0.5 bg-slate-100 rounded-lg text-slate-700">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span
+                        data-numero-retrabalho={item.isRetrabalho ? "sim" : undefined}
+                        className={`text-xs font-semibold px-2 py-0.5 bg-slate-100 rounded-lg ${item.isRetrabalho ? "text-[var(--retrabalho)]" : "text-slate-700"}`}
+                      >
                         Pedido #{item.ref_origem.match(/\d+/)?.[0] || "-"}
                       </span>
+                      {item.isRetrabalho ? <SeloRetrabalho /> : null}
                       {item.os_ideal && (
                         <span className="text-xs text-slate-500 font-mono">OS: {item.os_ideal}</span>
                       )}

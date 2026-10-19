@@ -1,4 +1,5 @@
 import { getSupabaseClient } from "@/lib/supabase/client";
+import { FORMA_RETRABALHO, cobrancaEhRetrabalho } from "@/lib/retrabalho";
 import type { PedidoProducaoListItem, PedidoStatus, PropostaOperacionalListItem, SetorDoPedido } from "../types";
 import type { PedidoModelo } from "@/features/producao/types";
 import { composeStatusEmArte } from "@/features/orcamentos/mappers";
@@ -76,6 +77,15 @@ export async function listarPedidosOperacionais(): Promise<PropostaOperacionalLi
   }
 
   const idInts = propostasRows.map(p => Number(p.id_int));
+
+  // RETRABALHO (19/10/2026): as cobrancas E-RETRABALHO destes pedidos, numa consulta
+  // so. Comeca AGORA e so e esperada antes de montar as linhas: corre em paralelo
+  // com as leituras abaixo, sem somar tempo. Falhou, a linha fica sem o destaque.
+  const retrabalhoEmCurso = client
+    .from("pagamentos_v2")
+    .select("id_int, tipo_cobranca, status")
+    .in("id_int", idInts)
+    .ilike("tipo_cobranca", FORMA_RETRABALHO);
 
   /**
    * Nome do PAGADOR, quando ele nao e o cliente do pedido.
@@ -265,6 +275,16 @@ export async function listarPedidosOperacionais(): Promise<PropostaOperacionalLi
   }
 
   // 4. Construir a resposta agregada
+  const retrabalhoLido = await retrabalhoEmCurso;
+  if (retrabalhoLido.error) {
+    console.warn("[pedidos-producao.service] Nao foi possivel ler as cobrancas de retrabalho:", retrabalhoLido.error.message);
+  }
+  const idsComRetrabalho = new Set(
+    ((retrabalhoLido.data ?? []) as { id_int: number | null; tipo_cobranca: string | null; status: string | null }[])
+      .filter(cobrancaEhRetrabalho)
+      .map((c) => Number(c.id_int))
+  );
+
   const resultados: PropostaOperacionalListItem[] = [];
 
   for (const p of propostasRows) {
@@ -396,6 +416,7 @@ export async function listarPedidosOperacionais(): Promise<PropostaOperacionalLi
       hasArtePendente: emArte,
       obs: "",
       libera_nf: p.libera_nf === true,
+      isRetrabalho: idsComRetrabalho.has(Number(p.id_int)),
       is_prd_aprovado: p.is_prd_aprovado === true,
       setores
     });
