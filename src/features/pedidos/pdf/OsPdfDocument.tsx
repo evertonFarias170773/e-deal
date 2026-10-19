@@ -1,4 +1,5 @@
 import React from "react";
+import { COR_RETRABALHO_CLARO } from "@/lib/retrabalho";
 import { Document, Page, View, Text, Image, StyleSheet } from "@react-pdf/renderer";
 import type { OsPdfViewModel, OsPdfProduto, OsPdfModelo } from "../services/os-viewmodel.service";
 import { textoDeEntrega } from "../lib/instrucoes-entrega";
@@ -245,6 +246,17 @@ const styles = StyleSheet.create({
   // 25.5 = 17 + 50%, conforme pedido.
   osBoxNumero: { fontSize: 25.5, fontFamily: "Helvetica-Bold" },
   headerSetor: { flex: 1, paddingHorizontal: 10 },
+  // 20 pt com lineHeight 1: 20 pt de altura + 2 de folga. Com o setor (29 pt) e o
+  // "Setor complementar" (~10 pt), a coluna fica abaixo dos 62 pt do QR.
+  retrabalhoTopo: {
+    fontSize: 20,
+    lineHeight: 1,
+    fontFamily: "Helvetica-Bold",
+    color: COR_RETRABALHO_CLARO,
+    textAlign: "center",
+    letterSpacing: 1,
+    marginBottom: 2
+  },
   setorBox: {
     borderWidth: 1,
     borderColor: "#3f3f42",
@@ -925,6 +937,12 @@ export function OsPdfCabecalho({ vm, qrDataUrl, logoDataUrl }: OsPdfDocumentProp
           </View>
 
           <View style={styles.headerSetor}>
+            {/* RETRABALHO (19/10/2026): no topo, grande, na cor do token (o PDF nao le
+                CSS: `COR_RETRABALHO_CLARO`). Mora DENTRO da coluna do setor, que tem
+                folga: a altura do cabecalho e da coluna da logo + OS (~72 pt) e do QR
+                (62 pt), e esta coluna usa ~41 pt. Assim o cabecalho nao cresce e a
+                paginacao nao muda. Vale para os tres modelos (todos usam este cabecalho). */}
+            {vm.retrabalho ? <Text style={styles.retrabalhoTopo}>RETRABALHO</Text> : null}
             <View style={[styles.setorBox, { borderColor: cores.forte, backgroundColor: cores.claro }]}>
               <Text style={styles.setorLabel}>Setor:</Text>
               <Text style={[styles.setorValor, { color: cores.forte }]}>{setor}</Text>

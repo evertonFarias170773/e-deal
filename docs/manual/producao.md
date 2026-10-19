@@ -43,6 +43,7 @@ Nomes exatamente como aparecem na tela.
 | **Editar OS / Boletim** (ou **Criar OS / Boletim**) | Menu **Ações** da linha | Abre a OS. Aparece como "Criar" quando o pedido ainda não tem lotes. |
 | **Imprimir OS (PDF)** | Menu **Ações** da linha | Abre em nova aba o PDF completo, com todos os setores. Enquanto gera, mostra "Gerando PDF...". |
 | **Imprimir OS reduzida (PDF)** | Menu **Ações** da linha | Abre o PDF resumido (lista de conferência, sem imagens). |
+| **RETRABALHO** no PDF | Topo de cada página de boletim (completo, reduzido e maço), acima do quadro do Setor | Aparece em letras grandes vermelhas quando o pedido tem cobrança E-Retrabalho não cancelada. O resto do boletim e a paginação ficam como sempre. |
 | **Gerar novo QR (invalida o anterior)** | Menu **Ações** da linha | Cria um QR novo para a OS e invalida o das vias já impressas. |
 | **Abrir DANFE (PDF)** | Menu **Ações** da linha | Abre a DANFE da nota do pedido. Só aparece quando há nota autorizada. |
 | **Baixar XML** | Menu **Ações** da linha | Baixa o XML da nota do pedido. Só aparece quando há nota autorizada. |

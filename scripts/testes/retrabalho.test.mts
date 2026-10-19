@@ -149,6 +149,18 @@ checar("tela: opcao no enum e no dropdown, e os dois filtros do cliente usam isR
   checar("fila: contorno, numero e selo na tabela e no cartao; ordem e itens intocados", [fila.includes('getRowOutline={(item) => (item.isRetrabalho ? "var(--retrabalho)" : null)}'), fila.includes("style={item.isRetrabalho ? CONTORNO_RETRABALHO : undefined}"), (fila.match(/\{item\.isRetrabalho \? <SeloRetrabalho \/> : null\}/g) ?? []).length, fila.includes("items={filaOrdenadaPelaPrevisao}")], [true, true, 2, true]);
 }
 
+// ── 8. PDF do boletim (19/10/2026) ──
+{
+  const vmSrc = readFileSync("src/features/pedidos/services/os-viewmodel.service.ts", "utf8").replace(/\r\n/g, "\n");
+  const pdf = readFileSync("src/features/pedidos/pdf/OsPdfDocument.tsx", "utf8");
+  const resumo = readFileSync("src/features/pedidos/pdf/OsPdfResumoDocument.tsx", "utf8");
+  const maco = readFileSync("src/features/pedidos/pdf/OsPdfMacoDocument.tsx", "utf8");
+  const iAll = vmSrc.indexOf("] = await Promise.all([");
+  checar("pdf: a leitura do retrabalho entra no lote paralelo do view model, tolerante a falha", [vmSrc.indexOf('.from("pagamentos_v2")') > iAll, vmSrc.includes('.ilike("tipo_cobranca", FORMA_RETRABALHO)'), vmSrc.includes("retrabalho: pedidoEhRetrabalho(")], [true, true, true]);
+  checar("pdf: RETRABALHO no cabecalho, na cor da constante (sem literal), so com o campo ligado", [pdf.includes('{vm.retrabalho ? <Text style={styles.retrabalhoTopo}>RETRABALHO</Text> : null}'), pdf.includes("color: COR_RETRABALHO_CLARO,"), /retrabalhoTopo:[\s\S]{0,200}#[0-9a-fA-F]{6}/.test(pdf)], [true, true, false]);
+  checar("pdf: os tres modelos usam o mesmo cabecalho (boletim, maco pela pagina do boletim, resumo)", [pdf.includes("<OsPdfCabecalho vm={vm}"), maco.includes("OsPdfPaginaBoletim"), resumo.includes("<OsPdfCabecalho vm={vm}")], [true, true, true]);
+}
+
 if (falhas > 0) {
   console.log(`\n${falhas} falha(s).`);
   process.exitCode = 1;

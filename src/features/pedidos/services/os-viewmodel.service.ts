@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { FORMA_RETRABALHO, pedidoEhRetrabalho } from "@/lib/retrabalho";
 import { obterPedidoOperacionalPorIdOuIdInt } from "./pedidos-detalhe.service";
 import { parsePedidosObs, obterFreteEscolhido } from "./boletim-propostas.service";
 import type { ParsedObs } from "./boletim-propostas.service";
@@ -142,6 +143,11 @@ export interface OsPdfViewModel {
    * mudaria o que a bancada faz.
    */
   obsTecnica: string;
+  /**
+   * O pedido tem cobranca E-RETRABALHO viva (`lib/retrabalho`, 19/10/2026): o
+   * cabecalho do PDF mostra RETRABALHO em vermelho. Falha de leitura = false.
+   */
+  retrabalho: boolean;
   /**
    * Instruções de entrega (`propostas.obs_entrega`). Vem da PROPOSTA e sai
    * INTEIRA no PDF, em bloco próprio, só quando há texto.
@@ -296,7 +302,8 @@ export async function montarOsPdfViewModel(
       modelosResult,
       pesosResult,
       freteResult,
-      expedicaoResult
+      expedicaoResult,
+      retrabalhoResult
     ] = await Promise.all([
       (async () => {
         try {
@@ -393,6 +400,20 @@ export async function montarOsPdfViewModel(
             .maybeSingle();
         } catch (e) {
           console.warn("[os-viewmodel] Falha ao ler a expedicao (nao-fatal):", e);
+          return { data: null };
+        }
+      })(),
+      // RETRABALHO (19/10/2026): as cobrancas E-RETRABALHO do pedido, com o status,
+      // no mesmo lote. Falhou, o boletim sai sem a marca (como era).
+      (async () => {
+        try {
+          return await client
+            .from("pagamentos_v2")
+            .select("tipo_cobranca, status")
+            .eq("id_int", idInt)
+            .ilike("tipo_cobranca", FORMA_RETRABALHO);
+        } catch (e) {
+          console.warn("[os-viewmodel] Falha ao ler as cobrancas de retrabalho (nao-fatal):", e);
           return { data: null };
         }
       })()
@@ -875,6 +896,7 @@ export async function montarOsPdfViewModel(
 
     const vm: OsPdfViewModel = {
       idInt,
+      retrabalho: pedidoEhRetrabalho((retrabalhoResult?.data ?? []) as { tipo_cobranca: string | null; status: string | null }[]),
       os: {
         emissao: pedido.dataPedido,
         // Prazo é do boletim; sem ele, cai no prazo do pedido (compatibilidade).
