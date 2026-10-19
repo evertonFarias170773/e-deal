@@ -50,7 +50,6 @@ import {
 import { useOrcamentoDetail } from "@/features/orcamentos/hooks/useOrcamentoDetail";
 import {
   gerarPDFProposta,
-  duplicarProposta,
   getPropostaChatResumos,
   loadChatReadInfo,
   type PropostaChatResumo
@@ -59,6 +58,7 @@ import { useGlobalChat } from "@/features/chat/context/GlobalChatContext";
 import { CancelPropostaModal } from "@/features/orcamentos/components/CancelPropostaModal";
 import { TarefasDoPedido } from "@/features/tarefas/components/TarefasDoPedido";
 import { LinhaAcompanha } from "@/features/orcamentos/components/LinhaAcompanha";
+import { useDuplicarProposta } from "@/features/orcamentos/hooks/useDuplicarProposta";
 
 type OrcamentoDetailPageProps = {
   idInt: number;
@@ -67,6 +67,8 @@ type OrcamentoDetailPageProps = {
 export function OrcamentoDetailPage({ idInt }: OrcamentoDetailPageProps) {
   const router = useRouter();
   const { showToast } = useAppToast();
+  // "Duplicar proposta": modal Duplicacao ou Retrabalho (19/10/2026), ponto unico.
+  const { pedirDuplicacao, duplicando, modalDuplicar } = useDuplicarProposta();
   const { user } = useAuth();
   const { getCobrancasByProposta } = useCobrancas();
   const [isCobrancaModalOpen, setIsCobrancaModalOpen] = useState(false);
@@ -324,43 +326,9 @@ export function OrcamentoDetailPage({ idInt }: OrcamentoDetailPageProps) {
     }
   }
 
-  async function handleDuplicarProposta() {
-    if (!proposta) return;
-    const ok = window.confirm("Deseja realmente duplicar esta proposta?");
-    if (!ok) return;
-
-    showToast({
-      type: "info",
-      title: "Duplicando proposta",
-      description: "Aguarde enquanto a proposta é duplicada..."
-    });
-
-    try {
-      const res = await duplicarProposta(proposta.id_int);
-      if (res.success && res.novoIdInt) {
-        showToast({
-          type: "success",
-          title: "Proposta duplicada",
-          description: "Proposta duplicada com sucesso. Redirecionando..."
-        });
-        window.setTimeout(() => {
-          router.push(`/orcamentos/${res.novoIdInt}/editar`);
-        }, 1200);
-      } else {
-        showToast({
-          type: "error",
-          title: "Erro ao duplicar",
-          description: res.errorMessage || "Não foi possível duplicar a proposta."
-        });
-      }
-    } catch (err) {
-      console.error("[Duplicação] Erro:", err);
-      showToast({
-        type: "error",
-        title: "Erro inesperado",
-        description: "Ocorreu um erro interno ao tentar duplicar."
-      });
-    }
+  function handleDuplicarProposta() {
+    if (!proposta || duplicando) return;
+    pedirDuplicacao(proposta.id_int);
   }
 
   return (
@@ -440,7 +408,7 @@ export function OrcamentoDetailPage({ idInt }: OrcamentoDetailPageProps) {
                     });
                   }
                 },
-                { label: "Duplicar proposta", onClick: () => void handleDuplicarProposta() },
+                { label: duplicando ? "Duplicando..." : "Duplicar proposta", onClick: () => handleDuplicarProposta() },
                 { label: "Copiar proposta informal", onClick: () => void copyInformal() },
                 { label: "Gerar PDF da proposta", onClick: () => void handleGerarPDF() },
                 { label: "Gerar OC", onClick: () => void handleGerarPDF("oc") },
@@ -655,6 +623,8 @@ export function OrcamentoDetailPage({ idInt }: OrcamentoDetailPageProps) {
         onOpenModal={() => setIsCobrancaModalOpen(true)}
         onCloseModal={() => setIsCobrancaModalOpen(false)}
       />
+
+      {modalDuplicar}
 
       <CancelPropostaModal
         isOpen={isCancelPropostaModalOpen}

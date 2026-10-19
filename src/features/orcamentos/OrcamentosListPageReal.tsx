@@ -30,6 +30,7 @@ import { podeVerMarcarComoEntregue } from "@/features/orcamentos/lib/marcar-entr
 import { marcarPedidoComoEntreguePeloServidor } from "@/features/orcamentos/services/marcar-entregue.service";
 import { MarcarEntregueModal } from "@/features/orcamentos/components/MarcarEntregueModal";
 import { EnviarFilaFaturamentoModal } from "@/features/orcamentos/components/EnviarFilaFaturamentoModal";
+import { useDuplicarProposta } from "@/features/orcamentos/hooks/useDuplicarProposta";
 import { estaNaFilaSemProducao, podeVerEnviarParaFila } from "@/features/orcamentos/lib/enviar-fila-faturamento";
 import { enviarPedidoParaFilaPeloServidor } from "@/features/orcamentos/services/enviar-fila-faturamento.service";
 import { RetirarProducaoModal } from "@/features/orcamentos/components/RetirarProducaoModal";
@@ -56,7 +57,6 @@ import {
 } from "@/features/orcamentos/services/status-arte-lista.service";
 import {
   gerarPDFProposta,
-  duplicarProposta,
   STATUS_ACEITAM_PEDIDO_COMPLEMENTAR,
   getPropostaChatResumos,
   loadChatReadInfo,
@@ -504,6 +504,8 @@ function getStatusTone(status: string) {
 export function OrcamentosListPageReal() {
   const router = useRouter();
   const { showToast } = useAppToast();
+  // "Duplicar proposta": modal Duplicacao ou Retrabalho (19/10/2026), ponto unico.
+  const { pedirDuplicacao, duplicando, modalDuplicar } = useDuplicarProposta();
   const { user } = useAuth();
 
   const canCancelarProposta = Boolean(
@@ -1466,42 +1468,9 @@ export function OrcamentosListPageReal() {
     }
   }
 
-  async function handleDuplicarPropostaForListItem(item: OrcamentoListItem) {
-    const ok = window.confirm(`Deseja realmente duplicar a proposta #${item.id_int}?`);
-    if (!ok) return;
-
-    showToast({
-      type: "info",
-      title: "Duplicando proposta",
-      description: "Aguarde enquanto a proposta é duplicada..."
-    });
-
-    try {
-      const res = await duplicarProposta(item.id_int);
-      if (res.success && res.novoIdInt) {
-        showToast({
-          type: "success",
-          title: "Proposta duplicada",
-          description: "Proposta duplicada com sucesso. Redirecionando..."
-        });
-        window.setTimeout(() => {
-          router.push(`/orcamentos/${res.novoIdInt}/editar`);
-        }, 1200);
-      } else {
-        showToast({
-          type: "error",
-          title: "Erro ao duplicar",
-          description: res.errorMessage || "Não foi possível duplicar a proposta."
-        });
-      }
-    } catch (err) {
-      console.error("[Duplicação] Erro:", err);
-      showToast({
-        type: "error",
-        title: "Erro inesperado",
-        description: "Ocorreu um erro ao tentar duplicar."
-      });
-    }
+  function handleDuplicarPropostaForListItem(item: OrcamentoListItem) {
+    if (duplicando) return;
+    pedirDuplicacao(item.id_int);
   }
 
   /**
@@ -1928,7 +1897,7 @@ Ela volta a aparecer nas listas operacionais.`
           router.push(`/orcamentos/${item.id_int}/editar?tab=${tab}`);
         }
       },
-      { label: "Duplicar proposta", onClick: () => void handleDuplicarPropostaForListItem(item) },
+      { label: "Duplicar proposta", onClick: () => handleDuplicarPropostaForListItem(item) },
       /**
        * PEDIDO COMPLEMENTAR (docs/business/PEDIDO-COMPLEMENTAR.md). O menu so
        * filtra o obvio: permissao, nao avulsa, nao e ela mesma complemento e
@@ -2922,6 +2891,8 @@ Ela volta a aparecer nas listas operacionais.`
           />
         </CobrancasSobDemanda>
       )}
+
+      {modalDuplicar}
 
       {pedidoParaEnviarAFila && (
         <EnviarFilaFaturamentoModal

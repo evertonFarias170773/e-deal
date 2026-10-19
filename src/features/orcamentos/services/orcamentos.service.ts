@@ -101,6 +101,7 @@ import {
 // Grupos "Aguardando financeiro" e "Pago / A liberar" da lista de Pedidos: a
 // MESMA regra que a Conferencia usa por cobranca, sem copia.
 import { getConferenciaStatusLabel } from "@/features/cobrancas/cobrancas-utils";
+import { mensagensDaCopia, type MotivoDaCopia } from "@/features/orcamentos/lib/motivo-copia";
 import {
   COLUNAS_NOTA_DO_PEDIDO,
   escolherNotaAutorizadaDoPedido,
@@ -4436,8 +4437,27 @@ export async function gerarPDFProposta(
   }
 }
 
+/**
+ * A proposta ja e copia? So para o modal "Duplicacao ou Retrabalho?" saber o que
+ * oferecer (copia so gera retrabalho). `null` quando a leitura falha: o modal
+ * mostra as duas e o banco decide.
+ */
+export async function lerSePropostaEhCopia(idInt: number): Promise<boolean | null> {
+  const client = getSupabaseClient();
+  if (!client || !idInt || idInt <= 0) return null;
+  const { data, error } = await client.from("propostas").select("is_copia").eq("id_int", idInt).maybeSingle();
+  if (error || !data) return null;
+  return (data as { is_copia: boolean | null }).is_copia === true;
+}
+
+/**
+ * Ponto UNICO do "Duplicar proposta" (lista, detalhe e edicao, via
+ * `useDuplicarProposta`). O motivo e obrigatorio desde 19/10/2026 e vai para
+ * `copiar_proposta_v2`, que o grava em `propostas.motivo_copia` (lib/motivo-copia.ts).
+ */
 export async function duplicarProposta(
-  idIntOrigem: number
+  idIntOrigem: number,
+  motivo: MotivoDaCopia
 ): Promise<{ success: boolean; novoIdInt?: number; errorMessage?: string }> {
   const client = getSupabaseClient();
   if (!client) {
@@ -4450,14 +4470,15 @@ export async function duplicarProposta(
 
   try {
     const { data, error } = await client.rpc("copiar_proposta_v2", {
-      p_id_int_origem: idIntOrigem
+      p_id_int_origem: idIntOrigem,
+      p_motivo: motivo
     });
 
     if (error) {
       console.error("[OrcamentosService] Erro ao duplicar proposta:", error);
       let msg = error.message || "Erro desconhecido ao duplicar proposta.";
       if (msg.includes("já é cópia") || msg.toLowerCase().includes("ja e copia")) {
-        msg = "Não é permitido duplicar uma proposta que já é cópia.";
+        msg = "Não é permitido duplicar uma proposta que já é cópia. Ela só pode gerar um retrabalho.";
       }
       return { success: false, errorMessage: msg };
     }
@@ -4500,15 +4521,16 @@ export async function duplicarProposta(
     }
 
     // Registrar mensagens nos chats de forma assíncrona (não-bloqueante)
+    const mensagens = mensagensDaCopia(motivo, idIntOrigem, novoIdInt);
     void registrarMensagemSistemaProposta({
       idInt: idIntOrigem,
-      mensagem: `Proposta duplicada. Nova proposta gerada: #${novoIdInt}.`,
+      mensagem: mensagens.naOrigem,
       setor: "Comercial"
     }).catch((err) => console.warn("[Duplicação Timeline Error Original]", err));
 
     void registrarMensagemSistemaProposta({
       idInt: novoIdInt,
-      mensagem: `Proposta duplicada a partir da proposta #${idIntOrigem}.`,
+      mensagem: mensagens.naNova,
       setor: "Comercial"
     }).catch((err) => console.warn("[Duplicação Timeline Error Nova]", err));
 

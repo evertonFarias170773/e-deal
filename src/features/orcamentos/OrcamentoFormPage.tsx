@@ -75,7 +75,7 @@ import { getCadastrosReadOnlyList, getCadastroCompleto } from "@/features/cadast
 import { listProdutos } from "@/features/produtos/services/produtos.service";
 import { listProdutoVariacaoVinculos } from "@/features/produtos/services/produto-variacoes.service";
 import { idEmpresaDoPdf } from "@/features/orcamentos/lib/empresa-pdf";
-import { saveProposta, listVendedoresReais, insertEnderecoProposta, salvarEnderecoDeEntregaDaProposta, contarOutrosPedidosNoEndereco, updatePropostaFiscalDados, registrarMensagemSistemaProposta, gerarPDFProposta, duplicarProposta, retirarPropostaDaProducao, type UsuarioVendedor } from "@/features/orcamentos/services/orcamentos.service";
+import { saveProposta, listVendedoresReais, insertEnderecoProposta, salvarEnderecoDeEntregaDaProposta, contarOutrosPedidosNoEndereco, updatePropostaFiscalDados, registrarMensagemSistemaProposta, gerarPDFProposta, retirarPropostaDaProducao, type UsuarioVendedor } from "@/features/orcamentos/services/orcamentos.service";
 import { ActionsMenu } from "@/components/common/ActionsMenu";
 import { classificarTransporte } from "@/features/orcamentos/lib/transporte-categoria";
 import { useGlobalChat } from "@/features/chat/context/GlobalChatContext";
@@ -105,6 +105,7 @@ import {
   valorFreteEfetivo
 } from "@/features/orcamentos/lib/modalidade-frete";
 import { contarModelosCopiados, copiaLevouCabecalho, montarAvisoDaCopia } from "@/features/orcamentos/lib/aviso-copia";
+import { useDuplicarProposta } from "@/features/orcamentos/hooks/useDuplicarProposta";
 import { box10Expandido, boxEstaNaLateral } from "@/features/orcamentos/lib/boxes-da-lateral";
 import { RetirarProducaoModal } from "@/features/orcamentos/components/RetirarProducaoModal";
 import { EnviarFilaFaturamentoModal } from "@/features/orcamentos/components/EnviarFilaFaturamentoModal";
@@ -392,6 +393,8 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
   const router = useRouter();
   const searchParams = useSearchParams();
   const { showToast } = useAppToast();
+  // "Duplicar proposta": modal Duplicacao ou Retrabalho (19/10/2026), ponto unico.
+  const { pedirDuplicacao, duplicando, modalDuplicar } = useDuplicarProposta();
   const { user } = useAuth();
   const { getCobrancasByProposta } = useCobrancas();
 
@@ -4297,22 +4300,9 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
   const { openChat: abrirChatProposta } = useGlobalChat();
   const [acaoEmCurso, setAcaoEmCurso] = useState<string | null>(null);
 
-  async function handleDuplicarDaProposta() {
-    if (!proposta || acaoEmCurso) return;
-    if (!window.confirm(`Deseja realmente duplicar a proposta #${proposta.id_int}?`)) return;
-    setAcaoEmCurso("duplicar");
-    showToast({ type: "info", title: "Duplicando proposta", description: "Aguarde..." });
-    try {
-      const res = await duplicarProposta(proposta.id_int);
-      if (res.success && res.novoIdInt) {
-        showToast({ type: "success", title: "Proposta duplicada", description: "Redirecionando..." });
-        window.setTimeout(() => router.push(`/orcamentos/${res.novoIdInt}/editar`), 1200);
-      } else {
-        showToast({ type: "error", title: "Erro ao duplicar", description: res.errorMessage || "Nao foi possivel duplicar." });
-      }
-    } finally {
-      setAcaoEmCurso(null);
-    }
+  function handleDuplicarDaProposta() {
+    if (!proposta || acaoEmCurso || duplicando) return;
+    pedirDuplicacao(proposta.id_int);
   }
 
   /** "Gerar PDF da proposta" (orcamento) e "Gerar OC": mesma funcao, modelo de cada um. */
@@ -4434,7 +4424,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
       },
       { label: "Editar proposta", onClick: () => router.push(`/orcamentos/${idInt}/editar`) },
       {
-        label: acaoEmCurso === "duplicar" ? "Duplicando..." : "Duplicar proposta",
+        label: duplicando ? "Duplicando..." : "Duplicar proposta",
         onClick: () => void handleDuplicarDaProposta()
       },
       { label: "Copiar proposta informal", onClick: () => void copyInformal() },
@@ -7803,6 +7793,8 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
           </div>
         </div>
       )}
+
+      {modalDuplicar}
 
       {enviarFilaModalAberto && proposta ? (
         <EnviarFilaFaturamentoModal

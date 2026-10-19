@@ -57,7 +57,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Ver proposta** | Menu da linha | Abre a proposta para leitura. |
 | **Ver chat interno** (ou **Ver chat interno (N não lidas)**) | Menu da linha | Abre o chat interno do pedido. |
 | **Editar proposta** | Menu da linha | Abre a proposta em edição. |
-| **Duplicar proposta** | Menu da linha | Cria uma cópia da proposta, com os dados da original, e abre a cópia em edição. |
+| **Duplicar proposta** | Menu da linha | Pergunta se é **Duplicação** ou **Retrabalho**, cria a cópia com os dados da original e abre a cópia em edição. |
 | **Criar Complemento** | Menu da linha e botão da janela de confirmação | Cria um pedido novo do mesmo evento, vinculado a este. |
 | **Copiar proposta informal** | Menu da linha | Copia o resumo do pedido para colar no WhatsApp. |
 | **Link pgto. externo** | Menu da linha | Copia o link de pagamento da área do cliente. |
@@ -168,7 +168,7 @@ As datas pequenas aparecem como dia/mês e hora, no horário de Brasília.
 1. **Ver proposta**: abre a proposta só para leitura.
 2. **Ver chat interno**: abre o chat do pedido. Mostra quantas mensagens não lidas há.
 3. **Editar proposta**: abre a proposta em edição.
-4. **Duplicar proposta**: pede confirmação, cria uma cópia e abre a cópia em edição. A cópia traz da original os produtos, os modelos (com a mesma numeração e a arte pendente), o faturado, o endereço, o contato, as observações e a modalidade de frete; a cotação, a cobrança e a arte não vêm. O passo a passo está na página da Proposta.
+4. **Duplicar proposta**: abre a janela **Duplicação ou Retrabalho?**. Escolha o motivo (não pode ser trocado depois; **Cancelar** não cria nada); a cópia é criada e abre em edição. Em pedido que já é cópia, só aparece **Retrabalho**. A cópia traz da original os produtos, os modelos (com a mesma numeração e a arte pendente), o faturado, o endereço, o contato, as observações e a modalidade de frete; a cotação, a cobrança e a arte não vêm. O passo a passo está na página da Proposta.
 5. **Criar Complemento**: abre a confirmação para criar um pedido novo do mesmo evento. Aparece só em proposta que não é avulsa, não é ela mesma um complemento e está entre LIBERADO e EXPEDICAO.
 6. **Copiar proposta informal**: copia o resumo do pedido, pronto para colar no WhatsApp.
 7. **Link pgto. externo**: copia o link da área do cliente para pagamento.
@@ -275,7 +275,7 @@ As datas pequenas aparecem como dia/mês e hora, no horário de Brasília.
 | "Erro de Validação: A quantidade vendida não bate com a soma dos lotes. Acerte os lotes antes de liberar para produção:" seguido dos produtos | A quantidade vendida de algum produto não bate com a soma dos lotes. | Acerte os lotes na aba Pedido da proposta e libere de novo. |
 | "Erro de Validação: Status precisa ser REVISAO ATENDENTE." | O status do pedido mudou depois que a lista foi carregada. | Atualize a tela e confira o status do pedido. |
 | "Você só pode duplicar proposta em que é o vendedor. Peça a um administrador ou a quem tem visão geral das propostas." | Tentativa de duplicar proposta de outro vendedor com perfil que vê só as próprias. | Peça a cópia ao vendedor da proposta, a um administrador ou a quem vê todas as propostas. |
-| "Não é permitido duplicar uma proposta que já é cópia." | A proposta nasceu de um **Duplicar proposta**. | Duplique a proposta original. |
+| "Não é permitido duplicar uma proposta que já é cópia. Ela só pode gerar um retrabalho." | A proposta nasceu de um **Duplicar proposta** e foi pedida uma duplicação comum. | Duplique a proposta original ou escolha **Retrabalho**. |
 | "Motivo obrigatório" | Tentativa de cancelar a proposta sem motivo. | Preencha o **Motivo do Cancelamento**. |
 | "Esta proposta tem pedido complementar aberto" | A proposta tem um complemento que ainda não foi cancelado. | Cancele ou desvincule o complemento antes de cancelar a proposta. |
 | "Não foi possível cancelar a proposta" | Há cobrança paga ou título liquidado, ou falta permissão. O motivo vem na mensagem. | Resolva o que a mensagem aponta, ou procure quem tem permissão para cancelar. |

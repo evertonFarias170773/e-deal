@@ -1,6 +1,6 @@
 # Proposta: visão geral e abas
 
-> **Última revisão:** 16/10/2026
+> **Última revisão:** 19/10/2026
 > **Caminho no menu:** Pedidos → **+ Nova proposta** (proposta nova) ou Pedidos → abrir um pedido → **Editar proposta**
 > **Endereço:** `/orcamentos/novo` e `/orcamentos/<número>/editar`
 
@@ -34,7 +34,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Ver proposta** | Menu **Acoes** | Abre o detalhe da proposta, só para leitura. |
 | **Ver chat interno** | Menu **Acoes** | Abre o chat interno do pedido na lateral. |
 | **Editar proposta** | Menu **Acoes** | Abre a edição da proposta (esta tela). |
-| **Duplicar proposta** | Menu **Acoes** | Cria uma cópia da proposta, com os dados da original, e abre a cópia em edição. |
+| **Duplicar proposta** | Menu **Acoes** | Pergunta se é **Duplicação** ou **Retrabalho**, cria a cópia com os dados da original e abre a cópia em edição. |
 | **Entendi** | Aviso azul **Cópia da proposta #<número>** | Fecha o aviso da cópia neste navegador. |
 | **Copiar proposta informal** | Menu **Acoes** | Copia o texto informal da proposta para colar no WhatsApp. |
 | **Link pgto. externo** | Menu **Acoes** | Copia o link da área do cliente daquele pedido. |
@@ -281,7 +281,7 @@ O complemento herda do pedido original o cliente, o endereço, o contato, o paga
 
 ### Duplicar a proposta
 
-1. No menu **Acoes**, clique em **Duplicar proposta** e confirme. A cópia abre em edição, com número novo e status NOVO.
+1. No menu **Acoes**, clique em **Duplicar proposta**. Abre a janela **Duplicação ou Retrabalho?**: escolha **Duplicação** (venda nova comum) ou **Retrabalho** (refazer o pedido). A escolha não pode ser trocada depois. **Cancelar** não cria nada. A cópia abre em edição, com número novo e status NOVO.
 2. Leia o aviso azul **Cópia da proposta #<número>**, no topo. Ele diz o que veio da original e o que falta conferir.
 3. Confira o faturado, o endereço de entrega, o contato e as observações. Eles vêm da original.
 4. Na aba Fretes, a modalidade (CIF, FOB ou Retira) e a transportadora do FOB vêm da original. A cotação não vem: em CIF, escolha o frete de novo.
@@ -290,6 +290,13 @@ O complemento herda do pedido original o cliente, o endereço, o contato, o paga
 7. Clique em **Salvar alterações**. A cobrança da original não vem: gere a da cópia na aba Pagamentos.
 
 O aviso some quando você clica em **Entendi** ou quando a cópia ganha cobrança.
+
+**Retrabalho:**
+
+- Leva os mesmos valores da original, como a duplicação.
+- Nasce com a linha **Retrabalho do pedido #<número>** no início da **Orientação técnica**, que sai no boletim. O que a original tinha nesse campo continua abaixo.
+- A cobrança é a **E-RETRABALHO**, e o pedido fica fora do faturamento.
+- Pedido que já é cópia (duplicação ou retrabalho) só pode gerar retrabalho: a janela mostra só **Retrabalho**. O novo pedido aponta para o pedido de onde você clicou, não para o primeiro da cadeia.
 
 ### Outras ações do menu
 
@@ -363,7 +370,7 @@ O aviso some quando você clica em **Entendi** ou quando a cópia ganha cobranç
 | **Modelos incompletos** — "Antes de acessar Artes, complete os modelos do Pedido." | Falta dado em algum modelo. | Complete os campos listados na aba Pedido. |
 | **Sessão expirada** | O login venceu durante a edição. | Entre de novo e repita a operação. |
 | **Erro ao duplicar** — "Você só pode duplicar proposta em que é o vendedor. Peça a um administrador ou a quem tem visão geral das propostas." | A proposta é de outro vendedor e o seu perfil vê só as próprias. | Peça a cópia ao vendedor da proposta, a um administrador ou a quem vê todas as propostas. |
-| **Erro ao duplicar** — "Não é permitido duplicar uma proposta que já é cópia." | A proposta nasceu de um **Duplicar proposta**. | Abra a proposta original e duplique a partir dela. |
+| **Erro na duplicação** — "Não é permitido duplicar uma proposta que já é cópia. Ela só pode gerar um retrabalho." | A proposta nasceu de um **Duplicar proposta** e foi pedida uma duplicação comum. | Para venda nova, abra a proposta original e duplique a partir dela. Para refazer o pedido, escolha **Retrabalho**. |
 | **Não foi possível gerar o link.** | O link de pagamento não foi criado. | Tente de novo. Se continuar, avise o administrador. |
 | **Geracao de PDF bloqueada** | A proposta é de cliente não cadastrado. Vale também para **Gerar OC**. | Vincule um cliente cadastrado antes de gerar o PDF ou a OC. |
 | **Erro ao gerar PDF** / **Falha na geração** ao gerar a OC | A empresa da proposta não tem modelo de OC cadastrado. Hoje só Ideal Gráfica, Ideal Birô e E3 Brindes têm. | Peça ao administrador para cadastrar o modelo da empresa. |
