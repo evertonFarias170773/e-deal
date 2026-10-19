@@ -1,6 +1,6 @@
 # Conferência
 
-> **Última revisão:** 14/10/2026
+> **Última revisão:** 19/10/2026
 > **Caminho no menu:** Conferência (primeiro item do menu lateral; é um link direto, sem subitens)
 > **Endereço:** `/cobrancas` (o detalhe de uma cobrança abre em `/cobrancas/<cobrança>`)
 
@@ -35,7 +35,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Fila de Conferência** | Aba, acima da lista | Mostra o que está esperando a conferência do financeiro. |
 | **Cobranças Confirmadas** | Aba, acima da lista | Mostra o que já foi conferido, com a data e o nome de quem confirmou. |
 | Campo **Buscar por número, cliente, ID, documento ou empresa** | Barra de filtros | Filtra a lista pelo texto; com três ou mais caracteres, procura em todo o período. |
-| Filtro de tipo (**Pendentes aprovação**, **Confirmados do dia**, **PIX**, **Boleto**, **Faturado**, **Cartão**, **Cancelados**, **E-Crédito**, **Todos os tipos**) | Barra de filtros | Filtra por situação ou por tipo de pagamento. |
+| Filtro de tipo (**Pendentes aprovação**, **Confirmados do dia**, **PIX**, **Boleto**, **Faturado**, **Cartão**, **Cancelados**, **E-Crédito**, **Retrabalhos**, **Todos os tipos**) | Barra de filtros | Filtra por situação ou por tipo de pagamento. |
 | **Todas empresas** | Barra de filtros | Filtra pela empresa recebedora. |
 | **Todos os vendedores** | Barra de filtros | Filtra pelo vendedor. |
 | **Período:** (duas datas) | Barra de filtros, só na aba **Cobranças Confirmadas** | Filtra pela data da confirmação. Começa no mês atual. |
@@ -206,6 +206,7 @@ Lista, filtros e cards:
 
 - As linhas de faturamento (E-Faturado, E-Permuta, E-Amostra e E-Retrabalho) ficam com fundo amarelo claro, nas duas abas e em qualquer empresa. O destaque é só visual: não muda filtros nem ações.
 - Escolher um tipo de pagamento no filtro (PIX, Boleto, Faturado, Cartão, E-Crédito) leva para a aba **Cobranças Confirmadas**: esses filtros mostram só o que já foi conferido.
+- **Retrabalhos** lista as cobranças E-Retrabalho confirmadas (pagas ou a vencer, não canceladas), combinando com busca, empresa, vendedor e período. Retrabalho é cortesia e fica fora do faturamento: por isso os cards de totais do topo não mudam quando você escolhe este tipo, e o valor dessas cobranças não entra neles.
 - O período só vale na aba **Cobranças Confirmadas** e filtra pela data da confirmação.
 - Com três ou mais caracteres na busca, o período deixa de valer para a lista, e a tela avisa: "Buscando ... em todo o período. Os cards acima continuam somando apenas o período selecionado. Limpe a busca para voltar a filtrar por data."
 - Os cards do topo não mudam quando você digita na busca.

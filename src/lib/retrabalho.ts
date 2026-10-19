@@ -47,3 +47,14 @@ export function pedidoEhRetrabalho(cobrancas: readonly { tipo_cobranca?: string 
 export function retrabalhoPelosTiposVivos(tiposVivos: readonly (string | null | undefined)[] | null | undefined): boolean {
   return (tiposVivos ?? []).some((t) => normalizar(t) === FORMA_RETRABALHO);
 }
+
+/**
+ * Cobranca de retrabalho para a LISTA da aba Cobrancas Confirmadas, tipo "Retrabalhos"
+ * (19/10/2026): viva, confirmada, PAID ou A_VENCER. Base propria da lista: nao passa
+ * pelo corte de faturamento (`contaNoFaturamento`), que continua valendo para os totais.
+ */
+export function retrabalhoConfirmadoParaLista(cobranca: { tipo_cobranca?: string | null; status?: string | null; confirmado?: boolean | null } | null | undefined): boolean {
+  if (!cobranca || !cobrancaEhRetrabalho(cobranca)) return false;
+  const status = normalizar(cobranca.status);
+  return (status === "PAID" || status === "A_VENCER") && cobranca.confirmado === true;
+}

@@ -11,7 +11,8 @@ import {
   ROTULO_RETRABALHO,
   cobrancaEhRetrabalho,
   pedidoEhRetrabalho,
-  retrabalhoPelosTiposVivos
+  retrabalhoPelosTiposVivos,
+  retrabalhoConfirmadoParaLista
 } from "../../src/lib/retrabalho.ts";
 import { mapSupabasePropostaRowsToListItems } from "../../src/features/orcamentos/mappers.ts";
 import type { SupabasePropostaRow } from "../../src/features/orcamentos/types.supabase.ts";
@@ -159,6 +160,26 @@ checar("tela: opcao no enum e no dropdown, e os dois filtros do cliente usam isR
   checar("pdf: a leitura do retrabalho entra no lote paralelo do view model, tolerante a falha", [vmSrc.indexOf('.from("pagamentos_v2")') > iAll, vmSrc.includes('.ilike("tipo_cobranca", FORMA_RETRABALHO)'), vmSrc.includes("retrabalho: pedidoEhRetrabalho(")], [true, true, true]);
   checar("pdf: RETRABALHO no cabecalho, na cor da constante (sem literal), so com o campo ligado", [pdf.includes('{vm.retrabalho ? <Text style={styles.retrabalhoTopo}>RETRABALHO</Text> : null}'), pdf.includes("color: COR_RETRABALHO_CLARO,"), /retrabalhoTopo:[\s\S]{0,200}#[0-9a-fA-F]{6}/.test(pdf)], [true, true, false]);
   checar("pdf: os tres modelos usam o mesmo cabecalho (boletim, maco pela pagina do boletim, resumo)", [pdf.includes("<OsPdfCabecalho vm={vm}"), maco.includes("OsPdfPaginaBoletim"), resumo.includes("<OsPdfCabecalho vm={vm}")], [true, true, true]);
+}
+
+// ── 9. Conferencia, aba Cobrancas Confirmadas, tipo Retrabalhos (19/10/2026) ──
+{
+  const r = (status: string | null, confirmado: boolean | null, tipo = "E-RETRABALHO") => ({ tipo_cobranca: tipo, status, confirmado });
+  checar("lista Retrabalhos: confirmada PAID ou A_VENCER entra", [retrabalhoConfirmadoParaLista(r("PAID", true)), retrabalhoConfirmadoParaLista(r("A_VENCER", true))], [true, true]);
+  checar("lista Retrabalhos: nao confirmada, cancelada, A_RECEBER ou outro tipo fica fora", [
+    retrabalhoConfirmadoParaLista(r("PAID", false)),
+    retrabalhoConfirmadoParaLista(r("CANCELADO", true)),
+    retrabalhoConfirmadoParaLista(r("A_RECEBER", true)),
+    retrabalhoConfirmadoParaLista(r("PAID", true, "E-AMOSTRA")),
+    retrabalhoConfirmadoParaLista(r("PAID", true, "E-PERMUTA")),
+    retrabalhoConfirmadoParaLista(null)
+  ], [false, false, false, false, false, false]);
+  const lista = readFileSync("src/features/cobrancas/CobrancasList.tsx", "utf8").replace(/\r\n/g, "\n");
+  checar("conferencia: opcao Retrabalhos logo depois de E-Credito", lista.includes('{ value: "E-CREDITO", label: "E-Crédito" },\n  { value: "RETRABALHO", label: "Retrabalhos" },'), true);
+  checar("conferencia: com Retrabalhos a LISTA usa a base propria", lista.includes('tipo === "RETRABALHO"\n                // Base propria (ver `isBaseRetrabalhoConfirmada`): os totais nao mudam.\n                ? filteredBase.filter(isBaseRetrabalhoConfirmada)'), true);
+  checar("conferencia: os cards seguem em isBaseConfirmada (3 usos nos totais), que segue com contaNoFaturamento", [(lista.match(/if \(!isBaseConfirmada\(c\)\) return false;/g) ?? []).length, lista.includes("contaNoFaturamento(cobranca.tipo_cobranca)")], [3, true]);
+  const servico = readFileSync("src/features/cobrancas/services/pagamentos-v2.service.ts", "utf8");
+  checar("conferencia: a consulta do servidor nao corta por Retrabalhos (os cards leem o mesmo que Todos)", /filters\.tipo === "RETRABALHO"/.test(servico), false);
 }
 
 if (falhas > 0) {

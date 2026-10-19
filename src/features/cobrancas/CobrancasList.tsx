@@ -1,5 +1,6 @@
 "use client";
 
+import { cobrancaEhRetrabalho, retrabalhoConfirmadoParaLista } from "@/lib/retrabalho";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CalendarDays, Search } from "lucide-react";
@@ -50,7 +51,8 @@ const TIPOS_FILTRO = [
   "FATURADO",
   "CARTAO",
   "CANCELADO",
-  "E-CREDITO"
+  "E-CREDITO",
+  "RETRABALHO"
 ] as const;
 const ABAS_CONFERENCIA = ["FILA", "CONFIRMADOS"] as const;
 
@@ -67,6 +69,7 @@ const tipoFiltroOptions: Array<{ value: TipoFiltro; label: string }> = [
   { value: "CARTAO", label: "Cartão" },
   { value: "CANCELADO", label: "Cancelados" },
   { value: "E-CREDITO", label: "E-Crédito" },
+  { value: "RETRABALHO", label: "Retrabalhos" },
   { value: "TODOS", label: "Todos os tipos" }
 ];
 
@@ -97,6 +100,17 @@ function isBaseConfirmada(cobranca: Cobranca) {
     cobranca.confirmado === true &&
     contaNoFaturamento(cobranca.tipo_cobranca)
   );
+}
+
+/**
+ * Base PROPRIA da lista quando o tipo e "Retrabalhos" (19/10/2026): cobranca
+ * E-RETRABALHO viva (`cobrancaEhRetrabalho`, `lib/retrabalho`), confirmada, PAID
+ * ou A_VENCER. NAO passa por `isBaseConfirmada`, de proposito: aquela tira o
+ * retrabalho porque e a base dos TOTAIS (cortesia nao e receita, 61a7b0f) — e os
+ * totais continuam sem ele. So a LISTA da aba usa esta base, e so neste tipo.
+ */
+function isBaseRetrabalhoConfirmada(cobranca: Cobranca) {
+  return retrabalhoConfirmadoParaLista(cobranca);
 }
 
 function isConfirmadoDia(cobranca: Cobranca) {
@@ -161,6 +175,10 @@ if (tipo === "TODOS") {
 
   if (tipo === "E-CREDITO") {
     return cobranca.tipo_cobranca === "E-CREDITO";
+  }
+
+  if (tipo === "RETRABALHO") {
+    return cobrancaEhRetrabalho(cobranca);
   }
 
   if (tipo === "CARTAO") {
@@ -488,6 +506,9 @@ export function CobrancasList() {
           ? filteredBase.filter(isConfirmadoDia)
             : tipo === "CANCELADO"
               ? filteredBase.filter((c) => c.status === "CANCELADO")
+              : tipo === "RETRABALHO"
+                // Base propria (ver `isBaseRetrabalhoConfirmada`): os totais nao mudam.
+                ? filteredBase.filter(isBaseRetrabalhoConfirmada)
               : statusFilter === "CONFIRMADOS"
                 ? filteredBase.filter(isBaseConfirmada)
                 : tipo === "TODOS"
