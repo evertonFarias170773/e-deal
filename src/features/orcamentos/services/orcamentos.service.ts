@@ -8,6 +8,7 @@ import {
   type TransporteCategoria
 } from "@/features/orcamentos/lib/transporte-categoria";
 import { calculateResumo, calculateItemSubtotal, itensComOBonusDoSalvar } from "@/features/orcamentos/orcamento-utils";
+import { FORMA_RETRABALHO, cobrancaEhRetrabalho } from "@/lib/retrabalho";
 import {
   TIPO_DESCONTO_TABELA_ESPECIAL,
   bonusDaEdicao,
@@ -916,7 +917,16 @@ async function fetchPropostaRows(
     }
 
     let idsTipoCobranca: number[] | null = null;
-    if (filters?.filterTipoCobranca && filters.filterTipoCobranca !== "TODOS") {
+    if (filters?.filterTipoCobranca === FORMA_RETRABALHO) {
+      // E-RETRABALHO (19/10/2026): so cobranca VIVA (`cobrancaEhRetrabalho`, a mesma regra
+      // do destaque). O ilike solto das outras opcoes acharia tambem a cancelada.
+      const { data: retrabalhos } = await client
+        .from("pagamentos_v2")
+        .select("id_int, tipo_cobranca, status")
+        .ilike("tipo_cobranca", FORMA_RETRABALHO);
+      const vivos = Array.from(new Set((retrabalhos || []).filter(cobrancaEhRetrabalho).map((p) => p.id_int).filter(Boolean)));
+      idsTipoCobranca = vivos.length > 0 ? vivos : [-1];
+    } else if (filters?.filterTipoCobranca && filters.filterTipoCobranca !== "TODOS") {
       const searchTipo = filters.filterTipoCobranca === "CARTAO" ? "CARD" : filters.filterTipoCobranca;
       const { data: paymentRows } = await client
         .from("pagamentos_v2")
@@ -1027,7 +1037,7 @@ async function fetchPropostaRows(
       // visibilidade acima). Vale com ou sem card ligado, para a lista do card e
       // as bases dos cards seguirem a lista. Com texto na busca nao recorta. A
       // regra e a de `status-ativos.ts`, a mesma que a tela confere.
-      if (ativosValem({ status: filters?.status, temBusca: Boolean(condicaoBusca) })) {
+      if (ativosValem({ status: filters?.status, temBusca: Boolean(condicaoBusca), filtroCobranca: filters?.filterTipoCobranca })) {
         const ativos = condicoesDosAtivosParaOServidor({ modelo: filters?.modelo });
         query = query.or(ativos.status);
         if (ativos.modelo) query = query.or(ativos.modelo);
@@ -1066,7 +1076,7 @@ async function fetchPropostaRows(
         } else {
           query = query.eq("status_interno", filters.status);
         }
-      } else if (visibilidadeEncerrados !== "SOMENTE") {
+      } else if (visibilidadeEncerrados !== "SOMENTE" && filters?.filterTipoCobranca !== FORMA_RETRABALHO) {
         query = query.neq("status_interno", "CANCELADO");
         // ENTREGUE fora da lista padrao (25/09/2026): o pedido ja saiu do fluxo.
         // Volta com o filtro de status ENTREGUE (ramo acima) ou com texto na
@@ -1074,6 +1084,9 @@ async function fetchPropostaRows(
         // nao. Vale para os tres grupos da ordenacao, que usam esta consulta.
         if (!condicaoBusca) query = query.neq("status_interno", "ENTREGUE");
       }
+      // Filtro Cobranca = E-RETRABALHO (19/10/2026): a lista padrao NAO corta ENTREGUE
+      // nem CANCELADO — quem procura retrabalho quer achar o pedido em qualquer fase
+      // (o recorte por id ja deixou so os de retrabalho vivo). Mesma excecao do "Ativos".
       // Em "SOMENTE", CANCELADO nao e excluido: quem abre a lista de encerrados
       // quer a lista COMPLETA deles, inclusive os cancelados — senao um marcado
       // por engano ficaria fora do unico atalho que o encontra.

@@ -59,8 +59,18 @@ export function statusEhEspecifico(status: string | null | undefined): boolean {
   return Boolean(status) && status !== STATUS_TODOS && status !== STATUS_ATIVOS;
 }
 
-/** "Ativos" só recorta sem texto na busca. */
-export function ativosValem(filtros: { status: string | null | undefined; temBusca: boolean }): boolean {
+/** Valor do filtro Cobrança que desliga o "Ativos" (19/10/2026). */
+export const FILTRO_COBRANCA_RETRABALHO = "E-RETRABALHO";
+
+/**
+ * "Ativos" só recorta sem texto na busca — e não com o filtro Cobrança em
+ * E-RETRABALHO (19/10/2026): quem procura retrabalho quer achar também o pedido
+ * ENTREGUE, EM TRANSITO ou CANCELADO que tem retrabalho vivo. As outras escolhas
+ * (modelo, vendedor, produto, período) continuam valendo; as outras opções do
+ * filtro Cobrança não mudam nada aqui.
+ */
+export function ativosValem(filtros: { status: string | null | undefined; temBusca: boolean; filtroCobranca?: string | null }): boolean {
+  if (String(filtros.filtroCobranca ?? "").trim().toUpperCase() === FILTRO_COBRANCA_RETRABALHO) return false;
   return statusEhAtivos(filtros.status) && !filtros.temBusca;
 }
 
@@ -89,7 +99,7 @@ export type PedidoParaAtivos = {
  */
 export function passaAtivos(
   pedido: PedidoParaAtivos,
-  filtros: { status: string | null | undefined; modelo: string | null | undefined; temBusca: boolean }
+  filtros: { status: string | null | undefined; modelo: string | null | undefined; temBusca: boolean; filtroCobranca?: string | null }
 ): boolean {
   if (!ativosValem(filtros)) return true;
   if (statusSaiDosAtivos(pedido.statusInterno)) return false;

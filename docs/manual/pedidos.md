@@ -1,6 +1,6 @@
 # Pedidos (lista)
 
-> **Última revisão:** 17/10/2026
+> **Última revisão:** 19/10/2026
 > **Caminho no menu:** Pedidos (item direto do menu lateral, sem submenu; é o segundo, logo abaixo de Conferência)
 > **Endereço:** `/orcamentos`
 
@@ -144,7 +144,7 @@ Com o card **Em arte** ligado, a ordem passa a ser primeiro pelo Status Arte, e 
 7. Em Arte.
 8. Os demais.
 
-Pedido de **retrabalho** (com cobrança E-Retrabalho que não foi cancelada) aparece com contorno vermelho, o número do pedido em vermelho e o selo **Retrabalho** logo abaixo do número, na tabela e no cartão do celular, nos temas claro e escuro. E-Amostra e E-Permuta não ganham esse destaque.
+Pedido de **retrabalho** (com cobrança E-Retrabalho que não foi cancelada) aparece com contorno vermelho, o número do pedido em vermelho e o selo **Retrabalho** logo abaixo do número, na tabela e no cartão do celular, nos temas claro e escuro. E-Amostra e E-Permuta não ganham esse destaque. No filtro **Cobrança**, a opção **E-RETRABALHO** lista os pedidos com retrabalho não cancelado em qualquer fase, inclusive Entregue, Em trânsito e Cancelado: com ela o status **Ativos** e o corte padrão de Entregue e Cancelado não escondem nada. As outras escolhas (modelo, vendedor, produto) continuam valendo; como toda opção do filtro Cobrança, ela procura em todos os períodos.
 
 No celular a lista vira cartões, e só a revisão atendente ganha fundo azul. O cartão mostra o status do pedido e, quando o pedido tem arte, o selo **Arte** com a situação dela, o mesmo da coluna Status Arte.
 

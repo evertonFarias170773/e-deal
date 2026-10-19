@@ -15,6 +15,7 @@ import {
 } from "../../src/lib/retrabalho.ts";
 import { mapSupabasePropostaRowsToListItems } from "../../src/features/orcamentos/mappers.ts";
 import type { SupabasePropostaRow } from "../../src/features/orcamentos/types.supabase.ts";
+import { ativosValem, passaAtivos, FILTRO_COBRANCA_RETRABALHO } from "../../src/features/orcamentos/lib/status-ativos.ts";
 
 let falhas = 0;
 function checar(nome: string, real: unknown, esperado: unknown) {
@@ -71,6 +72,51 @@ checar("tabela: contorno pelo token, numero e selo", [tela.includes("getRowOutli
 checar("cartao: contorno, numero e selo", [tela.includes("style={proposta.isRetrabalho ? { outline: `2px solid ${COR_RETRABALHO}`"), tela.includes("<SeloRetrabalho />")], [true, true]);
 checar("sem cor literal no destaque do retrabalho na tela", /retrabalho[^\n]{0,80}#[0-9a-fA-F]{3,6}/i.test(tela), false);
 checar("ResponsiveList: contorno so para quem passa getRowOutline", lista.includes("...(getRowOutline?.(item) ? { outline:"), true);
+
+// ── 5. Filtro Cobranca = E-RETRABALHO (19/10/2026) ──
+checar("ativosValem: sem o filtro, como antes (Ativos sem busca vale; com busca ou outro status, nao)", [
+  ativosValem({ status: "ATIVOS", temBusca: false }),
+  ativosValem({ status: "ATIVOS", temBusca: true }),
+  ativosValem({ status: "TODOS", temBusca: false }),
+  ativosValem({ status: "ATIVOS", temBusca: false, filtroCobranca: "PIX" }),
+  ativosValem({ status: "ATIVOS", temBusca: false, filtroCobranca: "E-FATURADO" }),
+  ativosValem({ status: "ATIVOS", temBusca: false, filtroCobranca: "TODOS" })
+], [true, false, false, true, true, true]);
+checar("ativosValem: com E-RETRABALHO o Ativos nao vale", [ativosValem({ status: "ATIVOS", temBusca: false, filtroCobranca: FILTRO_COBRANCA_RETRABALHO }), ativosValem({ status: "ATIVOS", temBusca: false, filtroCobranca: " e-retrabalho " })], [false, false]);
+const ped = (statusInterno: string, isAvulsoRaw = false) => ({ statusInterno, isAvulsoRaw });
+checar("passaAtivos: ENTREGUE, EM TRANSITO e CANCELADO saem do Ativos sem o filtro", ["ENTREGUE", "EM TRANSITO", "CANCELADO"].map((st) => passaAtivos(ped(st), { status: "ATIVOS", modelo: "TODOS_MODELOS", temBusca: false })), [false, false, false]);
+checar("passaAtivos: com E-RETRABALHO eles ficam", ["ENTREGUE", "EM TRANSITO", "CANCELADO", "EM PRODUCAO"].map((st) => passaAtivos(ped(st), { status: "ATIVOS", modelo: "TODOS_MODELOS", temBusca: false, filtroCobranca: "E-RETRABALHO" })), [true, true, true, true]);
+checar("passaAtivos: com PIX segue como antes (ENTREGUE sai)", passaAtivos(ped("ENTREGUE"), { status: "ATIVOS", modelo: "TODOS_MODELOS", temBusca: false, filtroCobranca: "PIX" }), false);
+{
+  // A selecao do servidor: as linhas de pagamentos_v2 com tipo E-RETRABALHO passam pela mesma regra.
+  const linhas = [
+    { id_int: 1, tipo_cobranca: "E-RETRABALHO", status: "PAID" },
+    { id_int: 2, tipo_cobranca: "E-RETRABALHO", status: "CANCELADO" },
+    { id_int: 3, tipo_cobranca: "e-retrabalho", status: null },
+    { id_int: 4, tipo_cobranca: "E-RETRABALHO", status: "EXTORNADO" },
+    { id_int: 5, tipo_cobranca: "E-RETRABALHO", status: "recusado" }
+  ];
+  checar("filtro do servidor: viva entra, cancelada/extornada/recusada fora", linhas.filter(cobrancaEhRetrabalho).map((l) => l.id_int), [1, 3]);
+}
+const servico = readFileSync("src/features/orcamentos/services/orcamentos.service.ts", "utf8");
+checar("servidor: E-RETRABALHO tem ramo proprio, sem ilike com coringa, e o Ativos recebe o filtro", [
+  servico.includes('if (filters?.filterTipoCobranca === FORMA_RETRABALHO) {'),
+  servico.includes('.ilike("tipo_cobranca", FORMA_RETRABALHO)'),
+  servico.includes(".filter(cobrancaEhRetrabalho)"),
+  servico.includes("filtroCobranca: filters?.filterTipoCobranca")
+], [true, true, true, true]);
+checar("servidor: a lista padrao (neq CANCELADO / neq ENTREGUE) nao corta com E-RETRABALHO, e segue cortando nas outras opcoes", [
+  servico.includes('} else if (visibilidadeEncerrados !== "SOMENTE" && filters?.filterTipoCobranca !== FORMA_RETRABALHO) {'),
+  servico.includes('if (!condicaoBusca) query = query.neq("status_interno", "ENTREGUE");')
+], [true, true]);
+checar("tela: o corte de CANCELADO do cliente tambem respeita o filtro", tela.includes('(filterTipoCobranca === "E-RETRABALHO" || item.status !== "CANCELADO")'), true);
+checar("servidor: as outras opcoes seguem com o mesmo ilike de antes", servico.includes('.ilike("tipo_cobranca", `%${searchTipo}%`)'), true);
+checar("tela: opcao no enum e no dropdown, e os dois filtros do cliente usam isRetrabalho", [
+  tela.includes('"E-FATURADO", "E-RETRABALHO", "CARTAO"'),
+  tela.includes('<option value="E-RETRABALHO">E-RETRABALHO</option>'),
+  (tela.match(/if \(filterTipoCobranca === "E-RETRABALHO"\)/g) ?? []).length,
+  (tela.match(/filtroCobranca: filterTipoCobranca/g) ?? []).length
+], [true, true, 2, 2]);
 
 if (falhas > 0) {
   console.log(`\n${falhas} falha(s).`);

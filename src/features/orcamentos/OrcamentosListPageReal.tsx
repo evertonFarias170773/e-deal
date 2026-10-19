@@ -211,7 +211,8 @@ function diaMesHora(iso: string | null | undefined): string {
   return FORMATO_DIA_MES_HORA.format(data).replace(",", "");
 }
 
-const TIPOS_COBRANCA = ["TODOS", "PIX", "BOLETO", "E-FATURADO", "CARTAO"] as const;
+// E-RETRABALHO (19/10/2026): so cobranca viva, e o "Ativos" nao esconde o pedido (lib/status-ativos).
+const TIPOS_COBRANCA = ["TODOS", "PIX", "BOLETO", "E-FATURADO", "E-RETRABALHO", "CARTAO"] as const;
 type TipoCobrancaFiltro = (typeof TIPOS_COBRANCA)[number];
 
 /**
@@ -457,7 +458,7 @@ function passaFiltrosDosCards(
   filtros: { modelo: string; vendedor: string; filterTipoCobranca: string; status: string; temBusca: boolean }
 ): boolean {
   const { modelo, vendedor, filterTipoCobranca } = filtros;
-  if (!passaAtivos(item, { status: filtros.status, modelo, temBusca: filtros.temBusca })) return false;
+  if (!passaAtivos(item, { status: filtros.status, modelo, temBusca: filtros.temBusca, filtroCobranca: filterTipoCobranca })) return false;
   // ENCERRADOS nao recorta por is_avulso: a consulta ja trouxe so encerrados,
   // e cair no `else` da ternaria (item.isAvulsoRaw !== true) sumiria com as
   // avulsas encerradas — tanto da lista quanto da contagem dos cards.
@@ -470,7 +471,10 @@ function passaFiltrosDosCards(
   const matchesVendedor = vendedor === "TODOS" || item.vendedor === vendedor;
   if (!matchesVendedor) return false;
 
-  if (filterTipoCobranca !== "TODOS") {
+  if (filterTipoCobranca === "E-RETRABALHO") {
+    // A mesma regra do destaque: so cobranca de retrabalho VIVA.
+    if (!item.isRetrabalho) return false;
+  } else if (filterTipoCobranca !== "TODOS") {
     const hasCartao = filterTipoCobranca === "CARTAO";
     const ok = item.tiposCobranca.some(t => {
       const upper = t.trim().toUpperCase();
@@ -930,8 +934,10 @@ export function OrcamentosListPageReal() {
       } else {
         // "Ativos" e "Todos status" nao escolhem um status; a exclusao dos Ativos
         // vem logo abaixo, e vale tambem com um card ligado.
+        // Com o filtro E-RETRABALHO o cancelado com retrabalho vivo fica (19/10/2026),
+        // como no servidor.
         matchesStatus = status === STATUS_TODOS || statusEhAtivos(status)
-          ? item.status !== "CANCELADO"
+          ? (filterTipoCobranca === "E-RETRABALHO" || item.status !== "CANCELADO")
           : (status === "EM ARTE" ? item.status?.includes("EM ARTE") : item.status === status);
       }
       if (!matchesStatus) continue;
@@ -939,7 +945,7 @@ export function OrcamentosListPageReal() {
       // Status "Ativos" (11/10/2026): sem ENTREGUE, EM TRANSITO e CANCELADO e, se
       // nenhum modelo foi escolhido, sem Avulso e Encerrados — a mesma regra que o
       // servidor aplica (`status-ativos.ts`).
-      if (!passaAtivos(item, { status, modelo, temBusca })) continue;
+      if (!passaAtivos(item, { status, modelo, temBusca, filtroCobranca: filterTipoCobranca })) continue;
 
       // ENCERRADOS nao recorta por is_avulso: a consulta ja trouxe so encerrados,
       // e cair no `else` da ternaria (item.isAvulsoRaw !== true) sumiria com as
@@ -972,7 +978,10 @@ export function OrcamentosListPageReal() {
         })();
       if (!matchesPeriodo) continue;
 
-      if (filterTipoCobranca !== "TODOS") {
+      if (filterTipoCobranca === "E-RETRABALHO") {
+        // A mesma regra do destaque: so cobranca de retrabalho VIVA.
+        if (!item.isRetrabalho) continue;
+      } else if (filterTipoCobranca !== "TODOS") {
         const hasCartao = filterTipoCobranca === "CARTAO";
         const ok = item.tiposCobranca.some(t => {
           const upper = t.trim().toUpperCase();
@@ -2252,6 +2261,7 @@ Ela volta a aparecer nas listas operacionais.`
               <option value="PIX">PIX</option>
               <option value="BOLETO">BOLETO</option>
               <option value="E-FATURADO">E-FATURADO</option>
+              <option value="E-RETRABALHO">E-RETRABALHO</option>
               <option value="CARTAO">CARTÃO</option>
             </select>
           </CampoFiltro>
