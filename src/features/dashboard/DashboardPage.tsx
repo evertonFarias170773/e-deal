@@ -24,6 +24,7 @@ import { RankingVendedoresSection } from "@/features/dashboard/sections/RankingV
 import { InfraSaudeSection } from "@/features/dashboard/sections/InfraSaudeSection";
 import { KpiCardsSection } from "@/features/dashboard/sections/KpiCardsSection";
 import { FinanceiroSection } from "@/features/dashboard/sections/FinanceiroSection";
+import { RetrabalhoSection } from "@/features/dashboard/sections/RetrabalhoSection";
 import { ComercialSection } from "@/features/dashboard/sections/ComercialSection";
 import { ProducaoSection } from "@/features/dashboard/sections/ProducaoSection";
 import { FiscalSection } from "@/features/dashboard/sections/FiscalSection";
@@ -155,6 +156,8 @@ export function DashboardPage() {
             companyId={activeCompany.id}
             companyNames={companyNames}
           />
+          {/* Retrabalho (19/10/2026): quadro a parte, so informativo; nao entra no faturamento acima. */}
+          <RetrabalhoSection range={range} companyId={activeCompany.id} companyNames={companyNames} />
           <ComercialSection com={data.comercial} companyId={activeCompany.id} />
           <ProducaoSection prod={data.producao} />
           <FiscalSection fiscal={data.fiscal} range={range} />

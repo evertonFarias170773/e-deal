@@ -30,7 +30,9 @@
  */
 
 import { getSupabaseClient } from "@/lib/supabase/client";
-import type { DateRange } from "@/lib/period";
+import { addDays, type DateRange } from "@/lib/period";
+import { FORMA_RETRABALHO } from "@/lib/retrabalho";
+import type { CobrancaParaResumoDeRetrabalho } from "@/features/dashboard/utils/retrabalho-resumo";
 import type {
   DashboardExecutivoPayload,
   ProximoBoleto,
@@ -146,4 +148,38 @@ export async function fetchUltimosPagamentos(
   }
 
   return { data: (data ?? []) as UltimoPagamento[], error: null };
+}
+
+/**
+ * Quadro "Retrabalho" (19/10/2026): as cobrancas E-RETRABALHO confirmadas, PAID ou
+ * A_VENCER, da empresa do contexto. Leitura propria, como os widgets acima: a RPC
+ * agregada do Dashboard nao muda. A janela do banco tem um dia de folga de cada
+ * lado; o corte exato (dia de `data_confirmacao` em Sao Paulo) e a regra da
+ * cobranca viva ficam em `resumoDeRetrabalho`, a mesma conta da lista
+ * "Retrabalhos" da Conferencia. Retrabalho nao entra no faturamento.
+ */
+export async function fetchCobrancasDeRetrabalho(
+  range: DateRange,
+  companyId: number
+): Promise<ServiceResult<CobrancaParaResumoDeRetrabalho[]>> {
+  const client = getSupabaseClient();
+  if (!client) return { data: null, error: "Supabase não configurado." };
+
+  let query = client
+    .from("pagamentos_v2")
+    .select("tipo_cobranca, status, confirmado, valor, id_empresa, data_confirmacao")
+    .ilike("tipo_cobranca", FORMA_RETRABALHO)
+    .in("status", ["PAID", "A_VENCER"])
+    .eq("confirmado", true)
+    .gte("data_confirmacao", `${addDays(range.inicio, -1)}T00:00:00Z`)
+    .lt("data_confirmacao", `${addDays(range.fim, 2)}T00:00:00Z`);
+
+  if (companyId !== 0) query = query.eq("id_empresa", companyId);
+
+  const { data, error } = await query;
+  if (error) {
+    console.warn("[Dashboard] Erro ao buscar as cobranças de retrabalho:", error.message);
+    return { data: null, error: error.message };
+  }
+  return { data: (data ?? []) as CobrancaParaResumoDeRetrabalho[], error: null };
 }

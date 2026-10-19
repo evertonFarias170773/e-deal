@@ -17,6 +17,7 @@ import {
 import { mapSupabasePropostaRowsToListItems } from "../../src/features/orcamentos/mappers.ts";
 import type { SupabasePropostaRow } from "../../src/features/orcamentos/types.supabase.ts";
 import { ativosValem, passaAtivos, FILTRO_COBRANCA_RETRABALHO } from "../../src/features/orcamentos/lib/status-ativos.ts";
+import { resumoDeRetrabalho } from "../../src/features/dashboard/utils/retrabalho-resumo.ts";
 
 let falhas = 0;
 function checar(nome: string, real: unknown, esperado: unknown) {
@@ -180,6 +181,32 @@ checar("tela: opcao no enum e no dropdown, e os dois filtros do cliente usam isR
   checar("conferencia: os cards seguem em isBaseConfirmada (3 usos nos totais), que segue com contaNoFaturamento", [(lista.match(/if \(!isBaseConfirmada\(c\)\) return false;/g) ?? []).length, lista.includes("contaNoFaturamento(cobranca.tipo_cobranca)")], [3, true]);
   const servico = readFileSync("src/features/cobrancas/services/pagamentos-v2.service.ts", "utf8");
   checar("conferencia: a consulta do servidor nao corta por Retrabalhos (os cards leem o mesmo que Todos)", /filters\.tipo === "RETRABALHO"/.test(servico), false);
+}
+
+// ── 10. Quadro Retrabalho do Dashboard (19/10/2026) ──
+{
+  const c = (valor: number, id_empresa: number, data_confirmacao: string | null, status = "PAID", confirmado: boolean | null = true, tipo = "E-RETRABALHO") => ({ tipo_cobranca: tipo, status, confirmado, valor, id_empresa, data_confirmacao });
+  const cobs = [
+    c(100, 1, "2026-10-01T03:00:00Z"), // 01/10 00:00 em SP: entra
+    c(50.5, 2, "2026-10-15T12:00:00Z"),
+    c(20, 3, "2026-10-31T23:00:00Z"), // 31/10 20:00 em SP: entra
+    c(999, 1, "2026-10-01T02:59:00Z"), // 30/09 23:59 em SP: fora do periodo
+    c(999, 1, "2026-11-01T03:00:00Z"), // 01/11 em SP: fora
+    c(999, 1, "2026-10-10T12:00:00Z", "CANCELADO"), // cancelada: fora
+    c(999, 1, "2026-10-10T12:00:00Z", "PAID", false), // nao confirmada: fora
+    c(999, 1, "2026-10-10T12:00:00Z", "PAID", true, "E-AMOSTRA"), // outro tipo: fora
+    c(30, 2, "2026-10-20T12:00:00Z", "A_VENCER")
+  ];
+  const r = resumoDeRetrabalho(cobs, { inicio: "2026-10-01", fim: "2026-10-31" });
+  checar("dashboard: quantidade e valor no periodo (dia em Sao Paulo, so viva e confirmada)", [r.quantidade, r.valor], [4, 200.5]);
+  checar("dashboard: quebra por empresa", r.porEmpresa, { 1: { quantidade: 1, valor: 100 }, 2: { quantidade: 2, valor: 80.5 }, 3: { quantidade: 1, valor: 20 } });
+  checar("dashboard: periodo vazio da zero, nao erro", resumoDeRetrabalho([], { inicio: "2026-10-01", fim: "2026-10-31" }), { quantidade: 0, valor: 0, porEmpresa: {} });
+  const pagina = readFileSync("src/features/dashboard/DashboardPage.tsx", "utf8");
+  const sec = readFileSync("src/features/dashboard/sections/RetrabalhoSection.tsx", "utf8");
+  const svc = readFileSync("src/features/dashboard/services/dashboard.service.ts", "utf8");
+  checar("dashboard: quadro na pagina com o periodo e a empresa do Dashboard", pagina.includes("<RetrabalhoSection range={range} companyId={activeCompany.id} companyNames={companyNames} />"), true);
+  checar("dashboard: a conta e a da lista (resumoDeRetrabalho -> retrabalhoConfirmadoParaLista), destaque pelo token", [sec.includes("resumoDeRetrabalho(r.data"), readFileSync("src/features/dashboard/utils/retrabalho-resumo.ts", "utf8").includes("if (!retrabalhoConfirmadoParaLista(c)) continue;"), sec.includes('"var(--retrabalho)"'), /#[0-9a-fA-F]{6}/.test(sec)], [true, true, true, false]);
+  checar("dashboard: leitura propria; a RPC agregada e os totais nao mudam", [svc.includes("export async function fetchCobrancasDeRetrabalho("), (svc.match(/rpc\(/g) ?? []).length], [true, 2]); // executivo e ranking, as de antes
 }
 
 if (falhas > 0) {

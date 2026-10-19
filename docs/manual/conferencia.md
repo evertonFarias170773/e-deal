@@ -207,6 +207,7 @@ Lista, filtros e cards:
 - As linhas de faturamento (E-Faturado, E-Permuta, E-Amostra e E-Retrabalho) ficam com fundo amarelo claro, nas duas abas e em qualquer empresa. O destaque é só visual: não muda filtros nem ações.
 - Escolher um tipo de pagamento no filtro (PIX, Boleto, Faturado, Cartão, E-Crédito) leva para a aba **Cobranças Confirmadas**: esses filtros mostram só o que já foi conferido.
 - **Retrabalhos** lista as cobranças E-Retrabalho confirmadas (pagas ou a vencer, não canceladas), combinando com busca, empresa, vendedor e período. Retrabalho é cortesia e fica fora do faturamento: por isso os cards de totais do topo não mudam quando você escolhe este tipo, e o valor dessas cobranças não entra neles.
+- O **Dashboard** tem o quadro **Retrabalho**, com a quantidade e o valor dessas mesmas cobranças no período e na empresa escolhidos no Dashboard, separados por Ideal Gráfica, Ideal Birô e E3 Brindes. É só informativo: os totais e gráficos de faturamento do Dashboard continuam sem o retrabalho.
 - O período só vale na aba **Cobranças Confirmadas** e filtra pela data da confirmação.
 - Com três ou mais caracteres na busca, o período deixa de valer para a lista, e a tela avisa: "Buscando ... em todo o período. Os cards acima continuam somando apenas o período selecionado. Limpe a busca para voltar a filtrar por data."
 - Os cards do topo não mudam quando você digita na busca.
