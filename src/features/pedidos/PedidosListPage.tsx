@@ -701,7 +701,7 @@ export function PedidosListPage() {
               proposta.isRetrabalho ? (
                 <span className="flex flex-col items-start gap-1">
                   <span data-numero-retrabalho="sim" className="font-semibold text-[var(--retrabalho)]">{proposta.id_int}</span>
-                  <SeloRetrabalho />
+                  <SeloRetrabalho idIntOriginal={proposta.retrabalhoOriginal} />
                 </span>
               ) : (
                 <span className="font-semibold text-slate-950">{proposta.id_int}</span>
@@ -958,7 +958,7 @@ export function PedidosListPage() {
                 {proposta.isRetrabalho ? (
                   <p className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-wide">
                     <span data-numero-retrabalho="sim" className="text-[var(--retrabalho)]">N° {proposta.id_int}</span>
-                    <SeloRetrabalho />
+                    <SeloRetrabalho idIntOriginal={proposta.retrabalhoOriginal} />
                   </p>
                 ) : (
                   <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">N° {proposta.id_int}</p>

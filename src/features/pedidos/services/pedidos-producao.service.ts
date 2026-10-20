@@ -1,5 +1,5 @@
 import { getSupabaseClient } from "@/lib/supabase/client";
-import { FORMA_RETRABALHO, cobrancaEhRetrabalho } from "@/lib/retrabalho";
+import { FORMA_RETRABALHO, cobrancaEhRetrabalho, marcaDeRetrabalho } from "@/lib/retrabalho";
 import type { PedidoProducaoListItem, PedidoStatus, PropostaOperacionalListItem, SetorDoPedido } from "../types";
 import type { PedidoModelo } from "@/features/producao/types";
 import { composeStatusEmArte } from "@/features/orcamentos/mappers";
@@ -55,7 +55,9 @@ export async function listarPedidosOperacionais(): Promise<PropostaOperacionalLi
       is_prd_aprovado,
       libera_nf,
       liberado_producao_em,
-      categoria_frete
+      categoria_frete,
+      motivo_copia,
+      id_int_origem_copia
     `)
     .eq("is_prd_aprovado", true)
     // Filtra apenas status operacionais para evitar poluir a lista com os que já saíram da produção
@@ -416,7 +418,9 @@ export async function listarPedidosOperacionais(): Promise<PropostaOperacionalLi
       hasArtePendente: emArte,
       obs: "",
       libera_nf: p.libera_nf === true,
-      isRetrabalho: idsComRetrabalho.has(Number(p.id_int)),
+      // Retrabalho pela regra unica (vinculo ou cobranca viva), 20/10/2026.
+      isRetrabalho: marcaDeRetrabalho(p, idsComRetrabalho.has(Number(p.id_int))) !== null,
+      retrabalhoOriginal: marcaDeRetrabalho(p, idsComRetrabalho.has(Number(p.id_int)))?.idIntOriginal ?? null,
       is_prd_aprovado: p.is_prd_aprovado === true,
       setores
     });

@@ -1,6 +1,6 @@
 # Produção (ordens de serviço)
 
-> **Última revisão:** 19/10/2026
+> **Última revisão:** 20/10/2026
 > **Caminho no menu:** Produção (item direto do menu lateral, sem submenu). A OS de cada pedido abre a partir da lista. O Kanban e a Fila de impressão não estão no menu: chega-se a eles pelo endereço ou pelas abas **Fila Geral / Kanban Board / Fila de Impressão / Expedição** que aparecem no topo dessas duas telas.
 > **Endereço:** `/pedidos` (painel geral). OS: `/pedidos/boletim`. Kanban: `/pedidos/kanban` (e `/os-producao`). Fila de impressão: `/pedidos/impressao`.
 
@@ -43,7 +43,7 @@ Nomes exatamente como aparecem na tela.
 | **Editar OS / Boletim** (ou **Criar OS / Boletim**) | Menu **Ações** da linha | Abre a OS. Aparece como "Criar" quando o pedido ainda não tem lotes. |
 | **Imprimir OS (PDF)** | Menu **Ações** da linha | Abre em nova aba o PDF completo, com todos os setores. Enquanto gera, mostra "Gerando PDF...". |
 | **Imprimir OS reduzida (PDF)** | Menu **Ações** da linha | Abre o PDF resumido (lista de conferência, sem imagens). |
-| **RETRABALHO** no PDF | Topo de cada página de boletim (completo, reduzido e maço), acima do quadro do Setor | Aparece em letras grandes vermelhas quando o pedido tem cobrança E-Retrabalho não cancelada. O resto do boletim e a paginação ficam como sempre. |
+| **RETRABALHO** no PDF | Topo de cada página de boletim (completo, reduzido e maço), acima do quadro do Setor | Aparece em letras grandes vermelhas quando o pedido é retrabalho: criado como Retrabalho pelo Duplicar proposta, ou com cobrança E-Retrabalho não cancelada. O resto do boletim e a paginação ficam como sempre. |
 | **Gerar novo QR (invalida o anterior)** | Menu **Ações** da linha | Cria um QR novo para a OS e invalida o das vias já impressas. |
 | **Abrir DANFE (PDF)** | Menu **Ações** da linha | Abre a DANFE da nota do pedido. Só aparece quando há nota autorizada. |
 | **Baixar XML** | Menu **Ações** da linha | Baixa o XML da nota do pedido. Só aparece quando há nota autorizada. |
@@ -228,7 +228,7 @@ As vias antigas continuam valendo como eram. O QR delas é um link: lido no term
 
 ## Regras e bloqueios
 
-- Pedido de **retrabalho** (cobrança E-Retrabalho não cancelada) aparece com contorno vermelho, o número do pedido em vermelho e o selo **Retrabalho**, na tabela e no cartão do celular. E-Amostra e E-Permuta não ganham o destaque. O destaque de Revisão continua por baixo.
+- Pedido de **retrabalho** (criado como Retrabalho pelo Duplicar proposta, ou com cobrança E-Retrabalho não cancelada) aparece com contorno vermelho, o número do pedido em vermelho e o selo **Retrabalho de #<original>** (o pedido de onde ele nasceu; só **Retrabalho** quando não há original gravado), na tabela e no cartão do celular. E-Amostra e E-Permuta não ganham o destaque. O destaque de Revisão continua por baixo.
 
 - Pedido não liberado não aparece na Produção, mesmo com pagamento confirmado ou arte aprovada. O que conta é a liberação.
 - A linha amarela marca pedido em REVISAO PRODUCAO: ele chegou e ninguém salvou a OS ainda. Esses pedidos ficam sempre no topo da lista.

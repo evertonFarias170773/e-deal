@@ -3,7 +3,7 @@ import { nomeTransporteEfetivo } from "@/features/orcamentos/lib/modalidade-fret
 import type { ModalidadeFrete } from "@/features/orcamentos/lib/modalidade-frete";
 import type { DanfeDoPedido } from "@/lib/fiscal/danfes-do-pedido";
 import type { CobrancaNaFilaDaLista } from "@/features/orcamentos/lib/cobrancas-na-fila";
-import { retrabalhoPelosTiposVivos } from "@/lib/retrabalho";
+import { marcaDeRetrabalho, retrabalhoPelosTiposVivos } from "@/lib/retrabalho";
 
 export function composeStatusEmArte(baseStatus: string, emArte: boolean | undefined): string {
   if (!baseStatus) return "SEM_STATUS";
@@ -59,8 +59,15 @@ export type OrcamentoListItem = {
   isAvulsoRaw: boolean | null | undefined;
   total: number;
   tiposCobranca: string[];
-  /** Tem cobranca E-RETRABALHO viva (`lib/retrabalho`, 17/10/2026). So de `tipos_cobranca`, que ja vem sem as cobrancas mortas. */
+  /**
+   * Tem cobranca E-RETRABALHO viva (`lib/retrabalho`, 17/10/2026). So de `tipos_cobranca`, que ja vem sem as cobrancas mortas.
+   * E o que o FILTRO Cobranca E-RETRABALHO usa; o destaque e `destaqueRetrabalho`.
+   */
   isRetrabalho: boolean;
+  /** Destaque de retrabalho pela regra unica (`marcaDeRetrabalho`: vinculo ou cobranca viva), 20/10/2026. */
+  destaqueRetrabalho: boolean;
+  /** Pedido de onde o retrabalho nasceu (`id_int_origem_copia`); nulo = sem original. */
+  retrabalhoOriginal: number | null;
   tipoCobrancaLabel: string;
   /**
    * Cobrança PAID ainda sem conferência do financeiro. `status` continua
@@ -468,6 +475,8 @@ function mapRowToListItem(row: SupabasePropostaRow): OrcamentoListItem | null {
     // So `tipos_cobranca` (cobrancas vivas, montado em orcamentos.service): `tipo_cobranca` e
     // `cobranca_status`, que tambem entram em `tiposCobranca`, nao dizem se a cobranca morreu.
     isRetrabalho: retrabalhoPelosTiposVivos(collectTiposCobranca(row.tipos_cobranca)),
+    destaqueRetrabalho: marcaDeRetrabalho(row, retrabalhoPelosTiposVivos(collectTiposCobranca(row.tipos_cobranca))) !== null,
+    retrabalhoOriginal: marcaDeRetrabalho(row, retrabalhoPelosTiposVivos(collectTiposCobranca(row.tipos_cobranca)))?.idIntOriginal ?? null,
     tipoCobrancaLabel: getTipoCobrancaLabel(tiposCobranca),
     pagoAConfirmar: (row as { pago_a_confirmar?: unknown }).pago_a_confirmar === true,
     cobrancasNaFila: Array.isArray((row as { cobrancas_na_fila?: unknown }).cobrancas_na_fila)

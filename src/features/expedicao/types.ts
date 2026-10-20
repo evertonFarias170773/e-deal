@@ -443,10 +443,12 @@ export interface PedidoExpedicao {
   danfes?: DanfeDoPedido[];
   liberaNf: boolean;
   /**
-   * Tem cobranca E-RETRABALHO viva (`lib/retrabalho`, 19/10/2026): contorno, numero
+   * E retrabalho pela regra unica (`marcaDeRetrabalho`: vinculo ou cobranca E-RETRABALHO viva): contorno, numero
    * em vermelho e selo no card. Opcional porque nem toda origem monta (mocks).
    */
   isRetrabalho?: boolean;
+  /** Pedido de onde o retrabalho nasceu (`id_int_origem_copia`); nulo = sem original (`marcaDeRetrabalho`, 20/10/2026). */
+  retrabalhoOriginal?: number | null;
   codigoRastreamento: string;
   obsOs: string;
   /** Já existe etiqueta/rastreio para o envio: prepostagem Correios OU rastreio OU 10x15 gerada. */

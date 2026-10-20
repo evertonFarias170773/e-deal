@@ -586,7 +586,7 @@ export function KanbanTransportadoras({
                       >
                         #{p.idInt}
                       </span>
-                      {p.isRetrabalho ? <SeloRetrabalho /> : null}
+                      {p.isRetrabalho ? <SeloRetrabalho idIntOriginal={p.retrabalhoOriginal} /> : null}
                       {/* Cadastro do cliente: a conferência de bancada casa o volume
                           pelo número do cadastro, não pelo nome — homônimos existem. */}
                       {/* Mesmo corpo do `#id`, sem negrito: o cadastro é tão

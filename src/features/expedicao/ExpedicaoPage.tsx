@@ -1192,7 +1192,7 @@ export function ExpedicaoPage() {
                 {p.isRetrabalho ? (
                   <span className="flex flex-wrap items-center gap-1.5">
                     <span data-numero-retrabalho="sim" className="font-semibold text-[var(--retrabalho)]">#{p.idInt}</span>
-                    <SeloRetrabalho />
+                    <SeloRetrabalho idIntOriginal={p.retrabalhoOriginal} />
                   </span>
                 ) : (
                   <span className="font-semibold text-slate-950 dark:text-slate-100">#{p.idInt}</span>
@@ -1429,7 +1429,7 @@ export function ExpedicaoPage() {
                         <span>
                           <span data-numero-retrabalho="sim" className="text-[var(--retrabalho)]">#{p.idInt}</span> · {p.empresa}
                         </span>
-                        <SeloRetrabalho />
+                        <SeloRetrabalho idIntOriginal={p.retrabalhoOriginal} />
                       </>
                     ) : (
                       <span>#{p.idInt} · {p.empresa}</span>

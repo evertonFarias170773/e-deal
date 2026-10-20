@@ -1,5 +1,5 @@
 import { getSupabaseClient } from "@/lib/supabase/client";
-import { FORMA_RETRABALHO, cobrancaEhRetrabalho } from "@/lib/retrabalho";
+import { FORMA_RETRABALHO, cobrancaEhRetrabalho, marcaDeRetrabalho } from "@/lib/retrabalho";
 import { formatDocument } from "@/lib/formatters/document";
 import { telefoneDestinatario } from "../lib/telefone-destinatario";
 import {
@@ -137,7 +137,7 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
       // `id_endereco_ent` (02/09/2026): o endereço de entrega DEFINIDO NA
       // PROPOSTA. Entrou na mesma linha que já vinha — zero consulta a mais
       // aqui. É `text` na tabela, e aponta para `enderecos.id` (uuid).
-      "id_int, cliente, id_cliente, id_faturado, empresa, vendedor, status_interno, libera_nf, volume, modalidade_frete, id_transportadora_cliente, valor_frete, id_endereco_ent, categoria_frete, id_int_pedido_principal"
+      "id_int, cliente, id_cliente, id_faturado, empresa, vendedor, status_interno, libera_nf, volume, modalidade_frete, id_transportadora_cliente, valor_frete, id_endereco_ent, categoria_frete, id_int_pedido_principal, motivo_copia, id_int_origem_copia"
     )
     .eq("is_prd_aprovado", true)
     .in("status_interno", STATUS_FUNIL_EXPEDICAO)
@@ -1019,7 +1019,9 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
       nfNumero: nf?.numero ?? null,
       danfes: danfesPorPedido.get(idInt) ?? [],
       liberaNf: p.libera_nf === true,
-      isRetrabalho: idsComRetrabalho.has(idInt),
+      // Retrabalho pela regra unica (vinculo ou cobranca viva), 20/10/2026.
+      isRetrabalho: marcaDeRetrabalho(p, idsComRetrabalho.has(idInt)) !== null,
+      retrabalhoOriginal: marcaDeRetrabalho(p, idsComRetrabalho.has(idInt))?.idIntOriginal ?? null,
       // Prepostagem marcada como cancelada: a lista passa a se comportar como
       // "sem rastreio" — some da coluna, some da busca e o item "Rastrear
       // objeto" nao aparece. O banco NAO muda: `expedicoes.codigo_rastreamento`

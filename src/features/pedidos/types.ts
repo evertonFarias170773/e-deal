@@ -245,8 +245,10 @@ export interface PropostaOperacionalListItem {
   valorTotal: number;
   status_interno: string; // Da tabela propostas
   libera_nf?: boolean | null; // Flag de liberação fiscal
-  /** Tem cobrança E-RETRABALHO viva (`lib/retrabalho`, 19/10/2026). */
+  /** É retrabalho pela regra única (`marcaDeRetrabalho`: vínculo ou cobrança E-RETRABALHO viva). */
   isRetrabalho?: boolean;
+  /** Pedido de onde o retrabalho nasceu (`id_int_origem_copia`); nulo = sem original (`marcaDeRetrabalho`, 20/10/2026). */
+  retrabalhoOriginal?: number | null;
   is_prd_aprovado?: boolean; // Liberada para produção (gatilho oficial da fila/OS)
   urgente: boolean;
   obs?: string;

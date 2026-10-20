@@ -47,8 +47,10 @@ export interface FaturavelOrigem {
   liberado_producao_em?: string | null;
   /** `propostas.is_prd_aprovado`: o pedido está na produção. Falso em quem foi só à Fila de Faturamento. */
   is_prd_aprovado?: boolean;
-  /** Tem cobrança E-RETRABALHO viva (`lib/retrabalho`, 19/10/2026). */
+  /** É retrabalho pela regra única (`marcaDeRetrabalho`: vínculo ou cobrança E-RETRABALHO viva). */
   isRetrabalho?: boolean;
+  /** Pedido de onde o retrabalho nasceu (`id_int_origem_copia`); nulo = sem original (`marcaDeRetrabalho`, 20/10/2026). */
+  retrabalhoOriginal?: number | null;
   /**
    * Nome do sócio pagador, quando `propostas.id_faturado` aponta para OUTRO
    * cadastro que não o `id_cliente`. `id_faturado` preenchido e igual ao cliente

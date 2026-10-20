@@ -1,5 +1,5 @@
 import { getSupabaseClient } from "@/lib/supabase/client";
-import { cobrancaEhRetrabalho } from "@/lib/retrabalho";
+import { cobrancaEhRetrabalho, marcaDeRetrabalho } from "@/lib/retrabalho";
 import { resolverPagadorDoBoletoC6 } from "@/features/cobrancas/services/boleto-c6";
 import { destinoDaRespostaDoCancelamento } from "@/features/cobrancas/services/cancelamento-c6";
 import { nfeMocks } from "@/lib/mocks/nfe.mock";
@@ -1732,6 +1732,9 @@ interface SupabasePropostaSimple {
   is_prd_aprovado?: boolean | null;
   /** `propostas.liberado_producao_em` — quando o pedido entrou em producao. */
   liberado_producao_em?: string | null;
+  /** Vinculo da copia, para o destaque de retrabalho (`marcaDeRetrabalho`, 20/10/2026). */
+  motivo_copia?: string | null;
+  id_int_origem_copia?: number | null;
 }
 
 /**
@@ -1854,7 +1857,7 @@ export async function getFaturaveisPropostas(): Promise<FaturavelOrigem[]> {
   try {
     const { data, error } = await client
       .from("propostas")
-      .select("id,id_int,id_cliente,cliente,valor,valor_total,vendedor,status_interno,empresa,created_at,libera_nf,is_prd_aprovado,id_faturado,liberado_producao_em")
+      .select("id,id_int,id_cliente,cliente,valor,valor_total,vendedor,status_interno,empresa,created_at,libera_nf,is_prd_aprovado,id_faturado,liberado_producao_em,motivo_copia,id_int_origem_copia")
       .eq("libera_nf", true)
       // Pedido cuja nota foi emitida no SISTEMA ANTIGO sai da fila (migration
       // 20260914_propostas_faturado_fora). Corte a mais, sem mexer nos outros:
@@ -1989,7 +1992,9 @@ export async function getFaturaveisPropostas(): Promise<FaturavelOrigem[]> {
         liberado_producao_em: row.liberado_producao_em ?? null,
         // Para o "Marcar como entregue" da Fila (13/10/2026): toda linha daqui tem libera_nf ligada.
         is_prd_aprovado: row.is_prd_aprovado === true,
-        isRetrabalho: idsComRetrabalho.has(Number(row.id_int))
+        // Retrabalho pela regra unica (vinculo ou cobranca viva), 20/10/2026.
+        isRetrabalho: marcaDeRetrabalho(row, idsComRetrabalho.has(Number(row.id_int))) !== null,
+        retrabalhoOriginal: marcaDeRetrabalho(row, idsComRetrabalho.has(Number(row.id_int)))?.idIntOriginal ?? null
       };
     });
   } catch (err) {

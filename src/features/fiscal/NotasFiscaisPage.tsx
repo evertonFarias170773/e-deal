@@ -2770,7 +2770,7 @@ export function NotasFiscaisPage() {
                       ) : (
                         <span className="font-medium text-slate-950">{item.ref_origem}</span>
                       )}
-                      {item.isRetrabalho ? <SeloRetrabalho /> : null}
+                      {item.isRetrabalho ? <SeloRetrabalho idIntOriginal={item.retrabalhoOriginal} /> : null}
                       {item.os_ideal && (
                         <span className="text-xs text-slate-500 font-mono">OS: {item.os_ideal}</span>
                       )}
@@ -2872,7 +2872,7 @@ export function NotasFiscaisPage() {
                       >
                         Pedido #{item.ref_origem.match(/\d+/)?.[0] || "-"}
                       </span>
-                      {item.isRetrabalho ? <SeloRetrabalho /> : null}
+                      {item.isRetrabalho ? <SeloRetrabalho idIntOriginal={item.retrabalhoOriginal} /> : null}
                       {item.os_ideal && (
                         <span className="text-xs text-slate-500 font-mono">OS: {item.os_ideal}</span>
                       )}

@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { FORMA_RETRABALHO, pedidoEhRetrabalho } from "@/lib/retrabalho";
+import { FORMA_RETRABALHO, marcaDeRetrabalho, pedidoEhRetrabalho } from "@/lib/retrabalho";
 import { obterPedidoOperacionalPorIdOuIdInt } from "./pedidos-detalhe.service";
 import { parsePedidosObs, obterFreteEscolhido } from "./boletim-propostas.service";
 import type { ParsedObs } from "./boletim-propostas.service";
@@ -144,10 +144,13 @@ export interface OsPdfViewModel {
    */
   obsTecnica: string;
   /**
-   * O pedido tem cobranca E-RETRABALHO viva (`lib/retrabalho`, 19/10/2026): o
-   * cabecalho do PDF mostra RETRABALHO em vermelho. Falha de leitura = false.
+   * O pedido e retrabalho pela regra unica (`marcaDeRetrabalho`: vinculo da copia
+   * ou cobranca E-RETRABALHO viva; 20/10/2026): o cabecalho do PDF mostra
+   * RETRABALHO em vermelho. Falha de leitura = false.
    */
   retrabalho: boolean;
+  /** Pedido de onde o retrabalho nasceu (`id_int_origem_copia`); nulo = sem original. */
+  retrabalhoOriginal: number | null;
   /**
    * Instruções de entrega (`propostas.obs_entrega`). Vem da PROPOSTA e sai
    * INTEIRA no PDF, em bloco próprio, só quando há texto.
@@ -314,7 +317,7 @@ export async function montarOsPdfViewModel(
               // custo zero. Serve a regra do 8469 logo abaixo.
               // `id_endereco_ent` entra em 18/09/2026, na MESMA linha: e o endereco de
               // entrega do bloco novo do boletim, e nao custa consulta alguma.
-              "cliente, cnpjCpf, contato, empresa, vendedor, status_interno, id_cliente, id_faturado, modalidade_frete, id_transportadora_cliente, id_endereco_ent"
+              "cliente, cnpjCpf, contato, empresa, vendedor, status_interno, id_cliente, id_faturado, modalidade_frete, id_transportadora_cliente, id_endereco_ent, motivo_copia, id_int_origem_copia"
             )
             .eq("id_int", idInt)
             .maybeSingle();
@@ -894,9 +897,16 @@ export async function montarOsPdfViewModel(
     // v1: variante administrativa não implementada — valores nunca são consultados.
     void opts.incluirValores;
 
+    // Retrabalho (20/10/2026): o vinculo vem na MESMA linha da proposta; a cobranca,
+    // da leitura que ja existia.
+    const marcaRetrabalho = marcaDeRetrabalho(
+      propostaResult?.data as { motivo_copia?: string | null; id_int_origem_copia?: number | null } | null,
+      pedidoEhRetrabalho((retrabalhoResult?.data ?? []) as { tipo_cobranca: string | null; status: string | null }[])
+    );
     const vm: OsPdfViewModel = {
       idInt,
-      retrabalho: pedidoEhRetrabalho((retrabalhoResult?.data ?? []) as { tipo_cobranca: string | null; status: string | null }[]),
+      retrabalho: marcaRetrabalho !== null,
+      retrabalhoOriginal: marcaRetrabalho?.idIntOriginal ?? null,
       os: {
         emissao: pedido.dataPedido,
         // Prazo é do boletim; sem ele, cai no prazo do pedido (compatibilidade).

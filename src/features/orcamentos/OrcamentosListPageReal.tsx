@@ -2273,7 +2273,7 @@ Ela volta a aparecer nas listas operacionais.`
         emptyTitle="Nenhuma proposta encontrada"
         emptyDescription="Ajuste os filtros ou crie uma nova proposta para comecar."
         // Retrabalho (17/10/2026): contorno por cima do destaque de status, que continua valendo.
-        getRowOutline={(proposta) => (proposta.isRetrabalho ? COR_RETRABALHO : null)}
+        getRowOutline={(proposta) => (proposta.destaqueRetrabalho ? COR_RETRABALHO : null)}
         getRowHighlight={(proposta) => {
           if (activeCard === "EM_ARTE") {
             const arte = grupoStatusArteDoCardEmArte(proposta.statusArteDoCard);
@@ -2291,7 +2291,7 @@ Ela volta a aparecer nas listas operacionais.`
           // Dois pontos maior que o corpo da tabela (text-sm, 14px) e em negrito:
           // o numero do pedido e por onde a operacao inteira se refere a linha.
           // Retrabalho: numero na cor do token e selo de texto (o destaque nao depende so da cor).
-          { header: "N°", cell: (proposta) => <NumeroDoPedido idInt={proposta.id_int} retrabalho={proposta.isRetrabalho} /> },
+          { header: "N°", cell: (proposta) => <NumeroDoPedido idInt={proposta.id_int} retrabalho={proposta.destaqueRetrabalho} original={proposta.retrabalhoOriginal} /> },
           {
             header: "id - Cliente",
             // Clique da coluna (25/09/2026): abre a edicao do cadastro do cliente,
@@ -2606,21 +2606,21 @@ Ela volta a aparecer nas listas operacionais.`
           // ficaria evidente só no desktop.
           <article
             key={proposta.id}
-            data-retrabalho={proposta.isRetrabalho ? "sim" : undefined}
+            data-retrabalho={proposta.destaqueRetrabalho ? "sim" : undefined}
             className={`rounded-3xl border p-5 shadow-sm ${
               ehRevisaoAtendente(proposta)
                 ? "border-blue-200 bg-blue-50"
                 : "border-[#d7e5e8] bg-white"
             }`}
             // Retrabalho: contorno na cor do token, por cima da borda do status.
-            style={proposta.isRetrabalho ? { outline: `2px solid ${COR_RETRABALHO}`, outlineOffset: "-2px" } : undefined}
+            style={proposta.destaqueRetrabalho ? { outline: `2px solid ${COR_RETRABALHO}`, outlineOffset: "-2px" } : undefined}
           >
             <div className="flex items-start justify-between gap-3">
               <div>
-                {proposta.isRetrabalho ? (
+                {proposta.destaqueRetrabalho ? (
                   <p className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-wide text-[var(--retrabalho)]">
                     N° {proposta.id_int}
-                    <SeloRetrabalho />
+                    <SeloRetrabalho idIntOriginal={proposta.retrabalhoOriginal} />
                   </p>
                 ) : (
                   <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">N° {proposta.id_int}</p>
@@ -2972,12 +2972,12 @@ Ela volta a aparecer nas listas operacionais.`
  * O numero do pedido na coluna N°. Retrabalho: na cor do token e com o selo. A classe
  * troca (e nao se sobrepoe): no tema escuro `.text-slate-950` e `!important`.
  */
-function NumeroDoPedido({ idInt, retrabalho }: { idInt: number; retrabalho: boolean }) {
+function NumeroDoPedido({ idInt, retrabalho, original }: { idInt: number; retrabalho: boolean; original: number | null }) {
   if (!retrabalho) return <span className="text-base font-bold text-slate-950">{idInt}</span>;
   return (
     <span className="flex flex-col items-start gap-1">
       <span data-numero-retrabalho className="text-base font-bold text-[var(--retrabalho)]">{idInt}</span>
-      <SeloRetrabalho />
+      <SeloRetrabalho idIntOriginal={original} />
     </span>
   );
 }

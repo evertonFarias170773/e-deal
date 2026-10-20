@@ -23,6 +23,9 @@ export type SupabasePropostaRow = Record<string, SupabaseValue> & {
   obs_proposta?: SupabaseValue;
   obs_tecnica?: SupabaseValue;
   obs_entrega?: SupabaseValue;
+  /** Vinculo da copia (19/10/2026): destaque de retrabalho na lista (`marcaDeRetrabalho`). */
+  motivo_copia?: SupabaseValue;
+  id_int_origem_copia?: SupabaseValue;
   proposta?: SupabaseValue;
   user_id?: SupabaseValue;
 

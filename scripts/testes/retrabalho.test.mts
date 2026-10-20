@@ -12,7 +12,9 @@ import {
   cobrancaEhRetrabalho,
   pedidoEhRetrabalho,
   retrabalhoPelosTiposVivos,
-  retrabalhoConfirmadoParaLista
+  retrabalhoConfirmadoParaLista,
+  marcaDeRetrabalho,
+  rotuloDoSeloRetrabalho
 } from "../../src/lib/retrabalho.ts";
 import { mapSupabasePropostaRowsToListItems } from "../../src/features/orcamentos/mappers.ts";
 import type { SupabasePropostaRow } from "../../src/features/orcamentos/types.supabase.ts";
@@ -70,8 +72,10 @@ checar("mapeamento: os outros campos nao mudam (tiposCobranca segue igual)", [a.
 // ── 4. Estrutura da tela ──
 const tela = readFileSync("src/features/orcamentos/OrcamentosListPageReal.tsx", "utf8");
 const lista = readFileSync("src/components/common/ResponsiveList.tsx", "utf8");
-checar("tabela: contorno pelo token, numero e selo", [tela.includes("getRowOutline={(proposta) => (proposta.isRetrabalho ? COR_RETRABALHO : null)}"), tela.includes("<NumeroDoPedido idInt={proposta.id_int} retrabalho={proposta.isRetrabalho} />")], [true, true]);
-checar("cartao: contorno, numero e selo", [tela.includes("style={proposta.isRetrabalho ? { outline: `2px solid ${COR_RETRABALHO}`"), tela.includes("<SeloRetrabalho />")], [true, true]);
+// Destaque pela regra unica (`destaqueRetrabalho`, 20/10/2026); o filtro segue em `isRetrabalho` (cobranca).
+checar("tabela: contorno pelo token, numero e selo com o original", [tela.includes("getRowOutline={(proposta) => (proposta.destaqueRetrabalho ? COR_RETRABALHO : null)}"), tela.includes("<NumeroDoPedido idInt={proposta.id_int} retrabalho={proposta.destaqueRetrabalho} original={proposta.retrabalhoOriginal} />")], [true, true]);
+checar("cartao: contorno, numero e selo com o original", [tela.includes("style={proposta.destaqueRetrabalho ? { outline: `2px solid ${COR_RETRABALHO}`"), tela.includes("<SeloRetrabalho idIntOriginal={proposta.retrabalhoOriginal} />")], [true, true]);
+checar("filtro Cobranca E-RETRABALHO continua so pela cobranca (isRetrabalho), nas duas pontas", (tela.match(/if \(!item\.isRetrabalho\) (return false|continue);/g) ?? []).length, 2);
 checar("sem cor literal no destaque do retrabalho na tela", /retrabalho[^\n]{0,80}#[0-9a-fA-F]{3,6}/i.test(tela), false);
 checar("ResponsiveList: contorno so para quem passa getRowOutline", lista.includes("...(getRowOutline?.(item) ? { outline:"), true);
 
@@ -129,9 +133,10 @@ checar("tela: opcao no enum e no dropdown, e os dois filtros do cliente usam isR
   const iFim = exp.indexOf("]);", iAll);
   const dentro = exp.slice(iAll, iFim);
   checar("expedicao: a leitura do retrabalho e UMA consulta, no mesmo Promise.all, por id_int", [dentro.includes('.from("pagamentos_v2")'), dentro.includes('.ilike("tipo_cobranca", FORMA_RETRABALHO)'), (exp.match(/from\("pagamentos_v2"\)/g) ?? []).length], [true, true, 1]);
-  checar("expedicao: regra viva aplicada e campo no pedido", [exp.includes(".filter(cobrancaEhRetrabalho)"), exp.includes("isRetrabalho: idsComRetrabalho.has(idInt),")], [true, true]);
-  checar("expedicao: Kanban com contorno, numero e selo", [kanban.includes("style={p.isRetrabalho ? CONTORNO_RETRABALHO : undefined}"), kanban.includes('p.isRetrabalho ? "text-[var(--retrabalho)]"'), kanban.includes("{p.isRetrabalho ? <SeloRetrabalho /> : null}")], [true, true, true]);
-  checar("expedicao: lista (contorno da linha) e celular (contorno do card), com selo", [pagina.includes('getRowOutline={(p) => (p.isRetrabalho ? "var(--retrabalho)" : null)}'), pagina.includes("style={p.isRetrabalho ? CONTORNO_RETRABALHO : undefined}"), (pagina.match(/<SeloRetrabalho \/>/g) ?? []).length], [true, true, 2]);
+  checar("expedicao: regra viva aplicada e campo no pedido", [exp.includes(".filter(cobrancaEhRetrabalho)"), exp.includes("isRetrabalho: marcaDeRetrabalho(p, idsComRetrabalho.has(idInt)) !== null,")], [true, true]);
+  checar("expedicao: o vinculo vem na MESMA linha da proposta", exp.includes("id_int_pedido_principal, motivo_copia, id_int_origem_copia\""), true);
+  checar("expedicao: Kanban com contorno, numero e selo", [kanban.includes("style={p.isRetrabalho ? CONTORNO_RETRABALHO : undefined}"), kanban.includes('p.isRetrabalho ? "text-[var(--retrabalho)]"'), kanban.includes("{p.isRetrabalho ? <SeloRetrabalho idIntOriginal={p.retrabalhoOriginal} /> : null}")], [true, true, true]);
+  checar("expedicao: lista (contorno da linha) e celular (contorno do card), com selo", [pagina.includes('getRowOutline={(p) => (p.isRetrabalho ? "var(--retrabalho)" : null)}'), pagina.includes("style={p.isRetrabalho ? CONTORNO_RETRABALHO : undefined}"), (pagina.match(/<SeloRetrabalho idIntOriginal=\{p\.retrabalhoOriginal\} \/>/g) ?? []).length], [true, true, 2]);
   const linhas = [
     { id_int: 23773, tipo_cobranca: "E-RETRABALHO", status: "PAID" },
     { id_int: 23610, tipo_cobranca: "E-RETRABALHO", status: "CANCELADO" }
@@ -145,10 +150,12 @@ checar("tela: opcao no enum e no dropdown, e os dois filtros do cliente usam isR
   const prodTela = readFileSync("src/features/pedidos/PedidosListPage.tsx", "utf8");
   const nfe = readFileSync("src/features/nfe/services/nfe.service.ts", "utf8");
   const fila = readFileSync("src/features/fiscal/NotasFiscaisPage.tsx", "utf8");
-  checar("producao: uma leitura em lote, iniciada cedo e esperada antes das linhas", [prodSrv.includes("const retrabalhoEmCurso = client"), prodSrv.includes('.ilike("tipo_cobranca", FORMA_RETRABALHO)'), prodSrv.indexOf("const retrabalhoLido = await retrabalhoEmCurso;") < prodSrv.indexOf("for (const p of propostasRows)"), prodSrv.includes("isRetrabalho: idsComRetrabalho.has(Number(p.id_int)),")], [true, true, true, true]);
-  checar("producao: tabela (contorno da linha) e cartao (contorno), numero e selo", [prodTela.includes('getRowOutline={(proposta) => (proposta.isRetrabalho ? "var(--retrabalho)" : null)}'), prodTela.includes("style={proposta.isRetrabalho ? CONTORNO_RETRABALHO : undefined}"), (prodTela.match(/<SeloRetrabalho \/>/g) ?? []).length], [true, true, 2]);
+  checar("producao: uma leitura em lote, iniciada cedo e esperada antes das linhas", [prodSrv.includes("const retrabalhoEmCurso = client"), prodSrv.includes('.ilike("tipo_cobranca", FORMA_RETRABALHO)'), prodSrv.indexOf("const retrabalhoLido = await retrabalhoEmCurso;") < prodSrv.indexOf("for (const p of propostasRows)"), prodSrv.includes("isRetrabalho: marcaDeRetrabalho(p, idsComRetrabalho.has(Number(p.id_int))) !== null,")], [true, true, true, true]);
+  checar("producao: o vinculo vem na MESMA linha da proposta", /categoria_frete,\s+motivo_copia,\s+id_int_origem_copia\s+`\)/.test(prodSrv), true);
+  checar("producao: tabela (contorno da linha) e cartao (contorno), numero e selo", [prodTela.includes('getRowOutline={(proposta) => (proposta.isRetrabalho ? "var(--retrabalho)" : null)}'), prodTela.includes("style={proposta.isRetrabalho ? CONTORNO_RETRABALHO : undefined}"), (prodTela.match(/<SeloRetrabalho idIntOriginal=\{proposta\.retrabalhoOriginal\} \/>/g) ?? []).length], [true, true, 2]);
   checar("fila: a MESMA leitura de pagamentos_v2 traz o status; regra viva; tipo exibido intocado", [nfe.includes('.select("id_int,tipo_cobranca,status,created_at")'), nfe.includes("if (Number.isFinite(idInt) && cobrancaEhRetrabalho(linha)) idsComRetrabalho.add(idInt);"), nfe.includes("cobrancaPorProposta.set(idInt, tipo);")], [true, true, true]);
-  checar("fila: contorno, numero e selo na tabela e no cartao; ordem e itens intocados", [fila.includes('getRowOutline={(item) => (item.isRetrabalho ? "var(--retrabalho)" : null)}'), fila.includes("style={item.isRetrabalho ? CONTORNO_RETRABALHO : undefined}"), (fila.match(/\{item\.isRetrabalho \? <SeloRetrabalho \/> : null\}/g) ?? []).length, fila.includes("items={filaOrdenadaPelaPrevisao}")], [true, true, 2, true]);
+  checar("fila: contorno, numero e selo na tabela e no cartao; ordem e itens intocados", [fila.includes('getRowOutline={(item) => (item.isRetrabalho ? "var(--retrabalho)" : null)}'), fila.includes("style={item.isRetrabalho ? CONTORNO_RETRABALHO : undefined}"), (fila.match(/\{item\.isRetrabalho \? <SeloRetrabalho idIntOriginal=\{item\.retrabalhoOriginal\} \/> : null\}/g) ?? []).length, fila.includes("items={filaOrdenadaPelaPrevisao}")], [true, true, 2, true]);
+  checar("fila: o vinculo vem na MESMA linha da proposta", nfe.includes("liberado_producao_em,motivo_copia,id_int_origem_copia\")"), true);
 }
 
 // ── 8. PDF do boletim (19/10/2026) ──
@@ -158,7 +165,8 @@ checar("tela: opcao no enum e no dropdown, e os dois filtros do cliente usam isR
   const resumo = readFileSync("src/features/pedidos/pdf/OsPdfResumoDocument.tsx", "utf8");
   const maco = readFileSync("src/features/pedidos/pdf/OsPdfMacoDocument.tsx", "utf8");
   const iAll = vmSrc.indexOf("] = await Promise.all([");
-  checar("pdf: a leitura do retrabalho entra no lote paralelo do view model, tolerante a falha", [vmSrc.indexOf('.from("pagamentos_v2")') > iAll, vmSrc.includes('.ilike("tipo_cobranca", FORMA_RETRABALHO)'), vmSrc.includes("retrabalho: pedidoEhRetrabalho(")], [true, true, true]);
+  checar("pdf: a leitura do retrabalho entra no lote paralelo do view model, tolerante a falha", [vmSrc.indexOf('.from("pagamentos_v2")') > iAll, vmSrc.includes('.ilike("tipo_cobranca", FORMA_RETRABALHO)'), vmSrc.includes("const marcaRetrabalho = marcaDeRetrabalho(") && vmSrc.includes("retrabalho: marcaRetrabalho !== null,")], [true, true, true]);
+  checar("pdf: o vinculo vem na MESMA linha da proposta", vmSrc.includes("id_endereco_ent, motivo_copia, id_int_origem_copia\""), true);
   checar("pdf: RETRABALHO no cabecalho, na cor da constante (sem literal), so com o campo ligado", [pdf.includes('{vm.retrabalho ? <Text style={styles.retrabalhoTopo}>RETRABALHO</Text> : null}'), pdf.includes("color: COR_RETRABALHO_CLARO,"), /retrabalhoTopo:[\s\S]{0,200}#[0-9a-fA-F]{6}/.test(pdf)], [true, true, false]);
   checar("pdf: os tres modelos usam o mesmo cabecalho (boletim, maco pela pagina do boletim, resumo)", [pdf.includes("<OsPdfCabecalho vm={vm}"), maco.includes("OsPdfPaginaBoletim"), resumo.includes("<OsPdfCabecalho vm={vm}")], [true, true, true]);
 }
@@ -207,6 +215,35 @@ checar("tela: opcao no enum e no dropdown, e os dois filtros do cliente usam isR
   checar("dashboard: quadro na pagina com o periodo e a empresa do Dashboard", pagina.includes("<RetrabalhoSection range={range} companyId={activeCompany.id} companyNames={companyNames} />"), true);
   checar("dashboard: a conta e a da lista (resumoDeRetrabalho -> retrabalhoConfirmadoParaLista), destaque pelo token", [sec.includes("resumoDeRetrabalho(r.data"), readFileSync("src/features/dashboard/utils/retrabalho-resumo.ts", "utf8").includes("if (!retrabalhoConfirmadoParaLista(c)) continue;"), sec.includes('"var(--retrabalho)"'), /#[0-9a-fA-F]{6}/.test(sec)], [true, true, true, false]);
   checar("dashboard: leitura propria; a RPC agregada e os totais nao mudam", [svc.includes("export async function fetchCobrancasDeRetrabalho("), (svc.match(/rpc\(/g) ?? []).length], [true, 2]); // executivo e ranking, as de antes
+}
+
+// ── 10. Regra unica do destaque: vinculo OU cobranca viva (20/10/2026) ──
+{
+  checar("marca: so o vinculo (motivo RETRABALHO), com original", marcaDeRetrabalho({ motivo_copia: "RETRABALHO", id_int_origem_copia: 23929 }, false), { idIntOriginal: 23929 });
+  checar("marca: so a cobranca viva (antigo sem motivo nem original)", marcaDeRetrabalho({ motivo_copia: null, id_int_origem_copia: null }, true), { idIntOriginal: null });
+  checar("marca: so a cobranca viva, antigo que e copia (mostra o original)", marcaDeRetrabalho({ motivo_copia: null, id_int_origem_copia: 22400 }, true), { idIntOriginal: 22400 });
+  checar("marca: os dois", marcaDeRetrabalho({ motivo_copia: "RETRABALHO", id_int_origem_copia: 23929 }, true), { idIntOriginal: 23929 });
+  checar("marca: nenhum (pedido comum)", marcaDeRetrabalho({ motivo_copia: null, id_int_origem_copia: null }, false), null);
+  checar("marca: duplicacao comum NAO e retrabalho", marcaDeRetrabalho({ motivo_copia: "DUPLICACAO", id_int_origem_copia: 23929 }, false), null);
+  checar("marca: motivo em minuscula/espaco ainda conta; original invalido vira nulo", [
+    marcaDeRetrabalho({ motivo_copia: " retrabalho ", id_int_origem_copia: "23929" }, false),
+    marcaDeRetrabalho({ motivo_copia: "RETRABALHO", id_int_origem_copia: 0 }, false),
+    marcaDeRetrabalho(null, true)
+  ], [{ idIntOriginal: 23929 }, { idIntOriginal: null }, { idIntOriginal: null }]);
+  checar("selo: com e sem original", [rotuloDoSeloRetrabalho(23929), rotuloDoSeloRetrabalho(null), rotuloDoSeloRetrabalho(undefined)], ["Retrabalho de #23929", "Retrabalho", "Retrabalho"]);
+
+  // A lista: destaque pela regra nova; isRetrabalho (filtro) continua so cobranca.
+  const [porVinculo, porCobranca, comum] = mapSupabasePropostaRowsToListItems([
+    { id: "a", id_int: 1, status_interno: "NOVO", motivo_copia: "RETRABALHO", id_int_origem_copia: 900, tipos_cobranca: [] },
+    { id: "b", id_int: 2, status_interno: "NOVO", motivo_copia: null, id_int_origem_copia: null, tipos_cobranca: ["E-RETRABALHO"] },
+    { id: "c", id_int: 3, status_interno: "NOVO", motivo_copia: "DUPLICACAO", id_int_origem_copia: 900, tipos_cobranca: ["PIX"] }
+  ] as unknown as SupabasePropostaRow[]);
+  checar("lista: vinculo destaca com original, sem mexer no filtro", [porVinculo?.destaqueRetrabalho, porVinculo?.retrabalhoOriginal, porVinculo?.isRetrabalho], [true, 900, false]);
+  checar("lista: so cobranca destaca sem original e segue no filtro", [porCobranca?.destaqueRetrabalho, porCobranca?.retrabalhoOriginal, porCobranca?.isRetrabalho], [true, null, true]);
+  checar("lista: duplicacao comum nao destaca", [comum?.destaqueRetrabalho, comum?.isRetrabalho], [false, false]);
+
+  const selo = readFileSync("src/components/common/SeloRetrabalho.tsx", "utf8");
+  checar("selo: um componente, texto pela regra", [selo.includes("{rotuloDoSeloRetrabalho(idIntOriginal)}"), selo.includes("idIntOriginal = null")], [true, true]);
 }
 
 if (falhas > 0) {
