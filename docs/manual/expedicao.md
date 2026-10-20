@@ -1,6 +1,6 @@
 # Expedição
 
-> **Última revisão:** 20/10/2026
+> **Última revisão:** 21/10/2026
 > **Caminho no menu:** Expedição (item direto do menu lateral, sem subitens; é o quarto, depois de Conferência, Pedidos e Clientes). Também se chega pela aba **Expedição** no topo do Kanban e da Fila de impressão da Produção.
 > **Endereço:** `/expedicao`
 
@@ -95,6 +95,7 @@ Os itens aparecem nesta ordem, cada um só quando se aplica.
 | **Desvincular e despachar separado** | Caixa de marcar no quadro do pedido complementar | Separa o complemento, com motivo obrigatório |
 | **Liberar despacho (ADM)** | Quadro vermelho da trava de frete; só administrador da Expedição | Libera um despacho, com motivo obrigatório |
 | **Cancelar liberação** | Quadro verde "Despacho liberado"; só administrador da Expedição | Desfaz a liberação do despacho |
+| **Fone** (telefone do destinatário) | Quadro de conferência, ao lado do bairro | Editável para quem tem a permissão de editar cadastros. Ao confirmar, o número corrigido é gravado no cadastro do destinatário (o pagador, quando é diferente do cliente) e vale na etiqueta e na prepostagem. Sem a permissão, só mostra o número |
 | **Cancelar** | Rodapé | Fecha sem gravar |
 | **Salvar sem despachar** | Rodapé, só no despacho | Guarda o que foi preenchido; o pedido segue Na Expedição |
 | **Confirmar despacho** | Rodapé, no despacho por transporte | Despacha o pedido |
@@ -232,8 +233,9 @@ A opção só aparece em pedido que já chegou à Expedição e não tem nota au
 1. No pedido com status Na Expedição, clique em **Despachar** e faça a conferência.
 2. Se o pedido não tem nota autorizada, marque **Despachar mesmo assim (há justificativa: remessa sem NF, retirada, etc.)**.
 3. Se aparecer um quadro sobre o frete, resolva-o antes (veja "Recotar o frete").
-4. Clique em **Confirmar despacho**. Em retirada, o botão se chama **Confirmar: aguardando retirada**.
-5. O destino depende de como o pedido sai:
+4. Se o telefone do destinatário estiver errado, corrija em **Fone** (só números, com DDD, mínimo 10 dígitos; telefone inválido bloqueia o botão). O número novo é gravado no cadastro do destinatário ao confirmar, antes do despacho. Se a gravação falhar, o pedido não é despachado e a tela mostra o erro. Sem alteração, nada é gravado no cadastro. Quem não pode editar cadastros vê o telefone, mas não edita, e o despacho segue com o número cadastrado. Uma prepostagem dos Correios já gerada mantém o telefone antigo.
+5. Clique em **Confirmar despacho**. Em retirada, o botão se chama **Confirmar: aguardando retirada**.
+6. O destino depende de como o pedido sai:
    - Correios — vai direto para Em Trânsito;
    - transportadora ou motoboy — continua Na Expedição como "aguardando coleta", com o card laranja, até o carro passar;
    - retirada — vai para A Retirar.
@@ -477,6 +479,8 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/features/expedicao/lib/promessa-do-card.ts`
 - `src/features/expedicao/lib/conhecimento.ts`
 - `src/features/expedicao/components/VerConhecimentoModal.tsx`
+- `src/features/expedicao/lib/telefone-edicao.ts`
+- `src/features/expedicao/components/CampoTelefoneDestinatario.tsx`
 - `src/features/expedicao/services/conhecimento-autoria.ts`
 
 > **Mudanças de 08/10/2026:**
@@ -501,3 +505,5 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 > - **15/10/2026:** novo item **Ver conhecimento** no menu de ações (Expedição e lista de Pedidos), só leitura, para despacho por transportadora ou motoboy.
 >
 > - **20/10/2026:** despachar de novo um pedido de transportadora ou motoboy que está em Na Expedição descarta a coleta anterior e o pedido volta a ficar aguardando coleta.
+>
+> - **21/10/2026:** o telefone do destinatário passou a ser editável no modal Despachar e em Editar dados de expedição (quem tem permissão de editar cadastros); o número corrigido é gravado no cadastro do destinatário.

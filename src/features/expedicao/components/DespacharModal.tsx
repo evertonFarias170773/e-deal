@@ -29,6 +29,10 @@ import { camposMinimosDespacho, frasearFaltantes } from "../lib/campos-minimos-d
 import { nomeTransportadoraCadastro } from "@/features/orcamentos/lib/modalidade-frete";
 import { divergenciaFreteDoDespacho, formatarCep } from "../lib/divergencia-frete-despacho";
 import { campoCodigoVisivel, ehConhecimento, rotuloDoCampoCodigo } from "../lib/conhecimento";
+import { avaliarTelefoneEditado, gravarTelefoneDoDestinatario } from "../lib/telefone-edicao";
+import { CampoTelefoneDestinatario } from "./CampoTelefoneDestinatario";
+import { updateCadastroCamposOperacionaisReadOnly } from "@/features/cadastros/services/cadastros.service";
+import { formatPhoneBR } from "@/lib/formatters/phone";
 import {
   recotarFrete,
   aplicarRecotacao,
@@ -165,6 +169,7 @@ export function DespacharModal({
   onClose,
   onDone,
   podeLiberarDespacho = false,
+  podeEditarTelefone = false,
   instrucaoEntrega
 }: {
   pedido: PedidoExpedicao;
@@ -183,6 +188,12 @@ export function DespacharModal({
    * frete recusa. So apresentacao — quem confere a permissao e a funcao do banco.
    */
   podeLiberarDespacho?: boolean;
+  /**
+   * `cadastros.edit` (ou admin): libera editar o telefone do destinatario, que ao confirmar e gravado
+   * no CADASTRO dele. Sem a permissao o campo so mostra o numero. So apresentacao: o despacho nao
+   * depende disto.
+   */
+  podeEditarTelefone?: boolean;
 }) {
   const { showToast } = useAppToast();
   const exp = pedido.expedicao;
@@ -921,6 +932,41 @@ export function DespacharModal({
     };
   }, [pedido.idInt]);
 
+  // TELEFONE DO DESTINATARIO (21/10/2026): o digitado (ou o do cadastro, enquanto nao mexeram) e a avaliacao.
+  const [telefoneDigitado, setTelefoneDigitado] = useState<string | null>(null);
+  const telefoneDoCadastro = previaBase?.destinatario.telefone ?? "";
+  const telefoneExibido = telefoneDigitado ?? telefoneDoCadastro;
+  const avaliacaoTelefone = useMemo(
+    () => avaliarTelefoneEditado({ original: telefoneDoCadastro, editado: telefoneExibido, podeEditar: podeEditarTelefone && previaBase !== null }),
+    [telefoneDoCadastro, telefoneExibido, podeEditarTelefone, previaBase]
+  );
+
+  /**
+   * Grava o telefone novo no cadastro do destinatario ANTES de despachar, de gerar a etiqueta ou a
+   * prepostagem (as duas releem o cadastro). `false` = a gravacao falhou: o toast ja foi mostrado e o
+   * chamador NAO segue. Sem alteracao, nada e gravado.
+   */
+  async function garantirTelefoneNoCadastro(): Promise<boolean> {
+    if (avaliacaoTelefone.bloqueia) {
+      showToast({ type: "warning", title: "Telefone inválido", description: avaliacaoTelefone.erro ?? "Corrija o telefone do destinatário." });
+      return false;
+    }
+    const r = await gravarTelefoneDoDestinatario(avaliacaoTelefone, previaBase?.destinatario.idCliente ?? null, (id, payload) =>
+      updateCadastroCamposOperacionaisReadOnly(id, payload)
+    );
+    if (!r.ok) {
+      showToast({ type: "error", title: "Não foi possível gravar o telefone", description: `${r.erro} O despacho não foi feito.` });
+      return false;
+    }
+    if (r.gravou && r.numero) {
+      const formatado = formatPhoneBR(r.numero);
+      setPreviaBase((atual) => (atual ? { ...atual, destinatario: { ...atual.destinatario, telefone: formatado } } : atual));
+      setTelefoneDigitado(null);
+      showToast({ type: "success", title: "Telefone gravado no cadastro", description: `${previaBase?.destinatario.nome ?? "Destinatário"}: ${formatado}` });
+    }
+    return true;
+  }
+
   const vmPrevia = useMemo<EtiquetaViewModel | null>(() => {
     if (!previaBase) return null;
     const vol = parseQtdVolumes(qtdVolumes);
@@ -1013,6 +1059,8 @@ export function DespacharModal({
         : {})
     };
 
+    if (!(await garantirTelefoneNoCadastro())) return;
+
     setSalvando(true);
     const res = modoEdicao
       ? await salvarDadosExpedicao(pedido.idInt, input, ator)
@@ -1098,6 +1146,7 @@ export function DespacharModal({
       showToast({ type: "error", title: "Volumes inválidos", description: "Quantidade de volumes deve ser entre 1 e 50." });
       return null;
     }
+    if (!(await garantirTelefoneNoCadastro())) return null;
 
     setSalvando(true);
     const res = await salvarDadosExpedicao(pedido.idInt, {
@@ -1192,6 +1241,9 @@ export function DespacharModal({
       showToast({ type: "error", title: "Volumes inválidos", description: "Quantidade de volumes deve ser entre 1 e 50." });
       return;
     }
+
+    // A rota de prepostagem le o telefone do CADASTRO: o numero corrigido tem de estar gravado antes.
+    if (!(await garantirTelefoneNoCadastro())) return;
 
     setGerandoPrepostagem(true);
     const salvo = await salvarDadosExpedicao(pedido.idInt, {
@@ -1428,7 +1480,20 @@ export function DespacharModal({
               vindo do mesmo view model do PDF, e os campos editáveis abaixo
               refletem aqui na hora. */}
           {vmPrevia ? (
-            <ConferenciaDespacho vm={vmPrevia} objetoCorreios={objetoCorreiosVigente} />
+            <ConferenciaDespacho
+              vm={{ ...vmPrevia, destinatario: { ...vmPrevia.destinatario, telefone: avaliacaoTelefone.alterado && avaliacaoTelefone.valido ? formatPhoneBR(avaliacaoTelefone.normalizado) : vmPrevia.destinatario.telefone } }}
+              objetoCorreios={objetoCorreiosVigente}
+              campoTelefone={
+                <CampoTelefoneDestinatario
+                  valor={telefoneExibido}
+                  onChange={setTelefoneDigitado}
+                  podeEditar={podeEditarTelefone}
+                  avaliacao={avaliacaoTelefone}
+                  nomeDestinatario={vmPrevia.destinatario.nome}
+                  prepostagemJaGerada={Boolean(objetoCorreiosVigente)}
+                />
+              }
+            />
           ) : carregandoPrevia ? (
             <p className="rounded-2xl border border-dashed border-slate-300 px-4 py-6 text-center text-sm text-slate-500 dark:border-slate-700">
               Carregando os dados do despacho...
@@ -2092,7 +2157,7 @@ export function DespacharModal({
               Bloqueado: {mensagemTrava}
             </span>
           ) : null}
-          <button type="button" onClick={() => void handleConfirmar()} disabled={salvando || faltamParaSalvar || travaBloqueia || bloqueioPorComplemento} className="rounded-2xl bg-[#0b2f4a] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[#123f61] disabled:cursor-not-allowed disabled:opacity-50">
+          <button type="button" onClick={() => void handleConfirmar()} disabled={salvando || faltamParaSalvar || travaBloqueia || bloqueioPorComplemento || avaliacaoTelefone.bloqueia} title={avaliacaoTelefone.bloqueia ? "Corrija o telefone do destinatário" : undefined} className="rounded-2xl bg-[#0b2f4a] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[#123f61] disabled:cursor-not-allowed disabled:opacity-50">
             {salvando ? "Salvando..." : modoEdicao ? "Salvar dados" : tipoEntrega === "RETIRADA" ? "Confirmar: aguardando retirada" : "Confirmar despacho"}
           </button>
         </div>

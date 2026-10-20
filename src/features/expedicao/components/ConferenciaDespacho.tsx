@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import type { EtiquetaViewModel } from "../services/etiqueta-viewmodel.service";
 import { apresentacaoEtiqueta } from "../lib/etiqueta-apresentacao";
 
@@ -43,9 +44,12 @@ const medio = "text-sm sm:text-base leading-snug text-slate-800 break-words dark
 
 export function ConferenciaDespacho({
   vm,
-  objetoCorreios
+  objetoCorreios,
+  campoTelefone
 }: {
   vm: EtiquetaViewModel;
+  /** Quando informado, ocupa o lugar do numero do Fone (campo editavel do modal Despachar). */
+  campoTelefone?: ReactNode;
   /**
    * Codigo do objeto (ou id da prepostagem) que JA existe nos Correios; `null`
    * quando nao ha, ou quando o envio nao vai por eles. Governa o unico aviso
@@ -90,7 +94,7 @@ export function ConferenciaDespacho({
             <p className={rotulo}>Fone</p>
             {/* `telefoneLinha` ja vem com o prefixo "Fone: " para o papel; aqui
                 o rotulo ja diz isso, entao sai so o numero. */}
-            <p className={destaque}>{vm.destinatario.telefone || "—"}</p>
+            {campoTelefone ?? <p className={destaque}>{vm.destinatario.telefone || "—"}</p>}
           </div>
           <div>
             <p className={rotulo}>CEP</p>

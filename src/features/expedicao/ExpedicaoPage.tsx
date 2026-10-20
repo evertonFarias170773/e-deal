@@ -200,6 +200,8 @@ export function ExpedicaoPage() {
   const podeSoltarDoGrupo = Boolean(user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "expedicao.admin"));
   const [isLoaded, setIsLoaded] = useState(false);
   const canOperar = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "expedicao.processar");
+  // Telefone do destinatario editavel no despacho: quem pode editar cadastros (`cadastros.edit`).
+  const podeEditarCadastro = Boolean(user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "cadastros.edit"));
   /**
    * O MODO DO MODAL E SINAL EXPLICITO, NAO DERIVADO DA ETAPA (02/09/2026).
    *
@@ -1538,6 +1540,7 @@ export function ExpedicaoPage() {
           modoEdicao={pedidoDespacho.modo === "EDICAO"}
           ator={atorAtual()}
           podeLiberarDespacho={canAdminExpedicao}
+          podeEditarTelefone={podeEditarCadastro}
           onClose={() => setPedidoDespacho(null)}
           onDone={() => { setPedidoDespacho(null); void recarregar(); }}
         />

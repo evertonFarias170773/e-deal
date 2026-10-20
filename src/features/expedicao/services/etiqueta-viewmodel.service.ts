@@ -64,6 +64,12 @@ export type EtiquetaViewModel = {
   dataEnvio: string;
   destinatario: {
     nome: string;
+    /**
+     * `clientes.id_cliente` do destinatario (pagador, cliente ou o escolhido em
+     * `id_cliente_destinatario_etiqueta`, ja validado): o cadastro de onde sai o telefone e
+     * para onde o modal Despachar grava a correcao dele.
+     */
+    idCliente: number | null;
     recebedor: string;
     endereco: string;
     bairro: string;
@@ -535,6 +541,7 @@ export async function montarEtiquetaViewModel(
             ? proposta.cliente || cliente?.nome || cliente?.fantasia || `Pedido #${idInt}`
             : cliente?.nome || cliente?.fantasia || `Cadastro ${idDestinatario}`
       }),
+      idCliente: idDestinatario,
       recebedor: endereco?.recebedor || "",
       endereco: endereco
         ? [[endereco.endereco, endereco.numero].filter(Boolean).join(", "), endereco.complemento]
