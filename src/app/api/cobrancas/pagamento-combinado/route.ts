@@ -6,6 +6,8 @@ import { resolveEmpresaIdFromTexto, montarUrlPublicaCobranca } from "@/features/
 import { verificarPermissaoServerSide } from "@/lib/auth/verificar-permissao";
 import { calcularSituacaoQuitacaoProposta } from "@/features/cobrancas/services/conferencia-financeira.service";
 import { gerarPixBancoInter } from "@/features/cobrancas/services/banco-inter.service";
+import { recusaDoGatilhoNoErro, recusaDoTipoNoPedido } from "@/features/cobrancas/lib/tipo-x-retrabalho";
+import { lerContextoRetrabalhoDoPedido } from "@/features/cobrancas/services/tipo-x-retrabalho.service";
 
 export async function POST(request: NextRequest) {
   const authHeader = request.headers.get("authorization") ?? "";
@@ -195,6 +197,17 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    // B2b. E-RETRABALHO x pedido de retrabalho (20/10/2026): o gatilho do banco
+    // recusa; conferido aqui, depois da repeticao idempotente e antes de qualquer
+    // efeito (consumo de credito), para nada ficar pela metade.
+    const contextoRetrabalho = await lerContextoRetrabalhoDoPedido(supabaseUser, idInt);
+    const recusaRetrabalho = contextoRetrabalho
+      ? recusaDoTipoNoPedido("E-CREDITO", contextoRetrabalho) ?? recusaDoTipoNoPedido(tipoSecundario, contextoRetrabalho)
+      : null;
+    if (recusaRetrabalho) {
+      return NextResponse.json({ success: false, error: recusaRetrabalho }, { status: 422 });
+    }
+
     // B3. Pré-validações do secundário BOLETO/CARTÃO — rodam ANTES de qualquer
     // efeito (consumo de crédito, criação de cobrança): falha aqui devolve 400
     // limpo, sem nada a regularizar. Espelham os gates do fluxo normal
@@ -291,7 +304,8 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (errPagV2Credito || !insertedCredito) {
-      return NextResponse.json({ success: false, error: "Falha ao salvar a cobrança E-Crédito." }, { status: 500 });
+      const recusa = recusaDoGatilhoNoErro(errPagV2Credito?.message);
+      return NextResponse.json({ success: false, error: recusa ?? "Falha ao salvar a cobrança E-Crédito." }, { status: recusa ? 422 : 500 });
     }
 
     // Registrar a chave de idempotência via RPC — único caminho permitido

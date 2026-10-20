@@ -42,6 +42,12 @@ import {
 } from "@/features/cobrancas/cobrancas-utils";
 import { formatCurrency } from "@/lib/formatters/currency";
 import {
+  recusaDoTipoNoPedido,
+  tipoApareceNoPedido,
+  type ContextoRetrabalhoDoPedido
+} from "@/features/cobrancas/lib/tipo-x-retrabalho";
+import { lerContextoRetrabalhoDoPedido } from "@/features/cobrancas/services/tipo-x-retrabalho.service";
+import {
   criarCobrancaInitialValues,
   getCobrancaTipoLabel,
   getMensagemTipoIndisponivel,
@@ -404,6 +410,14 @@ export function PropostaCobrancaPanel({
     }
   }
 
+  // E-RETRABALHO x pedido de retrabalho (20/10/2026): o que a lista de formas
+  // oferece. Quem recusa de fato e o gatilho do banco (lib/tipo-x-retrabalho).
+  const [contextoRetrabalho, setContextoRetrabalho] = useState<{ idInt: number; contexto: ContextoRetrabalhoDoPedido | null } | null>(null);
+  const contextoRetrabalhoDoPedido =
+    contextoRetrabalho && contextoRetrabalho.idInt === proposta.id_int ? contextoRetrabalho.contexto : null;
+  // Pedido de retrabalho: o formulario nasce (e renasce) em E-Retrabalho, a unica forma que ele aceita.
+  const pedidoEhRetrabalho = contextoRetrabalhoDoPedido?.motivoCopia === "RETRABALHO";
+
   function buildInitialFormState(): CriarCobrancaFormValues {
     // Só reaproveita OS numérica: `Cobranca.os_ideal` cai para `id_pagamento`
     // ("20130-A") quando a coluna está nula, e esse texto contornava a máscara
@@ -424,7 +438,8 @@ export function PropostaCobrancaPanel({
       osIdeal: defaultOsIdeal,
       modeloFatu: "BOLETO",
       id_empresa: initialEmp.id_empresa,
-      empresa: initialEmp.empresa
+      empresa: initialEmp.empresa,
+      ...(pedidoEhRetrabalho ? { tipoCobranca: "E-RETRABALHO" as CobrancaTipo } : {})
     };
   }
 
@@ -441,6 +456,27 @@ export function PropostaCobrancaPanel({
     if (!client || !proposta.id_int) return;
     void lerMarcaSistemaAntigo(client, proposta.id_int).then((gravada) => {
       if (ativo) setSistemaAntigo(checkboxInicialSistemaAntigo(gravada));
+    });
+    return () => {
+      ativo = false;
+    };
+  }, [proposta.id_int]);
+
+  useEffect(() => {
+    let ativo = true;
+    const client = getSupabaseClient();
+    if (!client || !proposta.id_int) return;
+    const idInt = proposta.id_int;
+    void lerContextoRetrabalhoDoPedido(client, idInt).then((contexto) => {
+      if (!ativo) return;
+      setContextoRetrabalho({ idInt, contexto });
+      if (contexto?.motivoCopia === "RETRABALHO") {
+        setForm((atual) =>
+          atual.tipoCobranca === "E-RETRABALHO"
+            ? atual
+            : { ...atual, tipoCobranca: "E-RETRABALHO", cartaoFluxo: undefined, parcelaSelecionada: undefined }
+        );
+      }
     });
     return () => {
       ativo = false;
@@ -1083,6 +1119,15 @@ export function PropostaCobrancaPanel({
       return;
     }
 
+    // E-RETRABALHO so em retrabalho; retrabalho so com E-RETRABALHO (20/10/2026).
+    const recusaRetrabalho = contextoRetrabalhoDoPedido
+      ? recusaDoTipoNoPedido(form.tipoCobranca, contextoRetrabalhoDoPedido)
+      : null;
+    if (recusaRetrabalho) {
+      showToast({ type: "warning", title: recusaRetrabalho });
+      return;
+    }
+
     if (form.tipoCobranca === "E-CREDITO") {
       // `isSaving` é ligado e desligado pelo handleSubmit, dono da trava.
       setRefreshingSaldo(true);
@@ -1532,6 +1577,11 @@ export function PropostaCobrancaPanel({
   if (saldoCredito > 0 && canUsarCredito && saldoRestante > 0) {
     opcoesPagamento.push({ id: "E-CREDITO", label: "E-Crédito", icon: Wallet as any });
   }
+  // Pedido de retrabalho: so E-Retrabalho. Os demais: sem E-Retrabalho, salvo o
+  // pedido antigo que ja teve uma (lib/tipo-x-retrabalho, 20/10/2026).
+  const opcoesDoPedido = opcoesPagamento.filter((opcao) =>
+    tipoApareceNoPedido(opcao.id === "CARD_ASAS" ? "CARD_PARCELADO" : opcao.id, contextoRetrabalhoDoPedido)
+  );
 
   const hasCobrancas = cobrancasAtivas.length > 0;
 
@@ -1731,7 +1781,7 @@ export function PropostaCobrancaPanel({
               description="Escolha uma opção operacional."
             >
               <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-5">
-                {opcoesPagamento.map((opcao) => {
+                {opcoesDoPedido.map((opcao) => {
                   const Icon = opcao.icon;
                   const selected = opcao.id === "E-FATURADO"
                     ? ["E-FATURADO", "E-RETRABALHO", "E-PERMUTA", "E-AMOSTRA"].includes(form.tipoCobranca)
@@ -2301,7 +2351,7 @@ export function PropostaCobrancaPanel({
                 description="Escolha uma opção operacional."
               >
                 <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-5">
-                  {opcoesPagamento.map((opcao) => {
+                  {opcoesDoPedido.map((opcao) => {
                     const Icon = opcao.icon;
                     const selected = opcao.id === "E-FATURADO"
                       ? ["E-FATURADO", "E-RETRABALHO", "E-PERMUTA", "E-AMOSTRA"].includes(form.tipoCobranca)

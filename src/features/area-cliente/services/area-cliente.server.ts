@@ -10,6 +10,7 @@ import {
 } from "@/features/cobrancas/cobrancas-utils";
 import { gravarMarcaVibePelaAreaCliente } from "@/features/cobrancas/lib/sistema-antigo";
 import { calcularTotaisPelaRegraDaTela } from "@/features/orcamentos/services/totais-proposta.server";
+import { recusaDoGatilhoNoErro } from "@/features/cobrancas/lib/tipo-x-retrabalho";
 
 /**
  * Fronteira server-only da área do cliente (/p/<token>).
@@ -623,6 +624,9 @@ export async function iniciarPagamentoAreaCliente(
         }
       } else {
         console.error(`[area-cliente] insert em pagamentos_v2 falhou (pedido ${idInt}):`, insertErr.message);
+        // Pedido de retrabalho so aceita E-Retrabalho (gatilho do banco, 20/10/2026).
+        const recusa = recusaDoGatilhoNoErro(insertErr.message);
+        if (recusa) return { ok: false, codigo: "BLOQUEADO", mensagem: `${recusa}. Fale com seu atendente.` };
         return { ok: false, codigo: "INTERNO", mensagem: "Não foi possível preparar o pagamento. Tente novamente." };
       }
     } else if (!criada) {

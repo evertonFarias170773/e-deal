@@ -25,6 +25,7 @@ import { criarControleDeRecarga, manterDadosDaRecarga } from "@/features/cobranc
 import { ACAO_AUTORIZAR_E_CONFERIR, mensagemDeFalhaParaATela } from "@/features/cobrancas/lib/autorizar-e-conferir";
 import { mensagemDaLeituraDeCobrancas, statusDaLeituraDeCobrancas } from "@/features/cobrancas/lib/limite-da-carga";
 import type { DestinoValorCancelado, MotivoCancelamentoPago } from "@/features/cobrancas/cancelamento-pago";
+import { recusaDoGatilhoNoErro } from "@/features/cobrancas/lib/tipo-x-retrabalho";
 
 /** Payload do cancelamento de cobrança JÁ PAGA — espelha o objeto que o
  *  CancelCobrancaModal monta e o contrato de POST /api/cobrancas/cancelar-pago. */
@@ -931,7 +932,7 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
         .returns<Array<{ id: string; id_pagamento?: string }>>();
 
       if (insertError || !createdRows || !createdRows.length) {
-        throw new Error(insertError?.message || "Nao foi possivel criar a cobranca. Tente novamente.");
+        throw new Error(recusaDoGatilhoNoErro(insertError?.message) || insertError?.message || "Nao foi possivel criar a cobranca. Tente novamente.");
       }
 
       const createdRow = createdRows[0];

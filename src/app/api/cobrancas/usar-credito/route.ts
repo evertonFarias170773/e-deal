@@ -55,6 +55,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient as createSupabaseClient, type SupabaseClient } from "@supabase/supabase-js";
 import { calcularSituacaoQuitacaoProposta } from "@/features/cobrancas/services/conferencia-financeira.service";
 import { montarUrlPublicaCobranca } from "@/features/cobrancas/cobrancas-utils";
+import { recusaDoGatilhoNoErro, recusaDoTipoNoPedido } from "@/features/cobrancas/lib/tipo-x-retrabalho";
+import { lerContextoRetrabalhoDoPedido } from "@/features/cobrancas/services/tipo-x-retrabalho.service";
 
 type UsuarioMinRow = {
   id_perfil: number | null;
@@ -226,6 +228,14 @@ export async function POST(request: NextRequest) {
     });
   }
 
+  // ── 4c. E-CREDITO em pedido de retrabalho (20/10/2026): o gatilho do banco
+  // recusa; conferido aqui, antes de qualquer efeito, para a mensagem sair limpa.
+  const contextoRetrabalho = await lerContextoRetrabalhoDoPedido(supabase, idInt);
+  const recusaRetrabalho = contextoRetrabalho ? recusaDoTipoNoPedido("E-CREDITO", contextoRetrabalho) : null;
+  if (recusaRetrabalho) {
+    return NextResponse.json({ success: false, error: recusaRetrabalho }, { status: 422 });
+  }
+
   // ── 5. Saldo real disponível — MESMA fonte usada no banner/modal
   // (getSaldoCredito/getSaldoContaCorrente): soma de toda a razão não
   // cancelada do cliente em movimento_credito. Cobre tanto pendências
@@ -318,8 +328,11 @@ export async function POST(request: NextRequest) {
 
   if (pagamentoError || !novoPagamento) {
     return NextResponse.json(
-      { success: false, error: `Erro ao registrar pagamento E-CREDITO: ${pagamentoError?.message}` },
-      { status: 500 }
+      {
+        success: false,
+        error: recusaDoGatilhoNoErro(pagamentoError?.message) ?? `Erro ao registrar pagamento E-CREDITO: ${pagamentoError?.message}`
+      },
+      { status: recusaDoGatilhoNoErro(pagamentoError?.message) ? 422 : 500 }
     );
   }
 

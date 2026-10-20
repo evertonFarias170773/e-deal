@@ -1,6 +1,6 @@
 # Proposta: aba Pagamentos
 
-> **Última revisão:** 16/10/2026
+> **Última revisão:** 20/10/2026
 > **Caminho no menu:** Pedidos → abrir um pedido → aba Pagamentos
 > **Endereço:** `/orcamentos/<número>/editar?tab=pagamentos`
 
@@ -43,7 +43,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **OS Ideal \*** | Janela **Criar cobrança** | Número da OS no sistema antigo, só dígitos, até 6. Fica na mesma linha do valor; só aparece, e só é obrigatório, com **Pedido do sistema antigo** marcado. |
 | **Valor da cobrança \*** | Janela **Criar cobrança** | Valor desta cobrança. Vem preenchido com o saldo restante. |
 | **Observações (opcional)** | Janela **Criar cobrança** | Texto livre gravado na cobrança. |
-| **PIX**, **Boleto**, **Cartão de crédito**, **Cartão Asaas**, **Faturado**, **E-Permuta**, **E-Amostra**, **E-Retrabalho**, **E-Crédito** | Quadro **Forma de pagamento** da janela | Escolhe a forma. Forma que a empresa recebedora não aceita aparece como **Indisponível**. |
+| **PIX**, **Boleto**, **Cartão de crédito**, **Cartão Asaas**, **Faturado**, **E-Permuta**, **E-Amostra**, **E-Retrabalho**, **E-Crédito** | Quadro **Forma de pagamento** da janela | Escolhe a forma. Forma que a empresa recebedora não aceita aparece como **Indisponível**. Em pedido de retrabalho só aparece **E-Retrabalho** (já selecionada); nos demais, **E-Retrabalho** não aparece, salvo no pedido antigo que já teve uma. |
 | **Condição de pagamento \*** | Quadro **Campos mínimos do faturado** | Escolhe a condição (parcelas e prazos) do Faturado e do E-Permuta. |
 | **Forma de Pagamento Secundária \*** e **Condição Secundária \*** | Quadro **Campos do E-Crédito** | Definem como cobrar o que o crédito não cobre. |
 | **Gerar cobrança** (vira **Gerando cobrança...**) e **Cancelar** | Rodapé da janela **Criar cobrança** | Cria a cobrança, ou fecha a janela sem criar. |
@@ -94,6 +94,8 @@ No cartão, o cliente escolhe as parcelas na página de pagamento; depois disso 
 6. O sistema responde **Faturamento liberado** (crédito disponível e sem vencidos; a cobrança segue para a Conferência) ou **Faturamento em análise** (o financeiro precisa avaliar).
 
 **E-Permuta** segue o mesmo caminho e também pede condição. **E-Amostra** e **E-Retrabalho** são cortesia: não pedem condição. Os três dependem sempre de liberação manual do financeiro.
+
+**E-Retrabalho** é só para pedido criado como **Retrabalho** (menu **Acoes** > **Duplicar proposta** > **Retrabalho**). Edite e salve o retrabalho antes (as quantidades podem ser diferentes das do original): o valor da cobrança nasce com o total da proposta naquele momento.
 
 Os boletos das parcelas não nascem aqui: depois que a Conferência confirma o faturado, a cobrança aparece no **Registro de recebíveis**, onde o financeiro clica em **Gerar títulos** e lança as parcelas com os vencimentos.
 
@@ -200,6 +202,7 @@ Se a janela for fechada sem escolher, a proposta fica com a faixa **Revisão fin
 - Não dá para entrar na aba com alteração não salva: a tela pede **Salvar e continuar**.
 - Não dá para entrar na aba enquanto houver diferença financeira pendente: "Resolva a diferença financeira pendente antes de acessar Pagamentos."
 - Não dá para gerar cobrança de orçamento rápido, sem cliente cadastrado.
+- **E-Retrabalho** só em pedido criado como Retrabalho, ou em pedido antigo que já teve uma E-Retrabalho. Pedido criado como Retrabalho só aceita **E-Retrabalho** (nem PIX, boleto, cartão, faturado nem crédito). A regra vale também na área do cliente e no uso de crédito.
 - **Gerar cobrança** só aparece enquanto há saldo. O saldo é o total da proposta menos a soma das cobranças ativas, pagas ou não. O valor de uma cobrança não pode passar do saldo.
 - Com **Pedido do sistema antigo** marcado, não dá para gerar cobrança sem **OS Ideal**. A marca fica gravada no pedido e volta na próxima cobrança.
 - Não dá para gerar cobrança com o frete desatualizado (peso da proposta diferente do peso cotado) nem, em pedido complementar, sem o frete complementar aplicado. No complementar em RETIRA ou FOB, que não tem frete a aplicar, esse bloqueio é um problema conhecido e sem solução publicada.
@@ -250,6 +253,8 @@ Se a janela for fechada sem escolher, a proposta fica com a faixa **Revisão fin
 | "Você deve salvar as alterações antes de acessar a aba Pagamentos." | A proposta tem alteração não salva. | Clique em **Salvar e continuar**. |
 | "Resolva a diferença financeira pendente antes de acessar Pagamentos." | A proposta paga foi alterada e a diferença não foi tratada. | Clique em **Resolver agora** na faixa **Revisão financeira pendente**. |
 | "Para gerar ou gerenciar cobranças, precisamos sincronizar os dados da proposta." | A proposta ainda não foi salva. | Clique em **Salvar proposta agora**. |
+| "E-Retrabalho só pode ser usado em pedido criado como Retrabalho" | O pedido não nasceu como Retrabalho e nunca teve E-Retrabalho. | Crie o retrabalho pelo **Duplicar proposta**, opção **Retrabalho**, e gere a cobrança nele. |
+| "Pedido de retrabalho só aceita cobrança E-Retrabalho" | Outra forma (PIX, boleto, cartão, faturado, crédito) num pedido criado como Retrabalho. | Use **E-Retrabalho**. |
 | "Não foi possível carregar as cobranças desta proposta." | A lista de cobranças não carregou. | Clique em **Recarregar cobranças** antes de gerar qualquer cobrança, para não duplicar. |
 | "Cadastre ou vincule um cliente antes de gerar cobrança." | A proposta é orçamento rápido, sem cliente cadastrado. | Vincule um cliente cadastrado na aba Geral. |
 | "Esta proposta já foi totalmente cobrada (saldo restante é R$ 0,00)." | As cobranças ativas já somam o total. | Cancele a cobrança errada antes de gerar outra. |
@@ -321,6 +326,7 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/features/cobrancas/PrepararBoletosModal.tsx`
 - `src/features/cobrancas/CobrancasProvider.tsx`
 - `src/features/cobrancas/cobrancas-utils.ts`
+- `src/features/cobrancas/lib/tipo-x-retrabalho.ts`
 - `src/features/contas-a-receber/registro-recebiveis/RegistroRecebiveisPage.tsx`
 - `src/features/contas-a-receber/registro-recebiveis/services/registro-recebiveis.service.ts`
 - `src/features/contas-a-receber/ContasReceberPage.tsx`
