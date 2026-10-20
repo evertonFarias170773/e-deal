@@ -233,6 +233,22 @@ type CamposDespachoConjunto = {
 };
 
 /**
+ * O que `despacharComplementoJunto` precisa saber do COMPLEMENTO para aplicar a regra do novo ciclo
+ * de coleta: o status dele (lido do banco) e a coleta que ele ja tem gravada.
+ */
+type CicloDeColetaDoComplemento = {
+  tipoEntrega: "TRANSPORTE" | "RETIRADA";
+  tipoFrete: TipoFreteNormalizado;
+  statusAtual: string | null | undefined;
+  coletadoEm: string | null;
+};
+
+/** A leitura da coleta so e necessaria quando a regra pode valer (motoboy/transportadora, transporte). */
+function regraDeColetaPodeValer(tipoEntrega: "TRANSPORTE" | "RETIRADA", tipoFrete: TipoFreteNormalizado): boolean {
+  return deveLimparColetaNoDespacho({ tipoEntrega, tipoFrete, statusAtual: "EXPEDICAO" });
+}
+
+/**
  * Grava o despacho de UM complemento junto com o principal: `expedicoes` com os
  * campos do principal e a mesma `data_despacho`, o rastreio no espelho
  * `propostas_os` e a transição para o mesmo destino. Usada pelo despacho
@@ -245,7 +261,8 @@ async function despacharComplementoJunto(
   dataDespacho: string,
   destino: string | null,
   codigoRastreamento: string | null,
-  ator: AtorExpedicao
+  ator: AtorExpedicao,
+  ciclo?: CicloDeColetaDoComplemento
 ): Promise<ResultadoAcao> {
   const client = getSupabaseClient();
   if (!client) return { success: false, error: "Supabase não inicializado." };
@@ -260,7 +277,11 @@ async function despacharComplementoJunto(
     tipo_volume: campos.tipo_volume,
     data_despacho: dataDespacho,
     despachado_por: ator.nome,
-    obs: `Despachado junto com #${idPrincipal}`
+    obs: `Despachado junto com #${idPrincipal}`,
+    // Novo despacho do COMPLEMENTO de motoboy/transportadora em EXPEDICAO = novo ciclo de coleta. A regra
+    // e a mesma do principal (`deveLimparColetaNoDespacho`), com o status do PROPRIO complemento e so quando
+    // ha coleta antiga: sem ela o payload e o de antes.
+    ...(ciclo?.coletadoEm && deveLimparColetaNoDespacho(ciclo) ? { coletado_em: null } : {})
   });
   if (!up.success) {
     return {
@@ -506,6 +527,13 @@ export async function despachar(
         tipoFretePrincipal === "RETIRA_BALCAO" ? "RETIRADA" : "TRANSPORTE",
         tipoFretePrincipal
       );
+      const tipoEntregaPrincipal = tipoFretePrincipal === "RETIRA_BALCAO" ? "RETIRADA" : "TRANSPORTE";
+      // Uma leitura so, e so quando a regra pode valer: a coleta que ESTE complemento ja tem gravada.
+      let coletaDoComplemento: string | null = null;
+      if (regraDeColetaPodeValer(tipoEntregaPrincipal, tipoFretePrincipal)) {
+        const { data: expProprio } = await client.from("expedicoes").select("coletado_em").eq("id_int", idInt).maybeSingle();
+        coletaDoComplemento = (expProprio?.coletado_em as string | null | undefined) ?? null;
+      }
       const repeticao = await despacharComplementoJunto(
         idInt,
         idPrincipal,
@@ -513,7 +541,8 @@ export async function despachar(
         String(expPrincipal.data_despacho),
         destinoPrincipal,
         expPrincipal.codigo_rastreamento ? String(expPrincipal.codigo_rastreamento) : null,
-        ator
+        ator,
+        { tipoEntrega: tipoEntregaPrincipal, tipoFrete: tipoFretePrincipal, statusAtual: propAtual?.status_interno, coletadoEm: coletaDoComplemento }
       );
       if (!repeticao.success) return repeticao;
       return { success: true, aguardandoColeta: destinoPrincipal === null };
@@ -732,7 +761,7 @@ export async function despachar(
    */
   const { data: complementosJuntos, error: erroJuntos } = await client
     .from("propostas")
-    .select("id_int")
+    .select("id_int, status_interno")
     .eq("id_int_pedido_principal", idInt)
     .eq("status_interno", "EXPEDICAO");
   if (erroJuntos) {
@@ -751,6 +780,16 @@ export async function despachar(
       };
     }
     return { success: true, aguardandoColeta: destino === null };
+  }
+  // A coleta de cada complemento: UMA leitura para todos, e so quando a regra pode valer (Correios nao le nada).
+  const statusDosComplementos = new Map((complementosJuntos ?? []).map((c) => [Number(c.id_int), String(c.status_interno ?? "")]));
+  const coletaDosComplementos = new Map<number, string | null>();
+  if (statusDosComplementos.size > 0 && regraDeColetaPodeValer(input.tipoEntrega, input.tipoFrete)) {
+    const { data: expsComplementos } = await client
+      .from("expedicoes")
+      .select("id_int, coletado_em")
+      .in("id_int", [...statusDosComplementos.keys()]);
+    for (const e of expsComplementos ?? []) coletaDosComplementos.set(Number(e.id_int), (e.coletado_em as string | null) ?? null);
   }
   const conjunto = await propagarAosComplementos(
     idInt,
@@ -771,7 +810,13 @@ export async function despachar(
         dataDespacho,
         destino,
         input.codigoRastreamento || null,
-        ator
+        ator,
+        {
+          tipoEntrega: input.tipoEntrega,
+          tipoFrete: input.tipoFrete,
+          statusAtual: statusDosComplementos.get(idComplemento),
+          coletadoEm: coletaDosComplementos.get(idComplemento) ?? null
+        }
       )
   );
 

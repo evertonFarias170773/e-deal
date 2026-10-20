@@ -129,5 +129,92 @@ confere("regra: Correios e retirada nao limpam", !deveLimparColetaNoDespacho({ t
   confere("4. Correios: transiciona para EM TRANSITO como sempre", transicoes.length === 1 && (transicoes[0].payload as { status_interno?: string })?.status_interno === "EM TRANSITO", transicoes.map((t) => t.payload));
 }
 
+// ═══════════════ COMPLEMENTO (23605, complemento do 23604) ═══════════════
+// Despacho CONJUNTO: o principal sai e leva o complemento em EXPEDICAO. O upsert do complemento e proprio.
+type CenCompl = { statusDoComplemento: string; coletaDoComplemento: boolean };
+async function rodaConjunto(tipoFrete: "MOTOBOY" | "TRANSPORTADORA" | "CORREIOS", c: CenCompl) {
+  falso.zerar();
+  falso.responderEmSequencia("propostas:select", [
+    { data: { status_interno: "EXPEDICAO", valor_frete: 38.38, id_int_pedido_principal: null, valor_total: 398.47 }, error: null },
+    { data: [{ id_int: 23605, status_interno: "EXPEDICAO", valor_total: 100 }], error: null }, // complementos abertos (lista)
+    { data: { status_interno: "EXPEDICAO" }, error: null }, // estado do conhecimento
+    { data: [{ id_int: 23605, status_interno: c.statusDoComplemento }], error: null }, // complementos em EXPEDICAO (conjunto)
+    { data: [], error: null }
+  ]);
+  falso.responderEmSequencia("expedicoes:select", [
+    { data: { codigo_rastreamento: null, tipo_frete: tipoFrete, coletado_em: null }, error: null }, // estado do principal
+    { data: [{ id_int: 23605, coletado_em: c.coletaDoComplemento ? "2026-10-19T18:02:07.345+00:00" : null }], error: null }, // coleta dos complementos
+    { data: [], error: null }
+  ]);
+  falso.responder("rpc:cc__valor_pago", { data: 100, error: null });
+  falso.responder("expedicoes:upsert", { data: null, error: null });
+  falso.responder("propostas:update", { data: [{ id_int: 23605 }], error: null });
+  const res = await despachar(23604, { ...base, tipoFrete, transportadoraNome: tipoFrete === "MOTOBOY" ? "Motoboy" : tipoFrete === "TRANSPORTADORA" ? "Transp X" : "Correios" }, ator);
+  const upCompl = falso.chamadas.find((x) => x.tabela === "expedicoes" && x.op === "upsert" && (x.payload as { id_int?: number })?.id_int === 23605);
+  const lerColetas = falso.chamadas.filter((x) => x.tabela === "expedicoes" && x.op === "select").length;
+  return { res, payload: (upCompl?.payload ?? null) as Record<string, unknown> | null, lerColetas };
+}
+
+{
+  const { res, payload } = await rodaConjunto("MOTOBOY", { statusDoComplemento: "EXPEDICAO", coletaDoComplemento: false });
+  confere("C1. conjunto, 1o despacho do complemento: saiu junto", Array.isArray(res.complementosDespachados) && res.complementosDespachados.includes(23605) && payload !== null, res);
+  confere("C1. payload do complemento igual ao de antes (sem coletado_em)", payload !== null && !("coletado_em" in payload), payload);
+}
+{
+  const { payload, res } = await rodaConjunto("MOTOBOY", { statusDoComplemento: "EXPEDICAO", coletaDoComplemento: true });
+  confere("C2. conjunto, repetido em EXPEDICAO com coleta antiga: coletado_em = null junto com data_despacho/despachado_por", payload !== null && payload.coletado_em === null && "coletado_em" in payload && typeof payload.data_despacho === "string" && payload.despachado_por === "Edina Farias", payload);
+  confere("C2. aguardandoColeta verdadeiro (sem transicao do principal nem do complemento)", res.aguardandoColeta === true && falso.chamadas.filter((x) => x.tabela === "propostas" && x.op === "update").length === 0);
+}
+{
+  const { payload } = await rodaConjunto("TRANSPORTADORA", { statusDoComplemento: "EXPEDICAO", coletaDoComplemento: true });
+  confere("C2b. transportadora: coleta do complemento limpa", payload !== null && payload.coletado_em === null && "coletado_em" in payload, payload);
+}
+for (const status of ["EM TRANSITO", "ENTREGUE"]) {
+  const { payload } = await rodaConjunto("MOTOBOY", { statusDoComplemento: status, coletaDoComplemento: true });
+  confere(`C3. complemento ${status} (status proprio, lido do banco): coleta preservada`, payload !== null && !("coletado_em" in payload), payload);
+}
+{
+  const { res, payload, lerColetas } = await rodaConjunto("CORREIOS", { statusDoComplemento: "EXPEDICAO", coletaDoComplemento: true });
+  confere("C4. Correios: complemento sai junto e coletado_em NAO e tocado", Array.isArray(res.complementosDespachados) && payload !== null && !("coletado_em" in payload), payload);
+  confere("C4. Correios: nenhuma leitura extra de coleta (so a do estado do principal)", lerColetas === 1, lerColetas);
+}
+
+// Caminho de REPETICAO: o proprio complemento clicado depois que o principal ja saiu.
+async function rodaRepeticao(statusDoComplemento: string, coletaDoComplemento: boolean, tipoPrincipal: "MOTOBOY" | "CORREIOS") {
+  falso.zerar();
+  falso.responderEmSequencia("propostas:select", [
+    { data: { status_interno: statusDoComplemento, valor_frete: 0, id_int_pedido_principal: 23604, valor_total: 100 }, error: null },
+    { data: [], error: null }
+  ]);
+  falso.responderEmSequencia("expedicoes:select", [
+    { data: { data_despacho: "2026-10-20T11:29:32.02+00:00", modalidade_frete: "CIF", tipo_frete: tipoPrincipal, transportadora_nome: "Motoboy", categoria_frete: "MOTOBOY", id_transportadora_cliente: null, id_endereco_entrega: "end-1", tipo_volume: "Pacote", codigo_rastreamento: "EDUARDA BAZOTTI" }, error: null }, // do principal
+    { data: { coletado_em: coletaDoComplemento ? "2026-10-19T18:02:07.345+00:00" : null }, error: null }, // do proprio complemento
+    { data: [], error: null }
+  ]);
+  falso.responder("rpc:cc__valor_pago", { data: 100, error: null });
+  falso.responder("expedicoes:upsert", { data: null, error: null });
+  falso.responder("propostas:update", { data: [{ id_int: 23605 }], error: null });
+  falso.responder("propostas_os:update", { data: null, error: null });
+  const res = await despachar(23605, { ...base, tipoFrete: tipoPrincipal, transportadoraNome: "x" }, ator);
+  const up = falso.chamadas.find((x) => x.tabela === "expedicoes" && x.op === "upsert");
+  return { res, payload: (up?.payload ?? null) as Record<string, unknown> | null };
+}
+{
+  const { res, payload } = await rodaRepeticao("EXPEDICAO", false, "MOTOBOY");
+  confere("R1. repeticao, 1o despacho do complemento: igual a antes (sem coletado_em)", res.success === true && payload !== null && !("coletado_em" in payload), { res, payload });
+}
+{
+  const { res, payload } = await rodaRepeticao("EXPEDICAO", true, "MOTOBOY");
+  confere("R2. repeticao em EXPEDICAO com coleta antiga: coletado_em = null + aguardandoColeta verdadeiro", res.success === true && res.aguardandoColeta === true && payload !== null && payload.coletado_em === null && "coletado_em" in payload && typeof payload.data_despacho === "string", { res, payload });
+}
+{
+  const { res, payload } = await rodaRepeticao("EM TRANSITO", true, "MOTOBOY");
+  confere("R3. repeticao com o complemento EM TRANSITO: nada e gravado (conflito de status), coleta preservada", res.success === false && payload === null, { res, payload });
+}
+{
+  const { res, payload } = await rodaRepeticao("EXPEDICAO", true, "CORREIOS");
+  confere("R4. repeticao Correios: coletado_em NAO e tocado", res.success === true && payload !== null && !("coletado_em" in payload), { res, payload });
+}
+
 console.log(falhas === 0 ? "\nTUDO OK" : `\n${falhas} FALHA(S)`);
 process.exitCode = falhas === 0 ? 0 : 1;
