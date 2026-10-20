@@ -29,7 +29,13 @@ import { camposMinimosDespacho, frasearFaltantes } from "../lib/campos-minimos-d
 import { nomeTransportadoraCadastro } from "@/features/orcamentos/lib/modalidade-frete";
 import { divergenciaFreteDoDespacho, formatarCep } from "../lib/divergencia-frete-despacho";
 import { campoCodigoVisivel, ehConhecimento, rotuloDoCampoCodigo } from "../lib/conhecimento";
-import { avaliarTelefoneEditado, gravarTelefoneDoDestinatario } from "../lib/telefone-edicao";
+import {
+  avaliarSelecaoDeTelefone,
+  chaveInicialDoTelefone,
+  gravarTelefoneDoDestinatario,
+  opcoesDeTelefone,
+  type ChaveTelefone
+} from "../lib/telefone-edicao";
 import { CampoTelefoneDestinatario } from "./CampoTelefoneDestinatario";
 import { updateCadastroCamposOperacionaisReadOnly } from "@/features/cadastros/services/cadastros.service";
 import { formatPhoneBR } from "@/lib/formatters/phone";
@@ -933,12 +939,22 @@ export function DespacharModal({
   }, [pedido.idInt]);
 
   // TELEFONE DO DESTINATARIO (21/10/2026): o digitado (ou o do cadastro, enquanto nao mexeram) e a avaliacao.
+  // Seletor (22/10/2026): os telefones preenchidos do MESMO cadastro; comeca no que a regra unica usa hoje.
   const [telefoneDigitado, setTelefoneDigitado] = useState<string | null>(null);
+  const [telefoneEscolhido, setTelefoneEscolhido] = useState<ChaveTelefone | null>(null);
   const telefoneDoCadastro = previaBase?.destinatario.telefone ?? "";
-  const telefoneExibido = telefoneDigitado ?? telefoneDoCadastro;
+  const opcoesTelefone = useMemo(() => opcoesDeTelefone(previaBase?.destinatario.telefones), [previaBase]);
+  const chaveInicialTelefone = useMemo(() => chaveInicialDoTelefone(opcoesTelefone, telefoneDoCadastro), [opcoesTelefone, telefoneDoCadastro]);
+  const chaveTelefoneAtual = telefoneEscolhido ?? chaveInicialTelefone;
+  const telefoneDaOpcao = opcoesTelefone.find((o) => o.chave === chaveTelefoneAtual)?.exibido ?? telefoneDoCadastro;
+  const telefoneExibido = telefoneDigitado ?? telefoneDaOpcao;
+  // O que decide gravar e o `whatsapp_1` ATUAL do cadastro: se o numero final for igual a ele, nada e gravado.
+  const whatsapp1DoCadastro = previaBase?.destinatario.telefones.whatsapp1 ?? "";
+  // So conta como alteracao o que o expedidor FEZ (escolheu outro telefone ou digitou).
+  const telefoneTocado = telefoneDigitado !== null || (telefoneEscolhido !== null && telefoneEscolhido !== chaveInicialTelefone);
   const avaliacaoTelefone = useMemo(
-    () => avaliarTelefoneEditado({ original: telefoneDoCadastro, editado: telefoneExibido, podeEditar: podeEditarTelefone && previaBase !== null }),
-    [telefoneDoCadastro, telefoneExibido, podeEditarTelefone, previaBase]
+    () => avaliarSelecaoDeTelefone({ whatsapp1: whatsapp1DoCadastro, exibido: telefoneExibido, tocado: telefoneTocado, podeEditar: podeEditarTelefone && previaBase !== null }),
+    [whatsapp1DoCadastro, telefoneExibido, telefoneTocado, podeEditarTelefone, previaBase]
   );
 
   /**
@@ -960,8 +976,13 @@ export function DespacharModal({
     }
     if (r.gravou && r.numero) {
       const formatado = formatPhoneBR(r.numero);
-      setPreviaBase((atual) => (atual ? { ...atual, destinatario: { ...atual.destinatario, telefone: formatado } } : atual));
+      setPreviaBase((atual) =>
+        atual
+          ? { ...atual, destinatario: { ...atual.destinatario, telefone: formatado, telefones: { ...atual.destinatario.telefones, whatsapp1: r.numero ?? "" } } }
+          : atual
+      );
       setTelefoneDigitado(null);
+      setTelefoneEscolhido(null);
       showToast({ type: "success", title: "Telefone gravado no cadastro", description: `${previaBase?.destinatario.nome ?? "Destinatário"}: ${formatado}` });
     }
     return true;
@@ -1488,6 +1509,12 @@ export function DespacharModal({
                   valor={telefoneExibido}
                   onChange={setTelefoneDigitado}
                   podeEditar={podeEditarTelefone}
+                  opcoes={opcoesTelefone}
+                  escolhida={chaveTelefoneAtual}
+                  onEscolher={(chave) => {
+                    setTelefoneEscolhido(chave);
+                    setTelefoneDigitado(null);
+                  }}
                   avaliacao={avaliacaoTelefone}
                   nomeDestinatario={vmPrevia.destinatario.nome}
                   prepostagemJaGerada={Boolean(objetoCorreiosVigente)}

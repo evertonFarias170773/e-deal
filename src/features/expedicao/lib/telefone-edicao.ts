@@ -1,4 +1,5 @@
 import { diagnosticarTelefone, normalizarTelefoneBR, soDigitos } from "@/lib/telefone/telefone-br";
+import { formatPhoneBR } from "@/lib/formatters/phone";
 
 /**
  * TELEFONE DO DESTINATARIO EDITAVEL NO DESPACHO (21/10/2026).
@@ -13,6 +14,64 @@ import { diagnosticarTelefone, normalizarTelefoneBR, soDigitos } from "@/lib/tel
  *
  * Aqui ficam so as decisoes puras e a sequencia de gravacao (testaveis sem tela nem banco).
  */
+
+export type ChaveTelefone = "whatsapp_1" | "telefone_fixo" | "whatsapp_2";
+export type TelefonesDoCadastro = { whatsapp1: string; telefoneFixo: string; whatsapp2: string };
+export type OpcaoTelefone = {
+  chave: ChaveTelefone;
+  rotulo: string;
+  /** O que esta gravado no cadastro, cru. */
+  numero: string;
+  /** Formatado para o seletor. */
+  exibido: string;
+  /** "sem DDD" (menos de 10 digitos), "inválido" (outro defeito) ou null quando serve. */
+  defeito: "sem DDD" | "inválido" | null;
+};
+
+/**
+ * Os telefones PREENCHIDOS do cadastro do destinatario, para o seletor do Fone. Preenchido = tem ao menos
+ * um digito (nome de pessoa no campo, comum em `whatsapp_1`, nao e telefone e nao entra). Menos de 10
+ * digitos aparece como "sem DDD". A ordem e a de sempre: WhatsApp 1, Telefone fixo comercial, WhatsApp 2.
+ */
+export function opcoesDeTelefone(telefones: TelefonesDoCadastro | null | undefined): OpcaoTelefone[] {
+  if (!telefones) return [];
+  const fontes: Array<[ChaveTelefone, string, string]> = [
+    ["whatsapp_1", "WhatsApp 1", telefones.whatsapp1],
+    ["telefone_fixo", "Telefone fixo comercial", telefones.telefoneFixo],
+    ["whatsapp_2", "WhatsApp 2", telefones.whatsapp2]
+  ];
+  const opcoes: OpcaoTelefone[] = [];
+  for (const [chave, rotulo, numero] of fontes) {
+    const digitos = soDigitos(numero);
+    if (!digitos) continue;
+    opcoes.push({
+      chave,
+      rotulo,
+      numero,
+      exibido: formatPhoneBR(numero),
+      defeito: normalizarTelefoneBR(numero) ? null : digitos.length < 10 ? "sem DDD" : "inválido"
+    });
+  }
+  return opcoes;
+}
+
+/**
+ * Qual opcao comeca selecionada: a que a regra unica (`telefoneDestinatario`) escolhe hoje — a primeira entre
+ * WhatsApp 1 e Telefone fixo cujo numero formatado e o do modal. Sem coincidencia, a primeira da lista.
+ */
+export function chaveInicialDoTelefone(opcoes: OpcaoTelefone[], telefoneDaRegra: string): ChaveTelefone | null {
+  const alvo = soDigitos(telefoneDaRegra);
+  if (alvo) {
+    const daRegra = opcoes.find((o) => o.chave !== "whatsapp_2" && soDigitos(o.exibido) === alvo);
+    if (daRegra) return daRegra.chave;
+  }
+  return opcoes[0]?.chave ?? null;
+}
+
+/** O seletor so aparece quando ha mais de um telefone para escolher. */
+export function mostraSeletorDeTelefone(opcoes: OpcaoTelefone[]): boolean {
+  return opcoes.length > 1;
+}
 
 export type AvaliacaoTelefone = {
   /** O texto digitado, sem nada. Vazio nunca grava (nao se apaga telefone por aqui). */
@@ -54,6 +113,25 @@ export function avaliarTelefoneEditado(entrada: {
     bloqueia: Boolean(erro),
     gravar: entrada.podeEditar && alterado && valido
   };
+}
+
+/**
+ * A avaliacao do que o expedidor ESCOLHEU/DIGITOU. A comparacao e com o `whatsapp_1` ATUAL do cadastro (e nele
+ * que se grava): numero final igual a ele = nada a gravar. Mas so conta como alteracao o que o expedidor
+ * FEZ: enquanto ele nao escolheu outro telefone nem digitou (`tocado` falso), o numero mostrado e o da
+ * regra unica — mesmo quando ele vem do Telefone fixo porque o WhatsApp 1 esta vazio — e nada e gravado.
+ */
+export function avaliarSelecaoDeTelefone(entrada: {
+  whatsapp1: string;
+  exibido: string;
+  tocado: boolean;
+  podeEditar: boolean;
+}): AvaliacaoTelefone {
+  return avaliarTelefoneEditado({
+    original: entrada.tocado ? entrada.whatsapp1 : entrada.exibido,
+    editado: entrada.exibido,
+    podeEditar: entrada.podeEditar
+  });
 }
 
 export type ResultadoGravarCadastro = { success: boolean; errorMessage?: string };

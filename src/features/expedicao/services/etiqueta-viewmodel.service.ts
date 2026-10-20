@@ -70,6 +70,12 @@ export type EtiquetaViewModel = {
      * para onde o modal Despachar grava a correcao dele.
      */
     idCliente: number | null;
+    /**
+     * Os TRES telefones do mesmo cadastro (`clientes.whatsapp_1`, `telefone_fixo`, `whatsapp_2`), crus, para o
+     * expedidor escolher qual usar no modal Despachar. `telefone` abaixo continua sendo o que a regra unica
+     * escolhe — esta lista so alimenta o seletor, nao muda o que sai no papel.
+     */
+    telefones: { whatsapp1: string; telefoneFixo: string; whatsapp2: string };
     recebedor: string;
     endereco: string;
     bairro: string;
@@ -398,7 +404,7 @@ export async function montarEtiquetaViewModel(
   const { data: cliente } = idDestinatario !== null
     ? await supabase
         .from("clientes")
-        .select("nome, fantasia, documento, whatsapp_1, telefone_fixo, cidade_uf")
+        .select("nome, fantasia, documento, whatsapp_1, telefone_fixo, whatsapp_2, cidade_uf")
         .eq("id_cliente", idDestinatario)
         .maybeSingle()
     : { data: null };
@@ -542,6 +548,11 @@ export async function montarEtiquetaViewModel(
             : cliente?.nome || cliente?.fantasia || `Cadastro ${idDestinatario}`
       }),
       idCliente: idDestinatario,
+      telefones: {
+        whatsapp1: String(cliente?.whatsapp_1 ?? "").trim(),
+        telefoneFixo: String(cliente?.telefone_fixo ?? "").trim(),
+        whatsapp2: String(cliente?.whatsapp_2 ?? "").trim()
+      },
       recebedor: endereco?.recebedor || "",
       endereco: endereco
         ? [[endereco.endereco, endereco.numero].filter(Boolean).join(", "), endereco.complemento]

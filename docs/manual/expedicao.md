@@ -1,6 +1,6 @@
 # Expedição
 
-> **Última revisão:** 21/10/2026
+> **Última revisão:** 22/10/2026
 > **Caminho no menu:** Expedição (item direto do menu lateral, sem subitens; é o quarto, depois de Conferência, Pedidos e Clientes). Também se chega pela aba **Expedição** no topo do Kanban e da Fila de impressão da Produção.
 > **Endereço:** `/expedicao`
 
@@ -95,7 +95,7 @@ Os itens aparecem nesta ordem, cada um só quando se aplica.
 | **Desvincular e despachar separado** | Caixa de marcar no quadro do pedido complementar | Separa o complemento, com motivo obrigatório |
 | **Liberar despacho (ADM)** | Quadro vermelho da trava de frete; só administrador da Expedição | Libera um despacho, com motivo obrigatório |
 | **Cancelar liberação** | Quadro verde "Despacho liberado"; só administrador da Expedição | Desfaz a liberação do despacho |
-| **Fone** (telefone do destinatário) | Quadro de conferência, ao lado do bairro | Editável para quem tem a permissão de editar cadastros. Ao confirmar, o número corrigido é gravado no cadastro do destinatário (o pagador, quando é diferente do cliente) e vale na etiqueta e na prepostagem. Sem a permissão, só mostra o número |
+| **Fone** (telefone do destinatário) | Quadro de conferência, ao lado do bairro | Quando o cadastro tem mais de um telefone, um seletor acima do campo lista os preenchidos (WhatsApp 1, Telefone fixo comercial, WhatsApp 2), com "sem DDD" nos que têm menos de 10 dígitos; escolher um preenche o campo. Editável para quem tem a permissão de editar cadastros. Ao confirmar, se o número final for diferente do WhatsApp 1 do cadastro, ele é gravado no WhatsApp 1 do cadastro do destinatário (o pagador, quando é diferente do cliente) e vale na etiqueta e na prepostagem; os outros telefones nunca mudam. Sem a permissão, só mostra o número e o seletor fica bloqueado |
 | **Cancelar** | Rodapé | Fecha sem gravar |
 | **Salvar sem despachar** | Rodapé, só no despacho | Guarda o que foi preenchido; o pedido segue Na Expedição |
 | **Confirmar despacho** | Rodapé, no despacho por transporte | Despacha o pedido |
@@ -233,7 +233,7 @@ A opção só aparece em pedido que já chegou à Expedição e não tem nota au
 1. No pedido com status Na Expedição, clique em **Despachar** e faça a conferência.
 2. Se o pedido não tem nota autorizada, marque **Despachar mesmo assim (há justificativa: remessa sem NF, retirada, etc.)**.
 3. Se aparecer um quadro sobre o frete, resolva-o antes (veja "Recotar o frete").
-4. Se o telefone do destinatário estiver errado, corrija em **Fone** (só números, com DDD, mínimo 10 dígitos; telefone inválido bloqueia o botão). O número novo é gravado no cadastro do destinatário ao confirmar, antes do despacho. Se a gravação falhar, o pedido não é despachado e a tela mostra o erro. Sem alteração, nada é gravado no cadastro. Quem não pode editar cadastros vê o telefone, mas não edita, e o despacho segue com o número cadastrado. Uma prepostagem dos Correios já gerada mantém o telefone antigo.
+4. Se o telefone do destinatário estiver errado, escolha em **Fone** o telefone certo entre os do cadastro (o seletor só aparece quando há mais de um) ou corrija o número no campo (só números, com DDD, mínimo 10 dígitos; telefone inválido bloqueia o botão). O número novo é gravado no cadastro do destinatário ao confirmar, antes do despacho. Se a gravação falhar, o pedido não é despachado e a tela mostra o erro. O número vai sempre para o WhatsApp 1; o Telefone fixo e o WhatsApp 2 do cadastro não são alterados. Sem alteração (inclusive só abrir e confirmar), nada é gravado no cadastro. Quem não pode editar cadastros vê o telefone, mas não edita nem troca o seletor, e o despacho segue com o número cadastrado. Uma prepostagem dos Correios já gerada mantém o telefone antigo.
 5. Clique em **Confirmar despacho**. Em retirada, o botão se chama **Confirmar: aguardando retirada**.
 6. O destino depende de como o pedido sai:
    - Correios — vai direto para Em Trânsito;
@@ -507,3 +507,5 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 > - **20/10/2026:** despachar de novo um pedido de transportadora ou motoboy que está em Na Expedição descarta a coleta anterior e o pedido volta a ficar aguardando coleta.
 >
 > - **21/10/2026:** o telefone do destinatário passou a ser editável no modal Despachar e em Editar dados de expedição (quem tem permissão de editar cadastros); o número corrigido é gravado no cadastro do destinatário.
+>
+> - **22/10/2026:** o campo Fone ganhou um seletor com os telefones do cadastro do destinatário (WhatsApp 1, Telefone fixo comercial, WhatsApp 2); o escolhido é gravado no WhatsApp 1 ao confirmar, só se for diferente do atual.
