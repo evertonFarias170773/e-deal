@@ -1,6 +1,6 @@
 # Expedição
 
-> **Última revisão:** 19/10/2026
+> **Última revisão:** 20/10/2026
 > **Caminho no menu:** Expedição (item direto do menu lateral, sem subitens; é o quarto, depois de Conferência, Pedidos e Clientes). Também se chega pela aba **Expedição** no topo do Kanban e da Fila de impressão da Produção.
 > **Endereço:** `/expedicao`
 
@@ -268,6 +268,7 @@ Serve para trocar a modalidade (quem paga) e a transportadora de um pedido que j
 
 1. No pedido laranja (despachado, aguardando coleta), clique em **Confirmar coleta** quando a transportadora ou o motoboy levar o volume.
 2. Confirme. O pedido passa para Em Trânsito.
+3. Se um pedido de transportadora ou motoboy voltar para Na Expedição e for despachado de novo, a coleta anterior é descartada e o pedido volta a ficar laranja (aguardando coleta), pronto para uma nova **Confirmar coleta**.
 
 ### Informar o rastreio e rastrear
 
@@ -498,3 +499,5 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 > - **15/10/2026:** campo **Conhecimento** para envios por transportadora e motoboy (salvar e corrigir também depois do despacho, com registro de quem alterou); **Rastrear objeto** só em envio pelos Correios.
 >
 > - **15/10/2026:** novo item **Ver conhecimento** no menu de ações (Expedição e lista de Pedidos), só leitura, para despacho por transportadora ou motoboy.
+>
+> - **20/10/2026:** despachar de novo um pedido de transportadora ou motoboy que está em Na Expedição descarta a coleta anterior e o pedido volta a ficar aguardando coleta.

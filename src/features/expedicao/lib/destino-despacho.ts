@@ -24,6 +24,30 @@ import type { TipoFreteNormalizado } from "../types";
  * despacho conjunto leva o complemento para o MESMO destino do principal, e a
  * regra precisa ser uma só para os dois.
  */
+/**
+ * Despachar DE NOVO um pedido de MOTOBOY ou TRANSPORTADORA que esta em EXPEDICAO comeca um
+ * novo ciclo de coleta: o `coletado_em` de um ciclo anterior nao pode sobreviver a ele
+ * (pedido 23604: devolvido a EXPEDICAO por escrita direta, que nao limpa a coleta, o
+ * `aguardandoColeta` ficava falso e o card oferecia "Despachar" a cada clique).
+ *
+ * So vale na gravacao do despacho (`despachar()`), com o status LIDO DO BANCO em EXPEDICAO:
+ *   - pedido EM TRANSITO/ENTREGUE (aba velha aberta): a coleta e valida e fica;
+ *   - CORREIOS: a postagem e a coleta, nada a limpar;
+ *   - primeiro despacho / coleta ja vazia: gravar `null` por cima de `null` nao muda nada.
+ * "Editar dados", salvar o conhecimento e "Confirmar coleta" nao passam por aqui.
+ */
+export function deveLimparColetaNoDespacho(entrada: {
+  tipoEntrega: "TRANSPORTE" | "RETIRADA";
+  tipoFrete: TipoFreteNormalizado;
+  statusAtual: string | null | undefined;
+}): boolean {
+  return (
+    entrada.tipoEntrega === "TRANSPORTE" &&
+    (entrada.tipoFrete === "TRANSPORTADORA" || entrada.tipoFrete === "MOTOBOY") &&
+    String(entrada.statusAtual ?? "").trim().toUpperCase() === "EXPEDICAO"
+  );
+}
+
 export function destinoDoDespacho(
   tipoEntrega: "TRANSPORTE" | "RETIRADA",
   tipoFrete: TipoFreteNormalizado

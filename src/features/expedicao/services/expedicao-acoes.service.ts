@@ -5,7 +5,7 @@ import {
   categoriaPorNomeConhecido
 } from "@/features/orcamentos/lib/categoria-frete";
 import type { ModalidadeFrete, TipoFreteNormalizado } from "../types";
-import { destinoDoDespacho } from "../lib/destino-despacho";
+import { destinoDoDespacho, deveLimparColetaNoDespacho } from "../lib/destino-despacho";
 
 export type AtorExpedicao = { uid: string | null; nome: string | null };
 export type ResultadoAcao = {
@@ -162,16 +162,17 @@ async function transicionar(
  */
 async function lerEstadoDoConhecimento(
   idInt: number
-): Promise<{ codigo: string | null; tipo: string | null; status: string }> {
+): Promise<{ codigo: string | null; tipo: string | null; status: string; coletado: string | null }> {
   const client = getSupabaseClient();
-  if (!client) return { codigo: null, tipo: null, status: "" };
+  if (!client) return { codigo: null, tipo: null, status: "", coletado: null };
   const [{ data: exp }, { data: prop }] = await Promise.all([
-    client.from("expedicoes").select("codigo_rastreamento, tipo_frete").eq("id_int", idInt).maybeSingle(),
+    client.from("expedicoes").select("codigo_rastreamento, tipo_frete, coletado_em").eq("id_int", idInt).maybeSingle(),
     client.from("propostas").select("status_interno").eq("id_int", idInt).maybeSingle()
   ]);
   return {
     codigo: (exp?.codigo_rastreamento as string | null | undefined) ?? null,
     tipo: (exp?.tipo_frete as string | null | undefined) ?? null,
+    coletado: (exp?.coletado_em as string | null | undefined) ?? null,
     status: String((prop as { status_interno?: string | null } | null)?.status_interno ?? "")
   };
 }
@@ -179,7 +180,7 @@ async function lerEstadoDoConhecimento(
 /** Grava a autoria do conhecimento sem nunca falhar o salvar (so avisa no console). */
 async function registrarConhecimento(
   idInt: number,
-  antes: { codigo: string | null; tipo: string | null; status: string },
+  antes: { codigo: string | null; tipo: string | null; status: string; coletado: string | null },
   tipoEfetivo: string | null | undefined,
   depois: string | null | undefined,
   ator: AtorExpedicao
@@ -686,7 +687,13 @@ export async function despachar(
     obs_etiqueta: input.obsEtiqueta?.trim() || null,
     nf_numero_manual: input.nfNumeroManual?.trim() || null,
     data_despacho: dataDespacho,
-    despachado_por: ator.nome
+    despachado_por: ator.nome,
+    // Novo despacho de motoboy/transportadora em EXPEDICAO = novo ciclo de coleta (ver a regra).
+    // So entra na gravacao quando HA uma coleta antiga: sem ela o payload e o de sempre.
+    ...(estadoAntes.coletado &&
+    deveLimparColetaNoDespacho({ tipoEntrega: input.tipoEntrega, tipoFrete: input.tipoFrete, statusAtual: propAtual?.status_interno })
+      ? { coletado_em: null }
+      : {})
   });
   if (up.success) await registrarConhecimento(idInt, estadoAntes, input.tipoFrete, input.codigoRastreamento || null, ator);
   if (!up.success) {
