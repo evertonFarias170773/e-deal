@@ -32,6 +32,7 @@ import type {
 } from "@/lib/mocks/contas-receber.mock";
 import { getContasReceberReadOnlyData } from "@/features/contas-a-receber/services/contas-receber.service";
 import { resolverUrlPdfBoleto } from "@/lib/boletos/pdf-url";
+import { baixarBoletoOuAbrirLink, type DesfechoBaixarOuAbrir } from "@/features/cobrancas/services/baixar-boleto";
 import { RevisarGeracaoBancariaModal } from "./components/RevisarGeracaoBancariaModal";
 import { useCobrancas } from "@/features/cobrancas/CobrancasProvider";
 import { resolverCobrancaDoTitulo } from "@/features/cobrancas/services/cobranca-do-titulo";
@@ -98,6 +99,21 @@ type BoletoLifecycleOps = {
  */
 function getResolvedPdfUrl(urlOrPath?: string): string {
   return resolverUrlPdfBoleto(urlOrPath, urlOrPath);
+}
+
+/**
+ * Baixa o PDF de um título da Carteira com o nome padrão do boleto
+ * ("<pedido> - <cliente>.pdf"; parcelado "<cobrança> P<n> de <total> - <cliente>.pdf"),
+ * pela mesma regra da aba Pagamentos (services/baixar-boleto). Uma leitura só,
+ * no clique. Se não der, abre o link de sempre (21/10/2026).
+ */
+function baixarPdfDoTitulo(item: BoletoDepositoMock, link: string): Promise<DesfechoBaixarOuAbrir> {
+  return baixarBoletoOuAbrirLink(
+    getSupabaseClient(),
+    { id_int: item.id_int, id_pagamento: item.id_pagamento, cliente: item.cliente, url_pdf: link, parcela: item.parcela ?? null },
+    process.env.NEXT_PUBLIC_SUPABASE_URL ?? "",
+    link
+  );
 }
 
 interface C6PaymentInfo {
@@ -1606,7 +1622,17 @@ export function ContasReceberPage() {
     // dois campos porque `pdf_storage` costuma vir como caminho relativo.
     const pdfSalvo = resolverUrlPdfBoleto(boleto.url_pdf, boleto.pdf_storage);
     if (pdfSalvo) {
-      window.open(pdfSalvo, "_blank");
+      // Baixa com o nome padrão (21/10/2026); se não der, abre o link de sempre.
+      const desfecho = await baixarPdfDoTitulo(boleto, pdfSalvo);
+      if (desfecho === "BLOQUEADO") {
+        showToast({
+          type: "warning",
+          title: "Não foi possível baixar o PDF",
+          description: "Clique aqui para abrir o boleto.",
+          duration: 10000,
+          onClick: () => openPdf(pdfSalvo)
+        });
+      }
       return;
     }
 
@@ -1659,13 +1685,16 @@ export function ContasReceberPage() {
       // então o bloqueador de pop-up pode barrar a aba — nesse caso window.open
       // devolve null e o toast clicável entra como saída, em vez de o usuário
       // ficar sem o arquivo.
-      const abriu = destinoPdf ? window.open(destinoPdf, "_blank") : null;
+      const desfecho = destinoPdf ? await baixarPdfDoTitulo(boleto, destinoPdf) : null;
+      const abriu = desfecho === "BAIXADO" || desfecho === "ABERTO";
 
       showToast({
         type: "success",
         title: "PDF gerado!",
         description: abriu
-          ? "O PDF do boleto foi criado, salvo e aberto em outra aba."
+          ? desfecho === "BAIXADO"
+            ? "O PDF do boleto foi criado, salvo e baixado."
+            : "O PDF do boleto foi criado, salvo e aberto em outra aba."
           : destinoPdf
             ? "O PDF do boleto foi criado e salvo. Clique aqui para abrir."
             : "O PDF do boleto foi criado e salvo com sucesso.",
@@ -3215,7 +3244,7 @@ function RecebivelActions({
     const podeGerar = !!(item.linha_digitavel && item.codigo_barras && item.id_boleto_c6);
     if (temPdf || podeGerar) {
       actionItems.push({
-        label: temPdf ? "Visualizar Boleto" : "Gerar PDF do Boleto",
+        label: temPdf ? "Baixar boleto" : "Gerar PDF do Boleto",
         onClick: () => onGerarPdfBoleto(item)
       });
     }
@@ -3322,7 +3351,7 @@ function BoletoActions({
     const podeGerar = !!(item.linha_digitavel && item.codigo_barras && item.id_boleto_c6);
     if (temPdf || podeGerar) {
       actionItems.push({
-        label: temPdf ? "Visualizar Boleto" : "Gerar PDF do Boleto",
+        label: temPdf ? "Baixar boleto" : "Gerar PDF do Boleto",
         onClick: () => onGerarPdfBoleto(item)
       });
     }
@@ -3460,6 +3489,14 @@ function RecebivelDetailModal({
   today: string;
   onClose: () => void;
 }) {
+  const { showToast } = useAppToast();
+  async function baixarPdf() {
+    const link = getResolvedPdfUrl(item.url_pdf || item.pdf_storage);
+    if (!link) return;
+    if ((await baixarPdfDoTitulo(item, link)) === "BLOQUEADO") {
+      showToast({ type: "warning", title: "Não foi possível baixar o PDF", description: "Libere as janelas deste site e tente de novo." });
+    }
+  }
   return (
     <div className="fixed inset-0 z-[70] flex items-end justify-center bg-slate-950/50 p-3 sm:items-center sm:p-6" role="dialog" aria-modal="true">
       <div className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-3xl bg-white p-5 shadow-2xl">
@@ -3534,10 +3571,10 @@ function RecebivelDetailModal({
           <div className="mt-4 flex gap-2">
             <button
               type="button"
-              onClick={() => window.open(getResolvedPdfUrl(item.url_pdf || item.pdf_storage), "_blank")}
+              onClick={() => void baixarPdf()}
               className="w-full rounded-2xl bg-[#0f9f9a] text-white px-4 py-3 text-sm font-semibold transition hover:bg-[#0c7c78]"
             >
-              Visualizar PDF do boleto
+              Baixar PDF do boleto
             </button>
           </div>
         )}

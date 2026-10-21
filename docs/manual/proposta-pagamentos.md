@@ -53,7 +53,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Voltar para pagamentos** | Detalhe da cobrança | Volta para a lista de cobranças. |
 | **Acoes** | Detalhe da cobrança, ao lado do selo | Abre o menu com: **Ver cobrança**, **Abrir proposta**, **Ver cliente**, **Abrir chat da proposta**, **Analisar condição**, **Confirmar Conferência**, **Voltar para lista principal**, **Analisar crédito**, **Copiar PIX**, **Copiar linha digitável**, **Nova tarefa** e **Cancelar cobrança**. |
 | **Atualizar Status** | Detalhe, quadro **Ações Administrativas** | Lê de novo a situação da cobrança. |
-| **Abrir**, **Copiar**, **Copiar PIX**, **Copiar Código**, **Baixar PDF** | Detalhe, quadro **Links e Códigos de Pagamento** | Abrem ou copiam o link, o código PIX, a linha digitável e o PDF. |
+| **Abrir**, **Copiar**, **Copiar PIX**, **Copiar Código**, **Baixar PDF** | Detalhe, quadro **Links e Códigos de Pagamento** | Abrem ou copiam o link, o código PIX e a linha digitável. **Baixar PDF** baixa o PDF do boleto com o mesmo nome do **Baixar boleto** ("<n° do pedido> - <cliente>.pdf"). |
 | **Visualizar Checkout** | Detalhe, quadro **Ações Administrativas** | Abre a página pública da cobrança. Não aparece em boleto, PIX e cartão. |
 | **Liberar para pedido** (ou **Pedido já liberado**) | Detalhe, quadro **Ações Administrativas** | No ambiente real responde "Liberação de pedido automática desativada nesta etapa de testes." |
 | **Cancelar cobrança** | Detalhe, quadro **Ações Administrativas**, e menu **Acoes** | Abre a janela **Cancelar Cobrança**. |

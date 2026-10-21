@@ -1,6 +1,6 @@
 # Carteira (contas a receber)
 
-> **Última revisão:** 09/10/2026
+> **Última revisão:** 21/10/2026
 > **Caminho no menu:** Financeiro → Carteira
 > **Endereço:** `/contas-a-receber`
 
@@ -15,7 +15,7 @@ A tela abre com o título **Contas a receber**. Os títulos entram nela pelo [Re
 - Vê a tela quem tem a permissão **Visualizar Títulos** no perfil, além de Administrador e Super Admin. Sem ela, a tela mostra acesso negado.
 - **Confirmar recebimento** (dar baixa) aparece só para quem tem a permissão **Registrar Baixa**, Administrador ou Super Admin.
 - **Registrar** (botão da linha), **Registrar boleto no banco**, **Registrar boleto**, **Refazer boleto**, **Cancelar recebível**, **Cancelar boleto**, **Prorrogar vencimento**, **Editar depósito** e **Transformar em boleto** aparecem só para quem tem a permissão **Administrar Contas a Receber**, Administrador ou Super Admin. O registro no banco é feito pelo servidor, que confere de novo a mesma permissão: a tela não fala mais direto com o banco.
-- As demais ações do menu (**Detalhe da Cobrança**, **Cadastro do Cliente**, **Ver boleto registrado**, **Consultar pagamento C6**, **Consultar PDF no C6**, **Visualizar Boleto** / **Gerar PDF do Boleto**) aparecem para todos que veem a tela.
+- As demais ações do menu (**Detalhe da Cobrança**, **Cadastro do Cliente**, **Ver boleto registrado**, **Consultar pagamento C6**, **Consultar PDF no C6**, **Baixar boleto** / **Gerar PDF do Boleto**) aparecem para todos que veem a tela.
 - Cancelar no banco um boleto registrado (em **Cancelar recebível**, **Cancelar boleto**, **Prorrogar vencimento**, **Refazer boleto** e na baixa manual) também exige, no servidor, a permissão **Cancelar / Estornar Cobranças** ou **Cancelar Cobrança Não Paga**. Quem não a tem recebe o aviso "Sem permissão para cancelar título".
 
 ## Botões e ações da tela
@@ -48,8 +48,8 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Registrar boleto** | Menu de ações, aba **Boletos**, em boleto sem registro | Abre a janela **Revisar para Geração Bancária**. |
 | **Consultar pagamento C6** | Menu de ações, em boleto registrado e não pago | Consulta o banco e, se o boleto foi pago, dá a baixa com a data do banco. |
 | **Consultar PDF no C6** | Menu de ações, em boleto registrado sem PDF | Busca o PDF do boleto no banco e guarda no título. |
-| **Visualizar Boleto** | Menu de ações, em boleto com PDF | Abre o PDF em outra aba. |
-| **Gerar PDF do Boleto** | Menu de ações, em boleto registrado sem PDF (no lugar de **Visualizar Boleto**) | Gera o PDF e abre. |
+| **Baixar boleto** | Menu de ações, em boleto com PDF | Baixa o PDF com o nome "<n° do pedido> - <cliente>.pdf" (no parcelado, "<cobrança> P<n> de <total> - <cliente>.pdf"). Se o PDF não puder ser baixado, abre em outra aba, como antes. |
+| **Gerar PDF do Boleto** | Menu de ações, em boleto registrado sem PDF (no lugar de **Baixar boleto**) | Gera o PDF e baixa, com o mesmo nome. |
 | **Confirmar recebimento** | Menu de ações; apagado em título pago ou cancelado | Dá baixa manual em pagamento recebido fora do boleto. |
 | **Cancelar recebível** | Menu de ações, aba **Carteira** (qualquer título) e aba **Depósitos**; apagado em título pago ou cancelado | Cancela o título por inteiro. |
 | **Prorrogar vencimento** | Menu de ações, aba **Boletos**, em boleto registrado | Cancela o boleto no banco e cria um título novo da mesma parcela, com a nova data. |
@@ -67,14 +67,14 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Sim, atualizar recebível** / **Voltar** | Janela **Confirmar Baixa de Pagamento** | Marca o título como pago com a data do banco / volta um passo. |
 | Botão com ícone de X ("Fechar consulta") | Canto da janela **Consultar Pagamento C6** | Fecha a janela. |
 | Botão com ícone de X ("Fechar detalhe") | Canto da janela **Conferência de Recebível** | Fecha a janela. |
-| **Visualizar PDF do boleto** | Janela **Conferência de Recebível** | Abre o PDF. Sem PDF, aparece **PDF ainda não disponível**, apagado. |
+| **Baixar PDF do boleto** | Janela **Conferência de Recebível** | Baixa o PDF com o nome "<n° do pedido> - <cliente>.pdf" (no parcelado, "<cobrança> P<n> de <total> - <cliente>.pdf"). Se o PDF não puder ser baixado, abre em outra aba, como antes. Sem PDF, aparece **PDF ainda não disponível**, apagado. |
 | **Editar Cadastro do Cliente** | Janela **Revisar para Geração Bancária**, quadro de pendências | Abre o cadastro do cliente em outra aba. |
 | **Re-validar Cadastro** | Janela **Revisar para Geração Bancária**, quadro de pendências | Confere o cadastro de novo. |
 | Caixa **Confirmo o uso deste e-mail para o registro bancário.** | Janela **Revisar para Geração Bancária**, quadro **E-mail de Cliente Ausente** | Libera o registro usando o e-mail informado em **E-mail para envio:**. |
 | Caixa **Depósito em conta** | Janela **Revisar para Geração Bancária**, em cada parcela | Marca a parcela como depósito, sem boleto. |
 | **Registrar boleto** | Janela **Revisar para Geração Bancária**, em cada parcela sem registro | Abre a confirmação **Confirmar Registro Bancário** e envia a parcela ao banco. |
 | **Registrar todos os boletos desta proposta** | Janela **Revisar para Geração Bancária**, quadro **Registro Bancário em Lote** (duas ou mais parcelas prontas) | Abre a confirmação **Confirmar Registro em Lote** e registra as parcelas em sequência. |
-| **Visualizar PDF** | Janela **Revisar para Geração Bancária**, parcela registrada | Abre o PDF. Sem PDF, aparece **PDF ainda não disponível**, apagado. |
+| **Baixar PDF** | Janela **Revisar para Geração Bancária**, parcela registrada | Baixa o PDF com o nome "<n° do pedido> - <cliente>.pdf" (no parcelado, "<cobrança> P<n> de <total> - <cliente>.pdf"). Se o PDF não puder ser baixado, abre em outra aba, como antes. Sem PDF, aparece **PDF ainda não disponível**, apagado. |
 | **Copiar Linha Digitável** | Janela **Revisar para Geração Bancária**, parcela registrada | Copia a linha digitável. |
 | **Copiar Link** | Janela **Revisar para Geração Bancária**, parcela registrada | Copia o endereço do PDF. |
 | **Salvar Alterações** / **Cancelar** | Rodapé da janela **Revisar para Geração Bancária** | Grava os ajustes das parcelas sem registrar no banco / fecha. |
@@ -131,13 +131,13 @@ A aba **Previsão de recebimento** mostra **Previsão por semana** (**Semana atu
 4. Se aparecer o quadro **E-mail de Cliente Ausente**, confira o **E-mail para envio:** e marque **Confirmo o uso deste e-mail para o registro bancário.**
 5. Ajuste, se precisar, **Valor**, **Vencimento**, **Descrição**, **Multa (%)** e **Juros/Dia (%)** da parcela.
 6. Clique em **Registrar boleto** na parcela e confirme em **Confirmar Registro Bancário**. Para registrar todas de uma vez, use **Registrar todos os boletos desta proposta**.
-7. A parcela passa a mostrar **Boleto Registrado**, com **Nosso Número**, **Linha Digitável** e os botões **Visualizar PDF**, **Copiar Linha Digitável** e **Copiar Link**. O PDF é gerado logo depois do registro.
+7. A parcela passa a mostrar **Boleto Registrado**, com **Nosso Número**, **Linha Digitável** e os botões **Baixar PDF**, **Copiar Linha Digitável** e **Copiar Link**. O PDF é gerado logo depois do registro.
 
 Para só gravar os ajustes sem registrar no banco, clique em **Salvar Alterações**.
 
 ### Abrir a segunda via do boleto
 
-1. No menu de ações do título, clique em **Visualizar Boleto**. O PDF abre em outra aba.
+1. No menu de ações do título, clique em **Baixar boleto**. O PDF é baixado com o número do pedido e o nome do cliente no nome do arquivo.
 2. Se a opção for **Gerar PDF do Boleto**, o PDF ainda não existe: clique para gerar. Ele abre sozinho ao terminar; se o navegador bloquear, clique no aviso "PDF gerado!" para abrir.
 3. Se aparecer **Consultar PDF no C6**, use para buscar o PDF direto no banco.
 4. Para copiar a linha digitável ou o link do PDF, abra **Ver boleto registrado** e use **Copiar Linha Digitável** ou **Copiar Link** na parcela. A linha digitável também aparece em **Detalhe da Cobrança**.
@@ -229,7 +229,7 @@ O boleto é cancelado no banco e o título continua ativo, agora como **Depósit
 1. No menu de ações, clique em **Detalhe da Cobrança**.
 2. A janela **Conferência de Recebível** mostra empresa, tipo, status, valores, vencimento, parcela, multa, juros, dias de atraso, linha digitável, código de barras e nosso número.
 3. Quando o título foi refeito ou prorrogado, o quadro **Histórico do título** mostra quem fez, quando e o motivo.
-4. Quando houver PDF, use **Visualizar PDF do boleto**.
+4. Quando houver PDF, use **Baixar PDF do boleto**.
 
 ## Regras e bloqueios
 
@@ -282,7 +282,7 @@ O boleto é cancelado no banco e o título continua ativo, agora como **Depósit
 - **Gerar títulos** (no Registro de recebíveis) e **Registrar boleto** (aqui): gerar cria o título na Carteira; registrar envia o boleto ao banco. Título gerado ainda não é boleto pagável.
 - **A receber criado — boleto não registrado** e **Boleto registrado**: no primeiro o cliente ainda não tem boleto para pagar; no segundo o boleto já existe no banco.
 - **Confirmar recebimento** e **Consultar pagamento C6**: o primeiro é a baixa manual de pagamento feito fora do boleto (e cancela o boleto no banco); o segundo baixa o boleto que o cliente pagou, com a data do banco.
-- **Visualizar Boleto**, **Gerar PDF do Boleto** e **Consultar PDF no C6**: o primeiro abre um PDF que já existe; o segundo monta o PDF a partir dos dados do boleto; o terceiro busca o PDF no banco.
+- **Baixar boleto**, **Gerar PDF do Boleto** e **Consultar PDF no C6**: o primeiro baixa um PDF que já existe; o segundo monta o PDF a partir dos dados do boleto; o terceiro busca o PDF no banco.
 - **Depósito em conta** (status) e **Depósito futuro** (coluna **Tipo**): é o mesmo título sem boleto, com nomes diferentes em cada coluna.
 - Coluna **Conf.** e tela **Conferência**: **Confirmado** aqui quer dizer título pago ou baixado; não é a conferência da cobrança feita pelo financeiro.
 - **N°** e **N° / OS**: o primeiro é o número do pagamento; o segundo traz o número da proposta e, embaixo, a nota fiscal ou a referência.

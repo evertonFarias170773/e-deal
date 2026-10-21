@@ -1,6 +1,6 @@
 # Conferência
 
-> **Última revisão:** 19/10/2026
+> **Última revisão:** 21/10/2026
 > **Caminho no menu:** Conferência (primeiro item do menu lateral; é um link direto, sem subitens)
 > **Endereço:** `/cobrancas` (o detalhe de uma cobrança abre em `/cobrancas/<cobrança>`)
 
@@ -77,7 +77,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Abrir** e **Copiar** | Detalhe, bloco **Links e Códigos de Pagamento**, linha **Link de Pagamento** | Abre o link de pagamento em outra aba ou o copia. |
 | **Copiar PIX** | Detalhe, bloco **Links e Códigos de Pagamento** | Copia o código PIX copia e cola. |
 | **Copiar Código** | Detalhe, bloco **Links e Códigos de Pagamento** | Copia a linha digitável. |
-| **Baixar PDF** | Detalhe, bloco **Links e Códigos de Pagamento** | Abre o PDF da cobrança. |
+| **Baixar PDF** | Detalhe, bloco **Links e Códigos de Pagamento** | Baixa o PDF do boleto com o nome "<n° do pedido> - <cliente>.pdf" (no parcelado, "<cobrança> P<n> de <total> - <cliente>.pdf"). Se o PDF não puder ser baixado, abre em outra aba, como antes. |
 | **Atualizar Status** | Detalhe, bloco **Ações Administrativas** | Recarrega os dados da cobrança. |
 | **Visualizar Checkout** | Detalhe, bloco **Ações Administrativas** (não aparece em boleto, PIX nem cartão parcelado) | Abre a página de pagamento da cobrança. |
 | **Liberar para pedido** | Detalhe, bloco **Ações Administrativas** | Não libera o pedido: a tela responde "Liberação de pedido automática desativada nesta etapa de testes." |

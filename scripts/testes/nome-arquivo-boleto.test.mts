@@ -67,7 +67,9 @@ function banco(linhasBoleto: unknown[]) { falso.zerar(); pedidas = []; falso.res
   banco([{ id_int: 23588, parcela: 2, total_parcelas: 3, status: "A_VENCER", created_at: "x" }]);
   const r = await baixarBoletoComNome(client, { id_int: 23588, id_pagamento: "23588-B", cliente: "CLIENTE TESTE", url_pdf: `${BASE}/storage/v1/object/public/boletos/23588/parcela_2.pdf` }, BASE, fetchPdf);
   const filtros = JSON.stringify(falso.chamadas[0]?.filtros);
-  confere("link do Storage: procura pela cobranca (id_pagamento)", filtros.includes('["eq",["id_pagamento","23588-B"]]'), filtros);
+  // Desde 21/10/2026: pelo pedido e parcela do caminho (num parcelado, so o
+  // id_pagamento acharia a ultima parcela, nao a do link).
+  confere("link do Storage: procura pelo pedido e parcela do caminho", filtros.includes('["eq",["id_int",23588]]') && filtros.includes('["eq",["parcela",2]]'), filtros);
   confere("parcelado: nome com a parcela", r.ok && r.nome === "23588-B P2 de 3 - CLIENTE TESTE.pdf", r);
 }
 {
@@ -85,6 +87,71 @@ function banco(linhasBoleto: unknown[]) { falso.zerar(); pedidas = []; falso.res
   const quebra = (async () => { throw new TypeError("Failed to fetch"); }) as typeof fetch;
   const r = await baixarBoletoComNome(client, { id_int: 1, id_pagamento: "1-A", cliente: "X", url_pdf: null }, BASE, quebra);
   confere("rede/CORS falhou: ok=false, nao lanca", !r.ok, r);
+}
+
+// ── D. todos os pontos do app (21/10/2026) ──────────────────────────────────
+console.log("== D. todos os pontos: mesma funcao, mesmo nome, mesma queda");
+const { baixarBoletoOuAbrirLink } = await import("../../src/features/cobrancas/services/baixar-boleto.ts");
+const { parcelaDoCaminhoStorage } = lib;
+confere("caminho absoluto do Storage -> pedido e parcela", JSON.stringify(parcelaDoCaminhoStorage(`${BASE}/storage/v1/object/public/boletos/23588/parcela_2.pdf`)) === '{"idInt":23588,"parcela":2}');
+confere("caminho relativo (pdf_storage) -> pedido e parcela", JSON.stringify(parcelaDoCaminhoStorage("23588/parcela_2.pdf")) === '{"idInt":23588,"parcela":2}');
+confere("link publico nao e caminho do Storage", parcelaDoCaminhoStorage("https://pay.ai-ideal.com.br/functions/v1/boleto-publico?codigo=P1") === null);
+
+async function nomePeloPonto(url: string, parcela?: number | null) {
+  banco([{ id_int: 23625, parcela: 1, total_parcelas: 1, status: "A_VENCER", created_at: "x" }]);
+  let salvo = "";
+  const desfecho = await baixarBoletoOuAbrirLink(client, { id_int: 23625, id_pagamento: "23625-A", cliente: "MB SOLUCOES GRAFICAS LTDA", url_pdf: url, parcela }, BASE, url,
+    { buscar: fetchPdf, salvar: (_a, nome) => { salvo = nome; }, abrir: () => { throw new Error("nao devia abrir"); } });
+  return { desfecho, salvo };
+}
+{
+  const pagamentos = await nomePeloPonto("https://pay.ai-ideal.com.br/functions/v1/boleto-publico?codigo=P1123625");
+  const detalhe = await nomePeloPonto("https://pay.ai-ideal.com.br/functions/v1/boleto-publico?codigo=P1123625");
+  const carteira = await nomePeloPonto(`${BASE}/storage/v1/object/public/boletos/23625/parcela_1.pdf`, 1);
+  const revisao = await nomePeloPonto(`${BASE}/storage/v1/object/public/boletos/23625/parcela_1.pdf`, 1);
+  const nomes = [pagamentos, detalhe, carteira, revisao].map((r) => `${r.desfecho}:${r.salvo}`);
+  confere("Pagamentos, detalhe, Carteira e revisao: mesmo nome para a mesma cobranca", new Set(nomes).size === 1 && nomes[0] === "BAIXADO:23625 - MB SOLUCOES GRAFICAS LTDA.pdf", nomes);
+}
+{
+  banco([
+    { id_int: 23588, parcela: 2, total_parcelas: 3, status: "A_VENCER", created_at: "2026-10-20" }
+  ]);
+  let salvo = "";
+  await baixarBoletoOuAbrirLink(client, { id_int: 23588, id_pagamento: "23588-B", cliente: "CLIENTE TESTE", url_pdf: "23588/parcela_2.pdf", parcela: 2 }, BASE, "23588/parcela_2.pdf",
+    { buscar: fetchPdf, salvar: (_a, n) => { salvo = n; }, abrir: () => null });
+  const filtros = JSON.stringify(falso.chamadas[0]?.filtros);
+  confere("Carteira parcelado: procura pedido E parcela do caminho (nao a ultima parcela da cobranca)", filtros.includes('["eq",["id_int",23588]]') && filtros.includes('["eq",["parcela",2]]') && !filtros.includes("id_pagamento"), filtros);
+  confere("Carteira parcelado: nome com a parcela certa", salvo === "23588-B P2 de 3 - CLIENTE TESTE.pdf", salvo);
+}
+{
+  banco([{ id_int: 23625, parcela: 1, total_parcelas: 1, status: "A_VENCER", created_at: "x" }]);
+  let aberto = "";
+  const d = await baixarBoletoOuAbrirLink(client, { id_int: 23625, id_pagamento: "23625-A", cliente: "X", url_pdf: "https://pay.ai-ideal.com.br/functions/v1/boleto-publico?codigo=P1123625" }, BASE,
+    "https://pay.ai-ideal.com.br/functions/v1/boleto-publico?codigo=P1123625",
+    { buscar: fetch404, salvar: () => { throw new Error("nao devia salvar"); }, abrir: (u) => { aberto = u; return {}; } });
+  confere("falha no download: abre o link de antes", d === "ABERTO" && aberto.endsWith("codigo=P1123625"), { d, aberto });
+  const b = await baixarBoletoOuAbrirLink(client, { id_pagamento: "x" }, BASE, "https://link", { buscar: fetch404, abrir: () => null });
+  confere("aba barrada pelo navegador: BLOQUEADO (a tela avisa)", b === "BLOQUEADO", b);
+  const sem = await baixarBoletoOuAbrirLink(null, { id_pagamento: "x" }, BASE, "https://link", { abrir: (u) => { aberto = u; return {}; } });
+  confere("sem cliente Supabase: abre o link de antes", sem === "ABERTO", sem);
+}
+{
+  // Os pontos usam a funcao comum; nenhum abre o PDF de boleto direto; a Carteira
+  // so le no clique (nenhuma chamada dentro de render/map).
+  const { readFileSync } = await import("node:fs");
+  const ler = (f: string) => readFileSync(new URL(`../../${f}`, import.meta.url), "utf8");
+  const detalhe = ler("src/features/cobrancas/CobrancaDetail.tsx");
+  const carteira = ler("src/features/contas-a-receber/ContasReceberPage.tsx");
+  const revisao = ler("src/features/contas-a-receber/components/RevisarGeracaoBancariaModal.tsx");
+  const painel = ler("src/features/cobrancas/PropostaCobrancaPanel.tsx");
+  confere("detalhe da cobranca usa baixarBoletoOuAbrirLink e nao tem href de url_pdf", detalhe.includes("baixarBoletoOuAbrirLink(") && !/href=\{cobrancaAtual\.url_pdf\}/.test(detalhe));
+  confere("revisao usa baixarBoletoOuAbrirLink e nao abre o PDF direto", revisao.includes("baixarBoletoOuAbrirLink(") && !/window\.open\(getResolvedPdfUrl\(String\(boleto\.url_pdf/.test(revisao));
+  confere("aba Pagamentos segue com baixarBoletoComNome (botao do d0107fc, inalterado)", painel.includes("baixarBoletoComNome(client"));
+  const chamadas = carteira.split("baixarPdfDoTitulo(").length - 1;
+  confere("Carteira: uma definicao e 3 chamadas, todas em acao de clique (PDF salvo, PDF gerado, detalhe)", chamadas === 4, chamadas);
+  confere("Carteira: nenhum window.open direto do PDF salvo ou do detalhe", !/window\.open\(pdfSalvo/.test(carteira) && !/window\.open\(getResolvedPdfUrl\(item\.url_pdf/.test(carteira));
+  const linhasComChamada = carteira.split(/\r?\n/).filter((l) => l.includes("baixarPdfDoTitulo(") && !l.includes("function baixarPdfDoTitulo"));
+  confere("Carteira: nenhuma chamada em JSX de lista (map/render)", linhasComChamada.every((l) => !/\.map\(|=>\s*<|renderCard|<[A-Z]/.test(l)), linhasComChamada);
 }
 
 console.log(falhas === 0 ? "\nTODOS OS TESTES PASSARAM" : `\n${falhas} TESTE(S) FALHARAM`);

@@ -63,6 +63,17 @@ export function codigoDoLinkPublico(url: string | null | undefined): string | nu
   }
 }
 
+/**
+ * Pedido e parcela do caminho do PDF no Storage (`boletos/<id_int>/parcela_<n>.pdf`,
+ * absoluto ou relativo ao bucket). Serve para achar a PARCELA certa: num
+ * parcelado, todas as parcelas têm o mesmo `id_pagamento`.
+ */
+export function parcelaDoCaminhoStorage(url: string | null | undefined): { idInt: number; parcela: number } | null {
+  const texto = String(url ?? "").split("?")[0];
+  const m = texto.match(/(?:\/boletos\/|^)(\d+)\/parcela_(\d+)\.pdf$/);
+  return m ? { idInt: Number(m[1]), parcela: Number(m[2]) } : null;
+}
+
 export type LinhaBoleto = {
   id_int: number | null;
   parcela: number | null;

@@ -9,6 +9,7 @@ import { updateBoletoInDb, registerBoletoViaN8n } from "@/features/nfe/services/
 import { gerarBoletoPdfInterno } from "@/features/contas-a-receber/services/contas-receber.service";
 import type { SupabaseBoletoRow } from "@/features/contas-a-receber/types.supabase";
 import { useCobrancas } from "@/features/cobrancas/CobrancasProvider";
+import { baixarBoletoOuAbrirLink } from "@/features/cobrancas/services/baixar-boleto";
 
 function Alert({ children }: { children: React.ReactNode; variant?: string }) {
   return (
@@ -61,6 +62,28 @@ export function RevisarGeracaoBancariaModal({
   const { showToast } = useAppToast();
   const { recalcularBoletoIdIntsLocal } = useCobrancas();
   const [boletosForReview, setBoletosForReview] = useState<SupabaseBoletoRow[]>([]);
+
+  // "Baixar PDF" (21/10/2026): mesmo nome e mesma regra do "Baixar boleto" da
+  // aba Pagamentos (services/baixar-boleto). Se não der, abre o link de sempre.
+  async function baixarPdfDoBoleto(boleto: SupabaseBoletoRow) {
+    const link = getResolvedPdfUrl(String(boleto.url_pdf || boleto.pdf_storage || ""));
+    if (!link) return;
+    const desfecho = await baixarBoletoOuAbrirLink(
+      getSupabaseClient(),
+      {
+        id_int: boleto.id_int != null ? Number(boleto.id_int) : null,
+        id_pagamento: boleto.id_pagamento != null ? String(boleto.id_pagamento) : null,
+        cliente: String(boleto.nome_cliente || nomeCliente || ""),
+        url_pdf: link,
+        parcela: boleto.parcela != null ? Number(boleto.parcela) : null
+      },
+      process.env.NEXT_PUBLIC_SUPABASE_URL ?? "",
+      link
+    );
+    if (desfecho === "BLOQUEADO") {
+      showToast({ type: "warning", title: "Não foi possível baixar o PDF", description: "Libere as janelas deste site e tente de novo." });
+    }
+  }
   const [isLoadingReviewBoletos, setIsLoadingReviewBoletos] = useState(false);
   const [isSavingReview, setIsSavingReview] = useState(false);
 
@@ -986,10 +1009,10 @@ export function RevisarGeracaoBancariaModal({
                                 {boleto.url_pdf || boleto.pdf_storage ? (
                                   <button
                                     type="button"
-                                    onClick={() => window.open(getResolvedPdfUrl(String(boleto.url_pdf || boleto.pdf_storage)), "_blank")}
+                                    onClick={() => void baixarPdfDoBoleto(boleto)}
                                     className="px-3 py-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 transition rounded-xl text-xs font-semibold"
                                   >
-                                    Visualizar PDF
+                                    Baixar PDF
                                   </button>
                                 ) : (
                                   <button

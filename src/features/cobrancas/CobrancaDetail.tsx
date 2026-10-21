@@ -27,6 +27,8 @@ import {
 import { formatCurrency } from "@/lib/formatters/currency";
 import { formatDataCivil, formatDate } from "@/lib/formatters/date";
 import type { Cobranca } from "@/features/cobrancas/types";
+import { baixarBoletoOuAbrirLink } from "@/features/cobrancas/services/baixar-boleto";
+import { getSupabaseClient } from "@/lib/supabase/client";
 
 export interface CobrancaDetailProps {
   cobrancaId: string;
@@ -69,7 +71,28 @@ export function CobrancaDetail({ cobrancaId, onClose, onRefreshProposta }: Cobra
   const { user } = useAuth();
   const { getCobrancaById, cancelCobranca, getCobrancasByProposta, liberarParaPedido, source, refreshCobrancas } = useCobrancas();
   const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
+  const [baixandoPdf, setBaixandoPdf] = useState(false);
   const cobranca = getCobrancaById(cobrancaId) as NonNullable<ReturnType<typeof getCobrancaById>>;
+
+  // "Baixar PDF" (21/10/2026): mesmo nome e mesma regra do "Baixar boleto" da
+  // aba Pagamentos (services/baixar-boleto). Se não der, abre o link de sempre.
+  async function baixarPdf() {
+    if (!cobranca?.url_pdf) return;
+    setBaixandoPdf(true);
+    try {
+      const desfecho = await baixarBoletoOuAbrirLink(
+        getSupabaseClient(),
+        { id_int: cobranca.id_int, id_pagamento: cobranca.id_pagamento, cliente: cobranca.cliente, url_pdf: cobranca.url_pdf },
+        process.env.NEXT_PUBLIC_SUPABASE_URL ?? "",
+        cobranca.url_pdf
+      );
+      if (desfecho === "BLOQUEADO") {
+        showToast({ type: "warning", title: "Não foi possível baixar o PDF", description: "Libere as janelas deste site e tente de novo." });
+      }
+    } finally {
+      setBaixandoPdf(false);
+    }
+  }
 
   if (!cobranca) {
     return (
@@ -336,14 +359,15 @@ export function CobrancaDetail({ cobrancaId, onClose, onRefreshProposta }: Cobra
                       <span className="text-slate-500 block text-[10px]">Documento da Cobrança</span>
                       <span className="font-medium text-slate-700">Arquivo PDF da cobrança</span>
                     </div>
-                    <a
-                      href={cobrancaAtual.url_pdf}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-slate-700 hover:bg-slate-50 transition font-semibold"
+                    <button
+                      type="button"
+                      onClick={() => void baixarPdf()}
+                      disabled={baixandoPdf}
+                      title="Baixa o PDF com o número do pedido e o nome do cliente"
+                      className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-slate-700 hover:bg-slate-50 transition font-semibold disabled:opacity-60 disabled:cursor-wait"
                     >
-                      Baixar PDF
-                    </a>
+                      {baixandoPdf ? "Baixando..." : "Baixar PDF"}
+                    </button>
                   </div>
                 )}
               </div>
