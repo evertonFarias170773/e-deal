@@ -416,8 +416,8 @@ const styles = StyleSheet.create({
   modeloObs: { fontSize: 6, color: "#5a6b7a", marginTop: 1, marginBottom: 1 },
   // Variacao escolhida na venda: uma linha por variacao, logo abaixo dos campos.
   modeloVariacao: { fontSize: 6, fontFamily: "Helvetica-Bold", color: "#3d4f5e", marginTop: 1 },
-  // TEXTIL, Acabamento e Acessorio ("Acb:"/"Ace:", lib/variacao-textil): 10 pt, quebra
-  // dentro do card (sem maxLines), para a bancada ler sem esforco.
+  // TEXTIL (Acabamento e Acessorio, "Acb:"/"Ace:") e PVC (Acabamento e Furacao):
+  // 10 pt, quebra dentro do card (sem maxLines). Regra em lib/variacao-textil.
   modeloVariacaoTextil: { fontSize: 10, lineHeight: 1.15, fontFamily: "Helvetica-Bold", color: "#1f2d3a", marginTop: 2 },
   checklistLinha: {
     flexDirection: "row",

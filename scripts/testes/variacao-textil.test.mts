@@ -15,7 +15,16 @@ checar("TEXTIL: Acabamento vira Acb: em destaque", linhaDeVariacaoNoCard("Acabam
 checar("TEXTIL: Acessórios vira Ace: em destaque", linhaDeVariacaoNoCard("Acessórios: Chapinha Metálica", "textil"), { texto: "Ace: Chapinha Metálica", destaque: true });
 checar("TEXTIL: singular e sem acento tambem", [linhaDeVariacaoNoCard("Acessorio: X", "TEXTIL").texto, linhaDeVariacaoNoCard("acabamentos : Y", "TEXTIL").texto], ["Ace: X", "Acb: Y"]);
 checar("TEXTIL: outra variacao fica como esta", linhaDeVariacaoNoCard("Cor do Cordão: Azul", "TEXTIL"), { texto: "Cor do Cordão: Azul", destaque: false });
-checar("outros setores: nada muda", ["PVC", "LASER", "FLEXO", null].map((s) => linhaDeVariacaoNoCard("Acabamento: Mosquete", s)), Array(4).fill({ texto: "Acabamento: Mosquete", destaque: false }));
+checar("PVC: Acabamento e Furacao em destaque, rotulo inteiro", [
+  linhaDeVariacaoNoCard("Acabamento: Brilho", "PVC"),
+  linhaDeVariacaoNoCard("Furação: Ovóide", "pvc")
+], [{ texto: "Acabamento: Brilho", destaque: true }, { texto: "Furação: Ovóide", destaque: true }]);
+checar("PVC: Furacao sem acento e no plural tambem", ["Furacao: Redonda", "Furações: Dupla", "Furacoes: Dupla"].map((l) => linhaDeVariacaoNoCard(l, "PVC").destaque), [true, true, true]);
+checar("PVC: outros grupos ficam em 6 pt", ["Tecnologia: RFID", "Impressão: Frente e Verso", "Acessórios: Chapinha"].map((l) => linhaDeVariacaoNoCard(l, "PVC")), [
+  { texto: "Tecnologia: RFID", destaque: false }, { texto: "Impressão: Frente e Verso", destaque: false }, { texto: "Acessórios: Chapinha", destaque: false }]);
+checar("TEXTIL nao muda com a regra do PVC: Furacao no TEXTIL fica em 6 pt", linhaDeVariacaoNoCard("Furação: Ovóide", "TEXTIL"), { texto: "Furação: Ovóide", destaque: false });
+checar("LASER, FLEXO e sem setor: nada muda", ["LASER", "FLEXO", null].map((s) => [linhaDeVariacaoNoCard("Acabamento: Brilho", s).destaque, linhaDeVariacaoNoCard("Furação: Ovóide", s).destaque]), [[false, false], [false, false], [false, false]]);
+checar("outros setores (sem PVC): nada muda", ["LASER", "FLEXO", null].map((s) => linhaDeVariacaoNoCard("Acabamento: Mosquete", s)), Array(3).fill({ texto: "Acabamento: Mosquete", destaque: false }));
 const pdf = readFileSync(new URL("../../src/features/pedidos/pdf/OsPdfDocument.tsx", import.meta.url), "utf8");
 checar("PDF: 10 pt sem limite de linhas, e o setor chega ao card", [
   /modeloVariacaoTextil: \{ fontSize: 10,/.test(pdf) && !/modeloVariacaoTextil:[^}]*maxLines/.test(pdf),

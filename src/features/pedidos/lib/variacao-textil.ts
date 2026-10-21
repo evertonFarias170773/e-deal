@@ -11,16 +11,27 @@
  * Grupos no catalogo (`variacoes.nome`, medido em 21/10/2026): "Acabamento" e
  * "Acessórios". Aceita singular/plural e sem acento.
  *
+ * PVC (21/10/2026): as linhas de Acabamento (ex.: "Brilho") e Furacao (ex.: "Ovoide")
+ * tambem saem em 10 pt, mas com o rotulo INTEIRO, como ja aparecem ("Acabamento:
+ * Brilho", "Furação: Ovóide"). Grupo no catalogo: "Furação". Os outros grupos do PVC
+ * (ex.: "Tecnologia", "Impressão") ficam em 6 pt.
+ *
  * Sem imports de proposito: roda no PDF e no teste do Node, igual.
  */
 
 const ACABAMENTO = /^\s*acabamentos?\s*:\s*/i;
 const ACESSORIO = /^\s*acess[oó]rios?\s*:\s*/i;
+// Furação, Furacao, Furações, Furacoes.
+const FURACAO = /^\s*fura[cç](?:[aã]o|[oõ]es)\s*:/i;
 
 export type LinhaDeVariacaoDoCard = { texto: string; destaque: boolean };
 
 export function linhaDeVariacaoNoCard(linha: string, setor: string | null | undefined): LinhaDeVariacaoDoCard {
-  const ehTextil = String(setor ?? "").trim().toUpperCase() === "TEXTIL";
+  const setorNormalizado = String(setor ?? "").trim().toUpperCase();
+  if (setorNormalizado === "PVC" && (ACABAMENTO.test(linha) || FURACAO.test(linha))) {
+    return { texto: linha, destaque: true };
+  }
+  const ehTextil = setorNormalizado === "TEXTIL";
   if (ehTextil) {
     if (ACABAMENTO.test(linha)) return { texto: `Acb: ${linha.replace(ACABAMENTO, "").trim()}`, destaque: true };
     if (ACESSORIO.test(linha)) return { texto: `Ace: ${linha.replace(ACESSORIO, "").trim()}`, destaque: true };
