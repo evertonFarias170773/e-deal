@@ -86,7 +86,7 @@ Os itens aparecem nesta ordem, cada um só quando se aplica.
 | **Aplicar** | Ao lado de cada opção recotada | Grava o frete novo na proposta. Fica apagado sem liberação ou quando a opção encarece |
 | **Gerar prepostagem SEDEX** | Abaixo do rastreio, em envio CIF pelos Correios. Não aparece quando o pedido tem transportadora escolhida que não é os Correios. Os dois cadastros dos Correios (o atual, da Superintendência Estadual RS, e o anterior, da sede) contam como Correios e mantêm o botão | Cria a prepostagem SEDEX e preenche o rastreio |
 | **PAC** | Ao lado do botão acima | Cria a prepostagem PAC |
-| **Gerar SEDEX** / **Gerar PAC** | Confirmação "Gerar outra prepostagem?" | Gera outra prepostagem em pedido que já tinha uma |
+| **Gerar SEDEX** / **Gerar PAC** | Confirmação "Gerar outra prepostagem?" | Gera outra prepostagem em pedido que já tinha uma, inclusive uma gerada há poucos segundos na mesma janela. O servidor só aceita se a confirmação trouxer o código que você viu |
 | **Gerar etiqueta 10x15** | Botão azul largo, abaixo das observações | Salva o formulário e abre a etiqueta de envio |
 | **Etiqueta de retirada** | Mesmo botão, em retirada no balcão | Salva e abre a etiqueta de balcão |
 | **Etiqueta Correios (oficial)** | Mesmo botão, em Correios com prepostagem | Salva e abre o rótulo oficial dos Correios |
@@ -212,7 +212,8 @@ Em CIF com transportadora escolhida que **não** é os Correios, o envio continu
 1. O envio precisa ser CIF e pelos Correios. Em **Despachar**, preencha peso, volumes e confira o endereço.
 2. Clique em **Gerar prepostagem SEDEX** ou em **PAC**.
 3. O rastreio é preenchido sozinho e aparece o aviso "Prepostagem criada". A partir daí o botão da etiqueta vira **Etiqueta Correios (oficial)**.
-4. Se o pedido já tinha prepostagem, o sistema pergunta "Gerar outra prepostagem?" e mostra os códigos. Copie o código que vai sair do registro se ainda precisar cancelá-lo no portal, e confirme em **Gerar SEDEX** ou **Gerar PAC**.
+4. Se o pedido já tem prepostagem, o sistema pergunta "Gerar outra prepostagem?" e mostra os códigos. Vale também para a prepostagem que você acabou de gerar: o segundo clique em **Gerar prepostagem SEDEX** ou em **PAC** na mesma janela abre a pergunta com o código atual, e nada é gerado sem a confirmação. Copie o código que vai sair do registro se ainda precisar cancelá-lo no portal, e confirme em **Gerar SEDEX** ou **Gerar PAC**. Se outra pessoa ou outra aba gerou a prepostagem no meio do caminho, o servidor recusa, a janela mostra o código que está gravado agora e pede a confirmação de novo. Enquanto a prepostagem é gerada, os botões SEDEX e PAC ficam apagados ("Gerando...").
+5. Cada prepostagem gerada fica registrada no histórico do pedido, com quem gerou, o código novo e, na substituição, o código que saiu.
 
 Também é possível digitar o código em **Código de rastreio (manual)**, que aparece em envio pelos Correios. Em envio por transportadora ou motoboy o mesmo espaço se chama **Conhecimento** (veja "Informar o rastreio e rastrear").
 
@@ -528,3 +529,5 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 > - **22/10/2026:** o campo Fone ganhou um seletor com os telefones do cadastro do destinatário (WhatsApp 1, Telefone fixo comercial, WhatsApp 2); o escolhido é gravado no WhatsApp 1 ao confirmar, só se for diferente do atual.
 >
 > - **21/10/2026:** saldo a receber trava o despacho (regra no banco, migration `20261021_exp_trava_saldo_despacho`): total do pedido maior que o pago confirmado recusa o primeiro despacho, com o valor que falta.
+>
+> - **22/10/2026:** gerar outra prepostagem passa a exigir confirmação também na mesma janela e no servidor: sem a confirmação (com o código que você viu), a geração é recusada e nada é criado nos Correios. Cada geração é registrada no histórico do pedido.

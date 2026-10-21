@@ -12,6 +12,12 @@ import { criarPrepostagem, correiosConfigurado } from "@/lib/correios/cws";
 import { resolverEmpresaRemetente } from "@/lib/correios/empresa-remetente";
 import { resolverPesoExpedicao } from "@/features/expedicao/lib/peso";
 import { telefoneDestinatario } from "@/features/expedicao/lib/telefone-destinatario";
+import {
+  ORIGEM_LOG_PREPOSTAGEM,
+  codigoAtualDaPrepostagem,
+  decidirGeracaoPrepostagem,
+  motivoDaGeracaoPrepostagem
+} from "@/features/expedicao/lib/regeracao-prepostagem";
 import { cifPorTransportadora, normalizarTipoFrete } from "@/features/expedicao/lib/tipo-frete";
 import { nomeTransportadoraCadastro } from "@/features/orcamentos/lib/modalidade-frete";
 import type { ModalidadeFrete } from "@/features/expedicao/types";
@@ -23,7 +29,13 @@ export async function POST(request: Request) {
   if (!correiosConfigurado()) {
     return NextResponse.json({ success: false, message: "Correios não configurados no servidor." }, { status: 503 });
   }
-  const body = (await request.json().catch(() => null)) as { id_int?: number; servico?: string } | null;
+  const body = (await request.json().catch(() => null)) as {
+    id_int?: number;
+    servico?: string;
+    /** Confirmacao de que o usuario quer SUBSTITUIR a prepostagem viva, e o codigo que ele viu na tela. */
+    substituir?: boolean;
+    codigo_visto?: string;
+  } | null;
   const idInt = Number(body?.id_int);
   const servico = body?.servico === "PAC" ? "PAC" : "SEDEX";
   if (!Number.isInteger(idInt) || idInt <= 0) {
@@ -61,7 +73,7 @@ export async function POST(request: Request) {
   const { data: proposta } = await supabase
     .from("propostas")
     .select(
-      "id_int, cliente, id_cliente, id_faturado, empresa, cep, id_endereco_ent, modalidade_frete, id_transportadora_cliente"
+      "id_int, cliente, id_cliente, id_faturado, empresa, cep, id_endereco_ent, modalidade_frete, id_transportadora_cliente, status_interno"
     )
     .eq("id_int", idInt)
     .maybeSingle();
@@ -89,6 +101,21 @@ export async function POST(request: Request) {
       .select("nome_produto, modelo_descri, qtd, valor_unt, valor_sub_total")
       .eq("id_int", idInt)
   ]);
+
+  // JA TEM PREPOSTAGEM VIVA (21/10/2026): so gera outra com a confirmacao valida. A regra mora aqui, no
+  // servidor, e ANTES de qualquer conversa com os Correios — cada chamada a mais e um objeto a mais no
+  // contrato. Sem prepostagem, ou com ela marcada como cancelada no portal, segue como sempre.
+  const decisao = decidirGeracaoPrepostagem({
+    exp,
+    substituir: body?.substituir === true,
+    codigoVisto: typeof body?.codigo_visto === "string" ? body.codigo_visto : null
+  });
+  if (decisao.acao === "recusar") {
+    return NextResponse.json(
+      { success: false, code: decisao.code, message: decisao.message, codigoAtual: decisao.codigoAtual },
+      { status: 409 }
+    );
+  }
 
   // CIF COM TRANSPORTADORA DECLARADA (07/10/2026): não é envio dos Correios.
   //
@@ -390,6 +417,32 @@ export async function POST(request: Request) {
         { status: 500 }
       );
     }
+    // AUTORIA DE CADA GERACAO (21/10/2026): quem, quando (created_at da linha) e qual codigo, na mesma trilha
+    // das acoes da Expedicao (`os_status_log`). Nao muda status: repete o atual em anterior e novo, como o
+    // Conhecimento. Falhar aqui NAO desfaz a prepostagem — o objeto ja existe nos Correios e esta gravado.
+    const { data: usuarioLog } = await supabase
+      .from("usuarios")
+      .select("nome_usuario")
+      .eq("user_id", authData.user.id)
+      .maybeSingle();
+    const statusAtual = String((proposta as { status_interno?: string | null }).status_interno ?? "");
+    const { error: logErr } = await supabase.from("os_status_log").insert({
+      id_int: idInt,
+      status_anterior: statusAtual,
+      status_novo: statusAtual,
+      resultado: "sucesso",
+      motivo: motivoDaGeracaoPrepostagem({
+        servico,
+        codigoNovo: resultado.codigoObjeto,
+        codigoSubstituido: regerando ? codigoAtualDaPrepostagem(exp) || null : null
+      }),
+      origem: ORIGEM_LOG_PREPOSTAGEM,
+      ator_tipo: "USUARIO",
+      ator_uid: authData.user.id,
+      ator_nome: usuarioLog?.nome_usuario || authData.user.email || null
+    });
+    if (logErr) console.warn("[correios/prepostagem] Falha ao registrar a autoria da geracao:", logErr.message);
+
     const { error: osErr } = await supabase
       .from("propostas_os")
       .update({ codigo_rastreamento: resultado.codigoObjeto })

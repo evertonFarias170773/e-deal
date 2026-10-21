@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { MENSAGEM_RETIRADA_PRECISA_LIBERAR, podeOferecerRetiradaAdm, retiradaAdmLiberada, tipoEntregaDoDespacho } from "../lib/retirada-adm";
 import { AlertTriangle, X } from "lucide-react";
 import { useAppToast } from "@/components/common/AppToast";
@@ -356,6 +356,16 @@ export function DespacharModal({
    * tentar imprimir em seguida ainda diria "gere a prepostagem".
    */
   const [prepostagemGeradaAgora, setPrepostagemGeradaAgora] = useState(false);
+  /**
+   * O codigo que a prepostagem tem AGORA, quando mudou nesta sessao (gerada aqui, ou informado pelo
+   * servidor ao recusar). `exp` e a foto da abertura do modal: sem isto o segundo clique em SEDEX/PAC achava
+   * que nao havia prepostagem e gerava outra sem confirmar (21/10/2026, 28 pedidos com dois codigos).
+   */
+  const [codigoDaSessao, setCodigoDaSessao] = useState<string | null>(null);
+  /** O `_anterior` que a proxima substituicao tira do registro, quando mudou nesta sessao; undefined = o da abertura. */
+  const [anteriorNaSessao, setAnteriorNaSessao] = useState<string | null | undefined>(undefined);
+  /** Trava SINCRONA da geracao: o estado so muda no proximo render, e dois cliques cabem antes dele. */
+  const geracaoEmCurso = useRef(false);
   const [emitindoEtiqueta, setEmitindoEtiqueta] = useState(false);
   /** Servico aguardando confirmacao de regeracao; null = nenhum dialogo aberto. */
   const [confirmarRegeracao, setConfirmarRegeracao] = useState<"SEDEX" | "PAC" | null>(null);
@@ -810,7 +820,7 @@ export function DespacharModal({
    * prepostagem, o código de objeto e o rastreio NÃO são apagados em nenhum
    * caso; só o rótulo do transporte muda.
    */
-  const prepostagemCorreios = exp?.correiosCodigoObjeto ?? exp?.correiosIdPrepostagem ?? null;
+  const prepostagemCorreios = codigoDaSessao ?? exp?.correiosCodigoObjeto ?? exp?.correiosIdPrepostagem ?? null;
   /**
    * NINGUÉM DISSE CORREIOS — só o texto da cotação (02/09/2026).
    *
@@ -838,6 +848,7 @@ export function DespacharModal({
    * confirmacao o mostra em texto selecionavel.
    */
   const prepostagemAnterior = exp?.correiosCodigoObjetoAnterior ?? exp?.correiosIdPrepostagemAnterior ?? null;
+  const anteriorDoDialogo = anteriorNaSessao !== undefined ? anteriorNaSessao : prepostagemAnterior;
   const trocaCorreiosPendente = gravadoComoCorreios && modalidade === "FOB" && !confirmaTrocaCorreios;
 
   const precisaAvisoNf = !modoEdicao && pedido.nfStatus !== "AUTORIZADA";
@@ -1269,12 +1280,12 @@ export function DespacharModal({
    * perder, e gera direto: a confirmacao nao aparece.
    */
   function pedirPrepostagem(servico: "SEDEX" | "PAC") {
-    if (gerandoPrepostagem || salvando) return;
+    if (geracaoEmCurso.current || gerandoPrepostagem || salvando) return;
     if (prepostagemCorreios) {
       setConfirmarRegeracao(servico);
       return;
     }
-    void handleGerarPrepostagem(servico);
+    void handleGerarPrepostagem(servico, null);
   }
 
   /**
@@ -1285,8 +1296,21 @@ export function DespacharModal({
    * Correios se o salvamento confirmar sucesso — o servidor sempre lê
    * exatamente o que está na tela.
    */
-  async function handleGerarPrepostagem(servico: "SEDEX" | "PAC") {
-    if (gerandoPrepostagem || salvando) return;
+  async function handleGerarPrepostagem(servico: "SEDEX" | "PAC", codigoVisto: string | null) {
+    // Trava ANTES de qualquer await (21/10/2026): o botao ja aparece "Gerando..." e um segundo clique,
+    // ou um segundo caminho, nao entra enquanto este nao terminar.
+    if (geracaoEmCurso.current || gerandoPrepostagem || salvando) return;
+    geracaoEmCurso.current = true;
+    setGerandoPrepostagem(true);
+    try {
+      await gerarPrepostagemSemTrava(servico, codigoVisto);
+    } finally {
+      geracaoEmCurso.current = false;
+      setGerandoPrepostagem(false);
+    }
+  }
+
+  async function gerarPrepostagemSemTrava(servico: "SEDEX" | "PAC", codigoVisto: string | null) {
     // Emitir prepostagem E contratar transporte: passa pela MESMA porta do
     // "Confirmar despacho", nao por uma mais larga. Antes só a divergência
     // barrava aqui, e um pedido sem transportadora, sem endereço ou sem peso
@@ -1344,12 +1368,21 @@ export function DespacharModal({
       return;
     }
 
-    const res = await gerarPrepostagem(pedido.idInt, servico);
+    const res = await gerarPrepostagem(pedido.idInt, servico, codigoVisto);
     setGerandoPrepostagem(false);
     if (res.success && res.codigoObjeto) {
+      // O que estava viva vira o `_anterior`; o que era o anterior sai do registro (a rota faz o mesmo).
+      if (prepostagemCorreios) setAnteriorNaSessao(prepostagemCorreios);
+      setCodigoDaSessao(res.codigoObjeto);
       setCodigoRastreamento(res.codigoObjeto);
       setPrepostagemGeradaAgora(true);
       showToast({ type: "success", title: "Prepostagem criada", description: `Rastreio ${res.codigoObjeto} preenchido.` });
+    } else if (res.recusa) {
+      // O servidor sabe de uma prepostagem que esta tela nao conhecia (outra aba, outra pessoa): nada foi
+      // gerado. Mostra a confirmacao com o codigo que esta gravado agora.
+      setCodigoDaSessao(res.recusa.codigoAtual);
+      setConfirmarRegeracao(servico);
+      showToast({ type: "warning", title: "Este pedido já tem prepostagem", description: `${res.recusa.codigoAtual}. Confira e confirme para gerar outra.` });
     } else {
       showToast({ type: "error", title: "Correios recusaram a prepostagem", description: res.errorMessage });
     }
@@ -2295,10 +2328,10 @@ export function DespacharModal({
               Passa a ser a anterior:{" "}
               <span className="select-all font-mono font-bold">{prepostagemCorreios}</span>
             </span>
-            {prepostagemAnterior ? (
+            {anteriorDoDialogo ? (
               <span>
                 Sai do registro para sempre:{" "}
-                <span className="select-all font-mono font-bold">{prepostagemAnterior}</span> — copie agora se ainda
+                <span className="select-all font-mono font-bold">{anteriorDoDialogo}</span> — copie agora se ainda
                 precisar cancelar este objeto no portal.
               </span>
             ) : (
@@ -2311,7 +2344,8 @@ export function DespacharModal({
         onConfirmar={() => {
           const servico = confirmarRegeracao;
           setConfirmarRegeracao(null);
-          void handleGerarPrepostagem(servico);
+          // O codigo que o dialogo mostrou: o servidor compara com o gravado e recusa se mudou.
+          void handleGerarPrepostagem(servico, prepostagemCorreios);
         }}
         onClose={() => setConfirmarRegeracao(null)}
       />

@@ -16,21 +16,38 @@ export async function correiosStatus(): Promise<{ configurado: boolean }> {
   }
 }
 
+/**
+ * `codigoVisto`: o codigo da prepostagem que o usuario VIU e confirmou substituir. Sem ele, o servidor
+ * recusa (409) quando o pedido ja tem prepostagem viva; com ele, o servidor compara com o gravado.
+ * `recusa`: o 409 do servidor, com o codigo gravado agora — a tela abre a confirmacao com ele.
+ */
 export async function gerarPrepostagem(
   idInt: number,
-  servico: "SEDEX" | "PAC"
-): Promise<{ success: boolean; codigoObjeto?: string; errorMessage?: string }> {
+  servico: "SEDEX" | "PAC",
+  codigoVisto?: string | null
+): Promise<{
+  success: boolean;
+  codigoObjeto?: string;
+  errorMessage?: string;
+  recusa?: { code: string; codigoAtual: string };
+}> {
   const token = await tokenSessao();
   if (!token) return { success: false, errorMessage: "Sessão expirada. Faça login novamente." };
   try {
     const res = await fetch("/api/expedicao/correios/prepostagem", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ id_int: idInt, servico })
+      body: JSON.stringify({ id_int: idInt, servico, ...(codigoVisto ? { substituir: true, codigo_visto: codigoVisto } : {}) })
     });
-    const data = (await res.json().catch(() => null)) as { success?: boolean; codigoObjeto?: string; message?: string } | null;
+    const data = (await res.json().catch(() => null)) as
+      | { success?: boolean; codigoObjeto?: string; message?: string; code?: string; codigoAtual?: string }
+      | null;
     if (res.ok && data?.success && data.codigoObjeto) return { success: true, codigoObjeto: data.codigoObjeto };
-    return { success: false, errorMessage: data?.message || `Falha (HTTP ${res.status}).` };
+    const recusa =
+      res.status === 409 && data?.codigoAtual && (data.code === "PREPOSTAGEM_JA_EXISTE" || data.code === "CODIGO_VISTO_DIFERENTE")
+        ? { code: data.code, codigoAtual: data.codigoAtual }
+        : undefined;
+    return { success: false, errorMessage: data?.message || `Falha (HTTP ${res.status}).`, ...(recusa ? { recusa } : {}) };
   } catch (e) {
     return { success: false, errorMessage: e instanceof Error ? e.message : "Erro de rede." };
   }
