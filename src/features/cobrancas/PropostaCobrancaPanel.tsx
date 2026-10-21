@@ -20,6 +20,7 @@ import { CorrigirTelefonePagadorModal } from "./CorrigirTelefonePagadorModal";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import { fetchComSessao, obterAccessToken, SessaoExpiradaError } from "@/lib/supabase/sessao";
 import { resolverTelefonePagador } from "@/lib/telefone/telefone-br";
+import { baixarBoletoComNome, salvarArquivoNoNavegador } from "@/features/cobrancas/services/baixar-boleto";
 import {
   ROTULO_SISTEMA_ANTIGO,
   checkboxInicialSistemaAntigo,
@@ -2712,6 +2713,38 @@ function CobrancasDaPropostaList({ cobrancas, onSelectCobranca, onRefreshPropost
   const { user } = useAuth();
   const [cobrancaParaExcluir, setCobrancaParaExcluir] = useState<Cobranca | null>(null);
 
+  // Boleto baixando agora (id da cobrança), para travar o botão no clique.
+  const [baixandoBoletoId, setBaixandoBoletoId] = useState<string | null>(null);
+
+  // "Baixar boleto" (21/10/2026): entrega o PDF como "<pedido> - <cliente>.pdf"
+  // em vez de "boleto-publico". O PDF vem do Storage, o mesmo arquivo do link
+  // público (ver lib/nome-arquivo-boleto). Se não der, abre o link de sempre.
+  async function baixarBoleto(cobranca: Cobranca, boletoUrl: string) {
+    const client = getSupabaseClient();
+    const base = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
+    setBaixandoBoletoId(cobranca.id);
+    try {
+      const resultado = client && base
+        ? await baixarBoletoComNome(client, {
+            id_int: cobranca.id_int,
+            id_pagamento: cobranca.id_pagamento,
+            cliente: cobranca.cliente,
+            url_pdf: boletoUrl
+          }, base)
+        : null;
+      if (resultado?.ok) {
+        salvarArquivoNoNavegador(resultado.arquivo, resultado.nome);
+        return;
+      }
+      const aberta = window.open(boletoUrl, "_blank", "noopener,noreferrer");
+      if (!aberta) {
+        showToast({ type: "warning", title: "Não foi possível baixar o boleto", description: "Libere as janelas deste site e tente de novo." });
+      }
+    } finally {
+      setBaixandoBoletoId(null);
+    }
+  }
+
   // Cancelar cobrança exige permissão. `cobrancas.cancel` = poder financeiro pleno;
   // `propostas.cancelar_cobranca_nao_paga` = só cobrança não paga da própria proposta.
   // A rota /api/cobrancas/cancelar-externo revalida permissão, escopo e estado.
@@ -2836,14 +2869,15 @@ function CobrancasDaPropostaList({ cobrancas, onSelectCobranca, onRefreshPropost
                 {isBoleto ? (
                   <>
                     {boletoUrl ? (
-                      <a
-                        href={boletoUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="h-10 min-w-[120px] px-4 inline-flex items-center justify-center rounded-xl text-sm font-semibold whitespace-nowrap bg-teal-600 text-white hover:bg-teal-700 shadow-sm transition"
+                      <button
+                        type="button"
+                        onClick={() => void baixarBoleto(cobranca, boletoUrl)}
+                        disabled={baixandoBoletoId === cobranca.id}
+                        title="Baixa o PDF com o número do pedido e o nome do cliente"
+                        className="h-10 min-w-[120px] px-4 inline-flex items-center justify-center rounded-xl text-sm font-semibold whitespace-nowrap bg-teal-600 text-white hover:bg-teal-700 shadow-sm transition disabled:opacity-60 disabled:cursor-wait"
                       >
-                        Abrir boleto
-                      </a>
+                        {baixandoBoletoId === cobranca.id ? "Baixando..." : "Baixar boleto"}
+                      </button>
                     ) : (
                       <button
                         disabled
@@ -3017,14 +3051,15 @@ function CobrancasDaPropostaList({ cobrancas, onSelectCobranca, onRefreshPropost
                   {isBoleto ? (
                     <>
                       {boletoUrl ? (
-                        <a
-                          href={boletoUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center justify-center rounded-xl bg-teal-600 px-2.5 py-1.5 text-xs font-semibold text-white transition hover:bg-teal-700 shadow-sm"
+                        <button
+                          type="button"
+                          onClick={() => void baixarBoleto(cobranca, boletoUrl)}
+                          disabled={baixandoBoletoId === cobranca.id}
+                          title="Baixa o PDF com o número do pedido e o nome do cliente"
+                          className="inline-flex items-center justify-center rounded-xl bg-teal-600 px-2.5 py-1.5 text-xs font-semibold text-white transition hover:bg-teal-700 shadow-sm disabled:opacity-60 disabled:cursor-wait"
                         >
-                          Abrir boleto
-                        </a>
+                          {baixandoBoletoId === cobranca.id ? "Baixando..." : "Baixar boleto"}
+                        </button>
                       ) : (
                         <button
                           disabled

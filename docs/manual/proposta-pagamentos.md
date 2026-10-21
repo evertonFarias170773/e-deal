@@ -1,6 +1,6 @@
 # Proposta: aba Pagamentos
 
-> **Última revisão:** 20/10/2026
+> **Última revisão:** 21/10/2026
 > **Caminho no menu:** Pedidos → abrir um pedido → aba Pagamentos
 > **Endereço:** `/orcamentos/<número>/editar?tab=pagamentos`
 
@@ -32,7 +32,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Abonar diferença (R$ ...)** | Ao lado de **Gerar cobrança** | Registra um desconto no valor exato do saldo pendente de proposta já paga. |
 | **Recarregar cobranças** | Aviso "Não foi possível carregar as cobranças desta proposta." | Lê de novo as cobranças da proposta. |
 | **Demorando? Tentar novamente** | Enquanto as cobranças carregam | Lê de novo as cobranças da proposta. |
-| **Abrir boleto** (ou **Indisponível**) | Linha de cobrança de boleto | Abre o boleto em outra aba. |
+| **Baixar boleto** (ou **Indisponível**) | Linha de cobrança de boleto | Baixa o PDF do boleto com o nome "<n° do pedido> - <cliente>.pdf" (no parcelado, "<cobrança> P<n> de <total> - <cliente>.pdf"), pronto para mandar ao cliente. Se o PDF ainda não existe, abre o link do boleto em outra aba, como antes. |
 | **Pix Copia e cola** | Linha de cobrança PIX | Copia o código PIX. |
 | **Abrir checkout** (no celular: **Abrir checkout cartão** ou **Escolher parcelas**) | Linha de cobrança de cartão | Abre a página de pagamento do cartão. |
 | **Copiar** | Linha de cobrança com link | Copia o link, o código PIX ou a linha digitável da cobrança. |
@@ -138,7 +138,7 @@ Complementar em **RETIRA** ou **FOB** não tem frete a cobrar e mesmo assim fica
 
 ### Enviar o pagamento ao cliente
 
-1. Na linha da cobrança, use **Pix Copia e cola**, **Abrir boleto**, **Abrir checkout** ou **Copiar**.
+1. Na linha da cobrança, use **Pix Copia e cola**, **Baixar boleto**, **Abrir checkout** ou **Copiar**.
 2. Para mandar um link único do pedido, abra o menu **Acoes** no topo da proposta e clique em **Link pgto. externo**. O aviso "Link de pagamento externo copiado." confirma.
 3. O cliente abre o link sem login. A página mostra o total do pedido, o que já foi pago, o que falta, os itens e os pagamentos recebidos, e oferece PIX ou cartão para o valor exato que falta.
 4. A cobrança que o cliente gera por ali aparece nesta aba como qualquer outra e passa pela Conferência do mesmo jeito.
