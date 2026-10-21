@@ -2,6 +2,7 @@ import { getSupabaseClient } from "@/lib/supabase/client";
 import { FORMA_RETRABALHO, cobrancaEhRetrabalho, marcaDeRetrabalho } from "@/lib/retrabalho";
 import { formatDocument } from "@/lib/formatters/document";
 import { telefoneDestinatario } from "../lib/telefone-destinatario";
+import { emLotes } from "../lib/em-lotes";
 import {
   nomeTransportadoraCadastro,
   nomeTransporteEfetivo
@@ -473,16 +474,22 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
 
   const enderecoMap = new Map<string, { rotulo: string; cep: string | null; cidadeUf: string; bairro: string }>();
   if (idsEndereco.length > 0) {
-    const { data: enderecosData, error: enderecosErro } = await client
-      .from("enderecos")
-      .select("id, endereco, numero, complemento, bairro, cidade, uf, cep")
-      .in("id", idsEndereco);
-    if (enderecosErro) {
-      // Tolerante como os demais blocos: sem endereço o modal avisa e bloqueia,
-      // que é melhor do que derrubar o painel inteiro.
-      console.warn("[expedicao.service] Erro ao buscar enderecos de entrega:", enderecosErro);
+    // EM LOTES DE 100 (21/10/2026): um `in` com ~640 uuids vira uma url de ~25 KB e o gateway responde
+    // 400 acima de ~16 KB — o mapa ficava vazio e todo pedido aparecia "sem endereco". Ver lib/em-lotes.ts.
+    const respostas = await Promise.all(
+      emLotes(idsEndereco, 100).map((lote) =>
+        client.from("enderecos").select("id, endereco, numero, complemento, bairro, cidade, uf, cep").in("id", lote)
+      )
+    );
+    const enderecosData = respostas.flatMap((r) => r.data ?? []);
+    for (const r of respostas) {
+      if (r.error) {
+        // Tolerante como os demais blocos: sem endereço o modal avisa e bloqueia,
+        // que é melhor do que derrubar o painel inteiro.
+        console.warn("[expedicao.service] Erro ao buscar enderecos de entrega:", r.error);
+      }
     }
-    for (const e of enderecosData ?? []) {
+    for (const e of enderecosData) {
       // MESMO formato do rótulo que `listarEnderecosCliente` monta, para o
       // texto do modal não mudar de cara agora que ele não vem mais de lá.
       const linha = [
