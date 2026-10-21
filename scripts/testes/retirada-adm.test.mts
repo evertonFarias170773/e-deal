@@ -130,7 +130,7 @@ async function roda(input: Record<string, unknown>, trava: Record<string, unknow
 const modal = readFileSync(path.join(RAIZ, "src/features/expedicao/components/DespacharModal.tsx"), "utf8");
 confere("modal: a opcao so com ofereceRetiradaAdm, e a modalidade continua travada", modal.includes("{ofereceRetiradaAdm && (") && modal.includes("const modalidadeTravada = modalidadeInicial !== null;"));
 confere("modal: a trava e consultada com RETIRA_BALCAO na retirada e o despacho manda a marca", modal.includes('tipoFrete: tipoEntrega === "RETIRADA" ? "RETIRA_BALCAO" : tipoFrete,\n      modalidade\n') && modal.includes("retiradaNoBalcaoAdm: retiradaAdmMarcada,"));
-confere("modal: sem liberacao bloqueia o botao com a mensagem do ADM", modal.includes("const travaBloqueia = avaliaTrava && (trava?.bloqueia === true || bloqueioRetiradaAdm);"));
+confere("modal: sem liberacao bloqueia o botao com a mensagem do ADM", modal.includes("const travaFreteBloqueia = avaliaTrava && (trava?.bloqueia === true || bloqueioRetiradaAdm);") && modal.includes("const travaBloqueia = travaFreteBloqueia || saldoBloqueia;"));
 confere("modal: retirada esconde o passo 2 e nao grava rascunho nem etiqueta sem despacho", modal.includes("&& !trocaCorreiosPendente && !retiradaAdmMarcada;") && modal.includes("disabled={salvando || retiradaAdmMarcada}") && modal.slice(modal.indexOf("async function salvarFormularioSemDespachar"), modal.indexOf("async function salvarFormularioSemDespachar") + 400).includes("if (retiradaAdmMarcada) {"));
 const pagina = readFileSync(path.join(RAIZ, "src/features/expedicao/ExpedicaoPage.tsx"), "utf8");
 confere("pagina: ADM pelo cadastro", pagina.includes("ehAdmNoCadastro={user?.isAdmNoCadastro === true}"));

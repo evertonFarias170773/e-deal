@@ -44,6 +44,7 @@ import {
   recotarFrete,
   aplicarRecotacao,
   buscarLiberacaoAtiva,
+  avaliarSaldoDoDespacho,
   avaliarTravaFreteDespacho,
   liberarDespacho,
   temLiberacaoDespachoAtiva,
@@ -58,6 +59,7 @@ import type {
 import { LABEL_MODALIDADE, MODALIDADES_OFERECIDAS, TRANSPORTES_POR_MODALIDADE } from "../types";
 import type { ModalidadeFrete, PedidoExpedicao, TipoFreteNormalizado } from "../types";
 import { AvisoInstrucaoEntrega } from "./AvisoInstrucaoEntrega";
+import { mensagemDoSaldo, type SaldoDoDespacho } from "../lib/saldo-despacho";
 
 const TIPOS_VOLUME = ["Pacote", "Caixa", "Envelope", "Outro"];
 
@@ -740,10 +742,32 @@ export function DespacharModal({
     avaliaTrava &&
     retiradaAdmMarcada &&
     !retiradaAdmLiberada({ situacaoDaTrava: trava?.situacao, temLiberacaoAtiva: liberacaoAtiva });
-  const travaBloqueia = avaliaTrava && (trava?.bloqueia === true || bloqueioRetiradaAdm);
-  const mensagemTrava = bloqueioRetiradaAdm
+  /**
+   * TRAVA DE SALDO DO DESPACHO (21/10/2026). O veredito vem do banco
+   * (`exp_saldo_despacho`), a mesma funcao da trigger que recusa o despacho com
+   * saldo a receber. So antes do primeiro despacho, como a trigger.
+   */
+  const [saldoDespacho, setSaldoDespacho] = useState<SaldoDoDespacho | null>(null);
+  useEffect(() => {
+    if (!avaliaTrava) return;
+    let vivo = true;
+    void avaliarSaldoDoDespacho(pedido.idInt).then((v) => {
+      if (vivo) setSaldoDespacho(v);
+    });
+    return () => {
+      vivo = false;
+    };
+  }, [avaliaTrava, pedido.idInt]);
+  const saldoBloqueia = avaliaTrava && saldoDespacho?.bloqueia === true;
+
+  /** Trava de FRETE (com a liberacao de ADM): vale tambem para a prepostagem. */
+  const travaFreteBloqueia = avaliaTrava && (trava?.bloqueia === true || bloqueioRetiradaAdm);
+  const mensagemTravaFrete = bloqueioRetiradaAdm
     ? MENSAGEM_RETIRADA_PRECISA_LIBERAR
     : trava?.mensagem || "diferença de frete acima do limite.";
+  /** Qualquer trava do despacho: frete ou saldo. O saldo nao tem liberacao de ADM nem trava a prepostagem. */
+  const travaBloqueia = travaFreteBloqueia || saldoBloqueia;
+  const mensagemTrava = saldoBloqueia ? mensagemDoSaldo(saldoDespacho) : mensagemTravaFrete;
 
   const [motivoLiberacaoDespacho, setMotivoLiberacaoDespacho] = useState("");
   const [liberandoDespacho, setLiberandoDespacho] = useState(false);
@@ -1279,8 +1303,8 @@ export function DespacharModal({
       });
       return;
     }
-    if (travaBloqueia) {
-      showToast({ type: "warning", title: "Prepostagem bloqueada", description: mensagemTrava });
+    if (travaFreteBloqueia) {
+      showToast({ type: "warning", title: "Prepostagem bloqueada", description: mensagemTravaFrete });
       return;
     }
     const pesoNum = parsePesoKg(pesoKg);
@@ -1838,7 +1862,7 @@ export function DespacharModal({
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
-                      disabled={gerandoPrepostagem || salvando || faltantes.length > 0 || travaBloqueia}
+                      disabled={gerandoPrepostagem || salvando || faltantes.length > 0 || travaFreteBloqueia}
                       onClick={() => pedirPrepostagem("SEDEX")}
                       className="rounded-2xl bg-[#0f9f9a] px-4 py-2 text-xs font-bold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
                     >
@@ -1846,7 +1870,7 @@ export function DespacharModal({
                     </button>
                     <button
                       type="button"
-                      disabled={gerandoPrepostagem || salvando || faltantes.length > 0 || travaBloqueia}
+                      disabled={gerandoPrepostagem || salvando || faltantes.length > 0 || travaFreteBloqueia}
                       onClick={() => pedirPrepostagem("PAC")}
                       className="rounded-2xl border border-[#0f9f9a] px-4 py-2 text-xs font-bold text-[#0f9f9a] transition hover:bg-teal-50 disabled:cursor-not-allowed disabled:opacity-50"
                     >
@@ -1859,9 +1883,9 @@ export function DespacharModal({
                       Falta informar {frasearFaltantes(faltantes)}. Emitir prepostagem é contratar transporte — o mesmo
                       que o &quot;Confirmar despacho&quot; exige vale aqui.
                     </p>
-                  ) : travaBloqueia ? (
+                  ) : travaFreteBloqueia ? (
                     <p className="text-xs font-medium text-rose-700 dark:text-rose-400">
-                      Bloqueado: {mensagemTrava} A prepostagem segue a mesma regra do despacho.
+                      Bloqueado: {mensagemTravaFrete} A prepostagem segue a mesma regra do despacho.
                     </p>
                   ) : null}
                 </div>
@@ -2089,6 +2113,12 @@ export function DespacharModal({
           </div>
         ) : null}
 
+        {saldoBloqueia ? (
+          <div className="mx-5 mb-1 rounded-2xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-900 dark:border-rose-900/40 dark:bg-rose-950/30 dark:text-rose-200">
+            <p className="font-semibold">Saldo a receber neste pedido</p>
+            <p className="mt-1">{mensagemDoSaldo(saldoDespacho)}</p>
+          </div>
+        ) : null}
         {avaliaTrava &&
           trava &&
           (bloqueioRetiradaAdm ||
@@ -2098,7 +2128,7 @@ export function DespacharModal({
             trava.situacao === "LIBERADO_ADM") && (
             <div
               className={
-                travaBloqueia
+                travaFreteBloqueia
                   ? "mx-5 mb-1 rounded-2xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-900 dark:border-rose-900/40 dark:bg-rose-950/30 dark:text-rose-200"
                   : trava.situacao === "LIBERADO_ADM"
                     ? "mx-5 mb-1 rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-900 dark:border-emerald-900/40 dark:bg-emerald-950/30 dark:text-emerald-200"
@@ -2152,7 +2182,7 @@ export function DespacharModal({
                   ) : null}
                 </p>
               ) : null}
-              {travaBloqueia ? (
+              {travaFreteBloqueia ? (
                 podeLiberarDespacho ? (
                   <div className="mt-2 flex flex-wrap items-center gap-2">
                     <input

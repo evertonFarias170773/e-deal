@@ -1,4 +1,5 @@
 import { getSupabaseClient } from "@/lib/supabase/client";
+import { lerSaldoDoDespacho, type SaldoDoDespacho } from "../lib/saldo-despacho";
 
 /**
  * Cliente da recotação de frete do despacho (Parte C, Etapa 1).
@@ -293,4 +294,18 @@ export async function revogarDespacho(
   const { error } = await client.rpc("exp_revogar_despacho", { p_id_int: idInt, p_autor_nome: autorNome });
   if (error) return { success: false, errorMessage: mensagemDoBanco(error.message, "Não foi possível cancelar a liberação.") };
   return { success: true };
+}
+
+/**
+ * Veredito da trava de SALDO do despacho (21/10/2026), calculado no banco por
+ * `exp_saldo_despacho` — a mesma funcao que a trigger de `expedicoes` usa para
+ * recusar o despacho com saldo a receber. A tela so pergunta; nao decide.
+ * Null = nao foi possivel avaliar agora (a trigger segue valendo no despacho).
+ */
+export async function avaliarSaldoDoDespacho(idInt: number): Promise<SaldoDoDespacho | null> {
+  const client = getSupabaseClient();
+  if (!client) return null;
+  const { data, error } = await client.rpc("exp_saldo_despacho", { p_id_int: idInt });
+  if (error) return null;
+  return lerSaldoDoDespacho(data);
 }

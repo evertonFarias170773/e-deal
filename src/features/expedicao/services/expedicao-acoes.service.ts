@@ -110,7 +110,8 @@ export type DespachoInput = {
 
 import { camposMinimosDespacho, frasearFaltantes } from "../lib/campos-minimos-despacho";
 import { MENSAGEM_RETIRADA_PRECISA_LIBERAR, MOTIVO_RETIRADA_ADM, retiradaAdmLiberada } from "../lib/retirada-adm";
-import { temLiberacaoDespachoAtiva } from "./recotacao.client";
+import { avaliarSaldoDoDespacho, temLiberacaoDespachoAtiva } from "./recotacao.client";
+import { mensagemDoSaldo, textoDaTravaDoDespacho } from "../lib/saldo-despacho";
 
 const MSG_CONFLITO =
   "O pedido mudou de status em outra tela. A lista será recarregada.";
@@ -215,9 +216,9 @@ async function upsertExpedicao(
   const { error } = await client
     .from("expedicoes")
     .upsert({ id_int: idInt, updated_at: new Date().toISOString(), ...campos }, { onConflict: "id_int" });
-  // A trava de frete do despacho (trigger no banco) recusa com um codigo na
-  // frente da mensagem; quem le e o expedidor, entao vai so o texto.
-  if (error) return { success: false, error: error.message.replace(/^EXP_DESPACHO_TRAVA_FRETE:\s*/, "") };
+  // As travas do despacho (triggers de frete e de saldo, no banco) recusam com
+  // um codigo na frente da mensagem; quem le e o expedidor, entao vai so o texto.
+  if (error) return { success: false, error: textoDaTravaDoDespacho(error.message) };
   return { success: true };
 }
 
@@ -563,6 +564,19 @@ export async function despachar(
 
   // Regra das três saídas em `lib/destino-despacho.ts`. `null` = sem transição.
   const destino = destinoDoDespacho(input.tipoEntrega, input.tipoFrete);
+
+  // TRAVA DE SALDO (21/10/2026). Quem garante e a trigger
+  // `trg_exp_trava_despacho_saldo`, no banco: com saldo a receber (total do
+  // pedido maior que o pago confirmado, R$ 0,01 ja conta) o despacho e recusado.
+  // Aqui a mesma funcao e consultada ANTES de gravar, para recusar com a
+  // mensagem certa. Leitura falha nao recusa: a trigger segue valendo. Como a
+  // trigger, so no PRIMEIRO despacho: pedido ja despachado (novo ciclo de
+  // coleta, correcao de dados) nao e avaliado. A data so e lida quando ha saldo.
+  const saldo = await avaliarSaldoDoDespacho(idInt);
+  if (saldo?.bloqueia) {
+    const { data: despachoAtual } = await client.from("expedicoes").select("data_despacho").eq("id_int", idInt).maybeSingle();
+    if (!despachoAtual?.data_despacho) return { success: false, error: mensagemDoSaldo(saldo) };
+  }
 
   // TRAVA DE FRETE (24/09/2026). Quem garante e a trigger
   // `trg_exp_trava_frete_despacho`, no banco: o despacho e PostgREST direto do
