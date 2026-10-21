@@ -1,6 +1,6 @@
 # Proposta: aba Orçamento (produtos)
 
-> **Última revisão:** 07/10/2026
+> **Última revisão:** 21/10/2026
 > **Caminho no menu:** Pedidos → abrir um pedido → aba **Orçamento**
 > **Endereço:** `/orcamentos/<número>/editar?tab=produtos` (em proposta nova, `/orcamentos/novo`)
 
@@ -37,7 +37,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Editar** | Cartão fechado do item | Abre o item para edição. |
 | **Duplicar** (dica: "Duplicar item (mesma configuração em uma nova linha)") | Cartão fechado do item | Cria uma linha igual logo abaixo. |
 | Botão de lixeira (dica: "Remover item"; travado: "Item não pode ser removido neste status") | Cartão do item, aberto ou fechado | Pede a exclusão ou a inativação do item. |
-| **Salvar item** | Cartão aberto do item | Salva a proposta inteira e fecha o cartão. Enquanto grava, mostra **Salvando...** |
+| **Salvar item** | Cartão aberto do item | Salva a proposta inteira e fecha o cartão. Enquanto grava, mostra **Salvando...** Em proposta com pagamento confirmado, só fecha o cartão e mostra a diferença atual, sem gravar: a proposta grava no **Salvar alterações** |
 | Lista ou caixas de cada grupo de variação | **Configuração de Variações**, no cartão aberto | Escolhem as variações do item. |
 | **Remover** (dica: "Remove do item. Só vale ao salvar.") | Quadro amarelo "grupo não vinculado ao produto", no cartão aberto | Tira do item uma variação de grupo que não pertence mais ao produto. |
 | **Sim, excluir** | Janela **Excluir produto?** | Apaga o item, e os modelos dele, de forma definitiva. |
@@ -153,6 +153,7 @@ A marcação de prateleira é guardada no item no momento em que ele entra na pr
 - Em proposta paga, quem tem permissão altera os produtos, e a diferença de valor é tratada ao salvar. Veja [Proposta: visão geral e abas](proposta.md).
 - Proposta avulsa já paga não pode ser alterada por ninguém.
 - Com cobrança ativa, os campos do item não gravam sozinhos ao sair do campo. A gravação é pelo **Salvar item**, que mostra os avisos financeiros.
+- Com pagamento confirmado, **Salvar item** não grava nada: fecha o cartão e mostra "Item atualizado na tela (ainda não gravado)" com a diferença atual. A pergunta sobre a diferença (manter crédito, devolver, bonificar, abater) aparece uma vez, no **Salvar alterações**. Total acima do pago não pergunta: vira saldo a cobrar na aba Pagamentos. Sair da tela sem salvar mostra o aviso de alterações não salvas, e **Salvar alterações** sem nenhuma mudança não grava de novo ("Nada para salvar").
 - Trocar a quantidade de um produto que já tem lotes na aba Pedido é permitido. A conferência entre a quantidade do item e a soma dos lotes acontece na liberação para a produção.
 - Variação de um grupo que deixou de pertencer ao produto aparece em destaque, com a nota "grupo não vinculado ao produto". Ela continua somando no subtotal até alguém clicar em **Remover** e salvar.
 
@@ -160,7 +161,7 @@ A marcação de prateleira é guardada no item no momento em que ele entra na pr
 
 - Aba **Orçamento** x menu **Pedidos** x título **Orcamentos**: a aba **Orçamento** guarda os produtos de uma proposta; o menu lateral **Pedidos** abre a lista de propostas, cuja página tem o título **Orcamentos** (sem cedilha).
 - Aba **Orçamento** x aba **Pedido**: na **Orçamento** ficam produto, quantidade, preço e variações; na **Pedido** ficam os modelos e lotes de cada produto.
-- **Salvar item** x **Salvar alterações** x sair do campo: os dois botões salvam a proposta inteira, e **Salvar item** ainda fecha o cartão; sair do campo grava sozinho só Quantidade, Valor Unitário e Fixo, e só em proposta com número e sem cobrança.
+- **Salvar item** x **Salvar alterações** x sair do campo: os dois botões salvam a proposta inteira (em proposta paga, só o **Salvar alterações**), e **Salvar item** ainda fecha o cartão; sair do campo grava sozinho só Quantidade, Valor Unitário e Fixo, e só em proposta com número e sem cobrança.
 - **Excluir produto?** x **Inativar produto?**: excluir apaga o item de vez, na hora; inativar deixa o item guardado como removido, pode ser desfeito em **Restaurar** e só vale depois de salvar.
 - **Removido (Inativo)** x **CANCELADO**: o primeiro é a marca de um item removido dentro da proposta; o segundo é o status da proposta inteira cancelada.
 - **Duplicar** x **Adicionar novo item** x **Duplicar proposta**: **Duplicar** copia o item com a mesma configuração; **Adicionar novo item** cria outra linha do produto do zero, com a quantidade mínima e sem variações escolhidas; **Duplicar proposta**, no menu **Acoes**, copia a proposta inteira.
@@ -211,6 +212,7 @@ A marcação de prateleira é guardada no item no momento em que ele entra na pr
 - `src/features/orcamentos/OrcamentoFormPage.tsx`
 - `src/features/orcamentos/components/ProductSearchSelector.tsx`
 - `src/features/orcamentos/orcamento-utils.ts`
+- `src/features/orcamentos/lib/salvar-item-paga.ts`
 - `src/features/orcamentos/services/orcamentos.service.ts`
 - `src/features/orcamentos/services/status-engine.service.ts`
 - `src/features/orcamentos/OrcamentosListPageReal.tsx`

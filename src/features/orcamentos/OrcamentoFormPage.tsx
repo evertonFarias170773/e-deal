@@ -123,6 +123,7 @@ import {
 } from "@/features/orcamentos/lib/servicos-transportadora";
 import { barreirasDaTrocaDeFrete } from "@/features/expedicao/services/corrigir-frete-simulacao";
 import { freteTravadoPeloCard, marcarComoCotacao } from "@/features/orcamentos/lib/origem-frete";
+import { avisoDaDiferencaNaTela, salvarItemSoNaTela, salvarSemMudancaEmPropostaPaga } from "@/features/orcamentos/lib/salvar-item-paga";
 import { verificarPermissaoServerSide } from "@/lib/auth/verificar-permissao";
 import {
   categoriaDoServico,
@@ -3421,6 +3422,16 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
       form.itens.map((it) => (it.id === itemId ? updatedItem : it))
     );
 
+    // PROPOSTA PAGA (21/10/2026): o item fica so na tela, sem gravar e sem modal.
+    // A diferenca e decidida uma vez, no "Salvar alterações" (lib/salvar-item-paga).
+    // O formulario segue sujo: o aviso de saida sem salvar continua valendo.
+    if (salvarItemSoNaTela({ modo: mode, propostaPaga: isPropostaPagaAtual })) {
+      setOpenItemIds((prev) => ({ ...prev, [itemId]: false }));
+      const aviso = avisoDaDiferencaNaTela(calcularDiferencaFinanceira(resumo.valorTotal, valorPagoConfirmadoAtual));
+      showToast({ type: "info", title: aviso.titulo, description: aviso.descricao });
+      return;
+    }
+
     // `updateItem` já roda `recalculateItem` a cada digitação, então
     // `form.itens` está atualizado aqui e o `handleSave` pode ler o estado
     // normalmente — não há versão nova esperando para ser aplicada.
@@ -4750,6 +4761,22 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
         description: "Proposta avulsa já paga não pode ser alterada.",
       });
       return;
+    }
+
+    // PROPOSTA PAGA SEM MUDANCA (21/10/2026): nao chama a editar-paga, que devolveria a
+    // mesma diferenca e reabriria a pergunta ja respondida (lib/salvar-item-paga).
+    if (
+      salvarSemMudancaEmPropostaPaga({
+        modo: mode,
+        propostaPaga: isPropostaPagaAtual,
+        formularioSujo: isDirty,
+        lotesPorGravar: Boolean(acoesDaAbaPedidoRef.current?.temLotesNaoGravados()),
+        totalDaTela: resumo.valorTotal,
+        totalCarregado: proposta?.resumo?.valorTotal
+      })
+    ) {
+      showToast({ type: "info", title: "Nada para salvar", description: "Nenhuma alteração desde o último salvamento." });
+      return true;
     }
 
     // — Modelos da lista rápida da aba Pedido (01/10/2026) —
