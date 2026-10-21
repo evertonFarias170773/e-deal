@@ -3637,7 +3637,9 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
 
     setForm((prev) => {
       const chavesPresentes = new Set(prev.fretes.map((f) => getStableFreightKey(f)));
-      const novas = [...sedex, ...azul, ...transp, ...veppo]
+      // Cards de cotacao: origem COTACAO e valor cotado (lib/origem-frete), como nas
+      // outras duas portas. Sem isto o card acrescentado aqui nao travava (21/10/2026).
+      const novas = marcarComoCotacao([...sedex, ...azul, ...transp, ...veppo])
         .filter((f) => !ehFreteDeRetirada(f) && !chavesPresentes.has(getStableFreightKey(f)))
         .map((f) => ({ ...f, escolhido: false }));
       if (novas.length === 0) return prev;
@@ -7581,6 +7583,9 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                   {form.fretes.filter((frete) => !ehFreteDeRetirada(frete)).map((frete) => (
                     <div 
                       key={frete.id} 
+                      // Origem do card (lib/origem-frete): COTACAO trava transportadora e valor.
+                      data-frete-card={frete.servico || frete.transportadora}
+                      data-frete-origem={frete.origem ?? "vazia"}
                       className={`rounded-3xl border p-4 flex flex-col justify-between transition-all duration-200 ${
                         frete.id === form.freteEscolhidoId 
                           ? "border-teal-300 bg-teal-50/60 ring-2 ring-teal-200/50 shadow-sm" 

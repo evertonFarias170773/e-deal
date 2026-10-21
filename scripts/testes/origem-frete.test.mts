@@ -62,7 +62,12 @@ checar("sem modalidade conta como CIF (como o selectFrete)", origemParaGravar(ve
 
 // ---------- estrutura: tela e servico usam a mesma regra
 const tela = ler("src/features/orcamentos/OrcamentoFormPage.tsx");
-checar("tela: cards de cotacao marcados nos dois pontos", (tela.match(/const allResults = marcarComoCotacao\(\[/g) ?? []).length, 2);
+checar("tela: cards de cotacao marcados nas TRES portas (automatica, Atualizar fretes e a da abertura da aba)", [
+  (tela.match(/const allResults = marcarComoCotacao\(\[/g) ?? []).length,
+  tela.includes("const novas = marcarComoCotacao([...sedex, ...azul, ...transp, ...veppo])")
+], [2, true]);
+// Toda chamada de cotacao da tela termina em marcarComoCotacao: tres blocos que cotam, tres marcas.
+checar("tela: nenhuma porta de cotacao sem a marca", [(tela.match(/solicitarCotacaoVeppo\(/g) ?? []).length, (tela.match(/marcarComoCotacao\(\[/g) ?? []).length], [3, 3]);
 checar("tela: dropdown e Valor cobrado travam pelo card", [
   tela.includes("disabled={Boolean(bloqueioTrocaFrete) || freteTravadoNoCard}"),
   tela.includes("disabled={!faseDeOrcamento || !freteEscolhido || Boolean(bloqueioTrocaFrete) || freteTravadoNoCard}"),
