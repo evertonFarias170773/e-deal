@@ -50,6 +50,7 @@ import {
 } from "@/features/orcamentos/lib/modalidade-frete";
 // As MESMAS barreiras da correção de frete da Expedição — ver `barreirasDaTrocaDeFrete`.
 import { barreirasDaTrocaDeFrete } from "@/features/expedicao/services/corrigir-frete-simulacao";
+import { origemParaGravar, recusaDoFreteCalculado } from "@/features/orcamentos/lib/origem-frete";
 import { verificarPermissaoServerSide } from "@/lib/auth/verificar-permissao";
 import type {
   SupabasePagamentoTipoCobrancaRow,
@@ -2224,6 +2225,19 @@ export async function getPropostaDetailById(idInt: number, overrideClient?: Supa
       ];
     }
 
+    // Card calculado relido (21/10/2026): a transportadora dele e a gravada na
+    // proposta, que a tela nao deixa trocar (lib/origem-frete.ts).
+    fretes = fretes.map((f) =>
+      f.escolhido && f.origem === "COTACAO"
+        ? {
+            ...f,
+            idTransportadoraCotada:
+              proposalRow.id_transportadora_cliente !== null && proposalRow.id_transportadora_cliente !== undefined
+                ? Number(proposalRow.id_transportadora_cliente)
+                : null
+          }
+        : f
+    );
     const chosenFrete = fretes.find((f) => f.escolhido) || fretes[0];
     const freteEscolhidoId = chosenFrete ? chosenFrete.id : "";
 
@@ -3334,6 +3348,13 @@ export async function saveProposta(
      */
     const usarDeclaracaoPersistida = !regravaFrete && gateLidoDoBanco;
     const modalidadeVigente = usarDeclaracaoPersistida ? modalidadePersistida : modalidadeFrete;
+
+    // CARD CALCULADO (21/10/2026): transportadora e valor sao os do card. A mesma
+    // regra da tela (lib/origem-frete.ts); recusa ANTES de qualquer escrita.
+    if (regravaFrete && !formState.isAvulso && !ehComplemento && modalidadeVigente !== "FOB" && modalidadeVigente !== "RETIRA") {
+      const recusaCard = recusaDoFreteCalculado(chosenFrete, idTransportadoraCliente);
+      if (recusaCard) return { success: false, errorMessage: recusaCard };
+    }
     const transportadoraVigente = usarDeclaracaoPersistida
       ? transportadoraPersistida
       : idTransportadoraCliente;
@@ -4180,7 +4201,9 @@ export async function saveProposta(
           // cotacao_frete nascem com pesoUsado 0, e `??` gravaria esse zero —
           // que é justamente o valor que desliga qualquer comparação.
           peso: formState.isAvulso ? 0 : (chosenFrete?.pesoUsado || resumo.pesoTotal || null),
-          escolhido: true
+          escolhido: true,
+          // COTACAO (card calculado, so leitura) ou MANUAL; nulo fora de CIF e no antigo.
+          origem: origemParaGravar(chosenFrete, { modalidade: modalidadeVigente, isAvulso: formState.isAvulso === true })
         };
 
         if (!formState.isAvulso && chosenFrete?.id_cotacao !== undefined) {

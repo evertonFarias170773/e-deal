@@ -1,6 +1,6 @@
 # Proposta: aba Fretes
 
-> **Última revisão:** 13/10/2026
+> **Última revisão:** 21/10/2026
 > **Caminho no menu:** Pedidos → abrir um pedido → aba Fretes
 > **Endereço:** `/orcamentos/<número>/editar?tab=fretes`
 
@@ -31,7 +31,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Motoboy** | Ao lado da lista de transportadora, em FOB | Informa que um motoboy leva; dispensa a transportadora. Clicar de novo desmarca. |
 | **Transportadora** (lista) | Caixa da modalidade, em CIF | Escolhe quem leva. Se a transportadora tem card cotado, escolhe o card dela; se não tem, cria um frete manual dela. |
 | **Serviço** (lista) | Caixa da modalidade, em CIF, entre **Transportadora** e **Valor cobrado (R$)** | Escolhe o serviço da transportadora. Só aparece para transportadora com mais de um serviço: hoje, a SVT TRANSPORTES, com **AZUL ECOMM**, **AZUL STANDARD**, **AZUL EXPRESSO** e **AZUL PREMIUM**. |
-| **Valor cobrado (R$)** | Caixa da modalidade, em CIF | Define quanto o cliente paga de frete. Grava ao sair do campo ou no Enter; Esc desfaz. Só edita na fase de orçamento. |
+| **Valor cobrado (R$)** | Caixa da modalidade, em CIF | Define quanto o cliente paga de frete. Grava ao sair do campo ou no Enter; Esc desfaz. Só edita na fase de orçamento, e só em frete manual: com um card calculado escolhido (SEDEX, VEPPO, São Miguel, Azul) ele fica só leitura, com o valor do card, assim como **Transportadora**. |
 | **Rodoviário** / **Aéreo** | Pergunta **Como vai o transporte?**, na caixa da modalidade | Diz à Expedição em qual coluna o pedido entra, quando o sistema não reconhece a transportadora sozinho. Clicar de novo desmarca. |
 | **Atualizar fretes** (vira **Atualizando...**) | Acima dos cards, em CIF | Refaz a cotação com o CEP do endereço e o peso atual da proposta. |
 | **Escolher** | Em cada card de frete | Torna aquele card o frete da proposta. |
@@ -89,9 +89,15 @@ O serviço escolhido é o nome que aparece na coluna **Envio** da lista de Pedid
 
 ### Cobrar um valor diferente do cotado (CIF)
 
-1. Escolha o frete.
+Card calculado (SEDEX, VEPPO, São Miguel, Azul) é cobrado pelo valor do card: com ele escolhido, **Transportadora** e **Valor cobrado (R$)** ficam só leitura e aparece o aviso "Frete calculado: a transportadora e o valor cobrado são os do card escolhido". Para mudar, escolha outro card ou clique em **Atualizar fretes**.
+
+Para cobrar outro valor, o frete precisa ser manual:
+
+1. Em **Transportadora**, escolha uma transportadora que não tenha card na lista. A tela cria o frete manual dela.
 2. Digite o valor em **Valor cobrado (R$)** e pressione Enter ou saia do campo. O card escolhido e o total passam a mostrar esse valor.
 3. Clique em **Salvar alterações**.
+
+Pedido salvo antes de 21/10/2026 continua editável como sempre, até a próxima troca de frete.
 
 Clicar em **Atualizar fretes** depois disso devolve o valor cotado ao card da parceira. No frete manual o valor digitado fica.
 
@@ -190,6 +196,7 @@ Repetir **Aplicar** não duplica: a segunda tentativa devolve o mesmo frete comp
 ## Regras e bloqueios
 
 - Retirada e FOB não cobram frete: o total da proposta sai sem frete, qualquer que seja a cotação. Só CIF cobra.
+- Card calculado escolhido: transportadora e valor cobrado são os do card. O **Salvar alterações** recusa outro valor ou outra transportadora nesse caso. Frete manual segue livre.
 - Em CIF não dá para salvar sem um frete escolhido. Em FOB não dá para salvar sem a transportadora ou o **Motoboy**. Em retirada não é preciso escolher nada.
 - Sem modalidade marcada, a tela não mostra cards e pede: "Escolha a modalidade do frete acima para continuar."
 - Trocar de modalidade limpa a transportadora (fora de FOB) e desfaz a escolha de retirada. Confira a caixa da modalidade depois de trocar.
@@ -239,6 +246,7 @@ Repetir **Aplicar** não duplica: a segunda tentativa devolve o mesmo frete comp
 
 | O que aparece | Por que acontece | O que fazer |
 |---|---|---|
+| "O valor cobrado de um frete calculado é o valor do card. Para mudar, escolha outro card ou use "Atualizar fretes"." (ou o mesmo aviso sobre a transportadora) | O frete escolhido é um card calculado, e o valor ou a transportadora divergem do card. | Escolha outro card, use **Atualizar fretes**, ou crie um frete manual pela **Transportadora** sem card. |
 | "CEP não encontrado" — "Selecione um endereço de entrega válido com CEP para cotar." | A proposta está sem endereço de entrega, ou o endereço está sem CEP. | Escolha o endereço na aba **Geral** e volte para cotar. No orçamento rápido, preencha o CEP de entrega. |
 | "Peso inválido" — "Adicione pelo menos um produto com peso maior que zero para cotar." | A proposta não tem produto com peso. | Inclua os produtos na aba **Orçamento**. |
 | "Falha na cotação de todos os fretes" | Nenhum parceiro respondeu à cotação. | Tente **Atualizar fretes** de novo em instantes. |
@@ -289,6 +297,7 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/features/orcamentos/lib/acompanhar-pedido.ts`
 - `src/app/api/orcamentos/acompanhar/route.ts`
 - `src/features/orcamentos/services/frete.service.ts`
+- `src/features/orcamentos/lib/origem-frete.ts`
 - `src/features/orcamentos/services/frete-desatualizado.ts`
 - `src/features/orcamentos/services/valor-frete-negociado.ts`
 - `src/features/orcamentos/services/orcamentos.service.ts`

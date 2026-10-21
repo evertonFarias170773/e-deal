@@ -144,6 +144,12 @@ export type PropostaFrete = {
   volumes?: number;
   pesoKg?: number;
   id_cotacao?: number;
+  /** `cotacao_frete.origem` (21/10/2026): COTACAO = card calculado; MANUAL = frete manual; vazio = antigo. Ver lib/origem-frete.ts. */
+  origem?: "COTACAO" | "MANUAL" | null;
+  /** Valor que a cotacao trouxe (so card COTACAO): o "Valor cobrado" nao pode diferir. */
+  valorCotado?: number | null;
+  /** Transportadora que o card COTACAO vincula; `undefined` = nao se sabe. */
+  idTransportadoraCotada?: number | null;
 };
 
 export type PropostaResumo = {

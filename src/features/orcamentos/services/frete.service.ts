@@ -15,7 +15,10 @@ export function mapCotacaoRowToPropostaFrete(row: {
   funcionamento_loja?: string | null;
   escolhido?: boolean | null;
   peso?: number | null;
+  origem?: string | null;
 }): PropostaFrete {
+  // Origem (21/10/2026): so os dois valores do CHECK contam; o resto e linha antiga.
+  const origem = row.origem === "COTACAO" || row.origem === "MANUAL" ? row.origem : null;
   return {
     id: String(row.id),
     id_int: Number(row.id_int),
@@ -25,7 +28,10 @@ export function mapCotacaoRowToPropostaFrete(row: {
     prazo: row.prazo || "Sob consulta",
     observacao: row.funcionamento_loja || "",
     escolhido: Boolean(row.escolhido),
-    pesoUsado: Number(row.peso || 0)
+    pesoUsado: Number(row.peso || 0),
+    origem,
+    // Card calculado relido: o valor gravado E o do card (ele nao se edita).
+    ...(origem === "COTACAO" ? { valorCotado: Number(row.valor || 0) } : {})
   };
 }
 

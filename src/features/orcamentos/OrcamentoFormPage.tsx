@@ -122,6 +122,7 @@ import {
   transportadoraTemEscolhaDeServico
 } from "@/features/orcamentos/lib/servicos-transportadora";
 import { barreirasDaTrocaDeFrete } from "@/features/expedicao/services/corrigir-frete-simulacao";
+import { freteTravadoPeloCard, marcarComoCotacao } from "@/features/orcamentos/lib/origem-frete";
 import { verificarPermissaoServerSide } from "@/lib/auth/verificar-permissao";
 import {
   categoriaDoServico,
@@ -1285,6 +1286,8 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
       : form.vendedor;
 
   const freteEscolhido = form.fretes.find((frete) => frete.id === form.freteEscolhidoId);
+  /** Card calculado escolhido (origem COTACAO): transportadora e "Valor cobrado" so leitura (lib/origem-frete). */
+  const freteTravadoNoCard = freteTravadoPeloCard(freteEscolhido);
 
   /**
    * MODALIDADE E TRANSPORTADORA SE TROCAM EM QUALQUER STATUS (23/09/2026).
@@ -2209,7 +2212,8 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
 
       // Sem o card "Retirada Local" (14/09/2026): ele duplicava o botao RETIRA
       // da barra de modalidade. Retirada se declara la, nao escolhendo cotacao.
-      const allResults = [...sedexResults, ...azulResults, ...transpResults, ...veppoResults];
+      // Cards de cotacao: origem COTACAO e valor cotado (lib/origem-frete, 21/10/2026).
+      const allResults = marcarComoCotacao([...sedexResults, ...azulResults, ...transpResults, ...veppoResults]);
 
       setForm((prev) => {
         // Preservação de frete só vale para mudanças de peso/produto no mesmo destino. Mudança de endereço invalida a cotação anterior.
@@ -3815,7 +3819,8 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     let foundMatch = false;
 
     // Sem o card "Retirada Local" — mesma remocao da cotacao automatica acima.
-    const allResults = [...sedexResults, ...azulResults, ...transpResults, ...veppoResults];
+    // Cards de cotacao: origem COTACAO e valor cotado (lib/origem-frete, 21/10/2026).
+    const allResults = marcarComoCotacao([...sedexResults, ...azulResults, ...transpResults, ...veppoResults]);
 
     const updatedResults = allResults.map((newFrete) => {
       if (currentChosen && !isManual && areFreightsEqual(newFrete, currentChosen)) {
@@ -3951,6 +3956,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
    * distraído tirar o frete do total — e, em proposta paga, virar crédito.
    */
   function escolherTransportadoraCif(idTransportadora: number | null) {
+    if (freteTravadoNoCard) return;
     if (bloqueioTrocaFrete) {
       showToast({ type: "warning", title: "Troca de frete bloqueada", description: bloqueioTrocaFrete });
       return;
@@ -4064,6 +4070,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
    */
   function aplicarValorCobradoCif(texto: string) {
     setValorCobradoCifDraft(null);
+    if (freteTravadoNoCard) return;
     const valor = parseCurrencyBR(texto);
     if (valor === null || valor < 0) return;
     setForm((current) => ({
@@ -4126,7 +4133,15 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
       // a rota canoniza cadastros substituídos, e o select tem de mostrar o
       // resultado real para ninguém achar que ficou o outro.
       const gravado = corpo.idTransportadoraCliente ?? null;
-      setForm((current) => ({ ...current, idTransportadoraCliente: gravado }));
+      // O carimbo do card calculado acompanha a correcao do admin: sem isso o
+      // Salvar seguinte recusaria a transportadora que a propria rota gravou.
+      setForm((current) => ({
+        ...current,
+        idTransportadoraCliente: gravado,
+        fretes: current.fretes.map((f) =>
+          f.id === current.freteEscolhidoId && f.origem === "COTACAO" ? { ...f, idTransportadoraCotada: gravado } : f
+        )
+      }));
 
       showToast({
         type: "success",
@@ -4281,7 +4296,12 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
       ...current,
       ...(viraRetira ? { modalidadeFrete: "RETIRA" as const, idTransportadoraCliente: null } : {}),
       ...(vinculoParceira !== undefined ? { idTransportadoraCliente: vinculoParceira } : {}),
-      fretes: updatedFretes,
+      // Card calculado: a transportadora dele fica carimbada, para o Salvar
+      // conferir a mesma regra da tela (lib/origem-frete, 21/10/2026).
+      fretes:
+        vinculoParceira !== undefined
+          ? updatedFretes.map((f) => (f.id === freteId && f.origem === "COTACAO" ? { ...f, idTransportadoraCotada: vinculoParceira } : f))
+          : updatedFretes,
       freteEscolhidoId: freteId
     }));
   }
@@ -7088,7 +7108,11 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                         // Trocar de modalidade zera quem leva: em FOB vem do drop,
                         // em CIF do card escolhido ou do drop de CIF, em RETIRA não
                         // há transportadora.
-                        if (m !== "FOB") updateField("idTransportadoraCliente", null);
+                        // Volta a CIF com card calculado escolhido: a transportadora e a
+                        // do card (lib/origem-frete, 21/10/2026), senao o Salvar recusaria.
+                        if (m === "CIF" && freteTravadoPeloCard(freteAtual) && freteAtual?.idTransportadoraCotada !== undefined) {
+                          updateField("idTransportadoraCliente", freteAtual.idTransportadoraCotada ?? null);
+                        } else if (m !== "FOB") updateField("idTransportadoraCliente", null);
                         // Trocar de modalidade troca o RAMO da escolha, entao a
                         // categoria anterior nao vale mais: o motoboy marcado num
                         // FOB nao pode sobreviver a um CIF. Zerar aqui e seguro
@@ -7183,7 +7207,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                       <SelectTransportadora
                         value={form.idTransportadoraCliente}
                         transportadoras={transportadoras}
-                        disabled={Boolean(bloqueioTrocaFrete)}
+                        disabled={Boolean(bloqueioTrocaFrete) || freteTravadoNoCard}
                         onChange={escolherTransportadoraCif}
                       />
                     </div>
@@ -7225,7 +7249,8 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                         type="text"
                         inputMode="decimal"
                         aria-label="Valor cobrado do frete (R$)"
-                        disabled={!faseDeOrcamento || !freteEscolhido || Boolean(bloqueioTrocaFrete)}
+                        disabled={!faseDeOrcamento || !freteEscolhido || Boolean(bloqueioTrocaFrete) || freteTravadoNoCard}
+                        data-frete-travado-no-card={freteTravadoNoCard ? "sim" : undefined}
                         value={valorCobradoCifDraft ?? formatCurrencyWithoutPrefix(resumo.frete)}
                         onChange={(e) => setValorCobradoCifDraft(e.target.value)}
                         onBlur={() => {
@@ -7243,7 +7268,9 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                     </div>
                   </div>
                   <p className="mt-1.5 text-xs text-slate-500">
-                    {!faseDeOrcamento
+                    {freteTravadoNoCard
+                      ? "Frete calculado: a transportadora e o valor cobrado são os do card escolhido. Para mudar, escolha outro card ou use \"Atualizar fretes\"."
+                      : !faseDeOrcamento
                       ? "Depois da liberação o valor cobrado muda pelo valor negociado. Trocar a transportadora ou o frete escolhido segue valendo aqui."
                       : !freteEscolhido
                         ? "Escolha um frete abaixo ou uma transportadora aqui para definir o valor cobrado."
