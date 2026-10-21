@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { MENSAGEM_RETIRADA_PRECISA_LIBERAR, podeOferecerRetiradaAdm, retiradaAdmLiberada, tipoEntregaDoDespacho } from "../lib/retirada-adm";
 import { AlertTriangle, X } from "lucide-react";
 import { useAppToast } from "@/components/common/AppToast";
 import { getTransportadoras } from "@/features/nfe/services/nfe.service";
@@ -45,6 +46,7 @@ import {
   buscarLiberacaoAtiva,
   avaliarTravaFreteDespacho,
   liberarDespacho,
+  temLiberacaoDespachoAtiva,
   revogarDespacho
 } from "../services/recotacao.client";
 import type {
@@ -176,6 +178,7 @@ export function DespacharModal({
   onDone,
   podeLiberarDespacho = false,
   podeEditarTelefone = false,
+  ehAdmNoCadastro = false,
   instrucaoEntrega
 }: {
   pedido: PedidoExpedicao;
@@ -200,6 +203,8 @@ export function DespacharModal({
    * depende disto.
    */
   podeEditarTelefone?: boolean;
+  /** ADM pelo cadastro (is_admin/is_super_adm): ve "Cliente vai retirar no balcao" em pedido CIF (lib/retirada-adm). */
+  ehAdmNoCadastro?: boolean;
 }) {
   const { showToast } = useAppToast();
   const exp = pedido.expedicao;
@@ -537,7 +542,11 @@ export function DespacharModal({
    * (RETIRADA → "A RETIRAR", TRANSPORTE → "EM TRANSITO"). Ele agora é derivado
    * da modalidade, em vez de ser um toggle próprio.
    */
-  const tipoEntrega: "TRANSPORTE" | "RETIRADA" = modalidade === "RETIRA" ? "RETIRADA" : "TRANSPORTE";
+  // "Cliente vai retirar no balcao" (ADM, pedido CIF; lib/retirada-adm, 21/10/2026).
+  const ofereceRetiradaAdm = podeOferecerRetiradaAdm({ ehAdmNoCadastro, modalidadeInicial, modoEdicao });
+  const [retiradaAdm, setRetiradaAdm] = useState(false);
+  const tipoEntrega: "TRANSPORTE" | "RETIRADA" = tipoEntregaDoDespacho(modalidade, ofereceRetiradaAdm && retiradaAdm);
+  const retiradaAdmMarcada = ofereceRetiradaAdm && retiradaAdm && tipoEntrega === "RETIRADA";
 
   /**
    * O que ainda falta para despachar. O botao passa a olhar isto, e nao so o
@@ -703,23 +712,38 @@ export function DespacharModal({
   const [trava, setTrava] = useState<TravaFreteDespacho | null>(null);
   /** Incrementado depois de recotar, aplicar ou liberar: forca reler o veredito. */
   const [versaoTrava, setVersaoTrava] = useState(0);
+  /** Liberacao de despacho ativa (retirada do ADM; lib/retirada-adm). */
+  const [liberacaoAtiva, setLiberacaoAtiva] = useState(false);
   useEffect(() => {
     if (!avaliaTrava) return;
     let vivo = true;
     void avaliarTravaFreteDespacho({
       idInt: pedido.idInt,
       cepDestino: cepDoEnderecoEscolhido,
-      tipoFrete,
+      // Retirada: a trava ve o transporte que vai ser gravado (RETIRA_BALCAO).
+      tipoFrete: tipoEntrega === "RETIRADA" ? "RETIRA_BALCAO" : tipoFrete,
       modalidade
     }).then((v) => {
       if (vivo) setTrava(v);
     });
+    if (retiradaAdmMarcada) {
+      void temLiberacaoDespachoAtiva(pedido.idInt).then((ativa) => {
+        if (vivo) setLiberacaoAtiva(ativa);
+      });
+    }
     return () => {
       vivo = false;
     };
-  }, [avaliaTrava, pedido.idInt, cepDoEnderecoEscolhido, tipoFrete, modalidade, versaoTrava]);
-  const travaBloqueia = avaliaTrava && trava?.bloqueia === true;
-  const mensagemTrava = trava?.mensagem || "diferença de frete acima do limite.";
+  }, [avaliaTrava, pedido.idInt, cepDoEnderecoEscolhido, tipoFrete, tipoEntrega, modalidade, versaoTrava, retiradaAdmMarcada]);
+  /** Retirada do ADM sem liberacao: bloqueia como a trava, com a mensagem propria. */
+  const bloqueioRetiradaAdm =
+    avaliaTrava &&
+    retiradaAdmMarcada &&
+    !retiradaAdmLiberada({ situacaoDaTrava: trava?.situacao, temLiberacaoAtiva: liberacaoAtiva });
+  const travaBloqueia = avaliaTrava && (trava?.bloqueia === true || bloqueioRetiradaAdm);
+  const mensagemTrava = bloqueioRetiradaAdm
+    ? MENSAGEM_RETIRADA_PRECISA_LIBERAR
+    : trava?.mensagem || "diferença de frete acima do limite.";
 
   const [motivoLiberacaoDespacho, setMotivoLiberacaoDespacho] = useState("");
   const [liberandoDespacho, setLiberandoDespacho] = useState(false);
@@ -850,7 +874,8 @@ export function DespacharModal({
    * drop "Em nome de quem sai a etiqueta", que desde 04/09/2026 fica acima da
    * previa, fora do bloco — por isso ela e nomeada aqui, uma vez.
    */
-  const mostraEnvio = (modalidade === "FOB" || modalidade === "CIF") && !trocaCorreiosPendente;
+  // Retirada do ADM (lib/retirada-adm): como em RETIRA, nao ha transporte a definir.
+  const mostraEnvio = (modalidade === "FOB" || modalidade === "CIF") && !trocaCorreiosPendente && !retiradaAdmMarcada;
 
   /**
    * Divergência entre o que o vendedor declarou no orçamento e o que o expedidor
@@ -1061,6 +1086,7 @@ export function DespacharModal({
 
     const input: DespachoInput = {
       tipoEntrega,
+      retiradaNoBalcaoAdm: retiradaAdmMarcada,
       modalidadeFrete: modalidade,
       tipoFrete: tipoEntrega === "RETIRADA" ? "RETIRA_BALCAO" : tipoFrete,
       transportadoraNome: tipoEntrega === "RETIRADA" ? "Retira balcão" : nomeTransportadoraParaGravar,
@@ -1157,6 +1183,11 @@ export function DespacharModal({
    * e a emissao da etiqueta, que grava antes de gerar (`handleEmitirEtiqueta`).
    */
   async function salvarFormularioSemDespachar(): Promise<ResultadoAcao | null> {
+    // Retirada do ADM: so no despacho, com a liberacao (lib/retirada-adm). Vale para as duas portas.
+    if (retiradaAdmMarcada) {
+      showToast({ type: "warning", title: "Retirada no balcão", description: "A retirada só é gravada no despacho, com a liberação de um ADM." });
+      return null;
+    }
     const pesoNum = parsePesoKg(pesoKg);
     if (pesoNum !== null && (!Number.isFinite(pesoNum) || pesoNum <= 0)) {
       showToast({ type: "error", title: "Peso inválido", description: "Informe o peso em kg (ex.: 12,4) ou deixe vazio." });
@@ -1455,6 +1486,29 @@ export function DespacharModal({
             </div>
           )}
 
+          {/* RETIRADA DECIDIDA PELO ADM (21/10/2026): pedido CIF que o cliente vai
+              buscar. So o despacho muda; a proposta (frete, total, modalidade, nota)
+              fica como esta. Exige "Liberar despacho (ADM)". Ver lib/retirada-adm. */}
+          {ofereceRetiradaAdm && (
+            <label
+              data-retirada-adm
+              className="flex items-start gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-800 dark:border-slate-700 dark:bg-slate-800/40 dark:text-slate-200"
+            >
+              <input
+                type="checkbox"
+                checked={retiradaAdm}
+                onChange={(e) => setRetiradaAdm(e.target.checked)}
+                className="mt-0.5 h-4 w-4"
+              />
+              <span>
+                <span className="font-semibold">Cliente vai retirar no balcão</span>
+                <span className="block text-xs text-slate-500 dark:text-slate-400">
+                  O pedido sai como retirada (aguardando retirada). O frete, o total, a modalidade CIF da proposta e a nota não mudam. Precisa da liberação de um ADM.
+                </span>
+              </span>
+            </label>
+          )}
+
           {/* Guarda do envio já existente nos Correios: nada é trocado sem o
               expedidor dizer que quer. */}
           {trocaCorreiosPendente && (
@@ -1502,7 +1556,8 @@ export function DespacharModal({
               refletem aqui na hora. */}
           {vmPrevia ? (
             <ConferenciaDespacho
-              vm={{ ...vmPrevia, destinatario: { ...vmPrevia.destinatario, telefone: avaliacaoTelefone.alterado && avaliacaoTelefone.valido ? formatPhoneBR(avaliacaoTelefone.normalizado) : vmPrevia.destinatario.telefone } }}
+              // Retirada do ADM: a previa mostra o que o despacho vai gravar (lib/retirada-adm).
+              vm={{ ...vmPrevia, ...(retiradaAdmMarcada ? { transportadora: "Retira balcão", envioPorTransportadoraDeclarada: false } : {}), destinatario: { ...vmPrevia.destinatario, telefone: avaliacaoTelefone.alterado && avaliacaoTelefone.valido ? formatPhoneBR(avaliacaoTelefone.normalizado) : vmPrevia.destinatario.telefone } }}
               objetoCorreios={objetoCorreiosVigente}
               campoTelefone={
                 <CampoTelefoneDestinatario
@@ -2036,7 +2091,8 @@ export function DespacharModal({
 
         {avaliaTrava &&
           trava &&
-          (trava.situacao === "PRECISA_RECOTAR" ||
+          (bloqueioRetiradaAdm ||
+            trava.situacao === "PRECISA_RECOTAR" ||
             trava.situacao === "DENTRO_DO_LIMITE" ||
             trava.situacao === "ACIMA_DO_LIMITE" ||
             trava.situacao === "LIBERADO_ADM") && (
@@ -2050,7 +2106,9 @@ export function DespacharModal({
               }
             >
               <p className="font-semibold">
-                {trava.situacao === "PRECISA_RECOTAR"
+                {bloqueioRetiradaAdm
+                  ? "⛔ Retirada no balcão: precisa da liberação de um ADM"
+                  : trava.situacao === "PRECISA_RECOTAR"
                   ? "⛔ Recote o frete antes de despachar"
                   : trava.situacao === "ACIMA_DO_LIMITE"
                     ? "⛔ Recotação acima do limite de R$ 4,00"
@@ -2058,7 +2116,11 @@ export function DespacharModal({
                       ? `🔓 Despacho liberado${trava.liberacao?.liberado_por_nome ? ` por ${trava.liberacao.liberado_por_nome}` : ""}`
                       : "⚠ Recotação dentro do limite de R$ 4,00"}
               </p>
-              {trava.situacao === "PRECISA_RECOTAR" ? (
+              {bloqueioRetiradaAdm ? (
+                <p className="mt-1" data-retirada-adm-bloqueio>
+                  {MENSAGEM_RETIRADA_PRECISA_LIBERAR} O frete e o total da proposta não mudam.
+                </p>
+              ) : trava.situacao === "PRECISA_RECOTAR" ? (
                 <p className="mt-1">
                   O endereço de entrega ou o transporte não são os que foram cotados. Recote o frete (bloco &quot;Recotar
                   frete&quot;) para medir a diferença: até R$ 4,00 acima do frete da proposta, o despacho segue.
@@ -2169,7 +2231,9 @@ export function DespacharModal({
             <button
               type="button"
               onClick={() => void handleSalvarRascunho()}
-              disabled={salvando}
+              // A retirada do ADM so se grava no despacho, com a liberacao (lib/retirada-adm).
+              disabled={salvando || retiradaAdmMarcada}
+              title={retiradaAdmMarcada ? "A retirada no balcão só é gravada no despacho, com a liberação de um ADM." : undefined}
               className="rounded-2xl border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
             >
               Salvar sem despachar

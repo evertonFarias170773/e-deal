@@ -57,6 +57,11 @@ export type ResultadoAcao = {
  */
 export type DespachoInput = {
   tipoEntrega: "TRANSPORTE" | "RETIRADA";
+  /**
+   * "Cliente vai retirar no balcao" marcado pelo ADM num pedido CIF (lib/retirada-adm,
+   * 21/10/2026): exige liberacao de despacho e grava o motivo na trilha.
+   */
+  retiradaNoBalcaoAdm?: boolean;
   /** Quem paga o transporte. Null só em pedido legado que ainda não foi redespachado. */
   modalidadeFrete: ModalidadeFrete | null;
   tipoFrete: TipoFreteNormalizado;
@@ -104,6 +109,8 @@ export type DespachoInput = {
 };
 
 import { camposMinimosDespacho, frasearFaltantes } from "../lib/campos-minimos-despacho";
+import { MENSAGEM_RETIRADA_PRECISA_LIBERAR, MOTIVO_RETIRADA_ADM, retiradaAdmLiberada } from "../lib/retirada-adm";
+import { temLiberacaoDespachoAtiva } from "./recotacao.client";
 
 const MSG_CONFLITO =
   "O pedido mudou de status em outra tela. A lista será recarregada.";
@@ -573,9 +580,20 @@ export async function despachar(
     p_tipo_frete: input.tipoFrete,
     p_modalidade: input.modalidadeFrete
   });
-  const veredito = trava as { bloqueia?: boolean; mensagem?: string } | null;
+  const veredito = trava as { bloqueia?: boolean; mensagem?: string; situacao?: string } | null;
+  const retiradaAdm = input.retiradaNoBalcaoAdm === true && input.tipoEntrega === "RETIRADA";
   if (veredito?.bloqueia) {
-    return { success: false, error: veredito.mensagem || "Despacho bloqueado pela diferença de frete." };
+    return {
+      success: false,
+      error: retiradaAdm ? MENSAGEM_RETIRADA_PRECISA_LIBERAR : veredito.mensagem || "Despacho bloqueado pela diferença de frete."
+    };
+  }
+  // Retirada do ADM: so com liberacao, mesmo quando a trava nao avalia o caso.
+  if (
+    retiradaAdm &&
+    !retiradaAdmLiberada({ situacaoDaTrava: veredito?.situacao, temLiberacaoAtiva: await temLiberacaoDespachoAtiva(idInt) })
+  ) {
+    return { success: false, error: MENSAGEM_RETIRADA_PRECISA_LIBERAR };
   }
 
   // Leitura de cortesia: pega a aba obsoleta ANTES de escrever, no caso comum.
@@ -732,7 +750,7 @@ export async function despachar(
   // Sem destino, não há transição a fazer: o pedido FICA em EXPEDICAO por
   // desenho, e é a gravação acima que o coloca em "aguardando coleta".
   if (destino !== null) {
-    const t = await transicionar(idInt, "EXPEDICAO", destino, ator, null, "NATURAL");
+    const t = await transicionar(idInt, "EXPEDICAO", destino, ator, retiradaAdm ? MOTIVO_RETIRADA_ADM : null, "NATURAL");
     if (!t.success) {
       // Dados gravados, status não. É o lado seguro da inversão: o pedido continua
       // no funil e os dados estão lá para conferência.

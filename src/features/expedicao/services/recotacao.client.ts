@@ -265,6 +265,25 @@ export async function liberarDespacho(
   return { success: true };
 }
 
+/**
+ * Ha liberacao de despacho ATIVA (nao consumida, nao revogada) para o pedido?
+ * Usada pela retirada no balcao do ADM (lib/retirada-adm) quando a trava de frete
+ * nao avalia o caso. So leitura. Falha de leitura = false (nao libera).
+ */
+export async function temLiberacaoDespachoAtiva(idInt: number): Promise<boolean> {
+  const client = getSupabaseClient();
+  if (!client) return false;
+  const { data, error } = await client
+    .from("expedicao_despacho_liberacoes")
+    .select("id")
+    .eq("id_int", idInt)
+    .is("consumida_em", null)
+    .is("revogada_em", null)
+    .limit(1);
+  if (error) return false;
+  return (data ?? []).length > 0;
+}
+
 export async function revogarDespacho(
   idInt: number,
   autorNome: string | null

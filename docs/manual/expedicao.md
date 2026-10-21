@@ -94,6 +94,7 @@ Os itens aparecem nesta ordem, cada um só quando se aplica.
 | **Despachar mesmo assim (há justificativa: remessa sem NF, retirada, etc.)** | Caixa de marcar no aviso vermelho de pedido sem nota | Libera o botão de confirmar |
 | **Desvincular e despachar separado** | Caixa de marcar no quadro do pedido complementar | Separa o complemento, com motivo obrigatório |
 | **Liberar despacho (ADM)** | Quadro vermelho da trava de frete; só administrador da Expedição | Libera um despacho, com motivo obrigatório |
+| **Cliente vai retirar no balcão** | Caixa de marcar no topo do **Despachar**; só ADM pelo cadastro, em pedido CIF | Despacha o pedido CIF como retirada (A Retirar), sem mudar frete, total, modalidade da proposta nem nota. Exige **Liberar despacho (ADM)** |
 | **Cancelar liberação** | Quadro verde "Despacho liberado"; só administrador da Expedição | Desfaz a liberação do despacho |
 | **Fone** (telefone do destinatário) | Quadro de conferência, ao lado do bairro | Quando o cadastro tem mais de um telefone, um seletor acima do campo lista os preenchidos (WhatsApp 1, Telefone fixo comercial, WhatsApp 2), com "sem DDD" nos que têm menos de 10 dígitos; escolher um preenche o campo. Editável para quem tem a permissão de editar cadastros. Ao confirmar, se o número final for diferente do WhatsApp 1 do cadastro, ele é gravado no WhatsApp 1 do cadastro do destinatário (o pagador, quando é diferente do cliente) e vale na etiqueta e na prepostagem; os outros telefones nunca mudam. Sem a permissão, só mostra o número e o seletor fica bloqueado |
 | **Cancelar** | Rodapé | Fecha sem gravar |
@@ -254,6 +255,18 @@ O bloco **Recotar frete** aparece em **Despachar** quando o pedido é CIF e est�
 5. Para gravar o frete novo na proposta, o administrador usa antes **Liberar aplicação da recotação** no menu do pedido. Depois o expedidor recota e clica em **Aplicar** na opção desejada. A liberação vale para uma aplicação e pode ser desfeita em **Cancelar liberação**, no menu.
 6. Ao aplicar, o frete e o total do pedido mudam pelo mesmo valor e o fato fica registrado na timeline do pedido. A diferença não é lançada na conta do cliente.
 
+### Despachar como retirada um pedido CIF (ADM)
+
+Quando o cliente de um pedido CIF decide buscar no balcão, inclusive com a NF-e já autorizada:
+
+1. Abra o pedido em **Despachar**. A **Modalidade do frete** aparece como **CIF** e não muda.
+2. Marque **Cliente vai retirar no balcão**. Só aparece para ADM pelo cadastro. O bloco de envio some, a **Forma de envio** passa a **RETIRA BALCÃO** e o botão vira **Confirmar: aguardando retirada**.
+3. Aparece o quadro vermelho **Retirada no balcão: precisa da liberação de um ADM**. O administrador da Expedição escreve o motivo e clica em **Liberar despacho (ADM)**. A liberação vale para um despacho.
+4. Clique em **Confirmar: aguardando retirada**. O pedido vai para A Retirar; o histórico registra quem fez e o motivo "cliente retira no balcão".
+5. Quando o cliente buscar, use **Confirmar retirada**, como em qualquer retirada.
+
+O frete, o total, a modalidade CIF da proposta e a nota ficam como estavam. O frete cobrado e não usado não vira crédito. Com a caixa marcada, **Salvar sem despachar** e a etiqueta não gravam nada: a retirada só se grava no despacho.
+
 ### Corrigir frete
 
 Serve para trocar a modalidade (quem paga) e a transportadora de um pedido que já saiu do orçamento.
@@ -330,6 +343,7 @@ Os retornos possíveis são: Entregue volta para Em Trânsito (ou para A Retirar
 - Não dá para despachar sem a modalidade do frete, a transportadora, o endereço de entrega, o peso aferido e a quantidade de volumes. Em retirada, basta a modalidade. O rastreio é opcional.
 - A etiqueta e a prepostagem exigem os mesmos dados do despacho enquanto o pedido ainda não saiu. Imprimir etiqueta de um envio que ninguém terminou de declarar não é permitido.
 - **Salvar sem despachar** e **Salvar dados** não exigem os campos mínimos: servem para guardar ou corrigir.
+- Pedido CIF só sai como retirada por **Cliente vai retirar no balcão**, com ADM pelo cadastro e **Liberar despacho (ADM)**. Sem a liberação: "Despacho como retirada no balcão precisa da liberação de um ADM: use "Liberar despacho (ADM)" neste despacho."
 - Não dá para trocar o endereço de entrega nem a transportadora na Expedição. Os dois vêm da proposta. A modalidade também, quando já está definida; ela se corrige na aba Fretes da proposta ou em **Corrigir frete**.
 - Pedido CIF com transportadora escolhida (no orçamento ou em **Corrigir frete**) vai por transportadora, mesmo com frete cotado como SEDEX ou PAC: a **Forma de envio** mostra a transportadora, os botões de prepostagem dos Correios não aparecem e o sistema recusa gerar prepostagem. Isso não vale quando a transportadora escolhida é o próprio cadastro dos Correios, nem quando o frete foi cotado como motoboy. Tirar a transportadora em **Corrigir frete** volta o pedido ao serviço cotado. Na visualização do pedido (**Ver proposta**), esse frete aparece como **Transportadora: nome**.
 - Se o pedido já tem prepostagem dos Correios gerada e não cancelada, ele continua como Correios e a janela avisa: "Já há prepostagem dos Correios gerada; cancele-a para despachar por transportadora". Cancele a prepostagem e marque-a como cancelada para o pedido passar a ir pela transportadora.
@@ -431,6 +445,7 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/features/expedicao/types.ts`
 - `src/features/expedicao/components/KanbanTransportadoras.tsx`
 - `src/features/expedicao/components/DespacharModal.tsx`
+- `src/features/expedicao/lib/retirada-adm.ts`
 - `src/features/expedicao/components/ConferenciaDespacho.tsx`
 - `src/features/expedicao/components/ConfirmarAcaoModal.tsx`
 - `src/features/expedicao/components/CorrigirFreteModal.tsx`

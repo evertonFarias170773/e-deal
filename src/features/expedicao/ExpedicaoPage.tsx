@@ -1541,6 +1541,7 @@ export function ExpedicaoPage() {
           ator={atorAtual()}
           podeLiberarDespacho={canAdminExpedicao}
           podeEditarTelefone={podeEditarCadastro}
+          ehAdmNoCadastro={user?.isAdmNoCadastro === true}
           onClose={() => setPedidoDespacho(null)}
           onDone={() => { setPedidoDespacho(null); void recarregar(); }}
         />
