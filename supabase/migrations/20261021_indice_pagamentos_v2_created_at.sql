@@ -1,0 +1,43 @@
+-- indice_pagamentos_v2_created_at
+-- Indice em pagamentos_v2(created_at desc) para a carga completa de cobrancas
+--
+-- Autorizado pelo dono em 21/10/2026, so para esta escrita.
+--
+-- A carga do CobrancasProvider le pagamentos_v2 em paginas de 1.000 com
+-- ORDER BY created_at DESC LIMIT/OFFSET (sem desempate). Sem indice, cada
+-- pagina ordenava a tabela inteira (10,5 mil linhas, 6 MB) e, nas paginas
+-- fundas, a ordenacao ia para o disco (external merge, ~5 MB por chamada,
+-- ~3,3 GB de temporario em 22 min em 21/10). A queda de 21/10 (16:26-16:41)
+-- foi com o banco Small sem memoria.
+--
+-- Antes (EXPLAIN ANALYZE, banco ocioso, 21/10):
+--   offset 9000: Seq Scan + Sort external merge Disk 5128kB, temp 642 blocos, 29,2 ms
+--   offset 0:    Seq Scan + top-N heapsort 1760kB, 16,0 ms
+--
+-- APLICADO em 21/10/2026 ~17:55 (SP), projeto vwbtitjlpelrcnsytzqw.
+-- indisvalid = true, indisready = true, 248 kB.
+-- Depois (mesmas consultas):
+--   offset 9000: Index Scan idx_pagamentos_v2_created_at, sem Sort e sem temp, 10,2 ms
+--   offset 0:    Index Scan, sem Sort, 1,4 ms
+--
+-- O indice nao muda dado nem resultado: so troca a ordenacao por leitura em
+-- ordem. Ha 1 par de linhas com o mesmo created_at; a ordem entre elas ja era
+-- indefinida antes e continua.
+--
+-- APLICADO FORA DE TRANSACAO, como comando unico (mesmo padrao de
+-- 20260926_clientes_indice_data_cadastro.sql): CREATE INDEX CONCURRENTLY e
+-- proibido dentro de BEGIN/COMMIT, por isso nao aparece no historico de
+-- migrations do Supabase. Nao bloqueia escrita. Se for reaplicar, rode a linha
+-- abaixo sozinha. Trava: IF NOT EXISTS (existencia do indice).
+
+create index concurrently if not exists idx_pagamentos_v2_created_at on public.pagamentos_v2 (created_at desc);
+
+-- Conferencia (so leitura): o indice tem de estar valido e pronto.
+-- select indisvalid, indisready from pg_index where indexrelid = 'public.idx_pagamentos_v2_created_at'::regclass;
+
+-- ============================================================================
+-- ROLLBACK (GUARDADO, NAO EXECUTADO). Exige nova autorizacao do dono.
+-- Tambem fora de transacao, comando unico. Serve ainda para limpar um indice
+-- que tenha ficado INVALIDO se a criacao concorrente falhar no meio.
+-- ============================================================================
+-- drop index concurrently if exists public.idx_pagamentos_v2_created_at;
