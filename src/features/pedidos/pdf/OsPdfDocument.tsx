@@ -1,5 +1,6 @@
 import React from "react";
 import { COR_RETRABALHO_CLARO } from "@/lib/retrabalho";
+import { linhaDeVariacaoNoCard } from "../lib/variacao-textil";
 import { Document, Page, View, Text, Image, StyleSheet } from "@react-pdf/renderer";
 import type { OsPdfViewModel, OsPdfProduto, OsPdfModelo } from "../services/os-viewmodel.service";
 import { textoDeEntrega } from "../lib/instrucoes-entrega";
@@ -415,6 +416,9 @@ const styles = StyleSheet.create({
   modeloObs: { fontSize: 6, color: "#5a6b7a", marginTop: 1, marginBottom: 1 },
   // Variacao escolhida na venda: uma linha por variacao, logo abaixo dos campos.
   modeloVariacao: { fontSize: 6, fontFamily: "Helvetica-Bold", color: "#3d4f5e", marginTop: 1 },
+  // TEXTIL, Acabamento e Acessorio ("Acb:"/"Ace:", lib/variacao-textil): 10 pt, quebra
+  // dentro do card (sem maxLines), para a bancada ler sem esforco.
+  modeloVariacaoTextil: { fontSize: 10, lineHeight: 1.15, fontFamily: "Helvetica-Bold", color: "#1f2d3a", marginTop: 2 },
   checklistLinha: {
     flexDirection: "row",
     alignItems: "center",
@@ -621,13 +625,16 @@ function ModeloCard({
   isEstoque,
   nomeProduto,
   boletimCampos,
-  variacoes
+  variacoes,
+  setor
 }: {
   modelo: OsPdfModelo;
   isEstoque?: boolean;
   nomeProduto: string;
   boletimCampos?: string[] | null;
   variacoes?: string[];
+  /** Setor do boletim: no TEXTIL, Acabamento e Acessorio saem em destaque (lib/variacao-textil). */
+  setor?: string | null;
 }) {
   /**
    * "MODELO" e o nome do lote (pedidos_modelos.nome_modelo) — nao o id interno.
@@ -736,11 +743,14 @@ function ModeloCard({
       {/* Variações escolhidas na venda, uma por linha, "GRUPO: opção". Nunca
           saíram no papel antes: só aparecem para item com `variacoes` no
           snapshot. */}
-      {linhasDeVariacao.map((linha, i) => (
-        <Text key={`var-${i}`} style={styles.modeloVariacao}>
-          {pdfSafe(linha)}
-        </Text>
-      ))}
+      {linhasDeVariacao.map((linha, i) => {
+        const v = linhaDeVariacaoNoCard(linha, setor);
+        return (
+          <Text key={`var-${i}`} style={v.destaque ? styles.modeloVariacaoTextil : styles.modeloVariacao}>
+            {pdfSafe(v.texto)}
+          </Text>
+        );
+      })}
 
       {modelo.obsTecnicas ? (
         <Text style={styles.modeloObs}>Obs: {truncar(modelo.obsTecnicas, 90)}</Text>
@@ -764,13 +774,15 @@ function ModelosLinha({
   isEstoque,
   nomeProduto,
   boletimCampos,
-  variacoes
+  variacoes,
+  setor
 }: {
   modelos: OsPdfModelo[];
   isEstoque?: boolean;
   nomeProduto: string;
   boletimCampos?: string[] | null;
   variacoes?: string[];
+  setor?: string | null;
 }) {
   return (
     <View style={styles.modelosLinha} wrap={false}>
@@ -783,6 +795,7 @@ function ModelosLinha({
             nomeProduto={nomeProduto}
             boletimCampos={boletimCampos}
             variacoes={variacoes}
+            setor={setor}
           />
         </React.Fragment>
       ))}
@@ -798,7 +811,7 @@ function ModelosLinha({
 }
 
 /** Card do produto: barra de título (qtd + peso) e a grade dos seus modelos. */
-function ProdutoCard({ produto, corSetor }: { produto: OsPdfProduto; corSetor: string }) {
+function ProdutoCard({ produto, corSetor, setor }: { produto: OsPdfProduto; corSetor: string; setor?: string | null }) {
   const codigoNome = [produto.codigo, pdfSafe(produto.nome)]
     .filter((v) => v !== null && v !== "")
     .join(" - ");
@@ -833,6 +846,7 @@ function ProdutoCard({ produto, corSetor }: { produto: OsPdfProduto; corSetor: s
             nomeProduto={pdfSafe(produto.nome)}
             boletimCampos={produto.boletimCampos}
             variacoes={produto.variacoes}
+            setor={setor}
           />
         ) : null}
       </View>
@@ -844,6 +858,7 @@ function ProdutoCard({ produto, corSetor }: { produto: OsPdfProduto; corSetor: s
           nomeProduto={pdfSafe(produto.nome)}
           boletimCampos={produto.boletimCampos}
           variacoes={produto.variacoes}
+          setor={setor}
         />
       ))}
     </View>
@@ -1067,7 +1082,7 @@ export function OsPdfPaginaBoletim({
         {/* Um card por produto, com os modelos DESTE boletim (setor). Produtos sem
             modelos no setor pertencem a outro boletim e saem do corpo do PDF. */}
         {produtosDoBoletim.map((produto, i) => (
-          <ProdutoCard key={i} produto={produto} corSetor={cores.forte} />
+          <ProdutoCard key={i} produto={produto} corSetor={cores.forte} setor={vm.boletim.setor} />
         ))}
 
         {/* O que os demais boletins da proposta produzem */}
