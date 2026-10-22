@@ -20,6 +20,11 @@ export type EtiquetaViewModel = {
    * `pedidosNoVolume`). Com mais de um, a etiqueta imprime "#X + #Y".
    */
   pedidosNoVolume: number[];
+  /**
+   * `propostas.id_cliente` — o CLIENTE DO PEDIDO (nao o pagador nem o destinatario impresso). Ja vinha na leitura
+   * da proposta; so decide o QR da etiqueta (`urlQrDaEtiqueta`).
+   */
+  idClienteDoPedido: number | null;
   volumes: number;
   pesoKg: string;
   transportadora: string;
@@ -456,6 +461,7 @@ export async function montarEtiquetaViewModel(
   return {
     idInt,
     pedidosNoVolume: pedidos,
+    idClienteDoPedido: idCliente,
     volumes,
     pesoKg,
     /**

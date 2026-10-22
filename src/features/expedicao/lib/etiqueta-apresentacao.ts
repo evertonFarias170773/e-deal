@@ -18,6 +18,22 @@ import type { EtiquetaViewModel } from "../services/etiqueta-viewmodel.service";
 /** Conteudo do QR "SITE:" — o mesmo no PDF e na previa. */
 export const SITE_QR_ETIQUETA = "https://www.ingressoideal.com.br";
 
+/** Site que o QR aponta nos pedidos do cliente Lisiton (22/10/2026, decisao do Everton). */
+export const SITE_QR_DSEG = "https://www.dsegbrasil.com.br";
+/** O cliente cujos pedidos levam o QR da Dseg. */
+export const ID_CLIENTE_QR_DSEG = 8469;
+
+/**
+ * URL do QR "SITE:" da etiqueta de despacho.
+ *
+ * A CONDICAO E O CLIENTE DO PEDIDO (`propostas.id_cliente`), nao o destinatario impresso nem o pagador
+ * (decisao do Everton, 22/10/2026): cliente 8469 com pagador outro — vale; 8469 so como pagador, ou como
+ * destinatario escolhido — nao vale. Qualquer outro valor, inclusive nulo, fica com a URL de sempre.
+ */
+export function urlQrDaEtiqueta(idClienteDoPedido: number | null | undefined): string {
+  return idClienteDoPedido === ID_CLIENTE_QR_DSEG ? SITE_QR_DSEG : SITE_QR_ETIQUETA;
+}
+
 /** 100 x 150 mm em pontos (1 mm = 2.83465 pt) — o papel e a previa usam os mesmos numeros. */
 export const ETIQUETA_LARGURA_PT = 283.46;
 export const ETIQUETA_ALTURA_PT = 425.2;
