@@ -1,0 +1,18 @@
+﻿{
+  "files.watcherExclude": {
+    "**/.next/**": true,
+    "**/node_modules/**": true,
+    "**/.git/objects/**": true,
+    "**/.git/subtree-cache/**": true,
+    "**/scratch/**": true
+  },
+  "search.exclude": {
+    "**/.next": true,
+    "**/node_modules": true,
+    "**/scratch": true
+  },
+  "files.exclude": {
+    "**/.next": true
+  },
+  "typescript.tsserver.maxTsServerMemory": 4096
+}

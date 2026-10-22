@@ -1,6 +1,7 @@
 /**
- * Testes da origem do frete (21/10/2026): card calculado (COTACAO) trava transportadora e
- * "Valor cobrado"; manual e antigo seguem editaveis; o Salvar recusa divergencia so com COTACAO.
+ * Testes da origem do frete (21/10/2026): card calculado (COTACAO) trava o "Valor cobrado"
+ * (desde 22/10 a lista de transportadora segue aberta: e a porta do frete manual); manual e
+ * antigo seguem editaveis; o Salvar recusa divergencia so com COTACAO.
  *
  *   node --experimental-strip-types --import ./scripts/testes/_alias-hook.mjs scripts/testes/origem-frete.test.mts
  *
@@ -68,12 +69,29 @@ checar("tela: cards de cotacao marcados nas TRES portas (automatica, Atualizar f
 ], [2, true]);
 // Toda chamada de cotacao da tela termina em marcarComoCotacao: tres blocos que cotam, tres marcas.
 checar("tela: nenhuma porta de cotacao sem a marca", [(tela.match(/solicitarCotacaoVeppo\(/g) ?? []).length, (tela.match(/marcarComoCotacao\(\[/g) ?? []).length], [3, 3]);
-checar("tela: dropdown e Valor cobrado travam pelo card", [
+// 22/10/2026: o dropdown de transportadora e a UNICA porta do frete manual CIF. Com card
+// calculado escolhido ele segue aberto (so o "Valor cobrado" trava); travar os dois
+// impedia lancar frete manual em todo orcamento com card escolhido (24163).
+checar("tela: Valor cobrado trava pelo card; dropdown de transportadora NAO", [
   tela.includes("disabled={Boolean(bloqueioTrocaFrete) || freteTravadoNoCard}"),
   tela.includes("disabled={!faseDeOrcamento || !freteEscolhido || Boolean(bloqueioTrocaFrete) || freteTravadoNoCard}"),
-  tela.includes("const freteTravadoNoCard = freteTravadoPeloCard(freteEscolhido);")
-], [true, true, true]);
-checar("tela: funcoes de escrita tambem se recusam", [/function escolherTransportadoraCif\([^)]*\) \{\r?\n\s+if \(freteTravadoNoCard\) return;/.test(tela), /function aplicarValorCobradoCif\([^)]*\) \{\r?\n\s+setValorCobradoCifDraft\(null\);\r?\n\s+if \(freteTravadoNoCard\) return;/.test(tela)], [true, true]);
+  tela.includes("const freteTravadoNoCard = freteTravadoPeloCard(freteEscolhido);"),
+  /<SelectTransportadora\s+value=\{form\.idTransportadoraCliente\}\s+transportadoras=\{transportadoras\}\s+disabled=\{Boolean\(bloqueioTrocaFrete\)\}\s+onChange=\{escolherTransportadoraCif\}/.test(tela)
+], [false, true, true, true]);
+checar("tela: escolherTransportadoraCif so recusa 'nenhuma' com card; Valor cobrado recusa", [
+  /function escolherTransportadoraCif\([^)]*\) \{[\s\S]{0,600}?if \(freteTravadoNoCard && idTransportadora === null\) return;/.test(tela),
+  /function escolherTransportadoraCif\([^)]*\) \{\r?\n\s+if \(freteTravadoNoCard\) return;/.test(tela),
+  /function aplicarValorCobradoCif\([^)]*\) \{\r?\n\s+setValorCobradoCifDraft\(null\);\r?\n\s+if \(freteTravadoNoCard\) return;/.test(tela)
+], [true, false, true]);
+
+// ---------- o caso do 24163: card SEDEX COTACAO escolhido -> frete manual de uma transportadora
+// O frete que escolherTransportadoraCif cria (mesmo formato) e o que o Salvar recebe.
+const sedexEscolhido = { ...marcarComoCotacao([{ id: "18979", valor: 819.74, observacao: "" }])[0], idTransportadoraCotada: null };
+const manualNovo = { id: `manual_${Date.now()}`, valor: 819.74, observacao: "Cadastro manual" };
+checar("24163: card SEDEX trava o valor (antes da troca)", freteTravadoPeloCard(sedexEscolhido), true);
+checar("24163: frete manual criado sobre o card nao trava e aceita valor digitado", [freteTravadoPeloCard(manualNovo), freteTravadoPeloCard({ ...manualNovo, valor: 450 })], [false, false]);
+checar("24163: Salvar aceita o manual com a transportadora escolhida e valor digitado", recusaDoFreteCalculado({ ...manualNovo, valor: 450 }, 4321), null);
+checar("24163: Salvar grava origem MANUAL", origemParaGravar(manualNovo, { modalidade: "CIF", isAvulso: false }), "MANUAL");
 checar("tela: carimbo no selectFrete e na correcao do admin", [tela.includes("idTransportadoraCotada: vinculoParceira"), tela.includes("idTransportadoraCotada: gravado")], [true, true]);
 
 const srv = ler("src/features/orcamentos/services/orcamentos.service.ts");

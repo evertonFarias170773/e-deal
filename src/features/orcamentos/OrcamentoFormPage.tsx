@@ -3969,7 +3969,11 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
    * distraído tirar o frete do total — e, em proposta paga, virar crédito.
    */
   function escolherTransportadoraCif(idTransportadora: number | null) {
-    if (freteTravadoNoCard) return;
+    // Card calculado escolhido (22/10/2026): a lista segue aberta, porque é a
+    // única porta do frete manual. Escolher uma transportadora troca o card por
+    // outro card ou por um frete manual; só "nenhuma" fica recusado, senão a
+    // transportadora divergiria do card e o Salvar recusaria.
+    if (freteTravadoNoCard && idTransportadora === null) return;
     if (bloqueioTrocaFrete) {
       showToast({ type: "warning", title: "Troca de frete bloqueada", description: bloqueioTrocaFrete });
       return;
@@ -7236,7 +7240,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                       <SelectTransportadora
                         value={form.idTransportadoraCliente}
                         transportadoras={transportadoras}
-                        disabled={Boolean(bloqueioTrocaFrete) || freteTravadoNoCard}
+                        disabled={Boolean(bloqueioTrocaFrete)}
                         onChange={escolherTransportadoraCif}
                       />
                     </div>
@@ -7298,7 +7302,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                   </div>
                   <p className="mt-1.5 text-xs text-slate-500">
                     {freteTravadoNoCard
-                      ? "Frete calculado: a transportadora e o valor cobrado são os do card escolhido. Para mudar, escolha outro card ou use \"Atualizar fretes\"."
+                      ? "Frete calculado: o valor cobrado é o do card escolhido. Para cobrar outro valor, escolha em Transportadora uma sem card (vira frete manual), outro card ou use \"Atualizar fretes\"."
                       : !faseDeOrcamento
                       ? "Depois da liberação o valor cobrado muda pelo valor negociado. Trocar a transportadora ou o frete escolhido segue valendo aqui."
                       : !freteEscolhido

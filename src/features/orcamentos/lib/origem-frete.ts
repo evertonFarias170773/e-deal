@@ -3,8 +3,9 @@
  *
  * `cotacao_frete.origem` (migration 20261021_cotacao_frete_origem):
  *   - COTACAO: card que veio de uma cotacao (SEDEX, VEPPO, Sao Miguel, Azul...).
- *     E CIF calculado: a transportadora e o "Valor cobrado" ficam SO LEITURA, com
- *     o valor do card. Para mudar, escolhe-se outro card ou "Atualizar fretes".
+ *     E CIF calculado: o "Valor cobrado" fica SO LEITURA, com
+ *     o valor do card. A lista de transportadora segue aberta (22/10/2026): e a
+ *     porta do frete manual, que substitui o card.
  *   - MANUAL: frete criado pelo dropdown de transportadora sem card (`manual_...`,
  *     "Cadastro manual"). Transportadora e valor seguem editaveis.
  *   - vazia: linha antiga, ou gravada por outra porta (n8n, Expedicao,
