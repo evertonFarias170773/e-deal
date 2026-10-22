@@ -2,6 +2,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import { tokenDaSessao } from "@/lib/supabase/bearer";
 import type { PropostaFrete } from "@/features/orcamentos/types";
+import { fetchComSessao } from "@/lib/supabase/sessao";
+import { regraAtualPermiteVeppo } from "@/features/orcamentos/lib/cidade-veppo";
 
 /**
  * Maps a single row from public.cotacao_frete to PropostaFrete type.
@@ -424,8 +426,17 @@ export async function solicitarCotacaoTransportadoras(
 }
 
 /**
- * Request VEPPO freight quote from the webhook.
- * Webhook expects: { text: string, cidade: string, valor: number, peso: number }
+ * Cotação VEPPO da tela do orçamento.
+ *
+ * Desde 21/10/2026 o navegador NÃO chama mais o webhook `coordenadas` do n8n:
+ * chama a rota `/api/frete/veppo`, que aplica no servidor a regra de sempre
+ * (RS e fora de Porto Alegre), confere a cidade em `cidades_veppo` e só então
+ * chama o n8n (services/frete-veppo.server). Cidade não atendida volta sem
+ * cotação — a opção VEPPO não aparece, como quando a VEPPO não responde.
+ *
+ * A assinatura e o retorno são os de antes; nunca lança (erro = nenhuma cotação).
+ * A regra de sempre também é conferida aqui, antes da rota, para RS fora de
+ * Porto Alegre e outros estados não fazerem chamada nenhuma, como hoje.
  */
 export async function solicitarCotacaoVeppo(input: {
   peso: number;
@@ -434,55 +445,21 @@ export async function solicitarCotacaoVeppo(input: {
   uf: string;
   id_int?: number | string;
 }): Promise<PropostaFrete[]> {
-  const normalizedUf = input.uf?.trim().toUpperCase();
-  const normalizedCidade = normalizeCityName(input.cidade || "");
-
-  // Regra VEPPO: somente para RS e diferente de Porto Alegre
-  if (normalizedUf !== "RS" || normalizedCidade === "PORTO ALEGRE") {
+  if (!regraAtualPermiteVeppo(input.uf, input.cidade)) {
     return [];
   }
 
-  const payload = {
-    text: `${input.cidade}, ${normalizedUf}, Brasil`,
-    cidade: input.cidade,
-    valor: input.valor,
-    peso: input.peso
-  };
-
   try {
-    const response = await fetch("https://10074.hostoo.net.br/webhook/coordenadas", {
+    const response = await fetchComSessao("/api/frete/veppo", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(10000)
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input)
     });
-
-    if (!response.ok) {
-      console.warn(`[FreteService] VEPPO retornou erro ${response.status}`);
+    const data = await response.json().catch(() => null);
+    if (!response.ok || !data?.success || !Array.isArray(data.fretes)) {
       return [];
     }
-
-    const data = await response.json();
-    if (!data || typeof data.valor_frete !== "number") {
-      return [];
-    }
-
-    const valorFrete = Number(data.valor_frete);
-    const idIntNum = typeof input.id_int === "number" ? input.id_int : (Number(input.id_int) || 0);
-
-    return [{
-      id: "frete_veppo",
-      id_int: idIntNum,
-      transportadora: "VEPPO",
-      servico: "VEPPO",
-      valor: valorFrete,
-      prazo: "Sob consulta",
-      observacao: "Cotação via VEPPO",
-      escolhido: false,
-      pesoUsado: input.peso
-    }];
+    return data.fretes as PropostaFrete[];
   } catch (error) {
     console.warn(`[FreteService] Erro ao consultar VEPPO:`, error);
     return [];

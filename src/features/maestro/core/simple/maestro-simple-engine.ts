@@ -40,7 +40,9 @@ import {
 import { RecusaDeEscopoDoMaestro } from '../agent/maestro-agent-escopo.server';
 import { simularOrcamentoAvulsoDb } from './maestro-simple-produtos.server';
 import { processarOrcamentoService } from './maestro-orcamento-service.server';
-import { solicitarCotacaoSedex, solicitarCotacaoAzulCargo, solicitarCotacaoTransportadoras, solicitarCotacaoVeppo } from '@/features/orcamentos/services/frete.service';
+import { solicitarCotacaoSedex, solicitarCotacaoAzulCargo, solicitarCotacaoTransportadoras } from '@/features/orcamentos/services/frete.service';
+// VEPPO pela função de servidor (21/10/2026): regra de sempre + cidades_veppo antes do webhook.
+import { cotarVeppoNoServidor } from '@/features/orcamentos/services/frete-veppo.server';
 import type { PropostaFrete } from '@/features/orcamentos/types';
 import { resolverTermoCatalogo } from './maestro-orcamento-catalogo-oficial';
 import { extrairCepDaQueryEstruturado } from './maestro-cep-resolver.server';
@@ -1541,12 +1543,12 @@ export async function processSimpleQueryWithBrain(
                        cidade: v2Ctx.budgetAddressCidade,
                        uf: v2Ctx.budgetAddressUf
                      }, { supabase }) : Promise.resolve([]),
-                     v2Ctx.budgetAddressCidade && v2Ctx.budgetAddressUf ? solicitarCotacaoVeppo({
+                     v2Ctx.budgetAddressCidade && v2Ctx.budgetAddressUf ? cotarVeppoNoServidor({
                        peso: pesoTotal,
                        valor: serviceResult.totalGeral || 0,
                        cidade: v2Ctx.budgetAddressCidade,
                        uf: v2Ctx.budgetAddressUf
-                     }) : Promise.resolve([])
+                     }).then((r) => r.fretes) : Promise.resolve([])
                    ]);
                    
                   if (sedexReq.status === 'fulfilled') fretesCalculados.push(...sedexReq.value);

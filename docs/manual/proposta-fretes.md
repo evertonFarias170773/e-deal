@@ -62,7 +62,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 1. Confira na aba **Geral** o endereço de entrega e na aba **Orçamento** os produtos: a cotação usa o CEP do endereço e o peso total da proposta, mostrado abaixo do botão **Atualizar fretes**.
 2. Marque **CIF — por conta da empresa**.
 3. A tela cota sozinha quando o endereço ou o peso mudam. Para cotar de novo, clique em **Atualizar fretes**.
-4. Aparecem os cards das opções: **SEDEX EXPRESS** e **PAC ECONÔMICO** (Correios), **AZUL CARGO**, **TRANSP. SÃO MIGUEL**, **ENTREGA MOTOBOY** e **VEPPO**, conforme o que cada parceiro devolver para aquele destino. Cada card mostra a transportadora, o prazo, o valor e o peso usado.
+4. Aparecem os cards das opções: **SEDEX EXPRESS** e **PAC ECONÔMICO** (Correios), **AZUL CARGO**, **TRANSP. SÃO MIGUEL**, **ENTREGA MOTOBOY** e **VEPPO**, conforme o que cada parceiro devolver para aquele destino. Cada card mostra a transportadora, o prazo, o valor e o peso usado. O card **VEPPO** só aparece no Rio Grande do Sul, fora de Porto Alegre, e só para as cidades que a VEPPO atende; nas outras cidades ele não aparece e as demais opções seguem normais.
 5. Clique em **Escolher** no card desejado. Ele ganha o selo **Escolhido**, e os campos **Transportadora** e **Valor cobrado (R$)** acima são preenchidos com ele.
 6. Clique em **Salvar alterações**.
 

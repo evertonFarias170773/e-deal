@@ -18,8 +18,11 @@ import {
   solicitarCotacaoSedex,
   solicitarCotacaoAzulCargo,
   solicitarCotacaoTransportadoras,
-  solicitarCotacaoVeppo,
 } from '@/features/orcamentos/services/frete.service';
+// VEPPO pela função de servidor (21/10/2026): regra de sempre + cidades_veppo
+// antes do webhook. Vale também para quem usa esta função (recotação da
+// Expedição e frete do pedido complementar).
+import { cotarVeppoNoServidor } from '@/features/orcamentos/services/frete-veppo.server';
 import type { PropostaFrete } from '@/features/orcamentos/types';
 import { resolverCepViaCep } from '../simple/maestro-cep-resolver.server';
 
@@ -157,7 +160,9 @@ export async function cotarOpcoesFretePorEndereco(
           { supabase: params.supabase },
         ),
       );
-      cotacoes.push(solicitarCotacaoVeppo({ peso: pesoGramas, valor: params.valorTotal, cidade: endereco.cidade, uf: endereco.uf }));
+      cotacoes.push(
+        cotarVeppoNoServidor({ peso: pesoGramas, valor: params.valorTotal, cidade: endereco.cidade, uf: endereco.uf }).then((r) => r.fretes),
+      );
     } else {
       avisos.push('Cidade/UF do CEP indisponíveis no momento — transportadoras locais não foram cotadas (SEDEX/PAC seguem pelo CEP).');
     }
