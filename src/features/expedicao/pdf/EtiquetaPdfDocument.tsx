@@ -9,6 +9,12 @@ import {
   ETIQUETA_PADDING_PT,
   apresentacaoEtiqueta
 } from "../lib/etiqueta-apresentacao";
+import {
+  ALTURA_BLOCO_DESTINATARIO_PT,
+  ALTURA_OBSERVACAO_PT,
+  ajustarDestinatario,
+  ajustarObservacao
+} from "../lib/etiqueta-ajuste-texto";
 
 // 100 x 150 mm em pontos (1 mm = 2.83465 pt). Os numeros vivem em
 // `lib/etiqueta-apresentacao.ts` desde 04/09/2026.
@@ -179,8 +185,11 @@ const styles = StyleSheet.create({
   /** Dois pedidos na mesma caixa (pedido complementar): "#X + #Y" numa linha. */
   pedidoNumeroConjunto: { fontSize: 22, letterSpacing: -0.5, marginTop: 4 },
 
-  destNome: { fontSize: 12, fontFamily: "Helvetica-Bold", marginTop: 1.5 },
-  destLinha: { fontSize: 10, marginTop: 1.2 },
+  // `flexShrink: 0` (22/10/2026): o yoga NAO corta o excesso, ele encolhe a caixa de cada filho — e as linhas
+  // passam a ser desenhadas umas sobre as outras. O tamanho e a altura vem de `ajustarDestinatario`, que
+  // garante que o bloco cabe; nenhum campo e comprimido pelo layout.
+  destNome: { fontSize: 12, fontFamily: "Helvetica-Bold", marginTop: 1.5, flexShrink: 0 },
+  destLinha: { fontSize: 10, marginTop: 1.2, flexShrink: 0 },
 
   grande: { fontSize: 18, fontFamily: "Helvetica-Bold", marginTop: 1 },
   envio: { fontSize: 12.5, fontFamily: "Helvetica-Bold", marginTop: 2 },
@@ -190,10 +199,11 @@ const styles = StyleSheet.create({
     fontFamily: "Helvetica-Bold",
     marginTop: 2,
     lineHeight: 1.2,
-    // Teto de altura junto do corte por caracteres: se a medição de
-    // texto do react-pdf discordar da minha conta, o layout ainda segura.
-    maxHeight: 24,
-    overflow: "hidden"
+    // Teto de altura: o corpo e escolhido por `ajustarObservacao` para o texto caber nele; se a medição de
+    // texto do react-pdf discordar da conta, o layout ainda segura.
+    maxHeight: ALTURA_OBSERVACAO_PT,
+    overflow: "hidden",
+    flexShrink: 0
   },
 
   remLinha: { fontSize: 9, marginTop: 1.2 },
@@ -241,9 +251,11 @@ const styles = StyleSheet.create({
    * cresce. Com o teto, o excesso é recortado NESTE bloco, e não no rodapé —
    * perder o fim de um complemento é ruim, perder o QR e o volume é pior.
    *
-   * 80pt cobrem nome + A/C + endereço em duas linhas + bairro + telefone.
+   * `ALTURA_BLOCO_DESTINATARIO_PT` (96; eram 80) e a altura reservada: `ajustarDestinatario` reduz a fonte,
+   * em degraus, ate o texto caber nela (minimo 7 pt) e, so entao, trunca. Texto curto ocupa menos que isso
+   * e sai como sempre.
    */
-  destBloco: { maxHeight: 80, overflow: "hidden" }
+  destBloco: { maxHeight: ALTURA_BLOCO_DESTINATARIO_PT, overflow: "hidden" }
 });
 
 export function EtiquetaPdfDocument({
@@ -258,6 +270,17 @@ export function EtiquetaPdfDocument({
   // que a previa do modal Despachar usa. Papel e tela nao podem discordar
   // sobre o que sai impresso.
   const a = apresentacaoEtiqueta(vm);
+  // Ajuste dos campos longos (nome, A/C, endereco+complemento, bairro, fone e observacoes): uma regra so, em
+  // `lib/etiqueta-ajuste-texto.ts`. Calculado uma vez — o texto e o mesmo em todos os volumes.
+  const dest = ajustarDestinatario({
+    nome: vm.destinatario.nome,
+    recebedor: vm.destinatario.recebedor,
+    endereco: vm.destinatario.endereco,
+    bairro: vm.destinatario.bairro,
+    telefoneLinha: a.telefoneLinha
+  });
+  const campoDest = (id: string) => dest.campos.find((c) => c.id === id);
+  const obs = a.observacaoImpressa ? ajustarObservacao(a.observacaoImpressa).campos[0] : null;
 
   return (
     <Document title={`Etiqueta ${vm.idInt}`}>
@@ -291,17 +314,19 @@ export function EtiquetaPdfDocument({
 
             <View wrap={false} style={styles.destBloco}>
               <Text style={styles.rotulo}>DESTINATÁRIO:</Text>
-              <Text style={styles.destNome}>{vm.destinatario.nome}</Text>
-              {vm.destinatario.recebedor ? (
-                <Text style={styles.destLinha}>A/C: {vm.destinatario.recebedor}</Text>
-              ) : null}
-              {vm.destinatario.endereco ? (
-                <Text style={styles.destLinha}>{vm.destinatario.endereco}</Text>
-              ) : null}
-              {vm.destinatario.bairro ? (
-                <Text style={styles.destLinha}>BAIRRO: {vm.destinatario.bairro}</Text>
-              ) : null}
-              {a.telefoneLinha ? <Text style={styles.destLinha}>{a.telefoneLinha}</Text> : null}
+              {[
+                { c: campoDest("nome"), estilo: styles.destNome },
+                { c: campoDest("recebedor"), estilo: styles.destLinha },
+                { c: campoDest("endereco"), estilo: styles.destLinha },
+                { c: campoDest("bairro"), estilo: styles.destLinha },
+                { c: campoDest("telefone"), estilo: styles.destLinha }
+              ].map(({ c, estilo }) =>
+                c ? (
+                  <Text key={c.id} style={[estilo, { fontSize: c.tamanho }]}>
+                    {c.texto}
+                  </Text>
+                ) : null
+              )}
             </View>
             <View style={styles.regua} />
 
@@ -330,11 +355,11 @@ export function EtiquetaPdfDocument({
                 empurraria o remetente e o rodapé para fora do papel. Três linhas
                 cobrem o caso real ("PRODUTO FRÁGIL, RETIRA NO AEROPORTO DE
                 CONGONHAS, ATÉ MEIO DIA DE SEXTA DIA 04/09") com folga. */}
-            {a.observacaoImpressa ? (
+            {obs ? (
               <>
                 <View wrap={false}>
                   <Text style={styles.rotulo}>OBSERVAÇÕES:</Text>
-                  <Text style={styles.obsTexto}>{a.observacaoImpressa}</Text>
+                  <Text style={[styles.obsTexto, { fontSize: obs.tamanho }]}>{obs.texto}</Text>
                 </View>
                 <View style={styles.regua} />
               </>

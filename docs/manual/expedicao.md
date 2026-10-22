@@ -385,6 +385,7 @@ Os retornos possíveis são: Entregue volta para Em Trânsito (ou para A Retirar
 - **Voltar status x Corrigir frete.** **Voltar status** desfaz um passo do andamento, com motivo. Não muda frete nem valor. É o caminho para reabrir **Corrigir frete** num pedido já despachado.
 - **Marcar prepostagem como cancelada x cancelar nos Correios.** O item do menu só avisa o Vibe. O cancelamento de verdade é feito no portal dos Correios.
 - **Gerar etiqueta 10x15 x Etiqueta Correios (oficial).** A 10x15 é a etiqueta do Vibe para transportadora e motoboy. O rótulo oficial vem dos Correios e só existe depois da prepostagem. Um não substitui o outro.
+- **Nome, A/C e endereço muito longos na etiqueta 10x15.** A letra desce sozinha, em degraus, até 7 pt para o texto caber no bloco do destinatário; só se ainda não couber o fim do A/C (e, por último, do endereço) é cortado com "…". Nenhum texto fica por cima de outro, e CEP, cidade, QR, NF, data e volume continuam onde estavam. O mesmo vale para as observações. Texto curto sai igual a antes.
 - **Declaração de conteúdo x etiqueta.** A declaração é o papel que acompanha o volume quando não há nota. A etiqueta é o endereçamento colado no volume.
 - **Peso aferido x Previsto.** O aferido é o que foi para a balança e é o que o despacho grava. O previsto, mostrado abaixo do campo e marcado como "(cotado)" ou "(previsto)" nos cards, é estimativa.
 - **Cidade do card x cidade do cadastro.** O card e a lista mostram a cidade do endereço de entrega, que pode ser diferente da cidade do cadastro do cliente.
@@ -531,3 +532,5 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 > - **21/10/2026:** saldo a receber trava o despacho (regra no banco, migration `20261021_exp_trava_saldo_despacho`): total do pedido maior que o pago confirmado recusa o primeiro despacho, com o valor que falta.
 >
 > - **22/10/2026:** gerar outra prepostagem passa a exigir confirmação também na mesma janela e no servidor: sem a confirmação (com o código que você viu), a geração é recusada e nada é criado nos Correios. Cada geração é registrada no histórico do pedido.
+>
+> - **22/10/2026:** a etiqueta de despacho 10x15 ajusta a letra de nome, A/C, endereço, bairro, fone e observações para que nenhum texto sobreponha outro (caso do pedido 23095).
