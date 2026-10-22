@@ -1,6 +1,6 @@
 # Conferência
 
-> **Última revisão:** 21/10/2026
+> **Última revisão:** 22/10/2026
 > **Caminho no menu:** Conferência (primeiro item do menu lateral; é um link direto, sem subitens)
 > **Endereço:** `/cobrancas` (o detalhe de uma cobrança abre em `/cobrancas/<cobrança>`)
 
@@ -234,6 +234,12 @@ Cancelamento:
 - A permissão **Cancelar Cobrança Não Paga** só alcança cobrança emitida e ainda não paga, de pedido do próprio usuário, e não alcança cobrança ligada à Conta Corrente. Como a Conferência lista o que já foi pago ou autorizado, essa permissão é usada na prática pela aba Pagamentos da proposta.
 - O cancelamento de uma cobrança é irreversível. Para cobrar de novo, gere outra cobrança na proposta.
 
+Conferência automática:
+
+- PIX, boleto, cartão parcelado e E-Crédito já pagos, de pedido feito no Vibe e sem abatimento de Conta Corrente, são conferidos sozinhos, com autoria **Sistema**. O resto continua esperando a conferência do financeiro.
+- Ela roda de segunda a sexta, a cada 2 minutos, das 07:30 às 19:00 (horário de Brasília). Não roda no sábado, no domingo nem em feriado nacional. Nesses dias e fora desse horário, a cobrança paga fica na fila até a próxima rodada ou até alguém conferir na mão.
+- Feriado estadual ou municipal não para a conferência automática. Se o sistema não conseguir consultar o calendário de feriados, ela roda normalmente.
+
 Outros:
 
 - O rodapé da lista traz o texto "Esta tela é somente leitura. As ações continuam simuladas nesta fase." As ações descritas nesta página gravam de verdade.
@@ -325,6 +331,8 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/features/cobrancas/lib/recarga-em-ordem.ts`
 - `src/features/cobrancas/lib/limite-da-carga.ts`
 - `src/features/cobrancas/lib/cancelada-que-consta-paga.ts`
+- `src/app/api/cobrancas/conferencia-automatica/route.ts`
+- `src/features/cobrancas/services/feriado-nacional.server.ts`
 - `src/features/cobrancas/services/cancelamento-pix.ts`
 - `src/features/cobrancas/ConferenciaFinanceiraAlertaModal.tsx`
 - `src/features/cobrancas/AutorizarFaturamentoModal.tsx`

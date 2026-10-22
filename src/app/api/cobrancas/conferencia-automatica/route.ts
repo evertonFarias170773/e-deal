@@ -8,6 +8,7 @@ import {
   lerModoConferenciaAutomatica,
   varrerConferenciaAutomatica
 } from "@/features/cobrancas/services/conferencia-automatica.server";
+import { feriadoNacionalDeHoje } from "@/features/cobrancas/services/feriado-nacional.server";
 
 /**
  * POST /api/cobrancas/conferencia-automatica — uma varredura da conferência
@@ -16,6 +17,8 @@ import {
  * Chamada por um fluxo pequeno do n8n, de tempos em tempos. Não recebe
  * parâmetro: o segredo só aciona a varredura, e todas as checagens são feitas
  * aqui. Responde o resumo (contagens e ids), sem dado pessoal.
+ * Em feriado nacional (public.feriados, hoje em São Paulo) responde
+ * `ignorado: "feriado"` sem conferir; se a consulta falhar, confere normalmente.
  *
  * Variáveis:
  *   CONFERENCIA_AUTOMATICA_SEGREDO — segredo próprio desta rota; sem ele, 503;
@@ -51,6 +54,13 @@ export async function POST(request: Request) {
   const supabase = criarClientServiceRole();
   if (!supabase) {
     return NextResponse.json({ success: false, error: "Chave de serviço ausente no servidor." }, { status: 503 });
+  }
+
+  // Feriado nacional (hoje em São Paulo): não confere, não grava, não chama nada.
+  // Consulta com erro segue para a varredura (feriado-nacional.server).
+  const feriado = await feriadoNacionalDeHoje(supabase);
+  if (feriado.feriado) {
+    return NextResponse.json({ success: true, ok: true, modo, ignorado: "feriado", data: feriado.data, descricao: feriado.descricao, examinadas: 0 });
   }
 
   try {

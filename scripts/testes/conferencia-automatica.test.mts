@@ -224,5 +224,69 @@ process.env.CONFERENCIA_AUTOMATICA_MODO = "sombra";
   confere("segredo certo, modo sombra: 200, so leitura", r.status === 200 && r.corpo.modo === "sombra" && falso.chamadas.every((c) => c.op === "select"), { r, chamadas: falso.chamadas.map((c) => `${c.tabela}:${c.op}`) });
 }
 
+// ── D. feriado nacional (22/10/2026) ────────────────────────────────────────
+// Relógio simulado (hoje em São Paulo), banco falso e fetch contado: nenhuma
+// chamada externa pode sair numa varredura ignorada por feriado.
+console.log("== D. feriado nacional");
+const DataReal = Date;
+function fixarRelogio(iso: string) {
+  globalThis.Date = class extends DataReal {
+    constructor(...a: unknown[]) { super(...((a.length ? a : [iso]) as [string])); }
+    static now() { return new DataReal(iso).getTime(); }
+  } as DateConstructor;
+}
+const fetchReal = globalThis.fetch;
+let fetches = 0;
+globalThis.fetch = (async () => { fetches++; throw new Error("fetch proibido no teste"); }) as typeof fetch;
+
+async function chamarNoDia(iso: string, feriados: { data: unknown; error: { message: string } | null }) {
+  fixarRelogio(iso);
+  falso.zerar();
+  fetches = 0;
+  falso.responder("feriados:select", feriados as never);
+  falso.responder("pagamentos_v2:select", { data: [], error: null });
+  const resposta = await POST(new Request("http://localhost/api/cobrancas/conferencia-automatica", { method: "POST", headers: { "x-vibe-conferencia-segredo": "segredo-certo-de-teste" } }) as never);
+  globalThis.Date = DataReal;
+  const corpo = (await resposta.json()) as Record<string, unknown>;
+  const consultaFeriado = falso.chamadas.find((c) => c.tabela === "feriados");
+  const filtros = Object.fromEntries((consultaFeriado?.filtros ?? []).filter(([f]) => f === "eq").map(([, a]) => a as [string, unknown]));
+  return { status: resposta.status, corpo, filtros, tabelas: falso.chamadas.map((c) => `${c.tabela}:${c.op}`), fetches };
+}
+
+for (const modo of ["sombra", "ligado"]) {
+  process.env.CONFERENCIA_AUTOMATICA_MODO = modo;
+  // 02/11/2026 09:00 em São Paulo = 12:00 UTC (Finados, segunda-feira)
+  const f = await chamarNoDia("2026-11-02T12:00:00Z", { data: [{ data: "2026-11-02", descricao: "Finados" }], error: null });
+  confere(`[${modo}] 2026-11-02 (Finados): consulta feriados por hoje em SP e NACIONAL`, f.filtros.data === "2026-11-02" && f.filtros.abrangencia === "NACIONAL", f.filtros);
+  confere(`[${modo}] 2026-11-02 (Finados): 200, ignorado "feriado", sem conferir`, f.status === 200 && f.corpo.ignorado === "feriado" && f.corpo.descricao === "Finados" && f.corpo.examinadas === 0, f.corpo);
+  confere(`[${modo}] 2026-11-02 (Finados): so leu feriados (nada de pagamentos_v2, nenhuma escrita, nenhum fetch)`, f.tabelas.length === 1 && f.tabelas[0] === "feriados:select" && f.fetches === 0, f.tabelas);
+
+  // 03/11/2026 09:00 em São Paulo: dia comum
+  const c = await chamarNoDia("2026-11-03T12:00:00Z", { data: [], error: null });
+  confere(`[${modo}] 2026-11-03 (dia comum): consulta por 2026-11-03 e segue para a varredura`, c.filtros.data === "2026-11-03" && c.status === 200 && c.corpo.ignorado === undefined && c.corpo.modo === modo && c.tabelas.includes("pagamentos_v2:select"), c);
+
+  // consulta a feriados com erro: confere como antes, e o erro vai ao log
+  const errosLog: unknown[] = [];
+  const erroReal = console.error;
+  console.error = (...a: unknown[]) => { errosLog.push(a); };
+  const e = await chamarNoDia("2026-11-02T12:00:00Z", { data: null, error: { message: "conexao recusada" } });
+  console.error = erroReal;
+  confere(`[${modo}] consulta a feriados com erro (mesmo em Finados): segue para a varredura`, e.status === 200 && e.corpo.ignorado === undefined && e.corpo.modo === modo && e.tabelas.includes("pagamentos_v2:select"), e);
+  confere(`[${modo}] consulta a feriados com erro: mesma resposta do dia comum`, JSON.stringify(e.corpo) === JSON.stringify(c.corpo), { e: e.corpo, c: c.corpo });
+  confere(`[${modo}] consulta a feriados com erro: registrado no log`, errosLog.some((a) => String((a as unknown[])[0]).includes("[feriado-nacional]") && String((a as unknown[])[1]).includes("conexao recusada")), errosLog);
+}
+{
+  process.env.CONFERENCIA_AUTOMATICA_MODO = "ligado";
+  fixarRelogio("2026-11-02T12:00:00Z");
+  falso.zerar();
+  const r = await POST(new Request("http://localhost/api/cobrancas/conferencia-automatica", { method: "POST", headers: { "x-vibe-conferencia-segredo": "segredo-errado" } }) as never);
+  globalThis.Date = DataReal;
+  confere("autenticacao continua antes: segredo errado em feriado = 401 sem ler feriados", r.status === 401 && falso.chamadas.length === 0);
+  // 02/11 23:30 em SP = 03/11 02:30 UTC: ainda e Finados no fuso de SP
+  const tarde = await chamarNoDia("2026-11-03T02:30:00Z", { data: [{ data: "2026-11-02", descricao: "Finados" }], error: null });
+  confere("hoje e contado em SP, nao em UTC (03/11 02:30 UTC = 02/11 em SP)", tarde.filtros.data === "2026-11-02", tarde.filtros);
+}
+globalThis.fetch = fetchReal;
+
 console.log(falhas === 0 ? "\nTODOS OS TESTES PASSARAM" : `\n${falhas} TESTE(S) FALHARAM`);
 if (falhas > 0) process.exitCode = 1;
