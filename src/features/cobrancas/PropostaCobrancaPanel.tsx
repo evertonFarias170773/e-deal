@@ -20,6 +20,7 @@ import { CorrigirTelefonePagadorModal } from "./CorrigirTelefonePagadorModal";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import { fetchComSessao, obterAccessToken, SessaoExpiradaError } from "@/lib/supabase/sessao";
 import { resolverTelefonePagador } from "@/lib/telefone/telefone-br";
+import { semCobrancaDeReenvio } from "@/features/cobrancas/lib/cobranca-reenvio";
 import { baixarBoletoComNome, salvarArquivoNoNavegador } from "@/features/cobrancas/services/baixar-boleto";
 import {
   ROTULO_SISTEMA_ANTIGO,
@@ -290,7 +291,10 @@ export function PropostaCobrancaPanel({
   const cobrancasDaProposta = getCobrancasByProposta(proposta.id_int);
   const cobrancasAtivas = cobrancasDaProposta.filter((item) => item.status !== "CANCELADO");
   const totalPropostaRounded = roundMoney(proposta.resumo.valorTotal);
-  const totalCobradoReal = cobrancasAtivas.reduce((total, item) => total + getValorCobranca(item), 0);
+  // Saldo e pago da PROPOSTA: a cobrança da diferença de frete do reenvio fica
+  // fora (ela continua na lista de cobranças). Sem reenvio: igual às ativas.
+  const cobrancasDoSaldo = semCobrancaDeReenvio(cobrancasAtivas);
+  const totalCobradoReal = cobrancasDoSaldo.reduce((total, item) => total + getValorCobranca(item), 0);
   const totalCobradoRealRounded = roundMoney(totalCobradoReal);
   const saldoRestante = Math.max(totalPropostaRounded - totalCobradoRealRounded, 0);
   const hasCobrancaExcedente = totalCobradoRealRounded > totalPropostaRounded;
@@ -306,7 +310,7 @@ export function PropostaCobrancaPanel({
   // é recalculado no servidor — o botão só decide visibilidade.
   const isAdminUser = Boolean(user?.isSuperAdmin || user?.isAdmin);
   const valorPagoConfirmadoPanel = roundMoney(
-    cobrancasAtivas
+    cobrancasDoSaldo
       .filter((c) => c.status === "PAID" || (c.status === "A_VENCER" && c.confirmado))
       .reduce((sum, c) => sum + (Number(c.valor) || 0), 0)
   );

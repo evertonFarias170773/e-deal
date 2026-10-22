@@ -40,6 +40,7 @@ import {
 } from "@/features/orcamentos/services/faturado-editavel";
 import { aplicarDiferencaFinanceira } from "@/features/cobrancas/services/diferenca-financeira-proposta";
 import { avaliarCoberturaFinanceira } from "@/features/cobrancas/services/cobertura-financeira-proposta";
+import { semCobrancaDeReenvio } from "@/features/cobrancas/lib/cobranca-reenvio";
 
 // ---------------------------------------------------------------------------
 // Configurações e Tipagens
@@ -302,9 +303,11 @@ export async function POST(request: NextRequest) {
   }
 
   // ── 5. Buscar cobranças e re-calcular valor pago confirmado (servidor) ───
+  // "*" e nao a lista de colunas: a leitura precisa trazer `chave_reenvio`
+  // quando ela existir, e nao pode quebrar antes da migration que a cria.
   const { data: cobrancasBanco, error: cobrancasError } = await supabase
     .from("pagamentos_v2")
-    .select("id, id_pagamento, tipo_cobranca, status, confirmado, paid_at, valor, obs_v2")
+    .select("*")
     .eq("id_int", idInt)
     .neq("status", "CANCELADO");
 
@@ -315,7 +318,11 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const cobrancas = cobrancasBanco || [];
+  // A cobrança da diferença de frete de um reenvio não é dinheiro da proposta:
+  // fica fora do pago, do pendente, do faturado e da soma das ativas — senão a
+  // próxima edição abriria crédito FAVOR_CLIENTE falso. O mesmo corte que o
+  // banco faz em cc__valor_pago. Pedido sem reenvio: lista igual à de antes.
+  const cobrancas = semCobrancaDeReenvio(cobrancasBanco || []);
   const temCobrancasAtivas = cobrancas.length > 0;
 
   // ── 5a1. A cobrança que a tela ia ajustar ainda existe? ───────────────────

@@ -170,6 +170,8 @@ export type Cobranca = {
   forma_fatu?: string;
   forma_pgto?: string;
   obs_v2?: string;
+  /** "REENVIO:<id_int>:<ciclo>": diferença de frete do reenvio, fora do pago da proposta (ver lib/cobranca-reenvio.ts). */
+  chave_reenvio?: string | null;
   id_modelo_cobranca?: string | null;
   motivo_cancela?: string;
   multaPercentual?: number;

@@ -30,6 +30,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient as createSupabaseClient, type SupabaseClient } from "@supabase/supabase-js";
 import { aplicarStatusRecomendadoProposta } from "@/features/orcamentos/services/status-writer.service";
 import { TIPO_DESCONTO_TABELA_ESPECIAL, percentualGravado } from "@/features/orcamentos/lib/bonus-da-proposta";
+import { semCobrancaDeReenvio } from "@/features/cobrancas/lib/cobranca-reenvio";
 
 const TOLERANCIA = 0.02;
 
@@ -114,16 +115,20 @@ export async function POST(request: NextRequest) {
     }
 
     // ── Cobranças: pago confirmado e total cobrado ativo ───────────────────
+    // "*" para trazer `chave_reenvio` quando ela existir, sem quebrar antes da
+    // migration que a cria.
     const { data: cobrancasBanco, error: cobrancasErr } = await supabase
       .from("pagamentos_v2")
-      .select("status, confirmado, valor, obs_v2")
+      .select("*")
       .eq("id_int", idInt)
       .neq("status", "CANCELADO");
 
     if (cobrancasErr) {
       return NextResponse.json({ success: false, error: "Erro ao buscar cobranças da proposta." }, { status: 500 });
     }
-    const cobrancas = cobrancasBanco || [];
+    // Cobrança da diferença de frete do reenvio fica fora do pago e do total
+    // cobrado ativo (mesmo corte de cc__valor_pago). Sem reenvio: lista igual.
+    const cobrancas = semCobrancaDeReenvio(cobrancasBanco || []);
 
     // Mesma regra oficial do editar-paga (desconta marcador de abatimento de débito)
     const valorPago = round2(

@@ -30,6 +30,7 @@ export type SupabasePagamentoV2Row = {
   motivo_cancela?: SupabaseValue;
   erro_pagamento?: SupabaseValue;
   obs_v2?: SupabaseValue;
+  chave_reenvio?: SupabaseValue;
   whats_contato?: SupabaseValue;
   id_fatura?: SupabaseValue;
   cod_solicitacao_inter?: SupabaseValue;
