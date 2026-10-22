@@ -620,6 +620,19 @@ Regra completa em `PEDIDO-COMPLEMENTAR.md` (§9 e §10). O que ela muda na Exped
 - **Destino do despacho.** A regra das três saídas (`A RETIRAR`, `EM TRANSITO` ou aguardando coleta) saiu de dentro de `despachar()` para `src/features/expedicao/lib/destino-despacho.ts`, a mesma para os dois pedidos da caixa.
 - **Pendente:** uma caixa com duas NF-e — decisão com a contabilidade. A etiqueta imprime a nota do principal.
 
+## 3.7 Reenvio de pedido devolvido — fase 1 (22/10/2026)
+
+Pedido `EM TRANSITO` devolvido pela transportadora volta a `EXPEDICAO` para sair de novo, sem Arte nem Produção, com endereço e/ou tipo de envio novos, **desde que o frete não mude**. Diferença de frete no reenvio (cobrança, abono, devolução) é a fase 2.
+
+- **Banco** (migration `20261022_exp_reenvio_fase1.sql`): tabela `expedicao_reenvios` (uma linha por ciclo; RLS só leitura) e RPC `exp_reenviar_pedido(p_id_int, p_ciclo, p_id_endereco_entrega, p_tipo_frete, p_motivo, p_modalidade)`, SECURITY DEFINER, permissão `expedicao.reenvio` (catálogo, seção Expedição; nenhum perfil nasce com ela; Administrador passa pelo fallback de `cc__assert_permissao`), `FOR UPDATE` em `propostas` e `expedicoes`, chave idempotente `REENVIO:<id_int>:<ciclo>` (a mesma chave devolve o registro sem gravar de novo; ciclo fora de ordem é recusado).
+- **O que grava:** o registro (motivo, autor da sessão, endereço/CEP/tipo anterior e novo, quem paga, veredito do frete e `envio_anterior` = cópia inteira da linha de `expedicoes`); em `expedicoes`, só `id_endereco_entrega` e `tipo_frete` (se o tipo muda, transportadora, vínculo e categoria voltam a nulo); `propostas.status_interno` `EM TRANSITO → EXPEDICAO` com guarda de status; `os_status_log` com motivo e autor (`origem = 'EXPEDICAO_REENVIO'`, `tipo_transicao = 'RETORNO'`). Não toca `cotacao_frete`, `valor_total`, NF, Conta Corrente, `pagamentos_v2`, arte, produção nem a engine de status.
+- **`data_despacho` fica.** Depois do despacho vale o endereço gravado (`lib/endereco-entrega.ts`); é isso que faz o endereço novo valer na etiqueta, na prepostagem, na declaração, no modal e no Vibe Entregas. O reenvio está **aberto** enquanto `expedicoes.data_despacho = expedicao_reenvios.data_despacho_anterior` do último ciclo (`lib/reenvio.ts`); o próximo Despachar grava data nova e o fecha. Sem coluna nem trigger novos em `expedicoes`. Como `expedicoes` tem uma linha por pedido, o histórico do primeiro envio vive na cópia do registro (e em `audit.logs_v2`).
+- **Frete:** em CIF, com CEP ou tipo diferentes do envio anterior, a RPC lê `exp_trava_frete_despacho` (sem consumir liberação) e só aceita `SEM_DIVERGENCIA` ou `DENTRO_DO_LIMITE` com diferença zero. Recotar, valor diferente, liberação de ADM ou sem cotação: recusa (`EXP_REENVIO_FRETE`). Troca de quem paga: `EXP_REENVIO_QUEM_PAGA`. FOB passa (frete do cliente). Mesmo CEP e mesmo tipo passam sempre.
+- **Também recusa:** complemento (`EXP_REENVIO_COMPLEMENTO`), principal com complemento não cancelado (`EXP_REENVIO_COM_COMPLEMENTO`), sem despacho, com `data_entrega`, endereço que não é do cliente nem do pagador, CEP inválido.
+- **As travas continuam como estão.** A de saldo e a de frete (triggers) só agem no primeiro `data_despacho`, e o redespacho não passa por elas no banco; o `despachar()` da tela continua consultando `exp_trava_frete_despacho` antes de gravar, e o modal passa a avaliar a trava e os campos mínimos de DESPACHO quando há reenvio aberto. Nada foi afrouxado.
+- **Painel:** item **Reenviar (pedido devolvido)** no menu (EM TRANSITO, `expedicao.reenvio`), selo **Reenvio N**, faixa no modal Despachar. Pedido com reenvio aberto não é "aguardando coleta" (`aguardandoColeta` ganhou `!reenvio.aberto`).
+- **Avisos, sem resolver:** o objeto antigo dos Correios segue cobrando até ser cancelado no portal (a etiqueta nova sai pela regeração da prepostagem, que já pede confirmação; até lá o webhook ainda casa eventos do código antigo); a Azul emite uma AWB por pedido.
+
 ---
 
 # 4. Regra de Nota Fiscal
@@ -1096,6 +1109,7 @@ v1.5.16 (leitura autenticada) em 17/08/2026.
 |---|---|---|
 | `expedicao.view` | "Visualizar Expedição" | Ver o painel `/expedicao`, gerar as duas etiquetas (interna e Correios) e a declaração de conteúdo |
 | `expedicao.processar` | "Processar Envio / Retirada" | Marcar pronto, despachar, confirmar retirada, marcar entregue, voltar status, editar dados de expedição, gerar prepostagem Correios, e o override "Desvincular e despachar separado" do pedido complementar (§3.6) |
+| `expedicao.reenvio` | "Reenviar Pedido Devolvido" | Item **Reenviar (pedido devolvido)** e a RPC `exp_reenviar_pedido` (§3.7). Nenhum perfil nasce com ela |
 
 Fallback: `user.isSuperAdmin || user.isAdmin` sempre libera visualização e operação, tanto no client (`ExpedicaoPage.tsx`) quanto no server (`verificarPermissaoServerSide`, em `src/lib/auth/verificar-permissao.ts`, retorna `true` direto se `is_super_adm`; se o perfil do usuário não tiver a permissão específica nem `"*"`, o fallback final da função ainda é `is_admin`).
 

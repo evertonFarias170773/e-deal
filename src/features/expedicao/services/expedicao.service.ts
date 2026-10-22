@@ -31,6 +31,7 @@ import { danfesDoPedido, COLUNAS_DANFE_DO_PEDIDO, type DanfeDoPedido } from "@/l
 import { resolverPesoExpedicao } from "../lib/peso";
 import { STATUS_FUNIL_EXPEDICAO } from "../lib/pedido-em-aberto";
 import { promessaNoDia } from "../lib/promessa-do-card";
+import { agruparReenvios, reenvioDoPedido, type LinhaReenvio } from "../lib/reenvio";
 import type {
   ContatoDestinatario,
   EtapaExpedicao,
@@ -186,7 +187,8 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
     recotacoesRes,
     setoresRes,
     complementosRes,
-    retrabalhoRes
+    retrabalhoRes,
+    reenviosRes
   ] = await Promise.all([
     client
       .from("propostas_os")
@@ -254,8 +256,19 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
       .from("pagamentos_v2")
       .select("id_int, tipo_cobranca, status")
       .in("id_int", ids)
-      .ilike("tipo_cobranca", FORMA_RETRABALHO)
+      .ilike("tipo_cobranca", FORMA_RETRABALHO),
+    // REENVIO (fase 1, 22/10/2026): os ciclos de reenvio dos pedidos do painel,
+    // no mesmo lote. Falhou, o card fica sem o selo e sem o item de reenvio
+    // aberto — o banco segue decidindo tudo na RPC.
+    client
+      .from("expedicao_reenvios")
+      .select("id_int, ciclo, motivo, autor_nome, criado_em, tipo_frete_anterior, tipo_frete_novo, data_despacho_anterior")
+      .in("id_int", ids)
   ]);
+  if (reenviosRes.error) {
+    console.warn("[expedicao.service] Nao foi possivel ler os reenvios:", reenviosRes.error.message);
+  }
+  const reenviosPorPedido = agruparReenvios((reenviosRes.data ?? []) as LinhaReenvio[]);
 
   if (fretesRes.error) {
     console.error("[expedicao.service] Erro ao buscar cotacao_frete (frete ficará 'A definir'):", fretesRes.error);
@@ -776,12 +789,17 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
      * `tipoFrete` aqui ja e o resolvido acima: com despacho confirmado ele vem
      * de `expedicoes.tipo_frete`, que e a declaracao do expedidor. E ela que
      * decide, nao o texto da cotacao.
+     *
+     * REENVIO ABERTO (22/10/2026) nao aguarda coleta: a `data_despacho` e a do
+     * envio que voltou, e o que falta e despachar de novo (`lib/reenvio.ts`).
      */
+    const reenvio = reenvioDoPedido(reenviosPorPedido.get(idInt) ?? [], exp?.dataDespacho);
     const aguardandoColeta =
       despachoConfirmado &&
       !exp?.coletadoEm &&
       etapa === "PRONTO" &&
-      (tipoFrete === "TRANSPORTADORA" || tipoFrete === "MOTOBOY");
+      (tipoFrete === "TRANSPORTADORA" || tipoFrete === "MOTOBOY") &&
+      !reenvio?.aberto;
 
     /**
      * O DEGRAU 4 DA CATEGORIA: derivação NA LEITURA, sem gravar nada.
@@ -1055,7 +1073,8 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
         p.id_int_pedido_principal !== null && p.id_int_pedido_principal !== undefined
           ? { idInt: Number(p.id_int_pedido_principal) }
           : null,
-      complementos: complementosMap.get(idInt) ?? []
+      complementos: complementosMap.get(idInt) ?? [],
+      reenvio
     });
   }
 

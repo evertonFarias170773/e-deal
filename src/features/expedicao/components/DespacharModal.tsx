@@ -60,6 +60,7 @@ import { LABEL_MODALIDADE, MODALIDADES_OFERECIDAS, TRANSPORTES_POR_MODALIDADE } 
 import type { ModalidadeFrete, PedidoExpedicao, TipoFreteNormalizado } from "../types";
 import { AvisoInstrucaoEntrega } from "./AvisoInstrucaoEntrega";
 import { mensagemDoSaldo, type SaldoDoDespacho } from "../lib/saldo-despacho";
+import { avisosDoReenvio } from "../lib/reenvio";
 
 const TIPOS_VOLUME = ["Pacote", "Caixa", "Envelope", "Outro"];
 
@@ -329,6 +330,16 @@ export function DespacharModal({
    * recebendo este id, e etiqueta, declaração e prepostagem seguem lendo de lá.
    */
   const idEnderecoEntrega = pedido.enderecoEntrega?.id ?? null;
+  /** REENVIO (fase 1, 22/10/2026, lib/reenvio.ts): o ciclo aberto, quando o pedido voltou devolvido. */
+  const reenvioAberto = pedido.reenvio?.aberto ?? null;
+  const avisosReenvio = reenvioAberto
+    ? avisosDoReenvio({
+        tipoFreteAtual: exp?.tipoFrete,
+        correiosCodigoObjeto: exp?.correiosCodigoObjeto,
+        prepostagemCanceladaEm: exp?.prepostagemCanceladaEm,
+        azulAwb: exp?.azulAwb
+      })
+    : [];
   const [transportadoras, setTransportadoras] = useState<Transportadora[]>([]);
   const [confirmaSemNf, setConfirmaSemNf] = useState(false);
   /**
@@ -646,9 +657,11 @@ export function DespacharModal({
         // A justificativa de 20/08 continua valendo, com a redacao corrigida: o
         // pedido JA SAIU, e obrigar o campo agora impediria corrigir o que
         // existe. O que mudou e que agora e o estado que responde, nao a porta.
-        pedido.despachoConfirmado ? "EDICAO" : "DESPACHO"
+        // Reenvio aberto: o despacho ainda vai acontecer, entao vale o DESPACHO.
+        pedido.despachoConfirmado && !reenvioAberto ? "EDICAO" : "DESPACHO"
       ),
     [
+      reenvioAberto,
       tipoEntrega,
       modalidade,
       nomeTransportadoraParaGravar,
@@ -720,7 +733,8 @@ export function DespacharModal({
    * So antes do despacho: em edicao, ou com o despacho ja confirmado, a trava ja
    * foi cumprida (e a trigger so age no momento do despacho).
    */
-  const avaliaTrava = !modoEdicao && !pedido.despachoConfirmado;
+  // Reenvio aberto: a trava e consultada de novo (o service `despachar` tambem consulta). Nao afrouxa nada.
+  const avaliaTrava = !modoEdicao && (!pedido.despachoConfirmado || Boolean(reenvioAberto));
   const [trava, setTrava] = useState<TravaFreteDespacho | null>(null);
   /** Incrementado depois de recotar, aplicar ou liberar: forca reler o veredito. */
   const [versaoTrava, setVersaoTrava] = useState(0);
@@ -1500,6 +1514,20 @@ export function DespacharModal({
         </div>
         {/* Instrucoes de entrega: o texto inteiro, antes de qualquer campo. */}
         <AvisoInstrucaoEntrega texto={instrucaoEntrega} formato="texto" className="mx-5 mt-4" />
+        {/* REENVIO ABERTO (22/10/2026): o pedido voltou devolvido e sai de novo. */}
+        {reenvioAberto ? (
+          <div className="mx-5 mt-4 space-y-2 rounded-2xl border border-violet-200 bg-violet-50 px-4 py-3 text-sm text-violet-900 dark:border-violet-900 dark:bg-violet-950/40 dark:text-violet-200">
+            <p className="font-semibold">
+              Reenvio {reenvioAberto.ciclo}: {reenvioAberto.motivo}
+            </p>
+            <p>O endereço e o tipo de envio vêm do reenvio. Informe o rastreio ou conhecimento NOVO; o do primeiro envio está guardado no registro do reenvio.</p>
+            {avisosReenvio.map((a) => (
+              <p key={a} className="flex gap-2 text-amber-900 dark:text-amber-200">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /> <span>{a}</span>
+              </p>
+            ))}
+          </div>
+        ) : null}
 
         <div className="space-y-4 p-6">
           {/* A LINHA DE CABECALHO (cliente · cidade · frete cotado) SAIU em

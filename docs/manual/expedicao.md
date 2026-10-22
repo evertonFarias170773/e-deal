@@ -16,6 +16,7 @@ A tela também avisa o que está atrasado ou prometido para hoje e segura o desp
 - Para agir (marcar pronto, despachar, confirmar coleta, retirada e entrega, voltar status, editar dados de expedição, gerar prepostagem, recotar frete) é preciso a permissão **Processar Envio / Retirada**. O perfil Expedidor já nasce com as duas.
 - Só o administrador da Expedição (permissão **Configurar Expedição**, ou Administrador) libera a aplicação de uma recotação, libera um despacho travado pela diferença de frete e marca uma prepostagem como cancelada.
 - **Corrigir frete** aparece para quem tem a permissão **Editar Proposta Paga** (ou Administrador).
+- **Reenviar (pedido devolvido)** aparece para quem tem a permissão **Reenviar Pedido Devolvido** (ou Administrador). Nenhum perfil nasce com ela: quem administra os perfis concede.
 - **Encerrar teste** é exclusivo do Super Administrador.
 
 ## Botões e ações da tela
@@ -73,6 +74,7 @@ Os itens aparecem nesta ordem, cada um só quando se aplica.
 | **Recotação já liberada** | No lugar do item acima, apagado | Só informa que já há liberação ativa |
 | **Cancelar liberação** | Menu de ações, abaixo de "Recotação já liberada" | Desfaz a liberação ainda não usada |
 | **Corrigir frete** | Menu de ações; quem pode editar proposta paga, sem nota autorizada, sem despacho confirmado | Abre a janela **Corrigir frete** |
+| **Reenviar (pedido devolvido)** | Menu de ações; pedido Em Trânsito já despachado, sem entrega registrada, que não é complemento nem tem complemento; só com a permissão **Reenviar Pedido Devolvido** | Abre a janela **Reenviar** |
 | **Voltar status** | Menu de ações; pedido que já chegou à Expedição | Abre a janela **Voltar status** |
 | **Encerrar teste** | Menu de ações; só Super Administrador | Tira o pedido de teste das listas operacionais, depois de uma confirmação do navegador |
 
@@ -110,6 +112,9 @@ Os itens aparecem nesta ordem, cada um só quando se aplica.
 | **Marcar pronto** / **Confirmar coleta** / **Confirmar entrega** | Janelas de confirmação "Marcar como pronto", "Confirmar coleta" e "Confirmar entrega" | Executa a mudança de status. **Cancelar** desiste |
 | **Confirmar entrega** | Janela **Confirmar retirada**, botão verde | Conclui a retirada no balcão |
 | **Voltar 1 passo** | Janela **Voltar status** | Desfaz um passo, com motivo |
+| **Endereço de entrega do reenvio** / **Tipo de envio** / **Motivo** | Janela **Reenviar** | Escolhe o endereço (do cliente ou do pagador), o envio (os mesmos da modalidade do pedido) e o motivo, que fica na trilha |
+| **Voltar para a Expedição** | Rodapé da janela **Reenviar** | Registra o reenvio e põe o pedido Na Expedição. Fica apagado sem motivo |
+| Selo **Reenvio N** | Coluna Pedido da lista e cabeçalho do card | Pedido que voltou devolvido e ainda não foi despachado de novo. Passe o mouse para ver o motivo |
 | Ícone de setas em círculo (texto "Atualizar") | Topo da janela **Rastreamento** | Refaz a consulta do rastreio |
 | **Correios confirmam a entrega — marcar ENTREGUE no sistema** | Rodapé da janela **Rastreamento**, quando os Correios acusam a entrega de um pedido Em Trânsito | Abre a confirmação de entrega |
 | **Nova transportadora** | Topo da janela **Transportadoras** | Abre o cadastro de uma transportadora nova |
@@ -315,6 +320,18 @@ Em envio pelos Correios despachado há menos de 12 horas, o sistema avisa há qu
 
 Os retornos possíveis são: Entregue volta para Em Trânsito (ou para A Retirar, se foi retirada); Em Trânsito e A Retirar voltam para Na Expedição; Na Expedição volta para EM ACABAMENTO.
 
+### Reenviar um pedido devolvido
+
+Use quando a transportadora ou os Correios devolveram um pedido que está Em Trânsito e ele precisa sair de novo, sem passar por Arte nem Produção.
+
+1. No menu do pedido, clique em **Reenviar (pedido devolvido)**.
+2. Escolha o **Endereço de entrega do reenvio**. A lista traz os endereços do cliente e do pagador; o atual vem marcado. Mudar o endereço na proposta não muda o envio: depois do despacho vale o endereço escolhido aqui.
+3. Escolha o **Tipo de envio**. Quem paga o frete (CIF ou FOB) não muda.
+4. Escreva o motivo (mínimo de 3 letras) e clique em **Voltar para a Expedição**.
+5. O pedido volta para Na Expedição com o selo **Reenvio N**. Despache de novo pelo botão **Despachar**, informando o rastreio ou conhecimento novo. Nos Correios, gere a prepostagem de novo (a janela pede confirmação).
+
+O primeiro envio (data, rastreio, endereço, transportadora) fica guardado no registro do reenvio. Não há limite de reenvios por pedido.
+
 ### Editar dados de um pedido já despachado
 
 1. No menu do pedido, clique em **Editar dados de expedição**.
@@ -345,7 +362,7 @@ Os retornos possíveis são: Entregue volta para Em Trânsito (ou para A Retirar
 - A etiqueta e a prepostagem exigem os mesmos dados do despacho enquanto o pedido ainda não saiu. Imprimir etiqueta de um envio que ninguém terminou de declarar não é permitido.
 - **Salvar sem despachar** e **Salvar dados** não exigem os campos mínimos: servem para guardar ou corrigir.
 - Pedido CIF só sai como retirada por **Cliente vai retirar no balcão**, com ADM pelo cadastro e **Liberar despacho (ADM)**. Sem a liberação: "Despacho como retirada no balcão precisa da liberação de um ADM: use "Liberar despacho (ADM)" neste despacho."
-- Não dá para trocar o endereço de entrega nem a transportadora na Expedição. Os dois vêm da proposta. A modalidade também, quando já está definida; ela se corrige na aba Fretes da proposta ou em **Corrigir frete**.
+- Não dá para trocar o endereço de entrega nem a transportadora na Expedição. Os dois vêm da proposta. A exceção é o pedido devolvido: **Reenviar (pedido devolvido)** escolhe o endereço e o tipo de envio do reenvio. A modalidade também, quando já está definida; ela se corrige na aba Fretes da proposta ou em **Corrigir frete**.
 - Pedido CIF com transportadora escolhida (no orçamento ou em **Corrigir frete**) vai por transportadora, mesmo com frete cotado como SEDEX ou PAC: a **Forma de envio** mostra a transportadora, os botões de prepostagem dos Correios não aparecem e o sistema recusa gerar prepostagem. Isso não vale quando a transportadora escolhida é o próprio cadastro dos Correios, nem quando o frete foi cotado como motoboy. Tirar a transportadora em **Corrigir frete** volta o pedido ao serviço cotado. Na visualização do pedido (**Ver proposta**), esse frete aparece como **Transportadora: nome**.
 - Se o pedido já tem prepostagem dos Correios gerada e não cancelada, ele continua como Correios e a janela avisa: "Já há prepostagem dos Correios gerada; cancele-a para despachar por transportadora". Cancele a prepostagem e marque-a como cancelada para o pedido passar a ir pela transportadora.
 - Falta de nota autorizada não bloqueia o despacho, mas exige marcar a confirmação.
@@ -366,6 +383,11 @@ Os retornos possíveis são: Entregue volta para Em Trânsito (ou para A Retirar
 - Toda mudança de status confere se o pedido ainda está no status que a tela mostrava. Se outra pessoa mexeu antes, a ação é recusada e a lista recarrega.
 - Marcar a prepostagem como cancelada não apaga o código: ele só deixa de aparecer na tela.
 - Pedido de teste encerrado continua acessível por busca e por endereço direto, e segue contando no faturamento.
+- **Reenvio sem diferença de frete.** O reenvio é recusado quando o endereço ou o tipo de envio novos exigem recotar o frete ou mudam o valor (em CIF), e quando se tenta trocar quem paga. A diferença de frete no reenvio ainda não existe no sistema. Em FOB o frete é do cliente e o reenvio passa. Mesmo CEP e mesmo tipo de envio sempre passam.
+- O reenvio não mexe no total, no frete da proposta, na nota, nas cobranças, na arte nem na produção.
+- No reenvio, o objeto antigo dos Correios continua gerando cobrança até ser cancelado no portal dos Correios. A janela avisa.
+- A Azul emite uma AWB por pedido. Se o pedido já tem AWB, o sistema não emite uma segunda: combine o reenvio direto com a Azul. A janela avisa.
+- Pedido em reenvio não aparece como "aguardando coleta": o que falta nele é despachar de novo. O redespacho passa pelas mesmas conferências de frete da tela do despacho.
 
 - **AWB da Azul:** só em frete CIF com NF-e autorizada, e uma AWB por pedido — a emissão cria contrato e cobrança reais na Azul e não pode ser repetida. Em FOB o cliente contrata a Azul. A Azul recebe da NF-e só a chave, a data de emissão e o valor. As medidas, os pesos e a natureza digitados na janela vão para a Azul e não ficam guardados no pedido. A janela não deixa emitir com altura + largura + comprimento abaixo de 45 cm em algum volume, nem com natureza genérica ("peças", "amostras", "brindes"). Se o cadastro do cliente não tem inscrição estadual, digite-a ou marque **Isento**. Se a Azul recusar, o texto dela aparece e o pedido fica livre para tentar de novo. Se a Azul não responder, o pedido fica **travado como incerto** até alguém conferir no portal da Azul se a AWB foi criada.
 
@@ -429,6 +451,10 @@ Os retornos possíveis são: Entregue volta para Em Trânsito (ou para A Retirar
 | Peso inválido / Volumes inválidos | Peso zerado ou negativo; volumes fora de 1 a 50 | Corrigir o valor |
 | A AWB exige NF-e autorizada | O pedido não tem NF-e de produção autorizada | Emitir a NF-e e tentar de novo |
 | Emissão incerta: a Azul não respondeu | A Azul não devolveu a AWB a tempo e pode ter criado a AWB | Conferir no portal da Azul; o pedido segue travado até essa conferência |
+| este endereco ou tipo de envio exige recotar o frete / muda o valor do frete… A diferenca de frete no reenvio sera tratada na fase 2 | O reenvio mudaria o frete | Escolher endereço do mesmo CEP ou o mesmo tipo de envio; a diferença de frete no reenvio ainda não existe |
+| o reenvio nao troca quem paga o frete | Tentou mudar CIF/FOB no reenvio | Manter quem paga; corrigir a modalidade é outro caminho |
+| Você não tem a permissão de reenviar pedido (expedicao.reenvio). | O perfil não tem **Reenviar Pedido Devolvido** | Pedir a permissão a quem administra os perfis |
+| a tela esta desatualizada (reenvio … pedido…) | Outra pessoa registrou um reenvio antes | Recarregar a lista |
 | Cadastro da empresa emitente incompleto / Endereço de entrega incompleto | Falta CEP, número, bairro, telefone ou outro dado de cadastro | Completar o cadastro indicado e abrir a janela de novo |
 
 ## Veja também
@@ -458,6 +484,10 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/features/expedicao/components/RastreioModal.tsx`
 - `src/features/expedicao/components/RetiradaModal.tsx`
 - `src/features/expedicao/components/VoltarStatusModal.tsx`
+- `src/features/expedicao/components/ReenvioModal.tsx`
+- `src/features/expedicao/lib/reenvio.ts`
+- `src/features/expedicao/services/reenvio.client.ts`
+- `supabase/migrations/20261022_exp_reenvio_fase1.sql`
 - `src/features/expedicao/components/TransportadorasModal.tsx`
 - `src/features/expedicao/services/expedicao.service.ts`
 - `src/features/expedicao/services/expedicao-acoes.service.ts`

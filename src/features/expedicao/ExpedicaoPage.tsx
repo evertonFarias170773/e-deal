@@ -52,6 +52,8 @@ import { rotuloClienteComNumero } from "./lib/cliente-rotulo";
 import { DespacharModal } from "./components/DespacharModal";
 import { RetiradaModal } from "./components/RetiradaModal";
 import { VoltarStatusModal } from "./components/VoltarStatusModal";
+import { ReenvioModal } from "./components/ReenvioModal";
+import { podeOferecerReenvio } from "./lib/reenvio";
 import { TransportadorasModal } from "./components/TransportadorasModal";
 import { RastreioModal } from "./components/RastreioModal";
 import { CorrigirFreteModal } from "./components/CorrigirFreteModal";
@@ -217,6 +219,9 @@ export function ExpedicaoPage() {
   >(null);
   const [pedidoRetirada, setPedidoRetirada] = useState<PedidoExpedicao | null>(null);
   const [pedidoVoltar, setPedidoVoltar] = useState<PedidoExpedicao | null>(null);
+  // Reenvio de pedido devolvido (fase 1, 22/10/2026). A permissao e reconferida na RPC.
+  const [pedidoReenvio, setPedidoReenvio] = useState<PedidoExpedicao | null>(null);
+  const podeReenviar = Boolean(user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "expedicao.reenvio"));
   const [pedidoRastreio, setPedidoRastreio] = useState<PedidoExpedicao | null>(null);
   // "Ver conhecimento": so leitura do numero de transportadora/motoboy.
   const [pedidoConhecimento, setPedidoConhecimento] = useState<PedidoExpedicao | null>(null);
@@ -578,6 +583,19 @@ export function ExpedicaoPage() {
       // habilita com CIF + NF-e autorizada + sem AWB. Com AWB, o numero ocupa o
       // lugar do botao. A rota reconfere tudo (inclusive a permissao) no servidor.
       ...itemAzul(p),
+      // REENVIO (fase 1, 22/10/2026): pedido EM TRANSITO devolvido volta para a
+      // Expedicao com endereco/tipo novos, sem diferenca de frete. So
+      // `expedicao.reenvio`; a RPC reconfere tudo no banco.
+      ...(podeReenviar &&
+      podeOferecerReenvio({
+        statusInterno: p.statusInterno,
+        despachoConfirmado: p.despachoConfirmado,
+        dataEntrega: p.expedicao?.dataEntrega,
+        pedidoPrincipal: p.pedidoPrincipal,
+        complementos: p.complementos
+      })
+        ? [{ label: "Reenviar (pedido devolvido)", onClick: () => setPedidoReenvio(p) }]
+        : []),
       // Sem retorno definido a partir de PRODUCAO/ACABAMENTO no service (voltarStatus) — affordance morta.
       ...(canOperar && p.etapa !== "PRODUCAO" && p.etapa !== "ACABAMENTO"
         ? [{ label: "Voltar status", destructive: true, onClick: () => setPedidoVoltar(p) }]
@@ -1201,6 +1219,14 @@ export function ExpedicaoPage() {
                 )}
                 <span className="text-[11px] text-slate-500">{p.empresa}</span>
                 <ChipVinculados grupos={vinculosPorPedido.get(p.idInt)} onSoltar={podeSoltarDoGrupo ? (grupo) => setSoltarAlvo({ idInt: p.idInt, grupo }) : undefined} />
+                {p.reenvio?.aberto ? (
+                  <span
+                    className="mt-1 inline-flex w-fit items-center rounded-lg border border-violet-300 bg-violet-50 px-2 py-0.5 text-[12px] font-bold text-violet-800 dark:border-violet-800 dark:bg-violet-950/40 dark:text-violet-200"
+                    title={`Reenvio ${p.reenvio.aberto.ciclo}: ${p.reenvio.aberto.motivo}${p.reenvio.aberto.autorNome ? ` (por ${p.reenvio.aberto.autorNome})` : ""}`}
+                  >
+                    Reenvio {p.reenvio.aberto.ciclo}
+                  </span>
+                ) : null}
                 {/* PEDIDO COMPLEMENTAR: o par do mesmo evento. */}
                 {p.pedidoPrincipal ? (
                   <span className="mt-1 inline-flex items-center rounded-lg border border-sky-300 bg-sky-50 px-2 py-0.5 text-[12px] font-bold text-sky-800 dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-200 w-fit" title={`Pedido complementar do #${p.pedidoPrincipal.idInt}`}>
@@ -1436,6 +1462,14 @@ export function ExpedicaoPage() {
                     ) : (
                       <span>#{p.idInt} · {p.empresa}</span>
                     )}
+                    {p.reenvio?.aberto ? (
+                      <span
+                        className="rounded-md border border-violet-300 bg-violet-50 px-1.5 py-0.5 text-[10px] font-bold normal-case text-violet-800 dark:border-violet-800 dark:bg-violet-950/40 dark:text-violet-200"
+                        title={`Reenvio ${p.reenvio.aberto.ciclo}: ${p.reenvio.aberto.motivo}`}
+                      >
+                        Reenvio {p.reenvio.aberto.ciclo}
+                      </span>
+                    ) : null}
                     {/* Instrucoes de entrega: icone com o texto na dica, como no Kanban. */}
                     <AvisoInstrucaoEntrega texto={instrucoesPorPedido.get(p.idInt)} formato="icone" />
                   </p>
@@ -1567,6 +1601,13 @@ export function ExpedicaoPage() {
           grupo={soltarAlvo.grupo}
           onClose={() => setSoltarAlvo(null)}
           onDone={() => { setSoltarAlvo(null); void recarregar(); }}
+        />
+      )}
+      {pedidoReenvio && (
+        <ReenvioModal
+          pedido={pedidoReenvio}
+          onClose={() => setPedidoReenvio(null)}
+          onDone={() => { setPedidoReenvio(null); void recarregar(); }}
         />
       )}
       {pedidoVoltar && (

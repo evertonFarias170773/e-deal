@@ -180,6 +180,8 @@ export const CATALOGO_PERMISSOES: Record<string, PermissionDefinition[]> = {
   "Expedição": [
     { key: "expedicao.view",      label: "Visualizar Expedição",       desc: "Permite ver a fila de expedição e os pedidos prontos para envio.",                  critica: false },
     { key: "expedicao.processar", label: "Processar Envio / Retirada", desc: "Permite registrar envios e confirmar retiradas na expedição.",                      critica: false },
+    // 22/10/2026: conferida no banco por exp_reenviar_pedido. Nenhum perfil nasce com ela.
+    { key: "expedicao.reenvio",   label: "Reenviar Pedido Devolvido",  desc: "Permite voltar para a Expedição um pedido EM TRANSITO devolvido pela transportadora, com endereço ou tipo de envio novo, quando o frete não muda.", critica: true },
     { key: "expedicao.admin",     label: "Configurar Expedição",       desc: "Permite configurar metodos de envio, integracoes logisticas e liberar a recotacao de frete de um pedido no despacho.", critica: true  }
   ],
 

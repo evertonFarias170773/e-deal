@@ -449,6 +449,12 @@ export interface PedidoExpedicao {
   isRetrabalho?: boolean;
   /** Pedido de onde o retrabalho nasceu (`id_int_origem_copia`); nulo = sem original (`marcaDeRetrabalho`, 20/10/2026). */
   retrabalhoOriginal?: number | null;
+  /**
+   * REENVIO (fase 1, 22/10/2026, `lib/reenvio.ts`): quantos ciclos o pedido ja
+   * teve e o ultimo, enquanto nao for redespachado. Opcional porque nem toda
+   * origem monta (mocks); ausente = sem reenvio.
+   */
+  reenvio?: import("./lib/reenvio").ReenvioDoPedido | null;
   codigoRastreamento: string;
   obsOs: string;
   /** Já existe etiqueta/rastreio para o envio: prepostagem Correios OU rastreio OU 10x15 gerada. */
