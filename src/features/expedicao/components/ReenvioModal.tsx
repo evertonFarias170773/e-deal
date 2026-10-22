@@ -12,8 +12,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, X } from "lucide-react";
 import { useAppToast } from "@/components/common/AppToast";
+import { formatCurrency } from "@/lib/formatters/currency";
 import { avisosDoReenvio } from "../lib/reenvio";
 import { listarEnderecosParaReenvio, reenviarPedido, type EnderecoParaReenvio } from "../services/reenvio.client";
+import { avaliarSaldoDoDespacho } from "../services/recotacao.client";
+import { mensagemDoSaldo, type SaldoDoDespacho } from "../lib/saldo-despacho";
 import { TRANSPORTES_POR_MODALIDADE, type PedidoExpedicao, type TipoFreteNormalizado } from "../types";
 
 const ROTULO_TIPO: Record<string, string> = {
@@ -43,6 +46,25 @@ export function ReenvioModal({
   const [tipoFrete, setTipoFrete] = useState<TipoFreteNormalizado>(tipos.includes(tipoAtual) ? tipoAtual : (tipos[0] ?? tipoAtual));
   const [motivo, setMotivo] = useState("");
   const [salvando, setSalvando] = useState(false);
+  /**
+   * SALDO A DEFINIR (22/10/2026): o mesmo veredito da trava de saldo do despacho
+   * (`exp_saldo_despacho`), que a RPC do reenvio tambem consulta antes de gravar.
+   * A tela so pergunta, para mostrar o valor e travar o botao antes do clique.
+   * Leitura que falha nao trava: a RPC segue recusando.
+   */
+  const [saldo, setSaldo] = useState<SaldoDoDespacho | null>(null);
+  /** Recusa da RPC, mostrada dentro da janela (alem do aviso). */
+  const [erroRpc, setErroRpc] = useState<string | null>(null);
+
+  useEffect(() => {
+    let vivo = true;
+    void avaliarSaldoDoDespacho(pedido.idInt).then((s) => {
+      if (vivo) setSaldo(s);
+    });
+    return () => {
+      vivo = false;
+    };
+  }, [pedido.idInt]);
 
   useEffect(() => {
     let vivo = true;
@@ -66,10 +88,12 @@ export function ReenvioModal({
   );
 
   const semQuemPaga = tipos.length === 0;
-  const pronto = !salvando && !semQuemPaga && Boolean(idEndereco) && motivo.trim().length >= 3;
+  const temSaldo = saldo?.bloqueia === true;
+  const pronto = !salvando && !semQuemPaga && !temSaldo && Boolean(idEndereco) && motivo.trim().length >= 3;
 
   async function handleConfirmar() {
     if (!pronto) return;
+    setErroRpc(null);
     setSalvando(true);
     const res = await reenviarPedido({
       idInt: pedido.idInt,
@@ -88,6 +112,7 @@ export function ReenvioModal({
       });
       onDone();
     } else {
+      setErroRpc(res.error);
       showToast({ type: "error", title: "Reenvio não registrado", description: res.error });
     }
   }
@@ -108,6 +133,16 @@ export function ReenvioModal({
             O pedido volta de EM TRANSITO para a Expedição, sem passar por Arte nem Produção, e sai de novo pelo Despachar.
             O primeiro envio fica guardado no registro do reenvio.
           </p>
+
+          {temSaldo ? (
+            <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-200">
+              <p className="font-semibold">
+                Saldo a receber neste pedido{saldo?.saldo !== undefined ? `: ${formatCurrency(saldo.saldo)}` : ""}
+              </p>
+              <p className="mt-1">{mensagemDoSaldo(saldo)}</p>
+              <p className="mt-1 font-semibold">O saldo precisa ser resolvido (cobrança paga ou abono) antes do reenvio.</p>
+            </div>
+          ) : null}
 
           {semQuemPaga ? (
             <p className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-200">
@@ -171,6 +206,13 @@ export function ReenvioModal({
               className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
             />
           </div>
+
+          {erroRpc ? (
+            <p className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-200">
+              <span className="font-semibold">Reenvio não registrado: </span>
+              {erroRpc}
+            </p>
+          ) : null}
 
           {avisos.map((a) => (
             <p key={a} className="flex gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">

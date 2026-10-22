@@ -71,6 +71,16 @@ checar(
   textoDoErroDeReenvio("EXP_REENVIO_FRETE: este endereco ou tipo de envio exige recotar o frete. A diferenca de frete no reenvio sera tratada na fase 2; nada foi gravado."),
   "este endereco ou tipo de envio exige recotar o frete. A diferenca de frete no reenvio sera tratada na fase 2; nada foi gravado."
 );
+// Texto real da recusa por saldo (prova de 22/10/2026, pedido 23820 com R$ 0,01 a mais, desfeita).
+checar(
+  "erro de saldo sem o codigo, com a mensagem de exp_saldo_despacho",
+  textoDoErroDeReenvio(
+    "EXP_REENVIO_SALDO: Despacho bloqueado: falta receber R$ 0,01 deste pedido. O total do pedido é R$ 124,58 e o pago confirmado é R$ 124,57. " +
+      "Gere a cobrança da diferença na aba Pagamentos da proposta (ou peça ao administrador para abonar a diferença) e despache depois que o pagamento for confirmado. " +
+      "O saldo precisa ser resolvido (cobranca paga ou abono) antes do reenvio; nada foi gravado."
+  ).startsWith("Despacho bloqueado: falta receber R$ 0,01 deste pedido."),
+  true
+);
 checar("erro de permissao em portugues", textoDoErroDeReenvio("PERM: sem permissão expedicao.reenvio"), "Você não tem a permissão de reenviar pedido (expedicao.reenvio).");
 
 console.log(falhas === 0 ? "\nTUDO OK" : `\n${falhas} FALHA(S)`);

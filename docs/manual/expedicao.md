@@ -384,6 +384,7 @@ O primeiro envio (data, rastreio, endereço, transportadora) fica guardado no re
 - Marcar a prepostagem como cancelada não apaga o código: ele só deixa de aparecer na tela.
 - Pedido de teste encerrado continua acessível por busca e por endereço direto, e segue contando no faturamento.
 - **Reenvio sem diferença de frete.** O reenvio é recusado quando o endereço ou o tipo de envio novos exigem recotar o frete ou mudam o valor (em CIF), e quando se tenta trocar quem paga. A diferença de frete no reenvio ainda não existe no sistema. Em FOB o frete é do cliente e o reenvio passa. Mesmo CEP e mesmo tipo de envio sempre passam.
+- **Saldo a receber trava o reenvio.** Com o mesmo critério da trava de saldo do despacho (total maior que o pago confirmado, R$ 0,01 já conta), o reenvio é recusado. A janela **Reenviar** mostra o quadro vermelho **Saldo a receber neste pedido** com o valor e trava o botão. Resolva o saldo (cobrança paga ou abono) antes de reenviar.
 - O reenvio não mexe no total, no frete da proposta, na nota, nas cobranças, na arte nem na produção.
 - No reenvio, o objeto antigo dos Correios continua gerando cobrança até ser cancelado no portal dos Correios. A janela avisa.
 - A Azul emite uma AWB por pedido. Se o pedido já tem AWB, o sistema não emite uma segunda: combine o reenvio direto com a Azul. A janela avisa.
@@ -452,6 +453,7 @@ O primeiro envio (data, rastreio, endereço, transportadora) fica guardado no re
 | A AWB exige NF-e autorizada | O pedido não tem NF-e de produção autorizada | Emitir a NF-e e tentar de novo |
 | Emissão incerta: a Azul não respondeu | A Azul não devolveu a AWB a tempo e pode ter criado a AWB | Conferir no portal da Azul; o pedido segue travado até essa conferência |
 | este endereco ou tipo de envio exige recotar o frete / muda o valor do frete… A diferenca de frete no reenvio sera tratada na fase 2 | O reenvio mudaria o frete | Escolher endereço do mesmo CEP ou o mesmo tipo de envio; a diferença de frete no reenvio ainda não existe |
+| "Despacho bloqueado: falta receber R$ ... deste pedido. ... O saldo precisa ser resolvido (cobranca paga ou abono) antes do reenvio" | O total do pedido ficou maior que o pago confirmado depois do primeiro envio | Gerar e receber a cobrança da diferença, ou pedir ao administrador para abonar; depois reenviar |
 | o reenvio nao troca quem paga o frete | Tentou mudar CIF/FOB no reenvio | Manter quem paga; corrigir a modalidade é outro caminho |
 | Você não tem a permissão de reenviar pedido (expedicao.reenvio). | O perfil não tem **Reenviar Pedido Devolvido** | Pedir a permissão a quem administra os perfis |
 | a tela esta desatualizada (reenvio … pedido…) | Outra pessoa registrou um reenvio antes | Recarregar a lista |
