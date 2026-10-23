@@ -1,6 +1,6 @@
 # Conferência
 
-> **Última revisão:** 22/10/2026
+> **Última revisão:** 23/10/2026
 > **Caminho no menu:** Conferência (primeiro item do menu lateral; é um link direto, sem subitens)
 > **Endereço:** `/cobrancas` (o detalhe de uma cobrança abre em `/cobrancas/<cobrança>`)
 
@@ -230,7 +230,8 @@ Cancelamento:
 - Não dá para cancelar uma cobrança de pedido que já está na produção (REVISAO PRODUCAO em diante, ou liberado para a produção). O gerente precisa devolver o pedido para REVISAO ATENDENTE, ou retirá-lo da produção, antes.
 - Não dá para cancelar um faturamento com título em aberto. Cancele o título na Carteira primeiro.
 - Cobrança com título já pago não é cancelada por aqui: o caso é devolução.
-- Cobrança paga com crédito do cliente (E-Crédito) não é cancelada por aqui, porque o cancelamento não devolve o crédito consumido. O caminho é o estorno de crédito.
+- Cobrança paga com crédito do cliente (E-Crédito) não é cancelada por aqui, porque o cancelamento não devolve o crédito consumido. O caminho é o estorno do uso de crédito, que existe desde 23/10/2026 só para administrador e **ainda não tem botão na tela**: hoje é feito pelo suporte, a pedido do administrador. Ele faz três coisas juntas: devolve o valor ao saldo do cliente na Conta Corrente (por um lançamento novo; o lançamento do uso continua no extrato), cancela a cobrança E-Crédito e registra na conversa do pedido quem fez e o motivo. Repetir não lança de novo. Ele recusa pedido que já entrou na produção, que tem expedição registrada ou que tem nota fiscal autorizada.
+- Cancelar a última cobrança não tira o pedido de REVISAO ATENDENTE. Para o vendedor gerar uma cobrança nova, o pedido precisa voltar para NOVO, o que também é só de administrador e **ainda não tem botão na tela** (feito pelo suporte). Só vale para pedido em REVISAO ATENDENTE, fora da produção, sem cobrança ativa (todas canceladas), sem nota fiscal autorizada e sem expedição; volta para NOVO, ou NOVO / EM ARTE se o pedido estiver marcado em arte, e registra na conversa do pedido quem fez e o motivo.
 - A permissão **Cancelar Cobrança Não Paga** só alcança cobrança emitida e ainda não paga, de pedido do próprio usuário, e não alcança cobrança ligada à Conta Corrente. Como a Conferência lista o que já foi pago ou autorizado, essa permissão é usada na prática pela aba Pagamentos da proposta.
 - O cancelamento de uma cobrança é irreversível. Para cobrar de novo, gere outra cobrança na proposta.
 
@@ -291,7 +292,7 @@ Outros:
 | "Proposta ... consta liberada para a produção. Peça ao gerente para retirá-la da produção antes de cancelar a cobrança." | O pedido está liberado para a produção. | Peça ao gerente para retirar da produção e tente de novo. |
 | "Esta cobrança tem o título ... em aberto no banco. Cancele o título primeiro em Contas a Receber ..." | Faturamento com título ainda ativo. | Use **Ir para Contas a Receber**, cancele o título e volte. |
 | "Não foi possível identificar com segurança quais títulos pertencem a esta cobrança ..." | Registro antigo, sem vínculo entre título e cobrança, em pedido com mais de um faturamento. | Peça conferência manual antes de cancelar. |
-| "Cobrança paga com crédito do cliente: o cancelamento não estorna o crédito consumido. Use o estorno de crédito." | A cobrança é E-Crédito. | Faça o estorno de crédito. |
+| "Cobrança paga com crédito do cliente: o cancelamento não estorna o crédito consumido. Use o estorno de crédito." | A cobrança é E-Crédito. | Peça a um administrador o estorno do uso de crédito (ainda sem botão na tela; feito pelo suporte). |
 | "Esta cobrança já está cancelada" | A cobrança já tinha sido cancelada. | Nada a fazer. |
 | "Não foi possível verificar" seguido de "Sem essa verificação o cancelamento não é liberado. Feche e tente de novo." | A verificação falhou (conexão, sessão expirada) ou o usuário não tem permissão ou acesso àquela cobrança. | Leia a linha de cima, que traz o motivo. Feche e tente de novo; se persistir, entre novamente no sistema ou procure um administrador. |
 | "Acesso negado a esta cobrança." | A cobrança é de um pedido fora do seu alcance (outro vendedor ou outra empresa). | Peça a quem tem acesso ao pedido. |
@@ -351,5 +352,8 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/app/api/cobrancas/cancelar-externo/route.ts`
 - `src/app/api/cobrancas/aprovar-faturado-automatico/route.ts`
 - `src/app/api/cobrancas/titulo-inativo-no-banco/route.ts`
+- `src/app/api/cobrancas/estornar-uso-credito/route.ts`
+- `src/app/api/orcamentos/voltar-para-novo/route.ts`
+- `supabase/migrations/20261023_mc_estornar_uso_pedido.sql`
 - `src/components/common/ActionsMenu.tsx`
 - `src/constants/navigation.ts`
