@@ -142,6 +142,15 @@ function montarFiltroBusca(termo: string): {
   const digitos = termo.replace(/\D/g, "");
   const soDigitos = digitos.length > 0 && digitos === termo;
 
+  // CPF/CNPJ digitado com pontuação (41.944.974/0001-00): busca pelos dígitos.
+  // Só vale para documento completo (11 ou 14 dígitos) — sem isso cairia na
+  // busca_geral com pontos e barra, que não casa com o documento gravado.
+  const pareceDocumento =
+    !soDigitos && /^[\d./\-\s]+$/.test(termo) && (digitos.length === 11 || digitos.length === 14);
+  if (pareceDocumento) {
+    return { tipo: "digitos", expressao: `documento_numeros.ilike.%${digitos}%`, idExato: "" };
+  }
+
   if (soDigitos) {
     const clausulas = [`documento_numeros.ilike.%${digitos}%`];
     const cabeEmInt4 = Number(digitos) <= INT4_MAX;
