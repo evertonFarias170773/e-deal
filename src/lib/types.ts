@@ -95,6 +95,12 @@ export type NavigationItem = {
    * `PermissionGuard` da rota — esconder o link nao protege nada sozinho.
    */
   requiresPermissao?: string;
+  /**
+   * Visivel para quem tem QUALQUER uma destas permissoes (24/10/2026). Usado
+   * pelas areas de Relatorios: a area aparece se o usuario abre ao menos um
+   * relatorio dela. Admin e super admin passam sempre.
+   */
+  requiresAlgumaDe?: string[];
   children?: {
     label: string;
     href: string;

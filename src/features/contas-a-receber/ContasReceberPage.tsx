@@ -1774,7 +1774,7 @@ export function ContasReceberPage() {
         <SummaryCard
           title="Pagos"
           value={formatCurrency(resumo.pagos)}
-          description="Cobranças pagas no período. Clique para listar."
+          description="Pagos com vencimento no período (não é a data do pagamento). Clique para listar."
           tone="success"
           icon={TrendingUp}
           onClick={verPagos}

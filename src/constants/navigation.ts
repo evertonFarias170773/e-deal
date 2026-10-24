@@ -27,6 +27,8 @@ import {
   Wallet
 } from "lucide-react";
 import type { NavigationItem, NavigationSection } from "@/lib/types";
+import { areasComRelatorio, relatoriosDaArea } from "@/features/relatorios/registro";
+import type { AreaRelatorio } from "@/features/relatorios/types";
 
 export const navigationItems: NavigationItem[] = [
   { label: "Dashboard", href: "/dashboard", icon: Gauge },
@@ -107,6 +109,15 @@ export const quickAccessItems: NavigationItem[] = [];
  * se chama PRODUCAO, e a tela que agora se chama PEDIDOS e governada por
  * `propostas.*`. O nome da chave nao acompanhou o rotulo de proposito.
  */
+const ICONE_DA_AREA: Record<AreaRelatorio, NavigationItem["icon"]> = {
+  vendas: TrendingUp,
+  financeiro: Banknote,
+  producao: LayoutDashboard,
+  expedicao: Truck,
+  produtos: Package,
+  infraestrutura: Gauge
+};
+
 export const navigationSections: NavigationSection[] = [
   // 1
   {
@@ -162,9 +173,8 @@ export const navigationSections: NavigationSection[] = [
       { label: "Conta Corrente", href: "/conta-corrente", icon: Wallet },
       // "Pendências" (/pendencias) saiu do menu em 01/10/2026: a central unica e
       // o menu Tarefas. A tela antiga segue acessivel pelo endereco, so leitura.
-      { label: "Verificação de CPF/CNPJ", href: "/verificacao", icon: ShieldCheck },
-      // Segue desabilitado, como sempre esteve. Mantido para nao sumir do menu.
-      { label: "Relatórios", href: "/relatorios", icon: BarChart3, disabled: true }
+      { label: "Verificação de CPF/CNPJ", href: "/verificacao", icon: ShieldCheck }
+      // O item "Relatórios" (desabilitado) saiu daqui em 24/10/2026: virou a seção RELATÓRIOS.
     ]
   },
   // 6b — Tarefas da equipe e melhorias (30/09/2026). Menu proprio, fora do
@@ -226,6 +236,20 @@ export const navigationSections: NavigationSection[] = [
         requiresPermissao: "variacoes.view"
       }
     ]
+  },
+  // 10b — Relatorios (24/10/2026). Um submenu por AREA, so as que ja tem relatorio
+  // pronto; os itens saem da lista de features/relatorios/registro.ts, entao
+  // relatorio novo aparece aqui sem mexer neste arquivo.
+  {
+    id: "relatorios",
+    label: "Relatórios",
+    icon: BarChart3,
+    items: areasComRelatorio().map((area) => ({
+      label: area.rotulo,
+      href: `/relatorios/${area.id}`,
+      icon: ICONE_DA_AREA[area.id],
+      requiresAlgumaDe: relatoriosDaArea(area.id).map((r) => r.permissao)
+    }))
   },
   // 11
   {

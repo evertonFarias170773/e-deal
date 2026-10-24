@@ -40,6 +40,10 @@ Cada ficha cobre uma tela ou um fluxo e segue sempre o mesmo formato ([_MODELO.m
 - [Registro de recebíveis](registro-de-recebiveis.md)
 - [Notas fiscais](notas-fiscais.md)
 
+### Relatórios
+
+- [Relatório: Vendas pagas](relatorio-vendas-pagas.md)
+
 ### Operação
 
 - [Produção (ordens de serviço)](producao.md)

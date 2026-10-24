@@ -190,6 +190,9 @@ export const CATALOGO_PERMISSOES: Record<string, PermissionDefinition[]> = {
     { key: "relatorios.view",       label: "Visualizar Relatórios",         desc: "Permite acessar e visualizar relatórios gerais do sistema.",                       critica: false },
     { key: "relatorios.financeiro", label: "Relatórios Financeiros",        desc: "Permite visualizar relatórios de faturamento, recebimentos e contas.",             critica: false },
     { key: "relatorios.producao",   label: "Relatórios de Produção",        desc: "Permite visualizar relatórios de pedidos, produção e expedição.",                  critica: false },
+    // 24/10/2026: uma chave por relatorio (menu RELATORIOS). Nenhum perfil nasce com ela;
+    // admin e super admin passam. A mesma chave e conferida na pagina, na rota e no banco.
+    { key: "relatorios.vendas_pagas", label: "Relatório: Vendas pagas",    desc: "Permite abrir o relatório de vendas pagas (por data de pagamento), com vendedor, empresa e forma de pagamento, e exportar em CSV.", critica: false },
     { key: "relatorios.export",     label: "Exportar Dados (CSV / PDF)",    desc: "Permite exportar dados de relatórios em formato CSV ou PDF.",                      critica: false }
   ],
 

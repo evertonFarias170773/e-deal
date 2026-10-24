@@ -125,22 +125,25 @@ export function SidebarNav({ isCollapsed, onToggleCollapse }: SidebarNavProps) {
   // Admins também veem as seções de vendedor (modo consulta do Meu desempenho).
   const podeVerSecaoVendedor = isVendedor || Boolean(user?.isAdmin || user?.isSuperAdmin);
 
+  /**
+   * Visibilidade por ITEM (08/09/2026). Antes so a secao era filtrada.
+   * Mesma regra de `PermissionGuard`: admin e super admin passam sempre.
+   * `requiresAlgumaDe` (24/10/2026): basta ter UMA das chaves (area de Relatorios).
+   */
+  const canSeeItem = (item: NavigationItem) =>
+    Boolean(user?.isSuperAdmin) ||
+    Boolean(user?.isAdmin) ||
+    ((!item.requiresPermissao || hasPermissao(user, item.requiresPermissao)) &&
+      (!item.requiresAlgumaDe || item.requiresAlgumaDe.some((chave) => hasPermissao(user, chave))));
+
+  // Secao com itens, mas nenhum visivel para o usuario, some do menu (Relatorios).
   const visibleSections = navigationSections.filter(
     (section) =>
       !(section.requiresConfigPerm && !canViewConfig) &&
       !(section.sellerOnly && !podeVerSecaoVendedor) &&
-      !(section.hiddenForSeller && isVendedor)
+      !(section.hiddenForSeller && isVendedor) &&
+      !(section.items.length > 0 && !section.items.some(canSeeItem))
   );
-
-  /**
-   * Visibilidade por ITEM (08/09/2026). Antes so a secao era filtrada.
-   * Mesma regra de `PermissionGuard`: admin e super admin passam sempre.
-   */
-  const canSeeItem = (item: NavigationItem) =>
-    !item.requiresPermissao ||
-    Boolean(user?.isSuperAdmin) ||
-    Boolean(user?.isAdmin) ||
-    hasPermissao(user, item.requiresPermissao);
 
   const visibleItems = (section: NavigationSection) => section.items.filter(canSeeItem);
 
