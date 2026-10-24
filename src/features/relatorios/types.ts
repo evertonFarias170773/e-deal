@@ -1,3 +1,5 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
+
 /**
  * Modelo único de relatório (24/10/2026).
  *
@@ -101,12 +103,21 @@ export type RelatorioDef = {
   colunas: ColunaDef[];
   ordenacaoPadrao: { coluna: string; direcao: "asc" | "desc" };
 
-  /** Função do banco que devolve os dados já agregados. */
-  rpc: {
+  /**
+   * De onde vêm os dados — uma das duas formas (a rota roda a que existir):
+   * - `rpc`: função do banco que já devolve tudo agregado (preferida);
+   * - `consultar`: consulta direta com o cliente da sessão do usuário, para fonte que é
+   *   tabela e não precisa de função nova. Roda só na rota (servidor), nunca no navegador.
+   */
+  rpc?: {
     nome: string;
     argumentos: (consulta: ConsultaRelatorio) => Record<string, unknown>;
   };
-  /** Transforma a resposta da RPC em linhas, total e cards. */
+  consultar?: (
+    supabase: SupabaseClient,
+    consulta: ConsultaRelatorio
+  ) => PromiseLike<{ data: unknown; error: { code?: string; message: string } | null }>;
+  /** Transforma a resposta (da RPC ou de `consultar`) em linhas, total e cards. Roda na rota. */
   normalizar: (resposta: unknown) => ResultadoRelatorio;
 };
 

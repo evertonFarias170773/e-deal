@@ -77,10 +77,12 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     filtros[filtro.chave] = valor;
   }
 
-  const { data, error } = await supabase.rpc(
-    relatorio.rpc.nome,
-    relatorio.rpc.argumentos({ inicio, fim, filtros })
-  );
+  const consulta = { inicio, fim, filtros };
+  const { data, error } = relatorio.consultar
+    ? await relatorio.consultar(supabase, consulta)
+    : relatorio.rpc
+      ? await supabase.rpc(relatorio.rpc.nome, relatorio.rpc.argumentos(consulta))
+      : { data: null, error: { message: "Relatório sem fonte de dados." } };
   if (error) {
     const semPermissao = error.code === "42501" || error.code === "28000";
     if (!semPermissao) console.error(`[relatorios/${slug}]`, error.message);

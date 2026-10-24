@@ -1,3 +1,4 @@
+import { contaCorrenteCreditos } from "./definicoes/conta-corrente-creditos";
 import { vendasPagas } from "./definicoes/vendas-pagas";
 import type { AreaDef, AreaRelatorio, RelatorioDef } from "./types";
 
@@ -5,7 +6,7 @@ import type { AreaDef, AreaRelatorio, RelatorioDef } from "./types";
  * Lista de relatórios prontos. Relatório novo = um arquivo em `definicoes/` +
  * uma linha aqui. Nada mais muda (menu, rota de dados e página leem esta lista).
  */
-export const RELATORIOS: RelatorioDef[] = [vendasPagas];
+export const RELATORIOS: RelatorioDef[] = [vendasPagas, contaCorrenteCreditos];
 
 export const AREAS: AreaDef[] = [
   { id: "vendas", rotulo: "Vendas", descricao: "Vendas, clientes e descontos." },
