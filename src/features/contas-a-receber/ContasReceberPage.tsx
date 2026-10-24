@@ -430,12 +430,35 @@ export function ContasReceberPage() {
   // Atalhos dos cards: filtram por status e zeram os DOIS períodos (vencimento e
   // emissão), para a lista mostrar a carteira inteira — o mesmo universo que o
   // card soma. A aba atual é preservada, como já era em "Limpar filtros".
+  // Clicar de novo no card ativo desfaz: status volta a "Todos" e o vencimento
+  // ao mês corrente (estes dois cards tinham zerado os períodos).
+  function desfazerCardDeCarteira() {
+    setFilters({ status: "TODOS", ini: firstDayOfMonth, fim: lastDayOfMonth, emiIni: "", emiFim: "" });
+  }
+
   function verTodasVencidas() {
+    if (status === "VENCIDOS") return desfazerCardDeCarteira();
     setFilters({ status: "VENCIDOS", ini: "", fim: "", emiIni: "", emiFim: "" });
   }
 
   function verTodasAReceber() {
+    if (status === "A_VENCER") return desfazerCardDeCarteira();
     setFilters({ status: "A_VENCER", ini: "", fim: "", emiIni: "", emiFim: "" });
+  }
+
+  // Pagos não zera o período: lista os pagos do período aplicado, o mesmo
+  // recorte (vencimento e emissão) que o card soma. Sem período de vencimento,
+  // usa o mês corrente. Clicar de novo só tira o status.
+  function verPagos() {
+    if (status === "PAID") {
+      setFilter("status", "TODOS");
+      return;
+    }
+    const semPeriodo = !dataInicial && !dataFinal;
+    setFilters({
+      status: "PAID",
+      ...(semPeriodo ? { ini: firstDayOfMonth, fim: lastDayOfMonth } : {})
+    });
   }
 
   function confirmRecebimento(id: string) {
@@ -1737,6 +1760,7 @@ export function ContasReceberPage() {
           tone="danger"
           icon={AlertTriangle}
           onClick={verTodasVencidas}
+          ativo={status === "VENCIDOS"}
         />
         <SummaryCard
           title="Cobranças a Receber"
@@ -1745,8 +1769,17 @@ export function ContasReceberPage() {
           tone="info"
           icon={Wallet}
           onClick={verTodasAReceber}
+          ativo={status === "A_VENCER"}
         />
-        <SummaryCard title="Pagos" value={formatCurrency(resumo.pagos)} description="Cobranças pagas no período" tone="success" icon={TrendingUp} />
+        <SummaryCard
+          title="Pagos"
+          value={formatCurrency(resumo.pagos)}
+          description="Cobranças pagas no período. Clique para listar."
+          tone="success"
+          icon={TrendingUp}
+          onClick={verPagos}
+          ativo={status === "PAID"}
+        />
       </section>
 
       <section className="rounded-3xl border border-[#d7e5e8] bg-white p-4 shadow-sm">
@@ -3856,7 +3889,7 @@ function filterVisibleRows(
     return filtered;
   }
 
-  return [...filtered]
-    .sort((a, b) => getPaidSortScore(b) - getPaidSortScore(a))
-    .slice(0, 100);
+  // Sem corte de quantidade: o card Pagos soma estas mesmas linhas e a lista
+  // tem de bater com ele.
+  return [...filtered].sort((a, b) => getPaidSortScore(b) - getPaidSortScore(a));
 }

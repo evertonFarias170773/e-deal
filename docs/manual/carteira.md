@@ -24,9 +24,9 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 
 | Nome na tela | Onde fica | O que faz |
 |---|---|---|
-| **Cobranças Vencidas** | Cartão do topo (clicável) | Soma todos os títulos vencidos. O clique filtra por **Vencidos** e limpa os períodos de vencimento e de emissão. |
-| **Cobranças a Receber** | Cartão do topo (clicável) | Soma todos os títulos a vencer. O clique filtra por a vencer e limpa os dois períodos. |
-| **Pagos** | Cartão do topo (não clicável) | Soma os títulos pagos dentro do período filtrado. |
+| **Cobranças Vencidas** | Cartão do topo (clicável) | Soma todos os títulos vencidos. O clique filtra por **Vencidos** e limpa os períodos de vencimento e de emissão. Clicar de novo desfaz: status volta a **Todos status** e o vencimento ao mês corrente. |
+| **Cobranças a Receber** | Cartão do topo (clicável) | Soma todos os títulos a vencer. O clique filtra por a vencer e limpa os dois períodos. Clicar de novo desfaz, como no cartão anterior. |
+| **Pagos** | Cartão do topo (clicável) | Soma os títulos pagos com vencimento dentro do período filtrado. O clique filtra por **Pagos** e mantém o período; sem período de vencimento, usa o mês corrente. A lista soma o mesmo valor do cartão. Clicar de novo tira o filtro de status. |
 | Campo **Buscar por cliente, id, pagamento, OS ou CPF/CNPJ** | Barra de filtros | Filtra por cliente, número da proposta, número do pagamento, NF/OS, CPF/CNPJ ou referência do título. |
 | **Todas as empresas** | Barra de filtros | Filtra pela empresa que recebe. |
 | **Todos status** (com **Previsão futura / E-Faturado (A Vencer)**, **Vencidos**, **Pagos**, **Cancelados**, **Boletos não registrados**) | Barra de filtros | Filtra pela situação do título. **Boletos não registrados** mostra os boletos sem registro completo no banco. |
@@ -264,7 +264,7 @@ O boleto é cancelado no banco e o título continua ativo, agora como **Depósit
 - O registro em lote só vale para parcelas da mesma proposta. Se uma parcela falhar, o lote para naquele ponto; as anteriores continuam registradas.
 - Na baixa de boleto registrado, na prorrogação e no **Refazer boleto**, o cancelamento no banco acontece uma vez só. Se a etapa seguinte falhar, tente de novo: o banco não é acionado outra vez.
 - Quando o banco recusa o cancelamento porque o boleto já saiu de circulação (expirado ou baixado depois do vencimento) e confirma que não houve pagamento, o sistema cancela o título só aqui e libera a cobrança para o Registro de recebíveis. Isso vale para os boletos do C6 e não acontece no **Refazer boleto**, que só mostra a recusa.
-- O grupo **Pagos**, quando o filtro de status é **Pagos**, mostra os 100 pagamentos mais recentes.
+- O grupo **Pagos**, quando o filtro de status é **Pagos**, mostra todos os pagos do período, do pagamento mais recente para o mais antigo.
 - A tela carrega os 5.000 títulos mais recentes.
 
 ## O que não confundir
@@ -287,7 +287,7 @@ O boleto é cancelado no banco e o título continua ativo, agora como **Depósit
 - Coluna **Conf.** e tela **Conferência**: **Confirmado** aqui quer dizer título pago ou baixado; não é a conferência da cobrança feita pelo financeiro.
 - **N°** e **N° / OS**: o primeiro é o número do pagamento; o segundo traz o número da proposta e, embaixo, a nota fiscal ou a referência.
 - Filtro **Vencimento** e filtro **Emissão**: um filtra pela data em que o título vence; o outro pela data em que foi criado. Os dois valem ao mesmo tempo.
-- Cartões **Cobranças Vencidas** / **Cobranças a Receber** e cartão **Pagos**: os dois primeiros somam a carteira inteira, sem olhar os períodos; **Pagos** soma só o período filtrado.
+- Cartões **Cobranças Vencidas** / **Cobranças a Receber** e cartão **Pagos**: os dois primeiros somam a carteira inteira, sem olhar os períodos; **Pagos** soma só o período filtrado (pelo vencimento, não pela data do pagamento).
 - **Cancelar** (botão das janelas) e **Cancelar recebível**: **Cancelar** só fecha a janela aberta.
 
 ## Erros comuns
