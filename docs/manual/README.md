@@ -42,7 +42,7 @@ Cada ficha cobre uma tela ou um fluxo e segue sempre o mesmo formato ([_MODELO.m
 
 ### Relatórios
 
-- [Relatório: Vendas pagas](relatorio-vendas-pagas.md)
+- [Relatório: Vendas](relatorio-vendas-pagas.md)
 
 ### Operação
 
