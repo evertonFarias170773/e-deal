@@ -1,6 +1,6 @@
 # Carteira (contas a receber)
 
-> **Última revisão:** 21/10/2026
+> **Última revisão:** 24/10/2026
 > **Caminho no menu:** Financeiro → Carteira
 > **Endereço:** `/contas-a-receber`
 
