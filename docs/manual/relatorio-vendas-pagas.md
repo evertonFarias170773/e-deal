@@ -6,9 +6,9 @@
 
 ## Para que serve
 
-Lista as propostas que tiveram pagamento fechado em um período, sejam elas pagas ou faturadas a vencer já confirmadas, com cliente, vendedor, situação, forma de pagamento, empresa, valor com frete, frete e valor sem frete. Serve para conferir quanto cada vendedor, empresa ou forma de pagamento vendeu e levar a lista para uma planilha.
+Lista as propostas que tiveram pagamento fechado em um período, sejam elas pagas ou faturadas a vencer já confirmadas, com cliente, vendedor, situação, forma de pagamento, empresa, valor e frete. Serve para conferir quanto cada vendedor, empresa ou forma de pagamento vendeu e levar a lista para uma planilha.
 
-O relatório só mostra números; não altera nada. O menu **Relatórios** agrupa os relatórios por área: por enquanto só aparece a área **Vendas**.
+O relatório só mostra números; não altera nada. O menu **Relatórios** agrupa os relatórios por área. Os outros relatórios de venda são a [Curva ABC de clientes](relatorio-curva-abc-clientes.md) e as [Vendas por cidade](relatorio-vendas-por-cidade.md), que seguem a mesma regra de data e de valor.
 
 ## Quem acessa
 
@@ -27,9 +27,10 @@ Nomes exatamente como aparecem na tela.
 | **Personalizado** | Filtros, período | Abre os campos de data inicial e final. O período máximo é de 366 dias. |
 | **Empresa** | Filtros | Todas as empresas, Ideal Gráfica, Ideal Birô ou E3 Brindes. |
 | **Vendedor** | Filtros | Todos os vendedores ou um vendedor da lista. |
+| **Valor** | Filtros | **Sem frete** (padrão) ou **Com frete**. A coluna **Valor**, o **Total** e os cartões usam o valor escolhido. |
 | **Situação** | Filtros | Todas as situações, **Pago** ou **Faturado a vencer**. |
 | **Forma de pagamento** | Filtros | Todas as formas ou uma: PIX, Boleto, Cartão de crédito, Cartão parcelado, Faturado, Crédito do cliente ou Permuta. |
-| **Limpar filtros** | Filtros | Volta ao padrão (mês atual, sem empresa, vendedor, situação ou forma). Só aparece quando há filtro ativo. |
+| **Limpar filtros** | Filtros | Volta ao padrão (mês atual, sem frete, sem empresa, vendedor, situação ou forma). Só aparece quando há filtro ativo. |
 | **Exportar CSV** | Topo da tela | Baixa o que a tabela mostra, na ordem atual, com a linha de total no fim. O arquivo abre direto no Excel em português. |
 | Título de cada coluna | Cabeçalho da tabela | Clique para ordenar; clique de novo para inverter. |
 
@@ -38,8 +39,8 @@ Nomes exatamente como aparecem na tela.
 ### Ver as vendas do mês
 
 1. No menu, abra **Relatórios** e clique em **Vendas**.
-2. Clique em **Vendas**. A tela abre em **Mês atual**.
-3. Leia os cartões do topo (**Vendas**, **Total com frete**, **Pago**, **Faturado a vencer** e **Ticket médio**) e a linha **Total** no fim da tabela.
+2. Clique em **Vendas**. A tela abre em **Mês atual**, em **Sem frete**.
+3. Leia os cartões do topo e a linha **Total** no fim da tabela. Em **Sem frete**: **Vendas**, **Total sem frete**, **Frete** e **Ticket médio**. Em **Com frete**: **Vendas**, **Total com frete**, **Pago**, **Faturado a vencer** e **Ticket médio**.
 
 ### Ver só o faturado a vencer de um vendedor e baixar a lista
 
@@ -51,12 +52,13 @@ Os filtros ficam no endereço da página: copiar o link leva quem receber ao mes
 
 ## Regras e bloqueios
 
-- **A data usada é a data de fechamento do pedido**, e isso aparece escrito no alto da tela. A venda entra no período pelo dia em que o pedido foi fechado (a data da confirmação), no horário de São Paulo. É a mesma data do Dashboard, e os totais batem com ele no mesmo período e empresa.
+- **A data usada é a data de fechamento do pedido**, e isso aparece escrito no alto da tela, junto com o valor que está ativo (**Valor mostrado: sem frete** ou **com frete**). A venda entra no período pelo dia em que o pedido foi fechado (a data da confirmação), no horário de São Paulo. É a mesma data do Dashboard. Os totais batem com o Dashboard no mesmo período e empresa quando o valor é **Com frete**.
 - Entram as vendas **pagas** e as **faturadas a vencer já confirmadas**. A coluna **Situação** mostra **Pago**, **Faturado a vencer** ou **Pago e faturado a vencer** (quando a mesma proposta tem os dois no período).
 - Uma proposta aparece uma vez no período. Se tiver fechamentos em dias diferentes, as duas datas (**1º fechamento** e **Último fechamento**) aparecem na linha.
 - Ficam de fora: vendas de teste, amostra e retrabalho, cobranças canceladas e pagamentos sem data de confirmação (hoje só os faturados de abril e maio de 2026). Esses últimos também não aparecem no Dashboard.
 - Os totais e a linha **Total** vêm calculados pelo sistema, não somados na tela; por isso batem com a lista toda, mesmo depois de ordenar.
-- **Frete** é o frete da proposta. **Valor sem frete** é o valor com frete menos o frete.
+- **Frete** é o frete da proposta. **Sem frete** é o valor pago menos o frete da proposta; quando a proposta tem pagamentos em períodos diferentes, o frete inteiro sai do período em que cada parte foi paga.
+- **Pago** e **Faturado a vencer** aparecem como cartões só em **Com frete**: o frete pertence à proposta, e não a um pagamento, então não há como dividi-lo entre pago e faturado.
 - Período vazio mostra "Nada neste período". Período acima de 366 dias é recusado.
 
 ## O que não confundir

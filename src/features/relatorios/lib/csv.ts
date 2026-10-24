@@ -5,8 +5,8 @@ import type { ColunaDef, LinhaRelatorio } from "../types";
 function celulaCsv(coluna: ColunaDef, valor: string | number | null | undefined) {
   if (valor === null || valor === undefined || valor === "") return "";
   // Texto na célula de número (ex.: "1224 vendas" no total) segue como está.
-  if (typeof valor === "string" && (coluna.tipo === "moeda" || coluna.tipo === "inteiro")) return valor;
-  if (coluna.tipo === "moeda") return Number(valor).toFixed(2).replace(".", ",");
+  if (typeof valor === "string" && (coluna.tipo === "moeda" || coluna.tipo === "inteiro" || coluna.tipo === "percentual")) return valor;
+  if (coluna.tipo === "moeda" || coluna.tipo === "percentual") return Number(valor).toFixed(2).replace(".", ",");
   if (coluna.tipo === "inteiro") return String(Math.trunc(Number(valor)));
   if (coluna.tipo === "data") return formatDataCivil(String(valor));
   return String(valor);

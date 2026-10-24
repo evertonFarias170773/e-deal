@@ -1,5 +1,6 @@
 import { formatCurrency } from "@/lib/formatters/currency";
 import { carregarVendedores, OPCOES_EMPRESA } from "../lib/opcoes";
+import { FILTRO_VALOR, incluirFrete, notaValor, rotuloValor } from "../lib/valor";
 import type { LinhaRelatorio, RelatorioDef, ResultadoRelatorio } from "../types";
 
 /**
@@ -26,15 +27,16 @@ type VendaApi = {
   formas_pagamento: string | null;
   situacao: string | null;
   empresa: string | null;
-  valor_com_frete: number | string | null;
+  valor: number | string | null;
   valor_frete: number | string | null;
-  valor_sem_frete: number | string | null;
   qtd_pagamentos: number | null;
 };
 
 type RespostaApi = {
+  filtros?: { incluir_frete?: boolean };
   totais?: {
     quantidade_vendas?: number;
+    total_relatorio?: number | string;
     total_com_frete?: number | string;
     total_frete?: number | string;
     total_sem_frete?: number | string;
@@ -50,9 +52,10 @@ function normalizar(resposta: unknown): ResultadoRelatorio {
   const r = (resposta ?? {}) as RespostaApi;
   const t = r.totais ?? {};
   const quantidade = numero(t.quantidade_vendas);
-  const comFrete = numero(t.total_com_frete);
+  // Valor escolhido no filtro Valor: o banco já devolve cada linha e o total nele.
+  const comFreteAtivo = Boolean(r.filtros?.incluir_frete);
+  const total = numero(t.total_relatorio);
   const frete = numero(t.total_frete);
-  const semFrete = numero(t.total_sem_frete);
   const pago = numero(t.total_pago);
   const faturado = numero(t.total_faturado_a_vencer);
 
@@ -66,9 +69,8 @@ function normalizar(resposta: unknown): ResultadoRelatorio {
     empresa: v.empresa ?? "",
     primeira_data_fechamento: v.primeira_data_fechamento ?? null,
     ultima_data_fechamento: v.ultima_data_fechamento ?? null,
-    valor_com_frete: numero(v.valor_com_frete),
+    valor: numero(v.valor),
     valor_frete: numero(v.valor_frete),
-    valor_sem_frete: numero(v.valor_sem_frete),
     qtd_pagamentos: numero(v.qtd_pagamentos)
   }));
 
@@ -76,9 +78,8 @@ function normalizar(resposta: unknown): ResultadoRelatorio {
     linhas,
     total: {
       numero_proposta: `${quantidade} ${quantidade === 1 ? "venda" : "vendas"}`,
-      valor_com_frete: comFrete,
-      valor_frete: frete,
-      valor_sem_frete: semFrete
+      valor: total,
+      valor_frete: frete
     },
     cards: [
       {
@@ -88,27 +89,42 @@ function normalizar(resposta: unknown): ResultadoRelatorio {
         tom: "info"
       },
       {
-        titulo: "Total com frete",
-        valor: formatCurrency(comFrete),
-        descricao: "Pago mais faturado a vencer, pela data de fechamento.",
+        titulo: `Total ${rotuloValor(comFreteAtivo)}`,
+        valor: formatCurrency(total),
+        descricao: comFreteAtivo
+          ? "Pago mais faturado a vencer, com o frete."
+          : "Pago mais faturado a vencer, menos o frete.",
         tom: "success"
       },
-      {
-        titulo: "Pago",
-        valor: formatCurrency(pago),
-        descricao: "Pagamentos já recebidos.",
-        tom: "success"
-      },
-      {
-        titulo: "Faturado a vencer",
-        valor: formatCurrency(faturado),
-        descricao: "Faturado confirmado, ainda a receber.",
-        tom: "warning"
-      },
+      // O frete pertence à proposta, não ao pagamento: dividir o frete entre pago e faturado
+      // seria chute. Por isso Pago e Faturado a vencer só aparecem com frete.
+      ...(comFreteAtivo
+        ? [
+            {
+              titulo: "Pago",
+              valor: formatCurrency(pago),
+              descricao: "Pagamentos já recebidos.",
+              tom: "success" as const
+            },
+            {
+              titulo: "Faturado a vencer",
+              valor: formatCurrency(faturado),
+              descricao: "Faturado confirmado, ainda a receber.",
+              tom: "warning" as const
+            }
+          ]
+        : [
+            {
+              titulo: "Frete",
+              valor: formatCurrency(frete),
+              descricao: "Frete das propostas do período, fora do total.",
+              tom: "neutral" as const
+            }
+          ]),
       {
         titulo: "Ticket médio",
-        valor: formatCurrency(quantidade > 0 ? comFrete / quantidade : 0),
-        descricao: "Total com frete por venda.",
+        valor: formatCurrency(quantidade > 0 ? total / quantidade : 0),
+        descricao: `Total ${rotuloValor(comFreteAtivo)} por venda.`,
         tom: "neutral"
       }
     ]
@@ -143,6 +159,7 @@ export const vendasPagas: RelatorioDef = {
         { valor: "FATURADO_A_VENCER", rotulo: "Faturado a vencer" }
       ]
     },
+    FILTRO_VALOR,
     {
       chave: "forma",
       rotulo: "Forma de pagamento",
@@ -159,6 +176,8 @@ export const vendasPagas: RelatorioDef = {
     }
   ],
 
+  notaDosFiltros: notaValor,
+
   colunas: [
     { id: "numero_proposta", titulo: "Proposta", tipo: "inteiro", alinhamento: "left" },
     { id: "os_ideal", titulo: "OS Ideal", tipo: "inteiro", alinhamento: "left" },
@@ -169,9 +188,8 @@ export const vendasPagas: RelatorioDef = {
     { id: "empresa", titulo: "Empresa", tipo: "texto" },
     { id: "primeira_data_fechamento", titulo: "1º fechamento", tipo: "data" },
     { id: "ultima_data_fechamento", titulo: "Último fechamento", tipo: "data" },
-    { id: "valor_com_frete", titulo: "Valor com frete", tipo: "moeda" },
+    { id: "valor", titulo: "Valor", tipo: "moeda" },
     { id: "valor_frete", titulo: "Frete", tipo: "moeda" },
-    { id: "valor_sem_frete", titulo: "Valor sem frete", tipo: "moeda" },
     { id: "qtd_pagamentos", titulo: "Pagamentos", tipo: "inteiro" }
   ],
   ordenacaoPadrao: { coluna: "ultima_data_fechamento", direcao: "desc" },
@@ -184,7 +202,7 @@ export const vendasPagas: RelatorioDef = {
       p_empresas: filtros.empresa ? [Number(filtros.empresa)] : null,
       p_formas_pagamento: filtros.forma ? [filtros.forma] : null,
       p_vendedores: filtros.vendedor ? [filtros.vendedor] : null,
-      p_incluir_frete: true,
+      p_incluir_frete: incluirFrete(filtros),
       p_situacao: filtros.situacao || null
     })
   },

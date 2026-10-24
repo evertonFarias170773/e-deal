@@ -37,7 +37,7 @@ export type FiltroDef = {
   carregarOpcoes?: () => Promise<Opcao[]>;
 };
 
-export type TipoColuna = "texto" | "inteiro" | "moeda" | "data";
+export type TipoColuna = "texto" | "inteiro" | "moeda" | "data" | "percentual";
 
 /** Linha de relatório: um registro plano, por id de coluna. */
 export type LinhaRelatorio = Record<string, string | number | null>;
@@ -100,6 +100,11 @@ export type RelatorioDef = {
   };
 
   filtros: FiltroDef[];
+  /**
+   * Frase que depende do filtro ativo (ex.: "Valor mostrado: sem frete."), somada ao
+   * cabeçalho da tela. Opcional.
+   */
+  notaDosFiltros?: (filtros: Record<string, string>) => string;
   colunas: ColunaDef[];
   ordenacaoPadrao: { coluna: string; direcao: "asc" | "desc" };
 

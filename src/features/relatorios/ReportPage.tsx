@@ -44,12 +44,15 @@ const estiloCampo = {
 
 function alinhamentoDe(coluna: ColunaDef) {
   if (coluna.alinhamento) return coluna.alinhamento;
-  return coluna.tipo === "moeda" || coluna.tipo === "inteiro" ? "right" : "left";
+  return coluna.tipo === "moeda" || coluna.tipo === "inteiro" || coluna.tipo === "percentual" ? "right" : "left";
 }
 
 function textoDaCelula(coluna: ColunaDef, valor: string | number | null | undefined) {
   if (valor === null || valor === undefined || valor === "") return "—";
   if (coluna.tipo === "moeda") return formatCurrency(Number(valor));
+  if (coluna.tipo === "percentual") {
+    return `${Number(valor).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`;
+  }
   if (coluna.tipo === "data") return formatDataCivil(String(valor));
   return String(valor);
 }
@@ -219,6 +222,13 @@ function ReportPageCorpo({ relatorio }: { relatorio: RelatorioDef }) {
         <p>
           <strong style={{ color: "var(--foreground)" }}>Data usada: {relatorio.dataReferencia.rotulo}.</strong>{" "}
           {relatorio.dataReferencia.criterio}{" "}
+          {relatorio.notaDosFiltros ? (
+            <strong style={{ color: "var(--foreground)" }}>
+              {relatorio.notaDosFiltros(
+                Object.fromEntries(relatorio.filtros.map((f) => [f.chave, String(filters[f.chave] ?? "")]))
+              )}{" "}
+            </strong>
+          ) : null}
           <span style={{ color: "var(--foreground)" }}>
             Período: {formatDataCivil(periodo.inicio)} a {formatDataCivil(periodo.fim)}.
           </span>
