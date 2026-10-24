@@ -1,3 +1,4 @@
+import { conferenciaPagamentos } from "./definicoes/conferencia-pagamentos";
 import { contaCorrenteCreditos } from "./definicoes/conta-corrente-creditos";
 import { curvaAbcClientes } from "./definicoes/curva-abc-clientes";
 import { vendasPagas } from "./definicoes/vendas-pagas";
@@ -12,7 +13,8 @@ export const RELATORIOS: RelatorioDef[] = [
   vendasPagas,
   curvaAbcClientes,
   vendasPorCidade,
-  contaCorrenteCreditos
+  contaCorrenteCreditos,
+  conferenciaPagamentos
 ];
 
 export const AREAS: AreaDef[] = [

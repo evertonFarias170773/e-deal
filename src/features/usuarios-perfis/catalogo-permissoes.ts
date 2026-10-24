@@ -193,6 +193,7 @@ export const CATALOGO_PERMISSOES: Record<string, PermissionDefinition[]> = {
     // 24/10/2026: uma chave por relatorio (menu RELATORIOS). Nenhum perfil nasce com ela;
     // admin e super admin passam. A mesma chave e conferida na pagina, na rota e no banco.
     { key: "relatorios.vendas_pagas", label: "Relatório: Vendas",    desc: "Permite abrir o relatório de vendas (pagas e faturadas a vencer, por data de fechamento do pedido), com vendedor, empresa, situação e forma de pagamento, e exportar em CSV.", critica: false },
+    { key: "relatorios.conferencia_pagamentos", label: "Relatório: Conferência de pagamentos", desc: "Permite abrir o relatório de pagamentos recebidos no período (por data do pagamento), para conferir com o extrato, e baixar em PDF, imprimir ou exportar em CSV.", critica: false },
     { key: "relatorios.curva_abc_clientes", label: "Relatório: Curva ABC de clientes", desc: "Permite abrir o ranking de clientes por valor vendido no período, com classes A, B e C, e exportar em CSV.", critica: false },
     { key: "relatorios.vendas_por_cidade", label: "Relatório: Vendas por cidade", desc: "Permite abrir o relatório de valor vendido por cidade no período e exportar em CSV.", critica: false },
     { key: "relatorios.conta_corrente_creditos", label: "Relatório: Conta Corrente e créditos", desc: "Permite abrir o extrato dos lançamentos de crédito dos clientes (por data do lançamento) e exportar em CSV.", critica: false },

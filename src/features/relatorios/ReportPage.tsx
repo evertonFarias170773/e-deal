@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowDown, ArrowUp, ArrowUpDown, CalendarDays, Download, Loader2 } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, CalendarDays, Download, FileText, Loader2, Printer } from "lucide-react";
 import { PageHeader } from "@/components/common/PageHeader";
 import { SummaryCard } from "@/components/common/SummaryCard";
 import { EmptyState } from "@/components/common/EmptyState";
@@ -10,6 +10,7 @@ import { codecs, type UrlFiltersSchema } from "@/lib/url-state";
 import { formatCurrency } from "@/lib/formatters/currency";
 import { formatDataCivil } from "@/lib/formatters/date";
 import { tokenDaSessao } from "@/lib/supabase/bearer";
+import { baixarBlob, imprimirPdf } from "./lib/arquivo";
 import { baixarCsv, montarCsv } from "./lib/csv";
 import { resolverPeriodo, ROTULO_PRESET } from "./lib/periodo";
 import { AREAS, buscarRelatorio } from "./registro";
@@ -20,7 +21,8 @@ import type {
   Opcao,
   PresetPeriodo,
   RelatorioDef,
-  ResultadoRelatorio
+  ResultadoRelatorio,
+  Subtotal
 } from "./types";
 
 /**
@@ -184,6 +186,49 @@ function ReportPageCorpo({ relatorio }: { relatorio: RelatorioDef }) {
     );
   }, []);
 
+  // PDF (só para relatório que declara `pdf`): gerado no servidor com os mesmos filtros da tela.
+  const [pdfOcupado, setPdfOcupado] = useState<"baixar" | "imprimir" | null>(null);
+  const [pdfErro, setPdfErro] = useState<string | null>(null);
+  const pdfDaTela = async (acao: "baixar" | "imprimir") => {
+    if (!relatorio.pdf || pdfOcupado) return;
+    setPdfOcupado(acao);
+    setPdfErro(null);
+    try {
+      const token = await tokenDaSessao();
+      const params = new URLSearchParams({ ini: periodo.inicio, fim: periodo.fim });
+      relatorio.filtros.forEach((f, i) => {
+        if (valoresDosFiltros[i]) params.set(f.chave, valoresDosFiltros[i]);
+      });
+      if (acao === "baixar") params.set("baixar", "1");
+      const resposta = await fetch(`/api/relatorios/${relatorio.slug}/pdf?${params.toString()}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        cache: "no-store"
+      });
+      if (!resposta.ok) {
+        const corpo = (await resposta.json().catch(() => null)) as { error?: string } | null;
+        setPdfErro(corpo?.error ?? "Não foi possível gerar o PDF.");
+        return;
+      }
+      const arquivo = await resposta.blob();
+      if (acao === "baixar") {
+        baixarBlob(
+          relatorio.pdf.nomeArquivo({
+            inicio: periodo.inicio,
+            fim: periodo.fim,
+            filtros: Object.fromEntries(relatorio.filtros.map((f, i) => [f.chave, valoresDosFiltros[i]]))
+          }),
+          arquivo
+        );
+      } else {
+        imprimirPdf(arquivo);
+      }
+    } catch {
+      setPdfErro("Não foi possível gerar o PDF.");
+    } finally {
+      setPdfOcupado(null);
+    }
+  };
+
   const exportar = () => {
     if (!resultado) return;
     baixarCsv(
@@ -201,16 +246,42 @@ function ReportPageCorpo({ relatorio }: { relatorio: RelatorioDef }) {
         title={relatorio.titulo}
         subtitle={relatorio.descricao}
         action={
-          <button
-            type="button"
-            onClick={exportar}
-            disabled={!resultado || resultado.linhas.length === 0}
-            className="inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold shadow-sm transition disabled:cursor-not-allowed disabled:opacity-50"
-            style={{ background: "var(--card)", color: "var(--foreground)", border: "1px solid var(--border)" }}
-          >
-            <Download className="h-4 w-4" />
-            Exportar CSV
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            {relatorio.pdf ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => pdfDaTela("baixar")}
+                  disabled={!resultado || resultado.linhas.length === 0 || pdfOcupado !== null}
+                  className="inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold shadow-sm transition disabled:cursor-not-allowed disabled:opacity-50"
+                  style={{ background: "var(--card)", color: "var(--foreground)", border: "1px solid var(--border)" }}
+                >
+                  {pdfOcupado === "baixar" ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+                  Baixar PDF
+                </button>
+                <button
+                  type="button"
+                  onClick={() => pdfDaTela("imprimir")}
+                  disabled={!resultado || resultado.linhas.length === 0 || pdfOcupado !== null}
+                  className="inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold shadow-sm transition disabled:cursor-not-allowed disabled:opacity-50"
+                  style={{ background: "var(--card)", color: "var(--foreground)", border: "1px solid var(--border)" }}
+                >
+                  {pdfOcupado === "imprimir" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />}
+                  Imprimir
+                </button>
+              </>
+            ) : null}
+            <button
+              type="button"
+              onClick={exportar}
+              disabled={!resultado || resultado.linhas.length === 0}
+              className="inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold shadow-sm transition disabled:cursor-not-allowed disabled:opacity-50"
+              style={{ background: "var(--card)", color: "var(--foreground)", border: "1px solid var(--border)" }}
+            >
+              <Download className="h-4 w-4" />
+              Exportar CSV
+            </button>
+          </div>
         }
       />
 
@@ -307,6 +378,16 @@ function ReportPageCorpo({ relatorio }: { relatorio: RelatorioDef }) {
         </div>
       </section>
 
+      {pdfErro ? (
+        <div
+          role="alert"
+          className="rounded-2xl p-4 text-sm"
+          style={{ background: "var(--card)", border: "1px solid var(--border)", color: "var(--foreground)" }}
+        >
+          {pdfErro}
+        </div>
+      ) : null}
+
       {erro ? (
         <div
           role="alert"
@@ -328,6 +409,10 @@ function ReportPageCorpo({ relatorio }: { relatorio: RelatorioDef }) {
           />
         ))}
       </section>
+
+      {resultado?.subtotais && resultado.subtotais.length > 0 ? (
+        <Subtotais subtotais={resultado.subtotais} />
+      ) : null}
 
       <section
         className="overflow-hidden rounded-2xl"
@@ -351,6 +436,56 @@ function ReportPageCorpo({ relatorio }: { relatorio: RelatorioDef }) {
         ) : null}
       </section>
     </div>
+  );
+}
+
+const TITULO_GRUPO: Record<Subtotal["grupo"], string> = {
+  forma: "Subtotal por forma de pagamento",
+  empresa: "Subtotal por empresa",
+  total: "Totais"
+};
+
+/** Subtotais e totais que o banco calculou (ex.: por forma de pagamento), abaixo dos cards. */
+function Subtotais({ subtotais }: { subtotais: Subtotal[] }) {
+  const grupos = (["forma", "empresa", "total"] as const).filter((g) => subtotais.some((s) => s.grupo === g));
+  return (
+    <section className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+      {grupos.map((grupo) => (
+        <div
+          key={grupo}
+          className="overflow-hidden rounded-2xl"
+          style={{ background: "var(--card)", border: "1px solid var(--border)" }}
+        >
+          <h2 className="px-4 pt-3 text-sm font-semibold" style={{ color: "var(--foreground)" }}>
+            {TITULO_GRUPO[grupo]}
+          </h2>
+          <table className="w-full border-collapse text-sm">
+            <tbody>
+              {subtotais
+                .filter((s) => s.grupo === grupo)
+                .map((s) => (
+                  <tr key={s.chave} style={{ borderTop: "1px solid var(--border)", color: "var(--foreground)" }}>
+                    <td className="px-4 py-2">
+                      <span className={s.chave === "TOTAL" ? "font-bold" : undefined}>{s.rotulo}</span>
+                      {s.nota ? (
+                        <span className="block text-xs" style={{ color: "var(--muted)" }}>
+                          {s.nota}
+                        </span>
+                      ) : null}
+                    </td>
+                    <td className="whitespace-nowrap px-2 py-2 text-right" style={{ color: "var(--muted)" }}>
+                      {s.quantidade}
+                    </td>
+                    <td className={`whitespace-nowrap px-4 py-2 text-right${s.chave === "TOTAL" ? " font-bold" : ""}`}>
+                      {formatCurrency(s.valor)}
+                    </td>
+                  </tr>
+                ))}
+            </tbody>
+          </table>
+        </div>
+      ))}
+    </section>
   );
 }
 

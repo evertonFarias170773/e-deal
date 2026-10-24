@@ -58,6 +58,17 @@ export type CardResumo = {
   tom?: "success" | "info" | "warning" | "danger" | "neutral";
 };
 
+/** Linha de subtotal ou total, calculada pelo banco (ex.: por forma de pagamento). */
+export type Subtotal = {
+  grupo: "forma" | "empresa" | "total";
+  chave: string;
+  rotulo: string;
+  quantidade: number;
+  valor: number;
+  /** Observação curta mostrada ao lado (ex.: "Sem movimento no banco"). */
+  nota?: string;
+};
+
 /** Resultado já normalizado: o que a tela exibe. */
 export type ResultadoRelatorio = {
   linhas: LinhaRelatorio[];
@@ -65,6 +76,45 @@ export type ResultadoRelatorio = {
   total: Record<string, string | number | null>;
   /** De 3 a 5 cards. */
   cards: CardResumo[];
+  /** Subtotais opcionais, mostrados abaixo dos cards e levados ao PDF. */
+  subtotais?: Subtotal[];
+};
+
+/* ── PDF (base reaproveitável: ver pdf/RelatorioPdfDocument.tsx) ─────────────── */
+
+export type ColunaPdf = { titulo: string; largura: number; alinhamento?: "left" | "right" | "center" };
+
+export type SecaoPdf = {
+  titulo: string;
+  nota?: string;
+  colunas: ColunaPdf[];
+  /** Células já formatadas (texto). */
+  linhas: string[][];
+  subtotal?: { rotulo: string; valor: string };
+};
+
+/** Tudo que o gerador de PDF precisa; o texto já vem pronto da definição. */
+export type ModeloPdf = {
+  titulo: string;
+  empresa: string;
+  periodo: string;
+  filtros: string[];
+  criterio: string;
+  secoes: SecaoPdf[];
+  resumo: { rotulo: string; valor: string; destaque?: boolean }[];
+  geradoEm: string;
+  geradoPor: string;
+};
+
+/** O que a rota repassa à definição para montar o PDF. */
+export type ContextoPdf = {
+  consulta: ConsultaRelatorio;
+  /** "Ideal Gráfica", "Todas as empresas"... */
+  empresa: string;
+  /** Filtros legíveis ("Forma de pagamento: PIX"). */
+  filtros: string[];
+  geradoEm: string;
+  geradoPor: string;
 };
 
 /** O que a rota repassa à definição depois de validar. */
@@ -124,6 +174,11 @@ export type RelatorioDef = {
   ) => PromiseLike<{ data: unknown; error: { code?: string; message: string } | null }>;
   /** Transforma a resposta (da RPC ou de `consultar`) em linhas, total e cards. Roda na rota. */
   normalizar: (resposta: unknown) => ResultadoRelatorio;
+  /** Opcional: com ele, a página mostra Baixar PDF e Imprimir. */
+  pdf?: {
+    nomeArquivo: (consulta: ConsultaRelatorio) => string;
+    montar: (resultado: ResultadoRelatorio, contexto: ContextoPdf) => ModeloPdf;
+  };
 };
 
 /** Dados de uma área do menu. */
