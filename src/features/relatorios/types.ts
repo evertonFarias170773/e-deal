@@ -82,6 +82,10 @@ export type ResultadoRelatorio = {
   cards: CardResumo[];
   /** Subtotais opcionais, mostrados abaixo dos cards e levados ao PDF. */
   subtotais?: Subtotal[];
+  /** Avisos para quem lê (ex.: arquivo que falta). Aparecem na tela, em destaque. */
+  avisos?: string[];
+  /** Dados de apoio do próprio relatório (ex.: emitente), usados só pelo seu PDF e pelo seu zip. */
+  extras?: Record<string, unknown>;
 };
 
 /* ── PDF (base reaproveitável: ver pdf/RelatorioPdfDocument.tsx) ─────────────── */
@@ -95,6 +99,8 @@ export type SecaoPdf = {
   /** Células já formatadas (texto). */
   linhas: string[][];
   subtotal?: { rotulo: string; valor: string };
+  /** Linha final em negrito, uma célula por coluna (ex.: "Total 42 notas" com as somas). */
+  linhaTotal?: string[];
 };
 
 /** Tudo que o gerador de PDF precisa; o texto já vem pronto da definição. */
@@ -106,6 +112,8 @@ export type ModeloPdf = {
   criterio: string;
   secoes: SecaoPdf[];
   resumo: { rotulo: string; valor: string; destaque?: boolean }[];
+  /** Parágrafos finais (fonte, avisos). */
+  notas?: string[];
   geradoEm: string;
   geradoPor: string;
 };
@@ -178,11 +186,28 @@ export type RelatorioDef = {
   ) => PromiseLike<{ data: unknown; error: { code?: string; message: string } | null }>;
   /** Transforma a resposta (da RPC ou de `consultar`) em linhas, total e cards. Roda na rota. */
   normalizar: (resposta: unknown) => ResultadoRelatorio;
+  /**
+   * Opcional: roda no servidor depois de `normalizar`, com o cliente de serviço (leitura de
+   * arquivos privados). Só lê; devolve o resultado enriquecido (avisos, extras).
+   */
+  complementar?: (resultado: ResultadoRelatorio, servico: SupabaseClient | null) => Promise<ResultadoRelatorio>;
+  /** Opcional: com ele, a página mostra Baixar XML (zip) e a rota `/xml` monta o arquivo. */
+  zip?: {
+    rotulo: string;
+    nomeArquivo: (consulta: ConsultaRelatorio) => string;
+    montar: (resultado: ResultadoRelatorio, servico: SupabaseClient) => Promise<ArquivosDoZip>;
+  };
   /** Opcional: com ele, a página mostra Baixar PDF e Imprimir. */
   pdf?: {
     nomeArquivo: (consulta: ConsultaRelatorio) => string;
     montar: (resultado: ResultadoRelatorio, contexto: ContextoPdf) => ModeloPdf;
   };
+};
+
+/** Arquivos que vão para o zip e os que faltaram (o zip sai com os que existem). */
+export type ArquivosDoZip = {
+  arquivos: { nome: string; conteudo: Uint8Array }[];
+  ausentes: string[];
 };
 
 /** Dados de uma área do menu. */

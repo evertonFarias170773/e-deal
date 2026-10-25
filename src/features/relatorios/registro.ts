@@ -2,6 +2,7 @@ import { conferenciaPagamentos } from "./definicoes/conferencia-pagamentos";
 import { contasAReceber } from "./definicoes/contas-a-receber";
 import { contaCorrenteCreditos } from "./definicoes/conta-corrente-creditos";
 import { curvaAbcClientes } from "./definicoes/curva-abc-clientes";
+import { notasFiscais } from "./definicoes/notas-fiscais";
 import { vendasPagas } from "./definicoes/vendas-pagas";
 import { vendasPorCidade } from "./definicoes/vendas-por-cidade";
 import type { AreaDef, AreaRelatorio, RelatorioDef } from "./types";
@@ -16,7 +17,8 @@ export const RELATORIOS: RelatorioDef[] = [
   vendasPorCidade,
   contaCorrenteCreditos,
   conferenciaPagamentos,
-  contasAReceber
+  contasAReceber,
+  notasFiscais
 ];
 
 export const AREAS: AreaDef[] = [

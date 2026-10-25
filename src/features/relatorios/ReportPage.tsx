@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowDown, ArrowUp, ArrowUpDown, CalendarDays, Download, FileText, Loader2, Printer } from "lucide-react";
+import { AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, CalendarDays, Download, FileArchive, FileText, Loader2, Printer } from "lucide-react";
 import { PageHeader } from "@/components/common/PageHeader";
 import { SummaryCard } from "@/components/common/SummaryCard";
 import { EmptyState } from "@/components/common/EmptyState";
@@ -187,10 +187,10 @@ function ReportPageCorpo({ relatorio }: { relatorio: RelatorioDef }) {
   }, []);
 
   // PDF (só para relatório que declara `pdf`): gerado no servidor com os mesmos filtros da tela.
-  const [pdfOcupado, setPdfOcupado] = useState<"baixar" | "imprimir" | null>(null);
+  const [pdfOcupado, setPdfOcupado] = useState<"baixar" | "imprimir" | "zip" | null>(null);
   const [pdfErro, setPdfErro] = useState<string | null>(null);
-  const pdfDaTela = async (acao: "baixar" | "imprimir") => {
-    if (!relatorio.pdf || pdfOcupado) return;
+  const pdfDaTela = async (acao: "baixar" | "imprimir" | "zip") => {
+    if ((acao === "zip" ? !relatorio.zip : !relatorio.pdf) || pdfOcupado) return;
     setPdfOcupado(acao);
     setPdfErro(null);
     try {
@@ -200,17 +200,25 @@ function ReportPageCorpo({ relatorio }: { relatorio: RelatorioDef }) {
         if (valoresDosFiltros[i]) params.set(f.chave, valoresDosFiltros[i]);
       });
       if (acao === "baixar") params.set("baixar", "1");
-      const resposta = await fetch(`/api/relatorios/${relatorio.slug}/pdf?${params.toString()}`, {
+      const destino = acao === "zip" ? "xml" : "pdf";
+      const resposta = await fetch(`/api/relatorios/${relatorio.slug}/${destino}?${params.toString()}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
         cache: "no-store"
       });
       if (!resposta.ok) {
         const corpo = (await resposta.json().catch(() => null)) as { error?: string } | null;
-        setPdfErro(corpo?.error ?? "Não foi possível gerar o PDF.");
+        setPdfErro(corpo?.error ?? (acao === "zip" ? "Não foi possível gerar o zip." : "Não foi possível gerar o PDF."));
         return;
       }
       const arquivo = await resposta.blob();
-      if (acao === "baixar") {
+      const consultaAtual = {
+        inicio: periodo.inicio,
+        fim: periodo.fim,
+        filtros: Object.fromEntries(relatorio.filtros.map((f, i) => [f.chave, valoresDosFiltros[i]]))
+      };
+      if (acao === "zip" && relatorio.zip) {
+        baixarBlob(relatorio.zip.nomeArquivo(consultaAtual), arquivo);
+      } else if (acao === "baixar" && relatorio.pdf) {
         baixarBlob(
           relatorio.pdf.nomeArquivo({
             inicio: periodo.inicio,
@@ -219,11 +227,11 @@ function ReportPageCorpo({ relatorio }: { relatorio: RelatorioDef }) {
           }),
           arquivo
         );
-      } else {
+      } else if (acao === "imprimir") {
         imprimirPdf(arquivo);
       }
     } catch {
-      setPdfErro("Não foi possível gerar o PDF.");
+      setPdfErro(acao === "zip" ? "Não foi possível gerar o zip." : "Não foi possível gerar o PDF.");
     } finally {
       setPdfOcupado(null);
     }
@@ -270,6 +278,18 @@ function ReportPageCorpo({ relatorio }: { relatorio: RelatorioDef }) {
                   Imprimir
                 </button>
               </>
+            ) : null}
+            {relatorio.zip ? (
+              <button
+                type="button"
+                onClick={() => pdfDaTela("zip")}
+                disabled={!resultado || resultado.linhas.length === 0 || pdfOcupado !== null}
+                className="inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold shadow-sm transition disabled:cursor-not-allowed disabled:opacity-50"
+                style={{ background: "var(--card)", color: "var(--foreground)", border: "1px solid var(--border)" }}
+              >
+                {pdfOcupado === "zip" ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileArchive className="h-4 w-4" />}
+                {relatorio.zip.rotulo}
+              </button>
             ) : null}
             <button
               type="button"
@@ -409,6 +429,20 @@ function ReportPageCorpo({ relatorio }: { relatorio: RelatorioDef }) {
           />
         ))}
       </section>
+
+      {resultado?.avisos && resultado.avisos.length > 0 ? (
+        <section
+          className="flex items-start gap-3 rounded-2xl p-4 text-sm"
+          style={{ background: "var(--card)", border: "1px solid var(--border)", color: "var(--foreground)" }}
+        >
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" style={{ color: "var(--muted)" }} />
+          <div className="space-y-1">
+            {resultado.avisos.map((aviso) => (
+              <p key={aviso}>{aviso}</p>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       {resultado?.subtotais && resultado.subtotais.length > 0 ? (
         <Subtotais subtotais={resultado.subtotais} />

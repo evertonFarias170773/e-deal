@@ -29,6 +29,9 @@ const styles = StyleSheet.create({
   subtotal: { flexDirection: "row", justifyContent: "flex-end", marginTop: 3, borderTopWidth: 1, borderTopColor: "#444", paddingTop: 3 },
   subtotalRotulo: { fontFamily: "Helvetica-Bold", fontSize: 8.5, marginRight: 10 },
   subtotalValor: { fontFamily: "Helvetica-Bold", fontSize: 8.5, width: 90, textAlign: "right" },
+  linhaTotal: { flexDirection: "row", borderTopWidth: 1, borderTopColor: "#444", backgroundColor: "#f2f2f2" },
+  celulaTotal: { fontFamily: "Helvetica-Bold", fontSize: 8, paddingVertical: 3, paddingHorizontal: 3 },
+  nota: { fontSize: 7.5, color: "#333", marginTop: 8, lineHeight: 1.4 },
   resumo: { marginTop: 14, borderTopWidth: 1.5, borderTopColor: "#111", paddingTop: 6 },
   resumoTitulo: { fontSize: 9.5, fontFamily: "Helvetica-Bold", marginBottom: 4 },
   resumoLinha: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 1.5 },
@@ -84,6 +87,15 @@ function RelatorioPdfDocument({ modelo }: { modelo: ModeloPdf }) {
                 ))}
               </View>
             ))}
+            {secao.linhaTotal ? (
+              <View style={styles.linhaTotal} wrap={false}>
+                {secao.linhaTotal.map((texto, j) => (
+                  <Text key={j} style={[styles.celulaTotal, alinhar(secao.colunas[j])]}>
+                    {texto}
+                  </Text>
+                ))}
+              </View>
+            ) : null}
             {secao.subtotal ? (
               <View style={styles.subtotal} wrap={false}>
                 <Text style={styles.subtotalRotulo}>{secao.subtotal.rotulo}</Text>
@@ -93,15 +105,23 @@ function RelatorioPdfDocument({ modelo }: { modelo: ModeloPdf }) {
           </View>
         ))}
 
-        <View style={styles.resumo} wrap={false}>
-          <Text style={styles.resumoTitulo}>Resumo</Text>
-          {modelo.resumo.map((r) => (
-            <View key={r.rotulo} style={styles.resumoLinha}>
-              <Text style={r.destaque ? styles.resumoDestaque : undefined}>{r.rotulo}</Text>
-              <Text style={r.destaque ? styles.resumoDestaque : undefined}>{r.valor}</Text>
-            </View>
-          ))}
-        </View>
+        {modelo.resumo.length > 0 ? (
+          <View style={styles.resumo} wrap={false}>
+            <Text style={styles.resumoTitulo}>Resumo</Text>
+            {modelo.resumo.map((r) => (
+              <View key={r.rotulo} style={styles.resumoLinha}>
+                <Text style={r.destaque ? styles.resumoDestaque : undefined}>{r.rotulo}</Text>
+                <Text style={r.destaque ? styles.resumoDestaque : undefined}>{r.valor}</Text>
+              </View>
+            ))}
+          </View>
+        ) : null}
+
+        {(modelo.notas ?? []).map((texto, i) => (
+          <Text key={i} style={styles.nota}>
+            {texto}
+          </Text>
+        ))}
 
         <View style={styles.rodape} fixed>
           <Text>

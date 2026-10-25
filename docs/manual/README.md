@@ -48,6 +48,7 @@ Cada ficha cobre uma tela ou um fluxo e segue sempre o mesmo formato ([_MODELO.m
 - [Relatório: Conta Corrente e créditos](relatorio-conta-corrente-creditos.md)
 - [Relatório: Conferência de pagamentos](relatorio-conferencia-pagamentos.md)
 - [Relatório: Contas a receber](relatorio-contas-a-receber.md)
+- [Relatório: Notas fiscais (NF-e)](relatorio-notas-fiscais.md)
 
 ### Operação
 

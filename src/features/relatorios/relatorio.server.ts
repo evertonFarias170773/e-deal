@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 import { createClient as createSupabaseClient, type SupabaseClient } from "@supabase/supabase-js";
 import { verificarPermissaoServerSide } from "@/lib/auth/verificar-permissao";
+import { criarClientServiceRole } from "@/features/cadastros/services/cadastro-online.server";
 import { buscarRelatorio } from "./registro";
 import { diasDoPeriodo, ehDataIso } from "./lib/periodo";
 import type { ConsultaRelatorio, RelatorioDef, ResultadoRelatorio } from "./types";
@@ -22,6 +23,8 @@ export type RespostaPipeline =
       resultado: ResultadoRelatorio;
       usuario: { id: string; nome: string };
       supabase: SupabaseClient;
+      /** Cliente de serviço (só leitura de arquivos privados); null quando a chave não está no servidor. */
+      servico: SupabaseClient | null;
     }
   | { ok: false; status: number; error: string };
 
@@ -94,12 +97,19 @@ export async function executarRelatorio(request: NextRequest, slug: string): Pro
   const nome = String((u as { nome_usuario?: string } | null)?.nome_usuario ?? "").trim();
   const email = String((u as { email?: string } | null)?.email ?? authData.user.email ?? "").trim();
 
+  // O cliente de serviço só nasce para o relatório que precisa dele (ex.: ler os XML do bucket
+  // privado) e só depois de a permissão e a consulta do usuário terem passado.
+  const servico = relatorio.complementar || relatorio.zip ? criarClientServiceRole() : null;
+  let resultado = relatorio.normalizar(data);
+  if (relatorio.complementar) resultado = await relatorio.complementar(resultado, servico);
+
   return {
     ok: true,
     relatorio,
     consulta,
-    resultado: relatorio.normalizar(data),
+    resultado,
     usuario: { id: authData.user.id, nome: nome || email || "Usuário" },
-    supabase
+    supabase,
+    servico
   };
 }
