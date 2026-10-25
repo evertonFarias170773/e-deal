@@ -21,7 +21,11 @@ export type AreaRelatorio =
   | "produtos"
   | "infraestrutura";
 
-export type PresetPeriodo = "hoje" | "mes" | "mes_anterior" | "custom";
+/**
+ * Atalhos de período. "mes" vai do dia 1º até hoje (relatório de coisa que já aconteceu);
+ * "mes_completo" e "proximo_mes" olham para a frente (relatório de vencimento, por exemplo).
+ */
+export type PresetPeriodo = "hoje" | "mes" | "mes_completo" | "proximo_mes" | "mes_anterior" | "custom";
 
 export type Opcao = { valor: string; rotulo: string };
 

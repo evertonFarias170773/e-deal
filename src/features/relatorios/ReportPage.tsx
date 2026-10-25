@@ -34,7 +34,7 @@ import type {
  * ordena e se exibe. A linha de total também vem do banco.
  */
 
-const PRESETS_VALORES = ["hoje", "mes", "mes_anterior", "custom"] as const;
+const PRESETS_VALORES = ["hoje", "mes", "mes_completo", "proximo_mes", "mes_anterior", "custom"] as const;
 
 type Ordenacao = { coluna: string; direcao: "asc" | "desc" };
 
