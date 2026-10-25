@@ -10,6 +10,10 @@ import type { ColunaPdf, LinhaRelatorio, ModeloPdf, RelatorioDef, ResultadoRelat
  * forma e por empresa e os totais). Data do pagamento (`paid_at`), só PAID, sem vendas de teste.
  * A função confere a permissão `relatorios.conferencia_pagamentos` e recusa períodos com mais de
  * 5.000 pagamentos (o PDF e a tela não aguentam mais que isso com conforto).
+ *
+ * "Passa pelo banco" = PIX, boleto e cartão (decisão de 25/10/2026). Faturado, crédito do
+ * cliente, amostra, retrabalho e permuta ficam em "sem movimento no banco". A marcação vem do
+ * banco (campo `banco` de cada forma), então a tela e o PDF só repetem o que a função devolve.
  */
 
 const ROTULO_FORMA: Record<string, string> = {
@@ -102,7 +106,7 @@ function normalizar(resposta: unknown): ResultadoRelatorio {
       rotulo: "Total que passa pelo banco",
       quantidade: n(t.quantidade_banco),
       valor: totalBanco,
-      nota: "PIX, boleto, cartão e faturado"
+      nota: "PIX, boleto e cartão"
     },
     {
       grupo: "total",
@@ -110,7 +114,7 @@ function normalizar(resposta: unknown): ResultadoRelatorio {
       rotulo: "Total sem movimento no banco",
       quantidade: n(t.quantidade_sem_banco),
       valor: totalSemBanco,
-      nota: "Crédito do cliente, amostra, retrabalho e permuta"
+      nota: "Faturado, crédito do cliente, amostra, retrabalho e permuta"
     },
     { grupo: "total", chave: "TOTAL", rotulo: "Total geral", quantidade, valor: total }
   ];
@@ -135,13 +139,13 @@ function normalizar(resposta: unknown): ResultadoRelatorio {
       {
         titulo: "Passa pelo banco",
         valor: formatCurrency(totalBanco),
-        descricao: `${plural(n(t.quantidade_banco), "pagamento", "pagamentos")}: PIX, boleto, cartão e faturado. É o que se confere com o extrato.`,
+        descricao: `${plural(n(t.quantidade_banco), "pagamento", "pagamentos")}: PIX, boleto e cartão. É o que se confere com o extrato.`,
         tom: "success"
       },
       {
         titulo: "Sem movimento no banco",
         valor: formatCurrency(totalSemBanco),
-        descricao: `${plural(n(t.quantidade_sem_banco), "pagamento", "pagamentos")}: crédito do cliente, amostra, retrabalho e permuta.`,
+        descricao: `${plural(n(t.quantidade_sem_banco), "pagamento", "pagamentos")}: faturado, crédito do cliente, amostra, retrabalho e permuta.`,
         tom: "warning"
       }
     ]
@@ -203,7 +207,7 @@ function montarPdf(resultado: ResultadoRelatorio, contexto: Parameters<NonNullab
     periodo: inicio === fim ? formatDataCivil(inicio) : `${formatDataCivil(inicio)} a ${formatDataCivil(fim)}`,
     filtros: contexto.filtros.filter((f) => !f.startsWith("Empresa:")),
     criterio:
-      "Pagamentos recebidos (status PAID) pela data do pagamento, no dia de São Paulo, para conferir com o extrato bancário. Faturado a vencer não entra. Vendas de teste ficam de fora. Crédito do cliente, amostra, retrabalho e permuta aparecem, mas não passam pelo banco: o total que se confere com o extrato é o \"Total que passa pelo banco\".",
+      "Pagamentos recebidos (status PAID) pela data do pagamento, no dia de São Paulo, para conferir com o extrato bancário. Faturado a vencer não entra. Vendas de teste ficam de fora. Faturado, crédito do cliente, amostra, retrabalho e permuta aparecem, mas não passam pelo banco: o total que se confere com o extrato é o \"Total que passa pelo banco\" (PIX, boleto e cartão).",
     secoes,
     resumo,
     geradoEm: contexto.geradoEm,
@@ -221,7 +225,7 @@ export const conferenciaPagamentos: RelatorioDef = {
   dataReferencia: {
     rotulo: "Data do pagamento",
     criterio:
-      "Conta o dia em que o pagamento foi registrado como pago (dia de São Paulo) e só entra o que está PAID, como no extrato. Faturado a vencer fica de fora; vendas de teste também. Pode diferir da tela de Conferência, que mostra todas as cobranças pela data da confirmação. Crédito do cliente, amostra, retrabalho e permuta aparecem, mas não passam pelo banco: o total para conferir com o extrato é o que passa pelo banco."
+      "Conta o dia em que o pagamento foi registrado como pago (dia de São Paulo) e só entra o que está PAID, como no extrato. Faturado a vencer fica de fora; vendas de teste também. Pode diferir da tela de Conferência, que mostra todas as cobranças pela data da confirmação. Faturado, crédito do cliente, amostra, retrabalho e permuta aparecem, mas não passam pelo banco: o total para conferir com o extrato é o que passa pelo banco (PIX, boleto e cartão)."
   },
 
   periodo: { presets: ["hoje", "mes", "mes_anterior", "custom"], padrao: "mes", maxDias: 93 },

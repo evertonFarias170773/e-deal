@@ -1,12 +1,12 @@
 # Relatório: Conferência de pagamentos
 
-> **Última revisão:** 24/10/2026
+> **Última revisão:** 25/10/2026
 > **Caminho no menu:** Relatórios → Financeiro → Conferência de pagamentos
 > **Endereço:** `/relatorios/financeiro/conferencia-pagamentos`
 
 ## Para que serve
 
-Lista os pagamentos que entraram em um período, por data, empresa e forma de pagamento, para conferir com os extratos bancários. Tem **Baixar PDF** e **Imprimir** para levar o relatório para a conferência. O PDF traz o cabeçalho com empresa, período e filtros, os pagamentos agrupados por forma de pagamento com o subtotal de cada forma, o total geral e quem gerou o relatório.
+Lista os pagamentos que entraram em um período, por data, empresa e forma de pagamento, para conferir com os extratos bancários. Tem **Baixar PDF** e **Imprimir** para levar o relatório para a conferência. O PDF traz o cabeçalho com empresa, período e filtros, os pagamentos agrupados por forma de pagamento com o subtotal de cada forma, o total geral e quem gerou o relatório. O cabeçalho da tabela (Data e hora, Pedido, Cliente, Empresa, Forma, Valor) se repete em todas as páginas.
 
 O relatório só mostra números; não altera nada.
 
@@ -40,22 +40,22 @@ Nomes exatamente como aparecem na tela.
 1. No menu, abra **Relatórios** e clique em **Financeiro**.
 2. Clique em **Conferência de pagamentos** e escolha **Mês anterior** (ou **Personalizado**).
 3. Em **Empresa**, escolha a empresa do extrato que você vai conferir.
-4. Compare o cartão **Passa pelo banco** com o extrato. Para conferir um meio de cada vez, escolha a **Forma de pagamento** (por exemplo, **PIX**).
+4. Compare o cartão **Passa pelo banco** (PIX, boleto e cartão) com o extrato. Para conferir um meio de cada vez, escolha a **Forma de pagamento** (por exemplo, **PIX**).
 5. Clique em **Baixar PDF** ou **Imprimir** para ter a lista de pagamentos por forma, com os subtotais.
 
 ## Regras e bloqueios
 
 - **A data usada é a data do pagamento** (o dia em que o pagamento foi registrado como pago, no horário de São Paulo), escrita no alto da tela e do PDF. Assim a data bate com a do extrato.
 - **Só entra o que foi pago.** Faturado a vencer não aparece no extrato e fica de fora. Vendas de teste também ficam de fora.
-- **Passa pelo banco ou não.** PIX, boleto, cartão e faturado passam pelo banco. Crédito do cliente, amostra, retrabalho e permuta são pagamentos pagos, mas não movimentam o banco: aparecem na lista e nos subtotais com o aviso "Não passa pelo banco", e o **Total que passa pelo banco** vem separado. É esse total que se confere com o extrato.
+- **Passa pelo banco ou não.** PIX, boleto e cartão (de crédito e parcelado) passam pelo banco. **Faturado**, crédito do cliente, amostra, retrabalho e permuta são pagamentos pagos, mas não são conferidos com o extrato: aparecem na lista e nos subtotais com o aviso "Não passa pelo banco", e o **Total sem movimento no banco** soma esse grupo. O **Total que passa pelo banco** (PIX, boleto e cartão) é o que se confere com o extrato, e o **Total geral** soma os dois grupos.
 - A forma de pagamento é unificada: "E-Faturado" e "E-FATURADO", por exemplo, aparecem juntos como **Faturado**.
 - Os totais e subtotais vêm calculados pelo sistema, não somados na tela, e o PDF traz os mesmos números da tela.
-- Período acima de 93 dias é recusado, e também o período com mais de 5.000 pagamentos ("Há registros demais no período. Escolha um período menor."). Um mês cheio tem cerca de 1.200 pagamentos e dá um PDF de cerca de 25 páginas.
+- Período acima de 93 dias é recusado, e também o período com mais de 5.000 pagamentos ("Há registros demais no período. Escolha um período menor."). Um mês cheio tem cerca de 1.200 pagamentos e dá um PDF de cerca de 25 páginas, todas com o cabeçalho da tabela.
 
 ## O que não confundir
 
 - Este relatório usa a **data do pagamento** e só o que está **pago**. A tela [Conferência](conferencia.md) mostra todas as cobranças (pagas, a vencer, canceladas...) pela data da confirmação; por isso os números do mesmo mês não coincidem. Em um mês, cerca de uma em cada dez cobranças pagas tem a confirmação em um dia e o pagamento em outro.
-- **Passa pelo banco** é só uma marcação para ajudar na conferência; não muda o valor de nenhum pagamento.
+- **Passa pelo banco** é só uma marcação para ajudar na conferência; não muda o valor de nenhum pagamento. **Faturado** fica no grupo "sem movimento no banco": ele aparece na lista e no total geral, mas não entra no total para conferir com o extrato.
 
 ## Erros comuns
 
@@ -82,3 +82,4 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/features/relatorios/registro.ts`
 - `src/app/api/relatorios/`
 - `supabase/migrations/20261024_relatorio_conferencia_pagamentos.sql`
+- `supabase/migrations/20261025_relatorio_conferencia_pagamentos_agrupamento.sql`

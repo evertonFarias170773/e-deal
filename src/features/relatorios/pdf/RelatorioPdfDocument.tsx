@@ -67,7 +67,8 @@ function RelatorioPdfDocument({ modelo }: { modelo: ModeloPdf }) {
               {secao.titulo}
             </Text>
             {secao.nota ? <Text style={styles.secaoNota}>{secao.nota}</Text> : null}
-            <View style={styles.cabecalho}>
+            {/* `fixed`: o cabeçalho da tabela se repete em cada página da seção (ex.: PIX com ~21 páginas). */}
+            <View style={styles.cabecalho} fixed>
               {secao.colunas.map((c) => (
                 <Text key={c.titulo} style={[styles.celulaCabecalho, alinhar(c)]}>
                   {c.titulo}
