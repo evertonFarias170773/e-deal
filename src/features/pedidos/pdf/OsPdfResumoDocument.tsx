@@ -97,6 +97,9 @@ const styles = StyleSheet.create({
   obsTitulo: { fontSize: 8.4, fontFamily: "Helvetica-Bold", color: "#666", marginBottom: 2 },
   // +20% em 27/08/2026: 8 -> 9.6
   obsTexto: { fontSize: 9.6, marginBottom: 1 },
+  // Instrucoes de fabricacao em destaque (26/10/2026, diretoria): negrito,
+  // vermelho, 16 pt. So quando ha texto; sem texto o "-" segue em obsTexto.
+  obsTextoFabricacao: { fontSize: 16, fontFamily: "Helvetica-Bold", color: "#dc2626", lineHeight: 1.25, marginBottom: 1 },
 
   envioBarra: { backgroundColor: "#f1f5f9", borderRadius: 3, paddingHorizontal: 6, paddingVertical: 3, marginBottom: 8 },
   envioTexto: { fontSize: 8, fontFamily: "Helvetica-Bold", color: "#334155" },
@@ -265,7 +268,10 @@ export function OsPdfResumoDocument({ vm, qrDataUrl, logoDataUrl }: OsPdfResumoD
             longo quebrar entre paginas em vez de ser cortado na renderizacao. */}
         <View style={styles.obsBox}>
           <Text style={styles.obsTitulo}>Orientação técnica de produção:</Text>
-          <OsPdfTextoMultilinha valor={vm.obsTecnica} estilo={styles.obsTexto} />
+          <OsPdfTextoMultilinha
+            valor={vm.obsTecnica}
+            estilo={(vm.obsTecnica || "").trim() ? styles.obsTextoFabricacao : styles.obsTexto}
+          />
         </View>
 
         {/* Instrucoes de entrega (`propostas.obs_entrega`) — bloco proprio, logo

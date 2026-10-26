@@ -2654,7 +2654,13 @@ export function BoletimFormPage() {
                   rows={4}
                   value={briefingOperacional}
                   onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setBriefingOperacional(e.target.value)}
-                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-sm text-slate-700 placeholder-slate-400 outline-none resize-y transition focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6]"
+                  // Destaque só de exibição (26/10/2026, diretoria): o texto digitado sai
+                  // em negrito, vermelho e 18 px; o placeholder fica como era (12 px,
+                  // normal). Grava texto puro. Tamanho e peso vão inline porque o
+                  // globals.css tem `textarea { font: inherit }` fora de camada, que vence
+                  // as classes; no escuro, `.dark textarea` força a cor com !important.
+                  style={{ fontSize: 18, fontWeight: 700, lineHeight: 1.4 }}
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-red-600 dark:text-red-400! placeholder:text-xs placeholder:font-normal placeholder:text-slate-400 outline-none resize-y transition focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6]"
                 />
               </div>
               {/* Instruções de entrega (`propostas.obs_entrega`): campo próprio,

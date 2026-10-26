@@ -486,6 +486,9 @@ const styles = StyleSheet.create({
   },
   // +20% em 27/08/2026: 8 -> 9.6
   obsTexto: { fontSize: 9.6, marginBottom: 1 },
+  // Instrucoes de fabricacao em destaque (26/10/2026, diretoria): negrito,
+  // vermelho, 16 pt. So quando ha texto; sem texto o "-" segue em obsTexto.
+  obsTextoFabricacao: { fontSize: 16, fontFamily: "Helvetica-Bold", color: "#dc2626", lineHeight: 1.25, marginBottom: 1 },
   envioBarra: {
     borderWidth: 1,
     borderColor: "#3f3f42",
@@ -1113,7 +1116,10 @@ export function OsPdfPaginaBoletim({
             longo quebrar entre paginas em vez de ser cortado na renderizacao. */}
         <View style={styles.obsBox}>
           <Text style={styles.obsTitulo}>Orientação técnica de produção:</Text>
-          <OsPdfTextoMultilinha valor={vm.obsTecnica} estilo={styles.obsTexto} />
+          <OsPdfTextoMultilinha
+            valor={vm.obsTecnica}
+            estilo={(vm.obsTecnica || "").trim() ? styles.obsTextoFabricacao : styles.obsTexto}
+          />
         </View>
 
         {/* Instrucoes de entrega (`propostas.obs_entrega`) — bloco proprio, logo
