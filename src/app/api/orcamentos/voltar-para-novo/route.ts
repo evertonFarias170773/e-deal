@@ -17,8 +17,10 @@
  *   - sem NF-e/NFS-e autorizada de produção (helper único recusaPorNotaEmitida);
  *   - sem produção nem expedição: nenhuma linha em propostas_os_setores,
  *     producao_volumes ou expedicoes.
- * Destino: NOVO; NOVO / EM ARTE só se em_arte = true.
- * Já em NOVO (ou NOVO / EM ARTE): responde sucesso sem gravar.
+ * Destino: sempre NOVO (26/10/2026), a mesma regra da engine quando todas as
+ * cobranças estão canceladas. A arte em andamento fica pela marcação `em_arte`;
+ * "NOVO / EM ARTE" não é mais gravado por ninguém (nenhum pedido está nele).
+ * Já em NOVO (ou no legado NOVO / EM ARTE): responde sucesso sem gravar.
  *
  * Corpo: { id_int: number, motivo: string }.
  */
@@ -86,7 +88,7 @@ export async function POST(request: Request) {
   if (!proposta) return erro("NAO_ENCONTRADA", "Pedido não encontrado.", 404);
 
   const statusAtual = String(proposta.status_interno ?? "").trim().toUpperCase();
-  const destino = proposta.em_arte === true ? "NOVO / EM ARTE" : "NOVO";
+  const destino = "NOVO";
 
   if (statusAtual === "NOVO" || statusAtual === "NOVO / EM ARTE") {
     return NextResponse.json({ success: true, idempotente: true, message: `O pedido #${idInt} já está em ${statusAtual}. Nada foi gravado.` });

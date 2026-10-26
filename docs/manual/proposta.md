@@ -1,6 +1,6 @@
 # Proposta: visão geral e abas
 
-> **Última revisão:** 19/10/2026
+> **Última revisão:** 26/10/2026
 > **Caminho no menu:** Pedidos → **+ Nova proposta** (proposta nova) ou Pedidos → abrir um pedido → **Editar proposta**
 > **Endereço:** `/orcamentos/novo` e `/orcamentos/<número>/editar`
 
@@ -255,7 +255,15 @@ O cancelamento não fica no menu de dentro da edição. Faça pela lista de Pedi
 2. Leia o quadro **Será cancelado junto**: ele lista as cobranças e os títulos que saem com a proposta.
 3. Se a intenção é só refazer a cobrança, use **Cancelar só a cobrança** (ou **Ver cobranças na aba Pagamentos**) em vez de cancelar a proposta.
 4. Preencha o **Motivo do Cancelamento**.
-5. Clique em **Confirmar Cancelamento**. A ação é irreversível.
+5. Clique em **Confirmar Cancelamento**. Pela tela, a ação é irreversível.
+
+### Reativar um pedido cancelado por engano
+
+Desde 26/10/2026 um administrador pode tirar um pedido de CANCELADO e devolvê-lo a NOVO, com o mesmo número, os mesmos itens e a arte como estava. **Ainda não há botão na tela**: é feito pelo suporte, a pedido do administrador, com o motivo.
+
+- Só vale para pedido CANCELADO que não esteja liberado para a produção, que não seja complemento de outro pedido, sem nenhuma cobrança ativa, sem nota fiscal autorizada e sem produção ou expedição registrada.
+- O pedido volta para NOVO (se a arte ainda está em andamento, a tela mostra NOVO / EM ARTE). As cobranças canceladas continuam canceladas: o vendedor gera uma cobrança nova na aba Pagamentos.
+- A conversa do pedido registra quem reativou e o motivo.
 
 ### Criar um Complemento
 
@@ -334,7 +342,7 @@ O aviso some quando você clica em **Entendi** ou quando a cópia ganha cobranç
 - **Menu Pedidos** x título **Orcamentos** x aba **Orçamento**: o menu lateral **Pedidos** abre a lista de propostas, cuja página tem o título **Orcamentos** (sem cedilha); a aba **Orçamento** fica dentro de uma proposta e guarda os produtos dela.
 - Aba **Pedido** x aba **Produção / Expedição** x menu **Produção**: a aba **Pedido** tem os modelos e lotes de cada produto; a aba **Produção / Expedição** é só o texto da orientação técnica; o menu lateral **Produção** é outra tela, a das ordens de serviço.
 - **Salvar alterações** x **Salvar item** x sair do campo: **Salvar alterações** (rodapé) salva tudo e recarrega a tela; **Salvar item** salva tudo e fecha o cartão do produto; sair do campo grava sozinho só Quantidade, Valor Unitário e Fixo, e só em proposta com número e sem cobrança.
-- **Cancelar** x **Cancelar proposta** x **Cancelar só a cobrança**: **Cancelar** (rodapé) apenas sai da edição; **Cancelar proposta** encerra o pedido e é irreversível; **Cancelar só a cobrança** mantém o pedido e reabre o saldo para uma cobrança nova.
+- **Cancelar** x **Cancelar proposta** x **Cancelar só a cobrança**: **Cancelar** (rodapé) apenas sai da edição; **Cancelar proposta** encerra o pedido e não se desfaz pela tela (só um administrador reativa, pelo suporte); **Cancelar só a cobrança** mantém o pedido e reabre o saldo para uma cobrança nova.
 - **Gerar PDF da proposta** x **Gerar OC**: o primeiro é o orçamento, com validade de 15 dias, para o cliente decidir; o segundo é a autorização de faturamento, que o cliente devolve assinada. Os dois saem com o modelo da empresa da proposta e entram na timeline como "PDF da proposta gerado." e "PDF da OC gerado.".
 - **Ver proposta** x **Editar proposta**: a primeira abre o detalhe, só para leitura; a segunda abre esta tela.
 - **Duplicar proposta** x **Criar Complemento**: duplicar abre uma cópia independente, com os produtos e os dados da original e frete a cotar; o complementar nasce sem itens, vinculado ao pedido original, e sai junto com ele na Expedição.
@@ -423,6 +431,7 @@ O aviso some quando você clica em **Entendi** ou quando a cópia ganha cobranç
 - `supabase/functions/proposta_comencial/gerar.ts`
 - `supabase/migrations/20261003_empresas_modelos_pdf_storage.sql`
 - `src/app/api/orcamentos/editar-paga/route.ts`
+- `src/app/api/orcamentos/reativar-cancelado/route.ts`
 - `src/components/common/ActionsMenu.tsx`
 - `src/constants/navigation.ts`
 

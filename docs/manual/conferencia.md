@@ -1,6 +1,6 @@
 # Conferência
 
-> **Última revisão:** 23/10/2026
+> **Última revisão:** 26/10/2026
 > **Caminho no menu:** Conferência (primeiro item do menu lateral; é um link direto, sem subitens)
 > **Endereço:** `/cobrancas` (o detalhe de uma cobrança abre em `/cobrancas/<cobrança>`)
 
@@ -231,7 +231,7 @@ Cancelamento:
 - Não dá para cancelar um faturamento com título em aberto. Cancele o título na Carteira primeiro.
 - Cobrança com título já pago não é cancelada por aqui: o caso é devolução.
 - Cobrança paga com crédito do cliente (E-Crédito) não é cancelada por aqui, porque o cancelamento não devolve o crédito consumido. O caminho é o estorno do uso de crédito, que existe desde 23/10/2026 só para administrador e **ainda não tem botão na tela**: hoje é feito pelo suporte, a pedido do administrador. Ele faz três coisas juntas: devolve o valor ao saldo do cliente na Conta Corrente (por um lançamento novo; o lançamento do uso continua no extrato), cancela a cobrança E-Crédito e registra na conversa do pedido quem fez e o motivo. Repetir não lança de novo. Ele recusa pedido que já entrou na produção, que tem expedição registrada ou que tem nota fiscal autorizada.
-- Cancelar a última cobrança não tira o pedido de REVISAO ATENDENTE. Para o vendedor gerar uma cobrança nova, o pedido precisa voltar para NOVO, o que também é só de administrador e **ainda não tem botão na tela** (feito pelo suporte). Só vale para pedido em REVISAO ATENDENTE, fora da produção, sem cobrança ativa (todas canceladas), sem nota fiscal autorizada e sem expedição; volta para NOVO, ou NOVO / EM ARTE se o pedido estiver marcado em arte, e registra na conversa do pedido quem fez e o motivo.
+- Cancelar a última cobrança não tira o pedido de REVISAO ATENDENTE. Para o vendedor gerar uma cobrança nova, o pedido precisa voltar para NOVO, o que também é só de administrador e **ainda não tem botão na tela** (feito pelo suporte). Só vale para pedido em REVISAO ATENDENTE, fora da produção, sem cobrança ativa (todas canceladas), sem nota fiscal autorizada e sem expedição; volta para NOVO (com arte em andamento, a tela mostra NOVO / EM ARTE) e registra na conversa do pedido quem fez e o motivo.
 - A permissão **Cancelar Cobrança Não Paga** só alcança cobrança emitida e ainda não paga, de pedido do próprio usuário, e não alcança cobrança ligada à Conta Corrente. Como a Conferência lista o que já foi pago ou autorizado, essa permissão é usada na prática pela aba Pagamentos da proposta.
 - O cancelamento de uma cobrança é irreversível. Para cobrar de novo, gere outra cobrança na proposta.
 
