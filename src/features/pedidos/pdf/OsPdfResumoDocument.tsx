@@ -184,7 +184,7 @@ function LoteLinha({
 }
 
 /** Bloco do produto: a mesma barra de título do layout completo, e a lista. */
-function ProdutoLista({ produto, corSetor }: { produto: OsPdfProduto; corSetor: string }) {
+function ProdutoLista({ produto, corSetor, textoSetor }: { produto: OsPdfProduto; corSetor: string; textoSetor: string }) {
   const codigoNome = [produto.codigo, pdfSafe(produto.nome)]
     .filter((v) => v !== null && v !== "")
     .join(" - ");
@@ -195,15 +195,15 @@ function ProdutoLista({ produto, corSetor }: { produto: OsPdfProduto; corSetor: 
       {/* Barra + cabeçalho da tabela juntos: o título nunca fica órfão no fim da página. */}
       <View wrap={false}>
         <View style={[styles.produtoBarra, { backgroundColor: corSetor }]}>
-          <Text style={styles.produtoNome}>{codigoNome || "Produto"}</Text>
+          <Text style={[styles.produtoNome, { color: textoSetor }]}>{codigoNome || "Produto"}</Text>
           <View style={styles.produtoChip}>
-            <Text style={styles.produtoChipLabel}>QUANT.:</Text>
-            <Text style={styles.produtoChipValor}>{formatarQuantidade(produto.quantidade)}</Text>
+            <Text style={[styles.produtoChipLabel, { color: textoSetor }]}>QUANT.:</Text>
+            <Text style={[styles.produtoChipValor, { color: textoSetor }]}>{formatarQuantidade(produto.quantidade)}</Text>
           </View>
           {peso ? (
             <View style={styles.produtoChip}>
-              <Text style={styles.produtoChipLabel}>PESO:</Text>
-              <Text style={styles.produtoChipValor}>{peso}</Text>
+              <Text style={[styles.produtoChipLabel, { color: textoSetor }]}>PESO:</Text>
+              <Text style={[styles.produtoChipValor, { color: textoSetor }]}>{peso}</Text>
             </View>
           ) : null}
         </View>
@@ -259,7 +259,7 @@ export function OsPdfResumoDocument({ vm, qrDataUrl, logoDataUrl }: OsPdfResumoD
         <OsPdfBlocoCliente vm={vm} somenteEstoque={somenteEstoque} />
 
         {produtosDoBoletim.map((produto, i) => (
-          <ProdutoLista key={i} produto={produto} corSetor={cores.forte} />
+          <ProdutoLista key={i} produto={produto} corSetor={cores.forte} textoSetor={cores.texto} />
         ))}
 
         {/* Orientacao tecnica de producao (`propostas.obs_tecnica`) — a

@@ -29,19 +29,27 @@ const OBS_MAX_CHARS = 600;
 const MODELOS_POR_LINHA = 3;
 
 /**
- * Identidade de cor por setor — a mesma da tela do boletim, para o PDF de cada
- * setor ser reconhecido de longe. `forte` vai em barra com texto branco;
- * `claro` e o fundo do selo de setor no cabecalho.
+ * Cor de cada setor NO PDF DA OS — padrao CMYK da grafica, definido pela
+ * diretoria em 26/10/2026: LASER ciano, PVC magenta, TEXTIL amarelo, FLEXO preto.
+ *
+ * Mapa PROPRIO do PDF: as telas (abas do boletim, chips de fase da lista)
+ * seguem com o mapa de `setores.ts`, que nao mudou.
+ *
+ * - `forte`: preenchimento da caixa do setor da pagina e das faixas.
+ * - `texto`: texto SOBRE `forte` — escuro no ciano e no amarelo, branco no
+ *   magenta e no preto.
+ * - `tinta`: o setor escrito/contornado sobre fundo branco (caixas apagadas do
+ *   cabecalho). Amarelo puro some no papel, por isso o TEXTIL usa um ocre.
  */
-const CORES_SETOR: Record<string, { forte: string; claro: string }> = {
-  PVC: { forte: "#1d4ed8", claro: "#eff6ff" },
-  LASER: { forte: "#b45309", claro: "#fffbeb" },
-  FLEXO: { forte: "#6d28d9", claro: "#f5f3ff" },
-  TEXTIL: { forte: "#0f766e", claro: "#f0fdfa" }
+const CORES_SETOR: Record<string, { forte: string; texto: string; tinta: string }> = {
+  PVC: { forte: "#EC008C", texto: "#ffffff", tinta: "#EC008C" },
+  LASER: { forte: "#00AEEF", texto: "#111111", tinta: "#0094CC" },
+  FLEXO: { forte: "#111111", texto: "#ffffff", tinta: "#111111" },
+  TEXTIL: { forte: "#FFD400", texto: "#111111", tinta: "#B89600" }
 };
 
 /** Cinza do layout original — usado quando o setor nao tem cor propria. */
-const COR_NEUTRA = { forte: "#58585a", claro: "#ffffff" };
+const COR_NEUTRA = { forte: "#58585a", texto: "#ffffff", tinta: "#58585a" };
 
 export function coresDoSetor(setor: string | null | undefined) {
   const chave = (setor || "").trim().toUpperCase();
@@ -808,7 +816,7 @@ function ModelosLinha({
 }
 
 /** Card do produto: barra de título (qtd + peso) e a grade dos seus modelos. */
-function ProdutoCard({ produto, corSetor, setor }: { produto: OsPdfProduto; corSetor: string; setor?: string | null }) {
+function ProdutoCard({ produto, corSetor, textoSetor, setor }: { produto: OsPdfProduto; corSetor: string; textoSetor: string; setor?: string | null }) {
   const codigoNome = [produto.codigo, pdfSafe(produto.nome)]
     .filter((v) => v !== null && v !== "")
     .join(" - ");
@@ -817,7 +825,7 @@ function ProdutoCard({ produto, corSetor, setor }: { produto: OsPdfProduto; corS
 
   const barra = (
     <View style={[styles.produtoBarra, { backgroundColor: corSetor }]}>
-      <Text style={styles.produtoNome}>{codigoNome || "Produto"}</Text>
+      <Text style={[styles.produtoNome, { color: textoSetor }]}>{codigoNome || "Produto"}</Text>
       <View style={styles.produtoChip}>
         <Text style={styles.produtoChipLabel}>QUANT.:</Text>
         <Text style={styles.produtoChipValor}>{formatarQuantidade(produto.quantidade)}</Text>
@@ -887,7 +895,7 @@ function ResumoDemaisSetores({
                 {j > 0 ? <View style={styles.modeloGap} /> : null}
                 <View style={[styles.resumoCard, { borderColor: coresDoSetor(grupo.setor).forte }]}>
                   <View style={[styles.resumoSetorBarra, { backgroundColor: coresDoSetor(grupo.setor).forte }]}>
-                    <Text style={styles.resumoSetor}>{pdfSafe(grupo.setor).toUpperCase()}</Text>
+                    <Text style={[styles.resumoSetor, { color: coresDoSetor(grupo.setor).texto }]}>{pdfSafe(grupo.setor).toUpperCase()}</Text>
                   </View>
                   {grupo.itens.map((item, k) => (
                     <View key={k} style={styles.resumoItem}>
@@ -978,13 +986,13 @@ export function OsPdfCabecalho({ vm, qrDataUrl, logoDataUrl }: OsPdfDocumentProp
                       {
                         width: larguraCaixa,
                         marginTop: i >= porLinha ? 4 : 0,
-                        borderColor: cor.forte,
+                        borderColor: atual ? cor.forte : cor.tinta,
                         backgroundColor: atual ? cor.forte : "#ffffff",
                         opacity: atual ? 1 : 0.45
                       }
                     ]}
                   >
-                    <Text style={[styles.setorNome, { fontSize: fonte, color: atual ? "#ffffff" : cor.forte }]}>
+                    <Text style={[styles.setorNome, { fontSize: fonte, color: atual ? cor.texto : cor.tinta }]}>
                       {nome}
                     </Text>
                   </View>
@@ -1104,7 +1112,7 @@ export function OsPdfPaginaBoletim({
         {/* Um card por produto, com os modelos DESTE boletim (setor). Produtos sem
             modelos no setor pertencem a outro boletim e saem do corpo do PDF. */}
         {produtosDoBoletim.map((produto, i) => (
-          <ProdutoCard key={i} produto={produto} corSetor={cores.forte} setor={vm.boletim.setor} />
+          <ProdutoCard key={i} produto={produto} corSetor={cores.forte} textoSetor={cores.texto} setor={vm.boletim.setor} />
         ))}
 
         {/* O que os demais boletins da proposta produzem */}
