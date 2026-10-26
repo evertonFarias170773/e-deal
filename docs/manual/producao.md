@@ -1,6 +1,6 @@
 # Produção (ordens de serviço)
 
-> **Última revisão:** 20/10/2026
+> **Última revisão:** 26/10/2026
 > **Caminho no menu:** Produção (item direto do menu lateral, sem submenu). A OS de cada pedido abre a partir da lista. O Kanban e a Fila de impressão não estão no menu: chega-se a eles pelo endereço ou pelas abas **Fila Geral / Kanban Board / Fila de Impressão / Expedição** que aparecem no topo dessas duas telas.
 > **Endereço:** `/pedidos` (painel geral). OS: `/pedidos/boletim`. Kanban: `/pedidos/kanban` (e `/os-producao`). Fila de impressão: `/pedidos/impressao`.
 
@@ -43,7 +43,8 @@ Nomes exatamente como aparecem na tela.
 | **Editar OS / Boletim** (ou **Criar OS / Boletim**) | Menu **Ações** da linha | Abre a OS. Aparece como "Criar" quando o pedido ainda não tem lotes. |
 | **Imprimir OS (PDF)** | Menu **Ações** da linha | Abre em nova aba o PDF completo, com todos os setores. Enquanto gera, mostra "Gerando PDF...". |
 | **Imprimir OS reduzida (PDF)** | Menu **Ações** da linha | Abre o PDF resumido (lista de conferência, sem imagens). |
-| **RETRABALHO** no PDF | Topo de cada página de boletim (completo, reduzido e maço), acima do quadro do Setor | Aparece em letras grandes vermelhas quando o pedido é retrabalho: criado como Retrabalho pelo Duplicar proposta, ou com cobrança E-Retrabalho não cancelada. O resto do boletim e a paginação ficam como sempre. |
+| **RETRABALHO** no PDF | Topo de cada página de boletim (completo, reduzido e maço), acima das caixas de setor | Aparece em letras grandes vermelhas quando o pedido é retrabalho: criado como Retrabalho pelo Duplicar proposta, ou com cobrança E-Retrabalho não cancelada. O resto do boletim e a paginação ficam como sempre. |
+| **Caixas de setor** no PDF | Cabeçalho de cada página de boletim (completo, reduzido e maço), entre o número da OS e o prazo | Uma caixa por setor que o pedido tem, com o nome e a cor do setor, sempre na ordem PVC, LASER, FLEXO, TEXTIL. O setor da página sai preenchido com a cor; os outros, só com contorno apagado. Com 4 setores as caixas ficam em duas linhas. Substitui o antigo quadro **Setor:** e a linha **Setor complementar**. |
 | **Gerar novo QR (invalida o anterior)** | Menu **Ações** da linha | Cria um QR novo para a OS e invalida o das vias já impressas. |
 | **Abrir DANFE (PDF)** | Menu **Ações** da linha | Abre a DANFE da nota do pedido. Só aparece quando há nota autorizada. |
 | **Baixar XML** | Menu **Ações** da linha | Baixa o XML da nota do pedido. Só aparece quando há nota autorizada. |

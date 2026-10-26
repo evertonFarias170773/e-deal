@@ -4,6 +4,7 @@ import { linhaDeVariacaoNoCard } from "../lib/variacao-textil";
 import { Document, Page, View, Text, Image, StyleSheet } from "@react-pdf/renderer";
 import type { OsPdfViewModel, OsPdfProduto, OsPdfModelo } from "../services/os-viewmodel.service";
 import { textoDeEntrega } from "../lib/instrucoes-entrega";
+import { ordenarSetores } from "../setores";
 
 /**
  * Documento PDF da OS (Boletim de Produção) — layout "OS 2027".
@@ -258,27 +259,20 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
     marginBottom: 2
   },
-  setorBox: {
-    borderWidth: 1,
-    borderColor: "#3f3f42",
+  // Caixas de setor (26/10/2026): uma por setor que a OS tem. A coluna tem
+  // ~197 pt de largura. Ate 3 setores ficam numa linha; com 4 ou mais, duas por
+  // linha, para o nome nao encolher. Altura maxima (2 linhas de 23 pt + folga +
+  // RETRABALHO) fica dentro dos ~72 pt da coluna da logo: o cabecalho nao cresce.
+  setoresGrade: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between" },
+  setorCaixa: {
+    borderWidth: 1.5,
     borderRadius: 5,
-    paddingVertical: 4,
-    paddingHorizontal: 8,
-    flexDirection: "row",
-    alignItems: "center"
+    paddingVertical: 3,
+    paddingHorizontal: 4,
+    alignItems: "center",
+    justifyContent: "center"
   },
-  setorLabel: { fontSize: 8, fontFamily: "Helvetica-Bold", color: "#5a6b7a", marginRight: 8 },
-  setorValor: { fontSize: 16, fontFamily: "Helvetica-Bold", flex: 1, textAlign: "center" },
-  // Aviso de que o pedido tem outros boletins: fica abaixo do setor, sem
-  // competir com ele, mas em negrito — a producao precisa notar que o pedido
-  // nao termina neste PDF.
-  setorOutros: {
-    fontSize: 7.5,
-    fontFamily: "Helvetica-Bold",
-    color: "#2f3b47",
-    textAlign: "center",
-    marginTop: 3
-  },
+  setorNome: { fontFamily: "Helvetica-Bold", lineHeight: 1, textAlign: "center" },
   headerPrazo: { width: 116, marginRight: 8 },
   prazoBox: {
     borderWidth: 1,
@@ -933,10 +927,18 @@ export interface OsPdfDocumentProps {
 export function OsPdfCabecalho({ vm, qrDataUrl, logoDataUrl }: OsPdfDocumentProps) {
   // Setor é campo próprio do boletim (pedidos_artes.setor) — nunca o setor do produto.
   const setor = pdfSafe(vm.boletim.setor).toUpperCase() || "-";
-  const cores = coresDoSetor(vm.boletim.setor);
-  const outrosSetores = vm.boletim.outrosSetores
-    .map((grupo) => pdfSafe(grupo.setor).toUpperCase())
-    .filter(Boolean);
+  // Só os setores que a OS tem: o desta página + os dos outros boletins, na
+  // ordem fixa de exibição (PVC, LASER, FLEXO, TEXTIL), igual em todas as páginas.
+  const setoresDaOs = ordenarSetores(
+    Array.from(
+      new Set([setor, ...vm.boletim.outrosSetores.map((grupo) => pdfSafe(grupo.setor).toUpperCase())].filter(Boolean))
+    ),
+    (s) => s
+  );
+  const total = setoresDaOs.length;
+  const porLinha = total >= 4 ? 2 : total;
+  const fonte = total <= 1 ? 20 : total === 2 ? 18 : 15;
+  const larguraCaixa = porLinha === 1 ? "100%" : porLinha === 2 ? "48.5%" : "32%";
 
   return (
         <View style={styles.header} wrap={false}>
@@ -958,17 +960,34 @@ export function OsPdfCabecalho({ vm, qrDataUrl, logoDataUrl }: OsPdfDocumentProp
                 (62 pt), e esta coluna usa ~41 pt. Assim o cabecalho nao cresce e a
                 paginacao nao muda. Vale para os tres modelos (todos usam este cabecalho). */}
             {vm.retrabalho ? <Text style={styles.retrabalhoTopo}>RETRABALHO</Text> : null}
-            <View style={[styles.setorBox, { borderColor: cores.forte, backgroundColor: cores.claro }]}>
-              <Text style={styles.setorLabel}>Setor:</Text>
-              <Text style={[styles.setorValor, { color: cores.forte }]}>{setor}</Text>
+            {/* Uma caixa por setor da OS: o desta página preenchido com a cor do
+                setor; os outros só com contorno, apagados — a produção vê de longe
+                de que setor é a folha e que o pedido não termina nela. */}
+            <View style={styles.setoresGrade}>
+              {setoresDaOs.map((nome, i) => {
+                const cor = coresDoSetor(nome);
+                const atual = nome === setor;
+                return (
+                  <View
+                    key={nome}
+                    style={[
+                      styles.setorCaixa,
+                      {
+                        width: larguraCaixa,
+                        marginTop: i >= porLinha ? 4 : 0,
+                        borderColor: cor.forte,
+                        backgroundColor: atual ? cor.forte : "#ffffff",
+                        opacity: atual ? 1 : 0.45
+                      }
+                    ]}
+                  >
+                    <Text style={[styles.setorNome, { fontSize: fonte, color: atual ? "#ffffff" : cor.forte }]}>
+                      {nome}
+                    </Text>
+                  </View>
+                );
+              })}
             </View>
-            {/* Uma OS pode ter mais de um boletim: este PDF é só de um setor, e
-                a produção precisa saber que o pedido não termina aqui. */}
-            {outrosSetores.length > 0 ? (
-              <Text style={styles.setorOutros}>
-                Setor complementar: {outrosSetores.join(" | ")}
-              </Text>
-            ) : null}
           </View>
 
           <View style={styles.headerPrazo}>
