@@ -1,7 +1,9 @@
 import React from "react";
 import { COR_RETRABALHO_CLARO } from "@/lib/retrabalho";
 import { linhaDeVariacaoNoCard } from "../lib/variacao-textil";
-import { Document, Page, View, Text, Image, StyleSheet } from "@react-pdf/renderer";
+import path from "node:path";
+import { existsSync } from "node:fs";
+import { Document, Page, View, Text, Image, StyleSheet, Font } from "@react-pdf/renderer";
 import type { OsPdfViewModel, OsPdfProduto, OsPdfModelo } from "../services/os-viewmodel.service";
 import { textoDeEntrega } from "../lib/instrucoes-entrega";
 import { ordenarSetores } from "../setores";
@@ -35,21 +37,39 @@ const MODELOS_POR_LINHA = 3;
  * Mapa PROPRIO do PDF: as telas (abas do boletim, chips de fase da lista)
  * seguem com o mapa de `setores.ts`, que nao mudou.
  *
- * - `forte`: preenchimento da caixa do setor da pagina e das faixas.
- * - `texto`: texto SOBRE `forte` — escuro no ciano e no amarelo, branco no
- *   magenta e no preto.
- * - `tinta`: o setor escrito/contornado sobre fundo branco (caixas apagadas do
- *   cabecalho). Amarelo puro some no papel, por isso o TEXTIL usa um ocre.
+ * - `forte`: preenchimento da caixa do setor da pagina, contorno das demais e
+ *   fundo das faixas.
+ * - `texto`: texto sobre `forte`. Sempre preto ("pra aparecer", Eduardo);
+ *   so o FLEXO, que e preto, leva texto branco.
  */
-const CORES_SETOR: Record<string, { forte: string; texto: string; tinta: string }> = {
-  PVC: { forte: "#EC008C", texto: "#ffffff", tinta: "#EC008C" },
-  LASER: { forte: "#00AEEF", texto: "#111111", tinta: "#0094CC" },
-  FLEXO: { forte: "#111111", texto: "#ffffff", tinta: "#111111" },
-  TEXTIL: { forte: "#FFD400", texto: "#111111", tinta: "#B89600" }
+const CORES_SETOR: Record<string, { forte: string; texto: string }> = {
+  LASER: { forte: "#00AEEF", texto: "#111111" },
+  PVC: { forte: "#EC008C", texto: "#111111" },
+  TEXTIL: { forte: "#FFD400", texto: "#111111" },
+  FLEXO: { forte: "#111111", texto: "#ffffff" }
 };
 
 /** Cinza do layout original — usado quando o setor nao tem cor propria. */
-const COR_NEUTRA = { forte: "#58585a", texto: "#ffffff", tinta: "#58585a" };
+const COR_NEUTRA = { forte: "#58585a", texto: "#ffffff" };
+
+/**
+ * Fonte condensada do nome do setor no cabecalho (layout do Eduardo, 26/10/2026).
+ * Oswald Bold, licenca SIL OFL (public/fonts/Oswald-OFL.txt). Lida do disco pela
+ * rota; o next.config inclui o arquivo na funcao da Vercel.
+ */
+const ARQUIVO_OSWALD = path.join(process.cwd(), "public", "fonts", "Oswald-Bold.ttf");
+// Sem o arquivo (ex.: fora do pacote da funcao), cai na Helvetica-Bold: a OS
+// sai com o nome menos condensado, mas sai — fonte ausente derrubaria o PDF.
+const FONTE_SETOR = existsSync(ARQUIVO_OSWALD) ? "Oswald" : "Helvetica-Bold";
+if (FONTE_SETOR === "Oswald") {
+  Font.register({ family: "Oswald", fonts: [{ src: ARQUIVO_OSWALD, fontWeight: 700 }] });
+}
+
+/** Ordem das caixas no cabecalho: a do modelo da diretoria (C, M, Y, K). */
+const ORDEM_CABECALHO = ["LASER", "PVC", "TEXTIL", "FLEXO"];
+
+/** Largura de cada nome em Oswald Bold, em "em" (medida com fontkit). */
+const LARGURA_NOME_EM: Record<string, number> = { PVC: 1.651, LASER: 2.547, FLEXO: 2.408, TEXTIL: 2.596 };
 
 export function coresDoSetor(setor: string | null | undefined) {
   const chave = (setor || "").trim().toUpperCase();
@@ -242,7 +262,9 @@ const styles = StyleSheet.create({
     padding: 7,
     marginBottom: 7
   },
-  headerIdentidade: { width: 128, alignItems: "flex-start" },
+  // 110 (era 128): a logo tem 104 de largura e o numero da OS cabe folgado. Os
+  // 18 pt vao para as caixas de setor, que no modelo sao grandes e quase quadradas.
+  headerIdentidade: { width: 110, alignItems: "flex-start" },
   logo: { width: 104, height: 30, objectFit: "contain", marginBottom: 5 },
   // Sem contorno: o numero da OS se sustenta sozinho no canto, alinhado com a
   // logo. Sem a borda, o recuo horizontal tambem sai, senao o numero fica
@@ -255,7 +277,7 @@ const styles = StyleSheet.create({
   osBoxLabel: { fontSize: 7.5, fontFamily: "Helvetica-Bold", color: "#5a6b7a", marginRight: 5 },
   // 25.5 = 17 + 50%, conforme pedido.
   osBoxNumero: { fontSize: 25.5, fontFamily: "Helvetica-Bold" },
-  headerSetor: { flex: 1, paddingHorizontal: 10 },
+  headerSetor: { flex: 1, paddingHorizontal: 6, justifyContent: "center" },
   // 20 pt com lineHeight 1: 20 pt de altura + 2 de folga. Com o setor (29 pt) e o
   // "Setor complementar" (~10 pt), a coluna fica abaixo dos 62 pt do QR.
   retrabalhoTopo: {
@@ -267,20 +289,22 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
     marginBottom: 2
   },
-  // Caixas de setor (26/10/2026): uma por setor que a OS tem. A coluna tem
-  // ~197 pt de largura. Ate 3 setores ficam numa linha; com 4 ou mais, duas por
-  // linha, para o nome nao encolher. Altura maxima (2 linhas de 23 pt + folga +
-  // RETRABALHO) fica dentro dos ~72 pt da coluna da logo: o cabecalho nao cresce.
-  setoresGrade: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between" },
+  // Caixas de setor (layout do Eduardo, 26/10/2026): uma por setor da OS, todas
+  // do mesmo tamanho, numa linha so, quase da altura do cabecalho. "SETOR"
+  // pequeno no topo e o nome grande em fonte condensada, sempre em preto.
+  // A coluna tem ~223 pt: com 4 setores cada caixa fica com ~52 x 58 pt.
+  setoresLinha: { flexDirection: "row", justifyContent: "center" },
   setorCaixa: {
-    borderWidth: 1.5,
-    borderRadius: 5,
-    paddingVertical: 3,
-    paddingHorizontal: 4,
-    alignItems: "center",
-    justifyContent: "center"
+    borderWidth: 2,
+    borderRadius: 6,
+    paddingTop: 3,
+    paddingBottom: 2,
+    paddingHorizontal: 2,
+    alignItems: "center"
   },
-  setorNome: { fontFamily: "Helvetica-Bold", lineHeight: 1, textAlign: "center" },
+  setorRotulo: { fontFamily: FONTE_SETOR, fontWeight: 700, fontSize: 8, lineHeight: 1, textAlign: "center" },
+  setorNomeArea: { flex: 1, justifyContent: "center", alignItems: "center" },
+  setorNome: { fontFamily: FONTE_SETOR, fontWeight: 700, lineHeight: 1, textAlign: "center" },
   headerPrazo: { width: 116, marginRight: 8 },
   prazoBox: {
     borderWidth: 1,
@@ -940,16 +964,31 @@ export function OsPdfCabecalho({ vm, qrDataUrl, logoDataUrl }: OsPdfDocumentProp
   const setor = pdfSafe(vm.boletim.setor).toUpperCase() || "-";
   // Só os setores que a OS tem: o desta página + os dos outros boletins, na
   // ordem fixa de exibição (PVC, LASER, FLEXO, TEXTIL), igual em todas as páginas.
+  // Ordem do modelo da diretoria: LASER, PVC, TEXTIL, FLEXO (o que nao estiver
+  // nela vai para o fim, na ordem de sempre).
   const setoresDaOs = ordenarSetores(
     Array.from(
       new Set([setor, ...vm.boletim.outrosSetores.map((grupo) => pdfSafe(grupo.setor).toUpperCase())].filter(Boolean))
     ),
     (s) => s
-  );
-  const total = setoresDaOs.length;
-  const porLinha = total >= 4 ? 2 : total;
-  const fonte = total <= 1 ? 20 : total === 2 ? 18 : 15;
-  const larguraCaixa = porLinha === 1 ? "100%" : porLinha === 2 ? "48.5%" : "32%";
+  ).sort((a, b) => {
+    const ia = ORDEM_CABECALHO.indexOf(a);
+    const ib = ORDEM_CABECALHO.indexOf(b);
+    return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+  });
+  // Medidas: coluna de ~223 pt, 5 pt entre caixas. Caixa no maximo 72 pt de
+  // largura (com 1 a 3 setores nao vira faixa). Altura 58 pt, ou 48 com o
+  // RETRABALHO em cima, para o cabecalho nao crescer.
+  const total = Math.max(setoresDaOs.length, 1);
+  const GAP = 5;
+  const larguraCaixa = Math.min(72, (223 - GAP * (total - 1)) / total);
+  const alturaCaixa = vm.retrabalho ? 48 : 58;
+  // Um tamanho de nome para todas as caixas: o maior que faz o nome mais largo
+  // caber na caixa (margem de 8 pt), sem passar do que a altura comporta.
+  // Na Helvetica-Bold (sem a Oswald) os nomes sao ~35% mais largos.
+  const fatorFonte = FONTE_SETOR === "Oswald" ? 1 : 1.35;
+  const maiorEm = Math.max(...setoresDaOs.map((n) => LARGURA_NOME_EM[n] ?? n.length * 0.55)) * fatorFonte;
+  const fonte = Math.floor(Math.min((larguraCaixa - 8) / maiorEm, (alturaCaixa - 18) / 0.95));
 
   return (
         <View style={styles.header} wrap={false}>
@@ -971,13 +1010,14 @@ export function OsPdfCabecalho({ vm, qrDataUrl, logoDataUrl }: OsPdfDocumentProp
                 (62 pt), e esta coluna usa ~41 pt. Assim o cabecalho nao cresce e a
                 paginacao nao muda. Vale para os tres modelos (todos usam este cabecalho). */}
             {vm.retrabalho ? <Text style={styles.retrabalhoTopo}>RETRABALHO</Text> : null}
-            {/* Uma caixa por setor da OS: o desta página preenchido com a cor do
-                setor; os outros só com contorno, apagados — a produção vê de longe
-                de que setor é a folha e que o pedido não termina nela. */}
-            <View style={styles.setoresGrade}>
+            {/* Uma caixa por setor da OS: a do setor desta pagina preenchida com a
+                cor; as outras brancas, com contorno grosso na cor cheia. Texto
+                sempre preto (branco so no FLEXO preenchido). */}
+            <View style={styles.setoresLinha}>
               {setoresDaOs.map((nome, i) => {
                 const cor = coresDoSetor(nome);
                 const atual = nome === setor;
+                const corTexto = atual ? cor.texto : "#111111";
                 return (
                   <View
                     key={nome}
@@ -985,16 +1025,17 @@ export function OsPdfCabecalho({ vm, qrDataUrl, logoDataUrl }: OsPdfDocumentProp
                       styles.setorCaixa,
                       {
                         width: larguraCaixa,
-                        marginTop: i >= porLinha ? 4 : 0,
-                        borderColor: atual ? cor.forte : cor.tinta,
-                        backgroundColor: atual ? cor.forte : "#ffffff",
-                        opacity: atual ? 1 : 0.45
+                        height: alturaCaixa,
+                        marginLeft: i > 0 ? GAP : 0,
+                        borderColor: cor.forte,
+                        backgroundColor: atual ? cor.forte : "#ffffff"
                       }
                     ]}
                   >
-                    <Text style={[styles.setorNome, { fontSize: fonte, color: atual ? cor.texto : cor.tinta }]}>
-                      {nome}
-                    </Text>
+                    <Text style={[styles.setorRotulo, { color: corTexto }]}>SETOR</Text>
+                    <View style={styles.setorNomeArea}>
+                      <Text style={[styles.setorNome, { fontSize: fonte, color: corTexto }]}>{nome}</Text>
+                    </View>
                   </View>
                 );
               })}

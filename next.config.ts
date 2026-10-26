@@ -11,6 +11,8 @@ const nextConfig: NextConfig = {
   // não entram na função da Vercel e o Maestro fica sem manual em produção.
   outputFileTracingIncludes: {
     "/api/maestro/simple": ["./docs/manual/*.md"],
+    // Fonte condensada do cabecalho do PDF da OS (Font.register le do disco).
+    "/api/pedidos/imprimir-os": ["./public/fonts/Oswald-Bold.ttf"],
   },
   async headers() {
     return [
