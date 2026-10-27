@@ -122,7 +122,7 @@ import {
   transportadoraTemEscolhaDeServico
 } from "@/features/orcamentos/lib/servicos-transportadora";
 import { barreirasDaTrocaDeFrete } from "@/features/expedicao/services/corrigir-frete-simulacao";
-import { freteTravadoPeloCard, marcarComoCotacao } from "@/features/orcamentos/lib/origem-frete";
+import { freteTravadoPeloCard, marcarComoCotacao, valorTravadoPeloCard } from "@/features/orcamentos/lib/origem-frete";
 import { avisoDaDiferencaNaTela, salvarItemSoNaTela, salvarSemMudancaEmPropostaPaga } from "@/features/orcamentos/lib/salvar-item-paga";
 import { verificarPermissaoServerSide } from "@/lib/auth/verificar-permissao";
 import {
@@ -1289,6 +1289,11 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
   const freteEscolhido = form.fretes.find((frete) => frete.id === form.freteEscolhidoId);
   /** Card calculado escolhido (origem COTACAO): transportadora e "Valor cobrado" so leitura (lib/origem-frete). */
   const freteTravadoNoCard = freteTravadoPeloCard(freteEscolhido);
+  /**
+   * So o "Valor cobrado": card calculado trava, menos com o motoboy interno (997)
+   * escolhido, que fica editavel para todos (lib/origem-frete, 27/10/2026).
+   */
+  const valorTravadoNoCard = valorTravadoPeloCard(freteEscolhido, form.idTransportadoraCliente);
 
   /**
    * MODALIDADE E TRANSPORTADORA SE TROCAM EM QUALQUER STATUS (23/09/2026).
@@ -4087,7 +4092,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
    */
   function aplicarValorCobradoCif(texto: string) {
     setValorCobradoCifDraft(null);
-    if (freteTravadoNoCard) return;
+    if (valorTravadoNoCard) return;
     const valor = parseCurrencyBR(texto);
     if (valor === null || valor < 0) return;
     setForm((current) => ({
@@ -7282,8 +7287,8 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                         type="text"
                         inputMode="decimal"
                         aria-label="Valor cobrado do frete (R$)"
-                        disabled={!faseDeOrcamento || !freteEscolhido || Boolean(bloqueioTrocaFrete) || freteTravadoNoCard}
-                        data-frete-travado-no-card={freteTravadoNoCard ? "sim" : undefined}
+                        disabled={!faseDeOrcamento || !freteEscolhido || Boolean(bloqueioTrocaFrete) || valorTravadoNoCard}
+                        data-frete-travado-no-card={valorTravadoNoCard ? "sim" : undefined}
                         value={valorCobradoCifDraft ?? formatCurrencyWithoutPrefix(resumo.frete)}
                         onChange={(e) => setValorCobradoCifDraft(e.target.value)}
                         onBlur={() => {
@@ -7301,8 +7306,10 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                     </div>
                   </div>
                   <p className="mt-1.5 text-xs text-slate-500">
-                    {freteTravadoNoCard
+                    {valorTravadoNoCard
                       ? "Frete calculado: o valor cobrado é o do card escolhido. Para cobrar outro valor, escolha em Transportadora uma sem card (vira frete manual), outro card ou use \"Atualizar fretes\"."
+                      : freteTravadoNoCard && faseDeOrcamento
+                      ? "Motoboy interno: o valor cobrado pode ser editado aqui por qualquer usuário, e o digitado é o frete do pedido. \"Atualizar fretes\" volta a pôr o valor cotado."
                       : !faseDeOrcamento
                       ? "Depois da liberação o valor cobrado muda pelo valor negociado. Trocar a transportadora ou o frete escolhido segue valendo aqui."
                       : !freteEscolhido

@@ -1,6 +1,6 @@
 # Proposta: aba Fretes
 
-> **Última revisão:** 22/10/2026
+> **Última revisão:** 27/10/2026
 > **Caminho no menu:** Pedidos → abrir um pedido → aba Fretes
 > **Endereço:** `/orcamentos/<número>/editar?tab=fretes`
 
@@ -31,7 +31,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Motoboy** | Ao lado da lista de transportadora, em FOB | Informa que um motoboy leva; dispensa a transportadora. Clicar de novo desmarca. |
 | **Transportadora** (lista) | Caixa da modalidade, em CIF | Escolhe quem leva. Se a transportadora tem card cotado, escolhe o card dela; se não tem, cria um frete manual dela. |
 | **Serviço** (lista) | Caixa da modalidade, em CIF, entre **Transportadora** e **Valor cobrado (R$)** | Escolhe o serviço da transportadora. Só aparece para transportadora com mais de um serviço: hoje, a SVT TRANSPORTES, com **AZUL ECOMM**, **AZUL STANDARD**, **AZUL EXPRESSO** e **AZUL PREMIUM**. |
-| **Valor cobrado (R$)** | Caixa da modalidade, em CIF | Define quanto o cliente paga de frete. Grava ao sair do campo ou no Enter; Esc desfaz. Só edita na fase de orçamento, e só em frete manual: com um card calculado escolhido (SEDEX, VEPPO, São Miguel, Azul) ele fica só leitura, com o valor do card. **Transportadora** segue aberta: é por ela que se troca o card por um frete manual. |
+| **Valor cobrado (R$)** | Caixa da modalidade, em CIF | Define quanto o cliente paga de frete. Grava ao sair do campo ou no Enter; Esc desfaz. Só edita na fase de orçamento, e só em frete manual: com um card calculado escolhido (SEDEX, VEPPO, São Miguel, Azul) ele fica só leitura, com o valor do card. Exceção: com o **MOTOBOY INTERNO** escolhido, o valor do card de motoboy pode ser editado por qualquer usuário. **Transportadora** segue aberta: é por ela que se troca o card por um frete manual. |
 | **Rodoviário** / **Aéreo** | Pergunta **Como vai o transporte?**, na caixa da modalidade | Diz à Expedição em qual coluna o pedido entra, quando o sistema não reconhece a transportadora sozinho. Clicar de novo desmarca. |
 | **Atualizar fretes** (vira **Atualizando...**) | Acima dos cards, em CIF | Refaz a cotação com o CEP do endereço e o peso atual da proposta. |
 | **Escolher** | Em cada card de frete | Torna aquele card o frete da proposta. |
@@ -90,6 +90,8 @@ O serviço escolhido é o nome que aparece na coluna **Envio** da lista de Pedid
 ### Cobrar um valor diferente do cotado (CIF)
 
 Card calculado (SEDEX, VEPPO, São Miguel, Azul) é cobrado pelo valor do card: com ele escolhido, **Valor cobrado (R$)** fica só leitura e aparece o aviso "Frete calculado: o valor cobrado é o do card escolhido". A lista **Transportadora** continua aberta.
+
+Exceção do **MOTOBOY INTERNO**: com o card de motoboy escolhido, **Valor cobrado (R$)** fica editável para qualquer usuário, sem trocar por frete manual. Digite o valor, pressione Enter e clique em **Salvar alterações**: o valor digitado é o frete do pedido, e a transportadora continua o motoboy. A ajuda sob o campo diz "Motoboy interno: o valor cobrado pode ser editado aqui por qualquer usuário". **Atualizar fretes** volta a pôr o valor cotado.
 
 Para cobrar outro valor, o frete precisa ser manual:
 
@@ -196,7 +198,7 @@ Repetir **Aplicar** não duplica: a segunda tentativa devolve o mesmo frete comp
 ## Regras e bloqueios
 
 - Retirada e FOB não cobram frete: o total da proposta sai sem frete, qualquer que seja a cotação. Só CIF cobra.
-- Card calculado escolhido: o valor cobrado é o do card. O **Salvar alterações** recusa outro valor ou outra transportadora nesse caso. Escolher uma transportadora sem card troca o card por um frete manual, que segue livre.
+- Card calculado escolhido: o valor cobrado é o do card, menos no card do **MOTOBOY INTERNO**, que aceita o valor digitado. O **Salvar alterações** recusa outro valor ou outra transportadora nesse caso. Escolher uma transportadora sem card troca o card por um frete manual, que segue livre.
 - Em CIF não dá para salvar sem um frete escolhido. Em FOB não dá para salvar sem a transportadora ou o **Motoboy**. Em retirada não é preciso escolher nada.
 - Sem modalidade marcada, a tela não mostra cards e pede: "Escolha a modalidade do frete acima para continuar."
 - Trocar de modalidade limpa a transportadora (fora de FOB) e desfaz a escolha de retirada. Confira a caixa da modalidade depois de trocar.
@@ -320,6 +322,8 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 > - **09/10/2026:** o Acompanhar Pedido vale para qualquer pedido em aberto, inclusive em NOVO e AGUARDANDO (antes só de APROVADO até EXPEDICAO); a busca por número procura entre todos os pedidos elegíveis; a mensagem de só leitura diz o motivo real.
 >
 > - **09/10/2026 (adendo):** o grupo Acompanhar deixa de ter limite de 10 pedidos (limite de segurança de 50, com aviso acima de 10); pedido com status vazio fica só para leitura.
+>
+> - **27/10/2026:** com o **MOTOBOY INTERNO** escolhido, o **Valor cobrado (R$)** do card de motoboy fica editável para todos e o **Salvar alterações** grava o valor digitado. As outras transportadoras seguem travadas no valor do card.
 >
 > - **22/10/2026:** com um card calculado escolhido, a lista **Transportadora** voltou a abrir: desde 21/10 ela ficava travada e não dava para lançar frete manual em CIF.
 >

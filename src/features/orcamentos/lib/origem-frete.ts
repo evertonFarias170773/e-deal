@@ -15,8 +15,16 @@
  * A tela (aba Fretes) e o `saveProposta` usam ESTAS funcoes: os dois concordam.
  * Retira, FOB, avulsa, complemento e a Expedicao nao passam por aqui.
  *
- * Sem imports de proposito: roda no navegador e no teste do Node, igual.
+ * EXCECAO DO MOTOBOY INTERNO (27/10/2026): com a transportadora 997 escolhida
+ * (TRANSPORTADORAS_PARCEIRAS.MOTOBOY, sempre pelo id), o "Valor cobrado" do card
+ * calculado fica editavel para todos e o Salvar grava o digitado. A transportadora
+ * continua a do card. As demais transportadoras seguem a regra acima.
+ *
+ * O unico import e o mapa de ids das parceiras, que tambem nao importa nada:
+ * roda no navegador e no teste do Node, igual.
  */
+
+import { TRANSPORTADORAS_PARCEIRAS } from "@/features/orcamentos/lib/transportadoras-parceiras";
 
 export const ORIGENS_FRETE = ["COTACAO", "MANUAL"] as const;
 export type OrigemFrete = (typeof ORIGENS_FRETE)[number];
@@ -53,6 +61,28 @@ export function marcarComoCotacao<T extends { valor: number }>(fretes: readonly 
   return fretes.map((f) => ({ ...f, origem: "COTACAO" as const, valorCotado: f.valor }));
 }
 
+/**
+ * Transportadora cujo "Valor cobrado" e livre mesmo com card calculado: so o
+ * motoboy interno (997). Pelo id, nunca pelo nome.
+ */
+export function valorCobradoLivreNaTransportadora(idTransportadora: number | null | undefined): boolean {
+  return idTransportadora !== null && idTransportadora !== undefined && Number(idTransportadora) === TRANSPORTADORAS_PARCEIRAS.MOTOBOY;
+}
+
+/**
+ * O "Valor cobrado" fica so leitura? Card calculado trava, exceto quando a
+ * transportadora escolhida e a 997 E o card e dela (carimbo ausente = nao se sabe,
+ * vale a da proposta). Frete manual e antigo nunca travam.
+ */
+export function valorTravadoPeloCard(
+  frete: Pick<FreteComOrigem, "id" | "observacao" | "origem" | "idTransportadoraCotada"> | null | undefined,
+  idTransportadoraDaProposta: number | null | undefined
+): boolean {
+  if (!freteTravadoPeloCard(frete)) return false;
+  if (!valorCobradoLivreNaTransportadora(idTransportadoraDaProposta)) return true;
+  return frete!.idTransportadoraCotada !== undefined && !valorCobradoLivreNaTransportadora(frete!.idTransportadoraCotada);
+}
+
 /** O card escolhido trava a transportadora e o "Valor cobrado"? So o COTACAO. */
 export function freteTravadoPeloCard(frete: Pick<FreteComOrigem, "id" | "observacao" | "origem"> | null | undefined): boolean {
   return Boolean(frete) && frete!.origem === "COTACAO" && !ehFreteManual(frete);
@@ -77,7 +107,8 @@ export function recusaDoFreteCalculado(
   idTransportadoraDaProposta: number | null | undefined
 ): string | null {
   if (!frete || !freteTravadoPeloCard(frete)) return null;
-  if (typeof frete.valorCotado === "number" && Math.abs(Number(frete.valor) - frete.valorCotado) > 0.005) {
+  // Motoboy interno (997): o valor digitado vale; a transportadora segue conferida.
+  if (valorTravadoPeloCard(frete, idTransportadoraDaProposta) && typeof frete.valorCotado === "number" && Math.abs(Number(frete.valor) - frete.valorCotado) > 0.005) {
     return MENSAGEM_VALOR_DO_CARD;
   }
   if (frete.idTransportadoraCotada !== undefined && (idTransportadoraDaProposta ?? null) !== (frete.idTransportadoraCotada ?? null)) {
