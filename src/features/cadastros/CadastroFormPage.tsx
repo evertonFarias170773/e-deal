@@ -1093,6 +1093,7 @@ export function CadastroFormPage({ mode, cadastro, categoriaInicial }: CadastroF
         cpf_erro: normalizeOptionalText(form.cpfErro),
         is_bonus: form.bonusAtivo,
         usa_preco_fixo: form.usaPrecoFixo,
+        pode_editar_frete: form.podeEditarFrete,
         percentual_bunus: normalizeOptionalText(form.percentualBonus),
         id_modelo_cobranca: form.modeloCobrancaId || null
       };
@@ -1352,6 +1353,7 @@ export function CadastroFormPage({ mode, cadastro, categoriaInicial }: CadastroF
         cpf_erro: normalizeOptionalText(form.cpfErro),
         is_bonus: form.bonusAtivo,
         usa_preco_fixo: form.usaPrecoFixo,
+        pode_editar_frete: form.podeEditarFrete,
         percentual_bunus: normalizeOptionalText(form.percentualBonus),
         id_modelo_cobranca: form.modeloCobrancaId || null
       };
@@ -2345,6 +2347,8 @@ function CompleteForm({
             <Toggle label="Bonus" checked={form.bonusAtivo} disabled={!canEditCredito || form.usaPrecoFixo} onChange={(value) => canEditCredito && onUpdate("bonusAtivo", value)} />
             <Toggle label="Restricao" checked={form.restricao} disabled={!canEditCredito} onChange={(value) => canEditCredito && onUpdate("restricao", value)} />
             <Toggle label="Nota" checked={form.nota} disabled={!canEditCredito} onChange={(value) => canEditCredito && onUpdate("nota", value)} />
+            {/* Frete subsidiado (27/10/2026): libera digitar o valor do frete, 0 incluido, em qualquer card do pedido. */}
+            <Toggle label="Pode editar valor do frete" checked={form.podeEditarFrete} disabled={!canEditCredito} onChange={(value) => canEditCredito && onUpdate("podeEditarFrete", value)} />
           </div>
         </FormSection>
       )}
@@ -2538,6 +2542,7 @@ function createInitialState(
     padraoPagamento: cadastro?.padraoPagamento ?? "PIX",
     modeloCobrancaId: cadastro?.modeloCobrancaId ?? undefined,
     usaPrecoFixo: cadastro?.usaPrecoFixo ?? false,
+    podeEditarFrete: cadastro?.podeEditarFrete ?? false,
     bonusAtivo: cadastro?.bonusAtivo ?? false,
     percentualBonus: cadastro?.percentualBonus?.toString() ?? "0",
     // Cadastro NOVO nasce faturavel. O DEFAULT do banco virou `true`, mas o

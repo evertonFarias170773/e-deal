@@ -144,6 +144,31 @@ checar("manual e antigo seguem livres com qualquer transportadora", [valorTravad
   checar("VEPPO: recotacao automatica traz o valor novo (regra de antes)", recotacaoAutomaticaDoEscolhido({ ...veppoCard, valorDigitado: true }, veppoNovo, 120018).valor, 41);
 }
 
+// ---------- cliente com "Pode editar valor do frete" (clientes.pode_editar_frete, 27/10/2026)
+{
+  const sedexCard = { ...marcarComoCotacao([{ id: "frete_sedex", valor: 48.5, observacao: "" }])[0], idTransportadoraCotada: 39975 };
+  const ctxCli = { idTransportadora: 39975, modalidade: "CIF", isAvulso: false, clientePodeEditarFrete: true };
+  checar("cliente liberado: card SEDEX (39975) com valor livre", valorTravadoPeloCard(sedexCard, 39975, true), false);
+  checar("cliente sem o checkbox: SEDEX segue travado", valorTravadoPeloCard(sedexCard, 39975, false), true);
+  const zero = aplicarValorDigitado(sedexCard, 0, 39975, true);
+  checar("cliente liberado: R$ 0,00 aceito e marcado como digitado", [zero.valor, zero.valorDigitado], [0, true]);
+  checar("cliente liberado: Salvar aceita 0 e grava frete_valor_digitado = true", [recusaDoFreteCalculado(zero, 39975, true), freteValorDigitadoParaGravar(zero, ctxCli), origemParaGravar(zero, { modalidade: "CIF", isAvulso: false })], [null, true, "COTACAO"]);
+  checar("SERVIDOR: mesmo frete 0 com o cadastro relido SEM checkbox e recusado", [recusaDoFreteCalculado(zero, 39975, false), freteValorDigitadoParaGravar(zero, { ...ctxCli, clientePodeEditarFrete: false })], [MENSAGEM_VALOR_DO_CARD, null]);
+  checar("cliente liberado: transportadora segue conferida", recusaDoFreteCalculado(sedexCard, 120018, true), MENSAGEM_TRANSPORTADORA_DO_CARD);
+  const novoSedex = marcarComoCotacao([{ id: "frete_sedex", valor: 52, observacao: "" }])[0];
+  const recotado = recotacaoAutomaticaDoEscolhido(zero, novoSedex, 39975, true);
+  checar("cliente liberado: recotacao automatica mantem 0 e atualiza o cotado", [recotado.valor, recotado.valorCotado, recotado.valorDigitado], [0, 52, true]);
+  checar("cliente liberado: sem o checkbox a recotacao traz o card novo", recotacaoAutomaticaDoEscolhido(zero, novoSedex, 39975, false).valor, 52);
+  const relido = valorDigitadoRelido({ id: "20001", valor: 0, observacao: "", origem: "COTACAO" as const, valorCotado: 0, idTransportadoraCotada: 39975 }, true, 39975, true);
+  checar("cliente liberado: releitura reabilita o 0 digitado", [relido.valor, relido.valorDigitado], [0, true]);
+  checar("descarte: Atualizar fretes, troca de card e fora da cotacao", [
+    semValorDigitado([novoSedex])[0].valorDigitado ?? false,
+    limparValorDigitadoForaDe([recotado, veppo], "veppo_1")[0].valorDigitado,
+    preservadoSemCotacao(recotado).valor
+  ], [false, false, 52]);
+  checar("frete manual e antigo seguem como antes com o checkbox", [valorTravadoPeloCard(manual, 39975, true), valorTravadoPeloCard(antigo, 39975, true)], [false, false]);
+}
+
 // ---------- estrutura: tela e servico usam a mesma regra
 const tela = ler("src/features/orcamentos/OrcamentoFormPage.tsx");
 checar("tela: cards de cotacao marcados nas TRES portas (automatica, Atualizar fretes e a da abertura da aba)", [
@@ -158,7 +183,7 @@ checar("tela: nenhuma porta de cotacao sem a marca", [(tela.match(/solicitarCota
 checar("tela: Valor cobrado trava pela regra do valor (com a 997); dropdown de transportadora NAO", [
   tela.includes("disabled={Boolean(bloqueioTrocaFrete) || freteTravadoNoCard}"),
   tela.includes("disabled={!faseDeOrcamento || !freteEscolhido || Boolean(bloqueioTrocaFrete) || valorTravadoNoCard}") &&
-    tela.includes("const valorTravadoNoCard = valorTravadoPeloCard(freteEscolhido, form.idTransportadoraCliente);"),
+    tela.includes("const valorTravadoNoCard = valorTravadoPeloCard(freteEscolhido, form.idTransportadoraCliente, clientePodeEditarFrete);"),
   tela.includes("const freteTravadoNoCard = freteTravadoPeloCard(freteEscolhido);"),
   /<SelectTransportadora\s+value=\{form\.idTransportadoraCliente\}\s+transportadoras=\{transportadoras\}\s+disabled=\{Boolean\(bloqueioTrocaFrete\)\}\s+onChange=\{escolherTransportadoraCif\}/.test(tela)
 ], [false, true, true, true]);
@@ -184,10 +209,10 @@ checar("24163: Salvar grava origem MANUAL", origemParaGravar(manualNovo, { modal
 checar("tela: carimbo no selectFrete e na correcao do admin", [tela.includes("idTransportadoraCotada: vinculoParceira"), tela.includes("idTransportadoraCotada: gravado")], [true, true]);
 
 checar("tela: as portas de cotacao usam a regra do valor digitado", [
-  tela.includes("return { ...recotacaoAutomaticaDoEscolhido(currentChosen, newFrete, prev.idTransportadoraCliente), escolhido: true };"),
+  tela.includes("return { ...recotacaoAutomaticaDoEscolhido(currentChosen, newFrete, prev.idTransportadoraCliente, clientePodeEditarFrete), escolhido: true };"),
   tela.includes("const updatedResults = semValorDigitado(allResults).map((newFrete) => {"),
   (tela.match(/preservedFretes\.push\(preservadoSemCotacao\(\{/g) ?? []).length,
-  tela.includes("aplicarValorDigitado(f, valor, current.idTransportadoraCliente)"),
+  tela.includes("aplicarValorDigitado(f, valor, current.idTransportadoraCliente, clientePodeEditarFrete)"),
   tela.includes("limparValorDigitadoForaDe(form.fretes, freteId)"),
   (tela.match(/limparValorDigitadoForaDe\(current\.fretes, freteManual\.id\)/g) ?? []).length,
   tela.includes("atualizarCotadoDoDigitado(f, equivalente)")
@@ -197,8 +222,31 @@ const srv = ler("src/features/orcamentos/services/orcamentos.service.ts");
 checar("saveProposta: marca so na fase de orcamento, no gate do frete; releitura reabilita", [
   /if \(faseDeOrcamento\) \{\s+propostaData\.frete_valor_digitado = ehComplemento/.test(srv),
   srv.indexOf("propostaData.frete_valor_digitado") > srv.indexOf("propostaData.id_transportadora_cliente = idTransportadoraCliente;"),
-  srv.includes("valorDigitadoRelido(f, proposalRow.frete_valor_digitado, idTranspRelida)")
+  srv.includes("valorDigitadoRelido(f, proposalRow.frete_valor_digitado, idTranspRelida, cadastro?.podeEditarFrete === true)")
 ], [true, true, true]);
+checar("SERVIDOR: Salvar usa o checkbox do cadastro RELIDO do banco (nao o da tela)", [
+  srv.includes("recusaDoFreteCalculado(chosenFrete, idTransportadoraCliente, cadastro?.podeEditarFrete === true)"),
+  srv.includes("clientePodeEditarFrete: cadastro?.podeEditarFrete === true"),
+  srv.indexOf("const fetched = await getCadastroCompleto(formState.clienteId, client);") < srv.indexOf("cadastro?.podeEditarFrete === true);"),
+  /formState\.[a-zA-Z]*[pP]odeEditarFrete/.test(srv)
+], [true, true, true, false]);
+checar("tela: checkbox do cliente libera o valor e tem ajuda propria", [
+  tela.includes("const clientePodeEditarFrete = cliente?.podeEditarFrete === true;"),
+  tela.includes("valorTravadoPeloCard(freteEscolhido, form.idTransportadoraCliente, clientePodeEditarFrete)"),
+  tela.includes("\"Cliente com frete editável: o valor cobrado pode ser digitado em qualquer card, inclusive R$ 0,00")
+], [true, true, true]);
+const cad = ler("src/features/cadastros/CadastroFormPage.tsx");
+const cadSrv = ler("src/features/cadastros/services/cadastros.service.ts");
+checar("cadastro: checkbox, leitura e gravacao so quando informado", [
+  cad.includes("<Toggle label=\"Pode editar valor do frete\" checked={form.podeEditarFrete}"),
+  cadSrv.includes("usa_preco_fixo,pode_editar_frete,"),
+  cadSrv.includes("...(payload.pode_editar_frete !== undefined ? { pode_editar_frete: payload.pode_editar_frete === true } : {})")
+], [true, true, true]);
+const migCli = ler("supabase/migrations/20261027_clientes_pode_editar_frete.sql");
+checar("migration clientes: so ADD COLUMN boolean sem default", [
+  /ADD COLUMN IF NOT EXISTS pode_editar_frete boolean;/.test(migCli),
+  /\bDEFAULT\b|UPDATE\s+public|TRIGGER|GRANT|POLICY/i.test(migCli.replace(/^--.*$/gm, ""))
+], [true, false]);
 const migDig = ler("supabase/migrations/20261027_propostas_frete_valor_digitado.sql");
 const migDigAtiva = migDig.slice(0, migDig.indexOf("-- ROLLBACK —")) + migDig.slice(migDig.indexOf("ALTER TABLE public.propostas\n") >= 0 ? migDig.indexOf("ALTER TABLE public.propostas\n") : migDig.indexOf("ALTER TABLE public.propostas\r\n"));
 checar("migration frete_valor_digitado: so ADD COLUMN boolean e COMMENT, sem default/backfill/trigger/grant", [
@@ -206,7 +254,7 @@ checar("migration frete_valor_digitado: so ADD COLUMN boolean e COMMENT, sem def
   /\bDEFAULT\b|UPDATE\s+public|TRIGGER|GRANT|POLICY|cotacao_frete\s+(ADD|ALTER)/i.test(migDigAtiva.replace(/^--.*$/gm, ""))
 ], [true, false]);
 checar("saveProposta: recusa antes de escrever e grava a origem", [
-  srv.includes("const recusaCard = recusaDoFreteCalculado(chosenFrete, idTransportadoraCliente);"),
+  srv.includes("const recusaCard = recusaDoFreteCalculado(chosenFrete, idTransportadoraCliente, cadastro?.podeEditarFrete === true);"),
   // \r?\n: a copia de trabalho pode estar em CRLF (autocrlf do Windows).
   (() => {
     const del = srv.search(/\.from\("cotacao_frete"\)\r?\n\s+\.delete\(\)/);

@@ -472,7 +472,7 @@ export async function getCadastroDetailReadOnly(
   try {
     const { data: mainRows, error: mainError } = await client
       .from("clientes")
-      .select("id,id_cliente,nome,apelido,contato,documento,ins_estadual,ins_municipal,data_fundacao,email_contato,email_financeiro,telefone_fixo,whatsapp_1,whatsapp_2,ativo,restricao,limite_credito,obs,data_criacao,fantasia,email,site,data_cadastro,recebe_email,recebe_whatsapp,tipo_pessoa,nome_vendedor,nota,categoria,risco_credito,ultima_compra,total_compras,verificado,data_verificacao,padrao_pagamento,empresa_padrao,tipo_contribuinte,motivo_erro,cidade_uf,cpf_invalido,cpf_erro,credito,is_bonus,usa_preco_fixo,percentual_bunus,id_modelo_cobranca")
+      .select("id,id_cliente,nome,apelido,contato,documento,ins_estadual,ins_municipal,data_fundacao,email_contato,email_financeiro,telefone_fixo,whatsapp_1,whatsapp_2,ativo,restricao,limite_credito,obs,data_criacao,fantasia,email,site,data_cadastro,recebe_email,recebe_whatsapp,tipo_pessoa,nome_vendedor,nota,categoria,risco_credito,ultima_compra,total_compras,verificado,data_verificacao,padrao_pagamento,empresa_padrao,tipo_contribuinte,motivo_erro,cidade_uf,cpf_invalido,cpf_erro,credito,is_bonus,usa_preco_fixo,pode_editar_frete,percentual_bunus,id_modelo_cobranca")
       .eq("id_cliente", idCliente)
       .limit(1);
 
@@ -787,6 +787,7 @@ export type CadastroInsertPayload = {
   cpf_erro?: string | null;
   is_bonus?: boolean;
   usa_preco_fixo?: boolean;
+  pode_editar_frete?: boolean;
   percentual_bunus?: number | string | null;
   id_modelo_cobranca?: string | null;
 };
@@ -1033,6 +1034,8 @@ function normalizeClienteWritePayload(payload: CadastroInsertPayload | CadastroU
     ...(payload.credito !== undefined ? { credito: toNullableDecimal(payload.credito) } : {}),
     is_bonus: toBoolean(payload.is_bonus, false),
     usa_preco_fixo: toBoolean(payload.usa_preco_fixo, false),
+    // So entra no write quando informado: quem nao manda o campo nao desliga o cliente.
+    ...(payload.pode_editar_frete !== undefined ? { pode_editar_frete: payload.pode_editar_frete === true } : {}),
     percentual_bunus: toNullableDecimal(payload.percentual_bunus),
     id_modelo_cobranca: payload.id_modelo_cobranca ?? null
   };

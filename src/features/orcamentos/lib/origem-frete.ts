@@ -81,9 +81,12 @@ export function valorCobradoLivreNaTransportadora(idTransportadora: number | nul
  */
 export function valorTravadoPeloCard(
   frete: Pick<FreteComOrigem, "id" | "observacao" | "origem" | "idTransportadoraCotada"> | null | undefined,
-  idTransportadoraDaProposta: number | null | undefined
+  idTransportadoraDaProposta: number | null | undefined,
+  /** `clientes.pode_editar_frete` do cliente da proposta (27/10/2026): libera qualquer card. */
+  clientePodeEditarFrete: boolean = false
 ): boolean {
   if (!freteTravadoPeloCard(frete)) return false;
+  if (clientePodeEditarFrete === true) return false;
   if (!valorCobradoLivreNaTransportadora(idTransportadoraDaProposta)) return true;
   return frete!.idTransportadoraCotada !== undefined && !valorCobradoLivreNaTransportadora(frete!.idTransportadoraCotada);
 }
@@ -109,11 +112,14 @@ export function origemParaGravar(
 /** A mesma regra, no Salvar: valor ou transportadora diferentes do card COTACAO. */
 export function recusaDoFreteCalculado(
   frete: FreteComOrigem | null | undefined,
-  idTransportadoraDaProposta: number | null | undefined
+  idTransportadoraDaProposta: number | null | undefined,
+  /** Lido do BANCO pelo Salvar (cadastro relido), nunca do que a tela mandou. */
+  clientePodeEditarFrete: boolean = false
 ): string | null {
   if (!frete || !freteTravadoPeloCard(frete)) return null;
-  // Motoboy interno (997): o valor digitado vale; a transportadora segue conferida.
-  if (valorTravadoPeloCard(frete, idTransportadoraDaProposta) && typeof frete.valorCotado === "number" && Math.abs(Number(frete.valor) - frete.valorCotado) > 0.005) {
+  // Motoboy interno (997) ou cliente com "Pode editar valor do frete": o valor
+  // digitado vale; a transportadora segue conferida.
+  if (valorTravadoPeloCard(frete, idTransportadoraDaProposta, clientePodeEditarFrete) && typeof frete.valorCotado === "number" && Math.abs(Number(frete.valor) - frete.valorCotado) > 0.005) {
     return MENSAGEM_VALOR_DO_CARD;
   }
   if (frete.idTransportadoraCotada !== undefined && (idTransportadoraDaProposta ?? null) !== (frete.idTransportadoraCotada ?? null)) {
@@ -125,6 +131,10 @@ export function recusaDoFreteCalculado(
 /* ---------------------------------------------------------------------------
  * VALOR DIGITADO DO MOTOBOY INTERNO (27/10/2026) — `propostas.frete_valor_digitado`.
  *
+ * Vale tambem para o cliente com "Pode editar valor do frete"
+ * (`clientes.pode_editar_frete`, 27/10/2026): qualquer card calculado, valor 0
+ * incluido, com as mesmas regras de descarte.
+ *
  * O valor que o usuario digita no card do 997 sobrevive a recotacao automatica
  * (mudanca de item, peso ou cidade): ela atualiza so o valor cotado de referencia.
  * "Atualizar fretes" e ato explicito: volta ao cotado e limpa a marca. Trocar de
@@ -133,12 +143,24 @@ export function recusaDoFreteCalculado(
 
 const DIFERENCA_DE_CENTAVO = 0.005;
 
-/** O card escolhido e o calculado do 997, com a 997 na proposta? So nele a marca vale. */
+/**
+ * O card escolhido e calculado e o valor dele esta liberado (997 na proposta com o
+ * card dela, ou cliente com "Pode editar valor do frete")? So nele a marca vale.
+ */
+export function valorDoCardLiberado(
+  frete: Pick<FreteComOrigem, "id" | "observacao" | "origem" | "idTransportadoraCotada"> | null | undefined,
+  idTransportadoraDaProposta: number | null | undefined,
+  clientePodeEditarFrete: boolean = false
+): boolean {
+  return Boolean(frete) && freteTravadoPeloCard(frete) && !valorTravadoPeloCard(frete, idTransportadoraDaProposta, clientePodeEditarFrete);
+}
+
+/** Nome antigo (so o 997), mantido para quem ja chamava. */
 export function ehCardDoMotoboyInterno(
   frete: Pick<FreteComOrigem, "id" | "observacao" | "origem" | "idTransportadoraCotada"> | null | undefined,
   idTransportadoraDaProposta: number | null | undefined
 ): boolean {
-  return Boolean(frete) && freteTravadoPeloCard(frete) && !valorTravadoPeloCard(frete, idTransportadoraDaProposta);
+  return valorDoCardLiberado(frete, idTransportadoraDaProposta, false);
 }
 
 /**
@@ -146,8 +168,13 @@ export function ehCardDoMotoboyInterno(
  * quando o digitado difere do cotado (digitar o proprio cotado apaga); nos
  * outros fretes a marca nao existe.
  */
-export function aplicarValorDigitado<T extends FreteComOrigem>(frete: T, valor: number, idTransportadoraDaProposta: number | null | undefined): T {
-  if (!ehCardDoMotoboyInterno(frete, idTransportadoraDaProposta)) return { ...frete, valor, valorDigitado: false };
+export function aplicarValorDigitado<T extends FreteComOrigem>(
+  frete: T,
+  valor: number,
+  idTransportadoraDaProposta: number | null | undefined,
+  clientePodeEditarFrete: boolean = false
+): T {
+  if (!valorDoCardLiberado(frete, idTransportadoraDaProposta, clientePodeEditarFrete)) return { ...frete, valor, valorDigitado: false };
   const cotado = typeof frete.valorCotado === "number" ? frete.valorCotado : null;
   const digitado = cotado === null ? true : Math.abs(valor - cotado) > DIFERENCA_DE_CENTAVO;
   return { ...frete, valor, valorDigitado: digitado };
@@ -161,9 +188,10 @@ export function aplicarValorDigitado<T extends FreteComOrigem>(frete: T, valor: 
 export function recotacaoAutomaticaDoEscolhido<T extends FreteComOrigem>(
   anterior: FreteComOrigem,
   novo: T,
-  idTransportadoraDaProposta: number | null | undefined
+  idTransportadoraDaProposta: number | null | undefined,
+  clientePodeEditarFrete: boolean = false
 ): T {
-  if (anterior.valorDigitado === true && ehCardDoMotoboyInterno(anterior, idTransportadoraDaProposta)) {
+  if (anterior.valorDigitado === true && valorDoCardLiberado(anterior, idTransportadoraDaProposta, clientePodeEditarFrete)) {
     return {
       ...novo,
       valor: anterior.valor,
@@ -203,15 +231,22 @@ export function semValorDigitado<T extends FreteComOrigem>(fretes: readonly T[])
 }
 
 /**
- * O que o Salvar grava em `propostas.frete_valor_digitado`: `true` so com a 997 na
- * proposta, o card escolhido dela e o valor editado; em qualquer outro caso `null`.
+ * O que o Salvar grava em `propostas.frete_valor_digitado`: `true` so com o valor
+ * do card liberado (997 com o card dela, ou cliente com "Pode editar valor do
+ * frete") e editado; em qualquer outro caso `null`.
  */
 export function freteValorDigitadoParaGravar(
   frete: FreteComOrigem | null | undefined,
-  contexto: { idTransportadora: number | null | undefined; modalidade: string | null; isAvulso: boolean }
+  contexto: {
+    idTransportadora: number | null | undefined;
+    modalidade: string | null;
+    isAvulso: boolean;
+    /** Lido do banco pelo Salvar. */
+    clientePodeEditarFrete?: boolean;
+  }
 ): true | null {
   if (!frete || contexto.isAvulso || contexto.modalidade === "RETIRA" || contexto.modalidade === "FOB") return null;
-  return frete.valorDigitado === true && ehCardDoMotoboyInterno(frete, contexto.idTransportadora) ? true : null;
+  return frete.valorDigitado === true && valorDoCardLiberado(frete, contexto.idTransportadora, contexto.clientePodeEditarFrete === true) ? true : null;
 }
 
 /**
@@ -222,9 +257,10 @@ export function freteValorDigitadoParaGravar(
 export function valorDigitadoRelido<T extends FreteComOrigem>(
   frete: T,
   marcaGravada: unknown,
-  idTransportadoraDaProposta: number | null | undefined
+  idTransportadoraDaProposta: number | null | undefined,
+  clientePodeEditarFrete: boolean = false
 ): T {
-  if (marcaGravada !== true || !ehCardDoMotoboyInterno(frete, idTransportadoraDaProposta)) return frete;
+  if (marcaGravada !== true || !valorDoCardLiberado(frete, idTransportadoraDaProposta, clientePodeEditarFrete)) return frete;
   return { ...frete, valorDigitado: true, valorCotado: undefined };
 }
 

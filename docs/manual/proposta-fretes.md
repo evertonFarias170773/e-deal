@@ -100,6 +100,14 @@ O valor digitado no motoboy interno fica mesmo depois de salvar e reabrir o orç
 - o motoboy deixa de aparecer na cotação (peso ou cidade fora da faixa): o card fica, com o último valor cotado;
 - o endereço de entrega muda: a cotação recomeça do zero.
 
+### Cliente com frete subsidiado ("Pode editar valor do frete")
+
+No cadastro do cliente, o Financeiro (quem tem a permissão de editar crédito) pode ligar o checkbox **Pode editar valor do frete**, ao lado de **Usa Preço Fixo**. Ele vem desligado.
+
+Com ele ligado, nos pedidos desse cliente o **Valor cobrado (R$)** fica editável em qualquer card calculado (SEDEX, VEPPO, São Miguel, Azul, motoboy), inclusive com **R$ 0,00**. A ajuda sob o campo diz "Cliente com frete editável". O valor digitado segue as mesmas regras do motoboy interno: fica ao salvar, reabrir e mudar item ou peso, e é descartado por **Atualizar fretes**, troca de card ou de transportadora, motoboy fora da cotação ou troca de endereço.
+
+O **Salvar alterações** confere o checkbox no cadastro gravado no banco, não na tela: se o checkbox foi desligado enquanto o pedido estava aberto, o valor diferente do card é recusado.
+
 Para cobrar outro valor, o frete precisa ser manual:
 
 1. Em **Transportadora**, escolha uma transportadora que não tenha card na lista, mesmo com um card calculado escolhido. A tela cria o frete manual dela e o card deixa de ser o escolhido.
@@ -205,7 +213,7 @@ Repetir **Aplicar** não duplica: a segunda tentativa devolve o mesmo frete comp
 ## Regras e bloqueios
 
 - Retirada e FOB não cobram frete: o total da proposta sai sem frete, qualquer que seja a cotação. Só CIF cobra.
-- Card calculado escolhido: o valor cobrado é o do card, menos no card do **MOTOBOY INTERNO**, que aceita o valor digitado. O **Salvar alterações** recusa outro valor ou outra transportadora nesse caso. Escolher uma transportadora sem card troca o card por um frete manual, que segue livre.
+- Card calculado escolhido: o valor cobrado é o do card, menos no card do **MOTOBOY INTERNO** e nos pedidos de cliente com **Pode editar valor do frete**, que aceitam o valor digitado (R$ 0,00 incluído). O **Salvar alterações** recusa outro valor ou outra transportadora nesse caso. Escolher uma transportadora sem card troca o card por um frete manual, que segue livre.
 - Em CIF não dá para salvar sem um frete escolhido. Em FOB não dá para salvar sem a transportadora ou o **Motoboy**. Em retirada não é preciso escolher nada.
 - Sem modalidade marcada, a tela não mostra cards e pede: "Escolha a modalidade do frete acima para continuar."
 - Trocar de modalidade limpa a transportadora (fora de FOB) e desfaz a escolha de retirada. Confira a caixa da modalidade depois de trocar.
@@ -329,6 +337,8 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 > - **09/10/2026:** o Acompanhar Pedido vale para qualquer pedido em aberto, inclusive em NOVO e AGUARDANDO (antes só de APROVADO até EXPEDICAO); a busca por número procura entre todos os pedidos elegíveis; a mensagem de só leitura diz o motivo real.
 >
 > - **09/10/2026 (adendo):** o grupo Acompanhar deixa de ter limite de 10 pedidos (limite de segurança de 50, com aviso acima de 10); pedido com status vazio fica só para leitura.
+>
+> - **27/10/2026 (cliente):** checkbox **Pode editar valor do frete** no cadastro do cliente libera o valor digitado, R$ 0,00 incluído, em qualquer card dos pedidos dele.
 >
 > - **27/10/2026 (adendo):** o valor digitado no **MOTOBOY INTERNO** sobrevive a salvar, reabrir e mudar item ou peso; **Atualizar fretes**, troca de card ou de transportadora o descartam.
 >

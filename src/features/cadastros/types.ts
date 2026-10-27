@@ -99,6 +99,8 @@ export type Cadastro = {
   dataFundacao?: string;
   is_bonus?: boolean;
   usaPrecoFixo?: boolean;
+  /** `clientes.pode_editar_frete`: o pedido do cliente aceita valor de frete digitado em qualquer card (27/10/2026). */
+  podeEditarFrete?: boolean;
   bonusAtivo?: boolean;
   percentualBonus?: number;
   dataVerificacao?: string;
@@ -153,6 +155,7 @@ export type CadastroFormState = {
   modeloCobrancaId?: string;
   valorTotalComprado?: number;
   usaPrecoFixo: boolean;
+  podeEditarFrete: boolean;
   bonusAtivo: boolean;
   percentualBonus: string;
   nota: boolean;

@@ -46,6 +46,7 @@ export type SupabaseClienteRow = {
   credito?: SupabaseNullableValue;
   is_bonus?: SupabaseNullableValue;
   usa_preco_fixo?: SupabaseNullableValue;
+  pode_editar_frete?: SupabaseNullableValue;
   percentual_bunus?: SupabaseNullableValue;
   id_modelo_cobranca?: SupabaseNullableValue;
 };

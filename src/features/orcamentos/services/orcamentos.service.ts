@@ -2250,7 +2250,7 @@ export async function getPropostaDetailById(idInt: number, overrideClient?: Supa
         proposalRow.id_transportadora_cliente !== null && proposalRow.id_transportadora_cliente !== undefined
           ? Number(proposalRow.id_transportadora_cliente)
           : null;
-      fretes = fretes.map((f) => (f.escolhido ? valorDigitadoRelido(f, proposalRow.frete_valor_digitado, idTranspRelida) : f));
+      fretes = fretes.map((f) => (f.escolhido ? valorDigitadoRelido(f, proposalRow.frete_valor_digitado, idTranspRelida, cadastro?.podeEditarFrete === true) : f));
     }
     const chosenFrete = fretes.find((f) => f.escolhido) || fretes[0];
     const freteEscolhidoId = chosenFrete ? chosenFrete.id : "";
@@ -3366,7 +3366,9 @@ export async function saveProposta(
     // CARD CALCULADO (21/10/2026): transportadora e valor sao os do card. A mesma
     // regra da tela (lib/origem-frete.ts); recusa ANTES de qualquer escrita.
     if (regravaFrete && !formState.isAvulso && !ehComplemento && modalidadeVigente !== "FOB" && modalidadeVigente !== "RETIRA") {
-      const recusaCard = recusaDoFreteCalculado(chosenFrete, idTransportadoraCliente);
+      // "Pode editar valor do frete" vem do cadastro RELIDO do banco acima (getCadastroCompleto),
+      // nunca do que a tela mandou (27/10/2026).
+      const recusaCard = recusaDoFreteCalculado(chosenFrete, idTransportadoraCliente, cadastro?.podeEditarFrete === true);
       if (recusaCard) return { success: false, errorMessage: recusaCard };
     }
     const transportadoraVigente = usarDeclaracaoPersistida
@@ -3692,7 +3694,8 @@ export async function saveProposta(
           : freteValorDigitadoParaGravar(chosenFrete, {
               idTransportadora: idTransportadoraCliente,
               modalidade: modalidadeVigente,
-              isAvulso: formState.isAvulso === true
+              isAvulso: formState.isAvulso === true,
+              clientePodeEditarFrete: cadastro?.podeEditarFrete === true
             });
       }
 

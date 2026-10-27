@@ -156,6 +156,8 @@ export function mapSupabaseClienteRowToCadastro(row: SupabaseClienteRow): Cadast
     dataFundacao: toText(row.data_fundacao) || undefined,
     is_bonus: toBoolean(row.is_bonus, false),
     usaPrecoFixo: toBoolean(row.usa_preco_fixo, false),
+    // Frete subsidiado (27/10/2026): nulo = desligado.
+    podeEditarFrete: toBoolean(row.pode_editar_frete, false),
     bonusAtivo: toBoolean(row.is_bonus, false),
     percentualBonus: toNumber(row.percentual_bunus, 0),
     dataVerificacao: toText(row.data_verificacao) || undefined,
