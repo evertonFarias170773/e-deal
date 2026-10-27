@@ -126,7 +126,7 @@ function normalizar(resposta: unknown): ResultadoRelatorio {
       pedidos: g.pedidos,
       frete_zero: g.frete_zero,
       frete: arred(g.frete),
-      pct: totalFrete > 0 ? arred((g.frete / totalFrete) * 10000) / 100 : 0
+      pct: totalFrete > 0 ? arred((g.frete / totalFrete) * 100) : 0
     }))
     .sort((a, b) => Number(b.frete) - Number(a.frete) || Number(b.pedidos) - Number(a.pedidos));
 
