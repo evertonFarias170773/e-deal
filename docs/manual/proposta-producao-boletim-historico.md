@@ -1,6 +1,6 @@
 # Proposta: abas Produção / Expedição, Boletim e Histórico
 
-> **Última revisão:** 13/10/2026
+> **Última revisão:** 27/10/2026
 > **Caminho no menu:** Pedidos → abrir um pedido → Editar proposta → aba Produção / Expedição ou aba Histórico. Não existe aba Boletim na barra de abas: a OS (boletim) abre pelo menu Produção → clicar no pedido.
 > **Endereço:** `/orcamentos/[número]/editar?tab=producao` e `/orcamentos/[número]/editar?tab=historico`. A aba se chamava **Produção** até 09/10/2026; só o nome mudou, o endereço `?tab=producao` é o mesmo. A OS fica em `/pedidos/boletim?id_int=[número]&modo=edicao`.
 
@@ -60,7 +60,9 @@ Nomes exatamente como aparecem na tela.
 2. No campo **Orientação técnica de produção**, escreva o que a bancada precisa saber. Exemplo da própria tela: "pulseira de pino sem o pino; entregar em bobina de 100; conferir a cor contra a amostra aprovada...".
 3. Clique em **Salvar alterações**.
 
-É um campo só por pedido. O mesmo texto aparece na OS, em **BLOCO 2 — Orientação Técnica de Produção**, onde a produção pode revisá-lo, e sai por inteiro nos dois PDFs da OS.
+É um campo só por pedido. O mesmo texto aparece na OS, em **BLOCO 2 — Orientação Técnica de Produção**, onde o campo se chama **Instruções de fabricação · sai na OS impressa** e a produção pode revisá-lo, e sai por inteiro nos dois PDFs da OS.
+
+Na OS e nos dois PDFs esse texto sai em **vermelho, negrito e letra grande** (18 px na tela, 16 pt no PDF), para a bancada não passar por cima dele. É só aparência: o texto é gravado normal, e a aba Produção / Expedição continua mostrando o campo com a letra de sempre. Sem instrução nenhuma, a OS mostra só o traço, como antes.
 
 ### Escrever as instruções de entrega (aba Produção / Expedição)
 
@@ -250,3 +252,5 @@ O que fazer:
 - `src/features/orcamentos/components/RetirarProducaoModal.tsx`
 
 > **Mudança desta revisão:** 09/10/2026 — nova seção sobre a página que mostra a mensagem This page could not load: é erro de carregamento, com a causa já vista (data inválida no pedido, tratada no commit `6693958`) e o que fazer.
+
+> **Mudança desta revisão:** 27/10/2026 — no BLOCO 2 da OS o campo aparece como **Instruções de fabricação · sai na OS impressa** e o texto digitado sai em vermelho, negrito e letra grande, na tela e nos dois PDFs da OS. Só exibição: a gravação, o campo da aba Produção / Expedição e as Instruções de entrega não mudaram.
