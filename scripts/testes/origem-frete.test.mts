@@ -25,7 +25,9 @@ import {
   preservadoSemCotacao,
   recotacaoAutomaticaDoEscolhido,
   semValorDigitado,
-  valorDigitadoRelido
+  valorDigitadoRelido,
+  reaplicarValorDigitadoDoCliente,
+  valorDigitadoDoCliente
 } from "../../src/features/orcamentos/lib/origem-frete.ts";
 
 let falhas = 0;
@@ -169,6 +171,35 @@ checar("manual e antigo seguem livres com qualquer transportadora", [valorTravad
   checar("frete manual e antigo seguem como antes com o checkbox", [valorTravadoPeloCard(manual, 39975, true), valorTravadoPeloCard(antigo, 39975, true)], [false, false]);
 }
 
+// ---------- cliente liberado: o digitado e do pedido, sobrevive as acoes da tela (27/10/2026)
+{
+  const sedex0 = { ...aplicarValorDigitado({ ...marcarComoCotacao([{ id: "frete_sedex", valor: 48.5, observacao: "" }])[0], idTransportadoraCotada: 39975 }, 0, 39975, true) };
+  const veppoC = { ...marcarComoCotacao([{ id: "frete_veppo", valor: 38.9, observacao: "" }])[0], idTransportadoraCotada: 120018 };
+  const lista = [{ ...sedex0, escolhido: true }, { ...veppoC, escolhido: false }];
+  const dig = valorDigitadoDoCliente(lista, "frete_sedex", true);
+  checar("cliente: valor digitado vigente e 0 (zero nao vira 'sem valor')", dig, 0);
+  checar("sem o checkbox (e no 997 sem checkbox): nada a carregar", [valorDigitadoDoCliente(lista, "frete_sedex", false)], [null]);
+  // Atualizar fretes: cards novos, SEDEX a 52
+  const novos = semValorDigitado(marcarComoCotacao([{ id: "frete_sedex", valor: 52, observacao: "" }, { id: "frete_veppo", valor: 40, observacao: "" }]));
+  const aposAtualizar = reaplicarValorDigitadoDoCliente(novos, "frete_sedex", dig);
+  checar("cliente: Atualizar fretes mantem 0 e o cotado vira 52", [aposAtualizar[0].valor, aposAtualizar[0].valorCotado, aposAtualizar[0].valorDigitado, aposAtualizar[1].valor], [0, 52, true, 40]);
+  // troca de card: SEDEX (0) -> VEPPO
+  const trocado = reaplicarValorDigitadoDoCliente(limparValorDigitadoForaDe(lista, "frete_veppo"), "frete_veppo", dig);
+  checar("cliente: trocar de card leva o 0 para o VEPPO, cotado 38,90; SEDEX volta ao cotado", [trocado[1].valor, trocado[1].valorCotado, trocado[1].valorDigitado, trocado[0].valor, trocado[0].valorDigitado], [0, 38.9, true, 48.5, false]);
+  checar("cliente: e o Salvar aceita e marca o VEPPO a 0", [recusaDoFreteCalculado(trocado[1], 120018, true), freteValorDigitadoParaGravar(trocado[1], { idTransportadora: 120018, modalidade: "CIF", isAvulso: false, clientePodeEditarFrete: true })], [null, true]);
+  // mudanca de endereco: lista nova, escolha padrao recomeca no SEDEX com id novo
+  const enderecoNovo = reaplicarValorDigitadoDoCliente(marcarComoCotacao([{ id: "frete_sedex_2", valor: 61, observacao: "" }]), "frete_sedex_2", dig);
+  checar("cliente: endereco novo mantem 0 no card escolhido, cotado 61", [enderecoNovo[0].valor, enderecoNovo[0].valorCotado, enderecoNovo[0].valorDigitado], [0, 61, true]);
+  // motoboy/card fora da cotacao: preservado sem a marca, depois reaplicado
+  const preservado = reaplicarValorDigitadoDoCliente([preservadoSemCotacao({ ...sedex0, valorCotado: 52 })], "frete_sedex", dig);
+  checar("cliente: card fora da cotacao fica com o 0", [preservado[0].valor, preservado[0].valorDigitado], [0, true]);
+  // frete manual no meio: card(0) -> transportadora sem card (manual com 0) -> outro card
+  const manual0 = { id: "manual_1", valor: 0, observacao: "Cadastro manual" };
+  checar("cliente: manual escolhido carrega o valor dele para o card seguinte", reaplicarValorDigitadoDoCliente([veppoC], "frete_veppo", valorDigitadoDoCliente([manual0], "manual_1", true))[0].valor, 0);
+  checar("sem o checkbox: manual nao carrega nada (regra de antes)", valorDigitadoDoCliente([manual0], "manual_1", false), null);
+  checar("sem valor digitado: reaplicar nao mexe nos cards", reaplicarValorDigitadoDoCliente(novos, "frete_sedex", null)[0].valor, 52);
+}
+
 // ---------- estrutura: tela e servico usam a mesma regra
 const tela = ler("src/features/orcamentos/OrcamentoFormPage.tsx");
 checar("tela: cards de cotacao marcados nas TRES portas (automatica, Atualizar fretes e a da abertura da aba)", [
@@ -235,6 +266,10 @@ checar("tela: checkbox do cliente libera o valor e tem ajuda propria", [
   tela.includes("valorTravadoPeloCard(freteEscolhido, form.idTransportadoraCliente, clientePodeEditarFrete)"),
   tela.includes("\"Cliente com frete editável: o valor cobrado pode ser digitado em qualquer card, inclusive R$ 0,00")
 ], [true, true, true]);
+checar("tela: as 4 acoes reaplicam o digitado do cliente (recotacao/endereco, Atualizar fretes, troca de card, servico)", [
+  (tela.match(/reaplicarValorDigitadoDoCliente\(/g) ?? []).length,
+  (tela.match(/valorDigitadoDoCliente\([a-z.]+fretes, [a-z.]+freteEscolhidoId, clientePodeEditarFrete\)/gi) ?? []).length
+], [4, 4]);
 const cad = ler("src/features/cadastros/CadastroFormPage.tsx");
 const cadSrv = ler("src/features/cadastros/services/cadastros.service.ts");
 checar("cadastro: checkbox, leitura e gravacao so quando informado", [

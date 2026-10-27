@@ -104,7 +104,7 @@ O valor digitado no motoboy interno fica mesmo depois de salvar e reabrir o orç
 
 No cadastro do cliente, o Financeiro (quem tem a permissão de editar crédito) pode ligar o checkbox **Pode editar valor do frete**, ao lado de **Usa Preço Fixo**. Ele vem desligado.
 
-Com ele ligado, nos pedidos desse cliente o **Valor cobrado (R$)** fica editável em qualquer card calculado (SEDEX, VEPPO, São Miguel, Azul, motoboy), inclusive com **R$ 0,00**. A ajuda sob o campo diz "Cliente com frete editável". O valor digitado segue as mesmas regras do motoboy interno: fica ao salvar, reabrir e mudar item ou peso, e é descartado por **Atualizar fretes**, troca de card ou de transportadora, motoboy fora da cotação ou troca de endereço.
+Com ele ligado, nos pedidos desse cliente o **Valor cobrado (R$)** fica editável em qualquer card calculado (SEDEX, VEPPO, São Miguel, Azul, motoboy), inclusive com **R$ 0,00**. A ajuda sob o campo diz "Cliente com frete editável". Para esse cliente o valor digitado é do pedido, não do card: ele fica ao salvar, reabrir e mudar item ou peso, e também com **Atualizar fretes**, troca de card, de serviço ou de transportadora, card que sai da cotação e troca de endereço. Nessas ações só o valor de referência da cotação se atualiza, e o valor digitado passa para o card que ficou escolhido. Frete manual escolhido conta como valor digitado e também passa para o card seguinte. Depois da liberação, o valor gravado é o que vai para a nota fiscal; ele só muda por ação explícita (valor negociado, **Corrigir frete** ou aplicar uma recotação na Expedição).
 
 O **Salvar alterações** confere o checkbox no cadastro gravado no banco, não na tela: se o checkbox foi desligado enquanto o pedido estava aberto, o valor diferente do card é recusado.
 
@@ -337,6 +337,8 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 > - **09/10/2026:** o Acompanhar Pedido vale para qualquer pedido em aberto, inclusive em NOVO e AGUARDANDO (antes só de APROVADO até EXPEDICAO); a busca por número procura entre todos os pedidos elegíveis; a mensagem de só leitura diz o motivo real.
 >
 > - **09/10/2026 (adendo):** o grupo Acompanhar deixa de ter limite de 10 pedidos (limite de segurança de 50, com aviso acima de 10); pedido com status vazio fica só para leitura.
+>
+> - **27/10/2026 (cliente, adendo):** para cliente com **Pode editar valor do frete**, o valor digitado não é mais descartado por **Atualizar fretes**, troca de card ou de transportadora, nem troca de endereço.
 >
 > - **27/10/2026 (cliente):** checkbox **Pode editar valor do frete** no cadastro do cliente libera o valor digitado, R$ 0,00 incluído, em qualquer card dos pedidos dele.
 >

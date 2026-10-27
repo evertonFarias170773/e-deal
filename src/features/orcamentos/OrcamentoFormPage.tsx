@@ -129,8 +129,10 @@ import {
   limparValorDigitadoForaDe,
   marcarComoCotacao,
   preservadoSemCotacao,
+  reaplicarValorDigitadoDoCliente,
   recotacaoAutomaticaDoEscolhido,
   semValorDigitado,
+  valorDigitadoDoCliente,
   valorTravadoPeloCard
 } from "@/features/orcamentos/lib/origem-frete";
 import { avisoDaDiferencaNaTela, salvarItemSoNaTela, salvarSemMudancaEmPropostaPaga } from "@/features/orcamentos/lib/salvar-item-paga";
@@ -2338,9 +2340,12 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
           }
         });
 
+        // Cliente com "Pode editar valor do frete": o digitado e do pedido e volta
+        // ao card que ficou escolhido, mesmo com endereco novo (lib/origem-frete).
+        const digitadoDoCliente = valorDigitadoDoCliente(prev.fretes, prev.freteEscolhidoId, clientePodeEditarFrete);
         return {
           ...prev,
-          fretes: uniqueMerged,
+          fretes: reaplicarValorDigitadoDoCliente(uniqueMerged, nextEscolhidoId, digitadoDoCliente),
           freteEscolhidoId: nextEscolhidoId
         };
       });
@@ -3952,9 +3957,15 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
       }
     });
 
+    // Cliente com "Pode editar valor do frete": "Atualizar fretes" atualiza so o
+    // cotado; o digitado fica no card escolhido (lib/origem-frete, 27/10/2026).
     setForm((prev) => ({
       ...prev,
-      fretes: uniqueMerged,
+      fretes: reaplicarValorDigitadoDoCliente(
+        uniqueMerged,
+        nextEscolhidoId,
+        valorDigitadoDoCliente(prev.fretes, prev.freteEscolhidoId, clientePodeEditarFrete)
+      ),
       freteEscolhidoId: nextEscolhidoId
     }));
 
@@ -4078,7 +4089,11 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
       setValorCobradoCifDraft(null);
       setForm((current) => ({
         ...current,
-        fretes: limparValorDigitadoForaDe(current.fretes, existente.id).map((f) => ({ ...f, escolhido: f.id === existente.id })),
+        fretes: reaplicarValorDigitadoDoCliente(
+          limparValorDigitadoForaDe(current.fretes, existente.id).map((f) => ({ ...f, escolhido: f.id === existente.id })),
+          existente.id,
+          valorDigitadoDoCliente(current.fretes, current.freteEscolhidoId, clientePodeEditarFrete)
+        ),
         freteEscolhidoId: existente.id,
         idTransportadoraCliente: idTransportadora
       }));
@@ -4304,7 +4319,12 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
       return;
     }
     // Trocar de card limpa o valor digitado do motoboy interno (lib/origem-frete, 27/10/2026).
-    const updatedFretes = limparValorDigitadoForaDe(form.fretes, freteId).map((frete) => ({ ...frete, escolhido: frete.id === freteId }));
+    // Cliente com "Pode editar valor do frete": o digitado acompanha o card novo.
+    const updatedFretes = reaplicarValorDigitadoDoCliente(
+      limparValorDigitadoForaDe(form.fretes, freteId).map((frete) => ({ ...frete, escolhido: frete.id === freteId })),
+      freteId,
+      valorDigitadoDoCliente(form.fretes, form.freteEscolhidoId, clientePodeEditarFrete)
+    );
     // Sincronia (nao substituicao): escolher retirada embaixo marca RETIRA no
     // topo. Os dois campos continuam existindo — `frete_escolhido` guarda a
     // cotacao e `modalidade_frete` guarda quem paga. Ponto UNICO: os outros
@@ -7341,7 +7361,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                     {valorTravadoNoCard
                       ? "Frete calculado: o valor cobrado é o do card escolhido. Para cobrar outro valor, escolha em Transportadora uma sem card (vira frete manual), outro card ou use \"Atualizar fretes\"."
                       : freteTravadoNoCard && faseDeOrcamento && clientePodeEditarFrete
-                      ? "Cliente com frete editável: o valor cobrado pode ser digitado em qualquer card, inclusive R$ 0,00, e o digitado é o frete do pedido. \"Atualizar fretes\" volta a pôr o valor cotado."
+                      ? "Cliente com frete editável: o valor cobrado pode ser digitado em qualquer card, inclusive R$ 0,00, e o digitado é o frete do pedido. Ele fica mesmo com \"Atualizar fretes\", troca de card ou de endereço; só o valor de referência se atualiza."
                       : freteTravadoNoCard && faseDeOrcamento
                       ? "Motoboy interno: o valor cobrado pode ser editado aqui por qualquer usuário, e o digitado é o frete do pedido. \"Atualizar fretes\" volta a pôr o valor cotado."
                       : !faseDeOrcamento

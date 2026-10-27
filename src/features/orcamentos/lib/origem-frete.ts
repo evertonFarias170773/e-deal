@@ -268,3 +268,48 @@ export function valorDigitadoRelido<T extends FreteComOrigem>(
 export function atualizarCotadoDoDigitado<T extends FreteComOrigem>(frete: T, novo: Pick<FreteComOrigem, "valor">): T {
   return frete.valorDigitado === true ? { ...frete, valorCotado: novo.valor } : frete;
 }
+
+/* ---------------------------------------------------------------------------
+ * CLIENTE COM "PODE EDITAR VALOR DO FRETE": O DIGITADO E DO PEDIDO (27/10/2026).
+ *
+ * Para esse cliente o valor digitado nao pertence ao card: ele sobrevive a
+ * "Atualizar fretes", a troca de card ou de transportadora, a mudanca de
+ * endereco e a qualquer recotacao — so o cotado de referencia se atualiza. As
+ * opcoes, os cards e as regras das transportadoras nao mudam; o que muda e que,
+ * depois de cada uma dessas acoes, o valor digitado volta para o card que ficou
+ * escolhido. Para cliente sem o checkbox e para o 997, nada muda.
+ * --------------------------------------------------------------------------- */
+
+/** O valor digitado vigente do cliente liberado (0 incluido), ou null se nao ha. */
+export function valorDigitadoDoCliente(
+  fretes: readonly FreteComOrigem[],
+  idEscolhido: string | null | undefined,
+  clientePodeEditarFrete: boolean
+): number | null {
+  if (clientePodeEditarFrete !== true) return null;
+  const escolhido = fretes.find((f) => f.id === idEscolhido);
+  // Frete manual escolhido: o valor dele e sempre do usuario, entao tambem viaja
+  // para o card seguinte (inclusive depois de reabrir, quando a marca nao existe).
+  if (!escolhido || (escolhido.valorDigitado !== true && !ehFreteManual(escolhido))) return null;
+  const valor = Number(escolhido.valor);
+  return Number.isFinite(valor) ? valor : null;
+}
+
+/**
+ * Devolve o valor digitado do cliente ao card que ficou escolhido depois de uma
+ * acao da tela. O cotado de referencia passa a ser o do card escolhido. Frete
+ * manual recebe o valor, sem marca (o manual ja e livre e grava MANUAL).
+ */
+export function reaplicarValorDigitadoDoCliente<T extends FreteComOrigem>(
+  fretes: readonly T[],
+  idEscolhido: string | null | undefined,
+  valorDigitado: number | null
+): T[] {
+  if (valorDigitado === null || !idEscolhido) return [...fretes];
+  return fretes.map((f) => {
+    if (f.id !== idEscolhido) return f;
+    if (ehFreteManual(f)) return { ...f, valor: valorDigitado, valorDigitado: false };
+    const cotado = f.valorDigitado === true ? (typeof f.valorCotado === "number" ? f.valorCotado : undefined) : f.valor;
+    return { ...f, valor: valorDigitado, valorCotado: cotado, valorDigitado: true };
+  });
+}
