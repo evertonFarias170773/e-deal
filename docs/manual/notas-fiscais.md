@@ -1,6 +1,6 @@
 # Notas fiscais
 
-> **Última revisão:** 20/10/2026
+> **Última revisão:** 27/10/2026
 > **Caminho no menu:** Financeiro → Notas fiscais (primeiro item da seção Financeiro do menu lateral)
 > **Endereço:** `/notas-fiscais` (a nota aberta fica em `/notas-fiscais/[id]`)
 
@@ -86,7 +86,8 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Lançar no Contas a Receber** | Menu da nota Autorizada de venda faturada ainda não lançada | Abre a janela **Preparar Cobrança** com as parcelas da nota. |
 | **Revisar para gerar boletos** | Menu da nota Autorizada que já tem títulos | Abre a janela **Revisar para Geração Bancária**. |
 | **Ver contas a receber** | Menu da nota Autorizada que já tem títulos | Abre a Carteira com a busca pela referência da nota. |
-| **Cancelar NF-e** | Menu da nota Autorizada | Abre a janela **Cancelar NF-e**. |
+| **Cancelar NF-e** | Menu da nota Autorizada, nas 24 horas seguintes à autorização | Abre a janela **Cancelar NF-e**. |
+| **Cancelar NF-e (fora do prazo)** | Menu da nota Autorizada, depois de 24 horas da autorização ou sem data de autorização | Abre a janela **Cancelamento indisponível**, que explica o motivo e orienta procurar a contabilidade. Não envia nada à SEFAZ. |
 | **Abrir Carta de Correção (PDF)** | Menu da nota Autorizada que já tem carta | Abre o PDF da última carta de correção. |
 | **Baixar XML da Carta de Correção** | Menu da nota Autorizada que já tem carta | Abre o XML da última carta de correção. |
 | **Carta de Correção** | Menu da nota Autorizada, para quem tem a permissão **Emitir Carta de Correção** | Abre a janela **Carta de Correção (CCe)**. |
@@ -114,7 +115,8 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Gerar nota de remessa** / **Cancelar** | Janela "Gerar nota de REMESSA do pedido #N?" | Cria o rascunho da remessa, ou fecha. |
 | **Descartar rascunho** / **Cancelar** | Janela "Descartar o rascunho ...?" | Apaga o rascunho, ou fecha sem apagar. |
 | **Enviar CCe** / **Cancelar** | Janela **Carta de Correção (CCe)** | Envia a carta de correção, ou fecha. |
-| **Confirmar** / **Cancelar** | Janela **Cancelar NF-e** | **Confirmar** cancela a nota; **Cancelar** só fecha a janela. |
+| **Confirmar** / **Cancelar** | Janela **Cancelar NF-e** | **Confirmar** pede o cancelamento à SEFAZ (a nota só vira Cancelada se a SEFAZ confirmar); **Cancelar** só fecha a janela. |
+| **Entendi** | Janela **Cancelamento indisponível** | Fecha a janela. |
 | **Confirmar Lançamento** / **Cancelar** | Janela **Preparar Cobrança** | Cria os títulos no contas a receber e abre a Carteira, ou fecha. |
 | **Depósito em conta** | Janela **Preparar Cobrança**, em cada parcela | Marca a parcela para ser lançada como depósito, sem boleto. |
 | **Registrar boleto** | Janela **Revisar para Geração Bancária**, em cada parcela | Registra o boleto da parcela no banco. |
@@ -302,9 +304,11 @@ O ícone **Baixar DANFE** só aparece para nota autorizada em produção, com n�
 
 ### Cancelar uma nota
 
-1. No **Histórico**, abra o menu da nota autorizada e clique em **Cancelar NF-e**.
+1. No **Histórico**, abra o menu da nota autorizada e clique em **Cancelar NF-e**. O item só abre o pedido nas **24 horas** seguintes à autorização da nota.
 2. Informe a justificativa, com pelo menos 15 caracteres, e clique em **Confirmar**.
-3. Com **A nota fiscal foi cancelada com sucesso.**, a nota passa a Cancelada. Se o pedido não tiver outra nota de venda, ele volta para a lista da fila e pode ser faturado de novo.
+3. A nota só passa a Cancelada quando a SEFAZ confirma o cancelamento. Aparece **Nota cancelada** com **A SEFAZ confirmou o cancelamento. A nota está CANCELADA.** Se o pedido não tiver outra nota de venda, ele volta para a lista da fila e pode ser faturado de novo.
+4. Se a SEFAZ não confirmar, aparece **Falha ao cancelar nota fiscal** com **A SEFAZ não confirmou o cancelamento. A nota continua AUTORIZADA.** e a resposta recebida (status, código e mensagem da SEFAZ). A nota segue Autorizada e a tentativa fica registrada em **Eventos fiscais** como falha.
+5. Passadas as 24 horas, ou se a nota não tem a data de autorização registrada, o menu mostra **Cancelar NF-e (fora do prazo)**. Ele abre a janela **Cancelamento indisponível**, que explica o motivo e orienta procurar a contabilidade. Nada é enviado à SEFAZ.
 
 Isso vale para a NF-e. **A NFS-e (nota de serviço) não se cancela pelo Vibe**: o item **Cancelar NFS-e** do menu fica apagado. Para cancelar uma NFS-e, use o portal nacional (www.nfse.gov.br) e avise o fiscal.
 
@@ -360,8 +364,10 @@ Nos dois casos a confirmação lista as notas autorizadas que o pedido já tem. 
 - Nota autorizada não se desfaz: só sai por cancelamento. Nota Autorizada, Cancelada, Denegada ou Processando não pode ser editada.
 - Não dá para transmitir duas vezes a mesma nota. Se ela já tem número ou chave, ou se o retorno guardado indica autorização, a nova emissão é bloqueada.
 - Só nota **Autorizada** pode ser cancelada, e só uma vez. Justificativa e texto de carta de correção precisam de pelo menos 15 caracteres.
+- A nota só vira Cancelada quando a SEFAZ confirma o evento de cancelamento (status "cancelado", código 135 ou 155 e o XML do evento). Qualquer outra resposta deixa a nota Autorizada, mostra o motivo e registra a tentativa como falha.
+- Se a nota já tem cancelamento confirmado registrado, um novo pedido é recusado sem ir à SEFAZ.
 - Carta de correção só vale para nota **Autorizada**, e o texto aceita no máximo 1.000 caracteres.
-- O Vibe não confere prazo de cancelamento nem de carta de correção. Quem aceita ou recusa é a SEFAZ, e o motivo da recusa aparece no aviso.
+- Prazo de cancelamento: 24 horas a partir da autorização. Fora dele, ou sem data de autorização registrada, o Vibe não envia o pedido e orienta procurar a contabilidade. O prazo da carta de correção não é conferido: quem aceita ou recusa é a SEFAZ, e o motivo da recusa aparece no aviso.
 - Só dá para descartar rascunho que nunca foi transmitido. Não dá para desfazer o descarte.
 - Nota de remessa só pode ser gerada depois da nota de venda autorizada, e exige nome e CPF ou CNPJ do recebedor no endereço de entrega. Ela não tira o pedido da fila e não gera título.
 - **Aviso de nota de remessa.** O Vibe compara o endereço de entrega do pedido com o endereço que vai na NF-e de venda (o principal de quem paga). Município ou UF diferentes: **Nota de remessa necessária** (vermelho), com "Entrega em <cidade/UF>, diferente do endereço da NF-e (<cidade/UF>)". Mesmo município, mas CEP, número ou rua diferentes: aviso leve (âmbar), "Entrega em endereço diferente do faturamento: confira se precisa de nota de remessa". Bairro e complemento não entram na comparação; "Av." e "Avenida", acento e maiúsculas não fazem diferença.
@@ -586,7 +592,10 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/constants/navigation.ts`
 - `src/app/api/fiscal/carta-correcao/route.ts`
 - `src/lib/fiscal/carta-correcao.ts`
+- `src/lib/fiscal/cancelamento-nfe.ts`
 
 > **Mudança desta revisão:** 08/10/2026 — aviso de nota de remessa: selo na Fila e faixa no rascunho da NF-e quando o pedido é entregue em endereço diferente do da nota. É só aviso; a remessa segue sendo gerada à mão, depois da venda autorizada.
 
 > **Mudança desta revisão:** 12/10/2026 — pedido marcado como entregue pela lista de Pedidos (commit `c818220`) continua na Fila de Faturamento enquanto esperar nota. Só documentação.
+
+> **Mudança desta revisão:** 27/10/2026 — cancelar NF-e: a nota só vira Cancelada quando a SEFAZ confirma (status "cancelado", código 135 ou 155 e XML do evento); recusa mantém a nota Autorizada, mostra o motivo e registra a falha; prazo de 24 h da autorização, com **Cancelar NF-e (fora do prazo)** orientando a contabilidade.

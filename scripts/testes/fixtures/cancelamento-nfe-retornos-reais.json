@@ -1,0 +1,174 @@
+{
+  "origem": "notas_eventos (tipo_evento CANCELAMENTO, NFE), lido em 27/10/2026; so os campos da decisao",
+  "sucessos": [
+    {
+      "gravado_em": "2026-06-09",
+      "retorno": {
+        "ref": "NFE-17121-001",
+        "status": "cancelado",
+        "status_sefaz": "135",
+        "mensagem_sefaz": "Evento registrado e vinculado a NF-e",
+        "caminho_xml_cancelamento": "/arquivos/14152597000102_213524/202606/XMLs/43260614152597000102550020000010011392968840-can.xml"
+      }
+    },
+    {
+      "gravado_em": "2026-06-17",
+      "retorno": {
+        "ref": "NFE-17974-001",
+        "status": "cancelado",
+        "status_sefaz": "135",
+        "mensagem_sefaz": "Evento registrado e vinculado a NF-e",
+        "caminho_xml_cancelamento": "/arquivos/14152597000102_213524/202606/XMLs/43260614152597000102550020000010021078755488-can.xml"
+      }
+    },
+    {
+      "gravado_em": "2026-06-17",
+      "retorno": {
+        "ref": "NFE-17974-002",
+        "status": "cancelado",
+        "status_sefaz": "135",
+        "mensagem_sefaz": "Evento registrado e vinculado a NF-e",
+        "caminho_xml_cancelamento": "/arquivos/14152597000102_213524/202606/XMLs/43260614152597000102550020000010031284187942-can.xml"
+      }
+    },
+    {
+      "gravado_em": "2026-09-15",
+      "retorno": {
+        "ref": "NFE-22066-002",
+        "status": "cancelado",
+        "status_sefaz": "135",
+        "mensagem_sefaz": "Evento registrado e vinculado a NF-e",
+        "caminho_xml_cancelamento": "/arquivos/33413131000150_213529/202609/XMLs/43260933413131000150550020000075011200050953-can.xml"
+      }
+    },
+    {
+      "gravado_em": "2026-09-15",
+      "retorno": {
+        "ref": "NFE-22066-003",
+        "status": "cancelado",
+        "status_sefaz": "135",
+        "mensagem_sefaz": "Evento registrado e vinculado a NF-e",
+        "caminho_xml_cancelamento": "/arquivos/14152597000102_213524/202609/XMLs/43260914152597000102550020000480041445699278-can.xml"
+      }
+    },
+    {
+      "gravado_em": "2026-09-15",
+      "retorno": {
+        "ref": "NFE-22066-004",
+        "status": "cancelado",
+        "status_sefaz": "135",
+        "mensagem_sefaz": "Evento registrado e vinculado a NF-e",
+        "caminho_xml_cancelamento": "/arquivos/28699310000165_213527/202609/XMLs/43260928699310000165550020000410021692160458-can.xml"
+      }
+    },
+    {
+      "gravado_em": "2026-09-16",
+      "retorno": {
+        "ref": "NFE-21955-002",
+        "status": "cancelado",
+        "status_sefaz": "135",
+        "mensagem_sefaz": "Evento registrado e vinculado a NF-e",
+        "caminho_xml_cancelamento": "/arquivos/14152597000102_213524/202609/XMLs/43260914152597000102550020000480071066859015-can.xml"
+      }
+    },
+    {
+      "gravado_em": "2026-10-13",
+      "retorno": {
+        "ref": "NFE-23458-001",
+        "status": "cancelado",
+        "status_sefaz": "135",
+        "mensagem_sefaz": "Evento registrado e vinculado a NF-e",
+        "caminho_xml_cancelamento": "/arquivos/33413131000150_213529/202610/XMLs/43261033413131000150550020000075381524174003-can.xml"
+      }
+    },
+    {
+      "gravado_em": "2026-10-14",
+      "retorno": {
+        "ref": "NFE-23344-001",
+        "status": "cancelado",
+        "status_sefaz": "135",
+        "mensagem_sefaz": "Evento registrado e vinculado a NF-e",
+        "caminho_xml_cancelamento": "/arquivos/14152597000102_213524/202610/XMLs/43261014152597000102550020000481761853083789-can.xml"
+      }
+    },
+    {
+      "gravado_em": "2026-10-14",
+      "retorno": {
+        "ref": "NFE-23422-001",
+        "status": "cancelado",
+        "status_sefaz": "135",
+        "mensagem_sefaz": "Evento registrado e vinculado a NF-e",
+        "caminho_xml_cancelamento": "/arquivos/14152597000102_213524/202610/XMLs/43261014152597000102550020000481851443818940-can.xml"
+      }
+    },
+    {
+      "gravado_em": "2026-10-15",
+      "retorno": {
+        "ref": "NFE-23561-001",
+        "status": "cancelado",
+        "status_sefaz": "135",
+        "mensagem_sefaz": "Evento registrado e vinculado a NF-e",
+        "caminho_xml_cancelamento": "/arquivos/14152597000102_213524/202610/XMLs/43261014152597000102550020000481751084332762-can.xml"
+      }
+    },
+    {
+      "gravado_em": "2026-10-16",
+      "retorno": {
+        "ref": "NFE-23564-003",
+        "status": "cancelado",
+        "status_sefaz": "135",
+        "mensagem_sefaz": "Evento registrado e vinculado a NF-e",
+        "caminho_xml_cancelamento": "/arquivos/28699310000165_213527/202610/XMLs/43261028699310000165550020000411481950296718-can.xml"
+      }
+    },
+    {
+      "gravado_em": "2026-10-21",
+      "retorno": {
+        "ref": "NFE-23957-001",
+        "status": "cancelado",
+        "status_sefaz": "135",
+        "mensagem_sefaz": "Evento registrado e vinculado a NF-e",
+        "caminho_xml_cancelamento": "/arquivos/14152597000102_213524/202610/XMLs/43261014152597000102550020000482991367170337-can.xml"
+      }
+    },
+    {
+      "gravado_em": "2026-10-26",
+      "retorno": {
+        "ref": "NFE-24008-001",
+        "status": "cancelado",
+        "status_sefaz": "135",
+        "mensagem_sefaz": "Evento registrado e vinculado a NF-e",
+        "caminho_xml_cancelamento": "/arquivos/28699310000165_213527/202610/XMLs/43261028699310000165550020000412391345039139-can.xml"
+      }
+    }
+  ],
+  "autorizados": [
+    {
+      "gravado_em": "2026-10-14",
+      "retorno": {
+        "ref": "NFE-23138-001",
+        "status": "autorizado",
+        "status_sefaz": "100",
+        "mensagem_sefaz": "Autorizado o uso da NF-e"
+      }
+    },
+    {
+      "gravado_em": "2026-10-16",
+      "retorno": {
+        "ref": "NFE-23564-002",
+        "status": "autorizado",
+        "status_sefaz": "100",
+        "mensagem_sefaz": "Autorizado o uso da NF-e"
+      }
+    },
+    {
+      "gravado_em": "2026-10-16",
+      "retorno": {
+        "ref": "NFE-23702-001",
+        "status": "autorizado",
+        "status_sefaz": "100",
+        "mensagem_sefaz": "Autorizado o uso da NF-e"
+      }
+    }
+  ]
+}

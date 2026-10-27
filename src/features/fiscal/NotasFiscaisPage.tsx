@@ -29,7 +29,7 @@ import { acoesFinanceirasDaNfse, seloFinanceiroDaNfse } from "@/features/nfse/li
 import { getCobrancaFaturadaParaLancar, getTitulosAtivosPorIdInt, type TitulosAtivos } from "@/features/nfse/services/nfse-financeiro.service";
 import type { SupabaseBoletoRow } from "@/features/contas-a-receber/types.supabase";
 import { useRouter } from "next/navigation";
-import { createOrReuseNfeDraft, getFaturaveisPropostas, updateNfeDraft, previewNfeRascunho, getNfeFinanceiroStatus, getFaturadoEmAbertoPorIdInt, getNfePagamentos, getNfeDisplayStatus, prepararEnvioNfe, insertNotaEvento, getNotaEventosForRefs, excluirRascunhoNfe, STATUS_DESCARTAVEIS_NFE, type FaturadoEmAberto, type SupabaseNotaEventoRow } from "@/features/nfe/services/nfe.service";
+import { createOrReuseNfeDraft, getFaturaveisPropostas, updateNfeDraft, previewNfeRascunho, getNfeFinanceiroStatus, getFaturadoEmAbertoPorIdInt, getNfePagamentos, getNfeDisplayStatus, prepararEnvioNfe, getNotaEventosForRefs, excluirRascunhoNfe, STATUS_DESCARTAVEIS_NFE, type FaturadoEmAberto, type SupabaseNotaEventoRow } from "@/features/nfe/services/nfe.service";
 import { PrepararBoletosModal, type OrigemNfeLancamento } from "@/features/cobrancas/PrepararBoletosModal";
 import { PAGAMENTOS_V2_SELECT } from "@/features/cobrancas/services/pagamentos-v2.service";
 import { mapSupabasePagamentoV2RowToCobranca } from "@/features/cobrancas/mappers";
@@ -79,7 +79,7 @@ import {
   seloDoAmbiente,
   statusExibidoDaNfse
 } from "@/features/nfse/lib/historico-nfse";
-import { parseFocusResponse } from "@/lib/fiscal/carta-correcao";
+import { prazoDoCancelamento } from "@/lib/fiscal/cancelamento-nfe";
 
 
 type ActiveTab = "FILA_FATURAMENTO" | "HISTORICO_FISCAL";
@@ -733,6 +733,9 @@ export function NotasFiscaisPage() {
   const [cancelLoading, setCancelLoading] = useState(false);
   const [cancelNoteNfe, setCancelNoteNfe] = useState<NfeReadModel | null>(null);
   const [cancelNoteNfse, setCancelNoteNfse] = useState<NfseReadModel | null>(null);
+  // Nota fora do prazo de cancelamento (ou sem data de autorização): a janela só
+  // explica e orienta a contabilidade. Nada é enviado à Focus.
+  const [cancelForaDoPrazo, setCancelForaDoPrazo] = useState<{ ref: string; mensagem: string } | null>(null);
 
   const handleOpenCceModal = (note: NfeReadModel) => {
     if (!note.id_empresa) {
@@ -869,126 +872,28 @@ export function NotasFiscaisPage() {
         throw new Error("A resposta da API de cancelamento não é um JSON válido.");
       }
 
-      if (!response.ok) {
+      // Quem decide se cancelou é a rota (lib/fiscal/cancelamento-nfe): só
+      // "cancelado" + cStat 135/155 + XML do evento. É ela que grava a nota e o
+      // evento; a tela só mostra o que voltou. Recusa da SEFAZ vem como 422 com
+      // o motivo, e a nota continua AUTORIZADA.
+      if (!response.ok || !envelope?.success) {
         const errorMsg =
-          envelope.message || envelope.erro?.mensagem || envelope.error || `Erro HTTP ${response.status}`;
+          envelope?.message || envelope?.erro?.mensagem || envelope?.error || `Erro HTTP ${response.status}`;
         throw new Error(errorMsg);
       }
 
-      // A rota repassa o corpo do webhook em `retorno`. O resto do fluxo abaixo
-      // continua lendo o retorno da Focus como sempre leu.
-      const data = envelope?.retorno ?? envelope;
-
-      const parsed = parseFocusResponse(data);
-      if (!parsed.success) throw new Error(parsed.message);
-
-      // 1. Normalizar o retorno da Focus
-      const normalized = Array.isArray(data) ? data[0] : data;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      let focusData: any = normalized;
-
-      if (normalized && normalized.body) {
-        focusData = normalized.body;
+      if (!isNfse && envelope.notaAtualizada) {
+        nfeData.setState(prev => ({
+          ...prev,
+          nfeList: prev.nfeList.map(n => n.id === note.id ? { ...n, status: "CANCELADA" } : n)
+        }));
       }
-      if (focusData && focusData.payload_retorno) {
-        focusData = focusData.payload_retorno;
-      }
-      if (focusData && typeof focusData.data === "string") {
-        try {
-          focusData = JSON.parse(focusData.data);
-        } catch (err) {
-          console.error("[Cancelamento] Error parsing focusData.data string:", err);
-        }
-      } else if (focusData && focusData.data && typeof focusData.data === "object") {
-        focusData = focusData.data;
-      }
-      if (typeof focusData === "string") {
-        try {
-          focusData = JSON.parse(focusData);
-        } catch (err) {
-          console.error("[Cancelamento] Error parsing focusData string:", err);
-        }
-      }
-
-      const client = getSupabaseClient();
-      if (client && !isNfse) {
-        try {
-          const nowIso = new Date().toISOString();
-          
-          // 2. Atualizar notas_fiscais
-          const { error: updateError } = await client
-            .from("notas_fiscais")
-            .update({
-              status: "CANCELADA",
-              status_focus: focusData?.status || null,
-              status_sefaz: focusData?.status_sefaz || focusData?.codigo_status_sefaz || null,
-              codigo_status_sefaz: focusData?.status_sefaz || focusData?.codigo_status_sefaz || null,
-              mensagem_sefaz: focusData?.mensagem_sefaz || null,
-              erro_codigo: null,
-              erro_mensagem: null,
-              data_cancelamento: nowIso,
-              payload_retorno: focusData,
-              updated_at: nowIso
-            })
-            .eq("id", note.id);
-
-          if (updateError) {
-            console.error("[Cancelamento] Falha ao atualizar notas_fiscais:", updateError);
-          } else {
-            console.log("[Cancelamento] Status da nota atualizado no banco para CANCELADA:", note.ref);
-          }
-
-          // 3. Inserir em public.notas_eventos
-          const { data: { session } } = await client.auth.getSession();
-          const criadoPor = session?.user?.id || session?.user?.email || null;
-          const criadoPorNome = session?.user?.user_metadata?.nome || session?.user?.user_metadata?.full_name || session?.user?.email || null;
-
-          const payloadEnvio = {
-            id_empresa: Number(note.id_empresa),
-            referencia: note.ref,
-            justificativa: cancelJustificativa.trim()
-          };
-
-          const eventData = {
-            tipo_documento: "NFE" as const,
-            ref: note.ref,
-            tipo_evento: "CANCELAMENTO" as const,
-            status_evento: focusData?.status || null,
-            status_sefaz: focusData?.status_sefaz || focusData?.codigo_status_sefaz || null,
-            mensagem_sefaz: focusData?.mensagem_sefaz || null,
-            caminho_xml: focusData?.caminho_xml_cancelamento || null,
-            caminho_pdf: focusData?.caminho_danfe || null,
-            justificativa: cancelJustificativa.trim(),
-            payload_envio: payloadEnvio,
-            payload_retorno: focusData,
-            origem: "FOCUS_CANCELAMENTO",
-            criado_por: criadoPor,
-            criado_por_nome: criadoPorNome
-          };
-
-          console.log("[Cancelamento] Inserindo evento de cancelamento:", eventData);
-          const success = await insertNotaEvento(eventData);
-          if (success) {
-            console.log("[Cancelamento] Evento de cancelamento persistido no banco.");
-          } else {
-            console.error("[Cancelamento] Falha ao persistir evento de cancelamento.");
-          }
-          
-          // 4. Atualizar estado local
-          nfeData.setState(prev => ({
-            ...prev,
-            nfeList: prev.nfeList.map(n => n.id === note.id ? { ...n, status: "CANCELADA" } : n)
-          }));
-          void refreshCceEventsForRefs([note.ref]);
-        } catch (dbErr) {
-          console.error("[Cancelamento] Erro no fluxo de persistência de cancelamento:", dbErr);
-        }
-      }
+      void refreshCceEventsForRefs([note.ref]);
 
       showToast({
-        type: "success",
-        title: "Sucesso!",
-        description: "A nota fiscal foi cancelada com sucesso."
+        type: envelope.notaAtualizada === false ? "warning" : "success",
+        title: envelope.notaAtualizada === false ? "Cancelada na SEFAZ" : "Nota cancelada",
+        description: envelope.message || "A SEFAZ confirmou o cancelamento."
       });
       setCancelModalOpen(false);
       void nfeData.refresh();
@@ -1418,10 +1323,21 @@ export function NotasFiscaisPage() {
       }
 
       if (canCancelNf) {
-        actions.push({
-          label: "Cancelar NF-e",
-          onClick: () => handleOpenCancelNfeModal(item)
-        });
+        // Prazo de 24 h da autorização (lib/fiscal/cancelamento-nfe). Fora dele,
+        // o item não abre o pedido: explica e orienta procurar a contabilidade.
+        // A rota confere a mesma regra antes de chamar a Focus.
+        const prazo = prazoDoCancelamento(item.data_autorizacao, new Date());
+        if (prazo.dentro) {
+          actions.push({
+            label: "Cancelar NF-e",
+            onClick: () => handleOpenCancelNfeModal(item)
+          });
+        } else {
+          actions.push({
+            label: "Cancelar NF-e (fora do prazo)",
+            onClick: () => setCancelForaDoPrazo({ ref: item.ref, mensagem: prazo.mensagem })
+          });
+        }
       }
 
       const events = cceEventsMap[item.ref] || [];
@@ -3583,6 +3499,39 @@ export function NotasFiscaisPage() {
                 ) : (
                   "Confirmar"
                 )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Cancelamento fora do prazo: só explica. Nenhuma chamada à Focus. */}
+      {cancelForaDoPrazo && (
+        <div className="fixed inset-0 z-[10000] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl shadow-2xl border border-slate-100 max-w-md w-full overflow-hidden flex flex-col">
+            <div className="px-6 py-5 flex items-center justify-between border-b border-slate-100">
+              <h3 className="text-base font-bold text-slate-900">Cancelamento indisponível</h3>
+              <button
+                type="button"
+                onClick={() => setCancelForaDoPrazo(null)}
+                className="p-1.5 hover:bg-slate-100 rounded-xl transition text-slate-400 hover:text-slate-600"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="px-6 py-6 space-y-3">
+              <p className="text-xs text-slate-500 font-sans">
+                Nota <strong className="font-mono text-slate-700">{cancelForaDoPrazo.ref}</strong>
+              </p>
+              <p className="text-sm text-slate-700 leading-relaxed font-sans">{cancelForaDoPrazo.mensagem}</p>
+            </div>
+            <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setCancelForaDoPrazo(null)}
+                className="px-5 py-2.5 text-xs font-bold text-white bg-[#0b2f4a] hover:opacity-90 rounded-xl shadow-sm transition font-sans"
+              >
+                Entendi
               </button>
             </div>
           </div>

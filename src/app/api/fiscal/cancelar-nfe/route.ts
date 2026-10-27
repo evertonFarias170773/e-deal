@@ -2,6 +2,13 @@ import { NextResponse } from "next/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { verificarPermissaoServerSide } from "@/lib/auth/verificar-permissao";
 import { cabecalhosWebhookN8n } from "@/lib/n8n/webhook-segredo";
+import {
+  MENSAGEM_JA_CANCELADA,
+  desfechoDoCancelamento,
+  montarEventoCancelamento,
+  prazoDoCancelamento,
+  type DesfechoDoCancelamento
+} from "@/lib/fiscal/cancelamento-nfe";
 
 /**
  * Cancelamento de nota fiscal — porta de entrada no servidor.
@@ -17,6 +24,18 @@ import { cabecalhosWebhookN8n } from "@/lib/n8n/webhook-segredo";
  *   Quem decide qual webhook chamar é o servidor, pela TABELA em que a `ref`
  *   existe — `notas_fiscais` para NF-e, `notas_servico` para NFS-e. Nunca por
  *   flag vinda do cliente.
+ *
+ * QUEM DECIDE SE CANCELOU É ESTA ROTA (27/10/2026)
+ *   Antes a rota só repassava o retorno e a TELA gravava CANCELADA sempre que
+ *   não via sinal de erro — e "autorizado"/100 não é erro. Três notas ficaram
+ *   CANCELADA no Vibe sem a SEFAZ ter cancelado. Agora a decisão é
+ *   `desfechoDoCancelamento` (lib/fiscal/cancelamento-nfe): CANCELADA só com
+ *   "cancelado" + cStat 135/155 + caminho do XML. Qualquer outra resposta libera
+ *   a reserva, grava o evento como "falha" e devolve 422 com o motivo da Focus.
+ *   A tela não grava mais nada do cancelamento.
+ *
+ *   Antes do webhook a rota recusa, sem chamar a Focus: nota fora do prazo de
+ *   24 h (ou sem data de autorização) e nota que já tem evento "cancelado".
  */
 
 export const maxDuration = 60;
@@ -40,6 +59,7 @@ type NotaCancelavel = {
   status: string;
   id_empresa: number | null;
   data_cancelamento?: string | null;
+  data_autorizacao?: string | null;
 };
 
 /** Extrai a mensagem real do webhook para que a recusa chegue à tela. */
@@ -142,7 +162,7 @@ export async function POST(request: Request) {
     //    NF-e ou NFS-e. Nada do corpo além de `ref` e `justificativa` é usado.
     const { data: nfeRow, error: nfeError } = await supabase
       .from("notas_fiscais")
-      .select("id, ref, status, id_empresa, data_cancelamento")
+      .select("id, ref, status, id_empresa, data_cancelamento, data_autorizacao")
       .eq("ref", ref)
       .maybeSingle();
 
@@ -232,6 +252,40 @@ export async function POST(request: Request) {
       );
     }
 
+    // 5b. Prazo da SEFAZ, contado da autorização. Fora dele (ou sem a data), a
+    //     Focus não é chamada: a tela explica e orienta procurar a contabilidade.
+    const prazo = prazoDoCancelamento(nota.data_autorizacao, new Date());
+    if (!prazo.dentro) {
+      return NextResponse.json(
+        { success: false, code: prazo.motivo, message: prazo.mensagem },
+        { status: 422 }
+      );
+    }
+
+    // 5c. Idempotência: se já existe evento "cancelado" para a nota, a SEFAZ já
+    //     cancelou — não se pede de novo nem se grava segundo evento.
+    const { data: jaCancelada, error: jaCanceladaError } = await supabase
+      .from("notas_eventos")
+      .select("id")
+      .eq("tipo_documento", "NFE")
+      .eq("ref", nota.ref)
+      .eq("tipo_evento", "CANCELAMENTO")
+      .eq("status_evento", "cancelado")
+      .limit(1);
+    if (jaCanceladaError) {
+      console.error("[API][CancelarNfe] Falha ao conferir eventos anteriores:", jaCanceladaError.message);
+      return NextResponse.json(
+        { success: false, message: "Não foi possível conferir os eventos da nota no banco." },
+        { status: 500 }
+      );
+    }
+    if (Array.isArray(jaCancelada) && jaCancelada.length > 0) {
+      return NextResponse.json(
+        { success: false, code: "CANCELAMENTO_JA_CONFIRMADO", message: MENSAGEM_JA_CANCELADA },
+        { status: 409 }
+      );
+    }
+
     // 6. Trava contra cancelamento concorrente — compare-and-swap de estado.
     //
     //    A checagem acima não basta: duas chamadas simultâneas leem o mesmo
@@ -279,16 +333,60 @@ export async function POST(request: Request) {
       }
     }
 
-    /** Devolve a reserva quando o cancelamento não se concretiza. */
+    /** Devolve a reserva quando o cancelamento não se concretiza — só a PRÓPRIA reserva. */
     async function liberarReserva() {
       if (ehNfse || !nota) return;
       const { error } = await supabase
         .from("notas_fiscais")
         .update({ data_cancelamento: null, updated_at: new Date().toISOString() })
-        .eq("id", nota.id);
+        .eq("id", nota.id)
+        .eq("status", STATUS_CANCELAVEL)
+        .eq("data_cancelamento", agora);
       if (error) {
         console.error("[API][CancelarNfe] Falha ao liberar a reserva:", error.message);
       }
+    }
+
+    // Autoria, a partir da sessão do servidor — nunca de valor do cliente.
+    // `criado_por`/`criado_por_nome` da nota são de quem criou o rascunho e
+    // NÃO podem ser sobrescritos: por isso as colunas próprias.
+    const usuario = authData.user;
+    const metadados = (usuario.user_metadata ?? {}) as Record<string, unknown>;
+    const nomeAutor =
+      String(metadados.nome ?? "").trim() ||
+      String(metadados.full_name ?? "").trim() ||
+      String(usuario.email ?? "").trim() ||
+      null;
+    const idEmpresa = Number(nota.id_empresa);
+    const refNota = nota.ref;
+
+    /** Grava o evento (confirmado ou falha). Falhar aqui não muda o desfecho. */
+    async function gravarEvento(desfecho: DesfechoDoCancelamento, respostaSemCorpo?: { motivo: string }) {
+      const evento = montarEventoCancelamento({
+        ref: refNota,
+        idEmpresa,
+        justificativa,
+        desfecho,
+        respostaSemCorpo: respostaSemCorpo ?? null,
+        criadoPor: usuario.id,
+        criadoPorNome: nomeAutor
+      });
+      const { error } = await supabase.from("notas_eventos").insert(evento);
+      if (error) {
+        console.error(
+          "[API][CancelarNfe] Evento não gravado:",
+          error.message,
+          JSON.stringify({ ref: refNota, status_evento: evento.status_evento })
+        );
+        return false;
+      }
+      return true;
+    }
+
+    /** Falha de transporte: a nota segue AUTORIZADA e o evento fica como falha. */
+    async function falhaDeIntegracao(motivo: string) {
+      await liberarReserva();
+      await gravarEvento(desfechoDoCancelamento(null), { motivo });
     }
 
     // 7. O webhook do n8n, com o mesmo corpo de sempre, agora do servidor.
@@ -306,7 +404,7 @@ export async function POST(request: Request) {
       });
     } catch (err) {
       console.error("[API][CancelarNfe] Webhook inacessível:", err);
-      await liberarReserva();
+      await falhaDeIntegracao("Integração fiscal inacessível.");
       return NextResponse.json(
         {
           success: false,
@@ -318,8 +416,11 @@ export async function POST(request: Request) {
 
     if (!response.ok) {
       const message = await mensagemDoWebhook(response);
-      await liberarReserva();
-      return NextResponse.json({ success: false, message }, { status: 502 });
+      await falhaDeIntegracao(message);
+      return NextResponse.json(
+        { success: false, code: "INTEGRACAO_RECUSOU", message: `${message} A nota continua AUTORIZADA.` },
+        { status: 502 }
+      );
     }
 
     let retorno: unknown = null;
@@ -336,38 +437,72 @@ export async function POST(request: Request) {
       console.warn("[API][CancelarNfe] Nao foi possivel ler o corpo do webhook:", err);
     }
 
-    // 8. Autoria, a partir da sessão do servidor — nunca de valor do cliente.
-    //    `criado_por`/`criado_por_nome` da nota são de quem criou o rascunho e
-    //    NÃO podem ser sobrescritos: por isso as colunas próprias.
-    if (!ehNfse) {
-      const metadados = (authData.user.user_metadata ?? {}) as Record<string, unknown>;
-      const nomeAutor =
-        String(metadados.nome ?? "").trim() ||
-        String(metadados.full_name ?? "").trim() ||
-        String(authData.user.email ?? "").trim() ||
-        null;
+    // 8. A decisão. Só "cancelado" + cStat 135/155 + caminho do XML é cancelamento.
+    const desfecho = desfechoDoCancelamento(retorno);
 
-      const { error: autoriaError } = await supabase
-        .from("notas_fiscais")
-        .update({
-          cancelado_por: authData.user.id,
-          cancelado_por_nome: nomeAutor,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", nota.id);
-
-      if (autoriaError) {
-        // A nota foi cancelada no banco de dados fiscal; perder a autoria não
-        // desfaz isso. Registra e segue — a tela conclui o restante.
-        console.error("[API][CancelarNfe] Falha ao gravar a autoria:", autoriaError.message);
-      }
+    if (!desfecho.confirmado) {
+      await liberarReserva();
+      const eventoGravado = await gravarEvento(desfecho);
+      return NextResponse.json(
+        {
+          success: false,
+          code: "CANCELAMENTO_NAO_CONFIRMADO",
+          message: desfecho.mensagem,
+          status_focus: desfecho.statusFocus,
+          status_sefaz: desfecho.statusSefaz,
+          mensagem_sefaz: desfecho.mensagemSefaz,
+          eventoGravado,
+        },
+        { status: 422 }
+      );
     }
+
+    // 9. Confirmado. O UPDATE só casa se a nota ainda está AUTORIZADA e com a
+    //    PRÓPRIA reserva (`data_cancelamento` = a marca desta chamada).
+    const { data: atualizadas, error: updateError } = await supabase
+      .from("notas_fiscais")
+      .update({
+        status: "CANCELADA",
+        status_focus: desfecho.statusFocus,
+        status_sefaz: desfecho.statusSefaz,
+        codigo_status_sefaz: desfecho.statusSefaz,
+        mensagem_sefaz: desfecho.mensagemSefaz,
+        erro_codigo: null,
+        erro_mensagem: null,
+        payload_retorno: desfecho.focus,
+        cancelado_por: usuario.id,
+        cancelado_por_nome: nomeAutor,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", nota.id)
+      .eq("status", STATUS_CANCELAVEL)
+      .eq("data_cancelamento", agora)
+      .select("id");
+
+    const notaAtualizada = !updateError && Array.isArray(atualizadas) && atualizadas.length > 0;
+    if (!notaAtualizada) {
+      // A SEFAZ cancelou; o Vibe não conseguiu marcar. Não se esconde: o evento
+      // é gravado igual e a tela avisa para recarregar e conferir.
+      console.error(
+        "[API][CancelarNfe] Cancelamento confirmado, mas a nota não foi marcada:",
+        updateError?.message ?? "nenhuma linha casou (status ou reserva mudaram)",
+        JSON.stringify({ ref: nota.ref })
+      );
+    }
+
+    const eventoGravado = await gravarEvento(desfecho);
 
     return NextResponse.json({
       success: true,
       ref: nota.ref,
-      tipo: ehNfse ? "NFSE" : "NFE",
-      retorno,
+      tipo: "NFE",
+      message: notaAtualizada
+        ? "A SEFAZ confirmou o cancelamento. A nota está CANCELADA."
+        : "A SEFAZ confirmou o cancelamento, mas o Vibe não conseguiu marcar a nota. Recarregue a lista e avise o suporte.",
+      notaAtualizada,
+      eventoGravado,
+      status_sefaz: desfecho.statusSefaz,
+      mensagem_sefaz: desfecho.mensagemSefaz,
     });
   } catch (err) {
     console.error("[API][CancelarNfe] Erro inesperado:", err);
