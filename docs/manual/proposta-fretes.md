@@ -80,7 +80,7 @@ A proposta tem um frete manual por vez: escolher outra transportadora sem cotaç
 ### Escolher o serviço da transportadora (CIF)
 
 1. Em CIF, escolha a **Transportadora**. Se ela tem mais de um serviço, a lista **Serviço** aparece ao lado.
-2. Abra a lista **Serviço** e escolha. Para a SVT TRANSPORTES (Azul Cargo), as opções são **AZUL ECOMM**, que é o serviço da cotação automática, **AZUL STANDARD**, **AZUL EXPRESSO** e **AZUL PREMIUM**.
+2. Abra a lista **Serviço** e escolha. Para a SVT TRANSPORTES (Azul Cargo), as opções são **AZUL ECOMM**, **AZUL STANDARD**, **AZUL EXPRESSO** e **AZUL PREMIUM**. Os três primeiros vêm da cotação automática, cada um no seu card.
 3. Se já existe card com esse serviço, ele vira o **Escolhido**. Se não existe, a tela cria um card **MANUAL / TRANSP.** com o nome do serviço, prazo "A combinar" e o valor que estava em **Valor cobrado (R$)**.
 4. Confira ou digite o valor em **Valor cobrado (R$)** e saia do campo.
 5. Clique em **Salvar alterações**.
@@ -222,7 +222,7 @@ Repetir **Aplicar** não duplica: a segunda tentativa devolve o mesmo frete comp
 - A cotação usa o CEP do endereço de entrega e o peso total da proposta. Os volumes são calculados pelo sistema, um a cada 14,5 kg.
 - O botão **Atualizar fretes** fica apagado sem CEP válido de 8 dígitos, sem produto com peso ou sem endereço de entrega escolhido.
 - A Azul Cargo não é cotada para entrega no Rio Grande do Sul.
-- A cotação automática da Azul Cargo traz só o serviço ECOMM, que na lista **Serviço** aparece como **AZUL ECOMM**. **AZUL STANDARD**, **AZUL EXPRESSO** e **AZUL PREMIUM** não são cotados: entram como frete manual, com o valor digitado em **Valor cobrado (R$)**.
+- A cotação automática da Azul Cargo traz um card por serviço habilitado no contrato: desde 27/10/2026, **ECOMM** (na lista **Serviço**, **AZUL ECOMM**), **AZUL STANDARD** e **AZUL EXPRESSO**. **AZUL PREMIUM** ainda não está habilitado na Azul e não é cotado: entra como frete manual, com o valor digitado em **Valor cobrado (R$)**. Quando a Azul não devolve nenhum serviço, simplesmente não aparece card da Azul.
 - Proposta gravada com o frete "ECOMM", inclusive a que veio da cotação automática, abre com **AZUL ECOMM** selecionado na lista **Serviço**. O card, a coluna **Envio** e a Expedição continuam mostrando "ECOMM" nessas propostas: o texto só muda quando alguém escolhe outro serviço e salva.
 - A lista **Serviço** mostra "— escolha o serviço —" quando o frete atual não é nenhum serviço da lista, como no frete manual com o nome da transportadora. Deixar assim não muda nada.
 - Depois do despacho, a Expedição mostra o nome da transportadora, e não mais o serviço.

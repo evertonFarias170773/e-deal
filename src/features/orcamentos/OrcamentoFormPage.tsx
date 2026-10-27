@@ -7668,7 +7668,8 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                         <div>
                           <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
                             {frete.transportadora === "Azul Cargo"
-                              ? `AZUL CARGO ${frete.servico}`
+                              // "AZUL STANDARD" gravado nao repete o AZUL no titulo (lib/cotacao-azul).
+                              ? `AZUL CARGO ${frete.servico.replace(/^AZUL +/i, "")}`
                               : frete.servico === "SEDEX"
                               ? "SEDEX EXPRESS"
                               : frete.servico === "PAC"

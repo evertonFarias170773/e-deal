@@ -4,6 +4,7 @@ import { tokenDaSessao } from "@/lib/supabase/bearer";
 import type { PropostaFrete } from "@/features/orcamentos/types";
 import { fetchComSessao } from "@/lib/supabase/sessao";
 import { regraAtualPermiteVeppo } from "@/features/orcamentos/lib/cidade-veppo";
+import { lerCorpoCotacaoAzul, mapearCotacoesAzul } from "@/features/orcamentos/lib/cotacao-azul";
 
 /**
  * Maps a single row from public.cotacao_frete to PropostaFrete type.
@@ -211,6 +212,10 @@ export async function adicionarCotacaoManual(input: {
 /**
  * Request Azul Cargo freight quote from the webhook.
  * Webhook expects: { CEPDestino: string, ValorTotal: number, SiglaServico: string, Itens: [...] }
+ *
+ * `SiglaServico` vazio (27/10/2026): a Azul devolve todos os serviços do
+ * contrato e cada um vira um card. Nomes, filtro, margem e corpo vazio estão
+ * em `lib/cotacao-azul.ts`.
  */
 export async function solicitarCotacaoAzulCargo(input: {
   peso: number;
@@ -225,7 +230,7 @@ export async function solicitarCotacaoAzulCargo(input: {
   const payload = {
     CEPDestino: cleanCep,
     ValorTotal: Number(input.valorTotal || 0),
-    SiglaServico: "ECOMM",
+    SiglaServico: "",
     TaxaColeta: "false",
     TipoEntrega: "AEROPORTO",
     BaseOrigem: "Qns02",
@@ -255,46 +260,12 @@ export async function solicitarCotacaoAzulCargo(input: {
     throw new Error(`Erro na cotação Azul Cargo (${response.status}): ${errorText || response.statusText}`);
   }
 
-  const data = await response.json();
-  let arrayData: Record<string, unknown>[] = [];
-  if (Array.isArray(data)) {
-    arrayData = data;
-  } else if (data && typeof data === "object") {
-    arrayData = [data as Record<string, unknown>];
-  } else {
-    throw new Error("Resposta inválida da cotação Azul Cargo.");
-  }
-
-  return arrayData.map((item: Record<string, unknown>, idx: number) => {
-    const prazo = item.Prazo as number | undefined;
-    const total = Number(item.Total || 0);
-    const servico = (item.Servico as string) || "ECOMM";
-
-    // Apply margin 1.15
-    const valorFinal = total * 1.15;
-
-    const prazoText = prazo 
-      ? (prazo === 1 ? "1 dia útil" : `${prazo} dias úteis`)
-      : "Sob consulta";
-
-    const idCotacao = item.ID_Cotacao !== undefined ? Number(item.ID_Cotacao) : undefined;
-
-    return {
-      id: `frete_azul_${String(servico).toLowerCase()}_${idx}`,
-      id_int: typeof input.id_int === "number" ? input.id_int : (Number(input.id_int) || 0),
-      transportadora: "Azul Cargo",
-      servico: servico,
-      valor: valorFinal, // usar SEMPRE o valor final já com margem da Azul.
-      prazo: prazoText,
-      observacao: `Volumes: ${volumes} | Peso: ${pesoKg.toFixed(2)} KG | Valor original: ${total.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}`,
-      escolhido: false,
-      pesoUsado: input.peso,
-      valorOriginal: total,
-      valorMargem: valorFinal,
-      volumes: volumes,
-      pesoKg: pesoKg,
-      id_cotacao: idCotacao
-    };
+  // Corpo vazio = nenhuma opção da Azul (serviço fora do contrato), não erro.
+  return mapearCotacoesAzul(lerCorpoCotacaoAzul(await response.text()), {
+    id_int: input.id_int,
+    volumes,
+    pesoKg,
+    pesoGramas: input.peso
   });
 }
 
