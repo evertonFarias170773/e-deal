@@ -14,6 +14,44 @@ export const MINIMO_CORRECAO = 15;
 /** O máximo que a SEFAZ aceita no texto da correção. */
 export const MAXIMO_CORRECAO = 1000;
 
+export type LeituraDaIntegracao =
+  | { ok: true; data: unknown }
+  | { ok: false; code: "RESPOSTA_INVALIDA" | "RESPOSTA_NAO_CONFIRMADA"; message: string };
+
+/**
+ * O corpo devolvido pelo webhook do n8n, lido como TEXTO (27/10/2026).
+ *
+ * Antes a rota fazia `response.json()` direto: quando o n8n recusava a chamada
+ * na porta (credencial do segredo, erro antes de abrir a execução) ou o proxy
+ * devolvia uma página HTML, a tela só dizia "não é um JSON válido", sem o status.
+ *
+ * JSON válido segue exatamente como antes (`parseFocusResponse` decide o resto).
+ * Fora de JSON:
+ *   - 502, 503, 504 e qualquer 2xx: a execução pode ter seguido depois do corte
+ *     (o ramo da carta tem POST na Focus e Wait), então NÃO se afirma que nada
+ *     foi enviado — confere-se antes de reenviar;
+ *   - os demais status: o n8n recusou antes de executar; nenhuma carta foi enviada.
+ */
+export function lerRespostaDaIntegracao(status: number, texto: string): LeituraDaIntegracao {
+  try {
+    return { ok: true, data: JSON.parse(texto) };
+  } catch {
+    const incerto = (status >= 200 && status < 300) || status === 502 || status === 503 || status === 504;
+    if (incerto) {
+      return {
+        ok: false,
+        code: "RESPOSTA_NAO_CONFIRMADA",
+        message: `A integração fiscal respondeu sem confirmação (HTTP ${status}). Não é possível saber se a carta foi enviada: confira os eventos da nota antes de enviar de novo.`
+      };
+    }
+    return {
+      ok: false,
+      code: "RESPOSTA_INVALIDA",
+      message: `A integração fiscal recusou a chamada (HTTP ${status}). Nenhuma carta foi enviada.`
+    };
+  }
+}
+
 /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
 export function parseFocusResponse(data: any): { success: boolean; message: string } {
   if (!data) {

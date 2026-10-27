@@ -195,7 +195,7 @@ Volta para a lista quando a nota é **cancelada** ou **denegada**, quando o rasc
 5. Confira os blocos da nota, na ordem da lateral:
    - **Resumo**: empresa, a linha **Sairá em** (PRODUÇÃO ou HOMOLOGAÇÃO) e a **Natureza da operação**. A natureza define o CFOP e a situação tributária de todos os itens; a lista só oferece as naturezas compatíveis com a operação (dentro ou fora do estado). Quando o pedido é entregue em endereço diferente do da nota, uma faixa no alto do bloco avisa e mostra os dois endereços lado a lado.
    - **Emitente**: a **Empresa Emitente** vem do pedido e pode ser trocada aqui.
-   - **Destinatário**: a nota sai no nome de quem paga o pedido, com o endereço principal do cadastro. Confira **Consumidor Final** e **Tipo de Contribuinte**. A Inscrição Estadual vem do cadastro e só se corrige lá. A mesma faixa de aviso da remessa aparece aqui.
+   - **Destinatário**: a nota sai no nome de quem paga o pedido, com o endereço principal do cadastro. Confira **Consumidor Final** e **Tipo de Contribuinte**. A Inscrição Estadual vem do cadastro e só se corrige lá. O telefone não aparece nesta tela: ele é levado do cadastro de quem paga direto para a nota (veja "Regras e bloqueios"). A mesma faixa de aviso da remessa aparece aqui.
    - **Itens**: descrição, unidade, quantidade, valores, NCM e peso. O CFOP não se digita. O botão **CST** abre a situação tributária do item. **Adicionar Item Fiscal** inclui um item; **Salvar \*** grava a linha alterada; **Excluir** remove.
    - **Transporte/Frete**: **Modalidade do Frete**, transportadora, valor do frete, volumes e pesos.
    - **Pagamentos**: **Forma de Pagamento** e parcelas (veja a tarefa seguinte).
@@ -358,6 +358,7 @@ Nos dois casos a confirmação lista as notas autorizadas que o pedido já tem. 
 - O botão **Emitir NF-e** fica desabilitado enquanto houver pendência que impede a emissão. Avisos não travam.
 - Não dá para emitir com a soma das parcelas diferente do total da nota, nem com parcela vencendo antes da data de emissão.
 - Nome, logradouro, número, complemento, bairro e município do destinatário, dados da transportadora e natureza da operação aceitam no máximo 60 caracteres na NF-e; a descrição do item, 120. Passando disso, a nota não é transmitida e a tela diz qual campo encurtar. Nada é cortado automaticamente.
+- **Telefone do destinatário na DANFE.** O campo FONE/FAX sai preenchido com o telefone de quem paga o pedido, levado do cadastro sem passar pela tela da nota: vale o primeiro número válido na ordem **WhatsApp 1**, **Telefone fixo comercial**, **WhatsApp 2**. Válido é o número com DDD e 10 ou 11 dígitos (um 55 ou um 0 na frente é descartado); nome, texto ou número sem DDD são ignorados e a nota sai sem o campo, como antes. Vale só na nota de venda: na **nota de remessa** o destinatário é quem recebe, não quem paga, e o telefone não entra. Para corrigir o número, altere o cadastro do cliente antes de emitir — nota já emitida não muda.
 - Alterar quantidade, valor de item ou frete em nota de boleto invalida as parcelas: é preciso gerá-las de novo.
 - Trocar a forma de pagamento para uma que não seja boleto substitui as parcelas por um pagamento único à vista.
 - A nota sai no ambiente em que a empresa emitente está no momento da transmissão. Com **Sairá em PRODUÇÃO**, a nota tem valor fiscal e número definitivo.
@@ -456,6 +457,8 @@ Nos dois casos a confirmação lista as notas autorizadas que o pedido já tem. 
 |---|---|---|
 | "Sem permissão para emitir carta de correção (fiscal.carta_correcao)." | Seu perfil não tem a permissão **Emitir Carta de Correção**. | Peça o envio a quem tem a permissão. |
 | "Carta de correção não permitida: a nota está em ..." | A nota deixou de estar Autorizada (foi cancelada, por exemplo). | Atualize a lista e confira o status da nota. |
+| "A integração fiscal recusou a chamada (HTTP ...). Nenhuma carta foi enviada." | A integração fiscal (n8n) barrou o pedido antes de chegar à SEFAZ: a carta não saiu. O número entre parênteses é o código do erro. | Não adianta repetir. Avise o suporte com o número da nota e o código HTTP. |
+| "A integração fiscal respondeu sem confirmação (HTTP ...)." | A resposta foi cortada no caminho (tempo esgotado, por exemplo). A carta pode ter sido registrada. | Atualize a nota e confira **Eventos fiscais** antes de enviar de novo. Se a carta não aparecer, avise o suporte. |
 | A nota não pode ser aberta ainda | A conferência do **Faturar** achou dado faltando no pedido, no cadastro ou no produto. | Use **Abrir para corrigir** em cada pendência e depois **Reconferir**. |
 | Falta resolver N coisas antes de emitir | A nota tem pendência que impede a emissão. | Siga cada linha do painel pelo botão **Abrir em ...** ou **Abrir cadastro** e clique em **Reconferir**. |
 | A nota não foi enviada: um campo passa do tamanho que a NF-e aceita. | Nome, endereço, transportadora, natureza ou descrição de item acima do limite. | Encurte no campo que o aviso indica (em geral os campos "só nesta nota") e emita de novo. Nada foi transmitido. |
@@ -599,3 +602,7 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 > **Mudança desta revisão:** 12/10/2026 — pedido marcado como entregue pela lista de Pedidos (commit `c818220`) continua na Fila de Faturamento enquanto esperar nota. Só documentação.
 
 > **Mudança desta revisão:** 27/10/2026 — cancelar NF-e: a nota só vira Cancelada quando a SEFAZ confirma (status "cancelado", código 135 ou 155 e XML do evento); recusa mantém a nota Autorizada, mostra o motivo e registra a falha; prazo de 24 h da autorização, com **Cancelar NF-e (fora do prazo)** orientando a contabilidade.
+
+> **Mudança desta revisão:** 27/10/2026 — carta de correção: quando a integração fiscal devolve uma resposta que não é JSON, o aviso passa a dizer o código HTTP e se a carta saiu ou não, no lugar de "não é um JSON válido".
+
+> **Mudança desta revisão:** 27/10/2026 — telefone do destinatário na NF-e de venda: o campo FONE/FAX da DANFE passou a sair preenchido com o telefone de quem paga (ordem WhatsApp 1, Telefone fixo comercial, WhatsApp 2; só com DDD e 10 ou 11 dígitos), aplicado no banco em 20/10/2026. Sem telefone válido, e na nota de remessa, a nota sai como antes.

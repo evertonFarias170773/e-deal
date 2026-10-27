@@ -5,6 +5,7 @@ import { cabecalhosWebhookN8n } from "@/lib/n8n/webhook-segredo";
 import {
   MAXIMO_CORRECAO,
   MINIMO_CORRECAO,
+  lerRespostaDaIntegracao,
   montarEventoCartaCorrecao,
   parseFocusResponse
 } from "@/lib/fiscal/carta-correcao";
@@ -121,12 +122,17 @@ export async function POST(request: Request) {
       return recusa("Não foi possível contatar a integração fiscal. Nenhuma carta foi enviada.", 502, "INTEGRACAO_INDISPONIVEL");
     }
 
-    let data: unknown;
-    try {
-      data = await response.json();
-    } catch {
-      return recusa("A resposta da API de Carta de Correção não é um JSON válido.", 502, "RESPOSTA_INVALIDA");
+    // Lida como texto: fora de JSON, a tela recebe o status HTTP (lerRespostaDaIntegracao).
+    const texto = await response.text().catch(() => "");
+    const leitura = lerRespostaDaIntegracao(response.status, texto);
+    if (!leitura.ok) {
+      console.error(
+        "[API][CartaCorrecao] Resposta fora de JSON:",
+        JSON.stringify({ ref: nota.ref, status: response.status, inicio: texto.slice(0, 120).replace(/\s+/g, " ") })
+      );
+      return recusa(leitura.message, 502, leitura.code);
     }
+    const data = leitura.data;
     if (!response.ok) {
       const d = data as { erro?: { mensagem?: string }; error?: string; message?: string } | null;
       return recusa(d?.erro?.mensagem || d?.error || d?.message || `Erro HTTP ${response.status}`, 502, "INTEGRACAO_RECUSOU");

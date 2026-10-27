@@ -1,6 +1,6 @@
 # Produção (ordens de serviço)
 
-> **Última revisão:** 26/10/2026
+> **Última revisão:** 27/10/2026
 > **Caminho no menu:** Produção (item direto do menu lateral, sem submenu). A OS de cada pedido abre a partir da lista. O Kanban e a Fila de impressão não estão no menu: chega-se a eles pelo endereço ou pelas abas **Fila Geral / Kanban Board / Fila de Impressão / Expedição** que aparecem no topo dessas duas telas.
 > **Endereço:** `/pedidos` (painel geral). OS: `/pedidos/boletim`. Kanban: `/pedidos/kanban` (e `/os-producao`). Fila de impressão: `/pedidos/impressao`.
 
@@ -45,6 +45,7 @@ Nomes exatamente como aparecem na tela.
 | **Imprimir OS reduzida (PDF)** | Menu **Ações** da linha | Abre o PDF resumido (lista de conferência, sem imagens). |
 | **RETRABALHO** no PDF | Topo de cada página de boletim (completo, reduzido e maço), acima das caixas de setor | Aparece em letras grandes vermelhas quando o pedido é retrabalho: criado como Retrabalho pelo Duplicar proposta, ou com cobrança E-Retrabalho não cancelada. O resto do boletim e a paginação ficam como sempre. |
 | **Caixas de setor** no PDF | Cabeçalho de cada página de boletim (completo, reduzido e maço), entre o número da OS e o prazo | Uma caixa grande por setor que o pedido tem, todas do mesmo tamanho e numa linha só, na ordem LASER, PVC, TEXTIL, FLEXO. Em cada caixa, **SETOR** pequeno em cima e o nome do setor grande embaixo, sempre em preto. O setor da página sai preenchido com a cor (LASER ciano, PVC magenta, TEXTIL amarelo, FLEXO preto, com texto branco); os outros saem brancos com contorno grosso na cor do setor. A faixa dos produtos usa a mesma cor, com texto preto (branco no FLEXO). |
+| **Acabamento**, **Acessórios** e **Furação** no PDF | Card de cada modelo, nas linhas de variação, no boletim completo e no maço | Saem maiores que as outras variações (10 pt, negrito), quebrando linha sem corte, porque são o que a bancada mais precisa ler. No **TEXTIL**, Acabamento e Acessórios saem com o rótulo abreviado — **Acb:** e **Ace:**. No **PVC**, Acabamento e Furação saem com o rótulo inteiro ("Acabamento: Brilho", "Furação: Ovóide"). As outras variações do mesmo card (Tecnologia, Impressão...), os setores LASER e FLEXO e o PDF reduzido, que não imprime variações, ficam como sempre. |
 | **Gerar novo QR (invalida o anterior)** | Menu **Ações** da linha | Cria um QR novo para a OS e invalida o das vias já impressas. |
 | **Abrir DANFE (PDF)** | Menu **Ações** da linha | Abre a DANFE da nota do pedido. Só aparece quando há nota autorizada. |
 | **Baixar XML** | Menu **Ações** da linha | Baixa o XML da nota do pedido. Só aparece quando há nota autorizada. |
@@ -311,6 +312,8 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 
 - `src/features/pedidos/PedidosListPage.tsx`
 - `src/features/pedidos/BoletimFormPage.tsx`
+- `src/features/pedidos/pdf/`
+- `src/features/pedidos/lib/variacao-textil.ts`
 - `src/features/orcamentos/hooks/useFimDivergente.ts`
 - `src/features/pedidos/PedidosKanbanPage.tsx`
 - `src/features/pedidos/PainelImpressaoPage.tsx`
