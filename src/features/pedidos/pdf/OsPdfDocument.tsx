@@ -1,6 +1,6 @@
 import React from "react";
 import { COR_RETRABALHO_CLARO } from "@/lib/retrabalho";
-import { linhaDeVariacaoNoCard } from "../lib/variacao-textil";
+import { linhaDeVariacaoNoCard, variacoesQueSaemNoCard } from "../lib/variacao-textil";
 import path from "node:path";
 import { existsSync } from "node:fs";
 import { Document, Page, View, Text, Image, StyleSheet, Font } from "@react-pdf/renderer";
@@ -703,8 +703,9 @@ function ModeloCard({
       }).map((item) => ({ label: item.label, valor: valorDoCampo(item.campo) || "-" }))
     : [];
 
-  const linhasDeVariacao =
-    temSnapshot && marcados.has("variacoes") ? variacoes ?? [] : [];
+  // Variacoes saem sempre que o item as tem (27/10/2026) — o checklist nao as
+  // esconde mais. Regra e motivo em lib/variacao-textil (variacoesQueSaemNoCard).
+  const linhasDeVariacao = variacoesQueSaemNoCard(boletimCampos, variacoes);
 
   // A imagem tambem e campo do checklist. Sem snapshot, sai sempre, como hoje.
   const mostrarImagem = !temSnapshot || marcados.has("imagem");
@@ -769,9 +770,9 @@ function ModeloCard({
         </>
       )}
 
-      {/* Variações escolhidas na venda, uma por linha, "GRUPO: opção". Nunca
-          saíram no papel antes: só aparecem para item com `variacoes` no
-          snapshot. */}
+      {/* Variações escolhidas na venda, uma por linha, "GRUPO: opção". Saem
+          para todo item com checklist que tenha variação gravada, marcada ou
+          não no checklist (27/10/2026). */}
       {linhasDeVariacao.map((linha, i) => {
         const v = linhaDeVariacaoNoCard(linha, setor);
         return (

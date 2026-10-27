@@ -630,10 +630,9 @@ export async function montarOsPdfViewModel(
         camposBoletimPorItem.clear();
       }
 
-      // As variações só interessam a quem marcou `variacoes` no snapshot.
-      const itensComVariacoes = idsComSnapshot.filter((id) =>
-        (camposBoletimPorItem.get(id) || []).includes("variacoes")
-      );
+      // Variações de TODO item com checklist, marcado ou não (27/10/2026): o
+      // card as imprime sempre que existem — ver variacoesQueSaemNoCard.
+      const itensComVariacoes = idsComSnapshot;
 
       if (itensComVariacoes.length > 0) {
         try {

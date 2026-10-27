@@ -38,3 +38,24 @@ export function linhaDeVariacaoNoCard(linha: string, setor: string | null | unde
   }
   return { texto: linha, destaque: false };
 }
+
+/**
+ * QUAIS VARIACOES O CARD IMPRIME (27/10/2026, autorizado pela diretoria).
+ *
+ * Desde a reforma do checklist (b8fce756, 22/09) as variacoes so saiam quando o
+ * item tinha `variacoes` marcado no checklist congelado. Item de produto com
+ * checklist curto (ex.: 3001 Cordao 85cm) gravava o acabamento e a OS saia sem
+ * ele. Regra nova: item COM checklist imprime TODAS as variacoes que tem, marcado
+ * ou nao. O checklist segue mandando nos outros campos (imagem, cor, F/V...).
+ *
+ * Item SEM checklist (anterior a 22/09) continua sem variacoes no card, como
+ * sempre saiu — nunca imprimiu variacoes, e a regra so desfaz o bloqueio do
+ * checklist. Item sem variacao gravada: lista vazia, nada aparece.
+ */
+export function variacoesQueSaemNoCard(
+  boletimCampos: string[] | null | undefined,
+  variacoes: string[] | null | undefined
+): string[] {
+  if (!Array.isArray(boletimCampos)) return [];
+  return (variacoes ?? []).filter((linha) => String(linha ?? "").trim() !== "");
+}

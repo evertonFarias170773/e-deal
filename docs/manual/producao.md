@@ -232,6 +232,7 @@ As vias antigas continuam valendo como eram. O QR delas é um link: lido no term
 
 - Pedido de **retrabalho** (criado como Retrabalho pelo Duplicar proposta, ou com cobrança E-Retrabalho não cancelada) aparece com contorno vermelho, o número do pedido em vermelho e o selo **Retrabalho de #<original>** (o pedido de onde ele nasceu; só **Retrabalho** quando não há original gravado), na tabela e no cartão do celular. E-Amostra e E-Permuta não ganham o destaque. O destaque de Revisão continua por baixo.
 
+- No PDF da OS (completo e maço), as **variações** do item escolhidas na venda (acabamento, acessórios, fundo, furação...) saem no card de cada modelo **sempre que o item tem variação gravada**, mesmo que o checklist do boletim do produto não marque "Variações". O checklist continua decidindo os outros campos do card (imagem, cor, numeração, impressão, tipo). Item sem variação gravada não mostra nada a mais. Itens vendidos antes do checklist (até 22/09/2026) seguem sem variações no card, como sempre saíram.
 - Pedido não liberado não aparece na Produção, mesmo com pagamento confirmado ou arte aprovada. O que conta é a liberação.
 - A linha amarela marca pedido em REVISAO PRODUCAO: ele chegou e ninguém salvou a OS ainda. Esses pedidos ficam sempre no topo da lista.
 - Não dá para mover a fase de um setor cujo chip mostra **Sem boletim**. Abra a OS, entre na aba do setor (marcada como **a abrir**), confira o prazo e salve; o chip passa a aceitar a mudança.
