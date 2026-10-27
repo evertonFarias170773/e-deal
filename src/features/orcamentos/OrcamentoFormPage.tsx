@@ -122,7 +122,17 @@ import {
   transportadoraTemEscolhaDeServico
 } from "@/features/orcamentos/lib/servicos-transportadora";
 import { barreirasDaTrocaDeFrete } from "@/features/expedicao/services/corrigir-frete-simulacao";
-import { freteTravadoPeloCard, marcarComoCotacao, valorTravadoPeloCard } from "@/features/orcamentos/lib/origem-frete";
+import {
+  aplicarValorDigitado,
+  atualizarCotadoDoDigitado,
+  freteTravadoPeloCard,
+  limparValorDigitadoForaDe,
+  marcarComoCotacao,
+  preservadoSemCotacao,
+  recotacaoAutomaticaDoEscolhido,
+  semValorDigitado,
+  valorTravadoPeloCard
+} from "@/features/orcamentos/lib/origem-frete";
 import { avisoDaDiferencaNaTela, salvarItemSoNaTela, salvarSemMudancaEmPropostaPaga } from "@/features/orcamentos/lib/salvar-item-paga";
 import { verificarPermissaoServerSide } from "@/lib/auth/verificar-permissao";
 import {
@@ -2242,7 +2252,9 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
           if (currentChosen && !isManual && areFreightsEqual(newFrete, currentChosen)) {
             nextEscolhidoId = newFrete.id;
             foundMatch = true;
-            return { ...newFrete, escolhido: true };
+            // Motoboy interno com valor digitado: fica o digitado, so o cotado
+            // se atualiza (lib/origem-frete, 27/10/2026). Os demais: o card novo.
+            return { ...recotacaoAutomaticaDoEscolhido(currentChosen, newFrete, prev.idTransportadoraCliente), escolhido: true };
           }
           return { ...newFrete, escolhido: false };
         });
@@ -2275,13 +2287,15 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
               normalizeName(currentChosen.servico).includes("retirada") ||
               normalizeName(currentChosen.servico).includes("retira");
 
-            preservedFretes.push({
+            // Escolhido fora da cotacao nova: o valor digitado do motoboy interno
+            // nao fica as cegas, volta ao ultimo cotado (lib/origem-frete).
+            preservedFretes.push(preservadoSemCotacao({
               ...currentChosen,
               escolhido: true,
               observacao: obs,
               pesoUsado: isRetirada ? resumo.pesoTotal : currentChosen.pesoUsado,
               valor: isRetirada ? 0.00 : currentChosen.valor
-            });
+            }));
           } else {
             manualFretes.forEach((f) => {
               if (f.id === currentChosen.id) {
@@ -3655,11 +3669,20 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
       const chavesPresentes = new Set(prev.fretes.map((f) => getStableFreightKey(f)));
       // Cards de cotacao: origem COTACAO e valor cotado (lib/origem-frete), como nas
       // outras duas portas. Sem isto o card acrescentado aqui nao travava (21/10/2026).
-      const novas = marcarComoCotacao([...sedex, ...azul, ...transp, ...veppo])
+      const cotadas = marcarComoCotacao([...sedex, ...azul, ...transp, ...veppo]);
+      const novas = cotadas
         .filter((f) => !ehFreteDeRetirada(f) && !chavesPresentes.has(getStableFreightKey(f)))
         .map((f) => ({ ...f, escolhido: false }));
-      if (novas.length === 0) return prev;
-      return { ...prev, fretes: [...prev.fretes, ...novas] };
+      // Motoboy interno relido com valor digitado: a cotacao da abertura so traz o
+      // cotado de referencia; o valor cobrado fica (lib/origem-frete, 27/10/2026).
+      const fretesAtuais = prev.fretes.map((f) => {
+        if (f.valorDigitado !== true) return f;
+        const equivalente = cotadas.find((c) => getStableFreightKey(c) === getStableFreightKey(f));
+        return equivalente ? atualizarCotadoDoDigitado(f, equivalente) : f;
+      });
+      const cotadoMudou = fretesAtuais.some((f, i) => f !== prev.fretes[i]);
+      if (novas.length === 0 && !cotadoMudou) return prev;
+      return { ...prev, fretes: [...fretesAtuais, ...novas] };
     });
   }
 
@@ -3840,7 +3863,9 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     // Cards de cotacao: origem COTACAO e valor cotado (lib/origem-frete, 21/10/2026).
     const allResults = marcarComoCotacao([...sedexResults, ...azulResults, ...transpResults, ...veppoResults]);
 
-    const updatedResults = allResults.map((newFrete) => {
+    // "Atualizar fretes" e explicito: o card novo, com o valor cotado e sem a marca
+    // do valor digitado do motoboy interno (lib/origem-frete, 27/10/2026).
+    const updatedResults = semValorDigitado(allResults).map((newFrete) => {
       if (currentChosen && !isManual && areFreightsEqual(newFrete, currentChosen)) {
         nextEscolhidoId = newFrete.id;
         foundMatch = true;
@@ -3877,13 +3902,14 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
           normalizeName(currentChosen.servico).includes("retirada") ||
           normalizeName(currentChosen.servico).includes("retira");
 
-        preservedFretes.push({
+        // "Atualizar fretes" e explicito: o digitado volta ao cotado e a marca apaga.
+        preservedFretes.push(preservadoSemCotacao({
           ...currentChosen,
           escolhido: true,
           observacao: obs,
           pesoUsado: isRetirada ? resumo.pesoTotal : currentChosen.pesoUsado,
           valor: isRetirada ? 0.00 : currentChosen.valor
-        });
+        }));
       } else {
         manualFretes.forEach((f) => {
           if (f.id === currentChosen.id) {
@@ -4011,7 +4037,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     setForm((current) => ({
       ...current,
       fretes: [
-        ...current.fretes
+        ...limparValorDigitadoForaDe(current.fretes, freteManual.id)
           .filter((f) => !(f.id.startsWith("manual_") || f.observacao === "Cadastro manual"))
           .map((f) => ({ ...f, escolhido: false })),
         freteManual
@@ -4050,7 +4076,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
       setValorCobradoCifDraft(null);
       setForm((current) => ({
         ...current,
-        fretes: current.fretes.map((f) => ({ ...f, escolhido: f.id === existente.id })),
+        fretes: limparValorDigitadoForaDe(current.fretes, existente.id).map((f) => ({ ...f, escolhido: f.id === existente.id })),
         freteEscolhidoId: existente.id,
         idTransportadoraCliente: idTransportadora
       }));
@@ -4071,7 +4097,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     setForm((current) => ({
       ...current,
       fretes: [
-        ...current.fretes
+        ...limparValorDigitadoForaDe(current.fretes, freteManual.id)
           .filter((f) => !(f.id.startsWith("manual_") || f.observacao === "Cadastro manual"))
           .map((f) => ({ ...f, escolhido: false })),
         freteManual
@@ -4095,9 +4121,12 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     if (valorTravadoNoCard) return;
     const valor = parseCurrencyBR(texto);
     if (valor === null || valor < 0) return;
+    // Motoboy interno: digitado diferente do cotado acende a marca (lib/origem-frete).
     setForm((current) => ({
       ...current,
-      fretes: current.fretes.map((f) => (f.id === current.freteEscolhidoId ? { ...f, valor } : f))
+      fretes: current.fretes.map((f) =>
+        f.id === current.freteEscolhidoId ? aplicarValorDigitado(f, valor, current.idTransportadoraCliente) : f
+      )
     }));
   }
 
@@ -4272,7 +4301,8 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
       showToast({ type: "warning", title: "Troca de frete bloqueada", description: bloqueioTrocaFrete });
       return;
     }
-    const updatedFretes = form.fretes.map((frete) => ({ ...frete, escolhido: frete.id === freteId }));
+    // Trocar de card limpa o valor digitado do motoboy interno (lib/origem-frete, 27/10/2026).
+    const updatedFretes = limparValorDigitadoForaDe(form.fretes, freteId).map((frete) => ({ ...frete, escolhido: frete.id === freteId }));
     // Sincronia (nao substituicao): escolher retirada embaixo marca RETIRA no
     // topo. Os dois campos continuam existindo — `frete_escolhido` guarda a
     // cotacao e `modalidade_frete` guarda quem paga. Ponto UNICO: os outros

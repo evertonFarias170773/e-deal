@@ -17,7 +17,15 @@ import {
   origemParaGravar,
   recusaDoFreteCalculado,
   valorCobradoLivreNaTransportadora,
-  valorTravadoPeloCard
+  valorTravadoPeloCard,
+  aplicarValorDigitado,
+  atualizarCotadoDoDigitado,
+  freteValorDigitadoParaGravar,
+  limparValorDigitadoForaDe,
+  preservadoSemCotacao,
+  recotacaoAutomaticaDoEscolhido,
+  semValorDigitado,
+  valorDigitadoRelido
 } from "../../src/features/orcamentos/lib/origem-frete.ts";
 
 let falhas = 0;
@@ -88,11 +96,59 @@ checar("Correios (SEDEX, 39975): valor travado e Salvar recusa diferente", [
 ], [true, MENSAGEM_VALOR_DO_CARD]);
 checar("manual e antigo seguem livres com qualquer transportadora", [valorTravadoPeloCard(manual, 120018), valorTravadoPeloCard(antigo, 39975)], [false, false]);
 
+// ---------- valor digitado do 997 sobrevive a recotacao automatica (27/10/2026)
+{
+  const ctx = { idTransportadora: 997, modalidade: "CIF", isAvulso: false };
+  const card27 = { ...marcarComoCotacao([{ id: "frete_transp_mb", valor: 27, observacao: "Entrega expressa local" }])[0], idTransportadoraCotada: 997 };
+  // 1. digita 35,00
+  const digitado = aplicarValorDigitado(card27, 35, 997);
+  checar("fluxo 997: digitar 35,00 acende a marca", [digitado.valor, digitado.valorCotado, digitado.valorDigitado], [35, 27, true]);
+  checar("fluxo 997: digitar o proprio cotado nao marca", aplicarValorDigitado(card27, 27, 997).valorDigitado, false);
+  // 2. salvar grava true
+  checar("fluxo 997: Salvar grava frete_valor_digitado = true e valor 35", [freteValorDigitadoParaGravar(digitado, ctx), recusaDoFreteCalculado(digitado, 997)], [true, null]);
+  // 3. recarregar do banco: linha gravada (id do banco, valor 35, origem COTACAO) + marca true
+  const relidoBruto = { id: "19999", valor: 35, observacao: "", origem: "COTACAO" as const, valorCotado: 35, idTransportadoraCotada: 997 };
+  const relido = valorDigitadoRelido(relidoBruto, true, 997);
+  checar("fluxo 997: recarregado reabilita o digitado (cotado so na proxima cotacao)", [relido.valor, relido.valorDigitado, relido.valorCotado], [35, true, undefined]);
+  checar("fluxo 997: sem a marca gravada, releitura fica como antes", valorDigitadoRelido(relidoBruto, null, 997).valorDigitado, undefined);
+  const abertura = atualizarCotadoDoDigitado(relido, { valor: 27 });
+  checar("fluxo 997: cotacao da abertura da aba traz so o cotado", [abertura.valor, abertura.valorCotado, abertura.valorDigitado], [35, 27, true]);
+  // 4. altera peso/item -> recotacao automatica com o motoboy agora a 30,00
+  const novoCard = marcarComoCotacao([{ id: "frete_transp_mb", valor: 30, observacao: "Entrega expressa local" }])[0];
+  const aposRecotar = recotacaoAutomaticaDoEscolhido(abertura, novoCard, 997);
+  checar("fluxo 997: alterar peso mantem 35,00 e atualiza o cotado para 30,00", [aposRecotar.valor, aposRecotar.valorCotado, aposRecotar.valorDigitado, aposRecotar.idTransportadoraCotada], [35, 30, true, 997]);
+  checar("fluxo 997: e o Salvar seguinte continua gravando true e 35", [freteValorDigitadoParaGravar(aposRecotar, ctx), aposRecotar.valor], [true, 35]);
+  // 5. Atualizar fretes (explicito): card novo, sem marca
+  const [atualizado] = semValorDigitado([novoCard]);
+  checar("fluxo 997: Atualizar fretes volta ao cotado e limpa a marca", [atualizado.valor, atualizado.valorDigitado ?? false, freteValorDigitadoParaGravar(atualizado, ctx)], [30, false, null]);
+  // 6. trocar de card limpa
+  const sedex = { ...marcarComoCotacao([{ id: "frete_sedex", valor: 50, observacao: "" }])[0], idTransportadoraCotada: 39975 };
+  const trocado = limparValorDigitadoForaDe([aposRecotar, sedex], "frete_sedex");
+  checar("fluxo 997: trocar de card limpa a marca e o 997 volta ao cotado", [trocado[0].valorDigitado, trocado[0].valor, freteValorDigitadoParaGravar(trocado[1], { ...ctx, idTransportadora: 39975 })], [false, 30, null]);
+  checar("fluxo 997: transportadora trocada na proposta grava null", freteValorDigitadoParaGravar(aposRecotar, { ...ctx, idTransportadora: 120018 }), null);
+  checar("fluxo 997: FOB, RETIRA e avulsa gravam null", [
+    freteValorDigitadoParaGravar(aposRecotar, { ...ctx, modalidade: "FOB" }),
+    freteValorDigitadoParaGravar(aposRecotar, { ...ctx, modalidade: "RETIRA" }),
+    freteValorDigitadoParaGravar(aposRecotar, { ...ctx, isAvulso: true })
+  ], [null, null, null]);
+  // 7. motoboy deixou de ser cotado: preservado, mas sem o digitado as cegas
+  const semCotacao = preservadoSemCotacao(aposRecotar);
+  checar("fluxo 997: motoboy fora da cotacao volta ao ultimo cotado e limpa", [semCotacao.valor, semCotacao.valorDigitado], [30, false]);
+  // 8. outra transportadora com card calculado: segue como antes
+  const veppoCard = { ...marcarComoCotacao([{ id: "frete_veppo", valor: 38.9, observacao: "" }])[0], idTransportadoraCotada: 120018 };
+  const veppoMexido = aplicarValorDigitado(veppoCard, 50, 120018);
+  checar("VEPPO: sem marca, travado, Salvar recusa e grava null", [
+    veppoMexido.valorDigitado, valorTravadoPeloCard(veppoMexido, 120018), recusaDoFreteCalculado(veppoMexido, 120018), freteValorDigitadoParaGravar(veppoMexido, { ...ctx, idTransportadora: 120018 })
+  ], [false, true, MENSAGEM_VALOR_DO_CARD, null]);
+  const veppoNovo = marcarComoCotacao([{ id: "frete_veppo", valor: 41, observacao: "" }])[0];
+  checar("VEPPO: recotacao automatica traz o valor novo (regra de antes)", recotacaoAutomaticaDoEscolhido({ ...veppoCard, valorDigitado: true }, veppoNovo, 120018).valor, 41);
+}
+
 // ---------- estrutura: tela e servico usam a mesma regra
 const tela = ler("src/features/orcamentos/OrcamentoFormPage.tsx");
 checar("tela: cards de cotacao marcados nas TRES portas (automatica, Atualizar fretes e a da abertura da aba)", [
   (tela.match(/const allResults = marcarComoCotacao\(\[/g) ?? []).length,
-  tela.includes("const novas = marcarComoCotacao([...sedex, ...azul, ...transp, ...veppo])")
+  tela.includes("const cotadas = marcarComoCotacao([...sedex, ...azul, ...transp, ...veppo]);")
 ], [2, true]);
 // Toda chamada de cotacao da tela termina em marcarComoCotacao: tres blocos que cotam, tres marcas.
 checar("tela: nenhuma porta de cotacao sem a marca", [(tela.match(/solicitarCotacaoVeppo\(/g) ?? []).length, (tela.match(/marcarComoCotacao\(\[/g) ?? []).length], [3, 3]);
@@ -114,7 +170,7 @@ checar("tela: escolherTransportadoraCif so recusa 'nenhuma' com card; Valor cobr
 checar("tela: ajuda do motoboy interno no lugar de mandar trocar por frete manual", tela.includes("? \"Motoboy interno: o valor cobrado pode ser editado aqui por qualquer usuário"), true);
 checar("lib: 997 vem do mapa de parceiras (sem numero solto)", [
   ler("src/features/orcamentos/lib/origem-frete.ts").includes("TRANSPORTADORAS_PARCEIRAS.MOTOBOY"),
-  /\b997\b/.test(ler("src/features/orcamentos/lib/origem-frete.ts").replace(/^\s*(\/\/|\*).*$/gm, ""))
+  /\b997\b/.test(ler("src/features/orcamentos/lib/origem-frete.ts").replace(/^\s*(\/\/|\/?\*).*$/gm, ""))
 ], [true, false]);
 
 // ---------- o caso do 24163: card SEDEX COTACAO escolhido -> frete manual de uma transportadora
@@ -127,10 +183,35 @@ checar("24163: Salvar aceita o manual com a transportadora escolhida e valor dig
 checar("24163: Salvar grava origem MANUAL", origemParaGravar(manualNovo, { modalidade: "CIF", isAvulso: false }), "MANUAL");
 checar("tela: carimbo no selectFrete e na correcao do admin", [tela.includes("idTransportadoraCotada: vinculoParceira"), tela.includes("idTransportadoraCotada: gravado")], [true, true]);
 
+checar("tela: as portas de cotacao usam a regra do valor digitado", [
+  tela.includes("return { ...recotacaoAutomaticaDoEscolhido(currentChosen, newFrete, prev.idTransportadoraCliente), escolhido: true };"),
+  tela.includes("const updatedResults = semValorDigitado(allResults).map((newFrete) => {"),
+  (tela.match(/preservedFretes\.push\(preservadoSemCotacao\(\{/g) ?? []).length,
+  tela.includes("aplicarValorDigitado(f, valor, current.idTransportadoraCliente)"),
+  tela.includes("limparValorDigitadoForaDe(form.fretes, freteId)"),
+  (tela.match(/limparValorDigitadoForaDe\(current\.fretes, freteManual\.id\)/g) ?? []).length,
+  tela.includes("atualizarCotadoDoDigitado(f, equivalente)")
+], [true, true, 2, true, true, 2, true]);
+
 const srv = ler("src/features/orcamentos/services/orcamentos.service.ts");
+checar("saveProposta: marca so na fase de orcamento, no gate do frete; releitura reabilita", [
+  /if \(faseDeOrcamento\) \{\s+propostaData\.frete_valor_digitado = ehComplemento/.test(srv),
+  srv.indexOf("propostaData.frete_valor_digitado") > srv.indexOf("propostaData.id_transportadora_cliente = idTransportadoraCliente;"),
+  srv.includes("valorDigitadoRelido(f, proposalRow.frete_valor_digitado, idTranspRelida)")
+], [true, true, true]);
+const migDig = ler("supabase/migrations/20261027_propostas_frete_valor_digitado.sql");
+const migDigAtiva = migDig.slice(0, migDig.indexOf("-- ROLLBACK —")) + migDig.slice(migDig.indexOf("ALTER TABLE public.propostas\n") >= 0 ? migDig.indexOf("ALTER TABLE public.propostas\n") : migDig.indexOf("ALTER TABLE public.propostas\r\n"));
+checar("migration frete_valor_digitado: so ADD COLUMN boolean e COMMENT, sem default/backfill/trigger/grant", [
+  /ADD COLUMN IF NOT EXISTS frete_valor_digitado boolean;/.test(migDig),
+  /\bDEFAULT\b|UPDATE\s+public|TRIGGER|GRANT|POLICY|cotacao_frete\s+(ADD|ALTER)/i.test(migDigAtiva.replace(/^--.*$/gm, ""))
+], [true, false]);
 checar("saveProposta: recusa antes de escrever e grava a origem", [
   srv.includes("const recusaCard = recusaDoFreteCalculado(chosenFrete, idTransportadoraCliente);"),
-  srv.indexOf("const recusaCard = recusaDoFreteCalculado") < srv.indexOf('.from("cotacao_frete")\n          .delete()'),
+  // \r?\n: a copia de trabalho pode estar em CRLF (autocrlf do Windows).
+  (() => {
+    const del = srv.search(/\.from\("cotacao_frete"\)\r?\n\s+\.delete\(\)/);
+    return del > 0 && srv.indexOf("const recusaCard = recusaDoFreteCalculado") < del;
+  })(),
   srv.includes("origem: origemParaGravar(chosenFrete, { modalidade: modalidadeVigente, isAvulso: formState.isAvulso === true })")
 ], [true, true, true]);
 const freteSrv = ler("src/features/orcamentos/services/frete.service.ts");

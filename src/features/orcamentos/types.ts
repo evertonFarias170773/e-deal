@@ -150,6 +150,8 @@ export type PropostaFrete = {
   valorCotado?: number | null;
   /** Transportadora que o card COTACAO vincula; `undefined` = nao se sabe. */
   idTransportadoraCotada?: number | null;
+  /** Valor cobrado digitado no card do motoboy interno (997); no banco, `propostas.frete_valor_digitado`. */
+  valorDigitado?: boolean;
 };
 
 export type PropostaResumo = {

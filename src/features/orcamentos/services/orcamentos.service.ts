@@ -50,7 +50,12 @@ import {
 } from "@/features/orcamentos/lib/modalidade-frete";
 // As MESMAS barreiras da correção de frete da Expedição — ver `barreirasDaTrocaDeFrete`.
 import { barreirasDaTrocaDeFrete } from "@/features/expedicao/services/corrigir-frete-simulacao";
-import { origemParaGravar, recusaDoFreteCalculado } from "@/features/orcamentos/lib/origem-frete";
+import {
+  freteValorDigitadoParaGravar,
+  origemParaGravar,
+  recusaDoFreteCalculado,
+  valorDigitadoRelido
+} from "@/features/orcamentos/lib/origem-frete";
 import { verificarPermissaoServerSide } from "@/lib/auth/verificar-permissao";
 import type {
   SupabasePagamentoTipoCobrancaRow,
@@ -2238,6 +2243,15 @@ export async function getPropostaDetailById(idInt: number, overrideClient?: Supa
           }
         : f
     );
+    // Motoboy interno (27/10/2026): com `frete_valor_digitado`, o valor gravado do
+    // card escolhido e o digitado e sobrevive a recotacao automatica (lib/origem-frete).
+    {
+      const idTranspRelida =
+        proposalRow.id_transportadora_cliente !== null && proposalRow.id_transportadora_cliente !== undefined
+          ? Number(proposalRow.id_transportadora_cliente)
+          : null;
+      fretes = fretes.map((f) => (f.escolhido ? valorDigitadoRelido(f, proposalRow.frete_valor_digitado, idTranspRelida) : f));
+    }
     const chosenFrete = fretes.find((f) => f.escolhido) || fretes[0];
     const freteEscolhidoId = chosenFrete ? chosenFrete.id : "";
 
@@ -3669,6 +3683,18 @@ export async function saveProposta(
         formState.transporteCategoria === "MOTOBOY"
       );
       propostaData.id_transportadora_cliente = idTransportadoraCliente;
+      // Valor digitado do motoboy interno (27/10/2026): true so com a 997, o card
+      // dela e o valor editado; senao null. So na fase de orcamento: pedido
+      // liberado ou alem fica como esta (lib/origem-frete).
+      if (faseDeOrcamento) {
+        propostaData.frete_valor_digitado = ehComplemento
+          ? null
+          : freteValorDigitadoParaGravar(chosenFrete, {
+              idTransportadora: idTransportadoraCliente,
+              modalidade: modalidadeVigente,
+              isAvulso: formState.isAvulso === true
+            });
+      }
 
       /**
        * A COLUNA DO PAINEL DA EXPEDICAO — `categoria_frete`, sete valores.

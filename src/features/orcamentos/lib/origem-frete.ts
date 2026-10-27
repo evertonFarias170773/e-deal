@@ -43,6 +43,11 @@ export type FreteComOrigem = {
    * sabe (nao confere).
    */
   idTransportadoraCotada?: number | null;
+  /**
+   * O "Valor cobrado" do card do motoboy interno (997) foi digitado pelo usuario
+   * (27/10/2026). So vive no estado da tela; no banco e `propostas.frete_valor_digitado`.
+   */
+  valorDigitado?: boolean;
 };
 
 export const MENSAGEM_VALOR_DO_CARD =
@@ -115,4 +120,115 @@ export function recusaDoFreteCalculado(
     return MENSAGEM_TRANSPORTADORA_DO_CARD;
   }
   return null;
+}
+
+/* ---------------------------------------------------------------------------
+ * VALOR DIGITADO DO MOTOBOY INTERNO (27/10/2026) — `propostas.frete_valor_digitado`.
+ *
+ * O valor que o usuario digita no card do 997 sobrevive a recotacao automatica
+ * (mudanca de item, peso ou cidade): ela atualiza so o valor cotado de referencia.
+ * "Atualizar fretes" e ato explicito: volta ao cotado e limpa a marca. Trocar de
+ * card ou de transportadora, ou o motoboy deixar de ser cotado, tambem limpam.
+ * --------------------------------------------------------------------------- */
+
+const DIFERENCA_DE_CENTAVO = 0.005;
+
+/** O card escolhido e o calculado do 997, com a 997 na proposta? So nele a marca vale. */
+export function ehCardDoMotoboyInterno(
+  frete: Pick<FreteComOrigem, "id" | "observacao" | "origem" | "idTransportadoraCotada"> | null | undefined,
+  idTransportadoraDaProposta: number | null | undefined
+): boolean {
+  return Boolean(frete) && freteTravadoPeloCard(frete) && !valorTravadoPeloCard(frete, idTransportadoraDaProposta);
+}
+
+/**
+ * O usuario digitou `valor` no "Valor cobrado". No card do 997 a marca acende
+ * quando o digitado difere do cotado (digitar o proprio cotado apaga); nos
+ * outros fretes a marca nao existe.
+ */
+export function aplicarValorDigitado<T extends FreteComOrigem>(frete: T, valor: number, idTransportadoraDaProposta: number | null | undefined): T {
+  if (!ehCardDoMotoboyInterno(frete, idTransportadoraDaProposta)) return { ...frete, valor, valorDigitado: false };
+  const cotado = typeof frete.valorCotado === "number" ? frete.valorCotado : null;
+  const digitado = cotado === null ? true : Math.abs(valor - cotado) > DIFERENCA_DE_CENTAVO;
+  return { ...frete, valor, valorDigitado: digitado };
+}
+
+/**
+ * Recotacao AUTOMATICA achou o card novo equivalente ao escolhido. Com a marca no
+ * card do 997, fica o valor digitado e so o cotado se atualiza; sem a marca (ou
+ * fora do 997), vale o card novo, sem marca — a regra de antes.
+ */
+export function recotacaoAutomaticaDoEscolhido<T extends FreteComOrigem>(
+  anterior: FreteComOrigem,
+  novo: T,
+  idTransportadoraDaProposta: number | null | undefined
+): T {
+  if (anterior.valorDigitado === true && ehCardDoMotoboyInterno(anterior, idTransportadoraDaProposta)) {
+    return {
+      ...novo,
+      valor: anterior.valor,
+      valorCotado: novo.valor,
+      valorDigitado: true,
+      idTransportadoraCotada: anterior.idTransportadoraCotada
+    };
+  }
+  return { ...novo, valorDigitado: false };
+}
+
+/**
+ * O escolhido nao veio na recotacao (motoboy fora da faixa, por exemplo) e e
+ * preservado como sempre. O digitado nao fica as cegas: volta ao ultimo cotado
+ * conhecido e a marca apaga.
+ */
+export function preservadoSemCotacao<T extends FreteComOrigem>(frete: T): T {
+  if (frete.valorDigitado !== true) return frete;
+  return { ...frete, valor: typeof frete.valorCotado === "number" ? frete.valorCotado : frete.valor, valorDigitado: false };
+}
+
+/**
+ * Troca de card ou de transportadora: o card que deixa de ser o escolhido perde a
+ * marca e volta ao cotado, para nao reaparecer com o digitado se for escolhido de novo.
+ */
+export function limparValorDigitadoForaDe<T extends FreteComOrigem>(fretes: readonly T[], idEscolhido: string | null | undefined): T[] {
+  return fretes.map((f) =>
+    f.valorDigitado === true && f.id !== idEscolhido
+      ? { ...f, valor: typeof f.valorCotado === "number" ? f.valorCotado : f.valor, valorDigitado: false }
+      : f
+  );
+}
+
+/** "Atualizar fretes" (explicito) e card trocado: sem marca em lugar nenhum. */
+export function semValorDigitado<T extends FreteComOrigem>(fretes: readonly T[]): T[] {
+  return fretes.map((f) => (f.valorDigitado ? { ...f, valorDigitado: false } : f));
+}
+
+/**
+ * O que o Salvar grava em `propostas.frete_valor_digitado`: `true` so com a 997 na
+ * proposta, o card escolhido dela e o valor editado; em qualquer outro caso `null`.
+ */
+export function freteValorDigitadoParaGravar(
+  frete: FreteComOrigem | null | undefined,
+  contexto: { idTransportadora: number | null | undefined; modalidade: string | null; isAvulso: boolean }
+): true | null {
+  if (!frete || contexto.isAvulso || contexto.modalidade === "RETIRA" || contexto.modalidade === "FOB") return null;
+  return frete.valorDigitado === true && ehCardDoMotoboyInterno(frete, contexto.idTransportadora) ? true : null;
+}
+
+/**
+ * Releitura do banco: com a marca gravada e o card do 997 escolhido, o valor
+ * gravado e o digitado. O cotado de referencia nao se sabe ate a proxima cotacao
+ * (`undefined`); a cotacao da abertura da aba o preenche.
+ */
+export function valorDigitadoRelido<T extends FreteComOrigem>(
+  frete: T,
+  marcaGravada: unknown,
+  idTransportadoraDaProposta: number | null | undefined
+): T {
+  if (marcaGravada !== true || !ehCardDoMotoboyInterno(frete, idTransportadoraDaProposta)) return frete;
+  return { ...frete, valorDigitado: true, valorCotado: undefined };
+}
+
+/** A cotacao da abertura da aba trouxe o card equivalente: so o cotado de referencia muda. */
+export function atualizarCotadoDoDigitado<T extends FreteComOrigem>(frete: T, novo: Pick<FreteComOrigem, "valor">): T {
+  return frete.valorDigitado === true ? { ...frete, valorCotado: novo.valor } : frete;
 }

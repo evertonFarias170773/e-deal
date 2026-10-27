@@ -91,7 +91,14 @@ O serviço escolhido é o nome que aparece na coluna **Envio** da lista de Pedid
 
 Card calculado (SEDEX, VEPPO, São Miguel, Azul) é cobrado pelo valor do card: com ele escolhido, **Valor cobrado (R$)** fica só leitura e aparece o aviso "Frete calculado: o valor cobrado é o do card escolhido". A lista **Transportadora** continua aberta.
 
-Exceção do **MOTOBOY INTERNO**: com o card de motoboy escolhido, **Valor cobrado (R$)** fica editável para qualquer usuário, sem trocar por frete manual. Digite o valor, pressione Enter e clique em **Salvar alterações**: o valor digitado é o frete do pedido, e a transportadora continua o motoboy. A ajuda sob o campo diz "Motoboy interno: o valor cobrado pode ser editado aqui por qualquer usuário". **Atualizar fretes** volta a pôr o valor cotado.
+Exceção do **MOTOBOY INTERNO**: com o card de motoboy escolhido, **Valor cobrado (R$)** fica editável para qualquer usuário, sem trocar por frete manual. Digite o valor, pressione Enter e clique em **Salvar alterações**: o valor digitado é o frete do pedido, e a transportadora continua o motoboy. A ajuda sob o campo diz "Motoboy interno: o valor cobrado pode ser editado aqui por qualquer usuário".
+
+O valor digitado no motoboy interno fica mesmo depois de salvar e reabrir o orçamento, e também quando se muda item, quantidade ou peso: a cotação automática atualiza só o valor de referência do motoboy, não o valor cobrado. O valor digitado deixa de valer quando:
+
+- você clica em **Atualizar fretes**: o valor cobrado volta ao cotado;
+- você escolhe outro card ou outra transportadora;
+- o motoboy deixa de aparecer na cotação (peso ou cidade fora da faixa): o card fica, com o último valor cotado;
+- o endereço de entrega muda: a cotação recomeça do zero.
 
 Para cobrar outro valor, o frete precisa ser manual:
 
@@ -322,6 +329,8 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 > - **09/10/2026:** o Acompanhar Pedido vale para qualquer pedido em aberto, inclusive em NOVO e AGUARDANDO (antes só de APROVADO até EXPEDICAO); a busca por número procura entre todos os pedidos elegíveis; a mensagem de só leitura diz o motivo real.
 >
 > - **09/10/2026 (adendo):** o grupo Acompanhar deixa de ter limite de 10 pedidos (limite de segurança de 50, com aviso acima de 10); pedido com status vazio fica só para leitura.
+>
+> - **27/10/2026 (adendo):** o valor digitado no **MOTOBOY INTERNO** sobrevive a salvar, reabrir e mudar item ou peso; **Atualizar fretes**, troca de card ou de transportadora o descartam.
 >
 > - **27/10/2026:** com o **MOTOBOY INTERNO** escolhido, o **Valor cobrado (R$)** do card de motoboy fica editável para todos e o **Salvar alterações** grava o valor digitado. As outras transportadoras seguem travadas no valor do card.
 >
