@@ -6,6 +6,7 @@ import {
   OsPdfBlocoCliente,
   OsPdfCabecalho,
   coresDoSetor,
+  textoDoFreteDaOs,
   faixaNumeracao,
   formatarData,
   formatarPeso,
@@ -296,7 +297,9 @@ export function OsPdfResumoDocument({ vm, qrDataUrl, logoDataUrl }: OsPdfResumoD
         </View>
 
         <View style={styles.envioBarra} wrap={false}>
-          <Text style={styles.envioTexto}>Forma de envio: {pdfSafe(entregaFrete) || "-"}</Text>
+          <Text style={styles.envioTexto}>
+            Forma de envio: {pdfSafe(entregaFrete) || "-"}   |   Frete: {textoDoFreteDaOs(vm.freteCobrado)}
+          </Text>
         </View>
 
         <View style={styles.assinaturaArea} wrap={false}>

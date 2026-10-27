@@ -71,6 +71,16 @@ const ORDEM_CABECALHO = ["LASER", "PVC", "TEXTIL", "FLEXO"];
 /** Largura de cada nome em Oswald Bold, em "em" (medida com fontkit). */
 const LARGURA_NOME_EM: Record<string, number> = { PVC: 1.651, LASER: 2.547, FLEXO: 2.408, TEXTIL: 2.596 };
 
+/**
+ * Frete no campo de envio da OS (27/10/2026). Valor cobrado em reais; zero
+ * (RETIRA, FOB, frete gratis) e nulo saem como "—", mesma regra da Expedicao:
+ * "R$ 0,00" leria como cobranca de zero em vez de "nao se aplica".
+ */
+export function textoDoFreteDaOs(valor: number | null | undefined): string {
+  if (valor === null || valor === undefined || !Number.isFinite(valor) || valor <= 0) return "—";
+  return "R$ " + valor.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
 export function coresDoSetor(setor: string | null | undefined) {
   const chave = (setor || "").trim().toUpperCase();
   return CORES_SETOR[chave] ?? COR_NEUTRA;
@@ -1196,7 +1206,9 @@ export function OsPdfPaginaBoletim({
 
         {/* Forma de envio (mesma origem/comportamento do layout anterior) */}
         <View style={styles.envioBarra} wrap={false}>
-          <Text style={styles.envioTexto}>Forma de envio: {pdfSafe(entregaFrete) || "-"}</Text>
+          <Text style={styles.envioTexto}>
+            Forma de envio: {pdfSafe(entregaFrete) || "-"}   |   Frete: {textoDoFreteDaOs(vm.freteCobrado)}
+          </Text>
         </View>
 
         {/*

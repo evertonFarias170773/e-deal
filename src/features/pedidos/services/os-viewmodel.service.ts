@@ -12,6 +12,7 @@ import type { EmpresaId } from "../pdf/os-pdf-assets";
 import {
   nomeTransportadoraCadastro,
   nomeTransporteEfetivo,
+  valorFreteEfetivo,
   type ModalidadeFrete
 } from "@/features/orcamentos/lib/modalidade-frete";
 import { idEnderecoEntregaVigente } from "@/features/expedicao/lib/endereco-entrega";
@@ -158,6 +159,13 @@ export interface OsPdfViewModel {
   obsEntrega: string;
   frete: { transportadora: string | null; servico: string | null } | null;
   /**
+   * Valor do frete que a proposta COBRA (27/10/2026), para o campo de envio da
+   * OS. É `propostas.valor_frete` — depois da liberação vale o gravado, não a
+   * cotação — passado por `valorFreteEfetivo`: RETIRA e FOB dão 0. Nulo quando
+   * não há valor gravado. O PDF mostra 0 e nulo como "—", igual à Expedição.
+   */
+  freteCobrado: number | null;
+  /**
    * PARA ONDE O PEDIDO VAI (18/09/2026) — o bloco de entrega do boletim.
    *
    * MESMA ORIGEM DA EXPEDICAO: o endereco vigente sai de
@@ -290,6 +298,7 @@ export async function montarOsPdfViewModel(
     let idFaturado: number | null = null;
     /** Modalidade declarada pelo vendedor — decide o rótulo de FORMA DE ENVIO. */
     let modalidadeFrete: ModalidadeFrete | null = null;
+    let valorFreteGravado: number | null = null;
     let idTransportadoraCliente: number | null = null;
     /** `propostas.id_endereco_ent` — o endereco de entrega escolhido no pedido. */
     let idEnderecoProposta: string | null = null;
@@ -317,7 +326,7 @@ export async function montarOsPdfViewModel(
               // custo zero. Serve a regra do 8469 logo abaixo.
               // `id_endereco_ent` entra em 18/09/2026, na MESMA linha: e o endereco de
               // entrega do bloco novo do boletim, e nao custa consulta alguma.
-              "cliente, cnpjCpf, contato, empresa, vendedor, status_interno, id_cliente, id_faturado, modalidade_frete, id_transportadora_cliente, id_endereco_ent, motivo_copia, id_int_origem_copia"
+              "cliente, cnpjCpf, contato, empresa, vendedor, status_interno, id_cliente, id_faturado, modalidade_frete, id_transportadora_cliente, id_endereco_ent, motivo_copia, id_int_origem_copia, valor_frete"
             )
             .eq("id_int", idInt)
             .maybeSingle();
@@ -435,6 +444,10 @@ export async function montarOsPdfViewModel(
           idFaturado = Number(propostaRow.id_faturado);
         }
         modalidadeFrete = (propostaRow.modalidade_frete as ModalidadeFrete | null) ?? null;
+        if (propostaRow.valor_frete !== null && propostaRow.valor_frete !== undefined) {
+          const n = Number(propostaRow.valor_frete);
+          valorFreteGravado = Number.isFinite(n) ? n : null;
+        }
         idEnderecoProposta = propostaRow.id_endereco_ent ? String(propostaRow.id_endereco_ent) : null;
         if (
           propostaRow.id_transportadora_cliente !== null &&
@@ -945,6 +958,8 @@ export async function montarOsPdfViewModel(
       obsTecnica: pedido.obsTecnica || "",
       obsEntrega: pedido.obsEntrega || "",
       frete,
+      freteCobrado:
+        valorFreteGravado === null ? null : valorFreteEfetivo(valorFreteGravado, modalidadeFrete),
       entrega,
       produtos,
       artesGerais,
