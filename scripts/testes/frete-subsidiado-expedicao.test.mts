@@ -89,6 +89,14 @@ checar("as duas telas mostram a mensagem com o valor atual e o novo", [
   corrigir.includes("mensagemFreteSubsidiado(confirmarSubsidio.valorAtual, confirmarSubsidio.valorNovo)")
 ], [true, true]);
 
+const painel = ler("src/features/orcamentos/components/RecotarFreteAdminPanel.tsx");
+checar("painel do orcamento: confere antes de aplicar; aplicarRecotacao so em gravarAplicacao; mesma mensagem", [
+  antes(painel, "conferirFreteSubsidiado(getSupabaseClient(), idInt)", "async function gravarAplicacao("),
+  (painel.match(/await aplicarRecotacao\(/g) || []).length,
+  antes(painel, "async function gravarAplicacao(", "await aplicarRecotacao("),
+  painel.includes("mensagemFreteSubsidiado(confirmarSubsidio.valorAtual, confirmarSubsidio.opcao.valor)")
+], [true, 1, true, true]);
+
 if (falhas > 0) {
   console.log(`\n${falhas} falha(s).`);
   process.exitCode = 1;

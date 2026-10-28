@@ -9,6 +9,9 @@ import {
   type OpcaoRecotacao,
   type RecotacaoResult
 } from "@/features/expedicao/services/recotacao.client";
+import { conferirFreteSubsidiado, mensagemFreteSubsidiado } from "@/features/expedicao/lib/frete-subsidiado";
+import { ConfirmarAcaoModal } from "@/features/expedicao/components/ConfirmarAcaoModal";
+import { getSupabaseClient } from "@/lib/supabase/client";
 
 /**
  * Recotar o frete a partir da PROPOSTA — Peça B da Etapa 3.
@@ -61,6 +64,8 @@ export function RecotarFreteAdminPanel({ idInt, statusInterno, modalidade, onApl
   const [chavesPorOpcao, setChavesPorOpcao] = useState<Record<string, string>>({});
   const [mensagem, setMensagem] = useState<string | null>(null);
   const [erro, setErro] = useState<string | null>(null);
+  /** Cliente com frete subsidiado: a opcao espera a confirmacao (lib/frete-subsidiado, como na Expedicao). */
+  const [confirmarSubsidio, setConfirmarSubsidio] = useState<{ opcao: OpcaoRecotacao; valorAtual: number } | null>(null);
 
   const emExpedicao = String(statusInterno ?? "").trim() === "EXPEDICAO";
   const ehCif = String(modalidade ?? "").trim().toUpperCase() === "CIF";
@@ -143,6 +148,26 @@ export function RecotarFreteAdminPanel({ idInt, statusInterno, modalidade, onApl
       setErro("Recote antes de aplicar.");
       return;
     }
+    setAplicandoId(o.id);
+    setErro(null);
+    // Cliente com "Pode editar valor do frete": confirma antes de regravar.
+    // Lido do banco agora; cancelar nao grava nada (lib/frete-subsidiado).
+    const conferencia = await conferirFreteSubsidiado(getSupabaseClient(), idInt);
+    if (!conferencia.ok) {
+      setAplicandoId(null);
+      setErro(conferencia.mensagem);
+      return;
+    }
+    if (conferencia.subsidiado) {
+      setAplicandoId(null);
+      setConfirmarSubsidio({ opcao: o, valorAtual: conferencia.valorAtual });
+      return;
+    }
+    await gravarAplicacao(o, chave);
+  }
+
+  /** O fluxo de sempre do "Aplicar": a rota `aplicar` e a RPC, sem mudanca. */
+  async function gravarAplicacao(o: OpcaoRecotacao, chave: string) {
     setAplicandoId(o.id);
     setErro(null);
     const res = await aplicarRecotacao({ idInt, chave, opcaoId: o.id, valorVisto: o.valor });
@@ -241,6 +266,26 @@ export function RecotarFreteAdminPanel({ idInt, statusInterno, modalidade, onApl
           {erro}
         </p>
       )}
+      {confirmarSubsidio ? (
+        <ConfirmarAcaoModal
+          titulo="Frete subsidiado"
+          descricao={mensagemFreteSubsidiado(confirmarSubsidio.valorAtual, confirmarSubsidio.opcao.valor)}
+          detalhe="Cancelar não grava nada."
+          rotuloConfirmar="Regravar frete"
+          salvando={aplicandoId !== null}
+          onConfirmar={() => {
+            const { opcao } = confirmarSubsidio;
+            const chave = chavesPorOpcao[opcao.id];
+            setConfirmarSubsidio(null);
+            if (!chave) {
+              setErro("Recote antes de aplicar.");
+              return;
+            }
+            void gravarAplicacao(opcao, chave);
+          }}
+          onClose={() => setConfirmarSubsidio(null)}
+        />
+      ) : null}
     </div>
   );
 }
