@@ -19,9 +19,61 @@ import type { ColunaPdf, LinhaRelatorio, ModeloPdf, RelatorioDef, ResultadoRelat
 const TAMANHO_PAGINA = 1000;
 const MAX_PAGINAS = 10;
 
+/**
+ * GRUPOS DE TRANSPORTADORA (28/10/2026, decisão do dono).
+ *
+ * `expedicoes.transportadora_nome` varia conforme o cadastro que a tela tinha na hora do despacho:
+ * os Correios saem como "SEDEX", "Correios" ou "CORREIOS SEDE", o motoboy como "Motoboy" ou
+ * "B M EXPRESS". O relatório junta esses nomes NA LEITURA; nada gravado muda.
+ *
+ * Prioridade: `tipo_frete`, depois `id_transportadora_cliente`, depois o nome gravado como apelido
+ * (comparado sem maiúsculas, acento nem espaços sobrando). Nome que não bate em nenhum grupo segue
+ * como está, para um nome novo nunca sumir nem cair num grupo em silêncio.
+ *
+ * Para incluir um apelido, um tipo ou um cadastro, edite SÓ esta lista. Um apelido não pode estar
+ * em dois grupos.
+ */
+const GRUPOS_TRANSPORTADORA: ReadonlyArray<{
+  nome: string;
+  tipos: readonly string[];
+  idsCadastro: readonly number[];
+  apelidos: readonly string[];
+}> = [
+  { nome: "Correios", tipos: ["CORREIOS"], idsCadastro: [39975, 663], apelidos: ["SEDEX", "PAC", "Correios", "CORREIOS SEDE"] },
+  { nome: "Motoboy", tipos: ["MOTOBOY"], idsCadastro: [997], apelidos: ["Motoboy", "B M EXPRESS"] },
+  // 120018: VEPPO CIA LIMITADA, fantasia ESTACAO RODOVIARIA CENTRAL DE PORTO ALEGRE (um cadastro só).
+  { nome: "VEPPO", tipos: [], idsCadastro: [120018], apelidos: ["VEPPO", "ESTACAO RODOVIARIA CENTRAL DE PORTO ALEGRE"] }
+];
+
+const normalizarApelido = (s: string) =>
+  s.normalize("NFD").replace(/[̀-ͯ]/g, "").toUpperCase().replace(/\s+/g, " ").trim();
+
+/** O grupo do despacho, ou `null` quando nenhum grupo reconhece (segue pelo nome gravado). */
+export function grupoDaTransportadora(d: {
+  transportadora_nome: string | null;
+  tipo_frete: string | null;
+  id_transportadora_cliente: number | null;
+}): string | null {
+  const tipo = (d.tipo_frete ?? "").trim().toUpperCase();
+  if (tipo) {
+    const g = GRUPOS_TRANSPORTADORA.find((x) => x.tipos.includes(tipo));
+    if (g) return g.nome;
+  }
+  if (d.id_transportadora_cliente !== null && d.id_transportadora_cliente !== undefined) {
+    const id = Number(d.id_transportadora_cliente);
+    const g = GRUPOS_TRANSPORTADORA.find((x) => x.idsCadastro.includes(id));
+    if (g) return g.nome;
+  }
+  const nome = normalizarApelido(d.transportadora_nome ?? "");
+  if (!nome) return null;
+  return GRUPOS_TRANSPORTADORA.find((x) => x.apelidos.some((a) => normalizarApelido(a) === nome))?.nome ?? null;
+}
+
 type Despacho = {
   id_int: number;
   transportadora_nome: string | null;
+  tipo_frete: string | null;
+  id_transportadora_cliente: number | null;
   modalidade_frete: string | null;
   data_despacho: string;
 };
@@ -48,7 +100,7 @@ async function consultar(
     }
     let consulta = supabase
       .from("expedicoes")
-      .select("id_int,transportadora_nome,modalidade_frete,data_despacho")
+      .select("id_int,transportadora_nome,tipo_frete,id_transportadora_cliente,modalidade_frete,data_despacho")
       .not("data_despacho", "is", null)
       .gte("data_despacho", de)
       .lt("data_despacho", ate);
@@ -98,8 +150,18 @@ function normalizar(resposta: unknown): ResultadoRelatorio {
   let totalFrete = 0;
   let totalZero = 0;
 
+  // Nomes gravados que cada grupo juntou, com a contagem, para o aviso de conferência.
+  const nomesPorGrupo = new Map<string, Map<string, number>>();
+
   for (const d of despachos) {
-    const nome = (d.transportadora_nome ?? "").trim() || "(sem transportadora)";
+    const gravado = (d.transportadora_nome ?? "").trim() || "(sem transportadora)";
+    const grupo = grupoDaTransportadora(d);
+    if (grupo) {
+      const nomes = nomesPorGrupo.get(grupo) ?? new Map<string, number>();
+      nomes.set(gravado, (nomes.get(gravado) ?? 0) + 1);
+      nomesPorGrupo.set(grupo, nomes);
+    }
+    const nome = grupo ?? gravado;
     const modalidade = rotuloModalidade(d.modalidade_frete);
     const chave = `${nome.toUpperCase()}|${modalidade}`;
     const frete = Number(fretes[String(d.id_int)] ?? 0);
@@ -138,6 +200,15 @@ function normalizar(resposta: unknown): ResultadoRelatorio {
   }
   if (retiraFobComFrete.length > 0) {
     avisos.push(`Pedidos Retira ou FOB com frete cobrado na proposta: ${retiraFobComFrete.join("; ")}.`);
+  }
+  for (const g of GRUPOS_TRANSPORTADORA) {
+    const nomes = nomesPorGrupo.get(g.nome);
+    if (!nomes) continue;
+    const lista = [...nomes]
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .map(([n, q]) => `${n} (${plural(q, "despacho", "despachos")})`)
+      .join(", ");
+    avisos.push(`Grupo ${g.nome} juntou os nomes gravados: ${lista}.`);
   }
 
   const pedidos = despachos.length;
@@ -205,7 +276,7 @@ function montarPdf(
     periodo: `Despacho de ${formatDataCivil(inicio)} a ${formatDataCivil(fim)}`,
     filtros: contexto.filtros,
     criterio:
-      "Frete COBRADO do cliente (o valor de frete gravado na proposta, sem recalcular), não o custo pago à transportadora, que o ERP não registra. Período pela data de despacho; transportadora e modalidade são as do despacho. Retira e FOB entram com o frete que a proposta tiver (normalmente zero).",
+      "Frete COBRADO do cliente (o valor de frete gravado na proposta, sem recalcular), não o custo pago à transportadora, que o ERP não registra. Período pela data de despacho; transportadora e modalidade são as do despacho. Retira e FOB entram com o frete que a proposta tiver (normalmente zero). Nomes da mesma transportadora (Correios, Motoboy, VEPPO) são somados numa linha; os nomes juntados estão nas notas.",
     secoes: [
       {
         titulo: `Por transportadora e modalidade — ${plural(resultado.linhas.length, "linha", "linhas")}`,
@@ -246,7 +317,7 @@ export const fretePorTransportadora: RelatorioDef = {
   dataReferencia: {
     rotulo: "Data de despacho",
     criterio:
-      "Conta o dia em que o pedido foi despachado (dia de São Paulo). Transportadora e modalidade são as do despacho, não as do orçamento. O valor é o frete gravado na proposta (o que foi cobrado do cliente), sem recalcular — não é o custo pago à transportadora, que o ERP não registra. Retira e FOB entram com o frete da proposta, normalmente zero, e cada combinação de transportadora e modalidade aparece em linha própria."
+      "Conta o dia em que o pedido foi despachado (dia de São Paulo). Transportadora e modalidade são as do despacho, não as do orçamento. O valor é o frete gravado na proposta (o que foi cobrado do cliente), sem recalcular — não é o custo pago à transportadora, que o ERP não registra. Retira e FOB entram com o frete da proposta, normalmente zero, e cada combinação de transportadora e modalidade aparece em linha própria. Nomes diferentes da mesma transportadora (Correios, Motoboy, VEPPO) são somados numa linha, e o aviso lista os nomes juntados."
   },
 
   periodo: { presets: ["mes", "mes_anterior", "custom"], padrao: "mes", maxDias: 366 },

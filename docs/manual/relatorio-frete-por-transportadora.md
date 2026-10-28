@@ -1,6 +1,6 @@
 # Relatório: Frete cobrado por transportadora
 
-> **Última revisão:** 27/10/2026
+> **Última revisão:** 28/10/2026
 > **Caminho no menu:** Relatórios → Expedição → Frete cobrado por transportadora
 > **Endereço:** `/relatorios/expedicao/frete-por-transportadora`
 
@@ -45,6 +45,12 @@ Nomes exatamente como aparecem na tela.
 - **A data usada é a data de despacho** do pedido, no dia de São Paulo, escrita no alto da tela e do PDF.
 - **Transportadora e modalidade são as do despacho**, e não as do orçamento: se o despacho saiu por outra transportadora, vale a do despacho.
 - **O valor é o frete gravado na proposta**, sem recalcular: o mesmo que a Expedição mostra como frete cobrado.
+- **Nomes da mesma transportadora são somados numa linha só** (desde 28/10/2026). O nome gravado no despacho varia conforme o cadastro que a tela tinha na hora, e o relatório junta assim:
+  - **Correios**: tipo de envio Correios, cadastros 39975 e 663, ou os nomes SEDEX, PAC, Correios e CORREIOS SEDE;
+  - **Motoboy**: tipo de envio Motoboy, cadastro 997, ou os nomes Motoboy e B M EXPRESS;
+  - **VEPPO**: cadastro 120018, ou os nomes VEPPO e ESTACAO RODOVIARIA CENTRAL DE PORTO ALEGRE.
+
+  Vale primeiro o tipo de envio, depois o cadastro, depois o nome; maiúsculas e acentos não contam. As demais transportadoras aparecem pelo nome gravado, como antes, e um nome que o relatório não conhece aparece como está. Um aviso abaixo da tabela lista os nomes gravados que entraram em cada grupo, com a quantidade de despachos. Nada gravado no despacho muda: é só a forma de agrupar.
 - Cada combinação de transportadora e modalidade aparece em linha própria (por exemplo, a mesma transportadora em CIF e em FOB).
 - **Retira e FOB** entram com o frete da proposta, que normalmente é zero (no FOB quem paga a transportadora é o cliente). Se algum pedido Retira ou FOB tiver frete cobrado, a tela avisa.
 - A coluna **Com frete zero** conta os pedidos sem frete cobrado. Os pedidos **CIF com frete zero** são listados no aviso, porque parte deles é frete subsidiado.
