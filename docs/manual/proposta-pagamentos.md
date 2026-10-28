@@ -1,6 +1,6 @@
 # Proposta: aba Pagamentos
 
-> **Última revisão:** 21/10/2026
+> **Última revisão:** 28/10/2026
 > **Caminho no menu:** Pedidos → abrir um pedido → aba Pagamentos
 > **Endereço:** `/orcamentos/<número>/editar?tab=pagamentos`
 
@@ -110,7 +110,7 @@ Os boletos das parcelas não nascem aqui: depois que a Conferência confirma o f
 1. Quando o cliente tem saldo, a faixa **Saldo na Conta Corrente** aparece no topo da proposta e a forma **E-Crédito** aparece na janela **Criar cobrança**.
 2. Escolha **E-Crédito**. O quadro **Campos do E-Crédito** mostra **Saldo de Crédito** e **Saldo Restante OS**.
 3. Em **Valor da cobrança \***, informe quanto do crédito usar. Não pode passar do saldo de crédito nem do saldo da proposta.
-4. Se o crédito cobre tudo, a tela mostra **Pagamento integral com E-Crédito**. Clique em **Gerar cobrança**.
+4. Se o crédito cobre tudo, a tela mostra **Pagamento integral com E-Crédito**. Clique em **Gerar cobrança**. O botão fica habilitado sempre que o **Saldo de Crédito** é maior ou igual ao valor da cobrança, conferido ao centavo (R$ 791,99 cobre R$ 790,99), e o valor não passa do **Saldo Restante OS**.
 5. Se o crédito cobre só uma parte, a tela mostra **Cobrança Parcial (Pagamento Combinado)**. Escolha a **Forma de Pagamento Secundária \*** (PIX, Boleto, Cartão de Crédito ou E-Faturado). Em E-Faturado, escolha também a **Condição Secundária \***. Clique em **Gerar cobrança**: as duas cobranças nascem juntas.
 
 O crédito é debitado do saldo do cliente na hora. A cobrança de E-Crédito nasce paga, mas ainda passa pela Conferência para ser confirmada.
@@ -341,10 +341,13 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/app/api/cobrancas/cancelar-boleto-faturado/route.ts`
 - `src/app/api/cobrancas/confirmar/route.ts`
 - `src/app/api/cobrancas/usar-credito/route.ts`
+- `src/features/cobrancas/lib/e-credito-botao.ts`
 - `src/app/api/cobrancas/pagamento-combinado/route.ts`
 - `src/app/api/cobrancas/aprovar-faturado-automatico/route.ts`
 - `src/app/api/orcamentos/abonar-diferenca/route.ts`
 - `src/lib/formatters/status.ts`
 - `src/lib/mocks/pagamentos.mock.ts`
 
-> **Mudança desta revisão:** 08/10/2026 — o identificador das opções de Motoboy, Transportadora São Miguel e VEPPO deixou de mudar a cada cotação, e por isso o frete complementar desses transportes volta a ser aplicado (commit `2387164`).
+> **Mudança desta revisão:** 28/10/2026 — **Gerar cobrança** com E-Crédito ficava apagado em alguns saldos (caso 20361: crédito R$ 791,99, saldo R$ 790,99) por erro de arredondamento na tela; agora a comparação é feita ao centavo.
+>
+> **Revisão anterior:** 08/10/2026 — o identificador das opções de Motoboy, Transportadora São Miguel e VEPPO deixou de mudar a cada cotação, e por isso o frete complementar desses transportes volta a ser aplicado (commit `2387164`).

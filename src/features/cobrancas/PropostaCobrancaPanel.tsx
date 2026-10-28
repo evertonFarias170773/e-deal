@@ -1,5 +1,6 @@
 "use client";
 
+import { eCreditoBloqueado } from "./lib/e-credito-botao";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -296,7 +297,8 @@ export function PropostaCobrancaPanel({
   const cobrancasDoSaldo = semCobrancaDeReenvio(cobrancasAtivas);
   const totalCobradoReal = cobrancasDoSaldo.reduce((total, item) => total + getValorCobranca(item), 0);
   const totalCobradoRealRounded = roundMoney(totalCobradoReal);
-  const saldoRestante = Math.max(totalPropostaRounded - totalCobradoRealRounded, 0);
+  // Arredondado: 2.151,37 - 1.360,38 em ponto flutuante da 790,9899999999998 (20361).
+  const saldoRestante = roundMoney(Math.max(totalPropostaRounded - totalCobradoRealRounded, 0));
   const hasCobrancaExcedente = totalCobradoRealRounded > totalPropostaRounded;
   const totalGerado = Math.min(totalCobradoRealRounded, totalPropostaRounded);
   const isControlled = typeof isModalOpen === "boolean";
@@ -1933,8 +1935,9 @@ export function PropostaCobrancaPanel({
                   disabled={
                       isSaving ||
                       !tipoDisponivel ||
-                      (form.tipoCobranca === "E-CREDITO" && (form.valor <= 0 || form.valor > saldoCredito || form.valor > saldoRestante)) ||
-                      (form.tipoCobranca === "E-CREDITO" && form.valor < saldoRestante && tipoSecundario === "E-FATURADO" && !condicaoSecundaria)
+                      // Em centavos (lib/e-credito-botao): ponto flutuante apagava o botao (20361).
+                      (form.tipoCobranca === "E-CREDITO" &&
+                        eCreditoBloqueado({ valor: form.valor, saldoCredito, saldoRestante, tipoSecundario, condicaoSecundaria }))
                     }
                   className="rounded-2xl bg-[#0b2f4a] px-5 py-3 text-sm font-semibold text-white shadow-sm disabled:opacity-60"
                 >
@@ -2565,8 +2568,9 @@ export function PropostaCobrancaPanel({
                     disabled={
                       isSaving ||
                       !tipoDisponivel ||
-                      (form.tipoCobranca === "E-CREDITO" && (form.valor <= 0 || form.valor > saldoCredito || form.valor > saldoRestante)) ||
-                      (form.tipoCobranca === "E-CREDITO" && form.valor < saldoRestante && tipoSecundario === "E-FATURADO" && !condicaoSecundaria)
+                      // Em centavos (lib/e-credito-botao): ponto flutuante apagava o botao (20361).
+                      (form.tipoCobranca === "E-CREDITO" &&
+                        eCreditoBloqueado({ valor: form.valor, saldoCredito, saldoRestante, tipoSecundario, condicaoSecundaria }))
                     }
                     className="rounded-2xl bg-[#0b2f4a] px-5 py-3 text-sm font-semibold text-white shadow-sm disabled:opacity-60"
                   >
