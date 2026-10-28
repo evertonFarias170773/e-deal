@@ -1,6 +1,6 @@
 # Expedição
 
-> **Última revisão:** 22/10/2026
+> **Última revisão:** 28/10/2026
 > **Caminho no menu:** Expedição (item direto do menu lateral, sem subitens; é o quarto, depois de Conferência, Pedidos e Clientes). Também se chega pela aba **Expedição** no topo do Kanban e da Fila de impressão da Produção.
 > **Endereço:** `/expedicao`
 
@@ -260,6 +260,7 @@ O bloco **Recotar frete** aparece em **Despachar** quando o pedido é CIF e est�
 4. Para liberar o despacho bloqueado, o administrador da Expedição abre o mesmo pedido em **Despachar**, escreve o motivo e clica em **Liberar despacho (ADM)**. A liberação vale para um despacho e pode ser desfeita em **Cancelar liberação**.
 5. Para gravar o frete novo na proposta, o administrador usa antes **Liberar aplicação da recotação** no menu do pedido. Depois o expedidor recota e clica em **Aplicar** na opção desejada. A liberação vale para uma aplicação e pode ser desfeita em **Cancelar liberação**, no menu.
 6. Ao aplicar, o frete e o total do pedido mudam pelo mesmo valor e o fato fica registrado na timeline do pedido. A diferença não é lançada na conta do cliente.
+7. Se o cliente do pedido tem **Pode editar valor do frete** ligado no cadastro, antes de gravar aparece a janela **Frete subsidiado**: "Este cliente tem frete subsidiado (valor atual: R$ X). Confirma que quer regravar para R$ Y?". **Regravar frete** grava; **Cancelar** não grava nada. O valor atual é o que está gravado no pedido agora.
 
 ### Despachar como retirada um pedido CIF (ADM)
 
@@ -284,6 +285,7 @@ Serve para trocar a modalidade (quem paga) e a transportadora de um pedido que j
 5. Clique em **Confirmar correção**.
 6. Se sobrar dinheiro a favor do cliente, o botão vira **Revisar o crédito** e depois **Gravar e escolher o destino**. A correção é gravada, o crédito é aberto na Conta Corrente do cliente e você escolhe o destino: **Manter crédito para uso futuro**, **Devolver ao cliente (solicitar ao Financeiro)** ou **Abater débito existente**.
 7. Se ficar valor a receber, a correção grava direto. O saldo continua sendo da proposta e é cobrado na aba Pagamentos.
+8. Se o cliente do pedido tem **Pode editar valor do frete** ligado no cadastro, antes de gravar aparece a janela **Frete subsidiado**, com o frete atual e o novo. **Regravar frete** segue a gravação (incluindo o passo do crédito, se houver); **Cancelar** não grava nada.
 
 ### Confirmar a coleta
 
@@ -378,6 +380,7 @@ O primeiro envio (data, rastreio, endereço, transportadora) fica guardado no re
 - **Corrigir frete** só vale para pedido Na Expedição ou A Retirar. Não aparece com nota autorizada, com despacho confirmado ou com pedido entregue. Com despacho confirmado, volte um passo antes; com nota autorizada, cancele a nota antes. Na prática, o pedido A Retirar já tem o despacho confirmado, então precisa voltar um passo para ser corrigido.
 - **Corrigir frete** é recusado quando o total muda e o pedido tem título ativo no Contas a Receber. Se o total não muda, a correção passa.
 - **Corrigir frete** muda o total do pedido conforme a modalidade nova. A etiqueta já impressa continua válida.
+- Cliente com **Pode editar valor do frete**: **Aplicar** (recotação) e **Corrigir frete** pedem confirmação na janela **Frete subsidiado** antes de regravar o frete. O cadastro é conferido no banco na hora do clique; se a conferência falhar, nada é gravado e aparece "Não foi possível conferir o cadastro do cliente antes de regravar o frete. Tente de novo.". Cliente sem o checkbox não vê aviso.
 - Pedido complementar não é despachado sozinho enquanto o principal não foi despachado.
 - **Voltar status** no principal não volta o complemento.
 - Toda mudança de status confere se o pedido ainda está no status que a tela mostrava. Se outra pessoa mexeu antes, a ação é recusada e a lista recarrega.
@@ -482,6 +485,7 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/features/expedicao/components/ConferenciaDespacho.tsx`
 - `src/features/expedicao/components/ConfirmarAcaoModal.tsx`
 - `src/features/expedicao/components/CorrigirFreteModal.tsx`
+- `src/features/expedicao/lib/frete-subsidiado.ts`
 - `src/features/expedicao/components/AzulAwbModal.tsx`
 - `src/features/expedicao/components/RastreioModal.tsx`
 - `src/features/expedicao/components/RetiradaModal.tsx`
@@ -555,6 +559,8 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 > - **15/10/2026:** campo **Conhecimento** para envios por transportadora e motoboy (salvar e corrigir também depois do despacho, com registro de quem alterou); **Rastrear objeto** só em envio pelos Correios.
 >
 > - **15/10/2026:** novo item **Ver conhecimento** no menu de ações (Expedição e lista de Pedidos), só leitura, para despacho por transportadora ou motoboy.
+>
+> - **28/10/2026:** cliente com **Pode editar valor do frete**: **Aplicar** (recotação) e **Corrigir frete** pedem confirmação com o frete atual e o novo antes de regravar.
 >
 > - **20/10/2026:** despachar de novo um pedido de transportadora ou motoboy que está em Na Expedição descarta a coleta anterior e o pedido volta a ficar aguardando coleta.
 >

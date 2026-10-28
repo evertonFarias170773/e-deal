@@ -39,13 +39,12 @@ Nomes exatamente como aparecem na tela.
 | **Cancelar** | Janela **Liberar proposta para Produção?** | Fecha a janela sem liberar. |
 | **✓ Liberada para produção** | Lista de Pedidos, menu **Ações**, em pedido já liberado | Não é clicável. Só mostra que a liberação já foi feita. |
 | **Editar OS / Boletim** / **Criar OS / Boletim** | Tela Produção, menu **Ações** da linha | Abre a OS do pedido. Clicar na linha faz o mesmo. |
-| **Imprimir OS (PDF)** / **Imprimir OS reduzida (PDF)** | Tela Produção, menu **Ações** da linha | Gera o PDF da OS, completo ou reduzido. |
+| **Imprimir OS (PDF)** | Tela Produção, menu **Ações** da linha | Gera o PDF da OS, com todos os setores. |
 | **Voltar para Revisão Atendente** | Tela Produção, menu **Ações** da linha | Abre a janela **Devolver proposta para Revisão?**. |
 | **Confirmar devolução** | Janela **Devolver proposta para Revisão?** | Devolve o pedido para REVISAO ATENDENTE e o tira da produção. |
 | Abas de setor (PVC, LASER, FLEXO, TEXTIL...) | OS, dentro do **BLOCO 1 — Identificação Comercial** | Abre o boletim daquele setor. A etiqueta **a abrir** marca setor ainda sem boletim. |
 | **Imprimir OS · [setor]** | Cabeçalho da OS | Abre o PDF da OS do setor aberto em nova aba. |
 | **Baixar todos (N)** | Cabeçalho da OS, quando o pedido tem mais de um boletim | Baixa um PDF por setor. |
-| **PDF reduzido** | Cabeçalho da OS | Menu com **PDF reduzido da OS · [setor]** e **Baixar todos reduzidos (N)**. |
 | **Salvar Alterações** / **Salvar Boletim** | Cabeçalho da OS e botão verde flutuante | Grava a OS. O nome é **Salvar Boletim** quando a OS ainda está sendo aberta. |
 | **Voltar** | Cabeçalho da OS | Volta para a tela Produção. |
 | **Abrir para imprimir** / **Abrir os N setores** | Janela **Abrir para imprimir?** (ou **Reimprimir o boletim?**), depois de salvar a OS | Abre o documento pronto para imprimir, um setor por página. |
@@ -73,7 +72,7 @@ Na OS e nos dois PDFs esse texto sai em **vermelho, negrito e letra grande** (18
 É um campo só por pedido, separado da orientação técnica, sem limite de tamanho e com as quebras de linha preservadas. Onde o texto aparece:
 
 - na OS, dentro do **BLOCO 2**, no campo **Instruções de entrega**, onde a produção pode revisá-lo (é o mesmo texto, não uma cópia);
-- nos dois PDFs da OS (completa e reduzida, inclusive no lote e na 2ª via), no bloco **Instruções de entrega**, logo abaixo da orientação técnica. Sem texto, o bloco não sai;
+- no PDF da OS (inclusive no lote e na 2ª via), no bloco **Instruções de entrega**, logo abaixo da orientação técnica. Sem texto, o bloco não sai;
 - na Expedição: ícone de aviso no card e no cartão do celular, e o texto inteiro na lista e na janela **Despachar pedido**.
 
 As instruções de entrega não são copiadas quando o pedido é duplicado nem quando se cria um complemento: escreva de novo no pedido novo, se valerem para ele.
@@ -119,7 +118,7 @@ Pedido só com produtos de prateleira pode ser liberado pelo próprio sistema, n
 2. Se o pedido já foi impresso antes, a pergunta vira **Reimprimir o boletim?** e ganha a opção **Abrir só [setor]**.
 3. **Agora não** fecha a janela. O boletim já está salvo.
 4. A qualquer momento, use **Imprimir OS · [setor]** no cabeçalho da OS, ou **Imprimir OS (PDF)** no menu **Ações** da tela Produção. O aviso "Gerando o PDF na nova aba" indica que o arquivo está sendo montado.
-5. Para a versão reduzida, use **PDF reduzido** (na OS) ou **Imprimir OS reduzida (PDF)** (na tela Produção).
+5. Não existe mais PDF reduzido da OS: saiu do sistema em 28/10/2026, porque a produção não o usava.
 
 ### Tirar um pedido da produção
 

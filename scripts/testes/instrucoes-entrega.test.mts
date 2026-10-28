@@ -94,7 +94,8 @@ checar("aba: textarea sem limite de tamanho", /value=\{form\.obsEntrega\}[\s\S]{
 checar("aba: a orientação técnica continua lá", form.includes('title="Orientação técnica de produção"'), true);
 
 // ── 5. PDFs da OS ───────────────────────────────────────────────────────────
-for (const arquivo of ["OsPdfDocument.tsx", "OsPdfResumoDocument.tsx"]) {
+// O PDF reduzido saiu do sistema em 28/10/2026; sobra o completo.
+for (const arquivo of ["OsPdfDocument.tsx"]) {
   const pdf = fonte(`src/features/pedidos/pdf/${arquivo}`);
   const tecnica = pdf.indexOf("<Text style={styles.obsTitulo}>Orientação técnica de produção:</Text>");
   const entrega = pdf.indexOf("<Text style={styles.obsTitulo}>Instruções de entrega:</Text>");

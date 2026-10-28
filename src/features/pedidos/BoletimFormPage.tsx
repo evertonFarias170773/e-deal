@@ -69,12 +69,10 @@ import {
   abrirPdfOs,
   baixarPdfOs,
   abrirMacoOs,
-  abrirAbaDesvinculada,
-  type LayoutPdfOs
+  abrirAbaDesvinculada
 } from "./services/imprimir-os.client";
 import { useFimDivergente } from "@/features/orcamentos/hooks/useFimDivergente";
 import { perguntaAntesDeImprimir } from "@/features/orcamentos/numeracao-modelo-utils";
-import { ActionsMenu } from "@/components/common/ActionsMenu";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import { PageHeader } from "@/components/common/PageHeader";
 import { TituloNumeroCliente } from "@/components/common/TituloNumeroCliente";
@@ -1099,14 +1097,6 @@ export function BoletimFormPage() {
   ]);
 
   /**
-   * As tres acoes de PDF desta tela, cada uma parametrizada pelo layout.
-   *
-   * Existem como funcao — e nao inline em cada botao — porque o padrao e o
-   * reduzido precisam se comportar EXATAMENTE igual em cada ponto: mesmo
-   * boletim, mesmo setor, mesmo aviso, mesma trava de `isPrintingOs`. Duas
-   * copias do mesmo handler divergiriam no primeiro ajuste.
-   */
-  /**
    * Antes de imprimir: se algum modelo do pedido tem o Nº final gravado
    * diferente do calculado pelo numerador de hoje, pergunta. Não bloqueia — o
    * documento sai igual, com o número gravado. A resposta já está lida
@@ -1117,12 +1107,12 @@ export function BoletimFormPage() {
     return !pergunta || window.confirm(pergunta);
   }
 
-  async function imprimirOsDoBoletimAberto(layout: LayoutPdfOs) {
+  async function imprimirOsDoBoletimAberto() {
     if (isPrintingOs || !idIntParam) return;
     if (!podeImprimirComOFimGravado()) return;
     setIsPrintingOs(true);
     // Imprime o boletim aberto: o PDF é do setor, não da proposta.
-    const result = await abrirPdfOs(Number(idIntParam), boletimId, setorEfetivo, layout);
+    const result = await abrirPdfOs(Number(idIntParam), boletimId, setorEfetivo);
     setIsPrintingOs(false);
     if (!result.success) {
       showToast({
@@ -1138,11 +1128,11 @@ export function BoletimFormPage() {
     }
   }
 
-  async function imprimirOsDeOutroSetor(boletimDoSetor: BoletimSetor, layout: LayoutPdfOs) {
+  async function imprimirOsDeOutroSetor(boletimDoSetor: BoletimSetor) {
     if (isPrintingOs || !idIntParam) return;
     if (!podeImprimirComOFimGravado()) return;
     setIsPrintingOs(true);
-    const r = await abrirPdfOs(Number(idIntParam), boletimDoSetor.id, boletimDoSetor.setor, layout);
+    const r = await abrirPdfOs(Number(idIntParam), boletimDoSetor.id, boletimDoSetor.setor);
     setIsPrintingOs(false);
     if (!r.success) {
       showToast({
@@ -1155,7 +1145,7 @@ export function BoletimFormPage() {
     }
   }
 
-  async function baixarTodosOsBoletins(layout: LayoutPdfOs) {
+  async function baixarTodosOsBoletins() {
     if (isPrintingOs || !idIntParam) return;
     if (!podeImprimirComOFimGravado()) return;
     setIsPrintingOs(true);
@@ -1163,7 +1153,7 @@ export function BoletimFormPage() {
     // da primeira, então cada uma vira download.
     const falhas: string[] = [];
     for (const b of boletins) {
-      const r = await baixarPdfOs(Number(idIntParam), b.id, b.setor, layout);
+      const r = await baixarPdfOs(Number(idIntParam), b.id, b.setor);
       if (!r.success) falhas.push(`${b.setor || "sem setor"}: ${r.errorMessage || "erro"}`);
     }
     setIsPrintingOs(false);
@@ -1172,9 +1162,7 @@ export function BoletimFormPage() {
         ? {
             type: "success",
             title: "PDFs gerados",
-            description: `${boletins.length} boletins baixados, um por setor${
-              layout === "resumido" ? ", em versao reduzida" : ""
-            }.`
+            description: `${boletins.length} boletins baixados, um por setor.`
           }
         : { type: "error", title: "Falha em parte dos PDFs", description: falhas.join(" | ") }
     );
@@ -2176,7 +2164,7 @@ export function BoletimFormPage() {
             {isEditing && canPrintOS && isPrdAprovado && (
               <button
                 type="button"
-                onClick={() => void imprimirOsDoBoletimAberto("completo")}
+                onClick={() => void imprimirOsDoBoletimAberto()}
                 disabled={isPrintingOs}
                 className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 shadow-sm flex items-center gap-1.5 disabled:opacity-60"
               >
@@ -2193,42 +2181,13 @@ export function BoletimFormPage() {
             {isEditing && boletins.length > 1 && (
               <button
                 type="button"
-                onClick={() => void baixarTodosOsBoletins("completo")}
+                onClick={() => void baixarTodosOsBoletins()}
                 disabled={isPrintingOs}
                 className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 shadow-sm flex items-center gap-1.5 disabled:opacity-60"
               >
                 <Printer className="h-4 w-4" />
                 <span>Baixar todos ({boletins.length})</span>
               </button>
-            )}
-            {/* Versoes REDUZIDAS das mesmas acoes, num menu.
-                Quatro botoes de PDF lado a lado poluiriam o cabecalho; o menu
-                mantem o caminho comum a um clique e o reduzido a dois, sem
-                mudar nada do que ja existia. */}
-            {isEditing && canPrintOS && isPrdAprovado && (
-              <ActionsMenu
-                label="PDF reduzido"
-                items={[
-                  {
-                    label: isPrintingOs
-                      ? "Gerando PDF..."
-                      : setorEfetivo
-                        ? `PDF reduzido da OS · ${setorEfetivo}`
-                        : "PDF reduzido da OS",
-                    disabled: isPrintingOs,
-                    onClick: () => void imprimirOsDoBoletimAberto("resumido")
-                  },
-                  ...(boletins.length > 1
-                    ? [
-                        {
-                          label: `Baixar todos reduzidos (${boletins.length})`,
-                          disabled: isPrintingOs,
-                          onClick: () => void baixarTodosOsBoletins("resumido")
-                        }
-                      ]
-                    : [])
-                ]}
-              />
             )}
             {selectedProposta && (
               <button
@@ -2739,21 +2698,11 @@ export function BoletimFormPage() {
                         <div className="flex items-center gap-1.5">
                           <button
                             type="button"
-                            onClick={() => void imprimirOsDeOutroSetor(boletimDoSetor, "completo")}
+                            onClick={() => void imprimirOsDeOutroSetor(boletimDoSetor)}
                             disabled={isPrintingOs}
                             className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 disabled:opacity-60"
                           >
                             Abrir PDF do {grupo.setor}
-                          </button>
-                          {/* Mesma acao, layout reduzido: mesmo boletim, mesmo setor. */}
-                          <button
-                            type="button"
-                            onClick={() => void imprimirOsDeOutroSetor(boletimDoSetor, "resumido")}
-                            disabled={isPrintingOs}
-                            className="rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-500 transition hover:bg-slate-50 disabled:opacity-60"
-                            title={`PDF reduzido do ${grupo.setor}`}
-                          >
-                            reduzido
                           </button>
                         </div>
                       )}

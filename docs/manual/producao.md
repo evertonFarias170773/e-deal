@@ -42,11 +42,10 @@ Nomes exatamente como aparecem na tela.
 | **Em produção** / **Impressão** / **Impressão pausada** / **Acabamento** / **Acabamento pausado** / **Pronto** | Menu **Fase do setor** | Grava a fase escolhida para o setor. |
 | **Editar OS / Boletim** (ou **Criar OS / Boletim**) | Menu **Ações** da linha | Abre a OS. Aparece como "Criar" quando o pedido ainda não tem lotes. |
 | **Imprimir OS (PDF)** | Menu **Ações** da linha | Abre em nova aba o PDF completo, com todos os setores. Enquanto gera, mostra "Gerando PDF...". |
-| **Imprimir OS reduzida (PDF)** | Menu **Ações** da linha | Abre o PDF resumido (lista de conferência, sem imagens). |
-| **RETRABALHO** no PDF | Topo de cada página de boletim (completo, reduzido e maço), acima das caixas de setor | Aparece em letras grandes vermelhas quando o pedido é retrabalho: criado como Retrabalho pelo Duplicar proposta, ou com cobrança E-Retrabalho não cancelada. O resto do boletim e a paginação ficam como sempre. |
-| **Caixas de setor** no PDF | Cabeçalho de cada página de boletim (completo, reduzido e maço), entre o número da OS e o prazo | Uma caixa grande por setor que o pedido tem, todas do mesmo tamanho e numa linha só, na ordem LASER, PVC, TEXTIL, FLEXO. Em cada caixa, **SETOR** pequeno em cima e o nome do setor grande embaixo, sempre em preto. O setor da página sai preenchido com a cor (LASER ciano, PVC magenta, TEXTIL amarelo, FLEXO preto, com texto branco); os outros saem brancos com contorno grosso na cor do setor. A faixa dos produtos usa a mesma cor, com texto preto (branco no FLEXO). |
-| **Forma de envio** e **Frete** no PDF | Faixa de envio, perto do fim do boletim (completo, reduzido e maço), acima de **Entregar para** | Mostra a forma de envio e o valor do frete que a proposta cobra (o gravado na proposta). Em **RETIRA** e **FOB** o frete é zero e sai como **—**, igual à Expedição; frete sem valor gravado também sai como **—**. |
-| **Acabamento**, **Acessórios** e **Furação** no PDF | Card de cada modelo, nas linhas de variação, no boletim completo e no maço | Saem maiores que as outras variações (10 pt, negrito), quebrando linha sem corte, porque são o que a bancada mais precisa ler. No **TEXTIL**, Acabamento e Acessórios saem com o rótulo abreviado — **Acb:** e **Ace:**. No **PVC**, Acabamento e Furação saem com o rótulo inteiro ("Acabamento: Brilho", "Furação: Ovóide"). As outras variações do mesmo card (Tecnologia, Impressão...), os setores LASER e FLEXO e o PDF reduzido, que não imprime variações, ficam como sempre. |
+| **RETRABALHO** no PDF | Topo de cada página de boletim (setor e maço), acima das caixas de setor | Aparece em letras grandes vermelhas quando o pedido é retrabalho: criado como Retrabalho pelo Duplicar proposta, ou com cobrança E-Retrabalho não cancelada. O resto do boletim e a paginação ficam como sempre. |
+| **Caixas de setor** no PDF | Cabeçalho de cada página de boletim (setor e maço), entre o número da OS e o prazo | Uma caixa grande por setor que o pedido tem, todas do mesmo tamanho e numa linha só, na ordem LASER, PVC, TEXTIL, FLEXO. Em cada caixa, **SETOR** pequeno em cima e o nome do setor grande embaixo, sempre em preto. O setor da página sai preenchido com a cor (LASER ciano, PVC magenta, TEXTIL amarelo, FLEXO preto, com texto branco); os outros saem brancos com contorno grosso na cor do setor. A faixa dos produtos usa a mesma cor, com texto preto (branco no FLEXO). |
+| **Forma de envio** e **Frete** no PDF | Faixa de envio, perto do fim do boletim (setor e maço), acima de **Entregar para** | Mostra a forma de envio e o valor do frete que a proposta cobra (o gravado na proposta). Em **RETIRA** e **FOB** o frete é zero e sai como **—**, igual à Expedição; frete sem valor gravado também sai como **—**. |
+| **Acabamento**, **Acessórios** e **Furação** no PDF | Card de cada modelo, nas linhas de variação, no boletim completo e no maço | Saem maiores que as outras variações (10 pt, negrito), quebrando linha sem corte, porque são o que a bancada mais precisa ler. No **TEXTIL**, Acabamento e Acessórios saem com o rótulo abreviado — **Acb:** e **Ace:**. No **PVC**, Acabamento e Furação saem com o rótulo inteiro ("Acabamento: Brilho", "Furação: Ovóide"). As outras variações do mesmo card (Tecnologia, Impressão...) e os setores LASER e FLEXO ficam como sempre. |
 | **Gerar novo QR (invalida o anterior)** | Menu **Ações** da linha | Cria um QR novo para a OS e invalida o das vias já impressas. |
 | **Abrir DANFE (PDF)** | Menu **Ações** da linha | Abre a DANFE da nota do pedido. Só aparece quando há nota autorizada. |
 | **Baixar XML** | Menu **Ações** da linha | Baixa o XML da nota do pedido. Só aparece quando há nota autorizada. |
@@ -64,12 +63,11 @@ Nomes exatamente como aparecem na tela.
 | **Voltar** | Cabeçalho | Volta para o painel geral sem salvar. |
 | **Imprimir OS · SETOR** (ou **Imprimir OS**) | Cabeçalho | Abre o PDF completo do setor da aba aberta. |
 | **Baixar todos (N)** | Cabeçalho, quando o pedido tem mais de um setor | Baixa um PDF por setor. |
-| **PDF reduzido** | Cabeçalho (menu) | Abre as opções **PDF reduzido da OS · SETOR** e **Baixar todos reduzidos (N)**. |
 | **Salvar Alterações** (na abertura: **Salvar Boletim**) | Cabeçalho e botão verde flutuante | Grava a OS. |
 | Abas **PVC** / **LASER** / **FLEXO** / **TEXTIL** | Abaixo do Bloco 1 | Trocam o setor mostrado. A aba marcada **a abrir** ainda não tem boletim. |
 | **Data Limite de Entrega \*** / **Hora do Prazo** | Faixa azul do Bloco 1 | Campos do prazo prometido ao cliente. |
 | **⚡ PRIORIDADE URGENTE** | Faixa azul do Bloco 1 | Caixa de marcar. Fica travada na edição e não tem efeito hoje. |
-| **Abrir PDF do SETOR** / **reduzido** | Bloco de produtos de outro setor | Abrem o PDF completo ou reduzido daquele setor. |
+| **Abrir PDF do SETOR** | Bloco de produtos de outro setor | Abre o PDF daquele setor. |
 | **Adicionar Lote** | Bloco de produtos, só na abertura | Cria mais um lote no produto. |
 | Ícone de lixeira (title "Remover Lote") | Cartão do lote, só na abertura | Remove o lote. O produto precisa ficar com pelo menos um. |
 | Ícone de olho (title "Ver gabarito visual") | Campo **Gabarito Operacional**, só na abertura | Mostra a imagem do gabarito; fecha em **Fechar Visualização**. |
@@ -175,9 +173,9 @@ Antes de abrir o PDF, o sistema confere a numeração dos modelos do pedido. Se 
 
 1. No painel geral, abra **Ações** na linha do pedido.
 2. **Imprimir OS (PDF)** abre, em nova aba, um documento só com todos os setores do pedido, um setor por página.
-3. **Imprimir OS reduzida (PDF)** abre a versão resumida (lista de conferência, sem as imagens das artes). Pelo painel geral ela sai de um setor só; para o reduzido de cada setor, use a tela da OS.
-4. Dentro da OS, o cabeçalho traz **Imprimir OS · SETOR** (só o setor da aba aberta), **Baixar todos (N)** (um arquivo por setor, direto para a pasta de downloads) e o menu **PDF reduzido**.
-5. Dentro da OS, no bloco de produtos de outro setor, **Abrir PDF do SETOR** e **reduzido** imprimem aquele setor sem trocar de aba.
+3. Dentro da OS, o cabeçalho traz **Imprimir OS · SETOR** (só o setor da aba aberta) e **Baixar todos (N)** (um arquivo por setor, direto para a pasta de downloads).
+4. Dentro da OS, no bloco de produtos de outro setor, **Abrir PDF do SETOR** imprime aquele setor sem trocar de aba.
+5. Não existe mais PDF reduzido da OS: saiu do sistema em 28/10/2026, porque a produção não o usava. Um link antigo do reduzido abre o PDF completo do setor.
 6. Depois de **Salvar Alterações**, a pergunta **Abrir para imprimir?** abre o documento completo. Se o pedido já foi impresso antes, a pergunta vira **Reimprimir o boletim?** e oferece **Abrir os N setores** ou **Abrir só SETOR** (o setor que você acabou de editar).
 7. O aviso "Gerando o PDF na nova aba" indica que o documento está sendo montado. A primeira impressão do dia costuma demorar mais.
 8. A OS impressa não mostra valores. No cabeçalho ela traz o número da OS, o setor, o prazo com a hora e o QR code. O QR traz só o número do pedido; os PDFs impressos antes desta mudança (09/10/2026) têm o QR antigo.
@@ -268,7 +266,6 @@ As vias antigas continuam valendo como eram. O QR delas é um link: lido no term
 - **REVISAO PRODUCAO x REVISAO ATENDENTE:** em REVISAO ATENDENTE o pedido ainda está com o atendente, antes da liberação; em REVISAO PRODUCAO ele já foi liberado e espera a fábrica salvar a OS.
 - **Card "Em revisão" x devolver para revisão:** o cartão **Em revisão** conta pedidos em REVISAO PRODUCAO; **Voltar para Revisão Atendente** devolve o pedido ao atendente e o tira da lista.
 - **"/ PENDENTE" x tarefa:** EM IMPRESSAO / PENDENTE e EM ACABAMENTO / PENDENTE são pausas da etapa; não criam tarefa nem pendência para ninguém.
-- **Imprimir OS (PDF) x Imprimir OS reduzida (PDF):** a primeira traz as imagens das artes e todos os setores; a reduzida é a lista de conferência, sem imagens.
 - **Imprimir OS x Baixar todos:** **Imprimir OS** abre o PDF em nova aba; **Baixar todos (N)** salva um arquivo por setor na pasta de downloads.
 - **Fila de impressão x imprimir a OS:** a Fila de impressão é um painel de lotes a rodar na máquina; ela não imprime a OS em papel.
 - **Painel geral x Kanban:** só o painel geral move fases; o Kanban é quadro de consulta.

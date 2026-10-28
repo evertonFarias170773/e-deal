@@ -27,7 +27,6 @@ import { SetorFaseChip } from "./components/SetorFaseChip";
 import {
   abrirPdfOs,
   abrirMacoOs,
-  type LayoutPdfOs,
   type AbrirPdfOsResult
 } from "./services/imprimir-os.client";
 import { useFimDivergente } from "@/features/orcamentos/hooks/useFimDivergente";
@@ -189,11 +188,6 @@ export function PedidosListPage() {
   // Impressão da OS em PDF (uma por vez; erros via toast)
   const [printingOsId, setPrintingOsId] = useState<number | null>(null);
   /**
-   * `layout` decide qual PDF sai; TODO o resto do caminho e o mesmo — inclusive
-   * a criacao da OS que falta e a revalidacao do servidor. E o que mantem o
-   * reduzido se comportando igual ao padrao neste ponto.
-   */
-  /**
    * O aviso do resultado da impressão. Extraído porque agora há DOIS pontos de
    * saída: a OS recém-criada, que já imprime com as linhas de setor que acabou
    * de ganhar, e o caminho normal de quem já tinha OS.
@@ -228,7 +222,7 @@ export function PedidosListPage() {
     });
   }
 
-  async function handleImprimirOS(proposta: PropostaOperacionalListItem, layout: LayoutPdfOs = "completo") {
+  async function handleImprimirOS(proposta: PropostaOperacionalListItem) {
     if (printingOsId !== null) return;
     // Nº final gravado diferente do calculado: pergunta antes, sem bloquear. A
     // resposta já está lida para os pedidos da lista (`useFimDivergente`).
@@ -305,7 +299,7 @@ export function PedidosListPage() {
       // acima só chega no próximo render. Sem esta leitura o maço não teria os
       // uuids e cairia no caminho legado, que imprime um setor só.
       const criados = await listarBoletinsDaProposta(proposta.id_int);
-      if (layout === "completo" && criados.length > 0) {
+      if (criados.length > 0) {
         const r = await abrirMacoOs(
           proposta.id_int,
           criados.map((b) => ({ id: b.id, setor: b.setor }))
@@ -327,18 +321,15 @@ export function PedidosListPage() {
      * A linha da lista já carrega `setores[].boletimId` do SELECT em lote que
      * existe, então não custa consulta nenhuma. Sem nenhum boletim aberto ainda,
      * mantém o caminho legado — aí não há setor para escolher.
-     *
-     * O layout resumido continua um por setor: ele é a lista de conferência de
-     * UM setor, e juntá-los é outra conversa.
      */
     const boletinsDoPedido = (proposta.setores ?? [])
       .filter((s): s is typeof s & { boletimId: string } => Boolean(s.boletimId))
       .map((s) => ({ id: s.boletimId, setor: s.setor }));
 
     const result =
-      layout === "completo" && boletinsDoPedido.length > 0
+      boletinsDoPedido.length > 0
         ? await abrirMacoOs(proposta.id_int, boletinsDoPedido)
-        : await abrirPdfOs(proposta.id_int, null, null, layout);
+        : await abrirPdfOs(proposta.id_int, null, null);
     setPrintingOsId(null);
     avisarResultadoDaImpressao(result);
   }
@@ -871,14 +862,7 @@ export function PedidosListPage() {
                 // não tinha lote — o caso em que imprimir era impossível.
                 ...(canPrintOS && proposta.is_prd_aprovado === true ? [{
                   label: printingOsId === proposta.id_int ? "Gerando PDF..." : "Imprimir OS (PDF)",
-                  onClick: () => { void handleImprimirOS(proposta, "completo"); }
-                }] : []),
-                // Mesma acao, layout reduzido. Sem setor, como o item de cima:
-                // a lista imprime a proposta, e a rota resolve o boletim mais
-                // recente — o caminho legado, que continua valendo.
-                ...(canPrintOS && proposta.is_prd_aprovado === true ? [{
-                  label: printingOsId === proposta.id_int ? "Gerando PDF..." : "Imprimir OS reduzida (PDF)",
-                  onClick: () => { void handleImprimirOS(proposta, "resumido"); }
+                  onClick: () => { void handleImprimirOS(proposta); }
                 }] : []),
                 ...(canRotateQr && proposta.hasOS && proposta.is_prd_aprovado === true ? [{
                   label: rotacionandoQrId === proposta.id_int ? "Gerando novo QR..." : "Gerar novo QR (invalida o anterior)",

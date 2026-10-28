@@ -33,18 +33,9 @@ export interface AbrirPdfOsResult {
   urlParaAbrir?: string;
 }
 
-/**
- * Layout do PDF. `completo` e o padrao historico (card por modelo, com a imagem
- * da arte) e continua saindo quando ninguem escolhe nada — inclusive de link
- * antigo, que nao tem o parametro. `resumido` e a lista de conferencia.
- */
-export type LayoutPdfOs = "completo" | "resumido";
-
-function urlDoBoletim(idInt: number, idBoletim?: string | null, layout?: LayoutPdfOs): string {
+function urlDoBoletim(idInt: number, idBoletim?: string | null): string {
   const params = new URLSearchParams({ id_int: String(idInt) });
   if (idBoletim) params.set("boletim", idBoletim);
-  // Só viaja quando é o não-padrão: a URL do caminho de sempre não muda.
-  if (layout === "resumido") params.set("layout", "resumido");
   return `/api/pedidos/imprimir-os?${params.toString()}`;
 }
 
@@ -96,12 +87,6 @@ export function abrirAbaDesvinculada(url: string): Window | null {
   return aba;
 }
 
-/** O resumido baixa com sufixo proprio — a rota manda o mesmo no Content-Disposition. */
-function nomeDoArquivo(idInt: number, setor: string | null | undefined, layout?: LayoutPdfOs): string {
-  const base = nomeArquivoOs(idInt, setor);
-  return layout === "resumido" ? base.replace(/\.pdf$/i, "_resumo.pdf") : base;
-}
-
 /**
  * Baixa o PDF de um boletim direto para o disco, sem abrir aba.
  *
@@ -111,10 +96,9 @@ function nomeDoArquivo(idInt: number, setor: string | null | undefined, layout?:
 export async function baixarPdfOs(
   idInt: number,
   idBoletim?: string | null,
-  setor?: string | null,
-  layout?: LayoutPdfOs
+  setor?: string | null
 ): Promise<AbrirPdfOsResult> {
-  const nomeArquivo = nomeDoArquivo(idInt, setor, layout);
+  const nomeArquivo = nomeArquivoOs(idInt, setor);
   let objectUrl: string | null = null;
   try {
     const client = getSupabaseClient();
@@ -122,7 +106,7 @@ export async function baixarPdfOs(
     const token = sessionResult?.data?.session?.access_token;
     if (!token) return { success: false, errorMessage: "Sessão expirada. Faça login novamente." };
 
-    const response = await fetch(urlDoBoletim(idInt, idBoletim, layout), {
+    const response = await fetch(urlDoBoletim(idInt, idBoletim), {
       headers: { Authorization: `Bearer ${token}` }
     });
     if (!response.ok) {
@@ -166,11 +150,10 @@ export async function baixarPdfOs(
 export async function abrirPdfOs(
   idInt: number,
   idBoletim?: string | null,
-  setor?: string | null,
-  layout?: LayoutPdfOs
+  setor?: string | null
 ): Promise<AbrirPdfOsResult> {
-  const nomeArquivo = nomeDoArquivo(idInt, setor, layout);
-  const url = urlDoBoletim(idInt, idBoletim, layout);
+  const nomeArquivo = nomeArquivoOs(idInt, setor);
+  const url = urlDoBoletim(idInt, idBoletim);
 
   // Aberta de forma síncrona no gesto do usuário — não move para depois de um
   // await. Desvinculada da janela do sistema: ver `abrirAbaDesvinculada`.
@@ -218,7 +201,7 @@ export async function abrirMacoOs(
     return { success: false, errorMessage: "Nenhum boletim de setor para imprimir." };
   }
   if (ids.length === 1) {
-    return abrirPdfOs(idInt, ids[0], boletins[0]?.setor ?? null, "completo");
+    return abrirPdfOs(idInt, ids[0], boletins[0]?.setor ?? null);
   }
 
   const url = urlDoMaco(idInt, ids);

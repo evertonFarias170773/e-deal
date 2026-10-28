@@ -47,6 +47,9 @@ import {
   type SimulacaoFrete
 } from "../services/corrigir-frete.client";
 import { LABEL_MODALIDADE, MODALIDADES_OFERECIDAS, type ModalidadeFrete, type PedidoExpedicao } from "../types";
+import { conferirFreteSubsidiado, mensagemFreteSubsidiado } from "../lib/frete-subsidiado";
+import { getSupabaseClient } from "@/lib/supabase/client";
+import { ConfirmarAcaoModal } from "./ConfirmarAcaoModal";
 
 const inputClass =
   "w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-400 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100";
@@ -100,6 +103,12 @@ export function CorrigirFreteModal({
   const [autorizandoCredito, setAutorizandoCredito] = useState(false);
   /** RODOVIARIO ou AEREO, quando a derivacao nao resolve. Mesma pergunta do orcamento. */
   const [categoriaDeclarada, setCategoriaDeclarada] = useState<CategoriaFrete | null>(null);
+  /** Cliente com frete subsidiado: a gravacao espera a confirmacao (lib/frete-subsidiado). */
+  const [confirmarSubsidio, setConfirmarSubsidio] = useState<{
+    comAcaoDeCredito: boolean;
+    valorAtual: number;
+    valorNovo: number;
+  } | null>(null);
 
   /**
    * O QUE ESTÁ GRAVADO vem da simulação, não do objeto da lista: ela relê
@@ -209,6 +218,31 @@ export function CorrigirFreteModal({
     if (salvando) return;
     setSalvando(true);
     setErroGravacao(null);
+    // Cliente com "Pode editar valor do frete": confirma antes de regravar.
+    // Lido do banco agora; cancelar nao grava nada (lib/frete-subsidiado).
+    const conferencia = await conferirFreteSubsidiado(getSupabaseClient(), pedido.idInt);
+    if (!conferencia.ok) {
+      setSalvando(false);
+      setErroGravacao(conferencia.mensagem);
+      return;
+    }
+    if (conferencia.subsidiado) {
+      setSalvando(false);
+      setConfirmarSubsidio({
+        comAcaoDeCredito,
+        valorAtual: conferencia.valorAtual,
+        valorNovo: simulacao?.valorFreteProjetado ?? 0
+      });
+      return;
+    }
+    await gravarCorrecao(comAcaoDeCredito);
+  }
+
+  /** O fluxo de sempre do "Confirmar correção": o modo `confirmar` da rota, sem mudanca. */
+  async function gravarCorrecao(comAcaoDeCredito: boolean) {
+    if (salvando) return;
+    setSalvando(true);
+    setErroGravacao(null);
     const res = await confirmarCorrecaoFrete({
       idInt: pedido.idInt,
       modalidade,
@@ -237,6 +271,7 @@ export function CorrigirFreteModal({
   const podeConfirmar = Boolean(simulacao) && !simulando && !salvando && !faltaTransportadora && !semMudanca;
 
   return (
+    <>
     <div
       className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/50 p-4"
       role="dialog"
@@ -453,5 +488,21 @@ export function CorrigirFreteModal({
         </div>
       </div>
     </div>
+    {confirmarSubsidio ? (
+      <ConfirmarAcaoModal
+        titulo="Frete subsidiado"
+        descricao={mensagemFreteSubsidiado(confirmarSubsidio.valorAtual, confirmarSubsidio.valorNovo)}
+        detalhe="Cancelar não grava nada."
+        rotuloConfirmar="Regravar frete"
+        salvando={salvando}
+        onConfirmar={() => {
+          const { comAcaoDeCredito } = confirmarSubsidio;
+          setConfirmarSubsidio(null);
+          void gravarCorrecao(comAcaoDeCredito);
+        }}
+        onClose={() => setConfirmarSubsidio(null)}
+      />
+    ) : null}
+    </>
   );
 }

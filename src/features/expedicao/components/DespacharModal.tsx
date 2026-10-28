@@ -61,6 +61,8 @@ import type { ModalidadeFrete, PedidoExpedicao, TipoFreteNormalizado } from "../
 import { AvisoInstrucaoEntrega } from "./AvisoInstrucaoEntrega";
 import { mensagemDoSaldo, type SaldoDoDespacho } from "../lib/saldo-despacho";
 import { avisosDoReenvio } from "../lib/reenvio";
+import { conferirFreteSubsidiado, mensagemFreteSubsidiado } from "../lib/frete-subsidiado";
+import { getSupabaseClient } from "@/lib/supabase/client";
 
 const TIPOS_VOLUME = ["Pacote", "Caixa", "Envelope", "Outro"];
 
@@ -409,6 +411,8 @@ export function DespacharModal({
    * desta tela (que ja falhou nesse papel quatro vezes neste projeto).
    */
   const [aplicandoId, setAplicandoId] = useState<string | null>(null);
+  /** Cliente com frete subsidiado: a opcao espera a confirmacao (lib/frete-subsidiado). */
+  const [confirmarSubsidio, setConfirmarSubsidio] = useState<{ opcao: OpcaoRecotacao; valorAtual: number } | null>(null);
   const [aplicacao, setAplicacao] = useState<AplicacaoRecotacao | null>(null);
   const [erroAplicacao, setErroAplicacao] = useState<string | null>(null);
   const [chavesPorOpcao, setChavesPorOpcao] = useState<Record<string, string>>({});
@@ -518,6 +522,26 @@ export function DespacharModal({
       setErroAplicacao("Recote antes de aplicar.");
       return;
     }
+    setAplicandoId(o.id);
+    setErroAplicacao(null);
+    // Cliente com "Pode editar valor do frete": confirma antes de regravar.
+    // Lido do banco agora; cancelar nao grava nada (lib/frete-subsidiado).
+    const conferencia = await conferirFreteSubsidiado(getSupabaseClient(), pedido.idInt);
+    if (!conferencia.ok) {
+      setAplicandoId(null);
+      setErroAplicacao(conferencia.mensagem);
+      return;
+    }
+    if (conferencia.subsidiado) {
+      setAplicandoId(null);
+      setConfirmarSubsidio({ opcao: o, valorAtual: conferencia.valorAtual });
+      return;
+    }
+    await gravarAplicacao(o, chave);
+  }
+
+  /** O fluxo de sempre do "Aplicar": a rota `aplicar` e a RPC, sem mudanca. */
+  async function gravarAplicacao(o: OpcaoRecotacao, chave: string) {
     setAplicandoId(o.id);
     setErroAplicacao(null);
     const res = await aplicarRecotacao({
@@ -2376,6 +2400,26 @@ export function DespacharModal({
           void handleGerarPrepostagem(servico, prepostagemCorreios);
         }}
         onClose={() => setConfirmarRegeracao(null)}
+      />
+    ) : null}
+    {confirmarSubsidio ? (
+      <ConfirmarAcaoModal
+        titulo="Frete subsidiado"
+        descricao={mensagemFreteSubsidiado(confirmarSubsidio.valorAtual, confirmarSubsidio.opcao.valor)}
+        detalhe="Cancelar não grava nada."
+        rotuloConfirmar="Regravar frete"
+        salvando={aplicandoId !== null}
+        onConfirmar={() => {
+          const { opcao } = confirmarSubsidio;
+          const chave = chavesPorOpcao[opcao.id];
+          setConfirmarSubsidio(null);
+          if (!chave) {
+            setErroAplicacao("Recote antes de aplicar.");
+            return;
+          }
+          void gravarAplicacao(opcao, chave);
+        }}
+        onClose={() => setConfirmarSubsidio(null)}
       />
     ) : null}
     </>

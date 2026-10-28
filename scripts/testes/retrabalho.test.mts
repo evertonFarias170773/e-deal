@@ -162,13 +162,12 @@ checar("tela: opcao no enum e no dropdown, e os dois filtros do cliente usam isR
 {
   const vmSrc = readFileSync("src/features/pedidos/services/os-viewmodel.service.ts", "utf8").replace(/\r\n/g, "\n");
   const pdf = readFileSync("src/features/pedidos/pdf/OsPdfDocument.tsx", "utf8");
-  const resumo = readFileSync("src/features/pedidos/pdf/OsPdfResumoDocument.tsx", "utf8");
   const maco = readFileSync("src/features/pedidos/pdf/OsPdfMacoDocument.tsx", "utf8");
   const iAll = vmSrc.indexOf("] = await Promise.all([");
   checar("pdf: a leitura do retrabalho entra no lote paralelo do view model, tolerante a falha", [vmSrc.indexOf('.from("pagamentos_v2")') > iAll, vmSrc.includes('.ilike("tipo_cobranca", FORMA_RETRABALHO)'), vmSrc.includes("const marcaRetrabalho = marcaDeRetrabalho(") && vmSrc.includes("retrabalho: marcaRetrabalho !== null,")], [true, true, true]);
-  checar("pdf: o vinculo vem na MESMA linha da proposta", vmSrc.includes("id_endereco_ent, motivo_copia, id_int_origem_copia\""), true);
+  checar("pdf: o vinculo vem na MESMA linha da proposta", vmSrc.includes("id_endereco_ent, motivo_copia, id_int_origem_copia, valor_frete\""), true);
   checar("pdf: RETRABALHO no cabecalho, na cor da constante (sem literal), so com o campo ligado", [pdf.includes('{vm.retrabalho ? <Text style={styles.retrabalhoTopo}>RETRABALHO</Text> : null}'), pdf.includes("color: COR_RETRABALHO_CLARO,"), /retrabalhoTopo:[\s\S]{0,200}#[0-9a-fA-F]{6}/.test(pdf)], [true, true, false]);
-  checar("pdf: os tres modelos usam o mesmo cabecalho (boletim, maco pela pagina do boletim, resumo)", [pdf.includes("<OsPdfCabecalho vm={vm}"), maco.includes("OsPdfPaginaBoletim"), resumo.includes("<OsPdfCabecalho vm={vm}")], [true, true, true]);
+  checar("pdf: os dois modelos usam o mesmo cabecalho (boletim, maco pela pagina do boletim)", [pdf.includes("<OsPdfCabecalho vm={vm}"), maco.includes("OsPdfPaginaBoletim")], [true, true]);
 }
 
 // ── 9. Conferencia, aba Cobrancas Confirmadas, tipo Retrabalhos (19/10/2026) ──
