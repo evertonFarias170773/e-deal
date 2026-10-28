@@ -13,14 +13,19 @@
  *      antes da margem de 1,15 e os ids por posição final; os _CORP ficam de
  *      fora; corpo vazio e falha de um grupo não derrubam o outro.
  *   3. Os três nomes gravados são reconhecidos como Azul por quem lê o frete.
+ *   4. Margem por serviço (28/10/2026): Total 100 vira 115,00 no ECOMM e 100,00
+ *      em AZUL EXPRESSO, AZUL STANDARD e AZUL PREMIUM; o rótulo "+15%" do card
+ *      só existe no ECOMM.
  */
 import assert from "node:assert/strict";
 import {
   juntarCotacoesAzul,
   lerCorpoCotacaoAzul,
   mapearCotacoesAzul,
+  margemDoServicoAzul,
   montarCorpoCotacaoAzul,
-  planejarCotacaoAzul
+  planejarCotacaoAzul,
+  rotuloMargemAzul
 } from "../../src/features/orcamentos/lib/cotacao-azul.ts";
 import { resolverTransportadoraParceira, TRANSPORTADORAS_PARCEIRAS } from "../../src/features/orcamentos/lib/transportadoras-parceiras.ts";
 import { servicoDoFrete } from "../../src/features/orcamentos/lib/servicos-transportadora.ts";
@@ -81,12 +86,15 @@ assert.deepEqual(cards.map((c) => c.servico), ["ECOMM", "AZUL EXPRESSO", "AZUL S
 assert.deepEqual(cards.map((c) => c.id), ["frete_azul_ecomm_0", "frete_azul_azul_expresso_1", "frete_azul_azul_standard_2"]);
 assert.equal(cards.filter((c) => c.servico === "ECOMM").length, 1, "ECOMM não duplica");
 assert.equal(cards[0].valorOriginal, 186.94, "Total do ECOMM x d (2 casas)");
-assert.equal(cards[0].valor, 186.94 * 1.15, "margem depois da multiplicação");
+assert.equal(cards[0].valor, 186.94 * 1.15, "margem do ECOMM depois da multiplicação");
 assert.equal(cards[0].prazo, "3 dias úteis", "prazo não muda");
 assert.equal(cards[0].volumes, 4, "2 envios x 2 volumes");
 assert.equal(cards[0].pesoKg, 48);
 assert.equal(cards[1].valorOriginal, 384.89, "DEMAIS sem multiplicação");
-assert.equal(cards[1].valor, 384.89 * 1.15);
+assert.equal(cards[1].valor, 384.89, "EXPRESSO sem margem");
+assert.equal(cards[2].valor, 231, "STANDARD sem margem");
+assert.ok(!cards[1].observacao.includes("Valor original"), "sem margem não repete o valor");
+assert.ok(cards[0].observacao.includes("Valor original"), "ECOMM mostra o valor original");
 assert.equal(cards[2].id_cotacao, 935927);
 assert.ok(cards.every((c) => c.transportadora === "Azul Cargo"));
 
@@ -104,6 +112,22 @@ assert.equal(cardLeve[0].valorOriginal, 40.19);
 assert.equal(cardLeve[0].valor, 40.19 * 1.15);
 assert.equal(cardLeve[0].volumes, 1);
 
+// 4. Margem por serviço: Total 100.
+const plano1 = planejarCotacaoAzul(1, "ECOMM");
+const planoD = planejarCotacaoAzul(1, "DEMAIS");
+const cem = (servico: string) => JSON.stringify([{ ID_Cotacao: 1, Prazo: 2, Total: 100, Servico: servico }]);
+const ecomm100 = mapearCotacoesAzul(lerCorpoCotacaoAzul(cem("ECOMM")), { id_int: 1, pesoGramas: 1000, plano: plano1 })[0];
+assert.equal(ecomm100.valor.toFixed(2), "115.00");
+for (const [api, gravado] of [["EXPRESSO", "AZUL EXPRESSO"], ["STANDARD", "AZUL STANDARD"], ["PREMIUM", "AZUL PREMIUM"]]) {
+  const card = mapearCotacoesAzul(lerCorpoCotacaoAzul(cem(api)), { id_int: 1, pesoGramas: 1000, plano: planoD })[0];
+  assert.equal(card.servico, gravado);
+  assert.equal(card.valor.toFixed(2), "100.00", gravado);
+  assert.equal(margemDoServicoAzul(gravado), 1);
+  assert.equal(rotuloMargemAzul(gravado), null, `sem "+0%" em ${gravado}`);
+}
+assert.equal(margemDoServicoAzul("ECOMM"), 1.15);
+assert.equal(rotuloMargemAzul("ECOMM"), "+15%");
+
 // 3. Reconhecimento por texto dos três nomes gravados.
 for (const c of cards) {
   const frete = { transportadora: c.transportadora, servico: c.servico };
@@ -113,4 +137,4 @@ for (const c of cards) {
   assert.ok(servicoDoFrete(TRANSPORTADORAS_PARCEIRAS.AZUL, frete) !== null, c.servico);
 }
 
-console.log("cotacao-azul.test.mts: ok (plano por peso nos 10 casos; duas cotações viram 3 cards sem ECOMM duplicado, Total x d antes da margem; nomes reconhecidos como Azul)");
+console.log("cotacao-azul.test.mts: ok (plano por peso nos 10 casos; duas cotações viram 3 cards sem ECOMM duplicado, Total x d antes da margem; margem 1,15 só no ECOMM e sem rótulo nos demais; nomes reconhecidos como Azul)");

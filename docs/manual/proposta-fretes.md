@@ -1,6 +1,6 @@
 # Proposta: aba Fretes
 
-> **Última revisão:** 27/10/2026
+> **Última revisão:** 28/10/2026
 > **Caminho no menu:** Pedidos → abrir um pedido → aba Fretes
 > **Endereço:** `/orcamentos/<número>/editar?tab=fretes`
 
@@ -226,7 +226,7 @@ Repetir **Aplicar** não duplica: a segunda tentativa devolve o mesmo frete comp
 - Proposta gravada com o frete "ECOMM", inclusive a que veio da cotação automática, abre com **AZUL ECOMM** selecionado na lista **Serviço**. O card, a coluna **Envio** e a Expedição continuam mostrando "ECOMM" nessas propostas: o texto só muda quando alguém escolhe outro serviço e salva.
 - A lista **Serviço** mostra "— escolha o serviço —" quando o frete atual não é nenhum serviço da lista, como no frete manual com o nome da transportadora. Deixar assim não muda nada.
 - Depois do despacho, a Expedição mostra o nome da transportadora, e não mais o serviço.
-- O card da Azul Cargo mostra, abaixo do valor, a linha "Original: R$ ... (+15%)" e o peso em kg com a quantidade de volumes.
+- O card da Azul Cargo mostra o peso em kg com a quantidade de volumes. Desde 28/10/2026 a margem de 15% sobre o valor da Azul vale só no **ECOMM**, e só esse card mostra a linha "Original: R$ ... (+15%)". **AZUL STANDARD**, **AZUL EXPRESSO** e **AZUL PREMIUM** vêm pelo valor da Azul, sem acréscimo e sem essa linha. Fretes já gravados não mudam: valem pelo valor que foi gravado.
 - Mudar o endereço de entrega desfaz o frete escolhido: é preciso escolher de novo. Mudar só o peso mantém a escolha quando a mesma opção volta na cotação nova.
 - Se o frete escolhido não volta na cotação nova, ele fica preservado e a tela avisa **Cotação Defasada**. Revise antes de salvar.
 - Ao reabrir uma proposta em CIF, a tela mostra o frete gravado e busca sozinha as outras opções, sem mudar o valor do escolhido.

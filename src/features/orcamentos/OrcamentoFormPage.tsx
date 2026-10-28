@@ -89,6 +89,7 @@ import {
 } from "@/features/orcamentos/lib/estado-de-edicao";
 import { buscarStatusArteDaProposta, classeDoStatusArte } from "@/features/orcamentos/services/status-arte-lista.service";
 import { solicitarCotacaoSedex, solicitarCotacaoAzulCargo, solicitarCotacaoTransportadoras, solicitarCotacaoVeppo } from "@/features/orcamentos/services/frete.service";
+import { rotuloMargemAzul } from "@/features/orcamentos/lib/cotacao-azul";
 import { resolverTransportadoraParceira } from "@/features/orcamentos/lib/transportadoras-parceiras";
 import { PermissionGuard } from "@/components/common/PermissionGuard";
 import {
@@ -7745,9 +7746,10 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                               {formatCurrency(frete.valor)}
                             </p>
                           )}
-                          {frete.transportadora === "Azul Cargo" && frete.valorOriginal !== undefined && (
+                          {/* Margem por serviço (lib/cotacao-azul): só o ECOMM leva +15%; sem margem, sem linha. */}
+                          {frete.transportadora === "Azul Cargo" && frete.valorOriginal !== undefined && rotuloMargemAzul(frete.servico) !== null && (
                             <p className="text-xs font-medium text-slate-500 mt-0.5">
-                              Original: {formatCurrency(frete.valorOriginal)} (+15%)
+                              Original: {formatCurrency(frete.valorOriginal)} ({rotuloMargemAzul(frete.servico)})
                             </p>
                           )}
                         </div>

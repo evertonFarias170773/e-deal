@@ -36,6 +36,8 @@
  *   - para um peso total P e um divisor d: n = ceil((P/d) / 16) volumes de peso
  *     igual p = (P/d) / n. Vai `Volume = n`, `Peso = P/d` (total, 3 casas) e a
  *     altura calculada por p;
+ *   - a margem é por serviço (`MARGEM_POR_SERVICO_AZUL`): 1,15 só no ECOMM,
+ *     aplicada DEPOIS do Total x d; os demais a 1,0;
  *   - são DUAS cotações por pedido, em paralelo, uma por grupo:
  *       ECOMM  — `SiglaServico` "ECOMM"; limite de 30 kg por envio, então
  *                d = menor inteiro que deixa P/d em 30 kg ou menos. ValorTotal
@@ -59,8 +61,30 @@ const NOME_GRAVADO_POR_SERVICO_AZUL: Readonly<Record<string, string>> = {
   PREMIUM: "AZUL PREMIUM"
 };
 
-/** Margem aplicada sobre o total da Azul (regra de sempre, 27/10/2026). */
-export const MARGEM_AZUL = 1.15;
+/**
+ * Margem sobre o Total da Azul, POR SERVIÇO gravado (28/10/2026). Até aqui era
+ * 1,15 para todos; agora só o ECOMM leva os 15%. STANDARD, EXPRESSO e PREMIUM
+ * vão a preço de custo (1,0) e o card não mostra "(+15%)" nem "Original".
+ * Vale só para cotação nova: o que já está em `cotacao_frete` não muda.
+ */
+export const MARGEM_POR_SERVICO_AZUL: Readonly<Record<string, number>> = {
+  ECOMM: 1.15,
+  "AZUL STANDARD": 1,
+  "AZUL EXPRESSO": 1,
+  "AZUL PREMIUM": 1
+};
+
+/** Margem do serviço gravado; nome fora da tabela não leva acréscimo. */
+export function margemDoServicoAzul(servicoGravado: string): number {
+  return MARGEM_POR_SERVICO_AZUL[String(servicoGravado ?? "").trim().toUpperCase()] ?? 1;
+}
+
+/** Rótulo do acréscimo para o card ("+15%"), ou `null` quando a margem é 1,0. */
+export function rotuloMargemAzul(servicoGravado: string): string | null {
+  const margem = margemDoServicoAzul(servicoGravado);
+  if (margem <= 1) return null;
+  return `+${Math.round((margem - 1) * 100)}%`;
+}
 
 /** Caixa da Azul: comprimento e largura fixos; a altura sai do peso. */
 export const CAIXA_AZUL = { comprimento: 32, largura: 23, alturaMaxima: 36 } as const;
@@ -189,11 +213,14 @@ export function mapearCotacoesAzul(
     const prazo = item.Prazo as number | undefined;
     // d envios ECOMM = d cotações iguais; o n8n só repassa o Total, então é só ele.
     const total = Number((Number(item.Total || 0) * plano.divisor).toFixed(2));
-    const valorFinal = total * MARGEM_AZUL;
+    const margem = margemDoServicoAzul(servico);
+    const valorFinal = total * margem;
     const prazoText = prazo ? (prazo === 1 ? "1 dia útil" : `${prazo} dias úteis`) : "Sob consulta";
     const idCotacao = item.ID_Cotacao !== undefined ? Number(item.ID_Cotacao) : undefined;
     const volumesTotais = plano.volumes * plano.divisor;
     const envios = plano.divisor > 1 ? ` | ${plano.divisor} envios` : "";
+    // Com margem 1,0 o valor original é o próprio valor: não repete.
+    const original = margem > 1 ? ` | Valor original: ${total.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}` : "";
 
     cards.push({
       id: idCardAzul(servico, cards.length),
@@ -202,7 +229,7 @@ export function mapearCotacoesAzul(
       servico,
       valor: valorFinal, // usar SEMPRE o valor final já com margem da Azul.
       prazo: prazoText,
-      observacao: `Volumes: ${volumesTotais} | Peso: ${plano.pesoTotalKg.toFixed(2)} KG${envios} | Valor original: ${total.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}`,
+      observacao: `Volumes: ${volumesTotais} | Peso: ${plano.pesoTotalKg.toFixed(2)} KG${envios}${original}`,
       escolhido: false,
       pesoUsado: input.pesoGramas,
       valorOriginal: total,
