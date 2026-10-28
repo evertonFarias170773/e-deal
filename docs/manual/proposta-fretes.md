@@ -36,6 +36,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Atualizar fretes** (vira **Atualizando...**) | Acima dos cards, em CIF | Refaz a cotação com o CEP do endereço e o peso atual da proposta. |
 | **Escolher** | Em cada card de frete | Torna aquele card o frete da proposta. |
 | **Escolhido** | Selo no card | Indica o frete que está valendo. Não é clicável. |
+| **Remover** | Só no card **MANUAL / TRANSP.** | Tira o frete manual da lista. Se ele era o escolhido, nenhum card fica escolhido, o frete do resumo volta a zero e a **Transportadora** volta a vazia, até você escolher outro card ou transportadora. Só aparece na fase de orçamento, sem pagamento confirmado. Cards calculados não têm o botão. |
 | **Corrigir a transportadora (admin)** (lista, com a opção "— Sem transportadora —") | Caixa da modalidade, depois da liberação | Troca só a transportadora, na hora, sem passar pelo **Salvar alterações**. |
 | Campo **Frete R$** (dica: "Valor negociado do frete, em reais") | Ao lado da lista **Corrigir a transportadora (admin)** | Grava o valor negociado do frete e o novo total da proposta, ao sair do campo ou no Enter. |
 | **Cotar frete complementar** (ou **Salve os itens antes de cotar**, **Salve as alterações antes de cotar**, **Cotando...**) | Card **Frete complementar do pedido #...**, em pedido complementar | Cota o frete do peso somado do pedido principal com este pedido. |
@@ -76,6 +77,8 @@ Em cotação nova, sem escolha anterior, a tela já deixa o SEDEX escolhido; sem
 4. Clique em **Salvar alterações**.
 
 A proposta tem um frete manual por vez: escolher outra transportadora sem cotação substitui o anterior.
+
+Para desfazer o frete manual, clique em **Remover** no card **MANUAL / TRANSP.**. Ele sai da lista; se era o escolhido, nenhum card fica escolhido e o frete volta a zero até você escolher outro card (**Escolher**) ou outra transportadora. O valor digitado nele é descartado, como numa troca de card. Nada é gravado até o **Salvar alterações**, e em CIF o salvar pede um frete escolhido. O botão só aparece na fase de orçamento (NOVO ou AGUARDANDO), sem pagamento confirmado; depois disso o frete muda pelo valor negociado ou pela correção do administrador. Se a proposta cotar de novo sozinha com nada escolhido (endereço ou peso mudou), a tela volta a pré-escolher o SEDEX, como em qualquer cotação nova.
 
 ### Escolher o serviço da transportadora (CIF)
 
@@ -337,6 +340,8 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 > - **09/10/2026:** o Acompanhar Pedido vale para qualquer pedido em aberto, inclusive em NOVO e AGUARDANDO (antes só de APROVADO até EXPEDICAO); a busca por número procura entre todos os pedidos elegíveis; a mensagem de só leitura diz o motivo real.
 >
 > - **09/10/2026 (adendo):** o grupo Acompanhar deixa de ter limite de 10 pedidos (limite de segurança de 50, com aviso acima de 10); pedido com status vazio fica só para leitura.
+>
+> - **28/10/2026:** o card **MANUAL / TRANSP.** ganhou o botão **Remover**, na fase de orçamento sem pagamento.
 >
 > - **27/10/2026 (cliente, adendo):** para cliente com **Pode editar valor do frete**, o valor digitado não é mais descartado por **Atualizar fretes**, troca de card ou de transportadora, nem troca de endereço.
 >

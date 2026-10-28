@@ -129,8 +129,10 @@ import {
   freteTravadoPeloCard,
   limparValorDigitadoForaDe,
   marcarComoCotacao,
+  podeRemoverFreteManual,
   preservadoSemCotacao,
   reaplicarValorDigitadoDoCliente,
+  removerFreteManualDaLista,
   recotacaoAutomaticaDoEscolhido,
   semValorDigitado,
   valorDigitadoDoCliente,
@@ -4312,6 +4314,34 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     }
   }
 
+  /**
+   * Remove o card manual (28/10/2026, lib/origem-frete). Só a tela muda: o
+   * `cotacao_frete` segue como está até o Salvar, que regrava a linha do frete
+   * escolhido como em qualquer troca de card — e em CIF recusa sem card.
+   */
+  function removerFreteManual(freteId: string) {
+    const frete = form.fretes.find((f) => f.id === freteId);
+    const pode = podeRemoverFreteManual(frete, {
+      faseDeOrcamento,
+      pago: isPropostaPagaAtual || proposta?.pagamentoConfirmado === true,
+      bloqueioTrocaFrete,
+      ehComplemento,
+      isAvulso: form.isAvulso === true
+    });
+    if (!pode) return;
+    setValorCobradoCifDraft(null);
+    setForm((current) => {
+      const r = removerFreteManualDaLista(current.fretes, freteId, current.freteEscolhidoId);
+      return {
+        ...current,
+        fretes: r.fretes,
+        freteEscolhidoId: r.freteEscolhidoId,
+        // A transportadora era a do frete manual: sem ele, o dropdown volta a vazio.
+        ...(r.removeuEscolhido && current.modalidadeFrete !== "FOB" ? { idTransportadoraCliente: null } : {})
+      };
+    });
+  }
+
   async function selectFrete(freteId: string) {
     // Trocar o card é trocar o frete: com a barreira da Expedição ativa (NF,
     // despacho, permissão), a escolha não muda e o motivo aparece.
@@ -7710,6 +7740,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                           <h4 className="font-bold text-slate-900 text-base mt-0.5">{frete.transportadora}</h4>
                           <p className="text-sm text-slate-500 font-medium">Prazo: {frete.prazo}</p>
                         </div>
+                        <div className="flex flex-col items-end gap-2">
                         {frete.id === form.freteEscolhidoId ? (
                           <span className="rounded-full bg-teal-600 px-3 py-1 text-xs font-bold text-white shadow-sm">
                             Escolhido
@@ -7723,6 +7754,24 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                             Escolher
                           </button>
                         )}
+                        {/* Só no card manual, na fase de orçamento sem pagamento (lib/origem-frete). */}
+                        {podeRemoverFreteManual(frete, {
+                          faseDeOrcamento,
+                          pago: isPropostaPagaAtual || proposta?.pagamentoConfirmado === true,
+                          bloqueioTrocaFrete,
+                          ehComplemento,
+                          isAvulso: form.isAvulso === true
+                        }) && (
+                          <button
+                            type="button"
+                            data-remover-frete-manual
+                            onClick={() => removerFreteManual(frete.id)}
+                            className="rounded-2xl border border-rose-200 bg-white px-3.5 py-1.5 text-xs font-bold text-rose-700 hover:bg-rose-50 transition-all shadow-sm"
+                          >
+                            Remover
+                          </button>
+                        )}
+                        </div>
                       </div>
                       <div className="mt-4 pt-3 border-t border-slate-200/60 flex items-center justify-between">
                         <div>

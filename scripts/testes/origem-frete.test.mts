@@ -27,7 +27,9 @@ import {
   semValorDigitado,
   valorDigitadoRelido,
   reaplicarValorDigitadoDoCliente,
-  valorDigitadoDoCliente
+  valorDigitadoDoCliente,
+  podeRemoverFreteManual,
+  removerFreteManualDaLista
 } from "../../src/features/orcamentos/lib/origem-frete.ts";
 
 let falhas = 0;
@@ -306,6 +308,41 @@ checar("migration: so a coluna com CHECK, sem default nem backfill", [
   /ADD COLUMN origem text\s+CONSTRAINT cotacao_frete_origem_valida CHECK \(origem IS NULL OR origem IN \('COTACAO', 'MANUAL'\)\);/.test(ativo),
   /DEFAULT|UPDATE\s+public\.cotacao_frete|GRANT|POLICY/i.test(ativo.replace(/^--.*$/gm, ""))
 ], [true, false]);
+
+// --- Remover o frete manual (28/10/2026) ---
+{
+  const sedex = { id: "frete_sedex", valor: 30, origem: "COTACAO" as const, valorCotado: 30, escolhido: false };
+  const azul = { id: "azul_ecomm", valor: 40, origem: "COTACAO" as const, valorCotado: 40, escolhido: false };
+  const manual = { id: "manual_1", valor: 25, observacao: "Cadastro manual", escolhido: true };
+  const lista = [sedex, azul, manual];
+  const r = removerFreteManualDaLista(lista, "manual_1", "manual_1");
+  checar("remover manual escolhido: card sai, nada escolhido", [r.fretes.map((f) => f.id).join(","), r.freteEscolhidoId, r.removeuEscolhido, r.fretes.some((f) => f.escolhido)], ["frete_sedex,azul_ecomm", "", true, false]);
+  checar("remover manual: cards calculados ficam iguais (valor e origem)", [r.fretes[0].valor, r.fretes[0].origem, r.fretes[1].valor], [30, "COTACAO", 40]);
+  const comDigitado = [{ ...sedex, valor: 0, valorDigitado: true }, { ...manual }];
+  const r2 = removerFreteManualDaLista(comDigitado, "manual_1", "manual_1");
+  checar("remover manual: marca de digitado cai e card volta ao cotado", [r2.fretes[0].valorDigitado, r2.fretes[0].valor], [false, 30]);
+  const r3 = removerFreteManualDaLista(lista, "frete_sedex", "manual_1");
+  checar("card calculado nao e removido", [r3.fretes.length, r3.freteEscolhidoId, r3.removeuEscolhido], [3, "manual_1", false]);
+  const r4 = removerFreteManualDaLista([{ ...sedex, escolhido: true }, { ...manual, escolhido: false }], "manual_1", "frete_sedex");
+  checar("manual nao escolhido: sai e a escolha fica", [r4.fretes.length, r4.freteEscolhidoId, r4.fretes[0].escolhido], [1, "frete_sedex", true]);
+  const r5 = removerFreteManualDaLista([sedex, { id: "x9", valor: 10, origem: "MANUAL" as const }], "x9", "x9");
+  checar("gravado com origem MANUAL tambem e manual", [r5.fretes.length, r5.freteEscolhidoId], [1, ""]);
+  const ok = { faseDeOrcamento: true, pago: false, bloqueioTrocaFrete: null, ehComplemento: false, isAvulso: false };
+  checar("botao Remover: so manual, so orcamento sem pagamento/barreira/complemento/avulsa", [
+    podeRemoverFreteManual(manual, ok),
+    podeRemoverFreteManual(sedex, ok),
+    podeRemoverFreteManual(manual, { ...ok, faseDeOrcamento: false }),
+    podeRemoverFreteManual(manual, { ...ok, pago: true }),
+    podeRemoverFreteManual(manual, { ...ok, bloqueioTrocaFrete: "NF autorizada" }),
+    podeRemoverFreteManual(manual, { ...ok, ehComplemento: true }),
+    podeRemoverFreteManual(manual, { ...ok, isAvulso: true })
+  ], [true, false, false, false, false, false, false]);
+  checar("tela: Remover so via podeRemoverFreteManual, sem escrita direta no banco", [
+    (tela.match(/podeRemoverFreteManual\(/g) || []).length,
+    /function removerFreteManual\([\s\S]{0,1400}?\.from\(/.test(tela),
+    tela.includes("removerFreteManualDaLista(current.fretes, freteId, current.freteEscolhidoId)")
+  ], [2, false, true]);
+}
 
 if (falhas > 0) {
   console.log(`\n${falhas} falha(s).`);

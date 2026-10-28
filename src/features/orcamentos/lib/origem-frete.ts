@@ -313,3 +313,55 @@ export function reaplicarValorDigitadoDoCliente<T extends FreteComOrigem>(
     return { ...f, valor: valorDigitado, valorCotado: cotado, valorDigitado: true };
   });
 }
+
+/* ---------------------------------------------------------------------------
+ * REMOVER O FRETE MANUAL (28/10/2026)
+ *
+ * O card "MANUAL / TRANSP." ganha "Remover". So a tela muda: o card sai da
+ * lista, e se era o escolhido nenhum card fica escolhido (frete zero no resumo)
+ * e a transportadora do dropdown volta a vazia. Toda marca de valor digitado
+ * cai, como na troca de card. Nada vai ao banco aqui: `cotacao_frete` so muda
+ * no Salvar, pelo mesmo DELETE + INSERT do frete escolhido de sempre — e em CIF
+ * o Salvar recusa sem card escolhido, entao nada e gravado ate o usuario
+ * escolher outro card ou transportadora. Cards calculados nao passam por aqui.
+ * --------------------------------------------------------------------------- */
+
+/**
+ * O card manual pode ser removido? So frete manual, so na fase de orcamento,
+ * sem pagamento, sem a barreira da troca de frete e fora do pedido complementar.
+ */
+export function podeRemoverFreteManual(
+  frete: Pick<FreteComOrigem, "id" | "observacao" | "origem"> | null | undefined,
+  ctx: { faseDeOrcamento: boolean; pago: boolean; bloqueioTrocaFrete: string | null; ehComplemento: boolean; isAvulso: boolean }
+): boolean {
+  return (
+    ehFreteManual(frete) &&
+    ctx.faseDeOrcamento &&
+    !ctx.pago &&
+    !ctx.bloqueioTrocaFrete &&
+    !ctx.ehComplemento &&
+    !ctx.isAvulso
+  );
+}
+
+/** Tira o frete manual da lista. Card calculado (ou id desconhecido): nada muda. */
+export function removerFreteManualDaLista<T extends FreteComOrigem & { escolhido?: boolean }>(
+  fretes: readonly T[],
+  idRemover: string,
+  idEscolhido: string | null | undefined
+): { fretes: T[]; freteEscolhidoId: string; removeuEscolhido: boolean } {
+  const alvo = fretes.find((f) => f.id === idRemover);
+  if (!alvo || !ehFreteManual(alvo)) {
+    return { fretes: [...fretes], freteEscolhidoId: idEscolhido ?? "", removeuEscolhido: false };
+  }
+  const removeuEscolhido = alvo.id === idEscolhido || alvo.escolhido === true;
+  const restantes = fretes.filter((f) => f.id !== idRemover);
+  if (!removeuEscolhido) {
+    return { fretes: restantes, freteEscolhidoId: idEscolhido ?? "", removeuEscolhido: false };
+  }
+  return {
+    fretes: limparValorDigitadoForaDe(restantes, null).map((f) => ({ ...f, escolhido: false })),
+    freteEscolhidoId: "",
+    removeuEscolhido: true
+  };
+}
