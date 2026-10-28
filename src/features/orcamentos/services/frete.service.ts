@@ -4,7 +4,15 @@ import { tokenDaSessao } from "@/lib/supabase/bearer";
 import type { PropostaFrete } from "@/features/orcamentos/types";
 import { fetchComSessao } from "@/lib/supabase/sessao";
 import { regraAtualPermiteVeppo } from "@/features/orcamentos/lib/cidade-veppo";
-import { lerCorpoCotacaoAzul, mapearCotacoesAzul } from "@/features/orcamentos/lib/cotacao-azul";
+import {
+  juntarCotacoesAzul,
+  lerCorpoCotacaoAzul,
+  mapearCotacoesAzul,
+  montarCorpoCotacaoAzul,
+  planejarCotacaoAzul,
+  type GrupoCotacaoAzul,
+  type PlanoCotacaoAzul
+} from "@/features/orcamentos/lib/cotacao-azul";
 
 /**
  * Maps a single row from public.cotacao_frete to PropostaFrete type.
@@ -210,49 +218,30 @@ export async function adicionarCotacaoManual(input: {
 }
 
 /**
- * Request Azul Cargo freight quote from the webhook.
- * Webhook expects: { CEPDestino: string, ValorTotal: number, SiglaServico: string, Itens: [...] }
+ * Cotação da Azul Cargo pelo webhook `cotacao-azul` do n8n.
  *
- * `SiglaServico` vazio (27/10/2026): a Azul devolve todos os serviços do
- * contrato e cada um vira um card. Nomes, filtro, margem e corpo vazio estão
- * em `lib/cotacao-azul.ts`.
+ * `peso` chega em GRAMAS. Desde 27/10/2026 são DUAS cotações em paralelo, uma
+ * por grupo (ECOMM com limite de 30 kg por envio; DEMAIS = EXPRESSO, STANDARD e
+ * PREMIUM), e a caixa sai do peso: regra inteira, corpo e leitura da resposta
+ * em `lib/cotacao-azul.ts`. Falha, timeout ou corpo vazio de um grupo não
+ * derruba o outro; só quando os dois falham a função lança, como antes.
+ * Quem chama (aba Fretes, recotação da Expedição, complementar, Maestro)
+ * herda tudo isso sem mudar.
  */
-export async function solicitarCotacaoAzulCargo(input: {
-  peso: number;
-  cep: string;
-  valorTotal: number;
-  id_int?: number | string;
-}): Promise<PropostaFrete[]> {
-  const cleanCep = input.cep.replace(/\D/g, "");
-  const pesoKg = input.peso / 1000;
-  const volumes = Math.max(1, Math.ceil(input.peso / 14500));
+const URL_COTACAO_AZUL = "https://10074.hostoo.net.br/webhook/cotacao-azul";
+const TIMEOUT_COTACAO_AZUL_MS = 30_000;
 
-  const payload = {
-    CEPDestino: cleanCep,
-    ValorTotal: Number(input.valorTotal || 0),
-    SiglaServico: "",
-    TaxaColeta: "false",
-    TipoEntrega: "AEROPORTO",
-    BaseOrigem: "Qns02",
-    BaseDestino: "",
-    Coleta: "false",
-    Itens: [
-      {
-        Volume: volumes,
-        Peso: pesoKg,
-        Altura: 36,
-        Comprimento: 32,
-        Largura: 23
-      }
-    ]
-  };
-
-  const response = await fetch("https://10074.hostoo.net.br/webhook/cotacao-azul", {
+async function cotarGrupoAzul(
+  plano: PlanoCotacaoAzul,
+  input: { cep: string; valorTotal: number; id_int?: number | string; pesoGramas: number }
+): Promise<PropostaFrete[]> {
+  const response = await fetch(URL_COTACAO_AZUL, {
     method: "POST",
     headers: {
       "Content-Type": "application/json"
     },
-    body: JSON.stringify(payload)
+    body: JSON.stringify(montarCorpoCotacaoAzul(plano, input)),
+    signal: AbortSignal.timeout(TIMEOUT_COTACAO_AZUL_MS)
   });
 
   if (!response.ok) {
@@ -260,13 +249,41 @@ export async function solicitarCotacaoAzulCargo(input: {
     throw new Error(`Erro na cotação Azul Cargo (${response.status}): ${errorText || response.statusText}`);
   }
 
-  // Corpo vazio = nenhuma opção da Azul (serviço fora do contrato), não erro.
+  // Corpo vazio = nenhuma opção deste grupo (serviço fora do contrato), não erro.
   return mapearCotacoesAzul(lerCorpoCotacaoAzul(await response.text()), {
     id_int: input.id_int,
-    volumes,
-    pesoKg,
-    pesoGramas: input.peso
+    pesoGramas: input.pesoGramas,
+    plano
   });
+}
+
+export async function solicitarCotacaoAzulCargo(input: {
+  peso: number;
+  cep: string;
+  valorTotal: number;
+  id_int?: number | string;
+}): Promise<PropostaFrete[]> {
+  const ctx = {
+    cep: input.cep.replace(/\D/g, ""),
+    valorTotal: Number(input.valorTotal || 0),
+    id_int: input.id_int,
+    pesoGramas: input.peso
+  };
+  const pesoTotalKg = input.peso / 1000;
+  const grupos: GrupoCotacaoAzul[] = ["ECOMM", "DEMAIS"];
+
+  const resultados = await Promise.allSettled(
+    grupos.map((grupo) => cotarGrupoAzul(planejarCotacaoAzul(pesoTotalKg, grupo), ctx))
+  );
+  const { cards, erros } = juntarCotacoesAzul(resultados);
+
+  if (erros.length === grupos.length) {
+    throw erros[0] instanceof Error ? erros[0] : new Error(String(erros[0]));
+  }
+  for (const erro of erros) {
+    console.warn("[FreteService] Um grupo da cotação Azul falhou; seguindo com o outro:", erro);
+  }
+  return cards;
 }
 
 /**
