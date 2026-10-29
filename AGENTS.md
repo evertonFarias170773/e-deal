@@ -53,6 +53,18 @@ Toda ficha segue o formato fixo de [`docs/manual/_MODELO.md`](docs/manual/_MODEL
 - **Arquivos de origem:** a última seção de cada ficha lista os arquivos de código de onde ela saiu. Arquivo novo que sustenta a ficha entra na lista; arquivo removido sai.
 - **Checagem:** `node scripts/checar-manual.mjs` (o hook `.githooks/pre-commit` roda a versão `--staged` a cada commit) lê as listas de "Arquivos de origem" e avisa quando um arquivo de origem mudou sem a ficha mudar junto, e quando há arquivo de tela alterado que não é origem de nenhuma ficha. `node scripts/checar-manual.mjs --origens` confere se as listas ainda apontam para arquivos que existem. **Ele só avisa, não bloqueia**: se a mudança for interna, siga; se for visível, atualize a ficha antes de commitar. O hook vale em cada cópia do repositório depois de `git config core.hooksPath .githooks`.
 
+## Manual do sistema e Maestro
+
+O Maestro responde às dúvidas de uso **só com o que está nas fichas** de [`docs/manual/`](docs/manual/README.md). Ficha errada ou ausente é resposta errada ou recusa na cara do usuário. Por isso:
+
+- **Toda mudança que altera o que o usuário vê ou faz** — botão, tela, regra, mensagem, permissão, relatório, fluxo — **atualiza a ficha correspondente em `docs/manual` no mesmo commit**. Se a ficha não existir, crie. Se algo foi removido, tire da ficha.
+- **O teto de 14 títulos `###`.** O índice que vai no prompt do Maestro usa, de cada ficha, o H1, o **Caminho no menu**, o **Endereço** e só os **14 primeiros títulos `###`** — o resto não é visto na escolha da página. Então: assunto de tarefa ("como faço para…") vai nos primeiros `###`, subtítulo de referência vai em `####`, e a ficha não passa de 14 `###`. Se passar, divida em outra ficha.
+- **Escreva o H1 e os títulos com o nome que o usuário procura**, incluindo os sinônimos de uso comum (por exemplo "retrabalho", "refazer pedido", "reimpressão por erro").
+- **Use só nomes de botão e menu que existam no código.** A trava do Maestro bloqueia nome que não esteja na ficha lida, e nome errado não é bloqueado: vira resposta confiante e errada.
+- **Antes de publicar**, rode `node scripts/checar-manual.mjs` e `node scripts/checar-manual.mjs --origens`, e trate os avisos.
+- **No retorno da tarefa**, uma linha: `Manual: <ficha atualizada>` ou `Manual: não se aplica (sem efeito visível ao usuário)`.
+- **Mudança interna sem efeito visível ao usuário não exige ficha** (refatoração, desempenho, teste, migration que não muda o que a pessoa vê ou consegue fazer).
+
 ## Regras e skills do workspace
 
 Consulte e aplique as regras relevantes localizadas em:
