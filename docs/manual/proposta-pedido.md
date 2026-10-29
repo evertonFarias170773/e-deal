@@ -1,6 +1,6 @@
 # Proposta: aba Pedido (Boletim Técnico & Lotes)
 
-> **Última revisão:** 09/10/2026
+> **Última revisão:** 29/10/2026
 > **Caminho no menu:** Pedidos → abrir um pedido → Editar proposta → aba Pedido
 > **Endereço:** `/orcamentos/[número]/editar?tab=pedido`
 
@@ -287,4 +287,4 @@ O PDF é sempre o do mapa como está hoje no sistema de mapas. Quem publica o PD
 - `src/features/orcamentos/OrcamentoFormPage.tsx`
 - `src/features/usuarios-perfis/catalogo-permissoes.ts`
 
-> **Mudança desta revisão:** 09/10/2026 — o erro de excluir modelo com QR de controle de acesso reservado passa a citar também o texto técnico da restrição do banco. Só documentação.
+> **Mudança desta revisão:** 29/10/2026 — ao gravar, o Nº Final é conferido pela conta do cadastro do numerador e a gravação é recusada se divergir (só modelo novo ou com Qtd, Nº Inicial ou numerador alterados). Linha com numerador fora da lista fica sem Nº Final e não é gravada.
