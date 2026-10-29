@@ -1,6 +1,6 @@
 # Proposta: visão geral e abas
 
-> **Última revisão:** 26/10/2026
+> **Última revisão:** 29/10/2026
 > **Caminho no menu:** Pedidos → **+ Nova proposta** (proposta nova) ou Pedidos → abrir um pedido → **Editar proposta**
 > **Endereço:** `/orcamentos/novo` e `/orcamentos/<número>/editar`
 
@@ -305,6 +305,7 @@ O aviso some quando você clica em **Entendi** ou quando a cópia ganha cobranç
 - Nasce com a linha **Retrabalho do pedido #<número>** no início da **Orientação técnica**, que sai no boletim. O que a original tinha nesse campo continua abaixo.
 - A cobrança é a **E-RETRABALHO**, e o pedido fica fora do faturamento.
 - Pedido que já é cópia (duplicação ou retrabalho) só pode gerar retrabalho: a janela mostra só **Retrabalho**. O novo pedido aponta para o pedido de onde você clicou, não para o primeiro da cadeia.
+- O passo a passo do retrabalho, com a cobrança E-Retrabalho e os erros, está em [Retrabalho: refazer um pedido](retrabalho.md).
 
 ### Outras ações do menu
 
@@ -388,6 +389,7 @@ O aviso some quando você clica em **Entendi** ou quando a cópia ganha cobranç
 ## Veja também
 
 - [Pedidos (lista)](pedidos.md)
+- [Retrabalho: refazer um pedido](retrabalho.md)
 - [Proposta: aba Geral](proposta-geral.md)
 - [Proposta: aba Orçamento (produtos)](proposta-produtos.md)
 - [Proposta: aba Fretes](proposta-fretes.md)

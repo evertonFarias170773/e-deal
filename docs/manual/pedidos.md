@@ -1,6 +1,6 @@
 # Pedidos (lista)
 
-> **Última revisão:** 20/10/2026
+> **Última revisão:** 29/10/2026
 > **Caminho no menu:** Pedidos (item direto do menu lateral, sem submenu; é o segundo, logo abaixo de Conferência)
 > **Endereço:** `/orcamentos`
 
@@ -295,6 +295,7 @@ As datas pequenas aparecem como dia/mês e hora, no horário de Brasília.
 - [Produção (ordens de serviço)](producao.md)
 - [Expedição](expedicao.md)
 - [Notas fiscais](notas-fiscais.md)
+- [Retrabalho: refazer um pedido](retrabalho.md)
 
 ## Arquivos de origem
 
