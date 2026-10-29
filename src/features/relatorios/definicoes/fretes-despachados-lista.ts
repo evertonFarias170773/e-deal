@@ -1,7 +1,8 @@
 import { addDays } from "@/lib/period";
 import { formatCurrency } from "@/lib/formatters/currency";
 import { formatDataCivil } from "@/lib/formatters/date";
-import type { ColunaPdf, LinhaRelatorio, ModeloPdf, RelatorioDef, ResultadoRelatorio } from "../types";
+import type { ColunaPdf, LinhaRelatorio, ModeloPdf, Opcao, RelatorioDef, ResultadoRelatorio } from "../types";
+import { grupoDaTransportadora } from "./frete-por-transportadora";
 
 /**
  * Fretes despachados (lista) — uma linha por despacho do período, sem agrupar.
@@ -21,6 +22,12 @@ import type { ColunaPdf, LinhaRelatorio, ModeloPdf, RelatorioDef, ResultadoRelat
  * TRANSPORTADORA e MOTOBOY é o conhecimento digitado; para CORREIOS é o código de rastreio do
  * objeto. Vazio ali, cai em `expedicoes.correios_codigo_objeto` (o objeto da prepostagem).
  *
+ * TRANSPORTADORA (29/10/2026): o nome agrupado de `grupoDaTransportadora`, a MESMA função do
+ * relatório "Frete cobrado por transportadora" (importada, sem copiar a lista de apelidos), então
+ * os dois nunca divergem. Sem grupo, vale o nome gravado no despacho; sem nome gravado (Retira),
+ * o rótulo do tipo de frete. O filtro compara esse nome sem diferenciar maiúsculas, como o
+ * agrupado junta as linhas, e as opções saem dos despachos do período (antes do filtro).
+ *
  * Sem função no banco: a lista sai ordenada da consulta e a soma é feita na rota, no servidor.
  * A tela recebe uma página por vez (`paginacao`); CSV e PDF levam o período inteiro.
  */
@@ -32,6 +39,8 @@ const LOTE = 200;
 type Despacho = {
   id_int: number;
   tipo_frete: string | null;
+  transportadora_nome: string | null;
+  id_transportadora_cliente: number | null;
   data_despacho: string;
   codigo_rastreamento: string | null;
   correios_codigo_objeto: string | null;
@@ -45,9 +54,9 @@ type Dados = {
   despachos: Despacho[];
   propostas: Record<string, Proposta>;
   enderecos: Record<string, Endereco>;
+  /** Valor do filtro Transportadora ("" = todas). */
+  transportadora: string;
 };
-
-const TIPOS_FRETE = ["CORREIOS", "MOTOBOY", "TRANSPORTADORA", "RETIRA_BALCAO", "SEM_CUSTO", "INDEFINIDO"] as const;
 
 /** Exceções ao rótulo padrão do tipo de frete. */
 const ROTULO_TIPO_FRETE: Record<string, string> = { RETIRA_BALCAO: "RETIRA NO BALCÃO" };
@@ -62,6 +71,18 @@ export function rotuloTipoFrete(tipo: string | null | undefined): string {
   if (!t) return "(sem tipo)";
   return ROTULO_TIPO_FRETE[t] ?? t.replace(/_+/g, " ");
 }
+
+/**
+ * Nome da transportadora na lista — único lugar: coluna (tela, CSV e PDF), opções e filtro.
+ * Grupo do relatório agrupado; senão o nome gravado; senão o rótulo do tipo de frete.
+ */
+export function nomeDaTransportadora(
+  d: Pick<Despacho, "transportadora_nome" | "tipo_frete" | "id_transportadora_cliente">
+): string {
+  return grupoDaTransportadora(d) ?? (limpo(d.transportadora_nome) || rotuloTipoFrete(d.tipo_frete));
+}
+
+const chaveDoNome = (nome: string) => nome.trim().toUpperCase();
 
 const plural = (q: number, um: string, varios: string) => `${q.toLocaleString("pt-BR")} ${q === 1 ? um : varios}`;
 const arred = (n: number) => Math.round(n * 100) / 100;
@@ -91,15 +112,14 @@ async function consultar(
     if (pagina >= MAX_PAGINAS) {
       return { data: null, error: { code: "LIMITE", message: "Muitos despachos no período." } };
     }
-    let consulta = supabase
+    const consulta = supabase
       .from("expedicoes")
-      .select("id_int,tipo_frete,data_despacho,codigo_rastreamento,correios_codigo_objeto,id_endereco_entrega")
+      .select(
+        "id_int,tipo_frete,transportadora_nome,id_transportadora_cliente,data_despacho,codigo_rastreamento,correios_codigo_objeto,id_endereco_entrega"
+      )
       .not("data_despacho", "is", null)
       .gte("data_despacho", de)
       .lt("data_despacho", ate);
-    if (filtros.tipo_frete === "SEM") consulta = consulta.is("tipo_frete", null);
-    else if (filtros.tipo_frete) consulta = consulta.eq("tipo_frete", filtros.tipo_frete);
-
     const { data, error } = await consulta
       .order("data_despacho", { ascending: true })
       .order("id_int", { ascending: true })
@@ -109,7 +129,12 @@ async function consultar(
     if ((data ?? []).length < TAMANHO_PAGINA) break;
   }
 
-  const ids = [...new Set(despachos.map((d) => d.id_int))];
+  // O filtro Transportadora é aplicado em `normalizar`, depois do agrupamento dos nomes: as
+  // opções do filtro precisam de todos os despachos do período.
+  const filtrados = filtros.transportadora
+    ? despachos.filter((d) => chaveDoNome(nomeDaTransportadora(d)) === chaveDoNome(filtros.transportadora))
+    : despachos;
+  const ids = [...new Set(filtrados.map((d) => d.id_int))];
   const propostas: Record<string, Proposta> = {};
   for (let i = 0; i < ids.length; i += LOTE) {
     const { data, error } = await supabase
@@ -127,7 +152,7 @@ async function consultar(
 
   const idsEndereco = [
     ...new Set(
-      despachos
+      filtrados
         .map((d) => limpo(d.id_endereco_entrega) || limpo(propostas[String(d.id_int)]?.id_endereco_ent))
         .filter(Boolean)
     )
@@ -141,11 +166,27 @@ async function consultar(
     }
   }
 
-  return { data: { despachos, propostas, enderecos } satisfies Dados, error: null };
+  return {
+    data: { despachos, propostas, enderecos, transportadora: filtros.transportadora ?? "" } satisfies Dados,
+    error: null
+  };
 }
 
 function normalizar(resposta: unknown): ResultadoRelatorio {
-  const { despachos = [], propostas = {}, enderecos = {} } = (resposta ?? {}) as Partial<Dados>;
+  const { despachos: todos = [], propostas = {}, enderecos = {}, transportadora = "" } = (resposta ?? {}) as Partial<Dados>;
+
+  // Opções do filtro: os nomes de todos os despachos do período, antes de filtrar.
+  const opcoes = new Map<string, string>();
+  for (const d of todos) {
+    const nome = nomeDaTransportadora(d);
+    if (!opcoes.has(chaveDoNome(nome))) opcoes.set(chaveDoNome(nome), nome);
+  }
+  const opcoesTransportadora: Opcao[] = [...opcoes.values()]
+    .sort((a, b) => a.localeCompare(b, "pt-BR"))
+    .map((nome) => ({ valor: nome, rotulo: nome }));
+  const despachos = transportadora
+    ? todos.filter((d) => chaveDoNome(nomeDaTransportadora(d)) === chaveDoNome(transportadora))
+    : todos;
 
   let totalFrete = 0;
   let freteZero = 0;
@@ -173,7 +214,7 @@ function normalizar(resposta: unknown): ResultadoRelatorio {
 
       return {
         id_int: d.id_int,
-        tipo_frete: rotuloTipoFrete(d.tipo_frete),
+        transportadora: nomeDaTransportadora(d),
         data_despacho: diaDeSaoPaulo(d.data_despacho),
         cidade_destino: cidade ? (uf ? `${cidade}/${uf}` : cidade) : null,
         conhecimento: conhecimento || null,
@@ -203,6 +244,7 @@ function normalizar(resposta: unknown): ResultadoRelatorio {
       valor_frete: totalFrete
     },
     avisos,
+    opcoesDosFiltros: { transportadora: opcoesTransportadora },
     cards: [
       { titulo: "Despachos", valor: registros.toLocaleString("pt-BR"), descricao: "Uma linha por despacho do período.", tom: "info" },
       { titulo: "Frete cobrado", valor: formatCurrency(totalFrete), descricao: "Soma do frete das propostas despachadas.", tom: "success" },
@@ -219,7 +261,7 @@ function normalizar(resposta: unknown): ResultadoRelatorio {
 
 const COLUNAS_PDF: ColunaPdf[] = [
   { titulo: "PEDIDO", largura: 10 },
-  { titulo: "Tipo frete", largura: 16 },
+  { titulo: "Transportadora", largura: 16 },
   { titulo: "Data despacho", largura: 13 },
   { titulo: "Cidade destino", largura: 27 },
   { titulo: "Conhecimento do frete", largura: 20 },
@@ -243,7 +285,7 @@ function montarPdf(
         colunas: COLUNAS_PDF,
         linhas: resultado.linhas.map((l) => [
           String(l.id_int),
-          String(l.tipo_frete),
+          String(l.transportadora),
           l.data_despacho ? formatDataCivil(String(l.data_despacho)) : "—",
           l.cidade_destino ? String(l.cidade_destino) : "—",
           l.conhecimento ? String(l.conhecimento) : "—",
@@ -267,13 +309,13 @@ function montarPdf(
 }
 
 const CRITERIO =
-  "Uma linha por despacho com data no período (dia de São Paulo), em ordem de data de despacho e número do pedido. Tipo de frete, conhecimento e cidade são os do despacho (a cidade cai no endereço da proposta só quando o despacho não gravou endereço). Nos Correios, o conhecimento é o código de rastreio do objeto. O valor é o frete gravado na proposta (o cobrado do cliente), sem recalcular, o mesmo do relatório Frete cobrado por transportadora. Retira e FOB entram com o frete que a proposta tiver, normalmente zero. Pedido reenviado aparece uma vez, com o despacho atual.";
+  "Uma linha por despacho com data no período (dia de São Paulo), em ordem de data de despacho e número do pedido. Transportadora, conhecimento e cidade são os do despacho (a cidade cai no endereço da proposta só quando o despacho não gravou endereço). Nos Correios, o conhecimento é o código de rastreio do objeto. O valor é o frete gravado na proposta (o cobrado do cliente), sem recalcular, o mesmo do relatório Frete cobrado por transportadora. A transportadora usa o mesmo agrupamento do relatório Frete cobrado por transportadora (Correios, Motoboy, VEPPO); sem nome gravado, como no Retira, aparece o tipo de frete. Retira e FOB entram com o frete que a proposta tiver, normalmente zero. Pedido reenviado aparece uma vez, com o despacho atual.";
 
 export const fretesDespachadosLista: RelatorioDef = {
   slug: "fretes-despachados-lista",
   area: "expedicao",
   titulo: "Fretes despachados (lista)",
-  descricao: "Lista completa dos despachos do período, um por linha, com tipo de frete, cidade, conhecimento e frete cobrado.",
+  descricao: "Lista completa dos despachos do período, um por linha, com transportadora, cidade, conhecimento e frete cobrado.",
   permissao: "relatorios.fretes_despachados_lista",
 
   dataReferencia: { rotulo: "Data de despacho", criterio: CRITERIO },
@@ -281,17 +323,13 @@ export const fretesDespachadosLista: RelatorioDef = {
   periodo: { presets: ["mes", "mes_anterior", "custom"], padrao: "mes", maxDias: 366 },
 
   filtros: [
-    {
-      chave: "tipo_frete",
-      rotulo: "Tipo de frete",
-      todasRotulo: "Todos",
-      opcoes: [...TIPOS_FRETE.map((t) => ({ valor: t, rotulo: rotuloTipoFrete(t) })), { valor: "SEM", rotulo: "Sem tipo" }]
-    }
+    // Opções vindas do resultado (`opcoesDosFiltros`): os nomes dos despachos do período.
+    { chave: "transportadora", rotulo: "Transportadora", todasRotulo: "Todos" }
   ],
 
   colunas: [
     { id: "id_int", titulo: "PEDIDO", tipo: "texto" },
-    { id: "tipo_frete", titulo: "Tipo frete", tipo: "texto" },
+    { id: "transportadora", titulo: "Transportadora", tipo: "texto" },
     { id: "data_despacho", titulo: "Data despacho", tipo: "data" },
     { id: "cidade_destino", titulo: "Cidade destino", tipo: "texto" },
     { id: "conhecimento", titulo: "Conhecimento do frete", tipo: "texto" },

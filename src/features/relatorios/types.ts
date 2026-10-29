@@ -86,6 +86,11 @@ export type ResultadoRelatorio = {
   avisos?: string[];
   /** Dados de apoio do próprio relatório (ex.: emitente), usados só pelo seu PDF e pelo seu zip. */
   extras?: Record<string, unknown>;
+  /**
+   * Opções de filtro que dependem do período (ex.: transportadoras dos despachos), por chave
+   * do filtro. A tela usa quando o filtro não tem `opcoes` fixas. Opcional.
+   */
+  opcoesDosFiltros?: Record<string, Opcao[]>;
   /** Só em relatório com `paginacao`: a página que a rota de dados devolveu. */
   paginacao?: PaginaDoRelatorio;
 };

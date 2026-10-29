@@ -425,7 +425,13 @@ function ReportPageCorpo({ relatorio }: { relatorio: RelatorioDef }) {
             <CampoSelecao
               key={filtro.chave}
               filtro={filtro}
-              opcoes={filtro.opcoes ?? opcoesCarregadas[filtro.chave] ?? []}
+              // Opções do resultado ficam as da última resposta enquanto a próxima carrega.
+              opcoes={
+                filtro.opcoes ??
+                estado.resultado?.opcoesDosFiltros?.[filtro.chave] ??
+                opcoesCarregadas[filtro.chave] ??
+                []
+              }
               valor={String(filters[filtro.chave] ?? "")}
               onChange={(valor) => setFilters({ [filtro.chave]: valor })}
             />
