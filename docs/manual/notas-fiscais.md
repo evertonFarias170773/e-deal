@@ -39,7 +39,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | Número do pedido (**#N**, dica "Abrir a proposta") | Aba Fila, coluna **Pedido** | Abre a proposta do pedido. |
 | Nome do cliente (dica "Abrir o cadastro do cliente") | Aba Fila, coluna **Cliente / Destinatário** | Abre o cadastro do cliente em edição. |
 | Selo **Remessa necessária** (vermelho) ou **Conferir remessa** (âmbar) | Aba Fila, abaixo do nome do cliente; só em pedido com entrega em endereço diferente do da NF-e | Não abre nada: é um aviso. Passe o mouse para ver a frase e os dois endereços (o de entrega e o da NF-e) |
-| **Nota emitida no sistema antigo** | Aba Fila, coluna **Ação** | Marca o pedido como faturado no sistema antigo e o tira da fila. Enquanto grava mostra "Marcando...". |
+| **Nota emitida no sistema antigo** | Aba Fila, coluna **Ação** | Abre a janela que pede o número da nota emitida no sistema antigo. **Marcar nota emitida** grava a marca e tira o pedido da fila. Enquanto grava mostra "Marcando...". |
 | **Marcar como entregue** | Aba Fila, coluna **Ação**, ao lado de **Nota emitida no sistema antigo**; só administrador (marca de administrador no cadastro do usuário) | Aparece em pedido Liberado (LIBERADO, ou APROVADO sem produção, OS nem nota emitida) e em pedido que foi só à Fila de Faturamento, sem produção (status REVISAO ATENDENTE). Abre a janela **Marcar como entregue?**; ao confirmar, o status vira ENTREGUE e a data de entrega gravada é a de hoje. O pedido continua na fila. Não há desmarcar. |
 | **NFS-e** | Aba Fila, coluna **Ação**, entre **Nota emitida no sistema antigo** e **Faturar**; só em pedido da **BIRÔ IDEAL** | Abre a janela **Gerar NFS-e**. O texto muda com a nota de serviço do pedido: **NFS-e** (sem nota ou com rascunho), **NFS-e nº N** (autorizada), **NFS-e em análise** e **NFS-e (reenviar)** (o envio falhou). |
 | **Endereço que vai na nota** (lista) | Janela **Gerar NFS-e**, seção **Endereço do tomador** | Escolhe o endereço do tomador entre os do cliente. Endereços iguais aparecem uma vez só; endereço com "cadastro incompleto" fica apagado. |
@@ -355,9 +355,11 @@ Nota com duas parcelas ou mais não é lançada por este caminho: a janela mostr
 
 Ação temporária, da transição entre sistemas. Use só quando a nota do pedido já foi emitida no sistema antigo.
 
-1. Na fila, clique em **Nota emitida no sistema antigo** na linha do pedido e confirme.
-2. O pedido sai da fila. Liberação para nota, status e produção do pedido ficam como estavam, e nenhuma nota é criada no Vibe. O registro fica na linha do tempo do pedido.
-3. Para desfazer, abra **Pedidos** no menu lateral (é a tela que o aviso chama de Orçamentos), ache o pedido (ele mostra a etiqueta **faturado no sistema antigo**), abra o menu da linha e clique em **Voltar para a Fila de Faturamento (desfazer nota no sistema antigo)**. O pedido volta a aparecer na fila.
+1. Na fila, clique em **Nota emitida no sistema antigo** na linha do pedido. Na janela, informe o **Número da nota no sistema antigo \*** (só dígitos, obrigatório), uma observação se quiser, e clique em **Marcar nota emitida**.
+   - **Nota antecipada** (emitida antes do pagamento, com o pedido em NOVO ou AGUARDANDO): a mesma marca se aplica em **Pedidos**, menu da linha, **Nota emitida no sistema antigo**, com a mesma janela. Só quem tem **Liberar para Nota Fiscal**.
+2. O pedido sai da fila e não entra mais nela. Liberação para nota, status e produção do pedido ficam como estavam, e nenhuma nota é criada no Vibe. O número da nota, quem marcou e quando ficam na linha do tempo do pedido.
+3. Uma venda, uma NF-e: com a marca, o **Faturar** e a ação **Gerar outra nota de venda** recusam o pedido com **Este pedido já tem nota emitida no sistema antigo.**
+4. Para desfazer, abra **Pedidos** no menu lateral (é a tela que o aviso chama de Orçamentos), ache o pedido (ele mostra a etiqueta **faturado no sistema antigo**), abra o menu da linha e clique em **Voltar para a Fila de Faturamento (desfazer nota no sistema antigo)**. O pedido volta a aparecer na fila quando estiver liberado para nota, e o **Faturar** deixa de recusá-lo.
 
 ### Descartar um rascunho
 
@@ -557,6 +559,10 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/features/fiscal/services/conferencia-faturamento.ts`
 - `src/features/fiscal/components/ConferenciaFaturamentoModal.tsx`
 - `src/lib/fiscal/correcao-de-cadastro.ts`
+- `src/features/fiscal/lib/faturado-fora.ts`
+- `src/features/fiscal/components/MarcarNotaSistemaAntigoModal.tsx`
+- `src/features/fiscal/services/faturado-fora.client.ts`
+- `src/app/api/fiscal/faturado-fora/route.ts`
 - `src/features/fiscal/lib/fila-producao-desde.ts`
 - `src/features/fiscal/lib/aviso-remessa.ts`
 - `src/features/fiscal/services/aviso-remessa.service.ts`
@@ -616,6 +622,8 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 > **Mudança desta revisão:** 08/10/2026 — aviso de nota de remessa: selo na Fila e faixa no rascunho da NF-e quando o pedido é entregue em endereço diferente do da nota. É só aviso; a remessa segue sendo gerada à mão, depois da venda autorizada.
 
 > **Mudança desta revisão:** 12/10/2026 — pedido marcado como entregue pela lista de Pedidos (commit `c818220`) continua na Fila de Faturamento enquanto esperar nota. Só documentação.
+
+> **Mudança desta revisão:** 29/10/2026 — **Nota emitida no sistema antigo**: marcar pede o número da nota (vai para a linha do tempo); a marca vale também para a nota antecipada, em pedido NOVO ou AGUARDANDO, pelo menu da linha em **Pedidos**; com a marca, **Faturar** e **Gerar outra nota de venda** recusam o pedido com "Este pedido já tem nota emitida no sistema antigo."
 
 > **Mudança desta revisão:** 29/10/2026 — **Abrir para corrigir**, na janela **A nota não pode ser aberta ainda**: pendência de cadastro abre a edição do cadastro (do pagador, ou do dono do endereço) com o campo destacado, em vez da ficha só de leitura; depois de salvar, **Voltar à Notas fiscais e reconferir #N** volta e reconfere o pedido. Quem pode editar o cadastro não mudou.
 

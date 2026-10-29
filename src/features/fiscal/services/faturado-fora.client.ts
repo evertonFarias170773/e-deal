@@ -25,16 +25,23 @@ export interface FaturadoForaResult {
   marcado?: boolean;
   faturadoForaEm?: string | null;
   faturadoForaPor?: string | null;
+  /** Marca gravada, mas o número da nota não entrou na linha do tempo. */
+  aviso?: string;
 }
 
-async function chamar(idInt: number, marcar: boolean, motivo?: string | null): Promise<FaturadoForaResult> {
+async function chamar(
+  idInt: number,
+  marcar: boolean,
+  motivo?: string | null,
+  numeroNota?: string | null
+): Promise<FaturadoForaResult> {
   const token = await tokenSessao();
   if (!token) return { success: false, errorMessage: "Sessão expirada. Faça login novamente." };
   try {
     const res = await fetch("/api/fiscal/faturado-fora", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ id_int: idInt, marcar, motivo: motivo ?? null })
+      body: JSON.stringify({ id_int: idInt, marcar, motivo: motivo ?? null, numero_nota: numeroNota ?? null })
     });
     const data = (await res.json().catch(() => null)) as (FaturadoForaResult & { message?: string }) | null;
     if (res.ok && data?.success) return data;
@@ -44,9 +51,13 @@ async function chamar(idInt: number, marcar: boolean, motivo?: string | null): P
   }
 }
 
-/** Marca o pedido como faturado no sistema antigo: sai da Fila de Faturamento. */
-export function marcarFaturadoNoSistemaAntigo(idInt: number, motivo?: string | null): Promise<FaturadoForaResult> {
-  return chamar(idInt, true, motivo);
+/** Marca o pedido como faturado no sistema antigo: sai da Fila de Faturamento. O número da nota é obrigatório. */
+export function marcarFaturadoNoSistemaAntigo(
+  idInt: number,
+  numeroNota: string,
+  motivo?: string | null
+): Promise<FaturadoForaResult> {
+  return chamar(idInt, true, motivo, numeroNota);
 }
 
 /** Desfaz a marca: limpa as duas colunas e o pedido volta para a Fila de Faturamento. */

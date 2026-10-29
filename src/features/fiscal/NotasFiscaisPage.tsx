@@ -55,6 +55,8 @@ import {
 import type { FaturavelOrigem } from "./types";
 import { EmissaoNfeModal } from "./components/EmissaoNfeModal";
 import { ConferenciaFaturamentoModal } from "./components/ConferenciaFaturamentoModal";
+import { MarcarNotaSistemaAntigoModal } from "./components/MarcarNotaSistemaAntigoModal";
+import { MENSAGEM_PEDIDO_FATURADO_FORA } from "./lib/faturado-fora";
 import { conferirFaturamento, type ResultadoConferencia } from "./services/conferencia-faturamento";
 import { partesDaConfirmacaoDeSegundaNota } from "./lib/confirmacao-segunda-nota";
 import { ConfirmarAcaoModal } from "@/features/expedicao/components/ConfirmarAcaoModal";
@@ -1721,29 +1723,34 @@ export function NotasFiscaisPage() {
    * O DESFAZER NÃO MORA AQUI: o pedido some desta lista, então um "desfazer"
    * nesta tela seria inalcançável. Fica no menu da linha em Orçamentos.
    */
-  async function handleMarcarFaturadoFora(item: FaturavelOrigem) {
+  /** Pedido da Fila com a janela "Nota emitida no sistema antigo" aberta (pede o número da nota). */
+  const [filaParaMarcarFora, setFilaParaMarcarFora] = useState<number | null>(null);
+
+  function handleMarcarFaturadoFora(item: FaturavelOrigem) {
     if (marcandoFaturadoForaId !== null) return;
     const idInt = Number(item.id_int);
     if (!Number.isInteger(idInt) || idInt <= 0) {
       showToast({ type: "warning", title: "Referência de origem inválida." });
       return;
     }
-    const ok = window.confirm(
-      `Marcar o pedido #${idInt} como FATURADO NO SISTEMA ANTIGO?\n\n` +
-        `Use só quando a nota deste pedido já foi emitida no sistema antigo.\n` +
-        `O pedido sai desta fila. Liberação para nota, status e produção seguem como estão.\n\n` +
-        `Para desfazer: Orçamentos, menu da linha do pedido, "Voltar para a Fila de Faturamento".`
-    );
-    if (!ok) return;
+    setFilaParaMarcarFora(idInt);
+  }
+
+  async function confirmarMarcarFaturadoFora(numeroNota: string, motivo: string | null) {
+    const idInt = filaParaMarcarFora;
+    if (idInt === null || marcandoFaturadoForaId !== null) return;
     setMarcandoFaturadoForaId(idInt);
     try {
-      const res = await marcarFaturadoNoSistemaAntigo(idInt);
+      const res = await marcarFaturadoNoSistemaAntigo(idInt, numeroNota, motivo);
       if (res.success) {
+        setFilaParaMarcarFora(null);
         setFaturaveisList((lista) => lista.filter((f) => Number(f.id_int) !== idInt));
         showToast({
-          type: "success",
+          type: res.aviso ? "warning" : "success",
           title: `Pedido #${idInt} fora da fila`,
-          description: "Marcado como faturado no sistema antigo. Para desfazer: menu da linha em Orçamentos."
+          description:
+            res.aviso ||
+            `Nota nº ${numeroNota} do sistema antigo registrada. Para desfazer: menu da linha em Orçamentos.`
         });
       } else {
         showToast({
@@ -1839,6 +1846,25 @@ export function NotasFiscaisPage() {
     if (!client) {
       showToast({ type: "warning", title: "Sem conexão com o banco para conferir as notas deste pedido." });
       return;
+    }
+
+    // Uma venda, uma NF-e: pedido com nota emitida no sistema antigo não ganha
+    // outra nota de venda. A conferência também recusa; aqui é só para não
+    // perguntar o que vai ser barrado logo depois.
+    if (tipo === "VENDA") {
+      const { data: marca } = await client
+        .from("propostas")
+        .select("faturado_fora_em")
+        .eq("id_int", idInt)
+        .maybeSingle();
+      if ((marca as { faturado_fora_em?: string | null } | null)?.faturado_fora_em) {
+        showToast({
+          type: "error",
+          title: MENSAGEM_PEDIDO_FATURADO_FORA,
+          description: `Pedido #${idInt}: o Vibe não emite outra nota de venda.`
+        });
+        return;
+      }
     }
 
     const { data, error } = await client
@@ -3302,6 +3328,15 @@ export function NotasFiscaisPage() {
           salvando={false}
           onConfirmar={seguirComSegundaNota}
           onClose={() => setSegundaNotaPendente(null)}
+        />
+      )}
+
+      {filaParaMarcarFora !== null && (
+        <MarcarNotaSistemaAntigoModal
+          idInt={filaParaMarcarFora}
+          salvando={marcandoFaturadoForaId !== null}
+          onConfirmar={(numero, motivo) => void confirmarMarcarFaturadoFora(numero, motivo)}
+          onFechar={() => setFilaParaMarcarFora(null)}
         />
       )}
 

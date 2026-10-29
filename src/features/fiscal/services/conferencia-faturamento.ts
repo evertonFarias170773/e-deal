@@ -3,6 +3,7 @@ import { resolverEmpresaEmitente, ehEnderecoDeEntrega } from "@/features/nfe/ser
 import { lerAvisoDeRemessaDoPedido } from "@/features/fiscal/services/aviso-remessa.service";
 import { ACAO_DA_REMESSA } from "@/features/fiscal/lib/aviso-remessa";
 import { rotaDeCorrecaoDoCadastro } from "@/lib/fiscal/correcao-de-cadastro";
+import { MENSAGEM_PEDIDO_FATURADO_FORA, descreverMarca } from "@/features/fiscal/lib/faturado-fora";
 
 /**
  * Conferência do Faturar.
@@ -84,7 +85,7 @@ export async function conferirFaturamento(idInt: number): Promise<ResultadoConfe
   const { data: propostaRow, error: propostaError } = await client
     .from("propostas")
     .select(
-      "id_int,id_cliente,id_faturado,cliente,empresa,id_endereco_ent,valor,valor_total,valor_frete,modalidade_frete"
+      "id_int,id_cliente,id_faturado,cliente,empresa,id_endereco_ent,valor,valor_total,valor_frete,modalidade_frete,faturado_fora_em,faturado_fora_por"
     )
     .eq("id_int", idInt)
     .maybeSingle();
@@ -110,7 +111,26 @@ export async function conferirFaturamento(idInt: number): Promise<ResultadoConfe
     valor_total: number | null;
     valor_frete: number | null;
     modalidade_frete: string | null;
+    faturado_fora_em: string | null;
+    faturado_fora_por: string | null;
   };
+
+  // ---------------------------------------------------------------------------
+  // Nota emitida no SISTEMA ANTIGO (29/10/2026). Uma venda, uma NF-e: o pedido
+  // marcado ja tem nota fora do Vibe. Recusa sozinho, antes de tudo — e por aqui
+  // que passam o Faturar da Fila e o "Gerar outra nota de venda" do Historico.
+  // ---------------------------------------------------------------------------
+  if (proposta.faturado_fora_em) {
+    bloqueios.push({
+      codigo: "FATURADO_NO_SISTEMA_ANTIGO",
+      titulo: MENSAGEM_PEDIDO_FATURADO_FORA,
+      encontrado: descreverMarca(proposta.faturado_fora_em, proposta.faturado_fora_por),
+      setor: "Fiscal",
+      onde:
+        "Uma venda, uma NF-e: o Vibe não emite outra. O número da nota está na linha do tempo do pedido. Se a marca estiver errada, quem tem Liberar para Nota Fiscal a desfaz em Orçamentos, menu da linha."
+    });
+    return { ok: false, bloqueios, avisos };
+  }
 
   // ---------------------------------------------------------------------------
   // PAGADOR e documento

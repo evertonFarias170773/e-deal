@@ -20,7 +20,12 @@ import type { OrcamentoListItem } from "@/features/orcamentos/mappers";
 import { COR_RETRABALHO } from "@/lib/retrabalho";
 import { SeloRetrabalho } from "@/components/common/SeloRetrabalho";
 import { encerrarTeste, reabrirTeste } from "@/features/pedidos/services/encerrar-teste.client";
-import { desmarcarFaturadoNoSistemaAntigo } from "@/features/fiscal/services/faturado-fora.client";
+import {
+  desmarcarFaturadoNoSistemaAntigo,
+  marcarFaturadoNoSistemaAntigo
+} from "@/features/fiscal/services/faturado-fora.client";
+import { podeMarcarNotaAntecipada } from "@/features/fiscal/lib/faturado-fora";
+import { MarcarNotaSistemaAntigoModal } from "@/features/fiscal/components/MarcarNotaSistemaAntigoModal";
 import { buscarRastreioDasPropostas, type RastreioDaProposta } from "@/features/orcamentos/services/rastreio-lista.service";
 import { VerConhecimentoModal } from "@/features/expedicao/components/VerConhecimentoModal";
 import { buscarPrazoEnvioDosPedidos } from "@/features/orcamentos/services/prazo-envio-lista.service";
@@ -1810,7 +1815,7 @@ Ela volta a aparecer nas listas operacionais.`
     if (desmarcandoFaturadoForaId !== null) return;
     const ok = window.confirm(
       `Voltar o pedido #${item.id_int} para a Fila de Faturamento?\n\n` +
-        `Remove a marca de nota emitida no sistema antigo. O pedido volta a aparecer na fila.`
+        `Remove a marca de nota emitida no sistema antigo. O pedido volta a aparecer na fila quando estiver liberado para nota, e o Faturar deixa de recusá-lo.`
     );
     if (!ok) return;
     setDesmarcandoFaturadoForaId(item.id_int);
@@ -1819,8 +1824,8 @@ Ela volta a aparecer nas listas operacionais.`
       if (res.success) {
         showToast({
           type: "success",
-          title: "De volta à fila",
-          description: `#${item.id_int} voltou para a Fila de Faturamento.`
+          title: "Marca removida",
+          description: `#${item.id_int}: marca de nota no sistema antigo removida.`
         });
         triggerRefresh();
       } else {
@@ -1832,6 +1837,39 @@ Ela volta a aparecer nas listas operacionais.`
       }
     } finally {
       setDesmarcandoFaturadoForaId(null);
+    }
+  }
+
+  /**
+   * Marcar "Nota emitida no sistema antigo" ANTES do pagamento (29/10/2026): a
+   * nota antecipada, emitida no sistema antigo com o pedido em NOVO ou
+   * AGUARDANDO. Mesma rota e mesma permissão do desfazer; pede o número da nota.
+   * Não liga libera_nf nem a produção.
+   */
+  const [pedidoParaMarcarFora, setPedidoParaMarcarFora] = useState<number | null>(null);
+  const [marcandoFaturadoFora, setMarcandoFaturadoFora] = useState(false);
+
+  async function confirmarMarcarFaturadoFora(numeroNota: string, motivo: string | null) {
+    const idInt = pedidoParaMarcarFora;
+    if (idInt === null || marcandoFaturadoFora) return;
+    setMarcandoFaturadoFora(true);
+    try {
+      const res = await marcarFaturadoNoSistemaAntigo(idInt, numeroNota, motivo);
+      if (res.success) {
+        setPedidoParaMarcarFora(null);
+        showToast({
+          type: res.aviso ? "warning" : "success",
+          title: `Pedido #${idInt} marcado`,
+          description:
+            res.aviso ||
+            `Nota nº ${numeroNota} do sistema antigo registrada. O pedido não entra na Fila de Faturamento.`
+        });
+        triggerRefresh();
+      } else {
+        showToast({ type: "error", title: "Não foi possível marcar", description: res.errorMessage || "Tente novamente." });
+      }
+    } finally {
+      setMarcandoFaturadoFora(false);
     }
   }
 
@@ -2005,8 +2043,12 @@ Ela volta a aparecer nas listas operacionais.`
               onClick: () => void handleEncerrarTeste(item, true)
             }
       ] : []),
-      // Desfazer da acao "Nota emitida no sistema antigo" da Fila de Faturamento.
-      // So aparece no pedido marcado: nao ha "marcar" aqui, a marcacao e da fila.
+      // Nota antecipada (29/10/2026): marcar aqui so em NOVO ou AGUARDANDO. Nos
+      // outros status a marcacao continua sendo da Fila de Faturamento.
+      ...(!item.faturadoForaEm && canDesmarcarFaturadoFora && podeMarcarNotaAntecipada(item.statusInterno)
+        ? [{ label: "Nota emitida no sistema antigo", onClick: () => setPedidoParaMarcarFora(item.id_int) }]
+        : []),
+      // Desfazer da acao "Nota emitida no sistema antigo". So aparece no pedido marcado.
       ...(item.faturadoForaEm && canDesmarcarFaturadoFora
         ? [{
             label: desmarcandoFaturadoForaId === item.id_int
@@ -2893,6 +2935,15 @@ Ela volta a aparecer nas listas operacionais.`
       )}
 
       {modalDuplicar}
+
+      {pedidoParaMarcarFora !== null && (
+        <MarcarNotaSistemaAntigoModal
+          idInt={pedidoParaMarcarFora}
+          salvando={marcandoFaturadoFora}
+          onConfirmar={(numero, motivo) => void confirmarMarcarFaturadoFora(numero, motivo)}
+          onFechar={() => setPedidoParaMarcarFora(null)}
+        />
+      )}
 
       {pedidoParaEnviarAFila && (
         <EnviarFilaFaturamentoModal

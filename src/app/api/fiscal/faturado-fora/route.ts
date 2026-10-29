@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { createClient as createServerSupabaseClient } from "@/lib/supabase/server";
 import { verificarPermissaoServerSide } from "@/lib/auth/verificar-permissao";
+import { normalizarNumeroNotaAntiga } from "@/features/fiscal/lib/faturado-fora";
 
 /**
  * Marcar (e desmarcar) um pedido como FATURADO NO SISTEMA ANTIGO.
@@ -16,7 +17,11 @@ import { verificarPermissaoServerSide } from "@/lib/auth/verificar-permissao";
  *   Faturamento — e só dela. Continua em Orçamentos, com badge e com o desfazer
  *   no menu da linha.
  *
- *   POST { id_int, marcar: true }  → marca (ação da Fila de Faturamento).
+ *   POST { id_int, marcar: true, numero_nota } → marca (Fila de Faturamento, ou
+ *                                    menu de Orçamentos em NOVO/AGUARDANDO, a
+ *                                    nota antecipada). O número é obrigatório e
+ *                                    vai para a linha do tempo. A rota não olha
+ *                                    status: vale em qualquer um.
  *   POST { id_int, marcar: false } → desmarca (menu da linha em Orçamentos):
  *                                    volta as duas colunas para NULL.
  *
@@ -49,7 +54,7 @@ import { verificarPermissaoServerSide } from "@/lib/auth/verificar-permissao";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-type Corpo = { id_int?: number; marcar?: boolean; motivo?: string | null };
+type Corpo = { id_int?: number; marcar?: boolean; motivo?: string | null; numero_nota?: string | number | null };
 
 export async function POST(request: Request) {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
@@ -74,6 +79,15 @@ export async function POST(request: Request) {
   }
   if (!Number.isInteger(idInt) || idInt <= 0) {
     return NextResponse.json({ success: false, message: "id_int inválido." }, { status: 400 });
+  }
+  // Marcar exige o número da nota emitida no sistema antigo (29/10/2026). Não há
+  // coluna para ele: vai para a linha do tempo do pedido, junto com a autoria.
+  const numeroNota = normalizarNumeroNotaAntiga(body?.numero_nota);
+  if (marcar && !numeroNota) {
+    return NextResponse.json(
+      { success: false, message: "Informe o número da nota emitida no sistema antigo (só dígitos)." },
+      { status: 400 }
+    );
   }
 
   const pode = await verificarPermissaoServerSide(supabase, authData.user.id, "propostas.release_nf");
@@ -134,6 +148,7 @@ export async function POST(request: Request) {
   }
 
   // Timeline: best-effort e fora da transação — falhar aqui nunca desfaz a marcação.
+  let timelineFalhou = false;
   try {
     const { data: usuarioRow } = await supabase
       .from("usuarios")
@@ -143,7 +158,7 @@ export async function POST(request: Request) {
     const autorNome = usuarioRow?.nome_usuario || autorEmail || "Usuário";
 
     const mensagem = marcar
-      ? `🗂️ Pedido marcado como FATURADO NO SISTEMA ANTIGO por ${autorNome}${motivo ? ` — ${motivo}` : ""}. ` +
+      ? `🗂️ Pedido marcado como FATURADO NO SISTEMA ANTIGO por ${autorNome} — nota nº ${numeroNota}${motivo ? ` — ${motivo}` : ""}. ` +
         `A nota fiscal foi emitida fora do Vibe; o pedido sai da Fila de Faturamento. ` +
         `Nada mais muda: liberação para nota, status e produção seguem como estavam.`
       : `↩️ Marca de FATURADO NO SISTEMA ANTIGO removida por ${autorNome}${motivo ? ` — ${motivo}` : ""}. ` +
@@ -162,13 +177,22 @@ export async function POST(request: Request) {
         mensagem
       }
     ]);
-    if (chatErro) console.warn("[faturado-fora] Erro ao gravar na timeline:", chatErro);
+    if (chatErro) {
+      console.warn("[faturado-fora] Erro ao gravar na timeline:", chatErro);
+      timelineFalhou = true;
+    }
   } catch (e) {
     console.warn("[faturado-fora] Exceção ao gravar na timeline:", e);
+    timelineFalhou = true;
   }
 
   return NextResponse.json({
     success: true,
+    // O número da nota só vive na linha do tempo: se ela falhou, quem marcou precisa saber.
+    aviso:
+      timelineFalhou && marcar
+        ? `A marca foi gravada, mas a linha do tempo falhou e o número da nota (${numeroNota}) não ficou registrado. Anote no chat do pedido.`
+        : undefined,
     idempotente: false,
     marcado: gravado.faturado_fora_em !== null,
     faturadoForaEm: gravado.faturado_fora_em,
