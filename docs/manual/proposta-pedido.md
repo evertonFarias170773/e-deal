@@ -126,10 +126,12 @@ O **Nº Final** é calculado pela tela e gravado junto com o modelo. Se o cadast
 
 1. Ao abrir a aba, o modelo nessa situação mostra um aviso vermelho: **Nº final gravado (X) difere do calculado (Y). Salve para corrigir antes de imprimir.**
 2. Confira se o numerador do modelo é o certo.
-3. Clique em **Gravar lote** (ou em **Salvar alterações**, em pedido com cobrança). O número calculado é gravado e o aviso some.
+3. Clique em **Salvar alterações**. O número calculado é gravado e o aviso some, sem precisar mexer na Qtd nem em outro campo do modelo. Vale também para pedido com cobrança e pedido pago.
 4. Se a OS já foi impressa com o número antigo, imprima de novo.
 
 Nada é gravado só de abrir a aba. O aviso não aparece em modelo sem numerador, sem numeração ou criado por Mapa de Teatro.
+
+O **Salvar alterações** corrige todo modelo nessa situação, inclusive em pedido entregue ou com a OS já impressa: confira antes de salvar um pedido antigo. Modelo cujo numerador não está mais na lista não é corrigido; o Nº Final dele fica como está.
 
 ### Criar os modelos a partir de um Mapa de Teatro
 
@@ -239,7 +241,7 @@ O PDF é sempre o do mapa como está hoje no sistema de mapas. Quem publica o PD
 | "... A quantidade do item voltou para N e o valor da proposta voltou a R$ ..." | Um modelo não pôde ser alterado ou incluído depois de a quantidade ser gravada. O sistema devolveu a quantidade. A mensagem diz o que já tinha sido gravado. | Confira a lista e clique em **Gravar lote** de novo. |
 | "... a quantidade do item ficou em N e não pôde ser devolvida ..." ou "... o valor da proposta ficou em R$ ... : confira." | A gravação falhou no meio e o sistema não conseguiu desfazer tudo. | Confira a quantidade do produto e o valor do pedido, e avise o administrador. |
 | "N lote(s) foram removidos, mas a quantidade do item não foi gravada" | Os modelos saíram, mas a quantidade do produto ficou a antiga. | Clique em **Gravar lote** de novo. |
-| "Nº final gravado (X) difere do calculado (Y). Salve para corrigir antes de imprimir." | O numerador do modelo mudou depois de o modelo ser gravado. | Confira o numerador e grave o lote. Reimprima a OS se ela já saiu. |
+| "Nº final gravado (X) difere do calculado (Y). Salve para corrigir antes de imprimir." | O numerador do modelo mudou depois de o modelo ser gravado, ou o Nº Final foi gravado errado. | Confira o numerador e clique em **Salvar alterações**: o Nº Final é corrigido sem mexer no modelo. Reimprima a OS se ela já saiu. |
 | "Nada foi gravado: o Nº final de N modelo(s) não confere com o cadastro do numerador. ..." | O Nº Final enviado não é o da conta do cadastro, ou o numerador do modelo não existe mais no cadastro. A mensagem traz o modelo, o numerador e o número certo. | Reabra o modelo, escolha o numerador de novo e grave. |
 | "...: a lista de numeradores ainda está carregando. Aguarde um instante e grave de novo." | A tela ainda não recebeu a lista de numeradores. | Espere alguns segundos e grave de novo. |
 | "...: o numerador "X" não está na lista de numeradores. Escolha o numerador de novo para calcular o Nº final." | O numerador do modelo não está na lista deste pedido: foi apagado, renomeado ou é exclusivo de outro cliente. | Escolha um numerador da lista e grave. |
@@ -287,4 +289,4 @@ O PDF é sempre o do mapa como está hoje no sistema de mapas. Quem publica o PD
 - `src/features/orcamentos/OrcamentoFormPage.tsx`
 - `src/features/usuarios-perfis/catalogo-permissoes.ts`
 
-> **Mudança desta revisão:** 29/10/2026 — ao gravar, o Nº Final é conferido pela conta do cadastro do numerador e a gravação é recusada se divergir (só modelo novo ou com Qtd, Nº Inicial ou numerador alterados). Linha com numerador fora da lista fica sem Nº Final e não é gravada.
+> **Mudança desta revisão:** 29/10/2026 — ao gravar, o Nº Final é conferido pela conta do cadastro do numerador e a gravação é recusada se divergir (só modelo novo ou com Qtd, Nº Inicial ou numerador alterados). Linha com numerador fora da lista fica sem Nº Final e não é gravada. O **Salvar alterações** passa a corrigir o Nº Final do modelo que difere do calculado, sem precisar mexer no modelo.

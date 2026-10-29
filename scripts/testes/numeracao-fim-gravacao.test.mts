@@ -11,7 +11,9 @@
  */
 import { readFileSync } from "node:fs";
 import {
+  aplicarCorrecoesDoFim,
   calcularNumeracaoFim,
+  correcoesDoFimIntocado,
   conferirFimDosLotes,
   fimDaGradeParaLote,
   loteFoiTocado,
@@ -109,15 +111,35 @@ checar("na mesma lista, só a nova é recusada", conferirFimDosLotes([
   lote({ nome_modelo: "NOVO", numeracao_fim: 100, quantidade: 100 })
 ], [GRAVADO_24420], CADASTRO).map((r) => r.nome), ["NOVO"]);
 
+// ── Salvar corrige a linha intocada (29/10/2026, 2ª parte) ────────────────────
+console.log("\nSalvar corrige o Nº final da linha intocada");
+const intocada4000 = lote({ id: 1005237, numeracao_fim: 4000 });
+checar("24420: gravada 4000, Ticket PRATA, QTD 4000, inicial 1 -> 20000 sem mexer na linha",
+  correcoesDoFimIntocado([intocada4000], [GRAVADO_24420], CADASTRO), [{ id: 1005237, de: 4000, para: 20000 }]);
+checar("a correção muda só o Nº final da linha",
+  aplicarCorrecoesDoFim([intocada4000], [{ id: 1005237, de: 4000, para: 20000 }]).map((m) => [m.id, m.quantidade, m.numeracao_inicio, m.numeracao_fim]),
+  [[1005237, 4000, 1, 20000]]);
+const certo = { id: 2001, quantidade: 200, numeracao_inicio: 1, numeracao_fim: 1000, gabarito_operacional: "Ticket PRATA" };
+checar("linha correta não é corrigida", correcoesDoFimIntocado([lote({ ...certo })], [certo], CADASTRO), []);
+checar("linha correta sai igual (mesmo objeto)", aplicarCorrecoesDoFim([certo], [])[0] === certo, true);
+const fora = { id: 2002, quantidade: 68, numeracao_inicio: 1, numeracao_fim: 68, gabarito_operacional: "Credencial 10x15cm" };
+checar("numerador fora da lista/cadastro não é tocado", correcoesDoFimIntocado([lote({ ...fora })], [fora], CADASTRO), []);
+checar("linha tocada não é corrigida (é conferida)", correcoesDoFimIntocado([lote({ id: 1005237, quantidade: 3000, numeracao_fim: 4000 })], [GRAVADO_24420], CADASTRO), []);
+checar("linha nova não é corrigida (é conferida)", correcoesDoFimIntocado([lote({ numeracao_fim: 4000 })], [], CADASTRO), []);
+checar("Mapa de Teatro e SEM_NUMERACAO não são tocados", correcoesDoFimIntocado([
+  lote({ id: 1005237, numeracao_fim: 4000, mapa_teatro_setor_id: "s" }),
+  lote({ id: 1005237, numeracao_fim: 4000, tipo_numeracao: "SEM_NUMERACAO" })
+], [GRAVADO_24420], CADASTRO), []);
+
 // ── ligação no servidor ─────────────────────────────────────────────────────
 console.log("\nservidor: a conferência roda antes de qualquer escrita");
 const rota = readFileSync("src/app/api/pedidos/lotes-em-massa/route.ts", "utf8");
 checar("lotes-em-massa: confere antes de gravarLotesDoItem", rota.indexOf("conferirFimAntesDeGravar(supabase, lotes)") > 0 && rota.indexOf("conferirFimAntesDeGravar(supabase, lotes)") < rota.indexOf("await gravarLotesDoItem("), true);
 const save = readFileSync("src/features/orcamentos/services/orcamentos.service.ts", "utf8");
-const iParcial = save.indexOf("recusaDoFimNoSave(client, formState, checklist, (item) =>");
+const iParcial = save.indexOf("fimDosLotesNoSave(client, formState, checklist, (item) =>");
 const iParcialEscrita = save.indexOf("const modelosSincronizados: ModeloSincronizado[] = [];\n  try {".replace(/\n/g, save.includes("\r\n") ? "\r\n" : "\n"));
 checar("Salvar parcial (editar-paga com cobrança): confere antes de gravar", iParcial > 0 && iParcial < iParcialEscrita, true);
-const iCompleto = save.indexOf("const recusaDoFim = await recusaDoFimNoSave(client, formState, checklistDosLotes);");
+const iCompleto = save.indexOf("const fimDosLotes = await fimDosLotesNoSave(client, formState, checklistDosLotes);");
 const iPrimeiraEscrita = save.indexOf("let clienteNome = \"\";");
 checar("Salvar completo: confere antes do bloco que escreve", iCompleto > 0 && iCompleto < iPrimeiraEscrita, true);
 const editarPaga = readFileSync("src/app/api/orcamentos/editar-paga/route.ts", "utf8");

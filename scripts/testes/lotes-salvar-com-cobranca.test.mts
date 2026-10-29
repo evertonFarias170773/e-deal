@@ -124,9 +124,10 @@ checar(
     "pagamentos_v2:select",
     "produtos_proposta:select",
     "produto_boletim_campos:select",
-    // Conferência do Nº final: lotes gravados. O produto 102 não imprime a
-    // faixa (fica fora) e o 600 está intocado, então o cadastro nem é lido.
+    // Conferência do Nº final: lotes gravados e cadastro de numerações. O
+    // produto 102 não imprime a faixa (fica fora); o 600 está intocado.
     "pedidos_modelos:select",
+    "producao_numeracoes:select",
     "pedidos_modelos:delete", // item 10
     "pedidos_modelos:update",
     "pedidos_modelos:insert",
@@ -202,6 +203,37 @@ const formTicketCerto = {
 } as unknown as PropostaFormState;
 const comTicketCerto = await saveProposta(formTicketCerto, cliente, "usuario-de-teste", { gravarLotesComCobranca: true });
 checar("Nº final certo (20000): grava", comTicketCerto.success, true);
+
+// ── 3c. Salvar corrige o Nº final da linha intocada (24420) ──────────────────
+// Três lotes já gravados no item 11, nenhum alterado na tela:
+//   700 = o 24420 (Ticket PRATA, QTD 4000, inicial 1, gravado 4000);
+//   701 = Ticket PRATA certo (QTD 200, 1-1000);
+//   702 = numerador que não está no cadastro (fica como está).
+combinar();
+const gravados3c = [
+  { id: 600, quantidade: 120, numeracao_inicio: 1, gabarito_operacional: "001 - Padrão Ideal" },
+  { id: 700, quantidade: 4000, numeracao_inicio: 1, gabarito_operacional: "Ticket PRATA" },
+  { id: 701, quantidade: 200, numeracao_inicio: 1, gabarito_operacional: "Ticket PRATA" },
+  { id: 702, quantidade: 68, numeracao_inicio: 1, gabarito_operacional: "Credencial 10x15cm" }
+];
+falso.responder("pedidos_modelos:select", { data: gravados3c, error: null });
+const form3c = {
+  ...form,
+  pedidosModelos: [
+    ...(form.pedidosModelos ?? []),
+    lote({ id: 700, isPersisted: true, id_produto_proposta_origem: 11, nome_modelo: "VALE 01 REFEIÇÃO", quantidade: 4000, numeracao_fim: 4000, gabarito_operacional: "Ticket PRATA" }),
+    lote({ id: 701, isPersisted: true, id_produto_proposta_origem: 11, nome_modelo: "CERTO", quantidade: 200, numeracao_fim: 1000, gabarito_operacional: "Ticket PRATA" }),
+    lote({ id: 702, isPersisted: true, id_produto_proposta_origem: 11, nome_modelo: "FORA", quantidade: 68, numeracao_fim: 68, gabarito_operacional: "Credencial 10x15cm" })
+  ]
+} as unknown as PropostaFormState;
+const salvo3c = await saveProposta(form3c, cliente, "usuario-de-teste", { gravarLotesComCobranca: true });
+checar("3c: salva", salvo3c.success, true);
+const updates3c = falso.chamadas.filter((c) => c.tabela === "pedidos_modelos" && c.op === "update");
+const fimGravado = (id: number) => (updates3c.find((c) => filtro(c, "eq", "id") === id)?.payload as Record<string, unknown> | undefined)?.numeracao_fim;
+checar("3c: o 24420 (700) vai com 20000, sem ninguém mexer na linha", fimGravado(700), 20000);
+checar("3c: a linha correta (701) vai com o mesmo 1000", fimGravado(701), 1000);
+checar("3c: numerador fora do cadastro (702) fica com o que tinha", fimGravado(702), 68);
+checar("3c: o estado da tela não é alterado (a correção é só no que vai ao banco)", form3c.pedidosModelos?.find((m) => m.id === 700)?.numeracao_fim, 4000);
 
 // ── 4. Leitura do checklist falhou: nada gravado ─────────────────────────────
 combinar();

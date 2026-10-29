@@ -94,6 +94,7 @@ import {
   type ChecklistVisivel
 } from "@/features/orcamentos/lib/checklist-lote";
 import { conferirFimAntesDeGravar } from "@/features/orcamentos/services/conferir-fim-dos-lotes";
+import { aplicarCorrecoesDoFim, type CorrecaoDoFim } from "@/features/orcamentos/numeracao-modelo-utils";
 import {
   divergenciasDeLotes,
   mensagemDasDivergencias,
@@ -2682,21 +2683,24 @@ export function montarInsertDeLoteDaProposta(
 
 /**
  * Nº final dos lotes que este save vai gravar, conferido pelo cadastro do
- * numerador ANTES de qualquer escrita (29/10/2026). Devolve a mensagem de
- * recusa, ou null. Só entram os lotes ligados a um item da tela, fora os
- * excluídos, e só os de produto que imprime a faixa — nos outros o Nº final
- * nem é gravado. Quais linhas são conferidas (novas ou tocadas) decide
- * `conferirFimAntesDeGravar`.
+ * numerador ANTES de qualquer escrita (29/10/2026). Devolve a recusa, ou as
+ * correções. Só entram os lotes ligados a um item da tela, fora os excluídos,
+ * e só os de produto que imprime a faixa — nos outros o Nº final nem é
+ * gravado. Linha nova ou tocada é conferida; linha já gravada e intocada cujo
+ * Nº final difere da conta do numerador de hoje volta em `correcoes` e sai
+ * corrigida neste Salvar (o aviso "Salve para corrigir" dependia de a pessoa
+ * mexer na linha — pedido 24420). Quem chama o save com lotes é a tela da
+ * proposta e o editar-paga; o Maestro manda `pedidosModelos` vazio.
  */
-async function recusaDoFimNoSave(
+async function fimDosLotesNoSave(
   client: import("@supabase/supabase-js").SupabaseClient,
   formState: PropostaFormState,
   checklistPorProduto: Map<number, string[]>,
   /** Salvamento parcial: só os itens que existem no banco têm lote gravado. */
   itemSeraGravado: (item: PropostaFormState["itens"][number]) => boolean = () => true
-): Promise<string | null> {
+): Promise<{ recusa: string } | { correcoes: CorrecaoDoFim[] }> {
   const modelos = formState.pedidosModelos ?? [];
-  if (formState.isAvulso || modelos.length === 0) return null;
+  if (formState.isAvulso || modelos.length === 0) return { correcoes: [] };
   const excluidos = new Set((formState.deletedModeloIds || []).map(Number));
   const itens = formState.itens || [];
   const aConferir = modelos.filter((m) => {
@@ -2710,7 +2714,7 @@ async function recusaDoFimNoSave(
     return mostraCampo(checklistVisivel(checklistPorProduto.get(Number(item.id_produto))), "numeracao_faixa");
   });
   const conferencia = await conferirFimAntesDeGravar(client, aConferir);
-  return conferencia.ok ? null : conferencia.mensagem;
+  return conferencia.ok ? { correcoes: conferencia.correcoes } : { recusa: conferencia.mensagem };
 }
 
 /** Lote novo gravado: o `tempId` da tela casado com o id do banco. */
@@ -2881,7 +2885,7 @@ async function gravarLotesNoSalvamentoParcial(
   formState: PropostaFormState,
   idInt: number
 ): Promise<{ success: true; modelosSincronizados: ModeloSincronizado[] } | { success: false; errorMessage: string }> {
-  const modelos = formState.pedidosModelos ?? [];
+  let modelos = formState.pedidosModelos ?? [];
   const excluirIds = (formState.deletedModeloIds || []).map(Number).filter((id) => Number.isFinite(id) && id > 0);
   if (formState.isAvulso || (modelos.length === 0 && excluirIds.length === 0)) {
     return { success: true, modelosSincronizados: [] };
@@ -2923,10 +2927,11 @@ async function gravarLotesNoSalvamentoParcial(
   }
 
   // Nº final conferido pelo cadastro do numerador antes de qualquer escrita.
-  const recusaDoFim = await recusaDoFimNoSave(client, formState, checklist, (item) =>
+  const fimDosLotes = await fimDosLotesNoSave(client, formState, checklist, (item) =>
     produtoDoItem.has(Number(item.id_produto_proposta_origem))
   );
-  if (recusaDoFim) return { success: false, errorMessage: recusaDoFim };
+  if ("recusa" in fimDosLotes) return { success: false, errorMessage: fimDosLotes.recusa };
+  modelos = aplicarCorrecoesDoFim(modelos, fimDosLotes.correcoes);
 
   const modelosSincronizados: ModeloSincronizado[] = [];
   try {
@@ -3112,8 +3117,11 @@ export async function saveProposta(
 
     // Nº final conferido pelo cadastro do numerador, ainda antes de qualquer
     // escrita (29/10/2026): recusa aqui não deixa item nem lote pela metade.
-    const recusaDoFim = await recusaDoFimNoSave(client, formState, checklistDosLotes);
-    if (recusaDoFim) return { success: false, errorMessage: recusaDoFim };
+    const fimDosLotes = await fimDosLotesNoSave(client, formState, checklistDosLotes);
+    if ("recusa" in fimDosLotes) return { success: false, errorMessage: fimDosLotes.recusa };
+    if (fimDosLotes.correcoes.length > 0) {
+      formState = { ...formState, pedidosModelos: aplicarCorrecoesDoFim(formState.pedidosModelos ?? [], fimDosLotes.correcoes) };
+    }
   }
 
 

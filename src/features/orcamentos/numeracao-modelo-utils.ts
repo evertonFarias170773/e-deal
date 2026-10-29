@@ -466,3 +466,52 @@ export function fimDaGradeParaLote(
   const { multiplicador } = resolverMultiplicadorNumeracao(findNumeracaoByName(numeracoes, lote.gabarito_operacional));
   return calcularNumeracaoFim(inicio, quantidade, multiplicador);
 }
+
+/* ------------------------------------------------------------------------- */
+/* SALVAR CORRIGE O Nº FINAL DA LINHA INTOCADA (29/10/2026)                    */
+/* ------------------------------------------------------------------------- */
+
+export type CorrecaoDoFim = { id: number; de: number; para: number };
+
+/**
+ * O aviso manda "Salve para corrigir", mas o Salvar levava o Nº final que a
+ * linha já tinha (pedido 24420: 4000 em vez de 20000) — a grade só repassa ao
+ * formulário a linha em que alguém mexe. Aqui, a linha JÁ GRAVADA em que
+ * ninguém mexeu (QTD, Nº inicial e numerador como no banco) e cujo Nº final
+ * difere da conta do numerador de hoje sai com o Nº final da conta.
+ *
+ * É a MESMA comparação do aviso (`divergenciaDoFim`): numerador fora do
+ * cadastro, SEM_NUMERACAO, Mapa de Teatro, sem Nº inicial ou sem Nº final não
+ * são tocados. Linha tocada não entra — essa é conferida por
+ * `conferirFimDosLotes`. Linha que já confere não aparece.
+ */
+export function correcoesDoFimIntocado(
+  lotes: readonly LoteParaConferirFim[],
+  gravados: readonly LoteGravadoParaConferir[],
+  numeracoes: NumeracaoOpcao[]
+): CorrecaoDoFim[] {
+  const porId = new Map(gravados.map((g) => [Number(g.id), g]));
+  const correcoes: CorrecaoDoFim[] = [];
+  for (const lote of lotes) {
+    const id = Number(lote.id);
+    if (!Number.isInteger(id) || id <= 0) continue;
+    const gravado = porId.get(id);
+    if (!gravado || loteFoiTocado(lote, gravado)) continue;
+    const d = divergenciaDoFim({ ...lote, id }, numeracoes);
+    if (d) correcoes.push({ id, de: d.gravado, para: d.calculado });
+  }
+  return correcoes;
+}
+
+/** Aplica as correções no que vai ser gravado: só o Nº final das linhas citadas muda. */
+export function aplicarCorrecoesDoFim<T extends { id?: number | null; numeracao_fim?: number | string | null }>(
+  modelos: readonly T[],
+  correcoes: readonly CorrecaoDoFim[]
+): T[] {
+  if (correcoes.length === 0) return [...modelos];
+  const porId = new Map(correcoes.map((c) => [c.id, c.para]));
+  return modelos.map((m) => {
+    const para = m.id ? porId.get(Number(m.id)) : undefined;
+    return para === undefined ? m : { ...m, numeracao_fim: para };
+  });
+}
