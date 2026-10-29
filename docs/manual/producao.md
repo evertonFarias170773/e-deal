@@ -1,6 +1,6 @@
 # Produção (ordens de serviço)
 
-> **Última revisão:** 27/10/2026
+> **Última revisão:** 29/10/2026
 > **Caminho no menu:** Produção (item direto do menu lateral, sem submenu). A OS de cada pedido abre a partir da lista. O Kanban e a Fila de impressão não estão no menu: chega-se a eles pelo endereço ou pelas abas **Fila Geral / Kanban Board / Fila de Impressão / Expedição** que aparecem no topo dessas duas telas.
 > **Endereço:** `/pedidos` (painel geral). OS: `/pedidos/boletim`. Kanban: `/pedidos/kanban` (e `/os-producao`). Fila de impressão: `/pedidos/impressao`.
 
@@ -25,7 +25,7 @@ Dela você abre a OS (o boletim) de cada pedido para conferir prazo, instruçõe
 
 Nomes exatamente como aparecem na tela.
 
-### Painel geral (`/pedidos`)
+#### Painel geral (`/pedidos`)
 
 | Nome na tela | Onde fica | O que faz |
 |---|---|---|
@@ -56,7 +56,7 @@ Nomes exatamente como aparecem na tela.
 | **Cancelar** / **Confirmar devolução** | Janela "Devolver proposta para Revisão?" | Desiste ou confirma a devolução ao atendente. |
 | **Editar OS** (ou **Criar OS**) / **Detalhes** / **Voltar p/ Revisão** | Cartão do pedido, no celular | Mesmas ações do menu da linha: abrir a OS, abrir o pedido e devolver ao atendente. |
 
-### Tela da OS (`/pedidos/boletim`)
+#### Tela da OS (`/pedidos/boletim`)
 
 | Nome na tela | Onde fica | O que faz |
 |---|---|---|
@@ -77,7 +77,7 @@ Nomes exatamente como aparecem na tela.
 | **Abrir o documento em nova aba** | Mesma janela, quando o navegador bloqueou a aba | Abre o PDF que foi bloqueado. |
 | **Agora não** | Mesma janela | Fecha sem imprimir e volta para o painel geral. A OS já está salva. |
 
-### Página do QR da OS (`/os`)
+#### Página do QR da OS (`/os`)
 
 | Nome na tela | Onde fica | O que faz |
 |---|---|---|
@@ -87,7 +87,7 @@ Nomes exatamente como aparecem na tela.
 | **Confirmar STATUS** | Painel de confirmação | Grava a mudança de status. |
 | **Confirmar entrega** e depois **Confirmar ENTREGUE agora** | Painel de confirmação, só para ENTREGUE | Os dois toques que marcam a entrega. |
 
-### Kanban (`/pedidos/kanban` e `/os-producao`)
+#### Kanban (`/pedidos/kanban` e `/os-producao`)
 
 | Nome na tela | Onde fica | O que faz |
 |---|---|---|
@@ -102,7 +102,7 @@ Nomes exatamente como aparecem na tela.
 | Ícone de balão (title "Chat") | Cartão | Abre o chat interno do pedido. |
 | Ícone de olho (title "Abrir Boletim de OS") e **Fábrica** (title "Ir para Boletim de Produção") | Cartão | Os dois abrem a OS do pedido. |
 
-### Fila de impressão (`/pedidos/impressao`)
+#### Fila de impressão (`/pedidos/impressao`)
 
 | Nome na tela | Onde fica | O que faz |
 |---|---|---|
@@ -210,6 +210,16 @@ As vias antigas continuam valendo como eram. O QR delas é um link: lido no term
 3. Clique em **Confirmar devolução**. O nome de quem devolveu e a data ficam registrados.
 4. Pedido com **nota fiscal emitida** (NF-e ou NFS-e autorizada, de produção, inclusive nota de remessa) não volta ao atendente: o item aparece desligado, com "(nota emitida)", e ao passar o mouse mostra qual nota trava. Cancele a nota em Fiscal › Notas Fiscais e a ação volta a funcionar. Nota cancelada, com erro, pendente ou de homologação não trava. No cartão do celular o botão aparece como **Voltar p/ Revisão (nota emitida)**.
 5. Devolver de novo um pedido que já está com o atendente não grava nada.
+
+### Retirar da Produção
+
+É a mesma devolução do passo acima, feita de dentro do pedido em vez do painel da Produção.
+
+1. Abra o pedido e, no menu **Acoes**, clique em **Retirar da Produção**. O item aparece para administrador ou para quem tem a permissão de liberar para produção, e só em pedido em REVISAO PRODUCAO.
+2. Confirme na janela.
+3. O pedido volta ao atendente (status REVISAO ATENDENTE) e sai da fila da produção.
+
+Não vale de EM PRODUCAO em diante nem em pedido com OS. A trava da **nota fiscal emitida** é a mesma descrita em "Devolver o pedido para o atendente", acima.
 
 ### Abrir a OS de um pedido que ainda não tem lotes
 

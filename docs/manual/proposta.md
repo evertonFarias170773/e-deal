@@ -83,7 +83,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 
 ## Passo a passo
 
-### Entender o cabeçalho
+### Entender o cabeçalho e as abas
 
 1. O título mostra **Novo pedido** (proposta ainda sem número) ou **N° <número>**, seguido do nome do cliente e do código dele.
 2. Ao lado ficam os selos: o **status** da proposta e, quando o pedido já tem arte registrada, o **status da arte** (o mesmo da coluna "Status Arte" da lista de Pedidos).
@@ -93,7 +93,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 6. O botão **Acoes**, no canto direito, abre o menu de ações: **Ver proposta**, **Ver chat interno**, **Editar proposta**, **Duplicar proposta**, **Copiar proposta informal**, **Link pgto. externo**, **Gerar PDF da proposta**, **Gerar OC** e, em pedido em REVISAO PRODUCAO, **Retirar da Produção**.
 7. Abaixo do cabeçalho podem aparecer avisos: sobre cobrança gerada, **Saldo na Conta Corrente** (cliente com crédito), **Cliente com débito em aberto** e **Revisão financeira pendente**. Também fica ali o bloco de tarefas da equipe ligadas ao pedido.
 
-### Navegar pelas abas
+#### Navegar pelas abas
 
 A barra de abas acompanha a rolagem da tela. São oito abas, nesta ordem:
 
@@ -307,13 +307,13 @@ O aviso some quando você clica em **Entendi** ou quando a cópia ganha cobranç
 - Pedido que já é cópia (duplicação ou retrabalho) só pode gerar retrabalho: a janela mostra só **Retrabalho**. O novo pedido aponta para o pedido de onde você clicou, não para o primeiro da cadeia.
 - O passo a passo do retrabalho, com a cobrança E-Retrabalho e os erros, está em [Retrabalho: refazer um pedido](retrabalho.md).
 
-### Outras ações do menu
+### Gerar o PDF, a OC e a proposta informal
 
 1. **Copiar proposta informal**: copia o mesmo texto do bloco **9. Envio do orçamento**.
 2. **Gerar PDF da proposta**: abre o PDF do orçamento em nova aba. Precisa de cliente cadastrado e de empresa válida.
 3. **Gerar OC**: abre em nova aba a **Autorização de faturamento** do pedido. Tem o mesmo conteúdo do orçamento: empresa emissora com CNPJ e endereço, **Orçado por**, data, validade, cliente, CPF/CNPJ, produtos, subtotal, frete, total, observações e a frase da entrega. Abaixo de CPF/CNPJ, só a OC traz **ENTREGA:** (o endereço de entrega da proposta, ou "Retira no balcão") e **ENVIO:** (a modalidade e o mesmo envio da coluna Envio da lista de Pedidos, por exemplo "CIF — SEDEX" ou "FOB — BRASPRESS"; na retirada, "Retira no balcão", como na linha ENTREGA). Muda também o título, a ordem do bloco de cima e o bloco de assinatura, para o cliente devolver assinado e carimbado. Na OC, **Dados para faturamento:** introduz os dados do cliente (CLIENTE, CPF/CNPJ, ENTREGA e ENVIO); depois vêm **Orçado por** e, por último, a empresa emissora com o endereço. Precisa de cliente cadastrado e de empresa válida, como o PDF.
-4. **Enviar para Fila de Faturamento**: para pedido que só precisa da nota e depois é marcado como entregue, sem produção. Vale também em pedido **Liberado** (APROVADO ou LIBERADO no banco, o caso da cobrança confirmada que nunca passa por REVISAO ATENDENTE), desde que não esteja na fila nem na produção, não tenha OS, não tenha NF-e ou NFS-e autorizada e não esteja marcado como nota emitida no sistema antigo; o servidor confere e recusa dizendo o motivo. O status não muda. Aparece só para administrador, em pedido REVISAO ATENDENTE que ainda não está na fila nem na produção. Abre a janela **Enviar para Fila de Faturamento?** (o foco fica em **Cancelar**); ao confirmar, o pedido entra na Fila de Faturamento e **não passa pela Produção nem pela Expedição**: não aparece em nenhum dos dois painéis e o status continua REVISAO ATENDENTE. Nada muda em cobranças nem no boletim. Depois de enviado o item some, e **Marcar como entregue** passa a aparecer. Não existe "tirar da fila"; o nome de quem enviou e a data ficam registrados.
-4. **Retirar da Produção**: abre uma janela de confirmação; ao confirmar, devolve o pedido ao atendente (status REVISAO ATENDENTE) e o tira da fila da produção. Não vale de EM PRODUCAO em diante nem com OS. Pedido com **nota fiscal emitida** (NF-e ou NFS-e autorizada, de produção, inclusive nota de remessa) não volta ao atendente: o item aparece desligado, com "(nota emitida)", e ao passar o mouse mostra qual nota trava. Cancele a nota em Fiscal › Notas Fiscais e a ação volta a funcionar. Nota cancelada, com erro, pendente ou de homologação não trava.
+
+Duas ações do mesmo menu têm o passo a passo em outra ficha: **Enviar para Fila de Faturamento**, em [Notas fiscais](notas-fiscais.md), e **Retirar da Produção**, em [Produção (ordens de serviço)](producao.md).
 
 ## Regras e bloqueios
 
@@ -397,9 +397,11 @@ O aviso some quando você clica em **Entendi** ou quando a cópia ganha cobranç
 - [Proposta: aba Artes](proposta-artes.md)
 - [Proposta: aba Pedido (Boletim Técnico & Lotes)](proposta-pedido.md)
 - [Proposta: abas Produção / Expedição, Boletim e Histórico](proposta-producao-boletim-historico.md)
+- [Notas fiscais](notas-fiscais.md)
 - [Conferência](conferencia.md)
 - [Carteira (contas a receber)](carteira.md)
 - [Registro de recebíveis](registro-de-recebiveis.md)
+- [Produção (ordens de serviço)](producao.md)
 - [Expedição](expedicao.md)
 - [Tarefas](tarefas.md)
 

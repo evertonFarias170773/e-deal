@@ -1,6 +1,6 @@
 # Tarefas
 
-> **Última revisão:** 02/10/2026
+> **Última revisão:** 29/10/2026
 > **Caminho no menu:** Tarefas (item direto do menu lateral, sem subitem; fica entre Financeiro e Maestro). O ícone de lista na barra do topo leva para a mesma tela.
 > **Endereço:** `/tarefas`
 
@@ -25,7 +25,7 @@ O que entra na lista são somente as tarefas criadas nesta central (pelo botão 
 
 Nomes exatamente como aparecem na tela.
 
-### Lista de tarefas
+#### Lista de tarefas
 
 | Nome na tela | Onde fica | O que faz |
 |---|---|---|
@@ -45,7 +45,7 @@ Nomes exatamente como aparecem na tela.
 | **Assumir** | Linha da tarefa Aberta, para quem a recebeu ou para administrador | Passa a tarefa para **Em andamento** com você como responsável. Durante a gravação mostra "Assumindo…". |
 | **Concluir** | Linha da tarefa Em andamento, para o responsável ou para administrador | Abre direto a janela **Concluir tarefa**. |
 
-### Janela Nova tarefa / Nova melhoria
+#### Janela Nova tarefa / Nova melhoria
 
 | Nome na tela | Onde fica | O que faz |
 |---|---|---|
@@ -65,7 +65,7 @@ Nomes exatamente como aparecem na tela.
 | **Salvar** | Rodapé da janela | Cria a tarefa e envia os anexos. Durante a gravação mostra "Salvando…". |
 | Ícone X (texto: "Fechar") | Canto superior direito da janela | Fecha a janela. A tecla Esc e o clique fora da janela fazem o mesmo. |
 
-### Janela de detalhe (título Tarefa ou Melhoria)
+#### Janela de detalhe (título Tarefa ou Melhoria)
 
 | Nome na tela | Onde fica | O que faz |
 |---|---|---|
@@ -90,7 +90,7 @@ Nomes exatamente como aparecem na tela.
 | **Fechar** | Rodapé, à esquerda | Fecha a janela, sem mudar a tarefa. |
 | Ícone X (texto: "Fechar") | Canto superior direito da janela | Fecha a janela. |
 
-### Em outras telas
+#### Em outras telas
 
 | Nome na tela | Onde fica | O que faz |
 |---|---|---|

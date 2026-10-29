@@ -1,6 +1,6 @@
 # Expedição
 
-> **Última revisão:** 28/10/2026
+> **Última revisão:** 29/10/2026
 > **Caminho no menu:** Expedição (item direto do menu lateral, sem subitens; é o quarto, depois de Conferência, Pedidos e Clientes). Também se chega pela aba **Expedição** no topo do Kanban e da Fila de impressão da Produção.
 > **Endereço:** `/expedicao`
 
@@ -23,7 +23,7 @@ A tela também avisa o que está atrasado ou prometido para hoje e segura o desp
 
 Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros de grafia.
 
-### Topo da tela e filtros
+#### Topo da tela e filtros
 
 | Nome na tela | Onde fica | O que faz |
 |---|---|---|
@@ -42,7 +42,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Todos os pedidos** / **Só complementos** / **Só com complemento** | Caixa de filtros | Filtra pelo vínculo de pedido complementar |
 | **Limpar filtros** | Caixa de filtros | Volta ao estado inicial: Expedição do dia, Kanban, sem busca e sem filtros |
 
-### Kanban e lista
+#### Kanban e lista
 
 | Nome na tela | Onde fica | O que faz |
 |---|---|---|
@@ -58,7 +58,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Confirmar retirada** | Idem. Pedido A Retirar | Abre a janela **Confirmar retirada** |
 | **Marcar entregue** | Idem. Pedido Em Trânsito | Pede confirmação e conclui o pedido como Entregue |
 
-### Menu de ações do pedido
+#### Menu de ações do pedido
 
 Os itens aparecem nesta ordem, cada um só quando se aplica.
 
@@ -78,7 +78,7 @@ Os itens aparecem nesta ordem, cada um só quando se aplica.
 | **Voltar status** | Menu de ações; pedido que já chegou à Expedição | Abre a janela **Voltar status** |
 | **Encerrar teste** | Menu de ações; só Super Administrador | Tira o pedido de teste das listas operacionais, depois de uma confirmação do navegador |
 
-### Janela Despachar pedido / Editar dados de expedição
+#### Janela Despachar pedido / Editar dados de expedição
 
 | Nome na tela | Onde fica | O que faz |
 |---|---|---|
@@ -105,7 +105,7 @@ Os itens aparecem nesta ordem, cada um só quando se aplica.
 | **Confirmar: aguardando retirada** | Rodapé, no despacho de retirada | Leva o pedido para A Retirar |
 | **Salvar dados** | Rodapé, no modo de edição | Grava as correções sem mudar o status |
 
-### Outras janelas
+#### Outras janelas
 
 | Nome na tela | Onde fica | O que faz |
 |---|---|---|
@@ -220,133 +220,13 @@ Em CIF com transportadora escolhida que **não** é os Correios, o envio continu
 4. Se o pedido já tem prepostagem, o sistema pergunta "Gerar outra prepostagem?" e mostra os códigos. Vale também para a prepostagem que você acabou de gerar: o segundo clique em **Gerar prepostagem SEDEX** ou em **PAC** na mesma janela abre a pergunta com o código atual, e nada é gerado sem a confirmação. Copie o código que vai sair do registro se ainda precisar cancelá-lo no portal, e confirme em **Gerar SEDEX** ou **Gerar PAC**. Se outra pessoa ou outra aba gerou a prepostagem no meio do caminho, o servidor recusa, a janela mostra o código que está gravado agora e pede a confirmação de novo. Enquanto a prepostagem é gerada, os botões SEDEX e PAC ficam apagados ("Gerando...").
 5. Cada prepostagem gerada fica registrada no histórico do pedido, com quem gerou, o código novo e, na substituição, o código que saiu.
 
-Também é possível digitar o código em **Código de rastreio (manual)**, que aparece em envio pelos Correios. Em envio por transportadora ou motoboy o mesmo espaço se chama **Conhecimento** (veja "Informar o rastreio e rastrear").
+Também é possível digitar o código em **Código de rastreio (manual)**, que aparece em envio pelos Correios. Em envio por transportadora ou motoboy o mesmo espaço se chama **Conhecimento** (veja "Informar o rastreio e rastrear", em [Expedição: despachar e entregar](expedicao-despacho.md)).
 
-### Cancelar a prepostagem
+### Despachar e entregar
 
-1. Cancele a prepostagem no portal dos Correios. O Vibe não cancela nos Correios.
-2. No menu do pedido, clique em **Marcar prepostagem como cancelada** (só administrador da Expedição).
-3. O rastreio e a etiqueta oficial somem da tela, e uma nova prepostagem pode ser gerada.
+O fim do fluxo tem ficha própria: despachar, recotar e corrigir frete, confirmar a coleta, o rastreio, a retirada no balcão e a entrega, voltar um passo, reenviar pedido devolvido, editar um pedido já despachado, despachar pedido com complemento, cancelar a prepostagem e imprimir a declaração de conteúdo estão em [Expedição: despachar e entregar](expedicao-despacho.md).
 
-### Imprimir a declaração de conteúdo
-
-1. No menu do pedido, clique em **Declaração de conteúdo**.
-2. O PDF abre com remetente, destinatário e os itens do pedido.
-
-A opção só aparece em pedido que já chegou à Expedição e não tem nota autorizada. É o papel que acompanha o volume no lugar da nota.
-
-### Despachar
-
-1. No pedido com status Na Expedição, clique em **Despachar** e faça a conferência.
-2. Se o pedido não tem nota autorizada, marque **Despachar mesmo assim (há justificativa: remessa sem NF, retirada, etc.)**.
-3. Se aparecer um quadro sobre o frete, resolva-o antes (veja "Recotar o frete").
-4. Se o telefone do destinatário estiver errado, escolha em **Fone** o telefone certo entre os do cadastro (o seletor só aparece quando há mais de um) ou corrija o número no campo (só números, com DDD, mínimo 10 dígitos; telefone inválido bloqueia o botão). O número novo é gravado no cadastro do destinatário ao confirmar, antes do despacho. Se a gravação falhar, o pedido não é despachado e a tela mostra o erro. O número vai sempre para o WhatsApp 1; o Telefone fixo e o WhatsApp 2 do cadastro não são alterados. Sem alteração (inclusive só abrir e confirmar), nada é gravado no cadastro. Quem não pode editar cadastros vê o telefone, mas não edita nem troca o seletor, e o despacho segue com o número cadastrado. Uma prepostagem dos Correios já gerada mantém o telefone antigo.
-5. Clique em **Confirmar despacho**. Em retirada, o botão se chama **Confirmar: aguardando retirada**.
-6. O destino depende de como o pedido sai:
-   - Correios — vai direto para Em Trânsito;
-   - transportadora ou motoboy — continua Na Expedição como "aguardando coleta", com o card laranja, até o carro passar;
-   - retirada — vai para A Retirar.
-
-### Recotar o frete
-
-O bloco **Recotar frete** aparece em **Despachar** quando o pedido é CIF e está Na Expedição.
-
-1. Clique em **Recotar frete**. Qualquer expedidor pode recotar; isso não altera a proposta.
-2. O sistema lista as opções com o valor e a diferença para o frete da proposta.
-3. Veja o quadro que aparece acima dos botões:
-   - **Recotação dentro do limite de R$ 4,00** — é só um aviso; o despacho segue. O frete e o total da proposta não mudam.
-   - **Recotação acima do limite de R$ 4,00** — o despacho fica bloqueado até um administrador liberar.
-   - **Recote o frete antes de despachar** — o endereço ou o transporte não são os cotados; é preciso recotar para medir a diferença.
-4. Para liberar o despacho bloqueado, o administrador da Expedição abre o mesmo pedido em **Despachar**, escreve o motivo e clica em **Liberar despacho (ADM)**. A liberação vale para um despacho e pode ser desfeita em **Cancelar liberação**.
-5. Para gravar o frete novo na proposta, o administrador usa antes **Liberar aplicação da recotação** no menu do pedido. Depois o expedidor recota e clica em **Aplicar** na opção desejada. A liberação vale para uma aplicação e pode ser desfeita em **Cancelar liberação**, no menu.
-6. Ao aplicar, o frete e o total do pedido mudam pelo mesmo valor e o fato fica registrado na timeline do pedido. A diferença não é lançada na conta do cliente.
-7. Se o cliente do pedido tem **Pode editar valor do frete** ligado no cadastro, antes de gravar aparece a janela **Frete subsidiado**: "Este cliente tem frete subsidiado (valor atual: R$ X). Confirma que quer regravar para R$ Y?". **Regravar frete** grava; **Cancelar** não grava nada. O valor atual é o que está gravado no pedido agora.
-
-### Despachar como retirada um pedido CIF (ADM)
-
-Quando o cliente de um pedido CIF decide buscar no balcão, inclusive com a NF-e já autorizada:
-
-1. Abra o pedido em **Despachar**. A **Modalidade do frete** aparece como **CIF** e não muda.
-2. Marque **Cliente vai retirar no balcão**. Só aparece para ADM pelo cadastro. O bloco de envio some, a **Forma de envio** passa a **RETIRA BALCÃO** e o botão vira **Confirmar: aguardando retirada**.
-3. Aparece o quadro vermelho **Retirada no balcão: precisa da liberação de um ADM**. O administrador da Expedição escreve o motivo e clica em **Liberar despacho (ADM)**. A liberação vale para um despacho.
-4. Clique em **Confirmar: aguardando retirada**. O pedido vai para A Retirar; o histórico registra quem fez e o motivo "cliente retira no balcão".
-5. Quando o cliente buscar, use **Confirmar retirada**, como em qualquer retirada.
-
-O frete, o total, a modalidade CIF da proposta e a nota ficam como estavam. O frete cobrado e não usado não vira crédito. Com a caixa marcada, **Salvar sem despachar** e a etiqueta não gravam nada: a retirada só se grava no despacho.
-
-### Corrigir frete
-
-Serve para trocar a modalidade (quem paga) e a transportadora de um pedido que já saiu do orçamento.
-
-1. No menu do pedido, clique em **Corrigir frete**.
-2. Escolha a **Modalidade do frete** e, fora de retirada, a **Transportadora** (obrigatória em FOB, opcional em CIF).
-3. Se aparecer **Como vai o transporte?**, escolha **Rodoviário** ou **Aéreo**. Serve só para definir a coluna do Kanban; em branco, o pedido fica em **Extras**.
-4. Confira o quadro com **Total atual**, **Total novo** e **Frete**. Em FOB e em retirada a proposta não cobra frete, então o total cai; em CIF vale o frete cotado.
-5. Clique em **Confirmar correção**.
-6. Se sobrar dinheiro a favor do cliente, o botão vira **Revisar o crédito** e depois **Gravar e escolher o destino**. A correção é gravada, o crédito é aberto na Conta Corrente do cliente e você escolhe o destino: **Manter crédito para uso futuro**, **Devolver ao cliente (solicitar ao Financeiro)** ou **Abater débito existente**.
-7. Se ficar valor a receber, a correção grava direto. O saldo continua sendo da proposta e é cobrado na aba Pagamentos.
-8. Se o cliente do pedido tem **Pode editar valor do frete** ligado no cadastro, antes de gravar aparece a janela **Frete subsidiado**, com o frete atual e o novo. **Regravar frete** segue a gravação (incluindo o passo do crédito, se houver); **Cancelar** não grava nada.
-
-### Confirmar a coleta
-
-1. No pedido laranja (despachado, aguardando coleta), clique em **Confirmar coleta** quando a transportadora ou o motoboy levar o volume.
-2. Confirme. O pedido passa para Em Trânsito.
-3. Se um pedido de transportadora ou motoboy voltar para Na Expedição e for despachado de novo, a coleta anterior é descartada e o pedido volta a ficar laranja (aguardando coleta), pronto para uma nova **Confirmar coleta**.
-
-### Informar o rastreio e rastrear
-
-1. O código de rastreio entra pela prepostagem ou pelo campo **Código de rastreio (manual)**, em envio pelos Correios.
-   Em envio por **transportadora** ou **motoboy**, o campo se chama **Conhecimento**: digite o número do conhecimento no modal **Despachar pedido** ou, depois do despacho (A Retirar, Em Trânsito ou Entregue), em **Editar dados de expedição**. O número pode ser corrigido a qualquer momento por quem opera a Expedição. Cada gravação ou correção registra quem fez e o valor antigo e o novo no histórico do pedido, sem mudar valor nem status.
-2. Na lista, clique no código para copiá-lo.
-3. No menu do pedido, clique em **Rastrear objeto**. Só aparece em envio pelos Correios: o conhecimento de transportadora ou motoboy não é rastreado. A janela mostra a situação atual e os eventos; o botão de atualizar refaz a consulta.
-4. Quando os Correios confirmam a entrega de um pedido Em Trânsito, aparece o botão **Correios confirmam a entrega — marcar ENTREGUE no sistema**.
-
-### Confirmar a retirada no balcão
-
-1. No pedido com status A Retirar, clique em **Confirmar retirada**.
-2. Em **Quem retirou?**, escreva o nome de quem levou o pedido.
-3. Clique em **Confirmar entrega**. O pedido passa para Entregue.
-
-### Marcar como entregue
-
-1. No pedido com status Em Trânsito, clique em **Marcar entregue**.
-2. Leia o aviso, se houver, e clique em **Confirmar entrega**.
-
-Em envio pelos Correios despachado há menos de 12 horas, o sistema avisa há quanto tempo o pedido foi postado. É só um aviso: confirmando, a entrega fica registrada com a data e a hora de agora.
-
-### Voltar um passo
-
-1. No menu do pedido, clique em **Voltar status**.
-2. Escreva o motivo (obrigatório, mínimo de 3 letras; fica registrado).
-3. Clique em **Voltar 1 passo**.
-
-Os retornos possíveis são: Entregue volta para Em Trânsito (ou para A Retirar, se foi retirada); Em Trânsito e A Retirar voltam para Na Expedição; Na Expedição volta para EM ACABAMENTO.
-
-### Reenviar um pedido devolvido
-
-Use quando a transportadora ou os Correios devolveram um pedido que está Em Trânsito e ele precisa sair de novo, sem passar por Arte nem Produção.
-
-1. No menu do pedido, clique em **Reenviar (pedido devolvido)**.
-2. Escolha o **Endereço de entrega do reenvio**. A lista traz os endereços do cliente e do pagador; o atual vem marcado. Mudar o endereço na proposta não muda o envio: depois do despacho vale o endereço escolhido aqui.
-3. Escolha o **Tipo de envio**. Quem paga o frete (CIF ou FOB) não muda.
-4. Escreva o motivo (mínimo de 3 letras) e clique em **Voltar para a Expedição**.
-5. O pedido volta para Na Expedição com o selo **Reenvio N**. Despache de novo pelo botão **Despachar**, informando o rastreio ou conhecimento novo. Nos Correios, gere a prepostagem de novo (a janela pede confirmação).
-
-O primeiro envio (data, rastreio, endereço, transportadora) fica guardado no registro do reenvio. Não há limite de reenvios por pedido.
-
-### Editar dados de um pedido já despachado
-
-1. No menu do pedido, clique em **Editar dados de expedição**.
-2. Corrija peso, volumes, observações da etiqueta ou o número da nota, ou reimprima a etiqueta.
-3. Clique em **Salvar dados**. O status não muda.
-
-### Despachar pedido com complemento
-
-1. O despacho é feito pelo pedido principal. O complemento que já está na Expedição e pago sai junto, com o mesmo transporte e a mesma data.
-2. O quadro **Pedido complementar do mesmo evento** mostra a situação de cada complemento: "em EXPEDICAO, sai junto" ou o motivo do bloqueio.
-3. Se o complemento ainda não chegou à Expedição ou não está pago por inteiro, espere ou marque **Desvincular e despachar separado** e escreva o **Motivo**. O complemento deixa de sair junto e passa a precisar de frete próprio.
-4. Confirmar coleta, retirada e entrega no principal levam junto o complemento que está no mesmo status.
-5. Se o complemento não acompanhou o despacho, abra **Despachar** no próprio complemento para repetir o passo.
+Em resumo: no pedido Na Expedição, clique em **Despachar**, confira peso, volumes e endereço, resolva o quadro do frete se ele aparecer e clique em **Confirmar despacho** (em retirada, **Confirmar: aguardando retirada**). Daí o pedido vai para Em Trânsito, fica aguardando a coleta da transportadora ou vai para A Retirar, e termina como Entregue por **Confirmar coleta**, **Confirmar retirada** ou **Marcar entregue**.
 
 ### Abrir o boletim da produção
 
@@ -464,6 +344,7 @@ O primeiro envio (data, rastreio, endereço, transportadora) fica guardado no re
 
 ## Veja também
 
+- [Expedição: despachar e entregar](expedicao-despacho.md)
 - [Pedidos (lista)](pedidos.md)
 - [Produção (ordens de serviço)](producao.md)
 - [Proposta: aba Fretes](proposta-fretes.md)

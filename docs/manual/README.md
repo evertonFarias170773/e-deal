@@ -57,6 +57,7 @@ Cada ficha cobre uma tela ou um fluxo e segue sempre o mesmo formato ([_MODELO.m
 
 - [Produção (ordens de serviço)](producao.md)
 - [Expedição](expedicao.md)
+- [Expedição: despachar e entregar](expedicao-despacho.md)
 - [Tarefas](tarefas.md)
 
 ### Administração
@@ -68,7 +69,8 @@ Cada ficha cobre uma tela ou um fluxo e segue sempre o mesmo formato ([_MODELO.m
 - Toda mudança que o usuário percebe (tela, botão, aviso, fluxo ou regra visível) atualiza a ficha correspondente **no mesmo commit**, com a data nova em "Última revisão". A regra completa está no [AGENTS.md](../../AGENTS.md).
 - Mudança só interna (refatoração, desempenho, banco sem efeito na tela) não precisa mexer no manual.
 - A seção "Arquivos de origem" de cada ficha diz de quais arquivos de código ela saiu. `node scripts/checar-manual.mjs` lê essas listas e avisa quando um arquivo de origem mudou sem a ficha mudar, e quando há tela alterada que não pertence a nenhuma ficha. Ele só avisa; não bloqueia o commit.
-- `node scripts/checar-manual.mjs --origens` confere se as listas ainda apontam para arquivos que existem.
+- `node scripts/checar-manual.mjs --origens` confere se as listas ainda apontam para arquivos que existem, e avisa qual ficha passou de 14 títulos `###` ou chegou a 14.
+- **Teto de 14 títulos `###` por ficha.** O índice que o Maestro recebe mostra, de cada ficha, o H1, o caminho no menu, o endereço e só os 14 primeiros títulos `###`. Título que passa disso não é visto na escolha da página: o assunto fica escondido, e o Maestro responde que não tem o passo a passo. Mantenha nos `###` o que o usuário procuraria como tarefa ("como faço para…"); subtítulo de referência (blocos de "Botões e ações da tela", por exemplo) vai como `####`. Ficha que não cabe em 14 tarefas é ficha para dividir.
 - Tela nova ganha ficha nova, copiada do [_MODELO.md](_MODELO.md) e listada aqui.
 
 ## Como escrever

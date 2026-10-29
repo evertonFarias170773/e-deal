@@ -16,6 +16,9 @@
  *   1. Arquivo de origem de uma ficha alterado, e a ficha nao alterada junto.
  *   2. Arquivo de TELA alterado (.tsx em src/app fora de api, src/features ou
  *      src/components) que nao e origem de nenhuma ficha — tela sem ficha.
+ *   3. Ficha com mais de 14 titulos "### " (assunto escondido do indice do
+ *      Maestro) ou com exatamente 14 (o proximo titulo desaparece). No modo
+ *      normal so para as fichas alteradas; em --origens, para todas.
  *
  * Uso:
  *   node scripts/checar-manual.mjs            # tudo que mudou na arvore (com e sem stage, e arquivos novos)
@@ -80,6 +83,59 @@ function origensDaFicha(nome) {
 
 const casa = (origem, caminho) => (origem.endsWith("/") ? caminho.startsWith(origem) : caminho === origem);
 
+/**
+ * O indice do manual que vai no prompt do Maestro mostra, de cada ficha, so os
+ * 14 primeiros titulos "### " (MAX_ASSUNTOS_NO_INDICE em
+ * src/features/maestro/core/agent/maestro-agent-manual.server.ts). Titulo que
+ * passa disso nao e visto na escolha da pagina: o assunto fica escondido.
+ * Mudou o teto la, muda aqui.
+ */
+const MAX_ASSUNTOS_NO_INDICE = 14;
+
+/** Titulos "### " da ficha, fora da secao "Arquivos de origem" (como o Maestro le). */
+function assuntosDaFicha(nome) {
+  const texto = readFileSync(`${PASTA_MANUAL}/${nome}`, "utf8").replace(/\r\n/g, "\n");
+  const linhas = texto.split("\n");
+  const inicio = linhas.findIndex((l) => /^##\s+Arquivos de origem\s*$/i.test(l));
+  let corpo = linhas;
+  if (inicio >= 0) {
+    let fim = linhas.findIndex((l, i) => i > inicio && /^##\s/.test(l));
+    if (fim < 0) fim = linhas.length;
+    corpo = [...linhas.slice(0, inicio), ...linhas.slice(fim)];
+  }
+  return corpo.filter((l) => l.startsWith("### ")).map((l) => l.slice(4).trim());
+}
+
+/** Avisos do teto do indice, para a lista de fichas recebida. */
+function linhasDoTeto(nomes) {
+  const passam = [];
+  const noTeto = [];
+  for (const nome of nomes) {
+    const titulos = assuntosDaFicha(nome);
+    if (titulos.length > MAX_ASSUNTOS_NO_INDICE) passam.push({ nome, titulos });
+    else if (titulos.length === MAX_ASSUNTOS_NO_INDICE) noTeto.push(nome);
+  }
+  const linhas = [];
+  if (passam.length > 0) {
+    linhas.push(`AVISO (manual): ficha com mais de ${MAX_ASSUNTOS_NO_INDICE} titulos "### ".`);
+    linhas.push("O indice do Maestro mostra so os primeiros: os de baixo nao aparecem na escolha da pagina.");
+    linhas.push("Saidas: mover o assunto para ficha propria, reordenar os titulos ou rebaixar a #### o que e referencia.");
+    linhas.push("");
+    for (const { nome, titulos } of passam.sort((a, b) => a.nome.localeCompare(b.nome))) {
+      linhas.push(`  ${PASTA_MANUAL}/${nome}: ${titulos.length} titulos, ${titulos.length - MAX_ASSUNTOS_NO_INDICE} fora do indice`);
+      for (const titulo of titulos.slice(MAX_ASSUNTOS_NO_INDICE)) linhas.push(`      fora -> ${titulo}`);
+    }
+    linhas.push("");
+  }
+  if (noTeto.length > 0) {
+    linhas.push(`AVISO (manual): ficha com exatamente ${MAX_ASSUNTOS_NO_INDICE} titulos "### " — o proximo que entrar fica fora do indice.`);
+    linhas.push("");
+    for (const nome of noTeto.sort()) linhas.push(`  ${PASTA_MANUAL}/${nome}`);
+    linhas.push("");
+  }
+  return linhas;
+}
+
 const ehTela = (caminho) =>
   caminho.endsWith(".tsx") &&
   !caminho.startsWith("src/app/api/") &&
@@ -105,6 +161,9 @@ if (conferirOrigens) {
   } else {
     console.log(`Manual: ${fichas.length} fichas, todas com "Arquivos de origem" apontando para arquivos que existem.`);
   }
+  const teto = linhasDoTeto(fichas.map(({ nome }) => nome));
+  if (teto.length > 0) console.warn(["", ...teto].join("\n"));
+  else console.log(`Manual: nenhuma ficha chega a ${MAX_ASSUNTOS_NO_INDICE} titulos "### ".`);
   process.exit(0);
 }
 
@@ -128,7 +187,11 @@ for (const caminho of codigoAlterado) {
 }
 const telasSemFicha = codigoAlterado.filter((c) => ehTela(c) && !cobertos.has(c));
 
-if (desatualizadas.size === 0 && telasSemFicha.length === 0) process.exit(0);
+// Teto do indice: so para as fichas que estao mudando neste commit.
+const nomesDasFichas = new Set(fichas.map(({ nome }) => nome));
+const teto = linhasDoTeto([...fichasAlteradas].filter((nome) => nomesDasFichas.has(nome)).sort());
+
+if (desatualizadas.size === 0 && telasSemFicha.length === 0 && teto.length === 0) process.exit(0);
 
 const linhas = [""];
 if (desatualizadas.size > 0) {
@@ -150,6 +213,7 @@ if (telasSemFicha.length > 0) {
   for (const tela of telasSemFicha) linhas.push(`  ${tela}`);
   linhas.push("");
 }
+if (teto.length > 0) linhas.push(...teto);
 linhas.push("Este aviso nao bloqueia o commit.");
 linhas.push("");
 console.warn(linhas.join("\n"));

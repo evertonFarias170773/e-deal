@@ -166,7 +166,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 
 O status do pedido é só informação: ele não impede nem libera a emissão. Por isso o pedido que o administrador marca como entregue pela lista de Pedidos ([Pedidos](pedidos.md)) continua na fila enquanto esperar nota, com o status Entregue.
 
-### O que põe e o que tira um pedido da fila
+#### O que põe e o que tira um pedido da fila
 
 Entra na fila o pedido que foi **liberado para produção**. Não existe uma liberação separada para nota: a liberação para produção já coloca o pedido na fila.
 
@@ -186,6 +186,17 @@ NFS-e em rascunho, em análise ou com erro não tira o pedido da fila: ainda há
 Se o pedido com NFS-e emitida ainda precisa de **NF-e** (venda de produto), marque a caixa para ele voltar e use **Faturar** normalmente.
 
 Volta para a lista quando a nota é **cancelada** ou **denegada**, quando o rascunho é **descartado** ou quando a marca de sistema antigo é desfeita. Rascunho ainda pendente e nota de remessa não tiram o pedido da fila.
+
+### Enviar para a Fila de Faturamento
+
+É o caminho do pedido que só precisa da nota e depois é marcado como entregue, sem passar pela produção. Quem envia é o administrador, de dentro do pedido.
+
+1. Abra o pedido e, no menu **Acoes**, clique em **Enviar para Fila de Faturamento**. O item aparece só para administrador, em pedido REVISAO ATENDENTE que ainda não está na fila nem na produção. Vale também em pedido **Liberado** (APROVADO ou LIBERADO no banco, o caso da cobrança confirmada que nunca passa por REVISAO ATENDENTE).
+2. Confirme na janela **Enviar para Fila de Faturamento?** (o foco fica em **Cancelar**).
+3. O pedido entra na fila e **não passa pela Produção nem pela Expedição**: não aparece em nenhum dos dois painéis e o status continua REVISAO ATENDENTE.
+4. Emita a nota como em qualquer pedido da fila. Depois de enviado, o item some do menu e **Marcar como entregue** passa a aparecer.
+
+O servidor recusa, dizendo o motivo, o pedido que já está na fila ou na produção, que tem OS, que tem NF-e ou NFS-e autorizada, ou que está marcado como nota emitida no sistema antigo. Nada muda em cobranças nem no boletim. Não existe "tirar da fila"; o nome de quem enviou e a data ficam registrados.
 
 ### Emitir a NF-e de um pedido
 
@@ -211,6 +222,15 @@ Outros botões do cabeçalho da nota:
 - **Só concluir rascunho**: valida e deixa a nota **Pronta para Envio**, sem transmitir. Depois, no menu da nota em **Notas em processo**, use **Enviar para Focus**.
 - **Salvar e sair**: grava o rascunho como está. Apesar do nome, a tela continua na nota.
 - **Voltar**: volta para a lista sem gravar.
+
+### Gerar outra nota do mesmo pedido
+
+No menu de uma nota de venda autorizada em produção:
+
+- **Gerar outra nota de venda (faturamento parcial)**: cria uma segunda nota de venda do pedido, com número próprio.
+- **Gerar nota de remessa**: cria a nota que acompanha a mercadoria, no nome de quem recebe e no endereço de entrega, sem cobrança. Ela não substitui a nota de venda.
+
+Nos dois casos a confirmação lista as notas autorizadas que o pedido já tem. Nada é transmitido na hora: abre um rascunho para conferir e emitir.
 
 ### Emitir a NFS-e (nota de serviço) de um pedido
 
@@ -249,12 +269,18 @@ Enquanto a janela trabalha (lendo o pedido, criando o rascunho, emitindo ou cons
 
 Se a resposta não chegar (demora ou queda de conexão), a janela não conclui que deu errado: ela relê a nota e mostra o que existe, por exemplo "A resposta não chegou, mas o envio saiu: a nota está em análise". Leia o quadro vermelho antes de clicar de novo.
 
-### Saber se a NFS-e emitida pelo Vibe vale (homologação ou produção)
+#### Saber se a NFS-e emitida pelo Vibe vale (homologação ou produção)
 
 1. Abra a janela **Gerar NFS-e** do pedido e olhe a faixa do ambiente no topo. No **Histórico NFS-e (Serviços)**, olhe a coluna **Ambiente**.
 2. **HOMOLOGAÇÃO** quer dizer nota de teste, sem valor fiscal. Hoje toda NFS-e emitida pelo Vibe sai assim.
 3. Ainda não dá para emitir NFS-e em produção pelo Vibe. A emissão em produção existe no sistema só para a **BIRÔ IDEAL** e não foi ativada.
 4. Para ter uma NFS-e com valor fiscal, emita pelo portal nacional (www.nfse.gov.br). O cancelamento de NFS-e também é pelo portal.
+
+### Criar uma nota avulsa
+
+1. Clique em **Nova nota avulsa**, no cabeçalho da tela.
+2. Escolha a **Empresa emitente**, busque o **Destinatário** por código, nome, fantasia ou CNPJ e confira os **Dados fiscais do destinatário**.
+3. Clique em **Criar rascunho**. A nota nasce sem itens e sem cobrança: lance os itens, a natureza e o transporte na própria nota. Nas listas ela aparece como **Avulsa**.
 
 ### Conferir parcelas e duplicatas
 
@@ -332,21 +358,6 @@ Ação temporária, da transição entre sistemas. Use só quando a nota do pedi
 1. Na fila, clique em **Nota emitida no sistema antigo** na linha do pedido e confirme.
 2. O pedido sai da fila. Liberação para nota, status e produção do pedido ficam como estavam, e nenhuma nota é criada no Vibe. O registro fica na linha do tempo do pedido.
 3. Para desfazer, abra **Pedidos** no menu lateral (é a tela que o aviso chama de Orçamentos), ache o pedido (ele mostra a etiqueta **faturado no sistema antigo**), abra o menu da linha e clique em **Voltar para a Fila de Faturamento (desfazer nota no sistema antigo)**. O pedido volta a aparecer na fila.
-
-### Gerar outra nota do mesmo pedido
-
-No menu de uma nota de venda autorizada em produção:
-
-- **Gerar outra nota de venda (faturamento parcial)**: cria uma segunda nota de venda do pedido, com número próprio.
-- **Gerar nota de remessa**: cria a nota que acompanha a mercadoria, no nome de quem recebe e no endereço de entrega, sem cobrança. Ela não substitui a nota de venda.
-
-Nos dois casos a confirmação lista as notas autorizadas que o pedido já tem. Nada é transmitido na hora: abre um rascunho para conferir e emitir.
-
-### Criar uma nota avulsa
-
-1. Clique em **Nova nota avulsa**, no cabeçalho da tela.
-2. Escolha a **Empresa emitente**, busque o **Destinatário** por código, nome, fantasia ou CNPJ e confira os **Dados fiscais do destinatário**.
-3. Clique em **Criar rascunho**. A nota nasce sem itens e sem cobrança: lance os itens, a natureza e o transporte na própria nota. Nas listas ela aparece como **Avulsa**.
 
 ### Descartar um rascunho
 
@@ -485,7 +496,8 @@ Nos dois casos a confirmação lista as notas autorizadas que o pedido já tem. 
 | Nota parcelada ainda não é suportada neste caminho | A nota tem duas parcelas ou mais. | Gere os títulos pelo Registro de recebíveis. |
 | Lançamento bloqueado: totais não fecham | A soma das parcelas da nota difere do total faturado em aberto da proposta. | Regularize a nota ou a cobrança da proposta antes de lançar. |
 | Duplicidade detectada! A parcela N desta origem já possui um boleto ativo no Contas a Receber | A parcela já foi lançada. | Use **Revisar para gerar boletos**. Para refazer, cancele o título atual na Carteira antes. |
-### Na janela Gerar NFS-e
+
+#### Na janela Gerar NFS-e
 
 | O que aparece | Por que acontece | O que fazer |
 |---|---|---|
