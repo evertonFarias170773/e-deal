@@ -19,6 +19,7 @@ import type {
   FiltroDef,
   LinhaRelatorio,
   Opcao,
+  PaginaDoRelatorio,
   PresetPeriodo,
   RelatorioDef,
   ResultadoRelatorio,
@@ -124,7 +125,14 @@ function ReportPageCorpo({ relatorio }: { relatorio: RelatorioDef }) {
 
   // Dados: um pedido por combinação de período + filtros.
   const valoresDosFiltros = relatorio.filtros.map((f) => String(filters[f.chave] ?? ""));
-  const chaveDaConsulta = [relatorio.slug, periodo.inicio, periodo.fim, ...valoresDosFiltros].join("|");
+  const chaveDosFiltros = [relatorio.slug, periodo.inicio, periodo.fim, ...valoresDosFiltros].join("|");
+
+  // Lista longa (`paginacao`): a página faz parte do pedido e volta à 1 quando período ou filtro mudam.
+  const paginado = Boolean(relatorio.paginacao);
+  const [paginaPedida, setPaginaPedida] = useState({ chave: "", pagina: 1 });
+  const pagina = paginado && paginaPedida.chave === chaveDosFiltros ? paginaPedida.pagina : 1;
+  const irParaPagina = (n: number) => setPaginaPedida({ chave: chaveDosFiltros, pagina: n });
+  const chaveDaConsulta = paginado ? `${chaveDosFiltros}|p${pagina}` : chaveDosFiltros;
   const [estado, setEstado] = useState<{
     chave: string;
     resultado: ResultadoRelatorio | null;
@@ -139,6 +147,7 @@ function ReportPageCorpo({ relatorio }: { relatorio: RelatorioDef }) {
       relatorio.filtros.forEach((f, i) => {
         if (valoresDosFiltros[i]) params.set(f.chave, valoresDosFiltros[i]);
       });
+      if (paginado) params.set("pagina", String(pagina));
       try {
         const resposta = await fetch(`/api/relatorios/${relatorio.slug}?${params.toString()}`, {
           headers: token ? { Authorization: `Bearer ${token}` } : {},
@@ -171,12 +180,14 @@ function ReportPageCorpo({ relatorio }: { relatorio: RelatorioDef }) {
   const resultado = estado.chave === chaveDaConsulta ? estado.resultado : null;
   const erro = estado.chave === chaveDaConsulta ? estado.erro : null;
 
-  // Ordenação: só reordena as linhas que o banco devolveu.
+  // Ordenação: só reordena as linhas que o banco devolveu. Lista paginada segue a ordem do
+  // servidor (reordenar só a página daria uma ordem falsa).
   const [ordem, setOrdem] = useState<Ordenacao>(relatorio.ordenacaoPadrao);
   const linhasOrdenadas = useMemo(() => {
     const linhas = resultado?.linhas ?? [];
+    if (paginado) return linhas;
     return [...linhas].sort((a, b) => comparar(a[ordem.coluna] ?? null, b[ordem.coluna] ?? null, ordem.direcao));
-  }, [resultado, ordem]);
+  }, [resultado, ordem, paginado]);
 
   const alternarOrdem = useCallback((coluna: string) => {
     setOrdem((atual) =>
@@ -237,12 +248,46 @@ function ReportPageCorpo({ relatorio }: { relatorio: RelatorioDef }) {
     }
   };
 
-  const exportar = () => {
+  const [csvOcupado, setCsvOcupado] = useState(false);
+  const exportar = async () => {
     if (!resultado) return;
-    baixarCsv(
-      nomeDoArquivo(relatorio.slug, periodo.inicio, periodo.fim),
-      montarCsv(relatorio.colunas, linhasOrdenadas, resultado.total)
-    );
+    if (!paginado) {
+      baixarCsv(
+        nomeDoArquivo(relatorio.slug, periodo.inicio, periodo.fim),
+        montarCsv(relatorio.colunas, linhasOrdenadas, resultado.total)
+      );
+      return;
+    }
+    // Lista paginada: o CSV leva o período inteiro, pedido à mesma rota (mesma permissão).
+    if (csvOcupado) return;
+    setCsvOcupado(true);
+    setPdfErro(null);
+    try {
+      const token = await tokenDaSessao();
+      const params = new URLSearchParams({ ini: periodo.inicio, fim: periodo.fim, pagina: "todas" });
+      relatorio.filtros.forEach((f, i) => {
+        if (valoresDosFiltros[i]) params.set(f.chave, valoresDosFiltros[i]);
+      });
+      const resposta = await fetch(`/api/relatorios/${relatorio.slug}?${params.toString()}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        cache: "no-store"
+      });
+      const corpo = (await resposta.json().catch(() => null)) as
+        | (ResultadoRelatorio & { success?: boolean; error?: string })
+        | null;
+      if (!resposta.ok || !corpo || corpo.success === false) {
+        setPdfErro(corpo?.error ?? "Não foi possível gerar o CSV.");
+        return;
+      }
+      baixarCsv(
+        nomeDoArquivo(relatorio.slug, periodo.inicio, periodo.fim),
+        montarCsv(relatorio.colunas, corpo.linhas, corpo.total)
+      );
+    } catch {
+      setPdfErro("Não foi possível gerar o CSV.");
+    } finally {
+      setCsvOcupado(false);
+    }
   };
 
   const area = AREAS.find((a) => a.id === relatorio.area);
@@ -294,11 +339,11 @@ function ReportPageCorpo({ relatorio }: { relatorio: RelatorioDef }) {
             <button
               type="button"
               onClick={exportar}
-              disabled={!resultado || resultado.linhas.length === 0}
+              disabled={!resultado || resultado.linhas.length === 0 || csvOcupado}
               className="inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold shadow-sm transition disabled:cursor-not-allowed disabled:opacity-50"
               style={{ background: "var(--card)", color: "var(--foreground)", border: "1px solid var(--border)" }}
             >
-              <Download className="h-4 w-4" />
+              {csvOcupado ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
               Exportar CSV
             </button>
           </div>
@@ -460,13 +505,16 @@ function ReportPageCorpo({ relatorio }: { relatorio: RelatorioDef }) {
         ) : resultado && resultado.linhas.length === 0 ? (
           <EmptyState title="Nada neste período" description="Nenhum registro encontrado com estes filtros." />
         ) : resultado ? (
-          <TabelaRelatorio
-            colunas={relatorio.colunas}
-            linhas={linhasOrdenadas}
-            total={resultado.total}
-            ordem={ordem}
-            onOrdenar={alternarOrdem}
-          />
+          <>
+            <TabelaRelatorio
+              colunas={relatorio.colunas}
+              linhas={linhasOrdenadas}
+              total={resultado.total}
+              ordem={ordem}
+              onOrdenar={paginado ? undefined : alternarOrdem}
+            />
+            {resultado.paginacao ? <Paginador paginacao={resultado.paginacao} onIr={irParaPagina} /> : null}
+          </>
         ) : null}
       </section>
     </div>
@@ -557,6 +605,40 @@ function CampoSelecao({
   );
 }
 
+/** Rodapé da lista paginada: onde está e Anterior / Próxima. */
+function Paginador({ paginacao, onIr }: { paginacao: PaginaDoRelatorio; onIr: (pagina: number) => void }) {
+  const { pagina, tamanho, totalLinhas, totalPaginas } = paginacao;
+  const de = totalLinhas === 0 ? 0 : (pagina - 1) * tamanho + 1;
+  const ate = Math.min(pagina * tamanho, totalLinhas);
+  const botao =
+    "rounded-xl px-3 py-1.5 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50";
+  return (
+    <div
+      className="flex flex-wrap items-center justify-between gap-2 px-3 py-3 text-sm"
+      style={{ borderTop: "1px solid var(--border)", color: "var(--muted)" }}
+    >
+      <span>
+        {de.toLocaleString("pt-BR")}–{ate.toLocaleString("pt-BR")} de {totalLinhas.toLocaleString("pt-BR")} · Página{" "}
+        {pagina} de {totalPaginas}
+      </span>
+      <div className="flex items-center gap-2">
+        <button type="button" className={botao} style={estiloCampo} disabled={pagina <= 1} onClick={() => onIr(pagina - 1)}>
+          Anterior
+        </button>
+        <button
+          type="button"
+          className={botao}
+          style={estiloCampo}
+          disabled={pagina >= totalPaginas}
+          onClick={() => onIr(pagina + 1)}
+        >
+          Próxima
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function TabelaRelatorio({
   colunas,
   linhas,
@@ -568,7 +650,8 @@ function TabelaRelatorio({
   linhas: LinhaRelatorio[];
   total: Record<string, string | number | null>;
   ordem: Ordenacao;
-  onOrdenar: (coluna: string) => void;
+  /** Sem ele (lista paginada), os títulos não ordenam. */
+  onOrdenar?: (coluna: string) => void;
 }) {
   return (
     <div className="overflow-x-auto">
@@ -577,6 +660,13 @@ function TabelaRelatorio({
           <tr style={{ borderBottom: "1px solid var(--border)", color: "var(--muted)" }}>
             {colunas.map((coluna) => {
               const alinhamento = alinhamentoDe(coluna);
+              if (!onOrdenar) {
+                return (
+                  <th key={coluna.id} scope="col" className="whitespace-nowrap px-3 py-3 font-semibold" style={{ textAlign: alinhamento }}>
+                    {coluna.titulo}
+                  </th>
+                );
+              }
               const ativa = ordem.coluna === coluna.id;
               const Seta = !ativa ? ArrowUpDown : ordem.direcao === "asc" ? ArrowUp : ArrowDown;
               return (

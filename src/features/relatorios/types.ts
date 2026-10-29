@@ -86,6 +86,16 @@ export type ResultadoRelatorio = {
   avisos?: string[];
   /** Dados de apoio do próprio relatório (ex.: emitente), usados só pelo seu PDF e pelo seu zip. */
   extras?: Record<string, unknown>;
+  /** Só em relatório com `paginacao`: a página que a rota de dados devolveu. */
+  paginacao?: PaginaDoRelatorio;
+};
+
+/** Página devolvida pela rota de dados. Total e cards continuam sendo do período inteiro. */
+export type PaginaDoRelatorio = {
+  pagina: number;
+  tamanho: number;
+  totalLinhas: number;
+  totalPaginas: number;
 };
 
 /* ── PDF (base reaproveitável: ver pdf/RelatorioPdfDocument.tsx) ─────────────── */
@@ -169,6 +179,13 @@ export type RelatorioDef = {
   notaDosFiltros?: (filtros: Record<string, string>) => string;
   colunas: ColunaDef[];
   ordenacaoPadrao: { coluna: string; direcao: "asc" | "desc" };
+
+  /**
+   * Opcional, para lista longa: a rota de dados devolve à tela uma página de `tamanho` linhas,
+   * na ordem em que `normalizar` entregou (a tela não reordena). Total e cards são do período
+   * inteiro; CSV (`pagina=todas`) e PDF levam todas as linhas. Sem este campo, nada muda.
+   */
+  paginacao?: { tamanho: number };
 
   /**
    * De onde vêm os dados — uma das duas formas (a rota roda a que existir):

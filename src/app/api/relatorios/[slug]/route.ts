@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { executarRelatorio } from "@/features/relatorios/relatorio.server";
+import { paginarResultado } from "@/features/relatorios/lib/paginacao";
 
 /**
  * GET /api/relatorios/[slug]?ini=AAAA-MM-DD&fim=AAAA-MM-DD&<filtro>=<valor>
@@ -27,5 +28,10 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   if (!resposta.ok) {
     return NextResponse.json({ success: false, error: resposta.error }, { status: resposta.status });
   }
-  return NextResponse.json({ success: true, ...resposta.resultado });
+  // Lista longa: a tela recebe só a página pedida (total e cards seguem do período inteiro).
+  const { relatorio, resultado } = resposta;
+  const corpo = relatorio.paginacao
+    ? paginarResultado(resultado, relatorio.paginacao.tamanho, request.nextUrl.searchParams.get("pagina"))
+    : resultado;
+  return NextResponse.json({ success: true, ...corpo });
 }
