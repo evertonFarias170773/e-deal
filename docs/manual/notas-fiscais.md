@@ -148,13 +148,16 @@ O status do pedido é só informação: ele não impede nem libera a emissão. P
 
 Entra na fila o pedido que foi **liberado para produção**. Não existe uma liberação separada para nota: a liberação para produção já coloca o pedido na fila.
 
+Entra também:
+
+- o pedido que um administrador enviou por **Enviar para Fila de Faturamento** (lista de Pedidos ou tela da proposta): ele fica na fila em REVISAO ATENDENTE ou Liberado, sem passar pela Produção nem pela Expedição, e a coluna **Em produção desde** fica vazia;
+- o pedido ainda em AGUARDANDO (antes do pagamento) liberado por **Liberar nota antecipada (Fila de Faturamento)** na lista de Pedidos (veja **Nota antecipada** abaixo). Enquanto não for liberado assim, o pedido em AGUARDANDO não está na fila — e as ações da fila, inclusive a marca de nota do sistema antigo, não alcançam ele.
+
 Sai da lista de pedidos quando:
 
 - o pedido ganha uma nota de venda que já saiu do rascunho (pronta para envio, processando, autorizada ou com erro). A nota passa a aparecer em **Notas em processo** ou no **Histórico**;
 - alguém marca **Nota emitida no sistema antigo**;
-- entra também o pedido que um administrador enviou por **Enviar para Fila de Faturamento** (lista de Pedidos ou tela da proposta): ele fica na fila em REVISAO ATENDENTE ou Liberado, sem passar pela Produção nem pela Expedição, e a coluna **Em produção desde** fica vazia;
 - o cliente do pedido está com o interruptor **Nota** desligado no cadastro;
-- entra também, ainda em AGUARDANDO (antes do pagamento), o pedido liberado por **Liberar nota antecipada (Fila de Faturamento)** na lista de Pedidos (veja **Nota antecipada** abaixo);
 - o pedido foi encerrado como teste;
 - a **NFS-e** do pedido foi **autorizada**. Este é o único caso que dá para pedir de volta: marque **Mostrar também pedidos com NFS-e emitida**.
 
