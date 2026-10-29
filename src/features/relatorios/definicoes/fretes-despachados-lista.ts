@@ -49,6 +49,20 @@ type Dados = {
 
 const TIPOS_FRETE = ["CORREIOS", "MOTOBOY", "TRANSPORTADORA", "RETIRA_BALCAO", "SEM_CUSTO", "INDEFINIDO"] as const;
 
+/** Exceções ao rótulo padrão do tipo de frete. */
+const ROTULO_TIPO_FRETE: Record<string, string> = { RETIRA_BALCAO: "RETIRA NO BALCÃO" };
+
+/**
+ * Texto exibido do tipo de frete — o único lugar da troca: a linha da tabela (tela, CSV e PDF)
+ * e as opções do filtro usam esta função. Underline vira espaço; o resto fica como gravado.
+ * O valor gravado e o que o filtro envia ao servidor não mudam.
+ */
+export function rotuloTipoFrete(tipo: string | null | undefined): string {
+  const t = limpo(tipo);
+  if (!t) return "(sem tipo)";
+  return ROTULO_TIPO_FRETE[t] ?? t.replace(/_+/g, " ");
+}
+
 const plural = (q: number, um: string, varios: string) => `${q.toLocaleString("pt-BR")} ${q === 1 ? um : varios}`;
 const arred = (n: number) => Math.round(n * 100) / 100;
 const limpo = (v: string | null | undefined) => String(v ?? "").trim();
@@ -159,7 +173,7 @@ function normalizar(resposta: unknown): ResultadoRelatorio {
 
       return {
         id_int: d.id_int,
-        tipo_frete: limpo(d.tipo_frete) || "(sem tipo)",
+        tipo_frete: rotuloTipoFrete(d.tipo_frete),
         data_despacho: diaDeSaoPaulo(d.data_despacho),
         cidade_destino: cidade ? (uf ? `${cidade}/${uf}` : cidade) : null,
         conhecimento: conhecimento || null,
@@ -204,7 +218,7 @@ function normalizar(resposta: unknown): ResultadoRelatorio {
 }
 
 const COLUNAS_PDF: ColunaPdf[] = [
-  { titulo: "ID_INT", largura: 10 },
+  { titulo: "PEDIDO", largura: 10 },
   { titulo: "Tipo frete", largura: 16 },
   { titulo: "Data despacho", largura: 13 },
   { titulo: "Cidade destino", largura: 27 },
@@ -253,7 +267,7 @@ function montarPdf(
 }
 
 const CRITERIO =
-  "Uma linha por despacho com data no período (dia de São Paulo), em ordem de data de despacho e ID_INT. Tipo de frete, conhecimento e cidade são os do despacho (a cidade cai no endereço da proposta só quando o despacho não gravou endereço). Nos Correios, o conhecimento é o código de rastreio do objeto. O valor é o frete gravado na proposta (o cobrado do cliente), sem recalcular, o mesmo do relatório Frete cobrado por transportadora. Retira e FOB entram com o frete que a proposta tiver, normalmente zero. Pedido reenviado aparece uma vez, com o despacho atual.";
+  "Uma linha por despacho com data no período (dia de São Paulo), em ordem de data de despacho e número do pedido. Tipo de frete, conhecimento e cidade são os do despacho (a cidade cai no endereço da proposta só quando o despacho não gravou endereço). Nos Correios, o conhecimento é o código de rastreio do objeto. O valor é o frete gravado na proposta (o cobrado do cliente), sem recalcular, o mesmo do relatório Frete cobrado por transportadora. Retira e FOB entram com o frete que a proposta tiver, normalmente zero. Pedido reenviado aparece uma vez, com o despacho atual.";
 
 export const fretesDespachadosLista: RelatorioDef = {
   slug: "fretes-despachados-lista",
@@ -271,12 +285,12 @@ export const fretesDespachadosLista: RelatorioDef = {
       chave: "tipo_frete",
       rotulo: "Tipo de frete",
       todasRotulo: "Todos",
-      opcoes: [...TIPOS_FRETE.map((t) => ({ valor: t, rotulo: t })), { valor: "SEM", rotulo: "Sem tipo" }]
+      opcoes: [...TIPOS_FRETE.map((t) => ({ valor: t, rotulo: rotuloTipoFrete(t) })), { valor: "SEM", rotulo: "Sem tipo" }]
     }
   ],
 
   colunas: [
-    { id: "id_int", titulo: "ID_INT", tipo: "texto" },
+    { id: "id_int", titulo: "PEDIDO", tipo: "texto" },
     { id: "tipo_frete", titulo: "Tipo frete", tipo: "texto" },
     { id: "data_despacho", titulo: "Data despacho", tipo: "data" },
     { id: "cidade_destino", titulo: "Cidade destino", tipo: "texto" },

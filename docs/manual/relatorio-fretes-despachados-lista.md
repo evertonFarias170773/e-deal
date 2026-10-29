@@ -1,6 +1,6 @@
 # Relatório: Fretes despachados (lista)
 
-> **Última revisão:** 29/10/2026
+> **Última revisão:** 29/10/2026 (rótulos PEDIDO e tipo de frete sem underline)
 > **Caminho no menu:** Relatórios → Expedição → Fretes despachados (lista)
 > **Endereço:** `/relatorios/expedicao/fretes-despachados-lista`
 
@@ -24,7 +24,7 @@ Nomes exatamente como aparecem na tela.
 | **Mês atual** | Filtros, período | Do dia 1º do mês até hoje. É o período ao abrir a tela. |
 | **Mês anterior** | Filtros, período | O mês anterior inteiro. |
 | **Personalizado** | Filtros, período | Abre os campos de data inicial e final. O período máximo é de 366 dias. |
-| **Tipo de frete** | Filtros | **Todos** ou um tipo, como gravado no despacho: CORREIOS, MOTOBOY, TRANSPORTADORA, RETIRA_BALCAO, SEM_CUSTO, INDEFINIDO ou Sem tipo. |
+| **Tipo de frete** | Filtros | **Todos** ou um tipo, o do despacho: CORREIOS, MOTOBOY, TRANSPORTADORA, RETIRA NO BALCÃO, SEM CUSTO, INDEFINIDO ou Sem tipo. |
 | **Limpar filtros** | Filtros | Volta ao padrão. Só aparece quando há filtro ativo. |
 | **Anterior** / **Próxima** | Rodapé da tabela | A tela mostra 100 despachos por vez; estes botões trocam de página. |
 | **Baixar PDF** | Topo da tela | Gera o PDF com o período inteiro e os filtros da tela e baixa o arquivo. |
@@ -44,7 +44,8 @@ Nomes exatamente como aparecem na tela.
 
 - **A data usada é a data de despacho**, no dia de São Paulo. A lista sai em ordem de data de despacho e, no mesmo dia, de número do pedido. Os títulos das colunas não reordenam a lista.
 - **Um pedido aparece uma vez só.** O despacho tem uma linha por pedido; o pedido reenviado aparece com o despacho atual.
-- **Tipo de frete** é o gravado no despacho.
+- A coluna **PEDIDO** é o número do pedido.
+- **Tipo de frete** é o gravado no despacho, escrito sem underline: RETIRA_BALCAO aparece como **RETIRA NO BALCÃO**, SEM_CUSTO como **SEM CUSTO**; os demais (CORREIOS, MOTOBOY, TRANSPORTADORA, INDEFINIDO) como estão. Tela, CSV, PDF e filtro usam os mesmos nomes.
 - **Cidade de destino** é a do endereço gravado no despacho; só quando o despacho não gravou endereço vale o endereço da proposta. Num Retira, é a cidade do endereço do cliente, não um envio. A grafia é a do cadastro (pode haver "Porto Alegre" e "PORTO ALEGRE").
 - **Conhecimento do frete** é o número digitado no despacho. Na transportadora e no motoboy é o conhecimento; **nos Correios é o código de rastreio** do objeto. Se o despacho não tem o número, vale o objeto da pré-postagem dos Correios. Um aviso conta os despachos de transportadora ou motoboy sem conhecimento.
 - **O valor é o frete gravado na proposta**, sem recalcular, o mesmo do relatório **Frete cobrado por transportadora**: o total de despachos e de frete do mesmo período é igual nos dois. Retira e FOB entram com o frete que a proposta tiver, normalmente zero.
