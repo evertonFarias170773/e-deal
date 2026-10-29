@@ -89,9 +89,11 @@ import type {
 import {
   anularColunasEscondidas,
   checklistVisivel,
+  mostraCampo,
   omitirColunasEscondidas,
   type ChecklistVisivel
 } from "@/features/orcamentos/lib/checklist-lote";
+import { conferirFimAntesDeGravar } from "@/features/orcamentos/services/conferir-fim-dos-lotes";
 import {
   divergenciasDeLotes,
   mensagemDasDivergencias,
@@ -2678,6 +2680,39 @@ export function montarInsertDeLoteDaProposta(
   );
 }
 
+/**
+ * Nº final dos lotes que este save vai gravar, conferido pelo cadastro do
+ * numerador ANTES de qualquer escrita (29/10/2026). Devolve a mensagem de
+ * recusa, ou null. Só entram os lotes ligados a um item da tela, fora os
+ * excluídos, e só os de produto que imprime a faixa — nos outros o Nº final
+ * nem é gravado. Quais linhas são conferidas (novas ou tocadas) decide
+ * `conferirFimAntesDeGravar`.
+ */
+async function recusaDoFimNoSave(
+  client: import("@supabase/supabase-js").SupabaseClient,
+  formState: PropostaFormState,
+  checklistPorProduto: Map<number, string[]>,
+  /** Salvamento parcial: só os itens que existem no banco têm lote gravado. */
+  itemSeraGravado: (item: PropostaFormState["itens"][number]) => boolean = () => true
+): Promise<string | null> {
+  const modelos = formState.pedidosModelos ?? [];
+  if (formState.isAvulso || modelos.length === 0) return null;
+  const excluidos = new Set((formState.deletedModeloIds || []).map(Number));
+  const itens = formState.itens || [];
+  const aConferir = modelos.filter((m) => {
+    if (m.id && excluidos.has(Number(m.id))) return false;
+    const item = itens.find(
+      (it) =>
+        (m.id_produto_proposta_origem && Number(it.id_produto_proposta_origem) === Number(m.id_produto_proposta_origem)) ||
+        (m.item_temp_id && it.id === m.item_temp_id)
+    );
+    if (!item || !itemSeraGravado(item)) return false;
+    return mostraCampo(checklistVisivel(checklistPorProduto.get(Number(item.id_produto))), "numeracao_faixa");
+  });
+  const conferencia = await conferirFimAntesDeGravar(client, aConferir);
+  return conferencia.ok ? null : conferencia.mensagem;
+}
+
 /** Lote novo gravado: o `tempId` da tela casado com o id do banco. */
 type ModeloSincronizado = { tempId: string; id: number; idProdutoPropostaOrigem: number };
 
@@ -2887,6 +2922,12 @@ async function gravarLotesNoSalvamentoParcial(
     }
   }
 
+  // Nº final conferido pelo cadastro do numerador antes de qualquer escrita.
+  const recusaDoFim = await recusaDoFimNoSave(client, formState, checklist, (item) =>
+    produtoDoItem.has(Number(item.id_produto_proposta_origem))
+  );
+  if (recusaDoFim) return { success: false, errorMessage: recusaDoFim };
+
   const modelosSincronizados: ModeloSincronizado[] = [];
   try {
     for (const item of formState.itens) {
@@ -3068,6 +3109,11 @@ export async function saveProposta(
         checklistDosLotes.set(id, lista);
       }
     }
+
+    // Nº final conferido pelo cadastro do numerador, ainda antes de qualquer
+    // escrita (29/10/2026): recusa aqui não deixa item nem lote pela metade.
+    const recusaDoFim = await recusaDoFimNoSave(client, formState, checklistDosLotes);
+    if (recusaDoFim) return { success: false, errorMessage: recusaDoFim };
   }
 
 

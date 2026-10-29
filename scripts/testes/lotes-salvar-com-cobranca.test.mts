@@ -86,6 +86,16 @@ function combinar() {
   // Produto 102 só imprime a cor; o 301 não tem checklist (tudo como sempre).
   falso.responder("produto_boletim_campos:select", { data: [{ id_produto: 102, campo: "cor" }], error: null });
   falso.responder("pedidos_modelos:insert", { data: { id: 900 }, error: null });
+  // Conferência do Nº final (29/10/2026): os lotes como estão no banco e o
+  // cadastro de numerações. O 600 está como no banco (intocado).
+  falso.responder("pedidos_modelos:select", {
+    data: [{ id: 600, quantidade: 120, numeracao_inicio: 1, gabarito_operacional: "001 - Padrão Ideal" }],
+    error: null
+  });
+  falso.responder("producao_numeracoes:select", {
+    data: [{ name: "001 - Padrão Ideal", tipo: "SEQUENCIAL", ticket_qtd: null }, { name: "Ticket PRATA", tipo: "TICKET", ticket_qtd: 5 }],
+    error: null
+  });
 }
 
 const resumo = (c: Chamada) => `${c.tabela}:${c.op}`;
@@ -114,6 +124,9 @@ checar(
     "pagamentos_v2:select",
     "produtos_proposta:select",
     "produto_boletim_campos:select",
+    // Conferência do Nº final: lotes gravados. O produto 102 não imprime a
+    // faixa (fica fora) e o 600 está intocado, então o cadastro nem é lido.
+    "pedidos_modelos:select",
     "pedidos_modelos:delete", // item 10
     "pedidos_modelos:update",
     "pedidos_modelos:insert",
@@ -123,7 +136,7 @@ checar(
   ]
 );
 
-const emLotes = falso.chamadas.filter((c) => c.tabela === "pedidos_modelos");
+const emLotes = falso.chamadas.filter((c) => c.tabela === "pedidos_modelos" && c.op !== "select");
 checar("exclusão do item 10: a fila inteira, presa ao item e à proposta", [
   filtro(emLotes[0], "in", "id"),
   filtro(emLotes[0], "eq", "id_produto_proposta_origem"),
@@ -166,6 +179,29 @@ const comFalha = await saveProposta(form, cliente, "usuario-de-teste", { gravarL
 checar("falha num lote: recusa", comFalha.success, false);
 checar("falha num lote: o motivo volta", comFalha.errorMessage, "Erro ao atualizar modelo #500: violou a regra X");
 checar("falha num lote: observações não gravadas", falso.chamadas.some((c) => c.tabela === "propostas" && c.op === "update"), false);
+
+// ── 3b. Nº final divergente (29/10/2026): recusa sem escrever nada ───────────
+// Lote novo no produto sem checklist (item 11), Ticket PRATA, QTD 4000, Nº
+// final 4000 (a conta ×1 dos pedidos 24054, 24420 e 24500).
+combinar();
+const formTicket = {
+  ...form,
+  pedidosModelos: [
+    ...(form.pedidosModelos ?? []),
+    lote({ tempId: "lote_t", isPersisted: false, id_produto_proposta_origem: 11, nome_modelo: "VALE", quantidade: 4000, numeracao_fim: 4000, gabarito_operacional: "Ticket PRATA" })
+  ]
+} as unknown as PropostaFormState;
+const comTicketErrado = await saveProposta(formTicket, cliente, "usuario-de-teste", { gravarLotesComCobranca: true });
+checar("Nº final divergente: recusa", comTicketErrado.success, false);
+checar("Nº final divergente: mensagem com o número do cadastro", String(comTicketErrado.errorMessage).includes("VALE (Ticket PRATA): Nº final 4000, o cadastro dá 20000"), true);
+checar("Nº final divergente: nenhuma escrita", falso.chamadas.filter((c) => c.op !== "select").length, 0);
+combinar();
+const formTicketCerto = {
+  ...formTicket,
+  pedidosModelos: (formTicket.pedidosModelos ?? []).map((m) => (m.tempId === "lote_t" ? { ...m, numeracao_fim: 20000 } : m))
+} as unknown as PropostaFormState;
+const comTicketCerto = await saveProposta(formTicketCerto, cliente, "usuario-de-teste", { gravarLotesComCobranca: true });
+checar("Nº final certo (20000): grava", comTicketCerto.success, true);
 
 // ── 4. Leitura do checklist falhou: nada gravado ─────────────────────────────
 combinar();

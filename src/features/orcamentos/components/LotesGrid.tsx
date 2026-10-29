@@ -94,11 +94,10 @@ import { fetchComSessao, SessaoExpiradaError } from "@/lib/supabase/sessao";
 import { interpretarColagem, somaQuantidades, type CorOpcao } from "@/features/orcamentos/services/lotes-colagem";
 import {
   avisoDoFimDivergente,
-  calcularNumeracaoFim,
   derivarCamposNumeracao,
   divergenciaDoFim,
-  findNumeracaoByName,
-  resolverMultiplicadorNumeracao,
+  fimDaGradeParaLote,
+  loteSeguradoPeloNumerador,
   type ModeloNumeracaoCampos,
   type NumeracaoOpcao
 } from "@/features/orcamentos/numeracao-modelo-utils";
@@ -485,6 +484,32 @@ export function LotesGrid({
     return mapa;
   }, [linhasIniciais, numeracoes, mostraFaixa]);
 
+  /**
+   * NUMERADOR FORA DA LISTA (29/10/2026). A conta abaixo usava ×1 quando o
+   * numerador do lote ainda não estava na lista (carregando, ou nome ausente):
+   * Ticket gravado com Nº final = QTD nos pedidos 24054, 24420 e 24500. Agora a
+   * linha nova ou tocada nesse estado fica sem Nº final, não vai para a rota nem
+   * para o Salvar, e a grade diz por quê. Quando a lista chega, `numerar` refaz
+   * a conta (depende de `numeracoes`) e o repasse ao Salvar é refeito.
+   * Linha do banco em que ninguém mexeu segue com o Nº final gravado.
+   */
+  const gravadasPorId = useMemo(
+    () => new Map(linhasIniciais.filter((l) => l.id).map((l) => [Number(l.id), { ...l, id: Number(l.id) }])),
+    [linhasIniciais]
+  );
+  const gravadaDe = (l: { id?: number | null }) => (l.id ? gravadasPorId.get(Number(l.id)) ?? null : null);
+  const segurada = (l: Lote) => loteSeguradoPeloNumerador(l, gravadaDe(l), numeracoes);
+  /** Por que as linhas seguradas não gravam, ou null. */
+  function motivoDasSeguradas(lista: Lote[]): string | null {
+    const presas = lista.filter(segurada);
+    if (presas.length === 0) return null;
+    if (numeracoes.length === 0) {
+      return `${item.nome}: a lista de numeradores ainda está carregando. Aguarde um instante e grave de novo.`;
+    }
+    const nomes = Array.from(new Set(presas.map((l) => String(l.gabarito_operacional ?? "").trim())));
+    return `${item.nome}: o numerador ${nomes.map((n) => `"${n}"`).join(", ")} não está na lista de numeradores. Escolha o numerador de novo para calcular o Nº final.`;
+  }
+
   const numerar = useCallback(
     (lista: Lote[], modo: ModoNumeracao | null): Lote[] => {
       // Linha de Mapa de Teatro fica FORA dos modos de numeração: os assentos
@@ -493,17 +518,13 @@ export function LotesGrid({
       const comuns = aplicarNumeracao(
         lista.filter((l) => !l.mapa_teatro_setor_id),
         mostraFaixa ? modo : null,
-        (inicio, qtd, linha) => {
-          const { multiplicador } = resolverMultiplicadorNumeracao(
-            findNumeracaoByName(numeracoes, linha.gabarito_operacional)
-          );
-          return calcularNumeracaoFim(inicio, qtd, multiplicador);
-        }
+        (inicio, qtd, linha) =>
+          fimDaGradeParaLote(inicio, qtd, linha, linha.id ? gravadasPorId.get(Number(linha.id)) ?? null : null, numeracoes)
       );
       let i = 0;
       return lista.map((l) => (l.mapa_teatro_setor_id ? l : comuns[i++]));
     },
-    [numeracoes, mostraFaixa]
+    [numeracoes, mostraFaixa, gravadasPorId]
   );
 
   const linhasNumeradas = useMemo(() => numerar(linhas, modoEfetivo), [linhas, modoEfetivo, numerar]);
@@ -533,6 +554,8 @@ export function LotesGrid({
    * nada — continua como está no banco.
    */
   function impedimento(): string | null {
+    const semNumerador = motivoDasSeguradas(numerar(linhasRef.current, modoRef.current).filter((l) => l.id || completa(l)));
+    if (semNumerador) return semNumerador;
     const presas = linhasRef.current.filter((l) => !completa(l) && tocadasRef.current.has(l.chave));
     if (presas.length === 0) return null;
     const faltam = new Set<string>();
@@ -624,6 +647,10 @@ export function LotesGrid({
       return { segurar: `Complete os campos obrigatórios do modelo #${existenteIncompleta.id} para voltar a gravar.` };
     }
     const enviaveis = numeradas.filter((l) => l.id || completa(l) || novaDeMapa(l));
+    // Numerador fora da lista: a linha não vai, e nada vai sem ela — gravar o
+    // resto deixaria a soma do item sem esse lote.
+    const semNumerador = motivoDasSeguradas(enviaveis);
+    if (semNumerador) return { segurar: semNumerador };
     const removerIds = removidosRef.current;
     if (enviaveis.length === 0 && removerIds.length === 0) return { segurar: "" };
     // Mesma regra do "Gravar lote" (ex-"Fechar lote") de sempre: sem quantidade nenhuma não há o que gravar.
@@ -675,6 +702,12 @@ export function LotesGrid({
     setTemLinhaPresa(impedimento() !== null);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [linhas, modoNumeracao]);
+  // Lista de numeradores chegou: a linha segurada por ela pode ter sido solta.
+  useEffect(() => {
+    if (retratoGravadoRef.current === null) return;
+    setTemLinhaPresa(impedimento() !== null);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [numeracoes]);
   // O que se perde ao sair: sem cobrança, tudo que não foi gravado; com
   // cobrança, só a linha presa — o resto já está no formulário.
   const perdeAoSair = temLinhaPresa || (!onPendente && naoGravado);
@@ -1068,21 +1101,37 @@ export function LotesGrid({
   // Proposta com cobrança: espelha no formulário a cada alteração (ver
   // `onPendente`). A primeira passagem é o que veio do banco: nada a espelhar.
   const espelhouRef = useRef(false);
+  /** Já houve repasse de verdade (alguém mexeu): só então a chegada da lista o refaz. */
+  const repassouRef = useRef(false);
+  function repassarAoSalvar() {
+    if (!onPendente) return;
+    const numeradas = numerar(linhasRef.current, modoRef.current);
+    // Linha nova sem os obrigatórios fica fora, como no envio da rota.
+    const gravaveis = numeradas.filter((l) => l.id || completa(l));
+    // Numerador fora da lista: o lote não vai ao Salvar (o Salvar fica segurado
+    // pelo `impedimento`). A soma conta com ele, para a quantidade do item não
+    // oscilar enquanto a lista carrega.
+    const lotes = gravaveis.filter((l) => !segurada(l)).map((l) => ({ ...l, ...montarLote(l), chave: l.chave }));
+    onPendente({ lotes, removerIds: [...removidosRef.current], soma: somaQuantidades(gravaveis) });
+    repassouRef.current = true;
+  }
   useEffect(() => {
     if (!onPendente) return;
     if (!espelhouRef.current) {
       espelhouRef.current = true;
       return;
     }
-    const numeradas = numerar(linhasRef.current, modoRef.current);
-    // Linha nova sem os obrigatórios fica fora, como no envio da rota.
-    const lotes = numeradas
-      .filter((l) => l.id || completa(l))
-      .map((l) => ({ ...l, ...montarLote(l), chave: l.chave }));
-    onPendente({ lotes, removerIds: [...removidosRef.current], soma: somaQuantidades(lotes) });
+    repassarAoSalvar();
     // Só as linhas e o modo disparam: são as duas fontes do que vai ao Salvar.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [linhas, modoNumeracao]);
+  // A lista de numeradores chegou (ou mudou): refaz a conta e o repasse. Sem
+  // repasse anterior não há nada a refazer — o formulário segue com o banco.
+  useEffect(() => {
+    if (!onPendente || !repassouRef.current) return;
+    repassarAoSalvar();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [numeracoes]);
 
   // A grade se apresenta ao Salvar da proposta. A cada render, para as funções
   // serem as do render mais novo (elas leem `visivel`, `onGravado`, o item).

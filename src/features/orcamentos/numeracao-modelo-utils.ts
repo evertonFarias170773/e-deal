@@ -292,3 +292,177 @@ export function pedidosAReabrirPeloNumerador(
   const pedidos = Array.from(new Set(divergentes.map((d) => d.idInt).filter((id): id is number => id !== null))).sort((a, b) => a - b);
   return { texto: pedidos.length ? "Estes pedidos precisam ser reabertos e salvos" : "", pedidos, modelos: divergentes };
 }
+
+/* ------------------------------------------------------------------------- */
+/* CONFERÊNCIA DO Nº FINAL NA GRAVAÇÃO (29/10/2026)                            */
+/* ------------------------------------------------------------------------- */
+
+/**
+ * O que a gravação confere antes de escrever. Seis modelos Ticket (24054,
+ * 24420, 24500) foram gravados com Nº final = QTD: a tela calculou com ×1
+ * porque o numerador ainda não estava na lista dela, e quem grava aceitava o
+ * número que a tela mandava. Agora a gravação refaz a conta pelo CADASTRO do
+ * numerador e recusa quando o número enviado é outro.
+ *
+ * SÓ LINHA NOVA OU TOCADA. Linha já gravada em que QTD, Nº inicial e numerador
+ * são os do banco passa sem conferência, para o Salvar de pedido antigo não
+ * travar por causa de faixa gravada antes desta regra. O aviso "gravado ×
+ * calculado" da impressão continua sendo quem aponta esses casos.
+ */
+
+/** Um lote como chega para ser gravado. */
+export type LoteParaConferirFim = {
+  id?: number | null;
+  nome_modelo?: string | null;
+  quantidade?: number | string | null;
+  tipo_numeracao?: string | null;
+  numeracao_inicio?: number | string | null;
+  numeracao_fim?: number | string | null;
+  gabarito_operacional?: string | null;
+  mapa_teatro_id?: unknown;
+  mapa_teatro_setor_id?: unknown;
+};
+
+/** O mesmo lote como está no banco: só o que decide se ele foi tocado. */
+export type LoteGravadoParaConferir = {
+  id: number;
+  quantidade?: number | string | null;
+  numeracao_inicio?: number | string | null;
+  gabarito_operacional?: string | null;
+};
+
+export type FimRecusado = {
+  id: number | null;
+  nome: string;
+  numerador: string;
+  enviado: number | null;
+  esperado: number | null;
+  motivo: string;
+};
+
+const vazio = (v: unknown) => v === null || v === undefined || String(v).trim() === "";
+const numeroOuNulo = (v: unknown): number | null => (vazio(v) ? null : Number.isFinite(Number(v)) ? Number(v) : null);
+const textoAparado = (v: unknown) => String(v ?? "").trim();
+
+/**
+ * O lote é novo, ou mudou QTD, Nº inicial ou numerador em relação ao banco?
+ * Sem a linha do banco (id ausente ou não encontrado) conta como novo.
+ */
+export function loteFoiTocado(lote: LoteParaConferirFim, gravado: LoteGravadoParaConferir | null | undefined): boolean {
+  if (!gravado) return true;
+  if (Number(lote.quantidade) !== Number(gravado.quantidade)) return true;
+  if (numeroOuNulo(lote.numeracao_inicio) !== numeroOuNulo(gravado.numeracao_inicio)) return true;
+  return textoAparado(lote.gabarito_operacional) !== textoAparado(gravado.gabarito_operacional);
+}
+
+/**
+ * Confere o Nº final de UM lote com a conta do cadastro. `null` = confere (ou
+ * não há faixa a conferir). Não confere: Mapa de Teatro, SEM_NUMERACAO e lote
+ * sem Nº inicial — nesses não há faixa calculada. Lote sem numerador usa ×1,
+ * a mesma conta da tela.
+ */
+export function recusaDoFim(lote: LoteParaConferirFim, numeracoes: NumeracaoOpcao[]): FimRecusado | null {
+  if (lote.mapa_teatro_id || lote.mapa_teatro_setor_id) return null;
+  if (textoAparado(lote.tipo_numeracao).toUpperCase() === "SEM_NUMERACAO") return null;
+  const inicio = numeroOuNulo(lote.numeracao_inicio);
+  if (inicio === null) return null;
+
+  const base = {
+    id: lote.id && Number(lote.id) > 0 ? Number(lote.id) : null,
+    nome: textoAparado(lote.nome_modelo),
+    numerador: textoAparado(lote.gabarito_operacional),
+    enviado: numeroOuNulo(lote.numeracao_fim)
+  };
+
+  let numeracao: NumeracaoOpcao | null = null;
+  if (base.numerador) {
+    numeracao = findNumeracaoByName(numeracoes, base.numerador);
+    if (!numeracao) {
+      return { ...base, esperado: null, motivo: `o numerador "${base.numerador}" não está no cadastro de numerações` };
+    }
+  }
+  const { multiplicador, erro } = resolverMultiplicadorNumeracao(numeracao);
+  if (multiplicador === null) return { ...base, esperado: null, motivo: erro ?? "numerador sem multiplicador no cadastro" };
+
+  const esperado = calcularNumeracaoFim(inicio, Number(lote.quantidade), multiplicador);
+  if (esperado === null) return null;
+  if (base.enviado === esperado) return null;
+  return { ...base, esperado, motivo: `Nº final ${base.enviado ?? "vazio"}, o cadastro dá ${esperado}` };
+}
+
+/** Confere a lista: só as linhas novas ou tocadas. */
+export function conferirFimDosLotes(
+  lotes: readonly LoteParaConferirFim[],
+  gravados: readonly LoteGravadoParaConferir[],
+  numeracoes: NumeracaoOpcao[]
+): FimRecusado[] {
+  const porId = new Map(gravados.map((g) => [Number(g.id), g]));
+  return lotes
+    .filter((l) => loteFoiTocado(l, l.id ? porId.get(Number(l.id)) : null))
+    .map((l) => recusaDoFim(l, numeracoes))
+    .filter((r): r is FimRecusado => r !== null);
+}
+
+/** A mensagem da recusa, para a tela mostrar como veio. */
+export function mensagemDaRecusaDoFim(recusas: readonly FimRecusado[]): string {
+  const linhas = recusas
+    .slice(0, 5)
+    .map((r) => `${r.id ? `#${r.id} ` : ""}${r.nome || "modelo"}${r.numerador ? ` (${r.numerador})` : ""}: ${r.motivo}`);
+  const resto = recusas.length > 5 ? [`e mais ${recusas.length - 5}`] : [];
+  return [
+    `Nada foi gravado: o Nº final de ${recusas.length} modelo(s) não confere com o cadastro do numerador.`,
+    ...linhas,
+    ...resto,
+    "Reabra o lote, escolha o numerador de novo e grave."
+  ].join(" ");
+}
+
+/* ------------------------------------------------------------------------- */
+/* GRADE: NUMERADOR FORA DA LISTA (29/10/2026)                                 */
+/* ------------------------------------------------------------------------- */
+
+/**
+ * Numerador escolhido que a lista da tela ainda não tem: a lista está
+ * carregando, ou o nome não está nela. Sem ele não se sabe o multiplicador, e
+ * calcular dava ×1 — foi assim que o Ticket saiu com Nº final = QTD.
+ * Sem numerador escolhido não é "fora da lista": a conta de sempre usa ×1.
+ */
+export function numeradorForaDaLista(gabarito: string | null | undefined, numeracoes: NumeracaoOpcao[]): boolean {
+  if (!textoAparado(gabarito)) return false;
+  return findNumeracaoByName(numeracoes, gabarito) === null;
+}
+
+/**
+ * Lote que a grade segura: numerador fora da lista E linha nova ou tocada.
+ * Linha do banco em que ninguém mexeu não é segurada — segue com o que tem
+ * gravado, como sempre. Setor de Mapa de Teatro não tem faixa.
+ */
+export function loteSeguradoPeloNumerador(
+  lote: LoteParaConferirFim,
+  gravado: LoteGravadoParaConferir | null | undefined,
+  numeracoes: NumeracaoOpcao[]
+): boolean {
+  if (lote.mapa_teatro_id || lote.mapa_teatro_setor_id) return false;
+  return numeradorForaDaLista(lote.gabarito_operacional, numeracoes) && loteFoiTocado(lote, gravado);
+}
+
+/**
+ * O Nº final que a grade põe na linha. Numerador fora da lista: linha
+ * segurada fica sem Nº final (nunca ×1), e linha intocada mantém o gravado.
+ * Com o numerador na lista, a conta de sempre.
+ */
+export function fimDaGradeParaLote(
+  inicio: number,
+  quantidade: number,
+  lote: LoteParaConferirFim,
+  gravado: (LoteGravadoParaConferir & { numeracao_fim?: number | string | null }) | null | undefined,
+  numeracoes: NumeracaoOpcao[]
+): number | null {
+  if (numeradorForaDaLista(lote.gabarito_operacional, numeracoes)) {
+    const comFaixa = { ...lote, numeracao_inicio: inicio, quantidade };
+    if (loteFoiTocado(comFaixa, gravado)) return null;
+    return numeroOuNulo(gravado?.numeracao_fim ?? lote.numeracao_fim);
+  }
+  const { multiplicador } = resolverMultiplicadorNumeracao(findNumeracaoByName(numeracoes, lote.gabarito_operacional));
+  return calcularNumeracaoFim(inicio, quantidade, multiplicador);
+}

@@ -195,6 +195,8 @@ O PDF é sempre o do mapa como está hoje no sistema de mapas. Quem publica o PD
 - Produto de prateleira mostra só **Qtd** e **Cor papel**. O nome do modelo é o nome do produto, e não há coluna **Arte** nem amostra.
 - A **Cor papel** só é obrigatória quando há cor para escolher: o produto tem formato e esse formato tem cores. Produto sem formato, ou com formato sem cores (os serviços, por exemplo), grava o modelo só com a quantidade, e a cor fica vazia.
 - O Nº Final nunca é digitado. Ele é refeito sempre que a quantidade, o Nº Inicial ou o numerador mudam.
+- Ao gravar, o sistema refaz a conta do Nº Final pelo cadastro do numerador (Nº Inicial + Qtd × números por unidade − 1) e recusa a gravação inteira se o número for outro. Só confere o modelo novo ou aquele em que a Qtd, o Nº Inicial ou o numerador mudaram; modelo antigo em que ninguém mexeu grava como está.
+- Enquanto a lista de numeradores carrega, ou quando o numerador do modelo não está nela, a linha nova ou alterada fica sem Nº Final e não é gravada. **Gravar lote** e **Salvar alterações** avisam o motivo. Quando a lista chega, o Nº Final é calculado.
 - Modelo sem quantidade não recebe numeração e não entra na sequência.
 - O botão de linhas cria no máximo 200 de uma vez.
 - Produto removido do pedido não aparece nesta aba.
@@ -238,6 +240,9 @@ O PDF é sempre o do mapa como está hoje no sistema de mapas. Quem publica o PD
 | "... a quantidade do item ficou em N e não pôde ser devolvida ..." ou "... o valor da proposta ficou em R$ ... : confira." | A gravação falhou no meio e o sistema não conseguiu desfazer tudo. | Confira a quantidade do produto e o valor do pedido, e avise o administrador. |
 | "N lote(s) foram removidos, mas a quantidade do item não foi gravada" | Os modelos saíram, mas a quantidade do produto ficou a antiga. | Clique em **Gravar lote** de novo. |
 | "Nº final gravado (X) difere do calculado (Y). Salve para corrigir antes de imprimir." | O numerador do modelo mudou depois de o modelo ser gravado. | Confira o numerador e grave o lote. Reimprima a OS se ela já saiu. |
+| "Nada foi gravado: o Nº final de N modelo(s) não confere com o cadastro do numerador. ..." | O Nº Final enviado não é o da conta do cadastro, ou o numerador do modelo não existe mais no cadastro. A mensagem traz o modelo, o numerador e o número certo. | Reabra o modelo, escolha o numerador de novo e grave. |
+| "...: a lista de numeradores ainda está carregando. Aguarde um instante e grave de novo." | A tela ainda não recebeu a lista de numeradores. | Espere alguns segundos e grave de novo. |
+| "...: o numerador "X" não está na lista de numeradores. Escolha o numerador de novo para calcular o Nº final." | O numerador do modelo não está na lista deste pedido: foi apagado, renomeado ou é exclusivo de outro cliente. | Escolha um numerador da lista e grave. |
 | "Salve a proposta uma vez antes de montar os lotes deste produto." | O produto foi incluído e o pedido ainda não foi salvo. | Clique em **Salvar alterações** e volte à aba. |
 | "N lote(s) ainda sem os obrigatórios — não são gravados até ficarem completos." | Há linha nova sem Modelo, Qtd ou Cor papel (a cor só conta quando o campo tem asterisco). | Complete a linha ou remova-a. |
 | "Complete os campos obrigatórios do modelo #... para voltar a gravar." | Um modelo que já existia ficou sem campo obrigatório. | Preencha o campo naquele modelo e grave de novo. |

@@ -74,7 +74,8 @@
 import { NextResponse } from "next/server";
 import { createClient as createSupabaseClient, type SupabaseClient } from "@supabase/supabase-js";
 import { avaliarFreteParaCobranca, mensagemFreteDesatualizado } from "@/features/orcamentos/services/frete-desatualizado";
-import { checklistVisivel } from "@/features/orcamentos/lib/checklist-lote";
+import { checklistVisivel, mostraCampo } from "@/features/orcamentos/lib/checklist-lote";
+import { conferirFimAntesDeGravar } from "@/features/orcamentos/services/conferir-fim-dos-lotes";
 import { gravarLotesDoItem } from "@/features/orcamentos/services/gravar-lotes.server";
 import { calcularTotaisPelaRegraDaTela } from "@/features/orcamentos/services/totais-proposta.server";
 import {
@@ -341,6 +342,17 @@ export async function POST(request: Request) {
         mapa_teatro_revisao: revisao,
         mapa_teatro_snapshot: retrato
       });
+    }
+  }
+
+  // 2d. Nº final conferido pelo cadastro do numerador (29/10/2026), antes de
+  //     qualquer escrita. Só linha nova ou com QTD, Nº inicial ou numerador
+  //     alterados; a tela não é mais a fonte da conta. Produto que não imprime
+  //     a faixa não tem Nº final gravado por esta rota, então não há o que conferir.
+  if (mostraCampo(visivel, "numeracao_faixa")) {
+    const conferencia = await conferirFimAntesDeGravar(supabase, lotes);
+    if (!conferencia.ok) {
+      return erro("NUMERACAO_FIM_DIVERGENTE", conferencia.mensagem, 409, { recusas: conferencia.recusas });
     }
   }
 
