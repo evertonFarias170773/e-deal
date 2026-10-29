@@ -11,18 +11,6 @@
 
 export const MENSAGEM_PEDIDO_FATURADO_FORA = "Este pedido já tem nota emitida no sistema antigo.";
 
-/**
- * Status em que a marca se aplica pelo menu de Orçamentos: a nota antecipada,
- * emitida antes do pagamento. Nos demais casos a marca continua saindo da Fila
- * de Faturamento, como antes.
- */
-export const STATUS_DA_MARCA_ANTECIPADA = ["NOVO", "AGUARDANDO"] as const;
-
-export function podeMarcarNotaAntecipada(statusInterno: string | null | undefined): boolean {
-  const status = String(statusInterno ?? "").trim().toUpperCase();
-  return (STATUS_DA_MARCA_ANTECIPADA as readonly string[]).includes(status);
-}
-
 /** Número da nota do sistema antigo: só dígitos, de 1 a 9. Fora disso, null. */
 export function normalizarNumeroNotaAntiga(valor: unknown): string | null {
   const texto = String(valor ?? "").trim();

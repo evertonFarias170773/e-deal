@@ -94,7 +94,7 @@ import {
   type ChecklistVisivel
 } from "@/features/orcamentos/lib/checklist-lote";
 import { conferirFimAntesDeGravar } from "@/features/orcamentos/services/conferir-fim-dos-lotes";
-import { aplicarCorrecoesDoFim, type CorrecaoDoFim } from "@/features/orcamentos/numeracao-modelo-utils";
+import { aplicarCorrecoesDoFim, statusCorrigeOFim, type CorrecaoDoFim } from "@/features/orcamentos/numeracao-modelo-utils";
 import {
   divergenciasDeLotes,
   mensagemDasDivergencias,
@@ -2883,7 +2883,9 @@ async function gravarLotesDoItem(
 async function gravarLotesNoSalvamentoParcial(
   client: import("@supabase/supabase-js").SupabaseClient,
   formState: PropostaFormState,
-  idInt: number
+  idInt: number,
+  /** Status lido do banco pelo editar-paga (a única porta deste caminho). */
+  statusDoBanco: string | null
 ): Promise<{ success: true; modelosSincronizados: ModeloSincronizado[] } | { success: false; errorMessage: string }> {
   let modelos = formState.pedidosModelos ?? [];
   const excluirIds = (formState.deletedModeloIds || []).map(Number).filter((id) => Number.isFinite(id) && id > 0);
@@ -2931,7 +2933,8 @@ async function gravarLotesNoSalvamentoParcial(
     produtoDoItem.has(Number(item.id_produto_proposta_origem))
   );
   if ("recusa" in fimDosLotes) return { success: false, errorMessage: fimDosLotes.recusa };
-  modelos = aplicarCorrecoesDoFim(modelos, fimDosLotes.correcoes);
+  // Correção da linha intocada só em pedido que ainda não saiu, pelo status do banco.
+  if (statusCorrigeOFim(statusDoBanco)) modelos = aplicarCorrecoesDoFim(modelos, fimDosLotes.correcoes);
 
   const modelosSincronizados: ModeloSincronizado[] = [];
   try {
@@ -2977,6 +2980,12 @@ export async function saveProposta(
      * permissão `propostas.editar_paga`.
      */
     gravarLotesComCobranca?: boolean;
+    /**
+     * `propostas.status_interno` como o editar-paga acabou de ler no banco.
+     * Decide, no salvamento parcial, se a linha intocada com Nº final errado é
+     * corrigida (só em pedido que ainda não saiu). Sem ele, não é corrigida.
+     */
+    statusDoBanco?: string | null;
   }
 ): Promise<{
   success: boolean;
@@ -3036,7 +3045,7 @@ export async function saveProposta(
           // gravado e a tela mostra o motivo sem recarregar.
           let modelosSincronizadosParcial: ModeloSincronizado[] = [];
           if (options?.gravarLotesComCobranca) {
-            const lotes = await gravarLotesNoSalvamentoParcial(client, formState, id_int);
+            const lotes = await gravarLotesNoSalvamentoParcial(client, formState, id_int, options?.statusDoBanco ?? null);
             if (!lotes.success) {
               return { success: false, errorMessage: lotes.errorMessage };
             }
@@ -3086,6 +3095,8 @@ export async function saveProposta(
    * de proposta sem lote não ganha nenhuma consulta.
    */
   const checklistDosLotes = new Map<number, string[]>();
+  /** Nº final de linha intocada a corrigir — aplicado só depois de ler o status do banco (gate). */
+  let correcoesDoFim: CorrecaoDoFim[] = [];
   if ((formState.pedidosModelos?.length ?? 0) > 0 && !formState.isAvulso) {
     const idsProdutoComLote = Array.from(
       new Set(
@@ -3119,9 +3130,7 @@ export async function saveProposta(
     // escrita (29/10/2026): recusa aqui não deixa item nem lote pela metade.
     const fimDosLotes = await fimDosLotesNoSave(client, formState, checklistDosLotes);
     if ("recusa" in fimDosLotes) return { success: false, errorMessage: fimDosLotes.recusa };
-    if (fimDosLotes.correcoes.length > 0) {
-      formState = { ...formState, pedidosModelos: aplicarCorrecoesDoFim(formState.pedidosModelos ?? [], fimDosLotes.correcoes) };
-    }
+    correcoesDoFim = fimDosLotes.correcoes;
   }
 
 
@@ -3329,6 +3338,8 @@ export async function saveProposta(
     /** `propostas.valor_frete` como estava no banco na leitura do gate — cru, para a trava. */
     let valorFreteGravadoBruto: number | string | null = null;
     let gateLidoDoBanco = false;
+    /** `status_interno` cru do banco; nulo se a leitura falhou (aí não há correção do Nº final). */
+    let statusLidoDoBanco: string | null = null;
 
     if (isUpdate && id_int) {
       const { data: gateRow, error: gateError } = await client
@@ -3341,6 +3352,7 @@ export async function saveProposta(
         console.warn("[OrcamentosService] Falha ao reler o status para o gate da modalidade:", gateError);
       } else if (gateRow) {
         gateLidoDoBanco = true;
+        statusLidoDoBanco = (gateRow.status_interno as string | null) ?? null;
         statusParaGate = String(gateRow.status_interno ?? formState.status);
         modalidadePersistida = (gateRow.modalidade_frete as ModalidadeFrete | null) ?? null;
         transportadoraPersistida =
@@ -3349,6 +3361,14 @@ export async function saveProposta(
             : null;
         valorFreteGravadoBruto = (gateRow.valor_frete as number | string | null) ?? null;
       }
+    }
+
+    // Nº final da linha intocada (29/10/2026): corrigido só em pedido que ainda
+    // não saiu, pelo status que ACABOU de ser lido do banco — nunca o da tela.
+    // ENTREGUE, EM TRANSITO, CANCELADO (e status não listado, ou leitura que
+    // falhou) gravam a linha como está. Linha tocada já foi conferida acima.
+    if (correcoesDoFim.length > 0 && statusCorrigeOFim(statusLidoDoBanco)) {
+      formState = { ...formState, pedidosModelos: aplicarCorrecoesDoFim(formState.pedidosModelos ?? [], correcoesDoFim) };
     }
 
     /**

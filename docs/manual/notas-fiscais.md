@@ -369,7 +369,7 @@ Nota com duas parcelas ou mais não é lançada por este caminho: a janela mostr
 Ação temporária, da transição entre sistemas. Use só quando a nota do pedido já foi emitida no sistema antigo.
 
 1. Na fila, clique em **Nota emitida no sistema antigo** na linha do pedido. Na janela, informe o **Número da nota no sistema antigo \*** (só dígitos, obrigatório), uma observação se quiser, e clique em **Marcar nota emitida**.
-   - **Nota antecipada** (emitida antes do pagamento, com o pedido em NOVO ou AGUARDANDO): a mesma marca se aplica em **Pedidos**, menu da linha, **Nota emitida no sistema antigo**, com a mesma janela. Só quem tem **Liberar para Nota Fiscal**.
+   - Para a nota antecipada (antes do pagamento), não use esta marca: libere o pedido com **Liberar nota antecipada (Fila de Faturamento)** e emita pelo Vibe (veja **Nota antecipada**).
 2. O pedido sai da fila e não entra mais nela. Liberação para nota, status e produção do pedido ficam como estavam, e nenhuma nota é criada no Vibe. O número da nota, quem marcou e quando ficam na linha do tempo do pedido.
 3. Uma venda, uma NF-e: com a marca, o **Faturar** e a ação **Gerar outra nota de venda** recusam o pedido com **Este pedido já tem nota emitida no sistema antigo.**
 4. Para desfazer, abra **Pedidos** no menu lateral (é a tela que o aviso chama de Orçamentos), ache o pedido (ele mostra a etiqueta **faturado no sistema antigo**), abra o menu da linha e clique em **Voltar para a Fila de Faturamento (desfazer nota no sistema antigo)**. O pedido volta a aparecer na fila quando estiver liberado para nota, e o **Faturar** deixa de recusá-lo.
@@ -638,7 +638,7 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 
 > **Mudança desta revisão:** 29/10/2026 — **Nota antecipada**: **Liberar nota antecipada (Fila de Faturamento)**, no menu da linha em **Pedidos**, coloca na fila o pedido em AGUARDANDO (só liga a liberação para nota; status, produção e cobranças não mudam), para a NF-e sair pelo **Faturar** antes do pagamento; **Desfazer nota antecipada** enquanto não houver NF-e de venda.
 
-> **Mudança desta revisão:** 29/10/2026 — **Nota emitida no sistema antigo**: marcar pede o número da nota (vai para a linha do tempo); a marca vale também para a nota antecipada, em pedido NOVO ou AGUARDANDO, pelo menu da linha em **Pedidos**; com a marca, **Faturar** e **Gerar outra nota de venda** recusam o pedido com "Este pedido já tem nota emitida no sistema antigo."
+> **Mudança desta revisão:** 29/10/2026 — **Nota emitida no sistema antigo**: marcar pede o número da nota (vai para a linha do tempo) e continua sendo feito só na Fila de Faturamento (o item que marcava em **Pedidos**, em NOVO ou AGUARDANDO, saiu no mesmo dia, substituído pela **Nota antecipada**); com a marca, **Faturar** e **Gerar outra nota de venda** recusam o pedido com "Este pedido já tem nota emitida no sistema antigo."
 
 > **Mudança desta revisão:** 29/10/2026 — **Abrir para corrigir**, na janela **A nota não pode ser aberta ainda**: pendência de cadastro abre a edição do cadastro (do pagador, ou do dono do endereço) com o campo destacado, em vez da ficha só de leitura; depois de salvar, **Voltar à Notas fiscais e reconferir #N** volta e reconfere o pedido. Quem pode editar o cadastro não mudou.
 

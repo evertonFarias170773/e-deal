@@ -226,7 +226,8 @@ const form3c = {
     lote({ id: 702, isPersisted: true, id_produto_proposta_origem: 11, nome_modelo: "FORA", quantidade: 68, numeracao_fim: 68, gabarito_operacional: "Credencial 10x15cm" })
   ]
 } as unknown as PropostaFormState;
-const salvo3c = await saveProposta(form3c, cliente, "usuario-de-teste", { gravarLotesComCobranca: true });
+// Pedido que ainda não saiu: o editar-paga leu EM PRODUCAO no banco.
+const salvo3c = await saveProposta(form3c, cliente, "usuario-de-teste", { gravarLotesComCobranca: true, statusDoBanco: "EM PRODUCAO" });
 checar("3c: salva", salvo3c.success, true);
 const updates3c = falso.chamadas.filter((c) => c.tabela === "pedidos_modelos" && c.op === "update");
 const fimGravado = (id: number) => (updates3c.find((c) => filtro(c, "eq", "id") === id)?.payload as Record<string, unknown> | undefined)?.numeracao_fim;

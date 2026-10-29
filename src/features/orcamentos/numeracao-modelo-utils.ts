@@ -474,6 +474,29 @@ export function fimDaGradeParaLote(
 export type CorrecaoDoFim = { id: number; de: number; para: number };
 
 /**
+ * Status em que o Salvar corrige a linha intocada (29/10/2026): o pedido ainda
+ * não saiu. Fora desta lista — ENTREGUE, EM TRANSITO, CANCELADO, e também
+ * qualquer status não listado — a linha intocada sai como está gravada, para um
+ * Salvar qualquer não reescrever a numeração do que já foi produzido (24054).
+ * Linha alterada pela pessoa é conferida em qualquer status.
+ */
+export const STATUS_QUE_CORRIGEM_O_FIM: readonly string[] = [
+  "NOVO",
+  "AGUARDANDO",
+  "REVISAO ATENDENTE",
+  "REVISAO PRODUCAO",
+  "EM PRODUCAO",
+  "EM IMPRESSAO",
+  "EM ACABAMENTO"
+];
+
+/** O status LIDO DO BANCO permite corrigir a linha intocada? Sem status, não. */
+export function statusCorrigeOFim(statusDoBanco: string | null | undefined): boolean {
+  const s = textoAparado(statusDoBanco).toUpperCase();
+  return s !== "" && STATUS_QUE_CORRIGEM_O_FIM.includes(s);
+}
+
+/**
  * O aviso manda "Salve para corrigir", mas o Salvar levava o Nº final que a
  * linha já tinha (pedido 24420: 4000 em vez de 20000) — a grade só repassa ao
  * formulário a linha em que alguém mexe. Aqui, a linha JÁ GRAVADA em que

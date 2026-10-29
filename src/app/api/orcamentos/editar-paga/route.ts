@@ -276,7 +276,7 @@ export async function POST(request: NextRequest) {
   // ── 4. Validação Server-Side da Proposta no Banco ────────────────────────
   const { data: propostaBanco, error: propostaError } = await supabase
     .from("propostas")
-    .select("id_int, id_cliente, valor_total, is_avulso, modalidade_frete, valor_frete")
+    .select("id_int, id_cliente, valor_total, is_avulso, modalidade_frete, valor_frete, status_interno")
     .eq("id_int", idInt)
     .maybeSingle();
 
@@ -580,7 +580,13 @@ export async function POST(request: NextRequest) {
     formState,
     supabase as unknown as import("@supabase/supabase-js").SupabaseClient,
     user.id,
-    { force: ehPropostaPaga || ehCaminhoFaturado || ehAcrescimoSobreAutorizada, gravarLotesComCobranca }
+    {
+      force: ehPropostaPaga || ehCaminhoFaturado || ehAcrescimoSobreAutorizada,
+      gravarLotesComCobranca,
+      // Status lido acima, nesta mesma requisição: decide se o salvamento
+      // parcial corrige o Nº final da linha intocada (só pedido que não saiu).
+      statusDoBanco: (propostaBanco.status_interno as string | null) ?? null
+    }
   );
 
   if (!saveResult.success) {

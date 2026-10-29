@@ -14,8 +14,7 @@
 import { config as carregarEnv } from "dotenv";
 import {
   MENSAGEM_PEDIDO_FATURADO_FORA,
-  normalizarNumeroNotaAntiga,
-  podeMarcarNotaAntecipada
+  normalizarNumeroNotaAntiga
 } from "../../src/features/fiscal/lib/faturado-fora.ts";
 
 let falhas = 0;
@@ -26,9 +25,6 @@ function checar(nome: string, real: unknown, esperado: unknown) {
 }
 
 // ── A ──
-checar("NOVO aceita", podeMarcarNotaAntecipada("NOVO"), true);
-checar("AGUARDANDO aceita", podeMarcarNotaAntecipada(" aguardando "), true);
-checar("EM PRODUCAO nao (la e pela Fila)", podeMarcarNotaAntecipada("EM PRODUCAO"), false);
 checar("numero valido", normalizarNumeroNotaAntiga("004512"), "4512");
 checar("numero vazio recusa", normalizarNumeroNotaAntiga(""), null);
 checar("numero zero recusa", normalizarNumeroNotaAntiga("000"), null);

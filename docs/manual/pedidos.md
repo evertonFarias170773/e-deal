@@ -21,7 +21,7 @@ No alto da tela o título aparece como "Orcamentos", com a etiqueta "Pedidos". �
 - **Duplicar proposta**: só o vendedor da proposta, o administrador ou quem vê todas as propostas. Para os demais a cópia é recusada com o aviso "Você só pode duplicar proposta em que é o vendedor".
 - **Liberar para Produção** e **Retirar da Produção**: só administrador, Super Administrador ou quem tem a permissão "Liberar para Produção". Sem ela, os dois itens não aparecem no menu, e o servidor recusa tanto a liberação quanto a retirada. **Retirar da Produção** só aparece em pedido em REVISAO PRODUCAO.
 - **Encerrar teste** e **Reabrir (desfazer encerramento de teste)**: só o Super Administrador.
-- **Nota emitida no sistema antigo**, **Voltar para a Fila de Faturamento (desfazer nota no sistema antigo)**, **Liberar nota antecipada (Fila de Faturamento)** e **Desfazer nota antecipada**: só administrador, Super Administrador ou quem tem a permissão "Liberar para Nota Fiscal". O servidor confere a mesma permissão.
+- **Voltar para a Fila de Faturamento (desfazer nota no sistema antigo)**, **Liberar nota antecipada (Fila de Faturamento)** e **Desfazer nota antecipada**: só administrador, Super Administrador ou quem tem a permissão "Liberar para Nota Fiscal". O servidor confere a mesma permissão.
 - **Confirmar Conferência**: só administrador ou Super Administrador, e só em pedido com cobrança na Fila de Conferência. O servidor confere a permissão de novo ao gravar.
 - **Marcar como entregue**: só administrador ou Super Administrador, em pedido Liberado (LIBERADO ou o legado APROVADO) ou em pedido que foi só à Fila de Faturamento (REVISAO ATENDENTE, enviado à fila e não liberado para a produção). Administrador aqui é quem tem a marca de administrador no cadastro do usuário (Administrador ou Super Administrador), não o perfil: a tela e o servidor usam o mesmo teste. O servidor confere o administrador; esconder o item na tela não é a proteção.
 - **Enviar para Fila de Faturamento**: só administrador ou Super Administrador, em pedido REVISAO ATENDENTE ou Liberado que não está na fila nem na produção. Como em **Marcar como entregue**, vale a marca de administrador no cadastro do usuário, não o perfil, na tela e no servidor.
@@ -76,7 +76,6 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Reabrir (desfazer encerramento de teste)** | Menu da linha | Devolve o pedido de teste às listas operacionais. |
 | **Liberar nota antecipada (Fila de Faturamento)** | Menu da linha, só em pedido AGUARDANDO fora da fila e da produção, sem a marca de sistema antigo | Para o cliente que só paga mediante a nota: põe o pedido na Fila de Faturamento antes do pagamento, e a NF-e sai pelo **Faturar** em Notas fiscais. Não muda status, produção nem cobranças; quem liberou fica na linha do tempo. O servidor recusa se já houver NF-e de venda autorizada ou em processamento. |
 | **Desfazer nota antecipada** | Menu da linha, só em pedido AGUARDANDO liberado por nota antecipada | Tira o pedido da Fila de Faturamento. Recusado se já houver NF-e de venda, inclusive rascunho. |
-| **Nota emitida no sistema antigo** | Menu da linha, só em pedido NOVO ou AGUARDANDO sem a marca | Nota antecipada: a NF-e foi emitida no sistema antigo antes do pagamento. Abre a janela que pede o **Número da nota no sistema antigo \*** e grava a marca. O pedido não entra na Fila de Faturamento e o **Faturar** o recusa ("Este pedido já tem nota emitida no sistema antigo."). Não muda status, liberação para nota nem produção. |
 | **Voltar para a Fila de Faturamento (desfazer nota no sistema antigo)** | Menu da linha | Remove a marca "faturado no sistema antigo". O pedido volta à Fila de Faturamento quando estiver liberado para nota. |
 | **Marcar como entregue** | Menu da linha, antes de **Retirar da Produção** | Só administrador (do cadastro), em pedido Liberado (inclusive o APROVADO sem produção, OS nem nota emitida) ou em pedido que foi só à Fila de Faturamento. Abre uma confirmação e, ao confirmar, muda o status para ENTREGUE e grava a data de entrega de hoje. Paliativo para pedido que terminou no sistema antigo. |
 | **Retirar da Produção** | Menu da linha, último item, só em pedido em REVISAO PRODUCAO | Abre uma confirmação e, ao confirmar, devolve o pedido ao atendente: sai da fila de Produção e o status volta para REVISAO ATENDENTE. Não vale de EM PRODUCAO em diante nem com OS (aí a devolução é da produção). Em pedido com nota fiscal emitida fica desligado, como **Retirar da Produção (nota emitida)**. |
@@ -196,6 +195,17 @@ As datas pequenas aparecem como dia/mês e hora, no horário de Brasília.
 2. No menu da linha, clique em **Liberar para Produção**.
 3. Leia o aviso e clique em **Confirmar liberação**.
 4. Se tudo estiver certo, aparece "Proposta liberada" e o pedido passa para REVISAO PRODUCAO. Se houver pendência, o aviso diz qual é.
+
+### Liberar a nota antecipada (nota antes do pagamento)
+
+Para o cliente que só paga mediante a nota. Só administrador, Super Administrador ou quem tem a permissão "Liberar para Nota Fiscal"; o servidor confere a mesma permissão.
+
+1. No menu da linha do pedido em AGUARDANDO — fora da fila e da produção, sem a marca de sistema antigo —, clique em **Liberar nota antecipada (Fila de Faturamento)**.
+2. O pedido entra na Fila de Faturamento antes do pagamento, e a NF-e sai pelo **Faturar**, em Notas fiscais. Status, produção e cobranças ficam como estavam; quem liberou fica na linha do tempo.
+3. Para tirar da fila, clique em **Desfazer nota antecipada**, no mesmo menu.
+4. Quando a nota antecipada já saiu no sistema antigo, use **Nota emitida no sistema antigo** (em pedido NOVO ou AGUARDANDO sem a marca): a janela pede o **Número da nota no sistema antigo \***, o pedido não entra na Fila de Faturamento e o **Faturar** o recusa. O passo a passo e como desfazer estão em [Notas fiscais](notas-fiscais.md).
+
+A liberação é recusada quando já existe NF-e de venda autorizada ou em processamento; o **Desfazer nota antecipada** é recusado quando já existe NF-e de venda, inclusive rascunho.
 
 ### Achar o que a lista esconde
 
@@ -348,7 +358,7 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 
 > **Mudança desta revisão:** 29/10/2026 — novas ações **Liberar nota antecipada (Fila de Faturamento)** e **Desfazer nota antecipada** no menu da linha, em pedido AGUARDANDO.
 
-> **Mudança desta revisão:** 29/10/2026 — nova ação **Nota emitida no sistema antigo** no menu da linha, em pedido NOVO ou AGUARDANDO (nota antecipada), pedindo o número da nota; o pedido marcado não entra na Fila de Faturamento e o **Faturar** o recusa.
+> **Mudança desta revisão:** 29/10/2026 — saiu do menu da linha a ação **Nota emitida no sistema antigo** (pedido NOVO ou AGUARDANDO), que existiu por poucas horas: a nota antecipada agora sai pelo Vibe, com **Liberar nota antecipada (Fila de Faturamento)**. A marca continua sendo feita na Fila de Faturamento, e o desfazer continua neste menu.
 
 > **Mudança desta revisão:** 08/10/2026 — a ação **Criar pedido complementar** passou a se chamar **Criar Complemento** (commit `dd9a110`), só no nome. **O Complemento está em reformulação.** Está sendo revisto para aceitar mais de um complemento por pedido e para valer também antes da produção. Ainda não há mudança publicada, e não há data definida. Enquanto isso, vale o que esta ficha descreve: só em pedido pago, entre LIBERADO e EXPEDICAO, e com um complemento aberto por pedido. Quando a regra mudar, esta ficha muda junto.
 

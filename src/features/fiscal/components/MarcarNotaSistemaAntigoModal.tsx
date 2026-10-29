@@ -7,9 +7,8 @@ import { normalizarNumeroNotaAntiga } from "../lib/faturado-fora";
 /**
  * "Nota emitida no sistema antigo": pede o número da nota antes de marcar.
  *
- * Usado pela Fila de Faturamento e pelo menu da linha em Orçamentos (pedido em
- * NOVO ou AGUARDANDO, a nota antecipada). A marca só registra que a nota existe
- * fora do Vibe; quem grava é a rota POST /api/fiscal/faturado-fora.
+ * Usado pela Fila de Faturamento. A marca só registra que a nota existe fora do
+ * Vibe; quem grava é a rota POST /api/fiscal/faturado-fora.
  */
 export function MarcarNotaSistemaAntigoModal({
   idInt,
