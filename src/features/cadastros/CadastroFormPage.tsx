@@ -5,7 +5,13 @@ import { fetchComSessao } from "@/lib/supabase/sessao";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { AlertTriangle, CheckCircle2, Plus, Trash2 } from "lucide-react";
+import { AlertTriangle, ArrowLeft, CheckCircle2, Plus, Trash2 } from "lucide-react";
+import {
+  ROTULO_DO_CAMPO_DE_CORRECAO,
+  lerCorrecaoDaUrl,
+  rotaDeVoltaParaReconferir,
+  type CampoDeCorrecao
+} from "@/lib/fiscal/correcao-de-cadastro";
 import { PrecoFixoPanel } from "./components/PrecoFixoPanel";
 import { useAppToast } from "@/components/common/AppToast";
 import { PageHeader } from "@/components/common/PageHeader";
@@ -164,6 +170,10 @@ export function CadastroFormPage({ mode, cadastro, categoriaInicial }: CadastroF
   const origemVinculo = searchParams.get("origemVinculo") || "";
   const tipoRelacaoParam = searchParams.get("tipoRelacao") || "";
   const novoVinculoParam = Number(searchParams.get("novoVinculo") || 0) || undefined;
+  // Veio do modal "A nota não pode ser aberta ainda" (Notas fiscais): qual campo
+  // corrigir e qual pedido reconferir na volta. Só em edição.
+  const correcao = mode === "edit" ? lerCorrecaoDaUrl(searchParams) : { foco: null, pedido: null };
+  const [salvoParaReconferir, setSalvoParaReconferir] = useState(false);
 
   const canViewCredito = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "cadastros.view_credito");
   const canEditCredito = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "cadastros.edit_credito");
@@ -1457,6 +1467,13 @@ export function CadastroFormPage({ mode, cadastro, categoriaInicial }: CadastroF
         description: warnings.length ? warnings.join(" ") : "Atualização concluída."
       });
 
+      // Veio da Notas fiscais: fica aqui e oferece a volta para reconferir o
+      // pedido, em vez de cair na ficha do cadastro.
+      if (correcao.pedido) {
+        setSalvoParaReconferir(true);
+        return;
+      }
+
       window.setTimeout(() => {
         router.push(`/cadastros/${idCliente}`);
       }, 1200);
@@ -1538,6 +1555,20 @@ export function CadastroFormPage({ mode, cadastro, categoriaInicial }: CadastroF
 
       {message ? <FormAlert message={message} /> : null}
 
+      {correcao.pedido ? (
+        <FaixaCorrecaoDaNota
+          pedido={correcao.pedido}
+          foco={correcao.foco}
+          campoTravado={
+            correcao.foco === "enderecos"
+              ? !isEditAllowed
+              : !isEditAllowed || (form.tipoCliente === "CNPJ" && !canEditFiscal)
+          }
+          salvo={salvoParaReconferir}
+          onVoltar={() => router.push(rotaDeVoltaParaReconferir(correcao.pedido!))}
+        />
+      ) : null}
+
       {mode === "new" && !isInitialValidated ? (
         <InitialStep
           form={form}
@@ -1579,6 +1610,7 @@ export function CadastroFormPage({ mode, cadastro, categoriaInicial }: CadastroF
           vinculoInicialId={mode === "edit" ? novoVinculoParam : undefined}
           tipoRelacaoInicial={tipoRelacaoParam || undefined}
           onConsumirVinculoInicial={limparParamVinculo}
+          foco={correcao.foco}
         />
       )}
 
@@ -1803,7 +1835,8 @@ function CompleteForm({
   canEditCredito,
   vinculoInicialId,
   tipoRelacaoInicial,
-  onConsumirVinculoInicial
+  onConsumirVinculoInicial,
+  foco = null
 }: {
   form: CadastroFormState;
   formattedDocument: string;
@@ -1829,8 +1862,21 @@ function CompleteForm({
   vinculoInicialId?: number;
   tipoRelacaoInicial?: string;
   onConsumirVinculoInicial?: () => void;
+  /** Campo pendente apontado pela Notas fiscais: rola até ele e o destaca. */
+  foco?: CampoDeCorrecao | null;
 }) {
   const { user } = useAuth();
+
+  useEffect(() => {
+    if (!foco) return;
+    const alvo = document.querySelector<HTMLElement>(`[data-foco="${foco}"]`);
+    if (!alvo) return;
+    alvo.scrollIntoView({ behavior: "smooth", block: "center" });
+    const campo = alvo.querySelector<HTMLInputElement | HTMLSelectElement>("input, select");
+    if (campo && !campo.disabled && !(campo as HTMLInputElement).readOnly) {
+      campo.focus({ preventScroll: true });
+    }
+  }, [foco]);
   const canCreate = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "cadastros.create");
   const canEdit = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "cadastros.edit");
   const canEditFiscal = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "cadastros.edit_fiscal");
@@ -1995,7 +2041,7 @@ function CompleteForm({
               <option value="INATIVO">Inativo</option>
             </select>
           </Field>
-          <Field label="CPF/CNPJ">
+          <Field label="CPF/CNPJ" foco="documento" destacar={foco === "documento"}>
             <div className="flex gap-2">
               <input
                 value={formattedDocument}
@@ -2036,7 +2082,7 @@ function CompleteForm({
           </Field>
           {/* Mesmo vocabulario da NF desde 25/08/2026: os codigos da SEFAZ, e so
               eles. O rotulo tambem estava errado — dizia "distribuinte". */}
-          <Field label="Tipo de contribuinte">
+          <Field label="Tipo de contribuinte" foco="tipo_contribuinte" destacar={foco === "tipo_contribuinte"}>
             <select value={form.tipoContribuinte} disabled={isFiscalBlocked || !isEditAllowed} onChange={(event) => onUpdate("tipoContribuinte", event.target.value)} className={(isFiscalBlocked || !isEditAllowed) ? `${inputClass} bg-slate-100 text-slate-500 cursor-not-allowed` : inputClass}>
               <option value="">Selecione...</option>
               {OPCOES_TIPO_CONTRIBUINTE.map((opcao) => (
@@ -2050,7 +2096,7 @@ function CompleteForm({
           <Field label="E-mail financeiro">
             <input value={form.emailFinanceiro} readOnly={!isEditAllowed} onChange={(event) => onUpdate("emailFinanceiro", event.target.value)} className={!isEditAllowed ? `${inputClass} bg-slate-100 text-slate-500 cursor-not-allowed` : inputClass} />
           </Field>
-          <Field label="Inscricao estadual">
+          <Field label="Inscricao estadual" foco="inscricao_estadual" destacar={foco === "inscricao_estadual"}>
             <input value={form.inscricaoEstadual} readOnly={isFiscalBlocked || !isEditAllowed} onChange={(event) => onUpdate("inscricaoEstadual", event.target.value)} className={(isFiscalBlocked || !isEditAllowed) ? `${inputClass} bg-slate-100 text-slate-500 cursor-not-allowed` : inputClass} />
           </Field>
           <Field label="Isento?">
@@ -2118,6 +2164,8 @@ function CompleteForm({
       </FormSection>
 
       <FormSection
+        foco="enderecos"
+        destacar={foco === "enderecos"}
         title="Enderecos"
         description="Enderecos vinculados ao id_cliente. Futuramente serao usados em propostas, frete e notas fiscais."
         action={isEditAllowed ? (
@@ -2394,9 +2442,27 @@ function getInputClass(hasError: boolean) {
     : inputClass;
 }
 
-function Field({ label, children }: { label: string; children: ReactNode }) {
+function Field({
+  label,
+  children,
+  foco,
+  destacar = false
+}: {
+  label: string;
+  children: ReactNode;
+  /** Âncora para a Notas fiscais apontar o campo pendente. */
+  foco?: CampoDeCorrecao;
+  destacar?: boolean;
+}) {
   return (
-    <label className="block space-y-2">
+    <label
+      data-foco={foco}
+      className={
+        destacar
+          ? "block space-y-2 rounded-2xl bg-amber-50 p-2 -m-2 ring-2 ring-amber-400"
+          : "block space-y-2"
+      }
+    >
       <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</span>
       {children}
     </label>
@@ -2407,9 +2473,28 @@ function FieldError({ message }: { message: string }) {
   return <p className="text-xs font-medium text-red-600">{message}</p>;
 }
 
-function FormSection({ title, description, action, children }: { title: string; description: string; action?: ReactNode; children: ReactNode }) {
+function FormSection({
+  title,
+  description,
+  action,
+  children,
+  foco,
+  destacar = false
+}: {
+  title: string;
+  description: string;
+  action?: ReactNode;
+  children: ReactNode;
+  foco?: CampoDeCorrecao;
+  destacar?: boolean;
+}) {
   return (
-    <section className="rounded-3xl border border-[#d7e5e8] bg-white p-5 shadow-sm">
+    <section
+      data-foco={foco}
+      className={`rounded-3xl border bg-white p-5 shadow-sm ${
+        destacar ? "border-amber-400 ring-2 ring-amber-300" : "border-[#d7e5e8]"
+      }`}
+    >
       <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <h2 className="text-lg font-semibold text-slate-950">{title}</h2>
@@ -2419,6 +2504,65 @@ function FormSection({ title, description, action, children }: { title: string; 
       </div>
       {children}
     </section>
+  );
+}
+
+/**
+ * Faixa de quem chegou pelo "Abrir para corrigir" da Notas fiscais. Diz o campo,
+ * avisa quando o perfil não pode alterá-lo (a trava é a de sempre, não muda
+ * aqui) e oferece a volta para reconferir o pedido.
+ */
+function FaixaCorrecaoDaNota({
+  pedido,
+  foco,
+  campoTravado,
+  salvo,
+  onVoltar
+}: {
+  pedido: number;
+  foco: CampoDeCorrecao | null;
+  campoTravado: boolean;
+  salvo: boolean;
+  onVoltar: () => void;
+}) {
+  const campo = foco ? ROTULO_DO_CAMPO_DE_CORRECAO[foco] : null;
+  const tom = salvo
+    ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+    : "border-amber-200 bg-amber-50 text-amber-900";
+  return (
+    <div
+      className={`flex flex-col gap-3 rounded-3xl border p-4 sm:flex-row sm:items-center sm:justify-between ${tom}`}
+    >
+      <div className="text-sm">
+        {salvo ? (
+          <p className="font-semibold">Cadastro salvo. Volte para reconferir o pedido #{pedido}.</p>
+        ) : (
+          <>
+            <p className="font-semibold">
+              Correção pedida pela Notas fiscais (pedido #{pedido})
+              {campo ? `: ${campo}` : ""}.
+            </p>
+            <p className="mt-0.5">
+              {campoTravado
+                ? "Seu perfil não pode alterar este campo. Peça a quem tem permissão de editar o cadastro."
+                : "Corrija o campo destacado e clique em Salvar. Depois volte para reconferir."}
+            </p>
+          </>
+        )}
+      </div>
+      <button
+        type="button"
+        onClick={onVoltar}
+        className={`inline-flex shrink-0 items-center justify-center gap-1.5 rounded-xl px-4 py-2 text-xs font-bold transition ${
+          salvo
+            ? "bg-[#0b2f4a] text-white hover:bg-[#061d2e]"
+            : "border border-amber-300 bg-white text-amber-900 hover:bg-amber-100"
+        }`}
+      >
+        <ArrowLeft className="h-3.5 w-3.5" />
+        Voltar à Notas fiscais e reconferir #{pedido}
+      </button>
+    </div>
   );
 }
 

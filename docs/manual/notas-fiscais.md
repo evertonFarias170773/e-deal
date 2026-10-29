@@ -1,6 +1,6 @@
 # Notas fiscais
 
-> **Última revisão:** 27/10/2026
+> **Última revisão:** 29/10/2026
 > **Caminho no menu:** Financeiro → Notas fiscais (primeiro item da seção Financeiro do menu lateral)
 > **Endereço:** `/notas-fiscais` (a nota aberta fica em `/notas-fiscais/[id]`)
 
@@ -103,7 +103,8 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Abrir PDF** | Menu da NFS-e | Abre o PDF da nota de serviço em outra aba. O botão de baixar do visualizador salva com o nome "NFS-e-N-Pedido-P.pdf"; o link da aba vale 60 minutos. |
 | **Lançar no Contas a Receber** | Menu da NFS-e autorizada de produção com cobrança faturada em aberto | Abre a janela **Preparar boletos** com a cobrança faturada do pedido. As parcelas saem da condição da cobrança. Em parcela única o boleto usa a referência da NFS-e (ex.: NFS-23733-001) e o número da NFS-e vai como número da NF; com 2 ou mais parcelas a referência é P + parcela + total + pedido. Se o pedido também tem NF-e autorizada, vale a NF-e. |
 | **Revisar para gerar boletos** / **Ver contas a receber** | Menu da NFS-e com título já lançado | Abre a revisão dos boletos do pedido / abre o Contas a Receber filtrado pelo número do pedido. |
-| **Abrir para corrigir** | Janela **A nota não pode ser aberta ainda**, em cada pendência | Leva à tela onde o dado se corrige (proposta, cadastro ou produtos). |
+| **Abrir para corrigir** | Janela **A nota não pode ser aberta ainda**, em cada pendência | Leva à tela onde o dado se corrige. Pendência de cadastro abre a **edição** do cadastro certo: o do pagador (quando o aviso diz que não é o cliente do pedido) ou o dono do endereço, já com o campo pendente destacado. Pendência do pedido abre a proposta. |
+| **Voltar à Notas fiscais e reconferir #N** | Faixa amarela no topo da edição do cadastro aberta pelo **Abrir para corrigir** | Volta para esta tela e refaz a conferência do pedido, sem recomeçar. Depois de salvar, a faixa fica verde e a edição não pula para a ficha do cadastro. |
 | **Reconferir** / **Fechar** | Janela **A nota não pode ser aberta ainda**, rodapé | Repete a conferência do pedido, ou fecha a janela. |
 | **Emitir NF-e** / **Cancelar** | Janela **Emitir NF-e** | Transmite a nota, ou fecha sem transmitir. Durante a conferência o botão mostra "Conferindo...". |
 | **Abrir DANFE** | Janela de emissão, com a nota autorizada | Abre a DANFE em outra aba, sem fechar a janela. |
@@ -189,7 +190,7 @@ Volta para a lista quando a nota é **cancelada** ou **denegada**, quando o rasc
 ### Emitir a NF-e de um pedido
 
 1. Na fila, clique em **Faturar** na linha do pedido.
-2. O sistema confere os dados do pedido antes de abrir a nota. Se faltar algo, aparece **A nota não pode ser aberta ainda**, com cada pendência, o setor que corrige e o botão **Abrir para corrigir**. Depois de corrigir na origem, clique em **Reconferir**.
+2. O sistema confere os dados do pedido antes de abrir a nota. Se faltar algo, aparece **A nota não pode ser aberta ainda**, com cada pendência, o setor que corrige e o botão **Abrir para corrigir**. Em pendência de cadastro, o botão abre a edição do cadastro com o campo destacado: corrija, clique em **Salvar** e use **Voltar à Notas fiscais e reconferir #N**. A tela volta e reconfere o pedido sozinha. Em outras pendências, corrija na origem e clique em **Reconferir**. Quem não tem permissão de editar o cadastro (ou os dados fiscais de CNPJ) vê o campo travado e um aviso para pedir a quem tem.
 3. Com tudo certo, abre o rascunho da nota. A referência segue o padrão `NFE-<pedido>-001`. Se o pedido já tinha um rascunho pendente, é ele que abre, e não um novo.
 4. No topo, o painel **Falta resolver N coisas antes de emitir** lista o que trava a emissão. Cada linha tem **Abrir em ...** (leva ao campo) ou **Abrir cadastro** (abre o cadastro do cliente em outra aba). Depois de corrigir o cadastro, clique em **Reconferir**.
 5. Confira os blocos da nota, na ordem da lateral:
@@ -459,7 +460,7 @@ Nos dois casos a confirmação lista as notas autorizadas que o pedido já tem. 
 | "Carta de correção não permitida: a nota está em ..." | A nota deixou de estar Autorizada (foi cancelada, por exemplo). | Atualize a lista e confira o status da nota. |
 | "A integração fiscal recusou a chamada (HTTP ...). Nenhuma carta foi enviada." | A integração fiscal (n8n) barrou o pedido antes de chegar à SEFAZ: a carta não saiu. O número entre parênteses é o código do erro. | Não adianta repetir. Avise o suporte com o número da nota e o código HTTP. |
 | "A integração fiscal respondeu sem confirmação (HTTP ...)." | A resposta foi cortada no caminho (tempo esgotado, por exemplo). A carta pode ter sido registrada. | Atualize a nota e confira **Eventos fiscais** antes de enviar de novo. Se a carta não aparecer, avise o suporte. |
-| A nota não pode ser aberta ainda | A conferência do **Faturar** achou dado faltando no pedido, no cadastro ou no produto. | Use **Abrir para corrigir** em cada pendência e depois **Reconferir**. |
+| A nota não pode ser aberta ainda | A conferência do **Faturar** achou dado faltando no pedido, no cadastro ou no produto. | Use **Abrir para corrigir** em cada pendência. No cadastro, salve e use **Voltar à Notas fiscais e reconferir #N**; nas outras, corrija e clique em **Reconferir**. |
 | Falta resolver N coisas antes de emitir | A nota tem pendência que impede a emissão. | Siga cada linha do painel pelo botão **Abrir em ...** ou **Abrir cadastro** e clique em **Reconferir**. |
 | A nota não foi enviada: um campo passa do tamanho que a NF-e aceita. | Nome, endereço, transportadora, natureza ou descrição de item acima do limite. | Encurte no campo que o aviso indica (em geral os campos "só nesta nota") e emita de novo. Nada foi transmitido. |
 | NF-e rejeitada pela Sefaz | A SEFAZ recusou a nota. A janela mostra o código, **O que significa** e **Como resolver**. | Feche, use **Corrigir rascunho**, ajuste o que o motivo aponta e emita de novo. |
@@ -541,6 +542,9 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 
 - `src/app/(erp)/notas-fiscais/`
 - `src/features/fiscal/NotasFiscaisPage.tsx`
+- `src/features/fiscal/services/conferencia-faturamento.ts`
+- `src/features/fiscal/components/ConferenciaFaturamentoModal.tsx`
+- `src/lib/fiscal/correcao-de-cadastro.ts`
 - `src/features/fiscal/lib/fila-producao-desde.ts`
 - `src/features/fiscal/lib/aviso-remessa.ts`
 - `src/features/fiscal/services/aviso-remessa.service.ts`
@@ -600,6 +604,8 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 > **Mudança desta revisão:** 08/10/2026 — aviso de nota de remessa: selo na Fila e faixa no rascunho da NF-e quando o pedido é entregue em endereço diferente do da nota. É só aviso; a remessa segue sendo gerada à mão, depois da venda autorizada.
 
 > **Mudança desta revisão:** 12/10/2026 — pedido marcado como entregue pela lista de Pedidos (commit `c818220`) continua na Fila de Faturamento enquanto esperar nota. Só documentação.
+
+> **Mudança desta revisão:** 29/10/2026 — **Abrir para corrigir**, na janela **A nota não pode ser aberta ainda**: pendência de cadastro abre a edição do cadastro (do pagador, ou do dono do endereço) com o campo destacado, em vez da ficha só de leitura; depois de salvar, **Voltar à Notas fiscais e reconferir #N** volta e reconfere o pedido. Quem pode editar o cadastro não mudou.
 
 > **Mudança desta revisão:** 27/10/2026 — cancelar NF-e: a nota só vira Cancelada quando a SEFAZ confirma (status "cancelado", código 135 ou 155 e XML do evento); recusa mantém a nota Autorizada, mostra o motivo e registra a falha; prazo de 24 h da autorização, com **Cancelar NF-e (fora do prazo)** orientando a contabilidade.
 

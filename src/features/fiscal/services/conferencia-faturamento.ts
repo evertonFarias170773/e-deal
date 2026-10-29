@@ -2,6 +2,7 @@ import { getSupabaseClient } from "@/lib/supabase/client";
 import { resolverEmpresaEmitente, ehEnderecoDeEntrega } from "@/features/nfe/services/nfe.service";
 import { lerAvisoDeRemessaDoPedido } from "@/features/fiscal/services/aviso-remessa.service";
 import { ACAO_DA_REMESSA } from "@/features/fiscal/lib/aviso-remessa";
+import { rotaDeCorrecaoDoCadastro } from "@/lib/fiscal/correcao-de-cadastro";
 
 /**
  * Conferência do Faturar.
@@ -30,7 +31,11 @@ export interface PendenciaFaturamento {
   setor: SetorResponsavel;
   /** Onde se corrige, em linguagem de tela. */
   onde: string;
-  /** Rota interna para o botão levar direto ao lugar. Ausente quando não há. */
+  /**
+   * Rota interna para o botão levar direto ao lugar. Ausente quando não há.
+   * Pendência de cadastro abre a EDIÇÃO do cadastro certo (o pagador, ou o dono
+   * do endereço), no campo pendente, lembrando o pedido para reconferir na volta.
+   */
   rota?: string;
 }
 
@@ -179,7 +184,8 @@ export async function conferirFaturamento(idInt: number): Promise<ResultadoConfe
     } else {
       documento = apenasDigitos(pagador.documento);
       ehContribuinte = ehContribuinteIcms(pagador.tipo_contribuinte);
-      const rotaPagador = `/cadastros/${idPagador}`;
+      const rotaPagador = (campo: "documento" | "tipo_contribuinte" | "inscricao_estadual") =>
+        rotaDeCorrecaoDoCadastro(idPagador, campo, idInt);
       const nomePagador =
         (pagador.fantasia ?? "").trim() || (pagador.nome ?? "").trim() || `id ${idPagador}`;
       /** Sufixo que nomeia de QUEM e o cadastro — sem isso o vendedor corrige o cadastro errado. */
@@ -192,7 +198,7 @@ export async function conferirFaturamento(idInt: number): Promise<ResultadoConfe
           encontrado: pagador.documento?.trim() || "vazio",
           setor: "Comercial",
           onde: `${cadastroDoQuem} → Dados principais`,
-          rota: rotaPagador
+          rota: rotaPagador("documento")
         });
       } else if (documento.length === 14 && ehContribuinte && vazio(pagador.ins_estadual)) {
         bloqueios.push({
@@ -201,7 +207,7 @@ export async function conferirFaturamento(idInt: number): Promise<ResultadoConfe
           encontrado: "IE vazia",
           setor: "Comercial",
           onde: `${cadastroDoQuem} → Dados fiscais. Informe a IE ou marque como isento.`,
-          rota: rotaPagador
+          rota: rotaPagador("inscricao_estadual")
         });
       } else if (documento.length === 11 && ehContribuinte) {
         bloqueios.push({
@@ -210,7 +216,7 @@ export async function conferirFaturamento(idInt: number): Promise<ResultadoConfe
           encontrado: pagador.tipo_contribuinte || "",
           setor: "Comercial",
           onde: `${cadastroDoQuem} → Dados fiscais. CPF deve ser não contribuinte.`,
-          rota: rotaPagador
+          rota: rotaPagador("tipo_contribuinte")
         });
       } else if (vazio(pagador.tipo_contribuinte)) {
         // Regra NOVA. Sem tipo de contribuinte a nota nao sabe se destaca ICMS,
@@ -221,7 +227,7 @@ export async function conferirFaturamento(idInt: number): Promise<ResultadoConfe
           encontrado: "vazio",
           setor: "Comercial",
           onde: `${cadastroDoQuem} → Dados fiscais. Informe contribuinte, isento ou não contribuinte.`,
-          rota: rotaPagador
+          rota: rotaPagador("tipo_contribuinte")
         });
       }
     }
@@ -231,7 +237,6 @@ export async function conferirFaturamento(idInt: number): Promise<ResultadoConfe
   // Endereço
   // ---------------------------------------------------------------------------
   const idEndereco = String(proposta.id_endereco_ent ?? "").trim();
-  const rotaCliente = proposta.id_cliente ? `/cadastros/${proposta.id_cliente}` : undefined;
 
   if (!idEndereco) {
     bloqueios.push({
@@ -245,11 +250,12 @@ export async function conferirFaturamento(idInt: number): Promise<ResultadoConfe
   } else {
     const { data: enderecoRow } = await client
       .from("enderecos")
-      .select("tipo_endereco,cep,endereco,numero,bairro,cidade,uf")
+      .select("id_cliente,tipo_endereco,cep,endereco,numero,bairro,cidade,uf")
       .eq("id", idEndereco)
       .maybeSingle();
 
     const endereco = enderecoRow as {
+      id_cliente: number | null;
       tipo_endereco: string | null;
       cep: string | null;
       endereco: string | null;
@@ -283,6 +289,16 @@ export async function conferirFaturamento(idInt: number): Promise<ResultadoConfe
         .map(([nome]) => nome);
 
       const destino = ehEnderecoDeEntrega(endereco.tipo_endereco) ? "de entrega" : "principal";
+      // O endereco se corrige no cadastro que e DONO dele, que pode nao ser o
+      // cliente do pedido. Sem dono gravado, cai no cliente do pedido, como antes.
+      const donoDoEndereco = endereco.id_cliente || proposta.id_cliente;
+      const rotaEndereco = donoDoEndereco
+        ? rotaDeCorrecaoDoCadastro(donoDoEndereco, "enderecos", idInt)
+        : undefined;
+      const cadastroDoEndereco =
+        endereco.id_cliente && endereco.id_cliente !== proposta.id_cliente
+          ? `Cadastro #${endereco.id_cliente} (dono do endereço, não é o cliente do pedido)`
+          : "Cadastro do cliente";
 
       if (faltando.length > 0) {
         bloqueios.push({
@@ -290,8 +306,8 @@ export async function conferirFaturamento(idInt: number): Promise<ResultadoConfe
           titulo: `Endereço ${destino} incompleto: falta ${faltando.join(", ")}.`,
           encontrado: `${endereco.cidade || "?"}/${endereco.uf || "?"}`,
           setor: "Comercial",
-          onde: "Cadastro do cliente → Endereços",
-          rota: rotaCliente
+          onde: `${cadastroDoEndereco} → Endereços`,
+          rota: rotaEndereco
         });
       } else if (!CEP_VALIDO.test(String(endereco.cep).trim())) {
         bloqueios.push({
@@ -299,8 +315,8 @@ export async function conferirFaturamento(idInt: number): Promise<ResultadoConfe
           titulo: `CEP do endereço ${destino} está fora do formato.`,
           encontrado: String(endereco.cep).trim(),
           setor: "Comercial",
-          onde: `Cadastro do cliente → Endereços → ${endereco.cidade || ""}/${endereco.uf || ""}`,
-          rota: rotaCliente
+          onde: `${cadastroDoEndereco} → Endereços → ${endereco.cidade || ""}/${endereco.uf || ""}`,
+          rota: rotaEndereco
         });
       }
     }

@@ -1,7 +1,7 @@
 "use client";
 
 import { CONTORNO_RETRABALHO, SeloRetrabalho } from "@/components/common/SeloRetrabalho";
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import { useUrlFilters } from "@/hooks/useUrlFilters";
 import { useDebouncedInput } from "@/hooks/useDebouncedValue";
@@ -28,7 +28,8 @@ import type { NfseReadModel } from "@/features/nfse/types";
 import { acoesFinanceirasDaNfse, seloFinanceiroDaNfse } from "@/features/nfse/lib/financeiro-nfse";
 import { getCobrancaFaturadaParaLancar, getTitulosAtivosPorIdInt, type TitulosAtivos } from "@/features/nfse/services/nfse-financeiro.service";
 import type { SupabaseBoletoRow } from "@/features/contas-a-receber/types.supabase";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
+import { lerPedidoParaReconferir } from "@/lib/fiscal/correcao-de-cadastro";
 import { createOrReuseNfeDraft, getFaturaveisPropostas, updateNfeDraft, previewNfeRascunho, getNfeFinanceiroStatus, getFaturadoEmAbertoPorIdInt, getNfePagamentos, getNfeDisplayStatus, prepararEnvioNfe, getNotaEventosForRefs, excluirRascunhoNfe, STATUS_DESCARTAVEIS_NFE, type FaturadoEmAberto, type SupabaseNotaEventoRow } from "@/features/nfe/services/nfe.service";
 import { PrepararBoletosModal, type OrigemNfeLancamento } from "@/features/cobrancas/PrepararBoletosModal";
 import { PAGAMENTOS_V2_SELECT } from "@/features/cobrancas/services/pagamentos-v2.service";
@@ -292,6 +293,40 @@ export function NotasFiscaisPage() {
     resultado: ResultadoConferencia;
   } | null>(null);
   const [reconferindo, setReconferindo] = useState(false);
+
+  // Volta da edição do cadastro ("Abrir para corrigir" do painel acima), com
+  // ?reconferir=<id_int>: reconfere o pedido sem o operador recomeçar. Faz o
+  // mesmo que o botão Reconferir — não cria rascunho.
+  const searchParams = useSearchParams();
+  const pedidoParaReconferir = lerPedidoParaReconferir(searchParams);
+  const reconferidoDaUrl = useRef<number | null>(null);
+  useEffect(() => {
+    if (!pedidoParaReconferir || reconferidoDaUrl.current === pedidoParaReconferir) return;
+    reconferidoDaUrl.current = pedidoParaReconferir;
+    const restantes = new URLSearchParams(searchParams.toString());
+    restantes.delete("reconferir");
+    const query = restantes.toString();
+    router.replace(query ? `?${query}` : window.location.pathname, { scroll: false });
+    (async () => {
+      showToast({ type: "info", title: `Reconferindo o pedido #${pedidoParaReconferir}...` });
+      const resultado = await conferirFaturamento(pedidoParaReconferir);
+      if (resultado.ok) {
+        showToast({
+          type: "success",
+          title: `Pendências do pedido #${pedidoParaReconferir} resolvidas. Pode faturar.`
+        });
+        return;
+      }
+      setConferenciaPendente({
+        idInt: pedidoParaReconferir,
+        pedido: `#${pedidoParaReconferir}`,
+        resultado
+      });
+    })().catch((erro) => {
+      console.error("[NotasFiscaisPage] Reconferencia da volta do cadastro falhou:", erro);
+      showToast({ type: "error", title: `Não foi possível reconferir o pedido #${pedidoParaReconferir}.` });
+    });
+  }, [pedidoParaReconferir, searchParams, router, showToast]);
 
   // State para fila faturável
   const [faturaveisList, setFaturaveisList] = useState<FaturavelOrigem[]>([]);
