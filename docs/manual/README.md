@@ -40,6 +40,7 @@ Cada ficha cobre uma tela ou um fluxo e segue sempre o mesmo formato ([_MODELO.m
 - [Carteira (contas a receber)](carteira.md)
 - [Registro de recebíveis](registro-de-recebiveis.md)
 - [Notas fiscais](notas-fiscais.md)
+- [Notas fiscais: NFS-e (nota de serviço)](notas-fiscais-nfse.md)
 
 ### Relatórios
 

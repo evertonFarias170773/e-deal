@@ -203,7 +203,7 @@ Para o cliente que só paga mediante a nota. Só administrador, Super Administra
 1. No menu da linha do pedido em AGUARDANDO — fora da fila e da produção, sem a marca de sistema antigo —, clique em **Liberar nota antecipada (Fila de Faturamento)**.
 2. O pedido entra na Fila de Faturamento antes do pagamento, e a NF-e sai pelo **Faturar**, em Notas fiscais. Status, produção e cobranças ficam como estavam; quem liberou fica na linha do tempo.
 3. Para tirar da fila, clique em **Desfazer nota antecipada**, no mesmo menu.
-4. Quando a nota antecipada já saiu no sistema antigo, use **Nota emitida no sistema antigo** (em pedido NOVO ou AGUARDANDO sem a marca): a janela pede o **Número da nota no sistema antigo \***, o pedido não entra na Fila de Faturamento e o **Faturar** o recusa. O passo a passo e como desfazer estão em [Notas fiscais](notas-fiscais.md).
+4. Quando a nota antecipada já saiu no sistema antigo, a marca é feita na **Fila de Faturamento**, pela ação **Nota emitida no sistema antigo** da linha do pedido, que pede o **Número da nota no sistema antigo \*** — não há mais essa ação neste menu. O passo a passo está em [Notas fiscais](notas-fiscais.md). Para desfazer, volte a este menu e clique em **Voltar para a Fila de Faturamento (desfazer nota no sistema antigo)**.
 
 A liberação é recusada quando já existe NF-e de venda autorizada ou em processamento; o **Desfazer nota antecipada** é recusado quando já existe NF-e de venda, inclusive rascunho.
 
