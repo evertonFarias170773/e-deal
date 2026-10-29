@@ -25,6 +25,8 @@ import {
   marcarFaturadoNoSistemaAntigo
 } from "@/features/fiscal/services/faturado-fora.client";
 import { podeMarcarNotaAntecipada } from "@/features/fiscal/lib/faturado-fora";
+import { podeVerDesfazerNotaAntecipada, podeVerLiberarNotaAntecipada } from "@/features/orcamentos/lib/nota-antecipada";
+import { desfazerNotaAntecipada, liberarNotaAntecipada } from "@/features/orcamentos/services/nota-antecipada.client";
 import { MarcarNotaSistemaAntigoModal } from "@/features/fiscal/components/MarcarNotaSistemaAntigoModal";
 import { buscarRastreioDasPropostas, type RastreioDaProposta } from "@/features/orcamentos/services/rastreio-lista.service";
 import { VerConhecimentoModal } from "@/features/expedicao/components/VerConhecimentoModal";
@@ -1846,6 +1848,38 @@ Ela volta a aparecer nas listas operacionais.`
    * AGUARDANDO. Mesma rota e mesma permissão do desfazer; pede o número da nota.
    * Não liga libera_nf nem a produção.
    */
+  /**
+   * "Liberar nota antecipada" (29/10/2026): pedido em AGUARDANDO entra na Fila de
+   * Faturamento antes do pagamento (só `libera_nf`). Mesma permissão da marca acima.
+   * A regra e as recusas (nota de venda, produção, sistema antigo) são do servidor.
+   */
+  const [notaAntecipadaEmCurso, setNotaAntecipadaEmCurso] = useState<number | null>(null);
+
+  async function handleNotaAntecipada(item: OrcamentoListItem, liberar: boolean) {
+    if (notaAntecipadaEmCurso !== null) return;
+    const ok = window.confirm(
+      liberar
+        ? `Liberar o pedido #${item.id_int} para nota antecipada?\n\n` +
+            `Ele entra na Fila de Faturamento ainda em AGUARDANDO, antes do pagamento, e a NF-e sai pelo Faturar.\n` +
+            `Status, produção e cobranças não mudam. Depois de emitida a nota, não dá para desfazer.`
+        : `Desfazer a liberação de nota antecipada do pedido #${item.id_int}?\n\n` +
+            `Ele sai da Fila de Faturamento. Só vale enquanto não houver NF-e de venda (nem rascunho).`
+    );
+    if (!ok) return;
+    setNotaAntecipadaEmCurso(item.id_int);
+    try {
+      const res = liberar ? await liberarNotaAntecipada(item.id_int) : await desfazerNotaAntecipada(item.id_int);
+      if (res.success) {
+        showToast({ type: res.aviso ? "warning" : "success", title: res.message, description: res.aviso || undefined });
+        triggerRefresh();
+      } else {
+        showToast({ type: "error", title: "Não foi possível concluir", description: res.message });
+      }
+    } finally {
+      setNotaAntecipadaEmCurso(null);
+    }
+  }
+
   const [pedidoParaMarcarFora, setPedidoParaMarcarFora] = useState<number | null>(null);
   const [marcandoFaturadoFora, setMarcandoFaturadoFora] = useState(false);
 
@@ -2043,6 +2077,19 @@ Ela volta a aparecer nas listas operacionais.`
               onClick: () => void handleEncerrarTeste(item, true)
             }
       ] : []),
+      // Nota antecipada pelo Vibe (29/10/2026): AGUARDANDO entra na Fila antes do pagamento.
+      ...(podeVerLiberarNotaAntecipada(canDesmarcarFaturadoFora, { statusInterno: item.statusInterno, liberaNf: item.libera_nf, isPrdAprovado: item.is_prd_aprovado, faturadoForaEm: item.faturadoForaEm })
+        ? [{
+            label: notaAntecipadaEmCurso === item.id_int ? "Liberando..." : "Liberar nota antecipada (Fila de Faturamento)",
+            onClick: () => void handleNotaAntecipada(item, true)
+          }]
+        : []),
+      ...(podeVerDesfazerNotaAntecipada(canDesmarcarFaturadoFora, { statusInterno: item.statusInterno, liberaNf: item.libera_nf, isPrdAprovado: item.is_prd_aprovado, faturadoForaEm: item.faturadoForaEm })
+        ? [{
+            label: notaAntecipadaEmCurso === item.id_int ? "Desfazendo..." : "Desfazer nota antecipada",
+            onClick: () => void handleNotaAntecipada(item, false)
+          }]
+        : []),
       // Nota antecipada (29/10/2026): marcar aqui so em NOVO ou AGUARDANDO. Nos
       // outros status a marcacao continua sendo da Fila de Faturamento.
       ...(!item.faturadoForaEm && canDesmarcarFaturadoFora && podeMarcarNotaAntecipada(item.statusInterno)

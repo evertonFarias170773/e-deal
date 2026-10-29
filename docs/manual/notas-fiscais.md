@@ -176,6 +176,7 @@ Sai da lista de pedidos quando:
 - alguém marca **Nota emitida no sistema antigo**;
 - entra também o pedido que um administrador enviou por **Enviar para Fila de Faturamento** (lista de Pedidos ou tela da proposta): ele fica na fila em REVISAO ATENDENTE ou Liberado, sem passar pela Produção nem pela Expedição, e a coluna **Em produção desde** fica vazia;
 - o cliente do pedido está com o interruptor **Nota** desligado no cadastro;
+- entra também, ainda em AGUARDANDO (antes do pagamento), o pedido liberado por **Liberar nota antecipada (Fila de Faturamento)** na lista de Pedidos (veja **Nota antecipada** abaixo);
 - o pedido foi encerrado como teste;
 - a **NFS-e** do pedido foi **autorizada**. Este é o único caso que dá para pedir de volta: marque **Mostrar também pedidos com NFS-e emitida**.
 
@@ -197,6 +198,18 @@ Volta para a lista quando a nota é **cancelada** ou **denegada**, quando o rasc
 4. Emita a nota como em qualquer pedido da fila. Depois de enviado, o item some do menu e **Marcar como entregue** passa a aparecer.
 
 O servidor recusa, dizendo o motivo, o pedido que já está na fila ou na produção, que tem OS, que tem NF-e ou NFS-e autorizada, ou que está marcado como nota emitida no sistema antigo. Nada muda em cobranças nem no boletim. Não existe "tirar da fila"; o nome de quem enviou e a data ficam registrados.
+
+#### Nota antecipada (antes do pagamento)
+
+Para o cliente que só paga mediante a nota. Quem tem **Liberar para Nota Fiscal** libera o pedido ainda em AGUARDANDO, e a NF-e sai pelo **Faturar** da fila, com o número do pedido. As travas de segunda nota já a enxergam.
+
+1. Em **Pedidos**, no menu da linha, clique em **Liberar nota antecipada (Fila de Faturamento)** e confirme. O item aparece só em pedido AGUARDANDO, fora da fila e da produção, sem a marca de nota no sistema antigo.
+2. O pedido entra na fila com o status AGUARDANDO. Status, produção e cobranças não mudam. Quem liberou e quando ficam na linha do tempo do pedido.
+3. Clique em **Faturar**. A conferência é a mesma de sempre: não pede pagamento confirmado, mas pede cobrança registrada, endereço, itens com NCM, valor e empresa.
+4. A nota leva o valor, o desconto e o frete da proposta **no momento do Faturar**. Mudar o pedido depois não muda a nota.
+5. Para desfazer, no mesmo menu: **Desfazer nota antecipada**. Só em AGUARDANDO e sem NF-e de venda (nem rascunho); o pedido sai da fila.
+
+O servidor recusa pedido fora de AGUARDANDO, já na produção, marcado como nota emitida no sistema antigo ou com NF-e de venda autorizada ou em processamento. Depois do pagamento, a liberação para a produção segue manual, como sempre.
 
 ### Emitir a NF-e de um pedido
 
@@ -622,6 +635,8 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 > **Mudança desta revisão:** 08/10/2026 — aviso de nota de remessa: selo na Fila e faixa no rascunho da NF-e quando o pedido é entregue em endereço diferente do da nota. É só aviso; a remessa segue sendo gerada à mão, depois da venda autorizada.
 
 > **Mudança desta revisão:** 12/10/2026 — pedido marcado como entregue pela lista de Pedidos (commit `c818220`) continua na Fila de Faturamento enquanto esperar nota. Só documentação.
+
+> **Mudança desta revisão:** 29/10/2026 — **Nota antecipada**: **Liberar nota antecipada (Fila de Faturamento)**, no menu da linha em **Pedidos**, coloca na fila o pedido em AGUARDANDO (só liga a liberação para nota; status, produção e cobranças não mudam), para a NF-e sair pelo **Faturar** antes do pagamento; **Desfazer nota antecipada** enquanto não houver NF-e de venda.
 
 > **Mudança desta revisão:** 29/10/2026 — **Nota emitida no sistema antigo**: marcar pede o número da nota (vai para a linha do tempo); a marca vale também para a nota antecipada, em pedido NOVO ou AGUARDANDO, pelo menu da linha em **Pedidos**; com a marca, **Faturar** e **Gerar outra nota de venda** recusam o pedido com "Este pedido já tem nota emitida no sistema antigo."
 
