@@ -111,7 +111,7 @@ import { box10Expandido, boxEstaNaLateral } from "@/features/orcamentos/lib/boxe
 import { RetirarProducaoModal } from "@/features/orcamentos/components/RetirarProducaoModal";
 import { EnviarFilaFaturamentoModal } from "@/features/orcamentos/components/EnviarFilaFaturamentoModal";
 import { podeVerEnviarParaFila } from "@/features/orcamentos/lib/enviar-fila-faturamento";
-import { deveAvisarNotaDivergente, valoresMudaram, type NotaViva } from "@/features/orcamentos/lib/nota-x-pedido";
+import { deveAvisarNotaDivergente, valoresMudaram, type NotaViva, type ValoresDoPedido } from "@/features/orcamentos/lib/nota-x-pedido";
 import { NotaDivergenteModal } from "@/features/orcamentos/components/NotaDivergenteModal";
 import {
   consultarNotasVivasDoPedido,
@@ -1720,6 +1720,8 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
   const [avisoNotaDivergente, setAvisoNotaDivergente] = useState<{ notas: NotaViva[]; totalNovo: number } | null>(null);
   const respostaAvisoNotaRef = useRef<((salvar: boolean) => void) | null>(null);
   const registrarNotaDivergenteRef = useRef(false);
+  const valoresPendentesRef = useRef<ValoresDoPedido | null>(null);
+  const valoresGravadosRef = useRef<ValoresDoPedido | null>(null);
   const handleSaveRef = useRef<((opcoes?: { faturadoConfirmado?: boolean; permanecerNaTela?: boolean; lotesJaGravados?: boolean }) => Promise<boolean | undefined>) | null>(null);
   useEffect(() => {
     handleSaveRef.current = handleSave;
@@ -4877,8 +4879,11 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     if (mode !== "edit" || !Number.isInteger(idInt) || idInt <= 0) return true;
     const carregado = proposta?.resumo;
     if (!carregado) return true;
-    const antes = { total: carregado.valorTotal, desconto: carregado.descontoGeral, frete: carregado.frete };
+    // Base: o último valor gravado nesta tela (o salvamento automático do item não
+    // recarrega a página) ou, antes do primeiro salvar, o que veio do banco.
+    const antes = valoresGravadosRef.current ?? { total: carregado.valorTotal, desconto: carregado.descontoGeral, frete: carregado.frete };
     const depois = { total: resumo.valorTotal, desconto: resumo.descontoGeral, frete: resumo.frete };
+    valoresPendentesRef.current = depois;
     if (!valoresMudaram(antes, depois)) return true;
 
     const notas = await consultarNotasVivasDoPedido(idInt);
@@ -4899,6 +4904,8 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
   }
 
   async function registrarNotaDivergenteSeConfirmado(idInt: number) {
+    if (valoresPendentesRef.current) valoresGravadosRef.current = valoresPendentesRef.current;
+    valoresPendentesRef.current = null;
     if (!registrarNotaDivergenteRef.current) return;
     registrarNotaDivergenteRef.current = false;
     const r = await registrarSalvoComNotaDivergente(idInt);
