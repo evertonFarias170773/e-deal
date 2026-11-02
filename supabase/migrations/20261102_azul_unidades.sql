@@ -23,10 +23,12 @@
 --   cidades distintas existem em ibge_municipios (conferido em 02/11/2026).
 --
 -- ACESSO
---   RLS ligado; leitura só para authenticated; nenhuma política de escrita, então
---   o app não grava (service_role continua por BYPASSRLS). Criada por postgres, a
---   tabela não recebe grant para anon pelo default privilege; o REVOKE abaixo é
---   garantia. Conferir o ACL depois de aplicar:
+--   RLS ligado; leitura só para authenticated; nenhuma política de escrita. O
+--   Supabase concede ALL por default privilege ao anon e ao authenticated em toda
+--   tabela nova de public (ALL inclui TRUNCATE, que ignora RLS), então o acesso é
+--   fixado pelo REVOKE e pelo GRANT explícitos abaixo: anon sem nada, authenticated
+--   só SELECT (e a política de RLS decide as linhas). service_role continua por
+--   BYPASSRLS. Conferir o ACL depois de aplicar:
 --     select grantee, array_agg(privilege_type order by privilege_type)
 --       from information_schema.role_table_grants
 --      where table_schema = 'public' and table_name = 'azul_unidades'
@@ -74,6 +76,8 @@ create policy azul_unidades_leitura_autenticado
   on public.azul_unidades for select to authenticated using (true);
 
 revoke all on table public.azul_unidades from anon;
+revoke all on table public.azul_unidades from authenticated;
+grant select on table public.azul_unidades to authenticated;
 
 insert into public.azul_unidades (base, nome, cidade, uf, servicos, servicos_cru, classe, elegivel, motivo) values
   ('RBR', 'RBR- RIO BRANCO/AC', 'Rio Branco', 'AC', ARRAY['ECOMM','EXPRESSO','PREMIUM','STANDARD']::text[], 'ECOMM, EXPRESSO, PREMIUM, STANDARD', 'AZUL', true, 'padrao Base IATA/ICAO + nome de loja/terminal/aeroporto da Azul Cargo'),
