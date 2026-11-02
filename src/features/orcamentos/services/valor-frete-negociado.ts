@@ -55,6 +55,7 @@ import { estaNaFaseDeOrcamento, modalidadeCobraFrete, type ModalidadeFrete } fro
 import { avaliarCoberturaFinanceira } from "@/features/cobrancas/services/cobertura-financeira-proposta";
 import { aplicarDiferencaFinanceira } from "@/features/cobrancas/services/diferenca-financeira-proposta";
 import type { CobrancaParaFaturado } from "@/features/orcamentos/services/faturado-editavel";
+import { barreiraNfAutorizada } from "@/features/expedicao/services/corrigir-frete-simulacao";
 
 export type RecusaValorFrete = {
   ok: false;
@@ -184,6 +185,13 @@ export async function gravarValorFreteNegociado(
       pendenciaAtiva: null
     };
   }
+
+  // ── 4b. NF-e viva (02/11/2026) ────────────────────────────────────────────
+  // Com nota autorizada, frete e total não mudam por aqui: MESMA barreira do
+  // Corrigir frete e da aba Fretes, com a nota lida do banco. Sem isto a nota
+  // ficava com o frete antigo.
+  const nfViva = await barreiraNfAutorizada(supabase, idInt);
+  if (nfViva) return recusa(nfViva.status, nfViva.motivo ?? "NF_AUTORIZADA", nfViva.mensagem ?? "Pedido com NF-e autorizada: cancele a nota antes de corrigir o frete.");
 
   // ── 5. O total gravado já confere com o cálculo do banco? ─────────────────
   const { data: soberanoAntes, error: soberanoErro } = await supabase.rpc("cc__total_soberano_proposta", {

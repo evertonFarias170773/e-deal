@@ -1,6 +1,6 @@
 # Expedição: despachar e entregar
 
-> **Última revisão:** 29/10/2026
+> **Última revisão:** 02/11/2026
 > **Caminho no menu:** Expedição → card do pedido → **Despachar** (os outros passos saem do menu de ações do card)
 > **Endereço:** `/expedicao`
 
@@ -191,7 +191,7 @@ As regras da tela inteira estão em [Expedição](expedicao.md). Estas são as q
 - Não dá para despachar sem a modalidade do frete, a transportadora, o endereço de entrega, o peso aferido e a quantidade de volumes. Em retirada, basta a modalidade. O rastreio é opcional.
 - **Saldo a receber trava o despacho.** Se o total do pedido é maior que o pago confirmado, o despacho é recusado, mesmo que a diferença seja de R$ 0,01. Vale para qualquer modalidade, inclusive retirada no balcão, e para o complemento que sai junto. Não há liberação de ADM na Expedição para o saldo. A trava só age no primeiro despacho.
 - A trava de frete só vale em CIF: até R$ 4,00 acima do frete da proposta só avisa; acima disso, ou sem recotação para o CEP atual, o despacho e a prepostagem ficam bloqueados até a liberação de um administrador da Expedição.
-- Recotar é livre para o expedidor. **Aplicar** depende de liberação do administrador e só aceita opção que barateia ou empata o frete; com nota autorizada, só o que barateia.
+- Recotar é livre para o expedidor. **Aplicar** depende de liberação do administrador e só aceita opção que barateia ou empata o frete. Com NF-e autorizada não se aplica nenhuma opção, nem a que barateia: a tela recusa antes de pedir confirmação, com a mesma mensagem do **Corrigir frete** (cancele a nota antes). Nota cancelada ou denegada não impede.
 - Pedido CIF só sai como retirada por **Cliente vai retirar no balcão**, com ADM pelo cadastro e **Liberar despacho (ADM)**.
 - **Corrigir frete** só vale para pedido Na Expedição ou A Retirar; não aparece com nota autorizada, com despacho confirmado ou com pedido entregue, e é recusado quando o total muda e o pedido tem título ativo no Contas a Receber.
 - Não dá para trocar o endereço de entrega nem a transportadora aqui: os dois vêm da proposta. A exceção é o pedido devolvido, em **Reenviar (pedido devolvido)**.

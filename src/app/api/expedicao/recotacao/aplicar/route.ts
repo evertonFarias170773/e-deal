@@ -164,7 +164,7 @@ export async function POST(request: Request) {
   // frete antigo: 22269 e 24343). A função do banco ainda aceita baratear; esta rota
   // é a única que a chama.
   const nfViva = await barreiraNfAutorizada(supabase, idInt);
-  if (nfViva) return erro(nfViva.mensagem, nfViva.status, { code: nfViva.motivo });
+  if (nfViva) return erro(nfViva.mensagem ?? "Pedido com NF-e autorizada: cancele a nota antes de corrigir o frete.", nfViva.status, { code: nfViva.motivo });
 
   // Liberação: pré-checada aqui para responder 403 com mensagem que se lê, e
   // CONSUMIDA dentro da RPC, na mesma transação das escritas. A pré-checagem

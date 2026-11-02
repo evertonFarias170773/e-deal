@@ -62,6 +62,7 @@ import { AvisoInstrucaoEntrega } from "./AvisoInstrucaoEntrega";
 import { mensagemDoSaldo, type SaldoDoDespacho } from "../lib/saldo-despacho";
 import { avisosDoReenvio } from "../lib/reenvio";
 import { conferirFreteSubsidiado, mensagemFreteSubsidiado } from "../lib/frete-subsidiado";
+import { barreiraNfAutorizada } from "../services/corrigir-frete-simulacao";
 import { getSupabaseClient } from "@/lib/supabase/client";
 
 const TIPOS_VOLUME = ["Pacote", "Caixa", "Envelope", "Outro"];
@@ -494,9 +495,9 @@ export function DespacharModal({
   }
 
   /**
-   * Com NF-e autorizada so entra o que BARATEIA: empatar nao justifica mexer no
-   * valor de um pedido que ja tem nota. Encarecer depende da alcada e fica para
-   * a etapa seguinte. A rota e a RPC repetem os dois gates contra o banco.
+   * Com NF-e autorizada NADA entra (02/11/2026): nem o que barateia, porque a nota
+   * ficaria com o frete antigo. Mesma barreira do Corrigir frete; a rota confere
+   * de novo lendo a nota no banco. Encarecer segue recusado.
    *
    * E APLICAR depende da liberacao do admin (24/09/2026): recotar e livre, mas
    * gravar o frete novo na proposta segue caso a caso. A rota `aplicar` confere
@@ -505,14 +506,14 @@ export function DespacharModal({
   function podeAplicar(o: OpcaoRecotacao): boolean {
     if (!recotacaoLiberada) return false;
     if (o.diferenca > 0) return false;
-    if (pedido.nfStatus === "AUTORIZADA" && o.diferenca >= 0) return false;
+    if (pedido.nfStatus === "AUTORIZADA") return false;
     return true;
   }
 
   function motivoBloqueio(o: OpcaoRecotacao): string {
     if (!recotacaoLiberada) return "Aplicar na proposta depende de liberação de um administrador.";
-    if (o.diferenca > 0) return "Encarece: depende da alçada, ainda não liberado.";
-    return "Com NF-e autorizada, só o que barateia.";
+    if (pedido.nfStatus === "AUTORIZADA") return "Com NF-e autorizada o frete não muda: cancele a nota antes de corrigir o frete.";
+    return "Encarece: depende da alçada, ainda não liberado.";
   }
 
   async function handleAplicar(o: OpcaoRecotacao) {
@@ -524,6 +525,15 @@ export function DespacharModal({
     }
     setAplicandoId(o.id);
     setErroAplicacao(null);
+    // NF-e viva recusa ANTES de qualquer confirmação, lida do banco agora. A rota
+    // confere de novo no servidor; isto só evita pedir confirmação à toa.
+    const supabaseNota = getSupabaseClient();
+    const nfViva = supabaseNota ? await barreiraNfAutorizada(supabaseNota, pedido.idInt) : null;
+    if (nfViva) {
+      setAplicandoId(null);
+      setErroAplicacao(nfViva.mensagem);
+      return;
+    }
     // Cliente com "Pode editar valor do frete": confirma antes de regravar.
     // Lido do banco agora; cancelar nao grava nada (lib/frete-subsidiado).
     const conferencia = await conferirFreteSubsidiado(getSupabaseClient(), pedido.idInt);

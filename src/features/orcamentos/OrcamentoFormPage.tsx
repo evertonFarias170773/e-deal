@@ -128,7 +128,7 @@ import {
   servicosDaTransportadora,
   transportadoraTemEscolhaDeServico
 } from "@/features/orcamentos/lib/servicos-transportadora";
-import { barreirasDaTrocaDeFrete } from "@/features/expedicao/services/corrigir-frete-simulacao";
+import { barreiraNfAutorizada, barreirasDaTrocaDeFrete } from "@/features/expedicao/services/corrigir-frete-simulacao";
 import {
   aplicarValorDigitado,
   atualizarCotadoDoDigitado,
@@ -1387,6 +1387,29 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
   /** Motivo que trava a troca de frete, ou `null` quando ela está liberada. */
   const bloqueioTrocaFrete =
     idIntDaBarreira !== null && barreiraFrete?.idInt === idIntDaBarreira ? barreiraFrete.mensagem : null;
+
+  /**
+   * NF-e VIVA TRAVA O VALOR NEGOCIADO (02/11/2026). Só a barreira da nota, a MESMA
+   * do Corrigir frete: o valor negociado tem permissão própria e não olha despacho.
+   * Aqui só desabilita o campo com o motivo; quem recusa é a rota, lendo a nota.
+   */
+  const [nfVivaValorNegociado, setNfVivaValorNegociado] = useState<{ idInt: number; mensagem: string | null } | null>(null);
+  const idIntDoValorNegociado = !faseDeOrcamento && proposta?.id_int ? Number(proposta.id_int) : null;
+  useEffect(() => {
+    if (idIntDoValorNegociado === null) return;
+    let ativo = true;
+    void (async () => {
+      const client = getSupabaseClient();
+      if (!client) return;
+      const barreira = await barreiraNfAutorizada(client, idIntDoValorNegociado);
+      if (ativo) setNfVivaValorNegociado({ idInt: idIntDoValorNegociado, mensagem: barreira?.mensagem ?? null });
+    })();
+    return () => { ativo = false; };
+  }, [idIntDoValorNegociado]);
+  const bloqueioValorNegociadoPorNota =
+    idIntDoValorNegociado !== null && nfVivaValorNegociado?.idInt === idIntDoValorNegociado
+      ? nfVivaValorNegociado.mensagem
+      : null;
 
   /**
    * FOB entregue por motoboy — a outra resposta possivel para "quem leva".
@@ -7603,7 +7626,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                           aria-label="Valor negociado do frete (R$)"
                           title="Valor negociado do frete, em reais"
                           placeholder="Frete R$"
-                          disabled={salvandoValorFreteAdmin || !modalidadeCobraFrete(form.modalidadeFrete)}
+                          disabled={salvandoValorFreteAdmin || !modalidadeCobraFrete(form.modalidadeFrete) || bloqueioValorNegociadoPorNota !== null}
                           value={valorFreteAdminDraft ?? formatCurrencyWithoutPrefix(Number(proposta?.resumo.frete) || 0)}
                           onChange={(e) => setValorFreteAdminDraft(e.target.value)}
                           onBlur={() => {
@@ -7629,6 +7652,8 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                           ? "Gravando o frete…"
                           : !modalidadeCobraFrete(form.modalidadeFrete)
                             ? `Valor do frete: em ${form.modalidadeFrete} o cliente não paga frete à empresa, então não há valor a negociar.`
+                            : bloqueioValorNegociadoPorNota
+                              ? `Valor do frete: ${bloqueioValorNegociadoPorNota}`
                             : "Valor do frete: o que o cliente paga. Grava ao sair do campo, junto com o total da proposta. Se a proposta já tem pagamento, a diferença vai para a aba Pagamentos."}
                       </p>
 
