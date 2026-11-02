@@ -1,6 +1,6 @@
 # Expedição
 
-> **Última revisão:** 29/10/2026
+> **Última revisão:** 02/11/2026
 > **Caminho no menu:** Expedição (item direto do menu lateral, sem subitens; é o quarto, depois de Conferência, Pedidos e Clientes). Também se chega pela aba **Expedição** no topo do Kanban e da Fila de impressão da Produção.
 > **Endereço:** `/expedicao`
 
@@ -273,7 +273,7 @@ Em resumo: no pedido Na Expedição, clique em **Despachar**, confira peso, volu
 - A Azul emite uma AWB por pedido. Se o pedido já tem AWB, o sistema não emite uma segunda: combine o reenvio direto com a Azul. A janela avisa.
 - Pedido em reenvio não aparece como "aguardando coleta": o que falta nele é despachar de novo. O redespacho passa pelas mesmas conferências de frete da tela do despacho.
 
-- **AWB da Azul:** só em frete CIF com NF-e autorizada, e uma AWB por pedido — a emissão cria contrato e cobrança reais na Azul e não pode ser repetida. Em FOB o cliente contrata a Azul. A Azul recebe da NF-e só a chave, a data de emissão e o valor. As medidas, os pesos e a natureza digitados na janela vão para a Azul e não ficam guardados no pedido. A janela não deixa emitir com altura + largura + comprimento abaixo de 45 cm em algum volume, nem com natureza genérica ("peças", "amostras", "brindes"). Se o cadastro do cliente não tem inscrição estadual, digite-a ou marque **Isento**. Se a Azul recusar, o texto dela aparece e o pedido fica livre para tentar de novo. Se a Azul não responder, o pedido fica **travado como incerto** até alguém conferir no portal da Azul se a AWB foi criada.
+- **AWB da Azul:** só em frete CIF com NF-e autorizada, com pagamento na conta corrente da Ideal junto à Azul (forma PX), e uma AWB por pedido. **A emissão ainda está em validação no ambiente de testes da Azul (sandbox)**: enquanto isso, a AWB emitida não vale como contrato real. Quando passar para produção, a emissão cria contrato e cobrança reais na Azul e não pode ser repetida. Em FOB o cliente contrata a Azul. A Azul recebe da NF-e só a chave, a data de emissão e o valor. As medidas, os pesos e a natureza digitados na janela vão para a Azul e não ficam guardados no pedido. A janela não deixa emitir com altura + largura + comprimento abaixo de 45 cm em algum volume, nem com natureza genérica ("peças", "amostras", "brindes"). Se o cadastro do cliente não tem inscrição estadual, digite-a ou marque **Isento**. Se a Azul recusar, o texto dela aparece e o pedido fica livre para tentar de novo. Se a Azul não responder, o pedido fica **travado como incerto** até alguém conferir no portal da Azul se a AWB foi criada.
 
 ## O que não confundir
 

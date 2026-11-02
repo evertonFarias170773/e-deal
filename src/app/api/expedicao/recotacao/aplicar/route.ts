@@ -5,6 +5,7 @@ import { verificarPermissaoServerSide } from "@/lib/auth/verificar-permissao";
 import { resolverPesoExpedicao } from "@/features/expedicao/lib/peso";
 import { cotarOpcoesFretePorEndereco } from "@/features/maestro/core/agent/maestro-agent-frete.server";
 import type { ModalidadeFrete } from "@/features/expedicao/types";
+import { barreiraNfAutorizada } from "@/features/expedicao/services/corrigir-frete-simulacao";
 
 /**
  * Aplicar uma opção da recotação — Parte C, Etapa 2.
@@ -108,7 +109,7 @@ export async function POST(request: Request) {
     .maybeSingle();
   if (!proposta) return erro("Pedido não encontrado.", 404);
 
-  const [{ data: exp }, { data: frete }, { data: itens }, { data: notas }] = await Promise.all([
+  const [{ data: exp }, { data: frete }, { data: itens }] = await Promise.all([
     supabase
       .from("expedicoes")
       .select("peso_kg, peso_bruto_kg, id_endereco_entrega, modalidade_frete, data_despacho, data_entrega, codigo_rastreamento, correios_id_prepostagem")
@@ -116,8 +117,7 @@ export async function POST(request: Request) {
       .maybeSingle(),
     // `cotacao_frete` é LIDA e só — peso cotado e CEP. Nenhuma escrita, nunca.
     supabase.from("cotacao_frete").select("peso, cep").eq("id_int", idInt).eq("escolhido", true).limit(1).maybeSingle(),
-    supabase.from("produtos_proposta").select("valor_sub_total, peso_total, status_item").eq("id_int", idInt),
-    supabase.from("notas_fiscais").select("id").eq("id_int", idInt).eq("status", "AUTORIZADA").limit(1)
+    supabase.from("produtos_proposta").select("valor_sub_total, peso_total, status_item").eq("id_int", idInt)
   ]);
 
   // ── Gates. A RPC revalida todos contra o banco, sob transação; aqui eles
@@ -158,6 +158,14 @@ export async function POST(request: Request) {
     return erro(`Pedido já despachado com rastreio/prepostagem emitidos (${emitido}) — o frete já foi contratado.`, 409);
   }
 
+  // NF-e viva (02/11/2026): com nota autorizada o frete não muda, nem para baratear.
+  // MESMA barreira do Corrigir frete e da aba Fretes, lida do banco aqui no servidor
+  // (antes daqui a nota so impedia empatar, e a recotação barata deixava a nota com o
+  // frete antigo: 22269 e 24343). A função do banco ainda aceita baratear; esta rota
+  // é a única que a chama.
+  const nfViva = await barreiraNfAutorizada(supabase, idInt);
+  if (nfViva) return erro(nfViva.mensagem, nfViva.status, { code: nfViva.motivo });
+
   // Liberação: pré-checada aqui para responder 403 com mensagem que se lê, e
   // CONSUMIDA dentro da RPC, na mesma transação das escritas. A pré-checagem
   // não é a tranca — duas aplicações simultâneas passariam por ela; quem as
@@ -175,8 +183,6 @@ export async function POST(request: Request) {
       403
     );
   }
-
-  const temNfeAutorizada = (notas ?? []).length > 0;
 
   // ── Endereço: override da tela > escolhido no despacho > mesmo CEP da
   // cotação > mais recente do cliente. Mesma cascata da Etapa 1.
@@ -255,9 +261,6 @@ export async function POST(request: Request) {
       `Esta opção encarece o frete em R$ ${diferenca.toFixed(2)}. Nesta fase só é possível aplicar o que barateia ou empata.`,
       409
     );
-  }
-  if (temNfeAutorizada && diferenca >= 0) {
-    return erro("Com NF-e autorizada só é possível aplicar recotação que barateia o frete.", 409);
   }
 
   // Autoria para o ledger e para a timeline.
