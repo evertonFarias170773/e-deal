@@ -1,6 +1,6 @@
 # Proposta: aba Pedido (Boletim Técnico & Lotes)
 
-> **Última revisão:** 29/10/2026
+> **Última revisão:** 02/11/2026
 > **Caminho no menu:** Pedidos → abrir um pedido → Editar proposta → aba Pedido
 > **Endereço:** `/orcamentos/[número]/editar?tab=pedido`
 
@@ -131,7 +131,7 @@ O **Nº Final** é calculado pela tela e gravado junto com o modelo. Se o cadast
 
 Nada é gravado só de abrir a aba. O aviso não aparece em modelo sem numerador, sem numeração ou criado por Mapa de Teatro.
 
-O **Salvar alterações** só corrige sozinho o modelo de pedido que ainda não saiu: NOVO, AGUARDANDO, REVISAO ATENDENTE, REVISAO PRODUCAO, EM PRODUCAO, EM IMPRESSAO ou EM ACABAMENTO, conforme o status gravado no momento do Salvar. Em qualquer outro status (ENTREGUE, EM TRANSITO, CANCELADO e os demais), o modelo em que ninguém mexeu sai como está gravado, e o aviso continua. Modelo alterado por você é conferido em qualquer status. Modelo cujo numerador não está mais na lista não é corrigido; o Nº Final dele fica como está.
+O **Salvar alterações** só corrige sozinho o modelo de pedido que ainda não saiu: NOVO, AGUARDANDO, REVISAO ATENDENTE, REVISAO PRODUCAO, APROVADO, LIBERADO, EM PRODUCAO, EM IMPRESSAO ou EM ACABAMENTO, conforme o status gravado no momento do Salvar. Em qualquer outro status (ENTREGUE, EM TRANSITO, CANCELADO, EXPEDICAO, A RETIRAR e os demais), o modelo em que ninguém mexeu sai como está gravado, e o aviso continua. Modelo alterado por você é conferido em qualquer status. Modelo cujo numerador não está mais na lista não é corrigido; o Nº Final dele fica como está.
 
 ### Criar os modelos a partir de um Mapa de Teatro
 
@@ -289,4 +289,4 @@ O PDF é sempre o do mapa como está hoje no sistema de mapas. Quem publica o PD
 - `src/features/orcamentos/OrcamentoFormPage.tsx`
 - `src/features/usuarios-perfis/catalogo-permissoes.ts`
 
-> **Mudança desta revisão:** 29/10/2026 — ao gravar, o Nº Final é conferido pela conta do cadastro do numerador e a gravação é recusada se divergir (só modelo novo ou com Qtd, Nº Inicial ou numerador alterados). Linha com numerador fora da lista fica sem Nº Final e não é gravada. O **Salvar alterações** passa a corrigir o Nº Final do modelo que difere do calculado, sem precisar mexer no modelo. A correção automática vale só para pedido que ainda não saiu (pelo status gravado).
+> **Mudança desta revisão:** 02/11/2026 — a correção automática do Nº Final no Salvar passa a valer também em APROVADO e LIBERADO. Antes (29/10/2026): ao gravar, o Nº Final é conferido pela conta do cadastro do numerador e a gravação é recusada se divergir (só modelo novo ou com Qtd, Nº Inicial ou numerador alterados). Linha com numerador fora da lista fica sem Nº Final e não é gravada. O **Salvar alterações** passa a corrigir o Nº Final do modelo que difere do calculado, sem precisar mexer no modelo. A correção automática vale só para pedido que ainda não saiu (pelo status gravado).

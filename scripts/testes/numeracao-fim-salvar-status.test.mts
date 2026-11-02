@@ -74,7 +74,10 @@ async function salvar(caminho: "completo" | "parcial", statusNoBanco: string | n
 
 for (const caminho of ["completo", "parcial"] as const) {
   console.log(`\n── caminho ${caminho} (${caminho === "completo" ? "proposta paga/sem cobrança: status do gate" : "cobrança ativa via editar-paga: statusDoBanco"}) ──`);
-  for (const [status, esperado] of [["ENTREGUE", 4000], ["CANCELADO", 4000], ["EM TRANSITO", 4000], ["EM PRODUCAO", 20000], ["NOVO", 20000]] as const) {
+  for (const [status, esperado] of [
+    ["ENTREGUE", 4000], ["CANCELADO", 4000], ["EM TRANSITO", 4000], ["EXPEDICAO", 4000], ["A RETIRAR", 4000],
+    ["EM PRODUCAO", 20000], ["NOVO", 20000], ["APROVADO", 20000], ["LIBERADO", 20000]
+  ] as const) {
     const r = await salvar(caminho, status, modelo());
     checar(`${status}: linha intocada com 4000 sai com ${esperado}`, [r.success, fimGravado()], [true, esperado]);
   }

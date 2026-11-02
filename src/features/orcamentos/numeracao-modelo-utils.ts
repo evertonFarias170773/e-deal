@@ -475,8 +475,10 @@ export type CorrecaoDoFim = { id: number; de: number; para: number };
 
 /**
  * Status em que o Salvar corrige a linha intocada (29/10/2026): o pedido ainda
- * não saiu. Fora desta lista — ENTREGUE, EM TRANSITO, CANCELADO, e também
- * qualquer status não listado — a linha intocada sai como está gravada, para um
+ * não saiu. APROVADO (nome antigo de LIBERADO) e LIBERADO entraram em
+ * 02/11/2026: ainda não foram produzidos. Fora desta lista — ENTREGUE, EM
+ * TRANSITO, CANCELADO, EXPEDICAO, A RETIRAR e qualquer status não listado — a
+ * linha intocada sai como está gravada, para um
  * Salvar qualquer não reescrever a numeração do que já foi produzido (24054).
  * Linha alterada pela pessoa é conferida em qualquer status.
  */
@@ -485,6 +487,8 @@ export const STATUS_QUE_CORRIGEM_O_FIM: readonly string[] = [
   "AGUARDANDO",
   "REVISAO ATENDENTE",
   "REVISAO PRODUCAO",
+  "APROVADO",
+  "LIBERADO",
   "EM PRODUCAO",
   "EM IMPRESSAO",
   "EM ACABAMENTO"

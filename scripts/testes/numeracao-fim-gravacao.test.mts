@@ -132,10 +132,12 @@ checar("Mapa de Teatro e SEM_NUMERACAO não são tocados", correcoesDoFimIntocad
   lote({ id: 1005237, numeracao_fim: 4000, tipo_numeracao: "SEM_NUMERACAO" })
 ], [GRAVADO_24420], CADASTRO), []);
 
-checar("status que corrigem: os 7 de pedido que ainda não saiu",
-  ["NOVO", "AGUARDANDO", "REVISAO ATENDENTE", "REVISAO PRODUCAO", "EM PRODUCAO", "EM IMPRESSAO", "EM ACABAMENTO"].map(statusCorrigeOFim), [true, true, true, true, true, true, true]);
-checar("ENTREGUE, EM TRANSITO, CANCELADO, não listados e vazio não corrigem",
-  ["ENTREGUE", "EM TRANSITO", "CANCELADO", "cancelada", "EXPEDICAO", "APROVADO", "", null].map(statusCorrigeOFim), [false, false, false, false, false, false, false, false]);
+checar("status que corrigem: os 9 de pedido que ainda não saiu",
+  ["NOVO", "AGUARDANDO", "REVISAO ATENDENTE", "REVISAO PRODUCAO", "APROVADO", "LIBERADO", "EM PRODUCAO", "EM IMPRESSAO", "EM ACABAMENTO"].map(statusCorrigeOFim),
+  [true, true, true, true, true, true, true, true, true]);
+checar("ENTREGUE, EM TRANSITO, CANCELADO, EXPEDICAO, A RETIRAR, não listados e vazio não corrigem",
+  ["ENTREGUE", "EM TRANSITO", "CANCELADO", "cancelada", "EXPEDICAO", "A RETIRAR", "PRONTO", "", null].map(statusCorrigeOFim),
+  [false, false, false, false, false, false, false, false, false]);
 checar("caixa e espaço não importam", statusCorrigeOFim(" em produCAO "), true);
 
 // ── ligação no servidor ─────────────────────────────────────────────────────
