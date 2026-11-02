@@ -1,6 +1,6 @@
 # Notas fiscais
 
-> **Última revisão:** 29/10/2026
+> **Última revisão:** 02/11/2026
 > **Caminho no menu:** Financeiro → Notas fiscais (primeiro item da seção Financeiro do menu lateral)
 > **Endereço:** `/notas-fiscais` (a nota aberta fica em `/notas-fiscais/[id]`)
 
@@ -187,7 +187,7 @@ Para o cliente que só paga mediante a nota. Quem tem **Liberar para Nota Fiscal
 1. Em **Pedidos**, no menu da linha, clique em **Liberar nota antecipada (Fila de Faturamento)** e confirme. O item aparece só em pedido AGUARDANDO, fora da fila e da produção, sem a marca de nota no sistema antigo.
 2. O pedido entra na fila com o status AGUARDANDO. Status, produção e cobranças não mudam. Quem liberou e quando ficam na linha do tempo do pedido.
 3. Clique em **Faturar**. A conferência é a mesma de sempre: não pede pagamento confirmado, mas pede cobrança registrada, endereço, itens com NCM, valor e empresa.
-4. A nota leva o valor, o desconto e o frete da proposta **no momento do Faturar**. Mudar o pedido depois não muda a nota.
+4. A nota leva o valor, o desconto e o frete da proposta **no momento do Faturar**. Mudar o pedido depois não muda a nota: ao salvar a proposta mudando total, desconto ou frete, a tela avisa com a janela **Este pedido já tem NF-e de venda** (veja [Proposta](proposta.md), **Salvar a proposta**).
 5. Para desfazer, no mesmo menu: **Desfazer nota antecipada**. Só em AGUARDANDO e sem NF-e de venda (nem rascunho); o pedido sai da fila.
 
 O servidor recusa pedido fora de AGUARDANDO, já na produção, marcado como nota emitida no sistema antigo ou com NF-e de venda autorizada ou em processamento. Depois do pagamento, a liberação para a produção segue manual, como sempre.

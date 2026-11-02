@@ -1,6 +1,6 @@
 # Proposta: visão geral e abas
 
-> **Última revisão:** 29/10/2026
+> **Última revisão:** 02/11/2026
 > **Caminho no menu:** Pedidos → **+ Nova proposta** (proposta nova) ou Pedidos → abrir um pedido → **Editar proposta**
 > **Endereço:** `/orcamentos/novo` e `/orcamentos/<número>/editar`
 
@@ -155,6 +155,8 @@ O que grava sem passar pelo botão do rodapé:
 Os outros campos (vendedor, empresa, contato, endereço escolhido, observações, modalidade de frete, orientação técnica) só valem depois de salvar.
 
 Ao salvar pela barra do rodapé, os modelos que ainda estavam por gravar na lista rápida da aba Pedido são gravados junto.
+
+**Pedido que já tem NF-e de venda.** A nota leva valor, desconto e frete do momento do **Faturar** e não muda quando o pedido muda. Se o pedido tem NF-e de venda autorizada, em processamento ou pronta para envio, e o salvamento muda o total, o desconto ou o frete, aparece antes a janela **Este pedido já tem NF-e de venda**, com o número e o valor da nota e o novo total. **Voltar** não grava nada. **Salvar mesmo assim** grava, e fica registrado na linha do tempo do pedido que ele foi salvo com valor diferente da nota. É só aviso: não impede salvar e não altera a nota. Vale em todo salvamento da tela, inclusive **Salvar item**, o salvamento automático do item, o salvar antes de gerar cobrança e a proposta já paga. Nota cancelada, denegada, rascunho ou remessa não conta.
 
 ### Sair com alterações por salvar
 
@@ -408,6 +410,10 @@ Duas ações do mesmo menu têm o passo a passo em outra ficha: **Enviar para Fi
 ## Arquivos de origem
 
 - `src/features/orcamentos/OrcamentoFormPage.tsx`
+- `src/features/orcamentos/lib/nota-x-pedido.ts`
+- `src/features/orcamentos/components/NotaDivergenteModal.tsx`
+- `src/features/orcamentos/services/nota-do-pedido.client.ts`
+- `src/app/api/orcamentos/nota-do-pedido/route.ts`
 - `src/features/orcamentos/lib/boxes-da-lateral.ts`
 - `src/app/(erp)/orcamentos/novo/page.tsx`
 - `src/app/(erp)/orcamentos/[id]/editar/page.tsx`
@@ -438,6 +444,8 @@ Duas ações do mesmo menu têm o passo a passo em outra ficha: **Enviar para Fi
 - `src/app/api/orcamentos/reativar-cancelado/route.ts`
 - `src/components/common/ActionsMenu.tsx`
 - `src/constants/navigation.ts`
+
+> **Mudança desta revisão:** 02/11/2026 — salvar pedido que já tem NF-e de venda (autorizada, em processamento ou pronta para envio) mudando total, desconto ou frete abre a janela **Este pedido já tem NF-e de venda**, com **Salvar mesmo assim** e **Voltar**; ao salvar assim, a linha do tempo registra que o pedido ficou com valor diferente da nota. Só aviso.
 
 > **Mudanças de 08/10/2026:**
 >
