@@ -110,7 +110,8 @@ import {
 // Grupos "Aguardando financeiro" e "Pago / A liberar" da lista de Pedidos: a
 // MESMA regra que a Conferencia usa por cobranca, sem copia.
 import { getConferenciaStatusLabel } from "@/features/cobrancas/cobrancas-utils";
-import { mensagensDaCopia, type MotivoDaCopia } from "@/features/orcamentos/lib/motivo-copia";
+import { mensagensDaCopia, type MotivoDaCopia } from "@/features/orcamentos/lib/motivo-copia";
+import { recusaPorPedidoEntregue } from "@/features/orcamentos/services/pedido-entregue";
 import {
   COLUNAS_NOTA_DO_PEDIDO,
   escolherNotaAutorizadaDoPedido,
@@ -3017,6 +3018,14 @@ export async function saveProposta(
   let id_int: number | null = isUpdate ? Number(formState.id_int) : null;
 
   let hasActiveCharge = false;
+
+  // Pedido entregue não pode ser alterado (02/11/2026), nem pelo editar-paga
+  // (que chama este Salvar com force) nem pelo salvamento parcial. Status lido do
+  // banco agora, nunca o do formulário. Roda no navegador no caminho normal.
+  if (isUpdate && id_int) {
+    const entregue = await recusaPorPedidoEntregue(client, id_int);
+    if (entregue) return { success: false, errorMessage: entregue.message };
+  }
 
   if (isUpdate && id_int) {
     // Revalidação de segurança no service antes de salvar

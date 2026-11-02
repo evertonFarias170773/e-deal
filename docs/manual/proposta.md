@@ -319,6 +319,8 @@ Duas ações do mesmo menu têm o passo a passo em outra ficha: **Enviar para Fi
 
 ## Regras e bloqueios
 
+- **Pedido entregue não pode ser alterado**, nem por administrador nem por quem tem **Editar Proposta Paga**. Em status ENTREGUE ficam travados os produtos, o **Salvar alterações**, o **Gerar cobrança** e o valor negociado do frete, com a mensagem "Pedido entregue não pode ser alterado. Para alterar, volte o status na Expedição até a Revisão Atendente (só é possível antes da NF)." O sistema confere o status gravado, não o da tela. **Duplicar** e **Retrabalho** continuam liberados, porque criam pedido novo. O boleto de uma cobrança faturada que já existia continua sendo registrado normalmente.
+- **Para alterar um pedido entregue:** na Expedição, use **Voltar status** passo a passo (Entregue → Em Trânsito ou A Retirar → Na Expedição → Em Acabamento). Depois, a produção devolve o pedido ao atendente com **Voltar para Revisão Atendente**, e só então a proposta pode ser editada. Com nota fiscal emitida, a devolução ao atendente é recusada: cancele a nota antes.
 - Não dá para salvar sem cliente, contato, endereço de entrega, vendedor, empresa, pelo menos um produto e frete definido. A tela diz qual deles falta.
 - Não dá para salvar com total zerado. O subtotal dos produtos e o total precisam ser maiores que R$ 0,00.
 - Em FOB, não dá para salvar sem transportadora ou sem marcar **Motoboy**: é o dado que a Expedição usa no despacho.

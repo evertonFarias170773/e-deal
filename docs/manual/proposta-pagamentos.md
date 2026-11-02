@@ -1,6 +1,6 @@
 # Proposta: aba Pagamentos
 
-> **Última revisão:** 28/10/2026
+> **Última revisão:** 02/11/2026
 > **Caminho no menu:** Pedidos → abrir um pedido → aba Pagamentos
 > **Endereço:** `/orcamentos/<número>/editar?tab=pagamentos`
 
@@ -199,6 +199,7 @@ Se a janela for fechada sem escolher, a proposta fica com a faixa **Revisão fin
 
 ## Regras e bloqueios
 
+- **Pedido entregue não recebe cobrança nova.** Em status ENTREGUE, **Gerar cobrança** fica desabilitado com a mensagem "Pedido entregue não pode ser alterado. Para alterar, volte o status na Expedição até a Revisão Atendente (só é possível antes da NF)." Vale para todos, administrador incluído, e o servidor recusa também o uso de crédito, o pagamento combinado e a emissão de boleto à vista, PIX e cartão. A página de pagamento do cliente já não aceitava pagar pedido entregue. O registro do boleto de uma cobrança faturada que já existia segue normal. O caminho para alterar está na ficha da [Proposta](proposta.md).
 - Não dá para entrar na aba com alteração não salva: a tela pede **Salvar e continuar**.
 - Não dá para entrar na aba enquanto houver diferença financeira pendente: "Resolva a diferença financeira pendente antes de acessar Pagamentos."
 - Não dá para gerar cobrança de orçamento rápido, sem cliente cadastrado.

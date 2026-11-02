@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
-import { gerarPixBancoInter } from "@/features/cobrancas/services/banco-inter.service";
+import { gerarPixBancoInter } from "@/features/cobrancas/services/banco-inter.service";
+import { recusaPorPedidoEntreguePelaCobranca } from "@/features/orcamentos/services/pedido-entregue";
 
 /**
  * Identidade do devedor NÃO vem do payload: sai de `pagamentos_v2`, lida aqui
@@ -97,6 +98,12 @@ export async function POST(request: Request) {
       { success: false, message: "Cobrança não encontrada ou fora do escopo de acesso do usuário." },
       { status: 404 }
     );
+  }
+
+  // Pedido entregue não recebe cobrança nova (02/11/2026): pedido lido do banco.
+  const entregue = await recusaPorPedidoEntreguePelaCobranca(supabaseUser, cobranca.id);
+  if (entregue) {
+    return NextResponse.json({ success: false, code: entregue.code, message: entregue.message }, { status: entregue.httpStatus });
   }
 
   const tipo = cobranca.tipo_cobranca?.toUpperCase() || "";

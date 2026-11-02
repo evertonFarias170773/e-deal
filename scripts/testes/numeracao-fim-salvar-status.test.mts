@@ -5,7 +5,8 @@
  * cobrança, o que o editar-paga leu e passou em `statusDoBanco`.
  *
  * Prova pelo `saveProposta` de verdade, com o cliente FALSO (nada é gravado):
- *   - ENTREGUE, EM TRANSITO e CANCELADO: a linha com 4000 sai com 4000;
+ *   - EM TRANSITO e CANCELADO: a linha com 4000 sai com 4000;
+ *   - ENTREGUE: o Salvar inteiro é recusado (02/11/2026, pedido entregue não pode ser alterado);
  *   - EM PRODUCAO e NOVO: sai com 20000 (Ticket PRATA, QTD 4000, inicial 1);
  *   - status do banco ilegível ou ausente: sai como está;
  *   - linha ALTERADA pela pessoa é conferida em qualquer status.
@@ -75,20 +76,23 @@ async function salvar(caminho: "completo" | "parcial", statusNoBanco: string | n
 for (const caminho of ["completo", "parcial"] as const) {
   console.log(`\n── caminho ${caminho} (${caminho === "completo" ? "proposta paga/sem cobrança: status do gate" : "cobrança ativa via editar-paga: statusDoBanco"}) ──`);
   for (const [status, esperado] of [
-    ["ENTREGUE", 4000], ["CANCELADO", 4000], ["EM TRANSITO", 4000], ["EXPEDICAO", 4000], ["A RETIRAR", 4000],
+    ["CANCELADO", 4000], ["EM TRANSITO", 4000], ["EXPEDICAO", 4000], ["A RETIRAR", 4000],
     ["EM PRODUCAO", 20000], ["NOVO", 20000], ["APROVADO", 20000], ["LIBERADO", 20000]
   ] as const) {
     const r = await salvar(caminho, status, modelo());
     checar(`${status}: linha intocada com 4000 sai com ${esperado}`, [r.success, fimGravado()], [true, esperado]);
   }
+  // ENTREGUE (02/11/2026): o Salvar é recusado antes de qualquer gravação.
+  const entregue = await salvar(caminho, "ENTREGUE", modelo(), "ENTREGUE");
+  checar("ENTREGUE: Salvar recusado, nada gravado", [entregue.success, String(entregue.errorMessage).startsWith("Pedido entregue não pode ser alterado."), falso.chamadas.filter((c) => c.op !== "select").length], [false, true, 0]);
   // O status que vale é o do banco, não o da tela.
   const telaMente = await salvar(caminho, "ENTREGUE", modelo(), "EM PRODUCAO");
-  checar("tela diz EM PRODUCAO, banco diz ENTREGUE: sai com 4000", [telaMente.success, fimGravado()], [true, 4000]);
+  checar("tela diz EM PRODUCAO, banco diz ENTREGUE: recusado pelo banco, nada gravado", [telaMente.success, falso.chamadas.filter((c) => c.op !== "select").length], [false, 0]);
   const semStatus = await salvar(caminho, null, modelo());
   checar("status do banco ausente: sai como está (4000)", [semStatus.success, fimGravado()], [true, 4000]);
 
   // Linha ALTERADA pela pessoa: conferida em qualquer status.
-  for (const status of ["ENTREGUE", "CANCELADO", "EM PRODUCAO"]) {
+  for (const status of ["CANCELADO", "EM PRODUCAO"]) {
     const errada = await salvar(caminho, status, modelo({ quantidade: 3000, numeracao_fim: 4000 }));
     checar(`${status}: linha alterada com Nº final errado é recusada, nada gravado`,
       [errada.success, String(errada.errorMessage).includes("o cadastro dá 15000"), falso.chamadas.filter((c) => c.op !== "select").length], [false, true, 0]);
@@ -99,7 +103,9 @@ for (const caminho of ["completo", "parcial"] as const) {
 
 console.log("\n── caminho completo: leitura do status falhou ──");
 const gateFalhou = await salvar("completo", "EM PRODUCAO", modelo(), "EM PRODUCAO", true);
-checar("gate ilegível: não corrige (sai com 4000), mesmo com a tela em EM PRODUCAO", [gateFalhou.success, fimGravado()], [true, 4000]);
+// Desde 02/11/2026 a leitura do status também decide se o pedido está entregue:
+// sem conseguir ler, o Salvar recusa e nada é gravado (falha de leitura nunca vira liberado).
+checar("status ilegível: Salvar recusado, nada gravado", [gateFalhou.success, String(gateFalhou.errorMessage).includes("Não foi possível conferir o status do pedido"), falso.chamadas.filter((c) => c.op !== "select").length], [false, true, 0]);
 
 console.log(falhas === 0 ? "\nTODOS OS TESTES PASSARAM" : `\n${falhas} TESTE(S) FALHARAM`);
 process.exitCode = falhas === 0 ? 0 : 1;

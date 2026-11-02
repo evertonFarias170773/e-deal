@@ -7,7 +7,8 @@ import { verificarPermissaoServerSide } from "@/lib/auth/verificar-permissao";
 import { calcularSituacaoQuitacaoProposta } from "@/features/cobrancas/services/conferencia-financeira.service";
 import { gerarPixBancoInter } from "@/features/cobrancas/services/banco-inter.service";
 import { recusaDoGatilhoNoErro, recusaDoTipoNoPedido } from "@/features/cobrancas/lib/tipo-x-retrabalho";
-import { lerContextoRetrabalhoDoPedido } from "@/features/cobrancas/services/tipo-x-retrabalho.service";
+import { lerContextoRetrabalhoDoPedido } from "@/features/cobrancas/services/tipo-x-retrabalho.service";
+import { CODIGO_PEDIDO_ENTREGUE, MENSAGEM_PEDIDO_ENTREGUE, statusEhEntregue } from "@/features/orcamentos/services/pedido-entregue";
 
 export async function POST(request: NextRequest) {
   const authHeader = request.headers.get("authorization") ?? "";
@@ -92,12 +93,20 @@ export async function POST(request: NextRequest) {
     // usado na emissão do PIX — mesma fonte do enderecoEntrega do front)
     const { data: proposta, error: propostaErr } = await supabaseUser
       .from("propostas")
-      .select("id_int, id_cliente, empresa, id_endereco_ent, id_faturado")
+      .select("id_int, id_cliente, empresa, id_endereco_ent, id_faturado, status_interno")
       .eq("id_int", idInt)
       .maybeSingle();
 
     if (propostaErr || !proposta) {
       return NextResponse.json({ success: false, error: "Proposta não encontrada." }, { status: 404 });
+    }
+
+    // Pedido entregue não recebe cobrança nova (02/11/2026): status lido do banco.
+    if (statusEhEntregue(proposta.status_interno)) {
+      return NextResponse.json(
+        { success: false, code: CODIGO_PEDIDO_ENTREGUE, error: MENSAGEM_PEDIDO_ENTREGUE, message: MENSAGEM_PEDIDO_ENTREGUE },
+        { status: 409 }
+      );
     }
 
     const idEmpresaReal = resolveEmpresaIdFromTexto(proposta.empresa);

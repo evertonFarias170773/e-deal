@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 
 import { gerarCartaoAsasParaCobranca } from "@/features/cobrancas/services/cartao-asas.server";
+import { recusaPorPedidoEntreguePelaCobranca } from "@/features/orcamentos/services/pedido-entregue";
 
 /**
  * Cartão Asas — segunda opção de cartão, acionada conscientemente pelo usuário.
@@ -51,6 +52,12 @@ export async function POST(request: Request) {
   const { data: authData, error: authError } = await supabase.auth.getUser();
   if (authError || !authData.user) {
     return NextResponse.json({ success: false, message: "Sessão inválida." }, { status: 401 });
+  }
+
+  // Pedido entregue não recebe cobrança nova (02/11/2026): pedido lido do banco.
+  const entregue = await recusaPorPedidoEntreguePelaCobranca(supabase, cobrancaId);
+  if (entregue) {
+    return NextResponse.json({ success: false, code: entregue.code, message: entregue.message }, { status: entregue.httpStatus });
   }
 
   const resultado = await gerarCartaoAsasParaCobranca(supabase, cobrancaId);

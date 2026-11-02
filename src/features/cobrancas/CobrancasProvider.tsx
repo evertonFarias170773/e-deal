@@ -25,7 +25,8 @@ import { criarControleDeRecarga, manterDadosDaRecarga } from "@/features/cobranc
 import { ACAO_AUTORIZAR_E_CONFERIR, mensagemDeFalhaParaATela } from "@/features/cobrancas/lib/autorizar-e-conferir";
 import { mensagemDaLeituraDeCobrancas, statusDaLeituraDeCobrancas } from "@/features/cobrancas/lib/limite-da-carga";
 import type { DestinoValorCancelado, MotivoCancelamentoPago } from "@/features/cobrancas/cancelamento-pago";
-import { recusaDoGatilhoNoErro } from "@/features/cobrancas/lib/tipo-x-retrabalho";
+import { recusaDoGatilhoNoErro } from "@/features/cobrancas/lib/tipo-x-retrabalho";
+import { recusaPorPedidoEntregue } from "@/features/orcamentos/services/pedido-entregue";
 
 /** Payload do cancelamento de cobrança JÁ PAGA — espelha o objeto que o
  *  CancelCobrancaModal monta e o contrato de POST /api/cobrancas/cancelar-pago. */
@@ -725,6 +726,11 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
       if (!client) {
         throw new Error("Sistema indisponivel no momento. Tente novamente.");
       }
+
+      // Pedido entregue não recebe cobrança nova (02/11/2026): status lido do
+      // banco agora, antes de qualquer gravação. Roda no navegador.
+      const entregue = await recusaPorPedidoEntregue(client, Number(proposta.id_int));
+      if (entregue) throw new Error(entregue.message);
 
       // ── Idempotência por tentativa ──────────────────────────────────────────
       // A trava do botão impede o clique duplo dentro de uma aba; esta camada

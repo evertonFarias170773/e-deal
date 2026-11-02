@@ -109,7 +109,8 @@ checar("sem a opção: sucesso (parcial)", semOpcao.success, true);
 checar(
   "sem a opção: só confere a cobrança e grava as observações",
   falso.chamadas.map(resumo),
-  ["pagamentos_v2:select", "propostas:update"]
+  // Desde 02/11/2026 o Salvar lê o status do pedido antes (pedido entregue não é alterado).
+  ["propostas:select", "pagamentos_v2:select", "propostas:update"]
 );
 checar("sem a opção: nada em pedidos_modelos", falso.chamadas.filter((c) => c.tabela === "pedidos_modelos").length, 0);
 
@@ -121,6 +122,7 @@ checar(
   "com a opção: sequência das chamadas",
   falso.chamadas.map(resumo),
   [
+    "propostas:select",
     "pagamentos_v2:select",
     "produtos_proposta:select",
     "produto_boletim_campos:select",

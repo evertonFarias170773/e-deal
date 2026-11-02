@@ -50,6 +50,7 @@ import {
   type ContextoRetrabalhoDoPedido
 } from "@/features/cobrancas/lib/tipo-x-retrabalho";
 import { lerContextoRetrabalhoDoPedido } from "@/features/cobrancas/services/tipo-x-retrabalho.service";
+import { MENSAGEM_PEDIDO_ENTREGUE, statusEhEntregue } from "@/features/orcamentos/services/pedido-entregue";
 import {
   criarCobrancaInitialValues,
   getCobrancaTipoLabel,
@@ -67,6 +68,8 @@ type PropostaCobrancaPanelProps = {
   onSavePropostaRequest?: () => Promise<boolean>;
   onRefreshProposta?: () => void;
   onPagamentoIntegralConcluido?: () => void;
+  /** Motivo que impede cobrança nova (ex.: pedido entregue). Com ele, "Gerar cobrança" fica desabilitado. */
+  bloqueioNovaCobranca?: string | null;
 };
 
 function getInitialEmpresaFromProposta(proposta: Proposta): { id_empresa: number; empresa: string } {
@@ -206,8 +209,14 @@ export function PropostaCobrancaPanel({
   onlyModal = false,
   onSavePropostaRequest,
   onRefreshProposta,
-  onPagamentoIntegralConcluido
+  onPagamentoIntegralConcluido,
+  bloqueioNovaCobranca: bloqueioNovaCobrancaProp = null
 }: PropostaCobrancaPanelProps) {
+  // Pedido entregue não recebe cobrança nova (02/11/2026). O painel lê o status da
+  // própria proposta, para valer em toda tela que o usa; o banco é conferido de novo
+  // na criação (CobrancasProvider) e nas rotas.
+  const bloqueioNovaCobranca =
+    bloqueioNovaCobrancaProp ?? (statusEhEntregue(proposta.status_interno) ? MENSAGEM_PEDIDO_ENTREGUE : null);
   const { showToast } = useAppToast();
   const { createCobranca, getCobrancasByProposta, source, cobrancas, refreshCobrancas, statusCarga, mensagemCarga } = useCobrancas();
   const { user } = useAuth();
@@ -841,6 +850,10 @@ export function PropostaCobrancaPanel({
   }, [form.valor, proposta, source, realCreditAnalysis, cobrancasAtivasTudo]);
 
   const openModal = useCallback(() => {
+    if (bloqueioNovaCobranca) {
+      showToast({ type: "error", title: "Ação bloqueada", description: bloqueioNovaCobranca });
+      return;
+    }
     if (proposta.clienteNaoCadastrado || proposta.cliente.idCliente === null || proposta.cliente.idCliente === undefined || Number(proposta.cliente.idCliente) === 0) {
       showToast({
         type: "error",
@@ -867,7 +880,7 @@ export function PropostaCobrancaPanel({
 
     onOpenModal?.();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isControlled, onOpenModal, saldoRestante]);
+  }, [isControlled, onOpenModal, saldoRestante, bloqueioNovaCobranca]);
 
   const closeModal = useCallback(() => {
     if (!isControlled) {
@@ -989,6 +1002,10 @@ export function PropostaCobrancaPanel({
    */
   function handleSubmitClick() {
     if (enviandoCobrancaRef.current || isSaving) return;
+    if (bloqueioNovaCobranca) {
+      showToast({ type: "error", title: "Ação bloqueada", description: bloqueioNovaCobranca });
+      return;
+    }
     // A reserva de débito (v1) atua sobre UMA única pendência (a mais antiga em
     // aberto) — o teto oferecido é o saldo dessa pendência, não o saldoDevedor
     // total (que pode somar várias pendências).
@@ -2135,7 +2152,8 @@ export function PropostaCobrancaPanel({
                   }
                   openModal();
                 }}
-                disabled={isSaving}
+                disabled={isSaving || Boolean(bloqueioNovaCobranca)}
+                title={bloqueioNovaCobranca ?? undefined}
                 className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[#0b2f4a] px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[#123f61] disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 {isSaving ? (
@@ -2143,6 +2161,9 @@ export function PropostaCobrancaPanel({
                 ) : null}
                 {isSaving ? "Salvando..." : "Gerar cobrança"}
               </button>
+            )}
+            {bloqueioNovaCobranca && saldoRestante > 0 && (
+              <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">{bloqueioNovaCobranca}</p>
             )}
           </div>
         ) : (
@@ -2204,7 +2225,8 @@ export function PropostaCobrancaPanel({
                           }
                           openModal();
                         }}
-                        disabled={isSaving || refreshingSaldo}
+                        disabled={isSaving || refreshingSaldo || Boolean(bloqueioNovaCobranca)}
+                        title={bloqueioNovaCobranca ?? undefined}
                         className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[#0b2f4a] px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[#123f61] disabled:opacity-60 disabled:cursor-not-allowed"
                       >
                         {isSaving ? (

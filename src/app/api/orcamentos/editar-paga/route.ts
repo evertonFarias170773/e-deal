@@ -41,6 +41,7 @@ import {
 import { aplicarDiferencaFinanceira } from "@/features/cobrancas/services/diferenca-financeira-proposta";
 import { avaliarCoberturaFinanceira } from "@/features/cobrancas/services/cobertura-financeira-proposta";
 import { semCobrancaDeReenvio } from "@/features/cobrancas/lib/cobranca-reenvio";
+import { CODIGO_PEDIDO_ENTREGUE, MENSAGEM_PEDIDO_ENTREGUE, statusEhEntregue } from "@/features/orcamentos/services/pedido-entregue";
 
 // ---------------------------------------------------------------------------
 // Configurações e Tipagens
@@ -291,6 +292,15 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       { success: false, error: `Proposta #${idInt} não encontrada no banco de dados.` },
       { status: 404 }
+    );
+  }
+
+  // Pedido entregue não pode ser alterado (02/11/2026), sem exceção de perfil.
+  // O status é o lido do banco logo acima, nunca o que a tela mandou.
+  if (statusEhEntregue(propostaBanco.status_interno)) {
+    return NextResponse.json(
+      { success: false, code: CODIGO_PEDIDO_ENTREGUE, error: MENSAGEM_PEDIDO_ENTREGUE, message: MENSAGEM_PEDIDO_ENTREGUE },
+      { status: 409 }
     );
   }
 

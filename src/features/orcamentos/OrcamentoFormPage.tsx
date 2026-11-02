@@ -165,6 +165,7 @@ import { AcompanharPedidoCard } from "@/features/orcamentos/components/Acompanha
 import { TarefasDoPedido } from "@/features/tarefas/components/TarefasDoPedido";
 import { SocioPagadorInline, type SocioConfirmado } from "@/features/orcamentos/components/SocioPagadorInline";
 import type { AcaoFinanceiraDiferenca } from "@/features/cobrancas/types";
+import { MENSAGEM_PEDIDO_ENTREGUE, statusEhEntregue } from "@/features/orcamentos/services/pedido-entregue";
 import {
   calcularValorPagoConfirmado,
   calcularDiferencaFinanceira
@@ -4938,6 +4939,12 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
   }
 
   async function handleSave(opcoes?: { faturadoConfirmado?: boolean; permanecerNaTela?: boolean; lotesJaGravados?: boolean }) {
+    // Pedido entregue não pode ser alterado (02/11/2026). A tela só evita a ida
+    // ao banco: o Salvar e o editar-paga conferem o status lido do banco.
+    if (pedidoEntregueNaTela) {
+      showToast({ type: "error", title: "Pedido entregue", description: MENSAGEM_PEDIDO_ENTREGUE });
+      return;
+    }
     // Bloqueio absoluto (vale para admin/superadmin): avulsa ou sem produtos
     // ativos + paga = somente visualização/Histórico/Pagamentos. O backend
     // (editar-paga) aplica a mesma regra — este guard evita o round-trip.
@@ -5737,10 +5744,13 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
   });
 
   // Desbloqueado quando usuário tem permissão E há cobrança ativa E não há pendência aberta
+  /** Pedido entregue não pode ser alterado (02/11/2026): trava a tela inteira, sem exceção de perfil. */
+  const pedidoEntregueNaTela = mode === "edit" && statusEhEntregue(proposta?.status_interno);
   const isFormBloqueadoPorCobranca =
     (hasActiveCobranca && !canEditarPropostaPaga && !podeEditarPeloFaturado) ||
     pendenciaRevisaoAberta !== null ||
-    bloqueioAvulsaPaga;
+    bloqueioAvulsaPaga ||
+    pedidoEntregueNaTela;
 
   /**
    * Status exibido, em UM lugar so (10/09/2026).
@@ -7984,6 +7994,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                   ) : (
                     <PropostaCobrancaPanel
                       proposta={proposta}
+                      bloqueioNovaCobranca={pedidoEntregueNaTela ? MENSAGEM_PEDIDO_ENTREGUE : null}
                       defaultModalOpen={autoAbrirCobranca}
                       onSavePropostaRequest={handleSaveForCobranca}
                       onRefreshProposta={() => {
@@ -8072,10 +8083,15 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
       {shouldShowRest && (
         <div className="sticky bottom-4 z-20 rounded-3xl border border-[#d7e5e8] bg-white/95 p-4 shadow-xl shadow-slate-900/10 backdrop-blur">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-sm font-semibold text-slate-700">Proposta #{form.id_int || "NOVA"} | Total {formatCurrency(resumo.valorTotal)}</p>
+            <div>
+              <p className="text-sm font-semibold text-slate-700">Proposta #{form.id_int || "NOVA"} | Total {formatCurrency(resumo.valorTotal)}</p>
+              {pedidoEntregueNaTela && (
+                <p className="mt-1 text-xs font-semibold text-amber-700 dark:text-amber-300">{MENSAGEM_PEDIDO_ENTREGUE}</p>
+              )}
+            </div>
             <div className="flex flex-col gap-2 sm:flex-row">
               <button type="button" onClick={() => handleNavigateRef.current(mode === "edit" && proposta ? `/orcamentos/${proposta.id_int}` : "/orcamentos")} className="rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700">Cancelar</button>
-              <button type="button" onClick={() => void handleSave()} disabled={isSaving || isQuotingSedex || isQuotingAzul || isQuotingTransp || isQuotingVeppo} className="rounded-2xl bg-[#0b2f4a] px-5 py-3 text-sm font-semibold text-white disabled:opacity-60">{isSaving ? "Salvando..." : mode === "edit" ? "Salvar alterações" : "Salvar proposta"}</button>
+              <button type="button" onClick={() => void handleSave()} disabled={isSaving || isQuotingSedex || isQuotingAzul || isQuotingTransp || isQuotingVeppo || pedidoEntregueNaTela} title={pedidoEntregueNaTela ? MENSAGEM_PEDIDO_ENTREGUE : undefined} className="rounded-2xl bg-[#0b2f4a] px-5 py-3 text-sm font-semibold text-white disabled:opacity-60">{isSaving ? "Salvando..." : mode === "edit" ? "Salvar alterações" : "Salvar proposta"}</button>
             </div>
           </div>
         </div>

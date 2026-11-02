@@ -56,7 +56,8 @@ import { createClient as createSupabaseClient, type SupabaseClient } from "@supa
 import { calcularSituacaoQuitacaoProposta } from "@/features/cobrancas/services/conferencia-financeira.service";
 import { montarUrlPublicaCobranca } from "@/features/cobrancas/cobrancas-utils";
 import { recusaDoGatilhoNoErro, recusaDoTipoNoPedido } from "@/features/cobrancas/lib/tipo-x-retrabalho";
-import { lerContextoRetrabalhoDoPedido } from "@/features/cobrancas/services/tipo-x-retrabalho.service";
+import { lerContextoRetrabalhoDoPedido } from "@/features/cobrancas/services/tipo-x-retrabalho.service";
+import { CODIGO_PEDIDO_ENTREGUE, MENSAGEM_PEDIDO_ENTREGUE, statusEhEntregue } from "@/features/orcamentos/services/pedido-entregue";
 
 type UsuarioMinRow = {
   id_perfil: number | null;
@@ -165,7 +166,7 @@ export async function POST(request: NextRequest) {
   // ── 4. Validação Server-Side da Proposta no Banco ────────────────────────
   const { data: propostaBanco, error: propostaError } = await supabase
     .from("propostas")
-    .select("id_int, id_cliente")
+    .select("id_int, id_cliente, status_interno")
     .eq("id_int", idInt)
     .maybeSingle();
 
@@ -173,6 +174,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       { success: false, error: propostaError ? propostaError.message : `Proposta #${idInt} não encontrada.` },
       { status: 404 }
+    );
+  }
+
+  // Pedido entregue não recebe cobrança nova (02/11/2026): status lido do banco.
+  if (statusEhEntregue(propostaBanco.status_interno)) {
+    return NextResponse.json(
+      { success: false, code: CODIGO_PEDIDO_ENTREGUE, error: MENSAGEM_PEDIDO_ENTREGUE, message: MENSAGEM_PEDIDO_ENTREGUE },
+      { status: 409 }
     );
   }
 

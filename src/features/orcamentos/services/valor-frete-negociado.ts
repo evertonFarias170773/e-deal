@@ -56,6 +56,7 @@ import { avaliarCoberturaFinanceira } from "@/features/cobrancas/services/cobert
 import { aplicarDiferencaFinanceira } from "@/features/cobrancas/services/diferenca-financeira-proposta";
 import type { CobrancaParaFaturado } from "@/features/orcamentos/services/faturado-editavel";
 import { barreiraNfAutorizada } from "@/features/expedicao/services/corrigir-frete-simulacao";
+import { CODIGO_PEDIDO_ENTREGUE, MENSAGEM_PEDIDO_ENTREGUE, statusEhEntregue } from "@/features/orcamentos/services/pedido-entregue";
 
 export type RecusaValorFrete = {
   ok: false;
@@ -149,6 +150,10 @@ export async function gravarValorFreteNegociado(
   }
   if (statusBase === "CANCELADO") {
     return recusa(409, "CANCELADA", `A proposta #${idInt} está cancelada e não aceita alteração de frete.`);
+  }
+  // Pedido entregue não pode ser alterado (02/11/2026): status lido do banco acima.
+  if (statusEhEntregue(proposta.status_interno)) {
+    return recusa(409, CODIGO_PEDIDO_ENTREGUE, MENSAGEM_PEDIDO_ENTREGUE);
   }
   if (proposta.id_int_pedido_principal !== null && proposta.id_int_pedido_principal !== undefined) {
     return recusa(

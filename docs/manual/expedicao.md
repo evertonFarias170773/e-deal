@@ -240,6 +240,7 @@ Em resumo: no pedido Na Expedição, clique em **Despachar**, confira peso, volu
 
 ## Regras e bloqueios
 
+- **Pedido entregue não pode ser alterado** na proposta (produtos, salvar, cobrança nova, valor negociado). Para alterar, use **Voltar status** passo a passo até Em Acabamento; a produção devolve o pedido ao atendente com **Voltar para Revisão Atendente**, o que só é possível sem nota fiscal emitida.
 - Não dá para despachar sem a modalidade do frete, a transportadora, o endereço de entrega, o peso aferido e a quantidade de volumes. Em retirada, basta a modalidade. O rastreio é opcional.
 - A etiqueta e a prepostagem exigem os mesmos dados do despacho enquanto o pedido ainda não saiu. Imprimir etiqueta de um envio que ninguém terminou de declarar não é permitido.
 - **Salvar sem despachar** e **Salvar dados** não exigem os campos mínimos: servem para guardar ou corrigir.
