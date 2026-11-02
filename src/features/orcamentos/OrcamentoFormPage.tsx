@@ -111,6 +111,12 @@ import { box10Expandido, boxEstaNaLateral } from "@/features/orcamentos/lib/boxe
 import { RetirarProducaoModal } from "@/features/orcamentos/components/RetirarProducaoModal";
 import { EnviarFilaFaturamentoModal } from "@/features/orcamentos/components/EnviarFilaFaturamentoModal";
 import { podeVerEnviarParaFila } from "@/features/orcamentos/lib/enviar-fila-faturamento";
+import { deveAvisarNotaDivergente, valoresMudaram, type NotaViva } from "@/features/orcamentos/lib/nota-x-pedido";
+import { NotaDivergenteModal } from "@/features/orcamentos/components/NotaDivergenteModal";
+import {
+  consultarNotasVivasDoPedido,
+  registrarSalvoComNotaDivergente
+} from "@/features/orcamentos/services/nota-do-pedido.client";
 import { enviarPedidoParaFilaPeloServidor } from "@/features/orcamentos/services/enviar-fila-faturamento.service";
 import { podeVerRetirarDaProducao } from "@/features/orcamentos/lib/retirar-producao";
 import { useNotasQueImpedemDevolucao } from "@/features/orcamentos/hooks/useNotasQueImpedemDevolucao";
@@ -1710,6 +1716,10 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
    * clique leria o `form` velho — sem os fretes que acabaram de chegar — e
    * reproduziria exatamente o erro que a espera existe para evitar.
    */
+  // Aviso "NF-e de venda viva x valor do pedido" (02/11/2026): o modal resolve a promessa.
+  const [avisoNotaDivergente, setAvisoNotaDivergente] = useState<{ notas: NotaViva[]; totalNovo: number } | null>(null);
+  const respostaAvisoNotaRef = useRef<((salvar: boolean) => void) | null>(null);
+  const registrarNotaDivergenteRef = useRef(false);
   const handleSaveRef = useRef<((opcoes?: { faturadoConfirmado?: boolean; permanecerNaTela?: boolean; lotesJaGravados?: boolean }) => Promise<boolean | undefined>) | null>(null);
   useEffect(() => {
     handleSaveRef.current = handleSave;
@@ -2195,7 +2205,10 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
             azulResults = await solicitarCotacaoAzulCargo({
               peso: resumo.pesoTotal,
               cep,
-              valorTotal: resumo.subtotalProdutos
+              valorTotal: resumo.subtotalProdutos,
+              // Azul só onde há unidade de retirada (lib/unidades-azul).
+              destino: { cidade, uf },
+              verificarUnidade: true
             });
           } catch (err) {
             console.error("Erro na cotação automática Azul Cargo:", err);
@@ -3660,7 +3673,13 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
         .finally(() => setIsQuotingSedex(false)),
       (uf?.toUpperCase() === "RS"
         ? Promise.resolve([] as PropostaFrete[])
-        : solicitarCotacaoAzulCargo({ peso: resumo.pesoTotal, cep, valorTotal: resumo.subtotalProdutos }).catch(() => [] as PropostaFrete[])
+        : solicitarCotacaoAzulCargo({
+            peso: resumo.pesoTotal,
+            cep,
+            valorTotal: resumo.subtotalProdutos,
+            destino: { cidade, uf },
+            verificarUnidade: true
+          }).catch(() => [] as PropostaFrete[])
       ).finally(() => setIsQuotingAzul(false)),
       (cidade && uf
         ? solicitarCotacaoTransportadoras({ peso: resumo.pesoTotal, cidade, uf }).catch(() => [] as PropostaFrete[])
@@ -3821,7 +3840,10 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
           azulResults = await solicitarCotacaoAzulCargo({
             peso: resumo.pesoTotal,
             cep,
-            valorTotal: resumo.subtotalProdutos
+            valorTotal: resumo.subtotalProdutos,
+            // Azul só onde há unidade de retirada (lib/unidades-azul).
+            destino: { cidade, uf },
+            verificarUnidade: true
           });
         } catch (err) {
           console.error("Erro ao cotar Azul Cargo manualmente:", err);
@@ -4842,6 +4864,49 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
    * `permanecerNaTela`: grava sem recarregar a página no fim. Só o salvamento
    * automático do item usa — ver `handleAutoSalvarItem`.
    */
+  /**
+   * NF-e de venda viva x Salvar (02/11/2026, lib/nota-x-pedido). Só aviso: se o
+   * total, o desconto ou o frete mudam nesta gravação e o pedido tem NF-e de venda
+   * viva (lida do banco pela rota do servidor), pergunta antes. "Salvar mesmo assim"
+   * segue e, depois de gravado, o servidor registra na linha do tempo. Falha na
+   * leitura não impede salvar: avisa e segue.
+   */
+  async function confirmarSeNotaDivergente(): Promise<boolean> {
+    registrarNotaDivergenteRef.current = false;
+    const idInt = Number(form.id_int);
+    if (mode !== "edit" || !Number.isInteger(idInt) || idInt <= 0) return true;
+    const carregado = proposta?.resumo;
+    if (!carregado) return true;
+    const antes = { total: carregado.valorTotal, desconto: carregado.descontoGeral, frete: carregado.frete };
+    const depois = { total: resumo.valorTotal, desconto: resumo.descontoGeral, frete: resumo.frete };
+    if (!valoresMudaram(antes, depois)) return true;
+
+    const notas = await consultarNotasVivasDoPedido(idInt);
+    if (notas === null) {
+      showToast({ type: "warning", title: "Não foi possível conferir a NF-e do pedido", description: "O salvamento segue sem o aviso de nota emitida." });
+      return true;
+    }
+    if (!deveAvisarNotaDivergente(notas, antes, depois)) return true;
+
+    const salvar = await new Promise<boolean>((resolve) => {
+      respostaAvisoNotaRef.current = resolve;
+      setAvisoNotaDivergente({ notas, totalNovo: depois.total });
+    });
+    respostaAvisoNotaRef.current = null;
+    setAvisoNotaDivergente(null);
+    registrarNotaDivergenteRef.current = salvar;
+    return salvar;
+  }
+
+  async function registrarNotaDivergenteSeConfirmado(idInt: number) {
+    if (!registrarNotaDivergenteRef.current) return;
+    registrarNotaDivergenteRef.current = false;
+    const r = await registrarSalvoComNotaDivergente(idInt);
+    if (!r.ok) {
+      showToast({ type: "warning", title: "Pedido salvo, mas a linha do tempo não foi registrada", description: r.message });
+    }
+  }
+
   async function handleSave(opcoes?: { faturadoConfirmado?: boolean; permanecerNaTela?: boolean; lotesJaGravados?: boolean }) {
     // Bloqueio absoluto (vale para admin/superadmin): avulsa ou sem produtos
     // ativos + paga = somente visualização/Histórico/Pagamentos. O backend
@@ -4976,6 +5041,12 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
       }
     }
 
+    // NF-e de venda viva e total, desconto ou frete mudando: pergunta antes de
+    // gravar (só aviso). As notas vêm do banco, pela rota do servidor.
+    if (!(await confirmarSeNotaDivergente())) {
+      return;
+    }
+
     setIsSaving(true);
     try {
       // — Capturar valor pago ANTES de salvar (para cálculo de diferença) —
@@ -5049,6 +5120,8 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
           setIsSaving(false);
           return;
         }
+
+        await registrarNotaDivergenteSeConfirmado(Number(formToSave.id_int));
 
         // — Pendência retornada? (diferença ≠ 0 → modal obrigatório) —
         const { diferenca, pendenciaAtiva } = apiResult;
@@ -5207,6 +5280,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
       const res = await saveProposta(formToSave);
 
       if (res.success) {
+        await registrarNotaDivergenteSeConfirmado(Number(res.id_int || formToSave.id_int));
         // Itens recém-inseridos: recebem o id real de produtos_proposta. Sem
         // isto o save seguinte não reconhece o item, insere outra linha e o
         // diff do serviço apaga a original — que leva junto, por cascade, os
@@ -5448,9 +5522,14 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
       freteDeclaracaoAlterada
     };
 
+    if (!(await confirmarSeNotaDivergente())) {
+      return false;
+    }
+
     try {
       const res = await saveProposta(formToSave);
       if (res.success) {
+        await registrarNotaDivergenteSeConfirmado(Number(res.id_int || formToSave.id_int));
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
         const { fretes: _f, freteDeclaracaoAlterada: _fd, ...savedSnap } = formToSave;
         initialFormSnapshot.current = JSON.stringify(savedSnap);
@@ -8021,6 +8100,15 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
           <ArtesBlockModal
             erros={showArtesBlockModal}
             onClose={() => setShowArtesBlockModal(null)}
+          />
+        )}
+
+        {avisoNotaDivergente && (
+          <NotaDivergenteModal
+            notas={avisoNotaDivergente.notas}
+            totalNovo={avisoNotaDivergente.totalNovo}
+            onSalvar={() => respostaAvisoNotaRef.current?.(true)}
+            onVoltar={() => respostaAvisoNotaRef.current?.(false)}
           />
         )}
 

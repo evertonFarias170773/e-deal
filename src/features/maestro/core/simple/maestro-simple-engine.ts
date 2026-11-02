@@ -1536,8 +1536,11 @@ export async function processSimpleQueryWithBrain(
                      v2Ctx.budgetAddressUf?.toUpperCase() === 'RS' ? Promise.resolve([]) : solicitarCotacaoAzulCargo({
                        peso: pesoTotal,
                        cep: v2Ctx.budgetAddressCep,
-                       valorTotal: serviceResult.totalGeral
-                     }),
+                       valorTotal: serviceResult.totalGeral,
+                       // Azul só onde há unidade de retirada (lib/unidades-azul).
+                       destino: { cidade: v2Ctx.budgetAddressCidade, uf: v2Ctx.budgetAddressUf },
+                       verificarUnidade: true
+                     }, { supabase }),
                      v2Ctx.budgetAddressCidade && v2Ctx.budgetAddressUf ? solicitarCotacaoTransportadoras({
                        peso: pesoTotal,
                        cidade: v2Ctx.budgetAddressCidade,

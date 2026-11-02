@@ -1662,6 +1662,7 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
         pesoGramas: Math.round(pesoGramas),
         valorTotal: Number(subtotal.toFixed(2)),
         supabase: ctx.supabase,
+        verificarUnidadeAzul: true,
       });
 
       return {

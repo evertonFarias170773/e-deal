@@ -1,6 +1,6 @@
 # Proposta: aba Fretes
 
-> **Última revisão:** 28/10/2026
+> **Última revisão:** 02/11/2026
 > **Caminho no menu:** Pedidos → abrir um pedido → aba Fretes
 > **Endereço:** `/orcamentos/<número>/editar?tab=fretes`
 
@@ -225,6 +225,7 @@ Repetir **Aplicar** não duplica: a segunda tentativa devolve o mesmo frete comp
 - A cotação usa o CEP do endereço de entrega e o peso total da proposta. Para os Correios os volumes são calculados pelo sistema, um a cada 14,5 kg. Para a Azul Cargo, desde 27/10/2026, a caixa sai do peso: comprimento 32 cm e largura 23 cm fixos, altura de 2,25 cm por kg (mínimo 1 cm, caixa cheia com 16 kg e 36 cm) e um volume a cada 16 kg, com o peso dividido por igual entre os volumes. Pedido leve deixou de pagar a cubagem da caixa cheia.
 - O botão **Atualizar fretes** fica apagado sem CEP válido de 8 dígitos, sem produto com peso ou sem endereço de entrega escolhido.
 - A Azul Cargo não é cotada para entrega no Rio Grande do Sul.
+- A Azul Cargo só é cotada onde o cliente consegue retirar (desde 02/11/2026). O sistema guarda a lista de unidades da Azul por cidade, extraída da própria Azul, e só oferece os serviços que as unidades da cidade de entrega atendem: cidade sem unidade da Azul não ganha card da Azul; cidade cujas unidades só atendem EXPRESSO e PREMIUM ganha só esses cards. Vale para a cotação do orçamento e do Maestro. A recotação da Expedição e o frete do pedido complementar não aplicam essa verificação e seguem como antes. Se a lista estiver indisponível ou a cidade do endereço não estiver preenchida, a cotação sai como antes.
 - A cotação automática da Azul Cargo traz um card por serviço habilitado no contrato: desde 27/10/2026, **ECOMM** (na lista **Serviço**, **AZUL ECOMM**), **AZUL STANDARD** e **AZUL EXPRESSO**. **AZUL PREMIUM** ainda não está habilitado na Azul e não é cotado: entra como frete manual, com o valor digitado em **Valor cobrado (R$)**. Quando a Azul não devolve nenhum serviço, simplesmente não aparece card da Azul. O ECOMM tem limite de 30 kg por envio: acima disso o sistema cota o peso dividido em envios iguais (31 a 60 kg em 2, 61 a 90 kg em 3, e assim por diante) e o card do ECOMM mostra o valor somado dos envios, com a quantidade total de volumes e a nota "N envios". Os outros serviços são cotados inteiros, sem essa divisão. O ECOMM e os demais serviços são cotados em paralelo: se uma das duas cotações falhar, os cards da outra aparecem normalmente.
 - Proposta gravada com o frete "ECOMM", inclusive a que veio da cotação automática, abre com **AZUL ECOMM** selecionado na lista **Serviço**. O card, a coluna **Envio** e a Expedição continuam mostrando "ECOMM" nessas propostas: o texto só muda quando alguém escolhe outro serviço e salva.
 - A lista **Serviço** mostra "— escolha o serviço —" quando o frete atual não é nenhum serviço da lista, como no frete manual com o nome da transportadora. Deixar assim não muda nada.

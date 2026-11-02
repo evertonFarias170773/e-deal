@@ -199,9 +199,19 @@ export function idCardAzul(servico: string, posicao: number): string {
  */
 export function mapearCotacoesAzul(
   itens: Record<string, unknown>[],
-  input: { id_int?: number | string; pesoGramas: number; plano: PlanoCotacaoAzul }
+  input: {
+    id_int?: number | string;
+    pesoGramas: number;
+    plano: PlanoCotacaoAzul;
+    /**
+     * Serviços que a cidade de destino atende (lib/unidades-azul, 02/11/2026):
+     * `null`/ausente = não filtra; `[]` = nenhum card da Azul. Aplicado DEPOIS
+     * do filtro de nomes e ANTES da margem.
+     */
+    servicosPermitidos?: readonly string[] | null;
+  }
 ): PropostaFrete[] {
-  const { plano } = input;
+  const { plano, servicosPermitidos } = input;
   const aceitos = GRUPOS_COTACAO_AZUL[plano.grupo].servicosApi;
   const cards: PropostaFrete[] = [];
   for (const item of itens) {
@@ -209,6 +219,7 @@ export function mapearCotacoesAzul(
     if (!aceitos.includes(nomeApi)) continue;
     const servico = nomeServicoAzul(nomeApi);
     if (servico === null) continue;
+    if (servicosPermitidos && !servicosPermitidos.includes(nomeApi)) continue;
 
     const prazo = item.Prazo as number | undefined;
     // d envios ECOMM = d cotações iguais; o n8n só repassa o Total, então é só ele.

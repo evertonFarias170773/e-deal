@@ -132,6 +132,12 @@ export async function cotarOpcoesFretePorEndereco(
     valorTotal: number;
     /** Client do chamador, com o JWT do usuário — a cotação de transportadoras não roda como anon. */
     supabase: SupabaseClient;
+    /**
+     * Azul só onde há unidade de retirada (lib/unidades-azul, 02/11/2026). O
+     * Maestro liga; a recotação da Expedição e o frete complementar NÃO ligam
+     * e seguem cotando como hoje.
+     */
+    verificarUnidadeAzul?: boolean;
   },
 ): Promise<CotacaoFreteResult> {
   const pesoGramas = Math.max(0, Math.round(params.pesoGramas));
@@ -151,7 +157,18 @@ export async function cotarOpcoesFretePorEndereco(
       solicitarCotacaoSedex({ peso: pesoGramas, vol: volumes, cep: endereco.cep }),
     ];
     if (endereco.uf !== 'RS') {
-      cotacoes.push(solicitarCotacaoAzulCargo({ peso: pesoGramas, cep: endereco.cep, valorTotal: params.valorTotal }));
+      cotacoes.push(
+        solicitarCotacaoAzulCargo(
+          {
+            peso: pesoGramas,
+            cep: endereco.cep,
+            valorTotal: params.valorTotal,
+            destino: { cidade: endereco.cidade, uf: endereco.uf },
+            verificarUnidade: params.verificarUnidadeAzul === true,
+          },
+          { supabase: params.supabase },
+        ),
+      );
     }
     if (temCidadeUf) {
       cotacoes.push(
@@ -205,7 +222,7 @@ export async function cotarOpcoesFrete(
   params: { pesoGramas: number; valorTotal: number },
 ): Promise<CotacaoFreteResult> {
   const endereco = await resolverEnderecoFrete(supabase, idCliente);
-  const result = await cotarOpcoesFretePorEndereco(endereco, { ...params, supabase });
+  const result = await cotarOpcoesFretePorEndereco(endereco, { ...params, supabase, verificarUnidadeAzul: true });
   if (!endereco) {
     // Mensagem específica do fluxo por cliente (a genérica fala em "endereço")
     result.avisos = [

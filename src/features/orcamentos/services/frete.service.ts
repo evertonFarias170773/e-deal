@@ -13,6 +13,7 @@ import {
   type GrupoCotacaoAzul,
   type PlanoCotacaoAzul
 } from "@/features/orcamentos/lib/cotacao-azul";
+import { servicosAzulDaCidade, type UnidadeAzul } from "@/features/orcamentos/lib/unidades-azul";
 
 /**
  * Maps a single row from public.cotacao_frete to PropostaFrete type.
@@ -227,13 +228,46 @@ export async function adicionarCotacaoManual(input: {
  * derruba o outro; só quando os dois falham a função lança, como antes.
  * Quem chama (aba Fretes, recotação da Expedição, complementar, Maestro)
  * herda tudo isso sem mudar.
+ *
+ * VERIFICAÇÃO DA UNIDADE (02/11/2026): com `verificarUnidade` ligado e
+ * `destino` (cidade + UF), só saem os serviços que as unidades elegíveis da
+ * cidade atendem (`public.azul_unidades`, lib/unidades-azul). Cidade sem
+ * unidade = nenhum card da Azul, e nem chama o webhook. Tabela vazia ou cidade
+ * não resolvida = cota como antes, com aviso no log. Orçamento e Maestro ligam;
+ * recotação da Expedição e complementar não ligam.
  */
 const URL_COTACAO_AZUL = "https://10074.hostoo.net.br/webhook/cotacao-azul";
 const TIMEOUT_COTACAO_AZUL_MS = 30_000;
+const CACHE_UNIDADES_AZUL_MS = 10 * 60_000;
+
+let cacheUnidadesAzul: { em: number; unidades: UnidadeAzul[] } | null = null;
+
+/** Unidades elegíveis de `azul_unidades` (cache de 10 min). `null` = não deu para ler. */
+async function carregarUnidadesAzul(client: SupabaseClient): Promise<UnidadeAzul[] | null> {
+  if (cacheUnidadesAzul && Date.now() - cacheUnidadesAzul.em < CACHE_UNIDADES_AZUL_MS) {
+    return cacheUnidadesAzul.unidades;
+  }
+  const { data, error } = await client
+    .from("azul_unidades")
+    .select("base, cidade, uf, servicos, elegivel")
+    .eq("elegivel", true);
+  if (error) {
+    console.warn("[FreteService] Não deu para ler azul_unidades; cotando a Azul sem verificar a cidade:", error.message);
+    return null;
+  }
+  cacheUnidadesAzul = { em: Date.now(), unidades: (data ?? []) as UnidadeAzul[] };
+  return cacheUnidadesAzul.unidades;
+}
 
 async function cotarGrupoAzul(
   plano: PlanoCotacaoAzul,
-  input: { cep: string; valorTotal: number; id_int?: number | string; pesoGramas: number }
+  input: {
+    cep: string;
+    valorTotal: number;
+    id_int?: number | string;
+    pesoGramas: number;
+    servicosPermitidos: readonly string[] | null;
+  }
 ): Promise<PropostaFrete[]> {
   const response = await fetch(URL_COTACAO_AZUL, {
     method: "POST",
@@ -253,21 +287,47 @@ async function cotarGrupoAzul(
   return mapearCotacoesAzul(lerCorpoCotacaoAzul(await response.text()), {
     id_int: input.id_int,
     pesoGramas: input.pesoGramas,
-    plano
+    plano,
+    servicosPermitidos: input.servicosPermitidos
   });
 }
 
-export async function solicitarCotacaoAzulCargo(input: {
-  peso: number;
-  cep: string;
-  valorTotal: number;
-  id_int?: number | string;
-}): Promise<PropostaFrete[]> {
+export async function solicitarCotacaoAzulCargo(
+  input: {
+    peso: number;
+    cep: string;
+    valorTotal: number;
+    id_int?: number | string;
+    /** Cidade e UF de destino, para a verificação da unidade. */
+    destino?: { cidade?: string | null; uf?: string | null } | null;
+    /** Liga a verificação em `azul_unidades`. Padrão: desligada (como antes). */
+    verificarUnidade?: boolean;
+  },
+  opcoes: { supabase?: SupabaseClient } = {}
+): Promise<PropostaFrete[]> {
+  let servicosPermitidos: readonly string[] | null = null;
+  if (input.verificarUnidade) {
+    const client = opcoes.supabase ?? getSupabaseClient();
+    const unidades = client ? await carregarUnidadesAzul(client) : null;
+    servicosPermitidos = servicosAzulDaCidade(unidades, input.destino?.cidade, input.destino?.uf);
+    if (servicosPermitidos === null) {
+      console.warn("[FreteService] Verificação de unidade da Azul sem efeito (lista vazia/indisponível ou cidade não resolvida); cotando como antes.", {
+        cidade: input.destino?.cidade ?? null,
+        uf: input.destino?.uf ?? null,
+        unidades: unidades?.length ?? null
+      });
+    } else if (servicosPermitidos.length === 0) {
+      // Cidade sem unidade elegível da Azul: nenhuma opção, sem chamar o webhook.
+      return [];
+    }
+  }
+
   const ctx = {
     cep: input.cep.replace(/\D/g, ""),
     valorTotal: Number(input.valorTotal || 0),
     id_int: input.id_int,
-    pesoGramas: input.peso
+    pesoGramas: input.peso,
+    servicosPermitidos
   };
   const pesoTotalKg = input.peso / 1000;
   const grupos: GrupoCotacaoAzul[] = ["ECOMM", "DEMAIS"];
