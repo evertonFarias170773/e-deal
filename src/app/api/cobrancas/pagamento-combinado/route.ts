@@ -7,7 +7,7 @@ import { verificarPermissaoServerSide } from "@/lib/auth/verificar-permissao";
 import { calcularSituacaoQuitacaoProposta } from "@/features/cobrancas/services/conferencia-financeira.service";
 import { gerarPixBancoInter } from "@/features/cobrancas/services/banco-inter.service";
 import { recusaDoGatilhoNoErro, recusaDoTipoNoPedido } from "@/features/cobrancas/lib/tipo-x-retrabalho";
-import { lerContextoRetrabalhoDoPedido } from "@/features/cobrancas/services/tipo-x-retrabalho.service";
+import { lerContextoRetrabalhoDoPedido } from "@/features/cobrancas/services/tipo-x-retrabalho.service";
 import { CODIGO_PEDIDO_ENTREGUE, MENSAGEM_PEDIDO_ENTREGUE, statusEhEntregue } from "@/features/orcamentos/services/pedido-entregue";
 
 export async function POST(request: NextRequest) {

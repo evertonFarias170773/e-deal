@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createClient as createSupabaseClient } from "@supabase/supabase-js";
+import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { recusaPorPedidoEntreguePelaCobranca } from "@/features/orcamentos/services/pedido-entregue";
 
 const soDigitos = (valor: unknown): string => String(valor ?? "").replace(/\D/g, "");

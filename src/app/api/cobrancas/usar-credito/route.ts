@@ -56,7 +56,7 @@ import { createClient as createSupabaseClient, type SupabaseClient } from "@supa
 import { calcularSituacaoQuitacaoProposta } from "@/features/cobrancas/services/conferencia-financeira.service";
 import { montarUrlPublicaCobranca } from "@/features/cobrancas/cobrancas-utils";
 import { recusaDoGatilhoNoErro, recusaDoTipoNoPedido } from "@/features/cobrancas/lib/tipo-x-retrabalho";
-import { lerContextoRetrabalhoDoPedido } from "@/features/cobrancas/services/tipo-x-retrabalho.service";
+import { lerContextoRetrabalhoDoPedido } from "@/features/cobrancas/services/tipo-x-retrabalho.service";
 import { CODIGO_PEDIDO_ENTREGUE, MENSAGEM_PEDIDO_ENTREGUE, statusEhEntregue } from "@/features/orcamentos/services/pedido-entregue";
 
 type UsuarioMinRow = {

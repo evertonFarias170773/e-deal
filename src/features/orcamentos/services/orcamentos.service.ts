@@ -110,7 +110,7 @@ import {
 // Grupos "Aguardando financeiro" e "Pago / A liberar" da lista de Pedidos: a
 // MESMA regra que a Conferencia usa por cobranca, sem copia.
 import { getConferenciaStatusLabel } from "@/features/cobrancas/cobrancas-utils";
-import { mensagensDaCopia, type MotivoDaCopia } from "@/features/orcamentos/lib/motivo-copia";
+import { mensagensDaCopia, type MotivoDaCopia } from "@/features/orcamentos/lib/motivo-copia";
 import { recusaPorPedidoEntregue } from "@/features/orcamentos/services/pedido-entregue";
 import {
   COLUNAS_NOTA_DO_PEDIDO,

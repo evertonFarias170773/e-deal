@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
-import { gerarPixBancoInter } from "@/features/cobrancas/services/banco-inter.service";
+import { gerarPixBancoInter } from "@/features/cobrancas/services/banco-inter.service";
 import { recusaPorPedidoEntreguePelaCobranca } from "@/features/orcamentos/services/pedido-entregue";
 
 /**
