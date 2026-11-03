@@ -2241,7 +2241,8 @@ export type NaturezaOperacaoNfe = {
    * sem o prefixo `NNNN - `. O texto curto existe nas linhas cuja
    * descricao sem prefixo passa dos 60 caracteres do layout (5949/6949,
    * 5108/6108 e 1202/2202) e onde o financeiro pediu outro titulo
-   * (5202/6202 "Devolução de Compra", 03/11/2026).
+   * (5202/6202 "Devolução de Compra" e 5101/6101 "Venda de Produção Própria",
+   * 03/11/2026).
    */
   natureza: string;
   /**
