@@ -71,10 +71,12 @@ function servico(lista: unknown[] | null, erro = false) {
 }
 {
   const r = await cotarVeppoNoServidor({ peso: 1200, valor: 300, cidade: "SANT'ANA DO LIVRAMENTO", uf: "RS", id_int: 23900 }, servico(LISTA));
-  confere("SANT'ANA DO LIVRAMENTO (lista sem apostrofo): COTADA", r.status === "COTADA" && r.fretes[0]?.valor === 87.5, r);
+  // 03/11/2026: o card leva +20% sobre o valor do n8n (87,50 -> 105,00).
+  confere("SANT'ANA DO LIVRAMENTO (lista sem apostrofo): COTADA com +20%", r.status === "COTADA" && r.fretes[0]?.valor === 105, r);
   confere("o n8n recebe o texto da cidade SEM normalizar, como antes", chamadasN8n.length === 1 && chamadasN8n[0].url === WEBHOOK_VEPPO &&
     JSON.stringify(chamadasN8n[0].corpo) === JSON.stringify({ text: "SANT'ANA DO LIVRAMENTO, RS, Brasil", cidade: "SANT'ANA DO LIVRAMENTO", valor: 300, peso: 1200 }), chamadasN8n);
-  confere("o frete devolvido e o de antes (id, servico, prazo, id_int, peso)", JSON.stringify(r.fretes[0]) === JSON.stringify({ id: "frete_veppo", id_int: 23900, transportadora: "VEPPO", servico: "VEPPO", valor: 87.5, prazo: "Sob consulta", observacao: "Cotação via VEPPO", escolhido: false, pesoUsado: 1200 }), r.fretes[0]);
+  const original = (87.5).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+  confere("o frete devolvido: id, servico, prazo, id_int e peso de antes; valor com +20% e o original", JSON.stringify(r.fretes[0]) === JSON.stringify({ id: "frete_veppo", id_int: 23900, transportadora: "VEPPO", servico: "VEPPO", valor: 105, prazo: "Sob consulta", observacao: `Cotação via VEPPO | Valor original: ${original} (+20%)`, escolhido: false, pesoUsado: 1200, valorOriginal: 87.5, valorMargem: 105 }), r.fretes[0]);
   const filtros = JSON.stringify(falso.chamadas.find((c) => c.tabela === "cidades_veppo")?.filtros);
   confere("a lista e lida so com is_ativa = true", filtros.includes('["eq",["is_ativa",true]]'), filtros);
 }

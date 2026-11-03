@@ -1,6 +1,6 @@
 # Proposta: aba Fretes
 
-> **Última revisão:** 02/11/2026
+> **Última revisão:** 03/11/2026
 > **Caminho no menu:** Pedidos → abrir um pedido → aba Fretes
 > **Endereço:** `/orcamentos/<número>/editar?tab=fretes`
 
@@ -232,6 +232,7 @@ Repetir **Aplicar** não duplica: a segunda tentativa devolve o mesmo frete comp
 - A lista **Serviço** mostra "— escolha o serviço —" quando o frete atual não é nenhum serviço da lista, como no frete manual com o nome da transportadora. Deixar assim não muda nada.
 - Depois do despacho, a Expedição mostra o nome da transportadora, e não mais o serviço.
 - O card da Azul Cargo mostra o peso em kg com a quantidade de volumes. Desde 28/10/2026 a margem de 15% sobre o valor da Azul vale só no **ECOMM**, e só esse card mostra a linha "Original: R$ ... (+15%)". **AZUL STANDARD**, **AZUL EXPRESSO** e **AZUL PREMIUM** vêm pelo valor da Azul, sem acréscimo e sem essa linha. Fretes já gravados não mudam: valem pelo valor que foi gravado.
+- Desde 03/11/2026 o card **VEPPO** cobra 20% a mais sobre o valor que a VEPPO devolve, arredondado ao centavo (por exemplo, R$ 42,45 da VEPPO vira R$ 50,94). O card mostra a linha "Original: R$ ... (+20%)". O acréscimo vale para toda cotação nova da VEPPO: a da proposta, a do Maestro, a recotação da Expedição e o frete do complemento. Fretes da VEPPO já gravados não mudam e, ao reabrir a proposta, o card gravado aparece sem a linha "Original". Se a VEPPO devolver zero ou um valor inválido, o card não aparece.
 - Mudar o endereço de entrega desfaz o frete escolhido: é preciso escolher de novo. Mudar só o peso mantém a escolha quando a mesma opção volta na cotação nova.
 - Se o frete escolhido não volta na cotação nova, ele fica preservado e a tela avisa **Cotação Defasada**. Revise antes de salvar.
 - Ao reabrir uma proposta em CIF, a tela mostra o frete gravado e busca sozinha as outras opções, sem mudar o valor do escolhido.
@@ -320,6 +321,8 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/features/orcamentos/lib/acompanhar-pedido.ts`
 - `src/app/api/orcamentos/acompanhar/route.ts`
 - `src/features/orcamentos/services/frete.service.ts`
+- `src/features/orcamentos/services/frete-veppo.server.ts`
+- `src/features/orcamentos/lib/cotacao-veppo.ts`
 - `src/features/orcamentos/lib/origem-frete.ts`
 - `src/features/orcamentos/services/frete-desatualizado.ts`
 - `src/features/orcamentos/services/valor-frete-negociado.ts`

@@ -90,6 +90,7 @@ import {
 import { buscarStatusArteDaProposta, classeDoStatusArte } from "@/features/orcamentos/services/status-arte-lista.service";
 import { solicitarCotacaoSedex, solicitarCotacaoAzulCargo, solicitarCotacaoTransportadoras, solicitarCotacaoVeppo } from "@/features/orcamentos/services/frete.service";
 import { rotuloMargemAzul } from "@/features/orcamentos/lib/cotacao-azul";
+import { rotuloMargemVeppo } from "@/features/orcamentos/lib/cotacao-veppo";
 import { resolverTransportadoraParceira } from "@/features/orcamentos/lib/transportadoras-parceiras";
 import { PermissionGuard } from "@/components/common/PermissionGuard";
 import {
@@ -7920,6 +7921,12 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                           {frete.transportadora === "Azul Cargo" && frete.valorOriginal !== undefined && rotuloMargemAzul(frete.servico) !== null && (
                             <p className="text-xs font-medium text-slate-500 mt-0.5">
                               Original: {formatCurrency(frete.valorOriginal)} ({rotuloMargemAzul(frete.servico)})
+                            </p>
+                          )}
+                          {/* VEPPO +20% (lib/cotacao-veppo): só card cotado agora traz o original; card relido do banco, não. */}
+                          {(frete.transportadora || "").toUpperCase() === "VEPPO" && frete.valorOriginal !== undefined && (
+                            <p className="text-xs font-medium text-slate-500 mt-0.5">
+                              Original: {formatCurrency(frete.valorOriginal)} ({rotuloMargemVeppo()})
                             </p>
                           )}
                         </div>

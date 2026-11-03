@@ -7,6 +7,7 @@
  * (lida com a chave de serviço: o RLS da tabela não tem política, e um usuário
  * logado leria zero linhas) -> webhook. O corpo enviado, o tempo limite e o
  * mapeamento da resposta são os de antes. Regra da cidade em lib/cidade-veppo.
+ * Desde 03/11/2026 o valor do n8n leva +20% aqui, uma vez só (lib/cotacao-veppo).
  *
  * Só leitura no banco; nada é gravado.
  */
@@ -18,6 +19,7 @@ import {
   regraAtualPermiteVeppo,
   type StatusCotacaoVeppo
 } from "@/features/orcamentos/lib/cidade-veppo";
+import { aplicarMargemVeppo, rotuloMargemVeppo, valorVeppoValido } from "@/features/orcamentos/lib/cotacao-veppo";
 
 export const WEBHOOK_VEPPO = "https://10074.hostoo.net.br/webhook/coordenadas";
 
@@ -90,11 +92,14 @@ export async function cotarVeppoNoServidor(
     }
 
     const data = await response.json();
-    if (!data || typeof data.valor_frete !== "number") {
+    // Zero, negativo ou sem número: sem card (03/11/2026; antes zero e negativo viravam card).
+    if (!data || !valorVeppoValido(data.valor_frete)) {
       return { status: "SEM_COTACAO", fretes: [] };
     }
 
-    const valorFrete = Number(data.valor_frete);
+    // +20% sobre o valor do n8n (lib/cotacao-veppo). Único ponto da conta.
+    const { valorOriginal, valorFinal } = aplicarMargemVeppo(data.valor_frete);
+    const originalTexto = valorOriginal.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
     const idIntNum = typeof input.id_int === "number" ? input.id_int : (Number(input.id_int) || 0);
 
     return {
@@ -104,11 +109,13 @@ export async function cotarVeppoNoServidor(
         id_int: idIntNum,
         transportadora: "VEPPO",
         servico: "VEPPO",
-        valor: valorFrete,
+        valor: valorFinal,
         prazo: "Sob consulta",
-        observacao: "Cotação via VEPPO",
+        observacao: `Cotação via VEPPO | Valor original: ${originalTexto} (${rotuloMargemVeppo()})`,
         escolhido: false,
-        pesoUsado: input.peso
+        pesoUsado: input.peso,
+        valorOriginal,
+        valorMargem: valorFinal
       }]
     };
   } catch (error) {
