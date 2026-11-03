@@ -13,6 +13,7 @@ import {
   referenciaConfirmacaoParaMesFechado
 } from "@/features/cobrancas/cancelamento-pago";
 import { formatMesAnoPtBr, getTipoCobrancaLabel } from "@/features/cobrancas/cobrancas-utils";
+import { pedidoSoComCobrancaSemDinheiro } from "@/features/cobrancas/cancelamento-sem-dinheiro";
 import { formatCurrency } from "@/lib/formatters/currency";
 import { getSupabaseClient } from "@/lib/supabase/client";
 
@@ -281,8 +282,12 @@ export function CancelPropostaModal({ isOpen, onClose, idInt, onSuccess }: Cance
                 ) : null}
               </ul>
               <p className="mt-2 text-[11px] leading-relaxed text-slate-500">
-                Cobrança já paga ou título liquidado bloqueiam o cancelamento — nesse caso a
-                proposta não é cancelada e o motivo aparece na mensagem de erro.
+                {pedidoSoComCobrancaSemDinheiro(cobrancasAtivas)
+                  ? "E-Amostra, E-Retrabalho e E-Permuta não movimentam dinheiro e não impedem o cancelamento. " +
+                    "Fora de AGUARDANDO, só o administrador cancela; nota fiscal autorizada, produção e " +
+                    "expedição continuam impedindo."
+                  : "Cobrança já paga ou título liquidado bloqueiam o cancelamento — nesse caso a " +
+                    "proposta não é cancelada e o motivo aparece na mensagem de erro."}
               </p>
             </div>
           ) : null}

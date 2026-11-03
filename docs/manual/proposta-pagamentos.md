@@ -1,6 +1,6 @@
 # Proposta: aba Pagamentos
 
-> **Última revisão:** 02/11/2026
+> **Última revisão:** 03/11/2026
 > **Caminho no menu:** Pedidos → abrir um pedido → aba Pagamentos
 > **Endereço:** `/orcamentos/<número>/editar?tab=pagamentos`
 
@@ -217,6 +217,7 @@ Se a janela for fechada sem escolher, a proposta fica com a faixa **Revisão fin
 - Depois de confirmado, o faturado continua **A vencer**: quem o quita são os títulos do Contas a receber. E-Permuta, E-Amostra e E-Retrabalho ficam quitados na própria confirmação.
 - Cancelar é irreversível e exige motivo. O cancelamento é feito primeiro no banco ou no provedor do cartão; se ele recusar, nada muda no sistema.
 - Não dá para cancelar cobrança já recebida pelo **Excluir**: o caso é devolução, não cancelamento.
+- E-Amostra, E-Retrabalho e E-Permuta ficam como pagas na liberação, mas não movimentam dinheiro e não impedem o cancelamento da proposta: se todas as cobranças ativas do pedido são desses tipos, **Cancelar proposta** cancela o pedido e elas saem canceladas junto (administrador em qualquer status; os demais, com o pedido em AGUARDANDO). Com qualquer cobrança com dinheiro junto, a recusa continua.
 - Não dá para cancelar cobrança de proposta com nota fiscal autorizada: cancele a nota antes.
 - Não dá para cancelar cobrança de proposta que já está em produção: o gerente precisa devolver a proposta para REVISAO ATENDENTE ou retirá-la da produção.
 - Não dá para cancelar uma cobrança faturada enquanto ela tiver título em aberto: cancele o título primeiro na Carteira (**Cancelar recebível**). Cancelar o título não cancela a cobrança; são dois passos separados.
@@ -279,7 +280,8 @@ Se a janela for fechada sem escolher, a proposta fica com a faixa **Revisão fin
 | "Esta permissão só cancela cobrança emitida e não paga (A_RECEBER)." | Perfil com cancelamento restrito tentando cancelar cobrança paga ou faturada. | Peça ao financeiro. |
 | "Cobrança vinculada à Conta Corrente. Cancelamento restrito ao financeiro." | A cobrança reservou débito do cliente. | Peça ao financeiro. |
 | "Acesso negado a esta cobrança." | A proposta está fora do que o seu perfil enxerga. | Peça ao responsável pela proposta ou ao financeiro. |
-| "Esta cobrança já foi recebida em ... Cancelar não devolve o dinheiro — o caso é devolução, não cancelamento." | A cobrança está paga. | Trate como devolução com o financeiro. |
+| "Esta cobrança já foi recebida em ... Cancelar não devolve o dinheiro — o caso é devolução, não cancelamento." | A cobrança está paga. | Trate como devolução com o financeiro. Se for E-Amostra, E-Retrabalho ou E-Permuta, cancele pela **Cancelar proposta**: essas três não impedem o cancelamento do pedido. |
+| "Pedido com E-Amostra, E-Retrabalho ou E-Permuta em ...: só o administrador cancela fora de AGUARDANDO." | Quem não é administrador tentou cancelar o pedido fora de AGUARDANDO. | Peça ao administrador. |
 | "O título ... desta cobrança ... foi liquidado ... A cobrança inteira vira devolução — não cancele por aqui." | Uma parcela do faturado já foi paga. | Trate como devolução com o financeiro. |
 | "A proposta ... tem NF-e nº ... autorizada. Cancele a nota em Fiscal › Notas Fiscais antes de cancelar a cobrança." | Há nota fiscal autorizada na proposta. | Clique em **Ir para Notas Fiscais** e cancele a nota. |
 | "Proposta ... está ... Peça ao gerente para devolver a proposta para REVISAO ATENDENTE antes de cancelar a cobrança." | A proposta já entrou na produção. | Peça ao gerente; depois cancele. |
@@ -346,9 +348,12 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/app/api/cobrancas/pagamento-combinado/route.ts`
 - `src/app/api/cobrancas/aprovar-faturado-automatico/route.ts`
 - `src/app/api/orcamentos/abonar-diferenca/route.ts`
+- `src/features/cobrancas/cancelamento-sem-dinheiro.ts`
 - `src/lib/formatters/status.ts`
 - `src/lib/mocks/pagamentos.mock.ts`
 
-> **Mudança desta revisão:** 28/10/2026 — **Gerar cobrança** com E-Crédito ficava apagado em alguns saldos (caso 20361: crédito R$ 791,99, saldo R$ 790,99) por erro de arredondamento na tela; agora a comparação é feita ao centavo.
+> **Mudança desta revisão:** 03/11/2026 — E-Amostra, E-Retrabalho e E-Permuta não impedem o cancelamento da proposta (caso 24533).
+>
+> **Revisão anterior:** 28/10/2026 — **Gerar cobrança** com E-Crédito ficava apagado em alguns saldos (caso 20361: crédito R$ 791,99, saldo R$ 790,99) por erro de arredondamento na tela; agora a comparação é feita ao centavo.
 >
 > **Revisão anterior:** 08/10/2026 — o identificador das opções de Motoboy, Transportadora São Miguel e VEPPO deixou de mudar a cada cotação, e por isso o frete complementar desses transportes volta a ser aplicado (commit `2387164`).

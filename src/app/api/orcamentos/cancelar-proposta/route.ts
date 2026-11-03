@@ -4,11 +4,18 @@ import { verificarPermissaoServerSide } from "@/lib/auth/verificar-permissao";
 import { verificarEscopoPropostaServerSide } from "@/lib/auth/verificar-escopo-proposta";
 import { avaliarCancelamentoNoServidor } from "@/features/cobrancas/services/cancelamento-elegibilidade.server";
 import { RECUSAS_DE_DINHEIRO } from "@/features/cobrancas/cancelamento-elegibilidade";
+import {
+  decidirCancelamentoSemDinheiro,
+  recusaSoPorRecebimentoSemDinheiro,
+  type DecisaoCancelamentoSemDinheiro
+} from "@/features/cobrancas/cancelamento-sem-dinheiro";
+import { bloqueiaCancelamentoPago } from "@/features/cobrancas/cancelamento-pago";
+import { recusaPorNotaEmitida } from "@/features/orcamentos/services/nota-impede-devolucao.server";
 
 // Status de pagamentos_v2 já inativos: nunca reprocessados.
 const STATUS_INATIVOS = ["CANCELADO", "CANCELADA", "EXTORNADO", "RECUSADO"];
 
-type PagamentoRow = { id: string; status: string | null; confirmado: boolean | null };
+type PagamentoRow = { id: string; status: string | null; confirmado: boolean | null; tipo_cobranca: string | null };
 type BoletoRow = { id: string; status: string | null; paid_at: string | null };
 type MovimentoRow = { id: string; tipo: string | null; cancelado: boolean | null };
 
@@ -61,7 +68,7 @@ export async function POST(request: Request) {
 
   const { data: proposta, error: propostaErr } = await supabase
     .from("propostas")
-    .select("id_int, status_interno, empresa, vendedor, id_cliente, id_int_pedido_principal")
+    .select("id_int, status_interno, is_prd_aprovado, empresa, vendedor, id_cliente, id_int_pedido_principal")
     .eq("id_int", idInt)
     .maybeSingle();
 
@@ -122,7 +129,7 @@ export async function POST(request: Request) {
 
   // 1) Reconsulta proposta (já feita acima), pagamentos, boletos e movimentos de crédito.
   const [pagamentosRes, boletosRes, movimentosRes] = await Promise.all([
-    supabase.from("pagamentos_v2").select("id, status, confirmado").eq("id_int", idInt),
+    supabase.from("pagamentos_v2").select("id, status, confirmado, tipo_cobranca").eq("id_int", idInt),
     supabase.from("boletos").select("id, status, paid_at").eq("id_int", idInt),
     supabase.from("movimento_credito").select("id, tipo, cancelado").eq("id_int", idInt).eq("tipo", "DEBITO").eq("cancelado", false)
   ]);
@@ -169,6 +176,46 @@ export async function POST(request: Request) {
     (p) => !STATUS_INATIVOS.includes(String(p.status || "").trim().toUpperCase())
   );
 
+  //     EXCECAO SEM DINHEIRO (03/11/2026, caso 24533): E-AMOSTRA, E-RETRABALHO
+  //     e E-PERMUTA ficam PAID na liberacao sem dinheiro entrar. Quando TODAS as
+  //     cobrancas ativas sao desses tipos (lidos aqui, do banco), a recusa
+  //     COBRANCA_RECEBIDA nao vale — mas so para ADM, ou em AGUARDANDO, e com
+  //     nota viva, producao e expedicao barrando. Regra em
+  //     `cancelamento-sem-dinheiro.ts`. Decidida so quando a recusa aparece,
+  //     para nada mudar no pedido que hoje ja cancela.
+  let decisaoSemDinheiro: DecisaoCancelamentoSemDinheiro | null = null;
+  async function decidirSemDinheiro(): Promise<DecisaoCancelamentoSemDinheiro | NextResponse> {
+    if (decisaoSemDinheiro) return decisaoSemDinheiro;
+    const [usuarioRes, recusaNota, setores, volumes, expedicoes] = await Promise.all([
+      supabase.from("usuarios").select("is_super_adm, is_admin").eq("user_id", authData.user!.id).maybeSingle(),
+      recusaPorNotaEmitida(supabase, idInt),
+      supabase.from("propostas_os_setores").select("id", { count: "exact", head: true }).eq("id_int", idInt),
+      supabase.from("producao_volumes").select("id", { count: "exact", head: true }).eq("id_int", idInt),
+      supabase.from("expedicoes").select("id", { count: "exact", head: true }).eq("id_int", idInt)
+    ]);
+    if (recusaNota && recusaNota.httpStatus !== 409) {
+      return NextResponse.json({ success: false, code: recusaNota.code, message: recusaNota.message }, { status: 503 });
+    }
+    if (usuarioRes.error || setores.error || volumes.error || expedicoes.error
+        || setores.count === null || volumes.count === null || expedicoes.count === null) {
+      return NextResponse.json(
+        { success: false, code: "FALHA_LEITURA", message: "Não foi possível conferir permissão, produção e expedição. Nada foi alterado." },
+        { status: 503 }
+      );
+    }
+    const usuario = usuarioRes.data as { is_super_adm: boolean | null; is_admin: boolean | null } | null;
+    decisaoSemDinheiro = decidirCancelamentoSemDinheiro({
+      cobrancas: pagamentos,
+      statusProposta: proposta!.status_interno,
+      ehAdm: Boolean(usuario?.is_super_adm || usuario?.is_admin),
+      temNotaViva: !!recusaNota,
+      mensagemNota: recusaNota?.message ?? null,
+      temProducao: bloqueiaCancelamentoPago(proposta!) || setores.count > 0 || volumes.count > 0,
+      temExpedicao: expedicoes.count > 0
+    });
+    return decisaoSemDinheiro;
+  }
+
   // Uma passada por cobranca. Sao 1 ou 2 na esmagadora maioria das propostas,
   // e isto roda uma vez por acao do usuario.
   for (const cobranca of cobrancasAtivas) {
@@ -179,6 +226,23 @@ export async function POST(request: Request) {
         { success: false, code: elegibilidade.erro, message: elegibilidade.mensagem },
         { status: elegibilidade.erro === "NAO_ENCONTRADA" ? 404 : 503 }
       );
+    }
+
+    const respeitadas = elegibilidade.veredito.recusas
+      .filter((r) => RECUSAS_DE_DINHEIRO.includes(r.code))
+      .map((r) => r.code);
+    const soRecebidaSemDinheiro =
+      !elegibilidade.veredito.pode &&
+      recusaSoPorRecebimentoSemDinheiro(respeitadas, elegibilidade.pagamento.tipo_cobranca);
+
+    if (soRecebidaSemDinheiro) {
+      const decisao = await decidirSemDinheiro();
+      if (decisao instanceof NextResponse) return decisao;
+      if (decisao.aplica && decisao.pode) continue;
+      if (decisao.aplica && !decisao.pode) {
+        return NextResponse.json({ success: false, code: decisao.code, message: decisao.message }, { status: 409 });
+      }
+      // Nao aplica: ha cobranca com dinheiro no pedido — vale a recusa de sempre.
     }
 
     if (!elegibilidade.veredito.pode) {
@@ -201,7 +265,8 @@ export async function POST(request: Request) {
   }
 
   // 2) Identifica exatamente as cobranças locais pendentes e não confirmadas
-  // (garantido pelo bloqueio acima: nenhuma está PAID/A_VENCER-confirmada/confirmada).
+  // (garantido pelo bloqueio acima: nenhuma tem dinheiro recebido; PAID só passa
+  // quando é E-AMOSTRA, E-RETRABALHO ou E-PERMUTA, que quitam sem dinheiro).
   const pagamentoIdsParaCancelar = pagamentos
     .filter((p) => !STATUS_INATIVOS.includes(String(p.status || "").trim().toUpperCase()))
     .map((p) => p.id);

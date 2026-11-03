@@ -1,6 +1,6 @@
 # Proposta: visão geral e abas
 
-> **Última revisão:** 02/11/2026
+> **Última revisão:** 03/11/2026
 > **Caminho no menu:** Pedidos → **+ Nova proposta** (proposta nova) ou Pedidos → abrir um pedido → **Editar proposta**
 > **Endereço:** `/orcamentos/novo` e `/orcamentos/<número>/editar`
 
@@ -259,6 +259,8 @@ O cancelamento não fica no menu de dentro da edição. Faça pela lista de Pedi
 4. Preencha o **Motivo do Cancelamento**.
 5. Clique em **Confirmar Cancelamento**. Pela tela, a ação é irreversível.
 
+Pedido cujas cobranças são só E-Amostra, E-Retrabalho ou E-Permuta pode ser cancelado mesmo com a cobrança marcada como paga: essas três não movimentam dinheiro e não impedem o cancelamento. Elas saem canceladas junto com a proposta, com o motivo. O administrador cancela em qualquer status; quem não é administrador, só com o pedido em AGUARDANDO. Nota fiscal autorizada, produção e expedição continuam impedindo.
+
 ### Reativar um pedido cancelado por engano
 
 Desde 26/10/2026 um administrador pode tirar um pedido de CANCELADO e devolvê-lo a NOVO, com o mesmo número, os mesmos itens e a arte como estava. **Ainda não há botão na tela**: é feito pelo suporte, a pedido do administrador, com o motivo.
@@ -331,6 +333,7 @@ Duas ações do mesmo menu têm o passo a passo em outra ficha: **Enviar para Fi
 - Com cobrança de retrabalho, permuta ou amostra, o total pode subir sem cancelar a cobrança: ela fica como está e a diferença vira saldo a cobrar, com uma segunda cobrança na aba Pagamentos.
 - Não dá para trocar o cliente manual por um cadastrado enquanto houver cobrança ativa ou pagamento confirmado.
 - Não dá para cancelar a proposta com cobrança já paga ou título já liquidado. A proposta não é cancelada e o motivo aparece na mensagem de erro.
+- A exceção são E-Amostra, E-Retrabalho e E-Permuta, que não impedem o cancelamento: quando todas as cobranças ativas do pedido são desses tipos, o administrador cancela em qualquer status, e os demais só em AGUARDANDO. Se houver junto qualquer cobrança com dinheiro (PIX, boleto, cartão, faturado ou E-Crédito), a recusa continua. Nota fiscal autorizada, produção e expedição continuam impedindo. E-Crédito segue pelo estorno de crédito.
 - Não dá para cancelar o pedido original enquanto ele tiver pedido complementar aberto. Cancele ou desvincule o complemento antes.
 - Não dá para gerar a cobrança do pedido complementar antes de aplicar o frete complementar na aba **Fretes**. No complementar em RETIRA ou FOB, que não tem frete a aplicar, esse bloqueio é um problema conhecido e sem solução publicada.
 - O pedido complementar só é aceito quando o original está pago integralmente, não é avulso, não foi despachado, não é ele mesmo um complemento e não tem outro complemento aberto.
@@ -435,6 +438,8 @@ Duas ações do mesmo menu têm o passo a passo em outra ficha: **Enviar para Fi
 - `src/features/orcamentos/components/DiferencaFinanceiraModal.tsx`
 - `src/features/orcamentos/components/LiberarFaturadoModal.tsx`
 - `src/features/orcamentos/components/CancelPropostaModal.tsx`
+- `src/features/cobrancas/cancelamento-sem-dinheiro.ts`
+- `src/app/api/orcamentos/cancelar-proposta/route.ts`
 - `src/features/orcamentos/components/CriarComplementoModal.tsx`
 - `src/features/orcamentos/components/PropostaChatDrawer.tsx`
 - `src/features/orcamentos/components/PropostaChatPanel.tsx`
@@ -447,7 +452,9 @@ Duas ações do mesmo menu têm o passo a passo em outra ficha: **Enviar para Fi
 - `src/components/common/ActionsMenu.tsx`
 - `src/constants/navigation.ts`
 
-> **Mudança desta revisão:** 02/11/2026 — salvar pedido que já tem NF-e de venda (autorizada, em processamento ou pronta para envio) mudando total, desconto ou frete abre a janela **Este pedido já tem NF-e de venda**, com **Salvar mesmo assim** e **Voltar**; ao salvar assim, a linha do tempo registra que o pedido ficou com valor diferente da nota. Só aviso.
+> **Mudança desta revisão:** 03/11/2026 — E-Amostra, E-Retrabalho e E-Permuta não impedem mais o cancelamento da proposta (caso 24533). O administrador cancela em qualquer status; os demais, em AGUARDANDO. Cobrança com dinheiro, nota fiscal autorizada, produção e expedição continuam impedindo.
+>
+> **Revisão anterior:** 02/11/2026 — salvar pedido que já tem NF-e de venda (autorizada, em processamento ou pronta para envio) mudando total, desconto ou frete abre a janela **Este pedido já tem NF-e de venda**, com **Salvar mesmo assim** e **Voltar**; ao salvar assim, a linha do tempo registra que o pedido ficou com valor diferente da nota. Só aviso.
 
 > **Mudanças de 08/10/2026:**
 >
