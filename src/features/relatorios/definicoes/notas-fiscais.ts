@@ -16,7 +16,9 @@ import type {
  * Notas fiscais (NF-e) do mês — para a contabilidade fechar os impostos.
  *
  * Dados: `rpc_relatorio_notas_fiscais` (só leitura). Lista só as NF-e autorizadas de venda
- * ("Venda de produção do estabelecimento"), com produtos, frete e total como estão na nota.
+ * (itens só com CFOP 5101/6101 e natureza "Venda de produção do estabelecimento" ou "Venda de
+ * Produção Própria", o título novo do 5101/6101; filtro na função desde 03/11/2026), com produtos,
+ * frete e total como estão na nota.
  * Canceladas e de outra natureza ficam fora da lista e são citadas, com o número, na nota de
  * critério. NFS-e (serviço) não entra. A função confere a permissão `relatorios.notas_fiscais`.
  *
@@ -26,7 +28,8 @@ import type {
  */
 
 const BUCKET = "nfe-documentos";
-const NATUREZA_VENDA = "Venda de produção do estabelecimento";
+/** Os dois títulos aceitos para a venda de produção (o antigo e o novo do 5101/6101). Só texto do critério: o filtro está na função. */
+const NATUREZAS_VENDA = ["Venda de produção do estabelecimento", "Venda de Produção Própria"];
 const MESES = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
 
 const numero = new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -338,7 +341,7 @@ function montarPdf(
     empresa: `${extras.emitente.razao_social} — CNPJ ${formatarCnpj(extras.emitente.cnpj)}`,
     periodo: `Emissão de ${formatDataCivil(consulta.inicio)} a ${formatDataCivil(consulta.fim)}`,
     filtros: [`Série ${serie}`],
-    criterio: `NF-e autorizadas de natureza "${NATUREZA_VENDA}", pela data de emissão (dia de São Paulo). Produtos, frete e total como constam em cada nota. ${frasesDeCriterio(extras)}`,
+    criterio: `NF-e autorizadas de venda de produção: itens com CFOP 5101 ou 6101 e natureza ${NATUREZAS_VENDA.map((t) => `"${t}"`).join(" ou ")}, pela data de emissão (dia de São Paulo). Produtos, frete e total como constam em cada nota. ${frasesDeCriterio(extras)}`,
     secoes: [
       {
         titulo: `Notas de venda — ${plural(quantidade, "nota", "notas")}`,

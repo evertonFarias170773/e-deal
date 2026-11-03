@@ -1,6 +1,6 @@
 # Relatório: Notas fiscais (NF-e)
 
-> **Última revisão:** 25/10/2026
+> **Última revisão:** 03/11/2026
 > **Caminho no menu:** Relatórios → Financeiro → Notas fiscais (NF-e)
 > **Endereço:** `/relatorios/financeiro/notas-fiscais`
 
@@ -46,7 +46,7 @@ Nomes exatamente como aparecem na tela.
 ## Regras e bloqueios
 
 - **A data usada é a data de emissão da nota**, no dia de São Paulo, escrita no alto da tela e do PDF.
-- **A lista traz só as notas autorizadas de venda**: natureza "Venda de produção do estabelecimento". Notas **canceladas** e as de **outra natureza** (por exemplo, "Outra saída de mercadoria não especificada") ficam fora da lista, mas aparecem no aviso e na nota de critério do PDF, com o número de cada uma.
+- **A lista traz só as notas autorizadas de venda de produção**: todos os itens com CFOP 5101 ou 6101 **e** natureza "Venda de produção do estabelecimento" ou "Venda de Produção Própria" (o título novo do 5101/6101; as duas valem desde 03/11/2026). Notas **canceladas** e as de **outra natureza** (por exemplo, "Outra saída de mercadoria não especificada") ficam fora da lista, mas aparecem no aviso e na nota de critério do PDF, com o número de cada uma.
 - **Produtos, frete e total são os da própria nota**; nada é recalculado a partir de pagamentos. A linha final do PDF traz o total de notas e as somas.
 - Só entram notas de **produção**. Notas de teste (homologação) ficam de fora.
 - **O zip traz o XML de todas as NF-e do período** (autorizadas, inclusive as canceladas e as de outra natureza), com o nome da chave de acesso. Dentro do zip vai também um **LEIAME.txt** com as contagens e com o que não pôde ser incluído.
