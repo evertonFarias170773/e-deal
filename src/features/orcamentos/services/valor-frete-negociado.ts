@@ -21,7 +21,18 @@
  *   e depois, em centavos.
  *
  *   NÃO toca `cotacao_frete` (os três triggers de lá reescrevem `valor_total` e
- *   `status_interno`) nem `pagamentos_v2`, `boletos` ou qualquer cobrança.
+ *   `status_interno`) nem `boletos`. Cobrança, só no caso do faturado abaixo, e
+ *   só pela `aplicarDiferencaFinanceira`.
+ *
+ * FATURADO A VENCER SEM TÍTULO (03/11/2026)
+ *   Uma cobrança só, E-Faturado A_VENCER sem pagamento, zero linhas em `boletos`
+ *   (`entradaFaturadoPeloCampo`), e quem grava com a permissão da `editar-paga`
+ *   (`propostas.editar_paga` ou `propostas.editar_faturado`): grava o frete e a
+ *   cobrança passa a valer o total novo, com a linha de autoria no chat — a
+ *   MESMA função e a MESMA conta da `editar-paga`. Não há transação entre os
+ *   dois UPDATEs: se a cobrança não acompanhar e continuar com o valor de
+ *   antes, o frete é desfeito com a mesma trava otimista. Repetir o mesmo valor
+ *   para no passo 4 e não escreve nada.
  *
  * A REGRA FINANCEIRA NÃO MORA AQUI
  *   Antes de gravar, `avaliarCoberturaFinanceira` (só leitura) diz por qual porta
@@ -31,8 +42,8 @@
  *   que este bloco não pode resolver e chama.
  *
  * O QUE ESTE BLOCO RECUSA, ANTES DE GRAVAR (decisões de 14/09/2026)
- *   - faturado a vencer: a regra oficial ajustaria `pagamentos_v2.valor`, e isso
- *     é trabalho de "Editar proposta paga";
+ *   - faturado a vencer fora do caso acima (título, outra cobrança) ou sem a
+ *     permissão: o caminho é editar a proposta e "Salvar alterações";
  *   - cobrança enviada e ainda não paga: o link tem valor fixo no provedor;
  *   - total menor que o pago sem `propostas.editar_paga`: a pendência de Conta
  *     Corrente exige essa permissão, conferida pela MESMA função do banco que
@@ -54,7 +65,17 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { estaNaFaseDeOrcamento, modalidadeCobraFrete, type ModalidadeFrete } from "@/features/orcamentos/lib/modalidade-frete";
 import { avaliarCoberturaFinanceira } from "@/features/cobrancas/services/cobertura-financeira-proposta";
 import { aplicarDiferencaFinanceira } from "@/features/cobrancas/services/diferenca-financeira-proposta";
-import type { CobrancaParaFaturado } from "@/features/orcamentos/services/faturado-editavel";
+import {
+  avaliarEdicaoFaturado,
+  isCobrancaAtiva,
+  isFaturadoAjustavel,
+  type CobrancaParaFaturado
+} from "@/features/orcamentos/services/faturado-editavel";
+import {
+  PERMISSAO_FATURADO,
+  PERMISSAO_PROPOSTA_PAGA,
+  verificarPermissaoEditarPaga
+} from "@/lib/auth/permissao-editar-paga";
 import { barreiraNfAutorizada } from "@/features/expedicao/services/corrigir-frete-simulacao";
 import { CODIGO_PEDIDO_ENTREGUE, MENSAGEM_PEDIDO_ENTREGUE, statusEhEntregue } from "@/features/orcamentos/services/pedido-entregue";
 
@@ -82,6 +103,8 @@ export type SucessoValorFrete = {
   /** > 0 a cobrar do cliente, < 0 a favor do cliente, 0 coberto. */
   saldo: number;
   pendenciaAtiva: { id: number; descricao: string } | null;
+  /** Cobrança faturada que acompanhou o frete (03/11/2026); null fora desse caso. */
+  faturadoAjustado: { id: string; valorAnterior: number; valorNovo: number } | null;
 };
 
 const MOTIVO_PENDENCIA = "FRETE";
@@ -187,7 +210,8 @@ export async function gravarValorFreteNegociado(
       statusNovo: statusAnterior,
       valorPagoConfirmado: 0,
       saldo: 0,
-      pendenciaAtiva: null
+      pendenciaAtiva: null,
+      faturadoAjustado: null
     };
   }
 
@@ -261,18 +285,32 @@ export async function gravarValorFreteNegociado(
   const { estavaIntegralmentePaga, titulos, ehCaminhoFaturado, valorCobradoPendente } = cobertura;
 
   // ── 7. Recusas antes de gravar ────────────────────────────────────────────
-  // Decisão 1: faturado a vencer não se resolve aqui.
+  // Decisão 1 (revista em 03/11/2026): faturado a vencer só passa por aqui no
+  // caso estreito de `entradaFaturadoPeloCampo` e com a permissão da
+  // `editar-paga`; a cobrança acompanha pela mesma `aplicarDiferencaFinanceira`.
+  // Fora disso, a recusa de sempre, com o caminho real na mensagem.
+  let faturadoLiberado: { faturadoId: string; valorAnterior: number } | null = null;
   if (ehCaminhoFaturado) {
-    return recusa(
-      409,
-      "FATURADO_A_VENCER",
-      `A proposta #${idInt} tem cobrança faturada a vencer: mudar o frete exige ajustar o valor dessa cobrança, e isso ` +
-        `não é feito por este campo. Use "Editar proposta paga" na proposta. Nada foi alterado.`
-    );
+    const entrada = entradaFaturadoPeloCampo({ cobrancas, titulos });
+    if (!entrada) {
+      return recusa(409, "FATURADO_A_VENCER", mensagemFaturadoForaDoCampo(idInt, titulos.length > 0));
+    }
+    const permissao = await verificarPermissaoEditarPaga(supabase, ator.uid, [PERMISSAO_PROPOSTA_PAGA, PERMISSAO_FATURADO]);
+    if (!permissao.autorizado) {
+      return recusa(403, "SEM_PERMISSAO_EDITAR_FATURADO", mensagemFaturadoSemPermissao(idInt));
+    }
+    // Mesma conta que a gravação fará, antes de escrever: o que não couber é
+    // recusado aqui, e não depois com o frete já gravado.
+    const previa = avaliarEdicaoFaturado({ cobrancas, titulos, novoTotal: totalNovoC / 100 });
+    if (!previa.elegivel) {
+      return recusa(409, previa.motivo, `${previa.mensagem} Nada foi alterado.`);
+    }
+    faturadoLiberado = { faturadoId: previa.faturadoId, valorAnterior: centavos(entrada.valor) };
   }
 
   // Link de cobrança enviado e não pago: o valor dele está fixo no provedor.
-  if (centavos(valorCobradoPendente) > 0) {
+  // No caminho do faturado não vale: a cobrança é a própria faturada, que acompanha.
+  if (!ehCaminhoFaturado && centavos(valorCobradoPendente) > 0) {
     return recusa(
       409,
       "COBRANCA_ENVIADA",
@@ -282,8 +320,9 @@ export async function gravarValorFreteNegociado(
   }
 
   // Avulsa (ou sem produto ativo) paga não é editável — a mesma regra do
-  // `editar-paga`, que vale para todos, admin inclusive.
-  if (ehPropostaPaga) {
+  // `editar-paga`, que vale para todos, admin inclusive (e, como lá, fora do
+  // caminho do faturado).
+  if (ehPropostaPaga && !ehCaminhoFaturado) {
     let semProdutosAtivos = Boolean(proposta.is_avulso);
     if (!semProdutosAtivos) {
       const { count, error: produtosErro } = await supabase
@@ -308,7 +347,8 @@ export async function gravarValorFreteNegociado(
   }
 
   // Decisão 3: total menor que o pago.
-  const ficaAbaixoDoPago = ehPropostaPaga && totalNovoC < pagoC;
+  // No faturado a diferença vai para a cobrança, não para crédito do cliente.
+  const ficaAbaixoDoPago = ehPropostaPaga && !ehCaminhoFaturado && totalNovoC < pagoC;
   if (ficaAbaixoDoPago && !estavaIntegralmentePaga) {
     // A Conta Corrente só recebe diferença de proposta que estava integralmente
     // paga. Fora disso o crédito do cliente ficaria sem destino — e decidir o
@@ -317,7 +357,8 @@ export async function gravarValorFreteNegociado(
       409,
       "EXIGE_DECISAO_CREDITO",
       `Com esse frete o cliente ficaria com ${moeda(pagoC - totalNovoC)} a favor na proposta #${idInt}, que não estava ` +
-        `integralmente paga. O destino desse crédito precisa ser decidido em "Editar proposta paga". Nada foi alterado.`
+        `integralmente paga. O destino desse crédito se decide na própria proposta: altere o frete e clique em ` +
+        `"Salvar alterações" (permissão Editar Proposta Paga, propostas.editar_paga). Nada foi alterado.`
     );
   }
 
@@ -325,7 +366,7 @@ export async function gravarValorFreteNegociado(
   // estava integralmente paga e o total não fica acima do pago, ou quando há
   // pendência aberta a reconciliar. Tudo que a RPC exigiria é conferido AQUI,
   // antes da escrita, para ela nunca recusar com o frete já gravado.
-  if (ehPropostaPaga && estavaIntegralmentePaga) {
+  if (ehPropostaPaga && estavaIntegralmentePaga && !ehCaminhoFaturado) {
     const { data: pendencias, error: pendErro } = await supabase
       .from("conta_corrente_pendencias")
       .select("id, valor_original, valor_saldo, valor_reservado, status")
@@ -404,6 +445,16 @@ export async function gravarValorFreteNegociado(
       `[valor-frete-negociado] Pedido #${idInt}: gravado frete ${moeda(freteNovoC)} e total ${moeda(totalGravadoC)}, ` +
         `mas o calculo do banco deu ${soberanoDepois === null || soberanoDepois === undefined ? "vazio" : moeda(centavos(soberanoDepois))}.`
     );
+    // Faturado: a cobrança ainda não foi tocada; desfaz o frete para não deixar
+    // a proposta com valor novo e a cobrança com o velho.
+    if (faturadoLiberado && (await desfazerFrete(supabase, idInt, proposta, freteNovoC, totalGravadoC))) {
+      return recusa(
+        500,
+        "TOTAL_DIVERGENTE_APOS_GRAVAR",
+        `O total da proposta #${idInt} não conferiu com o cálculo do banco depois de gravar o frete, então o frete foi ` +
+          `desfeito e a cobrança não foi tocada. Nada foi alterado. Avise o financeiro.`
+      );
+    }
     return recusa(
       500,
       "TOTAL_DIVERGENTE_APOS_GRAVAR",
@@ -430,6 +481,16 @@ export async function gravarValorFreteNegociado(
     emailExibicao: ator.email
   });
   if (!resultado.ok) {
+    if (faturadoLiberado) {
+      return await desfazerAposFalhaDoFaturado(supabase, {
+        idInt,
+        proposta,
+        freteNovoC,
+        totalGravadoC,
+        faturado: faturadoLiberado,
+        falha: resultado
+      });
+    }
     return recusa(resultado.status, resultado.code ?? "FALHA_FINANCEIRA", resultado.error, true);
   }
 
@@ -446,7 +507,127 @@ export async function gravarValorFreteNegociado(
     statusAnterior,
     statusNovo: String((statusRow as { status_interno?: string | null } | null)?.status_interno ?? statusAnterior),
     valorPagoConfirmado: pagoC / 100,
-    saldo: (totalGravadoC - pagoC) / 100,
-    pendenciaAtiva: resultado.pendenciaCriada
+    // Faturado: a cobrança passou a valer o total novo, não sobra saldo a cobrar.
+    saldo: faturadoLiberado ? 0 : (totalGravadoC - pagoC) / 100,
+    pendenciaAtiva: resultado.pendenciaCriada,
+    faturadoAjustado: resultado.faturadoAjustado
   };
+}
+
+// ── Faturado a vencer pelo campo (03/11/2026) ───────────────────────────────
+
+/**
+ * O caso em que este campo ajusta a cobrança faturada: UMA cobrança ativa, ela
+ * E-Faturado ajustável (A_VENCER, sem pagamento — `isFaturadoAjustavel`, a
+ * mesma regra da `editar-paga`), e ZERO linhas em `boletos` para o pedido
+ * (nem cancelada: título já houve, a conta é do Financeiro). Pedido entregue e
+ * NF-e autorizada já foram recusados antes. Devolve a cobrança, ou null.
+ */
+export function entradaFaturadoPeloCampo(entrada: {
+  cobrancas: CobrancaParaFaturado[];
+  titulos: unknown[];
+}): CobrancaParaFaturado | null {
+  if (entrada.titulos.length > 0) return null;
+  const ativas = entrada.cobrancas.filter(isCobrancaAtiva);
+  if (ativas.length !== 1) return null;
+  return isFaturadoAjustavel(ativas[0]) ? ativas[0] : null;
+}
+
+const CAMINHO_SALVAR =
+  `abra a proposta, altere o frete e clique em "Salvar alterações" — exige a permissão Editar Proposta com ` +
+  `Faturado a Vencer (propostas.editar_faturado) ou Editar Proposta Paga (propostas.editar_paga)`;
+
+/** Faturado a vencer fora do caso do campo (título no Contas a Receber ou outra cobrança). */
+export function mensagemFaturadoForaDoCampo(idInt: number, temTitulo: boolean): string {
+  return (
+    `A proposta #${idInt} tem cobrança faturada a vencer ${temTitulo ? "com título no Contas a Receber" : "junto de outras cobranças"}: ` +
+    `este campo só ajusta a cobrança quando ela é a única da proposta e ainda não tem título. Para mudar o frete, ` +
+    `${CAMINHO_SALVAR}. Nada foi alterado.`
+  );
+}
+
+/** Faturado a vencer no caso do campo, mas sem a permissão da `editar-paga`. */
+export function mensagemFaturadoSemPermissao(idInt: number): string {
+  return (
+    `A proposta #${idInt} tem cobrança faturada a vencer: mudar o frete ajusta o valor dessa cobrança, e isso exige a ` +
+    `permissão Editar Proposta com Faturado a Vencer (propostas.editar_faturado) ou Editar Proposta Paga ` +
+    `(propostas.editar_paga), que este usuário não tem. Quem tem a permissão pode mudar por este campo ou ` +
+    `${CAMINHO_SALVAR.replace(" — exige a permissão", ", com a permissão")}. Nada foi alterado.`
+  );
+}
+
+type ValoresLidos = { valor_frete: number | string | null; valor_total: number | null };
+
+/**
+ * Volta `valor_frete` e `valor_total` ao que foi lido, só se a linha ainda tem
+ * os valores que ESTA chamada gravou (mesma trava otimista da escrita). Devolve
+ * true quando desfez.
+ */
+async function desfazerFrete(
+  supabase: SupabaseClient,
+  idInt: number,
+  lidos: ValoresLidos,
+  freteGravadoC: number,
+  totalGravadoC: number
+): Promise<boolean> {
+  const { data, error } = await supabase
+    .from("propostas")
+    .update({ valor_frete: lidos.valor_frete, valor_total: lidos.valor_total })
+    .eq("id_int", idInt)
+    .eq("valor_frete", freteGravadoC / 100)
+    .gte("valor_total", (totalGravadoC - 0.5) / 100)
+    .lt("valor_total", (totalGravadoC + 0.5) / 100)
+    .select("id_int");
+  if (error) {
+    console.error(`[valor-frete-negociado] Pedido #${idInt}: falha ao desfazer o frete: ${error.message}`);
+    return false;
+  }
+  return (data || []).length === 1;
+}
+
+/**
+ * A cobrança faturada não acompanhou. Lê a cobrança: se ela continua com o valor
+ * anterior, desfaz o frete e nada fica alterado. Se ela já mudou (ou não deu
+ * para ler), NÃO desfaz — desfazer aí deixaria a cobrança nova com o frete velho.
+ */
+async function desfazerAposFalhaDoFaturado(
+  supabase: SupabaseClient,
+  p: {
+    idInt: number;
+    proposta: ValoresLidos;
+    freteNovoC: number;
+    totalGravadoC: number;
+    faturado: { faturadoId: string; valorAnterior: number };
+    falha: { status: number; code?: string; error: string };
+  }
+): Promise<RecusaValorFrete> {
+  const { idInt, falha } = p;
+  const code = falha.code ?? "FALHA_FINANCEIRA";
+  const { data: atual, error: leituraErro } = await supabase
+    .from("pagamentos_v2")
+    .select("valor")
+    .eq("id", p.faturado.faturadoId)
+    .maybeSingle();
+  const cobrancaIntacta =
+    !leituraErro && atual !== null && centavos((atual as { valor?: unknown }).valor) === p.faturado.valorAnterior;
+
+  if (cobrancaIntacta && (await desfazerFrete(supabase, idInt, p.proposta, p.freteNovoC, p.totalGravadoC))) {
+    return recusa(
+      falha.status,
+      code,
+      `A cobrança faturada da proposta #${idInt} não pôde ser ajustada, então o frete foi desfeito. Nada foi alterado. ` +
+        `Tente de novo; se repetir, avise o financeiro.`
+    );
+  }
+  console.error(
+    `[valor-frete-negociado] Pedido #${idInt}: cobranca faturada nao ajustada (${code}) e o frete NAO foi desfeito ` +
+      `(cobranca ${cobrancaIntacta ? "intacta, desfazer falhou" : "mudou ou nao foi lida"}).`
+  );
+  return recusa(
+    falha.status,
+    code,
+    `O frete da proposta #${idInt} foi gravado, mas a cobrança faturada pode não ter acompanhado e não foi possível ` +
+      `desfazer com segurança. Confira o valor da cobrança na aba Pagamentos e avise o financeiro.`,
+    true
+  );
 }

@@ -160,6 +160,7 @@ Depois da liberação o campo **Valor cobrado (R$)** fica só para leitura: o va
 2. Para trocar quem leva, escolha a transportadora na lista. A troca é gravada na hora, sem o **Salvar alterações**, e não mexe na modalidade nem no valor do frete. A Expedição vê a troca no próximo carregamento da tela.
 3. Para mudar o valor que o cliente paga, digite no campo **Frete R$** e pressione Enter ou saia do campo. O frete e o total da proposta são gravados juntos.
 4. Leia o aviso que aparece: ele mostra o total anterior e o novo, o saldo a cobrar na aba **Pagamentos** quando houver, e a mudança de status quando houver.
+5. **Cobrança faturada a vencer ainda sem boleto.** Quando a única cobrança da proposta é E-Faturado a vencer, sem pagamento e sem nenhum título no Contas a Receber, o campo também grava para quem tem a permissão **Editar Proposta Paga** ou **Editar Proposta com Faturado a Vencer**. A cobrança passa a valer o total novo e continua em **Registro de recebíveis**; o aviso mostra "Cobrança faturada: R$ … → R$ …", e o chat do pedido registra o valor anterior, o novo e o responsável. Gravar o mesmo valor de novo não muda nada. Se a cobrança não puder ser ajustada, o frete volta ao valor anterior e nada fica alterado. Um rascunho de nota fiscal que já existia não é refeito: confira-o antes de emitir.
 
 ### Acompanhar Pedido (pedidos que saem juntos)
 
@@ -243,7 +244,7 @@ Repetir **Aplicar** não duplica: a segunda tentativa devolve o mesmo frete comp
 - A lista **Corrigir a transportadora (admin)** troca a transportadora mesmo com o pedido já despachado. Ela mexe só em quem transporta.
 - O campo **Frete R$** não aceita valor em FOB nem em retirada, porque nessas modalidades o cliente não paga frete à empresa.
 - O valor negociado é recusado em pedido entregue ("Pedido entregue não pode ser alterado…"; o caminho para alterar está na ficha da [Proposta](proposta.md)).
-- O valor negociado é recusado quando o pedido tem NF-e autorizada (a mesma regra da troca de frete: cancele a nota antes; nota cancelada ou denegada não impede). Nesse caso o campo **Frete R$** fica desabilitado e a mensagem aparece abaixo dele. Também é recusado quando a proposta tem cobrança faturada a vencer, quando tem cobrança enviada ao cliente e ainda não paga (cancele a cobrança antes, na aba **Pagamentos**), quando é avulsa já paga, quando é pedido complementar, e quando o valor novo deixaria crédito a favor do cliente em proposta que não estava integralmente paga.
+- O valor negociado é recusado quando o pedido tem NF-e autorizada (a mesma regra da troca de frete: cancele a nota antes; nota cancelada ou denegada não impede). Nesse caso o campo **Frete R$** fica desabilitado e a mensagem aparece abaixo dele. Também é recusado quando a proposta tem cobrança faturada a vencer com título no Contas a Receber ou junto de outras cobranças, ou quando quem grava não tem uma das duas permissões acima (nesses casos, abra a proposta, altere o frete e clique em **Salvar alterações**, com a permissão **Editar Proposta com Faturado a Vencer** ou **Editar Proposta Paga**), quando tem cobrança enviada ao cliente e ainda não paga (cancele a cobrança antes, na aba **Pagamentos**), quando é avulsa já paga, quando é pedido complementar, e quando o valor novo deixaria crédito a favor do cliente em proposta que não estava integralmente paga (o destino do crédito se decide editando a proposta e clicando em **Salvar alterações**, com a permissão **Editar Proposta Paga**).
 - Escolher um card dos Correios (SEDEX ou PAC) vincula ao pedido o cadastro dos Correios, que desde 08/10/2026 é o da **Superintendência Estadual RS** (o anterior era o da sede em Brasília). É esse cadastro que vai para a nota fiscal como transportador. Pedido antigo continua com o cadastro anterior, e os dois seguem valendo como Correios no sistema.
 - Na tela, os dois cadastros dos Correios aparecem como **Correios**, e não pela fantasia do cadastro. As outras transportadoras continuam aparecendo pelo nome de sempre.
 - Em pedido complementar, a modalidade e a transportadora vêm do pedido principal e ficam travadas. Não há cards nem **Atualizar fretes**.
@@ -327,6 +328,7 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/features/orcamentos/lib/origem-frete.ts`
 - `src/features/orcamentos/services/frete-desatualizado.ts`
 - `src/features/orcamentos/services/valor-frete-negociado.ts`
+- `src/lib/auth/permissao-editar-paga.ts`
 - `src/features/orcamentos/services/orcamentos.service.ts`
 - `src/features/expedicao/services/corrigir-frete-simulacao.ts`
 - `src/features/expedicao/types.ts`

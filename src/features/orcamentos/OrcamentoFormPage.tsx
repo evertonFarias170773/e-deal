@@ -4326,6 +4326,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
         statusNovo?: string;
         saldo?: number;
         pendenciaAtiva?: { descricao: string } | null;
+        faturadoAjustado?: { valorAnterior: number; valorNovo: number } | null;
       };
 
       if (!resposta.ok || !corpo.success) {
@@ -4343,6 +4344,11 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
       ];
       if ((corpo.saldo ?? 0) > 0) partes.push(`Saldo a cobrar de ${formatCurrency(corpo.saldo ?? 0)} na aba Pagamentos.`);
       if (corpo.pendenciaAtiva) partes.push(corpo.pendenciaAtiva.descricao);
+      if (corpo.faturadoAjustado) {
+        partes.push(
+          `Cobrança faturada: ${formatCurrency(corpo.faturadoAjustado.valorAnterior)} → ${formatCurrency(corpo.faturadoAjustado.valorNovo)}, segue em Registro de recebíveis.`
+        );
+      }
       if (corpo.statusNovo && corpo.statusNovo !== corpo.statusAnterior) {
         partes.push(`Status: ${corpo.statusAnterior} → ${corpo.statusNovo}.`);
       }

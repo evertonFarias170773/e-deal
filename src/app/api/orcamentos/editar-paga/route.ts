@@ -42,85 +42,18 @@ import { aplicarDiferencaFinanceira } from "@/features/cobrancas/services/difere
 import { avaliarCoberturaFinanceira } from "@/features/cobrancas/services/cobertura-financeira-proposta";
 import { semCobrancaDeReenvio } from "@/features/cobrancas/lib/cobranca-reenvio";
 import { CODIGO_PEDIDO_ENTREGUE, MENSAGEM_PEDIDO_ENTREGUE, statusEhEntregue } from "@/features/orcamentos/services/pedido-entregue";
+import {
+  PERMISSAO_FATURADO,
+  PERMISSAO_PROPOSTA_PAGA,
+  verificarPermissaoEditarPaga
+} from "@/lib/auth/permissao-editar-paga";
 
 // ---------------------------------------------------------------------------
 // Configurações e Tipagens
 // ---------------------------------------------------------------------------
 
-const PERMISSOES_FALLBACK_ADMIN: string[] = [
-  "propostas.editar_paga", "propostas.editar_faturado", "financeiro.resolver_credito",
-  "financeiro.bonificar", "financeiro.devolver", "financeiro.debito_futuro", "credito.usar"
-];
+// Permissão da edição (paga ou faturado a vencer): `lib/auth/permissao-editar-paga`.
 
-/**
- * Permissões que abrem a edição, por caminho. `propostas.editar_faturado` vale
- * SÓ no caminho do faturado a vencer (dinheiro ainda não recebido) — quem tem
- * apenas ela continua sem poder editar proposta paga de verdade.
- */
-const PERMISSAO_PROPOSTA_PAGA = "propostas.editar_paga";
-const PERMISSAO_FATURADO = "propostas.editar_faturado";
-
-type UsuarioMinRow = {
-  id_perfil: number | null;
-  is_super_adm: boolean;
-  is_admin: boolean;
-};
-
-type PerfilMinRow = {
-  permissoes: string[];
-};
-
-/**
- * Verifica se o usuário tem alguma das permissões que abrem a edição.
- * `permissoesAceitas` muda conforme o caminho: paga de verdade aceita só
- * `propostas.editar_paga`; faturado a vencer aceita as duas.
- */
-async function verificarPermissaoEditarPaga(
-  supabase: SupabaseClient<any, any, any>,
-  userId: string,
-  permissoesAceitas: string[]
-): Promise<{ autorizado: boolean; motivo?: string }> {
-  const { data: usuarioData, error: usuarioError } = await supabase
-    .from("usuarios")
-    .select("id_perfil, is_super_adm, is_admin")
-    .eq("user_id", userId)
-    .maybeSingle();
-
-  if (usuarioError || !usuarioData) {
-    return { autorizado: false, motivo: "Usuário não encontrado em public.usuarios." };
-  }
-
-  const row = usuarioData as UsuarioMinRow;
-
-  if (row.is_super_adm) {
-    return { autorizado: true };
-  }
-
-  if (row.id_perfil != null) {
-    const { data: perfilData, error: perfilError } = await supabase
-      .from("perfis")
-      .select("permissoes")
-      .eq("id", row.id_perfil)
-      .eq("ativo", true)
-      .maybeSingle();
-
-    if (!perfilError && perfilData) {
-      const perfil = perfilData as PerfilMinRow;
-      const permissoes: string[] = Array.isArray(perfil.permissoes) ? perfil.permissoes : [];
-      if (permissoes.includes("*") || permissoesAceitas.some((p) => permissoes.includes(p))) {
-        return { autorizado: true };
-      }
-      return { autorizado: false, motivo: `Perfil sem permissão ${permissoesAceitas.join(" ou ")}.` };
-    }
-  }
-
-  if (row.is_admin) {
-    const temPermissao = permissoesAceitas.some((p) => PERMISSOES_FALLBACK_ADMIN.includes(p));
-    return { autorizado: temPermissao };
-  }
-
-  return { autorizado: false, motivo: "Sem permissão para editar proposta paga." };
-}
 
 /** R$ 1.234,56 — para a mensagem dizer o valor que o cliente tem em mãos. */
 function formatarBRL(valor: number): string {
