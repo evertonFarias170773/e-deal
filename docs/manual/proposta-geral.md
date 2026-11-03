@@ -32,7 +32,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Vendedor** (lista; primeira opção "Selecione o vendedor") | Bloco **2. Dados da proposta** | Define o vendedor, para quem pode alterar. |
 | Linha de **Outros contatos** | Bloco **3. Contato responsável** | Troca o contato selecionado. |
 | **+ Adicionar novo contato** | Bloco **3. Contato responsável** | Abre a janela **Adicionar novo contato**. |
-| **Adicionar** | Janela **Adicionar novo contato** | Inclui o contato e já o seleciona. |
+| **Adicionar** | Janela **Adicionar novo contato** | Inclui o contato na tela e já o seleciona. Ao salvar a proposta, ele entra no cadastro do cliente. |
 | Botão de lápis (dica: "Editar") | No contato e no endereço, selecionado ou da lista | Abre a edição do contato ou do endereço. |
 | **Salvar** | Janela **Editar contato (Modo Local)** | Aplica a correção do contato na tela. |
 | Linha de **Outras opções de pagador** | Bloco **4. Dados para nota fiscal** | Troca o pagador. Em proposta com número, grava na hora. |
@@ -103,7 +103,9 @@ Enquanto o cliente não é escolhido numa proposta nova, os outros blocos e abas
 
 O nome do contato é o que aparece na proposta enviada ao cliente.
 
-O contato incluído ou corrigido aqui vale só para esta proposta: ele não entra no cadastro do cliente. Ao reabrir a proposta, esse contato aparece na lista com o nome gravado, sem cargo, WhatsApp e e-mail, e continua selecionado.
+Contato **novo**, incluído em **+ Adicionar novo contato**, entra no cadastro do cliente quando você salva a proposta, com nome, cargo, WhatsApp e e-mail, e a proposta passa a usar esse contato do cadastro. Se o cliente já tem um contato com o mesmo nome, WhatsApp ou e-mail, a proposta usa o que já existe e nada é criado nem alterado. Se a gravação no cadastro falhar, a proposta não é salva e aparece o aviso **Contato não gravado no cadastro**.
+
+Corrigir um contato que já é do cadastro (lápis) vale só para esta proposta: o cadastro do cliente não muda. Propostas antigas com contato que ficou só na proposta mostram esse contato na lista com o nome gravado, sem cargo, WhatsApp e e-mail, e ele continua selecionado.
 
 ### Definir quem paga e sai na nota (bloco 4. Dados para nota fiscal)
 
@@ -181,7 +183,7 @@ A escolha entre proposta avulsa e proposta com produtos do catálogo não fica n
 - Endereço de entrega x endereço fiscal: o de entrega é o escolhido no bloco 5 e é o destino do frete; o fiscal é o endereço principal do pagador, mostrado no bloco 4, e não se escolhe aqui.
 - **Cliente não cadastrado / orçamento rápido** x **Proposta avulsa**: o orçamento rápido é proposta sem cliente no cadastro; a avulsa é proposta sem produtos do catálogo, marcada na aba Orçamento. Uma coisa não depende da outra.
 - **Salvar endereço** x **Salvar alterações**: **Salvar endereço** só abre a janela do endereço selecionado; quem salva a proposta é **Salvar alterações**, no rodapé.
-- **Salvar** da janela de endereço x **Salvar** da janela de contato: o endereço grava na hora no cadastro do cliente; o contato corrigido fica na tela ("Modo Local") e o nome dele só vai para a proposta ao salvar. Nunca vai para o cadastro do cliente.
+- **Salvar** da janela de endereço x **Salvar** da janela de contato: o endereço grava na hora no cadastro do cliente; o contato do cadastro corrigido fica na tela ("Modo Local") e o nome dele só vai para a proposta ao salvar, sem mudar o cadastro; já o contato novo entra no cadastro ao salvar a proposta.
 - Trocar o pagador x trocar o endereço: trocar o pagador muda a lista de endereços disponíveis, mas não escolhe o endereço de entrega por você.
 - Vendedor da proposta x vendedor do cadastro: o campo **Vendedor** nasce com o vendedor padrão do cliente; só quem tem permissão grava um vendedor diferente.
 - **Empresa** x cliente: **Empresa** é quem vende (Ideal, Biro ou E3), não a empresa do cliente.
@@ -201,6 +203,7 @@ A escolha entre proposta avulsa e proposta com produtos do catálogo não fica n
 | **CEP não encontrado** | O CEP digitado não existe na consulta. | Confira o número ou preencha cidade e UF à mão. |
 | **Contato obrigatório** | Nenhum contato selecionado. | Selecione um contato ou adicione um novo. |
 | **Nome obrigatório** / **WhatsApp obrigatório** | Contato novo sem nome ou sem WhatsApp. | Preencha os dois campos. |
+| **Contato não gravado no cadastro** | O contato novo não pôde ser gravado no cadastro do cliente ao salvar (o motivo vem no aviso). | Nada foi salvo e o que você digitou continua na tela. Tente salvar de novo; se repetir, avise o suporte com o motivo. |
 | **Endereço obrigatório** | Nenhum endereço de entrega selecionado. | Selecione um endereço no bloco 5. |
 | **Endereço incompleto** — "Preencha CEP, logradouro, número, cidade e UF." | Faltou campo na janela de endereço. | Complete os campos pedidos. |
 | **Cliente obrigatório** — "Selecione o cliente da proposta antes de adicionar um novo endereço." | Tentativa de criar endereço sem cliente. | Escolha o cliente primeiro. |

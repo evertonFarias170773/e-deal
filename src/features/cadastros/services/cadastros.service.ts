@@ -839,6 +839,12 @@ export type CadastroRelatedCreateResult = {
   success: boolean;
   errorMessage?: string;
   status?: number;
+  /**
+   * Ids das linhas criadas, como texto. Só `createCadastroContatos` preenche:
+   * o salvar da proposta precisa do id do contato novo para gravar em
+   * `propostas.id_contato`.
+   */
+  ids?: string[];
 };
 
 export type VendedorOption = {
@@ -2110,7 +2116,7 @@ export async function createCadastroContatos(
     e_mail: toNullableText(item.e_mail)
   }));
 
-  const { error } = await client.from("contatos").insert(rows);
+  const { data, error } = await client.from("contatos").insert(rows).select("id");
   if (error) {
     return {
       success: false,
@@ -2119,7 +2125,7 @@ export async function createCadastroContatos(
     };
   }
 
-  return { success: true };
+  return { success: true, ids: (data ?? []).map((row) => String(row.id)) };
 }
 
 export async function createCadastroVinculosComerciais(

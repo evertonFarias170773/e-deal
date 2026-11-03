@@ -72,7 +72,8 @@ import {
 } from "@/features/orcamentos/orcamento-utils";
 import { bonusDaEdicao } from "@/features/orcamentos/lib/bonus-da-proposta";
 import { contatosDaEdicao } from "@/features/orcamentos/lib/contato-da-edicao";
-import { getCadastrosReadOnlyList, getCadastroCompleto } from "@/features/cadastros/services/cadastros.service";
+import { createCadastroContatos, getCadastrosReadOnlyList, getCadastroCompleto } from "@/features/cadastros/services/cadastros.service";
+import { gravarContatoNovoNoCadastro, type DependenciasContatoNovo } from "@/features/orcamentos/lib/contato-novo-no-cadastro";
 import { listProdutos } from "@/features/produtos/services/produtos.service";
 import { listProdutoVariacaoVinculos } from "@/features/produtos/services/produto-variacoes.service";
 import { idEmpresaDoPdf } from "@/features/orcamentos/lib/empresa-pdf";
@@ -2888,6 +2889,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
       cargo: contactDraft.cargo.trim(),
       email: contactDraft.email.trim()
     };
+    contatosNovosRef.current.add(contact.id);
     setProposalContacts((current) => [...current, contact]);
     updateField("contatoId", contact.id);
     setContactDraft({ nome: "", cargo: "", whatsapp: "", email: "" });
@@ -2895,8 +2897,106 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     showToast({
       type: "success",
       title: "Contato adicionado à proposta.",
-      description: "Clique em Salvar alterações para gravar. Ele fica só nesta proposta e não entra no cadastro do cliente."
+      description: "Clique em Salvar alterações para gravar. Ao salvar, ele também entra no cadastro do cliente."
     });
+  }
+
+  /**
+   * Contatos NOVOS desta tela (criados em "+ Adicionar novo contato" e ainda não
+   * gravados). Só eles vão para o cadastro no salvar — ver
+   * `lib/contato-novo-no-cadastro`. Contato do cadastro, ou o gravado só na
+   * proposta antiga (`contatosDaEdicao`), nunca entra aqui.
+   */
+  const contatosNovosRef = useRef<Set<string>>(new Set());
+
+  const dependenciasContatoNovo: DependenciasContatoNovo = {
+    listar: async (idCliente) => {
+      const client = getSupabaseClient();
+      if (!client) return { ok: false, motivo: "Conexão com o banco indisponível." };
+      const { data, error } = await client
+        .from("contatos")
+        .select("id,nome_contato,cargo,whats,e_mail")
+        .eq("id_cliente", idCliente)
+        .limit(1000);
+      if (error) return { ok: false, motivo: `Não foi possível ler os contatos do cliente: ${error.message}` };
+      return { ok: true, contatos: data ?? [] };
+    },
+    criar: async (idCliente, contato) => {
+      const r = await createCadastroContatos([
+        {
+          id_cliente: idCliente,
+          nome_contato: contato.nome.trim(),
+          cargo: contato.cargo.trim() || null,
+          whats: contato.whatsapp.trim() || null,
+          e_mail: contato.email.trim() || null
+        }
+      ]);
+      const id = r.ids?.[0];
+      if (!r.success || !id) return { ok: false, motivo: r.errorMessage || "O cadastro não devolveu o contato criado." };
+      return { ok: true, id };
+    }
+  };
+
+  /**
+   * Grava no cadastro os contatos novos da tela e troca, na lista e no
+   * formulário, o id provisório pelo id real. Devolve as trocas para o
+   * salvar montar `id_contato`/`contato` com o contato real.
+   */
+  async function gravarContatosNovosDaTela(): Promise<
+    { ok: true; trocas: Map<string, CadastroContato> } | { ok: false; motivo: string }
+  > {
+    const idCliente = Number(form.clienteId);
+    const trocas = new Map<string, CadastroContato>();
+    let falha: string | null = null;
+
+    for (const idLocal of Array.from(contatosNovosRef.current)) {
+      const local = proposalContacts.find((c) => c.id === idLocal);
+      if (!local) {
+        contatosNovosRef.current.delete(idLocal);
+        continue;
+      }
+      const r = await gravarContatoNovoNoCadastro(
+        idCliente,
+        { nome: local.nome, cargo: local.cargo ?? "", whatsapp: local.whatsapp ?? "", email: local.email ?? "" },
+        dependenciasContatoNovo
+      );
+      if (!r.ok) {
+        falha = `${local.nome}: ${r.motivo}`;
+        break;
+      }
+      // Achou um igual no cadastro: a proposta passa a apontar para ele, como
+      // ele está gravado (o cadastro não é alterado).
+      const real: CadastroContato = r.existente
+        ? {
+            id: r.id,
+            nome: String(r.existente.nome_contato ?? "").trim(),
+            cargo: String(r.existente.cargo ?? ""),
+            whatsapp: String(r.existente.whats ?? ""),
+            email: String(r.existente.e_mail ?? "")
+          }
+        : { ...local, id: r.id };
+      trocas.set(idLocal, real);
+      contatosNovosRef.current.delete(idLocal);
+    }
+
+    // Aplica o que já gravou mesmo se um contato seguinte falhou: assim o
+    // próximo salvar não cria de novo o que já está no cadastro.
+    if (trocas.size > 0) {
+      setProposalContacts((current) => {
+        const resultado: CadastroContato[] = [];
+        for (const c of current) {
+          const real = trocas.get(c.id) ?? c;
+          if (!resultado.some((r) => r.id === real.id)) resultado.push(real);
+        }
+        return resultado;
+      });
+      setForm((current) => {
+        const real = trocas.get(current.contatoId);
+        return real ? { ...current, contatoId: real.id } : current;
+      });
+    }
+
+    return falha ? { ok: false, motivo: falha } : { ok: true, trocas };
   }
 
   function openEditContact(contato: CadastroContato) {
@@ -2928,11 +3028,14 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
       current.map((c) => (c.id === editingContactId ? { ...c, ...editContactDraft, nome, whatsapp } : c))
     );
 
+    const ehContatoNovo = editingContactId !== null && contatosNovosRef.current.has(editingContactId);
     setEditingContactId(null);
     showToast({
       type: "success",
       title: "Contato alterado na proposta.",
-      description: "Clique em Salvar alterações para gravar. A alteração vale só para esta proposta; o cadastro do cliente não muda."
+      description: ehContatoNovo
+        ? "Clique em Salvar alterações para gravar. Ao salvar, o contato entra no cadastro do cliente com estes dados."
+        : "Clique em Salvar alterações para gravar. A alteração vale só para esta proposta; o cadastro do cliente não muda."
     });
   }
 
@@ -5104,6 +5207,30 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     // gravar (só aviso). As notas vêm do banco, pela rota do servidor.
     if (!(await confirmarSeNotaDivergente())) {
       return;
+    }
+
+    // Contato NOVO criado na proposta entra no cadastro do cliente antes da
+    // gravação, e a proposta grava o id real (lib/contato-novo-no-cadastro).
+    // Fica depois das confirmações acima: desistir de um modal não cria nada.
+    // Com o formulário travado por cobrança o salvar é parcial e não grava o
+    // contato da proposta — então também não cria no cadastro.
+    if (!form.clienteNaoCadastrado && !isFormBloqueadoPorCobranca && contatosNovosRef.current.size > 0) {
+      setIsSaving(true);
+      const gravados = await gravarContatosNovosDaTela();
+      setIsSaving(false);
+      if (!gravados.ok) {
+        showToast({
+          type: "error",
+          title: "Contato não gravado no cadastro",
+          description: `${gravados.motivo} A proposta não foi salva e o que você digitou continua na tela.`
+        });
+        return;
+      }
+      const real = gravados.trocas.get(formToSave.contatoId);
+      if (real) {
+        formToSave.contatoId = real.id;
+        formToSave.contatoNome = real.nome.trim();
+      }
     }
 
     setIsSaving(true);
