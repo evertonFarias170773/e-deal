@@ -103,6 +103,8 @@ Enquanto o cliente não é escolhido numa proposta nova, os outros blocos e abas
 
 O nome do contato é o que aparece na proposta enviada ao cliente.
 
+O contato incluído ou corrigido aqui vale só para esta proposta: ele não entra no cadastro do cliente. Ao reabrir a proposta, esse contato aparece na lista com o nome gravado, sem cargo, WhatsApp e e-mail, e continua selecionado.
+
 ### Definir quem paga e sai na nota (bloco 4. Dados para nota fiscal)
 
 1. O painel **Pagador selecionado** começa com o próprio cliente (**Cadastro principal**). Ele mostra CNPJ ou CPF, inscrição estadual, contribuinte, e-mail e o endereço fiscal do pagador.
@@ -179,7 +181,7 @@ A escolha entre proposta avulsa e proposta com produtos do catálogo não fica n
 - Endereço de entrega x endereço fiscal: o de entrega é o escolhido no bloco 5 e é o destino do frete; o fiscal é o endereço principal do pagador, mostrado no bloco 4, e não se escolhe aqui.
 - **Cliente não cadastrado / orçamento rápido** x **Proposta avulsa**: o orçamento rápido é proposta sem cliente no cadastro; a avulsa é proposta sem produtos do catálogo, marcada na aba Orçamento. Uma coisa não depende da outra.
 - **Salvar endereço** x **Salvar alterações**: **Salvar endereço** só abre a janela do endereço selecionado; quem salva a proposta é **Salvar alterações**, no rodapé.
-- **Salvar** da janela de endereço x **Salvar** da janela de contato: o endereço grava na hora no cadastro do cliente; o contato corrigido fica na tela ("Modo Local") e o nome dele só vai para a proposta ao salvar.
+- **Salvar** da janela de endereço x **Salvar** da janela de contato: o endereço grava na hora no cadastro do cliente; o contato corrigido fica na tela ("Modo Local") e o nome dele só vai para a proposta ao salvar. Nunca vai para o cadastro do cliente.
 - Trocar o pagador x trocar o endereço: trocar o pagador muda a lista de endereços disponíveis, mas não escolhe o endereço de entrega por você.
 - Vendedor da proposta x vendedor do cadastro: o campo **Vendedor** nasce com o vendedor padrão do cliente; só quem tem permissão grava um vendedor diferente.
 - **Empresa** x cliente: **Empresa** é quem vende (Ideal, Biro ou E3), não a empresa do cliente.

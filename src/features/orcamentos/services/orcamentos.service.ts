@@ -2387,6 +2387,10 @@ export async function getPropostaDetailById(idInt: number, overrideClient?: Supa
       bonusTabelaEspecial,
       pagamentoConfirmado,
       contato: contact,
+      contatoGravado: {
+        id: proposalRow.id_contato != null ? String(proposalRow.id_contato) : null,
+        nome: proposalRow.contato != null ? String(proposalRow.contato) : ""
+      },
       enderecoEntrega: address,
       compradorAutorizado: undefined,
       empresa: proposalRow.empresa || "Ideal Grafica",

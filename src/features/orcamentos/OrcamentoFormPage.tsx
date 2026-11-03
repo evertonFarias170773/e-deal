@@ -71,6 +71,7 @@ import {
   sortEnderecosPorPrioridade
 } from "@/features/orcamentos/orcamento-utils";
 import { bonusDaEdicao } from "@/features/orcamentos/lib/bonus-da-proposta";
+import { contatosDaEdicao } from "@/features/orcamentos/lib/contato-da-edicao";
 import { getCadastrosReadOnlyList, getCadastroCompleto } from "@/features/cadastros/services/cadastros.service";
 import { listProdutos } from "@/features/produtos/services/produtos.service";
 import { listProdutoVariacaoVinculos } from "@/features/produtos/services/produto-variacoes.service";
@@ -713,7 +714,11 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
   }, [proposta?.id_int]); // Executa apenas no carregamento da proposta
 
 
-  const [proposalContacts, setProposalContacts] = useState<CadastroContato[]>(() => proposta?.cliente.contatos ?? []);
+  // Inclui o contato gravado na proposta quando ele não é do cadastro — ver
+  // `contatosDaEdicao`. O `contatoId` inicial (createInitialState) usa a mesma regra.
+  const [proposalContacts, setProposalContacts] = useState<CadastroContato[]>(() =>
+    proposta ? contatosDaEdicao(proposta.cliente.contatos ?? [], proposta.contato?.id ?? "", proposta.contatoGravado, proposta.id_int).contatos : []
+  );
   const [proposalAddresses, setProposalAddresses] = useState<CadastroEndereco[]>(() => {
     if (proposta?.cliente?.enderecos && proposta.cliente.enderecos.length > 0) return proposta.cliente.enderecos;
     return [];
@@ -2887,7 +2892,11 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     updateField("contatoId", contact.id);
     setContactDraft({ nome: "", cargo: "", whatsapp: "", email: "" });
     setIsContactModalOpen(false);
-    showToast({ type: "success", title: "Contato adicionado à proposta." });
+    showToast({
+      type: "success",
+      title: "Contato adicionado à proposta.",
+      description: "Clique em Salvar alterações para gravar. Ele fica só nesta proposta e não entra no cadastro do cliente."
+    });
   }
 
   function openEditContact(contato: CadastroContato) {
@@ -2920,7 +2929,11 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     );
 
     setEditingContactId(null);
-    showToast({ type: "success", title: "Contato atualizado com sucesso (Modo Local)" });
+    showToast({
+      type: "success",
+      title: "Contato alterado na proposta.",
+      description: "Clique em Salvar alterações para gravar. A alteração vale só para esta proposta; o cadastro do cliente não muda."
+    });
   }
 
   async function addAddress() {
@@ -9852,7 +9865,11 @@ function createInitialState(proposta?: Proposta): PropostaFormState {
     vendedor: proposta?.vendedor ?? (cliente ? getClienteVendedorPadrao(cliente) : ""),
     status: proposta?.status ?? "NOVO",
     clienteId: clienteNaoCadastrado ? "" : (cliente ? cliente.idCliente.toString() : ""),
-    contatoId: clienteNaoCadastrado ? "" : (proposta?.contato.id ?? cliente?.contatos[0]?.id ?? ""),
+    contatoId: clienteNaoCadastrado
+      ? ""
+      : proposta
+        ? contatosDaEdicao(proposta.cliente.contatos ?? [], proposta.contato?.id ?? "", proposta.contatoGravado, proposta.id_int).contatoId
+        : (cliente?.contatos[0]?.id ?? ""),
     enderecoId: clienteNaoCadastrado ? "" : (endereco?.id ?? (
       cliente?.enderecos?.find(e => e.tipo === "entrega")?.id || 
       cliente?.enderecos?.find(e => e.tipo === "principal")?.id || 

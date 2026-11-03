@@ -186,6 +186,13 @@ export type Proposta = {
   pagamentoConfirmado?: boolean;
   compradorAutorizado?: CadastroVinculoComercial;
   contato: CadastroContato;
+  /**
+   * `propostas.contato` e `propostas.id_contato` como gravados. `contato` acima
+   * é o do cadastro achado pelo nome (ou o primeiro, sem achar); este campo
+   * existe para a edição não trocar o gravado por esse outro. Ver
+   * `lib/contato-da-edicao.ts`.
+   */
+  contatoGravado?: { id: string | null; nome: string } | null;
   enderecoEntrega: CadastroEndereco;
   empresa: string;
   vendedor: string;
