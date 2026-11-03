@@ -10,6 +10,8 @@ import {
 import { idEnderecoEntregaVigente } from "@/features/expedicao/lib/endereco-entrega";
 import { criarPrepostagem, correiosConfigurado } from "@/lib/correios/cws";
 import { resolverEmpresaRemetente } from "@/lib/correios/empresa-remetente";
+import { COLUNAS_NOTA_DA_PREPOSTAGEM, notaParaPrepostagem } from "@/lib/correios/nota-da-prepostagem";
+import type { NotaCandidata } from "@/lib/fiscal/nota-do-pedido";
 import { resolverPesoExpedicao } from "@/features/expedicao/lib/peso";
 import { telefoneDestinatario } from "@/features/expedicao/lib/telefone-destinatario";
 import {
@@ -79,7 +81,7 @@ export async function POST(request: Request) {
     .maybeSingle();
   if (!proposta) return NextResponse.json({ success: false, message: "Pedido não encontrado." }, { status: 404 });
 
-  const [{ data: exp }, { data: frete }, { data: itensPedido }] = await Promise.all([
+  const [{ data: exp }, { data: frete }, { data: itensPedido }, { data: notasDoPedido, error: notasErr }] = await Promise.all([
     supabase
       .from("expedicoes")
       .select(
@@ -99,6 +101,11 @@ export async function POST(request: Request) {
     supabase
       .from("produtos_proposta")
       .select("nome_produto, modelo_descri, qtd, valor_unt, valor_sub_total")
+      .eq("id_int", idInt),
+    // NF-e para os Correios (03/11/2026): mesma escolha da Expedição; sem nota, nada muda.
+    supabase
+      .from("notas_fiscais")
+      .select(COLUNAS_NOTA_DA_PREPOSTAGEM)
       .eq("id_int", idInt)
   ]);
 
@@ -316,6 +323,12 @@ export async function POST(request: Request) {
     })
     .filter((item): item is { conteudo: string; quantidade: string; valor: string } => item !== null);
 
+  // NF-e AUTORIZADA do pedido (03/11/2026): desde 01/11/2026 os Correios exigem
+  // NF-e. Vão a chave (44 dígitos) e o número; a declaração continua indo. Sem
+  // nota, ou com a leitura falhando, a pré-postagem sai como antes.
+  if (notasErr) console.warn("[correios/prepostagem] Falha ao ler a NF-e do pedido; segue sem nota:", notasErr.message);
+  const notaFiscal = notasErr ? null : notaParaPrepostagem(notasDoPedido as Array<NotaCandidata & { chave_nfe?: string | null }> | null);
+
   try {
     const resultado = await criarPrepostagem({
       servico,
@@ -375,7 +388,8 @@ export async function POST(request: Request) {
         // o id. Esta regra vale para prepostagem gerada daqui em diante.
         telefone: telefoneDestinatario(cliente?.whatsapp_1, cliente?.telefone_fixo)
       },
-      itensDeclaracao
+      itensDeclaracao,
+      notaFiscal
     });
 
     // Grava na expedição e espelha o rastreio na OS (tolerante a falha no espelho).

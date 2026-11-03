@@ -1132,6 +1132,7 @@ A primeira versão de `src/lib/correios/cws.ts` foi escrita sem acesso ao Swagge
 | `numeroCartaoPostagem` / `numeroContrato` | ausentes | **presentes** (contrato só quando cadastrado) |
 | `solicitarColeta` | ausente | **`"N"`** |
 | `modalidadePagamento` | presente | **removido** — não existia no payload aprovado, e campo extra é candidato a 400 |
+| `chaveNFe` / `numeroNotaFiscal` | ausentes | **desde 03/11/2026**, só com NF-e de venda autorizada (`escolherNotaAutorizadaDoPedido`): chave sem o prefixo "NFe" (44 dígitos) e número. Sem nota, o corpo é idêntico ao anterior. Nomes de fonte pública não oficial, ainda não exercidos contra a API: a primeira prepostagem com nota é a prova. Regra em `src/lib/correios/nota-da-prepostagem.ts`; montagem em `montarPayloadPrepostagem` (teste `scripts/testes/prepostagem-nfe.test.mts`) |
 
 Limitações que continuam valendo:
 

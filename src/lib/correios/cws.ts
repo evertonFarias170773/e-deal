@@ -204,21 +204,27 @@ export type CwsPrepostagemInput = {
   };
   /** Declaração de conteúdo. Sem itens, vai um genérico de material gráfico. */
   itensDeclaracao?: Array<{ conteudo: string; quantidade: string; valor: string }>;
+  /**
+   * NF-e de venda autorizada do pedido (03/11/2026), quando existe. Desde
+   * 01/11/2026 os Correios exigem NF-e para postar. Sem nota, nada muda no
+   * payload. Montar com `notaParaPrepostagem` (lib/correios/nota-da-prepostagem).
+   */
+  notaFiscal?: { chave: string; numero: string } | null;
 };
 
-export async function criarPrepostagem(
-  input: CwsPrepostagemInput
-): Promise<{ id: string; codigoObjeto: string }> {
-  const cfg = lerConfigCorreios(input.idEmpresa);
-  if (!cfg) {
-    throw new CorreiosApiError(
-      500,
-      `Credenciais dos Correios não configuradas para a empresa ${input.idEmpresa ?? "(padrão)"}.`
-    );
-  }
-  const token = await obterToken(cfg);
-
-  const payload = {
+/**
+ * O corpo do POST /prepostagens, sem rede (03/11/2026: separado para o teste do
+ * payload). Sem `notaFiscal`, sai exatamente o corpo de antes.
+ *
+ * Com nota, vão `chaveNFe` (44 dígitos) e `numeroNotaFiscal`, e a declaração
+ * continua indo. Os nomes dos dois campos vêm de fonte pública não oficial
+ * (o Swagger dos Correios exige login); nada no repositório os contradiz.
+ */
+export function montarPayloadPrepostagem(
+  input: CwsPrepostagemInput,
+  cfg: Pick<CwsConfig, "servicoSedex" | "servicoPac" | "cartaoPostagem" | "contrato">
+): Record<string, unknown> {
+  return {
     codigoServico: input.servico === "SEDEX" ? cfg.servicoSedex : cfg.servicoPac,
     remetente: {
       nome: input.remetente.nome,
@@ -259,8 +265,25 @@ export async function criarPrepostagem(
     comprimentoInformado: String(Math.max(1, Math.round(input.comprimentoCm))),
     itensDeclaracaoConteudo: input.itensDeclaracao?.length
       ? input.itensDeclaracao
-      : [{ conteudo: "Material grafico", quantidade: "1", valor: "0.00" }]
+      : [{ conteudo: "Material grafico", quantidade: "1", valor: "0.00" }],
+    // Por último, para o corpo sem nota ficar idêntico ao de antes.
+    ...(input.notaFiscal ? { chaveNFe: input.notaFiscal.chave, numeroNotaFiscal: input.notaFiscal.numero } : {})
   };
+}
+
+export async function criarPrepostagem(
+  input: CwsPrepostagemInput
+): Promise<{ id: string; codigoObjeto: string }> {
+  const cfg = lerConfigCorreios(input.idEmpresa);
+  if (!cfg) {
+    throw new CorreiosApiError(
+      500,
+      `Credenciais dos Correios não configuradas para a empresa ${input.idEmpresa ?? "(padrão)"}.`
+    );
+  }
+  const token = await obterToken(cfg);
+
+  const payload = montarPayloadPrepostagem(input, cfg);
 
   const response = await fetch(`${cfg.base}/prepostagem/v1/prepostagens`, {
     method: "POST",
