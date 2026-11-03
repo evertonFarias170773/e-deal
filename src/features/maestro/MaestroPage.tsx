@@ -9,6 +9,7 @@ import { MaestroConversasSidebar } from './components/chat/MaestroConversasSideb
 import type { ConversaResumo } from './core/conversation/conversation.manager.simple';
 import { MOCK_SUGGESTIONS } from './mocks/maestro.mock';
 import { MaestroProvider } from './providers/maestro.provider';
+import { posicoesComImagemAtiva } from './core/simple/maestro-imagem';
 import { Plus } from 'lucide-react';
 
 export type PanelMode = 'expanded' | 'compact' | 'hidden';
@@ -58,6 +59,11 @@ function MaestroLayout() {
   // tem 1 mensagem e precisa aparecer, não ficar atrás das sugestões
   const showSuggestions = messages.length === 0 && !isLoading;
 
+  // Quais prints da conversa ainda viajam junto das perguntas novas. Mesma
+  // regra que o envio usa (janela de 2 turnos), para a bolha não prometer o
+  // que o Maestro não vê mais.
+  const imagensAtivas = posicoesComImagemAtiva(messages.map(m => m.role === 'user'));
+
   return (
     // Ocupa toda a largura disponível dentro do main do AppLayout
     // -m-4 lg:-m-6 cancela o padding do <main> do AppLayout para encostar nas bordas
@@ -100,8 +106,13 @@ function MaestroLayout() {
               />
             ) : (
               <div className="max-w-4xl mx-auto px-4 sm:px-6 py-4">
-                {messages.map(msg => (
-                  <MaestroMessage key={msg.id} message={msg} onSend={sendMessage} />
+                {messages.map((msg, i) => (
+                  <MaestroMessage
+                    key={msg.id}
+                    message={msg}
+                    onSend={sendMessage}
+                    imagemAtiva={msg.imagem ? imagensAtivas.has(i) : undefined}
+                  />
                 ))}
                 {isLoading && !messages.some(m => m.status === 'thinking' || m.status === 'streaming') && (
                   <MaestroLoadingBubble />

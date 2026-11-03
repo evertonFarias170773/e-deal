@@ -57,6 +57,29 @@ export const MAX_LADO_IMAGEM_PX = 1600;
  */
 export const MAX_TURNOS_COM_IMAGEM = 2;
 
+/**
+ * Quais turnos ainda levam o print, dada a sequência de turnos da conversa.
+ *
+ * Regra única da janela, usada por todos os lados para não divergirem: o
+ * navegador decide o que reenviar, o servidor confere, e a bolha da conversa
+ * decide se avisa que o Maestro não olha mais aquela imagem. Vale a IDADE —
+ * os MAX_TURNOS_COM_IMAGEM turnos de usuário mais recentes, tendo imagem ou
+ * não — e não a contagem de imagens.
+ *
+ * `ehDeUsuario[i]` diz se o turno na posição i é do usuário. Devolve as
+ * posições cuja imagem continua valendo.
+ */
+export function posicoesComImagemAtiva(ehDeUsuario: readonly boolean[]): Set<number> {
+  const vivas = new Set<number>();
+  let turnosDeUsuario = 0;
+  for (let i = ehDeUsuario.length - 1; i >= 0; i--) {
+    if (!ehDeUsuario[i]) continue;
+    turnosDeUsuario++;
+    if (turnosDeUsuario <= MAX_TURNOS_COM_IMAGEM) vivas.add(i);
+  }
+  return vivas;
+}
+
 /** Assinatura dos primeiros bytes de cada tipo aceito. */
 const ASSINATURAS: Record<string, readonly number[][]> = {
   'image/png': [[0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]],

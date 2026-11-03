@@ -25,7 +25,7 @@ import { MaestroContext } from '../../context/maestro.context';
 import { MOCK_WELCOME_MESSAGES, MOCK_INITIAL_CONTEXT } from '../../mocks/maestro.mock';
 import { getSupabaseClient } from '@/lib/supabase/client';
 import type { ActivityStep, ConversationContext, ConversationMessage } from '../../types';
-import { MAX_TURNOS_COM_IMAGEM, type ImagemDoTurno } from '../simple/maestro-imagem';
+import { posicoesComImagemAtiva, type ImagemDoTurno } from '../simple/maestro-imagem';
 
 // ─── Flag: motor simples por padrão ──────────────────────────────────────
 export const MAESTRO_ENGINE: 'simple' | 'legacy' = 'simple';
@@ -81,16 +81,13 @@ export function useConversationManagerSimple() {
         ...(m.role === 'user' && m.imagem ? { imagem: m.imagem } : {}),
       }));
 
-    // Janela por IDADE: só os 2 turnos de usuário mais recentes do histórico
-    // levam imagem. Como o histórico são os turnos ANTERIORES a esta pergunta,
-    // um print é reenviado nas 2 perguntas seguintes à que o trouxe, e para.
-    let turnosDeUsuario = 0;
-    for (let i = turnos.length - 1; i >= 0; i--) {
-      const t = turnos[i] as { role: string; imagem?: ImagemDoTurno };
-      if (t.role !== 'user') continue;
-      turnosDeUsuario++;
-      if (turnosDeUsuario > MAX_TURNOS_COM_IMAGEM) delete t.imagem;
-    }
+    // Janela por IDADE (regra única em posicoesComImagemAtiva): como o
+    // histórico são os turnos ANTERIORES a esta pergunta, um print é reenviado
+    // nas 2 perguntas seguintes à que o trouxe, e para.
+    const vivas = posicoesComImagemAtiva(turnos.map(t => t.role === 'user'));
+    turnos.forEach((t, i) => {
+      if (!vivas.has(i)) delete (t as { imagem?: ImagemDoTurno }).imagem;
+    });
     return turnos;
   };
 

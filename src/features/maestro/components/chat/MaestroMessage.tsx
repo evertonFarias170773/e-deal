@@ -2,6 +2,7 @@
 import { Bot, User } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import type { ConversationMessage } from '../../types';
+import { dataUrlDaImagem } from '../../core/simple/maestro-imagem';
 import { MaestroTableRenderer } from '../renderers/MaestroTableRenderer';
 import { MaestroCardRenderer } from '../renderers/MaestroCardRenderer';
 import { MaestroMessageRenderer } from '../renderers/MaestroMessageRenderer';
@@ -9,6 +10,15 @@ import { MaestroMessageRenderer } from '../renderers/MaestroMessageRenderer';
 interface Props {
   message: ConversationMessage;
   onSend?: (text: string) => void;
+  /**
+   * O print desta mensagem ainda viaja junto das perguntas novas?
+   *
+   * Quem decide é a janela de 2 turnos (posicoesComImagemAtiva), calculada em
+   * MaestroPage sobre a conversa inteira. `false` → a bolha avisa que o
+   * Maestro não olha mais aquela imagem. Ausente = sem aviso (mensagem
+   * restaurada do histórico, por exemplo, que nunca teve imagem).
+   */
+  imagemAtiva?: boolean;
 }
 
 function escapeHtml(text: string): string {
@@ -38,7 +48,7 @@ function parseContent(text: string): string {
     .replace(/\*(.*?)\*/g, '<em>$1</em>');
 }
 
-export function MaestroMessage({ message, onSend }: Props) {
+export function MaestroMessage({ message, onSend, imagemAtiva }: Props) {
   const router = useRouter();
   const isUser = message.role === 'user';
 
@@ -61,6 +71,23 @@ export function MaestroMessage({ message, onSend }: Props) {
             className="rounded-2xl rounded-tr-sm px-4 py-3 text-sm leading-relaxed shadow-sm"
             style={{ background: 'var(--primary)', color: 'var(--primary-foreground)' }}
           >
+            {/* Print enviado com a pergunta. Vem da memória da aba (a imagem
+                não é gravada em lugar nenhum): recarregar a página perde. */}
+            {message.imagem && (
+              <div className="mb-2">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={dataUrlDaImagem(message.imagem)}
+                  alt="Print enviado com a pergunta"
+                  className="max-h-48 w-auto max-w-full rounded-xl border border-white/25"
+                />
+                {imagemAtiva === false && (
+                  <p className="mt-1.5 text-[11px] leading-snug opacity-70">
+                    O Maestro não considera mais esta imagem nas respostas novas. Anexe de novo se precisar.
+                  </p>
+                )}
+              </div>
+            )}
             {message.content}
           </div>
           <div

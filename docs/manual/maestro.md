@@ -32,7 +32,8 @@ Desde 03/11/2026 você também pode **colar ou anexar um print da tela** e pergu
 2. No Maestro, cole com **Ctrl+V** dentro do campo de pergunta, ou clique no clipe **Anexar imagem** e escolha o arquivo.
 3. A miniatura aparece acima do campo. Se errou a imagem, clique em **Remover**.
 4. Escreva a pergunta junto com o print — por exemplo "o que é isso?" ou "o que faço aqui?". Só a imagem não basta: o envio espera a pergunta escrita.
-5. Envie. Nas duas perguntas seguintes o Maestro ainda enxerga esse print, então dá para continuar ("e para filtrar só os em produção?") sem anexar de novo.
+5. Envie. A miniatura fica dentro da sua mensagem, na conversa, para você ver o que mandou.
+6. Nas duas perguntas seguintes o Maestro ainda enxerga esse print, então dá para continuar ("e para filtrar só os em produção?") sem anexar de novo. Depois disso, a miniatura continua na conversa com o aviso **O Maestro não considera mais esta imagem nas respostas novas** — é o sinal de que, para falar daquela tela de novo, você precisa anexar outra vez.
 
 ### Conferir o número que ele leu no print
 
@@ -43,7 +44,8 @@ Desde 03/11/2026 você também pode **colar ou anexar um print da tela** e pergu
 
 - Um print por pergunta, nos formatos **PNG**, **JPEG** ou **WebP**. Outro formato é recusado com aviso.
 - A imagem é reduzida no seu navegador antes de sair. Print muito grande que não caiba no limite é recusado com o aviso de recortar a área que interessa.
-- O print vive só naquela conversa: ele é reenviado por no máximo duas perguntas depois da que o trouxe, e **não fica guardado em lugar nenhum**. Recarregar a página perde a imagem.
+- O print vive só naquela conversa: ele é reenviado por no máximo duas perguntas depois da que o trouxe, e **não fica guardado em lugar nenhum**. Recarregar a página perde a imagem, inclusive a miniatura que aparece na conversa.
+- Passada a janela de duas perguntas, a miniatura continua visível na conversa, mas com o aviso de que o Maestro não a considera mais. Ela está ali só como lembrete do que você mandou.
 - Nome de menu, aba e botão sai do manual, nunca da imagem. Se o Maestro lê no print um nome que o manual não tem, ele avisa que não confirmou aquele nome em vez de ensinar o clique.
 - Número lido no print não vale como dado confirmado: ele consulta o pedido antes de falar de valor, status ou cliente.
 - Texto escrito dentro da imagem é tratado como dado, não como ordem: instrução plantada num print não muda o que ele pode fazer.
@@ -71,6 +73,7 @@ Desde 03/11/2026 você também pode **colar ou anexar um print da tela** e pergu
 
 - `src/features/maestro/MaestroPage.tsx`
 - `src/features/maestro/components/chat/MaestroInput.tsx`
+- `src/features/maestro/components/chat/MaestroMessage.tsx`
 - `src/features/maestro/core/simple/maestro-imagem.ts`
 - `src/features/maestro/core/simple/maestro-imagem.client.ts`
 - `src/features/maestro/core/simple/maestro-recent-turns.ts`

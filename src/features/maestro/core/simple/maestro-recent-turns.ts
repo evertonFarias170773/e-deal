@@ -23,7 +23,7 @@
  * `content`.
  */
 
-import { MAX_TURNOS_COM_IMAGEM, validarImagemDoTurno, type ImagemDoTurno } from './maestro-imagem';
+import { posicoesComImagemAtiva, validarImagemDoTurno, type ImagemDoTurno } from './maestro-imagem';
 
 export interface RecentTurn {
   role: 'user' | 'assistant';
@@ -113,15 +113,12 @@ export function sanitizeRecentTurns(raw: unknown): RecentTurn[] {
  * navegador aplica o mesmo corte, mas quem garante é o servidor.
  */
 export function limitarTurnosComImagem(turns: RecentTurn[]): RecentTurn[] {
-  let turnosDeUsuario = 0;
-  const invertido = [...turns].reverse().map(t => {
-    if (t.role !== 'user') return t;
-    turnosDeUsuario++;
-    if (turnosDeUsuario <= MAX_TURNOS_COM_IMAGEM || !t.imagem) return t;
+  const vivas = posicoesComImagemAtiva(turns.map(t => t.role === 'user'));
+  return turns.map((t, i) => {
+    if (!t.imagem || vivas.has(i)) return t;
     const { imagem: _fora, ...semImagem } = t;
     return semImagem as RecentTurn;
   });
-  return invertido.reverse();
 }
 
 /**
