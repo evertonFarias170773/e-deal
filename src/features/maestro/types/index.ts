@@ -1,3 +1,5 @@
+import type { ImagemDoTurno } from '../core/simple/maestro-imagem';
+
 export type MessageRole = 'user' | 'maestro' | 'system';
 
 export type MessageContentType =
@@ -64,6 +66,14 @@ export interface ConversationMessage {
   responseMetadata?: ResponseMetadata;
   /** Botões de ação inline exibidos abaixo da mensagem */
   actions?: MaestroAction[];
+  /**
+   * Print que o usuário anexou neste turno (só em role 'user').
+   *
+   * Vive apenas na memória da aba: é o que permite reenviar a imagem nas
+   * perguntas seguintes (janela de 2 turnos). Não é persistido em
+   * maestro_mensagens nem em bucket — recarregar a página perde a imagem.
+   */
+  imagem?: ImagemDoTurno;
 }
 
 

@@ -25,6 +25,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 import { processSimpleQueryWithBrain } from '../../../../features/maestro/core/simple/maestro-simple-engine';
 import { sanitizeRecentTurns } from '../../../../features/maestro/core/simple/maestro-recent-turns';
+import { MOTIVO_DA_RECUSA, validarImagemDoTurno } from '../../../../features/maestro/core/simple/maestro-imagem';
 import { persistirTurnoMaestro } from '../../../../features/maestro/core/simple/maestro-persistence.server';
 import { deserializeV2Context } from '../../../../features/maestro/core/simple/maestro-v2-context-manager';
 import { deveUsarAgentLoop } from '../../../../features/maestro/core/agent/maestro-agent-config';
@@ -37,6 +38,10 @@ import {
   RESPOSTA_USUARIO_NAO_IDENTIFICADO,
 } from '../../../../features/maestro/core/agent/maestro-agent-escopo.server';
 import type { ConversationContext } from '../../../../features/maestro/types';
+
+/** Dito quando o turno foi respondido por um caminho que não lê imagem. */
+const AVISO_IMAGEM_NAO_LIDA =
+  'Sobre a imagem: não consegui olhar o print neste momento. Me descreva em palavras o que aparece na tela, ou o nome da tela, que eu procuro no manual.';
 
 export async function POST(request: NextRequest) {
   // ── 1. Lê o token do header Authorization ─────────────────────────────────
@@ -77,7 +82,7 @@ export async function POST(request: NextRequest) {
   registrarUsuarioDoMaestro(supabase, user.id);
 
   // ── 4. Leitura do payload ──────────────────────────────────────────────────
-  let body: { query?: unknown; context?: unknown; recentMessages?: unknown };
+  let body: { query?: unknown; context?: unknown; recentMessages?: unknown; imagem?: unknown };
   try {
     body = await request.json();
   } catch {
@@ -97,6 +102,16 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // ── 4b. Print de tela (campo OPCIONAL) ────────────────────────────────────
+  //    Tipo, assinatura e tamanho conferidos AQUI, no servidor: o navegador
+  //    reduz antes de enviar, mas quem decide é a rota. Imagem recusada vira
+  //    400 com motivo — é o usuário que precisa saber, não um descarte mudo.
+  //    A imagem só segue para o modelo; nada a grava.
+  const { imagem, recusa } = validarImagemDoTurno(body.imagem);
+  if (recusa) {
+    return NextResponse.json({ error: MOTIVO_DA_RECUSA[recusa] }, { status: 400 });
+  }
+
   // Extrai o primeiro nome do usuário logado (usado para humanização)
   const metadata = user.user_metadata || {};
   const fullName = metadata.nome || metadata.name || metadata.first_name || '';
@@ -108,6 +123,10 @@ export async function POST(request: NextRequest) {
   //    o fluxo de criar/salvar orçamento fica intacto.
   try {
     let result;
+    // Só o loop agêntico lê imagem. Se o turno for para o legado (flag
+    // desligada, cotação em andamento, ou falha do loop), o print não é lido —
+    // e o usuário tem de saber disso, em vez de receber resposta que o ignora.
+    let imagemFoiLida = false;
 
     const v2CtxProbe = deserializeV2Context(context.v2ContextJson);
     if (deveUsarAgentLoop(v2CtxProbe)) {
@@ -119,7 +138,9 @@ export async function POST(request: NextRequest) {
           userId: user.id,
           userName,
           recentTurns,
+          imagem,
         });
+        imagemFoiLida = imagem != null;
       } catch (agentErr) {
         // Falha do agent loop NUNCA derruba o Maestro — fallback para o legado.
         console.error('[/api/maestro/simple] Agent loop falhou — fallback para o motor legado:', agentErr);
@@ -168,6 +189,14 @@ export async function POST(request: NextRequest) {
           context,
         };
       }
+    }
+
+    // ── 5b. Print que não chegou a ser lido ───────────────────────────────────
+    //    Um aviso de uma linha na resposta, sem tocar no motor legado: melhor
+    //    dizer que a imagem não foi lida do que responder como se tivesse sido.
+    if (imagem && !imagemFoiLida && result?.message?.content) {
+      result.message.content =
+        `${result.message.content}\n\n${AVISO_IMAGEM_NAO_LIDA}`;
     }
 
     // ── 6. Persistência de conversa/rascunho (flag-gated; nunca quebra o fluxo)

@@ -2,6 +2,7 @@
 import { useContext, useRef, useCallback, useState } from 'react';
 import { MaestroContext } from '../context/maestro.context';
 import { useConversationManagerSimple as useConversationManager } from '../core/conversation/conversation.manager.simple';
+import type { ImagemDoTurno } from '../core/simple/maestro-imagem';
 
 export function useMaestro() {
   const context = useContext(MaestroContext);
@@ -24,12 +25,14 @@ export function useMaestro() {
     setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
   }, []);
 
-  const sendMessage = useCallback((query: string) => {
-    manager.sendMessage(query, scrollToBottom);
+  // imagem opcional: as chamadas antigas (sugestões, botões da resposta)
+  // continuam passando só o texto.
+  const sendMessage = useCallback((query: string, imagem?: ImagemDoTurno) => {
+    manager.sendMessage(query, scrollToBottom, imagem);
   }, [manager, scrollToBottom]);
 
-  const handleSend = useCallback((query: string) => {
-    sendMessage(query);
+  const handleSend = useCallback((query: string, imagem?: ImagemDoTurno) => {
+    sendMessage(query, imagem);
     setInputValue('');
   }, [sendMessage]);
 

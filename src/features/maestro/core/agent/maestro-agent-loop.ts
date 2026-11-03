@@ -27,11 +27,13 @@ import {
   avaliarCasoSemFicha,
   casoSemFichaLigado,
   orientacaoDeCasoSemFicha,
+  deveForcarConsultaAoManual,
   registrarCasoSemFicha,
   type CasoSemFicha,
 } from './maestro-agent-caso-sem-ficha';
 import type { ConversationContext, ConversationMessage, ActivityStep } from '../../types';
 import type { RecentTurn } from '../simple/maestro-recent-turns';
+import { conteudoComImagem, resumoDaImagem, type ImagemDoTurno } from '../simple/maestro-imagem';
 import type { SimpleClientContext } from '../simple/maestro-simple-context';
 import {
   deserializeV2Context,
@@ -102,6 +104,12 @@ export interface AgentLoopInput {
   userName?: string;
   /** Histórico recente sanitizado vindo do client (fallback sem persistência) */
   recentTurns?: RecentTurn[];
+  /**
+   * Print de tela deste turno, já validado na rota. Presente → o `content` do
+   * turno do usuário vira array de partes (texto + imagem). Ausente → a
+   * mensagem ao modelo é exatamente a de sempre.
+   */
+  imagem?: ImagemDoTurno;
 }
 
 export interface AgentLoopResult {
@@ -365,13 +373,27 @@ export async function runMaestroAgentLoop(input: AgentLoopInput): Promise<AgentL
     console.error('[MaestroAgentLoop] Falha ao montar o indice do manual:', err);
   }
 
-  const systemPrompt = buildAgentSystemPrompt({ currentDateIso, userName, estadoReal, indiceManual: indiceManual || undefined });
+  // Print de tela deste turno. A imagem NÃO entra em fontesDoTurno nem em
+  // coletarNumerosDaPergunta: nome de botão e número lidos do print não se
+  // autolegitimam — a trava do manual e a trava do pedido seguem valendo.
+  const imagemDoTurno = input.imagem;
+  const temImagem = imagemDoTurno != null;
+
+  const systemPrompt = buildAgentSystemPrompt({
+    currentDateIso,
+    userName,
+    estadoReal,
+    indiceManual: indiceManual || undefined,
+    temImagem,
+  });
 
   type ChatMessage = Record<string, unknown>;
   const messages: ChatMessage[] = [
     { role: 'system', content: systemPrompt },
-    ...historico.map(t => ({ role: t.role, content: t.content })),
-    { role: 'user', content: query },
+    // Turno do histórico com print (janela de 2 turnos) volta como array de
+    // partes; sem imagem, é a string de sempre.
+    ...historico.map(t => (t.imagem ? { role: t.role, content: conteudoComImagem(t.content, t.imagem) } : { role: t.role, content: t.content })),
+    { role: 'user', content: temImagem ? conteudoComImagem(query, imagemDoTurno!) : query },
   ];
 
   // Erro técnico na mensagem: sem ficha que o cite, ou em assunto sensível.
@@ -475,10 +497,11 @@ export async function runMaestroAgentLoop(input: AgentLoopInput): Promise<AgentL
           temperature: 0.1,
           max_tokens: 900,
           tools: AGENT_TOOL_SCHEMAS,
-          // Erro técnico relatado: a primeira chamada é obrigatoriamente ao
-          // manual. Ninguém diz "não tenho esse passo a passo" sem ter olhado.
+          // Erro técnico relatado, ou pergunta com print de tela: a primeira
+          // chamada é obrigatoriamente ao manual. Ninguém diz "não tenho esse
+          // passo a passo", nem descreve uma tela, sem ter olhado.
           tool_choice:
-            casoSemFicha && iter === 0 && toolCallsExecutados === 0
+            deveForcarConsultaAoManual(casoSemFicha, temImagem) && iter === 0 && toolCallsExecutados === 0
               ? { type: 'function', function: { name: 'consultar_manual' } }
               : 'auto',
           messages: messages as never,
@@ -840,6 +863,9 @@ export async function runMaestroAgentLoop(input: AgentLoopInput): Promise<AgentL
       trava_do_manual: travaDoManual,
       caso_sem_ficha: casoSemFicha?.semFicha ? casoSemFicha.erro.tipo : null,
       trava_de_repetir: travaDeRepetir,
+      // Print do turno: só tipo e tamanho. O conteúdo da imagem NUNCA é
+      // gravado nem registrado em log — print carrega CPF, valor e cliente.
+      imagem: imagemDoTurno ? resumoDaImagem(imagemDoTurno) : null,
       // Modelo, tokens, idas e tempo — nunca o texto da pergunta ou da resposta.
       ...(medicaoDoTurnoLigada() ? camposDeMedicao(medicao, model, Date.now() - inicioDoTurno) : {}),
     },

@@ -1,12 +1,19 @@
 'use client';
-import { Send, Mic } from 'lucide-react';
+import { Send, Mic, Paperclip, X } from 'lucide-react';
 import { useRef, useEffect, useState, useCallback } from 'react';
 import { APP_NAME } from '@/constants/brand';
+import {
+  imagemDaAreaDeTransferencia,
+  prepararImagemParaEnvio,
+  tipoDeImagemAceito,
+  type ImagemPreparada,
+} from '../../core/simple/maestro-imagem.client';
+import { MIMES_DE_IMAGEM_ACEITOS, type ImagemDoTurno } from '../../core/simple/maestro-imagem';
 
 interface Props {
   value: string;
   onChange: (v: string) => void;
-  onSend: (v: string) => void;
+  onSend: (v: string, imagem?: ImagemDoTurno) => void;
   isLoading: boolean;
 }
 
@@ -60,7 +67,53 @@ function safeConcat(left: string, right: string): string {
 
 export function MaestroInput({ value, onChange, onSend, isLoading }: Props) {
   const ref = useRef<HTMLTextAreaElement>(null);
-  
+
+  // ── Print anexado (vive só aqui, na memória da aba) ─────────────────────
+  const [anexo, setAnexo] = useState<ImagemPreparada | null>(null);
+  const [preparandoAnexo, setPreparandoAnexo] = useState(false);
+  const [erroAnexo, setErroAnexo] = useState<string | null>(null);
+  const arquivoRef = useRef<HTMLInputElement>(null);
+  // O auto-envio por voz dispara de dentro de um timer: precisa do anexo atual
+  // por ref, senão envia com o valor capturado na montagem (stale closure).
+  const anexoRef = useRef<ImagemPreparada | null>(null);
+  anexoRef.current = anexo;
+
+  /** Reduz e guarda o print. O arquivo original nunca é enviado. */
+  const receberImagem = useCallback(async (arquivo: File | Blob | null) => {
+    if (!arquivo) return;
+    const tipo = (arquivo as File).type || '';
+    if (!tipoDeImagemAceito(tipo)) {
+      setAnexo(null);
+      setErroAnexo('A imagem precisa ser PNG, JPEG ou WebP.');
+      return;
+    }
+    setErroAnexo(null);
+    setPreparandoAnexo(true);
+    try {
+      const preparada = await prepararImagemParaEnvio(arquivo);
+      setAnexo(preparada);
+    } catch (err) {
+      setAnexo(null);
+      setErroAnexo(err instanceof Error ? err.message : 'Não foi possível preparar a imagem.');
+    } finally {
+      setPreparandoAnexo(false);
+    }
+  }, []);
+
+  const removerAnexo = useCallback(() => {
+    setAnexo(null);
+    setErroAnexo(null);
+    if (arquivoRef.current) arquivoRef.current.value = '';
+  }, []);
+
+  /** Colar (Ctrl+V) com print na área de transferência. */
+  const handlePaste = useCallback((e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const arquivo = imagemDaAreaDeTransferencia(e.clipboardData?.items ?? null);
+    if (!arquivo) return; // colou texto: comportamento normal do textarea
+    e.preventDefault();
+    void receberImagem(arquivo);
+  }, [receberImagem]);
+
   // States para o Speech-to-Text
   const [isListening, setIsListening] = useState(false);
   const [isSupported, setIsSupported] = useState(true);
@@ -223,7 +276,10 @@ export function MaestroInput({ value, onChange, onSend, isLoading }: Props) {
 
             // O envio automático ocorre apenas se tiver conteúdo e não estiver processando
             if (textComposto.trim() && !isLoadingRef.current) {
-              onSendRef.current(textComposto);
+              onSendRef.current(textComposto, anexoRef.current?.imagem);
+              setAnexo(null);
+              setErroAnexo(null);
+              if (arquivoRef.current) arquivoRef.current.value = '';
             }
           }, 4000);
         }
@@ -282,23 +338,31 @@ export function MaestroInput({ value, onChange, onSend, isLoading }: Props) {
     }
   }, [isLoading]);
 
+  /** Envia o texto com o print, quando há um, e limpa o anexo. */
+  const enviar = useCallback(() => {
+    onSend(value, anexoRef.current?.imagem);
+    removerAnexo();
+  }, [onSend, value, removerAnexo]);
+
+  const podeEnviar = value.trim().length > 0 && !isLoading && !preparandoAnexo;
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      if (value.trim() && !isLoading) {
+      if (podeEnviar) {
         // Parada definitiva + descarte de resultados pendentes de voz:
         // nada pode re-popular o input depois deste envio
         encerrarVozParaEnvio();
-        onSend(value);
+        enviar();
       }
     }
   };
 
   const handleSendClick = () => {
-    if (value.trim() && !isLoading) {
+    if (podeEnviar) {
       // Parada definitiva + descarte de resultados pendentes de voz
       encerrarVozParaEnvio();
-      onSend(value);
+      enviar();
     }
   };
 
@@ -311,11 +375,49 @@ export function MaestroInput({ value, onChange, onSend, isLoading }: Props) {
             borderColor: 'var(--border)',
           }}
         >
+          {/* Print anexado: miniatura + remover. Fica acima do texto, para o
+              usuário ver o que vai enviar junto com a pergunta. */}
+          {(anexo || preparandoAnexo || erroAnexo) && (
+            <div className="px-5 pt-4">
+              {anexo && (
+                <div className="inline-flex items-start gap-2 rounded-xl border border-[var(--border)] bg-[var(--card)] p-2">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={anexo.preview}
+                    alt="Print anexado"
+                    className="h-16 w-auto max-w-[160px] rounded-lg object-cover"
+                  />
+                  <div className="flex flex-col gap-1">
+                    <span className="text-[11px] font-medium text-[var(--muted)]">
+                      {anexo.largura}×{anexo.altura}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={removerAnexo}
+                      className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-[var(--muted)] hover:bg-[var(--border)] hover:text-[var(--foreground)] transition-all cursor-pointer"
+                      title="Remover imagem"
+                    >
+                      <X size={12} />
+                      Remover
+                    </button>
+                  </div>
+                </div>
+              )}
+              {preparandoAnexo && (
+                <span className="text-[12px] text-[var(--muted)]">Preparando a imagem…</span>
+              )}
+              {erroAnexo && (
+                <span className="text-[12px] text-red-500">{erroAnexo}</span>
+              )}
+            </div>
+          )}
+
           <textarea
             ref={ref}
             value={value}
             onChange={e => onChange(e.target.value)}
             onKeyDown={handleKeyDown}
+            onPaste={handlePaste}
             placeholder="Pergunte qualquer coisa sobre clientes, propostas, pedidos, produção, financeiro, notas fiscais..."
             rows={1}
             disabled={isLoading}
@@ -324,6 +426,27 @@ export function MaestroInput({ value, onChange, onSend, isLoading }: Props) {
           <div className="flex items-center justify-between px-3 pb-3 pt-1">
             {/* Left actions */}
             <div className="flex items-center gap-0.5">
+              <input
+                ref={arquivoRef}
+                type="file"
+                accept={MIMES_DE_IMAGEM_ACEITOS.join(',')}
+                className="hidden"
+                onChange={e => {
+                  void receberImagem(e.target.files?.[0] ?? null);
+                }}
+              />
+              <button
+                type="button"
+                disabled={isLoading || preparandoAnexo}
+                onClick={() => arquivoRef.current?.click()}
+                className={`p-2 rounded-lg transition-all text-[var(--muted)] dark:text-white/40 hover:bg-[var(--border)] dark:hover:bg-white/10 hover:text-[var(--foreground)] dark:hover:text-white ${
+                  (isLoading || preparandoAnexo) ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'
+                }`}
+                title="Anexar print da tela (PNG, JPEG ou WebP) — também dá para colar com Ctrl+V"
+                aria-label="Anexar imagem"
+              >
+                <Paperclip size={18} />
+              </button>
               <button
                 type="button"
                 disabled={isLoading || !isSupported}
@@ -344,7 +467,8 @@ export function MaestroInput({ value, onChange, onSend, isLoading }: Props) {
             <button
               type="button"
               onClick={handleSendClick}
-              disabled={!value.trim() || isLoading}
+              disabled={!podeEnviar}
+              title={anexo && !value.trim() ? 'Escreva sua pergunta sobre a imagem' : 'Enviar'}
               className="flex items-center justify-center w-8 h-8 rounded-full disabled:opacity-40 disabled:cursor-not-allowed hover:scale-105 active:scale-95 transition-all shadow-md"
               style={{ background: 'var(--secondary)', color: 'var(--secondary-foreground)' }}
             >

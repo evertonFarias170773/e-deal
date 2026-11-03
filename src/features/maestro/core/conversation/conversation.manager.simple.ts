@@ -25,6 +25,7 @@ import { MaestroContext } from '../../context/maestro.context';
 import { MOCK_WELCOME_MESSAGES, MOCK_INITIAL_CONTEXT } from '../../mocks/maestro.mock';
 import { getSupabaseClient } from '@/lib/supabase/client';
 import type { ActivityStep, ConversationContext, ConversationMessage } from '../../types';
+import { MAX_TURNOS_COM_IMAGEM, type ImagemDoTurno } from '../simple/maestro-imagem';
 
 // ─── Flag: motor simples por padrão ──────────────────────────────────────
 export const MAESTRO_ENGINE: 'simple' | 'legacy' = 'simple';
@@ -64,16 +65,33 @@ export function useConversationManagerSimple() {
    * Monta o histórico recente enviado ao servidor (últimos 8 turnos completos).
    * Apenas mensagens reais (user/maestro) com conteúdo; conteúdo truncado a
    * 600 chars para limitar o payload. O servidor re-sanitiza tudo.
+   *
+   * Imagem: o print viaja de novo nos turnos seguintes, mas só nos
+   * MAX_TURNOS_COM_IMAGEM turnos de usuário mais recentes — é o que mantém o corpo
+   * da requisição pequeno numa conversa longa. O servidor aplica o mesmo teto.
    */
   const buildRecentMessages = (msgs: ConversationMessage[]) => {
-    return msgs
+    const turnos = msgs
       .filter(m => (m.role === 'user' || m.role === 'maestro'))
       .filter(m => m.status === 'completed' && typeof m.content === 'string' && m.content.trim().length > 0)
       .slice(-8)
       .map(m => ({
         role: m.role === 'maestro' ? 'assistant' : 'user',
         content: m.content.length > 600 ? m.content.slice(0, 600) + '…' : m.content,
+        ...(m.role === 'user' && m.imagem ? { imagem: m.imagem } : {}),
       }));
+
+    // Janela por IDADE: só os 2 turnos de usuário mais recentes do histórico
+    // levam imagem. Como o histórico são os turnos ANTERIORES a esta pergunta,
+    // um print é reenviado nas 2 perguntas seguintes à que o trouxe, e para.
+    let turnosDeUsuario = 0;
+    for (let i = turnos.length - 1; i >= 0; i--) {
+      const t = turnos[i] as { role: string; imagem?: ImagemDoTurno };
+      if (t.role !== 'user') continue;
+      turnosDeUsuario++;
+      if (turnosDeUsuario > MAX_TURNOS_COM_IMAGEM) delete t.imagem;
+    }
+    return turnos;
   };
 
   /** Token da sessão Supabase do browser (para o header Authorization). */
@@ -234,16 +252,18 @@ export function useConversationManagerSimple() {
   }, [sessions, setActiveSessionId, setMessages, setActivity, setGlobalContext]);
 
   // ── Enviar mensagem ───────────────────────────────────────────────────────
-  const sendMessage = useCallback(async (query: string, scrollToBottom: () => void) => {
+  const sendMessage = useCallback(async (query: string, scrollToBottom: () => void, imagem?: ImagemDoTurno) => {
     if (!query.trim()) return;
 
-    // 1. Adiciona mensagem do usuário
+    // 1. Adiciona mensagem do usuário (com o print, quando houver: é o que
+    //    permite reenviá-lo nas perguntas seguintes)
     const userMsg: ConversationMessage = {
       id: `user-${Date.now()}`,
       role: 'user',
       content: query,
       timestamp: new Date().toISOString(),
       status: 'completed',
+      ...(imagem ? { imagem } : {}),
     };
 
     // 2. Placeholder "thinking"
@@ -285,6 +305,7 @@ export function useConversationManagerSimple() {
           query,
           context: globalContextRef.current,
           recentMessages: buildRecentMessages(messagesRef.current),
+          ...(imagem ? { imagem } : {}),
         }),
       });
 

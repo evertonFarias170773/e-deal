@@ -61,6 +61,10 @@ Cada ficha cobre uma tela ou um fluxo e segue sempre o mesmo formato ([_MODELO.m
 - [Expedição: despachar e entregar](expedicao-despacho.md)
 - [Tarefas](tarefas.md)
 
+### Assistente
+
+- [Maestro: perguntar ao assistente](maestro.md)
+
 ### Administração
 
 - [Saúde da infraestrutura](saude-da-infraestrutura.md) (só administradores)

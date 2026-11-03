@@ -104,18 +104,21 @@ export function sanitizeRecentTurns(raw: unknown): RecentTurn[] {
 }
 
 /**
- * Deixa imagem apenas nos MAX_TURNOS_COM_IMAGEM turnos mais recentes que a
- * trazem. Os anteriores seguem no histórico, só pelo texto.
+ * Janela da imagem no histórico, por IDADE: só os MAX_TURNOS_COM_IMAGEM turnos
+ * de usuário mais recentes conservam o print. Os anteriores seguem no
+ * histórico, só pelo texto.
+ *
+ * Como o histórico são os turnos ANTERIORES à pergunta atual, isto é o teto que
+ * a regra pede: o print é reenviado por no máximo 2 turnos depois do seu. O
+ * navegador aplica o mesmo corte, mas quem garante é o servidor.
  */
 export function limitarTurnosComImagem(turns: RecentTurn[]): RecentTurn[] {
-  let restantes = MAX_TURNOS_COM_IMAGEM;
+  let turnosDeUsuario = 0;
   const invertido = [...turns].reverse().map(t => {
-    if (!t.imagem) return t;
-    if (restantes > 0) {
-      restantes--;
-      return t;
-    }
-    const { imagem: _descartada, ...semImagem } = t;
+    if (t.role !== 'user') return t;
+    turnosDeUsuario++;
+    if (turnosDeUsuario <= MAX_TURNOS_COM_IMAGEM || !t.imagem) return t;
+    const { imagem: _fora, ...semImagem } = t;
     return semImagem as RecentTurn;
   });
   return invertido.reverse();
