@@ -1,6 +1,6 @@
 # Pedidos (lista)
 
-> **Última revisão:** 29/10/2026
+> **Última revisão:** 03/11/2026
 > **Caminho no menu:** Pedidos (item direto do menu lateral, sem submenu; é o segundo, logo abaixo de Conferência)
 > **Endereço:** `/orcamentos`
 
@@ -233,7 +233,7 @@ A liberação é recusada quando já existe NF-e de venda autorizada ou em proce
 - Não dá para liberar para a produção um pedido que não está em REVISAO ATENDENTE, que é avulso ou que já foi liberado. A liberação também é recusada se houver pagamento não confirmado, arte que não está APROVADO ou produto cuja quantidade vendida não bate com a soma dos lotes.
 - **Retirar da Produção** não é o contrário inofensivo de liberar: o pedido sai da fila de Produção e volta ao atendente, que precisa liberá-lo de novo, mesmo que o cliente já tenha pago. Por isso a ação fica no fim do menu e abre uma janela que explica isso, com o foco em **Cancelar**. Até 13/10/2026 ela só desligava a fila e deixava o status em REVISAO PRODUCAO, e o pedido ficava parado sem saída pela tela.
 - **Retirar da Produção (nota emitida)**, desligado: Pedido com **nota fiscal emitida** (NF-e ou NFS-e autorizada, de produção, inclusive nota de remessa) não volta ao atendente: o item aparece desligado, com "(nota emitida)", e ao passar o mouse mostra qual nota trava. Cancele a nota em Fiscal › Notas Fiscais e a ação volta a funcionar. Nota cancelada, com erro, pendente ou de homologação não trava.
-- Não dá para cancelar uma proposta sem informar o motivo, nem enquanto ela tiver pedido complementar aberto. Cobrança já paga ou título já liquidado também bloqueiam o cancelamento. As cobranças pendentes são canceladas junto com a proposta.
+- Não dá para cancelar uma proposta sem informar o motivo, nem enquanto ela tiver pedido complementar aberto. Cobrança já paga ou título já liquidado também bloqueiam o cancelamento. A exceção são E-Amostra, E-Retrabalho e E-Permuta, que não movimentam dinheiro e não impedem o cancelamento: quando todas as cobranças ativas são desses tipos, o administrador cancela em qualquer status e os demais só em AGUARDANDO; nota fiscal autorizada, produção e expedição continuam impedindo. As cobranças pendentes (e essas três) são canceladas junto com a proposta.
 - Se a intenção é só refazer a cobrança, não cancele a proposta: na janela de cancelamento use **Cancelar só a cobrança** (ou **Ver cobranças na aba Pagamentos**, quando há mais de uma). O pedido continua de pé e o saldo reabre.
 - Pedido complementar só é aceito em proposta paga integralmente, não avulsa, ainda não despachada e sem outro complemento aberto. O sistema confere isso na hora de criar e mostra o motivo da recusa na própria janela.
 - Não dá para gerar PDF, OC nem cobrança de pedido sem cliente cadastrado.
@@ -356,6 +356,8 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/features/orcamentos/services/retirar-producao.server.ts`
 - `src/features/orcamentos/components/RetirarProducaoModal.tsx`
 
+> **Mudança desta revisão:** 03/11/2026 — E-Amostra, E-Retrabalho e E-Permuta não impedem o cancelamento da proposta (caso 24533): administrador em qualquer status, demais em AGUARDANDO.
+>
 > **Mudança desta revisão:** 29/10/2026 — novas ações **Liberar nota antecipada (Fila de Faturamento)** e **Desfazer nota antecipada** no menu da linha, em pedido AGUARDANDO.
 
 > **Mudança desta revisão:** 29/10/2026 — saiu do menu da linha a ação **Nota emitida no sistema antigo** (pedido NOVO ou AGUARDANDO), que existiu por poucas horas: a nota antecipada agora sai pelo Vibe, com **Liberar nota antecipada (Fila de Faturamento)**. A marca continua sendo feita na Fila de Faturamento, e o desfazer continua neste menu.
