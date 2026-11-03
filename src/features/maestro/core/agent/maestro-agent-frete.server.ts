@@ -138,6 +138,12 @@ export async function cotarOpcoesFretePorEndereco(
      * e seguem cotando como hoje.
      */
     verificarUnidadeAzul?: boolean;
+    /**
+     * Pedido que está sendo recotado (Expedição, Aplicar, complemento: o principal).
+     * Só a VEPPO usa: pedido com VEPPO escolhida antes de 03/11/2026 cota sem os
+     * 20% (lib/cotacao-veppo). Ausente = cotação nova (Maestro).
+     */
+    idIntPedido?: number;
   },
 ): Promise<CotacaoFreteResult> {
   const pesoGramas = Math.max(0, Math.round(params.pesoGramas));
@@ -178,7 +184,7 @@ export async function cotarOpcoesFretePorEndereco(
         ),
       );
       cotacoes.push(
-        cotarVeppoNoServidor({ peso: pesoGramas, valor: params.valorTotal, cidade: endereco.cidade, uf: endereco.uf }).then((r) => r.fretes),
+        cotarVeppoNoServidor({ peso: pesoGramas, valor: params.valorTotal, cidade: endereco.cidade, uf: endereco.uf, id_int: params.idIntPedido }).then((r) => r.fretes),
       );
     } else {
       avisos.push('Cidade/UF do CEP indisponíveis no momento — transportadoras locais não foram cotadas (SEDEX/PAC seguem pelo CEP).');

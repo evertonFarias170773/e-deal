@@ -45,6 +45,7 @@ function confere(nome: string, ok: boolean, detalhe?: unknown) {
   if (!ok) falhas++;
 }
 const ler = (p: string) => readFileSync(path.join(RAIZ, p), "utf8").replace(/\r\n/g, "\n");
+const form0 = () => ler("src/features/orcamentos/OrcamentoFormPage.tsx");
 const brl = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
 // ── A ───────────────────────────────────────────────────────────────────────
@@ -93,6 +94,54 @@ for (const [rotulo, resposta] of [
   confere(`resposta ${rotulo}: sem card (SEM_COTACAO)`, r.status === "SEM_COTACAO" && r.fretes.length === 0, r);
 }
 
+// ── B2. corte: pedido com VEPPO escolhida antes de 03/11/2026 ────────────────
+console.log("== B2. corte por pedido");
+const ANTES = "2026-11-02T18:46:58Z"; // como o 24575
+const DEPOIS = "2026-11-03T13:10:00Z";
+function comPedido(propostaCriadaEm: string | null, servicos: string[], n8n: unknown, erroEm: string | null = null) {
+  const d = comN8n(n8n);
+  falso.responder("propostas:select", erroEm === "propostas" ? { data: null, error: { message: "falha" } } : { data: propostaCriadaEm ? { created_at: propostaCriadaEm } : null, error: null });
+  falso.responder("cotacao_frete:select", erroEm === "cotacao_frete" ? { data: null, error: { message: "falha" } } : { data: servicos.map((servico) => ({ servico })), error: null });
+  return d;
+}
+const pedido = { ...entrada, id_int: 24575 };
+{
+  const r = await cotarVeppoNoServidor(pedido, comPedido(ANTES, ["VEPPO"], { valor_frete: 42.45 }));
+  const f = r.fretes[0];
+  confere("pedido com VEPPO gravada antes do corte: recota 42,45 (sem os 20%), card de antes, sem Original",
+    r.status === "COTADA" && f.valor === 42.45 && f.valorOriginal === undefined && f.valorMargem === undefined && f.observacao === "Cotação via VEPPO", r);
+  const escolhida = falso.chamadas.find((c) => c.tabela === "cotacao_frete");
+  confere("o corte lê o frete escolhido do próprio pedido (id_int e escolhido = true), só leitura",
+    JSON.stringify(escolhida?.filtros).includes('["eq",["id_int",24575]]') && JSON.stringify(escolhida?.filtros).includes('["eq",["escolhido",true]]') &&
+      falso.chamadas.every((c) => c.op === "select"), falso.chamadas);
+}
+for (const [rotulo, criada, servicos] of [
+  ["pedido novo (criado depois do corte) com VEPPO", DEPOIS, ["VEPPO"]],
+  ["pedido antigo que ainda não tinha a VEPPO escolhida (escolhe agora)", ANTES, ["SEDEX"]],
+  ["pedido antigo sem frete escolhido", ANTES, []]
+] as const) {
+  const r = await cotarVeppoNoServidor(pedido, comPedido(criada, [...servicos], { valor_frete: 42.45 }));
+  confere(`${rotulo}: 42,45 vira 50,94 com Original (+20%)`, r.fretes[0]?.valor === 50.94 && r.fretes[0]?.valorOriginal === 42.45, r);
+}
+{
+  const r = await cotarVeppoNoServidor({ ...entrada, id_int: undefined }, comPedido(ANTES, ["VEPPO"], { valor_frete: 42.45 }));
+  confere("sem número de pedido (orçamento novo, Maestro): +20% e o corte nem é lido", r.fretes[0]?.valor === 50.94 && !falso.chamadas.some((c) => c.tabela === "propostas"), r);
+}
+for (const tabela of ["propostas", "cotacao_frete"]) {
+  const r = await cotarVeppoNoServidor(pedido, comPedido(ANTES, ["VEPPO"], { valor_frete: 42.45 }, tabela));
+  confere(`leitura de ${tabela} falhou: sem card e sem chamar o n8n (como a lista ilegível)`, r.status === "CORTE_NAO_CONFERIDO" && r.fretes.length === 0 && chamadasN8n === 0, r);
+}
+{
+  const r = await cotarVeppoNoServidor(pedido, comPedido(ANTES, ["VEPPO"], { valor_frete: 0 }));
+  confere("pedido antigo com resposta zero: sem card, como sempre", r.status === "SEM_COTACAO" && r.fretes.length === 0, r);
+}
+confere("corte na hora do commit def064f7 (09:38 de 03/11/2026, Brasília)", lib.CORTE_MARGEM_VEPPO === "2026-11-03T12:38:04Z");
+confere("regra pura: um segundo antes do corte é antigo; no corte, novo",
+  lib.cotacaoVeppoLegada({ propostaCriadaEm: "2026-11-03T12:38:03Z", servicosEscolhidos: ["VEPPO"] }) === true &&
+    lib.cotacaoVeppoLegada({ propostaCriadaEm: "2026-11-03T12:38:04Z", servicosEscolhidos: ["VEPPO"] }) === false &&
+    lib.cotacaoVeppoLegada({ propostaCriadaEm: null, servicosEscolhidos: ["VEPPO"] }) === false);
+confere("tela: proposta não gravada não manda número; gravada manda", lib.idIntParaCorteVeppo("NOVO") === undefined && lib.idIntParaCorteVeppo("24575") === 24575);
+
 // ── C ───────────────────────────────────────────────────────────────────────
 console.log("== C. nunca duas vezes");
 // A tela recebe da rota o card já com +20% e devolve como veio.
@@ -119,7 +168,16 @@ confere(
 );
 // Os chamadores repassam o card como veio.
 const maestroFrete = ler("src/features/maestro/core/agent/maestro-agent-frete.server.ts");
-confere("Maestro, recotação, Aplicar e complementar (cotarOpcoesFretePorEndereco) repassam o card da VEPPO", maestroFrete.includes(".then((r) => r.fretes),") && !/valor\s*\*\s*1[.,]2/.test(maestroFrete));
+confere("Maestro, recotação, Aplicar e complementar (cotarOpcoesFretePorEndereco) repassam o card da VEPPO, com o número do pedido", maestroFrete.includes("id_int: params.idIntPedido }).then((r) => r.fretes),") && !/valor\s*\*\s*1[.,]2/.test(maestroFrete));
+for (const [arq, marco] of [
+  ["src/app/api/expedicao/recotacao/cotar/route.ts", "idIntPedido: idInt }"],
+  ["src/app/api/expedicao/recotacao/aplicar/route.ts", "idIntPedido: idInt }"],
+  ["src/app/api/orcamentos/complementar/cotar-frete/route.ts", "idIntPedido: idIntPrincipal"],
+  ["src/app/api/orcamentos/complementar/aplicar-frete/route.ts", "idIntPedido: idIntPrincipal"]
+] as const) {
+  confere(`${arq.split("/").slice(-3, -1).join("/")}: manda o pedido para o corte`, ler(arq).includes(marco));
+}
+confere("tela: as três cotações VEPPO mandam o número do pedido", (form0().match(/id_int: idIntParaCorteVeppo\(form\.id_int\)/g) || []).length === 3);
 const motor = ler("src/features/maestro/core/simple/maestro-simple-engine.ts");
 confere("Maestro simples repassa o card da VEPPO", motor.includes("}).then((r) => r.fretes) : Promise.resolve([])"));
 const rota = ler("src/app/api/frete/veppo/route.ts");

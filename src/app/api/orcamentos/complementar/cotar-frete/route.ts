@@ -323,7 +323,9 @@ export async function POST(request: Request) {
   const cotacao = await cotarOpcoesFretePorEndereco(endereco, {
     pesoGramas: pesoSomadoGramas,
     valorTotal: valorDeclarado,
-    supabase
+    supabase,
+    // O frete comparado é o do principal: VEPPO escolhida nele antes de 03/11/2026 cota sem os 20%.
+    idIntPedido: idIntPrincipal
   });
 
   const freteCobradoOriginal = Number(Number(principal.valor_frete ?? 0).toFixed(2));

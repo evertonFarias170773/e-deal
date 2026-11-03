@@ -7,7 +7,8 @@
  * (lida com a chave de serviço: o RLS da tabela não tem política, e um usuário
  * logado leria zero linhas) -> webhook. O corpo enviado, o tempo limite e o
  * mapeamento da resposta são os de antes. Regra da cidade em lib/cidade-veppo.
- * Desde 03/11/2026 o valor do n8n leva +20% aqui, uma vez só (lib/cotacao-veppo).
+ * Desde 03/11/2026 o valor do n8n leva +20% aqui, uma vez só (lib/cotacao-veppo),
+ * exceto no pedido que já tinha a VEPPO escolhida antes disso (corte por pedido).
  *
  * Só leitura no banco; nada é gravado.
  */
@@ -19,7 +20,12 @@ import {
   regraAtualPermiteVeppo,
   type StatusCotacaoVeppo
 } from "@/features/orcamentos/lib/cidade-veppo";
-import { aplicarMargemVeppo, rotuloMargemVeppo, valorVeppoValido } from "@/features/orcamentos/lib/cotacao-veppo";
+import {
+  aplicarMargemVeppo,
+  cotacaoVeppoLegada,
+  rotuloMargemVeppo,
+  valorVeppoValido
+} from "@/features/orcamentos/lib/cotacao-veppo";
 
 export const WEBHOOK_VEPPO = "https://10074.hostoo.net.br/webhook/coordenadas";
 
@@ -42,6 +48,25 @@ const PADRAO: Dependencias = {
   clienteServico: () => criarClientServiceRole(),
   buscar: (...args) => fetch(...args)
 };
+
+/**
+ * O pedido cota a VEPPO sem o acréscimo? Lê a data da proposta e o frete
+ * escolhido em `cotacao_frete` (só leitura, chave de serviço como a lista).
+ * `null` = não deu para conferir.
+ */
+async function lerCorteDoPedido(clienteServico: () => SupabaseClient | null, idInt: number): Promise<boolean | null> {
+  const client = clienteServico();
+  if (!client) return null;
+  const [proposta, escolhidos] = await Promise.all([
+    client.from("propostas").select("created_at").eq("id_int", idInt).maybeSingle(),
+    client.from("cotacao_frete").select("servico").eq("id_int", idInt).eq("escolhido", true)
+  ]);
+  if (proposta.error || escolhidos.error) return null;
+  return cotacaoVeppoLegada({
+    propostaCriadaEm: (proposta.data as { created_at?: string | null } | null)?.created_at,
+    servicosEscolhidos: ((escolhidos.data ?? []) as Array<{ servico: string | null }>).map((l) => l.servico)
+  });
+}
 
 /** Chaves (só letras) das cidades ativas, ou null quando a lista não pôde ser lida. */
 async function lerCidadesAtendidas(clienteServico: () => SupabaseClient | null): Promise<Set<string> | null> {
@@ -69,7 +94,16 @@ export async function cotarVeppoNoServidor(
   }
   if (!atendidas.has(chaveCidadeVeppo(input.cidade))) return { status: "NAO_ATENDIDA", fretes: [] };
 
-  // 3. Webhook, exatamente como antes.
+  // 3. Corte do acréscimo (lib/cotacao-veppo): pedido com VEPPO escolhida antes
+  //    de 03/11/2026 cota sem os 20%. Sem conseguir conferir, não cota (como a lista).
+  const idIntNum = typeof input.id_int === "number" ? input.id_int : (Number(input.id_int) || 0);
+  const legada = idIntNum > 0 ? await lerCorteDoPedido(deps.clienteServico, idIntNum) : false;
+  if (legada === null) {
+    console.warn(`[frete-veppo] corte do acrescimo nao conferido para #${idIntNum}: VEPPO nao cotada`);
+    return { status: "CORTE_NAO_CONFERIDO", fretes: [] };
+  }
+
+  // 4. Webhook, exatamente como antes.
   const normalizedUf = input.uf?.trim().toUpperCase();
   const payload = {
     text: `${input.cidade}, ${normalizedUf}, Brasil`,
@@ -97,10 +131,27 @@ export async function cotarVeppoNoServidor(
       return { status: "SEM_COTACAO", fretes: [] };
     }
 
+    // Pedido antigo: o card de antes de 03/11/2026, sem acréscimo e sem a linha "Original".
+    if (legada) {
+      return {
+        status: "COTADA",
+        fretes: [{
+          id: "frete_veppo",
+          id_int: idIntNum,
+          transportadora: "VEPPO",
+          servico: "VEPPO",
+          valor: Number(data.valor_frete),
+          prazo: "Sob consulta",
+          observacao: "Cotação via VEPPO",
+          escolhido: false,
+          pesoUsado: input.peso
+        }]
+      };
+    }
+
     // +20% sobre o valor do n8n (lib/cotacao-veppo). Único ponto da conta.
     const { valorOriginal, valorFinal } = aplicarMargemVeppo(data.valor_frete);
     const originalTexto = valorOriginal.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-    const idIntNum = typeof input.id_int === "number" ? input.id_int : (Number(input.id_int) || 0);
 
     return {
       status: "COTADA",

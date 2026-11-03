@@ -90,7 +90,7 @@ import {
 import { buscarStatusArteDaProposta, classeDoStatusArte } from "@/features/orcamentos/services/status-arte-lista.service";
 import { solicitarCotacaoSedex, solicitarCotacaoAzulCargo, solicitarCotacaoTransportadoras, solicitarCotacaoVeppo } from "@/features/orcamentos/services/frete.service";
 import { rotuloMargemAzul } from "@/features/orcamentos/lib/cotacao-azul";
-import { rotuloMargemVeppo } from "@/features/orcamentos/lib/cotacao-veppo";
+import { idIntParaCorteVeppo, rotuloMargemVeppo } from "@/features/orcamentos/lib/cotacao-veppo";
 import { resolverTransportadoraParceira } from "@/features/orcamentos/lib/transportadoras-parceiras";
 import { PermissionGuard } from "@/components/common/PermissionGuard";
 import {
@@ -2256,7 +2256,8 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
               peso: resumo.pesoTotal,
               valor: resumo.subtotalProdutos,
               cidade,
-              uf
+              uf,
+              id_int: idIntParaCorteVeppo(form.id_int)
             });
           } catch (err) {
             console.error("Erro na cotação automática VEPPO:", err);
@@ -3713,7 +3714,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
         : Promise.resolve([] as PropostaFrete[])
       ).finally(() => setIsQuotingTransp(false)),
       (cidade && uf
-        ? solicitarCotacaoVeppo({ peso: resumo.pesoTotal, valor: resumo.subtotalProdutos, cidade, uf }).catch(() => [] as PropostaFrete[])
+        ? solicitarCotacaoVeppo({ peso: resumo.pesoTotal, valor: resumo.subtotalProdutos, cidade, uf, id_int: idIntParaCorteVeppo(form.id_int) }).catch(() => [] as PropostaFrete[])
         : Promise.resolve([] as PropostaFrete[])
       ).finally(() => setIsQuotingVeppo(false))
     ]);
@@ -3889,7 +3890,8 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
             peso: resumo.pesoTotal,
             valor: resumo.subtotalProdutos,
             cidade: cidade!,
-            uf: uf!
+            uf: uf!,
+            id_int: idIntParaCorteVeppo(form.id_int)
           });
         } catch (err) {
           console.error("Erro ao cotar VEPPO manualmente:", err);

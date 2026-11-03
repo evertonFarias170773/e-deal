@@ -49,6 +49,7 @@ export type StatusCotacaoVeppo =
   | "SEM_COTACAO"       // n8n chamado, sem valor (erro, tempo, resposta vazia) — como hoje
   | "FORA_DA_REGRA"     // UF diferente de RS ou Porto Alegre — como hoje, sem chamar nada
   | "NAO_ATENDIDA"      // cidade fora de cidades_veppo — sem chamar o n8n
-  | "LISTA_INDISPONIVEL"; // não deu para ler a lista — sem chamar o n8n
+  | "LISTA_INDISPONIVEL" // não deu para ler a lista — sem chamar o n8n
+  | "CORTE_NAO_CONFERIDO"; // não deu para saber se o pedido é anterior ao acréscimo (lib/cotacao-veppo) — sem chamar o n8n
 
 export const MENSAGEM_CIDADE_NAO_ATENDIDA = "Cidade não atendida pela VEPPO.";

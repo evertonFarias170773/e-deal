@@ -208,7 +208,8 @@ export async function POST(request: Request) {
         .filter(Boolean)
         .join(", ")
     },
-    { pesoGramas, valorTotal: subtotalItens, supabase }
+    // idIntPedido: pedido com VEPPO escolhida antes de 03/11/2026 recota sem os 20% (lib/cotacao-veppo).
+    { pesoGramas, valorTotal: subtotalItens, supabase, idIntPedido: idInt }
   );
 
   const freteAtual = Number(proposta.valor_frete ?? 0);
