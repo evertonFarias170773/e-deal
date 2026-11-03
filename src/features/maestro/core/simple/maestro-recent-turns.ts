@@ -13,11 +13,27 @@
  *   - classificador externo de intenção (recentTurns do payload);
  *   - Brain de humanização (bloco [HISTÓRICO RECENTE] no user prompt).
  * Ele nunca é fonte de fatos e nunca participa do caminho de escrita.
+ *
+ * Imagem: um turno de usuário pode trazer um print (ImagemDoTurno). Ele é
+ * validado aqui pelos mesmos critérios da rota e só os MAX_TURNOS_COM_IMAGEM
+ * turnos mais recentes a conservam — a imagem é reenviada pelo navegador a cada
+ * pergunta, e sem este teto uma conversa longa multiplicaria bytes e tokens.
+ * O conteúdo da imagem NUNCA entra em texto de prompt (turnsToPromptBlock
+ * ignora o campo): só o loop agêntico a entrega ao modelo, como parte de
+ * `content`.
  */
+
+import { MAX_TURNOS_COM_IMAGEM, validarImagemDoTurno, type ImagemDoTurno } from './maestro-imagem';
 
 export interface RecentTurn {
   role: 'user' | 'assistant';
   content: string;
+  /**
+   * Print que o usuário colou ou anexou naquele turno (só em role 'user').
+   * Vive apenas no contexto da conversa: o navegador reenvia por no máximo
+   * MAX_TURNOS_COM_IMAGEM turnos e nada é gravado. Recarregar a aba perde.
+   */
+  imagem?: ImagemDoTurno;
 }
 
 /** Limites sanitários */
@@ -66,16 +82,43 @@ export function sanitizeRecentTurns(raw: unknown): RecentTurn[] {
     if (typeof content !== 'string') continue;
     const cleaned = redigirConteudoSensivel(content).trim();
     if (!cleaned) continue;
-    turns.push({
+    const turno: RecentTurn = {
       role,
       content: cleaned.length > MAX_CHARS_PER_TURN
         ? cleaned.slice(0, MAX_CHARS_PER_TURN) + '…'
         : cleaned,
-    });
+    };
+    // Imagem só em turno do usuário, e só se passar pela mesma validação da
+    // rota (tipo, assinatura e tamanho). Imagem inválida é descartada em
+    // silêncio: o turno continua valendo pelo texto.
+    if (role === 'user') {
+      const { imagem } = validarImagemDoTurno((item as any).imagem);
+      if (imagem) turno.imagem = imagem;
+    }
+    turns.push(turno);
   }
 
   // Mantém apenas os últimos N turnos
-  return turns.slice(-MAX_TURNS);
+  const recentes = turns.slice(-MAX_TURNS);
+  return limitarTurnosComImagem(recentes);
+}
+
+/**
+ * Deixa imagem apenas nos MAX_TURNOS_COM_IMAGEM turnos mais recentes que a
+ * trazem. Os anteriores seguem no histórico, só pelo texto.
+ */
+export function limitarTurnosComImagem(turns: RecentTurn[]): RecentTurn[] {
+  let restantes = MAX_TURNOS_COM_IMAGEM;
+  const invertido = [...turns].reverse().map(t => {
+    if (!t.imagem) return t;
+    if (restantes > 0) {
+      restantes--;
+      return t;
+    }
+    const { imagem: _descartada, ...semImagem } = t;
+    return semImagem as RecentTurn;
+  });
+  return invertido.reverse();
 }
 
 /**

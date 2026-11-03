@@ -103,7 +103,7 @@ Enquanto o cliente não é escolhido numa proposta nova, os outros blocos e abas
 
 O nome do contato é o que aparece na proposta enviada ao cliente.
 
-Contato **novo**, incluído em **+ Adicionar novo contato**, entra no cadastro do cliente quando você salva a proposta, com nome, cargo, WhatsApp e e-mail, e a proposta passa a usar esse contato do cadastro. Se o cliente já tem um contato com o mesmo nome, WhatsApp ou e-mail, a proposta usa o que já existe e nada é criado nem alterado. Se a gravação no cadastro falhar, a proposta não é salva e aparece o aviso **Contato não gravado no cadastro**.
+Contato **novo**, incluído em **+ Adicionar novo contato**, entra no cadastro do cliente quando você salva a proposta, com nome, cargo, WhatsApp e e-mail, e a proposta passa a usar esse contato do cadastro. Se o cliente já tem um contato com o mesmo nome (sem diferença de acento ou maiúscula), a proposta usa o que já existe e nada é criado nem alterado. Nome diferente cria um contato novo, mesmo que o WhatsApp ou o e-mail já estejam em outro contato do cliente. Se a gravação no cadastro falhar, a proposta não é salva e aparece o aviso **Contato não gravado no cadastro**.
 
 Corrigir um contato que já é do cadastro (lápis) vale só para esta proposta: o cadastro do cliente não muda. Propostas antigas com contato que ficou só na proposta mostram esse contato na lista com o nome gravado, sem cargo, WhatsApp e e-mail, e ele continua selecionado.
 

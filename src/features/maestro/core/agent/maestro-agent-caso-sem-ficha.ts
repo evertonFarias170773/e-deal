@@ -263,6 +263,27 @@ export function avaliarCasoSemFicha(
 }
 
 /**
+ * A primeira chamada do turno TEM de ser consultar_manual?
+ *
+ * Dois motivos, ambos "ninguém responde de cabeça sobre uma tela":
+ *   - erro técnico relatado (caso != null) — ninguém diz "não tenho esse passo
+ *     a passo" diante de um erro sem ter olhado o manual;
+ *   - a pergunta vem com PRINT DE TELA. "O que é isso?" diante de uma imagem é
+ *     pergunta de uso: sem o manual lido, a trava do nome de botão barraria a
+ *     resposta de todo jeito, e o modelo descreveria a tela de memória.
+ *
+ * A imagem NÃO fabrica um CasoSemFicha: isso registraria um erro técnico que
+ * não existe em maestro_acoes e poderia disparar a trava de "não repita a
+ * ação" por causa de um print.
+ */
+export function deveForcarConsultaAoManual(
+  caso: CasoSemFicha | null,
+  temImagem = false,
+): boolean {
+  return caso != null || temImagem;
+}
+
+/**
  * Recado ao modelo, antes de ele responder. O servidor obriga a primeira
  * chamada a ser consultar_manual (ver o loop): ninguém diz "não tenho esse
  * passo a passo" diante de um erro sem ter olhado o manual.

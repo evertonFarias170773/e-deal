@@ -8,8 +8,8 @@
  * (`createCadastroContatos`) e a proposta passa a apontar para o id real.
  *
  * Idempotente: antes de criar, relê os contatos do cliente no banco. Se já
- * houver um com o mesmo nome, WhatsApp ou e-mail, usa esse e não cria outro —
- * nem altera o que existe. Contato que já é do cadastro nunca passa por aqui.
+ * houver um com o mesmo nome (só o nome — ver `acharContatoIgual`), usa esse e
+ * não cria outro, nem altera o que existe. Contato que já é do cadastro nunca passa por aqui.
  */
 
 export type ContatoDoCadastroLido = {
@@ -47,33 +47,21 @@ function nomeComparavel(valor: string | null | undefined) {
     .toLowerCase();
 }
 
-/** Só dígitos, sem o 55 do país: "5551 98911-5" e "51 98911-5" são o mesmo. */
-function telefoneComparavel(valor: string | null | undefined) {
-  const digitos = String(valor ?? "").replace(/\D/g, "");
-  return digitos.length > 11 && digitos.startsWith("55") ? digitos.slice(2) : digitos;
-}
-
-function emailComparavel(valor: string | null | undefined) {
-  return String(valor ?? "").trim().toLowerCase();
-}
-
-/** O contato do cadastro igual ao novo (mesmo nome, WhatsApp ou e-mail), ou null. */
+/**
+ * O contato do cadastro com o mesmo nome do novo (sem diferença de acento nem
+ * de maiúscula), ou null.
+ *
+ * Só o nome identifica a pessoa (03/11/2026). WhatsApp e e-mail NÃO entram:
+ * contatos diferentes do mesmo cliente costumam dividir o e-mail geral ou o
+ * número da recepção, e casar por eles trocava a pessoa nova por outra.
+ */
 export function acharContatoIgual(
   existentes: readonly ContatoDoCadastroLido[],
   novo: ContatoNovoDaTela
 ): ContatoDoCadastroLido | null {
   const nome = nomeComparavel(novo.nome);
-  const telefone = telefoneComparavel(novo.whatsapp);
-  const email = emailComparavel(novo.email);
-
-  return (
-    existentes.find((c) => {
-      if (nome && nomeComparavel(c.nome_contato) === nome) return true;
-      if (telefone && telefoneComparavel(c.whats) === telefone) return true;
-      if (email && emailComparavel(c.e_mail) === email) return true;
-      return false;
-    }) ?? null
-  );
+  if (!nome) return null;
+  return existentes.find((c) => nomeComparavel(c.nome_contato) === nome) ?? null;
 }
 
 export async function gravarContatoNovoNoCadastro(
