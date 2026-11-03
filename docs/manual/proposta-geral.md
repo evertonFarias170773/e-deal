@@ -1,6 +1,6 @@
 # Proposta: aba Geral
 
-> **Última revisão:** 12/10/2026
+> **Última revisão:** 03/11/2026
 > **Caminho no menu:** Pedidos → abrir um pedido → aba **Geral**
 > **Endereço:** `/orcamentos/<número>/editar` (em proposta nova, `/orcamentos/novo`)
 
