@@ -5,6 +5,7 @@ import { curvaAbcClientes } from "./definicoes/curva-abc-clientes";
 import { fretePorTransportadora } from "./definicoes/frete-por-transportadora";
 import { fretesDespachadosLista } from "./definicoes/fretes-despachados-lista";
 import { notasFiscais } from "./definicoes/notas-fiscais";
+import { pagamentoComissao } from "./definicoes/pagamento-comissao";
 import { vendasPagas } from "./definicoes/vendas-pagas";
 import { vendasPorCidade } from "./definicoes/vendas-por-cidade";
 import type { AreaDef, AreaRelatorio, RelatorioDef } from "./types";
@@ -17,6 +18,7 @@ export const RELATORIOS: RelatorioDef[] = [
   vendasPagas,
   curvaAbcClientes,
   vendasPorCidade,
+  pagamentoComissao,
   contaCorrenteCreditos,
   conferenciaPagamentos,
   contasAReceber,

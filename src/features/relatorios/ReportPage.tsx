@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import type { ReactNode } from "react";
 import { AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, CalendarDays, Download, FileArchive, FileText, Loader2, Printer } from "lucide-react";
 import { PageHeader } from "@/components/common/PageHeader";
 import { SummaryCard } from "@/components/common/SummaryCard";
@@ -14,6 +15,7 @@ import { baixarBlob, imprimirPdf } from "./lib/arquivo";
 import { baixarCsv, montarCsv } from "./lib/csv";
 import { resolverPeriodo, ROTULO_PRESET } from "./lib/periodo";
 import { AREAS, buscarRelatorio } from "./registro";
+import { ACOES_DA_LINHA } from "./acoes";
 import type {
   ColunaDef,
   FiltroDef,
@@ -292,6 +294,17 @@ function ReportPageCorpo({ relatorio }: { relatorio: RelatorioDef }) {
 
   const area = AREAS.find((a) => a.id === relatorio.area);
 
+  // Menu no fim da linha, só para o relatório que registrou um em `acoes/`.
+  const AcoesDaLinha = ACOES_DA_LINHA[relatorio.slug];
+  const consultaDaTela = {
+    inicio: periodo.inicio,
+    fim: periodo.fim,
+    filtros: Object.fromEntries(relatorio.filtros.map((f, i) => [f.chave, valoresDosFiltros[i]]))
+  };
+  const acoesDaLinha = AcoesDaLinha
+    ? (linha: LinhaRelatorio) => <AcoesDaLinha linha={linha} consulta={consultaDaTela} />
+    : undefined;
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -518,6 +531,7 @@ function ReportPageCorpo({ relatorio }: { relatorio: RelatorioDef }) {
               total={resultado.total}
               ordem={ordem}
               onOrdenar={paginado ? undefined : alternarOrdem}
+              acoes={acoesDaLinha}
             />
             {resultado.paginacao ? <Paginador paginacao={resultado.paginacao} onIr={irParaPagina} /> : null}
           </>
@@ -650,7 +664,8 @@ function TabelaRelatorio({
   linhas,
   total,
   ordem,
-  onOrdenar
+  onOrdenar,
+  acoes
 }: {
   colunas: ColunaDef[];
   linhas: LinhaRelatorio[];
@@ -658,6 +673,8 @@ function TabelaRelatorio({
   ordem: Ordenacao;
   /** Sem ele (lista paginada), os títulos não ordenam. */
   onOrdenar?: (coluna: string) => void;
+  /** Menu no fim da linha (coluna Ações). Sem ele, a tabela não tem essa coluna. */
+  acoes?: (linha: LinhaRelatorio) => ReactNode;
 }) {
   return (
     <div className="overflow-x-auto">
@@ -695,6 +712,11 @@ function TabelaRelatorio({
                 </th>
               );
             })}
+            {acoes ? (
+              <th scope="col" className="whitespace-nowrap px-3 py-3 text-right font-semibold">
+                Ações
+              </th>
+            ) : null}
           </tr>
         </thead>
         <tbody>
@@ -709,6 +731,7 @@ function TabelaRelatorio({
                   {textoDaCelula(coluna, linha[coluna.id])}
                 </td>
               ))}
+              {acoes ? <td className="whitespace-nowrap px-3 py-2 text-right">{acoes(linha)}</td> : null}
             </tr>
           ))}
         </tbody>
@@ -726,6 +749,7 @@ function TabelaRelatorio({
                 </td>
               );
             })}
+            {acoes ? <td /> : null}
           </tr>
         </tfoot>
       </table>

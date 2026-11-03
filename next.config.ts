@@ -13,6 +13,8 @@ const nextConfig: NextConfig = {
     "/api/maestro/simple": ["./docs/manual/*.md"],
     // Fonte condensada do cabecalho do PDF da OS (Font.register le do disco).
     "/api/pedidos/imprimir-os": ["./public/fonts/Oswald-Bold.ttf"],
+    // Logos das empresas no recibo de comissão (lidas do disco, como no PDF da OS).
+    "/api/relatorios/[slug]/recibo": ["./public/logos/empresa-*"],
   },
   async headers() {
     return [
