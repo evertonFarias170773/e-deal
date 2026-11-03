@@ -1,3 +1,4 @@
+import type { PostgrestError } from "@supabase/supabase-js";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import { FORMA_RETRABALHO, cobrancaEhRetrabalho, marcaDeRetrabalho } from "@/lib/retrabalho";
 import { formatDocument } from "@/lib/formatters/document";
@@ -29,7 +30,7 @@ import {
 } from "@/lib/fiscal/nota-do-pedido";
 import { danfesDoPedido, COLUNAS_DANFE_DO_PEDIDO, type DanfeDoPedido } from "@/lib/fiscal/danfes-do-pedido";
 import { resolverPesoExpedicao } from "../lib/peso";
-import { STATUS_FUNIL_EXPEDICAO } from "../lib/pedido-em-aberto";
+import { STATUS_FUNIL_EXPEDICAO, STATUS_PEDIDO_EM_ABERTO } from "../lib/pedido-em-aberto";
 import { promessaNoDia } from "../lib/promessa-do-card";
 import { agruparReenvios, reenvioDoPedido, type LinhaReenvio } from "../lib/reenvio";
 import type {
@@ -125,6 +126,136 @@ function contatoDoCadastro(
   };
 }
 
+/** Colunas de `propostas` que o painel lê. */
+const COLUNAS_PROPOSTA_PAINEL =
+  // `id_endereco_ent` (02/09/2026): o endereço de entrega DEFINIDO NA
+  // PROPOSTA. Entrou na mesma linha que já vinha — zero consulta a mais
+  // aqui. É `text` na tabela, e aponta para `enderecos.id` (uuid).
+  "id_int, cliente, id_cliente, id_faturado, empresa, vendedor, status_interno, libera_nf, volume, modalidade_frete, id_transportadora_cliente, valor_frete, id_endereco_ent, categoria_frete, id_int_pedido_principal, motivo_copia, id_int_origem_copia";
+
+/** Teto de linhas por resposta do PostgREST neste projeto. */
+const LIMITE_LINHAS = 1000;
+
+/**
+ * Primeiro instante (UTC) do dia que fica `dias` antes de `hoje`, no relógio de
+ * São Paulo. Folga de um dia a mais: o corte exato continua no laço do painel.
+ */
+export function inicioJanelaEntregue(hoje: string, dias: number): string {
+  const base = Date.parse(`${hoje}T00:00:00-03:00`);
+  return new Date(base - (dias + 1) * 86400000).toISOString();
+}
+
+/** Ids por lote nas consultas do painel: 200 pedidos ficam bem abaixo das 1.000 linhas. */
+const IDS_POR_LOTE = 200;
+
+/**
+ * Roda a mesma consulta em lotes de ids e junta as linhas (03/11/2026). Com mais
+ * de 1.000 pedidos no painel, uma consulta única por `.in("id_int", ids)` bate no
+ * teto de 1.000 linhas e corta dados (o peso de 33 pedidos sumia na prova). O
+ * primeiro erro de qualquer lote vale para a consulta inteira, como antes.
+ */
+async function porLotes<T>(
+  ids: readonly number[],
+  montar: (lote: number[]) => PromiseLike<{ data: T[] | null; error: PostgrestError | null }>
+): Promise<{ data: T[]; error: PostgrestError | null }> {
+  const respostas = await Promise.all(emLotes(ids, IDS_POR_LOTE).map((lote) => montar(lote)));
+  const data: T[] = [];
+  for (const resposta of respostas) {
+    if (resposta.error) return { data: [], error: resposta.error };
+    const linhas = resposta.data ?? [];
+    if (linhas.length >= LIMITE_LINHAS) {
+      console.warn(`[expedicao.service] lote de ${IDS_POR_LOTE} ids devolveu ${linhas.length} linhas: pode ter cortado`);
+    }
+    data.push(...linhas);
+  }
+  return { data, error: null };
+}
+
+type ClientePainel = NonNullable<ReturnType<typeof getSupabaseClient>>;
+type Campo = string | number | boolean | null;
+type PropostaPainelRow = {
+  id_int: number;
+  cliente: string | null;
+  id_cliente: Campo;
+  id_faturado: Campo;
+  empresa: string | null;
+  vendedor: string | null;
+  status_interno: string | null;
+  libera_nf: boolean | null;
+  volume: Campo;
+  modalidade_frete: string | null;
+  id_transportadora_cliente: Campo;
+  valor_frete: Campo;
+  id_endereco_ent: string | null;
+  categoria_frete: string | null;
+  id_int_pedido_principal: number | null;
+  motivo_copia: string | null;
+  id_int_origem_copia: number | null;
+};
+
+/**
+ * As propostas do painel: abertos numa consulta, entregues recentes noutra.
+ * Exportada para o teste; a tela só usa `listarPainelExpedicao`.
+ */
+export async function lerPropostasDoPainel(
+  client: ClientePainel,
+  hoje: string = hojeSaoPaulo()
+): Promise<{ propostas: PropostaPainelRow[] | null; error: unknown }> {
+  // a) Abertos. Pedido de teste encerrado sai do painel sem ser apagado. Corte
+  // independente do auto-ocultar de ENTREGUE: um é sobre pedido que nunca foi
+  // real, o outro é sobre pedido real que já terminou.
+  const abertos = await client
+    .from("propostas")
+    .select(COLUNAS_PROPOSTA_PAINEL)
+    .eq("is_prd_aprovado", true)
+    .in("status_interno", STATUS_PEDIDO_EM_ABERTO)
+    .is("encerrado_teste_em", null)
+    .order("id_int", { ascending: false });
+  if (abertos.error || !abertos.data) return { propostas: null, error: abertos.error };
+  if (abertos.data.length >= LIMITE_LINHAS) {
+    console.warn(`[expedicao.service] ${abertos.data.length} pedidos abertos: perto do teto de ${LIMITE_LINHAS} linhas`);
+  }
+
+  // b) Entregues: primeiro os ids com entrega na janela ou sem data (páginas de
+  // 1.000, porque o mês sozinho já passa de 800), depois as propostas em lotes.
+  const desde = inicioJanelaEntregue(hoje, DIAS_ENTREGUE_VISIVEL);
+  const idsCandidatos: number[] = [];
+  for (let inicio = 0; ; inicio += LIMITE_LINHAS) {
+    const pagina = await client
+      .from("expedicoes")
+      .select("id_int")
+      .or(`data_entrega.gte.${desde},data_entrega.is.null`)
+      .order("id_int", { ascending: false })
+      .range(inicio, inicio + LIMITE_LINHAS - 1);
+    if (pagina.error || !pagina.data) return { propostas: null, error: pagina.error };
+    for (const linha of pagina.data) {
+      const id = Number(linha.id_int);
+      if (Number.isFinite(id)) idsCandidatos.push(id);
+    }
+    if (pagina.data.length < LIMITE_LINHAS) break;
+  }
+
+  const lotes = await Promise.all(
+    emLotes(Array.from(new Set(idsCandidatos)), 200).map((lote) =>
+      client
+        .from("propostas")
+        .select(COLUNAS_PROPOSTA_PAINEL)
+        .eq("is_prd_aprovado", true)
+        .eq("status_interno", "ENTREGUE")
+        .is("encerrado_teste_em", null)
+        .in("id_int", lote)
+    )
+  );
+  const entregues: PropostaPainelRow[] = [];
+  for (const lote of lotes) {
+    if (lote.error || !lote.data) return { propostas: null, error: lote.error };
+    entregues.push(...lote.data);
+  }
+
+  const propostas = [...abertos.data, ...entregues].sort((a, b) => Number(b.id_int) - Number(a.id_int));
+  return { propostas, error: null };
+}
+
 export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
   const client = getSupabaseClient();
   if (!client) {
@@ -132,22 +263,19 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
     return [];
   }
 
-  // 1. Propostas do funil
-  const { data: propostas, error: propError } = await client
-    .from("propostas")
-    .select(
-      // `id_endereco_ent` (02/09/2026): o endereço de entrega DEFINIDO NA
-      // PROPOSTA. Entrou na mesma linha que já vinha — zero consulta a mais
-      // aqui. É `text` na tabela, e aponta para `enderecos.id` (uuid).
-      "id_int, cliente, id_cliente, id_faturado, empresa, vendedor, status_interno, libera_nf, volume, modalidade_frete, id_transportadora_cliente, valor_frete, id_endereco_ent, categoria_frete, id_int_pedido_principal, motivo_copia, id_int_origem_copia"
-    )
-    .eq("is_prd_aprovado", true)
-    .in("status_interno", STATUS_FUNIL_EXPEDICAO)
-    // Pedido de teste encerrado sai do painel sem ser apagado. Corte independente
-    // do auto-ocultar de ENTREGUE após 30 dias, mais abaixo: um é sobre pedido
-    // que nunca foi real, o outro é sobre pedido real que já terminou.
-    .is("encerrado_teste_em", null)
-    .order("id_int", { ascending: false });
+  // 1. Propostas do funil, em DUAS consultas (03/11/2026).
+  //
+  // Antes era uma só, com os 13 status, e o corte de 30 dias do ENTREGUE vinha
+  // depois, em memória. O banco devolve no máximo 1.000 linhas: com 1.057
+  // entregues acumulados, a lista parava no #22952 e pedido ABERTO mais antigo
+  // (22249, 22721, 13020...) sumia do painel e da busca. Agora:
+  //   a) abertos (tudo menos ENTREGUE): ~190 linhas, longe do limite;
+  //   b) ENTREGUE só dos que têm `expedicoes.data_entrega` na janela ou vazia
+  //      (vazia continua visível, como no corte abaixo, que segue valendo).
+  //      ENTREGUE sem linha nenhuma em `expedicoes` deixa de entrar: eram 0 em
+  //      03/11 (todo ENTREGUE do funil tem data_entrega).
+  // O conjunto final é o mesmo de antes do limite; só deixa de perder pedido.
+  const { propostas, error: propError } = await lerPropostasDoPainel(client);
 
   if (propError || !propostas) {
     console.error("[expedicao.service] Erro ao buscar propostas:", propError);
@@ -190,80 +318,80 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
     retrabalhoRes,
     reenviosRes
   ] = await Promise.all([
-    client
+    porLotes(ids, (lote) => client
       .from("propostas_os")
       .select("id_int, data_termino, codigo_rastreamento, obs")
-      .in("id_int", ids),
-    client
+      .in("id_int", lote)),
+    porLotes(ids, (lote) => client
       .from("cotacao_frete")
       .select("id_int, servico, valor, peso, cep")
       .eq("escolhido", true)
-      .in("id_int", ids),
-    client
+      .in("id_int", lote)),
+    porLotes(ids, (lote) => client
       .from("notas_fiscais")
       .select(`id_int, ${COLUNAS_NOTA_DO_PEDIDO}, ${COLUNAS_DANFE_DO_PEDIDO}`)
-      .in("id_int", ids),
-    client
+      .in("id_int", lote)),
+    porLotes(ids, (lote) => client
       .from("expedicoes")
       .select(
         "id_int, modalidade_frete, tipo_frete, categoria_frete, transportadora_nome, id_transportadora_cliente, peso_kg, peso_bruto_kg, qtd_volumes, tipo_volume, id_endereco_entrega, id_cliente_destinatario_etiqueta, codigo_rastreamento, correios_id_prepostagem, correios_codigo_objeto, prepostagem_cancelada_em, correios_id_prepostagem_anterior, correios_codigo_objeto_anterior, data_pronto, data_despacho, coletado_em, data_entrega, despachado_por, retirado_por, obs, obs_etiqueta, nf_numero_manual, etiqueta_impressa_em, azul_awb, azul_status"
       )
-      .in("id_int", ids),
+      .in("id_int", lote)),
     idsCliente.length > 0
-      ? client
+      ? porLotes(idsCliente, (lote) => client
           .from("clientes")
           // `documento`, `whatsapp_1` e `telefone_fixo` (02/09/2026): o modal
           // Despachar passou a exibir CPF/CNPJ e telefone do destinatario, que
           // pode ser o cliente OU o pagador — os dois ja estao neste `in`.
           // Mesma linha que ja vinha, nenhuma consulta a mais.
           .select("id_cliente, nome, fantasia, cidade_uf, documento, whatsapp_1, telefone_fixo")
-          .in("id_cliente", idsCliente)
+          .in("id_cliente", lote))
       : Promise.resolve({ data: [], error: null } as const),
-    client.from("produtos_proposta").select("id_int, peso_total").in("id_int", ids),
+    porLotes(ids, (lote) => client.from("produtos_proposta").select("id_int, peso_total").in("id_int", lote)),
     // Liberacao ATIVA da recotacao (Parte C): quem autorizou e quando. Vem
     // junto da lista de proposito — o menu Acoes e o modal Despachar precisam
     // ler a MESMA fonte, senao um mostra liberado e o outro bloqueado.
-    client
+    porLotes(ids, (lote) => client
       .from("expedicao_recotacao_liberacoes")
       .select("id, id_int, liberado_em, liberado_por_nome")
       .is("consumida_em", null)
       .is("revogada_em", null)
-      .in("id_int", ids),
+      .in("id_int", lote)),
     // Ultima recotacao aplicada: vira a referencia de peso/CEP no despacho,
     // porque `cotacao_frete` nao muda quando uma recotacao e aplicada.
-    client
+    porLotes(ids, (lote) => client
       .from("expedicao_recotacoes")
       .select("id_int, peso_gramas, cep, aplicado_em")
-      .in("id_int", ids)
-      .order("aplicado_em", { ascending: false }),
+      .in("id_int", lote)
+      .order("aplicado_em", { ascending: false })),
     // Peso REAL por setor, medido na Revisão do boletim. A soma vira o "Peso
     // aferido" que o despacho abre preenchido — antes o expedidor tinha de
     // repetir na bancada uma pesagem que a produção já havia feito.
-    client.from("propostas_os_setores").select("id_int, setor, peso_real_kg").in("id_int", ids),
+    porLotes(ids, (lote) => client.from("propostas_os_setores").select("id_int, setor, peso_real_kg").in("id_int", lote)),
     // PEDIDO COMPLEMENTAR: complementos abertos dos pedidos do painel. Consulta
     // propria porque complemento em NOVO ou AGUARDANDO nao esta no funil — e o
     // card do principal precisa mostrar que ele existe e ainda nao chegou.
-    client
+    porLotes(ids, (lote) => client
       .from("propostas")
       .select("id_int, id_int_pedido_principal, status_interno")
-      .in("id_int_pedido_principal", ids)
-      .neq("status_interno", "CANCELADO"),
+      .in("id_int_pedido_principal", lote)
+      .neq("status_interno", "CANCELADO")),
     // RETRABALHO (19/10/2026): as cobrancas E-RETRABALHO dos pedidos do painel, NO
     // MESMO lote (em paralelo, sem ida e volta a mais). O status vem junto para a
     // regra da cobranca viva (`cobrancaEhRetrabalho`). Falhou, o card fica sem o
     // destaque — nada mais depende disto.
-    client
+    porLotes(ids, (lote) => client
       .from("pagamentos_v2")
       .select("id_int, tipo_cobranca, status")
-      .in("id_int", ids)
-      .ilike("tipo_cobranca", FORMA_RETRABALHO),
+      .in("id_int", lote)
+      .ilike("tipo_cobranca", FORMA_RETRABALHO)),
     // REENVIO (fase 1, 22/10/2026): os ciclos de reenvio dos pedidos do painel,
     // no mesmo lote. Falhou, o card fica sem o selo e sem o item de reenvio
     // aberto — o banco segue decidindo tudo na RPC.
-    client
+    porLotes(ids, (lote) => client
       .from("expedicao_reenvios")
       .select("id_int, ciclo, motivo, autor_nome, criado_em, tipo_frete_anterior, tipo_frete_novo, data_despacho_anterior")
-      .in("id_int", ids)
+      .in("id_int", lote))
   ]);
   if (reenviosRes.error) {
     console.warn("[expedicao.service] Nao foi possivel ler os reenvios:", reenviosRes.error.message);
