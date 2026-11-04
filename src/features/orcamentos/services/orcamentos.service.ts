@@ -364,7 +364,8 @@ function buildPeriodoFilter(periodo: string): OrcamentosPeriodoFilter | null {
  * Os status de arte que colocam o pedido no card EM_ARTE. Decisao do dono
  * (14/09/2026; "Pendente Informacao" entrou em 15/09/2026). Lista exaustiva:
  * outro status — APROVADO inclusive — e pedido sem linha em `pedidos_artes`
- * ficam fora.
+ * ficam fora. "Dados Pendentes" saiu em 04/11/2026 (pedido da gerencia) e foi
+ * para o card "Arte Aprovada" — ver `statusArteEntraNoCardArteAprovada`.
  *
  * Substituiu o criterio antigo (`status_interno` com " / EM ARTE" ou
  * `propostas.em_arte`). O sufixo continua na EXIBICAO do status e pode
@@ -378,7 +379,6 @@ const STATUS_ARTE_DO_CARD_EM_ARTE = [
   "Apr Parcial",
   // 30/09/2026, decisao do dono: o mesmo significado de "Apr Parcial".
   "APROVADO PARCIAL",
-  "Dados Pendentes",
   "Corrigir Dados",
   "Pendente Informacao"
 ];
@@ -414,24 +414,30 @@ export function statusArteEntraNoCardEmArte(status: string | null | undefined): 
  * lista inteira vai por grupo de Status Arte, nesta ordem, e dentro do grupo
  * fica a ordem de sempre. Valores reais de `pedidos_artes.status`, comparados
  * pela mesma chave do card (sem acento, caixa alta):
- *   1. Enviar Arte (fundo laranja na tela)
- *   2. Pendente Informacao (fundo vermelho na tela)
+ *   1. Pendente Informacao (fundo vermelho na tela)
+ *   2. Enviar Arte (fundo laranja na tela)
  *   3. Em Alteracao
- *   4. Dados Pendentes e Corrigir Dados
+ *   4. Corrigir Dados
  *   5. Em Aprovacao
  *   6. Apr Parcial e APROVADO PARCIAL
  *   7. EM ARTE
  *   8. os demais
+ * 04/11/2026 (gerencia): Pendente Informacao passou para o topo, antes de
+ * Enviar Arte, e Dados Pendentes saiu do card (estava no grupo 4).
  */
 const GRUPOS_STATUS_ARTE_DO_CARD_EM_ARTE: string[][] = [
-  ["Enviar Arte"],
   ["Pendente Informacao"],
+  ["Enviar Arte"],
   ["Em Alteracao"],
-  ["Dados Pendentes", "Corrigir Dados"],
+  ["Corrigir Dados"],
   ["Em Aprovacao"],
   ["Apr Parcial", "APROVADO PARCIAL"],
   ["EM ARTE"]
 ];
+
+/** Grupo de cada destaque da tela na ordem acima — a tela pinta por eles, nao por numero solto. */
+export const GRUPO_PENDENTE_INFORMACAO_DO_CARD_EM_ARTE = 1;
+export const GRUPO_ENVIAR_ARTE_DO_CARD_EM_ARTE = 2;
 
 const GRUPO_POR_CHAVE_DO_CARD_EM_ARTE = new Map<string, number>(
   GRUPOS_STATUS_ARTE_DO_CARD_EM_ARTE.flatMap((valores, i) =>
@@ -470,6 +476,18 @@ export function statusArteEhAprovado(status: string | null | undefined): boolean
 }
 
 /**
+ * O status de arte coloca o pedido no card "Arte Aprovada"? APROVADO e, desde
+ * 04/11/2026 (pedido da gerencia), tambem "Dados Pendentes" — que saiu do card
+ * EM_ARTE. "Apr Parcial" e "APROVADO PARCIAL" continuam fora. Mesma chave de
+ * comparacao dos demais status de arte. Usada pelo filtro do servidor e pela
+ * lista da tela (`pedidoEntraNoCardArteAprovada`).
+ */
+export function statusArteEntraNoCardArteAprovada(status: string | null | undefined): boolean {
+  const chave = chaveStatusArte(status);
+  return chave === "APROVADO" || chave === "DADOS PENDENTES";
+}
+
+/**
  * Status do pedido que TIRAM o pedido do card "Arte Aprovada" (27/09/2026,
  * decisao do dono): ja entrou na producao, saiu dela ou foi cancelado. Cada um
  * com e sem " / PENDENTE". Comparacao exata com `status_interno`, igual no
@@ -492,7 +510,8 @@ export const STATUS_FORA_DO_CARD_ARTE_APROVADA: readonly string[] = STATUS_BASE_
 const CONJUNTO_FORA_DO_CARD_ARTE_APROVADA = new Set(STATUS_FORA_DO_CARD_ARTE_APROVADA);
 
 /**
- * O pedido entra no card "Arte Aprovada"? (27/09/2026) Status Arte = APROVADO,
+ * O pedido entra no card "Arte Aprovada"? (27/09/2026) Status Arte = APROVADO
+ * (ou "Dados Pendentes", desde 04/11/2026 — `statusArteEntraNoCardArteAprovada`),
  * `is_prd_aprovado` falso (ou vazio) e `status_interno` fora de
  * `STATUS_FORA_DO_CARD_ARTE_APROVADA`. A flag e reforco: sozinha nao basta,
  * porque ha pedido em producao e entregue com ela falsa. Status vazio entra.
@@ -502,7 +521,7 @@ export function pedidoEntraNoCardArteAprovada(
   statusArte: string | null | undefined,
   pedido: { statusInterno?: string | null; is_prd_aprovado?: boolean | null }
 ): boolean {
-  if (!statusArteEhAprovado(statusArte)) return false;
+  if (!statusArteEntraNoCardArteAprovada(statusArte)) return false;
   if (pedido.is_prd_aprovado === true) return false;
   return !CONJUNTO_FORA_DO_CARD_ARTE_APROVADA.has(String(pedido.statusInterno ?? ""));
 }
@@ -961,7 +980,7 @@ async function fetchPropostaRows(
       idsCardArteAprovada = Array.from(
         new Set(
           (artesAprovadas || [])
-            .filter((linha) => statusArteEhAprovado(linha.status))
+            .filter((linha) => statusArteEntraNoCardArteAprovada(linha.status))
             .map((linha) => Number(linha.id_int))
             .filter((id) => Number.isFinite(id) && id > 0)
         )

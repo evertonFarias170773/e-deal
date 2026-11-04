@@ -70,6 +70,8 @@ import {
   listarPropostasDaBaseDosCards,
   listarPropostasDoCardEmArte,
   grupoStatusArteDoCardEmArte,
+  GRUPO_ENVIAR_ARTE_DO_CARD_EM_ARTE,
+  GRUPO_PENDENTE_INFORMACAO_DO_CARD_EM_ARTE,
   listarPropostasDoCardArteAprovada,
   pedidoEntraNoCardArteAprovada,
   statusArteEhPendenciaDoCardEmArte,
@@ -170,11 +172,14 @@ const DESTAQUE_PAGO_A_LIBERAR = { base: "#f0f9ff", hover: "#e0f2fe" };
 
 /**
  * Card EM_ARTE ligado (30/09/2026): "Enviar Arte" em laranja e "Pendente
- * Informacao" em vermelho (grupos 1 e 2 de `grupoStatusArteDoCardEmArte`).
+ * Informacao" em vermelho (grupos de `grupoStatusArteDoCardEmArte`).
  * Valem so com o card ligado e passam na frente dos destaques de sempre.
+ * 04/11/2026 (gerencia): o vermelho ficou mais forte (antes #fef2f2/#fee2e2,
+ * quase igual ao laranja claro) e virou token de tema (`--row-pendente-informacao`),
+ * que acompanha o modo escuro com o texto legivel.
  */
 const DESTAQUE_ENVIAR_ARTE = { base: "#fff7ed", hover: "#ffedd5" };
-const DESTAQUE_PENDENTE_INFORMACAO = { base: "#fef2f2", hover: "#fee2e2" };
+const DESTAQUE_PENDENTE_INFORMACAO = { base: "var(--row-pendente-informacao)", hover: "var(--row-pendente-informacao-hover)" };
 
 /**
  * Grupo da linha na ordem da lista: 0 = REVISAO ATENDENTE, 1 = financeiro
@@ -2325,8 +2330,8 @@ Ela volta a aparecer nas listas operacionais.`
         getRowHighlight={(proposta) => {
           if (activeCard === "EM_ARTE") {
             const arte = grupoStatusArteDoCardEmArte(proposta.statusArteDoCard);
-            if (arte === 1) return DESTAQUE_ENVIAR_ARTE;
-            if (arte === 2) return DESTAQUE_PENDENTE_INFORMACAO;
+            if (arte === GRUPO_PENDENTE_INFORMACAO_DO_CARD_EM_ARTE) return DESTAQUE_PENDENTE_INFORMACAO;
+            if (arte === GRUPO_ENVIAR_ARTE_DO_CARD_EM_ARTE) return DESTAQUE_ENVIAR_ARTE;
           }
           const grupo = grupoDaLinha(proposta);
           if (grupo === 0) return DESTAQUE_REVISAO;

@@ -1,6 +1,6 @@
 # Pedidos (lista)
 
-> **Última revisão:** 03/11/2026
+> **Última revisão:** 04/11/2026
 > **Caminho no menu:** Pedidos (item direto do menu lateral, sem submenu; é o segundo, logo abaixo de Conferência)
 > **Endereço:** `/orcamentos`
 
@@ -95,8 +95,8 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 Cada card mostra uma quantidade e, embaixo, "Soma em" seguido do período e do valor total. Clicar no card filtra a lista; clicar de novo desliga o filtro. Ligar um card volta o filtro de status para **Todos status**, menos em **Ativos**: com **Ativos** o card continua em **Ativos**, e as quantidades e somas dos cards seguem a mesma exclusão (sem entregues, em trânsito, cancelados, avulsos e encerrados).
 
 1. **Pedidos**: todos os pedidos do período, no recorte da lista (em **Ativos**, só os ativos; em **Todos status**, os que a lista padrão mostra, sem entregues). Ligar este card em **Todos status** traz também os entregues para a lista, que não estão no número do card; em **Ativos**, a lista continua sem entregues.
-2. **Em arte**: pedidos cujo Status Arte é Em Arte, Enviar Arte, Em Aprovação, Em Alteração, Apr Parcial (ou Aprovado Parcial), Dados Pendentes, Corrigir Dados ou Pendente Informação. O card fica laranja quando pelo menos um dos pedidos contados está em Pendente Informação ou Corrigir Dados.
-3. **Arte Aprovada**: pedidos com Status Arte APROVADO que ainda não foram liberados para a produção. Saem do card os que já estão em produção, na expedição, a retirar, em trânsito ou entregues.
+2. **Em arte**: pedidos cujo Status Arte é Em Arte, Enviar Arte, Em Aprovação, Em Alteração, Apr Parcial (ou Aprovado Parcial), Corrigir Dados ou Pendente Informação. Dados Pendentes não entra: vai para o card **Arte Aprovada**. O card fica laranja quando pelo menos um dos pedidos contados está em Pendente Informação ou Corrigir Dados.
+3. **Arte Aprovada**: pedidos com Status Arte APROVADO ou Dados Pendentes que ainda não foram liberados para a produção. Apr Parcial e Aprovado Parcial não entram. Saem do card os que já estão em produção, na expedição, a retirar, em trânsito ou entregues.
 4. **Liberadas**: pedidos com status exatamente "Liberado". Os que aparecem como "Liberado / EM ARTE" não entram aqui.
 5. **Revisão atendente**: pedidos em REVISAO ATENDENTE, que esperam o atendente conferir e liberar para a produção.
 6. **Em produção**: pedidos em REVISAO PRODUCAO, EM PRODUCAO, EM IMPRESSAO ou EM ACABAMENTO (com ou sem "/ PENDENTE").
@@ -137,10 +137,10 @@ A lista vem em grupos, nesta ordem. Dentro de cada grupo, vem primeiro o pedido 
 
 Com o card **Em arte** ligado, a ordem passa a ser primeiro pelo Status Arte, e dentro de cada um vale a ordem acima:
 
-1. Enviar Arte, com fundo laranja.
-2. Pendente Informação, com fundo vermelho.
+1. Pendente Informação, com fundo vermelho forte.
+2. Enviar Arte, com fundo laranja.
 3. Em Alteração.
-4. Dados Pendentes e Corrigir Dados.
+4. Corrigir Dados.
 5. Em Aprovação.
 6. Apr Parcial e Aprovado Parcial.
 7. Em Arte.
@@ -248,7 +248,7 @@ A liberação é recusada quando já existe NF-e de venda autorizada ou em proce
 - Título "Orcamentos" e item de menu **Pedidos**: são a mesma tela; o menu mudou de nome e o título do cabeçalho não.
 - Card **Pedidos** e o "Total de propostas encontradas" do rodapé: o card conta o período inteiro sem considerar um status específico escolhido; o rodapé dá o total da lista como está filtrada.
 - Card **Em arte** e opção EM ARTE do filtro de status: o card olha a coluna Status Arte; o filtro olha o "/ EM ARTE" escrito no status do pedido.
-- Card **Arte Aprovada** e status "Novo / Arte aprovada" ou "Aguardando / Arte aprovada": o card olha o Status Arte APROVADO de pedido ainda não liberado para a produção; os outros são status do pedido.
+- Card **Arte Aprovada** e status "Novo / Arte aprovada" ou "Aguardando / Arte aprovada": o card olha o Status Arte (APROVADO ou Dados Pendentes) de pedido ainda não liberado para a produção; os outros são status do pedido.
 - Card **Liberadas** e linha verde: o card conta só o status exatamente "Liberado"; a linha verde vale para todo pedido não avulso com financeiro liberado, inclusive "Liberado / EM ARTE".
 - Card **Liberadas** e **✓ Liberada para produção**: o primeiro é a liberação do financeiro (status "Liberado"); o segundo é o pedido que já entrou na fila da produção.
 - **Enviar para Fila de Faturamento** e **Liberar para Produção**: enviar põe o pedido só na Fila de Faturamento, sem produção; liberar põe na produção e na fila. Se um pedido enviado à fila for liberado depois, ele entra na produção normalmente (status REVISAO PRODUCAO) e continua na fila.
@@ -257,7 +257,7 @@ A liberação é recusada quando já existe NF-e de venda autorizada ou em proce
 - Selo **Pago / A liberar** e status "Liberado": o selo diz que o cliente pagou e o financeiro ainda não confirmou; "Liberado" é depois da confirmação.
 - Linha amarela (Aguardando financeiro) e linha azul bem claro (Pago / A liberar): as duas vêm da situação da cobrança na Conferência; se o pedido tem cobranças nas duas situações, vale Aguardando financeiro.
 - Linha azul clara (revisão atendente) e linha azul bem claro (Pago / A liberar): a primeira é pelo status do pedido e fica no topo; a segunda é pela cobrança e fica no quarto grupo.
-- Fundo laranja da linha (Enviar Arte) e card **Em arte** laranja: a linha fica laranja por Enviar Arte, só com o card ligado; o card fica laranja quando há pedido em Pendente Informação ou Corrigir Dados.
+- Fundo laranja da linha (Enviar Arte) e card **Em arte** laranja: a linha fica laranja por Enviar Arte, e vermelha por Pendente Informação, só com o card ligado; o card fica laranja quando há pedido em Pendente Informação ou Corrigir Dados.
 - **Cancelar proposta** e **Cancelar só a cobrança**: a primeira encerra o pedido e não tem volta; a segunda mantém o pedido e reabre o saldo para uma cobrança nova.
 - **Encerrar teste** e **Cancelar proposta**: encerrar teste só esconde o pedido das listas operacionais, sem mudar o status, e pode ser desfeito; cancelar é irreversível.
 - **Encerrar teste** e **Retirar da Produção**: encerrar teste não mexe na liberação do pedido; retirar desfaz a entrada na fila da produção e devolve o pedido ao atendente.
@@ -356,6 +356,8 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/features/orcamentos/services/retirar-producao.server.ts`
 - `src/features/orcamentos/components/RetirarProducaoModal.tsx`
 
+> **Mudança desta revisão:** 04/11/2026 — cards de arte (pedido da gerência): Dados Pendentes saiu do card **Em arte** e entrou no **Arte Aprovada**, com as mesmas exclusões; com o card **Em arte** ligado, Pendente Informação vem primeiro, antes de Enviar Arte, com o fundo vermelho mais forte.
+>
 > **Mudança desta revisão:** 03/11/2026 — E-Amostra, E-Retrabalho e E-Permuta não impedem o cancelamento da proposta (caso 24533): administrador em qualquer status, demais em AGUARDANDO.
 >
 > **Mudança desta revisão:** 29/10/2026 — novas ações **Liberar nota antecipada (Fila de Faturamento)** e **Desfazer nota antecipada** no menu da linha, em pedido AGUARDANDO.

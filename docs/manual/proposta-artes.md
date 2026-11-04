@@ -1,6 +1,6 @@
 # Proposta: aba Artes
 
-> **Última revisão:** 09/10/2026
+> **Última revisão:** 04/11/2026
 > **Caminho no menu:** Pedidos → abrir um pedido → Editar proposta → aba Artes
 > **Endereço:** `/orcamentos/[número]/editar?tab=artes`
 
@@ -94,17 +94,17 @@ Do **Enviar para arte** em diante, o status é alterado fora do Vibe, pelo siste
 | Status | Cor do selo | O que indica para o vendedor |
 |---|---|---|
 | AGUARDANDO | cinza | O briefing foi salvo, mas o pedido ainda não foi enviado para arte. Falta escolher o designer e clicar em **Enviar para arte**. |
-| Enviar Arte | azul | A arte ainda precisa ser enviada. Na lista de Pedidos, com o card **Em arte** ligado, esses pedidos vêm primeiro e com a linha laranja. |
+| Enviar Arte | azul | A arte ainda precisa ser enviada. Na lista de Pedidos, com o card **Em arte** ligado, esses pedidos vêm logo depois dos de Pendente Informação, com a linha laranja. |
 | Em Arte | azul | O pedido está com o designer. É o status que o **Enviar para arte** grava. |
 | Em Aprovação | laranja | A arte está em aprovação. |
 | Apr Parcial | laranja | Aprovação parcial. "APROVADO PARCIAL" tem o mesmo significado. |
 | Em Alteração | vermelho | A arte está sendo alterada. |
-| Dados Pendentes | azul | Faltam dados para a arte andar. |
+| Dados Pendentes | azul | Faltam dados para a arte andar. Na lista de Pedidos, o pedido conta no card **Arte Aprovada**, e não no **Em arte**. |
 | Corrigir Dados | vermelho | Há dado a corrigir. Deixa o card **Em arte** laranja na lista de Pedidos. |
-| Pendente Informação | cinza | Falta informação para a arte andar. Também deixa o card **Em arte** laranja; com o card ligado, a linha desses pedidos fica vermelha. |
+| Pendente Informação | cinza | Falta informação para a arte andar. Também deixa o card **Em arte** laranja; com o card ligado, esses pedidos vêm primeiro e com a linha vermelha. |
 | APROVADO | verde | Arte aprovada. É o único status de arte que deixa o pedido ser liberado para a produção. |
 
-Todos os status da tabela, menos AGUARDANDO e APROVADO, colocam o pedido no card **Em arte** da lista de Pedidos. Com APROVADO, ele passa para o card **Arte Aprovada** até ser liberado para a produção.
+Todos os status da tabela, menos AGUARDANDO, APROVADO e Dados Pendentes, colocam o pedido no card **Em arte** da lista de Pedidos. Com APROVADO ou Dados Pendentes, ele fica no card **Arte Aprovada** até ser liberado para a produção.
 
 ### Abrir o painel do cliente (link de aprovação)
 
@@ -145,7 +145,7 @@ O bloco **Últimos pedidos** lista as cinco propostas mais recentes do mesmo cli
 - O "/ EM ARTE" no status do pedido (por exemplo "LIBERADO / EM ARTE") não é o status da arte. Ele só diz que há arte pendente; em que ponto ela está é o selo ao lado.
 - **Enviar Arte** (status) não é **Enviar para arte** (botão). O botão grava o status **EM ARTE**.
 - **AGUARDANDO** no selo da arte não é o **AGUARDANDO** do status do pedido. O da arte quer dizer briefing salvo e não enviado; o do pedido é financeiro.
-- **Apr Parcial** não é **APROVADO**. Só APROVADO libera o pedido para a produção e entra no card **Arte Aprovada**.
+- **Apr Parcial** não é **APROVADO**. Só APROVADO libera o pedido para a produção. No card **Arte Aprovada** entram APROVADO e Dados Pendentes; Apr Parcial não.
 - O status da arte de cada modelo (coluna **Arte** da aba Pedido, por exemplo PENDENTE) não é o status da arte do pedido (selo do cabeçalho). A liberação para produção confere o do pedido.
 - O painel do cliente (ícone de link na lista de Pedidos) não é o botão do Ideal Imposition (cabeçalho do pedido). O primeiro é a página que o cliente vê; o segundo é o sistema interno de artes.
 - **Arquivos de referência** (esta aba) não são os anexos do chat (aba **Histórico**). Aqui só entram JPEG, PNG e PDF; o chat aceita também Word, Excel, ZIP, RAR e texto.
@@ -192,3 +192,5 @@ O bloco **Últimos pedidos** lista as cinco propostas mais recentes do mesmo cli
 - `src/features/orcamentos/orcamento-utils.ts`
 - `src/features/orcamentos/services/status-engine.service.ts`
 - `src/features/orcamentos/services/orcamentos.service.ts`
+
+> **Mudança desta revisão:** 04/11/2026 — Dados Pendentes passou do card **Em arte** para o **Arte Aprovada** na lista de Pedidos; Pendente Informação vem primeiro no card **Em arte**, antes de Enviar Arte.
