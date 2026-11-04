@@ -22,6 +22,7 @@ import {
   tipoContribuintePorDocumento
 } from "@/lib/fiscal/tipo-contribuinte";
 import { escolherEnderecoPrincipal } from "@/lib/fiscal/endereco-principal";
+import { idDoPagadorDoPedido } from "@/lib/fiscal/pagador-do-pedido";
 
 export const NFE_SELECT_COLUMNS = [
   "id",
@@ -493,9 +494,8 @@ export async function resolverPagador(idInt: number): Promise<number | null> {
     .maybeSingle();
   const linha = data as { id_cliente: number | null; id_faturado: number | null } | null;
   if (!linha) return null;
-  return linha.id_faturado && linha.id_faturado !== linha.id_cliente
-    ? linha.id_faturado
-    : linha.id_cliente;
+  // Regra unica com a NFS-e (lib/fiscal/pagador-do-pedido).
+  return idDoPagadorDoPedido(linha);
 }
 
 /**
@@ -561,10 +561,7 @@ export async function resolverDestinoFiscal(idInt: number): Promise<DestinoFisca
   } | null;
   if (!linha) return null;
 
-  const idPagador =
-    linha.id_faturado && linha.id_faturado !== linha.id_cliente
-      ? linha.id_faturado
-      : linha.id_cliente;
+  const idPagador = idDoPagadorDoPedido(linha);
   if (!idPagador) return null;
 
   const principal = await resolverEnderecoPrincipal(idPagador);

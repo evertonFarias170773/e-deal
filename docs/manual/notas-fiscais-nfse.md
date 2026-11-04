@@ -1,6 +1,6 @@
 # Notas fiscais: NFS-e (nota de serviço)
 
-> **Última revisão:** 04/11/2026 (natureza da operação e condição de pagamento na descrição do serviço)
+> **Última revisão:** 04/11/2026 (tomador é o pagador do pedido; natureza da operação e condição de pagamento na descrição do serviço)
 > **Caminho no menu:** Financeiro → Notas fiscais → aba **Fila Faturamento** → **NFS-e**
 > **Endereço:** `/notas-fiscais`
 
@@ -23,7 +23,7 @@ Nomes exatamente como aparecem na tela. Os botões da fila, do histórico e da N
 | Nome na tela | Onde fica | O que faz |
 |---|---|---|
 | **NFS-e** | Aba Fila, coluna **Ação**, entre **Nota emitida no sistema antigo** e **Faturar**; só em pedido da **BIRÔ IDEAL** | Abre a janela **Gerar NFS-e**. O texto muda com a nota de serviço do pedido: **NFS-e** (sem nota ou com rascunho), **NFS-e nº N** (autorizada), **NFS-e em análise** e **NFS-e (reenviar)** (o envio falhou). |
-| **Endereço que vai na nota** (lista) | Janela **Gerar NFS-e**, seção **Endereço do tomador** | Escolhe o endereço do tomador entre os do cliente. Endereços iguais aparecem uma vez só; endereço com "cadastro incompleto" fica apagado. |
+| **Endereço que vai na nota** (lista) | Janela **Gerar NFS-e**, seção **Endereço do tomador** | Escolhe o endereço do tomador entre os do cadastro do tomador (o pagador do pedido, quando há). Endereços iguais aparecem uma vez só; endereço com "cadastro incompleto" fica apagado. |
 | **Serviço fiscal** (lista) | Janela **Gerar NFS-e**, seção **Serviço e itens** | Escolhe o serviço da nota entre os serviços ativos do cadastro. Abaixo aparecem o código de tributação e o NBS do escolhido. Hoje há um serviço só (13.05.01). |
 | Caixa de marcar de cada item | Janela **Gerar NFS-e**, tabela de itens | Diz se o item do pedido entra na nota. Todos vêm marcados, e pelo menos um tem de ficar. |
 | **Usar a soma** | Janela **Gerar NFS-e**, abaixo do **Valor da nota** | Volta o valor para a soma dos itens marcados. Aparece quando o valor foi alterado. |
@@ -52,7 +52,7 @@ Só para pedido da **BIRÔ IDEAL** e para quem tem a permissão **Emitir NFS-e (
 
 1. Na aba **Fila Faturamento**, ache o pedido e clique em **NFS-e**, entre **Nota emitida no sistema antigo** e **Faturar**.
 2. A janela abre com o título **NFS-e · Pedido #N**, o selo do status (Novo enquanto o rascunho não foi criado; depois Rascunho, Em análise, Autorizada ou Erro) e a faixa do ambiente. Em homologação a faixa é amarela e diz "HOMOLOGAÇÃO: NOTA DE TESTE, sem valor fiscal"; em produção é vermelha.
-3. Confira os três quadros do resumo: **Informações gerais** (empresa emissora, ambiente e serviço fiscal), **Valores** (serviços e total da nota) e **Tomador** (nome, CPF ou CNPJ, e-mail e telefone do cliente do pedido).
+3. Confira os três quadros do resumo: **Informações gerais** (empresa emissora, ambiente e serviço fiscal), **Valores** (serviços e total da nota) e **Tomador** (nome, CPF ou CNPJ, e-mail e telefone de quem paga o pedido). Quando o pedido tem pagador, o tomador é o pagador e o quadro mostra "Pagador do pedido. Cliente: …" com o nome do cliente do cadastro.
 4. Em **Endereço do tomador**, escolha o endereço na lista. Com um endereço só, ele já vem escolhido; com vários, a escolha é obrigatória.
 5. Em **Serviço e itens**, confira o **Serviço fiscal** e a tabela dos itens do pedido (produto, quantidade, valor unitário e subtotal). Desmarque o item que não entra nesta nota.
 6. Confira o **Valor da nota**. Ele é a soma dos itens marcados, já com o desconto do pedido, e pode ser alterado; se ficar diferente da soma, a janela avisa.
@@ -117,6 +117,8 @@ Se a resposta não chegar (demora ou queda de conexão), a janela não conclui q
 - **NBS do rascunho:** super administrador e administrador veem o campo **NBS** e o botão **Salvar NBS** no rascunho (ou na nota com erro de envio), antes de emitir. O NBS precisa ter exatamente 9 dígitos, sem pontos. Nota autorizada, em análise, recusada ou cancelada não muda. Para os outros usuários o NBS aparece só para leitura. A alteração fica registrada com o nome de quem mudou.
 - Os serviços da lista vêm do cadastro de serviços da NFS-e. A janela não cadastra nem altera serviço.
 - A natureza da operação sai impressa na nota pela linha "Natureza da operação: Tributação no município (Subitem 13.05 - Composição gráfica)" da **Descrição do serviço**. O texto é fixo porque todas as NFS-e do Vibe usam o serviço 13.05.01 (subitem 13.05). Pode ser alterado ou apagado na descrição, como o resto do texto. O aviso de natureza da operação não selecionada continua aparecendo; ele não bloqueia a nota.
+- **Quem é o tomador:** o pagador escolhido no pedido, quando ele é diferente do cliente; sem pagador, o cliente do pedido. É a mesma regra do destinatário da NF-e de produto. Nome, documento, e-mail, telefone e a lista de endereços saem do cadastro do tomador. Exemplo: no pedido 23991 o cliente é a Companhia Zaffari e o pagador é a Maxion, então a NFS-e sai contra a Maxion, com o endereço da Maxion.
+- Trocar o pagador do pedido depois de criar o rascunho não muda o tomador já gravado. Para atualizar, crie outro rascunho.
 - A descrição do serviço tem de 1 a 1000 caracteres. Acima disso o **Criar rascunho** fica apagado.
 - Quando o município do endereço escolhido não é reconhecido, a nota sai sem o endereço do tomador. A janela avisa e não bloqueia. O mesmo vale para cliente sem endereço cadastrado.
 - Homologação não pede confirmação para emitir. Produção pede uma, com o resumo da nota.
@@ -142,7 +144,7 @@ Se a resposta não chegar (demora ou queda de conexão), a janela não conclui q
 |---|---|---|
 | "A emissão de NFS-e pelo Vibe não está liberada para ..." | O pedido não é da **BIRÔ IDEAL**. | Não há NFS-e pelo Vibe para essa empresa. |
 | "O cliente não tem CPF (11 dígitos) ou CNPJ (14 dígitos) no cadastro." | O documento do cliente está vazio ou incompleto. | Corrija o cadastro do cliente e abra a janela de novo. |
-| "Escolha o endereço do tomador." | O cliente tem endereço e nenhum foi marcado. | Marque um endereço e clique em **Criar rascunho**. |
+| "Escolha o endereço do tomador." | O tomador tem mais de um endereço e nenhum foi marcado. | Marque um endereço e clique em **Criar rascunho**. |
 | "O serviço ... está sem código de tributação no cadastro." ou "... sem NBS de 9 dígitos no cadastro." | O cadastro do serviço está incompleto. | Peça ao administrador para acertar o cadastro do serviço. |
 | "O serviço ... está inativo." | O serviço foi desativado depois que a janela abriu. | Feche e abra a janela, e escolha outro serviço. |
 | "O serviço ... tem NBS ..., mas o banco ainda grava 121011000 em toda nota." | O serviço tem um NBS que o banco ainda não sabe gravar na nota. | Avise o administrador. A emissão com esse serviço depende de ajuste no banco. |
@@ -198,3 +200,4 @@ Se a resposta não chegar (demora ou queda de conexão), a janela não conclui q
 - `src/app/api/fiscal/nfse-arquivo/route.ts`
 - `src/features/fiscal/NotasFiscaisPage.tsx`
 - `src/features/nfse/services/nfse-financeiro.service.ts`
+- `src/lib/fiscal/pagador-do-pedido.ts`

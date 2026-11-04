@@ -793,6 +793,11 @@ export function GerarNfseModal({
                   </p>
                   <p className="text-xs text-slate-500">E-mail: {contexto.tomador.email}</p>
                   <p className="text-xs text-slate-500">Telefone: {contexto.tomador.telefone}</p>
+                  {contexto.tomador.ehPagadorDoPedido && (
+                    <p className="mt-1 text-xs font-semibold text-slate-600" data-tomador-pagador>
+                      Pagador do pedido. Cliente: {contexto.tomador.clienteDoPedido}
+                    </p>
+                  )}
                 </CartaoDeResumo>
               </div>
 

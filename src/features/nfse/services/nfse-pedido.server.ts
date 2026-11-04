@@ -20,6 +20,7 @@ import {
   type CobrancaDoPedido,
   type ItemDoPedido
 } from "@/features/nfse/lib/composicao-nfse";
+import { idDoPagadorDoPedido } from "@/lib/fiscal/pagador-do-pedido";
 
 /**
  * NFS-e pela Fila — o que as rotas `/api/fiscal/rascunho-nfse` e
@@ -95,8 +96,19 @@ export type ContextoNfseDoPedido = {
   /** `propostas.valor_frete`. Não entra na nota de serviço; aparece só para explicar a diferença. */
   freteDoPedido: number;
   empresa: { id: number; nome: string; ambiente: AmbienteDaEmpresa; liberada: boolean };
+  /**
+   * O TOMADOR da nota: o pagador do pedido (`propostas.id_faturado`) quando há
+   * um distinto do cliente, pela mesma regra do destinatário da NF-e
+   * (lib/fiscal/pagador-do-pedido); senão, o cliente do pedido. Nome,
+   * documento, contatos e ENDEREÇOS saem todos do cadastro desse tomador.
+   */
   tomador: {
+    /** O `id_cliente` do tomador (vai para `p_id_cliente` do rascunho). */
     idCliente: number | null;
+    /** O tomador é o pagador escolhido no pedido, não o cliente do pedido. */
+    ehPagadorDoPedido: boolean;
+    /** Nome do cliente do pedido, para a janela explicar a troca. Vazio quando o tomador é o próprio cliente. */
+    clienteDoPedido: string;
     nome: string;
     documentoOk: boolean;
     tipoDocumento: "CPF" | "CNPJ" | null;
@@ -227,7 +239,7 @@ export async function lerContextoNfseDoPedido(
 ): Promise<{ ok: true; contexto: ContextoNfseDoPedido } | Falha> {
   const { data: propostaRow, error: propostaError } = await supabase
     .from("propostas")
-    .select("id_int, id_cliente, cliente, empresa, valor, valor_total, valor_frete")
+    .select("id_int, id_cliente, id_faturado, cliente, empresa, valor, valor_total, valor_frete")
     .eq("id_int", idInt)
     .maybeSingle();
   if (propostaError) {
@@ -238,6 +250,7 @@ export async function lerContextoNfseDoPedido(
 
   const proposta = propostaRow as {
     id_cliente: number | null;
+    id_faturado: number | null;
     cliente: string | null;
     empresa: string | null;
     valor: number | null;
@@ -245,7 +258,10 @@ export async function lerContextoNfseDoPedido(
     valor_frete: number | null;
   };
   const idEmpresa = empresaEmitenteDoTexto(proposta.empresa);
-  const idCliente = proposta.id_cliente != null && Number(proposta.id_cliente) > 0 ? Number(proposta.id_cliente) : null;
+  const idClienteDoPedido = proposta.id_cliente != null && Number(proposta.id_cliente) > 0 ? Number(proposta.id_cliente) : null;
+  // O tomador: o pagador do pedido quando há, senão o cliente (mesma regra da NF-e).
+  const idCliente = idDoPagadorDoPedido(proposta);
+  const ehPagadorDoPedido = idCliente != null && idCliente !== idClienteDoPedido;
 
   const [empresaRes, clienteRes, enderecosRes, itensRes, notasRes, cobrancasRes, descontosRes] = await Promise.all([
     supabase.from("empresas").select("id, nome_fantasia, ambiente_nfse").eq("id", idEmpresa).maybeSingle(),
@@ -385,7 +401,9 @@ export async function lerContextoNfseDoPedido(
       },
       tomador: {
         idCliente,
-        nome: texto(cliente?.nome) || texto(cliente?.fantasia) || texto(proposta.cliente) || "(cliente sem nome)",
+        ehPagadorDoPedido,
+        clienteDoPedido: ehPagadorDoPedido ? texto(proposta.cliente) || `Cliente ${idClienteDoPedido ?? "?"}` : "",
+        nome: texto(cliente?.nome) || texto(cliente?.fantasia) || (ehPagadorDoPedido ? "" : texto(proposta.cliente)) || "(cliente sem nome)",
         documentoOk: documento.ok,
         tipoDocumento: documento.tipo,
         documento: documentoFormatado(cliente?.documento),
