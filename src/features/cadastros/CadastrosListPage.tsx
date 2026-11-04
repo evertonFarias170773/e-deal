@@ -53,6 +53,8 @@ type SearchState = {
   search: string;
   tipo: CadastroTipo | "";
   mostrarInativos: boolean;
+  /** Busca por telefone/WhatsApp — só esta lista liga; o Maestro não. */
+  buscaPorTelefone: boolean;
   /** Muda para forçar releitura da lista (ex.: depois de inativar um cadastro). */
   recarga: number;
 };
@@ -210,6 +212,7 @@ export function CadastrosListPage() {
       // Seguem o interruptor: com ele desligado a consulta volta ao padrão.
       tipo: FILTROS_AVANCADOS_DISPONIVEIS ? filters.tipo : "",
       mostrarInativos: FILTROS_AVANCADOS_DISPONIVEIS ? filters.inativos : false,
+      buscaPorTelefone: true,
       recarga
     }),
     [pageIndex, search, filters.tipo, filters.inativos, recarga]
@@ -222,8 +225,11 @@ export function CadastrosListPage() {
     isLoading,
     warnings,
     loadedCount,
-    source
+    source,
+    acertos
   } = useCadastrosReadOnlyData(query);
+  /** "Encontrado por WhatsApp 2: ..." quando o cliente veio por telefone, WhatsApp ou e-mail. */
+  const acertoDe = (idCliente: number) => acertos?.[idCliente] ?? null;
   const resumo = useCadastrosDashboardResumo();
 
   const activeFilters = [
@@ -344,7 +350,7 @@ export function CadastrosListPage() {
                 value={buscaDigitada}
                 onChange={(event) => handleSearchChange(event.target.value)}
                 className="w-full bg-transparent text-sm text-slate-900 outline-none"
-                placeholder="Buscar por ID do cliente, documento, nome fantasia ou nome"
+                placeholder="Buscar por ID do cliente, documento, nome fantasia, nome, telefone, WhatsApp ou e-mail"
               />
             </label>
           </div>
@@ -440,6 +446,9 @@ export function CadastrosListPage() {
                 {cadastro.fantasia || cadastro.apelido ? (
                   <p className="text-xs text-slate-500">{cadastro.fantasia || cadastro.apelido}</p>
                 ) : null}
+                {acertoDe(cadastro.idCliente) ? (
+                  <p className="text-xs font-semibold text-[#0f9f9a]">Encontrado por {acertoDe(cadastro.idCliente)}</p>
+                ) : null}
               </div>
             )
           },
@@ -531,6 +540,9 @@ export function CadastrosListPage() {
                 <h3 className="mt-2 font-semibold text-slate-950">{cadastro.nome}</h3>
                 {cadastro.fantasia || cadastro.apelido ? (
                   <p className="mt-1 text-sm text-slate-500">{cadastro.fantasia || cadastro.apelido}</p>
+                ) : null}
+                {acertoDe(cadastro.idCliente) ? (
+                  <p className="mt-1 text-xs font-semibold text-[#0f9f9a]">Encontrado por {acertoDe(cadastro.idCliente)}</p>
                 ) : null}
               </div>
             </div>

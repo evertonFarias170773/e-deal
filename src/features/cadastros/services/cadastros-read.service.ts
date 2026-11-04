@@ -1,4 +1,5 @@
 import { getSupabaseClient } from "@/lib/supabase/client";
+import { campoQueBateu, digitosDaBusca, trechosDeTelefone, type LinhaParaAcerto } from "@/features/cadastros/lib/busca-cliente-por-digitos";
 import type {
   SupabaseCadastrosClientesListaRow,
   SupabaseCadastrosAbcClienteRow,
@@ -55,6 +56,13 @@ export type CadastrosListQuery = {
   tipo?: CadastroTipo | "";
   /** Falso (padrão) = só ativos. */
   mostrarInativos?: boolean;
+  /**
+   * Liga a busca por telefone da lista de Clientes (04/11/2026): termo só de
+   * dígitos, a partir de 4, acha também trecho de telefone fixo, WhatsApp 1 e 2
+   * (ID exato no topo, depois documento, depois telefone), e a resposta traz
+   * `acertos`. Desligado (padrão — o Maestro), a busca é a de sempre.
+   */
+  buscaPorTelefone?: boolean;
 };
 
 export type CadastrosReadResult = {
@@ -67,6 +75,8 @@ export type CadastrosReadResult = {
   loadedCount: number;
   warnings: string[];
   errorMessage?: string;
+  /** Por id_cliente: o campo que trouxe o cliente (telefone, WhatsApp ou e-mail). Só com `buscaPorTelefone`. */
+  acertos?: Record<number, string>;
 };
 
 export type CadastrosDashboardClienteResumo = {
@@ -307,6 +317,131 @@ async function fetchDashboardResumoSupabase(
   };
 }
 
+type FiltroDaLista = { op: "eq" | "ilike"; coluna: string; valor: string | boolean };
+
+function acertosDasLinhas(rows: readonly unknown[], termo: string): Record<number, string> {
+  const acertos: Record<number, string> = {};
+  if (!termo.trim()) return acertos;
+  for (const row of rows as LinhaParaAcerto[]) {
+    const campo = campoQueBateu(row, termo);
+    const idCliente = Number(row.id_cliente);
+    if (campo && Number.isFinite(idCliente)) acertos[idCliente] = campo;
+  }
+  return acertos;
+}
+
+/**
+ * Lista de Clientes com a busca por telefone (ver `buscaPorTelefone`).
+ *
+ * Ordem: ID exato fixado no topo (a mesma mecânica de sempre), depois quem bate
+ * no documento, depois quem bate só no telefone/WhatsApp. Os dois conjuntos são
+ * disjuntos (o de telefone exclui quem já bateu no documento) e paginados como
+ * UMA sequência: a janela [from, to] da página é recortada primeiro no
+ * documento e o que sobra no telefone, pelas contagens exatas de cada um. Os
+ * dígitos vêm das colunas `*_numeros` da view — nada muda no banco.
+ */
+async function listarComTelefone(
+  client: NonNullable<ReturnType<typeof getSupabaseClient>>,
+  p: {
+    digitos: string;
+    termo: string;
+    filtrosDaLista: FiltroDaLista[];
+    idExato: string;
+    from: number;
+    to: number;
+    pageIndex: number;
+    pageSize: number;
+  }
+): Promise<CadastrosReadResult> {
+  const { digitos, filtrosDaLista, idExato, from, to, pageIndex, pageSize } = p;
+  const VIEW = "vw_cadastros_lista_completa";
+  const condDocumento = `documento_numeros.ilike.%${digitos}%`;
+  const condTelefone = trechosDeTelefone(digitos)
+    .flatMap((t) => [`whatsapp_1_numeros.ilike.%${t}%`, `whatsapp_2_numeros.ilike.%${t}%`, `telefone_fixo_numeros.ilike.%${t}%`])
+    .join(",");
+  // NOT ILIKE em nulo dá nulo e descartaria o cadastro sem documento.
+  const semDocumento = `documento_numeros.is.null,documento_numeros.not.ilike.%${digitos}%`;
+
+  // Filtros da lista + exclusão do ID fixado, iguais em todas as leituras.
+  // O builder do PostgREST não tem um tipo comum entre as leituras.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const aplicar = (request: any, excluirIdExato: boolean): any => {
+    let r = request;
+    for (const filtro of filtrosDaLista) {
+      r = filtro.op === "eq" ? r.eq(filtro.coluna, filtro.valor) : r.ilike(filtro.coluna, String(filtro.valor));
+    }
+    if (excluirIdExato && idExato) r = r.or(`id_cliente_text.is.null,id_cliente_text.neq.${idExato}`);
+    return r;
+  };
+  const doDocumento = () => aplicar(client.from(VIEW).select(COLUNAS_LISTA, { count: "exact" }), true).or(condDocumento);
+  const doTelefone = () =>
+    aplicar(client.from(VIEW).select(COLUNAS_LISTA, { count: "exact" }), true).or(condTelefone).or(semDocumento);
+  const ordenar = (r: ReturnType<typeof doDocumento>) => r.order("id_cliente", { ascending: false, nullsFirst: false });
+  const nada = { data: [], error: null, count: 0 };
+
+  try {
+    // 1ª rodada: as contagens dos dois conjuntos e o ID exato.
+    const [contaDoc, contaTel, exato] = await Promise.all([
+      doDocumento().limit(1),
+      doTelefone().limit(1),
+      idExato ? aplicar(client.from(VIEW).select(COLUNAS_LISTA), false).eq("id_cliente_text", idExato).limit(1) : Promise.resolve(nada)
+    ]);
+    const erro = contaDoc.error ?? contaTel.error ?? exato.error;
+    if (erro) throw erro;
+    const nDoc = Number(contaDoc.count ?? 0);
+    const nTel = Number(contaTel.count ?? 0);
+
+    // 2ª rodada: a janela da página sobre a sequência documento → telefone.
+    const janelaDoc = from < nDoc ? [from, Math.min(to, nDoc - 1)] : null;
+    const inicioTel = Math.max(from - nDoc, 0);
+    const fimTel = to - nDoc;
+    const janelaTel = fimTel >= 0 && inicioTel < nTel ? [inicioTel, Math.min(fimTel, nTel - 1)] : null;
+
+    const [linhasDoc, linhasTel] = await Promise.all([
+      janelaDoc ? ordenar(doDocumento()).range(janelaDoc[0], janelaDoc[1]) : Promise.resolve(nada),
+      janelaTel ? ordenar(doTelefone()).range(janelaTel[0], janelaTel[1]) : Promise.resolve(nada)
+    ]);
+    const erroJanela = linhasDoc.error ?? linhasTel.error;
+    if (erroJanela) throw erroJanela;
+
+    const linhas = [
+      ...((linhasDoc.data ?? []) as SupabaseCadastrosClientesListaRow[]),
+      ...((linhasTel.data ?? []) as SupabaseCadastrosClientesListaRow[])
+    ];
+    let cadastros = linhas.map(mapClienteListaRow);
+    const linhaExata = ((exato.data ?? []) as SupabaseCadastrosClientesListaRow[])[0];
+    if (linhaExata && pageIndex === 0) {
+      const item = mapClienteListaRow(linhaExata);
+      cadastros = [item, ...cadastros.filter((c) => c.id !== item.id)].slice(0, pageSize);
+    }
+
+    const totalPrincipal = nDoc + nTel;
+    return {
+      source: "supabase",
+      cadastros,
+      totalCount: totalPrincipal + (linhaExata ? 1 : 0),
+      hasNextPage: from + linhas.length < totalPrincipal,
+      pageIndex,
+      pageSize,
+      loadedCount: cadastros.length,
+      acertos: acertosDasLinhas(linhas, p.termo),
+      warnings: [`Busca por dígitos com telefone em ${VIEW}: documento ${nDoc}, telefone ${nTel}.`]
+    };
+  } catch (error) {
+    console.log("[Cadastros][List] erro na busca por telefone - fallback vazio ativado.", { error });
+    return {
+      source: "supabase",
+      cadastros: [],
+      totalCount: 0,
+      hasNextPage: false,
+      pageIndex,
+      pageSize,
+      loadedCount: 0,
+      warnings: ["Não foi possível carregar a lista neste momento."]
+    };
+  }
+}
+
 export async function getCadastrosReadOnlyList(query: CadastrosListQuery): Promise<CadastrosReadResult> {
   const pageSize = Math.min(Math.max(query.pageSize ?? PAGE_SIZE_MAX, 1), PAGE_SIZE_MAX);
   const pageIndex = Math.max(query.pageIndex, 0);
@@ -361,6 +496,28 @@ export async function getCadastrosReadOnlyList(query: CadastrosListQuery): Promi
     filtrosDaLista.push({ op: "ilike", coluna: "id_cliente_text", valor: `${idClienteDigits}%` });
   }
 
+  // Busca por telefone (só a lista de Clientes): termo que a regra de sempre
+  // já trata como dígitos, a partir de 4. O ID exato e o documento seguem a
+  // mesma regra; os telefones entram depois deles.
+  const digitosTelefone =
+    query.buscaPorTelefone && filtroBusca?.tipo === "digitos" ? digitosDaBusca(searchTerm) : null;
+  if (digitosTelefone) {
+    return listarComTelefone(client, {
+      digitos: digitosTelefone,
+      termo: query.search ?? "",
+      filtrosDaLista,
+      idExato,
+      from,
+      to,
+      pageIndex,
+      pageSize
+    });
+  }
+
+  // E-mail por trecho já vem pela busca_geral; com a busca por telefone ligada,
+  // a leitura traz também os e-mails só para dizer na linha qual campo bateu.
+  const colunasDaLeitura = query.buscaPorTelefone ? `${COLUNAS_LISTA},email,email_contato` : COLUNAS_LISTA;
+
   try {
     // Fonte: public.vw_cadastros_lista_completa (migration
     // 20260729_vw_cadastros_lista_completa.sql). Mesmas colunas da view
@@ -370,7 +527,7 @@ export async function getCadastrosReadOnlyList(query: CadastrosListQuery): Promi
     // mesmo (contagem de ativos e aniversariantes) e o Maestro.
     let request = client
       .from("vw_cadastros_lista_completa")
-      .select(COLUNAS_LISTA, { count: "exact" })
+      .select(colunasDaLeitura, { count: "exact" })
       // nullsFirst: false — em DESC o Postgres põe NULL primeiro, e um cadastro
       // sem id_cliente abria a lista dos "mais recentes".
       .order("id_cliente", { ascending: false, nullsFirst: false });
@@ -443,6 +600,7 @@ export async function getCadastrosReadOnlyList(query: CadastrosListQuery): Promi
       pageIndex,
       pageSize,
       loadedCount: cadastros.length,
+      acertos: query.buscaPorTelefone ? acertosDasLinhas(data ?? [], query.search ?? "") : undefined,
       warnings: [
         `Leitura real aplicada em public.vw_cadastros_lista_completa com paginação server-side de ${pageSize} registros.`
       ]
