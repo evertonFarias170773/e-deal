@@ -1,6 +1,6 @@
 # Notas fiscais: NFS-e (nota de serviço)
 
-> **Última revisão:** 04/11/2026 (tomador é o pagador do pedido; natureza da operação e condição de pagamento na descrição do serviço)
+> **Última revisão:** 04/11/2026 (tomador é o pagador do pedido; natureza da operação e condição de pagamento na descrição do serviço; histórico da NFS-e em aba própria)
 > **Caminho no menu:** Financeiro → Notas fiscais → aba **Fila Faturamento** → **NFS-e**
 > **Endereço:** `/notas-fiscais`
 
@@ -62,7 +62,7 @@ Só para pedido da **BIRÔ IDEAL** e para quem tem a permissão **Emitir NFS-e (
 10. A janela acompanha a nota sozinha: consulta a cada 15 segundos, por até 5 minutos. Quando a prefeitura responde, aparece a seção **Documentos**, com o número da NFS-e, a data de emissão, a chave de acesso e os botões **Abrir PDF**, **Baixar PDF**, **Abrir XML** e **Baixar XML**.
 11. Se passar dos 5 minutos, a janela mostra "A nota continua em análise. Consulte depois.". Clique em **Consultar agora**, ou feche e volte mais tarde pelo botão **NFS-e em análise** da fila.
 
-Depois da NFS-e autorizada o pedido sai da fila. Para vê-lo de novo, marque **Mostrar também pedidos com NFS-e emitida**: ele volta com o botão **NFS-e nº N**. Clicar nele abre a nota só para leitura, com os mesmos botões de abrir e de baixar o PDF e o XML. A nota também fica no **Histórico NFS-e**.
+Depois da NFS-e autorizada o pedido sai da fila. Para vê-lo de novo, marque **Mostrar também pedidos com NFS-e emitida**: ele volta com o botão **NFS-e nº N**. Clicar nele abre a nota só para leitura, com os mesmos botões de abrir e de baixar o PDF e o XML. A nota também fica no **Histórico NF-e / NFS-e**, aba **NFS-e (Serviços)**.
 
 O rascunho não é editado depois de criado. Se o endereço, o valor, a descrição ou as informações complementares ficaram errados, abra **Mais ações** e clique em **Criar outro rascunho**: o anterior fica sem uso e a nota sai pelo novo.
 
@@ -85,7 +85,7 @@ Se a resposta não chegar (demora ou queda de conexão), a janela não conclui q
 
 #### Saber se a NFS-e emitida pelo Vibe vale (homologação ou produção)
 
-1. Abra a janela **Gerar NFS-e** do pedido e olhe a faixa do ambiente no topo. No **Histórico NFS-e (Serviços)**, olhe a coluna **Ambiente**.
+1. Abra a janela **Gerar NFS-e** do pedido e olhe a faixa do ambiente no topo. No **Histórico NF-e / NFS-e**, aba **NFS-e (Serviços)**, olhe a coluna **Ambiente**.
 2. **HOMOLOGAÇÃO** quer dizer nota de teste, sem valor fiscal. Hoje toda NFS-e emitida pelo Vibe sai assim.
 3. Ainda não dá para emitir NFS-e em produção pelo Vibe. A emissão em produção existe no sistema só para a **BIRÔ IDEAL** e não foi ativada.
 4. Para ter uma NFS-e com valor fiscal, emita pelo portal nacional (www.nfse.gov.br). O cancelamento de NFS-e também é pelo portal.
@@ -127,7 +127,7 @@ Se a resposta não chegar (demora ou queda de conexão), a janela não conclui q
 - Os alertas mostrados antes de emitir são informativos. Os marcados em vermelho apontam dado que a integração recusa: corrija o cadastro antes de enviar.
 - O número que identifica a nota de serviço é o **número da NFS-e**. A referência (NFS-pedido-sequência) é interna do Vibe.
 - Pedido com NFS-e **autorizada** sai da fila. A caixa **Mostrar também pedidos com NFS-e emitida** traz esses pedidos de volta. NFS-e em rascunho, em análise ou com erro mantém o pedido na fila. A nota de venda (NF-e) continua tirando o pedido da fila como antes, assim que sai do rascunho.
-- No **Histórico NFS-e (Serviços)** ficam a busca, os filtros por empresa, por status e por ambiente, **Abrir PDF**, **Abrir XML** e **Copiar Link**.
+- Na aba **NFS-e (Serviços)** do **Histórico NF-e / NFS-e** ficam a busca (número da nota, referência, pedido, nome ou ID do cliente), os filtros por empresa, por status e por ambiente (começa em **Produção**), **Abrir PDF**, **Abrir XML** e **Copiar Link**.
 - Cada nota de serviço do histórico mostra o selo do ambiente: **HOMOLOGAÇÃO** ou **PRODUÇÃO**. Nota sem ambiente gravado aparece como HOMOLOGAÇÃO.
 - A NFS-e não se cancela pelo Vibe. O item **Cancelar NFS-e** aparece apagado na nota autorizada; o cancelamento é pelo portal nacional (www.nfse.gov.br), avisando o fiscal.
 - Nota de serviço com status que a tela não conhece (por exemplo, recusada pela prefeitura ou com retorno não reconhecido) aparece como **Em análise**. Parando o mouse sobre o status, a dica mostra o status real. Ela continua na lista e entra no filtro **Em análise**.
@@ -135,7 +135,7 @@ Se a resposta não chegar (demora ou queda de conexão), a janela não conclui q
 ## O que não confundir
 
 - **NF-e** e **NFS-e**: a NF-e é a nota dos produtos do pedido; a NFS-e é a nota de serviço, só da **BIRÔ IDEAL**. Um pedido pode ter as duas, cada uma com a própria numeração.
-- **Histórico NF-e (Produtos)** e **Histórico NFS-e (Serviços)**: são listas separadas, cada uma com a própria busca e os próprios filtros.
+- Abas **NF-e (Produtos)** e **NFS-e (Serviços)** do Histórico: são listas separadas, cada uma com a própria busca e os próprios filtros. A NFS-e vem da emitida mais nova para a mais antiga.
 - **Rascunho** e **nota**: o **Criar rascunho** só grava a composição no Vibe. A nota só existe para a prefeitura depois do **Emitir NFS-e**.
 
 ## Erros comuns
