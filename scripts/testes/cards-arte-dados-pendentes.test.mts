@@ -118,6 +118,11 @@ const css = readFileSync("src/app/globals.css", "utf8");
 checar("servidor: card Em arte filtra por statusArteEntraNoCardEmArte", /filter\(\(linha\) => statusArteEntraNoCardEmArte\(linha\.status\)\)/.test(servico), true);
 checar("servidor: card Arte Aprovada filtra por statusArteEntraNoCardArteAprovada", /filter\(\(linha\) => statusArteEntraNoCardArteAprovada\(linha\.status\)\)/.test(servico), true);
 checar("servidor: ordem pela funcao do grupo", /grupo: grupoStatusArteDoCardEmArte\(mapaArte\.get/.test(servico), true);
+// Leitura paginada (04/11/2026): o teto de 1000 linhas cortava o Arte Aprovada (5 em vez de 32).
+checar("servidor: os dois cards leem pela funcao paginada",
+  servico.includes('lerStatusDasArtesDosCards(client, "EM_ARTE")') && servico.includes('lerStatusDasArtesDosCards(client, "ARTE_APROVADA")'), true);
+checar("servidor: paginas de 1000 em ordem estavel", /\.order\("id", \{ ascending: true \}\)\.range\(inicio, inicio \+ 999\)/.test(servico), true);
+checar("servidor: nenhuma leitura de pedidos_artes dos cards sem range", /select\("id_int, status"\)(\s*\.neq\("status", "APROVADO"\))?;/.test(servico), false);
 checar("tela: Arte Aprovada por pedidoEntraNoCardArteAprovada", tela.includes("pedidoEntraNoCardArteAprovada(statusArtePorId[item.id_int], item)"), true);
 checar("tela: vermelho pelo grupo nomeado", tela.includes("arte === GRUPO_PENDENTE_INFORMACAO_DO_CARD_EM_ARTE) return DESTAQUE_PENDENTE_INFORMACAO"), true);
 checar("tela: laranja pelo grupo nomeado", tela.includes("arte === GRUPO_ENVIAR_ARTE_DO_CARD_EM_ARTE) return DESTAQUE_ENVIAR_ARTE"), true);

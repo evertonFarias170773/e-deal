@@ -527,6 +527,38 @@ export function pedidoEntraNoCardArteAprovada(
 }
 
 /**
+ * Leitura de `pedidos_artes` dos cards EM_ARTE e "Arte Aprovada" (04/11/2026):
+ * em paginas de 1000 ate esgotar, em ordem estavel (`id`). Antes era uma leitura
+ * so, e o banco devolve no maximo 1000 linhas por leitura: com 1579 linhas na
+ * tabela, o "Arte Aprovada" perdia 579 sem ordem definida e a visao padrao
+ * mostrava 5 pedidos em vez de 32. O EM_ARTE so le fora de APROVADO (262 linhas
+ * hoje) e passava por estar abaixo do teto. A lista e o contador de cada card
+ * saem desta mesma leitura.
+ *
+ * Leitura que falha em qualquer pagina devolve vazio, como antes: o card fica
+ * vazio em vez de mostrar um pedaco.
+ */
+async function lerStatusDasArtesDosCards(
+  client: SupabaseClient,
+  card: "EM_ARTE" | "ARTE_APROVADA"
+): Promise<{ id_int: number | string | null; status: string | null }[]> {
+  const linhas: { id_int: number | string | null; status: string | null }[] = [];
+  for (let inicio = 0; ; inicio += 1000) {
+    let consulta = client.from("pedidos_artes").select("id, id_int, status");
+    // O `.neq` so poupa trazer os aprovados, que nunca entram no EM_ARTE.
+    if (card === "EM_ARTE") consulta = consulta.neq("status", "APROVADO");
+    const { data, error } = await consulta.order("id", { ascending: true }).range(inicio, inicio + 999);
+    if (error) {
+      console.warn(`[OrcamentosService] Falha ao ler pedidos_artes para o card ${card}:`, error.message);
+      return [];
+    }
+    linhas.push(...(data ?? []));
+    if (!data || data.length < 1000) break;
+  }
+  return linhas;
+}
+
+/**
  * Os status que pintam o card EM_ARTE de laranja: basta UMA proposta da lista
  * do card com um deles. Decisao do dono (15/09/2026). Os dois tambem estao em
  * `STATUS_ARTE_DO_CARD_EM_ARTE`, entao toda proposta que acende o laranja ja
@@ -854,13 +886,7 @@ async function fetchPropostaRows(
       // no mesmo molde do filtro de tipo de cobranca com `pagamentos_v2`.
       // O `.neq` so poupa trazer os aprovados, que nunca entram; a decisao e
       // a chave normalizada, feita aqui do lado de ca.
-      const { data: arteRows, error: arteError } = await client
-        .from("pedidos_artes")
-        .select("id_int, status")
-        .neq("status", "APROVADO");
-      if (arteError) {
-        console.warn("[OrcamentosService] Falha ao ler pedidos_artes para o card EM_ARTE:", arteError.message);
-      }
+      const arteRows = await lerStatusDasArtesDosCards(client, "EM_ARTE");
       idsCardEmArte = Array.from(
         new Set(
           (arteRows || [])
@@ -971,12 +997,7 @@ async function fetchPropostaRows(
     // `pedidos_artes` e dobram no `.in`.
     let idsCardArteAprovada: number[] | null = null;
     if (filters?.activeCard === "ARTE_APROVADA") {
-      const { data: artesAprovadas, error: erroArtesAprovadas } = await client
-        .from("pedidos_artes")
-        .select("id_int, status");
-      if (erroArtesAprovadas) {
-        console.warn("[OrcamentosService] Falha ao ler pedidos_artes para o card ARTE_APROVADA:", erroArtesAprovadas.message);
-      }
+      const artesAprovadas = await lerStatusDasArtesDosCards(client, "ARTE_APROVADA");
       idsCardArteAprovada = Array.from(
         new Set(
           (artesAprovadas || [])

@@ -356,6 +356,8 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/features/orcamentos/services/retirar-producao.server.ts`
 - `src/features/orcamentos/components/RetirarProducaoModal.tsx`
 
+> **Mudança desta revisão:** 04/11/2026 — os cards **Em arte** e **Arte Aprovada** passaram a considerar todas as artes cadastradas. O **Arte Aprovada** deixava de fora parte dos pedidos (na visão padrão mostrava 5 em vez de 32); o número, a soma e a lista do card agora trazem todos. A regra de cada card não mudou.
+>
 > **Mudança desta revisão:** 04/11/2026 — cards de arte (pedido da gerência): Dados Pendentes saiu do card **Em arte** e entrou no **Arte Aprovada**, com as mesmas exclusões; com o card **Em arte** ligado, Pendente Informação vem primeiro, antes de Enviar Arte, com o fundo vermelho mais forte.
 >
 > **Mudança desta revisão:** 03/11/2026 — E-Amostra, E-Retrabalho e E-Permuta não impedem o cancelamento da proposta (caso 24533): administrador em qualquer status, demais em AGUARDANDO.
