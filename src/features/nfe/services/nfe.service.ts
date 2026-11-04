@@ -1742,6 +1742,40 @@ interface SupabasePropostaSimple {
  * próprio, e nesses casos o mapa não recebe entrada. Uma consulta para o
  * conjunto todo: não muda a paginação de quem chama.
  */
+/**
+ * TETO DE 1.000 LINHAS (04/11/2026). O banco devolve no máximo 1.000 linhas por
+ * consulta, sem erro. A Fila lia `propostas` numa consulta só e perdia tudo
+ * abaixo do milésimo pedido (o 22721 sumiu assim); a leitura das cobranças,
+ * com 1.161 linhas, perdia as mais recentes. Mesmo conserto da Expedição
+ * (d82bf9af): propostas em páginas, leituras por pedido em lotes de 200 ids.
+ */
+const LIMITE_LINHAS_FILA = 1000;
+const IDS_POR_LOTE_FILA = 200;
+
+/**
+ * Roda a mesma consulta em lotes de ids e junta as linhas. Qualquer erro vale
+ * para a leitura inteira, como na consulta única de antes. Cada id cai num só
+ * lote, então a ordem das linhas de um mesmo pedido é a da consulta.
+ */
+async function lerEmLotesDaFila<T>(
+  ids: readonly number[],
+  montar: (lote: number[]) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>
+): Promise<{ data: T[]; error: { message: string } | null }> {
+  const lotes: number[][] = [];
+  for (let i = 0; i < ids.length; i += IDS_POR_LOTE_FILA) lotes.push(ids.slice(i, i + IDS_POR_LOTE_FILA));
+  const respostas = await Promise.all(lotes.map((lote) => montar(lote)));
+  const data: T[] = [];
+  for (const resposta of respostas) {
+    if (resposta.error) return { data: [], error: resposta.error };
+    const linhas = resposta.data ?? [];
+    if (linhas.length >= LIMITE_LINHAS_FILA) {
+      console.warn(`[NfeService] lote de ${IDS_POR_LOTE_FILA} ids devolveu ${linhas.length} linhas: pode ter cortado`);
+    }
+    data.push(...linhas);
+  }
+  return { data, error: null };
+}
+
 async function buscarSociosPagadores(
   client: NonNullable<ReturnType<typeof getSupabaseClient>>,
   linhas: Array<{ id_int: number | null; id_cliente: number | null; id_faturado: number | null }>
@@ -1758,10 +1792,10 @@ async function buscarSociosPagadores(
   );
   if (idsSocio.length === 0) return socioPorProposta;
 
-  const { data, error } = await client
-    .from("clientes")
-    .select("id_cliente,nome,fantasia")
-    .in("id_cliente", idsSocio);
+  const { data, error } = await lerEmLotesDaFila<{ id_cliente: number; nome: string | null; fantasia: string | null }>(
+    idsSocio,
+    (lote) => client.from("clientes").select("id_cliente,nome,fantasia").in("id_cliente", lote)
+  );
 
   if (error) {
     console.warn("[NfeService] Nao foi possivel ler os socios pagadores:", error.message);
@@ -1816,10 +1850,10 @@ async function filtrarPorNotaDoClienteDoPedido(
   );
   if (idsCliente.length === 0) return propostas;
 
-  const { data, error } = await client
-    .from("clientes")
-    .select("id_cliente,nota")
-    .in("id_cliente", idsCliente);
+  const { data, error } = await lerEmLotesDaFila<{ id_cliente: number | null; nota: boolean | null }>(
+    idsCliente,
+    (lote) => client.from("clientes").select("id_cliente,nota").in("id_cliente", lote)
+  );
 
   if (error) {
     console.warn("[NfeService] Nao foi possivel ler a flag `nota` dos clientes da fila:", error.message);
@@ -1852,7 +1886,35 @@ export async function getFaturaveisPropostas(): Promise<FaturavelOrigem[]> {
   }
 
   try {
-    const { data, error } = await client
+    const { data, error } = await lerPropostasDaFila(client);
+
+    if (error) {
+      console.error("[NfeService] Error fetching faturaveis propostas:", error);
+      return [];
+    }
+
+    if (!data) return [];
+
+    return await montarFilaDeFaturamento(client, data);
+  } catch (err) {
+    console.error("[NfeService] Exception in getFaturaveisPropostas:", err);
+    return [];
+  }
+}
+
+/**
+ * As propostas da Fila, TODAS (04/11/2026): páginas de 1.000 por `id_int`
+ * decrescente, cada página começando abaixo do último `id_int` lido. Pedido que
+ * entra durante a leitura não repete nem empurra outro para fora. A regra de
+ * quem entra é a de sempre. Exportada para o teste.
+ */
+export async function lerPropostasDaFila(
+  client: NonNullable<ReturnType<typeof getSupabaseClient>>
+): Promise<{ data: SupabasePropostaSimple[] | null; error: { message: string } | null }> {
+  const todas: SupabasePropostaSimple[] = [];
+  let abaixoDe: number | null = null;
+  for (;;) {
+    let consulta = client
       .from("propostas")
       .select("id,id_int,id_cliente,cliente,valor,valor_total,vendedor,status_interno,empresa,created_at,libera_nf,is_prd_aprovado,id_faturado,liberado_producao_em,motivo_copia,id_int_origem_copia")
       .eq("libera_nf", true)
@@ -1866,17 +1928,26 @@ export async function getFaturaveisPropostas(): Promise<FaturavelOrigem[]> {
       // de Orcamentos — a fila fiscal era a unica tela operacional sem ele, e o
       // 22334, encerrado como teste, aparecia entre os prontos para emitir.
       // Nada no pedido muda: e so a listagem.
-      .is("encerrado_teste_em", null)
-      .order("id_int", { ascending: false });
+      .is("encerrado_teste_em", null);
+    if (abaixoDe !== null) consulta = consulta.lt("id_int", abaixoDe);
+    const { data, error } = await consulta.order("id_int", { ascending: false }).limit(LIMITE_LINHAS_FILA);
+    if (error) return { data: null, error };
+    const pagina = (data ?? []) as SupabasePropostaSimple[];
+    todas.push(...pagina);
+    if (pagina.length < LIMITE_LINHAS_FILA) break;
+    const ultimo = Number(pagina[pagina.length - 1].id_int);
+    if (!Number.isFinite(ultimo)) break;
+    abaixoDe = ultimo;
+  }
+  return { data: todas, error: null };
+}
 
-    if (error) {
-      console.error("[NfeService] Error fetching faturaveis propostas:", error);
-      return [];
-    }
-
-    if (!data) return [];
-
-    const propostas = await filtrarPorNotaDoClienteDoPedido(client, data as SupabasePropostaSimple[]);
+async function montarFilaDeFaturamento(
+  client: NonNullable<ReturnType<typeof getSupabaseClient>>,
+  data: SupabasePropostaSimple[]
+): Promise<FaturavelOrigem[]> {
+  {
+    const propostas = await filtrarPorNotaDoClienteDoPedido(client, data);
 
     // Quantas notas cada proposta já tem ADIANTE do rascunho. Não contam:
     //   - CANCELADA e DENEGADA, porque a proposta volta a ser faturável quando
@@ -1891,19 +1962,26 @@ export async function getFaturaveisPropostas(): Promise<FaturavelOrigem[]> {
     );
 
     // A forma de cobrança negociada de cada pedido, para a fila mostrar o que é
-    // faturado sem abrir nada. Uma consulta para toda a fila — a paginação não
-    // muda, porque a lista continua vindo inteira de `propostas`.
+    // faturado sem abrir nada. Em lotes de pedidos (04/11/2026): numa consulta
+    // só, as 1.161 cobranças passavam do teto e as MAIS RECENTES se perdiam.
     const cobrancaPorProposta = new Map<number, string>();
     // RETRABALHO (19/10/2026): na MESMA leitura, com o status, para a regra da
     // cobranca viva (`cobrancaEhRetrabalho`). O tipo exibido (a cobranca mais
     // recente, logo abaixo) nao muda.
     const idsComRetrabalho = new Set<number>();
     if (idsInt.length > 0) {
-      const { data: cobrancas, error: cobrancasError } = await client
-        .from("pagamentos_v2")
-        .select("id_int,tipo_cobranca,status,created_at")
-        .in("id_int", idsInt)
-        .order("created_at", { ascending: true });
+      const { data: cobrancas, error: cobrancasError } = await lerEmLotesDaFila<{
+        id_int: number | null;
+        tipo_cobranca: string | null;
+        status?: string | null;
+      }>(idsInt, (lote) =>
+        client
+          .from("pagamentos_v2")
+          .select("id_int,tipo_cobranca,status,created_at")
+          .in("id_int", lote)
+          // Cada pedido cai num lote só: a ordem das cobranças DELE continua crescente.
+          .order("created_at", { ascending: true })
+      );
 
       if (cobrancasError) {
         console.warn("[NfeService] Nao foi possivel ler as cobrancas da fila:", cobrancasError.message);
@@ -1930,10 +2008,11 @@ export async function getFaturaveisPropostas(): Promise<FaturavelOrigem[]> {
 
     const notasVivasPorProposta = new Map<number, number>();
     if (idsInt.length > 0) {
-      const { data: notas, error: notasError } = await client
-        .from("notas_fiscais")
-        .select("id_int,status,tipo_nota")
-        .in("id_int", idsInt);
+      const { data: notas, error: notasError } = await lerEmLotesDaFila<{
+        id_int: number | null;
+        status: string | null;
+        tipo_nota?: string | null;
+      }>(idsInt, (lote) => client.from("notas_fiscais").select("id_int,status,tipo_nota").in("id_int", lote));
 
       if (notasError) {
         // Sem a contagem, a fila mostra tudo — o estado de hoje. Errar exibindo
@@ -1994,9 +2073,6 @@ export async function getFaturaveisPropostas(): Promise<FaturavelOrigem[]> {
         retrabalhoOriginal: marcaDeRetrabalho(row, idsComRetrabalho.has(Number(row.id_int)))?.idIntOriginal ?? null
       };
     });
-  } catch (err) {
-    console.error("[NfeService] Exception in getFaturaveisPropostas:", err);
-    return [];
   }
 }
 

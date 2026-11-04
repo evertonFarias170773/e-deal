@@ -2160,8 +2160,8 @@ export function NotasFiscaisPage() {
    * corrente, não do total da tabela.
    *
    * Filtrar aqui, no cliente, e não no servidor: `getFaturaveisPropostas` traz
-   * a fila INTEIRA numa consulta só, sem `range` nem `limit` — não há paginação
-   * no servidor para acompanhar. Levar o status para o SQL custaria uma ida a
+   * a fila INTEIRA (lida em páginas desde 04/11/2026, por causa do teto de
+   * 1.000 linhas do banco) — não há paginação na tela para acompanhar. Levar o status para o SQL custaria uma ida a
    * mais por troca de filtro e tornaria a contagem por status impossível sem
    * uma segunda consulta de agregação. É também como os outros quatro filtros
    * desta aba já funcionam.

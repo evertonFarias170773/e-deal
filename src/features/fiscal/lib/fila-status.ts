@@ -19,7 +19,7 @@
  *   dimensão sobre o que sobrou delas.
  *
  * ESTE MÓDULO NÃO CONSULTA NADA. A fila já vem inteira do
- *   `getFaturaveisPropostas` — uma consulta, sem `range` e sem `limit` —, e é
+ *   `getFaturaveisPropostas` — lida inteira, em páginas (04/11/2026) —, e é
  *   por isso que o recorte é no cliente: não há paginação de servidor a
  *   acompanhar, e a contagem por status exigiria uma segunda consulta de
  *   agregação para nada.
