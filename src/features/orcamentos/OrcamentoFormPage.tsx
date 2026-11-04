@@ -6856,7 +6856,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
 
           {activeFormTab === "geral" && (
             <div className="space-y-6">
-              <FormSection title="1. Cliente" description={form.clienteNaoCadastrado ? "Informe o nome livre do cliente e o CEP para entrega / cálculo de frete." : "Busque por ID, nome, apelido/fantasia ou documento do cliente."}>
+              <FormSection title="1. Cliente" description={form.clienteNaoCadastrado ? "Informe o nome livre do cliente e o CEP para entrega / cálculo de frete." : "Busque por ID, nome, apelido, documento, telefone, WhatsApp ou e-mail do cliente."}>
             {/* Toggle Cliente Cadastrado vs. Sem Cadastro */}
             {mode === "new" ? (
               <div className="mb-4 flex gap-6 border-b border-slate-100 pb-3">

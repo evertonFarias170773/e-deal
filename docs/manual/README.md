@@ -32,6 +32,7 @@ Cada ficha cobre uma tela ou um fluxo e segue sempre o mesmo formato ([_MODELO.m
 
 ### Clientes
 
+- [Clientes: lista de cadastros](cadastros-lista-de-clientes.md)
 - [Cadastros: Recebidos pelo link](cadastros-recebidos-pelo-link.md)
 
 ### Financeiro

@@ -292,7 +292,7 @@ export function CadastrosListPage() {
     <div className="space-y-6" data-cadastros-source={source}>
       <PageHeader
         title="Cadastros"
-        subtitle="Busca por ID, documento, nome fantasia ou nome, com filtro de tipo, em páginas de 100 registros."
+        subtitle="Busca por ID do cliente, documento, nome fantasia, nome, telefone, WhatsApp ou e-mail, com filtro de tipo, em páginas de 100 registros."
         context="Clientes"
         action={
           <div className="flex flex-wrap gap-2">
