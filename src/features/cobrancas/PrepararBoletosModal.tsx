@@ -50,6 +50,18 @@ export interface OrigemNfeLancamento {
   totalFaturadoEmAberto: number;
 }
 
+/**
+ * Abertura pela NFS-e (04/11/2026, pedido 24623): a condição de pagamento que
+ * está escrita na nota. A janela abre com a condição escolhida e as parcelas já
+ * geradas, com o vencimento e o valor gravados na cobrança (não recalcula pelos
+ * dias da condição a partir de hoje). Tudo continua editável, como no fluxo manual.
+ */
+export interface CondicaoInicialLancamento {
+  /** `modelos_cobranca.id` da cobrança; vazio = nenhuma condição marcada. */
+  idModelo: string | null;
+  parcelas: { numero: number; total: number; vencimento: string | null; valor: number }[];
+}
+
 interface PrepararBoletosModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -60,6 +72,8 @@ interface PrepararBoletosModalProps {
   defaultIntervalo?: number;
   /** Ausente = fluxo do Registro de Recebíveis, com gerador automático ativo. */
   origemNfe?: OrigemNfeLancamento;
+  /** Só pela NFS-e: abre com a condição e as parcelas da nota. Ignorado com `origemNfe`. */
+  condicaoInicial?: CondicaoInicialLancamento;
 }
 
 /** Empresa do grupo habilitada a emitir boleto. */
@@ -113,6 +127,31 @@ function montarParcelasFiscais(origem: OrigemNfeLancamento): GeneratedInstallmen
   }));
 }
 
+/** Dias corridos entre duas datas civis AAAA-MM-DD (sem fuso). */
+function diasEntre(de: string, ate: string): number {
+  const [a1, m1, d1] = de.split("-").map(Number);
+  const [a2, m2, d2] = ate.slice(0, 10).split("-").map(Number);
+  return Math.round((Date.UTC(a2, m2 - 1, d2) - Date.UTC(a1, m1 - 1, d1)) / 86_400_000);
+}
+
+/**
+ * As parcelas da condição da NFS-e, no formato da grade: vencimento e valor como
+ * vieram, descrição igual à do gerador manual. Multa e juros zerados, como lá.
+ */
+function montarParcelasDaCondicao(condicao: CondicaoInicialLancamento, cobranca: Cobranca): GeneratedInstallment[] {
+  const descBase = `Boleto E-Faturado - OS: ${cobranca.os_ideal || cobranca.id_int}`;
+  return condicao.parcelas.map((p) => ({
+    parcela: p.numero,
+    total_parcelas: p.total,
+    valor: Math.round((Number(p.valor) || 0) * 100) / 100,
+    vencimento: String(p.vencimento ?? "").slice(0, 10),
+    descricao: `Parcela ${p.numero}/${p.total} - ${descBase}`,
+    multa: 0,
+    juros_dia: 0,
+    deposito_conta: false
+  }));
+}
+
 function addDaysToLocalDateString(dateStr: string, days: number): string {
   const [year, month, day] = dateStr.split("-").map(Number);
   const date = new Date(year, month - 1, day);
@@ -132,7 +171,8 @@ export function PrepararBoletosModal({
   defaultQtdParcelas,
   defaultDiasPraInicio,
   defaultIntervalo,
-  origemNfe
+  origemNfe,
+  condicaoInicial
 }: PrepararBoletosModalProps) {
   const router = useRouter();
   const { showToast } = useAppToast();
@@ -145,7 +185,9 @@ export function PrepararBoletosModal({
 
   // Condições de pagamento existentes (tabela modelos_cobranca)
   const [modelosCobranca, setModelosCobranca] = useState<ModeloCobranca[]>([]);
-  const [modeloSelecionadoId, setModeloSelecionadoId] = useState<string>("");
+  // Pela NFS-e, nasce com a condição da cobrança (`condicaoInicial`).
+  const preenchida = !origemNfe && condicaoInicial && condicaoInicial.parcelas.length > 0 ? condicaoInicial : null;
+  const [modeloSelecionadoId, setModeloSelecionadoId] = useState<string>(preenchida?.idModelo ?? "");
 
   // Arredondamento de parcelas (apenas admin/superadmin)
   const [arredondarParcelas, setArredondarParcelas] = useState(false);
@@ -183,14 +225,24 @@ export function PrepararBoletosModal({
 
   // Installment Config parameters
   const valorEntrada = 0;
-  const [qtdParcelas, setQtdParcelas] = useState<number>(defaultQtdParcelas && defaultQtdParcelas >= 1 ? defaultQtdParcelas : 1);
-  const [diasPraInicio, setDiasPraInicio] = useState<number>(defaultDiasPraInicio !== undefined && defaultDiasPraInicio >= 0 ? defaultDiasPraInicio : 30);
-  const [intervalo, setIntervalo] = useState<number>(defaultIntervalo !== undefined && defaultIntervalo >= 0 ? defaultIntervalo : 30);
+  const [qtdParcelas, setQtdParcelas] = useState<number>(
+    preenchida ? preenchida.parcelas.length : defaultQtdParcelas && defaultQtdParcelas >= 1 ? defaultQtdParcelas : 1
+  );
+  const [diasPraInicio, setDiasPraInicio] = useState<number>(() => {
+    const primeira = preenchida?.parcelas[0]?.vencimento;
+    if (primeira) return Math.max(0, diasEntre(getTodayLocalDateString(), primeira));
+    return defaultDiasPraInicio !== undefined && defaultDiasPraInicio >= 0 ? defaultDiasPraInicio : 30;
+  });
+  const [intervalo, setIntervalo] = useState<number>(() => {
+    const [p1, p2] = preenchida?.parcelas ?? [];
+    if (p1?.vencimento && p2?.vencimento) return Math.max(1, diasEntre(p1.vencimento, p2.vencimento));
+    return defaultIntervalo !== undefined && defaultIntervalo >= 0 ? defaultIntervalo : 30;
+  });
 
   // Generated installments list. Vindo de NF, nasce já preenchida com as
   // parcelas fiscais — não há passo de "gerar".
   const [installments, setInstallments] = useState<GeneratedInstallment[]>(() =>
-    origemNfe ? montarParcelasFiscais(origemNfe) : []
+    origemNfe ? montarParcelasFiscais(origemNfe) : preenchida ? montarParcelasDaCondicao(preenchida, cobranca) : []
   );
   const [validationError, setValidationError] = useState<string | null>(null);
 
@@ -1069,6 +1121,11 @@ export function PrepararBoletosModal({
 
                 <div className="border-t border-slate-200 pt-4 space-y-4">
                   <h3 className="text-sm font-bold text-slate-800">Gerar Parcelas Automaticamente</h3>
+                  {preenchida ? (
+                    <p className="text-xs text-slate-600" data-condicao-da-nfse>
+                      Preenchido com a condição de pagamento da NFS-e. Confira as parcelas antes de confirmar.
+                    </p>
+                  ) : null}
 
                   {/* Parcela única com vencimento específico */}
                   <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 md:flex-row md:items-center md:justify-between">

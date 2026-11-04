@@ -1,6 +1,6 @@
 # Notas fiscais
 
-> **Última revisão:** 02/11/2026
+> **Última revisão:** 04/11/2026 (Lançar no Contas a Receber da NFS-e abre preenchido)
 > **Caminho no menu:** Financeiro → Notas fiscais (primeiro item da seção Financeiro do menu lateral)
 > **Endereço:** `/notas-fiscais` (a nota aberta fica em `/notas-fiscais/[id]`)
 
@@ -79,7 +79,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Buscar por Nº NFS-e, Ref, ID ou Nome...** | Histórico NFS-e, filtros | Busca nas notas de serviço. |
 | **Cancelar NFS-e** | Menu da NFS-e Autorizada | Aparece apagado e não faz nada. Parando o mouse sobre ele, a dica explica: o cancelamento de NFS-e ainda não está disponível no Vibe. |
 | **Abrir PDF** | Menu da NFS-e | Abre o PDF da nota de serviço em outra aba. O botão de baixar do visualizador salva com o nome "NFS-e-N-Pedido-P.pdf"; o link da aba vale 60 minutos. |
-| **Lançar no Contas a Receber** | Menu da NFS-e autorizada de produção com cobrança faturada em aberto | Abre a janela **Preparar boletos** com a cobrança faturada do pedido. As parcelas saem da condição da cobrança. Em parcela única o boleto usa a referência da NFS-e (ex.: NFS-23733-001) e o número da NFS-e vai como número da NF; com 2 ou mais parcelas a referência é P + parcela + total + pedido. Se o pedido também tem NF-e autorizada, vale a NF-e. |
+| **Lançar no Contas a Receber** | Menu da NFS-e autorizada de produção com cobrança faturada em aberto | Abre a janela **Preparar Cobrança** com a cobrança faturada do pedido, já preenchida com a condição de pagamento escrita na nota: a **Condição de Pagamento** escolhida no pedido e as parcelas com o vencimento e o valor gravados na cobrança (por exemplo 1 parcela em 24/11/2026 de R$ 748,80). Tudo continua editável; confira antes de **Confirmar Lançamento**. Com mais de uma cobrança faturada em aberto, ou sem vencimento gravado, a janela abre vazia, como antes. Em parcela única o boleto usa a referência da NFS-e (ex.: NFS-23733-001) e o número da NFS-e vai como número da NF; com 2 ou mais parcelas a referência é P + parcela + total + pedido. Se o pedido também tem NF-e autorizada, vale a NF-e. |
 | **Revisar para gerar boletos** / **Ver contas a receber** | Menu da NFS-e com título já lançado | Abre a revisão dos boletos do pedido / abre o Contas a Receber filtrado pelo número do pedido. |
 | **Abrir para corrigir** | Janela **A nota não pode ser aberta ainda**, em cada pendência | Leva à tela onde o dado se corrige. Pendência de cadastro abre a **edição** do cadastro certo: o do pagador (quando o aviso diz que não é o cliente do pedido) ou o dono do endereço, já com o campo pendente destacado. Pendência do pedido abre a proposta. |
 | **Voltar à Notas fiscais e reconferir #N** | Faixa amarela no topo da edição do cadastro aberta pelo **Abrir para corrigir** | Volta para esta tela e refaz a conferência do pedido, sem recomeçar. Depois de salvar, a faixa fica verde e a edição não pula para a ficha do cadastro. |

@@ -26,7 +26,13 @@ import { useNfseReadOnlyData } from "@/features/nfse/hooks/useNfseReadOnlyData";
 import type { NfeReadModel } from "@/features/nfe/types";
 import type { NfseReadModel } from "@/features/nfse/types";
 import { acoesFinanceirasDaNfse, seloFinanceiroDaNfse } from "@/features/nfse/lib/financeiro-nfse";
-import { getCobrancaFaturadaParaLancar, getTitulosAtivosPorIdInt, type TitulosAtivos } from "@/features/nfse/services/nfse-financeiro.service";
+import {
+  getCobrancaFaturadaParaLancar,
+  getCondicaoDaNfseParaLancar,
+  getTitulosAtivosPorIdInt,
+  type CondicaoInicialDoLancamento,
+  type TitulosAtivos
+} from "@/features/nfse/services/nfse-financeiro.service";
 import type { SupabaseBoletoRow } from "@/features/contas-a-receber/types.supabase";
 import { useRouter, useSearchParams } from "next/navigation";
 import { lerPedidoParaReconferir } from "@/lib/fiscal/correcao-de-cadastro";
@@ -720,7 +726,13 @@ export function NotasFiscaisPage() {
    * faturada em aberto e acha a NFS-e do pedido sozinha (sem NF-e autorizada).
    * Nao ha parcelas fiscais de NFS-e: as parcelas saem da condicao da cobranca.
    */
-  const [lancamentoNfse, setLancamentoNfse] = useState<{ cobranca: Cobranca; idInt: number; ref: string } | null>(null);
+  const [lancamentoNfse, setLancamentoNfse] = useState<{
+    cobranca: Cobranca;
+    idInt: number;
+    ref: string;
+    /** A condição escrita na nota (04/11/2026): a janela abre preenchida. Nula = abre vazia, como antes. */
+    condicao: CondicaoInicialDoLancamento | null;
+  } | null>(null);
   const [revisaoNfse, setRevisaoNfse] = useState<NfseReadModel | null>(null);
 
   const handleLancarNfse = async (item: NfseReadModel) => {
@@ -738,7 +750,8 @@ export function NotasFiscaisPage() {
         setFaturadoEmAbertoMap((prev) => ({ ...prev, [idInt]: { qtd: 0, soma: 0 } }));
         return;
       }
-      setLancamentoNfse({ cobranca, idInt, ref: item.ref });
+      const condicao = await getCondicaoDaNfseParaLancar(idInt);
+      setLancamentoNfse({ cobranca, idInt, ref: item.ref, condicao });
     } catch (err) {
       console.error("[NotasFiscaisPage] failed to prepare launch from NFS-e:", err);
       showToast({
@@ -3410,6 +3423,7 @@ export function NotasFiscaisPage() {
             setLancamentoNfse(null);
           }}
           cobranca={lancamentoNfse.cobranca}
+          condicaoInicial={lancamentoNfse.condicao ?? undefined}
           onSuccess={() => {
             atualizarFinanceiroDoPedidoNfse(lancamentoNfse.idInt);
           }}

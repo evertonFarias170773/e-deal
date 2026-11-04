@@ -350,6 +350,31 @@ export function textoDoPagamentoParaNota(cobrancas: readonly CobrancaDoPedido[])
 }
 
 /**
+ * A descrição que a janela PROPÕE (04/11/2026, pedido do financeiro, nota do 24623):
+ * as linhas dos itens e, embaixo, a condição de pagamento. A frase saiu das
+ * informações complementares, que passam a vir vazias, para não sair duas vezes
+ * na nota. Sem cobrança ativa, fica só a descrição dos itens.
+ */
+export function descricaoComPagamento(descricaoDosItens: string, cobrancas: readonly CobrancaDoPedido[]): string {
+  const pagamento = textoDoPagamentoParaNota(cobrancas);
+  return [descricaoDosItens.trim(), pagamento].filter(Boolean).join("\n");
+}
+
+/**
+ * As parcelas da condição de pagamento, para abrir o Preparar Cobrança já
+ * preenchido a partir da NFS-e (04/11/2026). Mesma conta da frase escrita na
+ * nota (`parcelasDaCobranca`): 1ª parcela no vencimento da cobrança e as demais
+ * pelo intervalo. Sem entrada e com todos os vencimentos conhecidos; senão
+ * `null`, e a janela abre como antes, para preencher à mão.
+ */
+export function parcelasParaLancamento(c: CobrancaDoPedido): ParcelaDaCobranca[] | null {
+  if (!cobrancaAtiva(c)) return null;
+  const { valor, entrada, vencimentos } = parcelasDaCobranca(c);
+  if (entrada > 0 || !(valor > 0) || vencimentos.some((v) => !v.vencimento)) return null;
+  return vencimentos;
+}
+
+/**
  * O texto como vai para o banco: sem as bordas em branco, sem caractere de
  * controle (a quebra de linha fica; a tabulação vira espaço) e com no máximo
  * 2.000 caracteres. Vazio vira `null`, e a nota nasce sem texto.

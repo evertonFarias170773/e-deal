@@ -25,9 +25,10 @@
  *   lib/composicao-nfse. O que vai para as rotas: pedido, endereço, serviço,
  *   descrição, valor e o texto das informações complementares.
  *
- * INFORMAÇÕES COMPLEMENTARES (07/10/2026)
- *   A janela propõe a condição de pagamento do pedido, uma cobrança ativa por
- *   linha, num campo editável de até 2.000 caracteres. É o texto que sai escrito
+ * INFORMAÇÕES COMPLEMENTARES (07/10/2026; 04/11/2026)
+ *   Desde 04/11/2026 a condição de pagamento do pedido vai no fim da DESCRIÇÃO
+ *   (pedido do financeiro), e este campo nasce vazio, para a frase não sair duas
+ *   vezes. Continua editável, até 2.000 caracteres, e é o texto que sai escrito
  *   na NFS-e. Rascunho criado e nota autorizada mostram o texto gravado, só para
  *   leitura; a reserva do banco ("NBS:" e o código) nunca aparece.
  *
@@ -73,7 +74,7 @@ import {
   opcoesDeEndereco,
   pagamentosParaConferencia,
   tamanhoDasInformacoesComplementares,
-  textoDoPagamentoParaNota,
+  descricaoComPagamento,
   mostraLinhaDeServicos,
   rotuloDosItensMarcados,
   seloDoCabecalho,
@@ -188,9 +189,8 @@ export function GerarNfseModal({
   const [baixando, setBaixando] = useState<null | "pdf" | "xml">(null);
   const [valorTexto, setValorTexto] = useState("");
   const [descricao, setDescricao] = useState("");
-  /** O texto que sai escrito na nota (xInfComp). Vem proposto do pagamento do pedido. */
+  /** O texto que sai escrito na nota (xInfComp). Nasce vazio: o pagamento vai na descrição (04/11/2026). */
   const [infComp, setInfComp] = useState("");
-  const [infCompMexida, setInfCompMexida] = useState(false);
   /** Itens do pedido que entram na nota. Todos vêm marcados; ao menos um fica. */
   const [marcados, setMarcados] = useState<Set<number>>(new Set());
   /** Quem digitou no valor ou na descrição: a janela para de regerar aquele campo. */
@@ -308,11 +308,11 @@ export function GerarNfseModal({
     setMarcados(todos);
     setIdEndereco(enderecoInicial(opcoesDeEndereco(lido.enderecos)));
     setValorTexto(sugerido > 0 ? sugerido.toFixed(2).replace(".", ",") : "");
-    setDescricao(descricaoDosItens(lido.idInt, lido.itens, descontoParaDescricao(lido)));
-    setInfComp(textoDoPagamentoParaNota(lido.cobrancas));
+    // A condição de pagamento vai na descrição (04/11/2026); as complementares nascem vazias.
+    setDescricao(descricaoComPagamento(descricaoDosItens(lido.idInt, lido.itens, descontoParaDescricao(lido)), lido.cobrancas));
+    setInfComp("");
     setValorMexido(false);
     setDescricaoMexida(false);
-    setInfCompMexida(false);
     setAlertas([]);
     setValidacao(null);
     setMaisAcoes(false);
@@ -350,7 +350,7 @@ export function GerarNfseModal({
       const sugerido = valorSugeridoDaNota(contexto.itens, novo, contexto.valorDosProdutos);
       setValorTexto(sugerido > 0 ? sugerido.toFixed(2).replace(".", ",") : "");
     }
-    if (!descricaoMexida) setDescricao(descricaoDosItens(contexto.idInt, contexto.itens.filter((item) => novo.has(item.id)), descontoParaDescricao(contexto)));
+    if (!descricaoMexida) setDescricao(descricaoComPagamento(descricaoDosItens(contexto.idInt, contexto.itens.filter((item) => novo.has(item.id)), descontoParaDescricao(contexto)), contexto.cobrancas));
   }
 
   /** Lê e mostra. Usado ao abrir a janela e nos botões que voltam ao estado do pedido. */
@@ -665,7 +665,6 @@ export function GerarNfseModal({
   const sugerido = contexto ? valorSugeridoDaNota(contexto.itens, marcados, contexto.valorDosProdutos) : 0;
   const temDesconto = contexto ? fatorDoDesconto(contexto.valorDosProdutos, somaDeTodos) < 1 : false;
   const pagamentos = contexto ? pagamentosParaConferencia(contexto.cobrancas) : [];
-  const textoProposto = contexto ? textoDoPagamentoParaNota(contexto.cobrancas) : "";
   const alertasSeparados = separarAlertas(alertas);
 
   const notaAberta = modo.tipo === "NOTA" ? modo.nota : null;
@@ -1023,7 +1022,7 @@ export function GerarNfseModal({
                                 className="underline"
                                 onClick={() => {
                                   setDescricaoMexida(false);
-                                  setDescricao(descricaoDosItens(contexto.idInt, contexto.itens.filter((item) => marcados.has(item.id)), descontoParaDescricao(contexto)));
+                                  setDescricao(descricaoComPagamento(descricaoDosItens(contexto.idInt, contexto.itens.filter((item) => marcados.has(item.id)), descontoParaDescricao(contexto)), contexto.cobrancas));
                                 }}
                               >
                                 Refazer a partir dos itens
@@ -1114,7 +1113,6 @@ export function GerarNfseModal({
                         value={infComp}
                         disabled={ocupado !== null}
                         onChange={(e) => {
-                          setInfCompMexida(true);
                           setInfComp(e.target.value);
                         }}
                         placeholder="Sem texto, a nota sai sem informações complementares."
@@ -1123,21 +1121,6 @@ export function GerarNfseModal({
                       <p data-contador-informacoes className={textoEstourou ? "mt-1 text-xs font-semibold text-red-600" : "mt-1 text-xs text-slate-500"}>
                         {caracteresDoTexto} de {LIMITE_INFORMACOES_COMPLEMENTARES_NFSE} caracteres
                         {textoEstourou && ": reduza o texto para criar o rascunho."}
-                        {infCompMexida && infComp !== textoProposto && (
-                          <>
-                            {" · "}
-                            <button
-                              type="button"
-                              className="underline"
-                              onClick={() => {
-                                setInfCompMexida(false);
-                                setInfComp(textoProposto);
-                              }}
-                            >
-                              Refazer a partir do pagamento
-                            </button>
-                          </>
-                        )}
                       </p>
                     </>
                   ) : notaAberta ? (
