@@ -381,9 +381,42 @@ export function textoDoPagamentoParaNota(cobrancas: readonly CobrancaDoPedido[])
  */
 export const LINHA_NATUREZA_NFSE = "Natureza da operação: Tributação no município (Subitem 13.05 - Composição gráfica)";
 
-export function descricaoComPagamento(descricaoDosItens: string, cobrancas: readonly CobrancaDoPedido[]): string {
+export function descricaoComPagamento(descricaoDosItens: string, cobrancas: readonly CobrancaDoPedido[], freteNaNota = 0): string {
   const pagamento = textoDoPagamentoParaNota(cobrancas);
-  return [descricaoDosItens.trim(), LINHA_NATUREZA_NFSE, pagamento].filter(Boolean).join("\n");
+  return [descricaoDosItens.trim(), linhaDoFrete(freteNaNota), LINHA_NATUREZA_NFSE, pagamento].filter(Boolean).join("\n");
+}
+
+/* ------------------------------------------------------------------- frete */
+
+/**
+ * O frete do pedido que entra na NFS-e (04/11/2026, decisão do dono, modelo 23991):
+ * só na nota INTEGRAL, com todos os itens do pedido marcados. Nota parcial não
+ * leva frete. Pedido sem frete (retirada, R$ 0,00) dá 0. O frete não leva desconto.
+ */
+export function freteQueEntraNaNota(itens: readonly ItemDoPedido[], marcados: ReadonlySet<number>, freteDoPedido: number | null | undefined): number {
+  const frete = Math.round((Number(freteDoPedido) || 0) * 100) / 100;
+  if (!(frete > 0)) return 0;
+  return itens.every((item) => marcados.has(item.id)) ? frete : 0;
+}
+
+/** A nota deixa itens do pedido de fora? (aí o frete não entra) */
+export function ehNotaParcial(itens: readonly ItemDoPedido[], marcados: ReadonlySet<number>): boolean {
+  return itens.some((item) => !marcados.has(item.id));
+}
+
+/** "Frete - R$ 25,00", no formato das linhas dos itens. Sem frete, vazio. */
+export function linhaDoFrete(frete: number): string {
+  return frete > 0 ? `Frete - ${reais(frete)}` : "";
+}
+
+/** Valor sugerido da nota: itens marcados com o desconto proporcional, mais o frete da nota integral. */
+export function valorSugeridoComFrete(
+  itens: readonly ItemDoPedido[],
+  marcados: ReadonlySet<number>,
+  valorDosProdutos: number | null | undefined,
+  freteDoPedido: number | null | undefined
+): number {
+  return Math.round((valorSugeridoDaNota(itens, marcados, valorDosProdutos) + freteQueEntraNaNota(itens, marcados, freteDoPedido)) * 100) / 100;
 }
 
 /**

@@ -80,7 +80,10 @@ import {
   seloDoCabecalho,
   separarAlertas,
   somaDosItensMarcados,
-  valorSugeridoDaNota
+  valorSugeridoDaNota,
+  ehNotaParcial,
+  freteQueEntraNaNota,
+  valorSugeridoComFrete
 } from "@/features/nfse/lib/composicao-nfse";
 import {
   AvisoEmDestaque,
@@ -303,11 +306,12 @@ export function GerarNfseModal({
   /** Abre a composição: todos os itens marcados, valor e descrição gerados deles. */
   const iniciarFormulario = useCallback((lido: ContextoNfseDoPedido, novo: boolean) => {
     const todos = new Set(lido.itens.map((item) => item.id));
-    const sugerido = valorSugeridoDaNota(lido.itens, todos, lido.valorDosProdutos);
+    // Nota integral: o frete do pedido entra no valor e na descrição (04/11/2026).
+    const sugerido = valorSugeridoComFrete(lido.itens, todos, lido.valorDosProdutos, lido.freteDoPedido);
     setMarcados(todos);
     setValorTexto(sugerido > 0 ? sugerido.toFixed(2).replace(".", ",") : "");
     // A condição de pagamento vai na descrição (04/11/2026); as complementares nascem vazias.
-    setDescricao(descricaoComPagamento(descricaoDosItens(lido.idInt, lido.itens, descontoParaDescricao(lido)), lido.cobrancas));
+    setDescricao(descricaoComPagamento(descricaoDosItens(lido.idInt, lido.itens, descontoParaDescricao(lido)), lido.cobrancas, freteQueEntraNaNota(lido.itens, todos, lido.freteDoPedido)));
     setInfComp("");
     setValorMexido(false);
     setDescricaoMexida(false);
@@ -345,10 +349,18 @@ export function GerarNfseModal({
     const novo = alternarItemMarcado(marcados, id);
     setMarcados(novo);
     if (!valorMexido) {
-      const sugerido = valorSugeridoDaNota(contexto.itens, novo, contexto.valorDosProdutos);
+      const sugerido = valorSugeridoComFrete(contexto.itens, novo, contexto.valorDosProdutos, contexto.freteDoPedido);
       setValorTexto(sugerido > 0 ? sugerido.toFixed(2).replace(".", ",") : "");
     }
-    if (!descricaoMexida) setDescricao(descricaoComPagamento(descricaoDosItens(contexto.idInt, contexto.itens.filter((item) => novo.has(item.id)), descontoParaDescricao(contexto)), contexto.cobrancas));
+    if (!descricaoMexida) {
+      setDescricao(
+        descricaoComPagamento(
+          descricaoDosItens(contexto.idInt, contexto.itens.filter((item) => novo.has(item.id)), descontoParaDescricao(contexto)),
+          contexto.cobrancas,
+          freteQueEntraNaNota(contexto.itens, novo, contexto.freteDoPedido)
+        )
+      );
+    }
   }
 
   /** Lê e mostra. Usado ao abrir a janela e nos botões que voltam ao estado do pedido. */
@@ -663,6 +675,10 @@ export function GerarNfseModal({
   const somaDeTodos = contexto ? somaDosItensMarcados(contexto.itens, new Set(contexto.itens.map((i) => i.id))) : 0;
   const somaMarcada = contexto ? somaDosItensMarcados(contexto.itens, marcados) : 0;
   const sugerido = contexto ? valorSugeridoDaNota(contexto.itens, marcados, contexto.valorDosProdutos) : 0;
+  // Frete: só na nota integral (todos os itens marcados). O sugerido da nota é itens + frete.
+  const freteNaNota = contexto ? freteQueEntraNaNota(contexto.itens, marcados, contexto.freteDoPedido) : 0;
+  const notaParcial = contexto ? ehNotaParcial(contexto.itens, marcados) : false;
+  const sugeridoDaNota = Math.round((sugerido + freteNaNota) * 100) / 100;
   const temDesconto = contexto ? fatorDoDesconto(contexto.valorDosProdutos, somaDeTodos) < 1 : false;
   const pagamentos = contexto ? pagamentosParaConferencia(contexto.cobrancas) : [];
   const alertasSeparados = separarAlertas(alertas);
@@ -778,6 +794,7 @@ export function GerarNfseModal({
                 <CartaoDeResumo titulo="Valores">
                   {itensMarcadosNaTela && <LinhaDeResumo rotulo={rotuloDosItensMarcados(marcados.size)}>{formatCurrency(somaMarcada)}</LinhaDeResumo>}
                   {!notaAberta && temDesconto && <LinhaDeResumo rotulo="Desconto do pedido">-{formatCurrency(Math.max(0, somaMarcada - sugerido))}</LinhaDeResumo>}
+                  {!notaAberta && freteNaNota > 0 && <LinhaDeResumo rotulo="Frete">{formatCurrency(freteNaNota)}</LinhaDeResumo>}
                   {mostraLinhaDeServicos(itensMarcadosNaTela, somaMarcada, totalDaNota) && (
                     <LinhaDeResumo rotulo="Serviços">{formatCurrency(totalDaNota)}</LinhaDeResumo>
                   )}
@@ -949,9 +966,25 @@ export function GerarNfseModal({
                     {contexto.itens.length > 0 && (
                       <p className="text-xs text-slate-500">
                         O subtotal do item é o que está gravado no pedido (inclui o valor fixo, quando há).
-                        {contexto.freteDoPedido > 0 ? ` O frete do pedido (${formatCurrency(contexto.freteDoPedido)}) não entra na nota de serviço.` : ""} Total do pedido:{" "}
-                        {formatCurrency(contexto.totalDoPedido)}.
+                        {contexto.freteDoPedido > 0 ? (
+                          <span data-texto-frete>
+                            {freteNaNota > 0
+                              ? ` O frete do pedido (${formatCurrency(freteNaNota)}) entra na nota, porque todos os itens estão marcados.`
+                              : notaParcial
+                                ? ` O frete do pedido (${formatCurrency(contexto.freteDoPedido)}) não entra: a nota não leva todos os itens do pedido (nota parcial).`
+                                : ""}
+                          </span>
+                        ) : null}{" "}
+                        Total do pedido: {formatCurrency(contexto.totalDoPedido)}.
                       </p>
+                    )}
+                    {freteNaNota > 0 && contexto.nfeDeVendaComFrete && (
+                      <div data-aviso-frete-na-nfe>
+                        <AvisoEmDestaque tom="atencao">
+                          A NF-e de venda deste pedido já inclui o frete; confira para não cobrá-lo duas vezes. ({contexto.nfeDeVendaComFrete.ref},{" "}
+                          {contexto.nfeDeVendaComFrete.status.toLowerCase()}, frete {formatCurrency(contexto.nfeDeVendaComFrete.valorFrete)})
+                        </AvisoEmDestaque>
+                      </div>
                     )}
 
                     <div className="grid grid-cols-1 gap-4 md:grid-cols-[220px_1fr]">
@@ -970,15 +1003,15 @@ export function GerarNfseModal({
                           }}
                           className={CAMPO_NFSE}
                         />
-                        {valorConferido.ok && contexto.itens.length > 0 && Math.round(valorConferido.valor * 100) !== Math.round(sugerido * 100) && (
+                        {valorConferido.ok && contexto.itens.length > 0 && Math.round(valorConferido.valor * 100) !== Math.round(sugeridoDaNota * 100) && (
                           <p role="status" data-aviso-valor className="mt-1.5 text-xs font-semibold text-amber-700">
-                            O valor difere da soma dos itens marcados ({formatCurrency(sugerido)}).{" "}
+                            O valor difere da soma dos itens marcados{freteNaNota > 0 ? " mais o frete" : ""} ({formatCurrency(sugeridoDaNota)}).{" "}
                             <button
                               type="button"
                               className="underline"
                               onClick={() => {
                                 setValorMexido(false);
-                                setValorTexto(sugerido > 0 ? sugerido.toFixed(2).replace(".", ",") : "");
+                                setValorTexto(sugeridoDaNota > 0 ? sugeridoDaNota.toFixed(2).replace(".", ",") : "");
                               }}
                             >
                               Usar a soma
@@ -1012,7 +1045,7 @@ export function GerarNfseModal({
                                 className="underline"
                                 onClick={() => {
                                   setDescricaoMexida(false);
-                                  setDescricao(descricaoComPagamento(descricaoDosItens(contexto.idInt, contexto.itens.filter((item) => marcados.has(item.id)), descontoParaDescricao(contexto)), contexto.cobrancas));
+                                  setDescricao(descricaoComPagamento(descricaoDosItens(contexto.idInt, contexto.itens.filter((item) => marcados.has(item.id)), descontoParaDescricao(contexto)), contexto.cobrancas, freteNaNota));
                                 }}
                               >
                                 Refazer a partir dos itens

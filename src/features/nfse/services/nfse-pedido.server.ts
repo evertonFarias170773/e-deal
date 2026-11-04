@@ -140,6 +140,12 @@ export type ContextoNfseDoPedido = {
   enderecoDoTomador: EnderecoDoTomador | null;
   /** Por que não há endereço utilizável; com motivo, o rascunho não é criado. */
   motivoSemEndereco: string | null;
+  /**
+   * NF-e de venda VIVA do pedido que já leva o frete (04/11/2026): a janela avisa
+   * para o frete não ser cobrado duas vezes. Só aviso. Viva = não cancelada nem
+   * denegada; remessa não conta (mesma régua da Fila de Faturamento).
+   */
+  nfeDeVendaComFrete: { ref: string; status: string; valorFrete: number } | null;
   descricaoSugerida: string;
   /**
    * O desconto do pedido, para a descricao mostrar "Desconto tabela especial
@@ -273,7 +279,7 @@ export async function lerContextoNfseDoPedido(
   const idCliente = idDoPagadorDoPedido(proposta);
   const ehPagadorDoPedido = idCliente != null && idCliente !== idClienteDoPedido;
 
-  const [empresaRes, clienteRes, enderecosRes, itensRes, notasRes, cobrancasRes, descontosRes] = await Promise.all([
+  const [empresaRes, clienteRes, enderecosRes, itensRes, notasRes, cobrancasRes, descontosRes, nfeRes] = await Promise.all([
     supabase.from("empresas").select("id, nome_fantasia, ambiente_nfse").eq("id", idEmpresa).maybeSingle(),
     idCliente
       ? supabase
@@ -301,7 +307,9 @@ export async function lerContextoNfseDoPedido(
       .eq("id_int", idInt)
       .order("created_at", { ascending: true }),
     // SO LEITURA: o rotulo do desconto na descricao. Falha aqui so tira o rotulo.
-    supabase.from("desconto_proposta").select("tipo_desconto, valor_percentual, valor_nominal").eq("id_int", idInt)
+    supabase.from("desconto_proposta").select("tipo_desconto, valor_percentual, valor_nominal").eq("id_int", idInt),
+    // SO LEITURA: o aviso de frete ja cobrado na NF-e. Falha aqui so tira o aviso.
+    supabase.from("notas_fiscais").select("ref, status, tipo_nota, valor_frete").eq("id_int", idInt)
   ]);
 
   const falhou = [empresaRes, clienteRes, enderecosRes, itensRes, notasRes].find((r) => r.error);
@@ -350,6 +358,19 @@ export async function lerContextoNfseDoPedido(
       municipioReconhecido: reconhecidos.get(`${cidade}|${uf}`) === true
     };
   });
+
+  if (nfeRes.error) console.warn("[API][Nfse] Não foi possível ler as NF-e do pedido:", nfeRes.error.message);
+  const nfeComFrete = ((nfeRes.error ? [] : nfeRes.data ?? []) as Record<string, unknown>[]).find((n) => {
+    const status = texto(n.status).toUpperCase();
+    return (
+      !["CANCELADA", "DENEGADA"].includes(status) &&
+      texto(n.tipo_nota).toUpperCase() !== "REMESSA" &&
+      Number(n.valor_frete) > 0
+    );
+  });
+  const nfeDeVendaComFrete = nfeComFrete
+    ? { ref: texto(nfeComFrete.ref), status: texto(nfeComFrete.status).toUpperCase(), valorFrete: Number(nfeComFrete.valor_frete) || 0 }
+    : null;
 
   // O endereço da nota: o PRINCIPAL do tomador, com o desempate da NF-e
   // (CAIXA ALTA, depois o mais recente, depois o id).
@@ -435,6 +456,7 @@ export async function lerContextoNfseDoPedido(
       enderecos,
       enderecoDoTomador,
       motivoSemEndereco,
+      nfeDeVendaComFrete,
       descricaoSugerida: descricaoDosItens(idInt, itens, {
         fator: fatorDoDesconto(Number(proposta.valor) || 0, itens.reduce((soma, item) => soma + (Number(item.subtotal) || 0), 0)),
         ...descontoDoPedido

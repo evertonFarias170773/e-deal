@@ -74,7 +74,7 @@ checar("cancelada: nao preenche", parcelasParaLancamento(cob({ status: "CANCELAD
 // 5. Quem usa o montador
 const modal = readFileSync("src/features/nfse/components/GerarNfseModal.tsx", "utf8");
 checar("modal: complementares nascem vazias", /setInfComp\(""\)/.test(modal) && !/setInfComp\(textoDoPagamentoParaNota/.test(modal), true);
-checar("modal: as tres portas da descricao levam o pagamento", (modal.match(/descricaoComPagamento\(descricaoDosItens\(/g) ?? []).length, 3);
+checar("modal: as tres portas da descricao levam o pagamento", (modal.match(/descricaoComPagamento\(\s*descricaoDosItens\(/g) ?? []).length, 3);
 const nfe = ["src/features/nfe/components/NfeDetailPage.tsx", "src/features/nfe/services/nfe.service.ts"].map((f) => readFileSync(f, "utf8")).join("\n");
 checar("NF-e de produto nao usa o montador da NFS-e", /composicao-nfse|descricaoComPagamento|textoDoPagamentoParaNota/.test(nfe), false);
 
