@@ -21,6 +21,8 @@ import {
   type ItemDoPedido
 } from "@/features/nfse/lib/composicao-nfse";
 import { idDoPagadorDoPedido } from "@/lib/fiscal/pagador-do-pedido";
+import { escolherEnderecoPrincipal } from "@/lib/fiscal/endereco-principal";
+import { motivoSemEnderecoDoTomador } from "@/features/nfse/lib/composicao-nfse";
 
 /**
  * NFS-e pela Fila — o que as rotas `/api/fiscal/rascunho-nfse` e
@@ -129,7 +131,15 @@ export type ContextoNfseDoPedido = {
   servicos: ServicoNfse[];
   /** O serviço que a janela traz escolhido. */
   idServicoPadrao: number;
+  /** Todos os endereços do tomador: só para mostrar o endereço gravado numa nota já criada. */
   enderecos: EnderecoDoTomador[];
+  /**
+   * O endereço que VAI na nota (04/11/2026): o PRINCIPAL do tomador, pela mesma
+   * regra do destinatário comercial da NF-e. Não há escolha em lista.
+   */
+  enderecoDoTomador: EnderecoDoTomador | null;
+  /** Por que não há endereço utilizável; com motivo, o rascunho não é criado. */
+  motivoSemEndereco: string | null;
   descricaoSugerida: string;
   /**
    * O desconto do pedido, para a descricao mostrar "Desconto tabela especial
@@ -275,7 +285,7 @@ export async function lerContextoNfseDoPedido(
     idCliente
       ? supabase
           .from("enderecos")
-          .select("id, cep, endereco, numero, complemento, bairro, cidade, uf, tipo_endereco")
+          .select("id, cep, endereco, numero, complemento, bairro, cidade, uf, tipo_endereco, data_criacao")
           .eq("id_cliente", idCliente)
       : Promise.resolve({ data: [], error: null }),
     supabase
@@ -340,6 +350,14 @@ export async function lerContextoNfseDoPedido(
       municipioReconhecido: reconhecidos.get(`${cidade}|${uf}`) === true
     };
   });
+
+  // O endereço da nota: o PRINCIPAL do tomador, com o desempate da NF-e
+  // (CAIXA ALTA, depois o mais recente, depois o id).
+  const principal = escolherEnderecoPrincipal(
+    enderecosBrutos.map((e) => ({ id: texto(e.id), tipo_endereco: texto(e.tipo_endereco) || null, data_criacao: texto(e.data_criacao) || null }))
+  );
+  const enderecoDoTomador = principal ? enderecos.find((e) => e.id === principal.id) ?? null : null;
+  const motivoSemEndereco = motivoSemEnderecoDoTomador(enderecos.length, enderecoDoTomador);
 
   // Item cancelado (inativação lógica de pedido pago) não entra na nota.
   const itens: ItemDoPedido[] = ((itensRes.data ?? []) as Record<string, unknown>[])
@@ -415,6 +433,8 @@ export async function lerContextoNfseDoPedido(
       servicos,
       idServicoPadrao: servicos.some((s) => s.id === SERVICO_NFSE.id) ? SERVICO_NFSE.id : (servicos[0]?.id ?? SERVICO_NFSE.id),
       enderecos,
+      enderecoDoTomador,
+      motivoSemEndereco,
       descricaoSugerida: descricaoDosItens(idInt, itens, {
         fator: fatorDoDesconto(Number(proposta.valor) || 0, itens.reduce((soma, item) => soma + (Number(item.subtotal) || 0), 0)),
         ...descontoDoPedido

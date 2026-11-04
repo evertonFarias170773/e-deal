@@ -54,6 +54,7 @@ import { useAuth } from "@/features/auth/AuthProvider";
 import {
   INTERVALO_CONSULTA_NFSE_MS,
   LIMITE_DESCRICAO_NFSE,
+  VERSAO_DA_JANELA_NFSE,
   MAXIMO_DE_CONSULTAS_NFSE,
   conferirDescricao,
   conferirServico,
@@ -68,7 +69,6 @@ import {
 import {
   LIMITE_INFORMACOES_COMPLEMENTARES_NFSE,
   alternarItemMarcado,
-  enderecoInicial,
   fatorDoDesconto,
   informacoesComplementaresDaNota,
   opcoesDeEndereco,
@@ -184,7 +184,6 @@ export function GerarNfseModal({
   // grava e confere de novo e o servidor (PATCH /api/fiscal/rascunho-nfse).
   const { user } = useAuth();
   const ehAdministrador = Boolean(user?.isSuperAdmin || user?.isAdmin);
-  const [idEndereco, setIdEndereco] = useState("");
   const [idServico, setIdServico] = useState<number | null>(null);
   const [baixando, setBaixando] = useState<null | "pdf" | "xml">(null);
   const [valorTexto, setValorTexto] = useState("");
@@ -306,7 +305,6 @@ export function GerarNfseModal({
     const todos = new Set(lido.itens.map((item) => item.id));
     const sugerido = valorSugeridoDaNota(lido.itens, todos, lido.valorDosProdutos);
     setMarcados(todos);
-    setIdEndereco(enderecoInicial(opcoesDeEndereco(lido.enderecos)));
     setValorTexto(sugerido > 0 ? sugerido.toFixed(2).replace(".", ",") : "");
     // A condição de pagamento vai na descrição (04/11/2026); as complementares nascem vazias.
     setDescricao(descricaoComPagamento(descricaoDosItens(lido.idInt, lido.itens, descontoParaDescricao(lido)), lido.cobrancas));
@@ -465,7 +463,7 @@ export function GerarNfseModal({
     if (!desc.ok) return setValidacao(desc.motivo);
     const valor = conferirValor(valorTexto);
     if (!valor.ok) return setValidacao(valor.motivo);
-    if (contexto.enderecos.length > 0 && !idEndereco) return setValidacao("Escolha o endereço do tomador.");
+    if (contexto.motivoSemEndereco) return setValidacao(contexto.motivoSemEndereco);
     if (contexto.itens.length > 0 && marcados.size === 0) return setValidacao("Marque pelo menos um item do pedido.");
     const servicoDoRascunho = conferirServico(contexto.servicos.find((sv) => sv.id === idServico) ?? null);
     if (!servicoDoRascunho.ok) return setValidacao(servicoDoRascunho.motivo);
@@ -482,7 +480,8 @@ export function GerarNfseModal({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           id_int: idInt,
-          id_endereco: idEndereco || null,
+          // O endereço não vai: o servidor usa o principal do tomador.
+          versao_janela: VERSAO_DA_JANELA_NFSE,
           id_servico: idServico,
           descricao: desc.texto,
           valor: valor.valor,
@@ -658,8 +657,9 @@ export function GerarNfseModal({
   const caracteresDoTexto = tamanhoDasInformacoesComplementares(infComp);
   const textoEstourou = caracteresDoTexto > LIMITE_INFORMACOES_COMPLEMENTARES_NFSE;
 
-  const opcoesDoEndereco = contexto ? opcoesDeEndereco(contexto.enderecos) : [];
-  const opcaoEscolhida = opcoesDoEndereco.find((o) => o.id === idEndereco) ?? null;
+  // O endereço da nota é fixo: o principal do tomador (sem escolha em lista).
+  const enderecoFixo = contexto?.enderecoDoTomador ?? null;
+  const semEnderecoUtilizavel = contexto?.motivoSemEndereco ?? null;
   const somaDeTodos = contexto ? somaDosItensMarcados(contexto.itens, new Set(contexto.itens.map((i) => i.id))) : 0;
   const somaMarcada = contexto ? somaDosItensMarcados(contexto.itens, marcados) : 0;
   const sugerido = contexto ? valorSugeridoDaNota(contexto.itens, marcados, contexto.valorDosProdutos) : 0;
@@ -813,7 +813,7 @@ export function GerarNfseModal({
                 data-secao="endereco"
                 estado={
                   emFormulario
-                    ? opcoesDoEndereco.length === 0 || (opcaoEscolhida && !opcaoEscolhida.municipioReconhecido) || !idEndereco
+                    ? semEnderecoUtilizavel || !enderecoFixo || !enderecoFixo.municipioReconhecido
                       ? "atencao"
                       : "ok"
                     : enderecoDaNota && enderecoDaNota.municipioReconhecido
@@ -822,35 +822,20 @@ export function GerarNfseModal({
                 }
               >
                 {emFormulario ? (
-                  opcoesDoEndereco.length === 0 ? (
-                    <p className="text-sm text-amber-700">O cliente não tem endereço cadastrado. A nota sairá sem o endereço do tomador.</p>
+                  semEnderecoUtilizavel || !enderecoFixo ? (
+                    <AvisoEmDestaque tom="impede">
+                      <span data-sem-endereco-do-tomador>{semEnderecoUtilizavel ?? "O tomador não tem endereço utilizável."}</span>
+                    </AvisoEmDestaque>
                   ) : (
                     <>
-                      <label htmlFor="nfse-endereco" className={ROTULO_NFSE}>
-                        Endereço que vai na nota
-                      </label>
-                      <select
-                        id="nfse-endereco"
-                        value={idEndereco}
-                        onChange={(e) => setIdEndereco(e.target.value)}
-                        disabled={ocupado !== null}
-                        className={CAMPO_NFSE}
-                      >
-                        {opcoesDoEndereco.length > 1 && <option value="">Escolha o endereço do tomador...</option>}
-                        {opcoesDoEndereco.length === 1 && opcoesDoEndereco[0].incompleto && <option value="">Nenhum endereço utilizável</option>}
-                        {opcoesDoEndereco.map((o) => (
-                          <option key={o.id} value={o.id} disabled={o.incompleto}>
-                            {o.rotulo}
-                            {o.incompleto ? " (cadastro incompleto)" : ""}
-                          </option>
-                        ))}
-                      </select>
-                      {opcoesDoEndereco.some((o) => o.incompleto) && (
-                        <p className="mt-1.5 text-xs text-slate-500">
-                          Endereço marcado como &quot;cadastro incompleto&quot; tem texto inválido em algum campo e não pode ser usado. Corrija-o no cadastro do cliente.
-                        </p>
-                      )}
-                      {opcaoEscolhida && !opcaoEscolhida.municipioReconhecido && (
+                      <p className={ROTULO_NFSE}>Endereço que vai na nota</p>
+                      <p className="rounded-xl bg-slate-50 p-3 text-sm font-medium text-slate-800" data-endereco-fixo>
+                        {opcoesDeEndereco([enderecoFixo])[0].rotulo}
+                      </p>
+                      <p className="mt-1.5 text-xs text-slate-500">
+                        Endereço principal do tomador, o mesmo da NF-e. Para mudar, corrija o endereço principal no cadastro do cliente.
+                      </p>
+                      {!enderecoFixo.municipioReconhecido && (
                         <p role="status" className="mt-2 text-xs font-semibold text-amber-700">
                           O município deste endereço não foi reconhecido. A nota sairá sem o endereço do tomador.
                         </p>
@@ -1371,7 +1356,7 @@ export function GerarNfseModal({
             <button
               type="button"
               onClick={() => void criarRascunho(modo.novo)}
-              disabled={ocupado !== null || !contexto.tomador.documentoOk || descricaoEstourou || textoEstourou || !servicoConferido.ok}
+              disabled={ocupado !== null || !contexto.tomador.documentoOk || Boolean(semEnderecoUtilizavel) || descricaoEstourou || textoEstourou || !servicoConferido.ok}
               className={BOTAO_PRIMARIO_NFSE}
             >
               {ocupado === "criar" && <Loader2 className="h-4 w-4 animate-spin" />}

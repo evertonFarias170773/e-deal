@@ -46,6 +46,25 @@ export function enderecoComCadastroIncompleto(e: EnderecoBruto): boolean {
   return [e.logradouro, e.numero, e.complemento, e.bairro, e.cidade, e.uf, e.cep].some(textoDeCadastroInvalido);
 }
 
+/**
+ * Por que o tomador NÃO tem endereço utilizável na NFS-e, ou `null` se tem
+ * (04/11/2026, pedido do financeiro). O endereço não é escolhido em lista: é o
+ * PRINCIPAL do tomador, pela mesma regra do destinatário comercial da NF-e
+ * (`escolherEnderecoPrincipal`). Sem ele, a janela avisa e o rascunho não sai.
+ */
+export function motivoSemEnderecoDoTomador(totalDeEnderecos: number, principal: EnderecoBruto | null): string | null {
+  if (totalDeEnderecos === 0) {
+    return "O tomador não tem endereço cadastrado. Cadastre o endereço principal no cadastro do cliente para criar a NFS-e.";
+  }
+  if (!principal) {
+    return "O tomador não tem endereço principal no cadastro. Marque um endereço como Principal no cadastro do cliente para criar a NFS-e.";
+  }
+  if (enderecoComCadastroIncompleto(principal) || !limpo(principal.logradouro) || !limpo(principal.cidade) || !limpo(principal.uf)) {
+    return "O endereço principal do tomador está com o cadastro incompleto (rua, cidade ou UF). Corrija-o no cadastro do cliente para criar a NFS-e.";
+  }
+  return null;
+}
+
 function limpo(valor: string | null | undefined): string {
   return String(valor ?? "").replace(/\s+/g, " ").trim();
 }

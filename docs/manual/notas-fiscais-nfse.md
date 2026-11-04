@@ -1,6 +1,6 @@
 # Notas fiscais: NFS-e (nota de serviço)
 
-> **Última revisão:** 04/11/2026 (tomador é o pagador do pedido; natureza da operação e condição de pagamento na descrição do serviço; histórico da NFS-e em aba própria)
+> **Última revisão:** 04/11/2026 (endereço do tomador fixo, sem lista; tomador é o pagador do pedido; natureza da operação e condição de pagamento na descrição do serviço; histórico da NFS-e em aba própria)
 > **Caminho no menu:** Financeiro → Notas fiscais → aba **Fila Faturamento** → **NFS-e**
 > **Endereço:** `/notas-fiscais`
 
@@ -23,7 +23,7 @@ Nomes exatamente como aparecem na tela. Os botões da fila, do histórico e da N
 | Nome na tela | Onde fica | O que faz |
 |---|---|---|
 | **NFS-e** | Aba Fila, coluna **Ação**, entre **Nota emitida no sistema antigo** e **Faturar**; só em pedido da **BIRÔ IDEAL** | Abre a janela **Gerar NFS-e**. O texto muda com a nota de serviço do pedido: **NFS-e** (sem nota ou com rascunho), **NFS-e nº N** (autorizada), **NFS-e em análise** e **NFS-e (reenviar)** (o envio falhou). |
-| **Endereço que vai na nota** (lista) | Janela **Gerar NFS-e**, seção **Endereço do tomador** | Escolhe o endereço do tomador entre os do cadastro do tomador (o pagador do pedido, quando há). Endereços iguais aparecem uma vez só; endereço com "cadastro incompleto" fica apagado. |
+| **Endereço que vai na nota** | Janela **Gerar NFS-e**, seção **Endereço do tomador** | Só mostra, não se escolhe: é o endereço **principal** do tomador (o pagador do pedido, quando há), o mesmo que a NF-e usa para o destinatário comercial. Para mudar, corrija o endereço principal no cadastro do cliente. |
 | **Serviço fiscal** (lista) | Janela **Gerar NFS-e**, seção **Serviço e itens** | Escolhe o serviço da nota entre os serviços ativos do cadastro. Abaixo aparecem o código de tributação e o NBS do escolhido. Hoje há um serviço só (13.05.01). |
 | Caixa de marcar de cada item | Janela **Gerar NFS-e**, tabela de itens | Diz se o item do pedido entra na nota. Todos vêm marcados, e pelo menos um tem de ficar. |
 | **Usar a soma** | Janela **Gerar NFS-e**, abaixo do **Valor da nota** | Volta o valor para a soma dos itens marcados. Aparece quando o valor foi alterado. |
@@ -53,7 +53,7 @@ Só para pedido da **BIRÔ IDEAL** e para quem tem a permissão **Emitir NFS-e (
 1. Na aba **Fila Faturamento**, ache o pedido e clique em **NFS-e**, entre **Nota emitida no sistema antigo** e **Faturar**.
 2. A janela abre com o título **NFS-e · Pedido #N**, o selo do status (Novo enquanto o rascunho não foi criado; depois Rascunho, Em análise, Autorizada ou Erro) e a faixa do ambiente. Em homologação a faixa é amarela e diz "HOMOLOGAÇÃO: NOTA DE TESTE, sem valor fiscal"; em produção é vermelha.
 3. Confira os três quadros do resumo: **Informações gerais** (empresa emissora, ambiente e serviço fiscal), **Valores** (serviços e total da nota) e **Tomador** (nome, CPF ou CNPJ, e-mail e telefone de quem paga o pedido). Quando o pedido tem pagador, o tomador é o pagador e o quadro mostra "Pagador do pedido. Cliente: …" com o nome do cliente do cadastro.
-4. Em **Endereço do tomador**, escolha o endereço na lista. Com um endereço só, ele já vem escolhido; com vários, a escolha é obrigatória.
+4. Confira o **Endereço do tomador**. Ele vem pronto: é o endereço principal do tomador, o mesmo da NF-e. Sem endereço utilizável, a janela avisa em vermelho e o **Criar rascunho** fica apagado.
 5. Em **Serviço e itens**, confira o **Serviço fiscal** e a tabela dos itens do pedido (produto, quantidade, valor unitário e subtotal). Desmarque o item que não entra nesta nota.
 6. Confira o **Valor da nota**. Ele é a soma dos itens marcados, já com o desconto do pedido, e pode ser alterado; se ficar diferente da soma, a janela avisa.
 7. Confira a **Descrição do serviço**. Ela é gerada com os itens marcados (quantidade, nome e valor unitário), depois a linha fixa "Natureza da operação: Tributação no município (Subitem 13.05 - Composição gráfica)" e, na última linha, a condição de pagamento do pedido (por exemplo "Forma de pagamento: Faturado. 1 parcela. Vencimento: 24/11/2026 (R$ 748,80)."). Sem cobrança ativa, a descrição termina na linha da natureza. Pode ser alterada. O "Valor Unit R$ …" que vem no nome de alguns produtos do cadastro não entra. Com desconto no pedido, cada item sai com o subtotal e a descrição fecha com o desconto e o total, por exemplo "Desconto tabela especial (10%): - R$ 10,00" e "Total: R$ 90,00"; o desconto é calculado pela diferença entre o bruto dos itens e o total do pedido. O contador mostra quantos caracteres já foram usados, de 1000.
@@ -105,9 +105,8 @@ Se a resposta não chegar (demora ou queda de conexão), a janela não conclui q
 - O valor sugerido para a nota é a soma dos itens marcados, com o desconto do pedido na mesma proporção. O frete do pedido não entra na nota de serviço.
 - O subtotal de cada item é o que está gravado no pedido e inclui o valor fixo do item, quando há. Por isso pode ser maior que quantidade vezes valor unitário.
 - Item cancelado no pedido não aparece na tabela. Pelo menos um item tem de ficar marcado.
-- Endereços iguais do cliente (mesmo logradouro, número e CEP) aparecem uma vez só na lista.
-- Endereço com texto inválido em algum campo ("NULL", "[object Object]" ou "<RUA>") aparece como "cadastro incompleto" e não pode ser escolhido. Corrija o cadastro do cliente.
-- Não existe a opção de emitir sem endereço para cliente que tem endereço cadastrado: a escolha de um endereço é obrigatória.
+- **Endereço do tomador:** é sempre o endereço **principal** do tomador, pela mesma regra do destinatário da NF-e: se houver mais de um marcado como principal, vale o escrito em CAIXA ALTA (o da Receita Federal) e, depois, o mais recente. Não há lista para escolher. Exemplo: no pedido 23991 vai o endereço da Maxion (Rua Furriel Luiz Antonio de Vargas, 239); no 24623, o principal da Zaffari, entre os cinco endereços dela.
+- **Sem endereço utilizável não há rascunho:** tomador sem endereço, sem endereço principal, ou com o principal incompleto (texto inválido como "NULL", "[object Object]" ou "<RUA>", ou sem rua, cidade ou UF). A janela diz qual é o caso. Corrija o cadastro do cliente.
 - Na seção **Pagamento do pedido**, a tabela é só leitura e não é enviada na nota. O pagamento vai escrito no fim da **Descrição do serviço**; as **Informações complementares** vêm vazias, para a frase não sair duas vezes.
 - As informações complementares são opcionais e têm até 2000 caracteres. Acima disso o **Criar rascunho** fica apagado. Quebra de linha é mantida.
 - Cobrança cancelada não entra na frase do pagamento. Cartão não ganha vencimento de parcela: quem define é a operadora.
@@ -117,10 +116,10 @@ Se a resposta não chegar (demora ou queda de conexão), a janela não conclui q
 - **NBS do rascunho:** super administrador e administrador veem o campo **NBS** e o botão **Salvar NBS** no rascunho (ou na nota com erro de envio), antes de emitir. O NBS precisa ter exatamente 9 dígitos, sem pontos. Nota autorizada, em análise, recusada ou cancelada não muda. Para os outros usuários o NBS aparece só para leitura. A alteração fica registrada com o nome de quem mudou.
 - Os serviços da lista vêm do cadastro de serviços da NFS-e. A janela não cadastra nem altera serviço.
 - A natureza da operação sai impressa na nota pela linha "Natureza da operação: Tributação no município (Subitem 13.05 - Composição gráfica)" da **Descrição do serviço**. O texto é fixo porque todas as NFS-e do Vibe usam o serviço 13.05.01 (subitem 13.05). Pode ser alterado ou apagado na descrição, como o resto do texto. O aviso de natureza da operação não selecionada continua aparecendo; ele não bloqueia a nota.
-- **Quem é o tomador:** o pagador escolhido no pedido, quando ele é diferente do cliente; sem pagador, o cliente do pedido. É a mesma regra do destinatário da NF-e de produto. Nome, documento, e-mail, telefone e a lista de endereços saem do cadastro do tomador. Exemplo: no pedido 23991 o cliente é a Companhia Zaffari e o pagador é a Maxion, então a NFS-e sai contra a Maxion, com o endereço da Maxion.
+- **Quem é o tomador:** o pagador escolhido no pedido, quando ele é diferente do cliente; sem pagador, o cliente do pedido. É a mesma regra do destinatário da NF-e de produto. Nome, documento, e-mail, telefone e o endereço principal saem do cadastro do tomador. Exemplo: no pedido 23991 o cliente é a Companhia Zaffari e o pagador é a Maxion, então a NFS-e sai contra a Maxion, com o endereço da Maxion.
 - Trocar o pagador do pedido depois de criar o rascunho não muda o tomador já gravado. Para atualizar, crie outro rascunho.
 - A descrição do serviço tem de 1 a 1000 caracteres. Acima disso o **Criar rascunho** fica apagado.
-- Quando o município do endereço escolhido não é reconhecido, a nota sai sem o endereço do tomador. A janela avisa e não bloqueia. O mesmo vale para cliente sem endereço cadastrado.
+- Quando o município do endereço principal não é reconhecido, a nota sai sem o endereço do tomador. A janela avisa e não bloqueia.
 - Homologação não pede confirmação para emitir. Produção pede uma, com o resumo da nota.
 - A janela nunca tenta de novo sozinha. Depois de um erro, quem decide repetir é você, com o que o quadro vermelho informar.
 - O erro fica na janela até você clicar em **Dispensar**, ou até a nota ser autorizada. Fechar a janela não o apaga.
@@ -144,7 +143,7 @@ Se a resposta não chegar (demora ou queda de conexão), a janela não conclui q
 |---|---|---|
 | "A emissão de NFS-e pelo Vibe não está liberada para ..." | O pedido não é da **BIRÔ IDEAL**. | Não há NFS-e pelo Vibe para essa empresa. |
 | "O cliente não tem CPF (11 dígitos) ou CNPJ (14 dígitos) no cadastro." | O documento do cliente está vazio ou incompleto. | Corrija o cadastro do cliente e abra a janela de novo. |
-| "Escolha o endereço do tomador." | O tomador tem mais de um endereço e nenhum foi marcado. | Marque um endereço e clique em **Criar rascunho**. |
+| "O tomador não tem endereço cadastrado." / "O tomador não tem endereço principal no cadastro." / "O endereço principal do tomador está com o cadastro incompleto (rua, cidade ou UF)." | Não há endereço principal utilizável no cadastro do tomador. | Corrija o endereço principal no cadastro do cliente e abra a janela de novo. |
 | "O serviço ... está sem código de tributação no cadastro." ou "... sem NBS de 9 dígitos no cadastro." | O cadastro do serviço está incompleto. | Peça ao administrador para acertar o cadastro do serviço. |
 | "O serviço ... está inativo." | O serviço foi desativado depois que a janela abriu. | Feche e abra a janela, e escolha outro serviço. |
 | "O serviço ... tem NBS ..., mas o banco ainda grava 121011000 em toda nota." | O serviço tem um NBS que o banco ainda não sabe gravar na nota. | Avise o administrador. A emissão com esse serviço depende de ajuste no banco. |
@@ -153,7 +152,7 @@ Se a resposta não chegar (demora ou queda de conexão), a janela não conclui q
 | "O PDF desta nota não foi encontrado no armazenamento." (ou XML) | O arquivo não está onde deveria. | Avise o administrador. |
 | "O município deste endereço não foi reconhecido. A nota sairá sem o endereço do tomador." | A cidade ou a UF do endereço não confere com a lista oficial de municípios. | Pode seguir. Para a nota sair com endereço, corrija a cidade e a UF no cadastro do cliente antes de criar o rascunho. |
 | "O valor difere da soma dos itens marcados (R$ ...)." | O valor digitado não é a soma dos itens marcados. | Confirme se é isso mesmo, ou clique em **Usar a soma**. Não bloqueia. |
-| "O endereço escolhido está com o cadastro incompleto." | O endereço tem texto inválido em algum campo. | Escolha outro endereço ou corrija o cadastro do cliente. |
+| "Esta janela é de uma versão anterior do Vibe. Atualize a página (F5) e abra a NFS-e de novo." | A página estava aberta desde antes de uma atualização do Vibe e montaria a nota pela regra antiga. | Aperte F5 e abra a NFS-e de novo. Nada foi gravado. |
 | "Marque pelo menos um item do pedido." | Nenhum item ficou marcado. | Marque o item que entra na nota. |
 | "N de 1000 caracteres: reduza o texto para criar o rascunho." | A descrição passou do limite. | Encurte a descrição. |
 | "N de 2000 caracteres: reduza o texto para criar o rascunho." | As informações complementares passaram do limite. | Encurte o texto. |

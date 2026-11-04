@@ -239,6 +239,15 @@ export function rotuloDoBotaoNfse(decisao: DecisaoDoPedido<NotaDeServicoDoPedido
 /** Limite da Focus para `descricao_servico`, que é onde `discriminacao` vai. */
 export const LIMITE_DESCRICAO_NFSE = 1000;
 
+/**
+ * Versão da composição da janela "NFS-e · Pedido" (04/11/2026). A janela manda
+ * este valor ao criar o rascunho; a rota recusa outro. Uma aba aberta antes de
+ * uma publicação continua rodando o código antigo até ser recarregada: foi assim
+ * que a frase do pagamento ainda caiu nas informações complementares depois do
+ * 6e123a7b. Mude o valor quando a composição da nota mudar.
+ */
+export const VERSAO_DA_JANELA_NFSE = "2026-11-04.2";
+
 export type ItemDoPedidoParaNfse = {
   nome: string | null;
   quantidade: number | null;

@@ -7,11 +7,11 @@ import {
   lerServicosNfse,
   respostaDeErro
 } from "@/features/nfse/services/nfse-pedido.server";
-import { enderecoComCadastroIncompleto, limparInformacoesComplementares } from "@/features/nfse/lib/composicao-nfse";
+import { limparInformacoesComplementares } from "@/features/nfse/lib/composicao-nfse";
 import {
   SERVICO_NFSE,
+  VERSAO_DA_JANELA_NFSE,
   conferirDescricao,
-  conferirEndereco,
   conferirServico,
   conferirValor,
   conferirNbsDigitado,
@@ -93,6 +93,14 @@ export async function POST(request: Request) {
     const idInt = lerIdInt(corpo?.id_int);
     if (!idInt) return respostaDeErro(400, "Número do pedido ausente.");
 
+    // Aba aberta antes da última publicação: compõe a nota com a regra antiga
+    // (ex.: frase do pagamento nas informações complementares). Recarregar resolve.
+    if (corpo?.versao_janela !== VERSAO_DA_JANELA_NFSE) {
+      return respostaDeErro(409, "Esta janela é de uma versão anterior do Vibe. Atualize a página (F5) e abra a NFS-e de novo.", {
+        code: "JANELA_DESATUALIZADA"
+      });
+    }
+
     const servico = clienteDeServico();
     if (!servico) {
       console.error("[API][RascunhoNfse] SUPABASE_SERVICE_ROLE_KEY ausente.");
@@ -101,7 +109,7 @@ export async function POST(request: Request) {
 
     const lido = await lerContextoNfseDoPedido(sessao.supabase, servico, idInt);
     if (!lido.ok) return respostaDeErro(lido.status, lido.message);
-    const { empresa, tomador, enderecos, decisao } = lido.contexto;
+    const { empresa, tomador, enderecoDoTomador, motivoSemEndereco, decisao } = lido.contexto;
 
     if (!empresa.liberada) {
       return respostaDeErro(422, `A emissão de NFS-e pelo Vibe não está liberada para ${empresa.nome}.`, {
@@ -150,15 +158,10 @@ export async function POST(request: Request) {
       });
     }
 
-    const endereco = conferirEndereco(corpo?.id_endereco, enderecos.map((e) => e.id));
-    if (!endereco.ok) return respostaDeErro(422, endereco.motivo, { code: "ENDERECO_INVALIDO" });
-    // Endereço com texto de cadastro quebrado ("[object Object]", "NULL", "<RUA>")
-    // aparece desligado na janela; aqui a mesma regra recusa.
-    const escolhido = enderecos.find((e) => e.id === endereco.idEndereco);
-    if (escolhido && enderecoComCadastroIncompleto(escolhido)) {
-      return respostaDeErro(422, "O endereço escolhido está com o cadastro incompleto. Corrija o cadastro do cliente ou escolha outro endereço.", {
-        code: "ENDERECO_INCOMPLETO"
-      });
+    // O endereço não vem do navegador (04/11/2026): é o PRINCIPAL do tomador,
+    // pela regra do destinatário da NF-e. Sem endereço utilizável, não há rascunho.
+    if (motivoSemEndereco || !enderecoDoTomador) {
+      return respostaDeErro(422, motivoSemEndereco ?? "O tomador não tem endereço utilizável.", { code: "ENDERECO_TOMADOR_INDISPONIVEL" });
     }
 
     const descricao = conferirDescricao(corpo?.descricao);
@@ -183,7 +186,7 @@ export async function POST(request: Request) {
       p_valor_servicos: valor.valor,
       p_discriminacao: descricao.texto,
       p_criado_por_nome: sessao.nomeDoUsuario,
-      p_id_endereco_tomador: endereco.idEndereco,
+      p_id_endereco_tomador: enderecoDoTomador.id,
       p_informacoes_complementares: limparInformacoesComplementares(corpo?.informacoes_complementares)
     });
 
