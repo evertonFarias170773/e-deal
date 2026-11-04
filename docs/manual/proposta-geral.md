@@ -1,6 +1,6 @@
 # Proposta: aba Geral
 
-> **Última revisão:** 03/11/2026
+> **Última revisão:** 04/11/2026
 > **Caminho no menu:** Pedidos → abrir um pedido → aba **Geral**
 > **Endereço:** `/orcamentos/<número>/editar` (em proposta nova, `/orcamentos/novo`)
 
@@ -24,7 +24,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Geral** | Barra de abas | Abre esta aba. |
 | **Cliente cadastrado** | Bloco **1. Cliente**, só em proposta nova | Faz a proposta para um cliente do cadastro. |
 | **Cliente não cadastrado / orçamento rápido** | Bloco **1. Cliente**, só em proposta nova | Faz a proposta só com nome e CEP, sem cadastro. |
-| Campo "Buscar por ID, nome, apelido ou documento do cliente..." | Bloco **1. Cliente** | Procura o cliente; clicar numa linha do resultado escolhe o cliente. |
+| Campo "Buscar por ID, nome, apelido, documento, telefone, WhatsApp ou e-mail do cliente..." | Bloco **1. Cliente** | Procura o cliente; clicar numa linha do resultado escolhe o cliente. |
 | Botão **X** (sem dica) | Dentro do campo de busca, com cliente escolhido | Limpa o cliente, o contato, o endereço, o pagador, o vendedor e a empresa. |
 | **Vincular cliente cadastrado** | Bloco **1. Cliente**, em orçamento rápido já salvo | Começa a troca do cliente manual por um cadastrado. |
 | **Cancelar vinculação** | Bloco **1. Cliente**, durante a vinculação | Desfaz a troca e volta ao que era. |
@@ -60,7 +60,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 ### Escolher o cliente (bloco 1. Cliente)
 
 1. Em proposta nova, escolha entre **Cliente cadastrado** e **Cliente não cadastrado / orçamento rápido**.
-2. Para cliente cadastrado, digite no campo de busca o código, o nome, o apelido ou o documento. A busca começa com dois caracteres.
+2. Para cliente cadastrado, digite no campo de busca o código, o nome, o apelido, o documento, o telefone, o WhatsApp ou o e-mail. A busca começa com dois caracteres. Só números, a partir de quatro, acham o código exato (sempre em primeiro), o documento e trechos de telefone fixo, WhatsApp 1 e WhatsApp 2, com ou sem pontuação no cadastro e sem precisar do 55. Quando o cliente aparece pelo telefone, WhatsApp ou e-mail, a linha mostra qual deles bateu, como "Encontrado por WhatsApp 2: ...".
 3. Clique no cliente na lista. Cada linha mostra o código, o nome, o documento, a cidade e o vendedor do cadastro.
 4. O sistema preenche sozinho o primeiro contato, o endereço de entrega (o do tipo entrega; se não houver, o principal), o vendedor padrão e a empresa padrão do cliente. Confira cada um nos blocos seguintes.
 5. Abaixo da busca aparecem três quadros: **Cliente**, **Limite Faturado / Risco** e **Tabela especial**. Este último mostra o percentual da tabela especial do cliente, escrito na tela como "+N% applied nos produtos", ou "Sem acréscimo especial".

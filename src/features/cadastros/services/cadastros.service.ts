@@ -10,6 +10,7 @@ import type {
   SupabaseUsuarioVendedorRow
 } from "@/features/cadastros/types.supabase";
 import { getSupabaseClient } from "@/lib/supabase/client";
+import { campoQueBateu, digitosDaBusca, trechosDeTelefone } from "@/features/cadastros/lib/busca-cliente-por-digitos";
 import { bearerDaSessao } from "@/lib/supabase/bearer";
 import { contaNoFaturamento } from "@/features/cobrancas/cobrancas-utils";
 import {
@@ -60,6 +61,11 @@ export type CadastrosReadResult = {
   loadedCount: number;
   warnings: string[];
   errorMessage?: string;
+  /**
+   * Por id_cliente: o campo que trouxe o cliente na busca quando foi telefone,
+   * WhatsApp ou e-mail (ex.: "WhatsApp 2: ..."). Ver `campoQueBateu`.
+   */
+  acertos?: Record<number, string>;
 };
 
 export type CadastroDetailReadResult = {
@@ -314,6 +320,129 @@ export async function getModelosCobranca(): Promise<{ id: string; resultado: str
   return data || [];
 }
 
+function acertosDaBusca(rows: SupabaseClienteRow[], termo: string): Record<number, string> {
+  const acertos: Record<number, string> = {};
+  if (!termo.trim()) return acertos;
+  for (const row of rows) {
+    const campo = campoQueBateu(row, termo);
+    const idCliente = Number(row.id_cliente);
+    if (campo && Number.isFinite(idCliente)) acertos[idCliente] = campo;
+  }
+  return acertos;
+}
+
+/** Categoria e status da lista, iguais nas três leituras da busca por dígitos. */
+function filtrosDaBuscaPorDigitos<Q>(request: Q, query: CadastrosListQuery): Q {
+  // O builder do PostgREST não expõe um tipo comum entre tabela e view.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let r = request as any;
+  if (query.categoria && query.categoria !== "TODAS") r = r.eq("categoria", query.categoria);
+  if (query.status === "ATIVO") r = r.eq("ativo", true).eq("restricao", false);
+  else if (query.status === "INATIVO") r = r.eq("ativo", false);
+  else if (query.status === "RESTRICAO") r = r.eq("restricao", true);
+  return r as Q;
+}
+
+/**
+ * Busca por dígitos em três leituras, para a ordem sair certa (um or() único
+ * ordena só por id_cliente, e o ID exato cairia fora da página — o caso do
+ * "8469"): 1) ID exato; 2) documento; 3) telefone fixo, WhatsApp 1 e 2. As duas
+ * últimas leem as colunas só de dígitos da view; as linhas vêm de `clientes`,
+ * no mesmo formato da busca de sempre.
+ */
+async function buscarClientesPorDigitos(
+  client: NonNullable<ReturnType<typeof getSupabaseClient>>,
+  digitos: string,
+  query: CadastrosListQuery,
+  pageIndex: number,
+  pageSize: number
+): Promise<CadastrosReadResult> {
+  const limite = (pageIndex + 1) * pageSize;
+  const falha = (mensagem: string): CadastrosReadResult => ({
+    source: "supabase",
+    cadastros: [],
+    totalCount: 0,
+    hasNextPage: false,
+    pageIndex,
+    pageSize,
+    loadedCount: 0,
+    errorMessage: mensagem,
+    warnings: ["Erro Supabase na busca por dígitos."]
+  });
+
+  const porId =
+    Number(digitos) <= INT4_MAX
+      ? filtrosDaBuscaPorDigitos(client.from("clientes").select("id_cliente").eq("id_cliente", Number(digitos)), query).limit(1)
+      : null;
+  const porDocumento = filtrosDaBuscaPorDigitos(
+    client.from("vw_cadastros_lista_completa").select("id_cliente").ilike("documento_numeros", `%${digitos}%`),
+    query
+  )
+    .order("id_cliente", { ascending: false })
+    .limit(limite);
+  const clausulasTelefone = trechosDeTelefone(digitos).flatMap((t) => [
+    `whatsapp_1_numeros.ilike.%${t}%`,
+    `whatsapp_2_numeros.ilike.%${t}%`,
+    `telefone_fixo_numeros.ilike.%${t}%`
+  ]);
+  const porTelefone = filtrosDaBuscaPorDigitos(
+    client.from("vw_cadastros_lista_completa").select("id_cliente").or(clausulasTelefone.join(",")),
+    query
+  )
+    .order("id_cliente", { ascending: false })
+    .limit(limite);
+
+  const [rId, rDoc, rTel] = await Promise.all([porId ?? Promise.resolve({ data: [], error: null }), porDocumento, porTelefone]);
+  const erro = rId.error ?? rDoc.error ?? rTel.error;
+  if (erro) return falha(erro.message || "Erro na busca por dígitos.");
+
+  const ordem: number[] = [];
+  for (const lista of [rId.data, rDoc.data, rTel.data] as Array<Array<{ id_cliente: unknown }> | null>) {
+    for (const linha of lista ?? []) {
+      const id = Number(linha.id_cliente);
+      if (Number.isFinite(id) && !ordem.includes(id)) ordem.push(id);
+    }
+  }
+  const pagina = ordem.slice(pageIndex * pageSize, limite);
+  if (pagina.length === 0) {
+    return {
+      source: "supabase",
+      cadastros: [],
+      totalCount: 0,
+      hasNextPage: false,
+      pageIndex,
+      pageSize,
+      loadedCount: 0,
+      warnings: ["Nenhum cadastro encontrado para os filtros atuais."]
+    };
+  }
+
+  const { data: rows, error } = await client
+    .from("clientes")
+    .select(CLIENTES_LIST_SELECT)
+    .in("id_cliente", pagina)
+    .returns<SupabaseClienteRow[]>();
+  if (error) return falha(error.message || "Erro na busca por dígitos.");
+
+  const porIdCliente = new Map((rows ?? []).map((row) => [Number(row.id_cliente), row]));
+  const ordenadas = pagina
+    .map((id) => porIdCliente.get(id))
+    .filter((row): row is SupabaseClienteRow => Boolean(row));
+  const cadastros = ordenadas.map(mapSupabaseClienteRowToCadastro);
+
+  return {
+    source: "supabase",
+    cadastros,
+    totalCount: ordem.length,
+    hasNextPage: ordem.length > limite,
+    pageIndex,
+    pageSize,
+    loadedCount: cadastros.length,
+    acertos: acertosDaBusca(ordenadas, query.search ?? ""),
+    warnings: [`Busca por dígitos em public.clientes: ${cadastros.length} registros na página atual.`]
+  };
+}
+
 export async function getCadastrosReadOnlyList(query: CadastrosListQuery): Promise<CadastrosReadResult> {
   const pageIndex = Math.max(query.pageIndex ?? 0, 0);
   const pageSize = Math.min(Math.max(query.pageSize ?? 500, 1), 500);
@@ -334,6 +463,13 @@ export async function getCadastrosReadOnlyList(query: CadastrosListQuery): Promi
       errorMessage: "Supabase client indisponível.",
       warnings: ["Supabase client ausente. Fallback mock foi removido."]
     };
+  }
+
+  // Termo só de dígitos (4+), com ou sem "#": ID exato, documento e telefones
+  // por dígitos, nessa ordem — ver lib/busca-cliente-por-digitos.
+  const digitosBusca = digitosDaBusca(query.search ?? "");
+  if (digitosBusca) {
+    return buscarClientesPorDigitos(client, digitosBusca, query, pageIndex, pageSize);
   }
 
   const searchClause = buildCadastrosSearchClause(query.search ?? "");
@@ -382,6 +518,7 @@ export async function getCadastrosReadOnlyList(query: CadastrosListQuery): Promi
     }
 
     const cadastros = sortCadastrosByIdClienteDesc((data ?? []).map(mapSupabaseClienteRowToCadastro));
+    const acertos = acertosDaBusca(data ?? [], query.search ?? "");
     const totalCount = typeof count === "number" ? count : cadastros.length;
     const hasNextPage = from + cadastros.length < totalCount;
 
@@ -413,6 +550,7 @@ export async function getCadastrosReadOnlyList(query: CadastrosListQuery): Promi
       pageIndex,
       pageSize,
       loadedCount: cadastros.length,
+      acertos,
       warnings: [`Leitura real aplicada em public.clientes com ${cadastros.length} registros na página atual.`]
     };
   } catch (error) {

@@ -1028,6 +1028,8 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
   const [clientSearch, setClientSearch] = useState(() => proposta?.cliente ? `${proposta.cliente.idCliente} - ${proposta.cliente.nome}` : (mode === "new" ? "#" : ""));
   const [showClientResults, setShowClientResults] = useState(false);
   const [clientResults, setClientResults] = useState<Cadastro[]>([]);
+  /** Por id_cliente: o campo que trouxe o cliente (telefone, WhatsApp ou e-mail). */
+  const [acertosDaBuscaCliente, setAcertosDaBuscaCliente] = useState<Record<number, string>>({});
   const [isSearchingClients, setIsSearchingClients] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -1884,8 +1886,10 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
         if (active) {
           if (res && res.cadastros) {
             setClientResults(res.cadastros);
+            setAcertosDaBuscaCliente(res.acertos ?? {});
           } else {
             setClientResults([]);
+            setAcertosDaBuscaCliente({});
           }
         }
       } catch (err) {
@@ -6981,7 +6985,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                     onChange={(event) => { setClientSearch(event.target.value); setShowClientResults(true); }}
                     onFocus={() => setShowClientResults(true)}
                     className="w-full bg-transparent text-sm text-slate-900 outline-none"
-                    placeholder="Buscar por ID, nome, apelido ou documento do cliente..."
+                    placeholder="Buscar por ID, nome, apelido, documento, telefone, WhatsApp ou e-mail do cliente..."
                   />
                   {isSearchingClients && (
                     <div className="h-4 w-4 animate-spin rounded-full border-2 border-[#0f9f9a] border-t-transparent"></div>
@@ -7027,6 +7031,10 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                           {result.fantasia ? `Apelido: ${result.fantasia} | ` : ""}
                           {result.cidadeUf} | Vendedor {getClienteVendedorPadrao(result)}
                         </p>
+                        {/* Por que o cliente apareceu, quando não foi por ID, nome ou documento. */}
+                        {acertosDaBuscaCliente[result.idCliente] ? (
+                          <p className="text-xs font-semibold text-[#0f9f9a]">Encontrado por {acertosDaBuscaCliente[result.idCliente]}</p>
+                        ) : null}
                       </button>
                     ))}
                   </div>
