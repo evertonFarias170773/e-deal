@@ -353,11 +353,18 @@ export function textoDoPagamentoParaNota(cobrancas: readonly CobrancaDoPedido[])
  * A descrição que a janela PROPÕE (04/11/2026, pedido do financeiro, nota do 24623):
  * as linhas dos itens e, embaixo, a condição de pagamento. A frase saiu das
  * informações complementares, que passam a vir vazias, para não sair duas vezes
- * na nota. Sem cobrança ativa, fica só a descrição dos itens.
+ * na nota. Sem cobrança ativa, fica sem a linha do pagamento.
+ *
+ * Entre os itens e o pagamento vai a linha fixa da natureza da operação
+ * (04/11/2026, pedido da Edina: a natureza tem de sair IMPRESSA na nota). Todas
+ * as NFS-e do Vibe usam o serviço 13.05.01 (subitem 13.05), por isso o texto é
+ * fixo. Fica editável na janela como o resto da descrição.
  */
+export const LINHA_NATUREZA_NFSE = "Natureza da operação: Tributação no município (Subitem 13.05 - Composição gráfica)";
+
 export function descricaoComPagamento(descricaoDosItens: string, cobrancas: readonly CobrancaDoPedido[]): string {
   const pagamento = textoDoPagamentoParaNota(cobrancas);
-  return [descricaoDosItens.trim(), pagamento].filter(Boolean).join("\n");
+  return [descricaoDosItens.trim(), LINHA_NATUREZA_NFSE, pagamento].filter(Boolean).join("\n");
 }
 
 /**

@@ -1,6 +1,6 @@
 # Notas fiscais: NFS-e (nota de serviço)
 
-> **Última revisão:** 04/11/2026 (condição de pagamento na descrição do serviço)
+> **Última revisão:** 04/11/2026 (natureza da operação e condição de pagamento na descrição do serviço)
 > **Caminho no menu:** Financeiro → Notas fiscais → aba **Fila Faturamento** → **NFS-e**
 > **Endereço:** `/notas-fiscais`
 
@@ -27,7 +27,7 @@ Nomes exatamente como aparecem na tela. Os botões da fila, do histórico e da N
 | **Serviço fiscal** (lista) | Janela **Gerar NFS-e**, seção **Serviço e itens** | Escolhe o serviço da nota entre os serviços ativos do cadastro. Abaixo aparecem o código de tributação e o NBS do escolhido. Hoje há um serviço só (13.05.01). |
 | Caixa de marcar de cada item | Janela **Gerar NFS-e**, tabela de itens | Diz se o item do pedido entra na nota. Todos vêm marcados, e pelo menos um tem de ficar. |
 | **Usar a soma** | Janela **Gerar NFS-e**, abaixo do **Valor da nota** | Volta o valor para a soma dos itens marcados. Aparece quando o valor foi alterado. |
-| **Refazer a partir dos itens** | Janela **Gerar NFS-e**, abaixo da **Descrição do serviço** | Refaz a descrição com os itens marcados e, no fim, a condição de pagamento do pedido. Aparece quando a descrição foi alterada. |
+| **Refazer a partir dos itens** | Janela **Gerar NFS-e**, abaixo da **Descrição do serviço** | Refaz a descrição com os itens marcados, a linha da natureza da operação e, no fim, a condição de pagamento do pedido. Aparece quando a descrição foi alterada. |
 | **Informações complementares (saem na nota)** (campo) | Janela **Gerar NFS-e**, seção **Pagamento do pedido**, abaixo da tabela | Texto livre que sai escrito na NFS-e. Vem vazio: a condição de pagamento já vai na **Descrição do serviço**. O contador mostra quantos caracteres já foram usados, de 2000. |
 | **Avisos informativos (N)** | Janela **Gerar NFS-e**, seção **Validação** | Abre e fecha a lista dos avisos que só informam. |
 | **Mais ações** | Janela **Gerar NFS-e**, rodapé, com o rascunho aberto | Abre o menu com **Criar outro rascunho**. |
@@ -56,7 +56,7 @@ Só para pedido da **BIRÔ IDEAL** e para quem tem a permissão **Emitir NFS-e (
 4. Em **Endereço do tomador**, escolha o endereço na lista. Com um endereço só, ele já vem escolhido; com vários, a escolha é obrigatória.
 5. Em **Serviço e itens**, confira o **Serviço fiscal** e a tabela dos itens do pedido (produto, quantidade, valor unitário e subtotal). Desmarque o item que não entra nesta nota.
 6. Confira o **Valor da nota**. Ele é a soma dos itens marcados, já com o desconto do pedido, e pode ser alterado; se ficar diferente da soma, a janela avisa.
-7. Confira a **Descrição do serviço**. Ela é gerada com os itens marcados (quantidade, nome e valor unitário) e, na última linha, a condição de pagamento do pedido (por exemplo "Forma de pagamento: Faturado. 1 parcela. Vencimento: 24/11/2026 (R$ 748,80)."). Pode ser alterada. O "Valor Unit R$ …" que vem no nome de alguns produtos do cadastro não entra. Com desconto no pedido, cada item sai com o subtotal e a descrição fecha com o desconto e o total, por exemplo "Desconto tabela especial (10%): - R$ 10,00" e "Total: R$ 90,00"; o desconto é calculado pela diferença entre o bruto dos itens e o total do pedido. O contador mostra quantos caracteres já foram usados, de 1000.
+7. Confira a **Descrição do serviço**. Ela é gerada com os itens marcados (quantidade, nome e valor unitário), depois a linha fixa "Natureza da operação: Tributação no município (Subitem 13.05 - Composição gráfica)" e, na última linha, a condição de pagamento do pedido (por exemplo "Forma de pagamento: Faturado. 1 parcela. Vencimento: 24/11/2026 (R$ 748,80)."). Sem cobrança ativa, a descrição termina na linha da natureza. Pode ser alterada. O "Valor Unit R$ …" que vem no nome de alguns produtos do cadastro não entra. Com desconto no pedido, cada item sai com o subtotal e a descrição fecha com o desconto e o total, por exemplo "Desconto tabela especial (10%): - R$ 10,00" e "Total: R$ 90,00"; o desconto é calculado pela diferença entre o bruto dos itens e o total do pedido. O contador mostra quantos caracteres já foram usados, de 1000.
 8. Em **Pagamento do pedido**, o campo **Informações complementares (saem na nota)** vem vazio; escreva nele só se a nota precisar de outro texto. Depois clique em **Criar rascunho**: a janela passa a mostrar o rascunho, com a referência (por exemplo NFS-22760-001) e a seção **Validação**.
 9. Clique em **Emitir NFS-e**. Em homologação a nota é enviada na hora, sem confirmação. Em produção aparece uma confirmação com a faixa **PRODUÇÃO**, a empresa, o tomador e o valor: confira e clique em **Emitir em PRODUÇÃO**.
 10. A janela acompanha a nota sozinha: consulta a cada 15 segundos, por até 5 minutos. Quando a prefeitura responde, aparece a seção **Documentos**, com o número da NFS-e, a data de emissão, a chave de acesso e os botões **Abrir PDF**, **Baixar PDF**, **Abrir XML** e **Baixar XML**.
@@ -116,6 +116,7 @@ Se a resposta não chegar (demora ou queda de conexão), a janela não conclui q
 - Só entra na nota serviço com o NBS 121011000. Serviço com outro NBS é recusado até o banco ser ajustado para gravar o NBS do serviço.
 - **NBS do rascunho:** super administrador e administrador veem o campo **NBS** e o botão **Salvar NBS** no rascunho (ou na nota com erro de envio), antes de emitir. O NBS precisa ter exatamente 9 dígitos, sem pontos. Nota autorizada, em análise, recusada ou cancelada não muda. Para os outros usuários o NBS aparece só para leitura. A alteração fica registrada com o nome de quem mudou.
 - Os serviços da lista vêm do cadastro de serviços da NFS-e. A janela não cadastra nem altera serviço.
+- A natureza da operação sai impressa na nota pela linha "Natureza da operação: Tributação no município (Subitem 13.05 - Composição gráfica)" da **Descrição do serviço**. O texto é fixo porque todas as NFS-e do Vibe usam o serviço 13.05.01 (subitem 13.05). Pode ser alterado ou apagado na descrição, como o resto do texto. O aviso de natureza da operação não selecionada continua aparecendo; ele não bloqueia a nota.
 - A descrição do serviço tem de 1 a 1000 caracteres. Acima disso o **Criar rascunho** fica apagado.
 - Quando o município do endereço escolhido não é reconhecido, a nota sai sem o endereço do tomador. A janela avisa e não bloqueia. O mesmo vale para cliente sem endereço cadastrado.
 - Homologação não pede confirmação para emitir. Produção pede uma, com o resumo da nota.

@@ -7,7 +7,8 @@
  * O QUE PROVA
  *   1. A descrição proposta = linhas dos itens + a frase do pagamento, embaixo.
  *      O texto do 24623: "Forma de pagamento: Faturado. 1 parcela. Vencimento: 24/11/2026 (R$ 748,80)."
- *   2. Sem cobrança ativa, a descrição fica só com os itens (nada de linha vazia).
+ *   2. Sem cobrança ativa, a descrição fica com os itens e a natureza (nada de linha vazia).
+ *   6. A linha fixa da natureza da operação vem depois dos itens e antes do pagamento.
  *   3. A frase cabe no limite da descrição (1000) num pedido de muitos itens comuns.
  *   4. As parcelas do Preparar Cobrança saem da MESMA conta da frase: 24623 dá
  *      1 parcela em 24/11/2026 de R$ 748,80; parcelado em 3 com intervalo dá as
@@ -16,8 +17,8 @@
  *      a NF-e de produto não usa este montador.
  */
 import { readFileSync } from "node:fs";
-import { descricaoComPagamento, parcelasParaLancamento, textoDoPagamentoParaNota, type CobrancaDoPedido } from "../../src/features/nfse/lib/composicao-nfse.ts";
-import { LIMITE_DESCRICAO_NFSE, conferirDescricao, descricaoDosItens } from "../../src/features/nfse/lib/regras-emissao.ts";
+import { LINHA_NATUREZA_NFSE, descricaoComPagamento, parcelasParaLancamento, textoDoPagamentoParaNota, type CobrancaDoPedido } from "../../src/features/nfse/lib/composicao-nfse.ts";
+import { LIMITE_DESCRICAO_NFSE, SERVICO_NFSE, conferirDescricao, descricaoDosItens } from "../../src/features/nfse/lib/regras-emissao.ts";
 
 let falhas = 0;
 function checar(nome: string, obtido: unknown, esperado: unknown) {
@@ -36,23 +37,27 @@ const itens24623 = descricaoDosItens(24623, [
   { nome: "Pulseira ColorBand", quantidade: 1520, valorUnitario: 0.21 }
 ]);
 const desc24623 = descricaoComPagamento(itens24623, [cob({})]);
-checar("24623: itens e, embaixo, a condicao de pagamento", desc24623.split("\n"), [
+checar("24623: itens, natureza e, embaixo, a condicao de pagamento", desc24623.split("\n"), [
   "Pedido 24623",
   "1.520 x Ingressos MOBI - R$ 0,23 un.",
   "1.520 x Pulseira ColorBand - R$ 0,21 un.",
+  "Natureza da operação: Tributação no município (Subitem 13.05 - Composição gráfica)",
   "Forma de pagamento: Faturado. 1 parcela. Vencimento: 24/11/2026 (R$ 748,80)."
 ]);
 checar("24623: a frase e a mesma das complementares de antes", desc24623.endsWith(textoDoPagamentoParaNota([cob({})])), true);
 checar("24623: a descricao passa na conferencia da rota", conferirDescricao(desc24623).ok, true);
 
 // 2. Sem cobranca ativa
-checar("sem cobranca: so os itens", descricaoComPagamento(itens24623, []), itens24623);
-checar("so cancelada: so os itens", descricaoComPagamento(itens24623, [cob({ status: "CANCELADO" })]), itens24623);
+const itensENatureza = [itens24623, LINHA_NATUREZA_NFSE].join("\n");
+checar("sem cobranca: itens e natureza", descricaoComPagamento(itens24623, []), itensENatureza);
+checar("so cancelada: itens e natureza", descricaoComPagamento(itens24623, [cob({ status: "CANCELADO" })]), itensENatureza);
+checar("natureza: o texto pedido", LINHA_NATUREZA_NFSE, "Natureza da operação: Tributação no município (Subitem 13.05 - Composição gráfica)");
+checar("natureza: o subitem bate com o servico da janela", SERVICO_NFSE.codigo.startsWith("13.05."), true);
 
 // 3. Limite
 const muitos = descricaoDosItens(1, Array.from({ length: 12 }, (_, i) => ({ nome: `Produto de teste numero ${i + 1}`, quantidade: 1000, valorUnitario: 1.25 })));
 const comFrase = descricaoComPagamento(muitos, [cob({ parcelas: 3, intervaloDias: 30, valor: 3000 })]);
-checar(`12 itens + parcelado em 3 cabe em ${LIMITE_DESCRICAO_NFSE}`, comFrase.length <= LIMITE_DESCRICAO_NFSE, true);
+checar(`12 itens + natureza + parcelado em 3 cabe em ${LIMITE_DESCRICAO_NFSE}`, comFrase.length <= LIMITE_DESCRICAO_NFSE, true);
 
 // 4. Parcelas do Preparar Cobranca
 checar("24623: 1 parcela em 24/11/2026 de R$ 748,80", parcelasParaLancamento(cob({})), [{ numero: 1, total: 1, vencimento: "2026-11-24", valor: 748.8 }]);
