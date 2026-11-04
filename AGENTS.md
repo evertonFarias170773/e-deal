@@ -15,7 +15,7 @@ Este arquivo contém as diretrizes gerais e obrigatórias para atuação de agen
 ## Fluxo de commit, push e deploy (OBRIGATÓRIO para qualquer agente)
 
 **Modelo de BRANCH ÚNICA** (vigente desde 27/07/2026): todo o trabalho acontece
-na árvore principal `d:\PROJETO IDEAL ANTIGRAVITY`, direto na branch
+na árvore principal `C:\PROJETO IDEAL ANTIGRAVITY`, direto na branch
 **`erp-ideal-preview`** — a mesma que a Vercel publica em produção
 automaticamente a cada push. Não existem branches de feature, worktrees nem
 cherry-picks: apenas UM desenvolvedor (o dono) trabalha no projeto.
