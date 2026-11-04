@@ -1,4 +1,5 @@
 import { getSupabaseClient } from "@/lib/supabase/client";
+import { lerTodas, lerPorIds, type ConsultaPaginavel } from "@/lib/supabase/ler-todas";
 import { cobrancaEhRetrabalho, marcaDeRetrabalho } from "@/lib/retrabalho";
 import { resolverPagadorDoBoletoC6 } from "@/features/cobrancas/services/boleto-c6";
 import { destinoDaRespostaDoCancelamento } from "@/features/cobrancas/services/cancelamento-c6";
@@ -117,6 +118,18 @@ function buildMockResult(): NfeReadResult {
   };
 }
 
+/**
+ * Ordena por `created_at` (empate pelo `id`, para ser estável). Devolve a ordem
+ * que a consulta única fazia no banco depois de uma leitura paginada pela chave.
+ */
+export function ordenarPorCreatedAt<T extends { created_at?: unknown; id?: unknown }>(linhas: T[], direcao: "asc" | "desc"): T[] {
+  const sinal = direcao === "asc" ? 1 : -1;
+  return [...linhas].sort((a, b) => {
+    const porData = String(a.created_at ?? "").localeCompare(String(b.created_at ?? "")) * sinal;
+    return porData !== 0 ? porData : String(a.id ?? "").localeCompare(String(b.id ?? ""));
+  });
+}
+
 async function fetchNfeRows(): Promise<SupabaseNfeRow[] | null> {
   const client = getSupabaseClient();
   if (!client) {
@@ -125,13 +138,18 @@ async function fetchNfeRows(): Promise<SupabaseNfeRow[] | null> {
   }
 
   console.log("[Nfe] Performing select query on public.notas_fiscais.");
-  const query = client
-    .from("notas_fiscais")
-    .select(NFE_SELECT)
-    .order("created_at", { ascending: false })
-    .limit(2000);
-
-  const { data, error } = await query.returns<SupabaseNfeRow[]>();
+  // TODAS as notas (04/11/2026): o `limit(2000)` de antes parava no teto de
+  // 1.000 do banco e as mais antigas não apareciam. Pagina pela chave única
+  // `id`; a ordem da tela (mais nova primeiro) é refeita depois. Leitura
+  // incompleta conta como falha, como um erro contava.
+  const leitura = await lerTodas<SupabaseNfeRow>(
+    // O select vem de uma lista montada (string comum): o supabase-js não deriva
+    // o tipo da linha, e antes o `.returns<SupabaseNfeRow[]>()` fazia o mesmo papel.
+    () => client.from("notas_fiscais").select(NFE_SELECT) as unknown as ConsultaPaginavel<SupabaseNfeRow>,
+    { chave: "id" }
+  );
+  const error = leitura.error ?? (leitura.completo ? null : { message: "leitura incompleta" });
+  const data = error ? null : ordenarPorCreatedAt(leitura.data, "desc");
 
   if (error || !data) {
     console.log("[Nfe][Supabase] Select query failed - falling back to mocks.", {
@@ -158,10 +176,14 @@ export async function getNfeReadOnlyList(): Promise<NfeReadResult> {
       try {
         const client = getSupabaseClient();
         if (client) {
-          const { data: clientsData } = await client
-            .from("clientes")
-            .select("id_cliente, nome, fantasia")
-            .in("id_cliente", uniqueClientIds);
+          // Em lotes (04/11/2026): com todas as notas a lista de clientes encosta no teto de 1.000.
+          // Leitura incompleta fica sem nomes, como um erro ficava.
+          const leituraClientes = await lerPorIds<{ id_cliente: number; nome: string | null; fantasia: string | null }, number>(
+            uniqueClientIds as number[],
+            (lote) => client.from("clientes").select("id_cliente, nome, fantasia").in("id_cliente", lote),
+            { chave: "id_cliente" }
+          );
+          const clientsData = leituraClientes.completo ? leituraClientes.data : null;
 
           if (clientsData) {
             for (const c of clientsData) {
@@ -178,8 +200,9 @@ export async function getNfeReadOnlyList(): Promise<NfeReadResult> {
     }
 
     // O que a lista mostra sem abrir a nota vem da proposta de origem e da
-    // cobrança. Duas consultas para o lote inteiro — a paginação não muda,
-    // porque a lista de notas continua vindo de uma consulta só.
+    // cobrança. Em lotes de 200 pedidos (04/11/2026): com todas as notas são
+    // mais de 1.000 pedidos e mais de 1.000 cobranças, e a consulta única cortava
+    // (a forma de cobrança vinha vazia em parte das notas).
     const idsInt = Array.from(new Set(rows.map((r) => Number(r.id_int)).filter((n) => Number.isFinite(n) && n > 0)));
     const propostaPorId = new Map<number, {
       cliente: string | null; id_cliente: number | null; id_faturado: number | null;
@@ -190,15 +213,30 @@ export async function getNfeReadOnlyList(): Promise<NfeReadResult> {
 
     const client = getSupabaseClient();
     if (client && idsInt.length > 0) {
-      const [propostasRes, cobrancasRes] = await Promise.all([
-        client.from("propostas")
-          .select("id_int,cliente,id_cliente,id_faturado,vendedor,status_interno")
-          .in("id_int", idsInt),
-        client.from("pagamentos_v2")
-          .select("id_int,tipo_cobranca,created_at")
-          .in("id_int", idsInt)
-          .order("created_at", { ascending: true })
+      const [propostasLidas, cobrancasLidas] = await Promise.all([
+        lerPorIds<{
+          id_int: number; cliente: string | null; id_cliente: number | null; id_faturado: number | null;
+          vendedor: string | null; status_interno: string | null;
+        }, number>(
+          idsInt,
+          (lote) => client.from("propostas").select("id_int,cliente,id_cliente,id_faturado,vendedor,status_interno").in("id_int", lote),
+          { chave: "id_int" }
+        ),
+        lerPorIds<{ id: string; id_int: number | null; tipo_cobranca: string | null; created_at: string | null }, number>(
+          idsInt,
+          (lote) => client.from("pagamentos_v2").select("id,id_int,tipo_cobranca,created_at").in("id_int", lote),
+          { chave: "id" }
+        )
       ]);
+      const propostasRes = {
+        data: propostasLidas.data,
+        error: propostasLidas.error ?? (propostasLidas.completo ? null : { message: "leitura incompleta" })
+      };
+      // A paginação ordena pela chave; a regra "a mais recente vence" precisa da ordem por created_at.
+      const cobrancasRes = {
+        data: ordenarPorCreatedAt(cobrancasLidas.data, "asc"),
+        error: cobrancasLidas.error ?? (cobrancasLidas.completo ? null : { message: "leitura incompleta" })
+      };
 
       if (propostasRes.error) {
         console.warn("[NfeService] Nao foi possivel ler as propostas do historico:", propostasRes.error.message);
