@@ -8,6 +8,7 @@ import type {
   MetodoAreaCliente,
   SituacaoAreaCliente
 } from "@/features/area-cliente/services/area-cliente.server";
+import { MENSAGEM_PIX_EM_PREPARACAO } from "@/features/cobrancas/lib/pix-em-preparacao";
 
 /**
  * Tela do cliente. Recebe a situacao ja resolvida pelo servidor e so fala com
@@ -227,12 +228,20 @@ export function AreaClienteView({ token, inicial }: Props) {
                   <p className="mt-3 text-center text-xs text-slate-500">Assim que o banco confirmar, esta página atualiza sozinha.</p>
                 </>
               ) : (
-                <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-                  Seu PIX está sendo preparado.
-                  <button type="button" onClick={() => void pagar("PIX")} disabled={trabalhando !== null} className="ml-2 font-semibold underline">
-                    {trabalhando === "PIX" ? "Gerando..." : "Tentar de novo"}
-                  </button>
-                </div>
+                cobranca.pixEmPreparacao ? (
+                  // Birô (04/11/2026): o banco aceitou e ainda não emitiu o QR. O
+                  // polling desta página troca para o QR quando o código chegar.
+                  <div data-pix-em-preparacao className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                    {MENSAGEM_PIX_EM_PREPARACAO}
+                  </div>
+                ) : (
+                  <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                    Seu PIX está sendo preparado.
+                    <button type="button" onClick={() => void pagar("PIX")} disabled={trabalhando !== null} className="ml-2 font-semibold underline">
+                      {trabalhando === "PIX" ? "Gerando..." : "Tentar de novo"}
+                    </button>
+                  </div>
+                )
               )}
             </>
           ) : (

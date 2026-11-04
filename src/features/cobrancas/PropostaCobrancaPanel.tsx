@@ -57,6 +57,7 @@ import {
   getMensagemTipoIndisponivel,
   isTipoDisponivelParaEmpresa
 } from "@/lib/mocks/pagamentos.mock";
+import { SELO_PIX_EM_PREPARACAO, pixEmPreparacao } from "@/features/cobrancas/lib/pix-em-preparacao";
 
 type PropostaCobrancaPanelProps = {
   proposta: Proposta;
@@ -299,6 +300,16 @@ export function PropostaCobrancaPanel({
   const [tipoSecundario, setTipoSecundario] = useState<CobrancaTipo>("PIX");
   const [condicaoSecundaria, setCondicaoSecundaria] = useState<string>("");
   const cobrancasDaProposta = getCobrancasByProposta(proposta.id_int);
+
+  // PIX da Birô em preparação (04/11/2026): o QR chega pelo aviso A_RECEBER do
+  // Inter. Enquanto houver um assim na tela, relê as cobranças a cada 15 s para
+  // o código aparecer sozinho. Para assim que não houver mais nenhum.
+  const temPixEmPreparacao = cobrancasDaProposta.some((c) => pixEmPreparacao(c));
+  useEffect(() => {
+    if (!temPixEmPreparacao) return;
+    const id = window.setInterval(() => void refreshCobrancas(), 15_000);
+    return () => window.clearInterval(id);
+  }, [temPixEmPreparacao, refreshCobrancas]);
   const cobrancasAtivas = cobrancasDaProposta.filter((item) => item.status !== "CANCELADO");
   const totalPropostaRounded = roundMoney(proposta.resumo.valorTotal);
   // Saldo e pago da PROPOSTA: a cobrança da diferença de frete do reenvio fica
@@ -1279,7 +1290,11 @@ export function PropostaCobrancaPanel({
             showToast({
                 type: "success",
                 title: isCombined ? "Pagamento Combinado Gerado" : "Crédito Aplicado com Sucesso!",
-                description: isCombined ? "Cobranças criadas com sucesso." : `O valor de ${formatCurrency(roundedValor)} foi debitado do saldo e registrado.`
+                description: isCombined
+                  ? json.pixData?.emPreparacao
+                    ? "Crédito aplicado. O PIX está em preparação no banco: o código aparece aqui quando o banco concluir."
+                    : "Cobranças criadas com sucesso."
+                  : `O valor de ${formatCurrency(roundedValor)} foi debitado do saldo e registrado.`
             });
             if (json.quitada && onPagamentoIntegralConcluido) {
                 onPagamentoIntegralConcluido();
@@ -2920,6 +2935,11 @@ function CobrancasDaPropostaList({ cobrancas, onSelectCobranca, onRefreshPropost
                   </>
                 ) : isPix ? (
                   <>
+                    {pixEmPreparacao(cobranca) && (
+                      <span data-pix-em-preparacao title="O banco aceitou a cobrança e ainda não emitiu o QR. Ele aparece aqui sozinho quando o banco concluir." className="inline-flex items-center justify-center rounded-xl border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-xs font-semibold text-amber-800 whitespace-nowrap">
+                        {SELO_PIX_EM_PREPARACAO}
+                      </span>
+                    )}
                     {cobranca.pix_copia_cola && (
                       <button
                         type="button"
@@ -3109,6 +3129,11 @@ function CobrancasDaPropostaList({ cobrancas, onSelectCobranca, onRefreshPropost
                         >
                           Abrir checkout
                         </button>
+                      )}
+                      {pixEmPreparacao(cobranca) && (
+                        <span data-pix-em-preparacao title="O banco aceitou a cobrança e ainda não emitiu o QR. Ele aparece aqui sozinho quando o banco concluir." className="inline-flex items-center justify-center rounded-xl border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-xs font-semibold text-amber-800 whitespace-nowrap">
+                          {SELO_PIX_EM_PREPARACAO}
+                        </span>
                       )}
                       {cobranca.pix_copia_cola && (
                         <button

@@ -172,6 +172,8 @@ const { data: pagamento, error } = await supabase
       JSON.stringify({
         status: pagamento.status,
         paid_at: pagamento.paid_at,
+        // PIX em preparação (04/11/2026): a página recarrega quando o código chegar.
+        tem_pix: Boolean(pagamento.pix_copia_cola),
       }),
       {
         headers: {
@@ -450,6 +452,12 @@ ${
 
 </div>
 `
+    : !pagamento.pix_copia_cola
+    ? `
+<div class="qr-box" id="pixEmPreparacao" style="background:#fff8e1;color:#7a5b00;font-weight:600;">
+Seu PIX está sendo preparado pelo banco. Esta página atualiza sozinha.
+</div>
+`
     : `
 <div class="qr-box">
 <img src="https://api.qrserver.com/v1/create-qr-code/?size=260x260&data=${encodeURIComponent(
@@ -617,6 +625,9 @@ async function verificarStatus() {
 
     if (data.status === "PAID") {
       atualizarParaPago(data.paid_at);
+    } else if (PIX_EM_PREPARACAO && data.tem_pix) {
+      // O banco emitiu a cobrança e o código chegou: mostra o QR.
+      window.location.reload();
     }
   } catch (e) {
     console.log("Erro ao verificar status", e);
@@ -644,6 +655,7 @@ function atualizarParaPago(paidAt) {
 }
 
 let interval = null;
+const PIX_EM_PREPARACAO = ${!isPaid && !isCardParcelado && !pagamento.pix_copia_cola};
 
 if ("${pagamento.status}" !== "PAID") {
   interval = setInterval(verificarStatus, 5000);

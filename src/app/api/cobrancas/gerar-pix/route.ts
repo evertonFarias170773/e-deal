@@ -2,6 +2,21 @@ import { NextResponse } from "next/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { gerarPixBancoInter } from "@/features/cobrancas/services/banco-inter.service";
 import { recusaPorPedidoEntreguePelaCobranca } from "@/features/orcamentos/services/pedido-entregue";
+import { CODIGO_PIX_EM_PREPARACAO, MENSAGEM_PIX_EM_PREPARACAO } from "@/features/cobrancas/lib/pix-em-preparacao";
+
+/** PIX da Birô aceito pelo Inter e ainda sem QR: sucesso em preparação (04/11/2026). */
+function respostaEmPreparacao(id: string, codSolicitacao: string) {
+  return NextResponse.json(
+    {
+      success: true,
+      emPreparacao: true,
+      code: CODIGO_PIX_EM_PREPARACAO,
+      message: MENSAGEM_PIX_EM_PREPARACAO,
+      data: { id, cod_solicitacao_inter: codSolicitacao, pix_copia_cola: null }
+    },
+    { status: 202 }
+  );
+}
 
 /**
  * Identidade do devedor NÃO vem do payload: sai de `pagamentos_v2`, lida aqui
@@ -144,6 +159,11 @@ export async function POST(request: Request) {
   // cobrança real no emissor — a idempotência acima não cobre este caso porque
   // depende de `pix_copia_cola`, que é justamente o que faltou.
   if (cobranca.cod_solicitacao_inter) {
+    // Birô: a cobrança está EM PREPARAÇÃO no Inter (o QR chega pelo aviso
+    // A_RECEBER). Nunca se cria outra: responde o mesmo estado (04/11/2026).
+    if (Number(cobranca.id_empresa) === 2) {
+      return respostaEmPreparacao(cobranca.id, cobranca.cod_solicitacao_inter);
+    }
     return NextResponse.json(
       {
         success: false,
@@ -199,6 +219,11 @@ export async function POST(request: Request) {
     uf,
     cep
   });
+
+  if (resPix.success && resPix.emPreparacao) {
+    const dados = resPix.data as { cod_solicitacao_inter?: string } | undefined;
+    return respostaEmPreparacao(cobrancaId, String(dados?.cod_solicitacao_inter ?? ""));
+  }
 
   if (!resPix.success) {
     // 409 quando a cobrança já existe no emissor: é conflito de estado, não

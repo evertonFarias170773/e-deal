@@ -81,6 +81,8 @@ export type CobrancaAbertaPublica = {
   valor: number;
   vencimento: string | null;
   pixCopiaCola: string | null;
+  /** PIX aceito pelo banco e ainda sem QR (Birô, 04/11/2026): a página espera, não pede nova tentativa. */
+  pixEmPreparacao: boolean;
   urlCheckout: string | null;
 };
 
@@ -303,6 +305,7 @@ function paraPublica(row: CobrancaRow): CobrancaAbertaPublica {
     valor: reais(centavos(Number(row.valor))),
     vencimento: row.vencimento,
     pixCopiaCola: metodo === "PIX" ? row.pix_copia_cola : null,
+    pixEmPreparacao: metodo === "PIX" && Boolean(String(row.cod_solicitacao_inter ?? "").trim()) && !String(row.pix_copia_cola ?? "").trim(),
     // Cartão: a URL gravada na cobrança — a página pública `pagamento-publico`
     // no fluxo C6, ou o checkout do provedor se o vendedor criou pelo Asaas.
     urlCheckout: metodo === "CARTAO" ? row.url_cobranca : null
@@ -660,6 +663,9 @@ export async function iniciarPagamentoAreaCliente(
     if (!linha.pix_copia_cola) {
       if (linha.cod_solicitacao_inter) {
         // Mesma regra de gerar-pix: emitida no banco sem QR — nunca reemitir.
+        // Birô: é o PIX EM PREPARAÇÃO (04/11/2026). A página mostra a cobrança
+        // sem QR e se atualiza sozinha quando o aviso A_RECEBER gravar o código.
+        if (idEmpresa === 2) return { ok: true, cobranca: paraPublica(linha), reaproveitada };
         return {
           ok: false,
           codigo: "PIX_EMITIDO_SEM_QR",
@@ -721,6 +727,7 @@ export async function iniciarPagamentoAreaCliente(
         };
       }
 
+      // Em preparação (Birô): resPix.data traz o código e o copia e cola vazio.
       const atualizada = resPix.data as Partial<CobrancaRow> | undefined;
       linha = { ...linha, pix_copia_cola: atualizada?.pix_copia_cola ?? linha.pix_copia_cola, cod_solicitacao_inter: atualizada?.cod_solicitacao_inter ?? linha.cod_solicitacao_inter };
     }

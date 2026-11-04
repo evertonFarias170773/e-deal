@@ -1,6 +1,6 @@
 # Proposta: aba Pagamentos
 
-> **Última revisão:** 03/11/2026
+> **Última revisão:** 04/11/2026 (PIX da Ideal Birô em preparação no banco)
 > **Caminho no menu:** Pedidos → abrir um pedido → aba Pagamentos
 > **Endereço:** `/orcamentos/<número>/editar?tab=pagamentos`
 
@@ -34,6 +34,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Demorando? Tentar novamente** | Enquanto as cobranças carregam | Lê de novo as cobranças da proposta. |
 | **Baixar boleto** (ou **Indisponível**) | Linha de cobrança de boleto | Baixa o PDF do boleto com o nome "<n° do pedido> - <cliente>.pdf" (no parcelado, "<cobrança> P<n> de <total> - <cliente>.pdf"), pronto para mandar ao cliente. Se o PDF ainda não existe, abre o link do boleto em outra aba, como antes. |
 | **Pix Copia e cola** | Linha de cobrança PIX | Copia o código PIX. |
+| Selo **PIX em preparação no banco** | Linha de cobrança PIX da Ideal Birô | Aparece no lugar de **Pix Copia e cola** enquanto o Banco Inter não termina de emitir a cobrança. O código PIX aparece sozinho quando o banco conclui (a tela confere a cada 15 segundos). O link da cobrança continua copiável. |
 | **Abrir checkout** (no celular: **Abrir checkout cartão** ou **Escolher parcelas**) | Linha de cobrança de cartão | Abre a página de pagamento do cartão. |
 | **Copiar** | Linha de cobrança com link | Copia o link, o código PIX ou a linha digitável da cobrança. |
 | **Ver cobrança** (no celular: **Ver**) | Linha de cobrança | Abre o detalhe da cobrança dentro da aba. |
@@ -80,7 +81,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 6. Confira o **Valor da cobrança \***. Ele vem com o saldo restante; para cobrar só uma parte, digite um valor menor.
 7. Escolha a forma em **Forma de pagamento**: **PIX**, **Boleto**, **Cartão de crédito** ou **Cartão Asaas**. A forma padrão do cadastro de quem paga já vem marcada.
 8. Clique em **Gerar cobrança**.
-9. A cobrança aparece em **Cobranças já geradas**, com os botões para abrir ou copiar o link, o código PIX ou o boleto.
+9. A cobrança aparece em **Cobranças já geradas**, com os botões para abrir ou copiar o link, o código PIX ou o boleto. No PIX da Ideal Birô, se o banco ainda estiver emitindo a cobrança, aparece o selo **PIX em preparação no banco** no lugar do código; ele vira o código sozinho quando o banco conclui.
 
 No cartão, o cliente escolhe as parcelas na página de pagamento; depois disso a linha mostra a quantidade de parcelas abaixo do valor.
 
@@ -211,6 +212,7 @@ Se a janela for fechada sem escolher, a proposta fica com a faixa **Revisão fin
 - Boleto e cartão exigem telefone válido no cadastro de quem paga; o cartão exige celular. Sem isso abre a janela **Telefone do cliente impede a cobrança**, onde o telefone é corrigido na hora.
 - **Cartão de crédito** existe para a Ideal Gráfica e a E3 Brindes; a Ideal Birô não tem. **Cartão Asaas** é só da IDEAL GRÁFICA EXPRESSA EIRELI. PIX, boleto e a família do faturado valem para as três empresas.
 - No pagamento combinado, a Ideal Birô não aceita boleto nem cartão como forma secundária.
+- **PIX da Ideal Birô:** o código PIX só é entregue quando o Banco Inter termina de emitir a cobrança (situação "a receber"). Até lá a cobrança fica **em preparação**: o painel mostra o selo, o link de pagamento mostra "Seu PIX está sendo preparado pelo banco. Esta página atualiza sozinha." e a área do cliente mostra a mesma frase. Normalmente leva segundos; em dias de lentidão do banco, pode levar vários minutos (em 04/11/2026, de 12 a 24). Nunca se gera outra cobrança para o mesmo título: gerar de novo devolve o mesmo estado. O PIX da Ideal Gráfica e da E3 Brindes (C6) sai na hora, como antes.
 - PIX, boleto e cartão nascem com vencimento em 3 dias. No faturado, o primeiro vencimento segue a condição de pagamento escolhida.
 - A liberação automática do faturado só vale para **Faturado**, e só quando o limite cobre o valor somado aos faturamentos ainda pendentes do cliente, não há faturamento vencido e o cliente não tem restrição. Fora disso a cobrança espera o financeiro.
 - Não dá para confirmar a conferência enquanto as cobranças da proposta somarem menos que o total: aparece **Não é possível confirmar esta cobrança**.

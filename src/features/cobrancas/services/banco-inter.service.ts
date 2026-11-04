@@ -50,6 +50,13 @@ export async function gerarPixBancoInter(
    */
   cobrancaEmitida?: boolean;
   /**
+   * `true` (com `success: true`) quando a cobrança da Birô foi aceita pelo Inter
+   * e o código ficou gravado, mas o QR ainda não veio: o PIX está EM PREPARAÇÃO
+   * (04/11/2026). O copia e cola chega pelo aviso A_RECEBER. Quem chama NÃO
+   * reemite: mostra "PIX em preparação" e espera.
+   */
+  emPreparacao?: boolean;
+  /**
    * `true` quando o n8n não respondeu dentro de `opcoes.timeoutMs`. Nada foi
    * gravado na cobrança. O pedido já saiu para o n8n, então a cobrança PODE ter
    * nascido no banco emissor depois do corte: quem chama não reemite na mesma
@@ -202,11 +209,19 @@ export async function gerarPixBancoInter(
           .update({ cod_solicitacao_inter: codSolicitacao })
           .eq("id", cobrancaId);
 
-        if (updateCodErr) {
-          console.error(
-            `[BancoInter] Cobrança ${codSolicitacao} emitida no Inter mas o código NÃO foi gravado em ${cobrancaId}: ${updateCodErr.message}`
-          );
+        if (!updateCodErr) {
+          // PIX EM PREPARAÇÃO (04/11/2026): a cobrança existe no Inter e o
+          // código está gravado; o QR chega pelo aviso A_RECEBER. É sucesso.
+          return {
+            success: true,
+            emPreparacao: true,
+            data: { id: cobrancaId, cod_solicitacao_inter: codSolicitacao, pix_copia_cola: null }
+          };
         }
+
+        console.error(
+          `[BancoInter] Cobrança ${codSolicitacao} emitida no Inter mas o código NÃO foi gravado em ${cobrancaId}: ${updateCodErr.message}`
+        );
 
         return {
           success: false,

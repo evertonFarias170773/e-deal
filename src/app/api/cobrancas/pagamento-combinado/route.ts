@@ -599,7 +599,9 @@ export async function POST(request: NextRequest) {
         });
 
         if (resPix.success) {
-          pixData = resPix.data;
+          // Birô em preparação (04/11/2026): a cobrança existe e o QR chega pelo
+          // aviso A_RECEBER. Não é falha; a tela mostra "PIX em preparação".
+          pixData = resPix.emPreparacao ? { ...(resPix.data as Record<string, unknown>), emPreparacao: true } : resPix.data;
         } else {
           interError = resPix.error || "Erro desconhecido na emissão do PIX Inter";
         }
