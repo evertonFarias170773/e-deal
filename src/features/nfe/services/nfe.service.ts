@@ -2850,8 +2850,14 @@ export async function updateBoletoInDb(
  * não é falha, e o título NÃO pode ser registrado de novo.
  */
 export class ErroDaRotaBancaria extends Error {
-  constructor(mensagem: string, readonly code: string | null) {
+  // Campo declarado e atribuído à mão, não via parameter property: o modo de
+  // teste padrão (`--experimental-strip-types`) só remove tipos e recusa
+  // `readonly code` no construtor. Mesma ordem de antes: super, code, name.
+  readonly code: string | null;
+
+  constructor(mensagem: string, code: string | null) {
     super(mensagem);
+    this.code = code;
     this.name = "ErroDaRotaBancaria";
   }
 }
