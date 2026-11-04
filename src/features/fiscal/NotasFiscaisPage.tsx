@@ -92,6 +92,7 @@ import {
   statusExibidoDaNfse
 } from "@/features/nfse/lib/historico-nfse";
 import { prazoDoCancelamento } from "@/lib/fiscal/cancelamento-nfe";
+import { estadoDoRegistroBancario } from "@/features/cobrancas/lib/registro-bancario";
 
 
 type ActiveTab = "FILA_FATURAMENTO" | "HISTORICO_FISCAL";
@@ -1121,6 +1122,16 @@ export function NotasFiscaisPage() {
         );
       });
 
+    // Todos com registro, mas algum só com o código da cobrança (boleto ainda
+    // não emitido): em processamento no banco, não "registrado" (04/11/2026).
+    if (allRegistered && nonDepositoBoletos.some((b) => estadoDoRegistroBancario(b) === "EM_PROCESSAMENTO")) {
+      return {
+        status: "BOLETO_EM_PROCESSAMENTO",
+        label: "Boleto em processamento no banco",
+        tone: "info" as const
+      };
+    }
+
     if (allRegistered) {
       return {
         status: "BOLETO_REGISTRADO",
@@ -1358,6 +1369,7 @@ export function NotasFiscaisPage() {
       if (
         vendaFaturada &&
         finStatus.status !== "BOLETO_REGISTRADO" &&
+        finStatus.status !== "BOLETO_EM_PROCESSAMENTO" &&
         finStatus.status !== "DEPOSITO_CONTA" &&
         finStatus.status !== "A_RECEBER_CRIADO" &&
         finStatus.status !== "SEM_VENCIMENTOS"

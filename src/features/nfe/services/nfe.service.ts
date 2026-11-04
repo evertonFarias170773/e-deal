@@ -2807,6 +2807,22 @@ export async function updateBoletoInDb(
 
 
 /**
+ * Erro de uma rota bancária, com o código que ela devolveu. `INTER_EM_PROCESSAMENTO`
+ * (04/11/2026): o banco aceitou a cobrança e o título ficou em processamento —
+ * não é falha, e o título NÃO pode ser registrado de novo.
+ */
+export class ErroDaRotaBancaria extends Error {
+  constructor(mensagem: string, readonly code: string | null) {
+    super(mensagem);
+    this.name = "ErroDaRotaBancaria";
+  }
+}
+
+export function ehRegistroEmProcessamento(erro: unknown): boolean {
+  return erro instanceof ErroDaRotaBancaria && erro.code === "INTER_EM_PROCESSAMENTO";
+}
+
+/**
  * Chama uma rota server-side de título faturado. O servidor relê `id_empresa`
  * no banco e decide o provedor — o cliente não escolhe.
  *
@@ -2829,7 +2845,10 @@ async function chamarRotaBoletoFaturado(rota: string, corpo: Record<string, unkn
   const resultado = await resposta.json().catch(() => null);
 
   if (!resposta.ok || !resultado?.success) {
-    throw new Error(resultado?.message || "Falha na operação bancária do título faturado.");
+    throw new ErroDaRotaBancaria(
+      resultado?.message || "Falha na operação bancária do título faturado.",
+      typeof resultado?.code === "string" ? resultado.code : null
+    );
   }
 
   return resultado as { success: true; delegarLegado?: boolean; data?: Record<string, unknown> };

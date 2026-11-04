@@ -1,6 +1,6 @@
 # Notas fiscais
 
-> **Última revisão:** 04/11/2026 (Histórico em duas abas, NF-e e NFS-e; NFS-e com busca própria, mais nova primeiro e começando em Produção)
+> **Última revisão:** 04/11/2026 (Histórico em duas abas, NF-e e NFS-e; NFS-e com busca própria, mais nova primeiro e começando em Produção; selo Boleto em processamento no banco)
 > **Caminho no menu:** Financeiro → Notas fiscais (primeiro item da seção Financeiro do menu lateral)
 > **Endereço:** `/notas-fiscais` (a nota aberta fica em `/notas-fiscais/[id]`)
 
@@ -296,7 +296,7 @@ Isso vale para a NF-e. **A NFS-e (nota de serviço) não se cancela pelo Vibe**:
 
 ### Lançar a nota no contas a receber e preparar a cobrança
 
-Vale para nota autorizada de pedido com cobrança do tipo **Faturado**. A coluna **Contas a Receber** da lista diz em que pé está: **Não lançado no contas a receber**, **Parcialmente lançado**, **Divergência**, **A receber criado — boleto não registrado**, **Boleto registrado**, **Depósito em conta** ou **Sem vencimentos fiscais**. O **Histórico NFS-e** tem a mesma coluna, para NFS-e autorizada de produção com cobrança faturada: **Não lançado no contas a receber** enquanto não há título do pedido e, com título, o mesmo selo da NF-e calculado sobre os títulos do pedido.
+Vale para nota autorizada de pedido com cobrança do tipo **Faturado**. A coluna **Contas a Receber** da lista diz em que pé está: **Não lançado no contas a receber**, **Parcialmente lançado**, **Divergência**, **A receber criado — boleto não registrado**, **Boleto em processamento no banco**, **Boleto registrado**, **Depósito em conta** ou **Sem vencimentos fiscais**. O **Histórico NFS-e** tem a mesma coluna, para NFS-e autorizada de produção com cobrança faturada: **Não lançado no contas a receber** enquanto não há título do pedido e, com título, o mesmo selo da NF-e calculado sobre os títulos do pedido.
 
 1. No **Histórico**, abra o menu da nota e clique em **Lançar no Contas a Receber**.
 2. Abre a janela **Preparar Cobrança**, com o aviso **Parcelas definidas pela NF-e nº ...**. Vencimento e valor vêm da nota e não podem ser alterados aqui.
@@ -373,7 +373,7 @@ Ação temporária, da transição entre sistemas. Use só quando a nota do pedi
 - Status da nota e status do pedido na coluna **Status**: a etiqueta de cima é da nota; a de baixo, em cinza, é do pedido e não interfere na emissão.
 - Parcelas da nota (**Gerar Parcelas Fiscais**) e títulos do contas a receber (**Lançar no Contas a Receber**): as parcelas são o que a nota declara à SEFAZ; os títulos são a cobrança na Carteira e só nascem com o lançamento.
 - **Lançar no Contas a Receber** e **Revisar para gerar boletos**: o primeiro cria o título; o segundo abre títulos que já existem para registrar o boleto no banco.
-- **A receber criado — boleto não registrado** e **Boleto registrado**: no primeiro o título existe, mas o boleto ainda não foi registrado no banco.
+- **A receber criado — boleto não registrado**, **Boleto em processamento no banco** e **Boleto registrado**: no primeiro o título existe, mas o boleto ainda não foi registrado no banco; no segundo o banco aceitou a cobrança e ainda não emitiu o boleto (não registre de novo).
 - **Empresa Emitente** (nota) e **Empresa recebedora** (janela Preparar Cobrança): a primeira emite a nota; a segunda é a que recebe o título e define o banco do boleto.
 - Cliente e **Sócio pagador**: o cliente é quem fez o pedido; a nota sai no nome de quem paga.
 - Endereço principal, **Usar endereço de entrega diferente** e **Endereço só nesta nota**: o principal é o do destinatário na nota; o de entrega é um segundo endereço informado na nota; "só nesta nota" apenas encurta o texto do endereço principal.

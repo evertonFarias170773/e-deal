@@ -5,7 +5,8 @@ import { getSupabaseClient } from "@/lib/supabase/client";
 import { FileText, X, Loader2, Info, AlertTriangle } from "lucide-react";
 import { formatCurrency } from "@/lib/formatters/currency";
 import { useAppToast } from "@/components/common/AppToast";
-import { updateBoletoInDb, registerBoletoViaN8n } from "@/features/nfe/services/nfe.service";
+import { updateBoletoInDb, registerBoletoViaN8n, ehRegistroEmProcessamento } from "@/features/nfe/services/nfe.service";
+import { estadoDoRegistroBancario } from "@/features/cobrancas/lib/registro-bancario";
 import { gerarBoletoPdfInterno } from "@/features/contas-a-receber/services/contas-receber.service";
 import type { SupabaseBoletoRow } from "@/features/contas-a-receber/types.supabase";
 import { useCobrancas } from "@/features/cobrancas/CobrancasProvider";
@@ -284,6 +285,21 @@ export function RevisarGeracaoBancariaModal({
     return res.success ? null : res.errorMessage || "Falha ao gerar o PDF.";
   };
 
+  /** Relê o título que ficou em processamento no banco (código gravado), para a lista mostrar o estado novo. */
+  const relerTituloEmProcessamento = async (boletoId: string) => {
+    const client = getSupabaseClient();
+    if (!client) return;
+    const { data: relido } = await client.from("boletos").select("*").eq("id", boletoId).maybeSingle();
+    if (!relido) return;
+    setBoletoErrors(prev => {
+      const resto = { ...prev };
+      delete resto[boletoId];
+      return resto;
+    });
+    setBoletosForReview(prev => prev.map(b => (b.id === boletoId ? relido : b)));
+    if (relido.id_int) await recalcularBoletoIdIntsLocal(Number(relido.id_int));
+  };
+
   const handleRegisterBoleto = async (boleto: SupabaseBoletoRow) => {
     if (boleto.deposito_conta) {
       showToast({
@@ -425,6 +441,14 @@ export function RevisarGeracaoBancariaModal({
     } catch (err) {
       console.error("[RevisarGeracaoBancariaModal] failed to register boleto:", err);
       const errMsg = err instanceof Error ? err.message : "Erro ao registrar boleto no banco.";
+      // O banco aceitou a cobrança e o título ficou em processamento (código
+      // gravado): não é erro e não pode ser registrado de novo. Relê o título
+      // para a linha sair da lista de registro.
+      if (ehRegistroEmProcessamento(err)) {
+        await relerTituloEmProcessamento(boleto.id);
+        showToast({ type: "warning", title: "Boleto em processamento no banco", description: errMsg });
+        return;
+      }
       setBoletoErrors(prev => ({ ...prev, [boleto.id]: errMsg }));
       showToast({
         type: "error",
@@ -600,6 +624,9 @@ export function RevisarGeracaoBancariaModal({
 
         } catch (innerErr) {
           const innerMsg = innerErr instanceof Error ? innerErr.message : "Erro desconhecido.";
+          // Em processamento no banco: relê o título (sai da lista) e interrompe
+          // o lote com o aviso, sem chamar de erro.
+          if (ehRegistroEmProcessamento(innerErr)) await relerTituloEmProcessamento(boleto.id);
           setBoletoErrors(prev => ({ ...prev, [boleto.id]: innerMsg }));
           throw new Error(`[Boleto Parcela ${boleto.parcela}] ${innerMsg}`);
         }
@@ -845,6 +872,10 @@ export function RevisarGeracaoBancariaModal({
                             ) : boleto.deposito_conta ? (
                               <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 font-bold border border-emerald-200 rounded-lg text-[10px]">
                                 Depósito em Conta
+                              </span>
+                            ) : estadoDoRegistroBancario(boleto) === "EM_PROCESSAMENTO" ? (
+                              <span data-registro-em-processamento className="px-2 py-0.5 bg-amber-50 text-amber-700 font-bold border border-amber-200 rounded-lg text-[10px]">
+                                Em processamento no banco
                               </span>
                             ) : isRegistered ? (
                               <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 font-bold border border-emerald-200 rounded-lg text-[10px]">

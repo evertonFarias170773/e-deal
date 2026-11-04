@@ -1,6 +1,6 @@
 # Carteira (contas a receber)
 
-> **Última revisão:** 24/10/2026
+> **Última revisão:** 04/11/2026 (boleto em processamento no banco)
 > **Caminho no menu:** Financeiro → Carteira
 > **Endereço:** `/contas-a-receber`
 
@@ -116,6 +116,7 @@ A aba **Previsão de recebimento** mostra **Previsão por semana** (**Semana atu
 | Status | Significado |
 |---|---|
 | **A receber criado — boleto não registrado** | O título existe, mas o boleto ainda não foi registrado no banco. O cliente não tem como pagar por boleto. |
+| **Boleto em processamento no banco** | O banco aceitou a cobrança, mas ainda não emitiu o boleto. Não tem botão **Registrar**: registrar de novo criaria um segundo boleto real. O status muda para **Boleto registrado** quando o banco conclui. |
 | **Boleto registrado** | Boleto registrado no banco e a vencer. |
 | **Depósito em conta** | Título sem boleto: o cliente paga por depósito, PIX ou outra forma, e a baixa é manual. |
 | **Vencido** | Passou do vencimento sem pagamento. |
@@ -131,7 +132,8 @@ A aba **Previsão de recebimento** mostra **Previsão por semana** (**Semana atu
 4. Se aparecer o quadro **E-mail de Cliente Ausente**, confira o **E-mail para envio:** e marque **Confirmo o uso deste e-mail para o registro bancário.**
 5. Ajuste, se precisar, **Valor**, **Vencimento**, **Descrição**, **Multa (%)** e **Juros/Dia (%)** da parcela.
 6. Clique em **Registrar boleto** na parcela e confirme em **Confirmar Registro Bancário**. Para registrar todas de uma vez, use **Registrar todos os boletos desta proposta**.
-7. A parcela passa a mostrar **Boleto Registrado**, com **Nosso Número**, **Linha Digitável** e os botões **Baixar PDF**, **Copiar Linha Digitável** e **Copiar Link**. O PDF é gerado logo depois do registro.
+7. Se o banco aceitar a cobrança e demorar a emitir o boleto (acontece no Inter, na Ideal Birô), aparece o aviso **Boleto em processamento no banco** e a parcela mostra **Em processamento no banco**. Não registre de novo: o boleto aparece quando o banco concluir.
+8. A parcela passa a mostrar **Boleto Registrado**, com **Nosso Número**, **Linha Digitável** e os botões **Baixar PDF**, **Copiar Linha Digitável** e **Copiar Link**. O PDF é gerado logo depois do registro.
 
 Para só gravar os ajustes sem registrar no banco, clique em **Salvar Alterações**.
 
@@ -317,6 +319,9 @@ O boleto é cancelado no banco e o título continua ativo, agora como **Depósit
 | "Sem permissão para registrar boleto no banco (contas_receber.admin)." | Seu perfil não tem a permissão **Administrar Contas a Receber**. | Peça o registro a quem tem a permissão. |
 | "Dados Cadastrais Incompletos / Inválidos" | Falta documento, e-mail ou endereço no cadastro do cliente. | **Editar Cadastro do Cliente**, corrigir e **Re-validar Cadastro**. |
 | "Boleto já registrado" | A parcela já tem registro no banco. | Nada a fazer. Para trocar o boleto, use **Refazer boleto**. |
+| "Boleto em processamento no banco" / "O banco aceitou a cobrança, mas o boleto ainda não foi emitido." | O banco aceitou a cobrança e ainda não emitiu o boleto. O código da cobrança ficou gravado no título. | Não registre de novo. O título fica **Boleto em processamento no banco** até o banco concluir. |
+| "O banco aceitou a cobrança (código ...), mas o código NÃO foi gravado no título." | O banco aceitou, mas a gravação do código no Vibe falhou. | Não registre de novo. Avise o financeiro com o código do aviso. |
+| "... O banco pode ter criado o boleto: confira antes de tentar de novo." | A integração não confirmou o registro e não devolveu código. Não dá para saber se o banco criou o boleto. | Confira no banco antes de tentar de novo: uma nova tentativa pode criar um segundo boleto. |
 | "Registro em Lote Interrompido" | Uma parcela do lote falhou. O aviso diz qual. | Corrija o que o aviso aponta e registre as parcelas que faltam. |
 | "Boleto registrado, mas sem PDF" | O registro deu certo, mas o PDF não foi gerado. | Use **Gerar PDF do Boleto** no menu de ações. |
 | "Campos obrigatórios ausentes" (ao gerar PDF) | O boleto não tem linha digitável, código de barras ou identificador do banco. | Registre o boleto no banco primeiro. |
@@ -365,5 +370,7 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/features/usuarios-perfis/catalogo-permissoes.ts`
 - `src/constants/navigation.ts`
 - `src/app/api/cobrancas/registrar-boleto-faturado/route.ts`
+- `src/features/cobrancas/lib/registro-bancario.ts`
+- `src/features/cobrancas/services/registro-inter.ts`
 - `src/features/cobrancas/services/boleto-c6.ts`
 - `src/lib/n8n/webhook-segredo.ts`

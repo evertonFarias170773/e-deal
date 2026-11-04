@@ -39,6 +39,7 @@ export function humanizeStatus(status: string) {
     // Existing statuses
     DEPOSITO_CONTA: "Depósito em conta",
     BOLETO_REGISTRADO: "Boleto registrado",
+    BOLETO_EM_PROCESSAMENTO: "Boleto em processamento no banco",
     A_RECEBER_CRIADO: "A receber criado — boleto não registrado",
     A_RECEBER: "A receber",
     A_VENCER: "A vencer",

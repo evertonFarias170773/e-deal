@@ -8,6 +8,13 @@ import {
   montarPayloadBoletoC6,
   resolverPagadorDoBoletoC6
 } from "@/features/cobrancas/services/boleto-c6";
+import { estadoDoRegistroBancario } from "@/features/cobrancas/lib/registro-bancario";
+import {
+  criarRegistroInter,
+  retomarRegistroInter,
+  type ResultadoDoRegistro,
+  type TituloLido
+} from "@/features/cobrancas/services/registro-inter";
 
 /**
  * Registro bancário de um título faturado do Registro de Recebíveis.
@@ -32,6 +39,15 @@ import {
 const WEBHOOK_BIRO_FATURADO = "https://10074.hostoo.net.br/webhook/biro-faturado-inter";
 /** C6, empresas 1 e 3. Exige o cabeçalho do segredo (`cabecalhosWebhookN8n`). */
 const WEBHOOK_C6_FATURADO = "https://10074.hostoo.net.br/webhook/boletos-vibe";
+
+/**
+ * Consulta de uma cobrança JÁ criada no Inter, sem criar outra (04/11/2026).
+ * O webhook é do n8n e ainda não existe: sem a variável, a rota só relê o
+ * título. Corpo: { codigoSolicitacao, external_reference_id, id_pagamento }.
+ */
+const webhookDeConsulta = () => process.env.N8N_WEBHOOK_BIRO_CONSULTA_INTER || "";
+/** Abaixo do `maxDuration`: a rota responde (e grava o código) antes de a plataforma cortar. */
+const LIMITE_DO_WEBHOOK_MS = 50_000;
 
 const EMPRESA_BIRO = 2;
 /** "Administrar Contas a Receber": a chave que a tela usa para as ações administrativas da Carteira. */
@@ -71,6 +87,8 @@ type BoletoRow = {
   descricao: string | null;
   ext_reference: string | null;
   status: string | null;
+  nosso_numero: string | null;
+  linha_digitavel: string | null;
 };
 
 const soDigitos = (v: unknown): string => String(v ?? "").replace(/\D/g, "");
@@ -126,7 +144,7 @@ export async function POST(request: Request) {
 
   const { data: boleto, error: fetchErr } = await supabase
     .from("boletos")
-    .select("id, id_int, id_cliente, id_empresa, id_pagamento, id_boleto_c6, n_nf, nome_cliente, documento, valor, vencimento, parcela, total_parcelas, multa, juros_dia, descricao, ext_reference, status")
+    .select("id, id_int, id_cliente, id_empresa, id_pagamento, id_boleto_c6, n_nf, nome_cliente, documento, valor, vencimento, parcela, total_parcelas, multa, juros_dia, descricao, ext_reference, status, nosso_numero, linha_digitavel")
     .eq("id", boletoId)
     .maybeSingle<BoletoRow>();
 
@@ -190,14 +208,36 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: true, idEmpresa, gravado: !erroGravacao, data: lido.data });
   }
 
-  // Idempotência: título já registrado no banco não é reenviado. Sem isso, um
-  // segundo clique emitiria outro boleto no Inter para a mesma parcela.
-  if (boleto.id_boleto_c6) {
-    return NextResponse.json({
-      success: true,
-      idempotente: true,
-      data: { id: boleto.id, id_boleto_c6: boleto.id_boleto_c6 }
+  // O título como está no banco agora: é o que o fluxo do n8n atualiza.
+  const relerTitulo = async (): Promise<TituloLido | null> => {
+    const { data } = await supabase
+      .from("boletos")
+      .select("id, id_boleto_c6, nosso_numero, linha_digitavel, url_pdf, status")
+      .eq("id", boletoId)
+      .maybeSingle<TituloLido>();
+    return data ?? null;
+  };
+
+  // Idempotência: título que já tem o código da cobrança no Inter NÃO é
+  // reenviado — um segundo envio emitiria outro boleto real (24402-A, 04/11).
+  // Com boleto pronto, responde como antes; sem boleto, retoma a consulta dela.
+  if (estadoDoRegistroBancario(boleto) !== "NAO_REGISTRADO") {
+    const urlDaConsulta = webhookDeConsulta();
+    const retomado = await retomarRegistroInter({
+      titulo: boleto,
+      relerTitulo,
+      consultar: urlDaConsulta
+        ? async (codigo) => {
+            await fetch(urlDaConsulta, {
+              method: "POST",
+              headers: cabecalhosWebhookN8n(),
+              body: JSON.stringify({ codigoSolicitacao: codigo, external_reference_id: texto(boleto.ext_reference), id_pagamento: texto(boleto.id_pagamento) }),
+              signal: AbortSignal.timeout(LIMITE_DO_WEBHOOK_MS)
+            });
+          }
+        : undefined
     });
+    return respostaDoRegistro(retomado);
   }
 
   // Segunda barreira: a cobrança pode já ter identificador bancário mesmo com a
@@ -359,58 +399,65 @@ export async function POST(request: Request) {
     is_prorrogado: false
   };
 
-  let webhookResponse: Response;
-  try {
-    webhookResponse = await fetch(WEBHOOK_BIRO_FATURADO, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload)
-    });
-  } catch (erro) {
-    console.error("[RegistrarBoletoFaturado] Falha de rede ao acionar o webhook:", erro);
+  // A criação: o código da cobrança que chegar (na resposta ou gravado pelo
+  // fluxo) fica no título antes de qualquer outra coisa — é ele que trava a
+  // próxima tentativa. Erro depois da criação aceita deixa o título EM
+  // PROCESSAMENTO, não "boleto não registrado".
+  const resultado = await criarRegistroInter({
+    criar: async () => {
+      const resposta = await fetch(WEBHOOK_BIRO_FATURADO, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(LIMITE_DO_WEBHOOK_MS)
+      });
+      const bruto = await resposta.text().catch(() => "");
+      let corpo: unknown = null;
+      try {
+        corpo = bruto ? JSON.parse(bruto) : null;
+      } catch {
+        corpo = null;
+      }
+      if (!resposta.ok) console.error(`[RegistrarBoletoFaturado] Webhook retornou ${resposta.status}: ${bruto.slice(0, 300)}`);
+      return { status: resposta.status, corpo };
+    },
+    relerTitulo,
+    gravarCodigoSeVazio: async (codigo) => {
+      const { data, error } = await supabase
+        .from("boletos")
+        .update({ id_boleto_c6: codigo })
+        .eq("id", boletoId)
+        // "Sem código" é nulo ou texto vazio. Em 04/11/2026 só existia nulo
+        // (400 títulos, nenhum vazio); o vazio fica coberto para não escapar.
+        .or("id_boleto_c6.is.null,id_boleto_c6.eq.")
+        .select("id");
+      if (error) {
+        console.error(`[RegistrarBoletoFaturado] Código ${codigo} do Inter NÃO gravado no título ${boletoId}: ${error.message}`);
+        return false;
+      }
+      return (data ?? []).length > 0;
+    }
+  });
+
+  return respostaDoRegistro(resultado);
+}
+
+/**
+ * A resposta da rota para cada desfecho do Inter. O caminho normal é o de
+ * antes: `success: true` com o título relido.
+ */
+function respostaDoRegistro(resultado: ResultadoDoRegistro) {
+  if (resultado.tipo === "REGISTRADO") {
+    return NextResponse.json({ success: true, idempotente: resultado.idempotente, data: resultado.titulo });
+  }
+  if (resultado.tipo === "EM_PROCESSAMENTO") {
+    const aviso = resultado.codigoGravado
+      ? "O banco aceitou a cobrança, mas o boleto ainda não foi emitido. O título fica em processamento: não registre de novo, o boleto aparece quando o banco concluir."
+      : `O banco aceitou a cobrança (código ${resultado.codigo}), mas o código NÃO foi gravado no título. Não registre de novo: avise o financeiro com este código.`;
     return NextResponse.json(
-      { success: false, message: "Não foi possível contatar a integração bancária. Nenhum título foi registrado." },
-      { status: 502 }
+      { success: false, code: "INTER_EM_PROCESSAMENTO", emProcessamento: true, message: aviso, data: { id_boleto_c6: resultado.codigo } },
+      { status: 202 }
     );
   }
-
-  if (!webhookResponse.ok) {
-    const detalhe = await webhookResponse.text().catch(() => "");
-    console.error(`[RegistrarBoletoFaturado] Webhook retornou ${webhookResponse.status}: ${detalhe.slice(0, 300)}`);
-    return NextResponse.json(
-      { success: false, message: "O Banco Inter recusou o registro do título. Nenhuma alteração foi feita." },
-      { status: 502 }
-    );
-  }
-
-  const retorno = await webhookResponse.json().catch(() => null);
-
-  if (!retorno || retorno.success === false) {
-    return NextResponse.json(
-      { success: false, message: retorno?.message || "A integração bancária não confirmou o registro do título." },
-      { status: 502 }
-    );
-  }
-
-  // O workflow grava id_boleto_c6, nosso_numero, linha_digitavel, codigo_barras
-  // e url_pdf direto em `boletos`. O ERP não persiste nada aqui — relê para
-  // confirmar que o registro realmente chegou ao banco de dados.
-  const { data: confirmado } = await supabase
-    .from("boletos")
-    .select("id, id_boleto_c6, linha_digitavel, url_pdf, status")
-    .eq("id", boletoId)
-    .maybeSingle<{ id: string; id_boleto_c6: string | null; linha_digitavel: string | null; url_pdf: string | null; status: string | null }>();
-
-  if (!confirmado?.id_boleto_c6) {
-    console.error("[RegistrarBoletoFaturado] Webhook respondeu ok mas o titulo nao foi persistido:", boletoId);
-    return NextResponse.json(
-      {
-        success: false,
-        message: "O título foi enviado ao banco, mas o retorno não foi gravado. Verifique antes de tentar novamente."
-      },
-      { status: 502 }
-    );
-  }
-
-  return NextResponse.json({ success: true, idempotente: false, data: confirmado });
+  return NextResponse.json({ success: false, code: "REGISTRO_NAO_CONFIRMADO", message: resultado.mensagem }, { status: 502 });
 }

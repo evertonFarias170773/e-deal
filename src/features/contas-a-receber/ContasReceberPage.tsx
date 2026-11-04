@@ -36,6 +36,7 @@ import { baixarBoletoOuAbrirLink, type DesfechoBaixarOuAbrir } from "@/features/
 import { RevisarGeracaoBancariaModal } from "./components/RevisarGeracaoBancariaModal";
 import { useCobrancas } from "@/features/cobrancas/CobrancasProvider";
 import { resolverCobrancaDoTitulo } from "@/features/cobrancas/services/cobranca-do-titulo";
+import { estadoDoRegistroBancario } from "@/features/cobrancas/lib/registro-bancario";
 import {
   EMPRESA_BIRO,
   MARCA_SUBSTITUIDO,
@@ -3676,6 +3677,12 @@ function getVisualStatus(item: BoletoDepositoMock, today: string): string {
     return "DEPOSITO_CONTA";
   }
 
+  // Código da cobrança gravado e boleto ainda não emitido: o banco aceitou, não
+  // se registra de novo (lib/registro-bancario, 04/11/2026). Sem botão Registrar.
+  if (estadoDoRegistroBancario(item) === "EM_PROCESSAMENTO") {
+    return "BOLETO_EM_PROCESSAMENTO";
+  }
+
   const isRegistered = !!(item.id_boleto_c6 || item.nosso_numero || item.linha_digitavel);
   if (isRegistered) {
     return "BOLETO_REGISTRADO";
@@ -3690,6 +3697,7 @@ function getVisualStatusTone(item: BoletoDepositoMock, today: string) {
   if (vis === "PAID") return "success";
   if (vis === "DEPOSITO_CONTA") return "success";
   if (vis === "BOLETO_REGISTRADO") return "success";
+  if (vis === "BOLETO_EM_PROCESSAMENTO") return "info";
   if (vis === "A_RECEBER_CRIADO") return "warning";
   if (vis === "CANCELADO") return "neutral";
   return "neutral";
@@ -3704,6 +3712,7 @@ function humanizeLocalStatus(status: string) {
     VENCIDO: "Vencido",
     DEPOSITO_CONTA: "Depósito em conta",
     BOLETO_REGISTRADO: "Boleto registrado",
+    BOLETO_EM_PROCESSAMENTO: "Boleto em processamento no banco",
     A_RECEBER_CRIADO: "A receber criado — boleto não registrado"
   };
 

@@ -53,6 +53,7 @@ const toneByStatus: Record<string, StatusTone> = {
   A_VENCER: "warning",
   DEPOSITO_CONTA: "success",
   BOLETO_REGISTRADO: "success",
+  BOLETO_EM_PROCESSAMENTO: "info",
   A_RECEBER_CRIADO: "warning",
   AGUARDANDO_CREDITO: "warning",
   AGUARDANDO: "info",
