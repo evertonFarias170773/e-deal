@@ -8,6 +8,8 @@ import type { Proposta } from "@/features/orcamentos/types";
 import { clonePagamentosMock, createCobrancaFromForm } from "@/lib/mocks/pagamentos.mock";
 import { canLiberarParaPedido, resolverEmpresaRecebedora, roundMoney, getTipoCobrancaLabel, montarUrlPublicaCobranca } from "@/features/cobrancas/cobrancas-utils";
 import { getSupabaseClient } from "@/lib/supabase/client";
+import { lerTodas } from "@/lib/supabase/ler-todas";
+import { pedidosComBoleto } from "@/features/cobrancas/lib/pedidos-com-boleto";
 import { useAuth } from "@/features/auth/AuthProvider";
 import {
   getCobrancasReadOnlyData,
@@ -544,31 +546,21 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
 
     // Buscar todos os id_int da tabela public.boletos no banco de dados
     // independentemente do source dos dados (seja mock ou supabase, a verificação de duplicidade de boleto é sempre real)
-    // Definimos limit(30000) e selecionamos apenas id_int,status para otimizar desempenho e evitar problemas de paginação do Supabase
+    // TODAS as linhas (04/11/2026): o `limit(30000)` de antes parava no teto de
+    // 1.000 do banco, e os títulos de fora sumiam do aviso do Cancelar proposta.
     const client = getSupabaseClient();
     if (client) {
       try {
-        const { data: boletosData, error } = await client
-          .from("boletos")
-          .select("id_int, status")
-          .limit(30000);
-        if (error) {
+        const { data: boletosData, error, completo } = await lerTodas<{ id: string; id_int: number | null; status: string | null }>(
+          () => client.from("boletos").select("id, id_int, status"),
+          { chave: "id" }
+        );
+        if (error || !completo) {
           console.error("[CobrancasProvider] Erro ao buscar id_int de boletos:", error);
         } else if (boletosData) {
-          const ids = new Set<number>();
-          const historyIds = new Set<number>();
-          boletosData.forEach((b) => {
-            if (b.id_int !== null && b.id_int !== undefined) {
-              const idIntNum = Number(b.id_int);
-              historyIds.add(idIntNum); // Adiciona todos ao histórico, inclusive CANCELADO
-              const statusStr = String(b.status || "").trim().toUpperCase();
-              if (statusStr !== "CANCELADO") {
-                ids.add(idIntNum); // Adiciona apenas ativos ao existingBoletoIdInts
-              }
-            }
-          });
-          setExistingBoletoIdInts(ids);
-          setHasBoletoHistoryIdInts(historyIds);
+          const { ativos, historico } = pedidosComBoleto(boletosData);
+          setExistingBoletoIdInts(ativos);
+          setHasBoletoHistoryIdInts(historico);
         }
       } catch (err) {
         console.error("[CobrancasProvider] Erro inesperado ao buscar boletos:", err);

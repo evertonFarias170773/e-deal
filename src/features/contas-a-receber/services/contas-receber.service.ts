@@ -1,4 +1,5 @@
 import { getSupabaseClient } from "@/lib/supabase/client";
+import { lerTodas, type ConsultaPaginavel } from "@/lib/supabase/ler-todas";
 import { type RecebimentoOperacional } from "@/lib/mocks/contas-receber.mock";
 import { mapSupabaseBoletoRowToRecebimentoOperacional } from "../mappers";
 import type { SupabaseBoletoRow } from "../types.supabase";
@@ -53,6 +54,14 @@ export type ContasReceberReadResult = {
   boletosDepositos: RecebimentoOperacional[];
 };
 
+/** `created_at` decrescente, como a consulta única fazia; empate pelo `id`, para ser estável. */
+export function ordenarMaisNovoPrimeiro<T extends { created_at?: unknown; id?: unknown }>(linhas: T[]): T[] {
+  return [...linhas].sort((a, b) => {
+    const porData = String(b.created_at ?? "").localeCompare(String(a.created_at ?? ""));
+    return porData !== 0 ? porData : String(a.id ?? "").localeCompare(String(b.id ?? ""));
+  });
+}
+
 async function fetchPagamentosRows() {
   const client = getSupabaseClient();
   if (!client) {
@@ -66,16 +75,21 @@ async function fetchPagamentosRows() {
   console.log("[ContasReceber] select em public.boletos.", {
     select: CONTAS_RECEBER_SELECT,
     orderBy: "created_at.desc",
-    limit: 5000
+    paginado: "id"
   });
 
-  const query = client
-    .from("boletos")
-    .select(CONTAS_RECEBER_SELECT)
-    .order("created_at", { ascending: false })
-    .limit(5000);
-
-  const { data, error } = await query.returns<SupabaseBoletoRow[]>();
+  // TODAS as linhas (04/11/2026): o `limit(5000)` de antes parava no teto de
+  // 1.000 do banco e os boletos mais antigos não apareciam nem entravam nas
+  // somas. Pagina pela chave única `id`; a ordem da tela (mais novo primeiro)
+  // é refeita abaixo. Leitura incompleta conta como falha, como antes.
+  const leitura = await lerTodas<SupabaseBoletoRow>(
+    // O select vem de uma lista montada (string comum): o supabase-js não deriva
+    // o tipo da linha, e antes o `.returns<SupabaseBoletoRow[]>()` fazia o mesmo papel.
+    () => client.from("boletos").select(CONTAS_RECEBER_SELECT) as unknown as ConsultaPaginavel<SupabaseBoletoRow>,
+    { chave: "id" }
+  );
+  const error = leitura.error ?? (leitura.completo ? null : { message: "leitura incompleta" });
+  const data = error ? null : ordenarMaisNovoPrimeiro(leitura.data);
 
   if (error || !data) {
     console.log("[ContasReceber][Supabase] consulta falhou.", {

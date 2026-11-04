@@ -97,14 +97,18 @@ if (!URL_DB || !SERVICE) {
   checar("fila sem pedido repetido", naFila.size, fila.length);
   checar("a fila passa de 1.000 (o teto foi de fato atravessado)", fila.length > 1000, idsEsperados.length > 1000);
 
-  // 2. O 22721 e a busca (mesma regra da tela: número do pedido em ref_origem).
-  const regra22721 = esperados.some((p) => p.id_int === 22721);
-  const posicao22721 = [...idsEsperados].reverse().indexOf(22721) + 1;
-  console.log(`        22721 na regra: ${regra22721} (posição ${posicao22721} em ordem decrescente)`);
-  checar("22721 continua na regra (sem isso a prova abaixo seria vazia)", regra22721, true);
-  checar("22721 está na fila quando a regra o inclui", naFila.has(22721), regra22721);
-  const busca = fila.filter((f) => f.ref_origem.toLowerCase().includes("22721"));
-  checar("a busca por 22721 o acha", busca.some((f) => f.id_int === 22721), regra22721);
+  // 2. Um pedido ALÉM do milésimo (o que a leitura antiga cortava) e a busca da
+  //    tela por ele (número do pedido em ref_origem). Era o 22721 em 04/11; ele
+  //    foi marcado faturado no sistema antigo depois, então a prova escolhe o
+  //    pedido na hora, sempre fora das 1.000 primeiras linhas da consulta.
+  const decrescente = [...idsEsperados].reverse();
+  const alemDoMilesimo = decrescente[decrescente.length - 1];
+  console.log(`        pedido além do milésimo: ${alemDoMilesimo} (posição ${decrescente.length} em ordem decrescente)`);
+  checar("há pedido além do milésimo na regra (a prova não é vazia)", decrescente.length > 1000, true);
+  checar("o pedido além do milésimo está na fila", naFila.has(alemDoMilesimo), true);
+  const busca = fila.filter((f) => f.ref_origem.toLowerCase().includes(String(alemDoMilesimo)));
+  checar("a busca pelo número dele o acha", busca.some((f) => f.id_int === alemDoMilesimo), true);
+  checar("o 22721 segue a regra (na fila se e só se a regra o inclui)", naFila.has(22721), esperados.some((p) => p.id_int === 22721));
 
   // 3. O mais novo.
   const maisNovo = Math.max(...idsEsperados);
