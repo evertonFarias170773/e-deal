@@ -79,12 +79,15 @@ import { decidirNfseDoPedido, empresaLiberadaParaNfse, rotuloDoBotaoNfse } from 
 import { pedidoOcultoPorNfse, rotuloDosOcultosPorNfse } from "@/features/nfse/lib/fila-nfse";
 import {
   FILTRO_AMBIENTE_NFSE,
+  FILTRO_AMBIENTE_NFSE_PADRAO,
   FILTRO_STATUS_NFSE,
   STATUS_CONHECIDOS_NFSE,
   STATUS_EM_ANALISE,
   itemCancelarNfse,
   notaPassaNoFiltroDeAmbiente,
   notaPassaNoFiltroDeStatus,
+  nfsePassaNaBusca,
+  ordenarNfsePorEmissao,
   seloDoAmbiente,
   statusExibidoDaNfse
 } from "@/features/nfse/lib/historico-nfse";
@@ -99,6 +102,13 @@ type ActiveTab = "FILA_FATURAMENTO" | "HISTORICO_FISCAL";
  * Vazio significa "todos" e, por ser o padrão, não entra na URL.
  */
 const ABAS = ["FILA_FATURAMENTO", "HISTORICO_FISCAL"] as const;
+/**
+ * As duas abas do Histórico (04/11/2026), no lugar das seções empilhadas: a NFS-e
+ * ficava no fim da lista de NF-e. Abre em NF-e; a escolha vai na URL (`hist`).
+ */
+const ABAS_HISTORICO = ["nfe", "nfse"] as const;
+type AbaHistorico = (typeof ABAS_HISTORICO)[number];
+const ROTULO_ABA_HISTORICO: Record<AbaHistorico, string> = { nfe: "NF-e (Produtos)", nfse: "NFS-e (Serviços)" };
 const EMPRESAS_EMITENTES = ["", "1", "2", "3"] as const;
 /**
  * Os status que o filtro do HISTORICO oferece.
@@ -254,6 +264,7 @@ export function NotasFiscaisPage() {
   const filtrosSchema = useMemo(
     () => ({
       aba: { codec: codecs.enumOf(ABAS), default: "FILA_FATURAMENTO" as const },
+      hist: { codec: codecs.enumOf(ABAS_HISTORICO), default: "nfe" as AbaHistorico },
       "nfe-q": { codec: codecs.texto(), default: "" },
       "nfe-emp": { codec: codecs.enumOf(EMPRESAS_EMITENTES), default: "" as const },
       "nfe-status": { codec: codecs.enumOf(STATUS_NFE), default: "" as const },
@@ -268,7 +279,8 @@ export function NotasFiscaisPage() {
       "nfse-q": { codec: codecs.texto(), default: "" },
       "nfse-emp": { codec: codecs.enumOf(EMPRESAS_EMITENTES), default: "" as const },
       "nfse-status": { codec: codecs.enumOf(STATUS_NFSE), default: "" as const },
-      "nfse-amb": { codec: codecs.enumOf(FILTRO_AMBIENTE_NFSE), default: "" as const }
+      // A aba NFS-e abre em Produção; "todos" e "homologacao" continuam à escolha.
+      "nfse-amb": { codec: codecs.enumOf(FILTRO_AMBIENTE_NFSE), default: FILTRO_AMBIENTE_NFSE_PADRAO }
     }),
     []
   );
@@ -377,6 +389,7 @@ export function NotasFiscaisPage() {
   const nfeEmpresa = filters["nfe-emp"];
   const nfseStatus = filters["nfse-status"];
   const nfseAmbiente = filters["nfse-amb"];
+  const historicoAba = filters.hist;
   const nfseEmpresa = filters["nfse-emp"];
   const soFaturados = filters["fila-so-faturados"];
   const mostrarComNfseEmitida = filters["fila-nfse-emitida"];
@@ -2509,24 +2522,10 @@ export function NotasFiscaisPage() {
   const notasEmProcesso = nfeListCombined.filter((item) => !ehNotaFinalizada(item));
 
   // Filtragem Histórico NFS-e
-  const filteredNfseList = nfseListCombined.filter((item) => {
-    if (nfseSearch) {
-      const search = nfseSearch.toLowerCase().trim();
-      const numNfseStr = item.numero_nfse ? String(item.numero_nfse) : "";
-      const refStr = item.ref ? item.ref.toLowerCase() : "";
-      const idCliStr = item.id_cliente ? String(item.id_cliente) : "";
-      const nomeStr = item.nome ? item.nome.toLowerCase() : "";
-      const fantStr = item.fantasia ? item.fantasia.toLowerCase() : "";
-
-      const matchesSearch =
-        numNfseStr.includes(search) ||
-        refStr.includes(search) ||
-        idCliStr.includes(search) ||
-        nomeStr.includes(search) ||
-        fantStr.includes(search);
-
-      if (!matchesSearch) return false;
-    }
+  // Busca própria da aba NFS-e (nº da nota, referência, pedido, nome e ID do
+  // cliente) e ordem pela data de emissão, da mais nova (lib/historico-nfse).
+  const filteredNfseList = ordenarNfsePorEmissao(nfseListCombined.filter((item) => {
+    if (!nfsePassaNaBusca(item, nfseSearch)) return false;
 
     if (nfseEmpresa) {
       if (String(item.id_empresa) !== nfseEmpresa) return false;
@@ -2537,7 +2536,7 @@ export function NotasFiscaisPage() {
     if (!notaPassaNoFiltroDeAmbiente(item.ambiente, nfseAmbiente)) return false;
 
     return true;
-  });
+  }));
 
   /** Selo do ambiente da nota de serviço: vazio ou desconhecido é HOMOLOGAÇÃO. */
   const renderSeloDoAmbienteNfse = (ambiente: string | null | undefined) => {
@@ -3081,10 +3080,30 @@ export function NotasFiscaisPage() {
         </div>
       ) : null}
 
-      {/* Renderização do Histórico NF-e */}
+      {/* Abas do Histórico: NF-e (Produtos) e NFS-e (Serviços) */}
       {activeTab === "HISTORICO_FISCAL" ? (
+        <div role="tablist" aria-label="Tipo de nota do histórico" className="flex gap-2 overflow-x-auto rounded-3xl border border-[#d7e5e8] bg-white p-2 shadow-sm">
+          {ABAS_HISTORICO.map((aba) => (
+            <button
+              key={aba}
+              type="button"
+              role="tab"
+              aria-selected={historicoAba === aba}
+              data-aba-historico={aba}
+              onClick={() => setFilter("hist", aba)}
+              className={`shrink-0 rounded-2xl px-5 py-2.5 text-sm font-semibold transition ${
+                historicoAba === aba ? "bg-[#0b2f4a] text-white" : "text-slate-600 hover:bg-slate-50"
+              }`}
+            >
+              {ROTULO_ABA_HISTORICO[aba]}
+            </button>
+          ))}
+        </div>
+      ) : null}
+
+      {/* Renderização do Histórico NF-e */}
+      {activeTab === "HISTORICO_FISCAL" && historicoAba === "nfe" ? (
         <div className="space-y-4">
-          <h2 className="text-xl font-bold px-4 py-2 border-b">Histórico NF-e (Produtos)</h2>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 rounded-3xl border border-[#d7e5e8] bg-white p-4 shadow-sm">
             <div className="relative">
               <input
@@ -3133,14 +3152,14 @@ export function NotasFiscaisPage() {
       ) : null}
 
       {/* Renderização do Histórico NFS-e */}
-      {activeTab === "HISTORICO_FISCAL" ? (
-        <div className="space-y-4 mt-12">
-          <h2 className="text-xl font-bold px-4 py-2 border-b">Histórico NFS-e (Serviços)</h2>
+      {activeTab === "HISTORICO_FISCAL" && historicoAba === "nfse" ? (
+        <div className="space-y-4">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 rounded-3xl border border-[#d7e5e8] bg-white p-4 shadow-sm">
             <div className="relative">
               <input
                 type="text"
-                placeholder="Buscar por Nº NFS-e, Ref, ID ou Nome..."
+                placeholder="Nº, Ref, Pedido ou Cliente..."
+                aria-label="Buscar NFS-e"
                 value={nfseSearch}
                 onChange={(e) => setNfseSearch(e.target.value)}
                 className="w-full rounded-2xl border border-[#d7e5e8] bg-slate-50 px-4 py-3 text-sm text-slate-800 placeholder-slate-400 outline-none transition focus:border-[#0b2f4a] focus:bg-white"
@@ -3181,7 +3200,7 @@ export function NotasFiscaisPage() {
                 onChange={(e) => setFilter("nfse-amb", e.target.value as (typeof FILTRO_AMBIENTE_NFSE)[number])}
                 className="w-full rounded-2xl border border-[#d7e5e8] bg-slate-50 px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-[#0b2f4a] focus:bg-white"
               >
-                <option value="">Ambiente: Todos</option>
+                <option value="todos">Ambiente: Todos</option>
                 <option value="producao">Produção</option>
                 <option value="homologacao">Homologação</option>
               </select>

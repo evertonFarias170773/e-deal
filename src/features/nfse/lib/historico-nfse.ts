@@ -33,9 +33,14 @@ export function seloDoAmbiente(valor: string | null | undefined): { ambiente: Am
   return { ambiente, rotulo: ambiente === "producao" ? "PRODUÇÃO" : "HOMOLOGAÇÃO" };
 }
 
-/** Valores do filtro "Ambiente" (vazio = Todos). */
-export const FILTRO_AMBIENTE_NFSE = ["", "producao", "homologacao"] as const;
+/**
+ * Valores do filtro "Ambiente". A aba NFS-e abre em PRODUÇÃO (04/11/2026): a nota
+ * com valor fiscal é a que se procura no dia a dia. "Todos" tem valor próprio
+ * ("todos") porque a URL descarta valor vazio e ele voltaria ao padrão.
+ */
+export const FILTRO_AMBIENTE_NFSE = ["todos", "producao", "homologacao"] as const;
 export type FiltroAmbienteNfse = (typeof FILTRO_AMBIENTE_NFSE)[number];
+export const FILTRO_AMBIENTE_NFSE_PADRAO: FiltroAmbienteNfse = "producao";
 
 export function notaPassaNoFiltroDeAmbiente(ambienteDaNota: string | null | undefined, filtro: string): boolean {
   if (filtro !== "producao" && filtro !== "homologacao") return true;
@@ -111,4 +116,54 @@ export const DICA_CANCELAR_NFSE =
  */
 export function itemCancelarNfse(): { label: string; disabled: true; title: string } {
   return { label: "Cancelar NFS-e", disabled: true, title: DICA_CANCELAR_NFSE };
+}
+
+/* ------------------------------------------------------------ busca e ordem */
+
+/** O mínimo de uma nota da lista para a busca e a ordem. */
+export type NotaDoHistoricoNfse = {
+  numero_nfse?: string | number | null;
+  ref?: string | null;
+  id_int?: number | string | null;
+  id_cliente?: number | string | null;
+  nome?: string | null;
+  fantasia?: string | null;
+  created_at?: string | null;
+  payload_retorno?: Record<string, unknown> | null;
+};
+
+/**
+ * Busca da aba NFS-e (04/11/2026): número da nota, referência (NFS-24623-001),
+ * número do pedido, nome ou fantasia e ID do cliente. Sem diferença de
+ * maiúsculas nem de acentos. Busca vazia deixa passar tudo.
+ */
+export function nfsePassaNaBusca(nota: NotaDoHistoricoNfse, busca: string): boolean {
+  const termo = semAcento(busca).trim();
+  if (!termo) return true;
+  return [nota.numero_nfse, nota.ref, nota.id_int, nota.id_cliente, nota.nome, nota.fantasia].some((campo) =>
+    campo == null ? false : semAcento(String(campo)).includes(termo)
+  );
+}
+
+/**
+ * A data que ordena a lista: a emissão que a Focus devolveu
+ * (`payload_retorno.data_emissao`); nota sem emissão (rascunho, pendente, erro)
+ * entra pela data de criação. Em milissegundos; sem data nenhuma, 0 (fim da lista).
+ */
+export function dataDeOrdemDaNfse(nota: NotaDoHistoricoNfse): number {
+  const emissao = nota.payload_retorno?.data_emissao;
+  for (const valor of [typeof emissao === "string" ? emissao : null, nota.created_at]) {
+    const ms = valor ? Date.parse(valor) : NaN;
+    if (Number.isFinite(ms)) return ms;
+  }
+  return 0;
+}
+
+/** Da mais nova para a mais antiga. Não altera a lista recebida. */
+export function ordenarNfsePorEmissao<T extends NotaDoHistoricoNfse>(notas: readonly T[]): T[] {
+  return [...notas].sort((a, b) => dataDeOrdemDaNfse(b) - dataDeOrdemDaNfse(a));
+}
+
+function semAcento(texto: string): string {
+  return texto.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 }

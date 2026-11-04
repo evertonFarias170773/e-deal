@@ -1,6 +1,6 @@
 # Notas fiscais
 
-> **Última revisão:** 04/11/2026 (Lançar no Contas a Receber da NFS-e abre preenchido)
+> **Última revisão:** 04/11/2026 (Histórico em duas abas, NF-e e NFS-e; NFS-e com busca própria, mais nova primeiro e começando em Produção)
 > **Caminho no menu:** Financeiro → Notas fiscais (primeiro item da seção Financeiro do menu lateral)
 > **Endereço:** `/notas-fiscais` (a nota aberta fica em `/notas-fiscais/[id]`)
 
@@ -30,8 +30,9 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 |---|---|---|
 | **Nova nota avulsa** | Cabeçalho da tela, à direita | Abre a janela **Nova nota avulsa**, para criar uma NF-e que não nasce de pedido. |
 | **Fila Faturamento (N)** (aba) | Abas do topo, 1ª | Mostra os pedidos a faturar e a seção **Notas em processo**. O número conta só os pedidos. |
-| **Histórico NF-e / NFS-e** (aba) | Abas do topo, 2ª | Mostra **Histórico NF-e (Produtos)** e, abaixo, **Histórico NFS-e (Serviços)**. As duas listas se atualizam sozinhas ao abrir a aba, ao voltar para a janela do navegador e quando a janela da NFS-e conclui ou fecha; não precisa de F5. |
+| **Histórico NF-e / NFS-e** (aba) | Abas do topo, 2ª | Mostra as abas **NF-e (Produtos)** e **NFS-e (Serviços)**. As duas listas se atualizam sozinhas ao abrir a aba, ao voltar para a janela do navegador e quando a janela da NFS-e conclui ou fecha; não precisa de F5. |
 | **Buscar fila por Ref, ID Cliente ou Nome...** | Aba Fila, filtros | Busca na lista de pedidos por número, código ou nome do cliente, sócio pagador e vendedor. |
+| **NF-e (Produtos)** / **NFS-e (Serviços)** (abas) | Topo do Histórico | Trocam entre a lista de notas de produto e a de serviço. Abre em **NF-e (Produtos)**. A aba escolhida fica no endereço da página (`hist=nfse`), então o link copiado abre direto nela. |
 | **Todas as Empresas Emitentes** | Filtros da Fila e dos dois Históricos | Filtra por **INGRESSO IDEAL**, **BIRÔ IDEAL** ou **E3 BRINDES**. |
 | **Todos os status do pedido (N)** | Aba Fila, filtros | Filtra a lista de pedidos pelo status do pedido; cada opção mostra quantos pedidos tem. |
 | **Só faturados (N)** — as cobranças do Financeiro | Aba Fila, caixa de marcar abaixo dos filtros | Deixa só os pedidos com cobrança do tipo **Faturado**. |
@@ -74,9 +75,9 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Copiar Ref** | Último item do menu de toda nota | Copia a referência da nota. |
 | **Buscar por Nº Nota, Ref, ID ou Nome...** | Histórico NF-e, filtros | Busca nas notas autorizadas e canceladas. |
 | **Todos os Status** | Histórico NF-e (Autorizada, Cancelada) e Histórico NFS-e (Pendente, Pronta para envio, Processando, Autorizada, Erro de Envio, Rejeitada, Cancelada, Em análise) | Filtra pelo status da nota. |
-| **Ambiente: Todos** | Histórico NFS-e, filtros | Filtra as notas de serviço por **Produção** ou **Homologação**. Começa em Todos. |
+| **Ambiente** | Aba NFS-e, filtros | Filtra as notas de serviço por **Produção** ou **Homologação**, ou **Ambiente: Todos**. Começa em **Produção**. |
 | Selo **HOMOLOGAÇÃO** / **PRODUÇÃO** | Histórico NFS-e, coluna **Ambiente** | Diz em que ambiente a nota de serviço foi emitida. Homologação é nota de teste, sem valor fiscal. |
-| **Buscar por Nº NFS-e, Ref, ID ou Nome...** | Histórico NFS-e, filtros | Busca nas notas de serviço. |
+| **Nº, Ref, Pedido ou Cliente...** (busca) | Aba NFS-e, filtros | Busca só nas notas de serviço, pelo número da nota, pela referência (ex.: NFS-24623-001), pelo número do pedido, pelo nome ou pelo ID do cliente. Não diferencia maiúsculas nem acentos. A lista vem da nota emitida mais nova para a mais antiga; nota ainda sem emissão entra pela data em que foi criada. |
 | **Cancelar NFS-e** | Menu da NFS-e Autorizada | Aparece apagado e não faz nada. Parando o mouse sobre ele, a dica explica: o cancelamento de NFS-e ainda não está disponível no Vibe. |
 | **Abrir PDF** | Menu da NFS-e | Abre o PDF da nota de serviço em outra aba. O botão de baixar do visualizador salva com o nome "NFS-e-N-Pedido-P.pdf"; o link da aba vale 60 minutos. |
 | **Lançar no Contas a Receber** | Menu da NFS-e autorizada de produção com cobrança faturada em aberto | Abre a janela **Preparar Cobrança** com a cobrança faturada do pedido, já preenchida com a condição de pagamento escrita na nota: a **Condição de Pagamento** escolhida no pedido e as parcelas com o vencimento e o valor gravados na cobrança (por exemplo 1 parcela em 24/11/2026 de R$ 748,80). Tudo continua editável; confira antes de **Confirmar Lançamento**. Com mais de uma cobrança faturada em aberto, ou sem vencimento gravado, a janela abre vazia, como antes. Em parcela única o boleto usa a referência da NFS-e (ex.: NFS-23733-001) e o número da NFS-e vai como número da NF; com 2 ou mais parcelas a referência é P + parcela + total + pedido. Se o pedido também tem NF-e autorizada, vale a NF-e. |
@@ -379,7 +380,7 @@ Ação temporária, da transição entre sistemas. Use só quando a nota do pedi
 - **Sairá em** e **Transmitida em**: Sairá em mostra o ambiente em que a empresa está hoje, para nota ainda não transmitida; Transmitida em mostra onde a nota já saiu.
 - **Data / Hora** da nota e **Em produção desde** do pedido: a primeira é quando a nota foi criada no Vibe, não a data da autorização; a segunda é quando o pedido foi liberado para produção, com data e hora na mesma linha (horário de Brasília). Logo abaixo vem um selo com a data prevista de entrega que a produção definiu no boletim do pedido. O selo diz o estado e muda de cor: **Previsão: dd/mm/aa** em azul quando a entrega é de amanhã em diante; **Previsão: hoje** em âmbar quando é hoje; **Atrasado: dd/mm/aa** em vermelho quando o dia já passou e o pedido continua na fila; **Sem previsão** em cinza quando a produção ainda não definiu a data. No celular o selo mostra também a data de hoje e há quantos dias está atrasado; no computador, essa informação aparece ao parar o mouse sobre o selo. Se o Vibe não conseguir ler as previsões, a coluna mostra só a data e a hora.
 - **Abrir DANFE (PDF)** e **Copiar Link (PDF)**: abrir serve para ver agora; o link copiado é o que se manda a outra pessoa e vale por 7 dias.
-- **Histórico NF-e (Produtos)** e **Histórico NFS-e (Serviços)**: são listas separadas, cada uma com a própria busca e os próprios filtros.
+- Abas **NF-e (Produtos)** e **NFS-e (Serviços)**: são listas separadas, cada uma com a própria busca e os próprios filtros. A busca da aba NF-e é o mesmo campo da busca da **Fila Faturamento**: o número da aba **Fila Faturamento** muda enquanto se busca uma NF-e. A busca da aba NFS-e não mexe na Fila.
 - Permissão **Liberar para Nota Fiscal** e entrada na fila: a permissão controla a marca de sistema antigo; quem põe o pedido na fila é a liberação para produção.
 - Menu **Pedidos** e "Orçamentos": são a mesma tela; os avisos desta tela ainda usam o nome antigo.
 
@@ -455,6 +456,7 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/features/nfse/lib/composicao-nfse.ts`
 - `src/features/nfse/components/PecasNfse.tsx`
 - `src/features/nfse/services/nfse-pedido.server.ts`
+- `src/features/nfse/lib/historico-nfse.ts`
 - `src/app/api/fiscal/rascunho-nfse/route.ts`
 - `src/app/api/fiscal/consultar-nfse/route.ts`
 - `src/app/api/fiscal/nfse-arquivo/route.ts`

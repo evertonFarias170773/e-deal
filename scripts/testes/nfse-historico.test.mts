@@ -12,9 +12,13 @@
  *      some da lista e o filtro "Em análise" acha todos eles.
  *   4. O item "Cancelar NFS-e": à vista, desligado, sem ação, com a dica.
  */
+import { readFileSync } from "node:fs";
 import {
   DICA_CANCELAR_NFSE,
   FILTRO_AMBIENTE_NFSE,
+  FILTRO_AMBIENTE_NFSE_PADRAO,
+  nfsePassaNaBusca,
+  ordenarNfsePorEmissao,
   FILTRO_STATUS_NFSE,
   STATUS_CONHECIDOS_NFSE,
   ambienteDaNfse,
@@ -44,10 +48,11 @@ checar(
 checar("ambiente: so o texto exato producao e producao", [ambienteDaNfse("producao"), ambienteDaNfse("producao2")], ["producao", "homologacao"]);
 
 // 2. Filtro de ambiente
-checar("filtro de ambiente: opcoes", FILTRO_AMBIENTE_NFSE, ["", "producao", "homologacao"]);
+checar("filtro de ambiente: opcoes (Todos tem valor proprio)", FILTRO_AMBIENTE_NFSE, ["todos", "producao", "homologacao"]);
+checar("filtro de ambiente: a aba abre em Producao", FILTRO_AMBIENTE_NFSE_PADRAO, "producao");
 const notas = [{ a: "homologacao" }, { a: "producao" }, { a: null }, { a: "" }, { a: "xpto" }];
 const passam = (filtro: string) => notas.filter((n) => notaPassaNoFiltroDeAmbiente(n.a, filtro)).length;
-checar("filtro de ambiente: Todos mostra tudo", passam(""), 5);
+checar("filtro de ambiente: Todos mostra tudo", passam("todos"), 5);
 checar("filtro de ambiente: Producao", passam("producao"), 1);
 checar("filtro de ambiente: Homologacao inclui vazio e desconhecido", passam("homologacao"), 4);
 checar("filtro de ambiente: valor estranho na URL nao esconde nada", passam("qualquer"), 5);
@@ -91,6 +96,27 @@ checar(
   [DICA_CANCELAR_NFSE.includes("www.nfse.gov.br"), DICA_CANCELAR_NFSE.includes("avise o fiscal"), DICA_CANCELAR_NFSE.startsWith("Cancelamento de NFS-e ainda não está disponível no Vibe.")],
   [true, true, true]
 );
+
+// 5. Busca e ordem da aba NFS-e (04/11/2026)
+const n24623 = { numero_nfse: "149", ref: "NFS-24623-001", id_int: 24623, id_cliente: 17610, nome: "COMPANHIA ZAFFARI COMERCIO E INDUSTRIA", fantasia: "Zaffari", created_at: "2026-11-04T14:36:00Z", payload_retorno: { data_emissao: "2026-11-04T11:38:38-03:00" } };
+const n23671 = { numero_nfse: null, ref: "NFS-23671-001", id_int: 23671, id_cliente: 17610, nome: "COMPANHIA ZAFFARI", fantasia: null, created_at: "2026-10-15T13:16:00Z", payload_retorno: null };
+const n23733 = { numero_nfse: "138", ref: "NFS-23733-001", id_int: 23733, id_cliente: 14, nome: "Cliente Teste", fantasia: null, created_at: "2026-10-14T20:48:00Z", payload_retorno: { data_emissao: "2026-10-14T17:49:25-03:00" } };
+checar("busca: pedido 24623", nfsePassaNaBusca(n24623, "24623"), true);
+checar("busca: referencia", nfsePassaNaBusca(n24623, "nfs-24623-001"), true);
+checar("busca: numero da nota", nfsePassaNaBusca(n24623, "149"), true);
+checar("busca: ID do cliente", nfsePassaNaBusca(n24623, "17610"), true);
+checar("busca: nome sem acento e sem caixa", nfsePassaNaBusca(n24623, "zaffari"), true);
+checar("busca: quem nao bate fica fora", nfsePassaNaBusca(n23733, "zaffari"), false);
+checar("busca vazia passa tudo", nfsePassaNaBusca(n23733, "  "), true);
+checar("busca: pedido pelo id_int mesmo sem ref", nfsePassaNaBusca({ ...n23733, ref: null }, "23733"), true);
+checar("ordem: emissao mais nova primeiro; sem emissao entra pela criacao", ordenarNfsePorEmissao([n23733, n23671, n24623]).map((n) => n.ref), ["NFS-24623-001", "NFS-23671-001", "NFS-23733-001"]);
+
+// 6. Pagina: abas do historico e busca da Fila intocada
+const pagina = readFileSync("src/features/fiscal/NotasFiscaisPage.tsx", "utf8");
+checar("pagina: abas NF-e e NFS-e na URL (hist), abre em NF-e", pagina.includes('hist: { codec: codecs.enumOf(ABAS_HISTORICO), default: "nfe"'), true);
+checar("pagina: rotulos das abas", pagina.includes('nfe: "NF-e (Produtos)", nfse: "NFS-e (Serviços)"'), true);
+checar("pagina: secoes nao empilham mais", pagina.includes('historicoAba === "nfe"') && pagina.includes('historicoAba === "nfse"'), true);
+checar("pagina: a Fila segue com a busca da NF-e (nfe-q)", /if \(nfeSearch\) \{\s*const search = nfeSearch/.test(pagina), true);
 
 console.log(falhas === 0 ? "\nTODOS OS TESTES PASSARAM" : `\n${falhas} TESTE(S) FALHARAM`);
 process.exitCode = falhas === 0 ? 0 : 1;
