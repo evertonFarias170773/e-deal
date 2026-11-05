@@ -4667,22 +4667,25 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
   const [enviarFilaModalAberto, setEnviarFilaModalAberto] = useState(false);
   const [enviandoAFila, setEnviandoAFila] = useState(false);
 
+  // O mesmo corpo de `confirmarEnviarAFila` da lista de Pedidos: mesma rota, mesmos avisos.
   async function handleEnviarParaFilaNaProposta() {
     if (!proposta || enviandoAFila) return;
+    const idInt = proposta.id_int;
     setEnviandoAFila(true);
     try {
-      const resposta = await enviarPedidoParaFilaPeloServidor(proposta.id_int);
+      const resposta = await enviarPedidoParaFilaPeloServidor(idInt);
       if (!resposta.success) {
         showToast({ type: "error", title: "Não foi possível enviar à Fila de Faturamento", description: resposta.message });
       } else if (resposta.idempotente) {
         showToast({ type: "info", title: "Já estava na fila", description: resposta.message });
       } else if (resposta.aviso) {
-        showToast({ type: "warning", title: "Enviado à fila, com aviso", description: resposta.aviso });
+        showToast({ type: "warning", title: `Proposta #${idInt} enviada à fila, com aviso`, description: resposta.aviso });
       } else {
         showToast({ type: "success", title: "Enviado à Fila de Faturamento", description: "O pedido não passa pela Produção nem pela Expedição." });
       }
+      // Em qualquer desfecho a tela relê, como a lista: o pedido pode ter mudado por outro caminho.
       setEnviarFilaModalAberto(false);
-      if (resposta.success && onReload) onReload(true);
+      if (onReload) onReload(true);
     } finally {
       setEnviandoAFila(false);
     }
@@ -4723,6 +4726,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
   function acoesDaProposta() {
     if (!proposta) return [];
     const idInt = proposta.id_int;
+    const linhaDaLista = acoesDaLista.item;
     const podeRetirar =
       user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "propostas.release_producao");
     return [
@@ -4753,7 +4757,15 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
       },
       ...acoesDaLista.aposGerarOc,
       // So a Fila de Faturamento, sem Producao nem Expedicao (13/10/2026). So ADM; some depois de enviado.
-      ...(podeVerEnviarParaFila(user, { statusInterno: proposta.status_interno, liberaNf: proposta.libera_nf, isPrdAprovado: proposta.is_prd_aprovado })
+      // A condicao da lista, sobre a mesma linha da lista (05/11/2026): inclui a marca de
+      // nota no sistema antigo (`faturadoForaEm`), que antes ficava de fora aqui.
+      ...(linhaDaLista &&
+      podeVerEnviarParaFila(user, {
+        statusInterno: linhaDaLista.statusInterno,
+        liberaNf: linhaDaLista.libera_nf,
+        isPrdAprovado: linhaDaLista.is_prd_aprovado,
+        faturadoForaEm: linhaDaLista.faturadoForaEm
+      })
         ? [{ label: "Enviar para Fila de Faturamento", onClick: () => setEnviarFilaModalAberto(true) }]
         : []),
       ...acoesDaLista.aposEnviarFila,
