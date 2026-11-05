@@ -8,6 +8,8 @@ import {
   mensagemNfseJaEmitida
 } from "@/features/fiscal/services/nfse-ja-emitida";
 import { empresaLiberadaParaNfse } from "@/features/nfse/lib/regras-emissao";
+import { mensagemSemPercentual, percentualParaFocus, rotuloDaCompetencia } from "@/features/nfse/lib/percentual-simples";
+import { lerPercentualSimplesVigente } from "@/features/nfse/services/percentual-simples.server";
 
 /**
  * Emissão de NFS-e — porta de entrada no servidor.
@@ -270,6 +272,25 @@ export async function POST(request: Request) {
     //     fluxo ter o caminho de produção da empresa — antes disso a nota
     //     sairia em homologação com "producao" gravado no banco.
 
+    // 6c. Lei 12.741 (05/11/2026): o percentual do Simples da empresa emissora
+    //     no MÊS DA EMISSÃO (horário de Brasília), de `empresas_percentual_simples`.
+    //     Sem ele a nota não sai — recusa antes da reserva, sem escrita. O valor
+    //     vai ao n8n no corpo do webhook; o fluxo não tem mais número fixo.
+    const percentualVigente = await lerPercentualSimplesVigente(
+      supabase,
+      nota.id_empresa == null ? null : Number(nota.id_empresa)
+    );
+    if (!percentualVigente.ok) {
+      return NextResponse.json(
+        {
+          success: false,
+          code: "PERCENTUAL_SIMPLES_NAO_CADASTRADO",
+          message: mensagemSemPercentual("empresa emissora desta nota", percentualVigente),
+        },
+        { status: 422 }
+      );
+    }
+
     // 7. Trava de duplicidade — a parte que vale contra corrida.
     //
     //    A checagem declarativa não basta: duas chamadas simultâneas leem o
@@ -324,14 +345,21 @@ export async function POST(request: Request) {
       );
     }
 
-    // 8. O webhook do n8n, com o mesmo corpo de sempre. O fluxo lê só a `ref`;
-    //    `supabase_url` viaja junto pela simetria com a NF-e.
+    // 8. O webhook do n8n. O fluxo lê a `ref` e, desde 05/11/2026, o percentual
+    //    do Simples (pTotTribSN), com duas casas e ponto ("15.20"); sem ele o nó
+    //    "Preparar Body Focus NFS-e" para e nada vai à Focus. `supabase_url`
+    //    viaja junto pela simetria com a NF-e.
     let response: Response;
     try {
       response = await fetch(WEBHOOK_EMITIR_NFSE, {
         method: "POST",
         headers: cabecalhosWebhookN8n(),
-        body: JSON.stringify({ ref: nota.ref, supabase_url: url }),
+        body: JSON.stringify({
+          ref: nota.ref,
+          supabase_url: url,
+          percentual_total_tributos_simples_nacional: percentualParaFocus(percentualVigente.percentual),
+          competencia_percentual_simples: rotuloDaCompetencia(percentualVigente.competencia),
+        }),
       });
     } catch (err) {
       console.error("[API][EmitirNfse] Webhook inacessível:", err);

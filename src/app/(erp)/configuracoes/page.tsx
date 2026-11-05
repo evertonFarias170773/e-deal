@@ -106,8 +106,10 @@ export default function ConfiguracoesHubPage() {
     user.isAdmin ||
     hasPermissao(user, "admin.usuarios.edit") ||
     hasPermissao(user, "admin.usuarios.view");
+  // Percentual do Simples da NFS-e (05/11/2026): quem emite NFS-e mantém o número.
+  const podeEmpresas = user.isSuperAdmin || user.isAdmin || hasPermissao(user, "fiscal.emit_nfse");
 
-  if (!isAuthorized) {
+  if (!isAuthorized && !podeEmpresas) {
     return (
       <div className="max-w-7xl mx-auto py-6 px-4">
         <AcessoNegado />
@@ -136,18 +138,22 @@ export default function ConfiguracoesHubPage() {
 
       {/* Grid de Configurações */}
       <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-        <ConfigHubCard
-          title="Usuários e Perfis"
-          description="Vincule perfis de acesso a operadores do sistema, audite permissões ativas e controle fallbacks legados."
-          href="/configuracoes/usuarios"
-          icon={UserCog}
-        />
-        <ConfigHubCard
-          title="Perfis e Permissões"
-          description="Gerencie as permissões granulares de acesso para cada perfil do catálogo do sistema."
-          href="/configuracoes/perfis"
-          icon={ShieldCheck}
-        />
+        {isAuthorized ? (
+          <>
+            <ConfigHubCard
+              title="Usuários e Perfis"
+              description="Vincule perfis de acesso a operadores do sistema, audite permissões ativas e controle fallbacks legados."
+              href="/configuracoes/usuarios"
+              icon={UserCog}
+            />
+            <ConfigHubCard
+              title="Perfis e Permissões"
+              description="Gerencie as permissões granulares de acesso para cada perfil do catálogo do sistema."
+              href="/configuracoes/perfis"
+              icon={ShieldCheck}
+            />
+          </>
+        ) : null}
         {user.isAdmin || user.isSuperAdmin ? (
           <ConfigHubCard
             title="Encerrar pedidos pagos (transição)"
@@ -156,13 +162,14 @@ export default function ConfiguracoesHubPage() {
             icon={PackageCheck}
           />
         ) : null}
-        <ConfigHubCard
-          title="Empresas"
-          description="Gerencie as filiais operacionais do grupo, chaves de acesso, logos e dados cadastrais comerciais."
-          href="/configuracoes/empresas"
-          icon={Building2}
-          disabled
-        />
+        {podeEmpresas ? (
+          <ConfigHubCard
+            title="Empresas"
+            description="Percentual do Simples Nacional de cada empresa, por mês, que sai na NFS-e (Lei 12.741), com o histórico dos meses anteriores."
+            href="/configuracoes/empresas"
+            icon={Building2}
+          />
+        ) : null}
         <ConfigHubCard
           title="Integrações"
           description="Configure integrações, gateways de pagamento e serviços de Nota Fiscal."

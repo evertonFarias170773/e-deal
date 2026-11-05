@@ -51,6 +51,7 @@ import { fetchComSessao, SessaoExpiradaError } from "@/lib/supabase/sessao";
 import { abrirLinkDeDocumentoFiscal } from "@/lib/fiscal/documento-nota";
 import { formatCurrency } from "@/lib/formatters/currency";
 import { useAuth } from "@/features/auth/AuthProvider";
+import { mensagemSemPercentual, percentualParaTela, rotuloDaCompetencia } from "@/features/nfse/lib/percentual-simples";
 import {
   INTERVALO_CONSULTA_NFSE_MS,
   LIMITE_DESCRICAO_NFSE,
@@ -689,6 +690,10 @@ export function GerarNfseModal({
   const podeEmitir =
     contexto !== null && notaAberta !== null && contexto.empresa.liberada && modo.tipo === "NOTA" && !modo.acompanhando &&
     (situacaoDaNota === "RASCUNHO" || situacaoDaNota === "REENVIAR");
+  // Lei 12.741 (05/11/2026): sem percentual do Simples do mês, não emite. A rota confere de novo.
+  const percentualDoMes = contexto?.percentualSimples ?? null;
+  const semPercentualDoMes = contexto !== null && contexto.empresa.liberada && !(percentualDoMes && percentualDoMes.ok);
+  const mostraAvisoDePercentual = semPercentualDoMes && (modo.tipo === "FORMULARIO" || podeEmitir);
   const totalDaNota = notaAberta ? Number(notaAberta.valor_servicos) || 0 : valorConferido.ok ? valorConferido.valor : 0;
   /** A linha "Itens marcados (N)" do cartão Valores: só na composição, e com item no pedido. */
   const itensMarcadosNaTela = !notaAberta && contexto !== null && contexto.itens.length > 0;
@@ -774,11 +779,29 @@ export function GerarNfseModal({
                 <AvisoEmDestaque tom="impede">A emissão de NFS-e pelo Vibe não está liberada para {contexto.empresa.nome}.</AvisoEmDestaque>
               )}
 
+              {mostraAvisoDePercentual && (
+                <div data-aviso-percentual-simples>
+                  <AvisoEmDestaque tom="impede">
+                    {percentualDoMes
+                      ? mensagemSemPercentual(contexto.empresa.nome, percentualDoMes)
+                      : "Não foi possível ler o percentual do Simples (Lei 12.741). Feche e abra a janela de novo; a nota não sai sem ele."}{" "}
+                    <a href="/configuracoes/empresas" className="underline">Abrir Configurações → Empresas</a>
+                  </AvisoEmDestaque>
+                </div>
+              )}
+
               {/* Resumo: três cartões, como no rascunho da NF-e */}
               <div className="grid grid-cols-1 gap-4 md:grid-cols-3" data-resumo-nfse>
                 <CartaoDeResumo titulo="Informações gerais">
                   <LinhaDeResumo rotulo="Empresa emissora">{contexto.empresa.nome}</LinhaDeResumo>
                   <LinhaDeResumo rotulo="Ambiente">{rotuloDoAmbiente}</LinhaDeResumo>
+                  <LinhaDeResumo rotulo="Tributos (Lei 12.741)">
+                    <span data-percentual-simples>
+                      {percentualDoMes && percentualDoMes.ok
+                        ? `${percentualParaTela(percentualDoMes.percentual)} do Simples (${rotuloDaCompetencia(percentualDoMes.competencia)})`
+                        : `não cadastrado${percentualDoMes ? ` para ${rotuloDaCompetencia(percentualDoMes.competencia)}` : ""}`}
+                    </span>
+                  </LinhaDeResumo>
                   <LinhaDeResumo rotulo="Serviço fiscal">
                     <span data-servico-escolhido>
                       {notaAberta
@@ -1404,7 +1427,7 @@ export function GerarNfseModal({
               <button
                 type="button"
                 onClick={() => void emitir(notaAberta)}
-                disabled={ocupado !== null}
+                disabled={ocupado !== null || semPercentualDoMes}
                 className="inline-flex items-center gap-2 rounded-2xl bg-red-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-red-700 disabled:opacity-50"
               >
                 {rotuloDoBotaoDeEmitir("producao", situacaoDaNota === "REENVIAR")}
@@ -1421,7 +1444,8 @@ export function GerarNfseModal({
                 if (emissaoPedeConfirmacao(ambiente)) setConfirmando(true);
                 else void emitir(notaAberta);
               }}
-              disabled={ocupado !== null}
+              disabled={ocupado !== null || semPercentualDoMes}
+              title={semPercentualDoMes ? "Sem percentual do Simples (Lei 12.741) cadastrado para o mês" : undefined}
               className={BOTAO_PRIMARIO_NFSE}
             >
               {ocupado === "emitir" && <Loader2 className="h-4 w-4 animate-spin" />}

@@ -1,6 +1,6 @@
 # Notas fiscais: NFS-e (nota de serviço)
 
-> **Última revisão:** 05/11/2026 (a descrição do serviço termina nos itens e no frete: saíram a condição de pagamento e a natureza da operação). 04/11/2026: frete na nota integral; endereço do tomador fixo, sem lista; tomador é o pagador do pedido; histórico da NFS-e em aba própria
+> **Última revisão:** 05/11/2026 (percentual do Simples da Lei 12.741 por empresa e mês, em Configurações → Empresas; sem o mês cadastrado a NFS-e não sai. A descrição do serviço termina nos itens e no frete: saíram a condição de pagamento e a natureza da operação). 04/11/2026: frete na nota integral; endereço do tomador fixo, sem lista; tomador é o pagador do pedido; histórico da NFS-e em aba própria
 > **Caminho no menu:** Financeiro → Notas fiscais → aba **Fila Faturamento** → **NFS-e**
 > **Endereço:** `/notas-fiscais`
 
@@ -15,6 +15,7 @@ A nota de produtos (NF-e), a fila, o histórico e tudo o que vem depois da nota 
 - Emite quem tem a permissão **Emitir NFS-e (Serviço)** no perfil, além de Administrador e Super Administrador.
 - O campo **NBS** do rascunho e o botão de salvá-lo aparecem só para administrador e super administrador.
 - Quem vê a tela de Notas fiscais vê o histórico das notas de serviço, mesmo sem poder emitir.
+- O percentual do Simples (Configurações → **Empresas**) é lançado por quem tem a permissão **Emitir NFS-e (Serviço)**, além de Administrador e Super Administrador. Para essas pessoas o item **Configurações** aparece no menu lateral.
 
 ## Botões e ações da tela
 
@@ -43,6 +44,9 @@ Nomes exatamente como aparecem na tela. Os botões da fila, do histórico e da N
 | **Abrir PDF** / **Abrir XML** | Janela **Gerar NFS-e**, com a nota autorizada | Abre o PDF ou o XML da nota de serviço. |
 | **Baixar PDF** / **Baixar XML** | Janela **Gerar NFS-e**, com a nota autorizada | Salva o arquivo no computador, com o nome "NFS-e-N-Pedido-P" (N é o número da NFS-e e P o do pedido). |
 | **Fechar** | Janela **Gerar NFS-e** | Fecha a janela. O que já foi criado ou enviado continua valendo. |
+| **Tributos (Lei 12.741)** (linha) | Janela **Gerar NFS-e**, cartão **Informações gerais** | Mostra o percentual do Simples que vai na nota, com o mês, por exemplo "15,20% do Simples (11/2026)", ou "não cadastrado para 11/2026". |
+| **Abrir Configurações → Empresas** | Janela **Gerar NFS-e**, no aviso vermelho de percentual não cadastrado | Abre a tela onde se lança o percentual do mês. |
+| **Gravar percentual** / **Corrigir percentual** | **Configurações** → **Empresas** | Grava o percentual do mês escolhido para a empresa escolhida. Se o mês já tem percentual, o botão vira **Corrigir percentual** e o valor anterior fica registrado. |
 
 ## Passo a passo
 
@@ -76,6 +80,17 @@ Enquanto a janela trabalha (lendo o pedido, criando o rascunho, emitindo ou cons
 
 Se a resposta não chegar (demora ou queda de conexão), a janela não conclui que deu errado: ela relê a nota e mostra o que existe, por exemplo "A resposta não chegou, mas o envio saiu: a nota está em análise". Leia o quadro vermelho antes de clicar de novo.
 
+### Lançar o percentual do Simples do mês (Lei 12.741)
+
+A NFS-e leva o total aproximado dos tributos como o percentual do Simples Nacional da empresa emissora. O número muda por empresa e por mês e vem do contador. Lance o mês antes da primeira nota dele.
+
+1. No menu lateral, abra **Configurações** e clique no cartão **Empresas**.
+2. Em **Lançar ou corrigir um mês**, escolha a **Empresa**, confira o **Mês (MM/AAAA)** (vem o mês atual) e digite o **Percentual (%)**, por exemplo 15,20. A **Observação** é opcional.
+3. Clique em **Gravar percentual**. Se o mês já tinha valor, aparece "Este mês já tem 15,20%. Gravar corrige o valor; o anterior fica registrado." e o botão é **Corrigir percentual**.
+4. Embaixo, cada empresa mostra o histórico dos meses, do mais novo para o mais antigo, com quem alterou por último, e diz se o mês atual está cadastrado.
+
+Cadastro inicial: **BIRÔ IDEAL**, outubro/2026 e novembro/2026 com 15,20%. O de novembro é provisório: corrija quando o contador mandar o número.
+
 #### Saber se a NFS-e emitida pelo Vibe vale (homologação ou produção)
 
 1. Abra a janela **Gerar NFS-e** do pedido e olhe a faixa do ambiente no topo. No **Histórico NF-e / NFS-e**, aba **NFS-e (Serviços)**, olhe a coluna **Ambiente**.
@@ -88,6 +103,7 @@ Se a resposta não chegar (demora ou queda de conexão), a janela não conclui q
 - NFS-e (nota de serviço): sai pelo botão **NFS-e** da fila, só para pedido da **BIRÔ IDEAL**. Para as outras empresas o botão não aparece e o servidor recusa.
 - Hoje a NFS-e pelo Vibe sai em **HOMOLOGAÇÃO**: é nota de teste, sem valor fiscal (o DANFSe traz o aviso "sem validade jurídica").
 - A emissão em produção existe no sistema só para a **BIRÔ IDEAL** e ainda não foi ativada: a empresa continua em homologação. Enquanto a janela mostrar **HOMOLOGAÇÃO**, a nota não vale, e a NFS-e de verdade continua sendo emitida pelo portal nacional (www.nfse.gov.br).
+- **Percentual do Simples (Lei 12.741):** a nota usa o percentual da empresa emissora cadastrado para o **mês da emissão**, no horário de Brasília (uma nota emitida em 01/12 usa dezembro). Sem o mês cadastrado, a janela mostra o aviso vermelho, o **Emitir NFS-e** fica apagado e o servidor também recusa. O mês anterior não vale para o mês seguinte. Regime, ISSQN, retenção e IBS/CBS não mudam com isso.
 - Um pedido tem uma NFS-e viva por vez:
   - com nota autorizada, a janela só mostra a nota e não cria outra;
   - com nota em análise, é preciso esperar o desfecho;
@@ -135,6 +151,7 @@ Se a resposta não chegar (demora ou queda de conexão), a janela não conclui q
 | O que aparece | Por que acontece | O que fazer |
 |---|---|---|
 | "A emissão de NFS-e pelo Vibe não está liberada para ..." | O pedido não é da **BIRÔ IDEAL**. | Não há NFS-e pelo Vibe para essa empresa. |
+| "Sem percentual do Simples (Lei 12.741) cadastrado para 11/2026 na ... Cadastre em Configurações → Empresas antes de emitir." | A empresa emissora não tem o percentual do mês da emissão. | Lance o mês em **Configurações** → **Empresas** e abra a janela de novo. Nada foi enviado. |
 | "O cliente não tem CPF (11 dígitos) ou CNPJ (14 dígitos) no cadastro." | O documento do cliente está vazio ou incompleto. | Corrija o cadastro do cliente e abra a janela de novo. |
 | "O tomador não tem endereço cadastrado." / "O tomador não tem endereço principal no cadastro." / "O endereço principal do tomador está com o cadastro incompleto (rua, cidade ou UF)." | Não há endereço principal utilizável no cadastro do tomador. | Corrija o endereço principal no cadastro do cliente e abra a janela de novo. |
 | "O serviço ... está sem código de tributação no cadastro." ou "... sem NBS de 9 dígitos no cadastro." | O cadastro do serviço está incompleto. | Peça ao administrador para acertar o cadastro do serviço. |
@@ -193,3 +210,8 @@ Se a resposta não chegar (demora ou queda de conexão), a janela não conclui q
 - `src/features/fiscal/NotasFiscaisPage.tsx`
 - `src/features/nfse/services/nfse-financeiro.service.ts`
 - `src/lib/fiscal/pagador-do-pedido.ts`
+- `src/features/nfse/lib/percentual-simples.ts`
+- `src/features/nfse/services/percentual-simples.server.ts`
+- `src/features/configuracoes/PercentualSimplesPage.tsx`
+- `src/app/(erp)/configuracoes/empresas/page.tsx`
+- `src/app/api/configuracoes/percentual-simples/route.ts`

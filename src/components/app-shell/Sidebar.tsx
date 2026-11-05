@@ -106,7 +106,9 @@ export function Sidebar({ isCollapsed, onToggleCollapse }: SidebarProps) {
             user?.isSuperAdmin ||
             user?.isAdmin ||
             hasPermissao(user, "admin.usuarios.view") ||
-            hasPermissao(user, "admin.usuarios.edit");
+            hasPermissao(user, "admin.usuarios.edit") ||
+            // NFS-e: percentual do Simples em Configuracoes > Empresas (05/11/2026)
+            hasPermissao(user, "fiscal.emit_nfse");
 
           return navigationItems.map((item) => {
             if (item.href === "/configuracoes" && !canViewConfig) {

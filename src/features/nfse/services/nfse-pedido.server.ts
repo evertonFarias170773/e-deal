@@ -23,6 +23,8 @@ import {
 import { idDoPagadorDoPedido } from "@/lib/fiscal/pagador-do-pedido";
 import { escolherEnderecoPrincipal } from "@/lib/fiscal/endereco-principal";
 import { motivoSemEnderecoDoTomador } from "@/features/nfse/lib/composicao-nfse";
+import type { PercentualVigente } from "@/features/nfse/lib/percentual-simples";
+import { lerPercentualSimplesVigente } from "@/features/nfse/services/percentual-simples.server";
 
 /**
  * NFS-e pela Fila — o que as rotas `/api/fiscal/rascunho-nfse` e
@@ -146,6 +148,12 @@ export type ContextoNfseDoPedido = {
    * denegada; remessa não conta (mesma régua da Fila de Faturamento).
    */
   nfeDeVendaComFrete: { ref: string; status: string; valorFrete: number } | null;
+  /**
+   * Lei 12.741 (05/11/2026): o percentual do Simples da empresa no mês de hoje
+   * (horário de Brasília). Sem ele a janela avisa e não deixa emitir; a rota de
+   * emissão confere de novo, no mês da emissão.
+   */
+  percentualSimples: PercentualVigente;
   descricaoSugerida: string;
   /**
    * O desconto do pedido, para a descricao mostrar "Desconto tabela especial
@@ -409,7 +417,10 @@ export async function lerContextoNfseDoPedido(
     pagoEm: texto(c.paid_at) || null
   }));
 
-  const servicos = await lerServicosNfse(servico);
+  const [servicos, percentualSimples] = await Promise.all([
+    lerServicosNfse(servico),
+    lerPercentualSimplesVigente(supabase, idEmpresa)
+  ]);
 
   const descontos = (descontosRes.error ? [] : descontosRes.data ?? []) as Record<string, unknown>[];
   const tabela = descontos.find((d) => texto(d.tipo_desconto).toUpperCase() === "TABELA_ESPECIAL");
@@ -457,6 +468,7 @@ export async function lerContextoNfseDoPedido(
       enderecoDoTomador,
       motivoSemEndereco,
       nfeDeVendaComFrete,
+      percentualSimples,
       descricaoSugerida: descricaoDosItens(idInt, itens, {
         fator: fatorDoDesconto(Number(proposta.valor) || 0, itens.reduce((soma, item) => soma + (Number(item.subtotal) || 0), 0)),
         ...descontoDoPedido

@@ -18,7 +18,10 @@
  *        - empresa 2 em homologação passa como antes;
  *        - empresa 2 em produção passa (não há mais `AMBIENTE_SEM_CAMINHO`);
  *        - ambiente vazio ou desconhecido é recusado;
- *        - o corpo mandado ao n8n não leva o ambiente.
+ *        - o corpo mandado ao n8n não leva o ambiente;
+ *        - (05/11/2026) leva o percentual do Simples do mês da emissão
+ *          ("15.20"); sem percentual cadastrado, ou com a leitura falhando, a
+ *          rota recusa antes da reserva e não chama o webhook.
  */
 import { registerHooks } from "node:module";
 import { pathToFileURL, fileURLToPath } from "node:url";
@@ -39,6 +42,8 @@ const { falso } = await import("./_supabase-falso.mts");
 const { POST: cancelar } = await import("../../src/app/api/fiscal/cancelar-nfe/route.ts");
 const { POST: emitir } = await import("../../src/app/api/fiscal/emitir-nfse/route.ts");
 const { EMPRESAS_NFSE_LIBERADAS } = await import("../../src/features/nfse/lib/regras-emissao.ts");
+const { competenciaDaData } = await import("../../src/features/nfse/lib/percentual-simples.ts");
+const MES_ATUAL = competenciaDaData(new Date());
 
 let falhas = 0;
 function checar(nome: string, obtido: unknown, esperado: unknown) {
@@ -140,8 +145,12 @@ falso.responder("notas_fiscais:select", { data: { id: "nfe-2", ref: "NFE-12345-0
 
 checar("emitir: a lista de empresas e a de sempre", EMPRESAS_NFSE_LIBERADAS, [2]);
 
-async function emitirCom(idEmpresa: number | null, ambiente: string | null) {
+type Percentual = { data: unknown; error: { message: string } | null };
+const PERCENTUAL_DO_MES: Percentual = { data: [{ competencia: MES_ATUAL, percentual: "15.20" }], error: null };
+
+async function emitirCom(idEmpresa: number | null, ambiente: string | null, percentual: Percentual = PERCENTUAL_DO_MES) {
   preparar();
+  falso.responder("empresas_percentual_simples:select", percentual);
   falso.responder("notas_servico:select", {
     data: { id: "nfs-9", ref: "NFS-88888-001", status: "PENDENTE", numero_nfse: null, codigo_verificacao: null, tentativas_envio: 0, id_empresa: idEmpresa, payload_retorno: null },
     error: null
@@ -165,9 +174,20 @@ for (const ambiente of ["homologacao", "producao"]) {
   checar(`emitir empresa 2 em ${ambiente}: reserva pela funcao do banco, com o que foi lido`, falso.chamadas.filter((c) => c.tabela.startsWith("rpc:")).map((c) => [c.tabela, c.payload]), [
     ["rpc:fn_reservar_emissao_nfse", { p_id: "nfs-9", p_status_lido: "PENDENTE", p_tentativas_lidas: 0 }]
   ]);
-  checar(`emitir empresa 2 em ${ambiente}: um webhook, o de sempre, sem o ambiente no corpo`, saidas, [
-    { url: "https://10074.hostoo.net.br/webhook/emitir-nfse-focus", metodo: "POST", corpo: { ref: "NFS-88888-001", supabase_url: "https://exemplo.supabase.co" } }
+  checar(`emitir empresa 2 em ${ambiente}: um webhook, sem o ambiente, com o percentual do mes`, saidas, [
+    {
+      url: "https://10074.hostoo.net.br/webhook/emitir-nfse-focus",
+      metodo: "POST",
+      corpo: {
+        ref: "NFS-88888-001",
+        supabase_url: "https://exemplo.supabase.co",
+        percentual_total_tributos_simples_nacional: "15.20",
+        competencia_percentual_simples: `${MES_ATUAL.slice(5, 7)}/${MES_ATUAL.slice(0, 4)}`
+      }
+    }
   ]);
+  const leitura = falso.chamadas.find((c) => c.tabela === "empresas_percentual_simples");
+  checar(`emitir empresa 2 em ${ambiente}: le o percentual da empresa 2 no mes atual`, leitura?.filtros, [["eq", ["id_empresa", 2]], ["eq", ["competencia", MES_ATUAL]]]);
   checar(`emitir empresa 2 em ${ambiente}: a rota nao escreve direto em tabela`, escritas(), []);
 }
 
@@ -180,6 +200,16 @@ for (const ambiente of ["", "teste", "PRODUCAO-X", null]) {
 {
   const { status, corpo } = await emitirCom(2, "Producao ");
   checar("emitir empresa 2 com ambiente em outra caixa e com espaco: normalizado, passa", [status, corpo.success], [200, true]);
+}
+
+for (const [rotulo, percentual] of [
+  ["sem linha do mes", { data: [], error: null }],
+  ["so o mes anterior", { data: [{ competencia: "2000-01-01", percentual: 15.2 }], error: null }],
+  ["leitura falhou", { data: null, error: { message: "permission denied" } }]
+] as [string, Percentual][]) {
+  const { status, corpo } = await emitirCom(2, "producao", percentual);
+  checar(`emitir empresa 2, ${rotulo}: PERCENTUAL_SIMPLES_NAO_CADASTRADO`, [status, corpo.success, corpo.code], [422, false, "PERCENTUAL_SIMPLES_NAO_CADASTRADO"]);
+  checar(`emitir empresa 2, ${rotulo}: sem reserva, sem webhook, sem escrita`, [rpcs(), saidas, escritas()], [[], [], []]);
 }
 
 console.log(falhas === 0 ? "\nTUDO OK" : `\n${falhas} FALHA(S)`);
