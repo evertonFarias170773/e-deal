@@ -46,8 +46,11 @@ function getValorCobranca(cobranca: Cobranca) {
 
 function renderShortUrl(url: string | undefined, token: string | undefined) {
   if (!url) return "-";
-  if (token && url.includes(token)) {
-    return `pay.ai-ideal.com.br/i/${token}`;
+  // Mostrava `pay.ai-ideal.com.br/i/{token}`, caminho que nao existe: quem
+  // copiava o texto mandava ao cliente um link que dava 404. Agora mostra o
+  // link verdadeiro sem o protocolo (o campo corta com reticencias e tem title).
+  if (token && url.includes(token) && /^https?:\/\//.test(url)) {
+    return url.replace(/^https?:\/\//, "");
   }
   try {
     const parsed = new URL(url);

@@ -1,6 +1,6 @@
 import type { Cobranca, CobrancaHistoricoEvento } from "@/features/cobrancas/types";
 import type { SupabasePagamentoV2Row } from "@/features/cobrancas/types.supabase";
-import { getTipoCobrancaLabel, normalizeCobrancaStatus } from "@/features/cobrancas/cobrancas-utils";
+import { getTipoCobrancaLabel, montarUrlPublicaCobranca, normalizeCobrancaStatus } from "@/features/cobrancas/cobrancas-utils";
 
 function toText(value: unknown) {
   if (value === null || value === undefined) {
@@ -144,6 +144,13 @@ function resolveUrlPublica(row: SupabasePagamentoV2Row, tokenPublico: string) {
   }
 
   if (tokenPublico) {
+    // Link nulo com token (PIX do pagamento combinado ate 05/11/2026): a pagina
+    // publica acha a cobranca pelo token, entao o link certo sai daqui sem
+    // regravar a linha. Tipos sem checkout (E-CREDITO, faturado) seguem iguais.
+    const publica = montarUrlPublicaCobranca({ tipoCobranca: toText(row.tipo_cobranca), tokenPublico });
+    if (publica) {
+      return publica;
+    }
     return `/pagamento/${tokenPublico}`;
   }
 

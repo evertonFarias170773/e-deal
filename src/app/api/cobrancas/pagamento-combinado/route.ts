@@ -431,6 +431,7 @@ export async function POST(request: NextRequest) {
     // boleto/cartão o recebiam, e agora a linha é a fonte da identidade: sem
     // documento, o retry automático do PIX (/api/cobrancas/gerar-pix) não teria
     // de onde ler o pagador e recusaria a emissão.
+    const tokenPublicoInicial = crypto.randomBytes(16).toString("hex");
     const payloadSecundaria = {
       id_int: idInt,
       id_cliente: pagador.idCliente,
@@ -445,7 +446,14 @@ export async function POST(request: NextRequest) {
       id_empresa: idEmpresaReal,
       atendente: atendente || user.nome,
       vencimento: vencimento || new Date().toISOString().split("T")[0],
-      token_publico: crypto.randomBytes(16).toString("hex"),
+      token_publico: tokenPublicoInicial,
+      // PIX: link da pagina publica pelo proprio token, como no PIX normal.
+      // Antes ficava nulo e a tela mostrava `pay.ai-ideal.com.br/i/{token}`,
+      // caminho que nao existe (24806-B, 05/11/2026). Boleto e cartao trocam
+      // token e link logo abaixo; faturado fica nulo.
+      url_cobranca: (tipoSecundario === "PIX" || tipoSecundario === "E-PIX")
+        ? montarUrlPublicaCobranca({ tipoCobranca: tipoSecundario, tokenPublico: tokenPublicoInicial })
+        : null,
       forma_pgto: forma_pgto,
       forma_fatu: forma_fatu,
       // Condicao de pagamento por id, so quando o secundario e faturado. Os

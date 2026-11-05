@@ -112,7 +112,7 @@ Os boletos das parcelas não nascem aqui: depois que a Conferência confirma o f
 2. Escolha **E-Crédito**. O quadro **Campos do E-Crédito** mostra **Saldo de Crédito** e **Saldo Restante OS**.
 3. Em **Valor da cobrança \***, informe quanto do crédito usar. Não pode passar do saldo de crédito nem do saldo da proposta.
 4. Se o crédito cobre tudo, a tela mostra **Pagamento integral com E-Crédito**. Clique em **Gerar cobrança**. O botão fica habilitado sempre que o **Saldo de Crédito** é maior ou igual ao valor da cobrança, conferido ao centavo (R$ 791,99 cobre R$ 790,99), e o valor não passa do **Saldo Restante OS**.
-5. Se o crédito cobre só uma parte, a tela mostra **Cobrança Parcial (Pagamento Combinado)**. Escolha a **Forma de Pagamento Secundária \*** (PIX, Boleto, Cartão de Crédito ou E-Faturado). Em E-Faturado, escolha também a **Condição Secundária \***. Clique em **Gerar cobrança**: as duas cobranças nascem juntas.
+5. Se o crédito cobre só uma parte, a tela mostra **Cobrança Parcial (Pagamento Combinado)**. Escolha a **Forma de Pagamento Secundária \*** (PIX, Boleto, Cartão de Crédito ou E-Faturado). Em E-Faturado, escolha também a **Condição Secundária \***. Clique em **Gerar cobrança**: as duas cobranças nascem juntas. A cobrança do restante em PIX tem link de pagamento próprio, igual ao de um PIX comum, com QR e código para copiar.
 
 O crédito é debitado do saldo do cliente na hora. A cobrança de E-Crédito nasce paga, mas ainda passa pela Conferência para ser confirmada.
 
