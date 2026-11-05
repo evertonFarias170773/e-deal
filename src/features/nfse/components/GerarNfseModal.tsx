@@ -74,7 +74,7 @@ import {
   opcoesDeEndereco,
   pagamentosParaConferencia,
   tamanhoDasInformacoesComplementares,
-  descricaoComPagamento,
+  descricaoDaNfse,
   mostraLinhaDeServicos,
   rotuloDosItensMarcados,
   seloDoCabecalho,
@@ -310,8 +310,8 @@ export function GerarNfseModal({
     const sugerido = valorSugeridoComFrete(lido.itens, todos, lido.valorDosProdutos, lido.freteDoPedido);
     setMarcados(todos);
     setValorTexto(sugerido > 0 ? sugerido.toFixed(2).replace(".", ",") : "");
-    // A condição de pagamento vai na descrição (04/11/2026); as complementares nascem vazias.
-    setDescricao(descricaoComPagamento(descricaoDosItens(lido.idInt, lido.itens, descontoParaDescricao(lido)), lido.cobrancas, freteQueEntraNaNota(lido.itens, todos, lido.freteDoPedido)));
+    // Descrição: itens e frete, sem pagamento nem natureza (05/11/2026); as complementares nascem vazias.
+    setDescricao(descricaoDaNfse(descricaoDosItens(lido.idInt, lido.itens, descontoParaDescricao(lido)), freteQueEntraNaNota(lido.itens, todos, lido.freteDoPedido)));
     setInfComp("");
     setValorMexido(false);
     setDescricaoMexida(false);
@@ -354,9 +354,8 @@ export function GerarNfseModal({
     }
     if (!descricaoMexida) {
       setDescricao(
-        descricaoComPagamento(
+        descricaoDaNfse(
           descricaoDosItens(contexto.idInt, contexto.itens.filter((item) => novo.has(item.id)), descontoParaDescricao(contexto)),
-          contexto.cobrancas,
           freteQueEntraNaNota(contexto.itens, novo, contexto.freteDoPedido)
         )
       );
@@ -1045,7 +1044,7 @@ export function GerarNfseModal({
                                 className="underline"
                                 onClick={() => {
                                   setDescricaoMexida(false);
-                                  setDescricao(descricaoComPagamento(descricaoDosItens(contexto.idInt, contexto.itens.filter((item) => marcados.has(item.id)), descontoParaDescricao(contexto)), contexto.cobrancas, freteNaNota));
+                                  setDescricao(descricaoDaNfse(descricaoDosItens(contexto.idInt, contexto.itens.filter((item) => marcados.has(item.id)), descontoParaDescricao(contexto)), freteNaNota));
                                 }}
                               >
                                 Refazer a partir dos itens

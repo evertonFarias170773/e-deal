@@ -360,30 +360,22 @@ function fraseDaCobranca(c: CobrancaDoPedido): string {
 }
 
 /**
- * O texto que a janela PROPÕE para as informações complementares: a condição
- * de pagamento do pedido, uma cobrança ativa por linha. Sem cobrança ativa, o
- * campo vem vazio. Quem emite pode editar antes de criar o rascunho.
+ * A condição de pagamento do pedido, uma cobrança ativa por linha. Sem cobrança
+ * ativa, vazio. Desde 05/11/2026 a janela não a põe na nota (nem na descrição
+ * nem nas complementares); fica como regra pronta, com os seus testes.
  */
 export function textoDoPagamentoParaNota(cobrancas: readonly CobrancaDoPedido[]): string {
   return cobrancas.filter(cobrancaAtiva).map(fraseDaCobranca).join("\n");
 }
 
 /**
- * A descrição que a janela PROPÕE (04/11/2026, pedido do financeiro, nota do 24623):
- * as linhas dos itens e, embaixo, a condição de pagamento. A frase saiu das
- * informações complementares, que passam a vir vazias, para não sair duas vezes
- * na nota. Sem cobrança ativa, fica sem a linha do pagamento.
- *
- * Entre os itens e o pagamento vai a linha fixa da natureza da operação
- * (04/11/2026, pedido da Edina: a natureza tem de sair IMPRESSA na nota). Todas
- * as NFS-e do Vibe usam o serviço 13.05.01 (subitem 13.05), por isso o texto é
- * fixo. Fica editável na janela como o resto da descrição.
+ * A descrição que a janela PROPÕE: as linhas dos itens e, na nota integral, a
+ * linha do frete. Termina aí (05/11/2026, decisão do financeiro): a frase do
+ * pagamento e a linha da natureza da operação, que entraram em 04/11, saíram da
+ * descrição. As informações complementares seguem vazias.
  */
-export const LINHA_NATUREZA_NFSE = "Natureza da operação: Tributação no município (Subitem 13.05 - Composição gráfica)";
-
-export function descricaoComPagamento(descricaoDosItens: string, cobrancas: readonly CobrancaDoPedido[], freteNaNota = 0): string {
-  const pagamento = textoDoPagamentoParaNota(cobrancas);
-  return [descricaoDosItens.trim(), linhaDoFrete(freteNaNota), LINHA_NATUREZA_NFSE, pagamento].filter(Boolean).join("\n");
+export function descricaoDaNfse(descricaoDosItens: string, freteNaNota = 0): string {
+  return [descricaoDosItens.trim(), linhaDoFrete(freteNaNota)].filter(Boolean).join("\n");
 }
 
 /* ------------------------------------------------------------------- frete */
