@@ -317,6 +317,7 @@ export function CobrancaActionsMenu({ cobranca, label }: CobrancaActionsMenuProp
         isCobrancaPaga={isCobrancaPaga}
         mesFechadoLabel={getMesFechadoLabel(cobranca)}
         tipoCobranca={cobranca.tipo_cobranca}
+        cobranca={cobranca}
       />
       <AutorizarFaturamentoModal
         isOpen={isAutorizarModalOpen}

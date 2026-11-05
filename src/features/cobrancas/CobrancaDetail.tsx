@@ -4,6 +4,9 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { CancelCobrancaModal } from "./CancelCobrancaModal";
+import { TrocarFormaPagamentoModal } from "./TrocarFormaPagamentoModal";
+import { cobrancaAceitaTroca } from "@/features/cobrancas/troca-forma-pagamento";
+import { hasPermissao } from "@/features/auth/usuarios.service";
 import { ArrowLeft } from "lucide-react";
 import { useAppToast } from "@/components/common/AppToast";
 import { useAuth } from "@/features/auth/AuthProvider";
@@ -74,6 +77,7 @@ export function CobrancaDetail({ cobrancaId, onClose, onRefreshProposta }: Cobra
   const { user } = useAuth();
   const { getCobrancaById, cancelCobranca, getCobrancasByProposta, liberarParaPedido, source, refreshCobrancas } = useCobrancas();
   const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
+  const [isTrocaModalOpen, setIsTrocaModalOpen] = useState(false);
   const [baixandoPdf, setBaixandoPdf] = useState(false);
   const cobranca = getCobrancaById(cobrancaId) as NonNullable<ReturnType<typeof getCobrancaById>>;
 
@@ -447,6 +451,23 @@ export function CobrancaDetail({ cobrancaId, onClose, onRefreshProposta }: Cobra
               >
                 Cancelar cobrança
               </button>
+
+              {/* Trocar forma de pagamento: PIX não pago do C6 -> Faturado.
+                  Mesma permissão do cancelamento de cobrança não paga; o resto
+                  (nota, produção, escopo) o servidor confere ao abrir. */}
+              {cobrancaAceitaTroca(cobrancaAtual) &&
+              (user?.isSuperAdmin ||
+                user?.isAdmin ||
+                hasPermissao(user, "cobrancas.cancel") ||
+                hasPermissao(user, "propostas.cancelar_cobranca_nao_paga")) ? (
+                <button
+                  type="button"
+                  onClick={() => setIsTrocaModalOpen(true)}
+                  className="w-full rounded-xl border border-teal-200 bg-teal-50 py-2 px-3 text-[#0b7774] hover:bg-teal-100 transition font-semibold text-center"
+                >
+                  Trocar forma de pagamento
+                </button>
+              ) : null}
               
             </div>
           </div>
@@ -459,11 +480,22 @@ export function CobrancaDetail({ cobrancaId, onClose, onRefreshProposta }: Cobra
         isCobrancaPaga={isCobrancaPaga}
         mesFechadoLabel={mesFechadoLabel}
         tipoCobranca={cobrancaAtual.tipo_cobranca}
+        cobranca={cobrancaAtual}
         onSuccess={() => {
           onClose?.();
           onRefreshProposta?.();
         }}
       />
+      {isTrocaModalOpen ? (
+        <TrocarFormaPagamentoModal
+          cobrancaId={cobrancaAtual.id}
+          onClose={() => setIsTrocaModalOpen(false)}
+          onSuccess={() => {
+            onClose?.();
+            onRefreshProposta?.();
+          }}
+        />
+      ) : null}
     </div>
   );
 }

@@ -3230,6 +3230,8 @@ function CobrancasDaPropostaList({ cobrancas, onSelectCobranca, onRefreshPropost
           // sem cancelamento de cobrança paga por aqui.
           isCobrancaPaga={false}
           mesFechadoLabel={null}
+          tipoCobranca={cobrancaParaExcluir.tipo_cobranca}
+          cobranca={cobrancaParaExcluir}
           onSuccess={() => {
             setCobrancaParaExcluir(null);
             onRefreshProposta?.();

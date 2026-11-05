@@ -13,6 +13,8 @@ import {
   type DestinoValorCancelado,
   type MotivoCancelamentoPago
 } from "@/features/cobrancas/cancelamento-pago";
+import { cobrancaAceitaTroca, type CobrancaParaTroca } from "@/features/cobrancas/troca-forma-pagamento";
+import { TrocarFormaPagamentoModal } from "@/features/cobrancas/TrocarFormaPagamentoModal";
 
 interface CancelCobrancaModalProps {
   isOpen: boolean;
@@ -29,6 +31,13 @@ interface CancelCobrancaModalProps {
    * o comportamento de sempre para todo o resto.
    */
   tipoCobranca?: string | null;
+  /**
+   * Tipo, empresa e situação da cobrança. Quando o cancelamento é barrado por
+   * nota autorizada e a cobrança aceita a troca (PIX não pago do C6), a recusa
+   * oferece "Trocar forma de pagamento". Opcional: sem ele, a recusa fica como
+   * sempre foi.
+   */
+  cobranca?: CobrancaParaTroca | null;
 }
 
 // Dois modos de proposito: cobranca NAO paga segue com motivo livre (fluxo de
@@ -81,8 +90,10 @@ export function CancelCobrancaModal({
   onSuccess,
   isCobrancaPaga,
   mesFechadoLabel,
-  tipoCobranca
+  tipoCobranca,
+  cobranca
 }: CancelCobrancaModalProps) {
+  const [trocando, setTrocando] = useState(false);
   const { cancelCobranca } = useCobrancas();
   const { showToast } = useAppToast();
   const router = useRouter();
@@ -174,6 +185,23 @@ export function CancelCobrancaModal({
   }, [isOpen]);
 
   if (!isOpen) return null;
+
+  if (trocando) {
+    return (
+      <TrocarFormaPagamentoModal
+        cobrancaId={cobrancaId}
+        onClose={() => {
+          setTrocando(false);
+          onClose();
+        }}
+        onSuccess={() => onSuccess?.()}
+      />
+    );
+  }
+
+  // Nota autorizada não barra a troca: só aqui a recusa oferece trocar.
+  const ofereceTroca =
+    veredito?.code === "NOTA_AUTORIZADA" && Boolean(cobranca) && cobrancaAceitaTroca(cobranca as CobrancaParaTroca);
 
   // Trocar o motivo já pré-marca o destino sugerido pelo catálogo; o usuário
   // ainda pode escolher outro destino manualmente depois.
@@ -349,15 +377,32 @@ export function CancelCobrancaModal({
                   </ul>
                 ) : null}
 
-                {veredito.acao && ACOES[veredito.acao]?.destino ? (
-                  <button
-                    type="button"
-                    onClick={() => router.push(ACOES[veredito.acao as string].destino as string)}
-                    className="mt-3 rounded-2xl border border-amber-300 bg-white px-4 py-2 text-xs font-semibold text-amber-900 transition hover:bg-amber-100"
-                  >
-                    {ACOES[veredito.acao as string].rotulo}
-                  </button>
+                {ofereceTroca ? (
+                  <p className="mt-2 leading-relaxed">
+                    Se o cliente vai pagar de outra forma, troque a forma de pagamento: a nota continua como está.
+                  </p>
                 ) : null}
+
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {ofereceTroca ? (
+                    <button
+                      type="button"
+                      onClick={() => setTrocando(true)}
+                      className="rounded-2xl bg-[#0b7774] px-4 py-2 text-xs font-semibold text-white transition hover:bg-[#095f5d]"
+                    >
+                      Trocar forma de pagamento
+                    </button>
+                  ) : null}
+                  {veredito.acao && ACOES[veredito.acao]?.destino ? (
+                    <button
+                      type="button"
+                      onClick={() => router.push(ACOES[veredito.acao as string].destino as string)}
+                      className="rounded-2xl border border-amber-300 bg-white px-4 py-2 text-xs font-semibold text-amber-900 transition hover:bg-amber-100"
+                    >
+                      {ACOES[veredito.acao as string].rotulo}
+                    </button>
+                  ) : null}
+                </div>
               </div>
             </div>
           ) : (
