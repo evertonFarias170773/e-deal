@@ -428,6 +428,7 @@ export function ModeloCampos({
   onPaste,
   onEnterQtd,
   numeracaoInicioTravada = null,
+  coresJaUsadas,
 }: {
   modelo: ModeloCamposValores;
   coresOpcoes: CorDoPapelOpcao[];
@@ -461,6 +462,11 @@ export function ModeloCampos({
   onEnterQtd?: () => void;
   /** Motivo para o Nº Inicial ficar somente leitura, ou null. */
   numeracaoInicioTravada?: string | null;
+  /**
+   * Cores que outros lotes do produto com o mesmo Modelo já usam
+   * (lib/cores-usadas-no-modelo): somem da lista, menos a cor deste lote.
+   */
+  coresJaUsadas?: ReadonlySet<string>;
 }) {
   const mostraCor = mostraCampo(visivel, "cor");
   const mostraFaixa = mostraCampo(visivel, "numeracao_faixa");
@@ -483,8 +489,12 @@ export function ModeloCampos({
 
   const hasConfig = Boolean(itemIdFormato);
 
+  const corDoLote = modelo.padrao?.trim() || null;
   const filteredCores = hasConfig ? coresOpcoes.filter((c) => {
-    return String(c.formato_id) === String(itemIdFormato);
+    if (String(c.formato_id) !== String(itemIdFormato)) return false;
+    // Cor já usada em outro lote do mesmo Modelo some; a deste lote fica.
+    const nome = String(c.name ?? "").trim();
+    return !coresJaUsadas?.has(nome) || nome === corDoLote;
   }) : [];
 
   // O asterisco só existe quando há cor para escolher (lib/checklist-lote).

@@ -1,6 +1,6 @@
 # Proposta: aba Pedido (Boletim Técnico & Lotes)
 
-> **Última revisão:** 02/11/2026
+> **Última revisão:** 05/11/2026
 > **Caminho no menu:** Pedidos → abrir um pedido → Editar proposta → aba Pedido
 > **Endereço:** `/orcamentos/[número]/editar?tab=pedido`
 
@@ -60,7 +60,7 @@ As colunas dependem do produto: campo que o produto não usa não aparece.
 1. **Modelo**: o nome do modelo (exemplo da tela: "Talão"). Dentro do campo aparece o número do modelo ("#1001304") ou "novo", quando a linha ainda não foi gravada.
 2. **Qtd \***: a quantidade daquele modelo. Apertar Enter neste campo cria a próxima linha.
 3. **Nº Inicial** e **Nº Final**: a faixa de numeração. O Nº Final é sempre calculado. O Nº Inicial só pode ser digitado quando nenhuma das duas caixas da faixa **Numeração** está marcada.
-4. **Cor papel \***: escolha na lista. Só aparecem as cores do formato do produto. Em produto sem formato, ou com formato sem cores, o campo aparece como **Cor papel**, sem asterisco, fica apagado e não precisa ser preenchido.
+4. **Cor papel \***: escolha na lista. Só aparecem as cores do formato do produto, menos as que outro modelo do mesmo produto com o mesmo nome já usa. Em produto sem formato, ou com formato sem cores, o campo aparece como **Cor papel**, sem asterisco, fica apagado e não precisa ser preenchido.
 5. **Bloco**: Nenhum, 10, 15, 20, 25, 40, 50, 75, 100 ou **Outro** (que abre um campo para digitar, exemplo "50x2").
 6. **Verso**: SÓ FRENTE, FRENTE E VERSO, VERSO FIXO ou VERSO VARIÁVEL. O valor escolhido é gravado como está e pode ser trocado depois, com ou sem numeração ligada ao modelo.
 7. **Numerador**: escolha na lista. Numerador exclusivo de um cliente só aparece em pedido daquele cliente.
@@ -196,6 +196,7 @@ O PDF é sempre o do mapa como está hoje no sistema de mapas. Quem publica o PD
 - Campo que o produto não usa não aparece e não recebe valor em modelo novo. Em modelo que já existe, o valor guardado nesse campo fica como está.
 - Produto de prateleira mostra só **Qtd** e **Cor papel**. O nome do modelo é o nome do produto, e não há coluna **Arte** nem amostra.
 - A **Cor papel** só é obrigatória quando há cor para escolher: o produto tem formato e esse formato tem cores. Produto sem formato, ou com formato sem cores (os serviços, por exemplo), grava o modelo só com a quantidade, e a cor fica vazia.
+- Dentro do mesmo produto, dois modelos com o mesmo nome não levam a mesma cor: a lista **Cor papel** de cada modelo esconde as cores que os outros modelos com esse nome já usam. Ao trocar ou apagar a cor de um modelo, ela volta a aparecer nos outros. Modelos de nomes diferentes podem repetir a cor (por exemplo, "AFTER" e "LOUNGE", os dois em Branca). Na prateleira, o nome é o do produto, então a cor não se repete. Pedido antigo que já tem cor repetida abre e grava como antes.
 - O Nº Final nunca é digitado. Ele é refeito sempre que a quantidade, o Nº Inicial ou o numerador mudam.
 - Ao gravar, o sistema refaz a conta do Nº Final pelo cadastro do numerador (Nº Inicial + Qtd × números por unidade − 1) e recusa a gravação inteira se o número for outro. Só confere o modelo novo ou aquele em que a Qtd, o Nº Inicial ou o numerador mudaram; modelo antigo em que ninguém mexeu grava como está.
 - Enquanto a lista de numeradores carrega, ou quando o numerador do modelo não está nela, a linha nova ou alterada fica sem Nº Final e não é gravada. **Gravar lote** e **Salvar alterações** avisam o motivo. Quando a lista chega, o Nº Final é calculado.

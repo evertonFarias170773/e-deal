@@ -92,6 +92,7 @@ import { useAppToast } from "@/components/common/AppToast";
 import { StatusBadge } from "@/components/common/StatusBadge";
 import { fetchComSessao, SessaoExpiradaError } from "@/lib/supabase/sessao";
 import { interpretarColagem, somaQuantidades, type CorOpcao } from "@/features/orcamentos/services/lotes-colagem";
+import { coresUsadasNoMesmoModelo } from "@/features/orcamentos/lib/cores-usadas-no-modelo";
 import {
   avisoDoFimDivergente,
   derivarCamposNumeracao,
@@ -1310,6 +1311,12 @@ export function LotesGrid({
                   simplificado={simplificado}
                   visivel={visivel}
                   itemPrateleira={itemPrateleira}
+                  coresJaUsadas={coresUsadasNoMesmoModelo(
+                    nomeDoLote(linha),
+                    linhasNumeradas
+                      .filter((_, i) => i !== indice)
+                      .map((l) => ({ nome_modelo: nomeDoLote(l), padrao: l.padrao }))
+                  )}
                   modo="lista"
                   identificador={linha.id ? `#${linha.id}` : "novo"}
                   onChange={(partial, imediato) => alterar(indice, partial, imediato)}
