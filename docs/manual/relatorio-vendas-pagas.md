@@ -1,6 +1,6 @@
 # Relatório: Vendas
 
-> **Última revisão:** 24/10/2026
+> **Última revisão:** 04/11/2026
 > **Caminho no menu:** Relatórios → Vendas → Vendas
 > **Endereço:** `/relatorios/vendas/vendas-pagas`
 
@@ -54,6 +54,7 @@ Os filtros ficam no endereço da página: copiar o link leva quem receber ao mes
 
 - **A data usada é a data de fechamento do pedido**, e isso aparece escrito no alto da tela, junto com o valor que está ativo (**Valor mostrado: sem frete** ou **com frete**). A venda entra no período pelo dia em que o pedido foi fechado (a data da confirmação), no horário de São Paulo. É a mesma data do Dashboard. Os totais batem com o Dashboard no mesmo período e empresa quando o valor é **Com frete**.
 - Entram as vendas **pagas** e as **faturadas a vencer já confirmadas**. A coluna **Situação** mostra **Pago**, **Faturado a vencer** ou **Pago e faturado a vencer** (quando a mesma proposta tem os dois no período).
+- **Vendedor** é quem lançou o pagamento. O pagamento feito pelo cliente na **área do cliente** conta para o vendedor dono da proposta: aparece com o nome dele e entra quando se filtra por ele. Se a proposta tiver pagamentos lançados por vendedores diferentes, a linha mostra os dois nomes, e cada um, no filtro, entra com os pagamentos que lançou.
 - Uma proposta aparece uma vez no período. Se tiver fechamentos em dias diferentes, as duas datas (**1º fechamento** e **Último fechamento**) aparecem na linha.
 - Ficam de fora: vendas de teste, amostra e retrabalho, cobranças canceladas e pagamentos sem data de confirmação (hoje só os faturados de abril e maio de 2026). Esses últimos também não aparecem no Dashboard.
 - Os totais e a linha **Total** vêm calculados pelo sistema, não somados na tela; por isso batem com a lista toda, mesmo depois de ordenar.
@@ -75,6 +76,8 @@ Os filtros ficam no endereço da página: copiar o link leva quem receber ao mes
 | Sem permissão para este relatório. | A permissão foi retirada com a tela aberta | Entrar de novo; se persistir, falar com um administrador. |
 | Período máximo de 366 dias. | O período personalizado passou de um ano | Escolher um período menor. |
 | Não foi possível gerar o relatório. | Falha ao consultar o banco | Tentar de novo; se repetir, avisar o suporte. |
+
+> **Mudança desta revisão:** 04/11/2026 — o pagamento feito pela área do cliente passou a contar para o vendedor dono da proposta, na coluna **Vendedor** e no filtro **Vendedor**; "Area do cliente" não aparece mais como vendedor. Os totais do período não mudam.
 
 ## Veja também
 

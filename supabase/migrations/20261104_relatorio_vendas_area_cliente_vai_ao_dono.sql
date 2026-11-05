@@ -29,6 +29,8 @@
 --   lancado pela Edina, que pela regra de hoje fica com ela).
 --
 -- TRAVA: so aplica se o corpo vivo das duas tiver os trechos substituidos.
+-- APLICADA em 04/11/2026 (autorizacao nominal do dono). Corpo vivo conferido antes: igual aos
+-- arquivos de 24/10 sem os comentarios. Depois: outubro/2026 bateu com a simulacao, 8 de 8.
 
 do $$
 declare
