@@ -1,6 +1,6 @@
 # Relatório: Vendas por cidade
 
-> **Última revisão:** 24/10/2026
+> **Última revisão:** 05/11/2026
 > **Caminho no menu:** Relatórios → Vendas → Vendas por cidade
 > **Endereço:** `/relatorios/vendas/vendas-por-cidade`
 
@@ -50,6 +50,7 @@ Os filtros ficam no endereço da página: copiar o link leva quem receber ao mes
 
 ## Regras e bloqueios
 
+- **Filtro Vendedor**: conta a venda das propostas do vendedor dono, qualquer que seja quem lançou o pagamento (o vendedor, a Edina, o financeiro ou o cliente pela área do cliente). É a mesma regra do relatório [Vendas](relatorio-vendas-pagas.md), então o valor de um vendedor bate entre as duas telas. Sem filtro, nada muda.
 - **A data usada é a data de fechamento do pedido**, escrita no alto da tela, junto com o valor que está ativo (**Valor mostrado: sem frete** ou **com frete**). A venda entra pelo dia em que o pedido foi fechado, seja paga ou faturada a vencer já confirmada: é a mesma regra do relatório [Vendas](relatorio-vendas-pagas.md) e do Dashboard.
 - Ficam de fora vendas de teste, amostra e retrabalho, cobranças canceladas e pagamentos sem data de confirmação (hoje só os faturados de abril e maio de 2026).
 - **A cidade é a do cadastro do cliente.** Se o cliente não tem cidade no cadastro, vale a do endereço de entrega do pedido. Se nenhuma existir, a venda aparece na linha **SEM CIDADE INFORMADA**; nenhuma venda sai do total.
@@ -72,6 +73,8 @@ Os filtros ficam no endereço da página: copiar o link leva quem receber ao mes
 | Sem permissão para este relatório. | A permissão foi retirada com a tela aberta | Entrar de novo; se persistir, falar com um administrador. |
 | Período máximo de 366 dias. | O período personalizado passou de um ano | Escolher um período menor. |
 | Não foi possível gerar o relatório. | Falha ao consultar o banco | Tentar de novo; se repetir, avisar o suporte. |
+
+> **Mudança desta revisão:** 05/11/2026 — o filtro **Vendedor** passou a contar a venda do vendedor dono da proposta, não de quem lançou o pagamento. Em outubro/2026, com frete, o Alexandre passou de R$ 132.401,71 para R$ 191.701,95, igual ao relatório Vendas. O total sem filtro não mudou.
 
 ## Veja também
 
