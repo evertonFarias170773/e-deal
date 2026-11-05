@@ -416,6 +416,7 @@ Duas ações do mesmo menu têm o passo a passo em outra ficha: **Enviar para Fi
 ## Arquivos de origem
 
 - `src/features/orcamentos/OrcamentoFormPage.tsx`
+- `src/features/orcamentos/hooks/useAcoesDaListaNaProposta.tsx`
 - `src/features/orcamentos/lib/nota-x-pedido.ts`
 - `src/features/orcamentos/components/NotaDivergenteModal.tsx`
 - `src/features/orcamentos/services/nota-do-pedido.client.ts`
