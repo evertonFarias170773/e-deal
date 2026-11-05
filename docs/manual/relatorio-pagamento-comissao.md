@@ -1,6 +1,6 @@
 # Relatório: Pagamento de comissão
 
-> **Última revisão:** 04/11/2026
+> **Última revisão:** 05/11/2026
 > **Caminho no menu:** Relatórios → Vendas → Pagamento de comissão
 > **Endereço:** `/relatorios/vendas/pagamento-comissao`
 
@@ -56,8 +56,7 @@ Nomes exatamente como aparecem na tela.
 
 - **O que conta como venda é o mesmo do relatório [Vendas](relatorio-vendas-pagas.md)**: propostas com pagamento fechado no período, pagas ou faturadas a vencer, pela data de fechamento do pedido (dia de São Paulo). Ficam de fora vendas de teste, amostra e retrabalho.
 - **O total de cada vendedor é o do relatório Vendas filtrado pelo mesmo vendedor e período**, com frete e sem frete, e a **Qtd de pedidos** é o número de vendas que ele mostra.
-- **Pedido com dois vendedores**: cada um entra com os pagamentos que lançou, como no relatório Vendas filtrado por vendedor. O frete do pedido sai na linha de cada um, então a soma das linhas sem frete pode ficar um pouco abaixo do total do período, e a soma de pedidos acima. Um aviso mostra quantos pedidos estão nessa situação.
-- **Pagamento feito pelo cliente na área do cliente entra no vendedor dono da proposta**: no total, na faixa de %, na comissão e no recibo. Não existe mais a linha "Area do cliente".
+- **A venda é sempre do vendedor dono da proposta**, qualquer que seja quem lançou o pagamento (o vendedor, a Edina, o financeiro ou o cliente pela área do cliente). Vale para o total, a faixa de %, a comissão e o recibo. Cada pedido fica em um vendedor só: a soma das linhas é igual ao total do período, em pedidos e em valor.
 - **Faixas da comissão**, pelo total do vendedor na base escolhida. O percentual vale sobre o total inteiro, não por degrau:
 
   | Total do vendedor | % |
@@ -90,6 +89,8 @@ Nomes exatamente como aparecem na tela.
 | Vendedor sem venda neste período. | O vendedor não tem venda no período do recibo | Conferir o período da tela. |
 | Não foi possível ler os dados da empresa. | Falha ao ler o cadastro da empresa | Tentar de novo. |
 | Período máximo de 366 dias. | Período personalizado acima de um ano | Escolher um período menor. |
+
+> **Mudança desta revisão:** 05/11/2026 — a venda passou a contar sempre para o vendedor dono da proposta, também quando o pagamento foi lançado por outra pessoa. Antes, o pagamento lançado por um vendedor ficava com quem lançou. Em outubro/2026 o Alexandre passou de 341 para 342 pedidos (o 24076, lançado pela Edina) e a Lisiane mudou de faixa, de 5,00% para 5,15%.
 
 > **Mudança desta revisão:** 04/11/2026 — o pagamento feito pela área do cliente passou a contar para o vendedor dono da proposta, e a linha "Area do cliente" deixou de existir. Em outubro/2026 eram 392 pedidos (R$ 176.666,46) nessa linha; o total do período não muda.
 

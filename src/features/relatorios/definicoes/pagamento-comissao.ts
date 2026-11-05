@@ -19,8 +19,10 @@ import type { ConsultaRelatorio, LinhaRelatorio, ModeloPdf, RelatorioDef, Result
  * banco (`rpc_relatorio_vendas_json`), chamada uma vez sem filtro (para achar os vendedores do
  * período) e uma vez por vendedor com o filtro Vendedor, exatamente como o card Vendas faz
  * quando se escolhe um vendedor. Por isso o total de cada linha é o do card Vendas filtrado pelo
- * mesmo período e vendedor, inclusive no pedido com dois vendedores (cada um entra com os
- * pagamentos que lançou). A função confere a permissão `relatorios.vendas_pagas`.
+ * mesmo período e vendedor. Desde 05/11/2026 a função atribui a venda ao vendedor dono da
+ * proposta, qualquer que seja quem lançou o pagamento; o aviso de pedido com mais de um vendedor
+ * só aparece se uma proposta sem dono tiver lançadores diferentes. A função confere a permissão
+ * `relatorios.vendas_pagas`.
  *
  * A base (com ou sem frete) é escolha de quem paga: enquanto não escolhida, %, ticket médio e
  * comissão ficam em branco. Nada é gravado; o recibo sai da rota `/api/relatorios/[slug]/recibo`.
