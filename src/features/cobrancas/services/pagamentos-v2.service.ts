@@ -204,8 +204,10 @@ async function fetchPagamentosV2Rows(filters?: {
     if (filters?.idEmpresa && filters.idEmpresa > 0) {
       query = query.eq("id_empresa", filters.idEmpresa);
     }
+    // Filtro por vendedor: cobranças das propostas desse vendedor (dono da proposta), quem
+    // quer que tenha lançado. `vendedor_da_proposta` é coluna calculada do banco (05/11/2026).
     if (filters?.atendente && filters.atendente !== "TODOS") {
-      query = query.eq("atendente", filters.atendente);
+      query = query.eq("vendedor_da_proposta", filters.atendente);
     }
     if (filters?.tipo && filters.tipo !== "TODOS") {
       if (filters.tipo === "E-CREDITO") {

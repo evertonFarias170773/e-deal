@@ -1,6 +1,6 @@
 # Conferência
 
-> **Última revisão:** 26/10/2026
+> **Última revisão:** 05/11/2026
 > **Caminho no menu:** Conferência (primeiro item do menu lateral; é um link direto, sem subitens)
 > **Endereço:** `/cobrancas` (o detalhe de uma cobrança abre em `/cobrancas/<cobrança>`)
 
@@ -37,7 +37,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | Campo **Buscar por número, cliente, ID, documento ou empresa** | Barra de filtros | Filtra a lista pelo texto; com três ou mais caracteres, procura em todo o período. |
 | Filtro de tipo (**Pendentes aprovação**, **Confirmados do dia**, **PIX**, **Boleto**, **Faturado**, **Cartão**, **Cancelados**, **E-Crédito**, **Retrabalhos**, **Todos os tipos**) | Barra de filtros | Filtra por situação ou por tipo de pagamento. |
 | **Todas empresas** | Barra de filtros | Filtra pela empresa recebedora. |
-| **Todos os vendedores** | Barra de filtros | Filtra pelo vendedor. |
+| **Todos os vendedores** | Barra de filtros | Filtra pelo vendedor dono da proposta: mostra todas as cobranças das propostas dele, quem quer que tenha lançado (ele mesmo, a área do cliente, a Edina ou o financeiro). |
 | **Período:** (duas datas) | Barra de filtros, só na aba **Cobranças Confirmadas** | Filtra pela data da confirmação. Começa no mês atual. |
 | **Limpar filtros** | Barra de filtros | Volta busca, filtros, aba e período ao padrão. |
 | Nome da empresa (sublinhado pontilhado) | Coluna **Empresa**, só em cobrança **Aguardando financeiro** | Abre a janela **Atualizar empresa**. |
@@ -180,6 +180,8 @@ O bloco **Histórico da cobrança**, no detalhe, ainda mostra "Histórico ainda 
 
 ## Regras e bloqueios
 
+- **Filtro por vendedor**: entram as cobranças das propostas do vendedor escolhido (o dono da proposta), não importa quem lançou a cobrança. É a mesma regra dos relatórios de vendas. O filtro só estreita a lista; sem ele, a lista é a mesma.
+
 O que entra e o que não entra na fila:
 
 - Entra na **Fila de Conferência** a cobrança já paga e ainda não conferida (status **Pago / A liberar**) e o faturamento já autorizado e ainda não conferido (status **Faturamento autorizado / A liberar**).
@@ -304,6 +306,8 @@ Outros:
 | "Cobrança não encontrada" no detalhe | A cobrança não está entre as carregadas na tela. | Volte para a lista, localize pela busca e abra de novo. |
 | "Nenhuma cobrança encontrada" | Nada bate com os filtros, a aba e a busca. | Troque de aba, ajuste o período ou use **Limpar filtros**. |
 | "Lista incompleta: há mais cobranças do que o limite carregado. Avise o suporte." | A tela carrega no máximo 30.000 cobranças, das mais novas para as mais antigas, e o total passou disso. | Avise o suporte. Enquanto o aviso aparecer, a aba Pagamentos da proposta não mostra as cobranças nem deixa gerar cobrança nova, para não duplicar uma antiga que não foi carregada. |
+
+> **Mudança desta revisão:** 05/11/2026 — o filtro **Todos os vendedores** passou a mostrar as cobranças das propostas do vendedor escolhido, quem quer que tenha lançado. Antes mostrava só as que ele mesmo lançou, e as cobranças da área do cliente, da Edina e do financeiro ficavam de fora.
 
 ## Veja também
 
