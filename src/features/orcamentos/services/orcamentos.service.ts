@@ -122,6 +122,12 @@ import {
 /** Limite de public.propostas.id_cliente (integer / int4). */
 const MAX_INT4 = 2147483647;
 
+/**
+ * Colunas de `vw_propostas_lista` que a lista de Pedidos lê. Exportada para a
+ * tela da proposta montar a MESMA linha da lista (menu Ações, 05/11/2026).
+ */
+export const COLUNAS_DA_LISTA_DE_PEDIDOS = "id, id_int, id_cliente, cliente, created_at, updated_at, status_alterado_em, vendedor, status_interno, valor_total, valor, is_avulso, empresa, valor_frete, em_arte, is_prd_aprovado, libera_nf, encerrado_teste_em, encerrado_teste_por, faturado_fora_em, faturado_fora_por, id_faturado, id_int_pedido_principal, modalidade_frete, frete_escolhido, motivo_copia, id_int_origem_copia";
+
 export type OrcamentosReadFilters = {
   search?: string;
   status?: string;
@@ -867,7 +873,7 @@ async function fetchPropostaRows(
     // consulta — a lista nao ganha nenhuma ida extra ao banco por causa delas.
     // `status_alterado_em` (26/09/2026): ultima mudanca REAL de `status_interno`,
     // de `vw_propostas_lista` — ver a migration 20260926_lista_pedidos_status_alterado_em.
-    const columnsToSelect = "id, id_int, id_cliente, cliente, created_at, updated_at, status_alterado_em, vendedor, status_interno, valor_total, valor, is_avulso, empresa, valor_frete, em_arte, is_prd_aprovado, libera_nf, encerrado_teste_em, encerrado_teste_por, faturado_fora_em, faturado_fora_por, id_faturado, id_int_pedido_principal, modalidade_frete, frete_escolhido, motivo_copia, id_int_origem_copia";
+    const columnsToSelect = COLUNAS_DA_LISTA_DE_PEDIDOS;
 
     // ── Pre-consultas: rodam UMA vez e viram listas de id_int. A consulta da
     //    lista e montada depois, quantas vezes a ordenacao por grupo precisar.

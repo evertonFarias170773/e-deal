@@ -110,6 +110,7 @@ import {
 } from "@/features/orcamentos/lib/modalidade-frete";
 import { contarModelosCopiados, copiaLevouCabecalho, montarAvisoDaCopia } from "@/features/orcamentos/lib/aviso-copia";
 import { useDuplicarProposta } from "@/features/orcamentos/hooks/useDuplicarProposta";
+import { useAcoesDaListaNaProposta } from "@/features/orcamentos/hooks/useAcoesDaListaNaProposta";
 import { box10Expandido, boxEstaNaLateral } from "@/features/orcamentos/lib/boxes-da-lateral";
 import { RetirarProducaoModal } from "@/features/orcamentos/components/RetirarProducaoModal";
 import { EnviarFilaFaturamentoModal } from "@/features/orcamentos/components/EnviarFilaFaturamentoModal";
@@ -4589,16 +4590,26 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
   }
 
   /**
-   * As sete acoes da lista que funcionam DENTRO da proposta aberta.
+   * O menu Acoes da proposta tem as acoes do menu da linha da lista de Pedidos.
    *
-   * Ficaram de fora, de proposito, as quatro que dependem de modal e estado que
-   * so existem na listagem — Gerar cobranca, Cancelar proposta, Liberar para
-   * Producao e Reabrir teste. Traze-las exigiria carregar quatro modais para
-   * dentro deste arquivo, que ja e grande; elas seguem na lista.
+   * As que ja existiam aqui seguem neste arquivo. As que so existiam na lista
+   * (Criar Complemento, DANFE, XML, Gerar cobranca, Confirmar Conferencia,
+   * Cancelar, Liberar para Producao, Rastrear, Conhecimento, teste, nota
+   * antecipada, sistema antigo, Marcar como entregue) vem de
+   * `useAcoesDaListaNaProposta` (05/11/2026), espelho de `getActions` da lista,
+   * com os mesmos modais e as mesmas condicoes.
    *
    * "Copiar proposta informal" reaproveita o `copyInformal` que esta tela ja
    * tinha, em vez de repetir a montagem do texto.
    */
+  const recarregarDaAcaoDaLista = useCallback(() => {
+    if (onReload) onReload(true);
+  }, [onReload]);
+  const acoesDaLista = useAcoesDaListaNaProposta({
+    idInt: mode === "edit" && proposta ? proposta.id_int : null,
+    versao: proposta,
+    onConcluir: recarregarDaAcaoDaLista
+  });
   const { openChat: abrirChatProposta } = useGlobalChat();
   const [acaoEmCurso, setAcaoEmCurso] = useState<string | null>(null);
 
@@ -4729,6 +4740,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
         label: duplicando ? "Duplicando..." : "Duplicar proposta",
         onClick: () => void handleDuplicarDaProposta()
       },
+      ...acoesDaLista.aposDuplicar,
       { label: "Copiar proposta informal", onClick: () => void copyInformal() },
       { label: "Link pgto. externo", onClick: () => void handleCopiarLinkAreaCliente() },
       {
@@ -4739,10 +4751,12 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
         label: acaoEmCurso === "oc" ? "Gerando OC..." : "Gerar OC",
         onClick: () => void handleGerarPdfDaProposta("oc")
       },
+      ...acoesDaLista.aposGerarOc,
       // So a Fila de Faturamento, sem Producao nem Expedicao (13/10/2026). So ADM; some depois de enviado.
       ...(podeVerEnviarParaFila(user, { statusInterno: proposta.status_interno, liberaNf: proposta.libera_nf, isPrdAprovado: proposta.is_prd_aprovado })
         ? [{ label: "Enviar para Fila de Faturamento", onClick: () => setEnviarFilaModalAberto(true) }]
         : []),
+      ...acoesDaLista.aposEnviarFila,
       // Ultimo item do menu. So onde a retirada vale (REVISAO PRODUCAO com a flag ligada).
       ...(podeRetirar && podeVerRetirarDaProducao({ statusInterno: proposta.status_interno, isPrdAprovado: proposta.is_prd_aprovado })
         ? [
@@ -8261,6 +8275,8 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
       )}
 
       {modalDuplicar}
+
+      {acoesDaLista.modais}
 
       {enviarFilaModalAberto && proposta ? (
         <EnviarFilaFaturamentoModal

@@ -1,6 +1,6 @@
 # Proposta: visão geral e abas
 
-> **Última revisão:** 03/11/2026
+> **Última revisão:** 05/11/2026
 > **Caminho no menu:** Pedidos → **+ Nova proposta** (proposta nova) ou Pedidos → abrir um pedido → **Editar proposta**
 > **Endereço:** `/orcamentos/novo` e `/orcamentos/<número>/editar`
 
@@ -40,6 +40,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Link pgto. externo** | Menu **Acoes** | Copia o link da área do cliente daquele pedido. |
 | **Gerar PDF da proposta** | Menu **Acoes** | Gera o PDF do orçamento e abre em outra aba. |
 | **Gerar OC** | Menu **Acoes**, logo abaixo de **Gerar PDF da proposta** (na edição e no detalhe da proposta) | Gera a OC, a autorização de faturamento que o cliente assina, e abre em outra aba. |
+| Ações da lista de Pedidos (**Criar Complemento**, **Abrir DANFE (PDF)**, **Baixar XML**, **Gerar cobrança**, **Confirmar Conferência**, **Cancelar proposta**, **Liberar para Produção**, **Rastrear objeto**, **Ver conhecimento**, **Encerrar teste** / **Reabrir (desfazer encerramento de teste)**, **Liberar nota antecipada (Fila de Faturamento)** / **Desfazer nota antecipada**, **Voltar para a Fila de Faturamento (desfazer nota no sistema antigo)** e **Marcar como entregue**) | Menu **Acoes** da edição, na mesma ordem da lista | As mesmas do menu da linha da lista de Pedidos: aparecem para as mesmas pessoas, nos mesmos status, com a mesma confirmação e o mesmo efeito. Ao concluir, a proposta é relida na tela, sem sair dela. Veja o que cada uma faz na [lista de Pedidos](pedidos.md). |
 | **Enviar para Fila de Faturamento** | Menu **Acoes**, só administrador (marca de administrador no cadastro do usuário, não o perfil), em pedido REVISAO ATENDENTE ou Liberado fora da fila e da produção | Abre uma confirmação e põe o pedido só na Fila de Faturamento. Ele não passa pela Produção nem pela Expedição e o status não muda. |
 | **Retirar da Produção** | Menu **Acoes**, só em pedido em REVISAO PRODUCAO | Abre uma confirmação e devolve o pedido ao atendente: sai da fila da produção e o status volta para REVISAO ATENDENTE. |
 | Botão com o ícone do Ideal Imposition (dica: "Abrir no Ideal Imposition") | Cabeçalho, em proposta que já tem número | Abre o pedido no sistema de imposição. |
@@ -90,7 +91,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 3. Se a proposta é um pedido complementar, aparece o selo **Complemento do #<número>**, que leva ao pedido principal. No pedido principal aparece **Complemento: #<número> · <status>**.
 4. O botão com o ícone do Ideal Imposition abre o pedido no sistema de imposição. Ele só aparece em proposta que já tem número.
 5. **Voltar ao detalhe** (ou **Voltar para lista**, em proposta nova) sai da edição.
-6. O botão **Acoes**, no canto direito, abre o menu de ações: **Ver proposta**, **Ver chat interno**, **Editar proposta**, **Duplicar proposta**, **Copiar proposta informal**, **Link pgto. externo**, **Gerar PDF da proposta**, **Gerar OC** e, em pedido em REVISAO PRODUCAO, **Retirar da Produção**.
+6. O botão **Acoes**, no canto direito, abre o menu de ações: **Ver proposta**, **Ver chat interno**, **Editar proposta**, **Duplicar proposta**, **Copiar proposta informal**, **Link pgto. externo**, **Gerar PDF da proposta**, **Gerar OC** e, em pedido em REVISAO PRODUCAO, **Retirar da Produção**. Na edição, o menu também tem as ações do menu da linha da lista de Pedidos, como **Gerar cobrança**, **Confirmar Conferência** e **Liberar para Produção**, cada uma só para quem pode e só no status em que a lista a mostra. Ao concluir uma delas, a proposta é relida na tela.
 7. Abaixo do cabeçalho podem aparecer avisos: sobre cobrança gerada, **Saldo na Conta Corrente** (cliente com crédito), **Cliente com débito em aberto** e **Revisão financeira pendente**. Também fica ali o bloco de tarefas da equipe ligadas ao pedido.
 
 #### Navegar pelas abas

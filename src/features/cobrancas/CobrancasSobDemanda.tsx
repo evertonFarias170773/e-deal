@@ -31,7 +31,11 @@ export function CobrancasSobDemanda({ children, onFechar }: { children: ReactNod
   );
 }
 
-function PortaoDaCargaCompleta({ children, onFechar }: { children: ReactNode; onFechar: () => void }) {
+/**
+ * O mesmo portão, para quem já está dentro de um `CobrancasProvider` (a tela da
+ * proposta): a ação só monta com a carga completa daquele provider.
+ */
+export function PortaoDaCargaCompleta({ children, onFechar }: { children: ReactNode; onFechar: () => void }) {
   const { statusCarga, mensagemCarga, source } = useCobrancas();
 
   const cargaCompleta = source === "supabase" && (statusCarga === "OK" || statusCarga === "VAZIA");
