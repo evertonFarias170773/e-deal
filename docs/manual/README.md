@@ -17,6 +17,11 @@ Cada ficha cobre uma tela ou um fluxo e segue sempre o mesmo formato ([_MODELO.m
 
 ## Fichas
 
+### Painéis
+
+- [Dashboard (painel executivo e período de análise)](dashboard.md)
+- [Meu desempenho (painel do vendedor)](meu-desempenho.md)
+
 ### Pedidos e proposta
 
 - [Pedidos (lista)](pedidos.md)
