@@ -1,6 +1,6 @@
 # Pedidos (lista)
 
-> **Última revisão:** 04/11/2026
+> **Última revisão:** 05/11/2026 (Trocar forma de pagamento no aviso de nota do Cancelar só a cobrança)
 > **Caminho no menu:** Pedidos (item direto do menu lateral, sem submenu; é o segundo, logo abaixo de Conferência)
 > **Endereço:** `/orcamentos`
 
@@ -82,6 +82,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Confirmar liberação** / **Cancelar** | Janela "Liberar proposta para Produção?" | Confirma a liberação, ou fecha sem liberar. |
 | **Confirmar Cancelamento** / **Voltar** | Janela "Cancelar Proposta" | Cancela a proposta (exige motivo), ou fecha sem cancelar. |
 | **Cancelar só a cobrança** | Janela "Cancelar Proposta", quando há uma única cobrança ativa | Troca para o cancelamento só da cobrança, sem cancelar o pedido. |
+| **Trocar forma de pagamento** | Aviso **Não é possível cancelar agora** do cancelamento só da cobrança, quando a recusa é por nota fiscal autorizada | Troca um PIX não pago da Ideal Gráfica ou da E3 Brindes por Faturado, com o mesmo valor, mantendo a nota. Não aparece na Ideal Birô. |
 | **Ver cobranças na aba Pagamentos** | Janela "Cancelar Proposta", quando há mais de uma cobrança ativa | Fecha a janela e abre a proposta na aba Pagamentos. |
 | **Anterior** / **Próxima** | Rodapé da lista | Muda de página. |
 | **Ver** | Cartão do pedido, só no celular | Abre a proposta para leitura. |
@@ -234,7 +235,7 @@ A liberação é recusada quando já existe NF-e de venda autorizada ou em proce
 - **Retirar da Produção** não é o contrário inofensivo de liberar: o pedido sai da fila de Produção e volta ao atendente, que precisa liberá-lo de novo, mesmo que o cliente já tenha pago. Por isso a ação fica no fim do menu e abre uma janela que explica isso, com o foco em **Cancelar**. Até 13/10/2026 ela só desligava a fila e deixava o status em REVISAO PRODUCAO, e o pedido ficava parado sem saída pela tela.
 - **Retirar da Produção (nota emitida)**, desligado: Pedido com **nota fiscal emitida** (NF-e ou NFS-e autorizada, de produção, inclusive nota de remessa) não volta ao atendente: o item aparece desligado, com "(nota emitida)", e ao passar o mouse mostra qual nota trava. Cancele a nota em Fiscal › Notas Fiscais e a ação volta a funcionar. Nota cancelada, com erro, pendente ou de homologação não trava.
 - Não dá para cancelar uma proposta sem informar o motivo, nem enquanto ela tiver pedido complementar aberto. Cobrança já paga ou título já liquidado também bloqueiam o cancelamento. A exceção são E-Amostra, E-Retrabalho e E-Permuta, que não movimentam dinheiro e não impedem o cancelamento: quando todas as cobranças ativas são desses tipos, o administrador cancela em qualquer status e os demais só em AGUARDANDO; nota fiscal autorizada, produção e expedição continuam impedindo. As cobranças pendentes (e essas três) são canceladas junto com a proposta.
-- Se a intenção é só refazer a cobrança, não cancele a proposta: na janela de cancelamento use **Cancelar só a cobrança** (ou **Ver cobranças na aba Pagamentos**, quando há mais de uma). O pedido continua de pé e o saldo reabre.
+- Se a intenção é só refazer a cobrança, não cancele a proposta: na janela de cancelamento use **Cancelar só a cobrança** (ou **Ver cobranças na aba Pagamentos**, quando há mais de uma). O pedido continua de pé e o saldo reabre. Se a cobrança é um PIX não pago da Ideal Gráfica ou da E3 Brindes e a janela recusa o cancelamento por nota fiscal autorizada, o aviso **Não é possível cancelar agora** oferece **Trocar forma de pagamento**, ao lado de **Ir para Notas Fiscais**: o PIX vira Faturado com o mesmo valor e a nota continua como está. Passo a passo em [Proposta: aba Pagamentos](proposta-pagamentos.md).
 - Pedido complementar só é aceito em proposta paga integralmente, não avulsa, ainda não despachada e sem outro complemento aberto. O sistema confere isso na hora de criar e mostra o motivo da recusa na própria janela.
 - Não dá para gerar PDF, OC nem cobrança de pedido sem cliente cadastrado.
 - Não dá para gerar cobrança de proposta que já foi totalmente cobrada.
@@ -356,7 +357,9 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/features/orcamentos/services/retirar-producao.server.ts`
 - `src/features/orcamentos/components/RetirarProducaoModal.tsx`
 
-> **Mudança desta revisão:** 04/11/2026 — os cards **Em arte** e **Arte Aprovada** passaram a considerar todas as artes cadastradas. O **Arte Aprovada** deixava de fora parte dos pedidos (na visão padrão mostrava 5 em vez de 32); o número, a soma e a lista do card agora trazem todos. A regra de cada card não mudou.
+> **Mudança desta revisão:** 05/11/2026 — no **Cancelar só a cobrança**, a recusa por nota fiscal autorizada de um PIX da Ideal Gráfica ou da E3 Brindes oferece **Trocar forma de pagamento** (caso 24692).
+>
+> **Mudança anterior:** 04/11/2026 — os cards **Em arte** e **Arte Aprovada** passaram a considerar todas as artes cadastradas. O **Arte Aprovada** deixava de fora parte dos pedidos (na visão padrão mostrava 5 em vez de 32); o número, a soma e a lista do card agora trazem todos. A regra de cada card não mudou.
 >
 > **Mudança desta revisão:** 04/11/2026 — cards de arte (pedido da gerência): Dados Pendentes saiu do card **Em arte** e entrou no **Arte Aprovada**, com as mesmas exclusões; com o card **Em arte** ligado, Pendente Informação vem primeiro, antes de Enviar Arte, com o fundo vermelho mais forte.
 >

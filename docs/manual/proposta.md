@@ -1,6 +1,6 @@
 # Proposta: visão geral e abas
 
-> **Última revisão:** 05/11/2026
+> **Última revisão:** 05/11/2026 (Trocar forma de pagamento no aviso de nota do Cancelar só a cobrança)
 > **Caminho no menu:** Pedidos → **+ Nova proposta** (proposta nova) ou Pedidos → abrir um pedido → **Editar proposta**
 > **Endereço:** `/orcamentos/novo` e `/orcamentos/<número>/editar`
 
@@ -79,6 +79,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | Botão de envio (dica: "Enviar mensagem") | Painel do chat | Envia a mensagem. |
 | **Cancelar proposta** | Menu **Acoes** da lista de Pedidos (na lista em cartões o botão se chama **Mais**) e do detalhe da proposta | Abre a janela **Cancelar Proposta**. |
 | **Cancelar só a cobrança** / **Ver cobranças na aba Pagamentos** | Janela **Cancelar Proposta** | Cancela só a cobrança, ou leva à aba Pagamentos quando há mais de uma. |
+| **Trocar forma de pagamento** | Aviso **Não é possível cancelar agora** do cancelamento só da cobrança, quando a recusa é por nota fiscal autorizada | Troca um PIX não pago da Ideal Gráfica ou da E3 Brindes por Faturado, com o mesmo valor, mantendo a nota. Não aparece na Ideal Birô. |
 | **Confirmar Cancelamento** | Janela **Cancelar Proposta** | Cancela a proposta. |
 | **Criar Complemento** | Menu **Acoes** (ou **Mais**) da lista de Pedidos e botão da janela de mesmo nome | Cria a proposta complementar, vinculada ao pedido original. |
 
@@ -256,7 +257,7 @@ O cancelamento não fica no menu de dentro da edição. Faça pela lista de Pedi
 
 1. No menu **Acoes**, clique em **Cancelar proposta**.
 2. Leia o quadro **Será cancelado junto**: ele lista as cobranças e os títulos que saem com a proposta.
-3. Se a intenção é só refazer a cobrança, use **Cancelar só a cobrança** (ou **Ver cobranças na aba Pagamentos**) em vez de cancelar a proposta.
+3. Se a intenção é só refazer a cobrança, use **Cancelar só a cobrança** (ou **Ver cobranças na aba Pagamentos**) em vez de cancelar a proposta. Se a cobrança é um PIX não pago da Ideal Gráfica ou da E3 Brindes e a janela recusa o cancelamento por nota fiscal autorizada, o aviso **Não é possível cancelar agora** oferece **Trocar forma de pagamento**, ao lado de **Ir para Notas Fiscais**: o PIX vira Faturado com o mesmo valor e a nota continua como está. Passo a passo em [Proposta: aba Pagamentos](proposta-pagamentos.md).
 4. Preencha o **Motivo do Cancelamento**.
 5. Clique em **Confirmar Cancelamento**. Pela tela, a ação é irreversível.
 
@@ -454,7 +455,9 @@ Duas ações do mesmo menu têm o passo a passo em outra ficha: **Enviar para Fi
 - `src/components/common/ActionsMenu.tsx`
 - `src/constants/navigation.ts`
 
-> **Mudança desta revisão:** 03/11/2026 — E-Amostra, E-Retrabalho e E-Permuta não impedem mais o cancelamento da proposta (caso 24533). O administrador cancela em qualquer status; os demais, em AGUARDANDO. Cobrança com dinheiro, nota fiscal autorizada, produção e expedição continuam impedindo.
+> **Mudança desta revisão:** 05/11/2026 — no **Cancelar só a cobrança**, a recusa por nota fiscal autorizada de um PIX da Ideal Gráfica ou da E3 Brindes oferece **Trocar forma de pagamento** (caso 24692).
+>
+> **Revisão anterior:** 03/11/2026 — E-Amostra, E-Retrabalho e E-Permuta não impedem mais o cancelamento da proposta (caso 24533). O administrador cancela em qualquer status; os demais, em AGUARDANDO. Cobrança com dinheiro, nota fiscal autorizada, produção e expedição continuam impedindo.
 >
 > **Revisão anterior:** 02/11/2026 — salvar pedido que já tem NF-e de venda (autorizada, em processamento ou pronta para envio) mudando total, desconto ou frete abre a janela **Este pedido já tem NF-e de venda**, com **Salvar mesmo assim** e **Voltar**; ao salvar assim, a linha do tempo registra que o pedido ficou com valor diferente da nota. Só aviso.
 
