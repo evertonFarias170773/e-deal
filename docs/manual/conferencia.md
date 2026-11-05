@@ -74,7 +74,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Ir para Notas Fiscais**, **Ir para Pedidos**, **Ir para Contas a Receber** | Janela **Cancelar Cobrança**, quando o cancelamento é recusado | Leva à tela onde a pendência se resolve. |
 | **Voltar para cobranças** | Topo do detalhe | Retorna à lista. |
 | **Atualizar status** | Detalhe, no aviso **Gerando código PIX...** | Recarrega os dados da cobrança. |
-| **Abrir** e **Copiar** | Detalhe, bloco **Links e Códigos de Pagamento**, linha **Link de Pagamento** | Abre o link de pagamento em outra aba ou o copia. |
+| **Abrir** e **Copiar** | Detalhe, bloco **Links e Códigos de Pagamento**, linha **Link de Pagamento** | Abre o link de pagamento em outra aba ou o copia. O link aparece inteiro (pay.ai-ideal.com.br/functions/v1/pagamento-publico?token=...); para mandar ao cliente, use **Copiar**. |
 | **Copiar PIX** | Detalhe, bloco **Links e Códigos de Pagamento** | Copia o código PIX copia e cola. |
 | **Copiar Código** | Detalhe, bloco **Links e Códigos de Pagamento** | Copia a linha digitável. |
 | **Baixar PDF** | Detalhe, bloco **Links e Códigos de Pagamento** | Baixa o PDF do boleto com o nome "<n° do pedido> - <cliente>.pdf" (no parcelado, "<cobrança> P<n> de <total> - <cliente>.pdf"). Se o PDF não puder ser baixado, abre em outra aba, como antes. |

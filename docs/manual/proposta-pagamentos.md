@@ -1,6 +1,6 @@
 # Proposta: aba Pagamentos
 
-> **Última revisão:** 04/11/2026 (PIX da Ideal Birô em preparação no banco)
+> **Última revisão:** 05/11/2026 (link do PIX do restante no pagamento combinado)
 > **Caminho no menu:** Pedidos → abrir um pedido → aba Pagamentos
 > **Endereço:** `/orcamentos/<número>/editar?tab=pagamentos`
 
