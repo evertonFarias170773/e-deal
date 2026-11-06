@@ -4,11 +4,11 @@
  */
 
 /**
- * Cliente teste #14 (contato Edison Jr): a conversa que existe no ChatGuru.
- * Único destino aceito com o modo teste ligado. Até 06/11/2026 era
- * 5551985018848, que não tem conversa no ChatGuru ("Chat não encontrado.").
+ * Cliente teste #14 (contato Edison Jr), SEM o nono dígito: é o formato em que
+ * o ChatGuru guarda a conversa. Único destino aceito com o modo teste ligado.
+ * 5551985018848 e 5551984608848 deram "Chat não encontrado." em 06/11/2026.
  */
-export const NUMERO_TESTE = "5551984608848";
+export const NUMERO_TESTE = "555184608848";
 
 export class Recusa extends Error {
   status: number;
