@@ -7,6 +7,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AlertTriangle, ArrowLeft, CheckCircle2, ChevronDown, ChevronRight, Plus, RotateCcw, Trash2, UserX } from "lucide-react";
 import { contatoEstaAtivo } from "@/features/cadastros/lib/contatos-ativos";
+import { normalizarCargoContato } from "@/features/cadastros/lib/cargo-contato";
+import { CampoCargoContato } from "@/features/cadastros/components/CampoCargoContato";
 import {
   ROTULO_DO_CAMPO_DE_CORRECAO,
   lerCorrecaoDaUrl,
@@ -371,7 +373,8 @@ export function CadastroFormPage({ mode, cadastro, categoriaInicial }: CadastroF
     const contatos: CadastroContato[] = (data.contatos || []).map((c, index) => ({
       id: `cont_${Date.now()}_${index}`,
       nome: (c.nome_contato || "").trim(),
-      cargo: c.cargo || "",
+      // Cargo da importação entra já na lista fechada (lib/cargo-contato).
+      cargo: normalizarCargoContato(c.cargo) ?? "",
       whatsapp: c.whats || "",
       email: c.e_mail || ""
     }));
@@ -2311,7 +2314,7 @@ function CompleteForm({
             return (
               <div key={contato.id} className="grid gap-3 rounded-3xl border border-slate-200 bg-slate-50 p-4 md:grid-cols-[1fr_1fr_1fr_1fr_auto]">
                 <Field label="Nome"><input value={contato.nome} readOnly={!isEditAllowed} onChange={(event) => onUpdate("contatos", form.contatos.map((c, idx) => idx === index ? { ...c, nome: event.target.value } : c))} className={contactInputClass} /></Field>
-                <Field label="Cargo"><input value={contato.cargo} readOnly={!isEditAllowed} onChange={(event) => onUpdate("contatos", form.contatos.map((c, idx) => idx === index ? { ...c, cargo: event.target.value } : c))} className={contactInputClass} /></Field>
+                <Field label="Cargo"><CampoCargoContato value={contato.cargo} disabled={!isEditAllowed} onChange={(cargo) => onUpdate("contatos", form.contatos.map((c, idx) => idx === index ? { ...c, cargo } : c))} className={contactInputClass} /></Field>
                 <Field label="WhatsApp"><input value={contato.whatsapp} readOnly={!isEditAllowed} onChange={(event) => onUpdate("contatos", form.contatos.map((c, idx) => idx === index ? { ...c, whatsapp: event.target.value } : c))} className={contactInputClass} /></Field>
                 <Field label="E-mail"><input value={contato.email} readOnly={!isEditAllowed} onChange={(event) => onUpdate("contatos", form.contatos.map((c, idx) => idx === index ? { ...c, email: event.target.value } : c))} className={contactInputClass} /></Field>
                 {isEditAllowed && (isTemporaryId(contato.id) ? (

@@ -1,6 +1,6 @@
 # Proposta: aba Geral
 
-> **Última revisão:** 06/11/2026 (total do resumo em centavos exatos; contato inativo fora da escolha)
+> **Última revisão:** 06/11/2026 (total do resumo em centavos exatos; contato inativo fora da escolha; cargo do contato em lista)
 > **Caminho no menu:** Pedidos → abrir um pedido → aba **Geral**
 > **Endereço:** `/orcamentos/<número>/editar` (em proposta nova, `/orcamentos/novo`)
 
@@ -97,7 +97,7 @@ Enquanto o cliente não é escolhido numa proposta nova, os outros blocos e abas
 
 1. O contato selecionado aparece no painel de cima, com cargo, WhatsApp e e-mail. Os demais ficam em **Outros contatos**. Contato inativado no cadastro do cliente não aparece para escolher; numa proposta antiga que já o usa, ele continua selecionado.
 2. Para trocar, clique em outro contato da lista. Com mais de quatro contatos, a lista ganha um campo de pesquisa.
-3. Para incluir, clique em **+ Adicionar novo contato**, preencha **Nome** e **WhatsApp** (obrigatórios), **Cargo** e **E-mail**, e clique em **Adicionar**.
+3. Para incluir, clique em **+ Adicionar novo contato**, preencha **Nome** e **WhatsApp** (obrigatórios), escolha o **Cargo** na lista (**Comprador**, **Financeiro** ou **Sem cargo**), preencha o **E-mail** e clique em **Adicionar**.
 4. Para corrigir um contato, clique no lápis ao lado dele, altere na janela **Editar contato (Modo Local)** e clique em **Salvar**.
 5. Salve a proposta para o contato escolhido valer.
 

@@ -1,6 +1,7 @@
 import { cadastrosMock, getCadastroById } from "@/lib/mocks/cadastros.mock";
 import type { Cadastro, CadastroPropostaListItem, CadastroVinculoComercial } from "@/features/cadastros/types";
 import type { CadastroCategoria } from "@/features/cadastros/types";
+import { normalizarCargoContato } from "@/features/cadastros/lib/cargo-contato";
 import type {
   SupabaseClienteRow,
   SupabaseClienteSocioRow,
@@ -2254,7 +2255,8 @@ export async function createCadastroContatos(
   const rows = payload.map((item) => ({
     id_cliente: Number(item.id_cliente),
     nome_contato: toText(item.nome_contato).trim(),
-    cargo: toNullableText(item.cargo),
+    // Lista fechada (lib/cargo-contato): o banco recusa outro valor.
+    cargo: normalizarCargoContato(item.cargo),
     whats: toNullableText(item.whats),
     e_mail: toNullableText(item.e_mail)
   }));
@@ -2414,7 +2416,8 @@ export async function updateCadastroContato(
     .from("contatos")
     .update({
       nome_contato: toText(payload.nome_contato).trim(),
-      cargo: toNullableText(payload.cargo),
+      // Lista fechada (lib/cargo-contato): o banco recusa outro valor.
+      cargo: normalizarCargoContato(payload.cargo),
       whats: toNullableText(payload.whats),
       e_mail: toNullableText(payload.e_mail),
       // Inativar / Reativar: só escreve quando a tela manda o valor.

@@ -74,6 +74,7 @@ import { bonusDaEdicao } from "@/features/orcamentos/lib/bonus-da-proposta";
 import { bonusPercentDosItens, resumoNoCentavo } from "@/features/orcamentos/lib/total-no-centavo";
 import { contatosDaEdicao } from "@/features/orcamentos/lib/contato-da-edicao";
 import { contatosParaEscolher, primeiroContatoAtivo } from "@/features/cadastros/lib/contatos-ativos";
+import { CampoCargoContato } from "@/features/cadastros/components/CampoCargoContato";
 import { createCadastroContatos, getCadastrosReadOnlyList, getCadastroCompleto } from "@/features/cadastros/services/cadastros.service";
 import { gravarContatoNovoNoCadastro, type DependenciasContatoNovo } from "@/features/orcamentos/lib/contato-novo-no-cadastro";
 import { listProdutos } from "@/features/produtos/services/produtos.service";
@@ -9691,7 +9692,8 @@ function ContactModal({ draft, onChange, onClose, onSave }: { draft: ContactDraf
           <input value={draft.nome} onChange={(event) => onChange({ ...draft, nome: event.target.value })} className={inputClass} />
           {nomeVazio ? <p className="text-xs text-amber-700">Obrigatório — é o nome que aparece na proposta enviada ao cliente.</p> : null}
         </Field>
-        <Field label="Cargo"><input value={draft.cargo} onChange={(event) => onChange({ ...draft, cargo: event.target.value })} className={inputClass} /></Field>
+        {/* Lista fechada: Comprador, Financeiro ou vazio (lib/cargo-contato). */}
+        <Field label="Cargo"><CampoCargoContato value={draft.cargo} onChange={(cargo) => onChange({ ...draft, cargo })} className={inputClass} /></Field>
         <Field label="WhatsApp *">
           <input value={draft.whatsapp} onChange={(event) => onChange({ ...draft, whatsapp: event.target.value })} className={inputClass} />
           {whatsappVazio ? <p className="text-xs text-amber-700">Obrigatório.</p> : null}

@@ -45,6 +45,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Inativar** | Edição do cadastro, seção **Contatos**, no contato já salvo | Passa o contato para o grupo **Inativos**. Grava no **Salvar**. |
 | **Inativos (N)** | Edição e ficha do cadastro, seção **Contatos** | Abre e fecha o grupo dos contatos inativados. Começa fechado. |
 | **Reativar** | Grupo **Inativos** da edição do cadastro | Devolve o contato à lista de ativos. Grava no **Salvar**. |
+| **Cargo** (lista: **Sem cargo**, **Comprador**, **Financeiro**) | Edição do cadastro, seção **Contatos** | Escolhe o cargo do contato. Grava no **Salvar**. |
 
 Clicar na linha do cliente (fora do menu) abre o cadastro direto para editar.
 
@@ -132,6 +133,7 @@ Clicar na linha do cliente (fora do menu) abre o cadastro direto para editar.
 - Proposta, pedido e nota antigos continuam mostrando o contato que usaram, mesmo inativo. Na edição dessa proposta, ele continua selecionado.
 - Contato novo digitado na proposta com o mesmo nome de um contato inativo vira um contato novo e ativo no cadastro.
 - O card **Contatos** da ficha do cadastro conta só os ativos.
+- O **Cargo** do contato é escolhido numa lista: **Comprador**, **Financeiro** ou **Sem cargo**. Não dá para digitar outro cargo, nem no cadastro nem nas janelas de contato da proposta. Os cargos digitados antes de 06/11/2026 foram convertidos: o que tinha "financeiro" virou **Financeiro**, o resto virou **Comprador**.
 
 ## O que não confundir
 
@@ -165,5 +167,7 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/features/cadastros/services/cadastros-read.service.ts`
 - `src/features/cadastros/lib/busca-cliente-por-digitos.ts`
 - `src/features/cadastros/lib/contatos-ativos.ts`
+- `src/features/cadastros/lib/cargo-contato.ts`
+- `src/features/cadastros/components/CampoCargoContato.tsx`
 - `src/features/cadastros/CadastroFormPage.tsx`
 - `src/features/cadastros/CadastroDetailPage.tsx`

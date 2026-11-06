@@ -1,5 +1,6 @@
 import React from "react";
 import { X } from "lucide-react";
+import { CampoCargoContato } from "@/features/cadastros/components/CampoCargoContato";
 
 type ContactDraft = {
   nome: string;
@@ -40,9 +41,10 @@ export function ContactEditModal({ draft, onChange, onClose, onSave }: ContactEd
           </div>
           <div>
             <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Cargo</label>
-            <input
+            {/* Lista fechada: Comprador, Financeiro ou vazio (lib/cargo-contato). */}
+            <CampoCargoContato
               value={draft.cargo}
-              onChange={(e) => onChange({ ...draft, cargo: e.target.value })}
+              onChange={(cargo) => onChange({ ...draft, cargo })}
               className={inputClass}
             />
           </div>
