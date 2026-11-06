@@ -64,7 +64,7 @@ export function AvisoPedidoPronto({
       });
       return;
     }
-    toastDoResultado(res.aviso ?? null);
+    toastDoResultado(res.aviso ?? null, res.motivo_chatguru);
   }
 
   async function reenviar() {
@@ -82,7 +82,7 @@ export function AvisoPedidoPronto({
       showToast({ type: "info", title: "Outro envio chegou antes", description: "Nada foi enviado de novo." });
       return;
     }
-    toastDoResultado(res.aviso ?? null);
+    toastDoResultado(res.aviso ?? null, res.motivo_chatguru);
   }
 
   async function atualizarStatus() {
@@ -94,7 +94,7 @@ export function AvisoPedidoPronto({
     if (!res.ok) showToast({ type: "error", title: "Status não consultado", description: res.mensagem });
   }
 
-  function toastDoResultado(a: AvisoPronto | null) {
+  function toastDoResultado(a: AvisoPronto | null, motivo?: string | null) {
     if (!a) return;
     if (a.estado === "enviado" || a.estado === "aguardando") {
       showToast({
@@ -103,7 +103,11 @@ export function AvisoPedidoPronto({
         description: `Pedido ${idInt}: ${ROTULO_ESTADO_AVISO[a.estado]}.${a.modo_teste ? " Modo teste: foi para o número de teste." : ""}`
       });
     } else if (a.estado === "falhou") {
-      showToast({ type: "error", title: "O ChatGuru recusou o envio", description: "Nada saiu. Confira o WhatsApp do contato e use Reenviar." });
+      showToast({
+        type: "error",
+        title: "O ChatGuru recusou o envio",
+        description: `${motivo ? `ChatGuru: ${motivo} ` : ""}Nada saiu. Confira o WhatsApp do contato e use Reenviar.`
+      });
     } else {
       showToast({
         type: "warning",

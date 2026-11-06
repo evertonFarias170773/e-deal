@@ -30,6 +30,8 @@ type Resposta = {
   aviso?: AvisoPronto | null;
   avisos?: Record<string, AvisoPronto | null>;
   status_chatguru?: string | null;
+  /** Motivo da recusa dado pelo ChatGuru (ex.: "Chat não encontrado."). Não é gravado. */
+  motivo_chatguru?: string | null;
 };
 
 const FUNCAO = "expedicao-pedido-pronto";

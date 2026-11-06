@@ -330,6 +330,7 @@ Em resumo: no pedido Na Expedição, clique em **Despachar**, confira peso, volu
 |---|---|---|
 | "O pedido não tem contato. Escolha o contato na proposta." ou "O contato do pedido não pertence ao cliente nem ao faturado." | O aviso de pedido pronto não tem para quem ir | Corrigir o contato na proposta e clicar de novo em **Avisar cliente: pedido pronto** |
 | "O WhatsApp do contato do pedido está vazio ou inválido." | O contato não tem WhatsApp válido | Corrigir o WhatsApp no cadastro do contato |
+| "O ChatGuru recusou o envio" com "ChatGuru: Chat não encontrado." | O número não tem conversa aberta no WhatsApp da Ideal (o Vibe não cria conversa nova) | Abrir a conversa com o número no ChatGuru e usar **Reenviar** |
 | "Este pedido já tinha aviso" | Já houve aviso para o pedido | Nada foi enviado de novo. Para mandar outra mensagem, use **Reenviar** |
 | Aviso em **resultado desconhecido** | O ChatGuru não respondeu a tempo ou respondeu algo inesperado | Conferir no ChatGuru se a mensagem saiu; só então usar **Reenviar** |
 | Falta informar o peso aferido (ou a transportadora, o endereço de entrega, a quantidade de volumes, a modalidade do frete) | Falta dado mínimo do despacho | Preencher o campo indicado. Endereço e transportadora se corrigem na proposta |

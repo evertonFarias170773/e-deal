@@ -326,12 +326,15 @@ Deno.serve(async (req) => {
 
     // Daqui em diante o POST ao ChatGuru nunca se repete automaticamente.
     let resultado: Registro;
+    // Motivo da recusa dado pelo ChatGuru: só volta na resposta, nunca é gravado.
+    let motivoChatGuru: string | null = null;
     try {
       const { http, data } = await chamarChatGuru(cfg, "message_send", { chat_number: destino, text: ctx.texto });
       const messageId = envioAceito(http, data);
       if (messageId) {
         resultado = await salvar(String(reserva), data?.message_status === "sent" ? "enviado" : "aguardando", messageId);
       } else {
+        motivoChatGuru = limpar(data?.description, 200) || null;
         resultado = await salvar(String(reserva), envioRecusado(http, data) ? "falhou" : "desconhecido", null);
       }
     } catch (e) {
@@ -339,7 +342,13 @@ Deno.serve(async (req) => {
       resultado = await salvar(String(reserva), "desconhecido", null);
     }
 
-    return responder(200, { ok: true, modo_teste: modoTeste, ja_existia: false, aviso: publico(resultado) });
+    return responder(200, {
+      ok: true,
+      modo_teste: modoTeste,
+      ja_existia: false,
+      aviso: publico(resultado),
+      motivo_chatguru: motivoChatGuru
+    });
   } catch (e) {
     if (e instanceof Recusa) return responder(e.status, { ok: false, mensagem: e.message });
     console.error("[expedicao-pedido-pronto]", e instanceof Error ? e.message : "erro");
