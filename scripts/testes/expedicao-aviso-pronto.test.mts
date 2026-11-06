@@ -42,7 +42,7 @@ caso("A. modo teste ligado por padrão", () => {
 
 caso("B. modo teste troca qualquer destino pelo número de teste", () => {
   assert.equal(destinoFinal("5551991107694", true), NUMERO_TESTE);
-  assert.equal(destinoFinal("5511999998888", true), "5551985018848");
+  assert.equal(destinoFinal("5511999998888", true), "5551984608848");
   assert.equal(destinoFinal("5511999998888", false), "5511999998888");
 });
 

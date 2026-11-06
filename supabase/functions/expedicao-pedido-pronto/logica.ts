@@ -3,8 +3,12 @@
  * Function e para o teste scripts/testes/expedicao-aviso-pronto.test.mts.
  */
 
-/** Cliente teste #14 (Edison Junior). Único destino aceito com o modo teste ligado. */
-export const NUMERO_TESTE = "5551985018848";
+/**
+ * Cliente teste #14 (contato Edison Jr): a conversa que existe no ChatGuru.
+ * Único destino aceito com o modo teste ligado. Até 06/11/2026 era
+ * 5551985018848, que não tem conversa no ChatGuru ("Chat não encontrado.").
+ */
+export const NUMERO_TESTE = "5551984608848";
 
 export class Recusa extends Error {
   status: number;
