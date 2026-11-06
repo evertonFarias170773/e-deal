@@ -41,6 +41,11 @@ export function compradoresDoCliente<T extends ContatoDaArte>(contatos: readonly
   return contatos.filter(ehCompradorAtivo);
 }
 
+/** "Usar contato existente como Comprador": os ativos do cliente que ainda não são Comprador. */
+export function contatosParaVirarComprador<T extends ContatoDaArte>(contatos: readonly T[]): T[] {
+  return contatos.filter((c) => contatoEstaAtivo(c) && !ehCompradorAtivo(c));
+}
+
 /**
  * Arte ainda não enviada: sem linha em `pedidos_artes` ou com status vazio,
  * AGUARDANDO (rascunho salvo sem designer) ou PENDENTE. Qualquer outro status

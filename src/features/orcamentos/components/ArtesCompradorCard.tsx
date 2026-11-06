@@ -1,12 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, CheckCircle2, Mail, Phone, UserPlus, Pencil, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Mail, Phone, UserCheck, UserPlus, Pencil, X } from "lucide-react";
 import type { CadastroContato } from "@/features/cadastros/types";
 import { createCadastroContatos, updateCadastroContato } from "@/features/cadastros/services/cadastros.service";
 import { formatPhoneBR } from "@/lib/formatters/phone";
 import {
   arteJaEnviada,
+  contatosParaVirarComprador,
   faltasDoComprador,
   situacaoDoComprador,
   type SituacaoDoComprador,
@@ -22,6 +23,8 @@ import { carregarCompradorDaArte, gravarCompradorDaProposta } from "@/features/o
 
 export type CompradorDaArte = {
   carregando: boolean;
+  /** Todos os contatos do cliente (ativos e inativos), como lidos do cadastro. */
+  contatos: CadastroContato[];
   erro: string | null;
   situacao: SituacaoDoComprador<CadastroContato>;
   idGravado: string | null;
@@ -94,6 +97,7 @@ export function useCompradorDaArte(idInt: number | null, idCliente: string | nul
 
   return {
     carregando,
+    contatos,
     erro,
     situacao,
     idGravado,
@@ -122,7 +126,38 @@ export function ArtesCompradorCard({ comprador, idCliente, podeEditarContato, on
   const { carregando, erro, situacao, jaEnviada } = comprador;
   const [rascunho, setRascunho] = useState<Rascunho | null>(null);
   const [gravando, setGravando] = useState(false);
+  const [usandoExistente, setUsandoExistente] = useState(false);
   const clienteCadastrado = Boolean(idCliente && /^\d+$/.test(idCliente));
+  const candidatos = useMemo(() => contatosParaVirarComprador(comprador.contatos), [comprador.contatos]);
+
+  // Contato existente vira Comprador: a mesma gravação do cadastro (updateCadastroContato),
+  // só com o cargo trocado; nome, fone e e-mail seguem os que o contato tem.
+  const marcarComoComprador = async (c: CadastroContato) => {
+    setGravando(true);
+    try {
+      const r = await updateCadastroContato(c.id, { nome_contato: c.nome, cargo: "Comprador", whats: c.whatsapp, e_mail: c.email });
+      if (!r.success) throw new Error(r.errorMessage || "Falha ao atualizar o contato.");
+      const contato: CadastroContato = { ...c, nome: c.nome.trim(), cargo: "Comprador" };
+      onContatoDoClienteGravado?.(contato);
+      const escolha = await comprador.contatoGravado(contato);
+      setUsandoExistente(false);
+      if (!escolha.ok) {
+        onAviso("error", "Contato virou Comprador, mas não ficou escolhido na proposta", escolha.erro);
+        return;
+      }
+      const faltas = faltasDoComprador(contato);
+      if (faltas.length > 0) {
+        onAviso("warning", `${contato.nome || "Contato"} agora é Comprador`, `Falta ${faltas.join(" e ")}: complete para enviar para arte.`);
+        abrirCompletar(contato);
+      } else {
+        onAviso("success", `${contato.nome || "Contato"} agora é Comprador`);
+      }
+    } catch (e) {
+      onAviso("error", "Não foi possível marcar o contato como Comprador", e instanceof Error ? e.message : undefined);
+    } finally {
+      setGravando(false);
+    }
+  };
 
   const abrirNovo = () => setRascunho({ id: null, nome: "", whatsapp: "", email: "" });
   const abrirCompletar = (c: CadastroContato) => setRascunho({ id: c.id, nome: c.nome, whatsapp: c.whatsapp, email: c.email });
@@ -184,16 +219,67 @@ export function ArtesCompradorCard({ comprador, idCliente, podeEditarContato, on
           <p className="text-sm font-bold text-slate-800">Comprador do cliente</p>
           <p className="text-xs text-slate-500">Quem recebe a arte. Sem um Comprador com nome, fone e e-mail o pedido não vai para arte.</p>
         </div>
-        {podeEditarContato && clienteCadastrado && !rascunho && (
-          <button
-            type="button"
-            onClick={abrirNovo}
-            className="flex items-center gap-1.5 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-bold text-indigo-700 hover:bg-indigo-100"
-          >
-            <UserPlus size={14} /> Adicionar Comprador
-          </button>
+        {podeEditarContato && clienteCadastrado && !rascunho && !carregando && (
+          <div className="flex flex-wrap gap-2">
+            {candidatos.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setUsandoExistente((v) => !v)}
+                className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50"
+              >
+                <UserCheck size={14} /> Usar contato existente como Comprador
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => {
+                setUsandoExistente(false);
+                abrirNovo();
+              }}
+              className="flex items-center gap-1.5 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-bold text-indigo-700 hover:bg-indigo-100"
+            >
+              <UserPlus size={14} /> Adicionar Comprador
+            </button>
+          </div>
         )}
       </div>
+
+      {usandoExistente && !rascunho && (
+        <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
+          <div className="mb-2 flex items-center justify-between">
+            <p className="text-xs font-bold text-slate-700">Contatos ativos do cliente que não são Comprador</p>
+            <button type="button" onClick={() => setUsandoExistente(false)} className="text-slate-400 hover:text-slate-600" aria-label="Fechar">
+              <X size={14} />
+            </button>
+          </div>
+          <ul className="space-y-1.5">
+            {candidatos.map((c) => (
+              <li key={c.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-white px-3 py-2 text-xs">
+                <span className="text-slate-700">
+                  <span className="font-semibold">{c.nome || "(sem nome)"}</span>
+                  <span className="text-slate-500">
+                    {" · "}
+                    {c.cargo.trim() || "sem cargo"}
+                    {" · "}
+                    {c.whatsapp.trim() ? formatPhoneBR(c.whatsapp) : "sem fone"}
+                    {" · "}
+                    {c.email.trim() || "sem e-mail"}
+                  </span>
+                </span>
+                <button
+                  type="button"
+                  disabled={gravando}
+                  onClick={() => marcarComoComprador(c)}
+                  className="rounded-lg bg-indigo-600 px-3 py-1.5 font-bold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {gravando ? "Gravando..." : "Usar como Comprador"}
+                </button>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2 text-[11px] text-slate-500">Quem não está na lista entra pelo Adicionar Comprador.</p>
+        </div>
+      )}
 
       <div className="mt-4 space-y-3">
         {carregando ? (

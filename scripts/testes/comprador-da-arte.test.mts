@@ -13,7 +13,7 @@
  *   F. arte já enviada (EM ARTE, APROVADO...) não é travada; AGUARDANDO/PENDENTE/vazio são primeiro envio.
  */
 import assert from "node:assert/strict";
-import { arteJaEnviada, situacaoDoComprador } from "@/features/orcamentos/lib/comprador-da-arte";
+import { arteJaEnviada, contatosParaVirarComprador, situacaoDoComprador } from "@/features/orcamentos/lib/comprador-da-arte";
 
 type C = { id: string; nome: string; cargo: string; whatsapp: string; email: string; ativo?: boolean };
 const contato = (id: string, extra: Partial<C> = {}): C => ({
@@ -69,6 +69,24 @@ caso("E. escolha gravada que deixou de ser Comprador volta a pedir escolha", () 
 caso("F. arte já enviada não trava; rascunho trava", () => {
   for (const st of ["EM ARTE", "Em Aprovação", "APROVADO", "Enviar Arte", "Dados Pendentes"]) assert.equal(arteJaEnviada(st), true, st);
   for (const st of [null, undefined, "", " ", "AGUARDANDO", "Pendente"]) assert.equal(arteJaEnviada(st), false, String(st));
+});
+
+caso("G. Edison Jr sem cargo: aparece em Usar contato existente e, virando Comprador, libera sem contato novo", () => {
+  const antes = [contato("64813", { nome: "Edison Jr", cargo: "" }), contato("330", { cargo: "Financeiro" }), contato("9", { cargo: "", ativo: false })];
+  assert.equal(situacaoDoComprador(antes, null).liberado, false);
+  const candidatos = contatosParaVirarComprador(antes);
+  assert.deepEqual(candidatos.map((c) => c.id), ["64813", "330"]); // inativo fora
+  const depois = antes.map((c) => (c.id === "64813" ? { ...c, cargo: "Comprador" } : c));
+  const s = situacaoDoComprador(depois, "64813");
+  assert.equal(s.liberado, true);
+  assert.equal(s.escolhido?.id, "64813");
+  assert.equal(depois.length, antes.length);
+  assert.equal(contatosParaVirarComprador(depois).some((c) => c.id === "64813"), false);
+});
+caso("G. contato existente sem e-mail vira Comprador e segue travado (abre o Completar)", () => {
+  const s = situacaoDoComprador([contato("1", { cargo: "Comprador", email: "" })], "1");
+  assert.equal(s.liberado, false);
+  assert.deepEqual(s.faltas, ["e-mail"]);
 });
 
 console.log(`\n${n} casos ok`);
