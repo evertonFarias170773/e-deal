@@ -11,6 +11,7 @@ import { useAuth } from "@/features/auth/AuthProvider";
 import type { Cobranca, ModeloCobranca } from "@/features/cobrancas/types";
 import { listarModelosCobranca, parcelasDoModelo } from "@/features/cobrancas/services/modelos-cobranca";
 import { referenciaDoBoleto, referenciaRepetida, referenciasDoLancamento } from "@/features/cobrancas/lib/referencia-do-boleto";
+import { tituloOcupaACobranca } from "@/features/contas-a-receber/lib/titulo-da-cobranca";
 import { COLUNAS_NFSE_DO_PEDIDO, escolherNfseAutorizadaDoPedido, type NfseCandidata } from "@/features/nfse/lib/financeiro-nfse";
 import {
   escolherNotaAutorizadaDoPedido,
@@ -598,7 +599,7 @@ export function PrepararBoletosModal({
 
     const { data: existing, error } = await client
       .from("boletos")
-      .select("parcela, status")
+      .select("parcela, status, id_pagamento")
       .eq("id_int", cobranca.id_int);
 
     if (error) {
@@ -608,11 +609,14 @@ export function PrepararBoletosModal({
 
     if (!existing || existing.length === 0) return null;
 
+    // A parcela é da COBRANÇA, não do pedido (06/11/2026, pedido 24253): o
+    // boleto da entrada (outra cobrança) não ocupa a parcela 1 do faturado.
+    // Título legado, sem `id_pagamento`, continua ocupando (titulo-da-cobranca).
     for (const item of list) {
       const ocupada = existing.find(
         (eb) =>
           Number(eb.parcela) === Number(item.parcela) &&
-          String(eb.status || "").toUpperCase() !== "CANCELADO"
+          tituloOcupaACobranca(eb, cobranca.id_pagamento)
       );
       if (ocupada) {
         return { parcela: Number(item.parcela), status: String(ocupada.status || "").toUpperCase() };

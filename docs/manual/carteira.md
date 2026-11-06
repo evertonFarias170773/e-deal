@@ -1,6 +1,6 @@
 # Carteira (contas a receber)
 
-> **Última revisão:** 04/11/2026 (boleto em processamento no banco)
+> **Última revisão:** 06/11/2026 (Registro de recebíveis: títulos contam por cobrança)
 > **Caminho no menu:** Financeiro → Carteira
 > **Endereço:** `/contas-a-receber`
 
@@ -241,7 +241,7 @@ O boleto é cancelado no banco e o título continua ativo, agora como **Depósit
 
 ### Cancelar só uma parcela não deixa relançar
 
-- Ao cancelar um título faturado com **Cancelar recebível**, a cobrança é liberada para voltar ao [Registro de recebíveis](registro-de-recebiveis.md). Mas o Registro só mostra a cobrança quando a proposta não tem mais **nenhum** título ativo. Enquanto existir outra parcela a vencer, vencida ou paga na mesma proposta, a cobrança não aparece lá, e não há como gerar a parcela de novo. Isso vale mesmo com o aviso dizendo que a cobrança volta para o Registro.
+- Ao cancelar um título faturado com **Cancelar recebível**, a cobrança é liberada para voltar ao [Registro de recebíveis](registro-de-recebiveis.md). Mas o Registro só mostra a cobrança quando ela não tem mais **nenhum** título ativo. Enquanto existir outra parcela a vencer, vencida ou paga da mesma cobrança, ela não aparece lá, e não há como gerar a parcela de novo. Título de outra cobrança do pedido (por exemplo, o boleto da entrada) não conta. Isso vale mesmo com o aviso dizendo que a cobrança volta para o Registro.
 - Mesmo quando a cobrança volta ao Registro, o lançamento é sempre do valor inteiro da cobrança: a soma das parcelas novas precisa bater com o total. Não existe lançamento de uma parcela avulsa.
 - Se alguma parcela da proposta já foi paga, a cobrança não volta ao Registro, porque título pago não pode ser cancelado.
 - Por isso, para trocar o boleto de **uma** parcela, não cancele o título. Use, nesta ordem de preferência:

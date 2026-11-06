@@ -1,6 +1,6 @@
 # Proposta: aba Pagamentos
 
-> **Última revisão:** 06/11/2026 (total em centavos exatos, igual ao da Expedição)
+> **Última revisão:** 06/11/2026 (total em centavos exatos; títulos do Registro de recebíveis contam por cobrança)
 > **Caminho no menu:** Pedidos → abrir um pedido → aba Pagamentos
 > **Endereço:** `/orcamentos/<número>/editar?tab=pagamentos`
 
@@ -237,7 +237,7 @@ Se a janela for fechada sem escolher, a proposta fica com a faixa **Revisão fin
 - **Trocar forma de pagamento** vale só para PIX não pago da Ideal Gráfica e da E3 Brindes, e só para Faturado. Na Ideal Birô a ação não aparece. Exige a mesma permissão do cancelamento de cobrança. As outras travas do cancelamento continuam valendo: produção ativa, cobrança paga, pedido entregue, Conta Corrente. O valor, a proposta e o pagador não mudam.
 - Não dá para cancelar cobrança de proposta que já está em produção: o gerente precisa devolver a proposta para REVISAO ATENDENTE ou retirá-la da produção.
 - Não dá para cancelar uma cobrança faturada enquanto ela tiver título em aberto: cancele o título primeiro na Carteira (**Cancelar recebível**). Cancelar o título não cancela a cobrança; são dois passos separados.
-- Cancelar só uma parcela de um faturado parcelado não deixa relançar. A cobrança continua ativa pelo valor inteiro, então **Gerar cobrança** não reaparece; e ela só volta ao Registro de recebíveis quando o pedido não tem mais nenhum título ativo. Para lançar de novo é preciso cancelar todas as parcelas em aberto. Para só corrigir um dado do boleto (número da NF, descrição, vencimento), use **Refazer boleto** na Carteira, que troca o boleto e mantém a parcela; ele não vale para a Ideal Birô.
+- Cancelar só uma parcela de um faturado parcelado não deixa relançar. A cobrança continua ativa pelo valor inteiro, então **Gerar cobrança** não reaparece; e ela só volta ao Registro de recebíveis quando ela não tem mais nenhum título ativo (títulos de outra cobrança do pedido, como o boleto da entrada, não contam). Para lançar de novo é preciso cancelar todas as parcelas em aberto. Para só corrigir um dado do boleto (número da NF, descrição, vencimento), use **Refazer boleto** na Carteira, que troca o boleto e mantém a parcela; ele não vale para a Ideal Birô.
 - Se alguma parcela do faturado já foi paga, a cobrança inteira não pode mais ser cancelada: vira caso de devolução.
 - Cobrança de E-Crédito não se desfaz pelo cancelamento: o crédito consumido não volta sozinho. O caminho é o estorno de crédito.
 - A janela **Cancelar Cobrança** informa que, se não restar nenhuma cobrança ativa, a proposta volta para NOVO.

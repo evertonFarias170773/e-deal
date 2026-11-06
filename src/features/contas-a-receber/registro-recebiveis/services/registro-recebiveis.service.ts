@@ -1,5 +1,6 @@
 import { getSupabaseClient } from "@/lib/supabase/client";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { tituloEstaAtivo, tituloOcupaACobranca } from "@/features/contas-a-receber/lib/titulo-da-cobranca";
 import { PAGAMENTOS_V2_SELECT } from "@/features/cobrancas/services/pagamentos-v2.service";
 import { mapSupabasePagamentoV2RowToCobranca } from "@/features/cobrancas/mappers";
 import type { SupabasePagamentoV2Row } from "@/features/cobrancas/types.supabase";
@@ -18,6 +19,7 @@ const EMPRESA_PLACEHOLDER = "definir empresa";
 type BoletoExistenteRow = {
   id_int: number | string | null;
   status: string | null;
+  id_pagamento: string | null;
 };
 
 function toNumberOrNull(value: unknown): number | null {
@@ -85,17 +87,21 @@ async function fetchRowsPendentes(client: SupabaseClient): Promise<SupabasePagam
   return rows;
 }
 
-async function fetchIdIntsComBoletosAtivos(
+/**
+ * Títulos ativos dos pedidos, agrupados por pedido. Quem decide se um título
+ * é da cobrança é `tituloOcupaACobranca` (por `id_pagamento`), não o pedido.
+ */
+async function fetchTitulosAtivosPorPedido(
   client: SupabaseClient,
   idInts: number[]
-): Promise<Set<number> | null> {
-  const ativos = new Set<number>();
+): Promise<Map<number, BoletoExistenteRow[]> | null> {
+  const porPedido = new Map<number, BoletoExistenteRow[]>();
 
   for (let i = 0; i < idInts.length; i += BOLETOS_IN_BATCH) {
     const lote = idInts.slice(i, i + BOLETOS_IN_BATCH);
     const { data, error } = await client
       .from("boletos")
-      .select("id_int, status")
+      .select("id_int, status, id_pagamento")
       .in("id_int", lote)
       .returns<BoletoExistenteRow[]>();
 
@@ -104,15 +110,15 @@ async function fetchIdIntsComBoletosAtivos(
     }
 
     for (const boleto of data) {
-      const status = String(boleto.status ?? "").toUpperCase();
       const idInt = toNumberOrNull(boleto.id_int);
-      if (idInt && status !== "CANCELADO") {
-        ativos.add(idInt);
-      }
+      if (!idInt || !tituloEstaAtivo(boleto)) continue;
+      const lista = porPedido.get(idInt) ?? [];
+      lista.push(boleto);
+      porPedido.set(idInt, lista);
     }
   }
 
-  return ativos;
+  return porPedido;
 }
 
 export async function getRecebiveisParaRegistro(): Promise<RecebiveisParaRegistroResult> {
@@ -148,9 +154,9 @@ export async function getRecebiveisParaRegistro(): Promise<RecebiveisParaRegistr
     )
   );
 
-  const idIntsComBoletos = await fetchIdIntsComBoletosAtivos(client, idInts);
+  const titulosPorPedido = await fetchTitulosAtivosPorPedido(client, idInts);
 
-  if (!idIntsComBoletos) {
+  if (!titulosPorPedido) {
     return {
       itens: [],
       errorMessage: "Não foi possível verificar títulos existentes no Contas a Receber."
@@ -162,11 +168,17 @@ export async function getRecebiveisParaRegistro(): Promise<RecebiveisParaRegistr
   // viver na Carteira. E o mesmo desfecho de quando o boleto e gerado aqui na
   // tela, que some assim que a lista recarrega. `possuiBoletos` continua sendo
   // calculado e sobrevive no item como rede de seguranca do botao.
+  //
+  // O titulo conta POR COBRANCA (06/11/2026, pedido 24253): o boleto da entrada
+  // de um pedido nao esconde a parte faturada dele. Titulo legado, sem
+  // `id_pagamento`, segue escondendo o pedido inteiro (ver titulo-da-cobranca).
   const itens: RecebivelParaRegistro[] = mapeados
     .map(({ row, cobranca }) => ({
       cobranca,
       plano: resolvePlano(row),
-      possuiBoletos: cobranca.id_int > 0 && idIntsComBoletos.has(cobranca.id_int),
+      possuiBoletos:
+        cobranca.id_int > 0 &&
+        (titulosPorPedido.get(cobranca.id_int) ?? []).some((titulo) => tituloOcupaACobranca(titulo, cobranca.id_pagamento)),
       empresaIndefinida: isEmpresaIndefinida(cobranca)
     }))
     .filter((item) => !item.possuiBoletos);

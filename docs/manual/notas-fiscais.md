@@ -1,6 +1,6 @@
 # Notas fiscais
 
-> **Última revisão:** 05/11/2026 (a condição de pagamento não vai mais escrita na NFS-e). 04/11/2026 (Histórico em duas abas, NF-e e NFS-e; NFS-e com busca própria, mais nova primeiro e começando em Produção; selo Boleto em processamento no banco)
+> **Última revisão:** 06/11/2026 (lançamento no contas a receber: a parcela conta por cobrança). 05/11/2026 (a condição de pagamento não vai mais escrita na NFS-e). 04/11/2026 (Histórico em duas abas, NF-e e NFS-e; NFS-e com busca própria, mais nova primeiro e começando em Produção; selo Boleto em processamento no banco)
 > **Caminho no menu:** Financeiro → Notas fiscais (primeiro item da seção Financeiro do menu lateral)
 > **Endereço:** `/notas-fiscais` (a nota aberta fica em `/notas-fiscais/[id]`)
 
@@ -346,7 +346,7 @@ Ação temporária, da transição entre sistemas. Use só quando a nota do pedi
 - O aviso não aparece em pedido de retirada no balcão, em pedido sem endereço de entrega ou com endereço incompleto (sem rua, cidade, UF ou CEP), em pedido que já tem nota de remessa, na própria nota de remessa, em nota avulsa, em nota já transmitida e na NFS-e. Se o Vibe não conseguir ler os endereços, o selo e a faixa simplesmente não aparecem.
 - Cliente com o interruptor **Nota** desligado no cadastro não entra na fila. Vale o cliente do pedido, não o pagador. Esses pedidos não têm nota emitida pelo Vibe.
 - **Só faturados** e a coluna **Contas a Receber** existem porque só venda faturada vira título. **Lançar no Contas a Receber** só aparece em nota autorizada de pedido com cobrança faturada em aberto.
-- Não dá para lançar no contas a receber quando a soma das parcelas da nota difere do total faturado em aberto da proposta, nem quando a parcela já tem título ativo. Os valores não se ajustam na janela de lançamento: vêm da nota autorizada.
+- Não dá para lançar no contas a receber quando a soma das parcelas da nota difere do total faturado em aberto da proposta, nem quando a parcela já tem título ativo da mesma cobrança (título de outra cobrança do pedido, como o boleto da entrada, não ocupa a parcela). Os valores não se ajustam na janela de lançamento: vêm da nota autorizada.
 - Nota de remessa e nota de pedido pago por PIX, cartão, crédito ou boleto à vista não oferecem **Lançar no Contas a Receber**.
 - A empresa emitente é uma de três: **INGRESSO IDEAL**, **BIRÔ IDEAL** e **E3 BRINDES**. Ela vem do pedido e pode ser trocada no bloco Emitente enquanto a nota ainda puder ser editada.
 

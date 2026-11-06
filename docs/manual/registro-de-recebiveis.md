@@ -1,12 +1,12 @@
 # Registro de recebíveis
 
-> **Última revisão:** 09/10/2026
+> **Última revisão:** 06/11/2026 (títulos contam por cobrança: a entrada em boleto não esconde a parte faturada)
 > **Caminho no menu:** Financeiro → Registro de recebíveis
 > **Endereço:** `/contas-a-receber/registro`
 
 ## Para que serve
 
-É a fila do que foi vendido faturado e ainda não virou título. Cada linha é uma cobrança E-Faturado já aprovada pelo financeiro que não tem boleto nem depósito lançado. Aqui você define as parcelas e gera os títulos, que passam a viver na [Carteira](carteira.md).
+É a fila do que foi vendido faturado e ainda não virou título. Cada linha é uma cobrança E-Faturado já aprovada pelo financeiro que não tem boleto nem depósito lançado **para ela**. Um pedido com entrada paga por boleto ou PIX e o resto faturado aparece aqui só com a parte faturada. Aqui você define as parcelas e gera os títulos, que passam a viver na [Carteira](carteira.md).
 
 Quando a fila está vazia, todas as cobranças faturadas aprovadas já têm título.
 
@@ -117,13 +117,14 @@ Use só quando o parcelamento inteiro precisa ser refeito. Para trocar o boleto 
 
 - Referência do título: é o código que identifica cada parcela no banco e no link do boleto, e não pode se repetir entre títulos ativos. Em faturado de duas parcelas ou mais, cada parcela recebe a sua, no formato P + parcela + total de parcelas + número da proposta (a parcela 2 de 3 da proposta 23181 é P2323181), com ou sem nota fiscal; o número da nota continua aparecendo no título. Só o faturado de parcela única usa a referência da nota, quando ela já está autorizada.
 - Não dá para gerar títulos de uma cobrança com **Empresa a definir**. Regularize a empresa da cobrança antes.
-- A cobrança só volta para esta lista quando a proposta não tem mais nenhum título ativo. Cancelar só uma parcela de um parcelamento não a traz de volta: as outras parcelas ainda estão ativas. É por isso que cancelar só uma parcela não deixa relançar.
+- Os títulos contam por cobrança. O boleto de outra cobrança do mesmo pedido (por exemplo, o boleto da entrada) não tira a cobrança faturada desta lista nem ocupa as parcelas dela. Título antigo, gravado sem a cobrança de origem (o último é de 31/08/2026), continua valendo para o pedido inteiro.
+- A cobrança só volta para esta lista quando ela não tem mais nenhum título ativo. Cancelar só uma parcela de um parcelamento não a traz de volta: as outras parcelas ainda estão ativas. É por isso que cancelar só uma parcela não deixa relançar.
 - Se alguma parcela da proposta já foi paga, a cobrança não volta para esta lista, porque título pago não pode ser cancelado. Para trocar o boleto de uma parcela sem perder as outras, use os caminhos da Carteira: **Refazer boleto** (o indicado), **Prorrogar vencimento** quando só a data muda, ou **Cancelar boleto** seguido de **Transformar em boleto** quando o valor muda.
 - **Refazer boleto** e **Prorrogar vencimento**, na Carteira, não devolvem a cobrança para esta lista: a parcela continua ativa.
 - O lançamento é sempre do valor inteiro da cobrança. A soma das parcelas tem de ser igual ao total, com tolerância de um centavo. Enquanto não bater, **Confirmar Lançamento** fica apagado.
 - O vencimento não pode ser anterior a hoje.
 - Toda parcela precisa ter valor maior que zero.
-- Não dá para lançar uma parcela que já tem título ativo na mesma proposta. Título cancelado não ocupa a parcela.
+- Não dá para lançar uma parcela que já tem título ativo na mesma cobrança. Título cancelado não ocupa a parcela, e título de outra cobrança do pedido também não.
 - A entrada não é lançada por aqui: o parcelamento divide o valor total da cobrança.
 - Gerar os títulos não registra o boleto no banco. O registro é o passo seguinte, na janela **Revisar para Geração Bancária** da Carteira. Registrar no banco exige a permissão **Administrar Contas a Receber**; quem só gera os títulos e não a tem recebe "Sem permissão para registrar boleto no banco (contas_receber.admin)."
 - Multa e juros nascem zerados em cada parcela. Preencha se for cobrar.
@@ -156,7 +157,7 @@ Use só quando o parcelamento inteiro precisa ser refeito. Para trocar o boleto 
 | "A parcela N/N não possui vencimento definido." | Parcela sem data. | Informe o vencimento. |
 | "A parcela N/N deve ter valor superior a zero." | Parcela zerada ou negativa. | Corrija o valor. |
 | "Selecione a empresa recebedora antes de confirmar o lançamento." | Nenhuma empresa válida escolhida. | Escolha a **Empresa recebedora**. |
-| "Duplicidade detectada! A parcela N desta origem já possui um boleto ativo no Contas a Receber..." | Já existe título ativo para essa parcela na proposta. | Cancele o título atual na Carteira antes de lançar de novo. |
+| "Duplicidade detectada! A parcela N desta origem já possui um boleto ativo no Contas a Receber..." | Já existe título ativo para essa parcela nesta cobrança (ou um título antigo, sem cobrança, na mesma parcela do pedido). | Cancele o título atual na Carteira antes de lançar de novo. |
 | "duplicate key value violates unique constraint \"idx_boletos_n_doc_boleto_ativo\"" ou "Duas parcelas deste lançamento ficaram com a mesma referência" | Dois títulos ativos ficariam com a mesma referência. Acontecia em faturado parcelado preparado depois de a nota fiscal sair; corrigido em 09/10/2026. | Nada foi gravado e nenhum boleto foi criado no banco. Recarregue a página e gere os títulos de novo. Se repetir, não insista: avise o suporte com o número da proposta. |
 | "Selecione a data de vencimento da parcela única." | Parcela única marcada sem data. | Informe o **Vencimento da parcela única**. |
 | "Aviso de Sincronização" | Os títulos foram criados, mas a cobrança não foi marcada como lançada. Ela pode continuar na lista. | Não gere de novo. Confira os títulos na Carteira e avise o administrador. |
@@ -179,6 +180,8 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/features/cobrancas/PrepararBoletosModal.tsx`
 - `src/features/cobrancas/lib/referencia-do-boleto.ts`
 - `src/features/contas-a-receber/ContasReceberPage.tsx`
+- `src/features/contas-a-receber/lib/titulo-da-cobranca.ts`
+- `supabase/migrations/20261106_boletos_parcela_unica_por_cobranca.sql`
 - `src/components/common/PermissionGuard.tsx`
 - `src/features/usuarios-perfis/catalogo-permissoes.ts`
 - `src/constants/navigation.ts`
