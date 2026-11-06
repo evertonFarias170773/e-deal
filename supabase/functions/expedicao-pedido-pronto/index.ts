@@ -17,13 +17,18 @@
  * que precisa pertencer ao cliente ou ao faturado do pedido.
  *
  * MODO TESTE: ligado enquanto CHATGURU_PEDIDO_PRONTO_MODO_TESTE não for
- * "desligado". Ligado, todo destino vira o número de teste (cliente #14) e
- * qualquer outro número é recusado.
+ * "desligado". Ligado, só pedido do cliente #14 (e contato do cliente #14):
+ * qualquer outro pedido é recusado aqui. O destino é sempre o WhatsApp do
+ * contato como está no cadastro.
+ *
+ * Recusa do ChatGuru por número ("Chat não encontrado."): a resposta traz o
+ * número enviado e o contato, para a tela oferecer "Corrigir número". Nada disso
+ * é gravado. O Vibe não tenta outro formato sozinho.
  */
 import { createClient } from "npm:@supabase/supabase-js@2";
 import {
   Recusa,
-  destinoFinal,
+  conferirModoTeste,
   envioAceito,
   envioRecusado,
   formaDeEnvio,
@@ -31,6 +36,7 @@ import {
   linhasDeItens,
   modoTesteLigado,
   montarMensagem,
+  recusaPorNumero,
   telefoneWhatsApp,
   type ItemPedido
 } from "./logica.ts";
@@ -128,7 +134,7 @@ async function quemChama(req: Request) {
 }
 
 /** Relê pedido, contato, itens e frete na hora do envio. */
-async function contextoDoPedido(idInt: number) {
+async function contextoDoPedido(idInt: number, modoTeste: boolean) {
   const { data: p, error } = await admin
     .from("propostas")
     .select("id_int, id_cliente, id_faturado, id_contato, status_interno, modalidade_frete, id_transportadora_cliente")
@@ -139,6 +145,7 @@ async function contextoDoPedido(idInt: number) {
   if ((p.status_interno ?? "").toUpperCase() !== "EXPEDICAO") {
     throw new Recusa(409, `O pedido ${idInt} não está pronto para expedir (status ${p.status_interno ?? "vazio"}).`);
   }
+  conferirModoTeste(modoTeste, p.id_cliente);
 
   const idContato = Number(String(p.id_contato ?? "").trim());
   if (!Number.isInteger(idContato) || idContato <= 0) {
@@ -155,6 +162,7 @@ async function contextoDoPedido(idInt: number) {
   if (!donos.includes(Number(contato.id_cliente))) {
     throw new Recusa(409, "O contato do pedido não pertence ao cliente nem ao faturado. Corrija o contato na proposta.");
   }
+  conferirModoTeste(modoTeste, p.id_cliente, contato.id_cliente);
 
   const [itensRes, expRes, cotRes] = await Promise.all([
     admin.from("produtos_proposta").select("nome_produto, qtd, status_item").eq("id_int", idInt).order("id"),
@@ -306,10 +314,9 @@ Deno.serve(async (req) => {
       if (ultimo.estado === "preparando") throw new Recusa(409, "Já há um envio em andamento para este pedido.");
     }
 
-    const ctx = await contextoDoPedido(idInt);
+    const ctx = await contextoDoPedido(idInt, modoTeste);
     const cfg = configChatGuru();
-    const numeroContato = telefoneWhatsApp(ctx.contato.whats, cfg.ddi);
-    const destino = destinoFinal(numeroContato, modoTeste);
+    const destino = telefoneWhatsApp(ctx.contato.whats, cfg.ddi);
 
     const { data: reserva, error: errReserva } = await admin.rpc("expedicao_aviso_pronto_reservar", {
       p_id_int: idInt,
@@ -328,6 +335,7 @@ Deno.serve(async (req) => {
     let resultado: Registro;
     // Motivo da recusa dado pelo ChatGuru: só volta na resposta, nunca é gravado.
     let motivoChatGuru: string | null = null;
+    let porNumero = false;
     try {
       const { http, data } = await chamarChatGuru(cfg, "message_send", { chat_number: destino, text: ctx.texto });
       const messageId = envioAceito(http, data);
@@ -335,7 +343,9 @@ Deno.serve(async (req) => {
         resultado = await salvar(String(reserva), data?.message_status === "sent" ? "enviado" : "aguardando", messageId);
       } else {
         motivoChatGuru = limpar(data?.description, 200) || null;
-        resultado = await salvar(String(reserva), envioRecusado(http, data) ? "falhou" : "desconhecido", null);
+        const recusado = envioRecusado(http, data);
+        porNumero = recusado && recusaPorNumero(motivoChatGuru);
+        resultado = await salvar(String(reserva), recusado ? "falhou" : "desconhecido", null);
       }
     } catch (e) {
       if (e instanceof Recusa) throw e;
@@ -347,7 +357,9 @@ Deno.serve(async (req) => {
       modo_teste: modoTeste,
       ja_existia: false,
       aviso: publico(resultado),
-      motivo_chatguru: motivoChatGuru
+      motivo_chatguru: motivoChatGuru,
+      // Só na recusa por número: o que foi enviado e de qual contato (não gravado).
+      recusa_numero: porNumero ? { numero_enviado: destino, id_contato: ctx.idContato } : null
     });
   } catch (e) {
     if (e instanceof Recusa) return responder(e.status, { ok: false, mensagem: e.message });

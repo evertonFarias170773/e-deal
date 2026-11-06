@@ -6,22 +6,24 @@
  *
  * SEM rede e SEM banco.
  *   A. modo teste: ligado sem variável e com qualquer valor que não seja "desligado";
- *   B. modo teste troca o destino pelo número de teste;
+ *   B. modo teste: só cliente #14 (pedido e contato); desligado, qualquer um;
  *   C. telefone: tira formatação, põe 55, não mexe no nono dígito, recusa lixo;
  *   D. forma de envio: retirada, Correios, motoboy, transportadora com nome;
  *   E. mensagem padrão e itens (cancelado fica fora);
- *   F. aceite: só 2xx + success + 201 + message_id.
+ *   F. aceite: só 2xx + success + 201 + message_id;
+ *   G. recusa por número ("Chat não encontrado.") abre o "Corrigir número".
  */
 import assert from "node:assert/strict";
 import {
-  NUMERO_TESTE,
-  destinoFinal,
+  CLIENTE_TESTE,
+  conferirModoTeste,
   envioAceito,
   envioRecusado,
   formaDeEnvio,
   linhasDeItens,
   modoTesteLigado,
   montarMensagem,
+  recusaPorNumero,
   telefoneWhatsApp
 } from "../../supabase/functions/expedicao-pedido-pronto/logica.ts";
 
@@ -40,10 +42,22 @@ caso("A. modo teste ligado por padrão", () => {
   assert.equal(modoTesteLigado(" Desligado "), false);
 });
 
-caso("B. modo teste troca qualquer destino pelo número de teste", () => {
-  assert.equal(destinoFinal("5551991107694", true), NUMERO_TESTE);
-  assert.equal(destinoFinal("5511999998888", true), "555184608848");
-  assert.equal(destinoFinal("5511999998888", false), "5511999998888");
+caso("B. modo teste só aceita o cliente #14", () => {
+  assert.equal(CLIENTE_TESTE, 14);
+  assert.doesNotThrow(() => conferirModoTeste(true, 14));
+  assert.doesNotThrow(() => conferirModoTeste(true, "14", 14));
+  assert.throws(() => conferirModoTeste(true, 15), /cliente #14/);
+  assert.throws(() => conferirModoTeste(true, null), /cliente #14/);
+  assert.throws(() => conferirModoTeste(true, 14, 900), /contatos do cliente #14/);
+  assert.doesNotThrow(() => conferirModoTeste(false, 15, 900));
+});
+
+caso("G. recusa por número", () => {
+  assert.equal(recusaPorNumero("Chat não encontrado."), true);
+  assert.equal(recusaPorNumero("Chat nao encontrado"), true);
+  assert.equal(recusaPorNumero("Número inválido"), true);
+  assert.equal(recusaPorNumero("Mensagem vazia"), false);
+  assert.equal(recusaPorNumero(null), false);
 });
 
 caso("C. telefone", () => {

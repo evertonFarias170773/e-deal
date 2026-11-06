@@ -5,12 +5,15 @@ import { MessageCircle } from "lucide-react";
 import { useAppToast } from "@/components/common/AppToast";
 import { formatDateTime } from "@/lib/formatters/date";
 import { ConfirmarAcaoModal } from "./ConfirmarAcaoModal";
+import { CorrigirNumeroModal } from "./CorrigirNumeroModal";
+import type { RecusaNumeroDoAviso } from "../hooks/useAvisosPedidoPronto";
 import {
   ROTULO_ESTADO_AVISO,
   consultarStatusAvisoPronto,
   enviarAvisoPronto,
   reenviarAvisoPronto,
-  type AvisoPronto
+  type AvisoPronto,
+  type RecusaPorNumero
 } from "../services/aviso-pronto.client";
 
 /**
@@ -21,6 +24,11 @@ import {
  * estado. "Reenviar" pede confirmação e o servidor faz uma reserva nova. Em
  * "resultado desconhecido" nada é reenviado sozinho: a tela pede para conferir
  * no ChatGuru antes.
+ *
+ * Recusa por número ("Chat não encontrado."): mostra o número enviado. Quem tem
+ * cadastros.edit (ou ADM) vê "Corrigir número", que grava contatos.whats pela
+ * gravação do cadastro; o Reenviar volta depois do salvar. Quem não tem vê o
+ * pedido de correção e o Reenviar (a correção pode vir do cadastro).
  */
 export function AvisoPedidoPronto({
   idInt,
@@ -28,20 +36,27 @@ export function AvisoPedidoPronto({
   aviso,
   modoTeste,
   podeOperar,
+  podeEditarCadastro,
+  recusaNumero,
   compacto = false,
-  onAviso
+  onAviso,
+  onNumeroCorrigido
 }: {
   idInt: number;
   statusInterno: string;
   aviso: AvisoPronto | undefined;
   modoTeste: boolean;
   podeOperar: boolean;
+  podeEditarCadastro: boolean;
+  recusaNumero: RecusaNumeroDoAviso | undefined;
   compacto?: boolean;
-  onAviso: (idInt: number, aviso: AvisoPronto | null | undefined, modoTeste?: boolean) => void;
+  onAviso: (idInt: number, aviso: AvisoPronto | null | undefined, modoTeste?: boolean, recusa?: RecusaPorNumero | null) => void;
+  onNumeroCorrigido: (idInt: number) => void;
 }) {
   const { showToast } = useAppToast();
   const [ocupado, setOcupado] = useState(false);
   const [confirmando, setConfirmando] = useState(false);
+  const [corrigindo, setCorrigindo] = useState(false);
 
   if ((statusInterno ?? "").toUpperCase() !== "EXPEDICAO") return null;
   if (!aviso && !podeOperar) return null;
@@ -51,7 +66,7 @@ export function AvisoPedidoPronto({
     setOcupado(true);
     const res = await enviarAvisoPronto(idInt);
     setOcupado(false);
-    onAviso(idInt, res.aviso, res.modo_teste);
+    onAviso(idInt, res.aviso, res.modo_teste, res.ja_existia ? undefined : (res.recusa_numero ?? null));
     if (!res.ok) {
       showToast({ type: "error", title: "Aviso não enviado", description: res.mensagem });
       return;
@@ -64,7 +79,7 @@ export function AvisoPedidoPronto({
       });
       return;
     }
-    toastDoResultado(res.aviso ?? null, res.motivo_chatguru);
+    toastDoResultado(res.aviso ?? null, res.motivo_chatguru, res.recusa_numero ?? null);
   }
 
   async function reenviar() {
@@ -73,7 +88,7 @@ export function AvisoPedidoPronto({
     const res = await reenviarAvisoPronto(idInt, aviso.seq);
     setOcupado(false);
     setConfirmando(false);
-    onAviso(idInt, res.aviso, res.modo_teste);
+    onAviso(idInt, res.aviso, res.modo_teste, res.ja_existia ? undefined : (res.recusa_numero ?? null));
     if (!res.ok) {
       showToast({ type: "error", title: "Reenvio não feito", description: res.mensagem });
       return;
@@ -82,7 +97,7 @@ export function AvisoPedidoPronto({
       showToast({ type: "info", title: "Outro envio chegou antes", description: "Nada foi enviado de novo." });
       return;
     }
-    toastDoResultado(res.aviso ?? null, res.motivo_chatguru);
+    toastDoResultado(res.aviso ?? null, res.motivo_chatguru, res.recusa_numero ?? null);
   }
 
   async function atualizarStatus() {
@@ -94,13 +109,19 @@ export function AvisoPedidoPronto({
     if (!res.ok) showToast({ type: "error", title: "Status não consultado", description: res.mensagem });
   }
 
-  function toastDoResultado(a: AvisoPronto | null, motivo?: string | null) {
+  function toastDoResultado(a: AvisoPronto | null, motivo?: string | null, recusa?: RecusaPorNumero | null) {
     if (!a) return;
     if (a.estado === "enviado" || a.estado === "aguardando") {
       showToast({
         type: "success",
         title: "Aviso enviado",
         description: `Pedido ${idInt}: ${ROTULO_ESTADO_AVISO[a.estado]}.${a.modo_teste ? " Modo teste: foi para o número de teste." : ""}`
+      });
+    } else if (a.estado === "falhou" && recusa) {
+      showToast({
+        type: "error",
+        title: `Número não encontrado no ChatGuru: ${recusa.numero_enviado}`,
+        description: `${motivo ? `ChatGuru: ${motivo} ` : ""}Nada saiu. ${podeEditarCadastro ? "Use Corrigir número e depois Reenviar." : "Peça a correção a quem pode editar o cadastro."}`
       });
     } else if (a.estado === "falhou") {
       showToast({
@@ -137,6 +158,10 @@ export function AvisoPedidoPronto({
   }
 
   const saiu = aviso.estado === "enviado" || aviso.estado === "aguardando";
+  // Recusa por número desta tentativa (só nesta tela: o servidor não grava o número).
+  const recusa = aviso.estado === "falhou" && recusaNumero && recusaNumero.seq === aviso.seq ? recusaNumero : null;
+  // Com recusa por número ainda não corrigida, quem pode corrigir corrige antes de reenviar.
+  const esperaCorrecao = Boolean(recusa && !recusa.corrigido && podeEditarCadastro);
   const cor =
     aviso.estado === "enviado"
       ? "text-emerald-700 dark:text-emerald-300"
@@ -161,6 +186,27 @@ export function AvisoPedidoPronto({
           Confira no ChatGuru se a mensagem saiu antes de reenviar.
         </span>
       )}
+      {recusa && (
+        <span className="max-w-[18rem] font-semibold text-red-700 dark:text-red-300">
+          Número não encontrado no ChatGuru: {recusa.numero_enviado}
+        </span>
+      )}
+      {recusa && recusa.corrigido && (
+        <span className="max-w-[18rem] text-emerald-700 dark:text-emerald-300">Número corrigido no cadastro. Use Reenviar.</span>
+      )}
+      {recusa && !recusa.corrigido && !podeEditarCadastro && (
+        <span className="max-w-[18rem] text-slate-600 dark:text-slate-300">Peça a correção a quem pode editar o cadastro.</span>
+      )}
+      {recusa && !recusa.corrigido && podeEditarCadastro && (
+        <button
+          type="button"
+          disabled={ocupado}
+          onClick={() => setCorrigindo(true)}
+          className="font-semibold text-red-700 underline-offset-2 hover:underline disabled:opacity-50 dark:text-red-300"
+        >
+          Corrigir número
+        </button>
+      )}
       {podeOperar && (
         <span className="flex gap-2">
           {aviso.message_id && aviso.estado !== "enviado" && (
@@ -173,7 +219,7 @@ export function AvisoPedidoPronto({
               Atualizar status
             </button>
           )}
-          {aviso.estado !== "preparando" && (
+          {aviso.estado !== "preparando" && !esperaCorrecao && (
             <button
               type="button"
               disabled={ocupado}
@@ -184,6 +230,18 @@ export function AvisoPedidoPronto({
             </button>
           )}
         </span>
+      )}
+      {corrigindo && recusa && (
+        <CorrigirNumeroModal
+          idContato={recusa.id_contato}
+          numeroEnviado={recusa.numero_enviado}
+          onClose={() => setCorrigindo(false)}
+          onSalvo={() => {
+            setCorrigindo(false);
+            onNumeroCorrigido(idInt);
+            showToast({ type: "success", title: "Número salvo no cadastro", description: "Use Reenviar para mandar o aviso de novo." });
+          }}
+        />
       )}
       {confirmando && (
         <ConfirmarAcaoModal

@@ -4,11 +4,11 @@
  */
 
 /**
- * Cliente teste #14 (contato Edison Jr), SEM o nono dígito: é o formato em que
- * o ChatGuru guarda a conversa. Único destino aceito com o modo teste ligado.
- * 5551985018848 e 5551984608848 deram "Chat não encontrado." em 06/11/2026.
+ * Modo teste (06/11/2026, 2ª versão): só pedido do cliente #14, com contato do
+ * cliente #14. O destino é o WhatsApp do contato como está no cadastro — não há
+ * mais número fixo.
  */
-export const NUMERO_TESTE = "555184608848";
+export const CLIENTE_TESTE = 14;
 
 export class Recusa extends Error {
   status: number;
@@ -48,16 +48,27 @@ export function telefoneWhatsApp(valor: unknown, ddi: string): string {
 }
 
 /**
- * Destino final. Modo teste: qualquer destinatário vira o número de teste. A
- * conferência final recusa o envio se, por qualquer caminho, o número não for o
- * de teste.
+ * Modo teste ligado: recusa no servidor todo pedido que não seja do cliente
+ * #14 e todo contato que não seja do cliente #14 (o faturado pode ser outro
+ * cliente, com gente real).
  */
-export function destinoFinal(numeroDoContato: string, modoTeste: boolean): string {
-  const destino = modoTeste ? NUMERO_TESTE : numeroDoContato;
-  if (modoTeste && destino !== NUMERO_TESTE) {
-    throw new Recusa(403, "Modo teste: só é permitido enviar para o número de teste.");
+export function conferirModoTeste(modoTeste: boolean, idClientePedido: unknown, idClienteContato?: unknown): void {
+  if (!modoTeste) return;
+  if (Number(idClientePedido) !== CLIENTE_TESTE) {
+    throw new Recusa(403, `Modo teste: só pedidos do cliente #${CLIENTE_TESTE} podem ser avisados.`);
   }
-  return destino;
+  if (idClienteContato !== undefined && Number(idClienteContato) !== CLIENTE_TESTE) {
+    throw new Recusa(403, `Modo teste: só contatos do cliente #${CLIENTE_TESTE} podem receber o aviso.`);
+  }
+}
+
+/**
+ * Recusa do ChatGuru por causa do número (ex.: "Chat não encontrado."): a tela
+ * mostra o número enviado e oferece "Corrigir número". O Vibe não tenta outro
+ * formato sozinho.
+ */
+export function recusaPorNumero(motivo: string | null | undefined): boolean {
+  return /chat\s+n[aã]o\s+encontrad|n[uú]mero|telefone|chat_number|whats/i.test(motivo ?? "");
 }
 
 export type ExpedicaoRow = {

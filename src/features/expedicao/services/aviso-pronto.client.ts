@@ -22,6 +22,9 @@ export type AvisoPronto = {
   atualizado_em: string;
 };
 
+/** Recusa do ChatGuru por número: o número que foi enviado e o contato do pedido. */
+export type RecusaPorNumero = { numero_enviado: string; id_contato: number };
+
 type Resposta = {
   ok: boolean;
   mensagem?: string;
@@ -32,6 +35,8 @@ type Resposta = {
   status_chatguru?: string | null;
   /** Motivo da recusa dado pelo ChatGuru (ex.: "Chat não encontrado."). Não é gravado. */
   motivo_chatguru?: string | null;
+  /** Só quando o ChatGuru recusou pelo número ("Chat não encontrado."). Não é gravado. */
+  recusa_numero?: RecusaPorNumero | null;
 };
 
 const FUNCAO = "expedicao-pedido-pronto";

@@ -19,6 +19,7 @@ A tela também avisa o que está atrasado ou prometido para hoje e segura o desp
 - **Reenviar (pedido devolvido)** aparece para quem tem a permissão **Reenviar Pedido Devolvido** (ou Administrador). Nenhum perfil nasce com ela: quem administra os perfis concede.
 - **Encerrar teste** é exclusivo do Super Administrador.
 - **Avisar cliente: pedido pronto**, **Reenviar** e **Atualizar status** pedem a permissão **Processar Envio / Retirada** (ou Administrador). Quem só tem **Visualizar Expedição** vê o aviso já enviado, sem os botões.
+- **Corrigir número** (no aviso recusado por número) aparece só para quem tem a permissão **Editar Cadastros** (ou Administrador). O perfil Expedidor não tem: vê o número recusado e o pedido de correção.
 
 ## Botões e ações da tela
 
@@ -62,6 +63,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | "Aviso enviado em … por …" (ou "Tentativa de aviso em … por …") | No lugar do botão, depois do envio | Mostra quando, quem e o estado do aviso |
 | **Atualizar status** | Abaixo do aviso, enquanto ele não está entregue ao WhatsApp | Consulta o ChatGuru. Não envia nada |
 | **Reenviar** | Abaixo do aviso | Pede confirmação e manda outra mensagem |
+| **Corrigir número** | Abaixo do aviso, quando o ChatGuru recusou pelo número ("Número não encontrado no ChatGuru: {número}") | Abre a janela **Corrigir número** com o WhatsApp do contato do pedido; salvar grava no cadastro do contato |
 
 #### Menu de ações do pedido
 
@@ -198,7 +200,15 @@ O pedido também chega à Expedição pela Revisão do boletim da produção.
 5. Para mandar de novo, clique em **Reenviar** e confirme na janela **Reenviar aviso de pedido pronto?**.
 6. Em **resultado desconhecido**, confira no ChatGuru se a mensagem saiu antes de reenviar. O Vibe não reenvia sozinho.
 
-Enquanto o **modo teste** estiver ligado (aparece "modo teste" no botão e no aviso), a mensagem vai só para o número de teste, nunca para o cliente. O modo teste não se desliga pela tela.
+Se o ChatGuru recusar pelo número, o aviso mostra "Número não encontrado no ChatGuru: {número enviado}":
+
+1. Clique em **Corrigir número**. A janela abre com o WhatsApp do contato do pedido, como está no cadastro.
+2. Corrija o número e clique em **Salvar número**. A gravação vai para o cadastro do contato, a mesma do cadastro do cliente.
+3. Aparece "Número corrigido no cadastro. Use Reenviar." Clique em **Reenviar** e confirme.
+
+Quem não tem **Editar Cadastros** vê "Peça a correção a quem pode editar o cadastro." O Vibe não tenta outro formato do número sozinho. O número recusado só fica na tela até ela ser recarregada; depois o aviso aparece só como **falhou**, com **Reenviar**.
+
+Enquanto o **modo teste** estiver ligado (aparece "modo teste" no botão e no aviso), só pedidos do cliente de teste (#14), com contato desse cliente, podem ser avisados; o de qualquer outro cliente é recusado. A mensagem vai para o WhatsApp do contato do pedido, como está no cadastro. O modo teste não se desliga pela tela.
 
 ### Conferir o pedido (peso e volumes)
 
@@ -330,7 +340,8 @@ Em resumo: no pedido Na Expedição, clique em **Despachar**, confira peso, volu
 |---|---|---|
 | "O pedido não tem contato. Escolha o contato na proposta." ou "O contato do pedido não pertence ao cliente nem ao faturado." | O aviso de pedido pronto não tem para quem ir | Corrigir o contato na proposta e clicar de novo em **Avisar cliente: pedido pronto** |
 | "O WhatsApp do contato do pedido está vazio ou inválido." | O contato não tem WhatsApp válido | Corrigir o WhatsApp no cadastro do contato |
-| "O ChatGuru recusou o envio" com "ChatGuru: Chat não encontrado." | O número não tem conversa aberta no WhatsApp da Ideal (o Vibe não cria conversa nova) | Abrir a conversa com o número no ChatGuru e usar **Reenviar** |
+| "Número não encontrado no ChatGuru: {número}" | O número não tem conversa no WhatsApp da Ideal nesse formato (o ChatGuru pode guardar a conversa sem o nono dígito; o Vibe não cria conversa nova) | **Corrigir número** e depois **Reenviar**. Sem a permissão, pedir a correção a quem edita o cadastro |
+| "Modo teste: só pedidos do cliente #14 podem ser avisados." | O modo teste está ligado e o pedido é de outro cliente | Nada a fazer pela tela: o aviso fica liberado quando o modo teste for desligado |
 | "Este pedido já tinha aviso" | Já houve aviso para o pedido | Nada foi enviado de novo. Para mandar outra mensagem, use **Reenviar** |
 | Aviso em **resultado desconhecido** | O ChatGuru não respondeu a tempo ou respondeu algo inesperado | Conferir no ChatGuru se a mensagem saiu; só então usar **Reenviar** |
 | Falta informar o peso aferido (ou a transportadora, o endereço de entrega, a quantidade de volumes, a modalidade do frete) | Falta dado mínimo do despacho | Preencher o campo indicado. Endereço e transportadora se corrigem na proposta |

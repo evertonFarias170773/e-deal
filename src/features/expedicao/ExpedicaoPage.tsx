@@ -215,8 +215,11 @@ export function ExpedicaoPage() {
         aviso={avisosPronto.avisos.get(p.idInt)}
         modoTeste={avisosPronto.modoTeste}
         podeOperar={Boolean(canOperar)}
+        podeEditarCadastro={podeEditarCadastro}
+        recusaNumero={avisosPronto.recusas.get(p.idInt)}
         compacto={compacto}
         onAviso={avisosPronto.atualizar}
+        onNumeroCorrigido={avisosPronto.marcarCorrigido}
       />
     );
   }
