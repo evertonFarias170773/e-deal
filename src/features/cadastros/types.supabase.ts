@@ -89,6 +89,8 @@ export type SupabaseContatoRow = {
   cargo?: SupabaseNullableValue;
   whats?: SupabaseNullableValue;
   e_mail?: SupabaseNullableValue;
+  /** `contatos.ativo` (06/11/2026): NOT NULL, default true. */
+  ativo?: boolean | null;
   created_at?: SupabaseNullableValue;
 };
 

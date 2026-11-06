@@ -24,6 +24,7 @@ import { AjusteContaCorrenteModal } from "./components/AjusteContaCorrenteModal"
 import { NovaTarefaModal } from "@/features/tarefas/components/NovaTarefaModal";
 import { useTarefas } from "@/features/tarefas/TarefasProvider";
 import { useAuth } from "@/features/auth/AuthProvider";
+import { contatoEstaAtivo } from "@/features/cadastros/lib/contatos-ativos";
 
 const categoriaLabel: Record<CadastroCategoria, string> = {
   CLIENTE: "Cliente",
@@ -315,8 +316,8 @@ export function CadastroDetailPage({ cadastro, dataSource = "mock" }: CadastroDe
         />
         <SummaryCard
           title="Contatos"
-          value={cadastro.contatos.length.toString()}
-          description="Pessoas vinculadas a este cadastro."
+          value={cadastro.contatos.filter(contatoEstaAtivo).length.toString()}
+          description="Contatos ativos vinculados a este cadastro."
           tone="neutral"
           icon={Phone}
         />
@@ -573,7 +574,7 @@ export function CadastroDetailPage({ cadastro, dataSource = "mock" }: CadastroDe
         <div className="space-y-6">
           <DetailCard title="Contatos">
             <div className="space-y-3">
-              {cadastro.contatos.map((contato) => (
+              {cadastro.contatos.filter(contatoEstaAtivo).map((contato) => (
                 <div key={contato.id} className="rounded-2xl border border-slate-200 p-4">
                   <p className="font-semibold text-slate-950">{contato.nome}</p>
                   <p className="text-sm text-slate-500">{contato.cargo}</p>
@@ -589,6 +590,24 @@ export function CadastroDetailPage({ cadastro, dataSource = "mock" }: CadastroDe
                   </div>
                 </div>
               ))}
+              {/* Inativos (06/11/2026): recolhidos. Inativar e Reativar ficam na edição do cadastro. */}
+              {cadastro.contatos.some((c) => !contatoEstaAtivo(c)) && (
+                <details className="rounded-2xl border border-dashed border-slate-300 px-4 py-3">
+                  <summary className="cursor-pointer text-sm font-semibold text-slate-600">
+                    Inativos ({cadastro.contatos.filter((c) => !contatoEstaAtivo(c)).length})
+                  </summary>
+                  <div className="mt-3 space-y-2">
+                    {cadastro.contatos.filter((c) => !contatoEstaAtivo(c)).map((contato) => (
+                      <div key={contato.id} className="rounded-xl bg-slate-50 px-3 py-2 text-sm text-slate-600">
+                        <p className="font-semibold">{contato.nome}</p>
+                        <p className="text-xs text-slate-500">
+                          {[contato.cargo, contato.whatsapp, contato.email].filter((v) => v && v.trim()).join(" · ")}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </details>
+              )}
             </div>
           </DetailCard>
 

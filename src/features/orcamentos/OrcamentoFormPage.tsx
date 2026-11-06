@@ -73,6 +73,7 @@ import {
 import { bonusDaEdicao } from "@/features/orcamentos/lib/bonus-da-proposta";
 import { bonusPercentDosItens, resumoNoCentavo } from "@/features/orcamentos/lib/total-no-centavo";
 import { contatosDaEdicao } from "@/features/orcamentos/lib/contato-da-edicao";
+import { contatosParaEscolher, primeiroContatoAtivo } from "@/features/cadastros/lib/contatos-ativos";
 import { createCadastroContatos, getCadastrosReadOnlyList, getCadastroCompleto } from "@/features/cadastros/services/cadastros.service";
 import { gravarContatoNovoNoCadastro, type DependenciasContatoNovo } from "@/features/orcamentos/lib/contato-novo-no-cadastro";
 import { listProdutos } from "@/features/produtos/services/produtos.service";
@@ -719,9 +720,12 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
 
   // Inclui o contato gravado na proposta quando ele não é do cadastro — ver
   // `contatosDaEdicao`. O `contatoId` inicial (createInitialState) usa a mesma regra.
-  const [proposalContacts, setProposalContacts] = useState<CadastroContato[]>(() =>
-    proposta ? contatosDaEdicao(proposta.cliente.contatos ?? [], proposta.contato?.id ?? "", proposta.contatoGravado, proposta.id_int).contatos : []
-  );
+  // Contato inativo fica fora da escolha, menos o que a proposta já usa (lib/contatos-ativos).
+  const [proposalContacts, setProposalContacts] = useState<CadastroContato[]>(() => {
+    if (!proposta) return [];
+    const daEdicao = contatosDaEdicao(proposta.cliente.contatos ?? [], proposta.contato?.id ?? "", proposta.contatoGravado, proposta.id_int);
+    return contatosParaEscolher(daEdicao.contatos, daEdicao.contatoId);
+  });
   const [proposalAddresses, setProposalAddresses] = useState<CadastroEndereco[]>(() => {
     if (proposta?.cliente?.enderecos && proposta.cliente.enderecos.length > 0) return proposta.cliente.enderecos;
     return [];
@@ -2788,7 +2792,8 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
       const nextEndereco = enderLista.find(e => e.tipo === "entrega") 
         || enderLista.find(e => e.tipo === "principal") 
         || enderLista[0];
-      const nextContacts = nextCliente.contatos || [];
+      // Cliente escolhido agora: só os contatos ativos (lib/contatos-ativos).
+      const nextContacts = contatosParaEscolher(nextCliente.contatos || []);
       const nextBonus = bonusDoFormulario(proposta, nextCliente);
       const recalculatedItems = form.itens.map((item) => recalculateItem(item, nextBonus, nextCliente));
 
@@ -2923,10 +2928,13 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     listar: async (idCliente) => {
       const client = getSupabaseClient();
       if (!client) return { ok: false, motivo: "Conexão com o banco indisponível." };
+      // Só os ativos: contato novo com o nome de um inativo vira contato novo e ativo,
+      // em vez de a proposta apontar para o que foi inativado.
       const { data, error } = await client
         .from("contatos")
         .select("id,nome_contato,cargo,whats,e_mail")
         .eq("id_cliente", idCliente)
+        .eq("ativo", true)
         .limit(1000);
       if (error) return { ok: false, motivo: `Não foi possível ler os contatos do cliente: ${error.message}` };
       return { ok: true, contatos: data ?? [] };
@@ -10037,7 +10045,7 @@ function createInitialState(proposta?: Proposta): PropostaFormState {
       ? ""
       : proposta
         ? contatosDaEdicao(proposta.cliente.contatos ?? [], proposta.contato?.id ?? "", proposta.contatoGravado, proposta.id_int).contatoId
-        : (cliente?.contatos[0]?.id ?? ""),
+        : (primeiroContatoAtivo(cliente?.contatos ?? [])?.id ?? ""),
     enderecoId: clienteNaoCadastrado ? "" : (endereco?.id ?? (
       cliente?.enderecos?.find(e => e.tipo === "entrega")?.id || 
       cliente?.enderecos?.find(e => e.tipo === "principal")?.id || 

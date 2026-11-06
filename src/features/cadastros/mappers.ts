@@ -205,7 +205,9 @@ export function mapSupabaseContatoRowToCadastroContato(row: SupabaseContatoRow):
     nome: toText(row.nome_contato) || toText(row.nome),
     cargo: toText(row.cargo),
     whatsapp: toText(row.whats),
-    email: toText(row.e_mail)
+    email: toText(row.e_mail),
+    // Só `false` gravado inativa; coluna ausente na leitura = ativo.
+    ativo: row.ativo !== false
   };
 }
 

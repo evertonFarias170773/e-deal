@@ -102,6 +102,7 @@ import {
   type DivergenciaDeLote
 } from "@/features/orcamentos/lib/divergencia-lotes";
 import { danfesDoPedido } from "@/lib/fiscal/danfes-do-pedido";
+import { primeiroContatoAtivo } from "@/features/cadastros/lib/contatos-ativos";
 import { padraoBuscaSemAcento, valorParaOr, digitosDeDocumentoParaBusca } from "@/features/orcamentos/lib/padrao-busca";
 import {
   ativosValem,
@@ -1942,8 +1943,10 @@ export async function getPropostaDetailById(idInt: number, overrideClient?: Supa
     // rodada separada; ate la o comportamento fica exatamente como sempre foi.
     let contact = clientObj.contatos.find((c) => c.nome === proposalRow.contato);
 
+    // O contato USADO (achado pelo nome acima) vale mesmo inativo. A reserva, quando
+    // o nome não casa, é o primeiro ATIVO (lib/contatos-ativos), não um inativado.
     if (!contact) {
-      contact = clientObj.contatos[0] || {
+      contact = primeiroContatoAtivo(clientObj.contatos) || {
         id: "cont_default",
         nome: proposalRow.contato || "Contato Principal",
         cargo: "Representante",

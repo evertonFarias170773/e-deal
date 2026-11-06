@@ -3,9 +3,10 @@
 import Link from "next/link";
 import { fetchComSessao } from "@/lib/supabase/sessao";
 import type { ReactNode } from "react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { AlertTriangle, ArrowLeft, CheckCircle2, Plus, Trash2 } from "lucide-react";
+import { AlertTriangle, ArrowLeft, CheckCircle2, ChevronDown, ChevronRight, Plus, RotateCcw, Trash2, UserX } from "lucide-react";
+import { contatoEstaAtivo } from "@/features/cadastros/lib/contatos-ativos";
 import {
   ROTULO_DO_CAMPO_DE_CORRECAO,
   lerCorrecaoDaUrl,
@@ -190,6 +191,8 @@ export function CadastroFormPage({ mode, cadastro, categoriaInicial }: CadastroF
     createInitialState(cadastro, mode === "new" ? documentoInicial : "", categoriaInicial)
   );
   const [isSaving, setIsSaving] = useState(false);
+  /** `contatos.ativo` como está gravado, por id: o salvar só escreve `ativo` no contato em que ele mudou. */
+  const ativoGravadoRef = useRef<Map<string, boolean> | null>(null);
   const [isInitialChecking, setIsInitialChecking] = useState(false);
   const [errorFields, setErrorFields] = useState<string[]>([]);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -1415,11 +1418,19 @@ export function CadastroFormPage({ mode, cadastro, categoriaInicial }: CadastroF
         if (!contato.nome.trim()) {
           continue;
         }
+        // Inativar / Reativar (06/11/2026): `ativo` só vai quando mudou nesta tela,
+        // para o salvar não desfazer o que outra pessoa mudou nesse meio tempo.
+        if (!ativoGravadoRef.current) {
+          ativoGravadoRef.current = new Map((cadastro?.contatos ?? []).map((c) => [c.id, contatoEstaAtivo(c)]));
+        }
+        const ativoAoAbrir = ativoGravadoRef.current.get(contato.id) ?? true;
+        const ativoAgora = contatoEstaAtivo(contato);
         const payload = {
           nome_contato: contato.nome.trim(),
           cargo: normalizeOptionalText(contato.cargo),
           whats: normalizeOptionalText(contato.whatsapp),
-          e_mail: normalizeOptionalText(contato.email)
+          e_mail: normalizeOptionalText(contato.email),
+          ...(!isTemporaryId(contato.id) && ativoAgora !== ativoAoAbrir ? { ativo: ativoAgora } : {})
         };
 
         const contatoResult = isTemporaryId(contato.id)
@@ -1429,6 +1440,7 @@ export function CadastroFormPage({ mode, cadastro, categoriaInicial }: CadastroF
           warnings.push("Houve falha ao salvar parte dos contatos.");
           break;
         }
+        if (!isTemporaryId(contato.id)) ativoGravadoRef.current.set(contato.id, ativoAgora);
       }
 
       for (const vinculo of form.vinculosComerciais) {
@@ -1896,6 +1908,8 @@ function CompleteForm({
   const inputClassFiscal = (!isEditAllowed || isFiscalBlocked) ? `${inputClass} bg-slate-100 text-slate-500 cursor-not-allowed` : inputClass;
   const inputClassCredito = !canEditCredito ? "w-full rounded-2xl border border-slate-300 bg-slate-100 text-slate-500 px-4 py-3 text-sm outline-none transition-shadow cursor-not-allowed" : inputClass;
   const [cepLoadingIndex, setCepLoadingIndex] = useState<number | null>(null);
+  /** Grupo "Inativos" da seção Contatos: começa recolhido. */
+  const [inativosAbertos, setInativosAbertos] = useState(false);
   /** Indice do endereco cuja consulta de CPF esta rodando. Trava so aquele botao. */
   const [validandoCpfIndex, setValidandoCpfIndex] = useState<number | null>(null);
 
@@ -2291,6 +2305,8 @@ function CompleteForm({
       >
         <div className="space-y-4">
           {form.contatos.map((contato, index) => {
+            // Inativo vai para o grupo "Inativos", abaixo (06/11/2026).
+            if (!contatoEstaAtivo(contato)) return null;
             const contactInputClass = !isEditAllowed ? `${inputClass} bg-slate-100 text-slate-500 cursor-not-allowed` : inputClass;
             return (
               <div key={contato.id} className="grid gap-3 rounded-3xl border border-slate-200 bg-slate-50 p-4 md:grid-cols-[1fr_1fr_1fr_1fr_auto]">
@@ -2298,19 +2314,66 @@ function CompleteForm({
                 <Field label="Cargo"><input value={contato.cargo} readOnly={!isEditAllowed} onChange={(event) => onUpdate("contatos", form.contatos.map((c, idx) => idx === index ? { ...c, cargo: event.target.value } : c))} className={contactInputClass} /></Field>
                 <Field label="WhatsApp"><input value={contato.whatsapp} readOnly={!isEditAllowed} onChange={(event) => onUpdate("contatos", form.contatos.map((c, idx) => idx === index ? { ...c, whatsapp: event.target.value } : c))} className={contactInputClass} /></Field>
                 <Field label="E-mail"><input value={contato.email} readOnly={!isEditAllowed} onChange={(event) => onUpdate("contatos", form.contatos.map((c, idx) => idx === index ? { ...c, email: event.target.value } : c))} className={contactInputClass} /></Field>
-                {isEditAllowed && (
-                  <button type="button" onClick={() => {
-                    if (!isTemporaryId(contato.id)) {
-                      onToast({ type: "warning", title: "Remoção bloqueada", description: "Contato já salvo não pode ser removido nesta fase." });
-                      return;
-                    }
+                {isEditAllowed && (isTemporaryId(contato.id) ? (
+                  // Contato que ainda não foi salvo: sai do formulário, como sempre.
+                  <button type="button" title="Remover contato" aria-label="Remover contato" onClick={() => {
                     onUpdate("contatos", form.contatos.filter((_, itemIndex) => itemIndex !== index));
                     onToast({ type: "warning", title: "Contato removido", description: "Remocao aplicada no formulário antes do salvamento." });
                   }} className="self-end rounded-xl p-3 text-red-600 hover:bg-red-50"><Trash2 className="h-4 w-4" /></button>
-                )}
+                ) : (
+                  // Contato já salvo não é apagado: é inativado e sai da escolha de contato.
+                  <button type="button" title="Inativar contato" onClick={() => {
+                    onUpdate("contatos", form.contatos.map((c, idx) => idx === index ? { ...c, ativo: false } : c));
+                    setInativosAbertos(true);
+                    onToast({ type: "info", title: "Contato inativado", description: "Clique em Salvar para gravar. Inativo não aparece para escolher em proposta nova nem recebe envios automáticos." });
+                  }} className="self-end flex items-center gap-1.5 rounded-xl px-3 py-3 text-xs font-semibold text-amber-700 hover:bg-amber-50"><UserX className="h-4 w-4" />Inativar</button>
+                ))}
               </div>
             );
           })}
+
+          {/* Inativos (06/11/2026): recolhido; propostas antigas seguem mostrando estes contatos. */}
+          {form.contatos.some((c) => !contatoEstaAtivo(c)) && (
+            <div className="rounded-3xl border border-dashed border-slate-300">
+              <button
+                type="button"
+                onClick={() => setInativosAbertos((aberto) => !aberto)}
+                aria-expanded={inativosAbertos}
+                className="flex w-full items-center gap-2 px-4 py-3 text-left text-sm font-semibold text-slate-600"
+              >
+                {inativosAbertos ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                Inativos ({form.contatos.filter((c) => !contatoEstaAtivo(c)).length})
+              </button>
+              {inativosAbertos && (
+                <div className="space-y-2 px-4 pb-4">
+                  {form.contatos.map((contato, index) => {
+                    if (contatoEstaAtivo(contato)) return null;
+                    const dados = [contato.cargo, contato.whatsapp, contato.email].map((v) => v.trim()).filter(Boolean).join(" · ");
+                    return (
+                      <div key={contato.id} className="flex items-center justify-between gap-3 rounded-2xl bg-slate-50 px-4 py-3">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold text-slate-600">{contato.nome || "Sem nome"}</p>
+                          {dados && <p className="truncate text-xs text-slate-500">{dados}</p>}
+                        </div>
+                        {isEditAllowed && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              onUpdate("contatos", form.contatos.map((c, idx) => idx === index ? { ...c, ativo: true } : c));
+                              onToast({ type: "info", title: "Contato reativado", description: "Clique em Salvar para gravar. Ele volta a aparecer para escolher." });
+                            }}
+                            className="flex shrink-0 items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold text-[#0f9f9a] hover:bg-teal-50"
+                          >
+                            <RotateCcw className="h-4 w-4" />Reativar
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </FormSection>
 

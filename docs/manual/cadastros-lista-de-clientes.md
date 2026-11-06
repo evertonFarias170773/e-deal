@@ -1,6 +1,6 @@
 # Clientes: lista de cadastros
 
-> **Última revisão:** 04/11/2026
+> **Última revisão:** 06/11/2026
 > **Caminho no menu:** Clientes
 > **Endereço:** `/cadastros`
 
@@ -13,6 +13,7 @@
 - Qualquer usuário com acesso ao sistema abre a lista.
 - **Consultar crédito** aparece só para Administrador e Super Admin.
 - **Inativar cadastro** aparece para todos, mas só grava para quem tem permissão de escrita no cadastro; sem ela, aparece um aviso de erro.
+- **Inativar** e **Reativar** um contato do cliente: quem pode editar o cadastro (Administrador, Super Admin ou a permissão **Editar Cadastros**).
 
 ## Botões e ações da tela
 
@@ -40,6 +41,10 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Ver financeiro** | Menu **Acoes** | Ainda não funciona: mostra "Esta ação ainda não está disponível." |
 | **Inativar cadastro** | Menus **Acoes** e **Mais** | Abre a confirmação **Inativar cadastro**. |
 | **Anterior** / **Proxima** | Rodapé da lista | Passa as páginas, de 100 cadastros cada. |
+| Lixeira (dica: "Remover contato") | Edição do cadastro, seção **Contatos**, no contato que ainda não foi salvo | Tira o contato do formulário. |
+| **Inativar** | Edição do cadastro, seção **Contatos**, no contato já salvo | Passa o contato para o grupo **Inativos**. Grava no **Salvar**. |
+| **Inativos (N)** | Edição e ficha do cadastro, seção **Contatos** | Abre e fecha o grupo dos contatos inativados. Começa fechado. |
+| **Reativar** | Grupo **Inativos** da edição do cadastro | Devolve o contato à lista de ativos. Grava no **Salvar**. |
 
 Clicar na linha do cliente (fora do menu) abre o cadastro direto para editar.
 
@@ -108,6 +113,14 @@ Clicar na linha do cliente (fora do menu) abre o cadastro direto para editar.
 2. Na confirmação **Inativar cadastro**, confira o nome e o ID e clique em **Inativar cadastro**. **Cancelar** fecha sem mudar nada.
 3. O cadastro sai da lista de ativos e fica indisponível para novas propostas. Nenhum dado é apagado.
 
+### Inativar ou reativar um contato do cliente
+
+1. Abra o cadastro em edição e vá à seção **Contatos**.
+2. No contato que não deve mais ser usado (um repetido ou antigo, por exemplo), clique em **Inativar**. Ele sai da lista e vai para o grupo **Inativos**.
+3. Clique em **Salvar**. Só a partir daí o contato deixa de aparecer para escolher.
+4. Para trazer de volta, abra **Inativos**, clique em **Reativar** no contato e em **Salvar**.
+5. Contato que você acabou de adicionar e ainda não salvou continua com a lixeira: ele sai do formulário sem ser gravado.
+
 ## Regras e bloqueios
 
 - A lista abre só com cadastros ativos, os mais recentes primeiro, em páginas de 100.
@@ -115,6 +128,10 @@ Clicar na linha do cliente (fora do menu) abre o cadastro direto para editar.
 - Número digitado com parênteses, espaço ou traço só é achado se estiver gravado exatamente daquele jeito. Digite só os números.
 - A busca olha só os campos do cadastro do cliente. Os telefones e e-mails dos contatos do cliente (as pessoas cadastradas dentro dele) não entram.
 - A busca, o **Tipo**, o **Mostrar inativos** e a página ficam no endereço da tela: atualizar a página ou abrir o link copiado mostra a mesma lista.
+- Contato já salvo não é apagado: é inativado. O contato inativo não aparece para escolher na proposta nova, na troca de cliente da proposta nem no Maestro, e não recebe os envios automáticos da cobrança (e-mail e WhatsApp).
+- Proposta, pedido e nota antigos continuam mostrando o contato que usaram, mesmo inativo. Na edição dessa proposta, ele continua selecionado.
+- Contato novo digitado na proposta com o mesmo nome de um contato inativo vira um contato novo e ativo no cadastro.
+- O card **Contatos** da ficha do cadastro conta só os ativos.
 
 ## O que não confundir
 
@@ -122,6 +139,7 @@ Clicar na linha do cliente (fora do menu) abre o cadastro direto para editar.
 - **Inativar cadastro** não apaga: o cadastro some da lista de ativos e volta a aparecer com **Mostrar inativos**.
 - Esta lista e a busca do campo **1. Cliente** da Nova proposta seguem a mesma regra para telefone e WhatsApp, mas são telas diferentes.
 - **Total filtrado**, no rodapé, é o total da busca; **Cadastros ativos**, no topo, é o total de ativos, sem filtro.
+- **Inativar cadastro** inativa o cliente inteiro; **Inativar**, na seção **Contatos**, inativa só uma pessoa dentro dele.
 
 ## Erros comuns
 
@@ -146,3 +164,6 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/features/cadastros/components/ConfirmarInativacaoModal.tsx`
 - `src/features/cadastros/services/cadastros-read.service.ts`
 - `src/features/cadastros/lib/busca-cliente-por-digitos.ts`
+- `src/features/cadastros/lib/contatos-ativos.ts`
+- `src/features/cadastros/CadastroFormPage.tsx`
+- `src/features/cadastros/CadastroDetailPage.tsx`

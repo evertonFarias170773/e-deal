@@ -89,6 +89,7 @@ import { podeImprimirOsNaTela } from "@/lib/auth/alcance-impressao-os";
 // A data do evento é gravada como meia-noite em UTC: lida com `new Date` ela
 // aparecia com um dia a menos. É data civil — vale o que foi digitado.
 import { formatDataCivil } from "@/lib/formatters/date";
+import { primeiroContatoAtivo } from "@/features/cadastros/lib/contatos-ativos";
 
 export interface GabaritoItem {
   id: string;
@@ -1348,7 +1349,8 @@ export function BoletimFormPage() {
 
         setSelectedProposta(details);
         setClienteNome(details.cliente?.nome || "");
-        setContatoNome(details.contato?.nome || details.cliente?.contatos?.[0]?.nome || "Contato Principal");
+        // O contato da proposta vale mesmo inativo; a reserva é o primeiro ativo.
+        setContatoNome(details.contato?.nome || primeiroContatoAtivo(details.cliente?.contatos ?? [])?.nome || "Contato Principal");
         setEmpresa(details.empresa || "Ideal Grafica");
         setVendedor(details.vendedor || "Everton Farias");
         setFormaPagamento(details.formaPagamento || "Pix a vista");

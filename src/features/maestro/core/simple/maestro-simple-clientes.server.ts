@@ -91,6 +91,7 @@ async function buildDetailedClientContext(
       .from('contatos')
       .select('nome_contato, cargo, whats, e_mail')
       .eq('id_cliente', idCliente)
+      .eq('ativo', true) // o Maestro não oferece contato inativado
       .limit(20),
     supabase
       .from('clientes_socios')
@@ -251,6 +252,7 @@ export async function buscarContatosCliente(
     .from('contatos')
     .select('nome_contato, cargo, whats, e_mail')
     .eq('id_cliente', idCliente)
+    .eq('ativo', true) // o Maestro não oferece contato inativado
     .limit(20);
   
   return (data || []).map(ct => ({

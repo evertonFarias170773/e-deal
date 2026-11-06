@@ -79,6 +79,7 @@ export async function salvarCotacaoComoPropostaReal(
         .from('contatos')
         .select('id')
         .eq('id_cliente', pending.clientInternalId)
+        .eq('ativo', true) // contato inativado não entra em proposta nova
         .limit(1);
 
       if (contatos && contatos.length > 0) {

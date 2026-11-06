@@ -34,6 +34,12 @@ export type CadastroContato = {
   cargo: string;
   whatsapp: string;
   email: string;
+  /**
+   * `contatos.ativo` (06/11/2026). `false` = inativado: fora da escolha de
+   * contato e dos envios automáticos (lib/contatos-ativos). Ausente = ativo
+   * (contato novo do formulário, ou montado fora do cadastro).
+   */
+  ativo?: boolean;
 };
 
 export type CadastroVinculoComercial = {

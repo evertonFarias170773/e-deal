@@ -634,7 +634,10 @@ export async function getCadastroDetailReadOnly(
         .limit(100),
       client
         .from("contatos")
-        .select("id,id_cliente,nome_contato,cargo,whats,e_mail")
+        // `ativo` viaja junto: o cadastro mostra os inativos no grupo deles, e a
+        // proposta antiga precisa achar o contato que usou mesmo inativo. Quem
+        // ESCOLHE contato filtra por `contatosParaEscolher` (lib/contatos-ativos).
+        .select("id,id_cliente,nome_contato,cargo,whats,e_mail,ativo")
         .eq("id_cliente", idCliente)
         .limit(100),
       client
@@ -965,6 +968,8 @@ export type CadastroContatoInsertPayload = {
   cargo: string | null;
   whats: string | null;
   e_mail: string | null;
+  /** Só na atualização (Inativar / Reativar do cadastro). Insert nasce ativo pelo default. */
+  ativo?: boolean;
 };
 
 export type CadastroVinculoComercialInsertPayload = {
@@ -2411,7 +2416,9 @@ export async function updateCadastroContato(
       nome_contato: toText(payload.nome_contato).trim(),
       cargo: toNullableText(payload.cargo),
       whats: toNullableText(payload.whats),
-      e_mail: toNullableText(payload.e_mail)
+      e_mail: toNullableText(payload.e_mail),
+      // Inativar / Reativar: só escreve quando a tela manda o valor.
+      ...(typeof payload.ativo === "boolean" ? { ativo: payload.ativo } : {})
     })
     .eq("id", id);
 

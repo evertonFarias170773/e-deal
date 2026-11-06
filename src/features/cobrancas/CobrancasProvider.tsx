@@ -1970,10 +1970,12 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
           whats = clientData.whatsapp_1 || clientData.whatsapp_2 || "";
         }
 
+        // Contato inativado (06/11/2026) não recebe envio automático.
         const { data: contactData } = await client
           .from("contatos")
           .select("nome_contato, whats, e_mail")
           .eq("id_cliente", cobranca.id_cliente)
+          .eq("ativo", true)
           .limit(1);
 
         if (contactData && contactData.length > 0) {
