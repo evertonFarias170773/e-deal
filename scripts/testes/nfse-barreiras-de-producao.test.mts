@@ -110,26 +110,40 @@ falso.responder("notas_servico:select", { data: null, error: null });
 
 /* ------------------------------------------- B. cancelar NF-e: como sempre */
 
+// Contrato desde ee5cb824 (27/10/2026): prazo de 24 h pela data_autorizacao,
+// confere evento "cancelado" anterior, CANCELADA so com status cancelado +
+// cStat 135/155 + caminho do XML, autoria no mesmo UPDATE final e o evento
+// gravado em notas_eventos. A regra fina do cancelamento esta em
+// cancelamento-nfe.test.mts; aqui so importa que a NF-e NAO cai na barreira
+// da NFS-e e segue o caminho completo.
 preparar();
-falso.responder("notas_fiscais:select", { data: { id: "nfe-1", ref: "NFE-12345-001", status: "AUTORIZADA", id_empresa: 1, data_cancelamento: null }, error: null });
+falso.responder("notas_fiscais:select", {
+  data: { id: "nfe-1", ref: "NFE-12345-001", status: "AUTORIZADA", id_empresa: 1, data_cancelamento: null, data_autorizacao: new Date(Date.now() - 60 * 60 * 1000).toISOString() },
+  error: null
+});
+falso.responder("notas_eventos:select", { data: [], error: null });
 falso.responder("notas_fiscais:update", { data: [{ id: "nfe-1" }], error: null });
-respostaDoWebhook = () => new Response(JSON.stringify({ status: "cancelado" }), { status: 200 });
+falso.responder("notas_eventos:insert", { data: null, error: null });
+respostaDoWebhook = () =>
+  new Response(JSON.stringify({ status: "cancelado", status_sefaz: "135", mensagem_sefaz: "Evento registrado e vinculado a NF-e", caminho_xml_cancelamento: "/arquivos/nfe-cancelamento.xml" }), { status: 200 });
 {
   const r = await cancelar(pedido({ ref: "NFE-12345-001", justificativa: JUSTIFICATIVA }));
   const corpo = await r.json();
-  checar("cancelar NF-e: sucesso, tipo NFE, retorno do webhook repassado", [r.status, corpo.success, corpo.tipo, corpo.ref, corpo.retorno], [200, true, "NFE", "NFE-12345-001", { status: "cancelado" }]);
+  checar("cancelar NF-e: sucesso, tipo NFE, nota marcada, cStat 135", [r.status, corpo.success, corpo.tipo, corpo.ref, corpo.notaAtualizada, corpo.status_sefaz], [200, true, "NFE", "NFE-12345-001", true, "135"]);
   checar("cancelar NF-e: um webhook, o de NF-e, com o corpo de sempre", saidas, [
     { url: "https://10074.hostoo.net.br/webhook/cancelamento", metodo: "POST", corpo: { id_empresa: 1, referencia: "NFE-12345-001", justificativa: JUSTIFICATIVA } }
   ]);
   checar("cancelar NF-e: sequencia de leituras e escritas", falso.chamadas.map((c) => `${c.tabela}:${c.op}`), [
     "usuarios:select",
     "notas_fiscais:select",
+    "notas_eventos:select",
     "notas_fiscais:update",
-    "notas_fiscais:update"
+    "notas_fiscais:update",
+    "notas_eventos:insert"
   ]);
-  const [reserva, autoria] = falso.chamadas.filter((c) => c.op === "update").map((c) => Object.keys(c.payload as Record<string, unknown>).sort());
-  checar("cancelar NF-e: a reserva marca data_cancelamento", reserva, ["data_cancelamento", "updated_at"]);
-  checar("cancelar NF-e: a autoria grava quem cancelou", autoria, ["cancelado_por", "cancelado_por_nome", "updated_at"]);
+  const [reserva, final] = falso.chamadas.filter((c) => c.op === "update").map((c) => c.payload as Record<string, unknown>);
+  checar("cancelar NF-e: a reserva marca data_cancelamento", Object.keys(reserva ?? {}).sort(), ["data_cancelamento", "updated_at"]);
+  checar("cancelar NF-e: o UPDATE final marca CANCELADA com a autoria", [final?.status, "cancelado_por" in (final ?? {}), "cancelado_por_nome" in (final ?? {})], ["CANCELADA", true, true]);
   checar("cancelar NF-e: notas_servico nem e lida", falso.chamadas.some((c) => c.tabela === "notas_servico"), false);
 }
 
