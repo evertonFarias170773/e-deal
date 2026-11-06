@@ -6671,7 +6671,16 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
             />
           )}
           {activeFormTab === "artes" && shouldShowRest && (
-            <ArtesTab form={form} onBriefingChange={handleBriefingChange} />
+            <ArtesTab
+              form={form}
+              onBriefingChange={handleBriefingChange}
+              // Comprador gravado pela aba Artes entra (ou se atualiza) na lista de contatos da proposta.
+              onContatoDoClienteGravado={(contato) =>
+                setProposalContacts((lista) =>
+                  lista.some((c) => c.id === contato.id) ? lista.map((c) => (c.id === contato.id ? { ...c, ...contato } : c)) : [...lista, contato]
+                )
+              }
+            />
           )}
           {/* Producao: a aba NAO some por prateleira nem por avulsa. Produto de
               estoque tambem e separado, conferido e embalado — a bancada

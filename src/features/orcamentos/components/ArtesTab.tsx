@@ -9,6 +9,10 @@ import { ArtesUltimosPedidosCard } from "./ArtesUltimosPedidosCard";
 import { carregarBriefingArtes, salvarBriefingArtes, listarArquivosDaProposta } from "@/features/pedidos/services/pedidos-artes.service";
 import { useAppToast } from "@/components/common/AppToast";
 import { useAuth } from "@/features/auth/AuthProvider";
+import { hasPermissao } from "@/features/auth/usuarios.service";
+import type { CadastroContato } from "@/features/cadastros/types";
+import { formatPhoneBR } from "@/lib/formatters/phone";
+import { ArtesCompradorCard, useCompradorDaArte } from "./ArtesCompradorCard";
 import { Save, Send } from "lucide-react";
 import { dataDoEventoNoIntervalo, MENSAGEM_DATA_EVENTO_FORA } from "@/features/orcamentos/lib/data-do-evento";
 
@@ -25,12 +29,17 @@ export interface BriefingArtesDraft {
 interface ArtesTabProps {
   form: PropostaFormState;
   onBriefingChange?: (draft: BriefingArtesDraft) => void;
+  /** Contato gravado pelo cadastro rápido do Comprador (para a lista de contatos da proposta). */
+  onContatoDoClienteGravado?: (contato: CadastroContato) => void;
 }
 
-export function ArtesTab({ form, onBriefingChange }: ArtesTabProps) {
+export function ArtesTab({ form, onBriefingChange, onContatoDoClienteGravado }: ArtesTabProps) {
   const idCliente = form.clienteId || null;
   const { showToast } = useAppToast();
   const { user } = useAuth();
+  // Comprador da arte (lib/comprador-da-arte): trava o primeiro "Enviar para arte".
+  const comprador = useCompradorDaArte(form.id_int === "NOVO" ? null : Number(form.id_int), idCliente);
+  const podeEditarContato = Boolean(user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "cadastros.edit"));
 
   const [nomeEvento, setNomeEvento] = useState("");
   const [dataEvento, setDataEvento] = useState("");
@@ -145,8 +154,22 @@ export function ArtesTab({ form, onBriefingChange }: ArtesTabProps) {
       return;
     }
 
+    // Primeiro envio para arte exige o Comprador; pedido já enviado segue como antes.
+    const exigeComprador = Boolean(selectedDesignerId) && !comprador.jaEnviada;
+    if (exigeComprador && (comprador.carregando || !comprador.situacao.liberado)) {
+      showToast({ type: "warning", title: "Comprador pendente", description: comprador.situacao.aviso || "Aguarde o carregamento do Comprador." });
+      return;
+    }
+
     setIsSaving(true);
     try {
+      if (exigeComprador) {
+        const escolha = await comprador.gravarEscolhaSeFaltar();
+        if (!escolha.ok) {
+          showToast({ type: "error", title: "Não foi possível gravar o Comprador na proposta", description: escolha.erro });
+          return;
+        }
+      }
       const finalDate = dataEvento ? `${dataEvento}T00:00:00` : null;
       const rawStatus = selectedDesignerId ? "EM ARTE" : "AGUARDANDO";
 
@@ -185,6 +208,7 @@ export function ArtesTab({ form, onBriefingChange }: ArtesTabProps) {
   };
 
   const hasDesigner = !!selectedDesignerId;
+  const travadoPeloComprador = hasDesigner && !comprador.jaEnviada && (comprador.carregando || !comprador.situacao.liberado);
   const hasModels = form.pedidosModelos && form.pedidosModelos.length > 0;
 
   if (!hasModels) {
@@ -222,17 +246,28 @@ export function ArtesTab({ form, onBriefingChange }: ArtesTabProps) {
           />
           <ArtesUltimosPedidosCard idCliente={idCliente} idIntAtual={form.id_int} />
         </div>
+
+        <ArtesCompradorCard
+          comprador={comprador}
+          idCliente={idCliente}
+          podeEditarContato={podeEditarContato}
+          onContatoDoClienteGravado={onContatoDoClienteGravado}
+          onAviso={(type, title, description) => showToast({ type, title, description })}
+        />
       </div>
 
       {/* Floating Button Container */}
-      <div className="sticky bottom-28 md:bottom-24 z-40 w-full pointer-events-none flex justify-center md:justify-start md:pl-8">
+      <div className="sticky bottom-28 md:bottom-24 z-40 w-full pointer-events-none flex flex-col items-center gap-2 md:flex-row md:justify-start md:pl-8">
         <button
           type="button"
-          disabled={isSaving || form.id_int === "NOVO"}
+          disabled={isSaving || form.id_int === "NOVO" || travadoPeloComprador}
           onClick={handleSaveBriefing}
-          className={`pointer-events-auto flex items-center gap-2 rounded-full px-6 py-4 shadow-xl transition-all font-bold ${
-            hasDesigner 
-              ? "bg-indigo-600 hover:bg-indigo-700 text-white hover:scale-105" 
+          title={travadoPeloComprador ? comprador.situacao.aviso ?? undefined : undefined}
+          className={`pointer-events-auto flex items-center gap-2 rounded-full px-6 py-4 shadow-xl transition-all font-bold disabled:cursor-not-allowed ${
+            travadoPeloComprador
+              ? "bg-slate-300 text-slate-500"
+              : hasDesigner
+              ? "bg-indigo-600 hover:bg-indigo-700 text-white hover:scale-105"
               : "bg-slate-800 hover:bg-slate-900 text-white"
           }`}
         >
@@ -252,6 +287,25 @@ export function ArtesTab({ form, onBriefingChange }: ArtesTabProps) {
             </>
           )}
         </button>
+        {/* Comprador ao lado do botão: quem recebe a arte, ou o que falta. */}
+        {hasDesigner && !comprador.jaEnviada && !comprador.carregando && (
+          <div
+            className={`pointer-events-auto max-w-md rounded-2xl border px-4 py-2 text-xs shadow-lg ${
+              comprador.situacao.liberado ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-amber-200 bg-amber-50 text-amber-800"
+            }`}
+          >
+            {comprador.situacao.liberado && comprador.situacao.escolhido ? (
+              <>
+                <span className="font-bold">Comprador: {comprador.situacao.escolhido.nome}</span>
+                <span className="block">
+                  {formatPhoneBR(comprador.situacao.escolhido.whatsapp)} · {comprador.situacao.escolhido.email}
+                </span>
+              </>
+            ) : (
+              <span className="font-semibold">{comprador.situacao.aviso}</span>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
