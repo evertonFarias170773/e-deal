@@ -206,7 +206,7 @@ Se o ChatGuru recusar pelo número, o aviso mostra "Número não encontrado no C
 2. Corrija o número e clique em **Salvar número**. A gravação vai para o cadastro do contato, a mesma do cadastro do cliente.
 3. Aparece "Número corrigido no cadastro. Use Reenviar." Clique em **Reenviar** e confirme.
 
-Quem não tem **Editar Cadastros** vê "Peça a correção a quem pode editar o cadastro." O Vibe não tenta outro formato do número sozinho. O número recusado só fica na tela até ela ser recarregada; depois o aviso aparece só como **falhou**, com **Reenviar**.
+Quem não tem **Editar Cadastros** vê "Peça a correção a quem pode editar o cadastro." O Vibe não tenta outro formato do número sozinho: tira só a formatação e põe o 55 quando falta, sem mexer no nono dígito. Na prova de 06/11/2026 o ChatGuru aceitou o número de teste só sem o nono dígito (51 8460-8848); com o 9, em qualquer formato, respondeu "Chat não encontrado." O número recusado só fica na tela até ela ser recarregada; depois o aviso aparece só como **falhou**, com **Reenviar**.
 
 Enquanto o **modo teste** estiver ligado (aparece "modo teste" no botão e no aviso), só pedidos do cliente de teste (#14), com contato desse cliente, podem ser avisados; o de qualquer outro cliente é recusado. A mensagem vai para o WhatsApp do contato do pedido, como está no cadastro. O modo teste não se desliga pela tela.
 
@@ -432,6 +432,7 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/app/(erp)/expedicao/page.tsx`
 - `src/app/api/expedicao/`
 - `src/features/expedicao/components/AvisoPedidoPronto.tsx`
+- `src/features/expedicao/components/CorrigirNumeroModal.tsx`
 - `src/features/expedicao/hooks/useAvisosPedidoPronto.ts`
 - `src/features/expedicao/services/aviso-pronto.client.ts`
 - `supabase/functions/expedicao-pedido-pronto/index.ts`
