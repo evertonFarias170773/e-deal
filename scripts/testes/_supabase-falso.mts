@@ -113,7 +113,7 @@ function construtor(tabela: string) {
     }
   };
 
-  for (const filtro of ["eq", "neq", "is", "in", "gt", "gte", "lt", "lte", "or", "not", "order", "limit", "returns", "range"]) {
+  for (const filtro of ["eq", "neq", "is", "in", "gt", "gte", "lt", "lte", "or", "not", "order", "limit", "returns", "range", "ilike"]) {
     b[filtro] = (...args: unknown[]) => {
       chamada.filtros.push([filtro, args]);
       return b;

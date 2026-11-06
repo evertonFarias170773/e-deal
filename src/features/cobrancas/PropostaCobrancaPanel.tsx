@@ -13,6 +13,9 @@ import { listPendenciasUtilizaveis, type ContaCorrentePendencia } from "@/featur
 import { StatusBadge } from "@/components/common/StatusBadge";
 import { useCobrancas } from "@/features/cobrancas/CobrancasProvider";
 import { Field, PanelCard, inputClass, InfoBox } from "@/features/cobrancas/form-ui";
+import { FaturadoComEntradaCampos, lerValorDigitado } from "@/features/cobrancas/FaturadoComEntradaCampos";
+import { dividirFaturadoComEntrada, type FormaDaEntrada } from "@/features/cobrancas/lib/faturado-com-entrada";
+import { centavosDoValor } from "@/features/orcamentos/lib/total-no-centavo";
 import type { Cobranca, CobrancaTipo, CriarCobrancaFormValues, CreditAnalysisResult, ModeloCobranca } from "@/features/cobrancas/types";
 import type { Proposta } from "@/features/orcamentos/types";
 import { CobrancaDetail } from "@/features/cobrancas/CobrancaDetail";
@@ -183,10 +186,13 @@ const EMPRESAS_COM_REGRA_POR_ID = new Set([1, 2, 3]);
  * O fallback por nome fica só para empresa fora da lista conhecida.
  */
 function isFormaPagamentoDisponivel(
-  opcaoId: CobrancaTipo | "CARD_ASAS",
+  opcaoId: CobrancaTipo | "CARD_ASAS" | "FATURADO_ENTRADA",
   idEmpresa: number,
   empresaNomeFallback: string
 ): boolean {
+  // Faturado com entrada é o faturado de sempre mais uma entrada PIX/boleto,
+  // que é conferida na hora de gerar.
+  if (opcaoId === "FATURADO_ENTRADA") return isFormaPagamentoDisponivel("E-FATURADO", idEmpresa, empresaNomeFallback);
   if (!EMPRESAS_COM_REGRA_POR_ID.has(idEmpresa)) {
     return isTipoDisponivelParaEmpresa(
       empresaNomeFallback,
@@ -219,7 +225,7 @@ export function PropostaCobrancaPanel({
   const bloqueioNovaCobranca =
     bloqueioNovaCobrancaProp ?? (statusEhEntregue(proposta.status_interno) ? MENSAGEM_PEDIDO_ENTREGUE : null);
   const { showToast } = useAppToast();
-  const { createCobranca, getCobrancasByProposta, source, cobrancas, refreshCobrancas, statusCarga, mensagemCarga } = useCobrancas();
+  const { createCobranca, createFaturadoComEntrada, getCobrancasByProposta, source, cobrancas, refreshCobrancas, statusCarga, mensagemCarga } = useCobrancas();
   const { user } = useAuth();
   
   const router = useRouter();
@@ -574,6 +580,11 @@ export function PropostaCobrancaPanel({
   const [debitoInputValor, setDebitoInputValor] = useState<string>("");
   const [modelosCobranca, setModelosCobranca] = useState<ModeloCobranca[]>([]);
   const [modeloSelecionadoId, setModeloSelecionadoId] = useState<string>("");
+  // Faturado com entrada (06/11/2026): o tipo do formulário fica E-FATURADO; a
+  // entrada (forma e valor) mora aqui, fora do formulário, como o fluxo do cartão.
+  const [comEntrada, setComEntrada] = useState(false);
+  const [formaEntrada, setFormaEntrada] = useState<FormaDaEntrada>("PIX");
+  const [valorEntrada, setValorEntrada] = useState("");
   /** Pagador efetivo: resolvido via proposta.id_faturado; fallback = cliente principal */
   const [pagador, setPagador] = useState<{
     idCliente: number;
@@ -901,6 +912,9 @@ export function PropostaCobrancaPanel({
     setDebitoResolvido(false);
     setDebitoIncluido(0);
     setDebitoInputValor("");
+    // Faturado com entrada recomeça desligado na próxima abertura.
+    setComEntrada(false);
+    setValorEntrada("");
 
     onCloseModal?.();
   }, [isControlled, onCloseModal, setDebitoResolvido, setDebitoIncluido, setDebitoInputValor]);
@@ -993,6 +1007,7 @@ export function PropostaCobrancaPanel({
     // Avisa no momento da escolha, com o vendedor ainda no contexto e sem nada
     // criado. A seleção é mantida: corrigido o telefone, ele segue de onde parou.
     bloqueiaPorTelefone(tipo, fluxoCartao);
+    setComEntrada(false);
 
     patchForm({
       tipoCobranca: tipo,
@@ -1020,7 +1035,8 @@ export function PropostaCobrancaPanel({
     // A reserva de débito (v1) atua sobre UMA única pendência (a mais antiga em
     // aberto) — o teto oferecido é o saldo dessa pendência, não o saldoDevedor
     // total (que pode somar várias pendências).
-    if (pendenciaDebitoAlvo && pendenciaDebitoAlvo.valor_saldo > 0 && form.tipoCobranca !== "E-CREDITO" && !debitoResolvido) {
+    // Faturado com entrada não inclui débito antigo: a soma das duas é o total da proposta.
+    if (pendenciaDebitoAlvo && pendenciaDebitoAlvo.valor_saldo > 0 && form.tipoCobranca !== "E-CREDITO" && !comEntrada && !debitoResolvido) {
       setDebitoInputValor(pendenciaDebitoAlvo.valor_saldo.toFixed(2).replace(".", ","));
       setShowDebitoModal(true);
       return;
@@ -1046,6 +1062,93 @@ export function PropostaCobrancaPanel({
     } finally {
       enviandoCobrancaRef.current = false;
       setIsSaving(false);
+    }
+  }
+
+  /**
+   * Faturado com entrada (06/11/2026): valida a divisão na tela (o servidor
+   * valida de novo), cria A + B num único passo e mostra o desfecho. A entrada
+   * que não sai no banco fica pendente de emissão, como o PIX/boleto normal, e
+   * o PIX ganha uma nova tentativa automática, como no combinado.
+   */
+  async function submeterFaturadoComEntrada() {
+    if (cobrancasAtivas.length > 0) {
+      showToast({ type: "error", title: "Faturado com entrada só vale para proposta sem cobrança ativa." });
+      return;
+    }
+    const totalPropostaTela = roundMoney(proposta.resumo.valorTotal);
+    const entradaDigitada = lerValorDigitado(valorEntrada);
+    const divisao = dividirFaturadoComEntrada(centavosDoValor(totalPropostaTela), centavosDoValor(entradaDigitada));
+    if (!divisao.ok) {
+      showToast({ type: "error", title: divisao.message });
+      return;
+    }
+    if (!isFormaPagamentoDisponivel(formaEntrada, idEmpresaReal, proposta.empresa)) {
+      showToast({ type: "error", title: "Forma da entrada indisponível para esta empresa." });
+      return;
+    }
+    if (bloqueiaPorTelefone(formaEntrada, undefined)) return;
+
+    const empresaRecebedora = resolverEmpresaRecebedora(proposta.empresa);
+    try {
+      const resultado = await createFaturadoComEntrada(
+        {
+          formaEntrada,
+          valorEntrada: divisao.entradaCentavos / 100,
+          idModeloCobranca: modeloSelecionadoId,
+          idEmpresa: form.id_empresa ?? empresaRecebedora.id,
+          empresa: form.empresa ?? empresaRecebedora.nome,
+          osIdeal: osIdealDaCobranca(sistemaAntigo, form.osIdeal) || null,
+          observacao: form.observacao || null
+        },
+        proposta
+      );
+      await registrarMarcaSistemaAntigo();
+
+      let erroEntrada = resultado.erroNaEmissaoDaEntrada;
+      if (erroEntrada && resultado.entrada.tipo === "PIX") {
+        const token = await obterAccessToken();
+        if (token) {
+          const retry = await tentarGerarPixNovamente(
+            resultado.entrada.id,
+            resultado.entrada.id_pagamento,
+            form.id_empresa ?? empresaRecebedora.id,
+            resultado.entrada.valor,
+            token
+          );
+          if (retry.success) erroEntrada = null;
+        }
+      }
+
+      const resumo = `Entrada ${formatCurrency(resultado.entrada.valor)} (${resultado.entrada.tipo === "PIX" ? "PIX" : "boleto"}) + Faturado ${formatCurrency(resultado.faturado.valor)}.`;
+      if (erroEntrada) {
+        showToast({
+          type: "warning",
+          title: "Cobranças criadas, mas a entrada não foi emitida no banco",
+          description: `${resumo} ${erroEntrada} A entrada ficou pendente: não gere outra cobrança; tente de novo pela linha dela.`
+        });
+      } else {
+        showToast({
+          type: "success",
+          title: "Faturado com entrada gerado",
+          description: resultado.liberadoAutomaticamente
+            ? `${resumo} O Faturado foi liberado automaticamente e segue para a Conferência.`
+            : `${resumo} O Faturado foi enviado para análise financeira.`
+        });
+      }
+
+      await refreshCobrancas();
+      if (onRefreshProposta) onRefreshProposta();
+      setComEntrada(false);
+      setValorEntrada("");
+      setForm(buildInitialFormState());
+      closeModal();
+    } catch (erro: unknown) {
+      showToast({
+        type: "error",
+        title: "Erro ao gerar Faturado com entrada",
+        description: erro instanceof Error ? erro.message : "Verifique sua conexão ou tente novamente."
+      });
     }
   }
 
@@ -1413,6 +1516,12 @@ export function PropostaCobrancaPanel({
       return;
     }
 
+    // Faturado com entrada: as duas cobranças nascem juntas, pela rota própria.
+    if (comEntrada && form.tipoCobranca === "E-FATURADO") {
+      await submeterFaturadoComEntrada();
+      return;
+    }
+
     let payloadVencimento = getDefaultVencimento(3);
     let extraPayload: Partial<CriarCobrancaFormValues> = {};
 
@@ -1594,7 +1703,7 @@ export function PropostaCobrancaPanel({
   // tipoCobranca CARD_PARCELADO + cartaoFluxo ASAS. O valor sintético nunca
   // chega ao banco nem ao tipo CobrancaTipo.
   const opcoesPagamento: Array<{
-    id: CobrancaTipo | "CARD_ASAS";
+    id: CobrancaTipo | "CARD_ASAS" | "FATURADO_ENTRADA";
     label: string;
     icon: typeof QrCode;
     blockedText?: string;
@@ -1606,6 +1715,10 @@ export function PropostaCobrancaPanel({
     { id: "CARD_PARCELADO", label: "Cartão de crédito", icon: CreditCard },
     { id: "CARD_ASAS", label: "Cartão Asaas", icon: CreditCard, hint: "Segunda opção de cartão" },
     { id: "E-FATURADO", label: "Faturado", icon: Landmark },
+    // Só para proposta sem cobrança ativa: entrada + restante = total.
+    ...(cobrancasAtivas.length === 0
+      ? [{ id: "FATURADO_ENTRADA" as const, label: "Faturado com entrada", icon: Landmark, hint: "Entrada por PIX ou boleto + restante faturado" }]
+      : []),
     // Deixaram de ser "subtipo do faturamento" num select escondido: são
     // formas de pagamento como as outras, e o vendedor escolhe direto. O
     // comportamento depois da criação continua o da família faturado.
@@ -1619,7 +1732,10 @@ export function PropostaCobrancaPanel({
   // Pedido de retrabalho: so E-Retrabalho. Os demais: sem E-Retrabalho, salvo o
   // pedido antigo que ja teve uma (lib/tipo-x-retrabalho, 20/10/2026).
   const opcoesDoPedido = opcoesPagamento.filter((opcao) =>
-    tipoApareceNoPedido(opcao.id === "CARD_ASAS" ? "CARD_PARCELADO" : opcao.id, contextoRetrabalhoDoPedido)
+    tipoApareceNoPedido(
+      opcao.id === "CARD_ASAS" ? "CARD_PARCELADO" : opcao.id === "FATURADO_ENTRADA" ? "E-FATURADO" : opcao.id,
+      contextoRetrabalhoDoPedido
+    )
   );
 
   const hasCobrancas = cobrancasAtivas.length > 0;
@@ -1823,7 +1939,9 @@ export function PropostaCobrancaPanel({
                 {opcoesDoPedido.map((opcao) => {
                   const Icon = opcao.icon;
                   const selected = opcao.id === "E-FATURADO"
-                    ? ["E-FATURADO", "E-RETRABALHO", "E-PERMUTA", "E-AMOSTRA"].includes(form.tipoCobranca)
+                    ? ["E-FATURADO", "E-RETRABALHO", "E-PERMUTA", "E-AMOSTRA"].includes(form.tipoCobranca) && !comEntrada
+                    : opcao.id === "FATURADO_ENTRADA"
+                    ? form.tipoCobranca === "E-FATURADO" && comEntrada
                     : opcao.id === "CARD_ASAS"
                       ? (form.tipoCobranca === "CARD_PARCELADO" && form.cartaoFluxo === "ASAS")
                       : opcao.id === "CARD_PARCELADO"
@@ -1843,6 +1961,9 @@ export function PropostaCobrancaPanel({
                       onClick={() => {
                         if (opcao.id === "CARD_ASAS") {
                           handleTipoChange("CARD_PARCELADO", "ASAS");
+                        } else if (opcao.id === "FATURADO_ENTRADA") {
+                          handleTipoChange("E-FATURADO");
+                          setComEntrada(true);
                         } else {
                           handleTipoChange(opcao.id);
                         }
@@ -1906,6 +2027,18 @@ export function PropostaCobrancaPanel({
                       </select>
                     </Field>
                   </div>
+                ) : null}
+
+                {comEntrada ? (
+                  <FaturadoComEntradaCampos
+                    totalProposta={roundMoney(proposta.resumo.valorTotal)}
+                    formaEntrada={formaEntrada}
+                    onFormaEntrada={setFormaEntrada}
+                    valorEntrada={valorEntrada}
+                    onValorEntrada={setValorEntrada}
+                    pixDisponivel={isFormaPagamentoDisponivel("PIX", idEmpresaReal, proposta.empresa)}
+                    boletoDisponivel={isFormaPagamentoDisponivel("BOLETO", idEmpresaReal, proposta.empresa)}
+                  />
                 ) : null}
 
                 {isLoadingCredit ? (
@@ -2399,7 +2532,9 @@ export function PropostaCobrancaPanel({
                   {opcoesDoPedido.map((opcao) => {
                     const Icon = opcao.icon;
                     const selected = opcao.id === "E-FATURADO"
-                      ? ["E-FATURADO", "E-RETRABALHO", "E-PERMUTA", "E-AMOSTRA"].includes(form.tipoCobranca)
+                      ? ["E-FATURADO", "E-RETRABALHO", "E-PERMUTA", "E-AMOSTRA"].includes(form.tipoCobranca) && !comEntrada
+                      : opcao.id === "FATURADO_ENTRADA"
+                      ? form.tipoCobranca === "E-FATURADO" && comEntrada
                       : opcao.id === "CARD_ASAS"
                         ? (form.tipoCobranca === "CARD_PARCELADO" && form.cartaoFluxo === "ASAS")
                         : opcao.id === "CARD_PARCELADO"
@@ -2419,6 +2554,9 @@ export function PropostaCobrancaPanel({
                         onClick={() => {
                           if (opcao.id === "CARD_ASAS") {
                             handleTipoChange("CARD_PARCELADO", "ASAS");
+                          } else if (opcao.id === "FATURADO_ENTRADA") {
+                            handleTipoChange("E-FATURADO");
+                            setComEntrada(true);
                           } else {
                             handleTipoChange(opcao.id);
                           }
@@ -2545,6 +2683,18 @@ export function PropostaCobrancaPanel({
                         </select>
                       </Field>
                     </div>
+                  ) : null}
+
+                  {comEntrada ? (
+                    <FaturadoComEntradaCampos
+                      totalProposta={roundMoney(proposta.resumo.valorTotal)}
+                      formaEntrada={formaEntrada}
+                      onFormaEntrada={setFormaEntrada}
+                      valorEntrada={valorEntrada}
+                      onValorEntrada={setValorEntrada}
+                      pixDisponivel={isFormaPagamentoDisponivel("PIX", idEmpresaReal, proposta.empresa)}
+                      boletoDisponivel={isFormaPagamentoDisponivel("BOLETO", idEmpresaReal, proposta.empresa)}
+                    />
                   ) : null}
 
                   {isLoadingCredit ? (

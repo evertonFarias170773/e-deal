@@ -1,6 +1,6 @@
 # Proposta: aba Pagamentos
 
-> **Última revisão:** 06/11/2026 (total em centavos exatos; títulos do Registro de recebíveis contam por cobrança)
+> **Última revisão:** 06/11/2026 (Faturado com entrada; total em centavos exatos; títulos do Registro de recebíveis contam por cobrança)
 > **Caminho no menu:** Pedidos → abrir um pedido → aba Pagamentos
 > **Endereço:** `/orcamentos/<número>/editar?tab=pagamentos`
 
@@ -44,8 +44,9 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **OS Ideal \*** | Janela **Criar cobrança** | Número da OS no sistema antigo, só dígitos, até 6. Fica na mesma linha do valor; só aparece, e só é obrigatório, com **Pedido do sistema antigo** marcado. |
 | **Valor da cobrança \*** | Janela **Criar cobrança** | Valor desta cobrança. Vem preenchido com o saldo restante. |
 | **Observações (opcional)** | Janela **Criar cobrança** | Texto livre gravado na cobrança. |
-| **PIX**, **Boleto**, **Cartão de crédito**, **Cartão Asaas**, **Faturado**, **E-Permuta**, **E-Amostra**, **E-Retrabalho**, **E-Crédito** | Quadro **Forma de pagamento** da janela | Escolhe a forma. Forma que a empresa recebedora não aceita aparece como **Indisponível**. Em pedido de retrabalho só aparece **E-Retrabalho** (já selecionada); nos demais, **E-Retrabalho** não aparece, salvo no pedido antigo que já teve uma. |
+| **PIX**, **Boleto**, **Cartão de crédito**, **Cartão Asaas**, **Faturado**, **Faturado com entrada**, **E-Permuta**, **E-Amostra**, **E-Retrabalho**, **E-Crédito** | Quadro **Forma de pagamento** da janela | Escolhe a forma. Forma que a empresa recebedora não aceita aparece como **Indisponível**. Em pedido de retrabalho só aparece **E-Retrabalho** (já selecionada); nos demais, **E-Retrabalho** não aparece, salvo no pedido antigo que já teve uma. |
 | **Condição de pagamento \*** | Quadro **Campos mínimos do faturado** | Escolhe a condição (parcelas e prazos) do Faturado e do E-Permuta. |
+| **Forma da entrada \*** (**PIX** ou **Boleto**) e **Valor da entrada \*** | Quadro **Entrada**, dentro de **Campos mínimos do faturado**, com **Faturado com entrada** escolhido | Definem a entrada. O quadro mostra o **Total da proposta**, a **Entrada** e o **Restante faturado**. |
 | **Forma de Pagamento Secundária \*** e **Condição Secundária \*** | Quadro **Campos do E-Crédito** | Definem como cobrar o que o crédito não cobre. |
 | **Gerar cobrança** (vira **Gerando cobrança...**) e **Cancelar** | Rodapé da janela **Criar cobrança** | Cria a cobrança, ou fecha a janela sem criar. |
 | **Enviar para avaliação** e **Voltar** | **Aviso de Pendência** | Envia o faturado ao financeiro mesmo com faturamento vencido, ou volta. |
@@ -101,6 +102,17 @@ No cartão, o cliente escolhe as parcelas na página de pagamento; depois disso 
 **E-Retrabalho** é só para pedido criado como **Retrabalho** (menu **Acoes** > **Duplicar proposta** > **Retrabalho**). Edite e salve o retrabalho antes (as quantidades podem ser diferentes das do original): o valor da cobrança nasce com o total da proposta naquele momento.
 
 Os boletos das parcelas não nascem aqui: depois que a Conferência confirma o faturado, a cobrança aparece no **Registro de recebíveis**, onde o financeiro clica em **Gerar títulos** e lança as parcelas com os vencimentos.
+
+#### Faturado com entrada (entrada por PIX ou boleto + restante faturado)
+
+Use quando o cliente paga uma parte agora e o resto faturado. As duas cobranças nascem juntas.
+
+1. Na janela **Criar cobrança**, escolha **Faturado com entrada**. A opção só aparece quando a proposta não tem cobrança ativa.
+2. Em **Campos mínimos do faturado**, escolha a **Condição de pagamento \*** do restante.
+3. No quadro **Entrada**, escolha a **Forma da entrada \*** (**PIX** ou **Boleto**) e digite o **Valor da entrada \***. O quadro mostra o **Restante faturado**: total da proposta menos a entrada.
+4. Clique em **Gerar cobrança**.
+5. O sistema cria as duas de uma vez: a entrada (PIX ou boleto, com link de pagamento) e o restante como Faturado. Se uma não puder ser criada, nenhuma é. Depois, a entrada é emitida no banco como um PIX ou boleto normal, e o Faturado segue o caminho de sempre: liberação automática ou análise do financeiro, Conferência e títulos no **Registro de recebíveis**.
+6. Se as duas forem criadas mas a entrada não sair no banco, o aviso diz isso. A entrada fica pendente; não gere outra cobrança. No PIX, o sistema tenta de novo sozinho uma vez.
 
 ### Dividir o pagamento em mais de uma cobrança
 
@@ -227,6 +239,7 @@ Se a janela for fechada sem escolher, a proposta fica com a faixa **Revisão fin
 - No pagamento combinado, a Ideal Birô não aceita boleto nem cartão como forma secundária.
 - **PIX da Ideal Birô:** o código PIX só é entregue quando o Banco Inter termina de emitir a cobrança (situação "a receber"). Até lá a cobrança fica **em preparação**: o painel mostra o selo, o link de pagamento mostra "Seu PIX está sendo preparado pelo banco. Esta página atualiza sozinha." e a área do cliente mostra a mesma frase. Normalmente leva segundos; em dias de lentidão do banco, pode levar vários minutos (em 04/11/2026, de 12 a 24). Nunca se gera outra cobrança para o mesmo título: gerar de novo devolve o mesmo estado. O PIX da Ideal Gráfica e da E3 Brindes (C6) sai na hora, como antes.
 - PIX, boleto e cartão nascem com vencimento em 3 dias. No faturado, o primeiro vencimento segue a condição de pagamento escolhida.
+- **Faturado com entrada**: a entrada tem de ser maior que zero e menor que o total, e entrada + restante = total da proposta, ao centavo. Só vale para proposta sem cobrança ativa e não inclui débito antigo do cliente. Enquanto a entrada não for paga, o pedido não é liberado: a Conferência só confirma quando a soma paga cobre o total, como acontece quando as duas cobranças são criadas uma a uma.
 - A liberação automática do faturado só vale para **Faturado**, e só quando o limite cobre o valor somado aos faturamentos ainda pendentes do cliente, não há faturamento vencido e o cliente não tem restrição. Fora disso a cobrança espera o financeiro.
 - Não dá para confirmar a conferência enquanto as cobranças da proposta somarem menos que o total: aparece **Não é possível confirmar esta cobrança**.
 - Depois de confirmado, o faturado continua **A vencer**: quem o quita são os títulos do Contas a receber. E-Permuta, E-Amostra e E-Retrabalho ficam quitados na própria confirmação.
@@ -281,6 +294,10 @@ Se a janela for fechada sem escolher, a proposta fica com a faixa **Revisão fin
 | "Informe a OS Ideal do sistema antigo para gerar a cobrança." | **Pedido do sistema antigo** marcado e **OS Ideal \*** em branco. | Preencha o número da OS, ou desmarque se o pedido é do Vibe. |
 | "Selecione uma forma de pagamento." | Nenhuma forma marcada. | Escolha a forma. |
 | "Selecione uma condição de pagamento." | Faturado ou E-Permuta sem condição. | Escolha a **Condição de pagamento \***. |
+| "A entrada precisa ser menor que o total da proposta. Para cobrar tudo de uma vez, use PIX ou Boleto." | No **Faturado com entrada**, a entrada é igual ou maior que o total. | Diminua a entrada, ou use PIX ou Boleto. |
+| "Informe um valor de entrada maior que zero." | **Valor da entrada \*** vazio ou zero. | Digite a entrada. |
+| "Faturado com entrada só vale para proposta sem cobrança ativa." | A proposta já tem cobrança ativa. | Cancele as cobranças atuais, ou gere as formas de pagamento uma a uma. |
+| **Cobranças criadas, mas a entrada não foi emitida no banco** | As duas cobranças foram criadas, mas o PIX ou o boleto da entrada não saiu no banco. | Não gere outra cobrança. Tente gerar a entrada de novo pela linha dela; se não der, fale com o financeiro. |
 | "O valor da cobrança (R$ ...) não pode ser maior que o saldo restante (R$ ...)." | O valor digitado passa do saldo. | Reduza o valor. |
 | "O frete precisa ser atualizado" | O peso mudou depois da cotação, ou falta o frete complementar. | Clique em **Recalcular frete**, cote e aplique o frete na aba **Fretes** e volte para gerar a cobrança. Se ao aplicar aparecer em vermelho que a opção não está na cotação, recarregue a página e cote de novo: isso acontecia sempre com Motoboy, São Miguel e VEPPO até a correção de 08/10/2026 (commit `2387164`). |
 | "Cliente sem e-mail cadastrado para geração do boleto." | O contato e o cliente estão sem e-mail. | Preencha o e-mail no cadastro. |
@@ -370,6 +387,9 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/app/api/cobrancas/usar-credito/route.ts`
 - `src/features/cobrancas/lib/e-credito-botao.ts`
 - `src/app/api/cobrancas/pagamento-combinado/route.ts`
+- `src/app/api/cobrancas/faturado-com-entrada/route.ts`
+- `src/features/cobrancas/lib/faturado-com-entrada.ts`
+- `src/features/cobrancas/FaturadoComEntradaCampos.tsx`
 - `src/app/api/cobrancas/aprovar-faturado-automatico/route.ts`
 - `src/app/api/orcamentos/abonar-diferenca/route.ts`
 - `src/features/cobrancas/cancelamento-sem-dinheiro.ts`

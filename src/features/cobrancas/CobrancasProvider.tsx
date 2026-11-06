@@ -80,6 +80,12 @@ type CobrancasContextValue = {
   statusCarga: StatusCargaCobrancas;
   mensagemCarga?: string;
   createCobranca: (values: CriarCobrancaFormValues, proposta?: Proposta) => Promise<Cobranca>;
+  /**
+   * Faturado com entrada (06/11/2026): grava A (entrada PIX/boleto) e B
+   * (Faturado com o restante) num único insert pela rota, emite a A no banco
+   * pelas rotas normais e aciona a liberação automática da B.
+   */
+  createFaturadoComEntrada: (params: ParametrosFaturadoComEntrada, proposta: Proposta) => Promise<ResultadoFaturadoComEntrada>;
   confirmPagamento: (id: string) => void;
   cancelCobranca: (
     id: string,
@@ -265,6 +271,33 @@ const soDigitos = (valor: unknown): string => String(valor ?? "").replace(/\D/g,
  * de `proposta.cliente`, e o boleto saía no nome de quem não paga. Só o
  * `cobrancaId` viaja daqui, para a rota saber QUAL linha ler.
  */
+/** Hoje em São Paulo + dias, "AAAA-MM-DD" — o mesmo vencimento que a rota grava na entrada. */
+function getLocalDateInSaoPauloHoje(dias: number): string {
+  const hoje = new Date().toLocaleDateString("sv-SE", { timeZone: "America/Sao_Paulo" });
+  const [a, m, d] = hoje.split("-").map(Number);
+  const data = new Date(Date.UTC(a, m - 1, d));
+  data.setUTCDate(data.getUTCDate() + dias);
+  return data.toISOString().slice(0, 10);
+}
+
+export type ParametrosFaturadoComEntrada = {
+  formaEntrada: "PIX" | "BOLETO";
+  valorEntrada: number;
+  idModeloCobranca: string;
+  idEmpresa: number;
+  empresa: string;
+  osIdeal: string | null;
+  observacao: string | null;
+};
+
+export type ResultadoFaturadoComEntrada = {
+  entrada: { id: string; id_pagamento: string | null; valor: number; tipo: "PIX" | "BOLETO" };
+  faturado: { id: string; id_pagamento: string | null; valor: number };
+  /** Preenchido quando as duas foram criadas mas a emissão da entrada no banco falhou. */
+  erroNaEmissaoDaEntrada: string | null;
+  liberadoAutomaticamente: boolean;
+};
+
 function montarPayloadBoletoAVista(params: {
   proposta: Proposta;
   valor: number;
@@ -1261,6 +1294,95 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
     return next;
   }, [source, loadData, cobrancas, cobrancasStats]);
 
+  const createFaturadoComEntrada = useCallback(async (
+    params: ParametrosFaturadoComEntrada,
+    proposta: Proposta
+  ): Promise<ResultadoFaturadoComEntrada> => {
+    const client = getSupabaseClient();
+    if (!client || source !== "supabase") {
+      throw new Error("Faturado com entrada só funciona com o banco conectado.");
+    }
+    if (params.formaEntrada === "BOLETO") {
+      const emailCliente = proposta.contato?.email?.trim() || proposta.cliente?.email?.trim() || "";
+      if (!emailCliente) throw new Error("Cliente sem e-mail cadastrado para geração do boleto.");
+    }
+    const entregue = await recusaPorPedidoEntregue(client, Number(proposta.id_int));
+    if (entregue) throw new Error(entregue.message);
+
+    const sessao = await client.auth.getSession();
+    const token = sessao.data.session?.access_token || "";
+    const cabecalhos = { "content-type": "application/json", Authorization: `Bearer ${token}` };
+
+    // 1. As duas linhas, num único insert no servidor.
+    const resposta = await fetch("/api/cobrancas/faturado-com-entrada", {
+      method: "POST",
+      headers: cabecalhos,
+      body: JSON.stringify({
+        idInt: proposta.id_int,
+        formaEntrada: params.formaEntrada,
+        valorEntrada: params.valorEntrada,
+        idModeloCobranca: params.idModeloCobranca,
+        idEmpresa: params.idEmpresa,
+        empresa: params.empresa,
+        osIdeal: params.osIdeal,
+        observacao: params.observacao
+      })
+    });
+    const dados = await resposta.json().catch(() => null);
+    if (!resposta.ok || !dados?.success) {
+      throw new Error(dados?.message || "Não foi possível criar o Faturado com entrada. Nenhuma cobrança foi gravada.");
+    }
+    const entrada = dados.entrada as ResultadoFaturadoComEntrada["entrada"];
+    const faturado = dados.faturado as ResultadoFaturadoComEntrada["faturado"];
+
+    // 2. A entrada vai ao banco pela MESMA rota do PIX/boleto normal. Falha aqui
+    //    não desfaz nada: as duas continuam existindo e a entrada fica pendente
+    //    de emissão, como no PIX/boleto de sempre.
+    let erroNaEmissaoDaEntrada: string | null = null;
+    try {
+      const emissao = params.formaEntrada === "BOLETO"
+        ? await fetch("/api/cobrancas/gerar-boleto", {
+            method: "POST",
+            headers: cabecalhos,
+            body: JSON.stringify(montarPayloadBoletoAVista({
+              proposta,
+              valor: entrada.valor,
+              idPagamento: entrada.id_pagamento || String(proposta.id_int),
+              idEmpresa: params.idEmpresa,
+              cobrancaId: entrada.id
+            }))
+          })
+        : await fetch("/api/cobrancas/gerar-pix", {
+            method: "POST",
+            headers: cabecalhos,
+            body: JSON.stringify({
+              cobrancaId: entrada.id,
+              idEmpresa: params.idEmpresa,
+              seuNumero: params.idEmpresa === 2 ? (entrada.id_pagamento || String(proposta.id_int)) : String(proposta.id_int),
+              valorNominal: roundMoney(entrada.valor),
+              dataVencimento: getLocalDateInSaoPauloHoje(3),
+              telefone: proposta.contato?.whatsapp || proposta.cliente.whatsapp || "",
+              endereco: proposta.enderecoEntrega?.endereco || "",
+              cidade: proposta.enderecoEntrega?.cidade || "",
+              uf: proposta.enderecoEntrega?.uf || "",
+              cep: proposta.enderecoEntrega?.cep || ""
+            })
+          });
+      const retorno = await emissao.json().catch(() => null);
+      if (!emissao.ok || !retorno?.success) {
+        erroNaEmissaoDaEntrada = retorno?.message || `Não foi possível gerar o ${params.formaEntrada === "PIX" ? "PIX" : "boleto"} da entrada agora (HTTP ${emissao.status}).`;
+      }
+    } catch (erro) {
+      erroNaEmissaoDaEntrada = erro instanceof Error ? erro.message : String(erro);
+    }
+
+    // 3. O faturado segue o caminho de sempre.
+    const liberadoAutomaticamente = await acionarAprovacaoAutomaticaFaturado(client, faturado.id);
+
+    await loadData();
+    return { entrada, faturado, erroNaEmissaoDaEntrada, liberadoAutomaticamente };
+  }, [source, loadData]);
+
 
   const checkAndRevertPropostaStatus = useCallback(async (idInt: number) => {
     if (source !== "supabase") return;
@@ -2208,6 +2330,7 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
       cobrancasStats,
       source,
       createCobranca,
+      createFaturadoComEntrada,
       confirmPagamento,
       cancelCobranca,
       cancelarExterno,
@@ -2248,6 +2371,7 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
       cancelarExterno,
       confirmPagamento,
       createCobranca,
+      createFaturadoComEntrada,
       liberarParaPedido,
       refreshCobrancas,
       liberarCobrancaReal,
