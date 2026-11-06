@@ -1,6 +1,6 @@
 # Proposta: aba Geral
 
-> **Última revisão:** 04/11/2026
+> **Última revisão:** 06/11/2026 (total do resumo em centavos exatos)
 > **Caminho no menu:** Pedidos → abrir um pedido → aba **Geral**
 > **Endereço:** `/orcamentos/<número>/editar` (em proposta nova, `/orcamentos/novo`)
 
@@ -151,7 +151,7 @@ O destino escolhido aparece também no topo do bloco **8. Resumo do orçamento**
 
 Aqui na aba Geral aparecem os blocos 8, 9 e 10. As outras abas mostram só alguns deles (o quadro completo está em [Proposta](proposta.md)). O bloco 5, **Endereço de entrega**, fica no corpo desta aba e também aparece na lateral da aba Fretes, como o mesmo bloco.
 
-1. **8. Resumo do orçamento** mostra **Entrega em**, **Subtotal bruto**, o abatimento da tabela especial, **Subtotal produtos**, **Desconto geral**, **Frete escolhido**, **Peso total** e **Total final**.
+1. **8. Resumo do orçamento** mostra **Entrega em**, **Subtotal bruto**, o abatimento da tabela especial, **Subtotal produtos**, **Desconto geral**, **Frete escolhido**, **Peso total** e **Total final**. O total é calculado em centavos exatos, com a mesma conta da trava de despacho da Expedição e da Conta Corrente: cada item é arredondado ao centavo, o desconto da tabela especial sai da soma dos itens, e o total é arredondado ao centavo (meio centavo para cima). O desconto da tabela especial mostrado é o subtotal bruto menos o total, então o resumo sempre fecha. Exemplo: subtotal bruto R$ 1.006,95 com 10% dá total R$ 906,26 e desconto R$ 100,69.
 2. Para dar desconto na proposta inteira, escolha o **Tipo** (**%** ou **R$**) e digite o valor em **Desconto geral**. O desconto nunca passa do subtotal dos produtos.
 3. **9. Envio do orçamento** traz o texto informal da proposta. Clique em **Copiar resumo para WhatsApp**. O botão só libera depois que um frete foi escolhido.
 4. **10. Observações e Condições** é o texto comercial da proposta. Ele não chega à produção: a instrução para a bancada fica na aba Produção / Expedição.

@@ -30,7 +30,7 @@ checar("avulsa sem total gravado: valor + frete", total({ ...base, isAvulso: tru
 checar("sem itens usa o total gravado", total({ ...base, itens: [] }), 999);
 checar("todos os itens cancelados: usa o gravado",
   totaisDaProposta({ ...base, itens: [{ qtd: 5, valor_unt: 10, fixo: 0, status_item: "CANCELADO" }] }),
-  { subtotalProdutos: 100, total: 999, origem: "gravado" });
+  { subtotalProdutos: 100, total: 999, totalNoCentavo: 999, origem: "gravado" });
 
 // ── Com itens ativos ────────────────────────────────────────────────────────
 checar("qtd x unit + fixo + frete (o gravado e ignorado)", total({ ...base, itens: [{ qtd: 120, valor_unt: 0.72, fixo: 60 }] }), 166.4);

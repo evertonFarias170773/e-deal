@@ -244,7 +244,8 @@ export async function GET(request: Request, contexto: { params: Promise<{ id_int
       valor_percentual: number;
       valor_nominal: number;
     }>;
-    const { total: valorTotal } = totaisDaProposta({
+    // Total em centavos exatos, a regra do banco (06/11/2026).
+    const { totalNoCentavo: valorTotal } = totaisDaProposta({
       isAvulso: proposta.is_avulso === true,
       valorTotalGravado: proposta.valor_total,
       valor: proposta.valor,

@@ -30,6 +30,12 @@ export type TotaisProposta = {
   subtotalProdutosCents: number;
   /** `propostas.valor_total`: subtotal - desconto geral + frete. */
   totalCents: number;
+  /**
+   * O total em centavos exatos, com a regra do banco (06/11/2026, pedido
+   * 24606). É o que a área do cliente compara e cobra; `totalCents` fica como
+   * era porque `lotes-em-massa` o grava.
+   */
+  totalNoCentavoCents: number;
 };
 
 type PropostaParaTotais = {
@@ -78,5 +84,9 @@ export async function calcularTotaisPelaRegraDaTela(
   });
 
   if (totais.origem !== "itens") return null;
-  return { subtotalProdutosCents: centavos(totais.subtotalProdutos), totalCents: centavos(totais.total) };
+  return {
+    subtotalProdutosCents: centavos(totais.subtotalProdutos),
+    totalCents: centavos(totais.total),
+    totalNoCentavoCents: Math.round(totais.totalNoCentavo * 100)
+  };
 }

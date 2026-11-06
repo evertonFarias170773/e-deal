@@ -31,6 +31,7 @@ import { createClient as createSupabaseClient, type SupabaseClient } from "@supa
 import { aplicarStatusRecomendadoProposta } from "@/features/orcamentos/services/status-writer.service";
 import { TIPO_DESCONTO_TABELA_ESPECIAL, percentualGravado } from "@/features/orcamentos/lib/bonus-da-proposta";
 import { semCobrancaDeReenvio } from "@/features/cobrancas/lib/cobranca-reenvio";
+import { totalNoCentavo } from "@/features/orcamentos/lib/total-no-centavo";
 
 const TOLERANCIA = 0.02;
 
@@ -159,11 +160,13 @@ export async function POST(request: NextRequest) {
     if (itensErr) {
       return NextResponse.json({ success: false, error: "Erro ao buscar itens da proposta." }, { status: 500 });
     }
-    const subtotalBruto = round2(
-      (itensRows || [])
-        .filter((i) => (i.status_item || "PENDENTE") !== "CANCELADO")
-        .reduce((sum, i) => sum + (Number(i.valor_sub_total) || 0), 0)
-    );
+    // Itens pelo subtotal gravado (já ao centavo), para a conta em centavos
+    // exatos de `totalNoCentavo` — a mesma de cc__total_soberano_proposta
+    // (06/11/2026, pedido 24606: a soma em ponto flutuante dava 906,25 e o
+    // banco, 906,26; o abono respondia "sem saldo" e o despacho seguia travado).
+    const itensDoTotal = (itensRows || [])
+      .filter((i) => (i.status_item || "PENDENTE") !== "CANCELADO")
+      .map((i) => ({ quantidade: 1, valorUnitario: Number(i.valor_sub_total) || 0, valorFixo: 0, variacoesEscolhidas: [] }));
 
     // O bônus GRAVADO na venda (linha TABELA_ESPECIAL) sai do subtotal antes do
     // desconto geral — a mesma conta de cc__total_soberano_proposta desde
@@ -178,11 +181,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: "Erro ao buscar o bônus gravado da proposta." }, { status: 500 });
     }
     const bonusGravado = percentualGravado(linhaTabelaEspecial);
-    const subtotal =
-      bonusGravado && bonusGravado > 0
-        ? Math.max(0, round2(subtotalBruto - (subtotalBruto * bonusGravado) / 100))
-        : subtotalBruto;
-    const frete = round2(Number(proposta.valor_frete) || 0);
+    const bonusDoTotal = bonusGravado && bonusGravado > 0 ? bonusGravado : 0;
+    const frete = Number(proposta.valor_frete) || 0;
 
     // Linha única de desconto geral — mesmo critério de cc__total_soberano_proposta
     // (DESCONTO_GERAL ou legado NULL; tipada primeiro, mais recente primeiro).
@@ -201,9 +201,16 @@ export async function POST(request: NextRequest) {
 
     const pct = Number(descontoRow?.valor_percentual) || 0;
     const nominal = Number(descontoRow?.valor_nominal) || 0;
-    const descontoAtual = Math.min(subtotal, round2(pct > 0 ? (subtotal * pct) / 100 : Math.max(0, nominal)));
-
-    const totalAtual = Math.max(0, round2(subtotal + frete - descontoAtual));
+    const contaAtual = totalNoCentavo({
+      itens: itensDoTotal,
+      bonusPercent: bonusDoTotal,
+      descontoTipo: pct > 0 ? "PERCENTUAL" : "VALOR",
+      descontoValor: pct > 0 ? pct : Math.max(0, nominal),
+      frete
+    });
+    const subtotal = contaAtual.subtotalCentavos / 100;
+    const descontoAtual = contaAtual.descontoCentavos / 100;
+    const totalAtual = contaAtual.totalCentavos / 100;
 
     // ── Saldo a abonar = total soberano − cobrado ativo ────────────────────
     const saldoAbono = round2(totalAtual - totalCobradoAtivo);
@@ -251,7 +258,9 @@ export async function POST(request: NextRequest) {
     }
 
     // ── Recalcular e persistir o novo total da proposta ────────────────────
-    const novoTotal = Math.max(0, round2(subtotal + frete - novoDesconto));
+    const novoTotal =
+      totalNoCentavo({ itens: itensDoTotal, bonusPercent: bonusDoTotal, descontoTipo: "VALOR", descontoValor: novoDesconto, frete })
+        .totalCentavos / 100;
     const { error: updTotalErr } = await supabase
       .from("propostas")
       .update({ valor_total: novoTotal })

@@ -367,7 +367,8 @@ export async function montarSituacaoAreaCliente(
   // nao cobra nada — cobrar o valor gravado foi o que gerou um PIX de
   // R$ 694,63 num pedido de R$ 304,63 (22759, 28/09/2026).
   const totaisTela = await calcularTotaisPelaRegraDaTela(service, proposta);
-  const valorEmRevisao = totaisTela !== null && totaisTela.totalCents !== totalCents;
+  // Em centavos exatos dos dois lados (06/11/2026, pedido 24606).
+  const valorEmRevisao = totaisTela !== null && totaisTela.totalNoCentavoCents !== totalCents;
 
   // Os dois sufixos de arte saem, como no status-engine: NOVO_ARTE_APROVADA e
   // AGUARDANDO_ARTE_APROVADA ainda esperam pagamento (28/09/2026).

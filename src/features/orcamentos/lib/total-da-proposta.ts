@@ -1,4 +1,5 @@
 import { calculateItemSubtotal } from "@/features/orcamentos/orcamento-utils";
+import { centavosDoValor, totalNoCentavo } from "@/features/orcamentos/lib/total-no-centavo";
 
 /**
  * O total da proposta — a ÚNICA regra, para todo o sistema.
@@ -70,6 +71,13 @@ export type TotaisDaProposta = {
   subtotalProdutos: number;
   /** O total — é `propostas.valor_total`. */
   total: number;
+  /**
+   * O total em centavos exatos (`totalNoCentavo`, a regra do banco), em reais.
+   * É o que se MOSTRA e se COBRA (06/11/2026, pedido 24606: a soma acima, em
+   * ponto flutuante, dava 906,25 e o banco 906,26). `total` fica como era
+   * porque `lotes-em-massa` o grava.
+   */
+  totalNoCentavo: number;
   /** `itens`: calculado pelos itens ativos. `gravado`: não havia item ativo. */
   origem: "itens" | "gravado";
 };
@@ -83,9 +91,11 @@ export function totaisDaProposta(entrada: EntradaTotalDaProposta): TotaisDaPropo
   const ativos = entrada.itens.filter(itemAtivoNoTotal);
 
   if (entrada.isAvulso || ativos.length === 0) {
+    const total = numero(entrada.valorTotalGravado ?? numero(entrada.valor) + frete);
     return {
       subtotalProdutos: numero(entrada.valor),
-      total: numero(entrada.valorTotalGravado ?? numero(entrada.valor) + frete),
+      total,
+      totalNoCentavo: centavosDoValor(total) / 100,
       origem: "gravado"
     };
   }
@@ -112,9 +122,24 @@ export function totaisDaProposta(entrada: EntradaTotalDaProposta): TotaisDaPropo
   // O mesmo teto de `calculateResumo`: nunca negativo, nunca acima do subtotal.
   desconto = Math.min(subtotalProdutos, Math.max(0, desconto));
 
+  const percentualDesconto = entrada.descontoGeral ? numero(entrada.descontoGeral.valor_percentual) : 0;
+  const conta = totalNoCentavo({
+    itens: ativos.map((item) => ({
+      quantidade: numero(item.qtd),
+      valorUnitario: numero(item.valor_unt),
+      valorFixo: numero(item.fixo),
+      variacoesEscolhidas: []
+    })),
+    bonusPercent: entrada.bonusPercent,
+    descontoTipo: percentualDesconto > 0 ? "PERCENTUAL" : "VALOR",
+    descontoValor: percentualDesconto > 0 ? percentualDesconto : numero(entrada.descontoGeral?.valor_nominal),
+    frete
+  });
+
   return {
     subtotalProdutos,
     total: Math.max(0, subtotalProdutos - desconto + frete),
+    totalNoCentavo: conta.totalCentavos / 100,
     origem: "itens"
   };
 }

@@ -1,6 +1,6 @@
 # Proposta: aba Pagamentos
 
-> **Última revisão:** 05/11/2026 (Trocar forma de pagamento: PIX para Faturado, mesmo com nota autorizada)
+> **Última revisão:** 06/11/2026 (total em centavos exatos, igual ao da Expedição)
 > **Caminho no menu:** Pedidos → abrir um pedido → aba Pagamentos
 > **Endereço:** `/orcamentos/<número>/editar?tab=pagamentos`
 
@@ -241,6 +241,7 @@ Se a janela for fechada sem escolher, a proposta fica com a faixa **Revisão fin
 - Se alguma parcela do faturado já foi paga, a cobrança inteira não pode mais ser cancelada: vira caso de devolução.
 - Cobrança de E-Crédito não se desfaz pelo cancelamento: o crédito consumido não volta sozinho. O caminho é o estorno de crédito.
 - A janela **Cancelar Cobrança** informa que, se não restar nenhuma cobrança ativa, a proposta volta para NOVO.
+- O total é calculado em centavos exatos, com a mesma conta da trava de despacho da Expedição e da Conta Corrente: cada item é arredondado ao centavo, o desconto da tabela especial sai da soma dos itens, e o total é arredondado ao centavo (meio centavo para cima). O desconto da tabela especial mostrado é o subtotal bruto menos o total, então o resumo sempre fecha. Exemplo: subtotal bruto R$ 1.006,95 com 10% dá total R$ 906,26 e desconto R$ 100,69. O saldo desta aba, a Conferência, a página de pagamento do cliente e o **Abonar diferença** usam esse total. Antes de 06/11/2026, num total de meio centavo exato com tabela especial, a tela podia mostrar um centavo a menos que a Expedição (pedido 24606: a tela mostrava R$ 906,25, e a Expedição bloqueava por falta de R$ 0,01). Agora a tela mostra R$ 906,26 e R$ 0,01 em aberto, e o administrador resolve com **Abonar diferença**.
 - **Abonar diferença** só aparece quando a proposta tem pagamento confirmado e ainda há saldo. O valor é sempre o saldo inteiro, calculado pelo sistema; vira desconto, o total é recalculado e a ação fica no Histórico. Não vale para proposta avulsa.
 - Proposta avulsa ou sem produto ativo, depois de paga, não pode ser alterada por nenhum perfil. Histórico e Pagamentos continuam disponíveis.
 - O link da área do cliente só deixa pagar enquanto o pedido espera pagamento (NOVO, AGUARDANDO, APROVADO ou LIBERADO). Ele não oferece boleto, faturado nem Cartão Asaas, e não vale para proposta avulsa. O link de um pedido é sempre o mesmo.

@@ -1031,7 +1031,7 @@ export async function createOrReuseNfeDraft(idInt: number): Promise<SupabaseNfeR
   // (1) e tambem segue em 0 — nada mais se move.
   const consumidorFinal = isCNPJ && tipoContribuinte !== 9 ? 0 : 1;
 
-  const valorFrete = proposta.resumo?.frete || 0;
+  const valorFrete = (proposta.resumo?.semArredondar?.frete ?? proposta.resumo?.frete) || 0;
   const modalidadeFrete = codigoModalidadeFrete(proposta.modalidadeFrete, valorFrete);
 
   let totalPeso = 0;
@@ -1158,10 +1158,12 @@ export async function createOrReuseNfeDraft(idInt: number): Promise<SupabaseNfeR
     ambiente: "homologacao",
     modelo: "55",
     status: "PENDENTE",
-    valor_produtos: proposta.resumo?.subtotalProdutos || 0,
-    valor_desconto: proposta.resumo?.descontoGeral || 0,
+    // Os valores de antes do arredondamento em centavos da tela (06/11/2026):
+    // o rascunho da NF-e grava o que sempre gravou.
+    valor_produtos: (proposta.resumo?.semArredondar?.subtotalProdutos ?? proposta.resumo?.subtotalProdutos) || 0,
+    valor_desconto: (proposta.resumo?.semArredondar?.descontoGeral ?? proposta.resumo?.descontoGeral) || 0,
     valor_frete: valorFrete,
-    valor_total_nf: proposta.resumo?.valorTotal || 0,
+    valor_total_nf: (proposta.resumo?.semArredondar?.valorTotal ?? proposta.resumo?.valorTotal) || 0,
     cond_pgto: pgtoConfigurado,
     forma_pgto: tipoCobranca || "A Vista",
     // O RASCUNHO NASCE SEM ENDEREÇO DE ENTREGA, sempre.

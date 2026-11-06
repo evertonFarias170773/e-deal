@@ -1,6 +1,6 @@
 # Proposta: visão geral e abas
 
-> **Última revisão:** 05/11/2026 (Trocar forma de pagamento no aviso de nota do Cancelar só a cobrança)
+> **Última revisão:** 06/11/2026 (total em centavos exatos na visualização e no texto do WhatsApp)
 > **Caminho no menu:** Pedidos → **+ Nova proposta** (proposta nova) ou Pedidos → abrir um pedido → **Editar proposta**
 > **Endereço:** `/orcamentos/novo` e `/orcamentos/<número>/editar`
 
@@ -188,7 +188,7 @@ O detalhe é a tela só de leitura, aberta por **Ver proposta**. Ele mostra o me
    - **Prazo de produção** é o maior prazo, em dias úteis, entre os produtos do pedido.
    - **Prazo de entrega** é o prazo da cotação quando ela é o frete; nos outros casos, "Não se aplica".
 8. **Contato responsável:** quando o contato está cadastrado sem nome, aparece "Contato sem nome cadastrado", com o telefone e o e-mail que existirem.
-9. **Copiar resumo para WhatsApp:** em pedido com tabela especial, o texto leva o subtotal bruto e o desconto corretos.
+9. **Copiar resumo para WhatsApp:** em pedido com tabela especial, o texto leva o subtotal bruto e o desconto corretos. O total é calculado em centavos exatos, com a mesma conta da trava de despacho da Expedição e da Conta Corrente: cada item é arredondado ao centavo, o desconto da tabela especial sai da soma dos itens, e o total é arredondado ao centavo (meio centavo para cima). O desconto da tabela especial mostrado é o subtotal bruto menos o total, então o resumo sempre fecha. Exemplo: subtotal bruto R$ 1.006,95 com 10% dá total R$ 906,26 e desconto R$ 100,69.
 
 ### Alterar proposta que já tem cobrança ou pagamento
 

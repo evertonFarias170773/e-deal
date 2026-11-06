@@ -71,6 +71,7 @@ import {
   sortEnderecosPorPrioridade
 } from "@/features/orcamentos/orcamento-utils";
 import { bonusDaEdicao } from "@/features/orcamentos/lib/bonus-da-proposta";
+import { bonusPercentDosItens, resumoNoCentavo } from "@/features/orcamentos/lib/total-no-centavo";
 import { contatosDaEdicao } from "@/features/orcamentos/lib/contato-da-edicao";
 import { createCadastroContatos, getCadastrosReadOnlyList, getCadastroCompleto } from "@/features/cadastros/services/cadastros.service";
 import { gravarContatoNovoNoCadastro, type DependenciasContatoNovo } from "@/features/orcamentos/lib/contato-novo-no-cadastro";
@@ -1519,7 +1520,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
       const subtotalProdutos = parseCurrencyBR(form.valorProdutosManual) ?? 0;
       // Mesma regra da proposta normal: em FOB o frete manual não é cobrado.
       const frete = valorFreteEfetivo(parseCurrencyBR(form.valorFreteManual) ?? 0, form.modalidadeFrete);
-      return {
+      return resumoNoCentavo({
         subtotalProdutos,
         subtotalBrutoProdutos: subtotalProdutos,
         acrescimoBonus: 0,
@@ -1531,7 +1532,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
         pesoTotal: 0,
         prazoProducao: "A combinar",
         prazoEntrega: "A combinar"
-      };
+      }, { itens: [], bonusPercent: 0, isAvulso: true });
     }
     // FOB não cobra frete: o resumo tem de mostrar o mesmo zero que o
     // salvamento vai gravar, senão o total na tela mente.
@@ -1546,15 +1547,19 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     // Pagamentos cobra. O carregamento já entrega esse valor em
     // `proposta.resumo.frete`. Com a troca (23/09/2026), vale o card, como no
     // salvamento — `recalculaFrete`.
+    // Total em centavos exatos, com a regra do banco (06/11/2026, pedido 24606).
+    // O bônus é o que os itens carregam — o mesmo que a soma de antes usava.
+    const noCentavo = (r: typeof calculado) =>
+      resumoNoCentavo(r, { itens: form.itens, bonusPercent: bonusPercentDosItens(form.itens) });
     if (!recalculaFrete && proposta) {
       const freteGravado = Number(proposta.resumo.frete) || 0;
-      return {
+      return noCentavo({
         ...calculado,
         frete: freteGravado,
         valorTotal: Math.max(0, calculado.subtotalProdutos - calculado.descontoGeral + freteGravado)
-      };
+      });
     }
-    return calculado;
+    return noCentavo(calculado);
   }, [form.isAvulso, form.valorProdutosManual, form.valorFreteManual, form.itens, form.fretes, form.modalidadeFrete, form.descontoGeralValor, form.descontoGeralTipo, recalculaFrete, proposta]);
 
   const volumes = Math.max(1, Math.ceil(resumo.pesoTotal / 14500));

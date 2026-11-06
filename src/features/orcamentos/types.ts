@@ -166,6 +166,12 @@ export type PropostaResumo = {
   pesoTotal: number;
   prazoProducao: string;
   prazoEntrega: string;
+  /**
+   * Os valores de antes do arredondamento em centavos (`resumoNoCentavo`),
+   * para quem GRAVA a partir do resumo carregado (rascunho de NF-e,
+   * consolidação do total) e não pode mudar o que grava.
+   */
+  semArredondar?: Pick<PropostaResumo, "subtotalProdutos" | "descontoGeral" | "valorTotal" | "frete">;
 };
 
 export type Proposta = {

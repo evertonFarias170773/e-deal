@@ -24,6 +24,8 @@ import {
   isCreditoPendente
 } from "@/features/cobrancas/cobrancas-utils";
 import type { Cobranca } from "@/features/cobrancas/types";
+import type { PropostaItem } from "@/features/orcamentos/types";
+import { centavosDoItem, centavosDoValor, totalNoCentavo } from "@/features/orcamentos/lib/total-no-centavo";
 import { humanizeStatus } from "@/lib/formatters/status";
 
 /* ---------------------------------------------------------------------- frete */
@@ -174,7 +176,17 @@ export function prazoDeProducao(itens: readonly ItemComPrazo[]): string {
 
 /* ------------------------------------------------------------- tabela especial */
 
-type ItemComValores = { statusItem?: string | null; subtotalBruto: number; acrescimoBonus: number; subtotal: number };
+type ItemComValores = {
+  statusItem?: string | null;
+  subtotalBruto: number;
+  acrescimoBonus: number;
+  subtotal: number;
+  /** Quando vêm, o bruto do item sai da conta exata (qtd × unitário + fixo). */
+  quantidade?: number;
+  valorUnitario?: number;
+  valorFixo?: number;
+  variacoesEscolhidas?: PropostaItem["variacoesEscolhidas"];
+};
 
 export type ValoresDaTabelaEspecial =
   /** Sem tabela especial neste pedido: as linhas não aparecem. */
@@ -200,15 +212,39 @@ export function valoresDaTabelaEspecial(
 ): ValoresDaTabelaEspecial {
   if (!(Number(bonusPercent) > 0)) return { mostrar: false, motivo: "SEM_TABELA" };
   const ativos = itens.filter((item) => String(item.statusItem ?? "").toUpperCase() !== "CANCELADO");
-  const bruto = ativos.reduce((t, i) => t + (Number(i.subtotalBruto) || 0), 0);
-  const desconto = ativos.reduce((t, i) => t + (Number(i.acrescimoBonus) || 0), 0);
-  const liquido = ativos.reduce((t, i) => t + (Number(i.subtotal) || 0), 0);
+  const descontoDosItens = ativos.reduce((t, i) => t + (Number(i.acrescimoBonus) || 0), 0);
+  if (!(centavos(descontoDosItens) > 0)) return { mostrar: false, motivo: "NAO_DERIVAVEL" };
+
+  // Em centavos exatos, com a regra do banco (06/11/2026, pedido 24606): cada
+  // item ao centavo, o bônus sobre a soma, o líquido arredondado; o desconto
+  // mostrado é bruto − líquido, e as três linhas fecham com o total da tela.
+  const conta = totalNoCentavo({
+    itens: ativos.map((item) => {
+      const brutoCentavos =
+        item.quantidade != null && item.valorUnitario != null
+          ? centavosDoItem({
+              quantidade: item.quantidade,
+              valorUnitario: item.valorUnitario,
+              valorFixo: item.valorFixo ?? 0,
+              variacoesEscolhidas: item.variacoesEscolhidas ?? []
+            })
+          : centavosDoValor(item.subtotalBruto);
+      return { quantidade: 1, valorUnitario: brutoCentavos / 100, valorFixo: 0, variacoesEscolhidas: [] };
+    }),
+    bonusPercent: Number(bonusPercent),
+    descontoTipo: "VALOR",
+    descontoValor: 0,
+    frete: 0
+  });
   const fecha =
-    centavos(desconto) > 0 &&
-    Math.abs(centavos(bruto) - centavos(desconto) - centavos(liquido)) <= 1 &&
-    Math.abs(centavos(liquido) - centavos(subtotalProdutosDoResumo)) <= 1;
+    conta.bonusCentavos > 0 && Math.abs(conta.subtotalCentavos - centavos(subtotalProdutosDoResumo)) <= 1;
   if (!fecha) return { mostrar: false, motivo: "NAO_DERIVAVEL" };
-  return { mostrar: true, bruto, desconto, liquido };
+  return {
+    mostrar: true,
+    bruto: conta.brutoCentavos / 100,
+    desconto: conta.bonusCentavos / 100,
+    liquido: conta.subtotalCentavos / 100
+  };
 }
 
 /* ------------------------------------------------------------------- pagamento */

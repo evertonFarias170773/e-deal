@@ -1,6 +1,6 @@
 # Pedidos (lista)
 
-> **Última revisão:** 05/11/2026 (Trocar forma de pagamento no aviso de nota do Cancelar só a cobrança)
+> **Última revisão:** 06/11/2026 (total da lista em centavos exatos)
 > **Caminho no menu:** Pedidos (item direto do menu lateral, sem submenu; é o segundo, logo abaixo de Conferência)
 > **Endereço:** `/orcamentos`
 
@@ -222,6 +222,7 @@ A liberação é recusada quando já existe NF-e de venda autorizada ou em proce
 
 ## Regras e bloqueios
 
+- O total de cada pedido na lista é calculado em centavos exatos, com a mesma conta da proposta, da aba Pagamentos e da trava de despacho da Expedição: cada item ao centavo, o desconto da tabela especial sobre a soma, e o total arredondado ao centavo (meio centavo para cima). Veja a regra em [Proposta: aba Pagamentos](proposta-pagamentos.md).
 - Proposta cancelada nunca aparece em card nenhum, nem na contagem nem na lista do card.
 - A lista padrão (**Ativos**) esconde os pedidos cancelados, os entregues, os em trânsito, os avulsos e os testes encerrados. Entregue já saiu do fluxo; teste encerrado não é pedido de verdade. Para ver tudo, escolha **Todos status** (que ainda esconde cancelados, entregues e testes encerrados) ou busque pelo número.
 - Os seis cards contam o período inteiro, e não só a página carregada. Ligar ou desligar um card não muda os números dos outros. O único caso em que eles contam menos é o da busca ou de filtro de modelo, produto, vendedor ou cobrança, em que cada leitura traz no máximo 100 pedidos (veja "Entender os cards do topo").

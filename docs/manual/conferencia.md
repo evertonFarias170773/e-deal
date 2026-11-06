@@ -1,6 +1,6 @@
 # Conferência
 
-> **Última revisão:** 05/11/2026 (Trocar forma de pagamento no detalhe e no aviso de nota autorizada)
+> **Última revisão:** 06/11/2026 (total da proposta em centavos exatos na conferência)
 > **Caminho no menu:** Conferência (primeiro item do menu lateral; é um link direto, sem subitens)
 > **Endereço:** `/cobrancas` (o detalhe de uma cobrança abre em `/cobrancas/<cobrança>`)
 
@@ -181,6 +181,7 @@ O bloco **Histórico da cobrança**, no detalhe, ainda mostra "Histórico ainda 
 
 ## Regras e bloqueios
 
+- Ao conferir uma cobrança, o total da proposta entra arredondado ao centavo (meio centavo para cima), a mesma conta da trava de despacho da Expedição. A tolerância de R$ 0,02 da conferência com duas ou mais cobranças não mudou.
 - **Filtro por vendedor**: entram as cobranças das propostas do vendedor escolhido (o dono da proposta), não importa quem lançou a cobrança. É a mesma regra dos relatórios de vendas. O filtro só estreita a lista; sem ele, a lista é a mesma.
 
 O que entra e o que não entra na fila:

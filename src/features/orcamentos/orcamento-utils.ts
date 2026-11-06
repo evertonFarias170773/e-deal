@@ -8,6 +8,7 @@ import type {
   TipoDescontoProposta,
   PropostaVariacaoEscolhida
 } from "@/features/orcamentos/types";
+import { bonusPercentDosItens, centavosDoValor, totalNoCentavo } from "@/features/orcamentos/lib/total-no-centavo";
 
 export function getCobrancaLabel(status: Proposta["cobrancaStatus"]) {
   const labels = {
@@ -187,6 +188,23 @@ export function buildPropostaInformalText({
 }) {
   const contactName = contatoNome || clienteNome || "cliente";
 
+  // Valores do texto em centavos exatos, com a regra do banco (06/11/2026,
+  // pedido 24606). O bônus mostrado é bruto − (bruto − bônus) arredondado, e o
+  // resumo fecha: 1.006,95 − 100,69 = 906,26.
+  const conta = isAvulso
+    ? null
+    : totalNoCentavo({
+        itens,
+        // O bônus que já está nos itens (e na linha de cada produto do texto).
+        bonusPercent: bonusPercentDosItens(itens),
+        descontoTipo: resumo.descontoGeralTipo,
+        descontoValor: resumo.descontoGeralValor,
+        frete: resumo.frete
+      });
+  const subtotalBrutoTexto = conta ? conta.brutoCentavos / 100 : resumo.subtotalBrutoProdutos;
+  const bonusTexto = conta ? conta.bonusCentavos / 100 : resumo.acrescimoBonus;
+  const totalTexto = conta ? conta.totalCentavos / 100 : centavosDoValor(resumo.valorTotal) / 100;
+
   let itemsText = "";
   if (isAvulso) {
     itemsText = `✅ *Orçamento Avulso*: *${formatPlainCurrency(resumo.subtotalProdutos)}*`;
@@ -234,14 +252,14 @@ export function buildPropostaInformalText({
     ``,
     itemsText || "✅ Nenhum produto adicionado",
     ``,
-    (bonusPercent > 0) ? `Subtotal bruto ${formatPlainCurrency(resumo.subtotalBrutoProdutos)}` : null,
+    (bonusPercent > 0) ? `Subtotal bruto ${formatPlainCurrency(subtotalBrutoTexto)}` : null,
     (bonusPercent > 0) ? `` : null,
-    (bonusPercent > 0) ? `Tabela especial do cliente aplicada (-${bonusPercent}%)  -${formatPlainCurrency(resumo.acrescimoBonus)}` : null,
+    (bonusPercent > 0) ? `Tabela especial do cliente aplicada (-${bonusPercent}%)  -${formatPlainCurrency(bonusTexto)}` : null,
     (bonusPercent > 0) ? `` : null,
     freteMsg,
     (cidade && uf && freteEscolhido) ? `Cidade: *${cidade} - ${uf}*` : null,
     ``,
-    `O valor total do pedido ficou em *${formatPlainCurrency(resumo.valorTotal)}*`,
+    `O valor total do pedido ficou em *${formatPlainCurrency(totalTexto)}*`,
     ``,
     `Se estiver tudo certo, me confirma por aqui que já dou andamento ao processo!`
   ];

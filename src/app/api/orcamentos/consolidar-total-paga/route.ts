@@ -166,7 +166,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: "Falha ao calcular a proposta oficial através do serviço." }, { status: 500 });
   }
 
-  const totalCalculado = propostaOficial.resumo.valorTotal;
+  // O valor de antes do arredondamento em centavos: esta rota GRAVA o total, e
+  // o que ela grava não muda (06/11/2026). O resumo arredondado é o da tela.
+  const totalCalculado = propostaOficial.resumo.semArredondar?.valorTotal ?? propostaOficial.resumo.valorTotal;
 
   if (!Number.isFinite(totalCalculado) || totalCalculado < 0) {
      return NextResponse.json({ success: false, error: "Cálculo oficial de total financeiro resultou em valor inválido." }, { status: 500 });

@@ -8,6 +8,7 @@ import {
   type TransporteCategoria
 } from "@/features/orcamentos/lib/transporte-categoria";
 import { calculateResumo, calculateItemSubtotal, itensComOBonusDoSalvar } from "@/features/orcamentos/orcamento-utils";
+import { resumoNoCentavo } from "@/features/orcamentos/lib/total-no-centavo";
 import { FORMA_RETRABALHO, cobrancaEhRetrabalho } from "@/lib/retrabalho";
 import {
   TIPO_DESCONTO_TABELA_ESPECIAL,
@@ -1700,7 +1701,8 @@ export async function getOrcamentosReadOnlyData(
         // Área do cliente, lista rápida e API da Lisiton usam a mesma.
         for (const row of rows) {
           const isAvulso = row.is_avulso === true || row.is_avulso === "true" || row.is_avulso === "1" || row.is_avulso === 1;
-          const { total } = totaisDaProposta({
+          // Total da lista em centavos exatos, a regra do banco (06/11/2026).
+          const { totalNoCentavo: total } = totaisDaProposta({
             isAvulso,
             valorTotalGravado: row.valor_total,
             valor: row.valor,
@@ -2449,21 +2451,27 @@ export async function getPropostaDetailById(idInt: number, overrideClient?: Supa
       modalidadeFrete: modalidadePersistidaProposta,
       idTransportadoraCliente:
         proposalRow.id_transportadora_cliente != null ? Number(proposalRow.id_transportadora_cliente) : null,
-      resumo: {
-        subtotalBrutoProdutos: subtotalProdutos,
-        acrescimoBonus: 0,
-        subtotalProdutos,
-        descontoGeralTipo: descontoGeralTipo,
-        descontoGeralValor: descontoGeralValor,
-        descontoGeral: descontoGeralCalculado,
-        frete: freteValor,
-        valorTotal,
-        pesoTotal,
-        prazoProducao: "7 dias",
-        // Sem cotacao nenhuma so no complemento (acima); proposta comum
-        // sempre tem ao menos as opcoes reconstruidas.
-        prazoEntrega: chosenFrete ? chosenFrete.prazo : ""
-      },
+      // Total em centavos exatos, com a regra do banco (06/11/2026, pedido
+      // 24606): é o que a aba Pagamentos, a tela e o texto mostram e comparam.
+      // Quem grava a partir deste resumo usa `resumo.semArredondar`.
+      resumo: resumoNoCentavo(
+        {
+          subtotalBrutoProdutos: subtotalProdutos,
+          acrescimoBonus: 0,
+          subtotalProdutos,
+          descontoGeralTipo: descontoGeralTipo,
+          descontoGeralValor: descontoGeralValor,
+          descontoGeral: descontoGeralCalculado,
+          frete: freteValor,
+          valorTotal,
+          pesoTotal,
+          prazoProducao: "7 dias",
+          // Sem cotacao nenhuma so no complemento (acima); proposta comum
+          // sempre tem ao menos as opcoes reconstruidas.
+          prazoEntrega: chosenFrete ? chosenFrete.prazo : ""
+        },
+        { itens: activeItens, bonusPercent: bonusPercentLoad, isAvulso: Boolean(proposalRow.is_avulso) }
+      ),
       descontoGeralTipo: descontoGeralTipo,
       descontoGeralValor: descontoGeralValor,
       formaPagamento: proposalRow.forma_pagamento || "A combinar",

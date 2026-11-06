@@ -1,6 +1,6 @@
 # Proposta: aba Orçamento (produtos)
 
-> **Última revisão:** 21/10/2026
+> **Última revisão:** 06/11/2026 (total em centavos exatos)
 > **Caminho no menu:** Pedidos → abrir um pedido → aba **Orçamento**
 > **Endereço:** `/orcamentos/<número>/editar?tab=produtos` (em proposta nova, `/orcamentos/novo`)
 
@@ -111,7 +111,7 @@ Item removido não entra no total, no peso, na aba Pedido nem na conferência de
 
 1. **Preço do produto**: o valor unitário e o valor fixo vêm do cadastro do produto.
 2. **Cliente com preço fixo**: quando o cliente tem preço fixo cadastrado para aquele produto, vale esse preço, e o campo **Fixo (R$)** fica zerado e travado.
-3. **Tabela especial (bônus)**: quando o cliente tem tabela especial, cada item mostra a faixa **Tabela especial do cliente aplicada** com o percentual, e o subtotal já sai com o abatimento. O Resumo mostra a mesma linha. Cliente com preço fixo não recebe o percentual.
+3. **Tabela especial (bônus)**: quando o cliente tem tabela especial, cada item mostra a faixa **Tabela especial do cliente aplicada** com o percentual, e o subtotal já sai com o abatimento. O Resumo mostra a mesma linha. Cliente com preço fixo não recebe o percentual. O total é calculado em centavos exatos, com a mesma conta da trava de despacho da Expedição e da Conta Corrente: cada item é arredondado ao centavo, o desconto da tabela especial sai da soma dos itens, e o total é arredondado ao centavo (meio centavo para cima). O desconto da tabela especial mostrado é o subtotal bruto menos o total, então o resumo sempre fecha. Exemplo: subtotal bruto R$ 1.006,95 com 10% dá total R$ 906,26 e desconto R$ 100,69.
 4. **Tabela especial congelada**: depois do primeiro pagamento confirmado, o percentual da proposta fica como estava. Mudar a tabela no cadastro do cliente não altera a proposta já paga.
 5. **Desconto geral**: fica no bloco **8. Resumo do orçamento**, na coluna da direita. Escolha **%** ou **R$** e digite o valor. Ele incide sobre o subtotal dos produtos e nunca passa dele.
 6. O item não tem campo de desconto próprio. Desconto é o geral, ou ajuste de valor unitário feito por administrador.

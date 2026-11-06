@@ -1,4 +1,5 @@
 import { SupabaseClient } from "@supabase/supabase-js";
+import { centavosDoValor } from "@/features/orcamentos/lib/total-no-centavo";
 
 export type CobrancaV2 = {
   id: string;
@@ -43,7 +44,9 @@ export async function calcularSituacaoQuitacaoProposta(
     throw new Error(`Erro ao buscar proposta #${idInt}.`);
   }
 
-  const valorTotalProposta = Number(proposta.valor_total) || 0;
+  // Total gravado em centavos exatos, meio centavo para cima — a regra da
+  // trava do despacho (06/11/2026, pedido 24606).
+  const valorTotalProposta = centavosDoValor(proposta.valor_total) / 100;
 
   const { data: pagamentos, error: pagamentosErr } = await supabase
     .from("pagamentos_v2")
