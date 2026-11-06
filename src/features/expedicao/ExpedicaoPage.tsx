@@ -72,6 +72,8 @@ import type { GrupoVinculado } from "./lib/vinculos-do-painel";
 import { useVinculosDoPainel } from "./hooks/useVinculosDoPainel";
 import { useInstrucoesDeEntrega } from "./hooks/useInstrucoesDeEntrega";
 import { AvisoInstrucaoEntrega } from "./components/AvisoInstrucaoEntrega";
+import { AvisoPedidoPronto } from "./components/AvisoPedidoPronto";
+import { useAvisosPedidoPronto } from "./hooks/useAvisosPedidoPronto";
 import { classeFaixaDoCard, destaqueDoCard } from "./lib/vinculos-do-painel";
 import type { EtapaExpedicao, PedidoExpedicao, TipoFreteNormalizado } from "./types";
 
@@ -202,6 +204,22 @@ export function ExpedicaoPage() {
   const podeSoltarDoGrupo = Boolean(user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "expedicao.admin"));
   const [isLoaded, setIsLoaded] = useState(false);
   const canOperar = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "expedicao.processar");
+  // Aviso "pedido pronto" pelo ChatGuru (06/11/2026): ultimo aviso dos pedidos na
+  // bancada, lido pela Edge Function (a tabela e so do service_role).
+  const avisosPronto = useAvisosPedidoPronto(pedidos, Boolean(user));
+  function avisoPronto(p: PedidoExpedicao, compacto = false) {
+    return (
+      <AvisoPedidoPronto
+        idInt={p.idInt}
+        statusInterno={p.statusInterno}
+        aviso={avisosPronto.avisos.get(p.idInt)}
+        modoTeste={avisosPronto.modoTeste}
+        podeOperar={Boolean(canOperar)}
+        compacto={compacto}
+        onAviso={avisosPronto.atualizar}
+      />
+    );
+  }
   // Telefone do destinatario editavel no despacho: quem pode editar cadastros (`cadastros.edit`).
   const podeEditarCadastro = Boolean(user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "cadastros.edit"));
   /**
@@ -1186,6 +1204,7 @@ export function ExpedicaoPage() {
           etapaFiltro={filters.etapa}
           vinculosPorPedido={vinculosPorPedido}
           instrucoesPorPedido={instrucoesPorPedido}
+          rodapeDoCard={(p) => avisoPronto(p, true)}
           onSoltarDoGrupo={podeSoltarDoGrupo ? (idInt, grupo) => setSoltarAlvo({ idInt, grupo }) : undefined}
         />
       ) : (
@@ -1413,18 +1432,21 @@ export function ExpedicaoPage() {
               const acoesMenu = itensMenu(p);
 
               return (
-                <div className="flex items-center justify-end gap-1.5">
-                  {primario && (
-                    <button
-                      type="button"
-                      disabled={ocupado}
-                      onClick={primario.acao}
-                      className="rounded-2xl bg-[#0b2f4a] px-3 py-2 text-xs font-semibold text-white transition hover:bg-[#123f61] disabled:opacity-50"
-                    >
-                      {primario.rotulo}
-                    </button>
-                  )}
-                  <ActionsMenu items={acoesMenu} />
+                <div className="flex flex-col items-end">
+                  <div className="flex items-center justify-end gap-1.5">
+                    {primario && (
+                      <button
+                        type="button"
+                        disabled={ocupado}
+                        onClick={primario.acao}
+                        className="rounded-2xl bg-[#0b2f4a] px-3 py-2 text-xs font-semibold text-white transition hover:bg-[#123f61] disabled:opacity-50"
+                      >
+                        {primario.rotulo}
+                      </button>
+                    )}
+                    <ActionsMenu items={acoesMenu} />
+                  </div>
+                  {avisoPronto(p)}
                 </div>
               );
             }
@@ -1561,6 +1583,7 @@ export function ExpedicaoPage() {
                 )}
                 <ActionsMenu items={acoesMenu} />
               </div>
+              {avisoPronto(p)}
             </article>
           );
         }}

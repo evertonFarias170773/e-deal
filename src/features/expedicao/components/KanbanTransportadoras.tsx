@@ -1,7 +1,7 @@
 "use client";
 
 import { CONTORNO_RETRABALHO, SeloRetrabalho } from "@/components/common/SeloRetrabalho";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ChevronLeft, ChevronRight, Truck } from "lucide-react";
 import { ActionsMenu } from "@/components/common/ActionsMenu";
 import { BotaoDanfe } from "@/components/common/BotaoDanfe";
@@ -66,6 +66,8 @@ type KanbanTransportadorasProps = {
    * aviso ao lado do menu, com o texto na dica.
    */
   instrucoesPorPedido?: Map<number, string>;
+  /** Rodape opcional do card (aviso "pedido pronto" pelo ChatGuru, 06/11/2026). */
+  rodapeDoCard?: (p: PedidoExpedicao) => ReactNode;
   /** Admin da Expedicao: abre o "Soltar do grupo" no chip do Acompanhar. */
   onSoltarDoGrupo?: (idInt: number, grupo: GrupoVinculado) => void;
 };
@@ -351,6 +353,7 @@ export function KanbanTransportadoras({
   etapaFiltro,
   vinculosPorPedido,
   instrucoesPorPedido,
+  rodapeDoCard,
   onSoltarDoGrupo
 }: KanbanTransportadorasProps) {
   /**
@@ -809,6 +812,7 @@ export function KanbanTransportadoras({
                       )}
                     </span>
                   </div>
+                  {rodapeDoCard?.(p)}
                 </article>
               );
             })}

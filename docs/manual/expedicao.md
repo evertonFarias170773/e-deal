@@ -1,6 +1,6 @@
 # Expedição
 
-> **Última revisão:** 03/11/2026
+> **Última revisão:** 06/11/2026
 > **Caminho no menu:** Expedição (item direto do menu lateral, sem subitens; é o quarto, depois de Conferência, Pedidos e Clientes). Também se chega pela aba **Expedição** no topo do Kanban e da Fila de impressão da Produção.
 > **Endereço:** `/expedicao`
 
@@ -18,6 +18,7 @@ A tela também avisa o que está atrasado ou prometido para hoje e segura o desp
 - **Corrigir frete** aparece para quem tem a permissão **Editar Proposta Paga** (ou Administrador).
 - **Reenviar (pedido devolvido)** aparece para quem tem a permissão **Reenviar Pedido Devolvido** (ou Administrador). Nenhum perfil nasce com ela: quem administra os perfis concede.
 - **Encerrar teste** é exclusivo do Super Administrador.
+- **Avisar cliente: pedido pronto**, **Reenviar** e **Atualizar status** pedem a permissão **Processar Envio / Retirada** (ou Administrador). Quem só tem **Visualizar Expedição** vê o aviso já enviado, sem os botões.
 
 ## Botões e ações da tela
 
@@ -57,6 +58,10 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Confirmar coleta** | Idem. Pedido despachado aguardando coleta | Pede confirmação e leva o pedido para Em Trânsito |
 | **Confirmar retirada** | Idem. Pedido A Retirar | Abre a janela **Confirmar retirada** |
 | **Marcar entregue** | Idem. Pedido Em Trânsito | Pede confirmação e conclui o pedido como Entregue |
+| **Avisar cliente: pedido pronto** | Abaixo das ações, na lista e no card; só em pedido Na Expedição ainda sem aviso | Manda pelo WhatsApp da Ideal (ChatGuru) a mensagem de pedido pronto ao contato da proposta |
+| "Aviso enviado em … por …" (ou "Tentativa de aviso em … por …") | No lugar do botão, depois do envio | Mostra quando, quem e o estado do aviso |
+| **Atualizar status** | Abaixo do aviso, enquanto ele não está entregue ao WhatsApp | Consulta o ChatGuru. Não envia nada |
+| **Reenviar** | Abaixo do aviso | Pede confirmação e manda outra mensagem |
 
 #### Menu de ações do pedido
 
@@ -184,6 +189,17 @@ Os itens aparecem nesta ordem, cada um só quando se aplica.
 
 O pedido também chega à Expedição pela Revisão do boletim da produção.
 
+### Avisar o cliente que o pedido está pronto
+
+1. No pedido com status Na Expedição, clique em **Avisar cliente: pedido pronto** (abaixo das ações, na lista e no card).
+2. O Vibe manda pelo WhatsApp da Ideal (ChatGuru) uma mensagem para o contato da proposta: "Olá, {nome do contato}! Seu pedido {número} está pronto. ✅", os itens (quantidade e produto, um por linha), a forma de envio (retirada no balcão ou entrega, com a transportadora quando houver) e "Qualquer dúvida, é só responder esta mensagem."
+3. O botão vira "Aviso enviado em {data e hora} por {usuário}" com o estado: **aguardando confirmação do WhatsApp**, **entregue ao WhatsApp**, **falhou** ou **resultado desconhecido**.
+4. Para saber se a mensagem já foi entregue ao WhatsApp, clique em **Atualizar status**.
+5. Para mandar de novo, clique em **Reenviar** e confirme na janela **Reenviar aviso de pedido pronto?**.
+6. Em **resultado desconhecido**, confira no ChatGuru se a mensagem saiu antes de reenviar. O Vibe não reenvia sozinho.
+
+Enquanto o **modo teste** estiver ligado (aparece "modo teste" no botão e no aviso), a mensagem vai só para o número de teste, nunca para o cliente. O modo teste não se desliga pela tela.
+
 ### Conferir o pedido (peso e volumes)
 
 1. No pedido com status Na Expedição, clique em **Despachar**.
@@ -240,6 +256,7 @@ Em resumo: no pedido Na Expedição, clique em **Despachar**, confira peso, volu
 
 ## Regras e bloqueios
 
+- **Aviso de pedido pronto (desde 06/11/2026).** Só sai com o pedido Na Expedição. O destinatário é o contato da proposta, que precisa estar ativo, ter WhatsApp com DDD e pertencer ao cliente ou ao faturado do pedido. Pedido e contato são lidos de novo na hora do envio. Clicar outra vez em **Avisar cliente: pedido pronto** não manda segunda mensagem: só **Reenviar**, com confirmação, manda outra.
 - **Pedido entregue não pode ser alterado** na proposta (produtos, salvar, cobrança nova, valor negociado). Para alterar, use **Voltar status** passo a passo até Em Acabamento; a produção devolve o pedido ao atendente com **Voltar para Revisão Atendente**, o que só é possível sem nota fiscal emitida.
 - Não dá para despachar sem a modalidade do frete, a transportadora, o endereço de entrega, o peso aferido e a quantidade de volumes. Em retirada, basta a modalidade. O rastreio é opcional.
 - A etiqueta e a prepostagem exigem os mesmos dados do despacho enquanto o pedido ainda não saiu. Imprimir etiqueta de um envio que ninguém terminou de declarar não é permitido.
@@ -311,6 +328,10 @@ Em resumo: no pedido Na Expedição, clique em **Despachar**, confira peso, volu
 
 | O que aparece | Por que acontece | O que fazer |
 |---|---|---|
+| "O pedido não tem contato. Escolha o contato na proposta." ou "O contato do pedido não pertence ao cliente nem ao faturado." | O aviso de pedido pronto não tem para quem ir | Corrigir o contato na proposta e clicar de novo em **Avisar cliente: pedido pronto** |
+| "O WhatsApp do contato do pedido está vazio ou inválido." | O contato não tem WhatsApp válido | Corrigir o WhatsApp no cadastro do contato |
+| "Este pedido já tinha aviso" | Já houve aviso para o pedido | Nada foi enviado de novo. Para mandar outra mensagem, use **Reenviar** |
+| Aviso em **resultado desconhecido** | O ChatGuru não respondeu a tempo ou respondeu algo inesperado | Conferir no ChatGuru se a mensagem saiu; só então usar **Reenviar** |
 | Falta informar o peso aferido (ou a transportadora, o endereço de entrega, a quantidade de volumes, a modalidade do frete) | Falta dado mínimo do despacho | Preencher o campo indicado. Endereço e transportadora se corrigem na proposta |
 | Esta proposta não tem endereço de entrega definido. Defina o endereço na proposta para poder despachar. | A proposta está sem endereço de entrega | Definir o endereço na proposta |
 | Confirme o despacho sem NF | O pedido não tem nota autorizada e a caixa não foi marcada | Marcar **Despachar mesmo assim** |
@@ -398,6 +419,12 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/features/expedicao/lib/pedido-em-aberto.ts`
 - `src/app/(erp)/expedicao/page.tsx`
 - `src/app/api/expedicao/`
+- `src/features/expedicao/components/AvisoPedidoPronto.tsx`
+- `src/features/expedicao/hooks/useAvisosPedidoPronto.ts`
+- `src/features/expedicao/services/aviso-pronto.client.ts`
+- `supabase/functions/expedicao-pedido-pronto/index.ts`
+- `supabase/functions/expedicao-pedido-pronto/logica.ts`
+- `supabase/migrations/20261106_expedicao_aviso_pronto.sql`
 - `src/app/api/pedidos/encerrar-teste/route.ts`
 - `src/features/orcamentos/lib/categoria-frete.ts`
 - `src/features/orcamentos/lib/modalidade-frete.ts`

@@ -1,6 +1,6 @@
 # Expedição: despachar e entregar
 
-> **Última revisão:** 03/11/2026
+> **Última revisão:** 06/11/2026
 > **Caminho no menu:** Expedição → card do pedido → **Despachar** (os outros passos saem do menu de ações do card)
 > **Endereço:** `/expedicao`
 
@@ -203,6 +203,7 @@ As regras da tela inteira estão em [Expedição](expedicao.md). Estas são as q
 
 ## O que não confundir
 
+- **Avisar cliente: pedido pronto** x **Despachar**: o aviso só manda a mensagem de pedido pronto pelo WhatsApp e não muda o status do pedido. Detalhes em [Expedição](expedicao.md).
 - **Recotar frete** x **Corrigir frete**: recotar busca preços novos para o mesmo envio e só grava com liberação; corrigir troca a modalidade (quem paga) e a transportadora, e muda o total do pedido.
 - **Confirmar coleta** x **Marcar entregue**: a coleta é o carro levando o volume (vai para Em Trânsito); a entrega é a chegada ao cliente (vai para Entregue).
 - **Voltar status** x **Reenviar (pedido devolvido)**: voltar um passo desfaz a última mudança; o reenvio registra que o pedido voltou devolvido e o devolve Na Expedição com o selo **Reenvio N**, guardando o primeiro envio.
