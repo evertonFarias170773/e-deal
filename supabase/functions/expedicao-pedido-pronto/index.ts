@@ -49,7 +49,7 @@ import {
   limpar,
   modoTesteLigado,
   nomeDoDialogo,
-  numeroDaNota,
+  notaParaODialogo,
   rastreioCorreiosValido,
   recusaPorNumero,
   telefoneWhatsApp,
@@ -228,9 +228,15 @@ async function fretesDosPedidos(ids: number[]): Promise<Map<number, Frete>> {
   return mapa;
 }
 
-/** Nota autorizada do pedido (NF-e de venda ou NFS-e, produção). Sem nota, "—". */
+/**
+ * Nota do pedido para o diálogo. Faturado no sistema antigo (faturado_fora_em):
+ * expedicoes.nf_numero_manual. Senão, a NF-e de venda ou NFS-e autorizada em
+ * produção. Sem nota, "—".
+ */
 async function notaDoPedido(idInt: number): Promise<string> {
-  const [nfe, nfse] = await Promise.all([
+  const [prop, exp, nfe, nfse] = await Promise.all([
+    admin.from("propostas").select("faturado_fora_em").eq("id_int", idInt).maybeSingle(),
+    admin.from("expedicoes").select("nf_numero_manual").eq("id_int", idInt).limit(1).maybeSingle(),
     admin
       .from("notas_fiscais")
       .select("numero_nf, tipo_nota")
@@ -239,12 +245,15 @@ async function notaDoPedido(idInt: number): Promise<string> {
       .eq("ambiente", "producao"),
     admin.from("notas_servico").select("numero_nfse").eq("id_int", idInt).eq("status", "AUTORIZADA").eq("ambiente", "producao")
   ]);
-  if (nfe.error || nfse.error) throw new Recusa(503, "Não foi possível ler a nota fiscal do pedido.");
-  const numeros = [
-    ...(nfe.data ?? []).filter((n) => (n.tipo_nota ?? "").toUpperCase() !== "REMESSA").map((n) => n.numero_nf),
-    ...(nfse.data ?? []).map((n) => n.numero_nfse)
-  ];
-  return numeroDaNota(numeros);
+  if (prop.error || exp.error || nfe.error || nfse.error) throw new Recusa(503, "Não foi possível ler a nota fiscal do pedido.");
+  return notaParaODialogo({
+    faturadoNoSistemaAntigo: Boolean(prop.data?.faturado_fora_em),
+    nfNumeroManual: exp.data?.nf_numero_manual ?? null,
+    numerosDoVibe: [
+      ...(nfe.data ?? []).filter((n) => (n.tipo_nota ?? "").toUpperCase() !== "REMESSA").map((n) => n.numero_nf),
+      ...(nfse.data ?? []).map((n) => n.numero_nfse)
+    ]
+  });
 }
 
 /** Relê pedido, contato, forma de envio, nota e cidade na hora do envio. */

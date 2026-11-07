@@ -10,7 +10,7 @@
  *   C. telefone: tira formatação, põe 55, não mexe no nono dígito, recusa lixo;
  *   D. diálogo pela forma de envio (07/11): despacho vence orçamento; SEDEX só com
  *      rastreio; PAC e forma sem modelo ficam apagados;
- *   E. campos do diálogo (field__<Nome>), nota "—", cidade/UF;
+ *   E. campos do diálogo (field__<Nome>), nota "—", nota do sistema antigo, cidade/UF;
  *   F. respostas: campos = 2xx + success + 200; diálogo = isso + "Diálogo executado";
  *   G. recusa por número ("Chat não encontrado.") abre o "Corrigir número";
  *   H. chave da conversa = SHA-256 de [endpoint, account, phone, número].
@@ -31,6 +31,7 @@ import {
   escolherDialogo,
   modoTesteLigado,
   nomeDoDialogo,
+  notaParaODialogo,
   numeroDaNota,
   rastreioCorreiosValido,
   recusaPorNumero,
@@ -139,6 +140,11 @@ caso("E. campos do diálogo", () => {
   assert.throws(() => camposDoDialogo("Transportadora", { ...v, cidadeDestino: null }), /cidade de entrega/);
   assert.equal(numeroDaNota([]), "—");
   assert.equal(numeroDaNota(["7502", 7501, null, "abc", "7501"]), "7501, 7502");
+  // Faturado no sistema antigo: vale o número manual da expedição
+  assert.equal(notaParaODialogo({ faturadoNoSistemaAntigo: true, nfNumeroManual: "41.030", numerosDoVibe: ["7501"] }), "41030");
+  assert.equal(notaParaODialogo({ faturadoNoSistemaAntigo: true, nfNumeroManual: "", numerosDoVibe: ["7501"] }), "7501");
+  assert.equal(notaParaODialogo({ faturadoNoSistemaAntigo: true, nfNumeroManual: null, numerosDoVibe: [] }), "—");
+  assert.equal(notaParaODialogo({ faturadoNoSistemaAntigo: false, nfNumeroManual: "6.694", numerosDoVibe: [] }), "—");
   assert.equal(cidadeDestino(" Porto  Alegre ", "rs"), "Porto Alegre/RS");
   assert.equal(cidadeDestino("", "RS"), null);
   // Nenhum campo nosso tem o nome do campo do envio de arte do Imposition

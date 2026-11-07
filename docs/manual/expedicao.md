@@ -1,6 +1,6 @@
 # Expedição
 
-> **Última revisão:** 06/11/2026
+> **Última revisão:** 07/11/2026
 > **Caminho no menu:** Expedição (item direto do menu lateral, sem subitens; é o quarto, depois de Conferência, Pedidos e Clientes). Também se chega pela aba **Expedição** no topo do Kanban e da Fila de impressão da Produção.
 > **Endereço:** `/expedicao`
 
@@ -59,10 +59,10 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Confirmar coleta** | Idem. Pedido despachado aguardando coleta | Pede confirmação e leva o pedido para Em Trânsito |
 | **Confirmar retirada** | Idem. Pedido A Retirar | Abre a janela **Confirmar retirada** |
 | **Marcar entregue** | Idem. Pedido Em Trânsito | Pede confirmação e conclui o pedido como Entregue |
-| **Avisar cliente: pedido pronto** | Abaixo das ações, na lista e no card; só em pedido Na Expedição ainda sem aviso | Manda pelo WhatsApp da Ideal (ChatGuru) a mensagem de pedido pronto ao contato da proposta |
+| **Avisar cliente: pedido pronto ({diálogo})** | Abaixo das ações, na lista e no card; só em pedido Na Expedição ainda sem aviso | Executa no ChatGuru o diálogo da forma de envio do pedido (Sedex, Motoboy, Retira, Veppo, Azul ou Transportadora) para o contato da proposta. Fica apagado, com o motivo embaixo, quando a forma de envio não tem diálogo ou quando é SEDEX sem etiqueta |
 | "Aviso enviado em … por …" (ou "Tentativa de aviso em … por …") | No lugar do botão, depois do envio | Mostra quando, quem e o estado do aviso |
-| **Atualizar status** | Abaixo do aviso, enquanto ele não está entregue ao WhatsApp | Consulta o ChatGuru. Não envia nada |
-| **Reenviar** | Abaixo do aviso | Pede confirmação e manda outra mensagem |
+| **Atualizar status** | Só nos avisos antigos por texto (até 06/11/2026), enquanto não estão entregues ao WhatsApp | Consulta o ChatGuru. Não envia nada. Aviso por diálogo não tem status para consultar |
+| **Reenviar** | Abaixo do aviso; some quando a forma de envio não tem diálogo, quando falta a etiqueta do SEDEX e quando o WhatsApp está travado | Pede confirmação e executa o diálogo de novo |
 | **Corrigir número** | Abaixo do aviso, quando o ChatGuru recusou pelo número ("Número não encontrado no ChatGuru: {número}") | Abre a janela **Corrigir número** com o WhatsApp do contato do pedido; salvar grava no cadastro do contato |
 
 #### Menu de ações do pedido
@@ -193,12 +193,31 @@ O pedido também chega à Expedição pela Revisão do boletim da produção.
 
 ### Avisar o cliente que o pedido está pronto
 
-1. No pedido com status Na Expedição, clique em **Avisar cliente: pedido pronto** (abaixo das ações, na lista e no card).
-2. O Vibe manda pelo WhatsApp da Ideal (ChatGuru) uma mensagem para o contato da proposta: "Olá, {nome do contato}! Seu pedido {número} está pronto. ✅", os itens (quantidade e produto, um por linha), a forma de envio (retirada no balcão ou entrega, com a transportadora quando houver) e "Qualquer dúvida, é só responder esta mensagem."
-3. O botão vira "Aviso enviado em {data e hora} por {usuário}" com o estado: **aguardando confirmação do WhatsApp**, **entregue ao WhatsApp**, **falhou** ou **resultado desconhecido**.
-4. Para saber se a mensagem já foi entregue ao WhatsApp, clique em **Atualizar status**.
-5. Para mandar de novo, clique em **Reenviar** e confirme na janela **Reenviar aviso de pedido pronto?**.
-6. Em **resultado desconhecido**, confira no ChatGuru se a mensagem saiu antes de reenviar. O Vibe não reenvia sozinho.
+Desde 07/11/2026 o aviso não é mais um texto livre: é um **diálogo** do ChatGuru, com modelo aprovado, um para cada forma de envio. Pela conta oficial do WhatsApp, texto livre só chega a quem falou com a Ideal nas últimas 24 horas.
+
+1. No pedido com status Na Expedição, clique em **Avisar cliente: pedido pronto ({diálogo})** (abaixo das ações, na lista e no card). O nome entre parênteses é o diálogo que vai ser usado.
+2. O Vibe grava na conversa do contato os campos do diálogo e depois executa o diálogo, no mesmo WhatsApp da Ideal.
+3. O botão vira "Aviso enviado em {data e hora} por {usuário}" com o estado e o diálogo: **diálogo executado no ChatGuru**, **falhou** ou **resultado desconhecido**. "Executado" quer dizer que o ChatGuru aceitou executar o diálogo. O ChatGuru não devolve confirmação de entrega para diálogo.
+4. Para mandar de novo, clique em **Reenviar** e confirme na janela **Reenviar aviso de pedido pronto?**.
+5. Em **resultado desconhecido**, o WhatsApp do contato fica travado para novos avisos de pedido pronto, deste e de qualquer outro pedido, até alguém conferir no ChatGuru se o diálogo foi executado. O aviso mostra "Este WhatsApp fica travado para novos avisos até alguém conferir no ChatGuru (avise o ADM)". O Vibe não reenvia sozinho, e não há botão para destravar.
+
+Qual diálogo vai, pela forma de envio do pedido (a do despacho, se o expedidor já declarou, vence a do orçamento):
+
+| Forma de envio | Diálogo | Campos gravados na conversa |
+|---|---|---|
+| Retirada no balcão | Retira | Pedido_Atual, Nota_Fiscal |
+| Motoboy | Motoboy | Pedido_Atual, Nota_Fiscal |
+| Correios SEDEX | Sedex | Sedex_Conhecimento, Pedido_Atual, Nota_Fiscal |
+| Transportadora Veppo | Veppo | Cidade_Destino, Pedido_Atual, Nota_Fiscal |
+| Azul Cargo | Azul | Pedido_Atual, Nota_Fiscal, Cidade_Destino |
+| Qualquer outra transportadora | Transportadora | Cidade_Destino, Pedido_Atual, Nota_Fiscal |
+
+- **Pedido_Atual:** o número do pedido.
+- **Nota_Fiscal:** o número da NF-e de venda (ou da NFS-e) autorizada do pedido. Pedido marcado como faturado no sistema antigo usa o número digitado na expedição (NF manual), só os dígitos: "41.030" vira "41030". Sem nota, vai "—".
+- **Cidade_Destino:** cidade/UF do endereço de entrega.
+- **Sedex_Conhecimento:** o código de rastreio dos Correios.
+
+Correios PAC, Correios sem o serviço dito e frete sem forma definida ("Frete Incluso", "Sem custo", "a definir") não têm diálogo. O botão fica apagado com "Sem modelo de mensagem para esta forma de envio." Nenhum outro diálogo é usado no lugar. SEDEX sem código de rastreio fica apagado com "Gere a etiqueta dos Correios antes."
 
 Se o ChatGuru recusar pelo número, o aviso mostra "Número não encontrado no ChatGuru: {número enviado}":
 
@@ -208,7 +227,9 @@ Se o ChatGuru recusar pelo número, o aviso mostra "Número não encontrado no C
 
 Quem não tem **Editar Cadastros** vê "Peça a correção a quem pode editar o cadastro." O Vibe não tenta outro formato do número sozinho: tira só a formatação e põe o 55 quando falta, sem mexer no nono dígito. Na prova de 06/11/2026 o ChatGuru aceitou o número de teste só sem o nono dígito (51 8460-8848); com o 9, em qualquer formato, respondeu "Chat não encontrado." O número recusado só fica na tela até ela ser recarregada; depois o aviso aparece só como **falhou**, com **Reenviar**.
 
-Enquanto o **modo teste** estiver ligado (aparece "modo teste" no botão e no aviso), só pedidos do cliente de teste (#14), com contato desse cliente, podem ser avisados; o de qualquer outro cliente é recusado. A mensagem vai para o WhatsApp do contato do pedido, como está no cadastro. O modo teste não se desliga pela tela.
+Enquanto o **modo teste** estiver ligado (aparece "modo teste" no botão e no aviso), só pedidos do cliente de teste (#14), com contato desse cliente, podem ser avisados; o de qualquer outro cliente é recusado. O diálogo vai para o WhatsApp do contato do pedido, como está no cadastro. O modo teste não se desliga pela tela.
+
+Prova de 07/11/2026 no 24880: o SEDEX, sem etiqueta, apareceu apagado com "Gere a etiqueta dos Correios antes.", e o servidor recusou a chamada direta sem reservar nada. Com a forma trocada para retirada, o diálogo Retira foi tentado para o contato que estava no pedido naquela hora (64814, 5551991107694). O ChatGuru recusou já na gravação dos campos com "Chat não encontrado.", e nada saiu. Na segunda tentativa, às 13:05 de Brasília, com o contato 65040 (555184608848), o ChatGuru aceitou os campos, mas a resposta da execução do diálogo não foi nem "Diálogo executado" nem uma recusa. O aviso ficou em **resultado desconhecido**, e o número ficou travado até a conferência no ChatGuru.
 
 ### Conferir o pedido (peso e volumes)
 
@@ -266,7 +287,7 @@ Em resumo: no pedido Na Expedição, clique em **Despachar**, confira peso, volu
 
 ## Regras e bloqueios
 
-- **Aviso de pedido pronto (desde 06/11/2026).** Só sai com o pedido Na Expedição. O destinatário é o contato da proposta, que precisa estar ativo, ter WhatsApp com DDD e pertencer ao cliente ou ao faturado do pedido. Pedido e contato são lidos de novo na hora do envio. Clicar outra vez em **Avisar cliente: pedido pronto** não manda segunda mensagem: só **Reenviar**, com confirmação, manda outra.
+- **Aviso de pedido pronto (desde 06/11/2026).** Só sai com o pedido Na Expedição. O destinatário é o contato da proposta, que precisa estar ativo, ter WhatsApp com DDD e pertencer ao cliente ou ao faturado do pedido. Pedido, contato, forma de envio, nota e cidade são lidos de novo na hora do envio. Clicar outra vez em **Avisar cliente: pedido pronto** não manda segunda mensagem: só **Reenviar**, com confirmação, manda outra. Desde 07/11/2026 o aviso é um diálogo escolhido pela forma de envio. Forma sem diálogo, ou SEDEX sem rastreio, é recusada também no servidor. Dois avisos para o mesmo WhatsApp nunca correm juntos: enquanto um está sendo enviado, ou ficou em resultado desconhecido, o outro é recusado.
 - **Pedido entregue não pode ser alterado** na proposta (produtos, salvar, cobrança nova, valor negociado). Para alterar, use **Voltar status** passo a passo até Em Acabamento; a produção devolve o pedido ao atendente com **Voltar para Revisão Atendente**, o que só é possível sem nota fiscal emitida.
 - Não dá para despachar sem a modalidade do frete, a transportadora, o endereço de entrega, o peso aferido e a quantidade de volumes. Em retirada, basta a modalidade. O rastreio é opcional.
 - A etiqueta e a prepostagem exigem os mesmos dados do despacho enquanto o pedido ainda não saiu. Imprimir etiqueta de um envio que ninguém terminou de declarar não é permitido.
@@ -343,7 +364,11 @@ Em resumo: no pedido Na Expedição, clique em **Despachar**, confira peso, volu
 | "Número não encontrado no ChatGuru: {número}" | O número não tem conversa no WhatsApp da Ideal nesse formato (o ChatGuru pode guardar a conversa sem o nono dígito; o Vibe não cria conversa nova) | **Corrigir número** e depois **Reenviar**. Sem a permissão, pedir a correção a quem edita o cadastro |
 | "Modo teste: só pedidos do cliente #14 podem ser avisados." | O modo teste está ligado e o pedido é de outro cliente | Nada a fazer pela tela: o aviso fica liberado quando o modo teste for desligado |
 | "Este pedido já tinha aviso" | Já houve aviso para o pedido | Nada foi enviado de novo. Para mandar outra mensagem, use **Reenviar** |
-| Aviso em **resultado desconhecido** | O ChatGuru não respondeu a tempo ou respondeu algo inesperado | Conferir no ChatGuru se a mensagem saiu; só então usar **Reenviar** |
+| Aviso em **resultado desconhecido** | O ChatGuru não respondeu a tempo ou respondeu algo inesperado | Conferir no ChatGuru se a mensagem saiu. Aviso por diálogo deixa o WhatsApp travado: avisar o ADM, que confere no ChatGuru e libera |
+| "Sem modelo de mensagem para esta forma de envio." | A forma de envio do pedido não tem diálogo (Correios PAC, Correios sem serviço, frete sem forma definida) | Nada a fazer pelo aviso. Se a forma estiver errada, corrigir no orçamento ou no despacho |
+| "Gere a etiqueta dos Correios antes." | Pedido SEDEX sem código de rastreio | Gerar a etiqueta (prepostagem) dos Correios; o botão acende depois |
+| "Há um aviso de pedido pronto sem confirmação para o WhatsApp {número}." | Outro aviso para o mesmo WhatsApp está em andamento ou em resultado desconhecido | Esperar terminar ou, se ficou desconhecido, conferir no ChatGuru com o ADM |
+| "O pedido não tem cidade de entrega." | O diálogo pede Cidade_Destino e o endereço de entrega não tem cidade | Corrigir o endereço de entrega na proposta |
 | Falta informar o peso aferido (ou a transportadora, o endereço de entrega, a quantidade de volumes, a modalidade do frete) | Falta dado mínimo do despacho | Preencher o campo indicado. Endereço e transportadora se corrigem na proposta |
 | Esta proposta não tem endereço de entrega definido. Defina o endereço na proposta para poder despachar. | A proposta está sem endereço de entrega | Definir o endereço na proposta |
 | Confirme o despacho sem NF | O pedido não tem nota autorizada e a caixa não foi marcada | Marcar **Despachar mesmo assim** |
@@ -438,6 +463,8 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `supabase/functions/expedicao-pedido-pronto/index.ts`
 - `supabase/functions/expedicao-pedido-pronto/logica.ts`
 - `supabase/migrations/20261106_expedicao_aviso_pronto.sql`
+- `supabase/migrations/20261107_expedicao_aviso_pronto_dialogo.sql`
+- `src/features/orcamentos/lib/transportadoras-parceiras.ts` (reconhecimento da transportadora, usado também pela função)
 - `src/app/api/pedidos/encerrar-teste/route.ts`
 - `src/features/orcamentos/lib/categoria-frete.ts`
 - `src/features/orcamentos/lib/modalidade-frete.ts`

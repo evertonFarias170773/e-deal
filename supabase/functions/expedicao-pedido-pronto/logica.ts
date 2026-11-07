@@ -228,6 +228,21 @@ export function numeroDaNota(numeros: (string | number | null | undefined)[]): s
   return lista.length ? lista.join(", ") : "—";
 }
 
+/**
+ * Nota_Fiscal do diálogo. Pedido marcado como faturado no sistema antigo
+ * (propostas.faturado_fora_em) usa expedicoes.nf_numero_manual, só os dígitos
+ * ("41.030" -> "41030"); sem número manual, vale a nota autorizada do Vibe.
+ */
+export function notaParaODialogo(e: {
+  faturadoNoSistemaAntigo: boolean;
+  nfNumeroManual: string | null | undefined;
+  numerosDoVibe: (string | number | null | undefined)[];
+}): string {
+  const manual = String(e.nfNumeroManual ?? "").replace(/\D/g, "").replace(/^0+(?=\d)/, "");
+  if (e.faturadoNoSistemaAntigo && /^\d{1,15}$/.test(manual)) return manual;
+  return numeroDaNota(e.numerosDoVibe);
+}
+
 /** "Santa Cruz do Sul/RS"; sem cidade, null. */
 export function cidadeDestino(cidade: string | null | undefined, uf: string | null | undefined): string | null {
   const c = limpar(cidade, 80);
