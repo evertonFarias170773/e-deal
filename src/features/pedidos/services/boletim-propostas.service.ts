@@ -35,6 +35,13 @@ export interface ObterPropostaResult {
  * Lista as propostas elegíveis para abertura de Boletim de Entrada.
  * Limita o retorno final em no máximo 20 registros.
  */
+/**
+ * Pedido marcado como teste (propostas.encerrado_teste_em, "Encerrar teste") não
+ * aparece no seletor do Boletim nem abre OS: a liberação de um pedido de teste não
+ * pode pôr trabalho na fila da produção (07/11/2026).
+ */
+export const PEDIDO_DE_TESTE_FORA_DO_BOLETIM = "Pedido de teste: não entra no Boletim de Entrada.";
+
 export async function listarPropostasLiberadasParaBoletim(): Promise<PropostaLiberadaBoletim[]> {
   const client = getSupabaseClient();
   if (!client) {
@@ -64,6 +71,8 @@ export async function listarPropostasLiberadasParaBoletim(): Promise<PropostaLib
     .in("status_interno", BOLETIM_ELIGIBLE_STATUSES)
     .not("id_int", "is", null)
     .not("id_vendedor", "is", null)
+    // Pedido de teste (encerrado_teste_em) não vai para a produção (07/11/2026).
+    .is("encerrado_teste_em", null)
     .order("updated_at", { ascending: false, nullsFirst: false })
     .order("created_at", { ascending: false, nullsFirst: false })
     .limit(200);
@@ -167,7 +176,9 @@ export async function buscarPropostasLiberadasParaBoletim(
     `)
     .in("status_interno", BOLETIM_ELIGIBLE_STATUSES)
     .not("id_int", "is", null)
-    .not("id_vendedor", "is", null);
+    .not("id_vendedor", "is", null)
+    // Pedido de teste (encerrado_teste_em) não vai para a produção (07/11/2026).
+    .is("encerrado_teste_em", null);
 
   const numericId = parseInt(cleanTerm, 10);
   if (!isNaN(numericId) && numericId.toString() === cleanTerm) {
@@ -267,7 +278,8 @@ export async function obterPropostaLiberadaParaBoletim(
       valor_total,
       valor,
       created_at,
-      updated_at
+      updated_at,
+      encerrado_teste_em
     `)
     .eq("id_int", idInt)
     .maybeSingle();
@@ -279,6 +291,11 @@ export async function obterPropostaLiberadaParaBoletim(
 
   if (!proposalRow) {
     return { success: false, error: "Proposta não encontrada" };
+  }
+
+  // Pedido de teste (encerrado_teste_em) não entra no Boletim (07/11/2026).
+  if (proposalRow.encerrado_teste_em) {
+    return { success: false, error: PEDIDO_DE_TESTE_FORA_DO_BOLETIM };
   }
 
   // 2. Verifica se está aprovada
@@ -379,7 +396,7 @@ export async function criarPedidoParaBoletim(
   // 1. Reconsultar diretamente o Supabase (public.propostas) usando maybeSingle()
   const { data: propostaRow, error: propostaError } = await client
     .from("propostas")
-    .select("id, id_int, cliente, id_vendedor, vendedor, status_interno, valor_total, valor")
+    .select("id, id_int, cliente, id_vendedor, vendedor, status_interno, valor_total, valor, encerrado_teste_em")
     .eq("id_int", idInt)
     .maybeSingle();
 
@@ -395,6 +412,10 @@ export async function criarPedidoParaBoletim(
 
   if (!propostaRow) {
     return { success: false, error: "Proposta não encontrada" };
+  }
+
+  if (propostaRow.encerrado_teste_em) {
+    return { success: false, error: PEDIDO_DE_TESTE_FORA_DO_BOLETIM };
   }
 
   // Validações de elegibilidade da proposta obtida

@@ -15,12 +15,14 @@
  *   G. recusa por número ("Chat não encontrado.") abre o "Corrigir número";
  *   H. chave da conversa = SHA-256 de [endpoint, account, phone, número];
  *   I. diagnóstico só sem chave e sem contato; Liberar número: enviada -> executado, não -> falhou;
- *   J. Testar modelo: só modo teste e cliente #14; campos que faltam vão com valor de teste.
+ *   J. Testar modelo: só modo teste e cliente #14; campos que faltam vão com valor de teste;
+ *   K. Pedido em Produção: diálogo próprio, fora da lista da Expedição, sem campos.
  */
 import assert from "node:assert/strict";
 import {
   CLIENTE_TESTE,
   DIALOGOS,
+  DIALOGO_PRODUCAO,
   LIBERACAO,
   SEM_ETIQUETA,
   SEM_MODELO,
@@ -236,6 +238,14 @@ caso("J. testar modelo", () => {
   assert.deepEqual(cheio.valores, { Sedex_Conhecimento: "AB123456789BR", Pedido_Atual: "24880", Nota_Fiscal: "7501" });
   assert.deepEqual(cheio.deTeste, []);
   assert.equal(camposDeTeste("Azul", { idInt: 1, notaFiscal: "7501", cidadeDestino: "Canoas/RS", rastreio: null }).campos.field__Cidade_Destino, "Canoas/RS");
+});
+
+caso("K. pedido em produção", () => {
+  assert.match(DIALOGO_PRODUCAO, /^[a-f0-9]{24}$/);
+  assert.equal(DIALOGO_PRODUCAO, "6071c6dbe34a18c2cc684747");
+  // Não é um dos diálogos da Expedição (não aparece no Testar modelo nem na escolha por forma de envio).
+  assert.equal(nomeDoDialogo(DIALOGO_PRODUCAO), null);
+  assert.ok(!Object.values(DIALOGOS).some((d) => d.id === DIALOGO_PRODUCAO));
 });
 
 console.log(`\n${n} casos ok`);

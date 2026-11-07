@@ -1,6 +1,6 @@
 # Proposta: abas Produção / Expedição, Boletim e Histórico
 
-> **Última revisão:** 27/10/2026
+> **Última revisão:** 07/11/2026
 > **Caminho no menu:** Pedidos → abrir um pedido → Editar proposta → aba Produção / Expedição ou aba Histórico. Não existe aba Boletim na barra de abas: a OS (boletim) abre pelo menu Produção → clicar no pedido.
 > **Endereço:** `/orcamentos/[número]/editar?tab=producao` e `/orcamentos/[número]/editar?tab=historico`. A aba se chamava **Produção** até 09/10/2026; só o nome mudou, o endereço `?tab=producao` é o mesmo. A OS fica em `/pedidos/boletim?id_int=[número]&modo=edicao`.
 
@@ -34,9 +34,11 @@ Nomes exatamente como aparecem na tela.
 | Ícone de enviar (dica "Enviar mensagem") | Aba Histórico, rodapé da timeline | Envia a mensagem e os anexos. |
 | **Ver chat interno** | Menu de ações do cabeçalho do pedido | Abre o mesmo chat da timeline em um painel lateral. |
 | **Retirar da Produção** | Menu de ações do cabeçalho do pedido e fim do menu **Ações** da lista de Pedidos, em pedido em REVISAO PRODUCAO | Abre uma confirmação e devolve o pedido ao atendente: sai da fila da produção e o status volta para REVISAO ATENDENTE. |
-| **Liberar para Produção** | Lista de Pedidos, menu **Ações** da linha, em pedido em REVISAO ATENDENTE | Abre a janela **Liberar proposta para Produção?**. |
-| **Confirmar liberação** | Janela **Liberar proposta para Produção?** | Faz as conferências e libera o pedido. Enquanto processa, mostra "Liberando...". |
-| **Cancelar** | Janela **Liberar proposta para Produção?** | Fecha a janela sem liberar. |
+| **Liberar para Produção** | Lista de Pedidos, menu **Ações** da linha, em pedido em REVISAO ATENDENTE (e o mesmo item no menu **Acoes** da edição) | Abre a janela **Liberar proposta para Produção?**, que pergunta se manda ao cliente o aviso "Pedido em Produção" e mostra o nome e o WhatsApp do contato responsável. |
+| **Liberar e enviar** | Janela **Liberar proposta para Produção?** | Faz as conferências e libera; só se liberar, manda o aviso pelo WhatsApp da Ideal (ChatGuru) e mostra o resultado. Apagado quando o envio seria recusado (modo teste, contato sem WhatsApp). |
+| **Liberar sem enviar** | Janela **Liberar proposta para Produção?** | Faz as conferências e libera, sem mensagem. |
+| **Cancelar** | Janela **Liberar proposta para Produção?** | Fecha a janela sem liberar e sem enviar. |
+| **Aviso: pedido em produção** | Menu **Ações**, em pedido já liberado | Mostra a última tentativa de aviso e permite enviar ou reenviar (com confirmação). |
 | **✓ Liberada para produção** | Lista de Pedidos, menu **Ações**, em pedido já liberado | Não é clicável. Só mostra que a liberação já foi feita. |
 | **Editar OS / Boletim** / **Criar OS / Boletim** | Tela Produção, menu **Ações** da linha | Abre a OS do pedido. Clicar na linha faz o mesmo. |
 | **Imprimir OS (PDF)** | Tela Produção, menu **Ações** da linha | Gera o PDF da OS, com todos os setores. |
@@ -90,10 +92,12 @@ REVISAO ATENDENTE é a conferência final de quem atende: cliente, produtos, qua
 
 1. Vá para a lista de Pedidos (menu **Pedidos**).
 2. Na linha do pedido, abra o menu **Ações** e clique em **Liberar para Produção**. O item só aparece em pedido em REVISAO ATENDENTE, que não seja avulso e ainda não tenha sido liberado.
-3. Leia a janela **Liberar proposta para Produção?** e clique em **Confirmar liberação**.
+3. Leia a janela **Liberar proposta para Produção?**, confira para quem vai o aviso e clique em **Liberar e enviar** ou **Liberar sem enviar**. O aviso só sai depois de a liberação dar certo; se ele falhar, a liberação continua valendo e a janela mostra o motivo e o **Reenviar**. As regras do aviso estão na [lista de Pedidos](pedidos.md).
 4. O sistema confere, nesta ordem: o status (REVISAO ATENDENTE), os pagamentos, a arte e a soma dos modelos de cada produto.
 5. Se tudo passar, aparece "Proposta liberada" e o pedido muda para **REVISAO PRODUCAO**. Ele entra na tela Produção, em destaque no topo da lista, e fica habilitado para a fila de faturamento.
 6. Se algo barrar, aparece "Erro de Validação" com o motivo. Veja "Erros comuns".
+
+Pedido marcado como teste (**Encerrar teste**) pode ser liberado, mas não entra no trabalho da produção: não aparece no painel de Produção, no Kanban, na fila de impressão nem no seletor do Boletim de Entrada, e o Boletim recusa abrir OS para ele ("Pedido de teste: não entra no Boletim de Entrada."), desde 07/11/2026.
 
 Pedido só com produtos de prateleira pode ser liberado pelo próprio sistema, no momento em que é confirmado o pagamento que o cobre por inteiro. As conferências são as mesmas.
 
@@ -231,7 +235,7 @@ O que fazer:
 
 - `src/features/orcamentos/OrcamentoFormPage.tsx`
 - `src/features/orcamentos/OrcamentosListPageReal.tsx`
-- `src/features/orcamentos/components/LiberarProducaoModal.tsx`
+- `src/features/orcamentos/components/AvisoProducaoModal.tsx`
 - `src/features/orcamentos/components/PropostaChatPanel.tsx`
 - `src/features/orcamentos/services/orcamentos.service.ts`
 - `src/features/pedidos/lib/instrucoes-entrega.ts`

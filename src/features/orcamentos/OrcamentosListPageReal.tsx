@@ -64,7 +64,6 @@ import {
   loadChatReadInfo,
   getPropostaDetailById,
   updatePropostaStatusInterno,
-  liberarPropostaParaProducaoPeloServidor,
   retirarPropostaDaProducao,
   PERIODO_ULTIMOS_15_DIAS,
   listarPropostasDaBaseDosCards,
@@ -86,7 +85,7 @@ import { codecs, type ParamCodec } from "@/lib/url-state";
 import { useUrlFilters } from "@/hooks/useUrlFilters";
 import { useDebouncedInput } from "@/hooks/useDebouncedValue";
 import { PropostaCobrancaPanel } from "@/features/cobrancas/PropostaCobrancaPanel";
-import { LiberarProducaoModal } from "@/features/orcamentos/components/LiberarProducaoModal";
+import { AvisoProducaoModal } from "@/features/orcamentos/components/AvisoProducaoModal";
 import { CancelPropostaModal } from "@/features/orcamentos/components/CancelPropostaModal";
 import { ConfirmarLiberacaoModal } from "@/features/cobrancas/ConfirmarLiberacaoModal";
 import { isFilaPadrao } from "@/features/cobrancas/cobrancas-utils";
@@ -536,7 +535,8 @@ export function OrcamentosListPageReal() {
 
   const [isLiberarModalOpen, setIsLiberarModalOpen] = useState(false);
   const [selectedPropostaForLiberar, setSelectedPropostaForLiberar] = useState<OrcamentoListItem | null>(null);
-  const [isLiberarSubmitting, setIsLiberarSubmitting] = useState(false);
+  // "liberar": Liberar para Produção com o aviso "Pedido em Produção"; "avisar": pedido já liberado (07/11/2026).
+  const [modoAvisoProducao, setModoAvisoProducao] = useState<"liberar" | "avisar">("liberar");
 
   const [isCancelPropostaModalOpen, setIsCancelPropostaModalOpen] = useState(false);
   const [selectedPropostaForCancel, setSelectedPropostaForCancel] = useState<OrcamentoListItem | null>(null);
@@ -1571,47 +1571,10 @@ export function OrcamentosListPageReal() {
     }
   }
 
-  async function handleLiberarProducao(item: OrcamentoListItem) {
+  async function handleLiberarProducao(item: OrcamentoListItem, modo: "liberar" | "avisar" = "liberar") {
     setSelectedPropostaForLiberar(item);
+    setModoAvisoProducao(modo);
     setIsLiberarModalOpen(true);
-  }
-
-  async function confirmLiberarProducao() {
-    if (!selectedPropostaForLiberar) return;
-
-    setIsLiberarSubmitting(true);
-    showToast({
-      type: "info",
-      title: "Liberando para produção...",
-      description: "Aguarde a validação das regras."
-    });
-
-    try {
-      // Conferido no servidor: a trava de quantidade × lotes e as demais
-      // validações rodam na rota, não no navegador.
-      const res = await liberarPropostaParaProducaoPeloServidor(selectedPropostaForLiberar.id_int);
-      if (res.success) {
-        showToast({
-          type: "success",
-          title: "Proposta liberada",
-          description: "A proposta agora está na lista de Produção/Pedidos."
-        });
-        setIsLiberarModalOpen(false);
-        setSelectedPropostaForLiberar(null);
-        triggerRefresh();
-      } else {
-        throw new Error(res.errorMessage || "Erro desconhecido.");
-      }
-    } catch (err) {
-      console.error("[OrcamentosListPageReal] Error sending to production:", err);
-      showToast({
-        type: "error",
-        title: "Erro de Validação",
-        description: err instanceof Error ? err.message : "Não foi possível enviar para produção."
-      });
-    } finally {
-      setIsLiberarSubmitting(false);
-    }
   }
 
   /**
@@ -2014,6 +1977,10 @@ Ela volta a aparecer nas listas operacionais.`
        */
       ...(!item.is_prd_aprovado && item.isAvulsoRaw !== true && item.statusInterno === "REVISAO ATENDENTE" && canLiberarProducao ? [{ label: "Liberar para Produção", onClick: () => void handleLiberarProducao(item) }] : []),
       ...(item.is_prd_aprovado && item.isAvulsoRaw !== true ? [{ label: "✓ Liberada para produção", disabled: true }] : []),
+      // Aviso "Pedido em Produção" depois da liberação: enviar ou reenviar (07/11/2026).
+      ...(item.is_prd_aprovado && item.isAvulsoRaw !== true && canLiberarProducao
+        ? [{ label: "Aviso: pedido em produção", onClick: () => void handleLiberarProducao(item, "avisar") }]
+        : []),
       // So a Fila de Faturamento, sem Producao nem Expedicao (13/10/2026). So ADM; some depois de enviado.
       ...(podeVerEnviarParaFila(user, { statusInterno: item.statusInterno, liberaNf: item.libera_nf, isPrdAprovado: item.is_prd_aprovado, faturadoForaEm: item.faturadoForaEm })
         ? [{ label: "Enviar para Fila de Faturamento", onClick: () => setPedidoParaEnviarAFila(item) }]
@@ -2913,13 +2880,20 @@ Ela volta a aparecer nas listas operacionais.`
         </CobrancasSobDemanda>
       )}
 
-      {selectedPropostaForLiberar && (
-        <LiberarProducaoModal
-          propostaId={selectedPropostaForLiberar.id_int}
-          isOpen={isLiberarModalOpen}
-          isSubmitting={isLiberarSubmitting}
-          onClose={() => setIsLiberarModalOpen(false)}
-          onConfirm={() => void confirmLiberarProducao()}
+      {selectedPropostaForLiberar && isLiberarModalOpen && (
+        <AvisoProducaoModal
+          key={`${selectedPropostaForLiberar.id_int}-${modoAvisoProducao}`}
+          idInt={selectedPropostaForLiberar.id_int}
+          modo={modoAvisoProducao}
+          onClose={() => {
+            setIsLiberarModalOpen(false);
+            setSelectedPropostaForLiberar(null);
+          }}
+          onConcluido={(liberou) => {
+            setIsLiberarModalOpen(false);
+            setSelectedPropostaForLiberar(null);
+            if (liberou) triggerRefresh();
+          }}
         />
       )}
 

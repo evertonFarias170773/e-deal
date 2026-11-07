@@ -1,6 +1,6 @@
 # Pedidos (lista)
 
-> **Última revisão:** 06/11/2026 (total da lista em centavos exatos)
+> **Última revisão:** 07/11/2026 (aviso Pedido em Produção na liberação)
 > **Caminho no menu:** Pedidos (item direto do menu lateral, sem submenu; é o segundo, logo abaixo de Conferência)
 > **Endereço:** `/orcamentos`
 
@@ -68,7 +68,8 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Gerar cobrança** | Menu da linha | Abre a geração de cobrança da proposta. |
 | **Confirmar Conferência** (com mais de uma cobrança na Fila: **Confirmar Conferência — forma valor**, uma opção por cobrança) | Menu da linha, depois de **Gerar cobrança**; só administrador, em pedido com cobrança na Fila de Conferência | Abre a janela **Confirmar Liberação Operacional**, a mesma da tela Conferência. |
 | **Cancelar proposta** | Menu da linha | Abre a janela **Cancelar Proposta**. |
-| **Liberar para Produção** | Menu da linha | Abre a confirmação "Liberar proposta para Produção?". |
+| **Liberar para Produção** | Menu da linha | Abre a janela "Liberar proposta para Produção?", que pergunta se manda ao cliente o aviso "Pedido em Produção" e mostra para quem vai: **Liberar e enviar**, **Liberar sem enviar** ou **Cancelar**. |
+| **Aviso: pedido em produção** | Menu da linha, em pedido já liberado, para quem pode liberar | Abre a mesma janela só com o aviso: mostra a última tentativa, **Enviar aviso** se ainda não houve e **Reenviar** (com confirmação). |
 | **Enviar para Fila de Faturamento** | Menu da linha (tabela e cartão), só administrador, em pedido REVISAO ATENDENTE ou Liberado fora da fila e da produção | Abre uma confirmação e, ao confirmar, põe o pedido só na Fila de Faturamento. Ele não passa pela Produção nem pela Expedição e o status não muda. |
 | **✓ Liberada para produção** | Menu da linha | Não faz nada: é só o aviso de que o pedido já foi liberado. |
 | **Rastrear objeto** | Menu da linha | Abre o rastreio dos Correios do pedido. |
@@ -181,7 +182,7 @@ As datas pequenas aparecem como dia/mês e hora, no horário de Brasília.
 11. **Gerar cobrança**: abre a geração de cobrança. Não aparece em pedido sem cliente cadastrado.
 12. **Confirmar Conferência**: aparece só para administrador, no pedido que tem cobrança na Fila de Conferência (paga e ainda não conferida, ou faturado a vencer já autorizado). É a mesma ação da tela Conferência: abre a janela **Confirmar Liberação Operacional**, e **Confirmar Liberação** grava a conferência pela rota oficial, que confere a permissão no servidor. Com mais de uma cobrança na Fila, o menu traz uma opção por cobrança, com a forma e o valor. Depois de confirmar, a lista atualiza e a opção some do pedido. Se a cobrança já foi conferida por outra pessoa, o sistema avisa e só atualiza a lista.
 13. **Cancelar proposta**: abre a janela de cancelamento, que exige o **Motivo do Cancelamento**.
-14. **Liberar para Produção**: aparece para quem tem a permissão "Liberar para Produção", em pedido não avulso que está em REVISAO ATENDENTE e ainda não foi liberado. Depois de liberado, no lugar dela fica o aviso **✓ Liberada para produção**, que não é clicável.
+14. **Liberar para Produção**: aparece para quem tem a permissão "Liberar para Produção", em pedido não avulso que está em REVISAO ATENDENTE e ainda não foi liberado. Depois de liberado, no lugar dela fica o aviso **✓ Liberada para produção**, que não é clicável, e o item **Aviso: pedido em produção**.
 15. **Rastrear objeto**: aparece quando o despacho é pelos Correios e já existe código de rastreio.
     **Ver conhecimento**: aparece quando o despacho é por transportadora ou motoboy e o conhecimento já foi preenchido na Expedição. Mostra o número e deixa copiar, sem consultar os Correios.
 16. **Encerrar teste** ou **Reabrir (desfazer encerramento de teste)**.
@@ -194,8 +195,21 @@ As datas pequenas aparecem como dia/mês e hora, no horário de Brasília.
 
 1. Clique no card **Revisão atendente** para ver a fila.
 2. No menu da linha, clique em **Liberar para Produção**.
-3. Leia o aviso e clique em **Confirmar liberação**.
-4. Se tudo estiver certo, aparece "Proposta liberada" e o pedido passa para REVISAO PRODUCAO. Se houver pendência, o aviso diz qual é.
+3. A janela **Liberar proposta para Produção?** traz o aviso de sempre e pergunta "Enviar mensagem ao cliente avisando que o pedido entrou em produção?". Logo abaixo aparece para quem vai: o nome e o WhatsApp do contato responsável do pedido.
+4. Escolha:
+   - **Liberar e enviar**: libera exatamente como antes e, só se a liberação der certo, manda pelo WhatsApp da Ideal (ChatGuru) o diálogo "Pedido em Produção". A janela continua aberta e mostra o resultado do aviso.
+   - **Liberar sem enviar**: só libera, como antes.
+   - **Cancelar**: não libera nem envia.
+5. Se a liberação tiver pendência, aparece "Erro de Validação" com o motivo, e nada é enviado. Se tudo estiver certo, aparece "Proposta liberada" e o pedido passa para REVISAO PRODUCAO.
+6. Se o aviso falhar, a liberação continua valendo. A janela mostra o motivo e oferece **Reenviar** (pede confirmação). Para mandar depois, use **Aviso: pedido em produção** no menu da linha do pedido liberado.
+
+Regras do aviso, as mesmas do aviso de pedido pronto da Expedição:
+
+- Um aviso por pedido: abrir de novo não manda segunda mensagem; só **Reenviar**, confirmado, manda outra.
+- Dois avisos para o mesmo WhatsApp nunca correm juntos. Se o ChatGuru não confirmar, o aviso fica em **resultado desconhecido** e o WhatsApp fica travado para novos avisos (deste e da Expedição) até o Administrador conferir no ChatGuru e usar **Liberar número**.
+- Se o ChatGuru recusar pelo número, aparece "Número não encontrado no ChatGuru: {número}" e, para quem tem **Editar Cadastros** (ou Administrador), **Corrigir número**; depois, **Reenviar**.
+- **Modo teste**: enquanto estiver ligado, só pedido e contato do cliente de teste (#14) recebem o aviso. Em pedido de outro cliente a janela aparece, mostra "Envio recusado: Modo teste: só pedidos do cliente #14 podem ser avisados." e o **Liberar e enviar** fica apagado; **Liberar sem enviar** funciona normalmente.
+- O Administrador vê também a resposta do ChatGuru (código e texto, sem a chave nem os dados do contato).
 
 ### Liberar a nota antecipada (nota antes do pagamento)
 
@@ -277,6 +291,9 @@ A liberação é recusada quando já existe NF-e de venda autorizada ou em proce
 |---|---|---|
 | "Sem permissão para retirar da produção (propostas.release_producao)." | Seu perfil não tem a permissão "Liberar para Produção". | Peça a quem tem a permissão. |
 | "Sem permissão para liberar para produção (propostas.release_producao)." | Seu perfil não tem a permissão "Liberar para Produção". | Peça a liberação a quem tem a permissão, ou peça ao administrador para incluí-la no seu perfil. |
+| "Envio recusado: Modo teste: só pedidos do cliente #14 podem ser avisados." | O aviso Pedido em Produção ainda está em teste. | Use **Liberar sem enviar**. O aviso passa a valer para todos quando o modo teste for desligado. |
+| "Há um aviso sem confirmação para o WhatsApp {número}." | Outro aviso para o mesmo WhatsApp (de produção ou de pedido pronto) ficou em resultado desconhecido. | Avise o Administrador: ele confere no ChatGuru e usa **Liberar número**. |
+| "O pedido {número} ainda não foi liberado para a produção. Nada foi enviado." | Tentativa de aviso antes da liberação. | Libere primeiro; o aviso sai depois. |
 | "Nenhuma proposta encontrada" | Os filtros não trazem nenhum pedido, ou o pedido está escondido (entregue, teste encerrado, cancelado). | Clique em **Limpar filtros** e busque pelo número. Veja "Achar o que a lista esconde". |
 | Busquei pelo valor ou pela OS Ideal e o pedido não veio | A busca na base inteira é por número, código e nome do cliente, CPF ou CNPJ do cliente, atendente, nome de quem recebe a nota e nome do evento. Valor e OS Ideal não fazem parte da busca. | Busque pelo número do pedido, pelo nome ou pelo CPF/CNPJ do cliente. |
 | O número do card não bate com o total do rodapé | O card ignora o status específico escolhido no filtro Status, ou a leitura do período inteiro ainda não terminou (alguns segundos depois de abrir), ou há busca ou filtro específico ligado (no máximo 100 pedidos). | Espere os cards se acertarem, use **Ativos** ou **Todos status**, ou use o "Total de propostas encontradas" do rodapé. |
@@ -325,7 +342,10 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/features/orcamentos/hooks/useOrcamentosReadOnlyData.ts`
 - `src/features/orcamentos/mappers.ts`
 - `src/features/orcamentos/components/FiltroProdutoDrop.tsx`
-- `src/features/orcamentos/components/LiberarProducaoModal.tsx`
+- `src/features/orcamentos/components/AvisoProducaoModal.tsx`
+- `src/features/expedicao/services/aviso-pronto.client.ts`
+- `supabase/functions/expedicao-pedido-pronto/index.ts`
+- `supabase/migrations/20261107d_expedicao_aviso_pronto_evento.sql`
 - `src/features/orcamentos/components/MarcarEntregueModal.tsx`
 - `src/features/orcamentos/components/EnviarFilaFaturamentoModal.tsx`
 - `src/features/orcamentos/lib/enviar-fila-faturamento.ts`

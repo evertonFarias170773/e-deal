@@ -17,6 +17,18 @@
  *            trava por conversa vale igual.
  * enviar/reenviar/status/testar exigem expedicao.processar (ou ADM).
  *
+ * AVISO "PEDIDO EM PRODUÇÃO" (07/11/2026), fora da Expedição, mesma tabela com
+ * evento = 'pedido_em_producao' (o pedido pronto é 'pedido_pronto'):
+ *   producao_preparar { id_int }        para quem vai (contato da proposta) e se o envio
+ *                                       seria recusado (modo teste, contato); só leitura
+ *   producao_enviar   { id_int, reenviar?, seq_atual?, confirmado? }
+ *                                       só com o pedido já liberado (is_prd_aprovado);
+ *                                       1º envio devolve o que existe se já houve; reenviar
+ *                                       exige confirmação da tentativa vista
+ *   Exigem propostas.release_producao (ou ADM). Diálogo DIALOGO_PRODUCAO, sem campos
+ *   personalizados (só dialog_execute). Mesma trava por conversa, mesmo critério de
+ *   sucesso, mesmo modo teste, mesmo "Corrigir número" e "Liberar número".
+ *
  * DIAGNÓSTICO (07/11/2026): só para ADM, a resposta do envio traz o HTTP e o
  * texto devolvido pelo ChatGuru em cada etapa (logica.diagnosticoSeguro: sem a
  * chave e sem os dados do contato). Nunca é gravado.
@@ -62,6 +74,7 @@ import {
   dialogoExecutado,
   dialogoValido,
   CLIENTE_TESTE,
+  DIALOGO_PRODUCAO,
   envioRecusado,
   escolherDialogo,
   limpar,
@@ -110,10 +123,13 @@ type Registro = {
   liberado_em: string | null;
   liberacao_resposta: string | null;
   envio_teste: boolean;
+  evento: string;
 };
 
+type Evento = "pedido_pronto" | "pedido_em_producao";
+
 const COLUNAS =
-  "id, id_int, seq, estado, message_id, dialogo_id, destino_chave, modo_teste, autor_nome, criado_em, atualizado_em, liberado_por_nome, liberado_em, liberacao_resposta, envio_teste";
+  "id, id_int, seq, estado, message_id, dialogo_id, destino_chave, modo_teste, autor_nome, criado_em, atualizado_em, liberado_por_nome, liberado_em, liberacao_resposta, envio_teste, evento";
 
 function publico(r: Registro | null) {
   if (!r) return null;
@@ -127,6 +143,7 @@ function publico(r: Registro | null) {
     modo_teste: r.modo_teste,
     // "Testar modelo": envio de teste, fora do "aviso já enviado" do pedido.
     teste: r.envio_teste === true,
+    evento: r.evento,
     autor_nome: r.autor_nome,
     criado_em: r.criado_em,
     atualizado_em: r.atualizado_em,
@@ -138,13 +155,13 @@ function publico(r: Registro | null) {
 }
 
 /**
- * Último aviso do pedido. Por padrão ignora os envios de teste ("Testar modelo"),
+ * Último aviso do pedido, do evento pedido (padrão: pedido pronto). Ignora os envios de teste ("Testar modelo"),
  * que não contam como aviso já enviado. `todos`: a última linha de qualquer tipo
  * (é a seq que a reserva confere).
  */
-async function ultimoRegistro(idInt: number, todos = false): Promise<Registro | null> {
+async function ultimoRegistro(idInt: number, todos = false, evento: Evento = "pedido_pronto"): Promise<Registro | null> {
   let q = admin.from("expedicao_aviso_pronto").select(COLUNAS).eq("id_int", idInt);
-  if (!todos) q = q.eq("envio_teste", false);
+  if (!todos) q = q.eq("envio_teste", false).eq("evento", evento);
   const { data, error } = await q.order("seq", { ascending: false }).limit(1).maybeSingle();
   if (error) throw new Recusa(503, "Não foi possível ler o aviso no banco. Tente de novo.");
   return (data as Registro | null) ?? null;
@@ -182,7 +199,8 @@ async function quemChama(req: Request) {
     adm,
     nome: limpar(u.nome_usuario) || limpar(u.email) || "Usuário",
     podeVer: tem("expedicao.view") || tem("expedicao.processar"),
-    podeOperar: tem("expedicao.processar")
+    podeOperar: tem("expedicao.processar"),
+    podeLiberar: tem("propostas.release_producao")
   };
 }
 
@@ -352,6 +370,39 @@ async function contextoDoPedido(idInt: number, modoTeste: boolean, dialogoTeste:
   return { idContato, contato, dialogo, campos: camposDoDialogo(dialogo, valores), teste: null };
 }
 
+/**
+ * "Pedido em produção": pedido e contato da proposta, relidos na hora. Mesmas
+ * regras do pedido pronto para o contato (ativo, do cliente ou do faturado) e o
+ * mesmo modo teste. Não olha o status: quem decide se já pode enviar é a ação.
+ */
+async function contextoProducao(idInt: number, modoTeste: boolean) {
+  const { data: p, error } = await admin
+    .from("propostas")
+    .select("id_int, id_cliente, id_faturado, id_contato, status_interno, is_prd_aprovado")
+    .eq("id_int", idInt)
+    .maybeSingle();
+  if (error) throw new Recusa(503, "Não foi possível ler o pedido. Tente de novo.");
+  if (!p) throw new Recusa(404, `Pedido ${idInt} não encontrado.`);
+  conferirModoTeste(modoTeste, p.id_cliente);
+  const idContato = Number(String(p.id_contato ?? "").trim());
+  if (!Number.isInteger(idContato) || idContato <= 0) {
+    throw new Recusa(422, "O pedido não tem contato responsável. Escolha o contato na proposta.");
+  }
+  const { data: contato } = await admin
+    .from("contatos")
+    .select("id, id_cliente, nome_contato, whats, ativo")
+    .eq("id", idContato)
+    .maybeSingle();
+  if (!contato) throw new Recusa(422, "O contato do pedido não existe mais no cadastro.");
+  if (contato.ativo === false) throw new Recusa(422, "O contato do pedido está inativo no cadastro.");
+  const donos = [Number(p.id_cliente), Number(p.id_faturado)].filter((n) => Number.isFinite(n) && n > 0);
+  if (!donos.includes(Number(contato.id_cliente))) {
+    throw new Recusa(409, "O contato do pedido não pertence ao cliente nem ao faturado. Corrija o contato na proposta.");
+  }
+  conferirModoTeste(modoTeste, p.id_cliente, contato.id_cliente);
+  return { p, idContato, contato };
+}
+
 function configChatGuru() {
   // Valores crus (sem trim) para a chave da conversa sair igual à do contrato.
   const endpoint = Deno.env.get("CHATGURU_ENDPOINT") ?? "";
@@ -411,6 +462,7 @@ async function listar(ids: unknown, modoTeste: boolean) {
       .from("expedicao_aviso_pronto")
       .select(COLUNAS)
       .in("id_int", lista.slice(i, i + 200))
+      .eq("evento", "pedido_pronto")
       .order("seq", { ascending: false });
     if (error) throw new Recusa(503, "Não foi possível ler os avisos.");
     for (const r of (data ?? []) as Registro[]) {
@@ -431,17 +483,21 @@ async function listar(ids: unknown, modoTeste: boolean) {
 }
 
 /**
- * Reserva do "Testar modelo": linha nova com envio_teste, seq depois da última
- * (de qualquer tipo). O índice único da trava por conversa recusa um segundo
- * envio para o mesmo WhatsApp enquanto há um 'preparando' ou 'desconhecido'.
+ * Reserva sem a RPC do pedido pronto: "Testar modelo" (envio_teste) e o aviso de
+ * pedido em produção. Linha nova, seq depois da última (de qualquer tipo); o
+ * índice único (id_int, seq) recusa a corrida e o da trava por conversa recusa um
+ * segundo envio para o mesmo WhatsApp enquanto há um 'preparando' ou 'desconhecido'.
  */
-async function reservarTeste(p: {
+async function reservarLinha(p: {
   idInt: number;
   idContato: number;
   autor: string;
   autorNome: string;
   dialogoId: string;
   destinoChave: string;
+  evento: Evento;
+  envioTeste: boolean;
+  modoTeste: boolean;
 }): Promise<{ resultado: "reservado"; id: string } | { resultado: "ocupado" | "concorrente" }> {
   const { data: preso } = await admin
     .from("expedicao_aviso_pronto")
@@ -457,8 +513,9 @@ async function reservarTeste(p: {
       id_int: p.idInt,
       seq: (ultimo?.seq ?? 0) + 1,
       id_contato: p.idContato,
-      modo_teste: true,
-      envio_teste: true,
+      modo_teste: p.modoTeste,
+      envio_teste: p.envioTeste,
+      evento: p.evento,
       autor: p.autor,
       autor_nome: p.autorNome,
       dialogo_id: p.dialogoId,
@@ -470,9 +527,9 @@ async function reservarTeste(p: {
     if (error.code === "23505") {
       return { resultado: /trava_conversa/.test(error.message ?? "") ? "ocupado" : "concorrente" };
     }
-    throw new Recusa(503, "Não foi possível reservar o envio de teste. Nada foi enviado.");
+    throw new Recusa(503, "Não foi possível reservar o envio. Nada foi enviado.");
   }
-  if (!data?.id) throw new Recusa(503, "Não foi possível reservar o envio de teste. Nada foi enviado.");
+  if (!data?.id) throw new Recusa(503, "Não foi possível reservar o envio. Nada foi enviado.");
   return { resultado: "reservado", id: String(data.id) };
 }
 
@@ -496,9 +553,11 @@ async function executarDialogo(
   // Diagnóstico (só ADM): HTTP e texto do ChatGuru em cada etapa, sem chave nem contato.
   const diagnostico: { etapa: string; http: number | null; texto: string }[] = [];
   try {
-    const r1 = await chamarChatGuru(cfg, "chat_update_custom_fields", { chat_number: destino, ...campos });
-    diagnostico.push({ etapa: "campos", http: r1.http, texto: diagnosticoSeguro(r1.texto, ocultar) });
-    if (!camposAceitos(r1.http, r1.data)) {
+    // Diálogo sem campos personalizados (pedido em produção): só dialog_execute.
+    const semCampos = Object.keys(campos).length === 0;
+    const r1 = semCampos ? null : await chamarChatGuru(cfg, "chat_update_custom_fields", { chat_number: destino, ...campos });
+    if (r1) diagnostico.push({ etapa: "campos", http: r1.http, texto: diagnosticoSeguro(r1.texto, ocultar) });
+    if (r1 && !camposAceitos(r1.http, r1.data)) {
       motivo = textoDaResposta(r1.data) || null;
       const recusado = envioRecusado(r1.http, r1.data);
       porNumero = recusado && recusaPorNumero(motivo);
@@ -570,6 +629,89 @@ Deno.serve(async (req) => {
       return responder(200, { ok: true, modo_teste: modoTeste, aviso: publico(lib as Registro) });
     }
 
+    if (acao === "producao_preparar" || acao === "producao_enviar") {
+      if (!quem.podeLiberar) throw new Recusa(403, "Sem permissão para liberar para produção (propostas.release_producao).");
+      const idP = Number(corpo?.id_int);
+      if (!Number.isInteger(idP) || idP <= 0) throw new Recusa(400, "Pedido inválido.");
+      const ultimoP = await ultimoRegistro(idP, false, "pedido_em_producao");
+
+      if (acao === "producao_preparar") {
+        // Só leitura: para quem vai e, se o envio seria recusado, o motivo.
+        const { data: base } = await admin.from("propostas").select("id_contato").eq("id_int", idP).maybeSingle();
+        const idC = Number(String(base?.id_contato ?? "").trim());
+        let destinatario: { id_contato: number; nome: string; whatsapp: string } | null = null;
+        if (Number.isInteger(idC) && idC > 0) {
+          const { data: c } = await admin.from("contatos").select("id, nome_contato, whats").eq("id", idC).maybeSingle();
+          if (c) destinatario = { id_contato: idC, nome: limpar(c.nome_contato) || "—", whatsapp: limpar(c.whats, 40) };
+        }
+        let bloqueio: string | null = null;
+        try {
+          const ctxP = await contextoProducao(idP, modoTeste);
+          telefoneWhatsApp(ctxP.contato.whats, env("CHATGURU_DEFAULT_DDI"));
+        } catch (e) {
+          if (!(e instanceof Recusa)) throw e;
+          bloqueio = e.message;
+        }
+        return responder(200, { ok: true, modo_teste: modoTeste, destinatario, bloqueio, aviso: publico(ultimoP) });
+      }
+
+      // producao_enviar: modo teste e contato primeiro (recusa antes de olhar o resto).
+      const ctxP = await contextoProducao(idP, modoTeste);
+      if (ctxP.p.is_prd_aprovado !== true) {
+        throw new Recusa(409, `O pedido ${idP} ainda não foi liberado para a produção. Nada foi enviado.`);
+      }
+      if ((ctxP.p.status_interno ?? "").toUpperCase() === "CANCELADO") throw new Recusa(409, "Pedido cancelado. Nada foi enviado.");
+      if (corpo?.reenviar === true) {
+        if (!ultimoP) throw new Recusa(409, "Este pedido ainda não teve aviso de produção.");
+        if (corpo?.confirmado !== true || Number(corpo?.seq_atual) !== ultimoP.seq) {
+          throw new Recusa(409, "O aviso mudou desde que a janela abriu. Feche, abra de novo e confirme.");
+        }
+        if (ultimoP.estado === "preparando") throw new Recusa(409, "Já há um envio em andamento para este pedido.");
+      } else if (ultimoP) {
+        return responder(200, { ok: true, modo_teste: modoTeste, ja_existia: true, aviso: publico(ultimoP) });
+      }
+      const cfgP = configChatGuru();
+      const destinoP = telefoneWhatsApp(ctxP.contato.whats, cfgP.ddi);
+      const chaveP = await chaveDaConversa(cfgP.endpoint, cfgP.account, cfgP.phone, destinoP);
+      const resP = await reservarLinha({
+        idInt: idP,
+        idContato: ctxP.idContato,
+        autor: quem.id,
+        autorNome: quem.nome,
+        dialogoId: DIALOGO_PRODUCAO,
+        destinoChave: chaveP,
+        evento: "pedido_em_producao",
+        envioTeste: false,
+        modoTeste
+      });
+      if (resP.resultado === "ocupado") {
+        throw new Recusa(
+          409,
+          `Há um aviso sem confirmação para o WhatsApp ${destinoP}. Nada foi enviado. Confira no ChatGuru: o número fica travado até o ADM usar Liberar número.`
+        );
+      }
+      if (resP.resultado !== "reservado") {
+        return responder(200, {
+          ok: true,
+          modo_teste: modoTeste,
+          ja_existia: true,
+          aviso: publico(await ultimoRegistro(idP, false, "pedido_em_producao"))
+        });
+      }
+      const ocultarP = [cfgP.key, cfgP.account, cfgP.phone, destinoP, ctxP.contato.whats, ctxP.contato.nome_contato];
+      const rP = await executarDialogo(resP.id, cfgP, destinoP, DIALOGO_PRODUCAO, {}, ocultarP);
+      return responder(200, {
+        ok: true,
+        modo_teste: modoTeste,
+        ja_existia: false,
+        aviso: publico(rP.resultado),
+        etapa_chatguru: rP.resultado.estado === "executado" ? null : rP.etapa,
+        motivo_chatguru: rP.motivo,
+        recusa_numero: rP.porNumero ? { numero_enviado: destinoP, id_contato: ctxP.idContato } : null,
+        diagnostico_chatguru: quem.adm ? rP.diagnostico : null
+      });
+    }
+
     if (!["enviar", "reenviar", "status", "testar"].includes(acao)) throw new Recusa(400, "Ação inválida.");
     if (!quem.podeOperar) throw new Recusa(403, "Sem permissão para operar a Expedição (expedicao.processar).");
     const idInt = Number(corpo?.id_int);
@@ -586,13 +728,16 @@ Deno.serve(async (req) => {
       const destinoT = telefoneWhatsApp(ctxT.contato.whats, cfgT.ddi);
       const dialogIdT = DIALOGOS[nome].id;
       const chaveT = await chaveDaConversa(cfgT.endpoint, cfgT.account, cfgT.phone, destinoT);
-      const res = await reservarTeste({
+      const res = await reservarLinha({
         idInt,
         idContato: ctxT.idContato,
         autor: quem.id,
         autorNome: quem.nome,
         dialogoId: dialogIdT,
-        destinoChave: chaveT
+        destinoChave: chaveT,
+        evento: "pedido_pronto",
+        envioTeste: true,
+        modoTeste: true
       });
       if (res.resultado === "ocupado") {
         throw new Recusa(

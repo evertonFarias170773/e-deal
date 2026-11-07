@@ -43,6 +43,8 @@ export type AvisoPronto = {
   modo_teste: boolean;
   /** Envio do "Testar modelo" (não conta como aviso do pedido). */
   teste?: boolean;
+  /** pedido_pronto (Expedição) ou pedido_em_producao (Liberar para Produção). */
+  evento?: "pedido_pronto" | "pedido_em_producao";
   /** "Liberar número" (ADM): quem conferiu no ChatGuru, quando e o que respondeu. */
   liberacao?: { por: string | null; em: string; resposta: "enviada" | "nao_enviada" | null } | null;
   autor_nome: string | null;
@@ -64,6 +66,10 @@ type Resposta = {
   testes?: Record<string, AvisoPronto | null>;
   /** "Testar modelo": valores enviados e quais foram de teste. */
   teste?: CamposDoTeste | null;
+  /** Pedido em produção: contato responsável da proposta (para quem vai). */
+  destinatario?: { id_contato: number; nome: string; whatsapp: string } | null;
+  /** Pedido em produção: por que o envio seria recusado (modo teste, contato). */
+  bloqueio?: string | null;
   modelos?: Record<string, ModeloAviso>;
   modelo?: ModeloAviso | null;
   /** Etapa em que o ChatGuru recusou ou ficou incerto: campos ou diálogo. */
@@ -129,6 +135,23 @@ export function liberarNumeroAviso(idInt: number, seq: number, resposta: "enviad
  */
 export function testarModeloAviso(idInt: number, dialogo: DialogoAviso) {
   return chamar({ acao: "testar", id_int: idInt, dialogo, confirmado: true });
+}
+
+/**
+ * Aviso "Pedido em Produção" (07/11/2026): mesma função, evento separado.
+ * preparar = para quem vai e se seria recusado (só leitura); enviar = só com o
+ * pedido já liberado; reenviar exige a tentativa vista e confirmação.
+ */
+export function prepararAvisoProducao(idInt: number) {
+  return chamar({ acao: "producao_preparar", id_int: idInt });
+}
+
+export function enviarAvisoProducao(idInt: number, reenvio?: { seqAtual: number }) {
+  return chamar(
+    reenvio
+      ? { acao: "producao_enviar", id_int: idInt, reenviar: true, seq_atual: reenvio.seqAtual, confirmado: true }
+      : { acao: "producao_enviar", id_int: idInt }
+  );
 }
 
 export function consultarStatusAvisoPronto(idInt: number) {

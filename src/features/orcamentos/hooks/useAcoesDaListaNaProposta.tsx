@@ -12,7 +12,6 @@ import type { Proposta } from "@/features/orcamentos/types";
 import { lerLinhaDaListaDaProposta } from "@/features/orcamentos/services/linha-da-lista.service";
 import {
   getPropostaDetailById,
-  liberarPropostaParaProducaoPeloServidor,
   STATUS_ACEITAM_PEDIDO_COMPLEMENTAR
 } from "@/features/orcamentos/services/orcamentos.service";
 import { buscarRastreioDasPropostas, type RastreioDaProposta } from "@/features/orcamentos/services/rastreio-lista.service";
@@ -31,7 +30,7 @@ import { PortaoDaCargaCompleta } from "@/features/cobrancas/CobrancasSobDemanda"
 import { PropostaCobrancaPanel } from "@/features/cobrancas/PropostaCobrancaPanel";
 import { ConfirmarLiberacaoModal } from "@/features/cobrancas/ConfirmarLiberacaoModal";
 import { CancelPropostaModal } from "@/features/orcamentos/components/CancelPropostaModal";
-import { LiberarProducaoModal } from "@/features/orcamentos/components/LiberarProducaoModal";
+import { AvisoProducaoModal } from "@/features/orcamentos/components/AvisoProducaoModal";
 import { CriarComplementoModal } from "@/features/orcamentos/components/CriarComplementoModal";
 import { MarcarEntregueModal } from "@/features/orcamentos/components/MarcarEntregueModal";
 import { RastreioPropostaModal } from "@/features/orcamentos/components/RastreioPropostaModal";
@@ -125,7 +124,8 @@ export function useAcoesDaListaNaProposta({
   const [abrindoConferenciaId, setAbrindoConferenciaId] = useState<string | null>(null);
   const [cancelarAberto, setCancelarAberto] = useState(false);
   const [liberarAberto, setLiberarAberto] = useState(false);
-  const [liberando, setLiberando] = useState(false);
+  // Aviso "Pedido em Produção" (07/11/2026): "liberar" na liberação, "avisar" depois.
+  const [modoAvisoProducao, setModoAvisoProducao] = useState<"liberar" | "avisar">("liberar");
   const [rastreioAberto, setRastreioAberto] = useState(false);
   const [conhecimentoAberto, setConhecimentoAberto] = useState(false);
   const [encerrandoTeste, setEncerrandoTeste] = useState(false);
@@ -183,24 +183,6 @@ export function useAcoesDaListaNaProposta({
       showToast({ type: "error", title: "Erro ao carregar proposta", description: err instanceof Error ? err.message : "Não foi possível carregar os detalhes." });
     } finally {
       setCarregandoCobranca(false);
-    }
-  }
-
-  async function confirmarLiberarProducao() {
-    if (!item) return;
-    setLiberando(true);
-    showToast({ type: "info", title: "Liberando para produção...", description: "Aguarde a validação das regras." });
-    try {
-      const res = await liberarPropostaParaProducaoPeloServidor(item.id_int);
-      if (!res.success) throw new Error(res.errorMessage || "Erro desconhecido.");
-      showToast({ type: "success", title: "Proposta liberada", description: "A proposta agora está na lista de Produção/Pedidos." });
-      setLiberarAberto(false);
-      concluir();
-    } catch (err) {
-      console.error("[useAcoesDaListaNaProposta] Erro ao liberar para produção:", err);
-      showToast({ type: "error", title: "Erro de Validação", description: err instanceof Error ? err.message : "Não foi possível enviar para produção." });
-    } finally {
-      setLiberando(false);
     }
   }
 
@@ -343,10 +325,25 @@ export function useAcoesDaListaNaProposta({
       aposGerarOc.push({ label: "Cancelar proposta", destructive: true, onClick: () => setCancelarAberto(true) });
     }
     if (!item.is_prd_aprovado && item.isAvulsoRaw !== true && item.statusInterno === "REVISAO ATENDENTE" && canLiberarProducao) {
-      aposGerarOc.push({ label: "Liberar para Produção", onClick: () => setLiberarAberto(true) });
+      aposGerarOc.push({
+        label: "Liberar para Produção",
+        onClick: () => {
+          setModoAvisoProducao("liberar");
+          setLiberarAberto(true);
+        }
+      });
     }
     if (item.is_prd_aprovado && item.isAvulsoRaw !== true) {
       aposGerarOc.push({ label: "✓ Liberada para produção", disabled: true });
+      if (canLiberarProducao) {
+        aposGerarOc.push({
+          label: "Aviso: pedido em produção",
+          onClick: () => {
+            setModoAvisoProducao("avisar");
+            setLiberarAberto(true);
+          }
+        });
+      }
     }
 
     if (rastreio?.ehCorreios && rastreio.codigo) {
@@ -431,13 +428,18 @@ export function useAcoesDaListaNaProposta({
         </PortaoDaCargaCompleta>
       )}
 
-      <LiberarProducaoModal
-        propostaId={item.id_int}
-        isOpen={liberarAberto}
-        isSubmitting={liberando}
-        onClose={() => setLiberarAberto(false)}
-        onConfirm={() => void confirmarLiberarProducao()}
-      />
+      {liberarAberto && (
+        <AvisoProducaoModal
+          key={`${item.id_int}-${modoAvisoProducao}`}
+          idInt={item.id_int}
+          modo={modoAvisoProducao}
+          onClose={() => setLiberarAberto(false)}
+          onConcluido={(liberou) => {
+            setLiberarAberto(false);
+            if (liberou) concluir();
+          }}
+        />
+      )}
 
       {marcarEntregueAberto && (
         <MarcarEntregueModal

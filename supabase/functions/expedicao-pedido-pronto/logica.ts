@@ -102,6 +102,12 @@ export function nomeDoDialogo(id: string | null | undefined): NomeDialogo | null
   return achado ?? null;
 }
 
+/**
+ * Aviso "Pedido em Produção" (07/11/2026), na liberação para a produção. Diálogo
+ * sem campos personalizados (dono, 07/11): só dialog_execute.
+ */
+export const DIALOGO_PRODUCAO = "6071c6dbe34a18c2cc684747";
+
 export const SEM_MODELO = "Sem modelo de mensagem para esta forma de envio.";
 export const SEM_ETIQUETA = "Gere a etiqueta dos Correios antes.";
 
