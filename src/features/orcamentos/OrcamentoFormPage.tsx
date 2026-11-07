@@ -1649,6 +1649,29 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
   };
   isDirtyRef.current = isDirty;
 
+  /**
+   * Comprador escolhido na aba Artes (07/11/2026): já gravado em
+   * `propostas.id_contato`, que é o "Contato responsável" desta tela. Troca o
+   * `contatoId` do formulário e também o do retrato salvo, para a troca não
+   * deixar o formulário "com alteração não salva" — o banco já a tem.
+   */
+  const aplicarContatoGravadoPelaArtes = useCallback((contato: CadastroContato) => {
+    setProposalContacts((lista) =>
+      lista.some((c) => c.id === contato.id) ? lista.map((c) => (c.id === contato.id ? { ...c, ...contato } : c)) : [...lista, contato]
+    );
+    // Retrato primeiro, depois um form novo (mesmo com o contato igual) para o `isDirty` recalcular.
+    if (initialFormSnapshot.current) {
+      try {
+        const salvo = JSON.parse(initialFormSnapshot.current);
+        salvo.contatoId = contato.id;
+        initialFormSnapshot.current = JSON.stringify(salvo);
+      } catch {
+        // Retrato ilegível: o formulário só aparece como alterado.
+      }
+    }
+    setForm((prev) => ({ ...prev, contatoId: contato.id }));
+  }, []);
+
   const currentAddress = useMemo(() => {
     return combinedAddresses.find((a) => a.id === form.enderecoId);
   }, [combinedAddresses, form.enderecoId]);
@@ -6680,6 +6703,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                   lista.some((c) => c.id === contato.id) ? lista.map((c) => (c.id === contato.id ? { ...c, ...contato } : c)) : [...lista, contato]
                 )
               }
+              onContatoDaPropostaGravado={aplicarContatoGravadoPelaArtes}
             />
           )}
           {/* Producao: a aba NAO some por prateleira nem por avulsa. Produto de

@@ -1,25 +1,33 @@
 /**
- * Aviso "pedido pronto" pelo WhatsApp da Ideal (ChatGuru) — Expedição (06/11/2026).
+ * Aviso "pedido pronto" pelo WhatsApp da Ideal (ChatGuru) — Expedição.
+ * 06/11/2026: message_send. 07/11/2026: diálogo com template aprovado (conta
+ * WABA: texto livre só chega dentro da janela de 24 h).
  *
  * POST { acao, ... } com o JWT do usuário do Vibe:
- *   listar   { ids: number[] }               último aviso de cada pedido (expedicao.view)
+ *   listar   { ids: number[] }               último aviso e o diálogo de cada pedido (expedicao.view)
  *   enviar   { id_int }                       1º aviso; se já existe um, devolve o que existe e NÃO envia
  *   reenviar { id_int, seq_atual, confirmado } nova reserva, só com confirmação da tentativa vista
- *   status   { id_int }                       consulta message_status no ChatGuru
+ *   status   { id_int }                       message_status, só para avisos antigos (message_send)
  * enviar/reenviar/status exigem expedicao.processar (ou ADM).
  *
- * Mesmo padrão da integração do Imposition (painel/_compartilhado/whatsapp_artes.ts):
- * POST form-urlencoded, action=message_send, 20 s, redirect "error"; aceite =
- * HTTP 2xx + result success + code 201 + message_id. Reserva no banco ANTES do
- * POST; depois da reserva o POST nunca se repete sozinho. Sem chat_add.
+ * ENVIO POR DIÁLOGO (Guia "Envio de WhatsApp por diálogos ChatGuru", 07/11/2026):
+ *   1. diálogo pela forma de envio (logica.escolherDialogo; despacho vence orçamento);
+ *   2. reserva no banco ANTES de qualquer POST: por pedido (seq) e por conversa
+ *      (destino_chave = SHA-256 de [endpoint, account, phone, número]);
+ *   3. chat_update_custom_fields com os campos do diálogo (field__<Nome>); só segue
+ *      com 2xx + success + code 200;
+ *   4. dialog_execute com o dialog_id, mesma conta, remetente e conversa;
+ *      sucesso = code 200 + "Diálogo executado" -> estado 'executado'.
+ *   Não há message_id: nada é inventado e message_status não é consultado.
+ *   Recusa explícita -> 'falhou' (libera a conversa). Qualquer incerteza ->
+ *   'desconhecido' (a conversa fica travada até alguém conferir no ChatGuru).
+ *   Depois da reserva nenhum POST se repete sozinho.
  *
  * Pedido e contato são relidos aqui, na hora. O destino é propostas.id_contato,
  * que precisa pertencer ao cliente ou ao faturado do pedido.
  *
  * MODO TESTE: ligado enquanto CHATGURU_PEDIDO_PRONTO_MODO_TESTE não for
- * "desligado". Ligado, só pedido do cliente #14 (e contato do cliente #14):
- * qualquer outro pedido é recusado aqui. O destino é sempre o WhatsApp do
- * contato como está no cadastro.
+ * "desligado". Ligado, só pedido do cliente #14 (e contato do cliente #14).
  *
  * Recusa do ChatGuru por número ("Chat não encontrado."): a resposta traz o
  * número enviado e o contato, para a tela oferecer "Corrigir número". Nada disso
@@ -27,18 +35,25 @@
  */
 import { createClient } from "npm:@supabase/supabase-js@2";
 import {
+  DIALOGOS,
   Recusa,
+  SEM_MODELO,
+  camposAceitos,
+  camposDoDialogo,
+  chaveDaConversa,
+  cidadeDestino,
   conferirModoTeste,
-  envioAceito,
+  dialogoExecutado,
   envioRecusado,
-  formaDeEnvio,
+  escolherDialogo,
   limpar,
-  linhasDeItens,
   modoTesteLigado,
-  montarMensagem,
+  nomeDoDialogo,
+  numeroDaNota,
+  rastreioCorreiosValido,
   recusaPorNumero,
   telefoneWhatsApp,
-  type ItemPedido
+  type EscolhaDialogo
 } from "./logica.ts";
 
 const cors = {
@@ -65,13 +80,15 @@ type Registro = {
   seq: number;
   estado: string;
   message_id: string | null;
+  dialogo_id: string | null;
+  destino_chave: string | null;
   modo_teste: boolean;
   autor_nome: string | null;
   criado_em: string;
   atualizado_em: string;
 };
 
-const COLUNAS = "id, id_int, seq, estado, message_id, modo_teste, autor_nome, criado_em, atualizado_em";
+const COLUNAS = "id, id_int, seq, estado, message_id, dialogo_id, destino_chave, modo_teste, autor_nome, criado_em, atualizado_em";
 
 function publico(r: Registro | null) {
   if (!r) return null;
@@ -79,6 +96,9 @@ function publico(r: Registro | null) {
     seq: r.seq,
     estado: r.estado,
     message_id: r.message_id,
+    dialogo: nomeDoDialogo(r.dialogo_id),
+    // Aviso por diálogo em incerteza: a conversa fica travada para novos avisos.
+    trava_conversa: r.estado === "desconhecido" && Boolean(r.destino_chave),
     modo_teste: r.modo_teste,
     autor_nome: r.autor_nome,
     criado_em: r.criado_em,
@@ -133,11 +153,105 @@ async function quemChama(req: Request) {
   };
 }
 
-/** Relê pedido, contato, itens e frete na hora do envio. */
+type Frete = {
+  escolha: EscolhaDialogo;
+  rastreio: string | null;
+  idEndereco: string | null;
+};
+
+/**
+ * Forma de envio e diálogo de cada pedido, em lote (o listar da tela e o envio
+ * usam o mesmo caminho). Só leitura.
+ */
+async function fretesDosPedidos(ids: number[]): Promise<Map<number, Frete>> {
+  const mapa = new Map<number, Frete>();
+  for (let i = 0; i < ids.length; i += 200) {
+    const lote = ids.slice(i, i + 200);
+    const [propRes, expRes, cotRes] = await Promise.all([
+      admin
+        .from("propostas")
+        .select("id_int, modalidade_frete, categoria_frete, id_transportadora_cliente, frete_escolhido, id_endereco_ent")
+        .in("id_int", lote),
+      admin
+        .from("expedicoes")
+        .select(
+          "id_int, tipo_frete, modalidade_frete, categoria_frete, transportadora_nome, id_transportadora_cliente, id_endereco_entrega, codigo_rastreamento, correios_codigo_objeto, prepostagem_cancelada_em"
+        )
+        .in("id_int", lote),
+      admin.from("cotacao_frete").select("id_int, servico, id").in("id_int", lote).eq("escolhido", true).order("id", { ascending: false })
+    ]);
+    if (propRes.error || expRes.error || cotRes.error) throw new Recusa(503, "Não foi possível ler a forma de envio dos pedidos.");
+
+    const exps = new Map<number, Record<string, unknown>>();
+    for (const e of expRes.data ?? []) if (!exps.has(Number(e.id_int))) exps.set(Number(e.id_int), e);
+    const cots = new Map<number, string | null>();
+    for (const c of cotRes.data ?? []) if (!cots.has(Number(c.id_int))) cots.set(Number(c.id_int), c.servico ?? null);
+
+    const idsTransp = Array.from(
+      new Set((propRes.data ?? []).map((p) => Number(p.id_transportadora_cliente)).filter((n) => Number.isFinite(n) && n > 0))
+    );
+    const nomes = new Map<number, string>();
+    if (idsTransp.length) {
+      const { data: ts } = await admin.from("clientes").select("id_cliente, nome, fantasia").in("id_cliente", idsTransp);
+      for (const t of ts ?? []) nomes.set(Number(t.id_cliente), limpar(t.fantasia) || limpar(t.nome));
+    }
+
+    for (const p of propRes.data ?? []) {
+      const idInt = Number(p.id_int);
+      const e = exps.get(idInt) ?? null;
+      const rastreio = e && !e.prepostagem_cancelada_em
+        ? rastreioCorreiosValido(e.correios_codigo_objeto as string | null, e.codigo_rastreamento as string | null)
+        : null;
+      const escolha = escolherDialogo({
+        despacho: e
+          ? {
+              tipo_frete: e.tipo_frete as string | null,
+              modalidade_frete: e.modalidade_frete as string | null,
+              categoria_frete: e.categoria_frete as string | null,
+              transportadora_nome: e.transportadora_nome as string | null,
+              id_transportadora_cliente: e.id_transportadora_cliente as number | null
+            }
+          : null,
+        orcamento: {
+          modalidade_frete: p.modalidade_frete,
+          categoria_frete: p.categoria_frete,
+          id_transportadora_cliente: p.id_transportadora_cliente,
+          nomeTransportadora: nomes.get(Number(p.id_transportadora_cliente)) ?? null,
+          servicoCotacao: cots.get(idInt) ?? p.frete_escolhido ?? null
+        },
+        rastreioCorreios: rastreio
+      });
+      const idEndereco = String((e?.id_endereco_entrega as string | null) ?? p.id_endereco_ent ?? "").trim() || null;
+      mapa.set(idInt, { escolha, rastreio, idEndereco });
+    }
+  }
+  return mapa;
+}
+
+/** Nota autorizada do pedido (NF-e de venda ou NFS-e, produção). Sem nota, "—". */
+async function notaDoPedido(idInt: number): Promise<string> {
+  const [nfe, nfse] = await Promise.all([
+    admin
+      .from("notas_fiscais")
+      .select("numero_nf, tipo_nota")
+      .eq("id_int", idInt)
+      .eq("status", "AUTORIZADA")
+      .eq("ambiente", "producao"),
+    admin.from("notas_servico").select("numero_nfse").eq("id_int", idInt).eq("status", "AUTORIZADA").eq("ambiente", "producao")
+  ]);
+  if (nfe.error || nfse.error) throw new Recusa(503, "Não foi possível ler a nota fiscal do pedido.");
+  const numeros = [
+    ...(nfe.data ?? []).filter((n) => (n.tipo_nota ?? "").toUpperCase() !== "REMESSA").map((n) => n.numero_nf),
+    ...(nfse.data ?? []).map((n) => n.numero_nfse)
+  ];
+  return numeroDaNota(numeros);
+}
+
+/** Relê pedido, contato, forma de envio, nota e cidade na hora do envio. */
 async function contextoDoPedido(idInt: number, modoTeste: boolean) {
   const { data: p, error } = await admin
     .from("propostas")
-    .select("id_int, id_cliente, id_faturado, id_contato, status_interno, modalidade_frete, id_transportadora_cliente")
+    .select("id_int, id_cliente, id_faturado, id_contato, status_interno")
     .eq("id_int", idInt)
     .maybeSingle();
   if (error) throw new Recusa(503, "Não foi possível ler o pedido. Tente de novo.");
@@ -164,42 +278,33 @@ async function contextoDoPedido(idInt: number, modoTeste: boolean) {
   }
   conferirModoTeste(modoTeste, p.id_cliente, contato.id_cliente);
 
-  const [itensRes, expRes, cotRes] = await Promise.all([
-    admin.from("produtos_proposta").select("nome_produto, qtd, status_item").eq("id_int", idInt).order("id"),
-    admin
-      .from("expedicoes")
-      .select("modalidade_frete, tipo_frete, transportadora_nome, id_transportadora_cliente")
-      .eq("id_int", idInt)
-      .maybeSingle(),
-    admin.from("cotacao_frete").select("servico").eq("id_int", idInt).eq("escolhido", true).limit(1).maybeSingle()
-  ]);
-  if (itensRes.error) throw new Recusa(503, "Não foi possível ler os itens do pedido.");
-  const itens = linhasDeItens((itensRes.data ?? []) as ItemPedido[]);
-  if (itens.length === 0) throw new Recusa(422, "O pedido não tem itens ativos.");
+  const frete = (await fretesDosPedidos([idInt])).get(idInt);
+  if (!frete?.escolha.dialogo) throw new Recusa(409, frete?.escolha.bloqueio ?? SEM_MODELO);
+  if (frete.escolha.bloqueio) throw new Recusa(409, frete.escolha.bloqueio);
+  const dialogo = frete.escolha.dialogo;
 
-  const idTransp = Number(expRes.data?.id_transportadora_cliente ?? p.id_transportadora_cliente);
-  let nomeTransp: string | null = null;
-  if (Number.isFinite(idTransp) && idTransp > 0) {
-    const { data: t } = await admin.from("clientes").select("nome, fantasia").eq("id_cliente", idTransp).maybeSingle();
-    nomeTransp = limpar(t?.fantasia) || limpar(t?.nome) || null;
+  let cidade: string | null = null;
+  if (frete.idEndereco && /^[0-9a-f-]{36}$/i.test(frete.idEndereco)) {
+    const { data: end } = await admin.from("enderecos").select("cidade, uf").eq("id", frete.idEndereco).maybeSingle();
+    cidade = cidadeDestino(end?.cidade, end?.uf);
   }
-
-  const forma = formaDeEnvio({
-    expedicao: expRes.data ?? null,
-    modalidadeOrcamento: p.modalidade_frete ?? null,
-    servicoCotacao: cotRes.data?.servico ?? null,
-    nomeTransportadoraCadastro: nomeTransp
+  const campos = camposDoDialogo(dialogo, {
+    idInt,
+    notaFiscal: await notaDoPedido(idInt),
+    cidadeDestino: cidade,
+    rastreio: frete.rastreio
   });
 
-  return { idContato, contato, texto: montarMensagem({ nomeContato: contato.nome_contato ?? "", idInt, itens, formaEnvio: forma }) };
+  return { idContato, contato, dialogo, escolha: frete.escolha, campos };
 }
 
 function configChatGuru() {
-  const endpoint = env("CHATGURU_ENDPOINT");
+  // Valores crus (sem trim) para a chave da conversa sair igual à do contrato.
+  const endpoint = Deno.env.get("CHATGURU_ENDPOINT") ?? "";
   const key = env("CHATGURU_KEY");
-  const account = env("CHATGURU_ACCOUNT_ID");
-  const phone = env("CHATGURU_PHONE_ID");
-  if (!/^https:\/\/(?:[a-z0-9-]+\.chatguru\.app|app\.zap\.guru)\/api\/v1\/?$/.test(endpoint) || !key || !account || !phone) {
+  const account = Deno.env.get("CHATGURU_ACCOUNT_ID") ?? "";
+  const phone = Deno.env.get("CHATGURU_PHONE_ID") ?? "";
+  if (!/^https:\/\/(?:[a-z0-9-]+\.chatguru\.app|app\.zap\.guru)\/api\/v1\/?$/.test(endpoint) || !key || !account.trim() || !phone.trim()) {
     throw new Recusa(503, "Integração com o ChatGuru não configurada.");
   }
   return { endpoint, key, account, phone, ddi: env("CHATGURU_DEFAULT_DDI") };
@@ -218,10 +323,10 @@ async function chamarChatGuru(cfg: ReturnType<typeof configChatGuru>, action: st
 }
 
 /** Grava o resultado SÓ na reserva que este pedido criou e que ainda está em 'preparando'. */
-async function salvar(idReserva: string, estado: string, messageId: string | null): Promise<Registro> {
+async function salvar(idReserva: string, estado: string): Promise<Registro> {
   const { data, error } = await admin
     .from("expedicao_aviso_pronto")
-    .update({ estado, message_id: messageId, atualizado_em: new Date().toISOString() })
+    .update({ estado, atualizado_em: new Date().toISOString() })
     .eq("id", idReserva)
     .eq("estado", "preparando")
     .select(COLUNAS)
@@ -248,7 +353,11 @@ async function listar(ids: unknown) {
       if (!avisos[r.id_int]) avisos[r.id_int] = publico(r);
     }
   }
-  return avisos;
+  const modelos: Record<number, { dialogo: string | null; bloqueio: string | null }> = {};
+  for (const [id, f] of await fretesDosPedidos(lista)) {
+    modelos[id] = { dialogo: f.escolha.dialogo, bloqueio: f.escolha.bloqueio };
+  }
+  return { avisos, modelos };
 }
 
 Deno.serve(async (req) => {
@@ -263,7 +372,7 @@ Deno.serve(async (req) => {
 
     if (acao === "listar") {
       if (!quem.podeVer) throw new Recusa(403, "Sem permissão da Expedição.");
-      return responder(200, { ok: true, modo_teste: modoTeste, avisos: await listar(corpo?.ids) });
+      return responder(200, { ok: true, modo_teste: modoTeste, ...(await listar(corpo?.ids)) });
     }
 
     if (!["enviar", "reenviar", "status"].includes(acao)) throw new Recusa(400, "Ação inválida.");
@@ -274,6 +383,7 @@ Deno.serve(async (req) => {
     const ultimo = await ultimoRegistro(idInt);
 
     if (acao === "status") {
+      // Só avisos antigos (message_send) têm message_id. Diálogo não tem status a consultar.
       if (!ultimo?.message_id || ultimo.estado === "enviado") {
         return responder(200, { ok: true, modo_teste: modoTeste, aviso: publico(ultimo) });
       }
@@ -317,39 +427,59 @@ Deno.serve(async (req) => {
     const ctx = await contextoDoPedido(idInt, modoTeste);
     const cfg = configChatGuru();
     const destino = telefoneWhatsApp(ctx.contato.whats, cfg.ddi);
+    const dialogId = DIALOGOS[ctx.dialogo].id;
+    const destinoChave = await chaveDaConversa(cfg.endpoint, cfg.account, cfg.phone, destino);
 
-    const { data: reserva, error: errReserva } = await admin.rpc("expedicao_aviso_pronto_reservar", {
+    const { data: reserva, error: errReserva } = await admin.rpc("expedicao_aviso_pronto_reservar_dialogo", {
       p_id_int: idInt,
       p_seq_atual: ultimo?.seq ?? 0,
       p_id_contato: ctx.idContato,
       p_modo_teste: modoTeste,
       p_autor: quem.id,
-      p_autor_nome: quem.nome
+      p_autor_nome: quem.nome,
+      p_dialogo_id: dialogId,
+      p_destino_chave: destinoChave
     });
-    if (errReserva) throw new Recusa(503, "Não foi possível reservar o envio. Nada foi enviado.");
-    if (!reserva) {
+    if (errReserva || !reserva?.resultado) throw new Recusa(503, "Não foi possível reservar o envio. Nada foi enviado.");
+    if (reserva.resultado === "ocupado") {
+      throw new Recusa(
+        409,
+        `Há um aviso de pedido pronto sem confirmação para o WhatsApp ${destino}. Nada foi enviado. Confira no ChatGuru antes: a conversa fica travada até isso ser resolvido.`
+      );
+    }
+    if (reserva.resultado !== "reservado" || !reserva.id) {
       return responder(200, { ok: true, modo_teste: modoTeste, ja_existia: true, aviso: publico(await ultimoRegistro(idInt)) });
     }
+    const idReserva = String(reserva.id);
 
-    // Daqui em diante o POST ao ChatGuru nunca se repete automaticamente.
+    // Daqui em diante nenhum POST ao ChatGuru se repete automaticamente.
     let resultado: Registro;
-    // Motivo da recusa dado pelo ChatGuru: só volta na resposta, nunca é gravado.
+    // Motivo e etapa da recusa: só voltam na resposta, nunca são gravados.
     let motivoChatGuru: string | null = null;
+    let etapa: "campos" | "dialogo" = "campos";
     let porNumero = false;
     try {
-      const { http, data } = await chamarChatGuru(cfg, "message_send", { chat_number: destino, text: ctx.texto });
-      const messageId = envioAceito(http, data);
-      if (messageId) {
-        resultado = await salvar(String(reserva), data?.message_status === "sent" ? "enviado" : "aguardando", messageId);
-      } else {
-        motivoChatGuru = limpar(data?.description, 200) || null;
-        const recusado = envioRecusado(http, data);
+      const r1 = await chamarChatGuru(cfg, "chat_update_custom_fields", { chat_number: destino, ...ctx.campos });
+      if (!camposAceitos(r1.http, r1.data)) {
+        motivoChatGuru = limpar(r1.data?.description, 200) || null;
+        const recusado = envioRecusado(r1.http, r1.data);
         porNumero = recusado && recusaPorNumero(motivoChatGuru);
-        resultado = await salvar(String(reserva), recusado ? "falhou" : "desconhecido", null);
+        resultado = await salvar(idReserva, recusado ? "falhou" : "desconhecido");
+      } else {
+        etapa = "dialogo";
+        const r2 = await chamarChatGuru(cfg, "dialog_execute", { chat_number: destino, dialog_id: dialogId });
+        if (dialogoExecutado(r2.http, r2.data)) {
+          resultado = await salvar(idReserva, "executado");
+        } else {
+          motivoChatGuru = limpar(r2.data?.description, 200) || null;
+          const recusado = envioRecusado(r2.http, r2.data);
+          porNumero = recusado && recusaPorNumero(motivoChatGuru);
+          resultado = await salvar(idReserva, recusado ? "falhou" : "desconhecido");
+        }
       }
     } catch (e) {
       if (e instanceof Recusa) throw e;
-      resultado = await salvar(String(reserva), "desconhecido", null);
+      resultado = await salvar(idReserva, "desconhecido");
     }
 
     return responder(200, {
@@ -357,6 +487,8 @@ Deno.serve(async (req) => {
       modo_teste: modoTeste,
       ja_existia: false,
       aviso: publico(resultado),
+      modelo: { dialogo: ctx.dialogo, bloqueio: null },
+      etapa_chatguru: resultado.estado === "executado" ? null : etapa,
       motivo_chatguru: motivoChatGuru,
       // Só na recusa por número: o que foi enviado e de qual contato (não gravado).
       recusa_numero: porNumero ? { numero_enviado: destino, id_contato: ctx.idContato } : null

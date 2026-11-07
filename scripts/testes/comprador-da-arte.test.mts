@@ -9,7 +9,8 @@
  *   B. dois Compradores: precisa escolher; escolhido gravado libera;
  *   C. Comprador sem e-mail: travado, com o aviso do que falta;
  *   D. inativo, Financeiro e sem cargo não contam como Comprador;
- *   E. escolha gravada que deixou de ser Comprador: volta a pedir escolha;
+ *   E. responsável que deixou de ser Comprador: avisa (não troca sozinho);
+ *   G. contato existente vira Comprador; H. um contato só: responsável da Geral = Comprador da Artes;
  *   F. arte já enviada (EM ARTE, APROVADO...) não é travada; AGUARDANDO/PENDENTE/vazio são primeiro envio.
  */
 import assert from "node:assert/strict";
@@ -60,11 +61,31 @@ caso("D. inativo e sem cargo não contam", () => {
   const s = situacaoDoComprador([contato("1", { ativo: false }), contato("2", { cargo: "" })], null);
   assert.equal(s.compradores.length, 0);
 });
-caso("E. escolha gravada que deixou de ser Comprador volta a pedir escolha", () => {
+caso("E. responsável que deixou de ser Comprador (inativo) não é trocado sozinho: avisa", () => {
   const s = situacaoDoComprador([contato("1", { ativo: false }), contato("2"), contato("3")], "1");
-  assert.equal(s.precisaEscolher, true);
+  assert.equal(s.liberado, false);
+  assert.equal(s.responsavelNaoComprador?.id, "1");
+  assert.equal(s.escolhido, null);
   const unico = situacaoDoComprador([contato("1", { ativo: false }), contato("2")], "1");
-  assert.equal(unico.escolhido?.id, "2");
+  assert.equal(unico.escolhido, null);
+  assert.equal(unico.responsavelNaoComprador?.id, "1");
+});
+caso("E. sem responsável na proposta e um só Comprador: ele vem escolhido", () => {
+  assert.equal(situacaoDoComprador([contato("2")], "").escolhido?.id, "2");
+  assert.equal(situacaoDoComprador([contato("2")], "999").escolhido?.id, "2"); // responsável de fora do cliente
+});
+caso("H. um contato só (24880): o responsável da Geral é o Comprador da Artes", () => {
+  const cliente14 = [contato("330", { nome: "Eduardo - Financeiro" }), contato("64814", { nome: "Everton Farias" })];
+  assert.equal(situacaoDoComprador(cliente14, "330").escolhido?.id, "330"); // Geral = Eduardo -> Artes = Eduardo
+  assert.equal(situacaoDoComprador(cliente14, "64814").escolhido?.id, "64814"); // Geral = Everton -> Artes = Everton
+  assert.equal(situacaoDoComprador(cliente14, "64814").precisaEscolher, false);
+});
+caso("H. responsável da Geral sem cargo: aviso com Usar como Comprador, sem liberar", () => {
+  const s = situacaoDoComprador([contato("1", { nome: "Paula", cargo: "" }), contato("2")], "1");
+  assert.equal(s.liberado, false);
+  assert.equal(s.responsavelNaoComprador?.id, "1");
+  assert.match(s.aviso!, /O contato responsável \(Paula\) não é Comprador/);
+  assert.deepEqual(s.compradores.map((c) => c.id), ["2"]); // "escolher outro Comprador"
 });
 caso("F. arte já enviada não trava; rascunho trava", () => {
   for (const st of ["EM ARTE", "Em Aprovação", "APROVADO", "Enviar Arte", "Dados Pendentes"]) assert.equal(arteJaEnviada(st), true, st);

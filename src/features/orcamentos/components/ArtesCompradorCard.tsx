@@ -12,13 +12,18 @@ import {
   situacaoDoComprador,
   type SituacaoDoComprador,
 } from "@/features/orcamentos/lib/comprador-da-arte";
-import { carregarCompradorDaArte, gravarCompradorDaProposta } from "@/features/orcamentos/services/comprador-da-arte.service";
+import { carregarCompradorDaArte, gravarContatoDaProposta } from "@/features/orcamentos/services/comprador-da-arte.service";
 
 /**
- * Comprador da aba Artes (06/11/2026). O hook lê os contatos do cliente, a
- * escolha gravada na proposta e o status da arte; o card mostra o Comprador ao
- * lado do "Enviar para arte", deixa escolher entre vários e abre o cadastro
- * rápido (cargo fixo Comprador) sem sair da aba. Regra em lib/comprador-da-arte.
+ * Comprador da aba Artes (06/11/2026). O hook lê os contatos do cliente e o
+ * status da arte; o card mostra o Comprador ao lado do "Enviar para arte",
+ * deixa escolher entre vários e abre o cadastro rápido (cargo fixo Comprador)
+ * sem sair da aba. Regra em lib/comprador-da-arte.
+ *
+ * Um contato só (07/11/2026): o Comprador é o "Contato responsável" da aba
+ * Geral. A aba lê o `form.contatoId` da tela (mudou na Geral, aparece aqui sem
+ * salvar) e, ao escolher, grava `propostas.id_contato` e devolve a escolha à
+ * tela por `onContatoDaPropostaGravado` (mudou aqui, aparece na Geral).
  */
 
 export type CompradorDaArte = {
@@ -27,20 +32,29 @@ export type CompradorDaArte = {
   contatos: CadastroContato[];
   erro: string | null;
   situacao: SituacaoDoComprador<CadastroContato>;
-  idGravado: string | null;
   jaEnviada: boolean;
-  escolher: (idContato: string) => Promise<{ ok: boolean; erro?: string }>;
-  /** Grava na proposta o Comprador da tela (o único, já escolhido) se ainda não estiver gravado. */
+  /** Complemento usa o contato do pedido principal: a aba não troca o contato. */
+  bloqueiaTroca: boolean;
+  escolher: (contato: CadastroContato) => Promise<{ ok: boolean; erro?: string }>;
+  /** Grava na proposta o Comprador da tela (o único, ou o responsável trocado na Geral sem salvar) se o banco ainda não o tem. */
   gravarEscolhaSeFaltar: () => Promise<{ ok: boolean; erro?: string }>;
   contatoGravado: (contato: CadastroContato) => Promise<{ ok: boolean; erro?: string }>;
 };
 
-export function useCompradorDaArte(idInt: number | null, idCliente: string | null): CompradorDaArte {
+export function useCompradorDaArte(
+  idInt: number | null,
+  idCliente: string | null,
+  /** `form.contatoId`: o "Contato responsável" como está na tela agora. */
+  idContatoDaTela: string | null,
+  ehComplemento: boolean,
+  onContatoDaPropostaGravado: (contato: CadastroContato) => void
+): CompradorDaArte {
   // `carregadoPara` = a chave (proposta + cliente) da última leitura; difere da atual enquanto carrega.
   const chave = `${idInt ?? ""}|${idCliente ?? ""}`;
   const [carregadoPara, setCarregadoPara] = useState<string | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [contatos, setContatos] = useState<CadastroContato[]>([]);
+  /** `propostas.id_contato` no banco: decide se o envio precisa gravar a escolha. */
   const [idGravado, setIdGravado] = useState<string | null>(null);
   const [statusArte, setStatusArte] = useState<string | null>(null);
   const carregando = Boolean(idInt) && carregadoPara !== chave;
@@ -52,7 +66,7 @@ export function useCompradorDaArte(idInt: number | null, idCliente: string | nul
       if (!vivo) return;
       if (r.ok) {
         setContatos(r.dados.contatos);
-        setIdGravado(r.dados.idGravado);
+        setIdGravado(r.dados.idContatoGravado);
         setStatusArte(r.dados.statusArte);
         setErro(null);
       } else {
@@ -65,24 +79,28 @@ export function useCompradorDaArte(idInt: number | null, idCliente: string | nul
     };
   }, [idInt, idCliente]);
 
-  const situacao = useMemo(() => situacaoDoComprador(contatos, idGravado), [contatos, idGravado]);
+  // A tela manda: o contato da Geral (mesmo sem salvar); sem tela, o do banco.
+  const idResponsavel = idContatoDaTela ?? idGravado;
+  const situacao = useMemo(() => situacaoDoComprador(contatos, idResponsavel), [contatos, idResponsavel]);
 
   const escolher = useCallback(
-    async (idContato: string) => {
+    async (contato: CadastroContato) => {
       if (!idInt) return { ok: false, erro: "Salve a proposta antes." };
-      const r = await gravarCompradorDaProposta(idInt, idContato);
+      if (ehComplemento) return { ok: false, erro: "Complemento usa o contato do pedido principal: troque o contato lá." };
+      const r = await gravarContatoDaProposta(idInt, contato);
       if (!r.ok) return { ok: false, erro: r.erro };
-      setIdGravado(idContato);
+      setIdGravado(contato.id);
+      onContatoDaPropostaGravado(contato);
       return { ok: true };
     },
-    [idInt]
+    [idInt, ehComplemento, onContatoDaPropostaGravado]
   );
 
   const gravarEscolhaSeFaltar = useCallback(async () => {
-    const id = situacao.escolhido?.id;
-    if (!id || id === idGravado) return { ok: true };
-    return escolher(id);
-  }, [situacao.escolhido, idGravado, escolher]);
+    const escolhido = situacao.escolhido;
+    if (!escolhido || escolhido.id === idGravado || ehComplemento) return { ok: true };
+    return escolher(escolhido);
+  }, [situacao.escolhido, idGravado, ehComplemento, escolher]);
 
   const contatoGravado = useCallback(
     async (contato: CadastroContato) => {
@@ -90,9 +108,11 @@ export function useCompradorDaArte(idInt: number | null, idCliente: string | nul
         const existe = lista.some((c) => c.id === contato.id);
         return existe ? lista.map((c) => (c.id === contato.id ? contato : c)) : [...lista, contato];
       });
-      return escolher(contato.id);
+      // Complemento: o contato muda no cadastro, mas o da proposta é o do principal.
+      if (ehComplemento) return { ok: true };
+      return escolher(contato);
     },
-    [escolher]
+    [escolher, ehComplemento]
   );
 
   return {
@@ -100,7 +120,7 @@ export function useCompradorDaArte(idInt: number | null, idCliente: string | nul
     contatos,
     erro,
     situacao,
-    idGravado,
+    bloqueiaTroca: ehComplemento,
     jaEnviada: arteJaEnviada(statusArte),
     escolher,
     gravarEscolhaSeFaltar,
@@ -217,7 +237,9 @@ export function ArtesCompradorCard({ comprador, idCliente, podeEditarContato, on
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="text-sm font-bold text-slate-800">Comprador do cliente</p>
-          <p className="text-xs text-slate-500">Quem recebe a arte. Sem um Comprador com nome, fone e e-mail o pedido não vai para arte.</p>
+          <p className="text-xs text-slate-500">
+            Quem recebe a arte. É o mesmo Contato responsável da aba Geral: mudar aqui muda lá. Sem um Comprador com nome, fone e e-mail o pedido não vai para arte.
+          </p>
         </div>
         {podeEditarContato && clienteCadastrado && !rascunho && !carregando && (
           <div className="flex flex-wrap gap-2">
@@ -290,14 +312,39 @@ export function ArtesCompradorCard({ comprador, idCliente, podeEditarContato, on
           <p className="text-sm text-amber-700">Proposta sem cliente cadastrado: não há Comprador para escolher.</p>
         ) : (
           <>
-            {situacao.compradores.length > 1 && (
+            {/* Responsável da Geral que não é Comprador: aviso + "Usar como Comprador" ou escolher outro abaixo. */}
+            {situacao.responsavelNaoComprador && (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm">
+                <p className="text-amber-800">
+                  O contato responsável da proposta, <span className="font-semibold">{situacao.responsavelNaoComprador.nome || "(sem nome)"}</span>,{" "}
+                  {situacao.responsavelNaoComprador.ativo === false ? "está inativo." : "não é Comprador."}
+                </p>
+                {podeEditarContato && situacao.responsavelNaoComprador.ativo !== false && (
+                  <button
+                    type="button"
+                    disabled={gravando}
+                    onClick={() => marcarComoComprador(situacao.responsavelNaoComprador!)}
+                    className="mt-2 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {gravando ? "Gravando..." : "Usar como Comprador"}
+                  </button>
+                )}
+              </div>
+            )}
+
+            {(situacao.compradores.length > 1 || (situacao.responsavelNaoComprador && situacao.compradores.length > 0)) && (
               <label className="block">
-                <span className="mb-1 block text-xs font-semibold text-slate-600">Comprador que recebe a arte</span>
+                <span className="mb-1 block text-xs font-semibold text-slate-600">
+                  {situacao.responsavelNaoComprador ? "Ou escolha outro Comprador" : "Comprador que recebe a arte"}
+                  <span className="font-normal text-slate-400"> · é também o Contato responsável da aba Geral</span>
+                </span>
                 <select
                   value={escolhido?.id ?? ""}
+                  disabled={comprador.bloqueiaTroca || gravando}
                   onChange={async (e) => {
-                    if (!e.target.value) return;
-                    const r = await comprador.escolher(e.target.value);
+                    const alvo = situacao.compradores.find((c) => c.id === e.target.value);
+                    if (!alvo) return;
+                    const r = await comprador.escolher(alvo);
                     if (!r.ok) onAviso("error", "Não foi possível gravar a escolha", r.erro);
                   }}
                   className={inputClass}
@@ -345,6 +392,9 @@ export function ArtesCompradorCard({ comprador, idCliente, podeEditarContato, on
             )}
             {jaEnviada && (
               <p className="text-xs text-slate-500">Pedido já enviado para arte: a exigência do Comprador vale só para o primeiro envio.</p>
+            )}
+            {comprador.bloqueiaTroca && (
+              <p className="text-xs text-slate-500">Complemento: o contato é o do pedido principal. Para trocar, troque no pedido principal.</p>
             )}
             {!podeEditarContato && !situacao.liberado && (
               <p className="text-xs text-slate-500">Sem permissão para editar contatos do cliente (Editar Cadastros). Peça a quem tem para completar o Comprador.</p>

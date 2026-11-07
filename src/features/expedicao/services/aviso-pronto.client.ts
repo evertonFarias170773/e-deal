@@ -3,19 +3,31 @@
 import { getSupabaseClient } from "@/lib/supabase/client";
 
 /**
- * Aviso "pedido pronto" pelo WhatsApp da Ideal (ChatGuru), 06/11/2026.
+ * Aviso "pedido pronto" pelo WhatsApp da Ideal (ChatGuru), 06/11/2026. Desde
+ * 07/11/2026 por diálogo com template (um por forma de envio): o estado final é
+ * "executado" — o ChatGuru não devolve message_id nem status de entrega.
  *
  * Tudo passa pela Edge Function `expedicao-pedido-pronto`: ela confere a
  * sessão e a permissão, relê pedido e contato, reserva e envia. A tabela
  * `expedicao_aviso_pronto` é só do service_role; a tela nunca lê nem grava nela.
  */
 
-export type EstadoAviso = "preparando" | "aguardando" | "enviado" | "falhou" | "desconhecido";
+export type EstadoAviso = "preparando" | "aguardando" | "enviado" | "executado" | "falhou" | "desconhecido";
+
+/**
+ * Diálogo do ChatGuru escolhido pelo servidor para a forma de envio do pedido
+ * (07/11/2026). Sem diálogo ou com bloqueio, o botão fica apagado com o aviso.
+ */
+export type ModeloAviso = { dialogo: string | null; bloqueio: string | null };
 
 export type AvisoPronto = {
   seq: number;
   estado: EstadoAviso;
   message_id: string | null;
+  /** Nome do diálogo usado (Sedex, Retira...). Nulo nos avisos antigos por texto. */
+  dialogo?: string | null;
+  /** Diálogo em incerteza: o WhatsApp fica travado para novos avisos. */
+  trava_conversa?: boolean;
   modo_teste: boolean;
   autor_nome: string | null;
   criado_em: string;
@@ -32,6 +44,10 @@ type Resposta = {
   ja_existia?: boolean;
   aviso?: AvisoPronto | null;
   avisos?: Record<string, AvisoPronto | null>;
+  modelos?: Record<string, ModeloAviso>;
+  modelo?: ModeloAviso | null;
+  /** Etapa em que o ChatGuru recusou ou ficou incerto: campos ou diálogo. */
+  etapa_chatguru?: "campos" | "dialogo" | null;
   status_chatguru?: string | null;
   /** Motivo da recusa dado pelo ChatGuru (ex.: "Chat não encontrado."). Não é gravado. */
   motivo_chatguru?: string | null;
@@ -82,6 +98,7 @@ export const ROTULO_ESTADO_AVISO: Record<EstadoAviso, string> = {
   preparando: "enviando",
   aguardando: "aguardando confirmação do WhatsApp",
   enviado: "entregue ao WhatsApp",
+  executado: "diálogo executado no ChatGuru",
   falhou: "falhou",
   desconhecido: "resultado desconhecido"
 };

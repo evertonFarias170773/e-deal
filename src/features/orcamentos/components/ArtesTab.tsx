@@ -31,14 +31,23 @@ interface ArtesTabProps {
   onBriefingChange?: (draft: BriefingArtesDraft) => void;
   /** Contato gravado pelo cadastro rápido do Comprador (para a lista de contatos da proposta). */
   onContatoDoClienteGravado?: (contato: CadastroContato) => void;
+  /** O Comprador escolhido aqui foi gravado em `propostas.id_contato`: a aba Geral passa a mostrá-lo. */
+  onContatoDaPropostaGravado: (contato: CadastroContato) => void;
 }
 
-export function ArtesTab({ form, onBriefingChange, onContatoDoClienteGravado }: ArtesTabProps) {
+export function ArtesTab({ form, onBriefingChange, onContatoDoClienteGravado, onContatoDaPropostaGravado }: ArtesTabProps) {
   const idCliente = form.clienteId || null;
   const { showToast } = useAppToast();
   const { user } = useAuth();
   // Comprador da arte (lib/comprador-da-arte): trava o primeiro "Enviar para arte".
-  const comprador = useCompradorDaArte(form.id_int === "NOVO" ? null : Number(form.id_int), idCliente);
+  // É o mesmo "Contato responsável" da Geral (form.contatoId / propostas.id_contato).
+  const comprador = useCompradorDaArte(
+    form.id_int === "NOVO" ? null : Number(form.id_int),
+    idCliente,
+    form.contatoId?.trim() ? form.contatoId : null,
+    Boolean(form.idIntPedidoPrincipal),
+    onContatoDaPropostaGravado
+  );
   const podeEditarContato = Boolean(user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "cadastros.edit"));
 
   const [nomeEvento, setNomeEvento] = useState("");

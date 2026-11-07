@@ -1,6 +1,6 @@
 # Proposta: aba Geral
 
-> **Última revisão:** 06/11/2026 (total do resumo em centavos exatos; contato inativo fora da escolha; cargo do contato em lista)
+> **Última revisão:** 07/11/2026 (contato responsável é o mesmo Comprador da aba Artes; total do resumo em centavos exatos; contato inativo fora da escolha; cargo do contato em lista)
 > **Caminho no menu:** Pedidos → abrir um pedido → aba **Geral**
 > **Endereço:** `/orcamentos/<número>/editar` (em proposta nova, `/orcamentos/novo`)
 
@@ -100,6 +100,8 @@ Enquanto o cliente não é escolhido numa proposta nova, os outros blocos e abas
 3. Para incluir, clique em **+ Adicionar novo contato**, preencha **Nome** e **WhatsApp** (obrigatórios), escolha o **Cargo** na lista (**Comprador**, **Financeiro** ou **Sem cargo**), preencha o **E-mail** e clique em **Adicionar**.
 4. Para corrigir um contato, clique no lápis ao lado dele, altere na janela **Editar contato (Modo Local)** e clique em **Salvar**.
 5. Salve a proposta para o contato escolhido valer.
+
+O contato responsável é também o **Comprador** da aba Artes (quem recebe a arte): trocar aqui troca lá, e escolher um Comprador na aba Artes troca o contato daqui, já gravado. Para enviar para arte, ele precisa ter cargo **Comprador**, WhatsApp e e-mail.
 
 O nome do contato é o que aparece na proposta enviada ao cliente.
 

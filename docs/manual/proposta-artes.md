@@ -1,6 +1,6 @@
 # Proposta: aba Artes
 
-> **Última revisão:** 06/11/2026
+> **Última revisão:** 07/11/2026
 > **Caminho no menu:** Pedidos → abrir um pedido → Editar proposta → aba Artes
 > **Endereço:** `/orcamentos/[número]/editar?tab=artes`
 
@@ -35,7 +35,8 @@ Nomes exatamente como aparecem na tela.
 | Ícone de download (dica "Abrir arquivo") | Em cada arquivo de **Arquivos Anexados** | Abre o arquivo em nova aba. |
 | Ícone de lixeira (dica "Excluir arquivo") | Em cada arquivo de **Arquivos Anexados** | Apaga o arquivo, depois de confirmar. |
 | Linha do designer | Bloco **Designers Ideal** | Clicar seleciona o designer (selo **Selecionado**); clicar de novo desmarca. |
-| **Comprador que recebe a arte** | Bloco **Comprador do cliente** | Lista que aparece quando o cliente tem mais de um Comprador ativo. A escolha é gravada na proposta na hora. |
+| **Comprador que recebe a arte** / **Ou escolha outro Comprador** | Bloco **Comprador do cliente** | Lista dos Compradores ativos do cliente. Aparece com mais de um Comprador, ou quando o contato responsável não é Comprador. A escolha é gravada na hora e passa a ser também o **Contato responsável** da aba Geral. |
+| **Usar como Comprador** (no aviso amarelo) | Bloco **Comprador do cliente**, quando o contato responsável da aba Geral não é Comprador | Troca o cargo desse contato para Comprador no cadastro do cliente. Ele continua sendo o contato da proposta. |
 | **Usar contato existente como Comprador** | Bloco **Comprador do cliente** | Aparece quando o cliente tem contato ativo que não é Comprador. Lista esses contatos (nome, cargo, fone e e-mail); **Usar como Comprador** troca o cargo dele para Comprador no cadastro, sem criar contato novo, e já o escolhe na proposta. Se faltar fone ou e-mail, abre o **Completar**. Só para quem tem **Editar Cadastros**. |
 | **Adicionar Comprador** | Bloco **Comprador do cliente** | Abre o cadastro rápido (Nome, WhatsApp com DDD, E-mail) dentro da aba. O cargo é sempre Comprador. Só para quem tem **Editar Cadastros**. |
 | **Completar** (com o que falta, por exemplo "Completar e-mail") | Bloco **Comprador do cliente**, abaixo do Comprador escolhido | Aparece quando falta algo no Comprador. Abre o mesmo cadastro rápido já preenchido com o que o contato tem. |
@@ -77,7 +78,8 @@ O arquivo é gravado na hora em que você clica em **Adicionar**. Não é precis
 
 1. No bloco **Designers Ideal**, clique no designer que vai cuidar do pedido. A linha fica destacada e ganha o selo **Selecionado**. Ao lado de cada nome aparecem **Pedidos** e **Modelos**: quantos pedidos e quantos modelos já estão com aquele designer.
 2. Confira se o **Nome do Evento / Tema** está preenchido.
-3. Confira o bloco **Comprador do cliente**. É quem recebe a arte: um contato ativo do cliente com cargo **Comprador** e com nome, fone (WhatsApp) e e-mail.
+3. Confira o bloco **Comprador do cliente**. É quem recebe a arte: um contato ativo do cliente com cargo **Comprador** e com nome, fone (WhatsApp) e e-mail. É o mesmo **Contato responsável** do bloco 3 da aba Geral: trocar numa aba troca na outra.
+   - Se o contato responsável escolhido na Geral não é Comprador, aparece o aviso amarelo. Clique em **Usar como Comprador** para trocar o cargo dele, ou escolha outro Comprador na lista logo abaixo.
    - Com um só Comprador, ele já vem escolhido.
    - Com mais de um, escolha em **Comprador que recebe a arte**.
    - Se a pessoa já é contato do cliente, mas sem cargo ou com outro cargo, clique em **Usar contato existente como Comprador** e, na linha dela, em **Usar como Comprador**. O cargo muda para Comprador e ela fica escolhida. Se faltar fone ou e-mail, o **Completar** abre em seguida.
@@ -143,7 +145,9 @@ O bloco **Últimos pedidos** lista as cinco propostas mais recentes do mesmo cli
 - Não dá para enviar para arte sem o **Nome do Evento / Tema**.
 - Não dá para enviar para arte pela primeira vez sem um Comprador do cliente: contato **ativo**, cargo **Comprador**, com nome, fone com DDD (10 dígitos ou mais) e e-mail válido. Contato inativo, Financeiro ou sem cargo não conta. Com mais de um Comprador, é preciso escolher.
 - A exigência do Comprador vale só para o primeiro envio. Pedido cuja arte já saiu (qualquer status de arte que não seja AGUARDANDO nem PENDENTE) não é travado; pedido sem arte gravada, ou em AGUARDANDO ou PENDENTE, é primeiro envio. **Salvar dados da arte** (sem designer) também não é travado.
-- O Comprador escolhido fica gravado na proposta. Se ele for inativado ou deixar de ser Comprador, a tela volta a pedir a escolha (ou escolhe o único que sobrar).
+- O Comprador e o **Contato responsável** da aba Geral são um campo só da proposta. Escolher um Comprador na aba Artes grava na hora e muda o contato da Geral, sem precisar do **Salvar alterações**. Trocar o contato na Geral muda o Comprador da aba Artes na hora; ele fica gravado quando você salva a proposta ou clica em **Enviar para arte**.
+- Se o contato responsável não é Comprador (sem cargo, Financeiro ou inativo), a aba não o troca sozinha: avisa e oferece **Usar como Comprador** ou escolher outro Comprador.
+- Em complemento de pedido, o contato é o do pedido principal: a aba Artes não o troca.
 - **Usar contato existente como Comprador** só lista contatos **ativos**. Inativo não aparece: reative pelo cadastro do cliente.
 - **Usar contato existente como Comprador**, **Adicionar Comprador** e **Completar** exigem a permissão **Editar Cadastros** (o perfil Vendedor tem). Sem ela, o bloco mostra o Comprador e o que falta, mas não deixa gravar.
 - A **Data do Evento** só aceita ano entre 1900 e 9999. Com o ano digitado errado (por exemplo 20206 no lugar de 2026), o botão flutuante avisa **Data do evento inválida: confira o ano** e não grava.
@@ -175,6 +179,7 @@ O bloco **Últimos pedidos** lista as cinco propostas mais recentes do mesmo cli
 | "Informe o Nome do Evento / Tema antes de enviar para arte." | Há designer selecionado, mas o nome do evento está vazio. | Preencha **Nome do Evento / Tema** e clique de novo em **Enviar para arte**. |
 | **Enviar para arte** apagado, com "O cliente não tem contato Comprador ativo..." | O cliente não tem contato com cargo Comprador. | No bloco **Comprador do cliente**, use **Usar contato existente como Comprador** se a pessoa já é contato; senão, **Adicionar Comprador**. |
 | **Enviar para arte** apagado, com "O cliente tem N Compradores. Escolha qual recebe a arte." | Há mais de um Comprador e nenhum escolhido. | Escolha em **Comprador que recebe a arte**. |
+| **Enviar para arte** apagado, com "O contato responsável (...) não é Comprador..." | O contato escolhido na aba Geral não tem cargo Comprador. | Clique em **Usar como Comprador** no aviso, ou escolha outro Comprador. |
 | **Enviar para arte** apagado, com "Falta e-mail no Comprador ..." (ou fone, ou nome) | O Comprador escolhido está incompleto. | Clique em **Completar** e grave. |
 | "Salve a proposta antes de anexar arquivos de referência." | O pedido ainda não foi salvo pela primeira vez. | Salve o pedido e volte à aba. |
 | "Formato inválido" — "Formato de arquivo não suportado. Apenas JPEG, PNG e PDF são permitidos." | O arquivo escolhido é de outro tipo. | Converta para PDF, JPEG ou PNG, ou envie pelo chat da aba **Histórico**. |
@@ -215,6 +220,8 @@ O bloco **Últimos pedidos** lista as cinco propostas mais recentes do mesmo cli
 - `src/features/orcamentos/services/status-engine.service.ts`
 - `src/features/orcamentos/services/orcamentos.service.ts`
 
-> **Mudança desta revisão:** 06/11/2026 — o primeiro **Enviar para arte** exige um Comprador do cliente com nome, fone e e-mail; bloco **Comprador do cliente** com escolha gravada na proposta e cadastro rápido (**Adicionar Comprador** / **Completar**); **Usar contato existente como Comprador** troca o cargo de um contato ativo sem criar contato novo.
+> **Mudança desta revisão:** 07/11/2026 — o Comprador da aba Artes passou a ser o **Contato responsável** da aba Geral (um campo só); responsável que não é Comprador mostra o aviso com **Usar como Comprador**.
+>
+> **Revisão de 06/11/2026:** o primeiro **Enviar para arte** exige um Comprador do cliente com nome, fone e e-mail; bloco **Comprador do cliente** com escolha gravada na proposta e cadastro rápido (**Adicionar Comprador** / **Completar**); **Usar contato existente como Comprador** troca o cargo de um contato ativo sem criar contato novo.
 >
 > **Revisão anterior:** 04/11/2026 — Dados Pendentes passou do card **Em arte** para o **Arte Aprovada** na lista de Pedidos; Pendente Informação vem primeiro no card **Em arte**, antes de Enviar Arte.

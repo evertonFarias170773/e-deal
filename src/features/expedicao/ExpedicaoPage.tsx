@@ -217,6 +217,7 @@ export function ExpedicaoPage() {
         podeOperar={Boolean(canOperar)}
         podeEditarCadastro={podeEditarCadastro}
         recusaNumero={avisosPronto.recusas.get(p.idInt)}
+        modelo={avisosPronto.modelos.get(p.idInt)}
         compacto={compacto}
         onAviso={avisosPronto.atualizar}
         onNumeroCorrigido={avisosPronto.marcarCorrigido}

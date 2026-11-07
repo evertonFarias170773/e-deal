@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { listarAvisosPronto, type AvisoPronto, type RecusaPorNumero } from "../services/aviso-pronto.client";
+import { listarAvisosPronto, type AvisoPronto, type ModeloAviso, type RecusaPorNumero } from "../services/aviso-pronto.client";
 
 /**
  * Recusa por número da tentativa `seq`, guardada só nesta tela (o servidor não
@@ -21,6 +21,8 @@ export function useAvisosPedidoPronto(pedidos: readonly { idInt: number; statusI
   const [avisos, setAvisos] = useState<Map<number, AvisoPronto>>(VAZIO);
   const [modoTeste, setModoTeste] = useState<boolean>(true);
   const [recusas, setRecusas] = useState<Map<number, RecusaNumeroDoAviso>>(new Map());
+  // Diálogo de cada pedido pela forma de envio (o servidor decide; a tela só mostra).
+  const [modelos, setModelos] = useState<Map<number, ModeloAviso>>(new Map());
 
   useEffect(() => {
     let vivo = true;
@@ -45,6 +47,9 @@ export function useAvisosPedidoPronto(pedidos: readonly { idInt: number; statusI
         if (aviso) mapa.set(Number(id), aviso);
       }
       setAvisos(mapa);
+      const doServidor = new Map<number, ModeloAviso>();
+      for (const [id, m] of Object.entries(res.modelos ?? {})) doServidor.set(Number(id), m);
+      setModelos(doServidor);
       setModoTeste(res.modo_teste !== false);
     })();
     return () => {
@@ -84,5 +89,5 @@ export function useAvisosPedidoPronto(pedidos: readonly { idInt: number; statusI
     });
   }, []);
 
-  return { avisos, modoTeste, atualizar, recusas, marcarCorrigido };
+  return { avisos, modoTeste, atualizar, recusas, marcarCorrigido, modelos };
 }

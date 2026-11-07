@@ -7,7 +7,7 @@ import type { CadastroContato } from "@/features/cadastros/types";
  *
  * O pedido só vai para a arte com um contato Comprador do cliente (ativo, cargo
  * "Comprador") que tenha nome, fone (WhatsApp) e e-mail. Com mais de um
- * Comprador, o usuário escolhe e a escolha fica em `propostas.id_contato_comprador`;
+ * Comprador, o usuário escolhe e a escolha fica em `propostas.id_contato` (o mesmo "Contato responsável" da aba Geral);
  * com um só, ele já vem escolhido. Pedido que já foi enviado para a arte não é
  * travado: a regra vale para o primeiro envio.
  */
@@ -63,8 +63,10 @@ function listaDeFaltas(faltas: FaltaDoComprador[]): string {
 
 export type SituacaoDoComprador<T extends ContatoDaArte> = {
   compradores: T[];
-  /** O escolhido: o gravado na proposta (se ainda é Comprador ativo) ou o único. */
+  /** O escolhido: o contato responsável da proposta (se é Comprador ativo) ou o único Comprador. */
   escolhido: T | null;
+  /** O contato responsável da proposta quando ele NÃO é Comprador ativo (aviso + "Usar como Comprador"). */
+  responsavelNaoComprador: T | null;
   /** Mais de um Comprador e nenhum escolhido. */
   precisaEscolher: boolean;
   faltas: FaltaDoComprador[];
@@ -74,35 +76,49 @@ export type SituacaoDoComprador<T extends ContatoDaArte> = {
   aviso: string | null;
 };
 
+/**
+ * Desde 07/11/2026 o Comprador da arte É o "Contato responsável" da aba Geral:
+ * um campo só, `propostas.id_contato` (`idContatoDaProposta` = `form.contatoId`).
+ * Responsável que não é Comprador não é trocado sozinho: a tela avisa e oferece
+ * "Usar como Comprador" ou escolher outro Comprador.
+ */
 export function situacaoDoComprador<T extends ContatoDaArte>(
   contatos: readonly T[],
-  idEscolhidoGravado: string | null | undefined
+  idContatoDaProposta: string | null | undefined
 ): SituacaoDoComprador<T> {
   const compradores = compradoresDoCliente(contatos);
-  const gravado = String(idEscolhidoGravado ?? "").trim();
-  const escolhido =
-    compradores.find((c) => gravado !== "" && c.id === gravado) ??
-    (compradores.length === 1 ? compradores[0] : null);
+  const idResp = String(idContatoDaProposta ?? "").trim();
+  const responsavel = idResp !== "" ? contatos.find((c) => c.id === idResp) ?? null : null;
+
+  if (responsavel && !ehCompradorAtivo(responsavel)) {
+    const nome = responsavel.nome.trim() || "escolhido";
+    return {
+      compradores, escolhido: null, responsavelNaoComprador: responsavel, precisaEscolher: false, faltas: [], liberado: false,
+      aviso: `O contato responsável (${nome}) não é Comprador. Use-o como Comprador ou escolha outro Comprador.`,
+    };
+  }
+
+  const escolhido = responsavel ?? (compradores.length === 1 ? compradores[0] : null);
 
   if (compradores.length === 0) {
     return {
-      compradores, escolhido: null, precisaEscolher: false, faltas: [], liberado: false,
+      compradores, escolhido: null, responsavelNaoComprador: null, precisaEscolher: false, faltas: [], liberado: false,
       aviso: "O cliente não tem contato Comprador ativo. Adicione um Comprador para enviar para arte.",
     };
   }
   if (!escolhido) {
     return {
-      compradores, escolhido: null, precisaEscolher: true, faltas: [], liberado: false,
-      aviso: `O cliente tem ${compradores.length} Compradores. Escolha qual recebe a arte.`,
+      compradores, escolhido: null, responsavelNaoComprador: null, precisaEscolher: true, faltas: [], liberado: false,
+      aviso: `O cliente tem ${compradores.length} Compradores. Escolha qual recebe a arte (vira o contato responsável da proposta).`,
     };
   }
   const faltas = faltasDoComprador(escolhido);
   if (faltas.length > 0) {
     const nome = escolhido.nome.trim() || "escolhido";
     return {
-      compradores, escolhido, precisaEscolher: false, faltas, liberado: false,
+      compradores, escolhido, responsavelNaoComprador: null, precisaEscolher: false, faltas, liberado: false,
       aviso: `Falta ${listaDeFaltas(faltas)} no Comprador ${nome}. Complete o contato para enviar para arte.`,
     };
   }
-  return { compradores, escolhido, precisaEscolher: false, faltas: [], liberado: true, aviso: null };
+  return { compradores, escolhido, responsavelNaoComprador: null, precisaEscolher: false, faltas: [], liberado: true, aviso: null };
 }
