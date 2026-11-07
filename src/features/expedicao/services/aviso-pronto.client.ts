@@ -29,6 +29,8 @@ export type AvisoPronto = {
   /** Diálogo em incerteza: o WhatsApp fica travado para novos avisos. */
   trava_conversa?: boolean;
   modo_teste: boolean;
+  /** "Liberar número" (ADM): quem conferiu no ChatGuru, quando e o que respondeu. */
+  liberacao?: { por: string | null; em: string; resposta: "enviada" | "nao_enviada" | null } | null;
   autor_nome: string | null;
   criado_em: string;
   atualizado_em: string;
@@ -51,9 +53,13 @@ type Resposta = {
   status_chatguru?: string | null;
   /** Motivo da recusa dado pelo ChatGuru (ex.: "Chat não encontrado."). Não é gravado. */
   motivo_chatguru?: string | null;
+  /** Só para ADM: HTTP e texto do ChatGuru em cada etapa, sem chave nem contato. Não é gravado. */
+  diagnostico_chatguru?: DiagnosticoChatGuru[] | null;
   /** Só quando o ChatGuru recusou pelo número ("Chat não encontrado."). Não é gravado. */
   recusa_numero?: RecusaPorNumero | null;
 };
+
+export type DiagnosticoChatGuru = { etapa: string; http: number | null; texto: string };
 
 const FUNCAO = "expedicao-pedido-pronto";
 
@@ -88,6 +94,15 @@ export function enviarAvisoPronto(idInt: number) {
 /** Nova reserva e novo envio — só depois da confirmação na tela. */
 export function reenviarAvisoPronto(idInt: number, seqAtual: number) {
   return chamar({ acao: "reenviar", id_int: idInt, seq_atual: seqAtual, confirmado: true });
+}
+
+/**
+ * "Liberar número" (só ADM, aviso de diálogo em resultado desconhecido), depois
+ * de conferir no ChatGuru. "enviada" -> executado, sem reenviar; "nao_enviada" ->
+ * falhou, e o Reenviar volta.
+ */
+export function liberarNumeroAviso(idInt: number, seq: number, resposta: "enviada" | "nao_enviada") {
+  return chamar({ acao: "liberar", id_int: idInt, seq, resposta, confirmado: true });
 }
 
 export function consultarStatusAvisoPronto(idInt: number) {

@@ -8,7 +8,13 @@
  *   enviar   { id_int }                       1º aviso; se já existe um, devolve o que existe e NÃO envia
  *   reenviar { id_int, seq_atual, confirmado } nova reserva, só com confirmação da tentativa vista
  *   status   { id_int }                       message_status, só para avisos antigos (message_send)
+ *   liberar  { id_int, seq, resposta, confirmado } só ADM: aviso de diálogo em 'desconhecido'
+ *            depois de conferir no ChatGuru; "enviada" -> 'executado', "nao_enviada" -> 'falhou'
  * enviar/reenviar/status exigem expedicao.processar (ou ADM).
+ *
+ * DIAGNÓSTICO (07/11/2026): só para ADM, a resposta do envio traz o HTTP e o
+ * texto devolvido pelo ChatGuru em cada etapa (logica.diagnosticoSeguro: sem a
+ * chave e sem os dados do contato). Nunca é gravado.
  *
  * ENVIO POR DIÁLOGO (Guia "Envio de WhatsApp por diálogos ChatGuru", 07/11/2026):
  *   1. diálogo pela forma de envio (logica.escolherDialogo; despacho vence orçamento);
@@ -36,6 +42,7 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 import {
   DIALOGOS,
+  LIBERACAO,
   Recusa,
   SEM_MODELO,
   camposAceitos,
@@ -43,6 +50,7 @@ import {
   chaveDaConversa,
   cidadeDestino,
   conferirModoTeste,
+  diagnosticoSeguro,
   dialogoExecutado,
   envioRecusado,
   escolherDialogo,
@@ -86,9 +94,13 @@ type Registro = {
   autor_nome: string | null;
   criado_em: string;
   atualizado_em: string;
+  liberado_por_nome: string | null;
+  liberado_em: string | null;
+  liberacao_resposta: string | null;
 };
 
-const COLUNAS = "id, id_int, seq, estado, message_id, dialogo_id, destino_chave, modo_teste, autor_nome, criado_em, atualizado_em";
+const COLUNAS =
+  "id, id_int, seq, estado, message_id, dialogo_id, destino_chave, modo_teste, autor_nome, criado_em, atualizado_em, liberado_por_nome, liberado_em, liberacao_resposta";
 
 function publico(r: Registro | null) {
   if (!r) return null;
@@ -102,7 +114,11 @@ function publico(r: Registro | null) {
     modo_teste: r.modo_teste,
     autor_nome: r.autor_nome,
     criado_em: r.criado_em,
-    atualizado_em: r.atualizado_em
+    atualizado_em: r.atualizado_em,
+    // "Liberar número": quem conferiu no ChatGuru, quando e o que respondeu.
+    liberacao: r.liberado_em
+      ? { por: r.liberado_por_nome, em: r.liberado_em, resposta: r.liberacao_resposta }
+      : null
   };
 }
 
@@ -147,6 +163,7 @@ async function quemChama(req: Request) {
   const tem = (codigo: string) => adm || permissoes.includes("*") || permissoes.includes(codigo);
   return {
     id: data.user.id,
+    adm,
     nome: limpar(u.nome_usuario) || limpar(u.email) || "Usuário",
     podeVer: tem("expedicao.view") || tem("expedicao.processar"),
     podeOperar: tem("expedicao.processar")
@@ -327,8 +344,16 @@ async function chamarChatGuru(cfg: ReturnType<typeof configChatGuru>, action: st
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({ key: cfg.key, account_id: cfg.account, phone_id: cfg.phone, action, ...extra })
   });
-  const data = await resposta.json();
-  return { http: resposta.status, data };
+  // Texto cru guardado para o diagnóstico; resposta que não é JSON vira data nula
+  // (nem aceite nem recusa explícita -> 'desconhecido').
+  const texto = await resposta.text();
+  let data: Record<string, unknown> | null = null;
+  try {
+    data = JSON.parse(texto);
+  } catch {
+    data = null;
+  }
+  return { http: resposta.status, data: data as any, texto };
 }
 
 /** Grava o resultado SÓ na reserva que este pedido criou e que ainda está em 'preparando'. */
@@ -382,6 +407,37 @@ Deno.serve(async (req) => {
     if (acao === "listar") {
       if (!quem.podeVer) throw new Recusa(403, "Sem permissão da Expedição.");
       return responder(200, { ok: true, modo_teste: modoTeste, ...(await listar(corpo?.ids)) });
+    }
+
+    if (acao === "liberar") {
+      if (!quem.adm) throw new Recusa(403, "Só o ADM libera o número.");
+      const idLib = Number(corpo?.id_int);
+      const seqLib = Number(corpo?.seq);
+      const resposta = String(corpo?.resposta ?? "") as keyof typeof LIBERACAO;
+      if (!Number.isInteger(idLib) || idLib <= 0 || !Number.isInteger(seqLib) || seqLib <= 0) throw new Recusa(400, "Pedido inválido.");
+      if (!(resposta in LIBERACAO)) throw new Recusa(400, "Resposta inválida: use enviada ou nao_enviada.");
+      if (corpo?.confirmado !== true) throw new Recusa(409, "Confirme o que você conferiu no ChatGuru.");
+      // Só a tentativa vista, só diálogo, só em 'desconhecido' e nunca liberada antes.
+      const { data: lib, error: errLib } = await admin
+        .from("expedicao_aviso_pronto")
+        .update({
+          estado: LIBERACAO[resposta],
+          liberado_por: quem.id,
+          liberado_por_nome: quem.nome,
+          liberado_em: new Date().toISOString(),
+          liberacao_resposta: resposta,
+          atualizado_em: new Date().toISOString()
+        })
+        .eq("id_int", idLib)
+        .eq("seq", seqLib)
+        .eq("estado", "desconhecido")
+        .not("destino_chave", "is", null)
+        .is("liberado_em", null)
+        .select(COLUNAS)
+        .maybeSingle();
+      if (errLib) throw new Recusa(503, "Não foi possível liberar o número. Nada mudou.");
+      if (!lib) throw new Recusa(409, "Este aviso não está mais travado (ou não é de diálogo). Atualize a tela.");
+      return responder(200, { ok: true, modo_teste: modoTeste, aviso: publico(lib as Registro) });
     }
 
     if (!["enviar", "reenviar", "status"].includes(acao)) throw new Recusa(400, "Ação inválida.");
@@ -467,8 +523,12 @@ Deno.serve(async (req) => {
     let motivoChatGuru: string | null = null;
     let etapa: "campos" | "dialogo" = "campos";
     let porNumero = false;
+    // Diagnóstico (só ADM): HTTP e texto do ChatGuru em cada etapa, sem chave nem contato.
+    const ocultar = [cfg.key, cfg.account, cfg.phone, destino, ctx.contato.whats, ctx.contato.nome_contato];
+    const diagnostico: { etapa: string; http: number | null; texto: string }[] = [];
     try {
       const r1 = await chamarChatGuru(cfg, "chat_update_custom_fields", { chat_number: destino, ...ctx.campos });
+      diagnostico.push({ etapa: "campos", http: r1.http, texto: diagnosticoSeguro(r1.texto, ocultar) });
       if (!camposAceitos(r1.http, r1.data)) {
         motivoChatGuru = limpar(r1.data?.description, 200) || null;
         const recusado = envioRecusado(r1.http, r1.data);
@@ -477,6 +537,7 @@ Deno.serve(async (req) => {
       } else {
         etapa = "dialogo";
         const r2 = await chamarChatGuru(cfg, "dialog_execute", { chat_number: destino, dialog_id: dialogId });
+        diagnostico.push({ etapa: "dialogo", http: r2.http, texto: diagnosticoSeguro(r2.texto, ocultar) });
         if (dialogoExecutado(r2.http, r2.data)) {
           resultado = await salvar(idReserva, "executado");
         } else {
@@ -488,6 +549,7 @@ Deno.serve(async (req) => {
       }
     } catch (e) {
       if (e instanceof Recusa) throw e;
+      diagnostico.push({ etapa, http: null, texto: "Sem resposta do ChatGuru (tempo esgotado ou falha de rede)." });
       resultado = await salvar(idReserva, "desconhecido");
     }
 
@@ -500,7 +562,8 @@ Deno.serve(async (req) => {
       etapa_chatguru: resultado.estado === "executado" ? null : etapa,
       motivo_chatguru: motivoChatGuru,
       // Só na recusa por número: o que foi enviado e de qual contato (não gravado).
-      recusa_numero: porNumero ? { numero_enviado: destino, id_contato: ctx.idContato } : null
+      recusa_numero: porNumero ? { numero_enviado: destino, id_contato: ctx.idContato } : null,
+      diagnostico_chatguru: quem.adm ? diagnostico : null
     });
   } catch (e) {
     if (e instanceof Recusa) return responder(e.status, { ok: false, mensagem: e.message });

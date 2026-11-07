@@ -296,6 +296,48 @@ export function envioRecusado(http: number, data: unknown): boolean {
   return http < 500 && d.result === "error" && Number(d.code) === 400;
 }
 
+/** Respostas do "Liberar número" (ADM, depois de conferir no ChatGuru) e o estado que cada uma dá. */
+export const LIBERACAO: Record<"enviada" | "nao_enviada", "executado" | "falhou"> = {
+  enviada: "executado",
+  nao_enviada: "falhou"
+};
+
+// Chaves que nunca vão para o diagnóstico: credenciais e dados do contato.
+const CHAVES_SENSIVEIS = /key|token|secret|senha|account|phone|chat_number|numero|number|name|nome|mail|whats|contat|contact/i;
+
+/**
+ * Texto da resposta do ChatGuru para diagnóstico (só ADM vê; nunca é gravado).
+ * Sem as chaves sensíveis do JSON, sem os valores em `ocultar` (chave da API,
+ * número, nome do contato) e sem sequência que pareça telefone.
+ */
+export function diagnosticoSeguro(texto: unknown, ocultar: (string | null | undefined)[] = [], max = 500): string {
+  let saida = typeof texto === "string" ? texto : "";
+  try {
+    const limpo = (v: unknown): unknown =>
+      Array.isArray(v)
+        ? v.map(limpo)
+        : v && typeof v === "object"
+          ? Object.fromEntries(
+              Object.entries(v as Record<string, unknown>)
+                .filter(([k]) => !CHAVES_SENSIVEIS.test(k))
+                .map(([k, x]) => [k, limpo(x)])
+            )
+          : v;
+    saida = JSON.stringify(limpo(JSON.parse(saida)));
+  } catch {
+    /* não é JSON: vai o texto, com as mesmas máscaras */
+  }
+  for (const valor of ocultar) {
+    const v = (valor ?? "").trim();
+    if (v.length >= 3) saida = saida.split(v).join("[oculto]");
+  }
+  return saida
+    .replace(/\+?\d[\d\s().-]{8,}\d/g, "[número]")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, max);
+}
+
 /** Chave da conversa do contrato: SHA-256 (hex) de JSON.stringify([endpoint, account_id, phone_id, numero]). */
 export async function chaveDaConversa(endpoint: string, account: string, phone: string, numero: string): Promise<string> {
   const bytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify([endpoint, account, phone, numero])));

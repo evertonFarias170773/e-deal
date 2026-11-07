@@ -13,12 +13,14 @@
  *   E. campos do diálogo (field__<Nome>), nota "—", nota do sistema antigo, cidade/UF;
  *   F. respostas: campos = 2xx + success + 200; diálogo = isso + "Diálogo executado";
  *   G. recusa por número ("Chat não encontrado.") abre o "Corrigir número";
- *   H. chave da conversa = SHA-256 de [endpoint, account, phone, número].
+ *   H. chave da conversa = SHA-256 de [endpoint, account, phone, número];
+ *   I. diagnóstico só sem chave e sem contato; Liberar número: enviada -> executado, não -> falhou.
  */
 import assert from "node:assert/strict";
 import {
   CLIENTE_TESTE,
   DIALOGOS,
+  LIBERACAO,
   SEM_ETIQUETA,
   SEM_MODELO,
   camposAceitos,
@@ -26,6 +28,7 @@ import {
   chaveDaConversa,
   cidadeDestino,
   conferirModoTeste,
+  diagnosticoSeguro,
   dialogoExecutado,
   envioRecusado,
   escolherDialogo,
@@ -178,5 +181,23 @@ caso("F. respostas do ChatGuru", () => {
   n++;
   console.log("ok - H. chave da conversa");
 }
+
+caso("I. diagnóstico e liberação", () => {
+  const bruto = JSON.stringify({
+    result: "success",
+    code: 200,
+    description: "Diálogo executado",
+    chat_number: "555184608848",
+    key: "SEGREDO123",
+    nome: "Edison",
+    extra: { phone_id: "abc", ok: true }
+  });
+  const d = diagnosticoSeguro(bruto, ["SEGREDO123", "555184608848", "Edison"]);
+  assert.equal(d, '{"result":"success","code":200,"description":"Diálogo executado","extra":{"ok":true}}');
+  assert.equal(diagnosticoSeguro("erro para 5551984608848 com chave SEGREDO123", ["SEGREDO123"]), "erro para [número] com chave [oculto]");
+  assert.equal(diagnosticoSeguro(null), "");
+  assert.equal(diagnosticoSeguro("x".repeat(900)).length, 500);
+  assert.deepEqual(LIBERACAO, { enviada: "executado", nao_enviada: "falhou" });
+});
 
 console.log(`\n${n} casos ok`);
