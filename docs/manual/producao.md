@@ -1,6 +1,6 @@
 # Produção (ordens de serviço)
 
-> **Última revisão:** 29/10/2026
+> **Última revisão:** 07/11/2026
 > **Caminho no menu:** Produção (item direto do menu lateral, sem submenu). A OS de cada pedido abre a partir da lista. O Kanban e a Fila de impressão não estão no menu: chega-se a eles pelo endereço ou pelas abas **Fila Geral / Kanban Board / Fila de Impressão / Expedição** que aparecem no topo dessas duas telas.
 > **Endereço:** `/pedidos` (painel geral). OS: `/pedidos/boletim`. Kanban: `/pedidos/kanban` (e `/os-producao`). Fila de impressão: `/pedidos/impressao`.
 
@@ -123,8 +123,9 @@ Nomes exatamente como aparecem na tela.
 1. O pedido só entra na Produção depois de liberado. A liberação é feita na tela de Pedidos, pela ação **Liberar para Produção**, quando o pedido está em REVISAO ATENDENTE.
 2. A liberação só passa se todos os pagamentos ativos estiverem confirmados, todas as artes estiverem aprovadas e a quantidade vendida de cada item for igual à soma dos lotes dele. Proposta avulsa não vai para produção.
 3. Pedido só com produtos de prateleira pode ser liberado sozinho pelo sistema, no momento em que o pagamento que o cobre por inteiro é confirmado. As conferências são as mesmas.
-4. Ao ser liberado, o pedido chega aqui com o status **REVISAO PRODUCAO**, aparece no topo da lista com a linha amarela e fica com a data e hora da liberação na coluna **Liberado em**.
-5. O pedido fica na lista enquanto estiver em REVISAO PRODUCAO, EM PRODUCAO, EM IMPRESSAO, EM IMPRESSAO / PENDENTE, EM ACABAMENTO ou EM ACABAMENTO / PENDENTE. Quando vai para a Expedição, sai daqui.
+4. Pedido marcado como teste (**Encerrar teste**) não aparece aqui nem no seletor do Boletim de Entrada, mesmo liberado, e o Boletim recusa abrir OS para ele (desde 07/11/2026).
+5. Ao ser liberado, o pedido chega aqui com o status **REVISAO PRODUCAO**, aparece no topo da lista com a linha amarela e fica com a data e hora da liberação na coluna **Liberado em**.
+6. O pedido fica na lista enquanto estiver em REVISAO PRODUCAO, EM PRODUCAO, EM IMPRESSAO, EM IMPRESSAO / PENDENTE, EM ACABAMENTO ou EM ACABAMENTO / PENDENTE. Quando vai para a Expedição, sai daqui.
 
 ### Ler o painel geral
 
