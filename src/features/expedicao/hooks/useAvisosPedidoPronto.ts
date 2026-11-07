@@ -23,6 +23,8 @@ export function useAvisosPedidoPronto(pedidos: readonly { idInt: number; statusI
   const [recusas, setRecusas] = useState<Map<number, RecusaNumeroDoAviso>>(new Map());
   // Diálogo de cada pedido pela forma de envio (o servidor decide; a tela só mostra).
   const [modelos, setModelos] = useState<Map<number, ModeloAviso>>(new Map());
+  // Último envio do "Testar modelo" de cada pedido (fora do aviso do pedido).
+  const [testes, setTestes] = useState<Map<number, AvisoPronto>>(new Map());
 
   useEffect(() => {
     let vivo = true;
@@ -47,6 +49,9 @@ export function useAvisosPedidoPronto(pedidos: readonly { idInt: number; statusI
         if (aviso) mapa.set(Number(id), aviso);
       }
       setAvisos(mapa);
+      const doTeste = new Map<number, AvisoPronto>();
+      for (const [id, t] of Object.entries(res.testes ?? {})) if (t) doTeste.set(Number(id), t);
+      setTestes(doTeste);
       const doServidor = new Map<number, ModeloAviso>();
       for (const [id, m] of Object.entries(res.modelos ?? {})) doServidor.set(Number(id), m);
       setModelos(doServidor);
@@ -61,6 +66,10 @@ export function useAvisosPedidoPronto(pedidos: readonly { idInt: number; statusI
     (idInt: number, aviso: AvisoPronto | null | undefined, teste?: boolean, recusa?: RecusaPorNumero | null) => {
     if (typeof teste === "boolean") setModoTeste(teste);
     if (!aviso) return;
+    if (aviso.teste) {
+      setTestes((atual) => new Map(atual).set(idInt, aviso));
+      return;
+    }
     // Tentativa nova: vale a recusa que veio com ela (ou nenhuma).
     setRecusas((atual) => {
       const anterior = atual.get(idInt);
@@ -89,5 +98,5 @@ export function useAvisosPedidoPronto(pedidos: readonly { idInt: number; statusI
     });
   }, []);
 
-  return { avisos, modoTeste, atualizar, recusas, marcarCorrigido, modelos };
+  return { avisos, modoTeste, atualizar, recusas, marcarCorrigido, modelos, testes };
 }

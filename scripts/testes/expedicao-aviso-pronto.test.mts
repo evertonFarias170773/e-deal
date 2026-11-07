@@ -14,7 +14,8 @@
  *   F. respostas: campos = 2xx + success + 200; diálogo = isso + "Diálogo executado";
  *   G. recusa por número ("Chat não encontrado.") abre o "Corrigir número";
  *   H. chave da conversa = SHA-256 de [endpoint, account, phone, número];
- *   I. diagnóstico só sem chave e sem contato; Liberar número: enviada -> executado, não -> falhou.
+ *   I. diagnóstico só sem chave e sem contato; Liberar número: enviada -> executado, não -> falhou;
+ *   J. Testar modelo: só modo teste e cliente #14; campos que faltam vão com valor de teste.
  */
 import assert from "node:assert/strict";
 import {
@@ -24,12 +25,16 @@ import {
   SEM_ETIQUETA,
   SEM_MODELO,
   camposAceitos,
+  camposDeTeste,
   camposDoDialogo,
   chaveDaConversa,
   cidadeDestino,
   conferirModoTeste,
+  conferirTeste,
+  dialogoValido,
   diagnosticoSeguro,
   dialogoExecutado,
+  textoDaResposta,
   envioRecusado,
   escolherDialogo,
   modoTesteLigado,
@@ -165,6 +170,13 @@ caso("F. respostas do ChatGuru", () => {
   assert.equal(dialogoExecutado(200, { result: "success", code: 200, description: "Dialogo executado." }), true);
   assert.equal(dialogoExecutado(200, { result: "success", code: 200, description: "Em fila" }), false);
   assert.equal(dialogoExecutado(200, { result: "success", code: 400, description: "Diálogo executado" }), false);
+  // Resposta real do ChatGuru (07/11/2026, teste Sedex no 24880): o texto vem em dialog_execution_return.
+  const real = { code: 200, dialog_execution_return: "Diálogo Executado", result: "success" };
+  assert.equal(dialogoExecutado(200, real), true);
+  assert.equal(dialogoExecutado(200, { ...real, dialog_execution_return: "Em fila" }), false);
+  assert.equal(dialogoExecutado(500, real), false);
+  assert.equal(textoDaResposta(real), "Diálogo Executado");
+  assert.equal(textoDaResposta({ description: "Chat não encontrado." }), "Chat não encontrado.");
   assert.equal(envioRecusado(400, { result: "error", code: 400 }), true);
   assert.equal(envioRecusado(500, { result: "error", code: 400 }), false);
   assert.equal(envioRecusado(200, { result: "success", code: 200 }), false);
@@ -198,6 +210,32 @@ caso("I. diagnóstico e liberação", () => {
   assert.equal(diagnosticoSeguro(null), "");
   assert.equal(diagnosticoSeguro("x".repeat(900)).length, 500);
   assert.deepEqual(LIBERACAO, { enviada: "executado", nao_enviada: "falhou" });
+});
+
+caso("J. testar modelo", () => {
+  assert.throws(() => conferirTeste(false, 14, 14), /modo teste ligado/);
+  assert.throws(() => conferirTeste(true, 15), /cliente #14/);
+  assert.throws(() => conferirTeste(true, 14, 900), /contatos do cliente #14/);
+  assert.doesNotThrow(() => conferirTeste(true, 14, 14));
+  assert.equal(dialogoValido("Azul"), "Azul");
+  assert.equal(dialogoValido("PAC"), null);
+  assert.equal(dialogoValido(undefined), null);
+  // Pedido sem nada: valores de teste.
+  const vazio = camposDeTeste("Sedex", { idInt: 24880, notaFiscal: "—", cidadeDestino: null, rastreio: null });
+  assert.deepEqual(vazio.campos, {
+    field__Sedex_Conhecimento: "TESTE000000BR",
+    field__Pedido_Atual: "24880",
+    field__Nota_Fiscal: "—"
+  });
+  assert.deepEqual(vazio.deTeste, ["Sedex_Conhecimento", "Nota_Fiscal"]);
+  const veppo = camposDeTeste("Veppo", { idInt: 24880, notaFiscal: "", cidadeDestino: null, rastreio: null });
+  assert.equal(veppo.campos.field__Cidade_Destino, "Porto Alegre/RS");
+  assert.ok(veppo.deTeste.includes("Cidade_Destino"));
+  // Pedido com tudo: valores do pedido, nenhum de teste.
+  const cheio = camposDeTeste("Sedex", { idInt: 24880, notaFiscal: "7501", cidadeDestino: "Canoas/RS", rastreio: "AB123456789BR" });
+  assert.deepEqual(cheio.valores, { Sedex_Conhecimento: "AB123456789BR", Pedido_Atual: "24880", Nota_Fiscal: "7501" });
+  assert.deepEqual(cheio.deTeste, []);
+  assert.equal(camposDeTeste("Azul", { idInt: 1, notaFiscal: "7501", cidadeDestino: "Canoas/RS", rastreio: null }).campos.field__Cidade_Destino, "Canoas/RS");
 });
 
 console.log(`\n${n} casos ok`);

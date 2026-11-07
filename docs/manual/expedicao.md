@@ -20,6 +20,7 @@ A tela também avisa o que está atrasado ou prometido para hoje e segura o desp
 - **Encerrar teste** é exclusivo do Super Administrador.
 - **Avisar cliente: pedido pronto**, **Reenviar** e **Atualizar status** pedem a permissão **Processar Envio / Retirada** (ou Administrador). Quem só tem **Visualizar Expedição** vê o aviso já enviado, sem os botões.
 - **Liberar número** (no aviso por diálogo em resultado desconhecido) e o diagnóstico do ChatGuru aparecem só para o Administrador.
+- **Testar modelo** aparece só com o modo teste ligado, só em pedido do cliente de teste (#14) e só para quem tem **Processar Envio / Retirada** (ou Administrador).
 - **Corrigir número** (no aviso recusado por número) aparece só para quem tem a permissão **Editar Cadastros** (ou Administrador). O perfil Expedidor não tem: vê o número recusado e o pedido de correção.
 
 ## Botões e ações da tela
@@ -65,6 +66,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Atualizar status** | Só nos avisos antigos por texto (até 06/11/2026), enquanto não estão entregues ao WhatsApp | Consulta o ChatGuru. Não envia nada. Aviso por diálogo não tem status para consultar |
 | **Reenviar** | Abaixo do aviso; some quando a forma de envio não tem diálogo, quando falta a etiqueta do SEDEX e quando o WhatsApp está travado | Pede confirmação e executa o diálogo de novo |
 | **Liberar número** | Só para o Administrador, abaixo do aviso por diálogo em **resultado desconhecido** | Abre a janela **Liberar número**: "Conferi no ChatGuru: a mensagem foi enviada" deixa o aviso como executado, sem reenviar; "não foi enviada" deixa como falhou, e o **Reenviar** volta. Registra quem liberou, quando e o que respondeu |
+| **Testar modelo** | Só com o modo teste ligado e em pedido do cliente #14, num quadro tracejado abaixo do aviso, com a lista dos seis diálogos | Pede confirmação e manda o diálogo escolhido ao contato do pedido, sem olhar a forma de envio. Não conta como aviso do pedido |
 | **Corrigir número** | Abaixo do aviso, quando o ChatGuru recusou pelo número ("Número não encontrado no ChatGuru: {número}") | Abre a janela **Corrigir número** com o WhatsApp do contato do pedido; salvar grava no cadastro do contato |
 
 #### Menu de ações do pedido
@@ -232,9 +234,35 @@ Se o ChatGuru recusar pelo número, o aviso mostra "Número não encontrado no C
 
 Quem não tem **Editar Cadastros** vê "Peça a correção a quem pode editar o cadastro." O Vibe não tenta outro formato do número sozinho: tira só a formatação e põe o 55 quando falta, sem mexer no nono dígito. Na prova de 06/11/2026 o ChatGuru aceitou o número de teste só sem o nono dígito (51 8460-8848); com o 9, em qualquer formato, respondeu "Chat não encontrado." O número recusado só fica na tela até ela ser recarregada; depois o aviso aparece só como **falhou**, com **Reenviar**.
 
+#### Testar modelo (só no modo teste, pedido do cliente #14)
+
+Serve para ver cada um dos seis diálogos chegar ao WhatsApp, sem mudar a forma de envio, o status nem o contato do pedido de teste.
+
+1. No pedido do cliente #14 Na Expedição, no quadro tracejado abaixo do aviso, escolha o diálogo na lista (**Sedex**, **Motoboy**, **Retira**, **Veppo**, **Azul** ou **Transportadora**) e clique em **Testar modelo**.
+2. Confirme na janela **Enviar teste do diálogo {diálogo}?**.
+3. O campo que o pedido não tem vai com valor de teste: **Sedex_Conhecimento** "TESTE000000BR", **Cidade_Destino** "Porto Alegre/RS", **Nota_Fiscal** "—". O que o pedido tem (rastreio, cidade de entrega, nota) vai como está.
+4. O quadro mostra "Teste {diálogo} em {data e hora} por {usuário}: {estado}" e os campos enviados, com "(valor de teste)" nos que não vieram do pedido. O Administrador vê também a resposta do ChatGuru.
+
+Cada clique é um envio novo e fica registrado como teste, com o diálogo usado. O teste não conta como aviso do pedido: não troca o "Aviso enviado em…", não aciona a regra de "já enviado" e não impede o **Avisar cliente**. A trava por WhatsApp vale igual: com um aviso ou teste em andamento ou em resultado desconhecido para o mesmo número, o teste é recusado, e o Administrador libera pelo **Liberar número** do próprio quadro. Fora do modo teste ou fora do cliente #14 o quadro não aparece, e o servidor recusa a chamada.
+
 Enquanto o **modo teste** estiver ligado (aparece "modo teste" no botão e no aviso), só pedidos do cliente de teste (#14), com contato desse cliente, podem ser avisados; o de qualquer outro cliente é recusado. O diálogo vai para o WhatsApp do contato do pedido, como está no cadastro. O modo teste não se desliga pela tela.
 
-Prova de 07/11/2026 no 24880: o SEDEX, sem etiqueta, apareceu apagado com "Gere a etiqueta dos Correios antes.", e o servidor recusou a chamada direta sem reservar nada. Com a forma trocada para retirada, o diálogo Retira foi tentado para o contato que estava no pedido naquela hora (64814, 5551991107694). O ChatGuru recusou já na gravação dos campos com "Chat não encontrado.", e nada saiu. Na segunda tentativa, às 13:05 de Brasília, com o contato 65040 (555184608848), o ChatGuru aceitou os campos, mas a resposta da execução do diálogo não foi nem "Diálogo executado" nem uma recusa. O aviso ficou em **resultado desconhecido**, e o número ficou travado até a conferência no ChatGuru.
+Prova de 07/11/2026 no 24880: o SEDEX, sem etiqueta, apareceu apagado com "Gere a etiqueta dos Correios antes.", e o servidor recusou a chamada direta sem reservar nada. Com a forma trocada para retirada, o diálogo Retira foi tentado para o contato que estava no pedido naquela hora (64814, 5551991107694). O ChatGuru recusou já na gravação dos campos com "Chat não encontrado.", e nada saiu. Na segunda tentativa, às 13:05 de Brasília, com o contato 65040 (555184608848), o ChatGuru aceitou os campos, mas a resposta da execução do diálogo não foi nem "Diálogo executado" nem uma recusa. O aviso ficou em **resultado desconhecido**, e o número ficou travado até a conferência no ChatGuru. A mensagem tinha chegado.
+
+Causa, achada no Testar modelo de 07/11/2026: o ChatGuru responde a execução do diálogo com {"code":200,"dialog_execution_return":"Diálogo Executado","result":"success"}. O texto vem em dialog_execution_return, e o Vibe só olhava a description. Desde então os dois são aceitos como sucesso; o que não for sucesso nem recusa explícita continua em **resultado desconhecido**.
+
+Prova do Testar modelo no 24880 (contato 65040, cliente #14), 07/11/2026, em sequência, horário de Brasília. A gravação dos campos respondeu "Campos personalizados foram salvos." em todos:
+
+| Diálogo | Horário | Resultado | Campos de teste |
+|---|---|---|---|
+| Sedex | 17:07:46 | Executado pelo ChatGuru; o Vibe marcou resultado desconhecido (ainda com o critério antigo) e o número foi liberado como enviada | Nota_Fiscal "—" (o rastreio AE121461805BR é do pedido) |
+| Motoboy | 17:11:51 | Diálogo executado | Nota_Fiscal "—" |
+| Retira | 17:11:54 | Diálogo executado | Nota_Fiscal "—" |
+| Veppo | 17:11:58 | Diálogo executado | Nota_Fiscal "—" (cidade Santa Cruz do Sul/RS é do pedido) |
+| Azul | 17:12:01 | Diálogo executado | Nota_Fiscal "—" |
+| Transportadora | 17:12:03 | Diálogo executado | Nota_Fiscal "—" |
+
+"Executado" quer dizer que o ChatGuru aceitou executar o diálogo; a chegada no WhatsApp é conferida por quem recebe.
 
 ### Conferir o pedido (peso e volumes)
 
@@ -370,6 +398,7 @@ Em resumo: no pedido Na Expedição, clique em **Despachar**, confira peso, volu
 | "Modo teste: só pedidos do cliente #14 podem ser avisados." | O modo teste está ligado e o pedido é de outro cliente | Nada a fazer pela tela: o aviso fica liberado quando o modo teste for desligado |
 | "Este pedido já tinha aviso" | Já houve aviso para o pedido | Nada foi enviado de novo. Para mandar outra mensagem, use **Reenviar** |
 | Aviso em **resultado desconhecido** | O ChatGuru não respondeu a tempo ou respondeu algo inesperado | Conferir no ChatGuru se a mensagem saiu. Aviso por diálogo deixa o WhatsApp travado: o Administrador confere e usa **Liberar número** |
+| "Testar modelo só existe com o modo teste ligado." / "Testar modelo: só pedidos do cliente #14." | Chamada de teste fora do modo teste ou em pedido de outro cliente | Nada a fazer: o teste só existe para o pedido de teste |
 | "Este aviso não está mais travado (ou não é de diálogo). Atualize a tela." | Outra pessoa já liberou o número, ou o aviso não é de diálogo em resultado desconhecido | Atualizar a tela; nada mudou |
 | "Sem modelo de mensagem para esta forma de envio." | A forma de envio do pedido não tem diálogo (Correios PAC, Correios sem serviço, frete sem forma definida) | Nada a fazer pelo aviso. Se a forma estiver errada, corrigir no orçamento ou no despacho |
 | "Gere a etiqueta dos Correios antes." | Pedido SEDEX sem código de rastreio | Gerar a etiqueta (prepostagem) dos Correios; o botão acende depois |
@@ -464,6 +493,8 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/app/api/expedicao/`
 - `src/features/expedicao/components/AvisoPedidoPronto.tsx`
 - `src/features/expedicao/components/CorrigirNumeroModal.tsx`
+- `src/features/expedicao/components/LiberarNumeroModal.tsx`
+- `src/features/expedicao/components/TestarModeloAviso.tsx`
 - `src/features/expedicao/hooks/useAvisosPedidoPronto.ts`
 - `src/features/expedicao/services/aviso-pronto.client.ts`
 - `supabase/functions/expedicao-pedido-pronto/index.ts`
@@ -471,6 +502,7 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `supabase/migrations/20261106_expedicao_aviso_pronto.sql`
 - `supabase/migrations/20261107_expedicao_aviso_pronto_dialogo.sql`
 - `supabase/migrations/20261107b_expedicao_aviso_pronto_liberacao.sql`
+- `supabase/migrations/20261107c_expedicao_aviso_pronto_teste.sql`
 - `src/features/orcamentos/lib/transportadoras-parceiras.ts` (reconhecimento da transportadora, usado também pela função)
 - `src/app/api/pedidos/encerrar-teste/route.ts`
 - `src/features/orcamentos/lib/categoria-frete.ts`

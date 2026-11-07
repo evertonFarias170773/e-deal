@@ -219,6 +219,7 @@ export function ExpedicaoPage() {
         ehAdm={Boolean(user?.isSuperAdmin || user?.isAdmin)}
         recusaNumero={avisosPronto.recusas.get(p.idInt)}
         modelo={avisosPronto.modelos.get(p.idInt)}
+        teste={avisosPronto.testes.get(p.idInt)}
         compacto={compacto}
         onAviso={avisosPronto.atualizar}
         onNumeroCorrigido={avisosPronto.marcarCorrigido}

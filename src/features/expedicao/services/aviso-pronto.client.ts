@@ -18,7 +18,19 @@ export type EstadoAviso = "preparando" | "aguardando" | "enviado" | "executado" 
  * Diálogo do ChatGuru escolhido pelo servidor para a forma de envio do pedido
  * (07/11/2026). Sem diálogo ou com bloqueio, o botão fica apagado com o aviso.
  */
-export type ModeloAviso = { dialogo: string | null; bloqueio: string | null };
+export type ModeloAviso = {
+  dialogo: string | null;
+  bloqueio: string | null;
+  /** "Testar modelo": modo teste ligado e pedido do cliente #14 (o servidor decide e confere de novo). */
+  testavel?: boolean;
+};
+
+/** Os seis diálogos do ChatGuru, na ordem do "Testar modelo". */
+export const DIALOGOS_AVISO = ["Sedex", "Motoboy", "Retira", "Veppo", "Azul", "Transportadora"] as const;
+export type DialogoAviso = (typeof DIALOGOS_AVISO)[number];
+
+/** Campos enviados num teste e quais deles foram com valor de teste. */
+export type CamposDoTeste = { valores: Record<string, string>; de_teste: string[] };
 
 export type AvisoPronto = {
   seq: number;
@@ -29,6 +41,8 @@ export type AvisoPronto = {
   /** Diálogo em incerteza: o WhatsApp fica travado para novos avisos. */
   trava_conversa?: boolean;
   modo_teste: boolean;
+  /** Envio do "Testar modelo" (não conta como aviso do pedido). */
+  teste?: boolean;
   /** "Liberar número" (ADM): quem conferiu no ChatGuru, quando e o que respondeu. */
   liberacao?: { por: string | null; em: string; resposta: "enviada" | "nao_enviada" | null } | null;
   autor_nome: string | null;
@@ -46,6 +60,10 @@ type Resposta = {
   ja_existia?: boolean;
   aviso?: AvisoPronto | null;
   avisos?: Record<string, AvisoPronto | null>;
+  /** Último envio do "Testar modelo" de cada pedido. */
+  testes?: Record<string, AvisoPronto | null>;
+  /** "Testar modelo": valores enviados e quais foram de teste. */
+  teste?: CamposDoTeste | null;
   modelos?: Record<string, ModeloAviso>;
   modelo?: ModeloAviso | null;
   /** Etapa em que o ChatGuru recusou ou ficou incerto: campos ou diálogo. */
@@ -103,6 +121,14 @@ export function reenviarAvisoPronto(idInt: number, seqAtual: number) {
  */
 export function liberarNumeroAviso(idInt: number, seq: number, resposta: "enviada" | "nao_enviada") {
   return chamar({ acao: "liberar", id_int: idInt, seq, resposta, confirmado: true });
+}
+
+/**
+ * "Testar modelo" (só modo teste, só pedido do cliente #14): envia o diálogo
+ * escolhido, sem olhar a forma de envio. Cada chamada é um envio novo.
+ */
+export function testarModeloAviso(idInt: number, dialogo: DialogoAviso) {
+  return chamar({ acao: "testar", id_int: idInt, dialogo, confirmado: true });
 }
 
 export function consultarStatusAvisoPronto(idInt: number) {

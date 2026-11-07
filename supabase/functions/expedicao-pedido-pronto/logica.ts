@@ -278,16 +278,89 @@ export function camposDoDialogo(
   return campos;
 }
 
+// ───────────────────────── Testar modelo (07/11/2026) ─────────────────────────
+
+/** Os seis diálogos na ordem da tela. */
+export const NOMES_DIALOGO = Object.keys(DIALOGOS) as NomeDialogo[];
+
+export function dialogoValido(nome: unknown): NomeDialogo | null {
+  return typeof nome === "string" && (NOMES_DIALOGO as string[]).includes(nome) ? (nome as NomeDialogo) : null;
+}
+
+/** Valores de teste para o campo que o pedido não tem (Nota_Fiscal sem nota já é "—"). */
+export const VALORES_TESTE = {
+  Sedex_Conhecimento: "TESTE000000BR",
+  Cidade_Destino: "Porto Alegre/RS",
+  Nota_Fiscal: "—"
+} as const;
+
+/**
+ * "Testar modelo": só com o modo teste ligado e só para pedido (e contato) do
+ * cliente #14. Fora disso a opção não existe e o servidor recusa.
+ */
+export function conferirTeste(modoTeste: boolean, idClientePedido: unknown, idClienteContato?: unknown): void {
+  if (!modoTeste) throw new Recusa(403, "Testar modelo só existe com o modo teste ligado.");
+  if (Number(idClientePedido) !== CLIENTE_TESTE) {
+    throw new Recusa(403, `Testar modelo: só pedidos do cliente #${CLIENTE_TESTE}.`);
+  }
+  if (idClienteContato !== undefined && Number(idClienteContato) !== CLIENTE_TESTE) {
+    throw new Recusa(403, `Testar modelo: só contatos do cliente #${CLIENTE_TESTE}.`);
+  }
+}
+
+/**
+ * Campos do diálogo escolhido no "Testar modelo", sem depender da forma de envio:
+ * o que o pedido tem vai como está; o que não tem vai com o valor de teste.
+ * `deTeste` lista os campos que foram com valor de teste.
+ */
+export function camposDeTeste(
+  dialogo: NomeDialogo,
+  v: { idInt: number; notaFiscal: string; cidadeDestino: string | null; rastreio: string | null }
+): { campos: Record<string, string>; valores: Partial<Record<CampoDialogo, string>>; deTeste: CampoDialogo[] } {
+  const doPedido: Record<CampoDialogo, string | null> = {
+    Pedido_Atual: String(v.idInt),
+    Nota_Fiscal: v.notaFiscal && v.notaFiscal !== "—" ? v.notaFiscal : null,
+    Cidade_Destino: v.cidadeDestino,
+    Sedex_Conhecimento: v.rastreio
+  };
+  const campos: Record<string, string> = {};
+  const valores: Partial<Record<CampoDialogo, string>> = {};
+  const deTeste: CampoDialogo[] = [];
+  for (const nome of DIALOGOS[dialogo].campos) {
+    let valor = doPedido[nome];
+    if (!valor) {
+      valor = (VALORES_TESTE as Record<string, string>)[nome] ?? null;
+      if (!valor) throw new Recusa(422, `Campo ${nome} sem valor.`);
+      deTeste.push(nome);
+    }
+    campos[`field__${nome}`] = valor;
+    valores[nome] = valor;
+  }
+  return { campos, valores, deTeste };
+}
+
 /** chat_update_custom_fields aceito: HTTP 2xx + result "success" + code 200. */
 export function camposAceitos(http: number, data: unknown): boolean {
   const d = (data ?? {}) as Record<string, unknown>;
   return http >= 200 && http < 300 && d.result === "success" && Number(d.code) === 200;
 }
 
-/** dialog_execute: sucesso = 2xx + success + code 200 + "Diálogo executado". Não há message_id. */
+/**
+ * dialog_execute: sucesso = 2xx + success + code 200 + "Diálogo executado". Não há message_id.
+ * Resposta real do ChatGuru (07/11/2026, teste Sedex no 24880):
+ *   {"code":200,"dialog_execution_return":"Diálogo Executado","result":"success"}
+ * O texto vem em dialog_execution_return (não em description); os dois são aceitos.
+ */
 export function dialogoExecutado(http: number, data: unknown): boolean {
   const d = (data ?? {}) as Record<string, unknown>;
-  return camposAceitos(http, d) && /di[aá]logo\s+executado/i.test(String(d.description ?? ""));
+  const texto = `${String(d.dialog_execution_return ?? "")} ${String(d.description ?? "")}`;
+  return camposAceitos(http, d) && /di[aá]logo\s+executado/i.test(texto);
+}
+
+/** Texto do ChatGuru que explica a resposta: description ou dialog_execution_return. */
+export function textoDaResposta(data: unknown): string {
+  const d = (data ?? {}) as Record<string, unknown>;
+  return limpar(d.description, 200) || limpar(d.dialog_execution_return, 200);
 }
 
 /** Recusa explícita do ChatGuru (nada saiu): result "error" + code 400 + HTTP < 500. */
