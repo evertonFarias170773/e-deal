@@ -1,6 +1,7 @@
 # ChatGuru: trava por conversa compartilhada (proposta)
 
-> **Situação:** proposta de 09/11/2026. A ideia foi aprovada pela equipe do Imposition com cinco ajustes, tratados na revisão 2; a revisão 3 traz o resultado do teste do item 5 e a regra dos 120 segundos do ChatGuru. **Não aplicada** no banco.
+> **Situação:** proposta de 09/11/2026, **revisão 4**. A equipe do Imposition alinhou o conceito na revisão 3 e pediu a revisão 4 antes de aplicar (seção "Revisão 4", abaixo). **Não aplicada** no banco.
+> **Arquivos:** migração única em [CHATGURU-TRAVA-COMPARTILHADA-MIGRACAO.sql](CHATGURU-TRAVA-COMPARTILHADA-MIGRACAO.sql) (com rodapé de reversão) e teste com ROLLBACK em [CHATGURU-TRAVA-COMPARTILHADA-TESTE.sql](CHATGURU-TRAVA-COMPARTILHADA-TESTE.sql). **O teste ainda não rodou:** a execução foi recusada pela camada de permissão em 09/11/2026; roda-se no SQL Editor (termina em ROLLBACK) e devolve uma linha por caso com PASSA ou FALHA.
 > **Alcance:** a trava compartilhada vale para **todos os avisos do Vibe** que usam a Edge Function `expedicao-pedido-pronto`: o aviso de pedido pronto da Expedição (seis diálogos), o "Testar modelo" e o "Pedido em Produção".
 > **Enquanto não existir:** o "Pedido em Produção" só envia em modo teste e para o cliente #14; os demais veem "Envio de aviso de produção em ajuste" e só liberam. O aviso de pedido pronto da Expedição está limitado pelo modo teste (só cliente #14). Desligar o modo teste da Expedição antes da trava compartilhada deixa aberta a corrida em `Pedido_Atual` descrita abaixo.
 
@@ -82,7 +83,7 @@ Cuidado na troca: se algum secret tiver hoje barra final ou espaço, a chave mud
 
 **Conclusão:** o ChatGuru lê os campos logo depois de responder "Diálogo Executado", em menos de 2 segundos. Uma gravação de outro sistema nesse intervalo troca o valor da mensagem que acabou de sair.
 
-**Decisão:** a trava fica presa **5 segundos** depois do "Diálogo Executado" (coluna `livre_em`), com folga sobre os 2 segundos medidos.
+**Decisão (revisão 3):** a trava fica presa 5 segundos depois do "Diálogo Executado" (coluna `livre_em`). **Revisão 4:** os 5 s são margem experimental, não garantia; passa a **10 s, configurável**, com registro para conferir (item 4 da revisão 4).
 
 **Rodapé do template Retira:** na mensagem de 0 s, o topo chegou com 99999, mas o rodapé "NÚMERO DO PEDIDO" chegou com 24880. Ou o rodapé não usa `Pedido_Atual`, ou lê o campo em outro momento. **Conferir com a diretoria** qual campo o rodapé usa e quando ele é lido. Se for outro campo que o Vibe não grava, o rodapé pode mostrar o pedido de outro envio.
 
@@ -99,130 +100,152 @@ O ChatGuru recusa um segundo diálogo na mesma conversa antes de 120 segundos do
   1. O Imposition trata essa resposta do mesmo jeito? Hoje, para ele, `result` "error" com `code` 200 também não é recusa (o `rejeitado` dele exige `code` 400), então cai em "desconhecido" e segura a conversa.
   2. Vale guardar o horário da última execução por conversa (por exemplo, em `imposition_whatsapp_conversas`) para os dois sistemas avisarem antes de tentar, em vez de esperar a recusa.
 
-## SQL proposta (revisão 2, não aplicada)
+## Revisão 4: pedidos da equipe do Imposition
+
+### 1. Gatilho de exclusão (erro reproduzido e corrigido)
+
+**O erro:** o gatilho `imposition_whatsapp_trava_nao_apagar` da revisão 3 calculava a chave numa única expressão:
 
 ```sql
--- A) Sem chave estrangeira; formato da chave conferido.
-alter table public.imposition_whatsapp_conversas
-  drop constraint imposition_whatsapp_conversas_chave_envio_fkey;
-alter table public.imposition_whatsapp_conversas
-  add constraint imposition_whatsapp_conversas_chave_envio_check
-  check (chave_envio is null
-         or chave_envio ~ '^[a-f0-9]{64}$'
-         or chave_envio ~ '^vibe:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$');
-alter table public.imposition_whatsapp_conversas add column livre_em timestamptz;
-
--- B) Integridade: o dono da trava existe (item 2).
-create or replace function public.imposition_whatsapp_conversas_dono_existe()
-returns trigger language plpgsql set search_path to '' as $$
-begin
-  if new.chave_envio is null then return new; end if;
-  if new.chave_envio like 'vibe:%' then
-    if not exists (select 1 from public.expedicao_aviso_pronto where id = substr(new.chave_envio, 6)::uuid) then
-      raise exception 'Trava sem aviso do Vibe: %', new.chave_envio;
-    end if;
-  elsif not exists (select 1 from public.imposition_whatsapp_artes where chave = new.chave_envio) then
-    raise exception 'Trava sem envio de arte: %', new.chave_envio;
-  end if;
-  return new;
-end $$;
-create trigger imposition_whatsapp_conversas_dono
-  before insert or update of chave_envio on public.imposition_whatsapp_conversas
-  for each row execute function public.imposition_whatsapp_conversas_dono_existe();
-
--- B2) Não apagar o dono de uma trava ativa (o que a chave estrangeira garantia).
-create or replace function public.imposition_whatsapp_trava_nao_apagar()
-returns trigger language plpgsql set search_path to '' as $$
-declare v_chave text := case when tg_table_name = 'expedicao_aviso_pronto' then 'vibe:' || old.id::text else old.chave end;
-begin
-  if exists (select 1 from public.imposition_whatsapp_conversas where chave_envio = v_chave) then
-    raise exception 'Registro segura a conversa: libere antes de apagar';
-  end if;
-  return old;
-end $$;
-create trigger expedicao_aviso_pronto_trava_nao_apagar before delete on public.expedicao_aviso_pronto
-  for each row execute function public.imposition_whatsapp_trava_nao_apagar();
-create trigger imposition_whatsapp_artes_trava_nao_apagar before delete on public.imposition_whatsapp_artes
-  for each row execute function public.imposition_whatsapp_trava_nao_apagar();
-
--- C) Ocupar a conversa para um aviso do Vibe (item 1: nada nulo, UUID válido).
-create or replace function public.imposition_whatsapp_conversa_travar(p_destino text, p_chave text)
-returns text language plpgsql set search_path to '' as $$
-declare v record;
-begin
-  if p_destino is null or p_chave is null then raise exception 'Parametro nulo'; end if;
-  if p_destino !~ '^[a-f0-9]{64}$'
-     or p_chave !~ '^vibe:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then
-    raise exception 'Parametro invalido';
-  end if;
-  insert into public.imposition_whatsapp_conversas(destino_chave) values (p_destino) on conflict do nothing;
-  select chave_envio, livre_em into v from public.imposition_whatsapp_conversas where destino_chave = p_destino for update;
-  if v.chave_envio is not null or v.livre_em > now() then return 'ocupado'; end if;
-  update public.imposition_whatsapp_conversas set chave_envio = p_chave, livre_em = null, atualizado_em = now()
-   where destino_chave = p_destino;
-  return 'reservado';
-end $$;
-
--- D) Soltar, só se a conversa ainda é deste aviso; p_espera segura depois do "Diálogo Executado" (item 5).
-create or replace function public.imposition_whatsapp_conversa_soltar(p_destino text, p_chave text, p_espera interval)
-returns boolean language plpgsql set search_path to '' as $$
-begin
-  if p_destino is null or p_chave is null or p_espera is null then raise exception 'Parametro nulo'; end if;
-  if p_espera < interval '0' or p_espera > interval '5 minutes' then raise exception 'Espera invalida'; end if;
-  update public.imposition_whatsapp_conversas
-     set chave_envio = null, livre_em = now() + p_espera, atualizado_em = now()
-   where destino_chave = p_destino and chave_envio = p_chave;
-  return found;
-end $$;
-
-revoke all on function public.imposition_whatsapp_conversa_travar(text, text) from public, anon, authenticated;
-revoke all on function public.imposition_whatsapp_conversa_soltar(text, text, interval) from public, anon, authenticated;
-grant execute on function public.imposition_whatsapp_conversa_travar(text, text) to service_role;
-grant execute on function public.imposition_whatsapp_conversa_soltar(text, text, interval) to service_role;
-
--- E) Imposition: uma linha a mais (só se a espera do item 5 for maior que zero).
---    Em imposition_whatsapp_dialogo_reservar e _reenviar:
---      IF ocupado IS NOT NULL OR (SELECT livre_em FROM ... WHERE destino_chave = p_destino) > now() THEN RETURN 'ocupado'; END IF;
---    Em imposition_whatsapp_dialogo_finalizar, ao soltar com sucesso:
---      SET chave_envio = NULL, livre_em = now() + interval '5 seconds', ...
-
--- F) Passagem (item 4), no momento do deploy: avisos do Vibe em 'desconhecido',
---    ou em 'preparando' há mais de 2 minutos, ocupam a conversa; conversa já ocupada fica listada, não é sobrescrita.
-insert into public.imposition_whatsapp_conversas(destino_chave)
-  select distinct destino_chave from public.expedicao_aviso_pronto
-   where destino_chave is not null
-     and (estado = 'desconhecido' or (estado = 'preparando' and atualizado_em < now() - interval '2 minutes'))
-  on conflict do nothing;
-update public.imposition_whatsapp_conversas c set chave_envio = 'vibe:' || a.id::text, atualizado_em = now()
-  from public.expedicao_aviso_pronto a
- where a.destino_chave = c.destino_chave and c.chave_envio is null
-   and (a.estado = 'desconhecido' or (a.estado = 'preparando' and a.atualizado_em < now() - interval '2 minutes'));
+case when tg_table_name = 'expedicao_aviso_pronto' then 'vibe:' || old.id::text else old.chave end
 ```
 
-## Lado do Vibe (Edge Function `expedicao-pedido-pronto`)
+O PL/pgSQL resolve **todos** os campos citados ao preparar a expressão, não só o do ramo usado. Na tabela `expedicao_aviso_pronto` não existe `old.chave`, e em `imposition_whatsapp_artes` não existe `old.id`. Com isso, **todo** DELETE nas duas tabelas falhava com `record "old" has no field "chave"` (ou `"id"`), segurando ou não uma conversa. Quando a linha era dona de uma trava, a exclusão também era barrada, mas por esse erro e não pela regra.
+
+**Casos do teste com ROLLBACK (resultado esperado; o teste ainda não rodou no banco):**
+
+| Caso | Revisão 3 (antes) | Revisão 4 (agora) |
+|---|---|---|
+| Apagar aviso do Vibe que não segura conversa | falha: `record "old" has no field "chave"` (caso R3-1) | apaga (1a) |
+| Apagar envio de arte que não segura conversa | falha: `record "old" has no field "id"` (R3-2) | apaga (1b) |
+| Apagar envio de arte que segura a conversa | barrado pelo erro de campo, não pela regra (R3-3) | recusado: "Registro … segura a conversa: libere a trava antes de apagar" (1e) |
+| Apagar aviso do Vibe que segura a conversa | não testável (a chave estrangeira não aceitava `vibe:`) | recusado com a mesma mensagem (1d) |
+| Trocar a chave (`chave`/`id`) de quem segura a conversa | não coberto | recusado (1f) |
+| Soltar a trava e depois apagar | — | apaga (1g) |
+
+**Correção:** cada tabela tem o seu ramo de `IF`, e só o ramo executado é preparado. O gatilho também cobre a troca da chave (`update of chave` / `update of id`), que a chave estrangeira impedia, e devolve o código `23503`, o mesmo de violação de chave estrangeira.
+
+### 2. Integridade sob concorrência
+
+**O risco:** a transação T1 grava `chave_envio = X` na conversa e confere que o dono X existe. Ao mesmo tempo, a transação T2 apaga X e confere que nenhuma conversa aponta para X. Cada uma vê o estado de antes da outra, as duas passam, e a trava fica sem dono.
+
+**A solução:** o gatilho que confere o dono lê a linha com `FOR KEY SHARE`, um bloqueio de linha que fica até o fim da transação. Ele é compatível com as atualizações comuns (estado, `atualizado_em`), então não atrapalha o fluxo normal dos dois sistemas. Mas bloqueia DELETE e troca da chave. As duas ordens possíveis:
+
+- **T1 grava a trava primeiro:** o `FOR KEY SHARE` prende a linha de X. O DELETE de T2 espera o fim de T1, porque o PostgreSQL trava a linha antes de rodar o gatilho BEFORE DELETE. Quando T1 confirma, o gatilho de T2 roda com uma leitura nova (READ COMMITTED), vê a trava gravada e recusa. Se T1 desfizer, T2 apaga normalmente.
+- **T2 apaga primeiro:** o `FOR KEY SHARE` de T1 espera o fim de T2. Quando T2 confirma, a linha não existe mais, o SELECT volta vazio e T1 recusa com "Trava sem aviso do Vibe" ou "Trava sem envio de arte".
+
+**Por que é seguro:** em nenhuma ordem as duas transações passam juntas. É o mesmo mecanismo que o PostgreSQL usa na chave estrangeira: o lado que referencia trava a linha referenciada com `FOR KEY SHARE`.
+
+**Limites:**
+- **Nível de isolamento:**
+  - O raciocínio vale em READ COMMITTED, o padrão do PostgREST, das Edge Functions e do SQL Editor.
+  - Em SERIALIZABLE, o próprio banco detecta o conflito e aborta uma das duas.
+  - Em REPEATABLE READ, a leitura do gatilho de exclusão usaria uma foto antiga. Por isso o gatilho recusa apagar ou trocar a chave nesse nível ("Apague ou troque a chave em READ COMMITTED").
+- **Constraint trigger adiada:** foi considerada e descartada. Ela também lê uma foto e não resolve a corrida sem o bloqueio de linha.
+- **O que o teste prova:** o teste com ROLLBACK roda numa sessão só. Por isso ele prova que o gatilho prende a linha do dono: o `xmax` da linha passa de 0 para o número da transação depois que a trava é gravada (casos 2d e 2e). A espera entre duas sessões é o comportamento documentado do PostgreSQL para `FOR KEY SHARE`. Um teste com duas sessões de verdade exige a migração aplicada.
+
+### 3. Migração executável e ordem da transição
+
+**Arquivo único:** [CHATGURU-TRAVA-COMPARTILHADA-MIGRACAO.sql](CHATGURU-TRAVA-COMPARTILHADA-MIGRACAO.sql). Ele traz:
+- a remoção da chave estrangeira, o check do formato e a coluna `livre_em`;
+- os dois gatilhos (dono existe, com `FOR KEY SHARE`; dono não se apaga);
+- as duas funções do Vibe:
+  - `imposition_whatsapp_conversa_travar(destino, chave)`;
+  - `imposition_whatsapp_conversa_soltar(destino, chave, executado)`;
+- as três RPCs do Imposition alteradas (mesmas assinaturas e permissões, mudanças marcadas `rev4`):
+  - `reservar` e `reenviar` devolvem `ocupado` enquanto `livre_em` estiver no futuro;
+  - `finalizar` grava `livre_em = agora + margem` quando o diálogo foi executado (`aguardando`), e não grava margem em `falhou`;
+- a margem configurável e o registro (item 4);
+- a passagem dos avisos do Vibe pendentes. Em 09/11/2026 não havia nenhum em "desconhecido" ou "preparando".
+
+O rodapé traz a reversão completa: as RPCs voltam ao texto de hoje e a chave estrangeira volta.
+
+**Ordem, sem janela em que um sistema ignore a trava do outro:**
+
+| Passo | Onde | O que muda | Por que não abre janela |
+|---|---|---|---|
+| 1 | Código do Vibe (Edge Function `expedicao-pedido-pronto`, v19) | Todo aviso chama `travar` antes de gravar campos. Se a função não existe ou dá erro, o aviso fica `falhou` com "Trava compartilhada indisponível" e **nada sai**. Ao terminar: `soltar(…, executado = true)` só com "Diálogo Executado"; `soltar(…, false)` em `falhou`, inclusive na recusa dos 120 s; em `desconhecido`, não solta. O "Liberar número" passa a soltar a trava compartilhada. | Do deploy até o passo 2, o Vibe não envia nada: ele nunca envia sem a trava. Hoje isso só afeta o modo teste (cliente #14). |
+| 2 | Banco | A migração inteira, numa transação (cerca de 1 s de bloqueio nas três tabelas). | No commit, as duas pontas passam a valer juntas: as RPCs do Imposition já recusam com trava `vibe:` ou com `livre_em` no futuro, e o `travar` do Vibe já recusa com trava do Imposition. |
+| 3 | Código do Imposition | A recusa dos 120 s vira `falhou` (item 5). | Não mexe na trava. O código deles não lê `chave_envio` (conferido no `painel` v283), então o prefixo `vibe:` não quebra leitura. Pode vir antes ou depois do passo 2. |
+| 4 | Código dos dois | Normalização da chave (item 3 da revisão 2) como **conferência**, não como transformação. Cada lado compara o texto cru dos secrets com o normalizado e, se diferirem, recusa o envio. | A chave nunca muda de valor, então os dois sistemas nunca calculam chaves diferentes para a mesma conversa. |
+| 5 | Vibe | Sai o "Envio de aviso de produção em ajuste" e, depois, o modo teste. | Só depois dos passos 1 a 3 no ar e de uma semana de registro sem linha na conferência (item 4). |
+
+**Reversão:**
+1. O Vibe volta para a v18, que não usa a trava compartilhada (o estado de hoje, sob modo teste).
+2. Roda o rodapé de reversão do arquivo.
+3. O Imposition não precisa voltar código.
+
+### 4. Margem: 10 s, configurável, com conferência
+
+- **Margem:** fica em `chatguru_trava_config.margem`, com padrão de **10 segundos** e limite entre 0 e 2 minutos. As duas pontas leem a margem pela função `chatguru_trava_margem()`, então uma mudança vale para Vibe e Imposition ao mesmo tempo, sem deploy:
+
+  ```sql
+  update public.chatguru_trava_config set margem = interval '15 seconds';
+  ```
+
+  Mudar a margem é escrita em produção e precisa de autorização.
+- **Registro:** cada reserva e cada soltura vai para `chatguru_trava_registro`, com a origem (`vibe` ou `imposition`) e o evento:
+  - `reservado`: os campos vão ser gravados em seguida;
+  - `executado`: houve "Diálogo Executado" e a margem começou;
+  - `solto`: soltura sem diálogo executado.
+- **Conferência:** a visão `chatguru_trava_conferencia` lista cada aviso executado em que **outro envio ocupou a mesma conversa (e gravou campos) até 30 s depois**. Essa janela também é configurável, em `janela_conferencia`. Linha nessa visão é o caso a conferir no WhatsApp: a mensagem executada saiu com o próprio pedido, ou com o do envio seguinte?
+
+  ```sql
+  select * from public.chatguru_trava_conferencia order by executado_em desc;
+  ```
+
+- **Por que a conferência importa mesmo com a regra dos 120 s:** o ChatGuru recusa o segundo diálogo, mas a gravação de campos do segundo envio acontece **antes** da recusa. É exatamente a gravação que troca o valor da mensagem anterior.
+
+### 5. Recusa dos 120 s no Imposition (mudança para a equipe deles aplicar)
+
+**Onde:** Edge Function `painel` (no ar v283), arquivo `supabase/functions/_compartilhado/whatsapp_artes.ts`, linhas 126 a 132:
+
+```ts
+const sucesso = (r: any) => r.http >= 200 && r.http < 300 && r.data.result === "success" && r.data.code === 200;
+const rejeitado = (r: any) => r.http < 500 && r.data.result === "error" && r.data.code === 400;
+...
+estado = sucesso(dialogo) ? "aguardando" : rejeitado(dialogo) ? "falhou" : "desconhecido";
+```
+
+**O que acontece hoje:** a resposta "Diálogo não foi executado pois o tempo mínimo não foi atingido" chega com HTTP 200, `code` 200 e `result` "error". Ela não é `sucesso` nem `rejeitado`, então cai em `desconhecido`. O `finalizar` não solta a conversa em `desconhecido`, e ela fica presa até alguém conferir, mesmo sem nada ter saído.
+
+**Mudança sugerida** (a mesma regra que o Vibe usa desde a v18):
+
+```ts
+const tempoMinimo = (r: any) =>
+  r.http < 500 && r.data?.result === "error" &&
+  /tempo\s+m[ií]nimo/i.test(`${r.data?.dialog_execution_return ?? ""} ${r.data?.description ?? ""}`);
+const rejeitado = (r: any) =>
+  r.http < 500 && r.data.result === "error" && (r.data.code === 400 || tempoMinimo(r));
+```
+
+Com isso:
+- o envio fica `falhou`;
+- o `finalizar` solta a conversa sem margem (nada foi executado);
+- a tela pode mostrar "O ChatGuru exige 2 minutos entre mensagens para a mesma conversa. Tente de novo em instantes." quando `tempoMinimo(dialogo)` for verdadeiro.
+
+Nada foi alterado no código do Imposition.
+
+## Lado do Vibe (Edge Function `expedicao-pedido-pronto`, v19, não feita)
 
 No caminho comum a todos os avisos (`enviarParaConversas` -> `reservarLinha`), o que cobre de uma vez o pedido pronto, o Testar modelo e o Pedido em Produção:
 
-1. Calcular `destino_chave` com a normalização do item 3.
-2. Depois de reservar a linha em `expedicao_aviso_pronto`, chamar `imposition_whatsapp_conversa_travar(destino_chave, 'vibe:' || id)`.
+1. Depois de reservar a linha em `expedicao_aviso_pronto`, chamar `imposition_whatsapp_conversa_travar(destino_chave, 'vibe:' || id)`.
    - Se vier `ocupado`, marcar a linha como `falhou`, sem chamar o ChatGuru, e mostrar "Há uma operação pendente para esta conversa".
-3. Ao terminar:
-   - com `executado`, chamar `imposition_whatsapp_conversa_soltar` com a espera do item 5 (5 segundos);
-   - com `falhou`, soltar com espera zero (inclusive na recusa dos 120 segundos, item 6);
-   - em `desconhecido`, ou numa reserva interrompida, não soltar: o "Liberar número" solta.
-4. A trava própria do Vibe continua e cobre dois avisos do Vibe sem passar pelo Imposition.
-5. Ordem para ligar, só com a trava compartilhada no ar e conferida:
-   1. passo F (passagem);
-   2. a trava passa a valer nos dois sistemas;
-   3. sai o "Envio de aviso de produção em ajuste";
-   4. o modo teste é desligado.
+   - Se a chamada falhar (função inexistente ou erro), marcar `falhou` com "Trava compartilhada indisponível" e não chamar o ChatGuru.
+2. Ao terminar:
+   - com "Diálogo Executado", `soltar(destino, chave, true)`, que aplica a margem;
+   - com `falhou`, inclusive na recusa dos 120 s, `soltar(destino, chave, false)`;
+   - em `desconhecido` ou numa reserva interrompida, não soltar: o "Liberar número" solta, com `false`.
+3. A trava própria do Vibe (índice em `expedicao_aviso_pronto`) continua.
+4. Ordem para ligar: a tabela do item 3 da revisão 4.
 
 ## Pontos para combinar com o Imposition
 
 - **A trava é mútua:** o Vibe passa a ocupar linhas de `imposition_whatsapp_conversas` em todo aviso. O envio de arte recebe "Há uma operação pendente para esta conversa" enquanto um aviso do Vibe está em andamento, em resultado desconhecido ou dentro da espera. Na Expedição isso acontece muito mais que no aviso de produção.
-- **O `finalizar` do Imposition** só solta a conversa quando ela é dele (`chave_envio = p_chave`), então nunca solta uma trava do Vibe. Com a espera do item 5, ele passa a gravar `livre_em`.
-- **Leituras da coluna:** quem lê `chave_envio` esperando sempre uma chave de `imposition_whatsapp_artes` precisa aceitar o prefixo `vibe:`. Não achei leitor assim nas RPCs.
-- **Normalização do item 3:** entra nos dois códigos no mesmo deploy.
+- **O `finalizar` do Imposition** só solta a conversa quando ela é dele (`chave_envio = p_chave`), então nunca solta uma trava do Vibe. Com a revisão 4, ele grava `livre_em` (margem) quando o diálogo foi executado.
+- **Leituras da coluna:** quem lê `chave_envio` esperando sempre uma chave de `imposition_whatsapp_artes` precisa aceitar o prefixo `vibe:`. Não há leitor assim nas RPCs nem no código do `painel` v283.
+- **Normalização do item 3:** entra nos dois códigos como conferência (recusa se o texto cru diferir do normalizado), sem mudar o valor da chave; ver passo 4 da transição.
 
 ## Campos que o Vibe grava em cada diálogo
 
