@@ -599,3 +599,25 @@ export function comoSoltar(estado: string): { soltar: boolean; executado: boolea
   if (estado === "falhou") return { soltar: true, executado: false };
   return { soltar: false, executado: false };
 }
+
+// --- v19: Liberar número para trava compartilhada presa ---
+//
+// Aviso do Vibe já terminado ('executado' ou 'falhou') cuja conversa ficou com
+// 'vibe:<id>' em imposition_whatsapp_conversas porque o soltar falhou. Só o ADM,
+// com confirmação; a liberação fica registrada no próprio aviso (liberado_por,
+// liberado_por_nome, liberado_em; liberacao_resposta segue nula: não houve
+// conferência de envio). Só solta chave 'vibe:' do próprio aviso: o banco só
+// apaga a trava se chave_envio for exatamente essa (nunca a de um envio de arte).
+
+export const TRAVA_NAO_PRESA = "A conversa deste aviso não está presa. Atualize a tela.";
+export const TRAVA_NAO_SOLTA = "Não foi possível soltar a conversa. Nada mudou. Tente de novo.";
+
+/** O aviso pode ter deixado a trava compartilhada presa: só os que terminaram e têm conversa. */
+export function podeTerTravaPresa(r: { estado: string; destino_chave: string | null }): boolean {
+  return Boolean(r.destino_chave) && comoSoltar(r.estado).soltar;
+}
+
+/** Liberar número: "conferir" (aviso em desconhecido, com resposta) ou "trava" (conversa presa). */
+export function modoDaLiberacao(corpo: unknown): "conferir" | "trava" {
+  return (corpo as { modo?: unknown } | null)?.modo === "trava" ? "trava" : "conferir";
+}

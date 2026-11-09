@@ -11,12 +11,17 @@
 -- Sem BEGIN de proposito: o editor manda o arquivo inteiro como um comando
 -- so, que roda numa transacao implicita; o erro do fim desfaz tudo sozinho.
 -- Com BEGIN, o erro deixaria a transacao aberta segurando as tabelas.
--- Resultado esperado: 49 casos, 3 FALHA (R3-1, R3-2 e R3-3) e 46 PASSA.
+-- Resultado esperado: 61 casos, 3 FALHA (R3-1, R3-2 e R3-3) e 58 PASSA.
 -- D3 e D5 tambem dao FALHA se houver envio real em andamento na hora: e a
 -- drenagem funcionando; rodar de novo com os envios parados.
 -- Primeiro reproduz o erro do gatilho da revisao 3 (casos R3, que devem dar
 -- FALHA), depois aplica a revisao 4 e roda os casos dos itens 1 e 2 e uma
 -- reserva/soltura de cada lado (devem dar PASSA).
+-- Depois a VOLTA: o texto de CHATGURU-TRAVA-COMPARTILHADA-REVERSAO.sql,
+-- comando a comando (um comando que falhar aparece como linha "VOLTA ..."
+-- com o erro), e os casos X0 a X11 comparam o catalogo com a foto tirada
+-- antes da ida: chave estrangeira, funcoes, tabelas, visao, gatilhos, coluna
+-- livre_em e o md5 do corpo das tres RPCs do Imposition.
 -- Segura bloqueio em imposition_whatsapp_conversas, imposition_whatsapp_artes
 -- e expedicao_aviso_pronto por cerca de 1 segundo.
 -- =====================================================================
@@ -26,6 +31,8 @@ create function pg_temp.tenta(p text) returns text language plpgsql as $f$
 declare r text;
 begin execute p into r; return 'ok:' || coalesce(r, ''); exception when others then return 'erro:' || sqlerrm; end $f$;
 create function pg_temp.reg(c text, e text, o text) returns void language sql as $f$ insert into _r(caso, esperado, obtido) values (c, e, o) $f$;
+create function pg_temp.volta(c text, p text) returns void language plpgsql as $f$
+begin execute p; exception when others then insert into _r(caso, esperado, obtido) values ('VOLTA ' || c, 'ok:', 'erro:' || sqlerrm); end $f$;
 
 insert into public.expedicao_aviso_pronto(id, id_int, seq, modo_teste, autor, estado) values
  ('00000000-0000-4000-8000-0000000000a1', 999999, 1, true, '00000000-0000-4000-8000-000000000007', 'executado'),
@@ -59,6 +66,27 @@ select pg_temp.reg('R3-3 rev3: apagar envio de arte que segura a conversa', 'err
 drop trigger expedicao_aviso_pronto_trava_nao_apagar on public.expedicao_aviso_pronto;
 drop trigger imposition_whatsapp_artes_trava_nao_apagar on public.imposition_whatsapp_artes;
 drop function public.imposition_whatsapp_trava_nao_apagar();
+
+-- Foto do catalogo ANTES da ida, para conferir a volta (casos X).
+create temp table _antes as select
+  (select pg_get_constraintdef(oid) from pg_constraint where conname = 'imposition_whatsapp_conversas_chave_envio_fkey') as fk,
+  (select string_agg(proname || '|' || md5(prosrc), ',' order by proname) from pg_proc
+    where pronamespace = 'public'::regnamespace and proname like 'imposition_whatsapp_dialogo_%') as rpc_corpo,
+  (select string_agg(proname || '|' || md5(pg_get_functiondef(oid)) || '|' || coalesce(proacl::text, '') || '|' || pg_get_userbyid(proowner), ',' order by proname)
+     from pg_proc where pronamespace = 'public'::regnamespace and proname like 'imposition_whatsapp_dialogo_%') as rpc_def,
+  (select md5(string_agg(x, ',' order by x)) from (select p.oid::regprocedure::text || md5(p.prosrc) || coalesce(p.proconfig::text, '') || coalesce(p.proacl::text, '') as x
+     from pg_proc p where p.pronamespace = 'public'::regnamespace) s) as funcoes,
+  (select md5(string_agg(x, ',' order by x)) from (select c.relname || ':' || c.relkind as x
+     from pg_class c where c.relnamespace = 'public'::regnamespace) s) as relacoes,
+  (select md5(string_agg(x, ',' order by x)) from (
+     select 'g:' || t.tgrelid::regclass::text || ':' || t.tgname || ':' || md5(pg_get_triggerdef(t.oid)) as x
+       from pg_trigger t join pg_class c on c.oid = t.tgrelid where not t.tgisinternal and c.relnamespace = 'public'::regnamespace and c.relname in ('imposition_whatsapp_conversas', 'imposition_whatsapp_artes', 'expedicao_aviso_pronto')
+     union all
+     select 'r:' || c.relname || ':' || k.conname || ':' || pg_get_constraintdef(k.oid)
+       from pg_constraint k join pg_class c on c.oid = k.conrelid where c.relnamespace = 'public'::regnamespace and c.relname in ('imposition_whatsapp_conversas', 'imposition_whatsapp_artes', 'expedicao_aviso_pronto')
+     union all
+     select 'c:' || c.relname || ':' || a.attname || ':' || format_type(a.atttypid, a.atttypmod) || ':' || a.attnotnull::text
+       from pg_attribute a join pg_class c on c.oid = a.attrelid where a.attnum > 0 and not a.attisdropped and c.relnamespace = 'public'::regnamespace and c.relname in ('imposition_whatsapp_conversas', 'imposition_whatsapp_artes', 'expedicao_aviso_pronto')) s) as tres_tabelas;
 
 create function public.chatguru_trava_drenagem(p_reversao boolean)
 returns text language plpgsql set search_path to '' as $$
@@ -366,6 +394,115 @@ update public.imposition_whatsapp_conversas set livre_em = clock_timestamp() + i
 select pg_temp.reg('D4 reversao com margem correndo: aborta', 'erro:Reversao abortada', pg_temp.tenta($q$select public.chatguru_trava_drenagem(true)$q$));
 update public.imposition_whatsapp_conversas set livre_em = null where destino_chave = repeat('4', 64);
 select pg_temp.reg('D5 reversao drenada: segue (FALHA se houver envio real agora)', 'ok:drenado', pg_temp.tenta($q$select public.chatguru_trava_drenagem(true)$q$));
+
+-- =====================================================================
+-- VOLTA: o texto de CHATGURU-TRAVA-COMPARTILHADA-REVERSAO.sql, comando a comando
+-- (21 comandos). Comando que falhar vira uma linha "VOLTA ..." com o erro.
+-- =====================================================================
+select pg_temp.volta('01 select public.chatguru_trava_drenagem(true)', $volta$select public.chatguru_trava_drenagem(true)$volta$);
+select pg_temp.volta('02 update public.imposition_whatsapp_conversas set chave_envio ', $volta$update public.imposition_whatsapp_conversas set chave_envio = null, atualizado_em = now()
+ where chave_envio like 'vibe:%'$volta$);
+select pg_temp.volta('03 drop trigger imposition_whatsapp_conversas_dono on public.im', $volta$drop trigger imposition_whatsapp_conversas_dono on public.imposition_whatsapp_conversas$volta$);
+select pg_temp.volta('04 drop trigger expedicao_aviso_pronto_trava_nao_apagar on publ', $volta$drop trigger expedicao_aviso_pronto_trava_nao_apagar on public.expedicao_aviso_pronto$volta$);
+select pg_temp.volta('05 drop trigger imposition_whatsapp_artes_trava_nao_apagar on p', $volta$drop trigger imposition_whatsapp_artes_trava_nao_apagar on public.imposition_whatsapp_artes$volta$);
+select pg_temp.volta('06 drop function public.imposition_whatsapp_conversas_dono_exis', $volta$drop function public.imposition_whatsapp_conversas_dono_existe()$volta$);
+select pg_temp.volta('07 drop function public.imposition_whatsapp_trava_nao_apagar()', $volta$drop function public.imposition_whatsapp_trava_nao_apagar()$volta$);
+select pg_temp.volta('08 drop function public.imposition_whatsapp_conversa_travar(tex', $volta$drop function public.imposition_whatsapp_conversa_travar(text, text)$volta$);
+select pg_temp.volta('09 drop function public.imposition_whatsapp_conversa_soltar(tex', $volta$drop function public.imposition_whatsapp_conversa_soltar(text, text, boolean)$volta$);
+select pg_temp.volta('10 CREATE OR REPLACE FUNCTION public.imposition_whatsapp_dialog', $volta$CREATE OR REPLACE FUNCTION public.imposition_whatsapp_dialogo_reservar(p_chave text, p_destino text, p_os_id text, p_autor uuid, p_dialogo text, p_repetir boolean DEFAULT false)
+ RETURNS text LANGUAGE plpgsql SET search_path TO ''
+AS $function$
+DECLARE ocupado text; atual public.imposition_whatsapp_artes;
+BEGIN
+ INSERT INTO public.imposition_whatsapp_conversas(destino_chave) VALUES(p_destino) ON CONFLICT DO NOTHING;
+ SELECT chave_envio INTO ocupado FROM public.imposition_whatsapp_conversas WHERE destino_chave=p_destino FOR UPDATE;
+ IF ocupado IS NOT NULL THEN RETURN 'ocupado'; END IF;
+ SELECT * INTO atual FROM public.imposition_whatsapp_artes WHERE chave=p_chave FOR UPDATE;
+ IF FOUND THEN
+   IF NOT p_repetir OR atual.estado<>'falhou' OR atual.message_id IS NOT NULL OR atual.dialogo_executado OR atual.os_id<>p_os_id THEN RETURN 'existente'; END IF;
+   UPDATE public.imposition_whatsapp_artes SET estado='preparando', autor=p_autor,
+     dialogo_id=p_dialogo, atualizado_em=now(), tentativas=tentativas+1 WHERE chave=p_chave;
+ ELSE
+   INSERT INTO public.imposition_whatsapp_artes(chave,os_id,autor,dialogo_id) VALUES(p_chave,p_os_id,p_autor,p_dialogo)
+     ON CONFLICT DO NOTHING;
+   IF NOT FOUND THEN RETURN 'existente'; END IF;
+ END IF;
+ UPDATE public.imposition_whatsapp_conversas SET chave_envio=p_chave, atualizado_em=now() WHERE destino_chave=p_destino;
+ RETURN 'reservado';
+END;
+$function$$volta$);
+select pg_temp.volta('11 CREATE OR REPLACE FUNCTION public.imposition_whatsapp_dialog', $volta$CREATE OR REPLACE FUNCTION public.imposition_whatsapp_dialogo_reenviar(p_chave text, p_destino text, p_os_id text, p_autor uuid, p_dialogo text, p_atualizado_em timestamp with time zone)
+ RETURNS text LANGUAGE plpgsql SET search_path TO ''
+AS $function$
+DECLARE ocupado text; atual public.imposition_whatsapp_artes;
+BEGIN
+ INSERT INTO public.imposition_whatsapp_conversas(destino_chave) VALUES(p_destino) ON CONFLICT DO NOTHING;
+ SELECT chave_envio INTO ocupado FROM public.imposition_whatsapp_conversas WHERE destino_chave=p_destino FOR UPDATE;
+ IF ocupado IS NOT NULL THEN RETURN 'ocupado'; END IF;
+ SELECT * INTO atual FROM public.imposition_whatsapp_artes WHERE chave=p_chave FOR UPDATE;
+ IF NOT FOUND THEN RETURN 'existente'; END IF;
+ IF atual.os_id<>p_os_id OR atual.estado NOT IN ('aguardando','enviado')
+    OR (atual.message_id IS NULL AND NOT atual.dialogo_executado)
+    OR atual.atualizado_em IS DISTINCT FROM p_atualizado_em
+    OR clock_timestamp()<atual.atualizado_em+interval '120 seconds' THEN RETURN 'existente'; END IF;
+ INSERT INTO public.imposition_whatsapp_reenvios(chave,registro_anterior) VALUES(p_chave,to_jsonb(atual));
+ UPDATE public.imposition_whatsapp_artes SET estado='preparando',autor=p_autor,
+   dialogo_id=p_dialogo,dialogo_executado=false,message_id=NULL,concluido=false,
+   atualizado_em=clock_timestamp(),tentativas=tentativas+1 WHERE chave=p_chave;
+ UPDATE public.imposition_whatsapp_conversas SET chave_envio=p_chave,atualizado_em=clock_timestamp() WHERE destino_chave=p_destino;
+ RETURN 'reservado';
+END;
+$function$$volta$);
+select pg_temp.volta('12 CREATE OR REPLACE FUNCTION public.imposition_whatsapp_dialog', $volta$CREATE OR REPLACE FUNCTION public.imposition_whatsapp_dialogo_finalizar(p_chave text, p_destino text, p_estado text)
+ RETURNS SETOF public.imposition_whatsapp_artes LANGUAGE plpgsql SET search_path TO ''
+AS $function$
+DECLARE ocupado text;
+BEGIN
+ IF p_estado NOT IN ('aguardando','falhou','desconhecido') THEN RAISE EXCEPTION 'Estado invalido'; END IF;
+ SELECT chave_envio INTO ocupado FROM public.imposition_whatsapp_conversas WHERE destino_chave=p_destino FOR UPDATE;
+ IF ocupado IS DISTINCT FROM p_chave THEN RAISE EXCEPTION 'Reserva da conversa nao confirmada'; END IF;
+ RETURN QUERY UPDATE public.imposition_whatsapp_artes SET estado=p_estado,
+   dialogo_executado=(p_estado='aguardando'), atualizado_em=now()
+   WHERE chave=p_chave AND estado='preparando' AND message_id IS NULL AND dialogo_id IS NOT NULL RETURNING *;
+ IF NOT FOUND THEN RAISE EXCEPTION 'Registro do dialogo nao confirmado'; END IF;
+ -- Incerteza não libera a conversa: confirmar no CRM antes de reconciliar.
+ IF p_estado<>'desconhecido' THEN
+   UPDATE public.imposition_whatsapp_conversas SET chave_envio=NULL, atualizado_em=now() WHERE destino_chave=p_destino;
+ END IF;
+END;
+$function$$volta$);
+select pg_temp.volta('13 drop index public.imposition_whatsapp_conversas_chave_envio', $volta$drop index public.imposition_whatsapp_conversas_chave_envio$volta$);
+select pg_temp.volta('14 alter table public.imposition_whatsapp_conversas drop column', $volta$alter table public.imposition_whatsapp_conversas drop column livre_em$volta$);
+select pg_temp.volta('15 alter table public.imposition_whatsapp_conversas drop constr', $volta$alter table public.imposition_whatsapp_conversas drop constraint imposition_whatsapp_conversas_chave_envio_check$volta$);
+select pg_temp.volta('16 alter table public.imposition_whatsapp_conversas add constra', $volta$alter table public.imposition_whatsapp_conversas
+  add constraint imposition_whatsapp_conversas_chave_envio_fkey
+  foreign key (chave_envio) references public.imposition_whatsapp_artes(chave)$volta$);
+select pg_temp.volta('17 drop view public.chatguru_trava_conferencia', $volta$drop view public.chatguru_trava_conferencia$volta$);
+select pg_temp.volta('18 drop function public.chatguru_trava_margem()', $volta$drop function public.chatguru_trava_margem()$volta$);
+select pg_temp.volta('19 drop table public.chatguru_trava_registro', $volta$drop table public.chatguru_trava_registro$volta$);
+select pg_temp.volta('20 drop table public.chatguru_trava_config', $volta$drop table public.chatguru_trava_config$volta$);
+select pg_temp.volta('21 drop function public.chatguru_trava_drenagem(boolean)', $volta$drop function public.chatguru_trava_drenagem(boolean)$volta$);
+
+select pg_temp.reg('X0 volta: nenhum comando da reversao falhou', 'ok:0', pg_temp.tenta($q$select count(*)::text from _r where caso like 'VOLTA %'$q$));
+select pg_temp.reg('X1 chave estrangeira original de chave_envio de volta (igual a de antes)', 'ok:true', pg_temp.tenta($q$select (pg_get_constraintdef(oid) = (select fk from _antes))::text from pg_constraint where conname = 'imposition_whatsapp_conversas_chave_envio_fkey'$q$));
+select pg_temp.reg('X2 check do formato fora', 'ok:true', pg_temp.tenta($q$select (not exists (select 1 from pg_constraint where conname = 'imposition_whatsapp_conversas_chave_envio_check'))::text$q$));
+select pg_temp.reg('X3 coluna livre_em fora', 'ok:true', pg_temp.tenta($q$select (not exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'imposition_whatsapp_conversas' and column_name = 'livre_em'))::text$q$));
+select pg_temp.reg('X4 nenhuma funcao nova', 'ok:true', pg_temp.tenta($q$select (not exists (select 1 from pg_proc where pronamespace = 'public'::regnamespace and proname in ('imposition_whatsapp_conversa_travar', 'imposition_whatsapp_conversa_soltar', 'chatguru_trava_margem', 'chatguru_trava_drenagem', 'imposition_whatsapp_conversas_dono_existe', 'imposition_whatsapp_trava_nao_apagar')))::text$q$));
+select pg_temp.reg('X5 nenhuma tabela, visao ou indice novo', 'ok:true', pg_temp.tenta($q$select (not exists (select 1 from pg_class where relnamespace = 'public'::regnamespace and (relname like 'chatguru_trava%' or relname = 'imposition_whatsapp_conversas_chave_envio')))::text$q$));
+select pg_temp.reg('X6 nenhum gatilho novo', 'ok:true', pg_temp.tenta($q$select (not exists (select 1 from pg_trigger where tgname in ('imposition_whatsapp_conversas_dono', 'expedicao_aviso_pronto_trava_nao_apagar', 'imposition_whatsapp_artes_trava_nao_apagar')))::text$q$));
+select pg_temp.reg('X7 tres RPCs do Imposition: md5 do corpo igual ao de antes da ida', 'ok:true', pg_temp.tenta($q$select ((select string_agg(proname || '|' || md5(prosrc), ',' order by proname) from pg_proc where pronamespace = 'public'::regnamespace and proname like 'imposition_whatsapp_dialogo_%') = (select rpc_corpo from _antes) and (select rpc_corpo from _antes) like '%,%,%')::text$q$));
+select pg_temp.reg('X8 tres RPCs: definicao completa, permissoes e dono iguais', 'ok:true', pg_temp.tenta($q$select ((select string_agg(proname || '|' || md5(pg_get_functiondef(oid)) || '|' || coalesce(proacl::text, '') || '|' || pg_get_userbyid(proowner), ',' order by proname) from pg_proc where pronamespace = 'public'::regnamespace and proname like 'imposition_whatsapp_dialogo_%') = (select rpc_def from _antes))::text$q$));
+select pg_temp.reg('X9 todas as funcoes de public iguais as de antes', 'ok:true', pg_temp.tenta($q$select ((select md5(string_agg(x, ',' order by x)) from (select p.oid::regprocedure::text || md5(p.prosrc) || coalesce(p.proconfig::text, '') || coalesce(p.proacl::text, '') as x from pg_proc p where p.pronamespace = 'public'::regnamespace) s) = (select funcoes from _antes))::text$q$));
+select pg_temp.reg('X10 tabelas, visoes, indices e sequencias de public iguais', 'ok:true', pg_temp.tenta($q$select ((select md5(string_agg(x, ',' order by x)) from (select c.relname || ':' || c.relkind as x from pg_class c where c.relnamespace = 'public'::regnamespace) s) = (select relacoes from _antes))::text$q$));
+select pg_temp.reg('X11 gatilhos, restricoes e colunas das tres tabelas iguais', 'ok:true', pg_temp.tenta($q$select ((select md5(string_agg(x, ',' order by x)) from (
+     select 'g:' || t.tgrelid::regclass::text || ':' || t.tgname || ':' || md5(pg_get_triggerdef(t.oid)) as x
+       from pg_trigger t join pg_class c on c.oid = t.tgrelid where not t.tgisinternal and c.relnamespace = 'public'::regnamespace and c.relname in ('imposition_whatsapp_conversas', 'imposition_whatsapp_artes', 'expedicao_aviso_pronto')
+     union all
+     select 'r:' || c.relname || ':' || k.conname || ':' || pg_get_constraintdef(k.oid)
+       from pg_constraint k join pg_class c on c.oid = k.conrelid where c.relnamespace = 'public'::regnamespace and c.relname in ('imposition_whatsapp_conversas', 'imposition_whatsapp_artes', 'expedicao_aviso_pronto')
+     union all
+     select 'c:' || c.relname || ':' || a.attname || ':' || format_type(a.atttypid, a.atttypmod) || ':' || a.attnotnull::text
+       from pg_attribute a join pg_class c on c.oid = a.attrelid where a.attnum > 0 and not a.attisdropped and c.relnamespace = 'public'::regnamespace and c.relname in ('imposition_whatsapp_conversas', 'imposition_whatsapp_artes', 'expedicao_aviso_pronto')) s) = (select tres_tabelas from _antes))::text$q$));
 
 -- Final: junta os resultados num texto e dispara um erro com ele.
 -- O erro desfaz a transacao inteira; o editor mostra a mensagem com os resultados.

@@ -23,7 +23,9 @@
  *   N. regra dos 120 s do ChatGuru: recusa explícita (falhou), com a mensagem da tela;
  *   O. v19: pausa CHATGURU_AVISOS_PAUSA (vazio ou "desligada" envia; o resto pausa);
  *   P. v19: trava compartilhada (chave vibe:<id>, só "reservado" envia, erro = nada
- *      sai; executado solta com margem, falhou sem margem, desconhecido não solta).
+ *      sai; executado solta com margem, falhou sem margem, desconhecido não solta);
+ *   Q. v19: Liberar número da trava presa (só executado/falhou com conversa; modo
+ *      "trava" só com modo === "trava"; a chave é sempre 'vibe:' do aviso).
  */
 import assert from "node:assert/strict";
 import {
@@ -72,7 +74,11 @@ import {
   chaveDaTrava,
   comoSoltar,
   conferirPausa,
-  resultadoTrava
+  resultadoTrava,
+  TRAVA_NAO_PRESA,
+  TRAVA_NAO_SOLTA,
+  modoDaLiberacao,
+  podeTerTravaPresa
 } from "../../supabase/functions/expedicao-pedido-pronto/logica.ts";
 
 let n = 0;
@@ -375,6 +381,27 @@ caso("P. v19: trava compartilhada", () => {
   assert.deepEqual(comoSoltar("preparando"), { soltar: false, executado: false });
   assert.equal(TRAVA_OCUPADA, "Há uma operação pendente para esta conversa. Nada foi enviado. Tente de novo em instantes.");
   assert.equal(TRAVA_INDISPONIVEL, "Trava compartilhada indisponível. Nada foi enviado.");
+});
+
+caso("Q. v19: Liberar número da trava compartilhada presa", () => {
+  const conversa = "a".repeat(64);
+  // Só aviso terminado e com conversa pode ter deixado a trava presa.
+  assert.equal(podeTerTravaPresa({ estado: "executado", destino_chave: conversa }), true);
+  assert.equal(podeTerTravaPresa({ estado: "falhou", destino_chave: conversa }), true);
+  assert.equal(podeTerTravaPresa({ estado: "desconhecido", destino_chave: conversa }), false);
+  assert.equal(podeTerTravaPresa({ estado: "preparando", destino_chave: conversa }), false);
+  assert.equal(podeTerTravaPresa({ estado: "executado", destino_chave: null }), false);
+  // Modo: só "trava" explícito; o resto é a conferência de sempre (exige resposta).
+  assert.equal(modoDaLiberacao({ modo: "trava" }), "trava");
+  assert.equal(modoDaLiberacao({ modo: "TRAVA" }), "conferir");
+  assert.equal(modoDaLiberacao({ resposta: "enviada" }), "conferir");
+  assert.equal(modoDaLiberacao(null), "conferir");
+  // A chave solta é sempre a do próprio aviso, com 'vibe:': nunca a de um envio de
+  // arte (64 hex), que nem passa pela conversão.
+  assert.match(chaveDaTrava("00000000-0000-4000-8000-0000000000a3"), /^vibe:/);
+  assert.throws(() => chaveDaTrava("b".repeat(64)), /indisponível/);
+  assert.equal(TRAVA_NAO_PRESA, "A conversa deste aviso não está presa. Atualize a tela.");
+  assert.equal(TRAVA_NAO_SOLTA, "Não foi possível soltar a conversa. Nada mudou. Tente de novo.");
 });
 
 console.log(`\n${n} casos ok`);

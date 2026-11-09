@@ -45,12 +45,17 @@ export type AvisoPronto = {
   dialogo?: string | null;
   /** Diálogo em incerteza: o WhatsApp fica travado para novos avisos. */
   trava_conversa?: boolean;
+  /**
+   * v19 (trava compartilhada com o Imposition): o aviso já terminou, mas a conversa
+   * ficou presa porque o servidor não conseguiu soltá-la. O ADM solta pelo Liberar número.
+   */
+  trava_compartilhada_presa?: boolean;
   modo_teste: boolean;
   /** Envio do "Testar modelo" (não conta como aviso do pedido). */
   teste?: boolean;
   /** pedido_pronto (Expedição) ou pedido_em_producao (Liberar para Produção). */
   evento?: "pedido_pronto" | "pedido_em_producao";
-  /** "Liberar número" (ADM): quem conferiu no ChatGuru, quando e o que respondeu. */
+  /** "Liberar número" (ADM): quem conferiu no ChatGuru, quando e o que respondeu (nulo: só soltou a conversa presa). */
   liberacao?: { por: string | null; em: string; resposta: "enviada" | "nao_enviada" | null } | null;
   /** Conversa do ChatGuru usada (09/11/2026); nulo nos avisos anteriores. */
   chat_id?: string | null;
@@ -172,10 +177,30 @@ export function verConversasDoCliente(idInt: number) {
 /**
  * "Liberar número" (só ADM, aviso de diálogo em resultado desconhecido), depois
  * de conferir no ChatGuru. "enviada" -> executado, sem reenviar; "nao_enviada" ->
- * falhou, e o Reenviar volta.
+ * falhou, e o Reenviar volta. "soltar" (v19): aviso já terminado com a conversa
+ * presa na trava compartilhada; só solta a conversa, o estado não muda.
  */
-export function liberarNumeroAviso(idInt: number, seq: number, resposta: "enviada" | "nao_enviada") {
+export function liberarNumeroAviso(idInt: number, seq: number, resposta: RespostaLiberacao) {
+  if (resposta === "soltar") return chamar({ acao: "liberar", modo: "trava", id_int: idInt, seq, confirmado: true });
   return chamar({ acao: "liberar", id_int: idInt, seq, resposta, confirmado: true });
+}
+
+export type RespostaLiberacao = "enviada" | "nao_enviada" | "soltar";
+
+/** v19: aviso terminado ("executado" ou "falhou") com a conversa presa na trava compartilhada. */
+export function travaCompartilhadaPresa(a: AvisoPronto | null | undefined): boolean {
+  return Boolean(a && a.trava_compartilhada_presa === true && (a.estado === "executado" || a.estado === "falhou"));
+}
+
+export const TEXTO_TRAVA_PRESA =
+  "A conversa deste WhatsApp ficou presa na trava compartilhada com o Imposition. Novos envios para ela ficam parados até o ADM usar Liberar número.";
+
+/** Texto do registro do Liberar número. */
+export function textoDaLiberacao(l: NonNullable<AvisoPronto["liberacao"]>, quando: string): string {
+  const quem = `Liberado por ${l.por || "—"} em ${quando}`;
+  if (l.resposta === "enviada") return `${quem}: conferido no ChatGuru, a mensagem foi enviada.`;
+  if (l.resposta === "nao_enviada") return `${quem}: conferido no ChatGuru, a mensagem não foi enviada.`;
+  return `${quem}: conversa solta na trava compartilhada.`;
 }
 
 /**

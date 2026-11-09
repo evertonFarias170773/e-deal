@@ -44,6 +44,17 @@ Com o secret gravado antes, a v19 já nasce pausada. Pausada, ela não chama a t
 
 Qualquer valor no secret diferente de vazio ou `desligada` também pausa: um erro de digitação deixa o Vibe parado, nunca enviando. O "Liberar número", a lista e "Ver conversas" seguem funcionando.
 
+**Fichas do manual, no mesmo commit do deploy.** As fichas de Expedição e Pedidos com a trava compartilhada estão prontas em [CHATGURU-TRAVA-FICHAS.patch](CHATGURU-TRAVA-FICHAS.patch). Elas não entram antes porque o manual descreve o que está no ar, e o Maestro lê o manual. Logo depois do deploy:
+
+```sh
+git apply docs/technical/CHATGURU-TRAVA-FICHAS.patch
+# troca {DATA DA JANELA} pela data do dia (dd/mm/aaaa) nas duas fichas, por exemplo:
+sed -i 's#{DATA DA JANELA}#dd/mm/aaaa#g' docs/manual/expedicao.md docs/manual/pedidos.md
+grep -rn "DATA DA JANELA" docs/manual   # precisa voltar vazio
+```
+
+Depois, commit e publicação, como sempre (AGENTS.md). Anotar o hash desse commit, porque a volta o desfaz. Se o `git apply` recusar, alguém mexeu nas fichas desde o patch: aplicar à mão, conferindo o texto do patch.
+
 ### 2. Pausar o Imposition
 
 | | |
@@ -207,10 +218,11 @@ select
 | | |
 |---|---|
 | **Quem** | Vibe, com autorização do dono para o deploy |
-| **Faz** | Deploy da `expedicao-pedido-pronto` no texto da v18 (commit `46808cb5`, que não usa a trava compartilhada). Depois, apaga o secret `CHATGURU_AVISOS_PAUSA`: a v18 não o lê. |
+| **Faz** | Deploy da `expedicao-pedido-pronto` no texto da v18 (commit `46808cb5`, que não usa a trava compartilhada). Depois, apaga o secret `CHATGURU_AVISOS_PAUSA`: a v18 não o lê. No mesmo commit, desfaz as fichas: `git revert <hash do commit das fichas>`. |
 | **Confere** | Um aviso no 24880 (modo teste) chega e fica executado. Até esse deploy, a v19 não envia: está pausada e, sem a função `travar`, recusa tudo. |
 
 ## Pontos de atenção
 
-- **Soltar que falha:** se a v19 não conseguir soltar a conversa depois do ChatGuru (duas tentativas), a conversa fica ocupada. Esse é o lado seguro, e o erro vai para o log da função. O "Liberar número" só age em aviso `desconhecido`, então um `executado` com a conversa ainda presa precisa de liberação manual, com autorização: `select public.imposition_whatsapp_conversa_soltar('<destino_chave>', 'vibe:<id>', false);`.
-- **A reversão não foi executada em teste.** O arquivo de teste do editor cobre a ida (49 casos), não a volta.
+- **Soltar que falha:** se a v19 não conseguir soltar a conversa depois do ChatGuru (duas tentativas), a conversa fica ocupada. Esse é o lado seguro, e o erro vai para o log da função. O aviso volta marcado com a conversa presa, e o Administrador solta pelo **Liberar número** → **Soltar a conversa**, que exige confirmação e registra quem soltou e quando, em `liberado_por`/`liberado_em`. Só solta a chave `vibe:` do próprio aviso: o banco só apaga a trava quando `chave_envio` é exatamente essa, então nunca solta um envio de arte do Imposition.
+- **A volta está no teste.** O teste do editor (61 casos) roda a ida, depois o texto de `CHATGURU-TRAVA-COMPARTILHADA-REVERSAO.sql` comando a comando, e compara o catálogo com uma foto tirada antes da ida (casos X0 a X11).
+- **A tela já tem o "Soltar a conversa"** desde a publicação do repositório, mas ele fica sem efeito enquanto a v18 estiver no ar: a v18 nunca marca uma conversa como presa.

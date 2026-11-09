@@ -93,7 +93,11 @@
  *     não existe, banco fora): a linha vira 'falhou' e nada sai (fail-closed).
  *   - SOLTAR: 'executado' solta com a margem do banco; 'falhou' (inclusive a recusa
  *     dos 120 s) solta sem margem; 'desconhecido' não solta. O Liberar número
- *     solta sem margem.
+ *     solta sem margem, antes de gravar a liberação.
+ *   - TRAVA PRESA: se o soltar falhar depois de 'executado' ou 'falhou', o aviso
+ *     volta com trava_compartilhada_presa e o ADM usa Liberar número (modo
+ *     "trava": confirmação, registro em liberado_por/liberado_em, resposta nula).
+ *     Só solta a chave 'vibe:' do próprio aviso, nunca a de um envio de arte.
  */
 import { createClient } from "npm:@supabase/supabase-js@2";
 import {
@@ -136,6 +140,10 @@ import {
   comoSoltar,
   conferirPausa,
   resultadoTrava,
+  TRAVA_NAO_PRESA,
+  TRAVA_NAO_SOLTA,
+  modoDaLiberacao,
+  podeTerTravaPresa,
   textoDaResposta,
   type EscolhaDialogo,
   type NomeDialogo
@@ -184,7 +192,7 @@ type Evento = "pedido_pronto" | "pedido_em_producao";
 const COLUNAS =
   "id, id_int, seq, estado, message_id, dialogo_id, destino_chave, modo_teste, autor_nome, criado_em, atualizado_em, liberado_por_nome, liberado_em, liberacao_resposta, envio_teste, evento, chat_id";
 
-function publico(r: Registro | null) {
+function publico(r: Registro | null, presas?: Set<string>) {
   if (!r) return null;
   return {
     seq: r.seq,
@@ -193,6 +201,9 @@ function publico(r: Registro | null) {
     dialogo: nomeDoDialogo(r.dialogo_id),
     // Aviso por diálogo em incerteza: a conversa fica travada para novos avisos.
     trava_conversa: r.estado === "desconhecido" && Boolean(r.destino_chave),
+    // v19: aviso já terminado cuja conversa ficou presa na trava compartilhada
+    // (o soltar falhou). O ADM solta pelo Liberar número.
+    trava_compartilhada_presa: Boolean(presas?.has(r.id)),
     modo_teste: r.modo_teste,
     // "Testar modelo": envio de teste, fora do "aviso já enviado" do pedido.
     teste: r.envio_teste === true,
@@ -202,7 +213,8 @@ function publico(r: Registro | null) {
     autor_nome: r.autor_nome,
     criado_em: r.criado_em,
     atualizado_em: r.atualizado_em,
-    // "Liberar número": quem conferiu no ChatGuru, quando e o que respondeu.
+    // "Liberar número": quem conferiu no ChatGuru, quando e o que respondeu (resposta
+    // nula: só soltou a conversa presa na trava compartilhada).
     liberacao: r.liberado_em
       ? { por: r.liberado_por_nome, em: r.liberado_em, resposta: r.liberacao_resposta }
       : null
@@ -535,7 +547,7 @@ async function travarConversa(destinoChave: string, idAviso: string): Promise<{ 
  * confere). Com executado = true o banco aplica a margem. Tenta duas vezes; se
  * não conseguir, a conversa fica ocupada (lado seguro) e o erro vai para o log.
  */
-async function soltarConversa(destinoChave: string, chave: string, executado: boolean): Promise<boolean> {
+async function soltarConversa(destinoChave: string, chave: string, executado: boolean): Promise<"solto" | "nao_era_dono" | "erro"> {
   for (let tentativa = 0; tentativa < 2; tentativa++) {
     try {
       const { data, error } = await admin.rpc("imposition_whatsapp_conversa_soltar", {
@@ -543,13 +555,49 @@ async function soltarConversa(destinoChave: string, chave: string, executado: bo
         p_chave: chave,
         p_executado: executado
       });
-      if (!error) return data === true;
+      if (!error) return data === true ? "solto" : "nao_era_dono";
     } catch {
       // tenta de novo
     }
   }
   console.error("[expedicao-pedido-pronto] soltar", "falhou: conversa segue ocupada");
-  return false;
+  return "erro";
+}
+
+/**
+ * v19: ids dos avisos (já terminados) que ainda seguram a conversa na trava
+ * compartilhada: chave_envio = 'vibe:<id>' em imposition_whatsapp_conversas.
+ * Antes da migração nenhuma conversa tem 'vibe:', então a resposta é vazia.
+ * estrito: erro de leitura recusa (Liberar número); senão só registra no log.
+ */
+async function travasPresas(regs: (Registro | null)[], estrito = false): Promise<Set<string>> {
+  const presas = new Set<string>();
+  const porChave = new Map<string, Registro>();
+  for (const r of regs) {
+    if (!r || !podeTerTravaPresa(r)) continue;
+    try {
+      porChave.set(chaveDaTrava(r.id), r);
+    } catch {
+      // id fora do formato: não segura trava
+    }
+  }
+  const chaves = [...porChave.keys()];
+  for (let i = 0; i < chaves.length; i += 200) {
+    const { data, error } = await admin
+      .from("imposition_whatsapp_conversas")
+      .select("destino_chave, chave_envio")
+      .in("chave_envio", chaves.slice(i, i + 200));
+    if (error) {
+      console.error("[expedicao-pedido-pronto] travas presas", error.code ?? "erro");
+      if (estrito) throw new Recusa(503, "Não foi possível conferir a conversa. Nada mudou.");
+      return presas;
+    }
+    for (const c of data ?? []) {
+      const r = porChave.get(String(c.chave_envio));
+      if (r && r.destino_chave === c.destino_chave) presas.add(r.id);
+    }
+  }
+  return presas;
 }
 
 /** Grava o resultado SÓ na reserva que este pedido criou e que ainda está em 'preparando'. */
@@ -688,18 +736,18 @@ async function enviarParaConversas(p: {
       conversa.nome,
       ...p.ocultar
     ]);
+    // v19: solta conforme o resultado; 'desconhecido' segue ocupando a conversa.
+    const como = comoSoltar(r.resultado.estado);
+    const soltou = como.soltar ? await soltarConversa(chave, trava.chave, como.executado) : null;
     out.push({
       conversa,
-      aviso: publico(r.resultado),
+      aviso: publico(r.resultado, soltou === "erro" ? new Set([r.resultado.id]) : undefined),
       recusa: null,
       etapa_chatguru: r.resultado.estado === "executado" ? null : r.etapa,
       motivo_chatguru: r.motivo,
       recusa_numero: r.porNumero ? { numero_enviado: destino, chat_id: conversa.chat_id } : null,
       diagnostico_chatguru: p.quem.adm ? r.diagnostico : null
     });
-    // v19: solta conforme o resultado; 'desconhecido' segue ocupando a conversa.
-    const como = comoSoltar(r.resultado.estado);
-    if (como.soltar) await soltarConversa(chave, trava.chave, como.executado);
   }
   return out;
 }
@@ -739,8 +787,8 @@ async function listar(ids: unknown, modoTeste: boolean) {
     ? Array.from(new Set(ids.map(Number).filter((n) => Number.isInteger(n) && n > 0))).slice(0, 1000)
     : [];
   // Último aviso de verdade e, à parte, o último envio de teste de cada pedido.
-  const avisos: Record<number, ReturnType<typeof publico>> = {};
-  const testes: Record<number, ReturnType<typeof publico>> = {};
+  const ultimos: Record<number, Registro> = {};
+  const ultimosTeste: Record<number, Registro> = {};
   for (let i = 0; i < lista.length; i += 200) {
     const { data, error } = await admin
       .from("expedicao_aviso_pronto")
@@ -750,10 +798,16 @@ async function listar(ids: unknown, modoTeste: boolean) {
       .order("seq", { ascending: false });
     if (error) throw new Recusa(503, "Não foi possível ler os avisos.");
     for (const r of (data ?? []) as Registro[]) {
-      const alvo = r.envio_teste ? testes : avisos;
-      if (!alvo[r.id_int]) alvo[r.id_int] = publico(r);
+      const alvo = r.envio_teste ? ultimosTeste : ultimos;
+      if (!alvo[r.id_int]) alvo[r.id_int] = r;
     }
   }
+  // v19: conversa presa na trava compartilhada depois de um aviso já terminado.
+  const presas = await travasPresas([...Object.values(ultimos), ...Object.values(ultimosTeste)]);
+  const avisos: Record<number, ReturnType<typeof publico>> = {};
+  const testes: Record<number, ReturnType<typeof publico>> = {};
+  for (const r of Object.values(ultimos)) avisos[r.id_int] = publico(r, presas);
+  for (const r of Object.values(ultimosTeste)) testes[r.id_int] = publico(r, presas);
   const modelos: Record<number, { dialogo: string | null; bloqueio: string | null; testavel: boolean }> = {};
   for (const [id, f] of await fretesDosPedidos(lista)) {
     modelos[id] = {
@@ -889,10 +943,57 @@ Deno.serve(async (req) => {
       if (!quem.adm) throw new Recusa(403, "Só o ADM libera o número.");
       const idLib = Number(corpo?.id_int);
       const seqLib = Number(corpo?.seq);
-      const resposta = String(corpo?.resposta ?? "") as keyof typeof LIBERACAO;
       if (!Number.isInteger(idLib) || idLib <= 0 || !Number.isInteger(seqLib) || seqLib <= 0) throw new Recusa(400, "Pedido inválido.");
+      const { data: atualLib, error: errAtual } = await admin
+        .from("expedicao_aviso_pronto")
+        .select(COLUNAS)
+        .eq("id_int", idLib)
+        .eq("seq", seqLib)
+        .maybeSingle();
+      if (errAtual) throw new Recusa(503, "Não foi possível ler o aviso. Nada mudou.");
+      const regLib = atualLib as Registro | null;
+
+      if (modoDaLiberacao(corpo) === "trava") {
+        // v19: aviso já terminado ('executado' ou 'falhou') cuja conversa ficou presa
+        // na trava compartilhada. Só a chave 'vibe:' deste aviso; nunca a de um envio de arte.
+        if (corpo?.confirmado !== true) throw new Recusa(409, "Confirme que quer soltar a conversa.");
+        if (!regLib || !podeTerTravaPresa(regLib)) throw new Recusa(409, TRAVA_NAO_PRESA);
+        const presa = await travasPresas([regLib], true);
+        if (!presa.has(regLib.id)) throw new Recusa(409, TRAVA_NAO_PRESA);
+        const soltou = await soltarConversa(regLib.destino_chave!, chaveDaTrava(regLib.id), false);
+        if (soltou === "erro") throw new Recusa(503, TRAVA_NAO_SOLTA);
+        if (soltou === "nao_era_dono") throw new Recusa(409, TRAVA_NAO_PRESA);
+        // Registro: quem soltou e quando. Não sobrescreve uma liberação anterior.
+        const agora = new Date().toISOString();
+        const { data: reg, error: errReg } = await admin
+          .from("expedicao_aviso_pronto")
+          .update({ liberado_por: quem.id, liberado_por_nome: quem.nome, liberado_em: agora, atualizado_em: agora })
+          .eq("id", regLib.id)
+          .is("liberado_em", null)
+          .select(COLUNAS)
+          .maybeSingle();
+        if (errReg) {
+          console.error("[expedicao-pedido-pronto] registro da liberacao da trava", errReg.code ?? "erro");
+          throw new Recusa(503, "A conversa foi solta, mas o registro de quem liberou não foi gravado.");
+        }
+        if (!reg) console.error("[expedicao-pedido-pronto] liberacao da trava sem registro novo: aviso ja tinha liberacao");
+        return responder(200, { ok: true, modo_teste: modoTeste, aviso: publico((reg ?? regLib) as Registro) });
+      }
+
+      const resposta = String(corpo?.resposta ?? "") as keyof typeof LIBERACAO;
       if (!(resposta in LIBERACAO)) throw new Recusa(400, "Resposta inválida: use enviada ou nao_enviada.");
       if (corpo?.confirmado !== true) throw new Recusa(409, "Confirme o que você conferiu no ChatGuru.");
+      if (!regLib || regLib.estado !== "desconhecido" || !regLib.destino_chave || regLib.liberado_em) {
+        throw new Recusa(409, "Este aviso não está mais travado (ou não é de diálogo). Atualize a tela.");
+      }
+      // v19: solta a trava compartilhada ANTES de gravar, sem margem (a conferência
+      // levou tempo). Assim a liberação nunca fica gravada com a conversa ainda presa.
+      // Aviso de antes da trava compartilhada não ocupa a conversa: nada a soltar.
+      const segura = await travasPresas([{ ...regLib, estado: "falhou" }], true);
+      if (segura.has(regLib.id)) {
+        const soltou = await soltarConversa(regLib.destino_chave, chaveDaTrava(regLib.id), false);
+        if (soltou === "erro") throw new Recusa(503, TRAVA_NAO_SOLTA);
+      }
       // Só a tentativa vista, só diálogo, só em 'desconhecido' e nunca liberada antes.
       const { data: lib, error: errLib } = await admin
         .from("expedicao_aviso_pronto")
@@ -913,10 +1014,6 @@ Deno.serve(async (req) => {
         .maybeSingle();
       if (errLib) throw new Recusa(503, "Não foi possível liberar o número. Nada mudou.");
       if (!lib) throw new Recusa(409, "Este aviso não está mais travado (ou não é de diálogo). Atualize a tela.");
-      // v19: solta também a trava compartilhada, sem margem (a conferência levou tempo).
-      // Aviso de antes da trava compartilhada não ocupa a conversa: soltar devolve false.
-      const libReg = lib as Registro;
-      if (libReg.destino_chave) await soltarConversa(libReg.destino_chave, chaveDaTrava(libReg.id), false);
       return responder(200, { ok: true, modo_teste: modoTeste, aviso: publico(lib as Registro) });
     }
 
@@ -983,7 +1080,7 @@ Deno.serve(async (req) => {
           if (!(e instanceof Recusa)) throw e;
           bloqueio = e.message;
         }
-        return responder(200, { ok: true, modo_teste: modoTeste, destinatario, conversa, escolha, bloqueio, aviso: publico(ultimoP) });
+        return responder(200, { ok: true, modo_teste: modoTeste, destinatario, conversa, escolha, bloqueio, aviso: publico(ultimoP, await travasPresas([ultimoP])) });
       }
 
       // producao_enviar: modo teste e contato primeiro (recusa antes de olhar o resto).
@@ -999,7 +1096,7 @@ Deno.serve(async (req) => {
         }
         if (ultimoP.estado === "preparando") throw new Recusa(409, "Já há um envio em andamento para este pedido.");
       } else if (ultimoP) {
-        return responder(200, { ok: true, modo_teste: modoTeste, ja_existia: true, aviso: publico(ultimoP) });
+        return responder(200, { ok: true, modo_teste: modoTeste, ja_existia: true, aviso: publico(ultimoP, await travasPresas([ultimoP])) });
       }
       conferirPausaDoServidor();
       const linkP = await linkDoPedido(idP);

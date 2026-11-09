@@ -1,3 +1,9 @@
 # Edge Function publicada em producao: o git guarda os bytes exatos (fim de linha incluido),
 # para o arquivo do repositorio ser identico ao que esta no ar e servir de base de volta.
 supabase/functions/pagamento-publico/** -text
+
+# Trava compartilhada ChatGuru: SQL colado no SQL Editor recria funcoes do Imposition;
+# o corpo precisa sair com LF (o md5 do corpo e conferido no teste da volta).
+docs/technical/CHATGURU-TRAVA-*.sql text eol=lf
+# Patch das fichas do manual da trava compartilhada: bytes exatos para o git apply.
+docs/technical/CHATGURU-TRAVA-FICHAS.patch -text

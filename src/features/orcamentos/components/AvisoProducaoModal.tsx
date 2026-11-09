@@ -13,6 +13,10 @@ import {
   ROTULO_ESTADO_AVISO,
   enviarAvisoProducao,
   liberarNumeroAviso,
+  travaCompartilhadaPresa,
+  textoDaLiberacao,
+  TEXTO_TRAVA_PRESA,
+  type RespostaLiberacao,
   prepararAvisoProducao,
   type AvisoPronto,
   type ConversaChatGuru,
@@ -218,7 +222,7 @@ export function AvisoProducaoModal({
     if (!comAviso && liberouAgora) onConcluido(true);
   }
 
-  async function liberarNumero(resposta: "enviada" | "nao_enviada") {
+  async function liberarNumero(resposta: RespostaLiberacao) {
     if (!aviso || ocupado) return;
     setOcupado(true);
     const res = await liberarNumeroAviso(idInt, aviso.seq, resposta);
@@ -229,7 +233,11 @@ export function AvisoProducaoModal({
       return;
     }
     if (res.aviso) setAviso(res.aviso);
-    showToast({ type: "success", title: "Número liberado", description: `Pedido ${idInt}: conferido no ChatGuru.` });
+    showToast({
+      type: "success",
+      title: "Número liberado",
+      description: resposta === "soltar" ? `Pedido ${idInt}: conversa solta na trava compartilhada.` : `Pedido ${idInt}: conferido no ChatGuru.`
+    });
   }
 
   const destinatario = preparo?.destinatario ?? null;
@@ -237,8 +245,10 @@ export function AvisoProducaoModal({
   const escolhaDaJanela = preparo?.escolha ?? null;
   const faltaEscolher = Boolean(escolhaDaJanela && selecionadas.length === 0);
   const travado = aviso?.estado === "desconhecido" && aviso.trava_conversa === true;
+  // v19: aviso terminado com a conversa presa na trava compartilhada.
+  const presa = travaCompartilhadaPresa(aviso);
   const recusaAtual = recusa && aviso && recusa.seq === aviso.seq && aviso.estado === "falhou" ? recusa : null;
-  const podeReenviar = Boolean(aviso && aviso.estado !== "preparando" && !travado && !bloqueio);
+  const podeReenviar = Boolean(aviso && aviso.estado !== "preparando" && !travado && !presa && !bloqueio);
 
   const botao = "rounded-2xl px-4 py-2.5 text-sm font-semibold shadow-sm transition disabled:opacity-50";
 
@@ -336,10 +346,10 @@ export function AvisoProducaoModal({
               </p>
               {aviso.liberacao && (
                 <p className="text-slate-600 dark:text-slate-300">
-                  Liberado por {aviso.liberacao.por || "—"} em {formatDateTime(aviso.liberacao.em)}: conferido no ChatGuru,{" "}
-                  {aviso.liberacao.resposta === "enviada" ? "a mensagem foi enviada" : "a mensagem não foi enviada"}.
+                  {textoDaLiberacao(aviso.liberacao, formatDateTime(aviso.liberacao.em))}
                 </p>
               )}
+              {presa && <p className="text-amber-800 dark:text-amber-200">{TEXTO_TRAVA_PRESA}</p>}
               {travado && (
                 <p className="text-amber-800 dark:text-amber-200">
                   Não se sabe se a mensagem saiu. Este WhatsApp fica travado para novos avisos até alguém conferir no ChatGuru (avise o ADM).
@@ -436,7 +446,7 @@ export function AvisoProducaoModal({
             </>
           ) : (
             <>
-              {travado && ehAdm && (
+              {(travado || presa) && ehAdm && (
                 <button
                   type="button"
                   disabled={ocupado}
@@ -508,6 +518,7 @@ export function AvisoProducaoModal({
       {liberandoNumero && (
         <LiberarNumeroModal
           idInt={idInt}
+          soltarTrava={presa && !travado}
           ocupado={ocupado}
           onEscolher={(r) => void liberarNumero(r)}
           onClose={() => setLiberandoNumero(false)}

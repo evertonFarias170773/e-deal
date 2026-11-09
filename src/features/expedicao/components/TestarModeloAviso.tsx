@@ -11,6 +11,10 @@ import {
   DIALOGOS_AVISO,
   ROTULO_ESTADO_AVISO,
   liberarNumeroAviso,
+  travaCompartilhadaPresa,
+  textoDaLiberacao,
+  TEXTO_TRAVA_PRESA,
+  type RespostaLiberacao,
   testarModeloAviso,
   type AvisoPronto,
   type CamposDoTeste,
@@ -54,6 +58,8 @@ export function TestarModeloAviso({
   const [diagnostico, setDiagnostico] = useState<DiagnosticoChatGuru[] | null>(null);
 
   const travado = teste?.estado === "desconhecido" && teste.trava_conversa === true;
+  // v19: teste terminado com a conversa presa na trava compartilhada.
+  const presa = travaCompartilhadaPresa(teste);
 
   async function testar(selecao?: SelecaoConversas) {
     if (ocupado) return;
@@ -93,7 +99,7 @@ export function TestarModeloAviso({
     }
   }
 
-  async function liberar(resposta: "enviada" | "nao_enviada") {
+  async function liberar(resposta: RespostaLiberacao) {
     if (!teste || ocupado) return;
     setOcupado(true);
     const res = await liberarNumeroAviso(idInt, teste.seq, resposta);
@@ -101,7 +107,12 @@ export function TestarModeloAviso({
     setLiberando(false);
     onAviso(idInt, res.aviso, res.modo_teste);
     if (!res.ok) showToast({ type: "error", title: "Número não liberado", description: res.mensagem });
-    else showToast({ type: "success", title: "Número liberado", description: `Pedido ${idInt}: teste conferido no ChatGuru.` });
+    else
+      showToast({
+        type: "success",
+        title: "Número liberado",
+        description: resposta === "soltar" ? `Pedido ${idInt}: conversa solta na trava compartilhada.` : `Pedido ${idInt}: teste conferido no ChatGuru.`
+      });
   }
 
   return (
@@ -123,8 +134,8 @@ export function TestarModeloAviso({
         </select>
         <button
           type="button"
-          disabled={ocupado || travado}
-          title={travado ? "WhatsApp travado: confira no ChatGuru e libere o número antes." : undefined}
+          disabled={ocupado || travado || presa}
+          title={travado ? "WhatsApp travado: confira no ChatGuru e libere o número antes." : presa ? TEXTO_TRAVA_PRESA : undefined}
           onClick={() => setConfirmando(true)}
           className="font-semibold text-amber-800 underline-offset-2 hover:underline disabled:opacity-50 dark:text-amber-200"
         >
@@ -139,8 +150,7 @@ export function TestarModeloAviso({
       )}
       {teste?.liberacao && (
         <span className="max-w-[18rem] text-slate-600 dark:text-slate-300">
-          Liberado por {teste.liberacao.por || "—"} em {formatDateTime(teste.liberacao.em)}:{" "}
-          {teste.liberacao.resposta === "enviada" ? "a mensagem foi enviada" : "a mensagem não foi enviada"}.
+          {textoDaLiberacao(teste.liberacao, formatDateTime(teste.liberacao.em))}
         </span>
       )}
       {travado && (
@@ -148,7 +158,8 @@ export function TestarModeloAviso({
           Não se sabe se o diálogo foi executado. Este WhatsApp fica travado até alguém conferir no ChatGuru (avise o ADM).
         </span>
       )}
-      {travado && ehAdm && (
+      {presa && <span className="max-w-[18rem] text-amber-800 dark:text-amber-200">{TEXTO_TRAVA_PRESA}</span>}
+      {(travado || presa) && ehAdm && (
         <button
           type="button"
           disabled={ocupado}
@@ -203,6 +214,7 @@ export function TestarModeloAviso({
         <LiberarNumeroModal
           idInt={idInt}
           teste
+          soltarTrava={presa && !travado}
           ocupado={ocupado}
           onEscolher={(r) => void liberar(r)}
           onClose={() => setLiberando(false)}

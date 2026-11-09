@@ -14,6 +14,10 @@ import {
   consultarStatusAvisoPronto,
   enviarAvisoPronto,
   liberarNumeroAviso,
+  travaCompartilhadaPresa,
+  textoDaLiberacao,
+  TEXTO_TRAVA_PRESA,
+  type RespostaLiberacao,
   reenviarAvisoPronto,
   type AvisoPronto,
   type DiagnosticoChatGuru,
@@ -169,7 +173,7 @@ export function AvisoPedidoPronto({
     if (!res.ok) showToast({ type: "error", title: "Status não consultado", description: res.mensagem });
   }
 
-  async function liberar(resposta: "enviada" | "nao_enviada") {
+  async function liberar(resposta: RespostaLiberacao) {
     if (!aviso || ocupado) return;
     setOcupado(true);
     const res = await liberarNumeroAviso(idInt, aviso.seq, resposta);
@@ -184,9 +188,11 @@ export function AvisoPedidoPronto({
       type: "success",
       title: "Número liberado",
       description:
-        resposta === "enviada"
-          ? `Pedido ${idInt}: aviso marcado como executado. Nada foi reenviado.`
-          : `Pedido ${idInt}: aviso marcado como falhou. Já dá para usar Reenviar.`
+        resposta === "soltar"
+          ? `Pedido ${idInt}: conversa solta na trava compartilhada. Nada foi reenviado.`
+          : resposta === "enviada"
+            ? `Pedido ${idInt}: aviso marcado como executado. Nada foi reenviado.`
+            : `Pedido ${idInt}: aviso marcado como falhou. Já dá para usar Reenviar.`
     });
   }
 
@@ -272,6 +278,8 @@ export function AvisoPedidoPronto({
   const saiu = aviso.estado === "enviado" || aviso.estado === "aguardando" || aviso.estado === "executado";
   // Diálogo incerto segura o WhatsApp: Reenviar só depois de conferir no ChatGuru.
   const travado = aviso.estado === "desconhecido" && aviso.trava_conversa === true;
+  // v19: aviso terminado com a conversa presa na trava compartilhada (o soltar falhou).
+  const presa = travaCompartilhadaPresa(aviso);
   // Recusa por número desta tentativa (só nesta tela: o servidor não grava o motivo).
   const recusa = aviso.estado === "falhou" && recusaNumero && recusaNumero.seq === aviso.seq ? recusaNumero : null;
   const cor =
@@ -304,7 +312,8 @@ export function AvisoPedidoPronto({
           Não se sabe se o diálogo foi executado. Este WhatsApp fica travado para novos avisos até alguém conferir no ChatGuru (avise o ADM).
         </span>
       )}
-      {travado && ehAdm && (
+      {presa && <span className="max-w-[18rem] text-amber-800 dark:text-amber-200">{TEXTO_TRAVA_PRESA}</span>}
+      {(travado || presa) && ehAdm && (
         <button
           type="button"
           disabled={ocupado}
@@ -316,8 +325,7 @@ export function AvisoPedidoPronto({
       )}
       {aviso.liberacao && (
         <span className="max-w-[18rem] text-slate-600 dark:text-slate-300">
-          Liberado por {aviso.liberacao.por || "—"} em {formatDateTime(aviso.liberacao.em)}: conferido no ChatGuru,{" "}
-          {aviso.liberacao.resposta === "enviada" ? "a mensagem foi enviada" : "a mensagem não foi enviada"}.
+          {textoDaLiberacao(aviso.liberacao, formatDateTime(aviso.liberacao.em))}
         </span>
       )}
       {ehAdm && diagnostico && diagnostico.length > 0 && (
@@ -339,7 +347,7 @@ export function AvisoPedidoPronto({
       )}
       {podeOperar && (
         <span className="flex gap-2">
-          {aviso.estado !== "preparando" && !travado && !bloqueio && (
+          {aviso.estado !== "preparando" && !travado && !presa && !bloqueio && (
             <button
               type="button"
               disabled={ocupado}
@@ -359,7 +367,7 @@ export function AvisoPedidoPronto({
               Atualizar status
             </button>
           )}
-          {aviso.estado !== "preparando" && !travado && !bloqueio && (
+          {aviso.estado !== "preparando" && !travado && !presa && !bloqueio && (
             <button
               type="button"
               disabled={ocupado}
@@ -375,6 +383,7 @@ export function AvisoPedidoPronto({
       {liberando && (
         <LiberarNumeroModal
           idInt={idInt}
+          soltarTrava={presa && !travado}
           ocupado={ocupado}
           onEscolher={(r) => void liberar(r)}
           onClose={() => setLiberando(false)}
