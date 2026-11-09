@@ -57,7 +57,7 @@ create temp table _antes as select
      from pg_proc where pronamespace = 'public'::regnamespace and proname like 'imposition_whatsapp_dialogo_%') as rpc_def,
   (select md5(string_agg(x, ',' order by x)) from (select p.oid::regprocedure::text || md5(p.prosrc) || coalesce(p.proconfig::text, '') || coalesce(p.proacl::text, '') as x
      from pg_proc p where p.pronamespace = 'public'::regnamespace) s) as funcoes,
-  (select md5(string_agg(x, ',' order by x)) from (select c.relname || ':' || c.relkind as x
+  (select md5(string_agg(x, ',' order by x)) from (select c.relname || ':' || c.relkind::text as x
      from pg_class c where c.relnamespace = 'public'::regnamespace) s) as relacoes,
   (select md5(string_agg(x, ',' order by x)) from (
      select 'g:' || t.tgrelid::regclass::text || ':' || t.tgname || ':' || md5(pg_get_triggerdef(t.oid)) as x
@@ -474,7 +474,7 @@ select pg_temp.reg('X6 nenhum gatilho novo', 'ok:true', pg_temp.tenta($q$select 
 select pg_temp.reg('X7 tres RPCs do Imposition: md5 do corpo igual ao de antes da ida', 'ok:true', pg_temp.tenta($q$select ((select string_agg(proname || '|' || md5(prosrc), ',' order by proname) from pg_proc where pronamespace = 'public'::regnamespace and proname like 'imposition_whatsapp_dialogo_%') = (select rpc_corpo from _antes) and (select rpc_corpo from _antes) like '%,%,%')::text$q$));
 select pg_temp.reg('X8 tres RPCs: definicao completa, permissoes e dono iguais', 'ok:true', pg_temp.tenta($q$select ((select string_agg(proname || '|' || md5(pg_get_functiondef(oid)) || '|' || coalesce(proacl::text, '') || '|' || pg_get_userbyid(proowner), ',' order by proname) from pg_proc where pronamespace = 'public'::regnamespace and proname like 'imposition_whatsapp_dialogo_%') = (select rpc_def from _antes))::text$q$));
 select pg_temp.reg('X9 todas as funcoes de public iguais as de antes', 'ok:true', pg_temp.tenta($q$select ((select md5(string_agg(x, ',' order by x)) from (select p.oid::regprocedure::text || md5(p.prosrc) || coalesce(p.proconfig::text, '') || coalesce(p.proacl::text, '') as x from pg_proc p where p.pronamespace = 'public'::regnamespace) s) = (select funcoes from _antes))::text$q$));
-select pg_temp.reg('X10 tabelas, visoes, indices e sequencias de public iguais', 'ok:true', pg_temp.tenta($q$select ((select md5(string_agg(x, ',' order by x)) from (select c.relname || ':' || c.relkind as x from pg_class c where c.relnamespace = 'public'::regnamespace) s) = (select relacoes from _antes))::text$q$));
+select pg_temp.reg('X10 tabelas, visoes, indices e sequencias de public iguais', 'ok:true', pg_temp.tenta($q$select ((select md5(string_agg(x, ',' order by x)) from (select c.relname || ':' || c.relkind::text as x from pg_class c where c.relnamespace = 'public'::regnamespace) s) = (select relacoes from _antes))::text$q$));
 select pg_temp.reg('X11 gatilhos, restricoes e colunas das tres tabelas iguais', 'ok:true', pg_temp.tenta($q$select ((select md5(string_agg(x, ',' order by x)) from (
      select 'g:' || t.tgrelid::regclass::text || ':' || t.tgname || ':' || md5(pg_get_triggerdef(t.oid)) as x
        from pg_trigger t join pg_class c on c.oid = t.tgrelid where not t.tgisinternal and c.relnamespace = 'public'::regnamespace and c.relname in ('imposition_whatsapp_conversas', 'imposition_whatsapp_artes', 'expedicao_aviso_pronto')
