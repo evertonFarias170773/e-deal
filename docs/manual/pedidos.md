@@ -295,6 +295,7 @@ A liberação é recusada quando já existe NF-e de venda autorizada ou em proce
 | "Sem permissão para retirar da produção (propostas.release_producao)." | Seu perfil não tem a permissão "Liberar para Produção". | Peça a quem tem a permissão. |
 | "Sem permissão para liberar para produção (propostas.release_producao)." | Seu perfil não tem a permissão "Liberar para Produção". | Peça a liberação a quem tem a permissão, ou peça ao administrador para incluí-la no seu perfil. |
 | "Envio de aviso de produção em ajuste" | O aviso Pedido em Produção está suspenso para clientes reais até a trava por conversa ser a mesma do envio de arte do Imposition. | Use **Liberar sem enviar**. |
+| "O ChatGuru exige 2 minutos entre mensagens para a mesma conversa. Tente de novo em instantes." | Saiu outra mensagem para a mesma conversa há menos de 2 minutos. Nada saiu; a liberação continua valendo. | Espere 2 minutos e use **Reenviar** na janela ou em **Aviso: pedido em produção**. |
 | "Pedido sem link de aprovação" | O pedido não tem link ativo de aprovação do cliente (o mesmo do Imposition). | Use **Liberar sem enviar**. O aviso só sai com o link do próprio pedido. |
 | "Há um aviso sem confirmação para o WhatsApp {número}." | Outro aviso para o mesmo WhatsApp (de produção ou de pedido pronto) ficou em resultado desconhecido. | Avise o Administrador: ele confere no ChatGuru e usa **Liberar número**. |
 | "O pedido {número} ainda não foi liberado para a produção. Nada foi enviado." | Tentativa de aviso antes da liberação. | Libere primeiro; o aviso sai depois. |

@@ -1,6 +1,6 @@
 # Expedição
 
-> **Última revisão:** 09/11/2026 (aviso pelo ChatGuru vai para a conversa do cliente no remetente 3478; campos gravados por diálogo)
+> **Última revisão:** 09/11/2026 (aviso pelo ChatGuru: conversa do cliente no remetente 3478, campos por diálogo, regra dos 2 minutos)
 > **Caminho no menu:** Expedição (item direto do menu lateral, sem subitens; é o quarto, depois de Conferência, Pedidos e Clientes). Também se chega pela aba **Expedição** no topo do Kanban e da Fila de impressão da Produção.
 > **Endereço:** `/expedicao`
 
@@ -407,6 +407,7 @@ Em resumo: no pedido Na Expedição, clique em **Despachar**, confira peso, volu
 | "Cliente sem conversa no ChatGuru (remetente 3478)" | O cliente do pedido não tem nenhuma conversa no WhatsApp da Ideal com o código dele no nome | Nada é enviado. A conversa precisa existir no ChatGuru com o código do cliente no nome ("Nome - {código}"); o Vibe não cria conversa |
 | Janela **Para qual conversa enviar?** | O WhatsApp do contato responsável casa com mais de uma conversa do cliente, ou com nenhuma | Escolha a conversa (ou várias, ou todas) e confirme |
 | "Número não encontrado no ChatGuru: {número}" | O ChatGuru recusou a conversa usada | **Ver conversas do cliente** e escolha outra conversa |
+| "O ChatGuru exige 2 minutos entre mensagens para a mesma conversa. Tente de novo em instantes." | Saiu outra mensagem por diálogo para a mesma conversa há menos de 2 minutos (deste aviso, de outro pedido ou do envio de arte do Imposition). O ChatGuru recusa e nada sai | Espere 2 minutos e use **Reenviar**. O aviso fica como **falhou** e o WhatsApp não fica travado |
 | "Modo teste: só pedidos do cliente #14 podem ser avisados." | O modo teste está ligado e o pedido é de outro cliente | Nada a fazer pela tela: o aviso fica liberado quando o modo teste for desligado |
 | "Este pedido já tinha aviso" | Já houve aviso para o pedido | Nada foi enviado de novo. Para mandar outra mensagem, use **Reenviar** |
 | Aviso em **resultado desconhecido** | O ChatGuru não respondeu a tempo ou respondeu algo inesperado | Conferir no ChatGuru se a mensagem saiu. Aviso por diálogo deixa o WhatsApp travado: o Administrador confere e usa **Liberar número** |

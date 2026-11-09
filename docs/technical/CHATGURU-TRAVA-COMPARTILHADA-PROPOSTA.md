@@ -1,6 +1,6 @@
 # ChatGuru: trava por conversa compartilhada (proposta)
 
-> **Situação:** proposta de 09/11/2026. A ideia foi aprovada pela equipe do Imposition com cinco ajustes, tratados na revisão 2 (abaixo). **Não aplicada**: nada no banco nem nas funções.
+> **Situação:** proposta de 09/11/2026. A ideia foi aprovada pela equipe do Imposition com cinco ajustes, tratados na revisão 2; a revisão 3 traz o resultado do teste do item 5 e a regra dos 120 segundos do ChatGuru. **Não aplicada** no banco.
 > **Alcance:** a trava compartilhada vale para **todos os avisos do Vibe** que usam a Edge Function `expedicao-pedido-pronto`: o aviso de pedido pronto da Expedição (seis diálogos), o "Testar modelo" e o "Pedido em Produção".
 > **Enquanto não existir:** o "Pedido em Produção" só envia em modo teste e para o cliente #14; os demais veem "Envio de aviso de produção em ajuste" e só liberam. O aviso de pedido pronto da Expedição está limitado pelo modo teste (só cliente #14). Desligar o modo teste da Expedição antes da trava compartilhada deixa aberta a corrida em `Pedido_Atual` descrita abaixo.
 
@@ -67,22 +67,37 @@ Cuidado na troca: se algum secret tiver hoje barra final ou espaço, a chave mud
 - **Do lado do Imposition:** a regra já é igual. O `finalizar` não solta em "desconhecido", e a reserva interrompida dele fica com `chave_envio` ocupado até alguém resolver. A proposta não muda isso.
 - **Antes de ligar:** um passo único, no mesmo momento do deploy, faz cada aviso do Vibe em "desconhecido" (e em "preparando" há mais de 2 minutos) ocupar a conversa em `imposition_whatsapp_conversas` com `vibe:<id>`. Se a conversa já estiver ocupada por um envio de arte, o caso fica listado para conferência manual e não é sobrescrito.
 
-### 5. Quando o Guru lê os campos (teste pendente)
+### 5. Quando o Guru lê os campos (testado em 09/11/2026)
 
-**Pergunta:** depois do "Diálogo Executado", o ChatGuru ainda lê os campos da conversa por algum tempo? Se sim, uma gravação de outro sistema logo depois troca o valor da mensagem que acabou de sair. Nesse caso a trava precisa ficar presa mais um pouco depois da execução.
+**Pergunta:** depois do "Diálogo Executado", o ChatGuru ainda lê os campos da conversa por algum tempo? Se sim, uma gravação de outro sistema logo depois troca o valor da mensagem que acabou de sair.
 
-**Teste combinado:** conversa "Edison Junior - 14", diálogo Retira, pedido 24880.
-1. Gravar `Pedido_Atual` = 24880.
-2. Executar o diálogo.
-3. Logo depois da resposta, gravar `Pedido_Atual` = 99999.
-4. Repetir com 2, 5 e 15 segundos de espera antes da segunda gravação.
-5. Conferir no WhatsApp qual número chegou em cada uma das quatro mensagens.
+**Teste:** conversa "Edison Junior - 14", diálogo Retira, pedido 24880. Grava `Pedido_Atual` = 24880, executa o diálogo e, depois da espera, grava `Pedido_Atual` = 99999. Feito por uma ação temporária da função, só modo teste, cliente #14 e ADM, removida em seguida. Mensagens conferidas no WhatsApp:
 
-**Situação em 09/11/2026:** o teste não foi feito. A segunda gravação (99999) exige chamar o ChatGuru com a chave da integração. Essa chave só existe dentro das Edge Functions, e o Vibe não tem ação que grave um valor arbitrário. Fazer o teste pede uma ação temporária na função (só modo teste, cliente #14, só ADM, removida depois) ou alguém com acesso ao ChatGuru fazendo as gravações à mão.
+| Espera antes de gravar 99999 | Diálogo executado (Brasília) | Número que chegou no topo da mensagem |
+|---|---|---|
+| 0 s | 11:27:53 | **99999** (errado) |
+| 2 s | 11:36:17 | 24880 |
+| 5 s | 11:30:02 | 24880 |
+| 15 s | 11:34:01 | 24880 |
 
-**Proposta de espera, até o resultado:** a trava fica presa **30 segundos** depois do "Diálogo Executado". O valor é provisório e conservador. Com o resultado, vira o maior tempo em que a segunda gravação ainda trocou o número, mais uma folga de 2 vezes. Se nenhuma das quatro mensagens chegar com 99999, a espera cai para 2 segundos.
+**Conclusão:** o ChatGuru lê os campos logo depois de responder "Diálogo Executado", em menos de 2 segundos. Uma gravação de outro sistema nesse intervalo troca o valor da mensagem que acabou de sair.
 
-Como segurar sem dormir dentro da função: uma coluna `livre_em` em `imposition_whatsapp_conversas`. Os dois sistemas, ao terminar com sucesso, soltam `chave_envio` e gravam `livre_em = now() + espera`. A conversa conta como ocupada enquanto `chave_envio` não for nulo **ou** `livre_em` estiver no futuro. Isso exige uma linha a mais nas RPCs `reservar` e `reenviar` do Imposition e no `finalizar`, que passa a gravar `livre_em`. Sem isso, o envio de arte soltaria a conversa na hora e a espera valeria só para o Vibe.
+**Decisão:** a trava fica presa **5 segundos** depois do "Diálogo Executado" (coluna `livre_em`), com folga sobre os 2 segundos medidos.
+
+**Rodapé do template Retira:** na mensagem de 0 s, o topo chegou com 99999, mas o rodapé "NÚMERO DO PEDIDO" chegou com 24880. Ou o rodapé não usa `Pedido_Atual`, ou lê o campo em outro momento. **Conferir com a diretoria** qual campo o rodapé usa e quando ele é lido. Se for outro campo que o Vibe não grava, o rodapé pode mostrar o pedido de outro envio.
+
+### 6. Regra dos 120 segundos do ChatGuru (achada em 09/11/2026)
+
+O ChatGuru recusa um segundo diálogo na mesma conversa antes de 120 segundos do anterior. A resposta é HTTP 200 e `code` 200, mas com `result` "error":
+
+> "Diálogo não foi executado pois o tempo mínimo não foi atingido: Tempo decorrido: 63 segs - Mínimo: 120 segs"
+
+- **Nas tentativas recusadas nada sai:** a conta conta a partir da última execução que deu certo, e as recusas não reiniciam o tempo.
+- **No Vibe, desde 09/11/2026 (função v18):** essa resposta é recusa explícita. O aviso fica em "falhou", a conversa fica livre, e a tela mostra "O ChatGuru exige 2 minutos entre mensagens para a mesma conversa. Tente de novo em instantes." Antes, ela caía em "resultado desconhecido" e travava a conversa até o "Liberar número".
+- **Na trava compartilhada:** dois sistemas mandando para a mesma conversa em menos de 2 minutos fazem o segundo ser recusado pelo ChatGuru, mesmo com a trava livre. A trava não substitui essa regra.
+- **Pontos para combinar com o Imposition:**
+  1. O Imposition trata essa resposta do mesmo jeito? Hoje, para ele, `result` "error" com `code` 200 também não é recusa (o `rejeitado` dele exige `code` 400), então cai em "desconhecido" e segura a conversa.
+  2. Vale guardar o horário da última execução por conversa (por exemplo, em `imposition_whatsapp_conversas`) para os dois sistemas avisarem antes de tentar, em vez de esperar a recusa.
 
 ## SQL proposta (revisão 2, não aplicada)
 
@@ -169,7 +184,7 @@ grant execute on function public.imposition_whatsapp_conversa_soltar(text, text,
 --    Em imposition_whatsapp_dialogo_reservar e _reenviar:
 --      IF ocupado IS NOT NULL OR (SELECT livre_em FROM ... WHERE destino_chave = p_destino) > now() THEN RETURN 'ocupado'; END IF;
 --    Em imposition_whatsapp_dialogo_finalizar, ao soltar com sucesso:
---      SET chave_envio = NULL, livre_em = now() + <espera>, ...
+--      SET chave_envio = NULL, livre_em = now() + interval '5 seconds', ...
 
 -- F) Passagem (item 4), no momento do deploy: avisos do Vibe em 'desconhecido',
 --    ou em 'preparando' há mais de 2 minutos, ocupam a conversa; conversa já ocupada fica listada, não é sobrescrita.
@@ -192,8 +207,8 @@ No caminho comum a todos os avisos (`enviarParaConversas` -> `reservarLinha`), o
 2. Depois de reservar a linha em `expedicao_aviso_pronto`, chamar `imposition_whatsapp_conversa_travar(destino_chave, 'vibe:' || id)`.
    - Se vier `ocupado`, marcar a linha como `falhou`, sem chamar o ChatGuru, e mostrar "Há uma operação pendente para esta conversa".
 3. Ao terminar:
-   - com `executado`, chamar `imposition_whatsapp_conversa_soltar` com a espera do item 5;
-   - com `falhou`, soltar com espera zero;
+   - com `executado`, chamar `imposition_whatsapp_conversa_soltar` com a espera do item 5 (5 segundos);
+   - com `falhou`, soltar com espera zero (inclusive na recusa dos 120 segundos, item 6);
    - em `desconhecido`, ou numa reserva interrompida, não soltar: o "Liberar número" solta.
 4. A trava própria do Vibe continua e cobre dois avisos do Vibe sem passar pelo Imposition.
 5. Ordem para ligar, só com a trava compartilhada no ar e conferida:

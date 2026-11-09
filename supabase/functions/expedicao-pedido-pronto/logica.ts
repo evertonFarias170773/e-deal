@@ -369,10 +369,24 @@ export function textoDaResposta(data: unknown): string {
   return limpar(d.description, 200) || limpar(d.dialog_execution_return, 200);
 }
 
-/** Recusa explícita do ChatGuru (nada saiu): result "error" + code 400 + HTTP < 500. */
+/**
+ * Regra dos 120 segundos (09/11/2026): o ChatGuru recusa um segundo diálogo na mesma
+ * conversa antes de 2 minutos, com HTTP 200, code 200 e result "error":
+ *   "Diálogo não foi executado pois o tempo mínimo não foi atingido: Tempo decorrido: 63 segs - Mínimo: 120 segs"
+ * Nada sai: é recusa explícita (estado 'falhou', conversa liberada), não incerteza.
+ */
+export const TEMPO_MINIMO_GURU = "O ChatGuru exige 2 minutos entre mensagens para a mesma conversa. Tente de novo em instantes.";
+
+export function recusaTempoMinimo(data: unknown): boolean {
+  const d = (data ?? {}) as Record<string, unknown>;
+  const texto = `${String(d.dialog_execution_return ?? "")} ${String(d.description ?? "")}`;
+  return d.result === "error" && /tempo\s+m[ií]nimo/i.test(texto);
+}
+
+/** Recusa explícita do ChatGuru (nada saiu): result "error" + code 400 + HTTP < 500, ou a regra dos 120 s. */
 export function envioRecusado(http: number, data: unknown): boolean {
   const d = (data ?? {}) as Record<string, unknown>;
-  return http < 500 && d.result === "error" && Number(d.code) === 400;
+  return http < 500 && d.result === "error" && (Number(d.code) === 400 || recusaTempoMinimo(d));
 }
 
 /** Respostas do "Liberar número" (ADM, depois de conferir no ChatGuru) e o estado que cada uma dá. */

@@ -19,11 +19,14 @@
  *   K. Pedido em Produção: diálogo próprio, fora da lista da Expedição, sem campos;
  *   L. conversa do ChatGuru (09/11): DDD + 8 últimos casa com uma -> automática;
  *      várias ou nenhuma -> escolha; sem conversa -> não envia; escolha só do cliente;
- *   M. produção (09/11): só modo teste + cliente #14; Link_do_Cliente do próprio pedido.
+ *   M. produção (09/11): só modo teste + cliente #14; Link_do_Cliente do próprio pedido;
+ *   N. regra dos 120 s do ChatGuru: recusa explícita (falhou), com a mensagem da tela.
  */
 import assert from "node:assert/strict";
 import {
   CLIENTE_TESTE,
+  TEMPO_MINIMO_GURU,
+  recusaTempoMinimo,
   AVISO_PRODUCAO_EM_AJUSTE,
   SEM_LINK_APROVACAO,
   conferirEnvioProducao,
@@ -310,6 +313,19 @@ caso("M. produção: link do cliente e bloqueio", () => {
   assert.throws(() => linkDoCliente(24917, [{ numero_pedido: "24917", token: "ab12cd" }, { numero_pedido: "24917", token: "xy34ef" }]), /sem link/);
   assert.equal(SEM_LINK_APROVACAO, "Pedido sem link de aprovação");
   assert.equal(AVISO_PRODUCAO_EM_AJUSTE, "Envio de aviso de produção em ajuste");
+});
+
+caso("N. regra dos 120 s do ChatGuru", () => {
+  const r = { code: 200, dialog_execution_return: "Diálogo não foi executado pois o tempo mínimo não foi atingido: Tempo decorrido: 63 segs - Mínimo: 120 segs", result: "error" };
+  assert.equal(recusaTempoMinimo(r), true);
+  // Recusa explícita: estado 'falhou' (libera a conversa), não 'desconhecido'.
+  assert.equal(envioRecusado(200, r), true);
+  assert.equal(dialogoExecutado(200, r), false);
+  assert.equal(TEMPO_MINIMO_GURU, "O ChatGuru exige 2 minutos entre mensagens para a mesma conversa. Tente de novo em instantes.");
+  // Não confunde com sucesso nem com outra resposta.
+  assert.equal(recusaTempoMinimo({ code: 200, dialog_execution_return: "Diálogo Executado", result: "success" }), false);
+  assert.equal(envioRecusado(200, { code: 200, result: "error", description: "algo inesperado" }), false);
+  assert.equal(envioRecusado(500, r), false);
 });
 
 console.log(`\n${n} casos ok`);

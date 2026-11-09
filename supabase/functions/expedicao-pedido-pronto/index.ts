@@ -114,6 +114,8 @@ import {
   notaParaODialogo,
   rastreioCorreiosValido,
   recusaPorNumero,
+  recusaTempoMinimo,
+  TEMPO_MINIMO_GURU,
   textoDaResposta,
   type EscolhaDialogo,
   type NomeDialogo
@@ -768,7 +770,8 @@ async function executarDialogo(
       if (dialogoExecutado(r2.http, r2.data)) {
         resultado = await salvar(idReserva, "executado");
       } else {
-        motivo = textoDaResposta(r2.data) || null;
+        // Regra dos 120 s do ChatGuru: recusa explícita, com a mensagem da tela (09/11/2026).
+        motivo = recusaTempoMinimo(r2.data) ? TEMPO_MINIMO_GURU : textoDaResposta(r2.data) || null;
         const recusado = envioRecusado(r2.http, r2.data);
         porNumero = recusado && recusaPorNumero(motivo);
         resultado = await salvar(idReserva, recusado ? "falhou" : "desconhecido");
