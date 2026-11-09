@@ -42,6 +42,14 @@ type Preparo = {
  * faz nada. Falha no envio não desfaz a liberação: mostra o motivo e oferece
  * Reenviar, com confirmação.
  *
+ * Pedido que já recebeu o aviso (09/11/2026): a janela mostra "Este pedido já
+ * recebeu o aviso de produção em {data}" e "Liberar e enviar" manda de novo (é um
+ * reenvio, pela tentativa vista). "Liberar sem enviar" segue sem mensagem.
+ *
+ * Link e bloqueio (09/11/2026): o servidor grava o Link_do_Cliente do próprio pedido
+ * antes do diálogo; sem link, "Pedido sem link de aprovação". Fora do modo teste ou
+ * do cliente #14, "Envio de aviso de produção em ajuste" e só "Liberar sem enviar".
+ *
  * modo "avisar": pedido já liberado. Mostra o último aviso e envia/reenvia.
  *
  * Destino (09/11/2026): a conversa do cliente no ChatGuru (remetente 3478), lida
@@ -187,7 +195,8 @@ export function AvisoProducaoModal({
       onConcluido(true);
       return;
     }
-    await enviar(undefined, selecaoDaJanela());
+    // Já houve aviso: "Liberar e enviar" manda de novo, pela tentativa que a janela mostrou.
+    await enviar(aviso ? { seqAtual: aviso.seq } : undefined, selecaoDaJanela());
   }
 
   async function liberarNumero(resposta: "enviada" | "nao_enviada") {
@@ -249,6 +258,11 @@ export function AvisoProducaoModal({
               <p className="font-semibold text-slate-950 dark:text-slate-100">
                 Enviar mensagem ao cliente avisando que o pedido entrou em produção?
               </p>
+              {aviso && (
+                <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 font-semibold text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-100">
+                  Este pedido já recebeu o aviso de produção em {formatDateTime(aviso.criado_em)}. Liberar e enviar manda a mensagem de novo.
+                </p>
+              )}
             </>
           )}
 
@@ -289,7 +303,7 @@ export function AvisoProducaoModal({
                   modo teste: só pedidos e contatos do cliente #14
                 </p>
               )}
-              {bloqueio && <p className="text-red-700 dark:text-red-300">Envio recusado: {bloqueio}</p>}
+              {bloqueio && <p className="font-semibold text-red-700 dark:text-red-300">{bloqueio}</p>}
             </div>
           </div>
 

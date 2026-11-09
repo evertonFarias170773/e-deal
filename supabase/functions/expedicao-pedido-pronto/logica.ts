@@ -491,3 +491,39 @@ export function conversasEscolhidas(pedidas: unknown, doCliente: Conversa[], tod
   if (fora.length) throw new Recusa(409, "Uma das conversas escolhidas não é deste cliente no ChatGuru. Abra a lista de novo.");
   return ids.map((id) => porId.get(id)!);
 }
+
+// --- Pedido em Produção: link do cliente e bloqueio (09/11/2026) ---
+//
+// O template do diálogo DIALOGO_PRODUCAO passou a usar {Link_do_Cliente}. Sem gravar
+// o campo, o ChatGuru usa o último valor da conversa (no teste de 09/11, o link do
+// 24880 chegou no aviso do 24917). Por isso o Vibe grava field__Link_do_Cliente com
+// o link do próprio pedido antes do dialog_execute, montado como o Imposition monta.
+
+export const AVISO_PRODUCAO_EM_AJUSTE = "Envio de aviso de produção em ajuste";
+export const SEM_LINK_APROVACAO = "Pedido sem link de aprovação";
+export const PORTAL_CLIENTE = "https://imposition.ai-ideal.com.br";
+
+/**
+ * Enquanto o Vibe e o envio de arte do Imposition não respeitam a mesma trava por
+ * conversa (imposition_whatsapp_conversas), o aviso de produção só sai no modo
+ * teste e só para o cliente #14. Fora disso: "Envio de aviso de produção em ajuste".
+ */
+export function conferirEnvioProducao(modoTeste: boolean, idClientePedido: unknown): void {
+  if (!modoTeste || Number(idClientePedido) !== CLIENTE_TESTE) throw new Recusa(423, AVISO_PRODUCAO_EM_AJUSTE);
+}
+
+/**
+ * Link de aprovação do pedido, como o Imposition monta: linhas ativas de
+ * pedidos_links_cliente com os_id "vibe_<id_int>"; exatamente uma, do próprio
+ * pedido, com token de 6 a 12 letras/dígitos. Nunca gera token novo.
+ */
+export function linkDoCliente(idInt: number, linhas: { numero_pedido?: unknown; token?: unknown }[] | null | undefined): string {
+  const ativas = linhas ?? [];
+  if (ativas.length !== 1) throw new Recusa(422, SEM_LINK_APROVACAO);
+  const numero = String(ativas[0].numero_pedido ?? "").trim();
+  const token = String(ativas[0].token ?? "").trim();
+  if (!/^[1-9]\d*$/.test(numero) || numero !== String(idInt) || !/^[a-zA-Z0-9]{6,12}$/.test(token)) {
+    throw new Recusa(422, SEM_LINK_APROVACAO);
+  }
+  return `${PORTAL_CLIENTE}/cliente/${numero}-${token}`;
+}

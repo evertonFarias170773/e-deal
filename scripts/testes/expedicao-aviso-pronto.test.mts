@@ -18,11 +18,16 @@
  *   J. Testar modelo: só modo teste e cliente #14; campos que faltam vão com valor de teste;
  *   K. Pedido em Produção: diálogo próprio, fora da lista da Expedição, sem campos;
  *   L. conversa do ChatGuru (09/11): DDD + 8 últimos casa com uma -> automática;
- *      várias ou nenhuma -> escolha; sem conversa -> não envia; escolha só do cliente.
+ *      várias ou nenhuma -> escolha; sem conversa -> não envia; escolha só do cliente;
+ *   M. produção (09/11): só modo teste + cliente #14; Link_do_Cliente do próprio pedido.
  */
 import assert from "node:assert/strict";
 import {
   CLIENTE_TESTE,
+  AVISO_PRODUCAO_EM_AJUSTE,
+  SEM_LINK_APROVACAO,
+  conferirEnvioProducao,
+  linkDoCliente,
   SEM_CONVERSA,
   conversasEscolhidas,
   dddFinal8,
@@ -289,6 +294,22 @@ caso("L. conversa do ChatGuru", () => {
   assert.throws(() => conversasEscolhidas(["zz"], [a, b]), /não é deste cliente/);
   assert.throws(() => conversasEscolhidas([], [a, b]), /ao menos uma/);
   assert.throws(() => conversasEscolhidas(undefined, [ruim], true), /sem conversa/);
+});
+
+caso("M. produção: link do cliente e bloqueio", () => {
+  // Bloqueio: só modo teste e cliente #14.
+  assert.throws(() => conferirEnvioProducao(false, 14), /Envio de aviso de produção em ajuste/);
+  assert.throws(() => conferirEnvioProducao(true, 70130), /Envio de aviso de produção em ajuste/);
+  assert.doesNotThrow(() => conferirEnvioProducao(true, 14));
+  // Link: exatamente uma linha ativa do próprio pedido.
+  assert.equal(linkDoCliente(24917, [{ numero_pedido: "24917", token: "ab12cd" }]), "https://imposition.ai-ideal.com.br/cliente/24917-ab12cd");
+  assert.throws(() => linkDoCliente(24917, []), /Pedido sem link de aprovação/);
+  assert.throws(() => linkDoCliente(24917, null), /Pedido sem link de aprovação/);
+  assert.throws(() => linkDoCliente(24917, [{ numero_pedido: "24880", token: "ab12cd" }]), /sem link/);
+  assert.throws(() => linkDoCliente(24917, [{ numero_pedido: "24917", token: "ab" }]), /sem link/);
+  assert.throws(() => linkDoCliente(24917, [{ numero_pedido: "24917", token: "ab12cd" }, { numero_pedido: "24917", token: "xy34ef" }]), /sem link/);
+  assert.equal(SEM_LINK_APROVACAO, "Pedido sem link de aprovação");
+  assert.equal(AVISO_PRODUCAO_EM_AJUSTE, "Envio de aviso de produção em ajuste");
 });
 
 console.log(`\n${n} casos ok`);

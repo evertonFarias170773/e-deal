@@ -1,6 +1,6 @@
 # Expedição
 
-> **Última revisão:** 09/11/2026 (aviso pelo ChatGuru vai para a conversa do cliente no remetente 3478)
+> **Última revisão:** 09/11/2026 (aviso pelo ChatGuru vai para a conversa do cliente no remetente 3478; campos gravados por diálogo)
 > **Caminho no menu:** Expedição (item direto do menu lateral, sem subitens; é o quarto, depois de Conferência, Pedidos e Clientes). Também se chega pela aba **Expedição** no topo do Kanban e da Fila de impressão da Produção.
 > **Endereço:** `/expedicao`
 
@@ -224,6 +224,8 @@ Qual diálogo vai, pela forma de envio do pedido (a do despacho, se o expedidor 
 - **Nota_Fiscal:** o número da NF-e de venda (ou da NFS-e) autorizada do pedido. Pedido marcado como faturado no sistema antigo usa o número digitado na expedição (NF manual), só os dígitos: "41.030" vira "41030". Sem nota, vai "—".
 - **Cidade_Destino:** cidade/UF do endereço de entrega.
 - **Sedex_Conhecimento:** o código de rastreio dos Correios.
+
+O Vibe só grava esses campos. O ChatGuru guarda na conversa o último valor de cada campo: se o modelo de um diálogo usar um campo que o Vibe não grava (por exemplo, o link de aprovação, Link_do_Cliente, que o envio de arte do Imposition grava), a mensagem sai com o valor de outro envio. Foi o que aconteceu com o aviso Pedido em Produção em 09/11/2026. Mudança de modelo no ChatGuru precisa ser combinada antes. A lista completa, com o envio de arte do Imposition, está em `docs/technical/CHATGURU-TRAVA-COMPARTILHADA-PROPOSTA.md`.
 
 Correios PAC, Correios sem o serviço dito e frete sem forma definida ("Frete Incluso", "Sem custo", "a definir") não têm diálogo. O botão fica apagado com "Sem modelo de mensagem para esta forma de envio." Nenhum outro diálogo é usado no lugar. SEDEX sem código de rastreio fica apagado com "Gere a etiqueta dos Correios antes."
 

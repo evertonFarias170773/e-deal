@@ -26,8 +26,15 @@
  *                                       1º envio devolve o que existe se já houve; reenviar
  *                                       exige confirmação da tentativa vista
  *   Exigem propostas.release_producao (ou ADM). Diálogo DIALOGO_PRODUCAO, sem campos
- *   personalizados (só dialog_execute). Mesma trava por conversa, mesmo critério de
+ *   personalizados até 09/11 (desde então grava Link_do_Cliente). Mesma trava por conversa, mesmo critério de
  *   sucesso, mesmo modo teste, mesmo "Ver conversas do cliente" e "Liberar número".
+ *
+ * LINK E BLOQUEIO (09/11/2026): o template do Pedido em Produção usa {Link_do_Cliente}.
+ * Antes do dialog_execute o Vibe grava field__Link_do_Cliente com o link de aprovação
+ * do próprio pedido (pedidos_links_cliente, os_id "vibe_<id_int>", ativo; nunca gera
+ * token). Sem link: "Pedido sem link de aprovação". Enquanto a trava por conversa não
+ * for a mesma do envio de arte do Imposition, só modo teste + cliente #14 envia; o
+ * resto recebe "Envio de aviso de produção em ajuste" (a liberação segue igual).
  *
  * enviar, reenviar, testar e producao_enviar aceitam também chat_ids (string[]) ou
  * todas = true: a escolha feita na tela quando a regra do DESTINO pediu.
@@ -92,6 +99,8 @@ import {
   dialogoValido,
   CLIENTE_TESTE,
   DIALOGO_PRODUCAO,
+  conferirEnvioProducao,
+  linkDoCliente,
   SEM_CONVERSA,
   conversasEscolhidas,
   decidirConversa,
@@ -407,6 +416,8 @@ async function contextoProducao(idInt: number, modoTeste: boolean) {
     .maybeSingle();
   if (error) throw new Recusa(503, "Não foi possível ler o pedido. Tente de novo.");
   if (!p) throw new Recusa(404, `Pedido ${idInt} não encontrado.`);
+  // Bloqueio de 09/11: fora do modo teste ou fora do cliente #14, não envia.
+  conferirEnvioProducao(modoTeste, p.id_cliente);
   conferirModoTeste(modoTeste, p.id_cliente);
   const idContato = Number(String(p.id_contato ?? "").trim());
   if (!Number.isInteger(idContato) || idContato <= 0) {
@@ -425,6 +436,18 @@ async function contextoProducao(idInt: number, modoTeste: boolean) {
   }
   conferirModoTeste(modoTeste, p.id_cliente, contato.id_cliente);
   return { p, idContato, contato };
+}
+
+/** Link de aprovação do pedido (pedidos_links_cliente), só leitura. Ver logica.linkDoCliente. */
+async function linkDoPedido(idInt: number): Promise<string> {
+  const { data, error } = await admin
+    .from("pedidos_links_cliente")
+    .select("numero_pedido, token")
+    .eq("os_id", `vibe_${idInt}`)
+    .eq("ativo", true)
+    .limit(2);
+  if (error) throw new Recusa(503, "Não foi possível ler o link de aprovação do pedido. Nada foi enviado.");
+  return linkDoCliente(idInt, data);
 }
 
 function configChatGuru() {
@@ -729,7 +752,7 @@ async function executarDialogo(
   // Diagnóstico (só ADM): HTTP e texto do ChatGuru em cada etapa, sem chave nem contato.
   const diagnostico: { etapa: string; http: number | null; texto: string }[] = [];
   try {
-    // Diálogo sem campos personalizados (pedido em produção): só dialog_execute.
+    // Diálogo sem campos personalizados: só dialog_execute.
     const semCampos = Object.keys(campos).length === 0;
     const r1 = semCampos ? null : await chamarChatGuru(cfg, "chat_update_custom_fields", { chat_number: destino, ...campos });
     if (r1) diagnostico.push({ etapa: "campos", http: r1.http, texto: diagnosticoSeguro(r1.texto, ocultar) });
@@ -859,6 +882,7 @@ Deno.serve(async (req) => {
         let escolha: Destinos["escolha"] = null;
         try {
           const ctxP = await contextoProducao(idP, modoTeste);
+          await linkDoPedido(idP);
           const dest = await destinosDoAviso(ctxP.p.id_cliente, ctxP.contato.whats, {});
           conversa = dest.conversas[0] ?? null;
           escolha = dest.escolha;
@@ -884,6 +908,7 @@ Deno.serve(async (req) => {
       } else if (ultimoP) {
         return responder(200, { ok: true, modo_teste: modoTeste, ja_existia: true, aviso: publico(ultimoP) });
       }
+      const linkP = await linkDoPedido(idP);
       const destP = await destinosDoAviso(ctxP.p.id_cliente, ctxP.contato.whats, corpo);
       if (destP.escolha) {
         return responder(200, { ok: true, modo_teste: modoTeste, ja_existia: false, aviso: publico(ultimoP), escolha: destP.escolha });
@@ -896,9 +921,10 @@ Deno.serve(async (req) => {
         evento: "pedido_em_producao",
         envioTeste: false,
         dialogoId: DIALOGO_PRODUCAO,
-        campos: {},
+        // O link do próprio pedido vai no campo antes do diálogo (09/11/2026).
+        campos: { field__Link_do_Cliente: linkP },
         conversas: destP.conversas,
-        ocultar: [ctxP.contato.whats, ctxP.contato.nome_contato]
+        ocultar: [ctxP.contato.whats, ctxP.contato.nome_contato, linkP]
       });
       return respostaDosEnvios(modoTeste, outP);
     }
