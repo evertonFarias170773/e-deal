@@ -86,6 +86,9 @@ returns trigger language plpgsql security definer set search_path to '' as $$
 begin
   if new.chave_envio is null then return new; end if;
   if tg_op = 'UPDATE' and new.chave_envio is not distinct from old.chave_envio then return new; end if;
+  if not (new.chave_envio ~ '^[a-f0-9]{64}$' or new.chave_envio ~ '^vibe:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$') then
+    raise exception 'Chave da trava fora do formato: %', new.chave_envio using errcode = '23514';
+  end if;
   if new.chave_envio like 'vibe:%' then
     perform 1 from public.expedicao_aviso_pronto where id = substr(new.chave_envio, 6)::uuid for key share;
     if not found then raise exception 'Trava sem aviso do Vibe: %', new.chave_envio using errcode = '23503'; end if;
@@ -239,8 +242,10 @@ select pg_temp.reg('2a trava com aviso do Vibe inexistente', 'erro:Trava sem avi
   pg_temp.tenta($q$insert into public.imposition_whatsapp_conversas(destino_chave, chave_envio) values (repeat('3', 64), 'vibe:00000000-0000-4000-8000-0000000000ff') returning 'gravado'$q$));
 select pg_temp.reg('2b trava com envio de arte inexistente', 'erro:Trava sem envio de arte',
   pg_temp.tenta($q$insert into public.imposition_whatsapp_conversas(destino_chave, chave_envio) values (repeat('3', 64), repeat('e', 64)) returning 'gravado'$q$));
-select pg_temp.reg('2c chave fora do formato', 'erro:new row for relation "imposition_whatsapp_conversas" violates check constraint',
+select pg_temp.reg('2c chave do Vibe fora do formato: mensagem propria', 'erro:Chave da trava fora do formato',
   pg_temp.tenta($q$insert into public.imposition_whatsapp_conversas(destino_chave, chave_envio) values (repeat('3', 64), 'vibe:nao-uuid') returning 'gravado'$q$));
+select pg_temp.reg('2c2 chave de arte fora do formato: mensagem propria', 'erro:Chave da trava fora do formato',
+  pg_temp.tenta($q$insert into public.imposition_whatsapp_conversas(destino_chave, chave_envio) values (repeat('3', 64), 'XYZ') returning 'gravado'$q$));
 select pg_temp.reg('2d linha do dono antes da trava: xmax', 'ok:0',
   pg_temp.tenta($q$select xmax::text from public.expedicao_aviso_pronto where id = '00000000-0000-4000-8000-0000000000a3'$q$));
 insert into public.imposition_whatsapp_conversas(destino_chave, chave_envio) values (repeat('3', 64), 'vibe:00000000-0000-4000-8000-0000000000a3');
@@ -272,7 +277,13 @@ select pg_temp.reg('I10 Imposition desconhecido: segura a conversa', 'ok:reserva
    pg_temp.tenta($q$select public.imposition_whatsapp_dialogo_reservar(repeat('8', 64), repeat('6', 64), 'vibe_999999', '00000000-0000-4000-8000-000000000007', '6aef191d04236cee4e7075c1', false)$q$)
    || pg_temp.tenta($q$select estado from public.imposition_whatsapp_dialogo_finalizar(repeat('8', 64), repeat('6', 64), 'desconhecido')$q$)
    || pg_temp.tenta($q$select chave_envio from public.imposition_whatsapp_conversas where destino_chave = repeat('6', 64)$q$));
-select pg_temp.reg('M1 margem configuravel (15 s)', 'ok:00:00:15', pg_temp.tenta($q$with u as (update public.chatguru_trava_config set margem = interval '15 seconds' returning 1) select public.chatguru_trava_margem()::text from u$q$));
+-- M1: gravacao e leitura em comandos separados (numa CTE que altera dados a
+-- consulta principal enxerga a foto de antes do UPDATE).
+select pg_temp.reg('M1a margem gravada: 15 s', 'ok:00:00:15', pg_temp.tenta($q$update public.chatguru_trava_config set margem = interval '15 seconds' returning margem::text$q$));
+select pg_temp.reg('M1b chatguru_trava_margem() le 15 s', 'ok:00:00:15', pg_temp.tenta($q$select public.chatguru_trava_margem()::text$q$));
+select pg_temp.reg('M1c margem gravada: 20 s', 'ok:00:00:20', pg_temp.tenta($q$update public.chatguru_trava_config set margem = interval '20 seconds' returning margem::text$q$));
+select pg_temp.reg('M1d chatguru_trava_margem() le 20 s (nao guarda valor)', 'ok:00:00:20', pg_temp.tenta($q$select public.chatguru_trava_margem()::text$q$));
+select pg_temp.reg('M1e chatguru_trava_margem() e STABLE (s), nao IMMUTABLE (i)', 'ok:s', pg_temp.tenta($q$select provolatile::text from pg_proc where oid = 'public.chatguru_trava_margem()'::regprocedure$q$));
 select pg_temp.reg('M2 margem acima de 2 min recusada', 'erro:new row for relation "chatguru_trava_config" violates check constraint', pg_temp.tenta($q$update public.chatguru_trava_config set margem = interval '5 minutes' returning 'x'$q$));
 select pg_temp.reg('N1 parametro nulo no travar', 'erro:Parametro nulo', pg_temp.tenta($q$select public.imposition_whatsapp_conversa_travar(null, 'vibe:00000000-0000-4000-8000-0000000000a3')$q$));
 select pg_temp.reg('R1 registro: eventos na conversa 4', 'ok:', pg_temp.tenta($q$select string_agg(origem || ':' || evento, ', ' order by id) from public.chatguru_trava_registro where destino_chave = repeat('4', 64)$q$));

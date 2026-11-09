@@ -4,7 +4,8 @@
 -- NÃO APLICADA. Fica fora de supabase/migrations de propósito.
 -- Aplicar inteira, numa transação, só com autorização nominal, na ordem da
 -- seção "Transição" de docs/technical/CHATGURU-TRAVA-COMPARTILHADA-PROPOSTA.md.
--- Teste com ROLLBACK pronto em CHATGURU-TRAVA-COMPARTILHADA-TESTE.sql (ainda nao rodado).
+-- Teste: CHATGURU-TRAVA-COMPARTILHADA-TESTE.sql (ROLLBACK) e -TESTE-EDITOR.sql
+-- (SQL Editor). Primeira rodada 09/11: 2c e M1 corrigidos; segunda pendente.
 --
 -- Partes:
 --   1. margem configurável (chatguru_trava_config, padrão 10 s)
@@ -92,6 +93,12 @@ returns trigger language plpgsql security definer set search_path to '' as $$
 begin
   if new.chave_envio is null then return new; end if;
   if tg_op = 'UPDATE' and new.chave_envio is not distinct from old.chave_envio then return new; end if;
+  -- Formato antes de qualquer conversao: o gatilho BEFORE roda antes da CHECK,
+  -- e sem isto uma chave 'vibe:' torta estourava no ::uuid com erro generico.
+  if not (new.chave_envio ~ '^[a-f0-9]{64}$'
+          or new.chave_envio ~ '^vibe:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$') then
+    raise exception 'Chave da trava fora do formato: %', new.chave_envio using errcode = '23514';
+  end if;
   if new.chave_envio like 'vibe:%' then
     perform 1 from public.expedicao_aviso_pronto
       where id = substr(new.chave_envio, 6)::uuid for key share;

@@ -1,7 +1,11 @@
 # ChatGuru: trava por conversa compartilhada (proposta)
 
 > **Situação:** proposta de 09/11/2026, **revisão 4**. A equipe do Imposition alinhou o conceito na revisão 3 e pediu a revisão 4 antes de aplicar (seção "Revisão 4", abaixo). **Não aplicada** no banco.
-> **Arquivos:** migração única em [CHATGURU-TRAVA-COMPARTILHADA-MIGRACAO.sql](CHATGURU-TRAVA-COMPARTILHADA-MIGRACAO.sql) (com rodapé de reversão) e teste com ROLLBACK em [CHATGURU-TRAVA-COMPARTILHADA-TESTE.sql](CHATGURU-TRAVA-COMPARTILHADA-TESTE.sql). **O teste ainda não rodou:** a execução foi recusada pela camada de permissão em 09/11/2026; vai rodar no SQL Editor da Supabase pela versão [CHATGURU-TRAVA-COMPARTILHADA-TESTE-EDITOR.sql](CHATGURU-TRAVA-COMPARTILHADA-TESTE-EDITOR.sql), que termina com um erro proposital: a mensagem do erro traz uma linha por caso (PASSA ou FALHA) e o erro desfaz a transação inteira. Os casos R3 devem dar FALHA (reproduzem o erro da revisão 3); os demais, PASSA.
+> **Arquivos:** migração única em [CHATGURU-TRAVA-COMPARTILHADA-MIGRACAO.sql](CHATGURU-TRAVA-COMPARTILHADA-MIGRACAO.sql) (com rodapé de reversão) e teste com ROLLBACK em [CHATGURU-TRAVA-COMPARTILHADA-TESTE.sql](CHATGURU-TRAVA-COMPARTILHADA-TESTE.sql). O teste roda no SQL Editor da Supabase pela versão [CHATGURU-TRAVA-COMPARTILHADA-TESTE-EDITOR.sql](CHATGURU-TRAVA-COMPARTILHADA-TESTE-EDITOR.sql). Ela não tem BEGIN: o editor roda o arquivo numa transação implícita, e o erro proposital do fim desfaz tudo e traz na mensagem uma linha por caso (PASSA ou FALHA). **Primeira rodada (09/11/2026): 34 PASSA, 5 FALHA.** Três FALHA eram os R3, esperados. As outras duas:
+> - **2c**, chave fora do formato: foi recusada, mas com `invalid input syntax for type uuid`, porque o gatilho convertia para uuid antes de conferir o formato. Corrigido: o gatilho confere o formato primeiro e recusa com "Chave da trava fora do formato". O caso 2c2 cobre o lado da arte.
+> - **M1**, margem de 15 s: leu 10 s. O defeito era do teste: o UPDATE e a leitura estavam no mesmo comando (CTE), e a consulta principal enxerga a foto de antes do UPDATE. O teste foi separado em gravar e ler (M1a a M1d, 15 s e depois 20 s), e o M1e confere que `chatguru_trava_margem()` é STABLE.
+>
+> **Esperado na segunda rodada:** 44 casos, 41 PASSA e 3 FALHA (R3-1, R3-2 e R3-3).
 > **Alcance:** a trava compartilhada vale para **todos os avisos do Vibe** que usam a Edge Function `expedicao-pedido-pronto`: o aviso de pedido pronto da Expedição (seis diálogos), o "Testar modelo" e o "Pedido em Produção".
 > **Enquanto não existir:** o "Pedido em Produção" só envia em modo teste e para o cliente #14; os demais veem "Envio de aviso de produção em ajuste" e só liberam. O aviso de pedido pronto da Expedição está limitado pelo modo teste (só cliente #14). Desligar o modo teste da Expedição antes da trava compartilhada deixa aberta a corrida em `Pedido_Atual` descrita abaixo.
 
@@ -30,7 +34,7 @@ O que impede o Vibe de usar a trava do Imposition hoje: `imposition_whatsapp_con
 
 ### 1. Validação dos parâmetros
 
-As duas funções recusam parâmetro nulo, de forma explícita. Antes, `p_chave` nulo passava pelo `!~` (nulo não é verdadeiro nem falso) e podia responder "reservado" sem ocupar a conversa. A chave do Vibe é `vibe:` seguido de um UUID no formato 8-4-4-4-12.
+As duas funções recusam parâmetro nulo, de forma explícita. Antes, `p_chave` nulo passava pelo `!~` (nulo não é verdadeiro nem falso) e podia responder "reservado" sem ocupar a conversa. A chave do Vibe é `vibe:` seguido de um UUID no formato 8-4-4-4-12. O gatilho que confere o dono checa esse formato (ou os 64 hexadecimais da arte) antes de converter a chave para uuid e recusa com "Chave da trava fora do formato" (código 23514). Isso é necessário porque o gatilho BEFORE roda antes da CHECK da tabela.
 
 ### 2. Integridade no lugar da chave estrangeira
 
@@ -184,6 +188,8 @@ O rodapé traz a reversão completa: as RPCs voltam ao texto de hoje e a chave e
   ```
 
   Mudar a margem é escrita em produção e precisa de autorização.
+
+  `chatguru_trava_margem()` é STABLE (não IMMUTABLE) e não guarda valor: cada comando que a chama lê a tabela de novo. Dentro de um mesmo comando ela usa a foto do início dele. Por isso o teste grava e lê em comandos separados.
 - **Registro:** cada reserva e cada soltura vai para `chatguru_trava_registro`, com a origem (`vibe` ou `imposition`) e o evento:
   - `reservado`: os campos vão ser gravados em seguida;
   - `executado`: houve "Diálogo Executado" e a margem começou;
