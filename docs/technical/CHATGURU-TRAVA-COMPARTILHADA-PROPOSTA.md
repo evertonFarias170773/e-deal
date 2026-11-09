@@ -1,11 +1,17 @@
 # ChatGuru: trava por conversa compartilhada (proposta)
 
-> **Situação:** proposta de 09/11/2026, **não aplicada**. Precisa ser combinada com a equipe do Imposition antes.
-> **Enquanto não existir:** o aviso "Pedido em Produção" do Vibe só envia em modo teste e para o cliente #14. Para os demais, a janela mostra "Envio de aviso de produção em ajuste" e só libera.
+> **Situação:** proposta de 09/11/2026, revista no mesmo dia; **não aplicada**. Precisa ser combinada com a equipe do Imposition antes.
+> **Alcance:** a trava compartilhada vale para **todos os avisos do Vibe** que usam a Edge Function `expedicao-pedido-pronto`: o aviso de pedido pronto da Expedição (seis diálogos), o "Testar modelo" e o "Pedido em Produção". Não é só o de produção.
+> **Enquanto não existir:** o "Pedido em Produção" só envia em modo teste e para o cliente #14; os demais veem "Envio de aviso de produção em ajuste" e só liberam. O aviso de pedido pronto da Expedição está, hoje, limitado pelo modo teste (só cliente #14). Desligar o modo teste da Expedição antes da trava compartilhada deixa aberta a corrida em `Pedido_Atual` descrita abaixo.
 
 ## Por que
 
-O template do diálogo "Pedido em Produção" (6071c6dbe34a18c2cc684747) usa `{Link_do_Cliente}`. O envio de arte do Imposition grava o mesmo campo na mesma conversa, junto com `Pedido_Atual`, que os seis diálogos da Expedição do Vibe também gravam. O ChatGuru guarda o último valor do campo na conversa. Por isso as duas gravações precisam de uma ordem: "gravar campos e executar o diálogo" de um sistema não pode acontecer no meio do mesmo par de chamadas do outro.
+Dois campos são gravados pelos dois sistemas na mesma conversa:
+
+- `Link_do_Cliente`: o envio de arte do Imposition e o "Pedido em Produção" do Vibe (o template 6071c6dbe34a18c2cc684747 passou a usar o campo).
+- `Pedido_Atual`: o envio de arte do Imposition e os seis diálogos da Expedição do Vibe (Sedex, Motoboy, Retira, Veppo, Azul, Transportadora), inclusive no "Testar modelo".
+
+Então a corrida não é exclusiva do aviso de produção: um aviso de pedido pronto e um envio de arte para o mesmo cliente, ao mesmo tempo, podem trocar o número do pedido na mensagem um do outro. O ChatGuru guarda o último valor do campo na conversa. Por isso as duas gravações precisam de uma ordem: "gravar campos e executar o diálogo" de um sistema não pode acontecer no meio do mesmo par de chamadas do outro.
 
 Hoje cada sistema tem a própria trava, e um não vê a do outro:
 
@@ -61,15 +67,16 @@ grant execute on function public.imposition_whatsapp_conversa_travar(text, text)
 grant execute on function public.imposition_whatsapp_conversa_soltar(text, text) to service_role;
 ```
 
-Do lado do Vibe (Edge Function `expedicao-pedido-pronto`):
+Do lado do Vibe (Edge Function `expedicao-pedido-pronto`), no caminho comum a todos os avisos (`enviarParaConversas` -> `reservarLinha`), o que cobre de uma vez o pedido pronto, o Testar modelo e o Pedido em Produção:
 
 1. Depois de reservar a linha em `expedicao_aviso_pronto`, chamar `imposition_whatsapp_conversa_travar(destino_chave, 'vibe:' || id)`. Se vier `ocupado`, marcar a linha como `falhou`, sem chamar o ChatGuru, e mostrar "Há uma operação pendente para esta conversa (envio de arte)".
 2. Ao terminar com `executado` ou `falhou`, chamar `imposition_whatsapp_conversa_soltar`. Em `desconhecido`, não soltar: o "Liberar número" do Vibe solta.
 3. A trava própria do Vibe continua: ela cobre dois avisos do Vibe sem passar pelo Imposition.
+4. Com a trava compartilhada no ar e conferida, sai o bloqueio "Envio de aviso de produção em ajuste" e o modo teste pode ser desligado para os dois avisos, nessa ordem.
 
 ## Pontos para combinar com o Imposition
 
-- **A trava agora é mútua:** o Vibe passa a ocupar linhas de `imposition_whatsapp_conversas`, e o envio de arte recebe "Há uma operação pendente para esta conversa" enquanto um aviso do Vibe está em andamento ou em resultado desconhecido.
+- **A trava agora é mútua:** o Vibe passa a ocupar linhas de `imposition_whatsapp_conversas` em todo aviso (pedido pronto, Testar modelo e produção), e o envio de arte recebe "Há uma operação pendente para esta conversa" enquanto um aviso do Vibe está em andamento ou em resultado desconhecido. Na Expedição isso acontece muito mais vezes que no aviso de produção: vale combinar com a equipe do Imposition o que o atendente de arte vê nesse caso.
 - **O `finalizar` do Imposition não muda:** ele só solta a conversa quando ela é dele (`chave_envio = p_chave`), então nunca solta uma trava do Vibe.
 - **Leituras da coluna:** quem lê `chave_envio` esperando sempre uma chave de `imposition_whatsapp_artes` precisa aceitar o prefixo `vibe:`. Não achei leitor assim nas RPCs.
 - **Passagem para a trava nova:** avisos do Vibe que estiverem em `desconhecido` no dia precisam ocupar a conversa antes de ligar o envio real.
@@ -92,4 +99,4 @@ A API do ChatGuru que o Vibe usa (`chat_update_custom_fields`, `dialog_execute`,
 
 Se algum template da Expedição usar um campo fora da sua linha, por exemplo `Link_do_Cliente`, a mensagem sai com o último valor gravado na conversa, que pode ser de outro pedido. Isso já aconteceu com o Pedido em Produção em 09/11/2026.
 
-`Pedido_Atual` já é gravado pelos dois sistemas. Com a gravação logo antes de cada execução, cada mensagem leva o valor certo; a troca só é arriscada se os dois sistemas mandarem para a mesma conversa ao mesmo tempo, que é o caso que a trava compartilhada resolve.
+`Pedido_Atual` já é gravado pelos dois sistemas: pelo envio de arte e por todos os diálogos da Expedição. Como cada um grava logo antes de executar, uma mensagem sozinha leva o valor certo. O risco aparece quando os dois mandam para a mesma conversa ao mesmo tempo: um grava, o outro grava por cima e o primeiro executa com o número do pedido errado. Esse é o caso que a trava compartilhada resolve, e por isso ela precisa valer para todos os avisos do Vibe.
