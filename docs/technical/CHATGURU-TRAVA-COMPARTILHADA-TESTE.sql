@@ -46,6 +46,64 @@ drop trigger expedicao_aviso_pronto_trava_nao_apagar on public.expedicao_aviso_p
 drop trigger imposition_whatsapp_artes_trava_nao_apagar on public.imposition_whatsapp_artes;
 drop function public.imposition_whatsapp_trava_nao_apagar();
 
+create function public.chatguru_trava_drenagem(p_reversao boolean)
+returns text language plpgsql set search_path to '' as $$
+declare v_andamento text; v_aviso text;
+begin
+  -- Prende a escrita nas tres tabelas ate o fim da transacao: nada comeca
+  -- entre a conferencia e a troca. Espera no maximo 5 s por quem ja escreve.
+  perform set_config('lock_timeout', '5s', true);
+  lock table public.expedicao_aviso_pronto, public.imposition_whatsapp_artes,
+             public.imposition_whatsapp_conversas in share row exclusive mode;
+  select string_agg(linha, E'\n' order by linha) into v_andamento from (
+    select format('Vibe: aviso %s (pedido %s, seq %s) em preparando desde %s', a.id, a.id_int, a.seq,
+                  to_char(a.atualizado_em at time zone 'America/Sao_Paulo', 'DD/MM HH24:MI:SS')) as linha
+      from public.expedicao_aviso_pronto a where a.estado = 'preparando'
+    union all
+    select format('Imposition: envio de arte %s... (OS %s) em preparando desde %s', left(r.chave, 12), r.os_id,
+                  to_char(r.atualizado_em at time zone 'America/Sao_Paulo', 'DD/MM HH24:MI:SS'))
+      from public.imposition_whatsapp_artes r where r.estado = 'preparando'
+    union all
+    select format('Imposition: conversa %s... ocupada pelo envio de arte %s... em curso', left(c.destino_chave, 12), left(r.chave, 12))
+      from public.imposition_whatsapp_conversas c
+      join public.imposition_whatsapp_artes r on r.chave = c.chave_envio
+     where r.estado = 'preparando') s;
+  -- Para conferir, sem abortar: conversa presa por envio de arte em desconhecido
+  -- (segue presa do mesmo jeito depois da troca; o painel do Imposition resolve).
+  select string_agg(format('conversa %s... presa pelo envio de arte %s... em desconhecido', left(c.destino_chave, 12), left(r.chave, 12)), E'\n')
+    into v_aviso
+    from public.imposition_whatsapp_conversas c
+    join public.imposition_whatsapp_artes r on r.chave = c.chave_envio
+   where r.estado = 'desconhecido';
+  if p_reversao then
+    -- Na reversao a margem some junto com livre_em: espera ela acabar.
+    select nullif(concat_ws(E'\n', v_andamento, string_agg(format('Conversa %s... com margem correndo ate %s', left(c.destino_chave, 12),
+                  to_char(c.livre_em at time zone 'America/Sao_Paulo', 'HH24:MI:SS')), E'\n')), '')
+      into v_andamento from public.imposition_whatsapp_conversas c where c.livre_em > clock_timestamp();
+    select nullif(concat_ws(E'\n', v_aviso, string_agg(format('conversa %s... presa por %s: a reversao solta', left(c.destino_chave, 12), c.chave_envio), E'\n')), '')
+      into v_aviso from public.imposition_whatsapp_conversas c where c.chave_envio like 'vibe:%';
+  end if;
+  if v_aviso is not null then
+    raise notice E'Para conferir (nao aborta):\n%', v_aviso;
+  end if;
+  if v_andamento is not null then
+    raise exception E'% abortada: ha envio em andamento. Pausar os envios dos dois lados, esperar terminar e rodar de novo.\n%',
+      case when p_reversao then 'Reversao' else 'Migracao' end, v_andamento using errcode = '55006';
+  end if;
+  return 'drenado';
+end $$;
+revoke all on function public.chatguru_trava_drenagem(boolean) from public, anon, authenticated;
+-- Drenagem (ida): aborta com envio em andamento de cada lado; passa sem nenhum.
+insert into public.imposition_whatsapp_artes(chave, os_id, autor, estado) values (repeat('d', 64), 'vibe_999999', '00000000-0000-4000-8000-000000000007', 'preparando');
+insert into public.imposition_whatsapp_conversas(destino_chave, chave_envio) values (repeat('7', 64), repeat('d', 64));
+select pg_temp.reg('D1 drenagem: envio de arte em preparando aborta a migracao', 'erro:Migracao abortada', pg_temp.tenta($q$select public.chatguru_trava_drenagem(false)$q$));
+delete from public.imposition_whatsapp_conversas where destino_chave = repeat('7', 64);
+delete from public.imposition_whatsapp_artes where chave = repeat('d', 64);
+insert into public.expedicao_aviso_pronto(id, id_int, seq, modo_teste, autor, estado) values ('00000000-0000-4000-8000-0000000000a5', 999999, 5, true, '00000000-0000-4000-8000-000000000007', 'preparando');
+select pg_temp.reg('D2 drenagem: aviso do Vibe em preparando aborta a migracao', 'erro:Migracao abortada', pg_temp.tenta($q$select public.chatguru_trava_drenagem(false)$q$));
+delete from public.expedicao_aviso_pronto where id = '00000000-0000-4000-8000-0000000000a5';
+select pg_temp.reg('D3 drenagem sem envio em andamento: segue (FALHA se houver envio real agora)', 'ok:drenado', pg_temp.tenta($q$select public.chatguru_trava_drenagem(false)$q$));
+
 create table public.chatguru_trava_config (
   id boolean primary key default true check (id),
   margem interval not null default interval '10 seconds' check (margem >= interval '0' and margem <= interval '2 minutes'),
@@ -216,10 +274,10 @@ END;
 $function$;
 insert into public.imposition_whatsapp_conversas(destino_chave)
   select distinct destino_chave from public.expedicao_aviso_pronto where destino_chave is not null
-     and (estado = 'desconhecido' or (estado = 'preparando' and atualizado_em < now() - interval '2 minutes')) on conflict do nothing;
+     and estado = 'desconhecido' on conflict do nothing;
 update public.imposition_whatsapp_conversas c set chave_envio = 'vibe:' || a.id::text, atualizado_em = now()
   from public.expedicao_aviso_pronto a where a.destino_chave = c.destino_chave and c.chave_envio is null
-   and (a.estado = 'desconhecido' or (a.estado = 'preparando' and a.atualizado_em < now() - interval '2 minutes'));
+   and a.estado = 'desconhecido';
 
 select pg_temp.reg('P0 passagem: conversas ocupadas por aviso do Vibe', 'ok:0',
   pg_temp.tenta($q$select count(*)::text from public.imposition_whatsapp_conversas where chave_envio like 'vibe:%'$q$));
@@ -288,6 +346,12 @@ select pg_temp.reg('M2 margem acima de 2 min recusada', 'erro:new row for relati
 select pg_temp.reg('N1 parametro nulo no travar', 'erro:Parametro nulo', pg_temp.tenta($q$select public.imposition_whatsapp_conversa_travar(null, 'vibe:00000000-0000-4000-8000-0000000000a3')$q$));
 select pg_temp.reg('R1 registro: eventos na conversa 4', 'ok:', pg_temp.tenta($q$select string_agg(origem || ':' || evento, ', ' order by id) from public.chatguru_trava_registro where destino_chave = repeat('4', 64)$q$));
 select pg_temp.reg('R2 conferencia: outro envio ocupou a conversa ate 30 s depois de um executado', 'ok:', pg_temp.tenta($q$select string_agg(origem || '->' || outro_origem || ' ' || segundos_depois || 's', ', ') from public.chatguru_trava_conferencia where destino_chave = repeat('4', 64)$q$));
+
+-- Drenagem (reversao): margem correndo aborta; sem ela, segue.
+update public.imposition_whatsapp_conversas set livre_em = clock_timestamp() + interval '10 seconds' where destino_chave = repeat('4', 64);
+select pg_temp.reg('D4 reversao com margem correndo: aborta', 'erro:Reversao abortada', pg_temp.tenta($q$select public.chatguru_trava_drenagem(true)$q$));
+update public.imposition_whatsapp_conversas set livre_em = null where destino_chave = repeat('4', 64);
+select pg_temp.reg('D5 reversao drenada: segue (FALHA se houver envio real agora)', 'ok:drenado', pg_temp.tenta($q$select public.chatguru_trava_drenagem(true)$q$));
 
 select n, caso, case when obtido like esperado || '%' then 'PASSA' else 'FALHA' end as resultado, obtido from _r order by n;
 rollback;

@@ -1,11 +1,11 @@
 # ChatGuru: trava por conversa compartilhada (proposta)
 
-> **Situação:** proposta de 09/11/2026, **revisão 4**. A equipe do Imposition alinhou o conceito na revisão 3 e pediu a revisão 4 antes de aplicar (seção "Revisão 4", abaixo). **Não aplicada** no banco.
+> **Situação:** proposta de 09/11/2026, **revisão 4**. A equipe do Imposition alinhou o conceito na revisão 3 e pediu a revisão 4 antes de aplicar (seção "Revisão 4", abaixo). Depois, alinhou a revisão 4 e pediu a drenagem e a pausa na troca e na reversão (item 6). **Não aplicada** no banco.
 > **Arquivos:** migração única em [CHATGURU-TRAVA-COMPARTILHADA-MIGRACAO.sql](CHATGURU-TRAVA-COMPARTILHADA-MIGRACAO.sql) (com rodapé de reversão) e teste com ROLLBACK em [CHATGURU-TRAVA-COMPARTILHADA-TESTE.sql](CHATGURU-TRAVA-COMPARTILHADA-TESTE.sql). O teste roda no SQL Editor da Supabase pela versão [CHATGURU-TRAVA-COMPARTILHADA-TESTE-EDITOR.sql](CHATGURU-TRAVA-COMPARTILHADA-TESTE-EDITOR.sql). Ela não tem BEGIN: o editor roda o arquivo numa transação implícita, e o erro proposital do fim desfaz tudo e traz na mensagem uma linha por caso (PASSA ou FALHA). **Primeira rodada (09/11/2026): 34 PASSA, 5 FALHA.** Três FALHA eram os R3, esperados. As outras duas:
 > - **2c**, chave fora do formato: foi recusada, mas com `invalid input syntax for type uuid`, porque o gatilho convertia para uuid antes de conferir o formato. Corrigido: o gatilho confere o formato primeiro e recusa com "Chave da trava fora do formato". O caso 2c2 cobre o lado da arte.
 > - **M1**, margem de 15 s: leu 10 s. O defeito era do teste: o UPDATE e a leitura estavam no mesmo comando (CTE), e a consulta principal enxerga a foto de antes do UPDATE. O teste foi separado em gravar e ler (M1a a M1d, 15 s e depois 20 s), e o M1e confere que `chatguru_trava_margem()` é STABLE.
 >
-> **Esperado na segunda rodada:** 44 casos, 41 PASSA e 3 FALHA (R3-1, R3-2 e R3-3).
+> **Esperado na segunda rodada:** 49 casos, 46 PASSA e 3 FALHA (R3-1, R3-2 e R3-3). Entraram os casos D1 a D5 da drenagem (item 6). D3 e D5 também dão FALHA se houver envio real em andamento na hora: é a drenagem funcionando, e basta rodar de novo.
 > **Alcance:** a trava compartilhada vale para **todos os avisos do Vibe** que usam a Edge Function `expedicao-pedido-pronto`: o aviso de pedido pronto da Expedição (seis diálogos), o "Testar modelo" e o "Pedido em Produção".
 > **Enquanto não existir:** o "Pedido em Produção" só envia em modo teste e para o cliente #14; os demais veem "Envio de aviso de produção em ajuste" e só liberam. O aviso de pedido pronto da Expedição está limitado pelo modo teste (só cliente #14). Desligar o modo teste da Expedição antes da trava compartilhada deixa aberta a corrida em `Pedido_Atual` descrita abaixo.
 
@@ -70,7 +70,7 @@ Cuidado na troca: se algum secret tiver hoje barra final ou espaço, a chave mud
 - **Reserva interrompida:** a reserva ficou em "preparando" e a função caiu antes de chamar o Guru. Ela não é solta sozinha. Depois de 2 minutos em "preparando", aparece como pendência para o "Liberar número" do Vibe, como o "desconhecido". O "Liberar número" passa a aceitar os dois estados e solta a trava compartilhada junto.
 - **Resultado desconhecido:** não é solto sozinho. Segue a regra de hoje: o Administrador confere no ChatGuru e usa o "Liberar número", que solta a trava compartilhada.
 - **Do lado do Imposition:** a regra já é igual. O `finalizar` não solta em "desconhecido", e a reserva interrompida dele fica com `chave_envio` ocupado até alguém resolver. A proposta não muda isso.
-- **Antes de ligar:** um passo único, no mesmo momento do deploy, faz cada aviso do Vibe em "desconhecido" (e em "preparando" há mais de 2 minutos) ocupar a conversa em `imposition_whatsapp_conversas` com `vibe:<id>`. Se a conversa já estiver ocupada por um envio de arte, o caso fica listado para conferência manual e não é sobrescrito.
+- **Antes de ligar:** um passo único, no mesmo momento do deploy, faz cada aviso do Vibe em "desconhecido" ocupar a conversa ("preparando" de qualquer idade aborta a migração; revisão 4, item 6) em `imposition_whatsapp_conversas` com `vibe:<id>`. Se a conversa já estiver ocupada por um envio de arte, o caso fica listado para conferência manual e não é sobrescrito.
 
 ### 5. Quando o Guru lê os campos (testado em 09/11/2026)
 
@@ -160,24 +160,22 @@ O PL/pgSQL resolve **todos** os campos citados ao preparar a expressão, não s�
   - `reservar` e `reenviar` devolvem `ocupado` enquanto `livre_em` estiver no futuro;
   - `finalizar` grava `livre_em = agora + margem` quando o diálogo foi executado (`aguardando`), e não grava margem em `falhou`;
 - a margem configurável e o registro (item 4);
-- a passagem dos avisos do Vibe pendentes. Em 09/11/2026 não havia nenhum em "desconhecido" ou "preparando".
+- a passagem dos avisos do Vibe em "desconhecido". Em 09/11/2026 não havia nenhum;
+- na frente de tudo, a drenagem (item 6): aborta, listando, se houver envio em andamento de qualquer lado.
 
-O rodapé traz a reversão completa: as RPCs voltam ao texto de hoje e a chave estrangeira volta.
+O rodapé traz a reversão completa: as RPCs voltam ao texto de hoje e a chave estrangeira volta. Ele começa pela mesma drenagem.
 
 **Ordem, sem janela em que um sistema ignore a trava do outro:**
 
 | Passo | Onde | O que muda | Por que não abre janela |
 |---|---|---|---|
 | 1 | Código do Vibe (Edge Function `expedicao-pedido-pronto`, v19) | Todo aviso chama `travar` antes de gravar campos. Se a função não existe ou dá erro, o aviso fica `falhou` com "Trava compartilhada indisponível" e **nada sai**. Ao terminar: `soltar(…, executado = true)` só com "Diálogo Executado"; `soltar(…, false)` em `falhou`, inclusive na recusa dos 120 s; em `desconhecido`, não solta. O "Liberar número" passa a soltar a trava compartilhada. | Do deploy até o passo 2, o Vibe não envia nada: ele nunca envia sem a trava. Hoje isso só afeta o modo teste (cliente #14). |
-| 2 | Banco | A migração inteira, numa transação (cerca de 1 s de bloqueio nas três tabelas). | No commit, as duas pontas passam a valer juntas: as RPCs do Imposition já recusam com trava `vibe:` ou com `livre_em` no futuro, e o `travar` do Vibe já recusa com trava do Imposition. |
+| 2 | Banco | Com os dois lados pausados (item 6), a migração inteira, numa transação, com cerca de 1 s de bloqueio nas três tabelas. Ela começa pela drenagem. | No commit, as duas pontas passam a valer juntas: as RPCs do Imposition já recusam com trava `vibe:` ou com `livre_em` no futuro, e o `travar` do Vibe já recusa com trava do Imposition. |
 | 3 | Código do Imposition | A recusa dos 120 s vira `falhou` (item 5). | Não mexe na trava. O código deles não lê `chave_envio` (conferido no `painel` v283), então o prefixo `vibe:` não quebra leitura. Pode vir antes ou depois do passo 2. |
 | 4 | Código dos dois | Normalização da chave (item 3 da revisão 2) como **conferência**, não como transformação. Cada lado compara o texto cru dos secrets com o normalizado e, se diferirem, recusa o envio. | A chave nunca muda de valor, então os dois sistemas nunca calculam chaves diferentes para a mesma conversa. |
 | 5 | Vibe | Sai o "Envio de aviso de produção em ajuste" e, depois, o modo teste. | Só depois dos passos 1 a 3 no ar e de uma semana de registro sem linha na conferência (item 4). |
 
-**Reversão:**
-1. O Vibe volta para a v18, que não usa a trava compartilhada (o estado de hoje, sob modo teste).
-2. Roda o rodapé de reversão do arquivo.
-3. O Imposition não precisa voltar código.
+**Reversão:** pausar os dois lados, conferir, reverter e retomar. A sequência completa está no item 6. O Imposition não precisa voltar código, e o Vibe volta para a v18 por último.
 
 ### 4. Margem: 10 s, configurável, com conferência
 
@@ -232,6 +230,70 @@ Com isso:
 
 Nada foi alterado no código do Imposition.
 
+### 6. Drenagem e pausa na troca e na reversão (pedido da equipe do Imposition, 09/11/2026)
+
+**Regra:** a migração e a reversão só rodam sem envio em andamento de nenhum dos dois lados. "Em andamento" é:
+- **Vibe:** aviso em `preparando` em `expedicao_aviso_pronto`;
+- **Imposition:** envio de arte em `preparando` em `imposition_whatsapp_artes`, ou conversa com `chave_envio` ocupada por um envio de arte nesse estado.
+
+**Como a migração confere (parte 0 do arquivo):** a função `chatguru_trava_drenagem(p_reversao)` é a primeira coisa da migração e a primeira linha do rodapé de reversão.
+1. Prende a escrita nas três tabelas até o fim da transação (`share row exclusive`, com no máximo 5 s de espera por quem já está escrevendo). Assim, nenhum envio novo começa entre a conferência e a troca.
+2. Lista os envios em andamento. Se houver algum, aborta a transação inteira com "Migracao abortada: ha envio em andamento…" (ou "Reversao abortada"), uma linha por envio: lado, aviso ou envio de arte (início da chave), pedido ou OS, e desde quando.
+3. Na reversão, também aborta se alguma conversa estiver com a margem correndo (`livre_em` no futuro), porque a margem some junto com a coluna.
+4. Sem abortar, avisa (NOTICE) as conversas presas por envio de arte em `desconhecido`. Elas continuam presas do mesmo jeito depois da troca, e o painel do Imposition resolve como hoje. Na reversão, avisa também as travas `vibe:` que o rodapé vai soltar.
+
+Envio em `preparando` de qualquer idade aborta, inclusive o que ficou preso por queda da função. Ele é resolvido à mão antes: no Vibe pelo ADM, depois de conferir no ChatGuru; no Imposition pela equipe deles. Com isso, a passagem da parte 7 ficou só com `desconhecido`.
+
+**Situação em 09/11/2026 (leitura):**
+- nenhum aviso do Vibe nem envio de arte em `preparando`;
+- uma conversa presa há cerca de 9 h por um envio de arte em `desconhecido`, que entraria só no aviso, sem abortar.
+
+**A pausa é o que garante; a drenagem confere.** Uma chamada do Imposition que comece durante a migração espera o bloqueio. Quando ele cai, pode rodar o texto antigo da RPC, que já tinha sido carregado. Por isso os dois lados param antes, e não só o banco confere.
+
+**Pausar no Vibe:** a v19 ganha um interruptor no servidor, o secret `CHATGURU_AVISOS_PAUSA`.
+- Com o valor `ligada`, a Edge Function `expedicao-pedido-pronto` recusa todo aviso novo (pedido pronto, Testar modelo, Pedido em Produção) com "Envio de avisos pausado por alguns minutos. Tente de novo em instantes.".
+- A recusa vem antes de reservar a linha, então nada novo vira `preparando`.
+- O "Liberar número" continua funcionando.
+- Liga e desliga sem deploy. Conferir com uma tentativa no pedido de teste 24880, que deve voltar a mensagem de pausa.
+- Na ida, a v19 já não envia antes da migração (fail-closed sem a função `travar`); a pausa troca o "Trava compartilhada indisponível" por uma mensagem clara e não deixa linhas em `falhou`.
+
+**Pausar no Imposition (o que eles teriam de fazer):**
+1. Um interruptor equivalente no `painel`, conferido antes de chamar `imposition_whatsapp_dialogo_reservar` e `_reenviar`, com mensagem própria e sem tocar no banco. Pode ser um secret da função deles.
+2. Confirmar que nada chama essas RPCs fora do botão, como reenvio automático ou rotina agendada. Se houver, a pausa precisa cobrir também.
+3. Sem o interruptor, a alternativa é combinar com a equipe de não enviar arte por alguns minutos. É mais fraca: a drenagem ainda aborta sem estrago se alguém enviar, mas não cobre a chamada que começa durante a migração.
+
+**Sequência da troca:**
+1. **Pausar:** o Vibe (`CHATGURU_AVISOS_PAUSA = ligada`) e o Imposition (interruptor deles).
+2. **Esperar uns 2 minutos:** o que estava em curso termina, porque a chamada ao ChatGuru tem limite de tempo. Conferir por leitura que nada está em andamento:
+   ```sql
+   select 'vibe' as lado, id::text, atualizado_em from public.expedicao_aviso_pronto where estado = 'preparando'
+   union all
+   select 'imposition', left(chave, 12), atualizado_em from public.imposition_whatsapp_artes where estado = 'preparando';
+   ```
+3. **Rodar a migração inteira**, numa transação. Se abortar, ela lista o que estava em andamento; espere e rode de novo.
+4. **Retomar o Imposition primeiro:** o código deles não muda, só as RPCs ganharam a margem. Um envio de arte de teste deve deixar no `chatguru_trava_registro` as linhas `imposition reservado` e `executado`.
+5. **Retomar o Vibe por último:** desligar a pausa e testar com o pedido 24880 em modo teste. O registro deve mostrar `vibe reservado` e `executado`. O caminho do Vibe é o novo, então entra sozinho, depois que o lado que não mudou já foi conferido.
+
+**Sequência da reversão:**
+1. **Pausar** os dois lados, como na troca.
+2. **Conferir:** esperar a margem acabar (padrão 10 s, no máximo 2 min) e o que estiver em curso. A primeira linha do rodapé, `select public.chatguru_trava_drenagem(true)`, aborta e lista se ainda houver envio em andamento ou margem correndo.
+3. **Reverter:** o resto do rodapé, na mesma transação. Solta as travas `vibe:`, devolve as RPCs e a chave estrangeira e apaga as funções, inclusive a de drenagem.
+4. **Retomar:**
+   - primeiro sai a pausa do Imposition, que volta às RPCs de antes sem mudar código;
+   - depois o Vibe volta para a v18, que não usa a trava. A v18 não tem a pausa, mas até esse deploy a v19 segue sem enviar: pausada e, sem a função `travar`, fail-closed.
+
+**Teste:** casos D1 a D5 no arquivo de teste.
+
+| Caso | O que faz | Esperado |
+|---|---|---|
+| D1 | envio de arte de teste em `preparando`, ocupando uma conversa | aborta, "Migracao abortada" |
+| D2 | aviso do Vibe de teste em `preparando` | aborta |
+| D3 | sem nenhum dos dois | "drenado" |
+| D4 | depois da migração, conversa com margem correndo, em modo reversão | aborta, "Reversao abortada" |
+| D5 | sem margem correndo | "drenado" |
+
+D3 e D5 também dão FALHA se houver envio real em andamento na hora do teste: é a drenagem funcionando, e basta rodar de novo.
+
 ## Lado do Vibe (Edge Function `expedicao-pedido-pronto`, v19, não feita)
 
 No caminho comum a todos os avisos (`enviarParaConversas` -> `reservarLinha`), o que cobre de uma vez o pedido pronto, o Testar modelo e o Pedido em Produção:
@@ -244,10 +306,12 @@ No caminho comum a todos os avisos (`enviarParaConversas` -> `reservarLinha`), o
    - com `falhou`, inclusive na recusa dos 120 s, `soltar(destino, chave, false)`;
    - em `desconhecido` ou numa reserva interrompida, não soltar: o "Liberar número" solta, com `false`.
 3. A trava própria do Vibe (índice em `expedicao_aviso_pronto`) continua.
-4. Ordem para ligar: a tabela do item 3 da revisão 4.
+4. Pausa: o secret `CHATGURU_AVISOS_PAUSA` = `ligada` recusa todo aviso novo antes de reservar a linha, com "Envio de avisos pausado por alguns minutos. Tente de novo em instantes.". O "Liberar número" continua funcionando (item 6).
+5. Ordem para ligar: a tabela do item 3 da revisão 4.
 
 ## Pontos para combinar com o Imposition
 
+- **Pausa do lado deles:** um interruptor no `painel` antes de `reservar` e `reenviar`, e a confirmação de que nada chama essas RPCs fora do botão (item 6 da revisão 4).
 - **A trava é mútua:** o Vibe passa a ocupar linhas de `imposition_whatsapp_conversas` em todo aviso. O envio de arte recebe "Há uma operação pendente para esta conversa" enquanto um aviso do Vibe está em andamento, em resultado desconhecido ou dentro da espera. Na Expedição isso acontece muito mais que no aviso de produção.
 - **O `finalizar` do Imposition** só solta a conversa quando ela é dele (`chave_envio = p_chave`), então nunca solta uma trava do Vibe. Com a revisão 4, ele grava `livre_em` (margem) quando o diálogo foi executado.
 - **Leituras da coluna:** quem lê `chave_envio` esperando sempre uma chave de `imposition_whatsapp_artes` precisa aceitar o prefixo `vibe:`. Não há leitor assim nas RPCs nem no código do `painel` v283.

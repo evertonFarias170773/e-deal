@@ -8,6 +8,7 @@
 -- (SQL Editor). Primeira rodada 09/11: 2c e M1 corrigidos; segunda pendente.
 --
 -- Partes:
+--   0. drenagem: aborta se houver envio em andamento de qualquer lado
 --   1. margem configurável (chatguru_trava_config, padrão 10 s)
 --   2. registro para conferir a margem (chatguru_trava_registro + visão)
 --   3. imposition_whatsapp_conversas: sai a chave estrangeira, entra check e livre_em
@@ -17,6 +18,61 @@
 --   7. passagem: avisos do Vibe pendentes ocupam a conversa
 --   Rodapé: reversão
 -- =====================================================================
+
+-- 0) Drenagem -------------------------------------------------------------
+-- Rodar com os envios dos dois lados pausados (seção "Drenagem e pausa" da
+-- proposta). A função prende a escrita nas três tabelas até o fim da transação
+-- e aborta, listando cada um, se houver envio em andamento: aviso do Vibe em
+-- 'preparando', envio de arte em 'preparando' ou conversa ocupada por ele.
+-- O rodapé de reversão usa a mesma função (p_reversao = true).
+create function public.chatguru_trava_drenagem(p_reversao boolean)
+returns text language plpgsql set search_path to '' as $$
+declare v_andamento text; v_aviso text;
+begin
+  -- Prende a escrita nas tres tabelas ate o fim da transacao: nada comeca
+  -- entre a conferencia e a troca. Espera no maximo 5 s por quem ja escreve.
+  perform set_config('lock_timeout', '5s', true);
+  lock table public.expedicao_aviso_pronto, public.imposition_whatsapp_artes,
+             public.imposition_whatsapp_conversas in share row exclusive mode;
+  select string_agg(linha, E'\n' order by linha) into v_andamento from (
+    select format('Vibe: aviso %s (pedido %s, seq %s) em preparando desde %s', a.id, a.id_int, a.seq,
+                  to_char(a.atualizado_em at time zone 'America/Sao_Paulo', 'DD/MM HH24:MI:SS')) as linha
+      from public.expedicao_aviso_pronto a where a.estado = 'preparando'
+    union all
+    select format('Imposition: envio de arte %s... (OS %s) em preparando desde %s', left(r.chave, 12), r.os_id,
+                  to_char(r.atualizado_em at time zone 'America/Sao_Paulo', 'DD/MM HH24:MI:SS'))
+      from public.imposition_whatsapp_artes r where r.estado = 'preparando'
+    union all
+    select format('Imposition: conversa %s... ocupada pelo envio de arte %s... em curso', left(c.destino_chave, 12), left(r.chave, 12))
+      from public.imposition_whatsapp_conversas c
+      join public.imposition_whatsapp_artes r on r.chave = c.chave_envio
+     where r.estado = 'preparando') s;
+  -- Para conferir, sem abortar: conversa presa por envio de arte em desconhecido
+  -- (segue presa do mesmo jeito depois da troca; o painel do Imposition resolve).
+  select string_agg(format('conversa %s... presa pelo envio de arte %s... em desconhecido', left(c.destino_chave, 12), left(r.chave, 12)), E'\n')
+    into v_aviso
+    from public.imposition_whatsapp_conversas c
+    join public.imposition_whatsapp_artes r on r.chave = c.chave_envio
+   where r.estado = 'desconhecido';
+  if p_reversao then
+    -- Na reversao a margem some junto com livre_em: espera ela acabar.
+    select nullif(concat_ws(E'\n', v_andamento, string_agg(format('Conversa %s... com margem correndo ate %s', left(c.destino_chave, 12),
+                  to_char(c.livre_em at time zone 'America/Sao_Paulo', 'HH24:MI:SS')), E'\n')), '')
+      into v_andamento from public.imposition_whatsapp_conversas c where c.livre_em > clock_timestamp();
+    select nullif(concat_ws(E'\n', v_aviso, string_agg(format('conversa %s... presa por %s: a reversao solta', left(c.destino_chave, 12), c.chave_envio), E'\n')), '')
+      into v_aviso from public.imposition_whatsapp_conversas c where c.chave_envio like 'vibe:%';
+  end if;
+  if v_aviso is not null then
+    raise notice E'Para conferir (nao aborta):\n%', v_aviso;
+  end if;
+  if v_andamento is not null then
+    raise exception E'% abortada: ha envio em andamento. Pausar os envios dos dois lados, esperar terminar e rodar de novo.\n%',
+      case when p_reversao then 'Reversao' else 'Migracao' end, v_andamento using errcode = '55006';
+  end if;
+  return 'drenado';
+end $$;
+revoke all on function public.chatguru_trava_drenagem(boolean) from public, anon, authenticated;
+select public.chatguru_trava_drenagem(false);
 
 -- 1) Margem configurável -------------------------------------------------
 create table public.chatguru_trava_config (
@@ -280,32 +336,39 @@ BEGIN
 END;
 $function$;
 
--- 7) Passagem: aviso do Vibe em 'desconhecido', ou em 'preparando' há mais de
---    2 minutos, ocupa a conversa. Conversa já ocupada não é sobrescrita; a
+-- 7) Passagem: aviso do Vibe em 'desconhecido' ocupa a conversa ('preparando'
+--    não chega aqui: a drenagem da parte 0 aborta antes). Conversa já ocupada não é sobrescrita; a
 --    consulta do fim lista esses casos para conferência manual.
 --    (09/11/2026: zero avisos do Vibe nesses estados.)
 insert into public.imposition_whatsapp_conversas(destino_chave)
   select distinct destino_chave from public.expedicao_aviso_pronto
    where destino_chave is not null
-     and (estado = 'desconhecido' or (estado = 'preparando' and atualizado_em < now() - interval '2 minutes'))
+     and estado = 'desconhecido'
   on conflict do nothing;
 update public.imposition_whatsapp_conversas c
    set chave_envio = 'vibe:' || a.id::text, atualizado_em = now()
   from public.expedicao_aviso_pronto a
  where a.destino_chave = c.destino_chave and c.chave_envio is null
-   and (a.estado = 'desconhecido' or (a.estado = 'preparando' and a.atualizado_em < now() - interval '2 minutes'));
+   and a.estado = 'desconhecido';
 -- Conferência manual (rodar depois, só leitura):
 --   select a.id, a.id_int, a.estado, c.chave_envio from public.expedicao_aviso_pronto a
 --     join public.imposition_whatsapp_conversas c on c.destino_chave = a.destino_chave
---    where (a.estado = 'desconhecido' or (a.estado = 'preparando' and a.atualizado_em < now() - interval '2 minutes'))
+--    where a.estado = 'desconhecido'
 --      and c.chave_envio is distinct from 'vibe:' || a.id::text;
 
 -- =====================================================================
--- REVERSÃO (rodapé). Antes: o Vibe volta para a versão sem trava compartilhada
--- (a v19 recusa todo envio sem a função travar, então fica parada, sem risco).
+-- REVERSÃO (rodapé). Só com os envios dos dois lados pausados. Sequência:
+--   1. pausar: Vibe (CHATGURU_AVISOS_PAUSA) e Imposition (pausa deles);
+--   2. conferir: a primeira linha do rodapé chama a drenagem e aborta,
+--      listando, se houver envio em andamento ou margem correndo;
+--   3. reverter: o resto do rodapé, na mesma transação;
+--   4. retomar: primeiro sai a pausa do Imposition (volta às RPCs de antes);
+--      depois o Vibe volta para a v18, que não usa a trava. Até esse deploy
+--      a v19 segue sem enviar: pausada e, sem a função travar, fail-closed.
 -- O Imposition não precisa voltar código: as RPCs voltam ao texto de antes.
 -- =====================================================================
 -- begin;
+-- select public.chatguru_trava_drenagem(true);  -- aborta se houver envio em andamento
 -- -- solta as travas do Vibe (a chave estrangeira volta e não aceita 'vibe:')
 -- update public.imposition_whatsapp_conversas set chave_envio = null, atualizado_em = now()
 --  where chave_envio like 'vibe:%';
@@ -392,4 +455,5 @@ update public.imposition_whatsapp_conversas c
 -- drop function public.chatguru_trava_margem();
 -- drop table public.chatguru_trava_registro;   -- guardar uma cópia antes, se já tiver linhas
 -- drop table public.chatguru_trava_config;
+-- drop function public.chatguru_trava_drenagem(boolean);
 -- commit;
