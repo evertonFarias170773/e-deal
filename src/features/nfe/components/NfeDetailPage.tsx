@@ -76,6 +76,7 @@ import {
 } from "../services/nfe.service";
 import type { SupabaseNfeRow, SupabaseNfeItemRow, SupabaseNfePagamentoRow, NfeReadModel } from "../types";
 import { OPCOES_TIPO_CONTRIBUINTE } from "@/lib/fiscal/tipo-contribuinte";
+import { ehCadastroSubstituido } from "@/features/orcamentos/lib/transportadoras-parceiras";
 import { escolherEnderecoPrincipal } from "@/lib/fiscal/endereco-principal";
 import {
   ambienteExibido,
@@ -495,9 +496,12 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
    * atende mais quatro telas (despacho, correcao de frete, modal da Expedicao
    * e o orcamento) que nao foram pedidas nesta rodada.
    */
+  // Cadastro substituido (Correios de Brasilia 663, franquia Beluno) nao entra
+  // na lista da nota: na NF-e os Correios sao sempre o 39975 (09/11/2026). So
+  // aqui — a mesma lista atende a Expedicao, que segue reconhecendo o 663.
   const transportadorasEmOrdem = useMemo(
     () =>
-      [...transportadoras].sort((a, b) =>
+      transportadoras.filter((t) => !ehCadastroSubstituido(t.id_cliente)).sort((a, b) =>
         (a.nome || a.fantasia || "").localeCompare(b.nome || b.fantasia || "", "pt-BR", {
           sensitivity: "base",
         })

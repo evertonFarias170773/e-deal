@@ -16,7 +16,12 @@ import { condicaoDaParcelaInicial, somarDiasIso } from "@/features/nfe/lib/parce
 import { isFamiliaFaturado } from "@/features/cobrancas/cobrancas-utils";
 import { buscarModeloCobrancaDaProposta, listarModelosCobranca } from "@/features/cobrancas/services/modelos-cobranca";
 import type { ModeloCobranca } from "@/features/cobrancas/types";
-import { canonizarTransportadora, ehCadastroSubstituido } from "@/features/orcamentos/lib/transportadoras-parceiras";
+import {
+  canonizarTransportadora,
+  ehCadastroSubstituido,
+  pedidoEhDosCorreios,
+  TRANSPORTADORAS_PARCEIRAS
+} from "@/features/orcamentos/lib/transportadoras-parceiras";
 import type { FaturavelOrigem } from "@/features/fiscal/types";
 import {
   normalizarTipoContribuinte,
@@ -363,9 +368,69 @@ export async function getNfeValidationGeral(ref: string) {
   return data;
 }
 
+/** Status em que a nota ainda aceita a troca do transportador sem efeito colateral. */
+function notaAceitaTrocaDeTransportador(status: string | null | undefined): boolean {
+  const s = String(status ?? "").trim().toUpperCase();
+  // PRONTA_PARA_ENVIO fica de fora: o gatilho `fn_resetar_status_nfe_ao_editar`
+  // devolveria a nota a PENDENTE e apagaria o payload.
+  return s === "PENDENTE" || s.startsWith("ERRO") || s.startsWith("REJEIT");
+}
+
+/**
+ * Cadastro substituído na nota vira o canônico (09/11/2026).
+ *
+ * A criação já traduz (`canonizarTransportadora`), mas o rascunho gravado antes
+ * — ou escolhido à mão com o 663 — levaria os Correios de Brasília. Decisão do
+ * financeiro: na nota, Correios é sempre o 39975. Roda ao reabrir o rascunho e
+ * ao preparar o envio, os dois momentos em que a nota ainda é rascunho; o
+ * UPDATE repete status e id antigo, para duas telas não se atropelarem. Nota
+ * autorizada nunca é tocada.
+ */
+export async function canonizarTransportadoraDaNota(ref: string): Promise<{ trocou: boolean; de?: number; para?: number }> {
+  const client = getSupabaseClient();
+  if (!client) return { trocou: false };
+  const { data: linha, error } = await client
+    .from("notas_fiscais")
+    .select("id, status, id_transportadora_cliente")
+    .eq("ref", ref)
+    .maybeSingle();
+  if (error || !linha) return { trocou: false };
+  const nota = linha as { id: string; status: string | null; id_transportadora_cliente: number | null };
+  const idAtual = nota.id_transportadora_cliente === null ? null : Number(nota.id_transportadora_cliente);
+  if (!ehCadastroSubstituido(idAtual) || !notaAceitaTrocaDeTransportador(nota.status)) return { trocou: false };
+  const idCanonico = canonizarTransportadora(idAtual);
+  if (idCanonico === null) return { trocou: false };
+
+  const { data: cadastro } = await client
+    .from("clientes")
+    .select("nome, fantasia")
+    .eq("id_cliente", idCanonico)
+    .maybeSingle();
+  const linhaCadastro = cadastro as { nome?: string | null; fantasia?: string | null } | null;
+  const nomeCanonico = String(linhaCadastro?.nome ?? linhaCadastro?.fantasia ?? "").trim();
+
+  const { data: atualizada, error: erroUpdate } = await client
+    .from("notas_fiscais")
+    .update({ id_transportadora_cliente: idCanonico, transportadora: nomeCanonico || null })
+    .eq("id", nota.id)
+    .eq("status", String(nota.status))
+    .eq("id_transportadora_cliente", idAtual as number)
+    .select("id");
+  if (erroUpdate) {
+    console.warn("[NfeService] Nao foi possivel trocar a transportadora substituida da nota:", erroUpdate.message);
+    return { trocou: false };
+  }
+  if (!atualizada || atualizada.length === 0) return { trocou: false };
+  console.log(`[NfeService] Transportadora da nota ${ref}: cadastro ${idAtual} trocado por ${idCanonico}.`);
+  return { trocou: true, de: idAtual as number, para: idCanonico };
+}
+
 export async function prepararEnvioNfe(ref: string) {
   const client = getSupabaseClient();
   if (!client) throw new Error("Supabase client absent");
+  // Correios de Brasilia (663) ou franquia no rascunho viram o 39975 antes de
+  // o payload ser montado.
+  await canonizarTransportadoraDaNota(ref);
   const { data, error } = await client.rpc("fn_preparar_envio_nfe", { p_ref: ref });
   if (error) throw error;
   return data;
@@ -878,6 +943,12 @@ export async function createOrReuseNfeDraft(idInt: number): Promise<SupabaseNfeR
 
   if (existing) {
     console.log(`[NfeService] Reusing existing draft for id_int=${idInt}, ref=${existing.ref}`);
+    // Rascunho gravado com o 663 (Correios de Brasilia) reabre ja com o 39975.
+    const troca = await canonizarTransportadoraDaNota(existing.ref);
+    if (troca.trocou) {
+      const { data: relida } = await client.from("notas_fiscais").select("*").eq("id", existing.id).maybeSingle();
+      if (relida) return relida;
+    }
     return existing;
   }
 
@@ -1056,7 +1127,7 @@ export async function createOrReuseNfeDraft(idInt: number): Promise<SupabaseNfeR
   // sem expedicao pesada continua saindo como sempre saiu.
   const { data: expedicaoRow } = await client
     .from("expedicoes")
-    .select("peso_kg, peso_bruto_kg, id_transportadora_cliente, transportadora_nome, qtd_volumes, tipo_volume")
+    .select("peso_kg, peso_bruto_kg, id_transportadora_cliente, transportadora_nome, qtd_volumes, tipo_volume, categoria_frete")
     .eq("id_int", idInt)
     .maybeSingle();
 
@@ -1065,6 +1136,7 @@ export async function createOrReuseNfeDraft(idInt: number): Promise<SupabaseNfeR
     peso_bruto_kg?: number | null;
     id_transportadora_cliente?: number | null;
     transportadora_nome?: string | null;
+    categoria_frete?: string | null;
     qtd_volumes?: number | null;
     tipo_volume?: string | null;
   } | null;
@@ -1105,14 +1177,30 @@ export async function createOrReuseNfeDraft(idInt: number): Promise<SupabaseNfeR
   // O ID E O NOME SAO RESOLVIDOS SEPARADAMENTE, de proposito: 16 das 27
   // expedicoes com nome de transportadora estao SEM o id. Exigir os dois juntos
   // jogaria fora o nome nesses casos.
-  const idTransportadoraBruto =
+  const idTransportadoraVinculado =
     expedicao?.id_transportadora_cliente ?? proposta.idTransportadoraCliente ?? null;
 
+  // PEDIDO DOS CORREIOS SEM VINCULO usa o 39975 (09/11/2026, decisao do
+  // financeiro). Era o caso da maioria: o vinculo so era gravado no clique do
+  // card, e a nota da 24497 (NF 7762) saiu sem transportador nenhum.
+  const correiosSemVinculo =
+    idTransportadoraVinculado === null &&
+    pedidoEhDosCorreios({
+      modalidade: proposta.modalidadeFrete,
+      card: proposta.fretes?.find((f) => f.id === proposta.freteEscolhidoId) ?? null,
+      transporteCategoria: proposta.transporteCategoria ?? null,
+      categoriaFrete: proposta.categoriaFrete ?? null,
+      categoriaFreteExpedicao: expedicao?.categoria_frete ?? null
+    });
+  const idTransportadoraBruto = correiosSemVinculo ? TRANSPORTADORAS_PARCEIRAS.CORREIOS : idTransportadoraVinculado;
+
   // Um cadastro pode ter sido substituido por outro — os Correios chegaram em
-  // dois, e a Expedicao vinculou 9 despachos a agencia franqueada. Quem vale na
-  // nota e o cadastro canonico (ver `transportadoras-parceiras.ts`).
+  // tres (a franquia Beluno e a sede de Brasilia, 663, viram o 39975). Quem vale
+  // na nota e o cadastro canonico (ver `transportadoras-parceiras.ts`).
   const idTransportadoraNota = canonizarTransportadora(idTransportadoraBruto);
-  const transportadoraFoiTraduzida = ehCadastroSubstituido(idTransportadoraBruto);
+  // O nome da expedicao ("Correios") nao serve quando o id veio da regra: o nome
+  // sai do cadastro, junto com o CNPJ que o payload le dele.
+  const transportadoraFoiTraduzida = ehCadastroSubstituido(idTransportadoraBruto) || correiosSemVinculo;
 
   // Nome vindo da expedicao NAO serve quando o id foi traduzido: ele descreve o
   // cadastro antigo, e o payload manda nome e CNPJ juntos. Nome de um, documento

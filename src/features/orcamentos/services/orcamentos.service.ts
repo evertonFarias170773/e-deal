@@ -51,6 +51,7 @@ import {
 } from "@/features/orcamentos/lib/modalidade-frete";
 // As MESMAS barreiras da correção de frete da Expedição — ver `barreirasDaTrocaDeFrete`.
 import { barreirasDaTrocaDeFrete } from "@/features/expedicao/services/corrigir-frete-simulacao";
+import { vinculoPeloCardEscolhido } from "@/features/orcamentos/lib/transportadoras-parceiras";
 import {
   freteValorDigitadoParaGravar,
   origemParaGravar,
@@ -3462,7 +3463,18 @@ export async function saveProposta(
         declaracaoMudou: formState.freteDeclaracaoAlterada === true
       });
     const modalidadeFrete: ModalidadeFrete | null = formState.modalidadeFrete ?? null;
-    const idTransportadoraCliente = formState.idTransportadoraCliente ?? null;
+    // O card escolhido grava o vínculo mesmo sem clique (09/11/2026): cotação
+    // automática, "Atualizar fretes" e o Maestro deixavam o pedido dos Correios
+    // sem transportadora, e a NF-e saía sem transportador. Regra única em
+    // `vinculoPeloCardEscolhido`; avulso e complemento ficam com o da tela.
+    const idTransportadoraCliente =
+      formState.isAvulso || ehComplemento
+        ? formState.idTransportadoraCliente ?? null
+        : vinculoPeloCardEscolhido({
+            modalidade: modalidadeFrete,
+            card: chosenFrete ?? null,
+            idDaTela: formState.idTransportadoraCliente ?? null
+          });
 
     /**
      * AS BARREIRAS DA EXPEDIÇÃO, e só fora da fase de orçamento.

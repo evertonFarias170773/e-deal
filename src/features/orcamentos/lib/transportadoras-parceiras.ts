@@ -118,7 +118,14 @@ export function ehCadastroCorreios(id: number | null | undefined): boolean {
  */
 const CADASTROS_CANONIZADOS: Readonly<Record<number, number>> = {
   /** AGENCIA DE CORREIOS FRANQUEADA BELUNO LTDA -> EMPRESA BRASILEIRA DE CORREIOS E TELEGRAFOS */
-  120001: TRANSPORTADORAS_PARCEIRAS.CORREIOS
+  120001: TRANSPORTADORAS_PARCEIRAS.CORREIOS,
+  /**
+   * CORREIOS SEDE (matriz em Brasília, sem inscrição estadual) -> Superintendência
+   * RS. Decisão do financeiro em 09/11/2026: na nota, a transportadora dos
+   * Correios é SEMPRE o 39975. O 663 segue reconhecido como Correios
+   * (`IDS_CORREIOS`) pela Expedição e pela prepostagem; só não vai mais para a nota.
+   */
+  663: TRANSPORTADORAS_PARCEIRAS.CORREIOS
 };
 
 /**
@@ -182,4 +189,53 @@ export function resolverTransportadoraParceira(
   if (texto.includes("AZUL") || texto.includes("ECOMM")) return TRANSPORTADORAS_PARCEIRAS.AZUL;
 
   return null;
+}
+
+/**
+ * O vínculo que o SALVAR grava, dado o card de frete escolhido (09/11/2026).
+ *
+ * Até aqui só o CLIQUE no card gravava o vínculo. O card que ficava escolhido
+ * sozinho — cotação automática, "Atualizar fretes", proposta do Maestro — ia
+ * para o banco sem transportadora, e a NF-e nascia sem transportador: em
+ * novembro, 3 de cada 4 pedidos de Correios.
+ *
+ * A regra é a do clique, com uma diferença: card que não é de parceira NÃO
+ * apaga o vínculo da tela (aqui não houve escolha nova para justificar apagar).
+ *   FOB ............ o da tela: vem do drop, escolha explícita do vendedor.
+ *   RETIRA ......... o da tela (a tela já zera ao virar retirada).
+ *   CIF / sem modalidade, card de parceira ... a parceira do card.
+ *   CIF / sem modalidade, outro card ......... o da tela.
+ */
+export function vinculoPeloCardEscolhido(args: {
+  modalidade: string | null | undefined;
+  card: { transportadora?: string | null; servico?: string | null } | null | undefined;
+  idDaTela: number | null | undefined;
+}): number | null {
+  const idDaTela = args.idDaTela === undefined || args.idDaTela === null ? null : Number(args.idDaTela);
+  const modalidade = normalizar(args.modalidade);
+  if (modalidade === "FOB" || modalidade === "RETIRA") return idDaTela;
+  return resolverTransportadoraParceira(args.card) ?? idDaTela;
+}
+
+/**
+ * O pedido é dos Correios? Para a NF-e de pedido sem vínculo (09/11/2026).
+ *
+ * Qualquer um dos sinais basta: o card escolhido (SEDEX, PAC, Correios), a
+ * categoria do transporte ou a coluna do painel da Expedição. Retirada nunca é.
+ * Em FOB o card não conta: o SEDEX que sobra ali é resíduo de cotação que
+ * ninguém contratou (o mesmo de `correiosResiduoDeCotacaoFob`).
+ */
+export function pedidoEhDosCorreios(args: {
+  modalidade?: string | null;
+  card?: { transportadora?: string | null; servico?: string | null } | null;
+  transporteCategoria?: string | null;
+  categoriaFrete?: string | null;
+  categoriaFreteExpedicao?: string | null;
+}): boolean {
+  const modalidade = normalizar(args.modalidade);
+  if (modalidade === "RETIRA") return false;
+  if (modalidade !== "FOB" && resolverTransportadoraParceira(args.card) === TRANSPORTADORAS_PARCEIRAS.CORREIOS) return true;
+  return [args.transporteCategoria, args.categoriaFrete, args.categoriaFreteExpedicao].some(
+    (valor) => normalizar(valor) === "CORREIOS"
+  );
 }

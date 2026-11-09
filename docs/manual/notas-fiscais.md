@@ -1,6 +1,6 @@
 # Notas fiscais
 
-> **Última revisão:** 06/11/2026 (lançamento no contas a receber: a parcela conta por cobrança). 05/11/2026 (a condição de pagamento não vai mais escrita na NFS-e). 04/11/2026 (Histórico em duas abas, NF-e e NFS-e; NFS-e com busca própria, mais nova primeiro e começando em Produção; selo Boleto em processamento no banco)
+> **Última revisão:** 09/11/2026 (transportadora dos Correios na nota é sempre o cadastro de Porto Alegre). 06/11/2026 (lançamento no contas a receber: a parcela conta por cobrança). 05/11/2026 (a condição de pagamento não vai mais escrita na NFS-e). 04/11/2026 (Histórico em duas abas, NF-e e NFS-e; NFS-e com busca própria, mais nova primeiro e começando em Produção; selo Boleto em processamento no banco)
 > **Caminho no menu:** Financeiro → Notas fiscais (primeiro item da seção Financeiro do menu lateral)
 > **Endereço:** `/notas-fiscais` (a nota aberta fica em `/notas-fiscais/[id]`)
 
@@ -204,7 +204,7 @@ O servidor recusa pedido fora de AGUARDANDO, já na produção, marcado como not
    - **Emitente**: a **Empresa Emitente** vem do pedido e pode ser trocada aqui.
    - **Destinatário**: a nota sai no nome de quem paga o pedido, com o endereço principal do cadastro. Confira **Consumidor Final** e **Tipo de Contribuinte**. A Inscrição Estadual vem do cadastro e só se corrige lá. O telefone não aparece nesta tela: ele é levado do cadastro de quem paga direto para a nota (veja "Regras e bloqueios"). A mesma faixa de aviso da remessa aparece aqui.
    - **Itens**: descrição, unidade, quantidade, valores, NCM e peso. O CFOP não se digita. O botão **CST** abre a situação tributária do item. **Adicionar Item Fiscal** inclui um item; **Salvar \*** grava a linha alterada; **Excluir** remove.
-   - **Transporte/Frete**: **Modalidade do Frete**, transportadora, valor do frete, volumes e pesos.
+   - **Transporte/Frete**: **Modalidade do Frete**, transportadora, valor do frete, volumes e pesos. Em pedido dos Correios a transportadora já vem preenchida com **EMPRESA BRASILEIRA DE CORREIOS E TELEGRAFOS (34028316002661) - Porto Alegre - RS** (veja "Regras e bloqueios").
    - **Pagamentos**: **Forma de Pagamento** e parcelas (veja a tarefa seguinte).
    - **Informações adicionais**: **Informações Complementares (Impresso na DANFE)**, que já nasce com o número do pedido, e **Observações Internas**, que não vão para a nota.
 6. Se quiser ver como a nota vai ficar, clique em **DANFE Preview**, no cabeçalho. A prévia não tem validade fiscal.
@@ -328,6 +328,13 @@ Ação temporária, da transição entre sistemas. Use só quando a nota do pedi
 - Não dá para emitir com a soma das parcelas diferente do total da nota, nem com parcela vencendo antes da data de emissão.
 - Nome, logradouro, número, complemento, bairro e município do destinatário, dados da transportadora e natureza da operação aceitam no máximo 60 caracteres na NF-e; a descrição do item, 120. Passando disso, a nota não é transmitida e a tela diz qual campo encurtar. Nada é cortado automaticamente.
 - **Telefone do destinatário na DANFE.** O campo FONE/FAX sai preenchido com o telefone de quem paga o pedido, levado do cadastro sem passar pela tela da nota: vale o primeiro número válido na ordem **WhatsApp 1**, **Telefone fixo comercial**, **WhatsApp 2**. Válido é o número com DDD e 10 ou 11 dígitos (um 55 ou um 0 na frente é descartado); nome, texto ou número sem DDD são ignorados e a nota sai sem o campo, como antes. Vale só na nota de venda: na **nota de remessa** o destinatário é quem recebe, não quem paga, e o telefone não entra. Para corrigir o número, altere o cadastro do cliente antes de emitir — nota já emitida não muda.
+- **Transportadora dos Correios.** Na nota, os Correios são sempre o cadastro da Superintendência Estadual RS: CNPJ 34028316002661, IE 0962055271, Rua Siqueira Campos 1100, Porto Alegre/RS (decisão do financeiro, 09/11/2026). Por isso:
+  - o rascunho de pedido dos Correios nasce com essa transportadora, mesmo que o pedido não tenha transportadora vinculada (é pedido dos Correios o que tem card SEDEX ou PAC escolhido ou categoria de frete Correios; retirada nunca é);
+  - pedido ou expedição vinculados ao cadastro antigo da sede em Brasília (CORREIOS SEDE) ou à agência franqueada Beluno saem com o de Porto Alegre;
+  - rascunho gravado com um desses dois troca sozinho para o de Porto Alegre ao ser reaberto pelo **Faturar** e ao preparar o envio;
+  - a lista **Selecionar Transportadora Cadastrada** não mostra mais a sede de Brasília nem a Beluno;
+  - se uma nota com um desses dois chegar à emissão, ela é recusada sem transmitir: "A transportadora desta nota é o cadastro #..., que foi substituído pelo #39975. Volte a nota para rascunho e prepare o envio de novo."
+  - Nota já autorizada não muda. Para corrigir o transportador de nota autorizada, use carta de correção (CC-e), dentro do prazo da SEFAZ.
 - Alterar quantidade, valor de item ou frete em nota de boleto invalida as parcelas: é preciso gerá-las de novo.
 - Trocar a forma de pagamento para uma que não seja boleto substitui as parcelas por um pagamento único à vista.
 - A nota sai no ambiente em que a empresa emitente está no momento da transmissão. Com **Sairá em PRODUÇÃO**, a nota tem valor fiscal e número definitivo.
@@ -468,6 +475,7 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/features/fiscal/services/ja-autorizada.ts`
 - `src/features/fiscal/services/faturado-fora.client.ts`
 - `src/features/fiscal/lib/limites-layout-nfe.ts`
+- `src/features/orcamentos/lib/transportadoras-parceiras.ts`
 - `src/features/fiscal/lib/confirmacao-segunda-nota.ts`
 - `src/features/fiscal/lib/fila-status.ts`
 - `src/features/fiscal/constants/sefaz-rejeicoes.ts`

@@ -1,6 +1,6 @@
 # Proposta: aba Fretes
 
-> **Última revisão:** 03/11/2026
+> **Última revisão:** 09/11/2026 (o Salvar vincula a transportadora do card escolhido mesmo sem clique)
 > **Caminho no menu:** Pedidos → abrir um pedido → aba Fretes
 > **Endereço:** `/orcamentos/<número>/editar?tab=fretes`
 
@@ -245,7 +245,9 @@ Repetir **Aplicar** não duplica: a segunda tentativa devolve o mesmo frete comp
 - O campo **Frete R$** não aceita valor em FOB nem em retirada, porque nessas modalidades o cliente não paga frete à empresa.
 - O valor negociado é recusado em pedido entregue ("Pedido entregue não pode ser alterado…"; o caminho para alterar está na ficha da [Proposta](proposta.md)).
 - O valor negociado é recusado quando o pedido tem NF-e autorizada (a mesma regra da troca de frete: cancele a nota antes; nota cancelada ou denegada não impede). Nesse caso o campo **Frete R$** fica desabilitado e a mensagem aparece abaixo dele. Também é recusado quando a proposta tem cobrança faturada a vencer com título no Contas a Receber ou junto de outras cobranças, ou quando quem grava não tem uma das duas permissões acima (nesses casos, abra a proposta, altere o frete e clique em **Salvar alterações**, com a permissão **Editar Proposta com Faturado a Vencer** ou **Editar Proposta Paga**), quando tem cobrança enviada ao cliente e ainda não paga (cancele a cobrança antes, na aba **Pagamentos**), quando é avulsa já paga, quando é pedido complementar, e quando o valor novo deixaria crédito a favor do cliente em proposta que não estava integralmente paga (o destino do crédito se decide editando a proposta e clicando em **Salvar alterações**, com a permissão **Editar Proposta Paga**).
-- Escolher um card dos Correios (SEDEX ou PAC) vincula ao pedido o cadastro dos Correios, que desde 08/10/2026 é o da **Superintendência Estadual RS** (o anterior era o da sede em Brasília). É esse cadastro que vai para a nota fiscal como transportador. Pedido antigo continua com o cadastro anterior, e os dois seguem valendo como Correios no sistema.
+- O card escolhido vincula a transportadora ao pedido no **Salvar alterações** (na fase de orçamento, ou depois dela quando o frete é trocado), tenha ele sido escolhido com o clique em **Escolher**, pela cotação automática, por **Atualizar fretes** ou pelo Maestro (desde 09/11/2026; antes, só o clique vinculava). Vale em CIF e em proposta sem modalidade, para os cards de Correios, Azul, Motoboy, VEPPO e São Miguel. Em FOB vale a **Transportadora definida \***; card que não é de parceira (frete manual) mantém a transportadora que já estava.
+- O cadastro dos Correios vinculado é o da **Superintendência Estadual RS** (desde 08/10/2026; o anterior era o da sede em Brasília). É esse cadastro que vai para a nota fiscal como transportador, também nos pedidos antigos com o cadastro de Brasília: a nota troca sozinha (09/11/2026). Os dois seguem valendo como Correios na Expedição e na prepostagem.
+- **Corrigir a transportadora (admin)** com o cadastro de Brasília grava o da Superintendência Estadual RS.
 - Na tela, os dois cadastros dos Correios aparecem como **Correios**, e não pela fantasia do cadastro. As outras transportadoras continuam aparecendo pelo nome de sempre.
 - Em pedido complementar, a modalidade e a transportadora vêm do pedido principal e ficam travadas. Não há cards nem **Atualizar fretes**.
 - Pedido complementar fora de CIF não cobra frete: a tela mostra "... herdado do pedido #... — sem frete a cobrar neste pedido."
@@ -349,6 +351,8 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 > - **09/10/2026:** o Acompanhar Pedido vale para qualquer pedido em aberto, inclusive em NOVO e AGUARDANDO (antes só de APROVADO até EXPEDICAO); a busca por número procura entre todos os pedidos elegíveis; a mensagem de só leitura diz o motivo real.
 >
 > - **09/10/2026 (adendo):** o grupo Acompanhar deixa de ter limite de 10 pedidos (limite de segurança de 50, com aviso acima de 10); pedido com status vazio fica só para leitura.
+>
+> - **09/11/2026:** o **Salvar alterações** grava a transportadora do card escolhido mesmo sem o clique em **Escolher** (cotação automática, **Atualizar fretes**, Maestro). Na nota fiscal os Correios são sempre o cadastro de Porto Alegre, também em pedido antigo com o de Brasília.
 >
 > - **28/10/2026:** o card **MANUAL / TRANSP.** ganhou o botão **Remover**, na fase de orçamento sem pagamento.
 >

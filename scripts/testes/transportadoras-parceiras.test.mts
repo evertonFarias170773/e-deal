@@ -20,14 +20,18 @@
  *   existem hoje em `cotacao_frete` (medido em 26/08/2026).
  *
  * O QUE ELE NÃO COBRE
- *   Não testa a gravação em `propostas.id_transportadora_cliente` — isso vive no
- *   `selectFrete` da tela, que depende de estado de React. Aqui fica a REGRA;
- *   a tela só escolhe quando aplicá-la (CIF sim, FOB não, RETIRA nulo).
+ *   Não testa a gravação em `propostas.id_transportadora_cliente` — ela vive no
+ *   `selectFrete` da tela (clique) e no `saveProposta` (09/11/2026, card
+ *   escolhido sem clique). Aqui ficam as REGRAS que os dois aplicam:
+ *   `resolverTransportadoraParceira` e `vinculoPeloCardEscolhido`.
  */
 import {
   resolverTransportadoraParceira,
   canonizarTransportadora,
   ehCadastroSubstituido,
+  ehCadastroCorreios,
+  vinculoPeloCardEscolhido,
+  pedidoEhDosCorreios,
   TRANSPORTADORAS_PARCEIRAS as IDS
 } from "@/features/orcamentos/lib/transportadoras-parceiras";
 
@@ -90,14 +94,44 @@ console.log("\n--- canonizacao: cadastro substituido vira o legitimo ---");
 // 39975 (Superintendencia Estadual RS); 9 despachos ja apontam para o 120001.
 checar("120001 (Beluno) -> 39975 (ECT)", canonizarTransportadora(120001), 39975);
 checar("120001 e substituido", ehCadastroSubstituido(120001), true);
-checar("663 permanece 663", canonizarTransportadora(663), 663);
-checar("663 nao e substituido", ehCadastroSubstituido(663), false);
+// 09/11/2026, decisao do financeiro: na nota, Correios e sempre o 39975. O 663
+// (sede de Brasilia, sem IE) vira o 39975, mas segue reconhecido como Correios.
+checar("663 (Brasilia) -> 39975", canonizarTransportadora(663), 39975);
+checar("663 e substituido", ehCadastroSubstituido(663), true);
+checar("663 segue sendo Correios", ehCadastroCorreios(663), true);
+checar("39975 nao e substituido", ehCadastroSubstituido(39975), false);
 checar("120009 (Braspress) intacto", canonizarTransportadora(120009), 120009);
 checar("808 intacto", canonizarTransportadora(808), 808);
 checar("null continua null", canonizarTransportadora(null), null);
 checar("undefined vira null", canonizarTransportadora(undefined), null);
 checar("NaN vira null", canonizarTransportadora(Number.NaN), null);
 checar("null nao e substituido", ehCadastroSubstituido(null), false);
+
+console.log("\n--- vinculo gravado pelo Salvar a partir do card escolhido (09/11/2026) ---");
+const SEDEX = { transportadora: "Correios SEDEX", servico: "SEDEX" };
+const AZUL = { transportadora: "Azul Cargo", servico: "ECOMM" };
+const MANUAL = { transportadora: "BRASPRESS", servico: "BRASPRESS" };
+checar("CIF + SEDEX sem vinculo -> 39975", vinculoPeloCardEscolhido({ modalidade: "CIF", card: SEDEX, idDaTela: null }), 39975);
+checar("sem modalidade + SEDEX -> 39975", vinculoPeloCardEscolhido({ modalidade: null, card: SEDEX, idDaTela: null }), 39975);
+checar("CIF + SEDEX com 663 na tela -> 39975", vinculoPeloCardEscolhido({ modalidade: "CIF", card: SEDEX, idDaTela: 663 }), 39975);
+checar("CIF + card Azul com 39975 velho -> 808", vinculoPeloCardEscolhido({ modalidade: "CIF", card: AZUL, idDaTela: 39975 }), 808);
+checar("CIF + card manual mantem o da tela", vinculoPeloCardEscolhido({ modalidade: "CIF", card: MANUAL, idDaTela: 120009 }), 120009);
+checar("CIF + card manual sem vinculo fica null", vinculoPeloCardEscolhido({ modalidade: "CIF", card: MANUAL, idDaTela: null }), null);
+checar("CIF sem card mantem o da tela", vinculoPeloCardEscolhido({ modalidade: "CIF", card: null, idDaTela: 997 }), 997);
+checar("FOB ignora o card", vinculoPeloCardEscolhido({ modalidade: "FOB", card: SEDEX, idDaTela: 796 }), 796);
+checar("FOB sem drop fica null", vinculoPeloCardEscolhido({ modalidade: "FOB", card: SEDEX, idDaTela: null }), null);
+checar("RETIRA fica com o da tela", vinculoPeloCardEscolhido({ modalidade: "RETIRA", card: SEDEX, idDaTela: null }), null);
+
+console.log("\n--- pedido dos Correios para a NF-e sem vinculo (09/11/2026) ---");
+checar("card SEDEX em CIF", pedidoEhDosCorreios({ modalidade: "CIF", card: SEDEX }), true);
+checar("card PAC sem modalidade", pedidoEhDosCorreios({ modalidade: null, card: { transportadora: null, servico: "PAC" } }), true);
+checar("categoria do transporte CORREIOS", pedidoEhDosCorreios({ modalidade: "CIF", card: null, transporteCategoria: "CORREIOS" }), true);
+checar("categoria do painel CORREIOS", pedidoEhDosCorreios({ modalidade: "CIF", categoriaFrete: "CORREIOS" }), true);
+checar("categoria da expedicao CORREIOS", pedidoEhDosCorreios({ modalidade: "CIF", categoriaFreteExpedicao: "CORREIOS" }), true);
+checar("FOB: SEDEX residuo nao conta", pedidoEhDosCorreios({ modalidade: "FOB", card: SEDEX }), false);
+checar("RETIRA nunca", pedidoEhDosCorreios({ modalidade: "RETIRA", transporteCategoria: "CORREIOS" }), false);
+checar("Azul nao e Correios", pedidoEhDosCorreios({ modalidade: "CIF", card: AZUL, transporteCategoria: "TRANSPORTADORA" }), false);
+checar("sem sinal nenhum", pedidoEhDosCorreios({ modalidade: "CIF" }), false);
 
 console.log(falhas === 0 ? "\nTODOS OS TESTES PASSARAM" : `\n${falhas} TESTE(S) FALHARAM`);
 process.exitCode = falhas === 0 ? 0 : 1;

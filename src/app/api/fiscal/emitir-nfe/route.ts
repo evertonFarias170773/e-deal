@@ -3,6 +3,7 @@ import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { verificarPermissaoServerSide } from "@/lib/auth/verificar-permissao";
 import { cabecalhosWebhookN8n } from "@/lib/n8n/webhook-segredo";
 import { resolverAmbienteFiscal } from "@/features/fiscal/services/ambiente-fiscal";
+import { canonizarTransportadora, ehCadastroSubstituido } from "@/features/orcamentos/lib/transportadoras-parceiras";
 import { estourosDeLayoutNfe } from "@/features/fiscal/lib/limites-layout-nfe";
 import {
   detectarNotaJaAutorizada,
@@ -268,6 +269,25 @@ export async function POST(request: Request) {
           message: "Não foi possível conferir a nota antes de emitir. Nada foi transmitido.",
         },
         { status: 500 }
+      );
+    }
+
+    // 6c. Cadastro substituido como transportador (09/11/2026). O preparo do
+    //     envio ja troca o 663 (Correios de Brasilia) e a franquia pelo 39975;
+    //     se algum chegar ate aqui, a nota sairia com o transportador errado.
+    //     Recusa sem gravar: a troca e feita no rascunho, nao aqui, porque
+    //     editar nota PRONTA_PARA_ENVIO a devolve a PENDENTE (gatilho do banco).
+    const idTransportadorNoPayload = (payloadConferencia as { id_transportadora_cliente?: unknown }).id_transportadora_cliente;
+    if (idTransportadorNoPayload !== null && idTransportadorNoPayload !== undefined && ehCadastroSubstituido(Number(idTransportadorNoPayload))) {
+      return NextResponse.json(
+        {
+          success: false,
+          code: "TRANSPORTADORA_SUBSTITUIDA",
+          message:
+            `A transportadora desta nota é o cadastro #${idTransportadorNoPayload}, que foi substituído pelo #${canonizarTransportadora(Number(idTransportadorNoPayload))}. ` +
+            "Volte a nota para rascunho e prepare o envio de novo. Nada foi transmitido.",
+        },
+        { status: 409 }
       );
     }
 
