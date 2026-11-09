@@ -12,15 +12,22 @@
  *      rastreio; PAC e forma sem modelo ficam apagados;
  *   E. campos do diálogo (field__<Nome>), nota "—", nota do sistema antigo, cidade/UF;
  *   F. respostas: campos = 2xx + success + 200; diálogo = isso + "Diálogo executado";
- *   G. recusa por número ("Chat não encontrado.") abre o "Corrigir número";
+ *   G. recusa por número ("Chat não encontrado.") abre o "Ver conversas do cliente";
  *   H. chave da conversa = SHA-256 de [endpoint, account, phone, número];
  *   I. diagnóstico só sem chave e sem contato; Liberar número: enviada -> executado, não -> falhou;
  *   J. Testar modelo: só modo teste e cliente #14; campos que faltam vão com valor de teste;
- *   K. Pedido em Produção: diálogo próprio, fora da lista da Expedição, sem campos.
+ *   K. Pedido em Produção: diálogo próprio, fora da lista da Expedição, sem campos;
+ *   L. conversa do ChatGuru (09/11): DDD + 8 últimos casa com uma -> automática;
+ *      várias ou nenhuma -> escolha; sem conversa -> não envia; escolha só do cliente.
  */
 import assert from "node:assert/strict";
 import {
   CLIENTE_TESTE,
+  SEM_CONVERSA,
+  conversasEscolhidas,
+  dddFinal8,
+  decidirConversa,
+  numeroDaConversa,
   DIALOGOS,
   DIALOGO_PRODUCAO,
   LIBERACAO,
@@ -246,6 +253,42 @@ caso("K. pedido em produção", () => {
   // Não é um dos diálogos da Expedição (não aparece no Testar modelo nem na escolha por forma de envio).
   assert.equal(nomeDoDialogo(DIALOGO_PRODUCAO), null);
   assert.ok(!Object.values(DIALOGOS).some((d) => d.id === DIALOGO_PRODUCAO));
+});
+
+caso("L. conversa do ChatGuru", () => {
+  // DDD + 8 últimos: com ou sem 55, com ou sem o nono dígito, com formatação.
+  assert.equal(dddFinal8("555184608848"), "5184608848");
+  assert.equal(dddFinal8("(51) 98460-8848"), "5184608848");
+  assert.equal(dddFinal8("+55 51 9 8460-8848"), "5184608848");
+  assert.equal(dddFinal8("16996256252"), "1696256252");
+  assert.equal(dddFinal8("98460-8848"), null);
+  assert.equal(dddFinal8(""), null);
+  assert.equal(dddFinal8(null), null);
+  assert.equal(numeroDaConversa("5516996256252"), "5516996256252");
+  assert.equal(numeroDaConversa("555184608848"), "555184608848");
+  assert.equal(numeroDaConversa("5184608848"), null);
+  const a = { chat_id: "a1", nome: "Edison Junior - 14", numero: "555184608848" };
+  const b = { chat_id: "b2", nome: "Financeiro - 14", numero: "555133334444" };
+  const c = { chat_id: "c3", nome: "Edison outro - 14", numero: "5551984608848" };
+  const ruim = { chat_id: "x9", nome: "lixo - 14", numero: "123" };
+  // Casa com exatamente uma: automática, sem perguntar.
+  assert.deepEqual(decidirConversa("51984608848", [a, b]), { modo: "automatica", conversa: a });
+  // Casa com mais de uma: escolha com todas as conversas válidas.
+  assert.deepEqual(decidirConversa("51984608848", [a, b, c]), { modo: "escolha", motivo: "varias", conversas: [a, b, c] });
+  // Não casa, mas há conversas: escolha.
+  assert.deepEqual(decidirConversa("51911112222", [a, b]), { modo: "escolha", motivo: "nenhuma", conversas: [a, b] });
+  assert.deepEqual(decidirConversa("", [b]), { modo: "escolha", motivo: "nenhuma", conversas: [b] });
+  // Sem conversa (ou só com número inválido): não envia.
+  assert.deepEqual(decidirConversa("51984608848", []), { modo: "sem_conversa" });
+  assert.deepEqual(decidirConversa("51984608848", [ruim]), { modo: "sem_conversa" });
+  assert.equal(SEM_CONVERSA, "Cliente sem conversa no ChatGuru (remetente 3478)");
+  // Escolha da tela: só chat_id do cliente, sem repetição; todas = as válidas.
+  assert.deepEqual(conversasEscolhidas(["b2", "b2"], [a, b]), [b]);
+  assert.deepEqual(conversasEscolhidas(["a1", "b2"], [a, b]), [a, b]);
+  assert.deepEqual(conversasEscolhidas(undefined, [a, b, ruim], true), [a, b]);
+  assert.throws(() => conversasEscolhidas(["zz"], [a, b]), /não é deste cliente/);
+  assert.throws(() => conversasEscolhidas([], [a, b]), /ao menos uma/);
+  assert.throws(() => conversasEscolhidas(undefined, [ruim], true), /sem conversa/);
 });
 
 console.log(`\n${n} casos ok`);

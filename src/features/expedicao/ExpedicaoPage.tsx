@@ -215,14 +215,12 @@ export function ExpedicaoPage() {
         aviso={avisosPronto.avisos.get(p.idInt)}
         modoTeste={avisosPronto.modoTeste}
         podeOperar={Boolean(canOperar)}
-        podeEditarCadastro={podeEditarCadastro}
         ehAdm={Boolean(user?.isSuperAdmin || user?.isAdmin)}
         recusaNumero={avisosPronto.recusas.get(p.idInt)}
         modelo={avisosPronto.modelos.get(p.idInt)}
         teste={avisosPronto.testes.get(p.idInt)}
         compacto={compacto}
         onAviso={avisosPronto.atualizar}
-        onNumeroCorrigido={avisosPronto.marcarCorrigido}
       />
     );
   }

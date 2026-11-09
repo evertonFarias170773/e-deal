@@ -1,6 +1,6 @@
 # Proposta: abas Produção / Expedição, Boletim e Histórico
 
-> **Última revisão:** 07/11/2026
+> **Última revisão:** 09/11/2026
 > **Caminho no menu:** Pedidos → abrir um pedido → Editar proposta → aba Produção / Expedição ou aba Histórico. Não existe aba Boletim na barra de abas: a OS (boletim) abre pelo menu Produção → clicar no pedido.
 > **Endereço:** `/orcamentos/[número]/editar?tab=producao` e `/orcamentos/[número]/editar?tab=historico`. A aba se chamava **Produção** até 09/10/2026; só o nome mudou, o endereço `?tab=producao` é o mesmo. A OS fica em `/pedidos/boletim?id_int=[número]&modo=edicao`.
 
@@ -34,8 +34,8 @@ Nomes exatamente como aparecem na tela.
 | Ícone de enviar (dica "Enviar mensagem") | Aba Histórico, rodapé da timeline | Envia a mensagem e os anexos. |
 | **Ver chat interno** | Menu de ações do cabeçalho do pedido | Abre o mesmo chat da timeline em um painel lateral. |
 | **Retirar da Produção** | Menu de ações do cabeçalho do pedido e fim do menu **Ações** da lista de Pedidos, em pedido em REVISAO PRODUCAO | Abre uma confirmação e devolve o pedido ao atendente: sai da fila da produção e o status volta para REVISAO ATENDENTE. |
-| **Liberar para Produção** | Lista de Pedidos, menu **Ações** da linha, em pedido em REVISAO ATENDENTE (e o mesmo item no menu **Acoes** da edição) | Abre a janela **Liberar proposta para Produção?**, que pergunta se manda ao cliente o aviso "Pedido em Produção" e mostra o nome e o WhatsApp do contato responsável. |
-| **Liberar e enviar** | Janela **Liberar proposta para Produção?** | Faz as conferências e libera; só se liberar, manda o aviso pelo WhatsApp da Ideal (ChatGuru) e mostra o resultado. Apagado quando o envio seria recusado (modo teste, contato sem WhatsApp). |
+| **Liberar para Produção** | Lista de Pedidos, menu **Ações** da linha, em pedido em REVISAO ATENDENTE (e o mesmo item no menu **Acoes** da edição) | Abre a janela **Liberar proposta para Produção?**, que pergunta se manda ao cliente o aviso "Pedido em Produção" e mostra o contato responsável e a conversa do cliente no ChatGuru que vai receber (ou a lista para escolher). |
+| **Liberar e enviar** | Janela **Liberar proposta para Produção?** | Faz as conferências e libera; só se liberar, manda o aviso pelo WhatsApp da Ideal (ChatGuru) e mostra o resultado. Apagado quando o envio seria recusado (modo teste, cliente sem conversa no ChatGuru) ou quando falta escolher a conversa. |
 | **Liberar sem enviar** | Janela **Liberar proposta para Produção?** | Faz as conferências e libera, sem mensagem. |
 | **Cancelar** | Janela **Liberar proposta para Produção?** | Fecha a janela sem liberar e sem enviar. |
 | **Aviso: pedido em produção** | Menu **Ações**, em pedido já liberado | Mostra a última tentativa de aviso e permite enviar ou reenviar (com confirmação). |

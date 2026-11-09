@@ -5,7 +5,7 @@ import { MessageCircle } from "lucide-react";
 import { useAppToast } from "@/components/common/AppToast";
 import { formatDateTime } from "@/lib/formatters/date";
 import { ConfirmarAcaoModal } from "./ConfirmarAcaoModal";
-import { CorrigirNumeroModal } from "./CorrigirNumeroModal";
+import { ConversasDoClienteModal } from "./ConversasDoCliente";
 import { LiberarNumeroModal } from "./LiberarNumeroModal";
 import { TestarModeloAviso } from "./TestarModeloAviso";
 import type { RecusaNumeroDoAviso } from "../hooks/useAvisosPedidoPronto";
@@ -17,8 +17,11 @@ import {
   reenviarAvisoPronto,
   type AvisoPronto,
   type DiagnosticoChatGuru,
+  type EnvioPorConversa,
+  type EscolhaConversa,
   type ModeloAviso,
-  type RecusaPorNumero
+  type RecusaPorNumero,
+  type SelecaoConversas
 } from "../services/aviso-pronto.client";
 
 const SEM_MODELO = "Sem modelo de mensagem para esta forma de envio.";
@@ -32,10 +35,13 @@ const SEM_MODELO = "Sem modelo de mensagem para esta forma de envio.";
  * "resultado desconhecido" nada é reenviado sozinho: a tela pede para conferir
  * no ChatGuru antes.
  *
- * Recusa por número ("Chat não encontrado."): mostra o número enviado. Quem tem
- * cadastros.edit (ou ADM) vê "Corrigir número", que grava contatos.whats pela
- * gravação do cadastro; o Reenviar volta depois do salvar. Quem não tem vê o
- * pedido de correção e o Reenviar (a correção pode vir do cadastro).
+ * Destino (09/11/2026): a conversa do cliente no ChatGuru (remetente 3478), que o
+ * servidor escolhe pela visão chatguru_contatos_3478. Se a regra não decide
+ * (o WhatsApp do contato casa com várias conversas, ou com nenhuma), a resposta
+ * traz a lista e a tela abre a escolha: uma, várias ou todas, com confirmação.
+ * Recusa por número ("Chat não encontrado."): mostra o número usado e "Ver
+ * conversas do cliente" (no lugar do antigo "Corrigir número", que gravava
+ * contatos.whats). Nada aqui grava em contatos.
  *
  * Desde 07/11/2026 o aviso é um diálogo do ChatGuru, um por forma de envio. O
  * servidor escolhe (`modelo`); sem diálogo, ou SEDEX sem etiqueta, o botão fica
@@ -53,21 +59,18 @@ export function AvisoPedidoPronto({
   aviso,
   modoTeste,
   podeOperar,
-  podeEditarCadastro,
   ehAdm = false,
   recusaNumero,
   modelo,
   teste,
   compacto = false,
-  onAviso,
-  onNumeroCorrigido
+  onAviso
 }: {
   idInt: number;
   statusInterno: string;
   aviso: AvisoPronto | undefined;
   modoTeste: boolean;
   podeOperar: boolean;
-  podeEditarCadastro: boolean;
   /** Administrador: vê o diagnóstico do ChatGuru e o "Liberar número". */
   ehAdm?: boolean;
   recusaNumero: RecusaNumeroDoAviso | undefined;
@@ -77,12 +80,12 @@ export function AvisoPedidoPronto({
   teste?: AvisoPronto;
   compacto?: boolean;
   onAviso: (idInt: number, aviso: AvisoPronto | null | undefined, modoTeste?: boolean, recusa?: RecusaPorNumero | null) => void;
-  onNumeroCorrigido: (idInt: number) => void;
 }) {
   const { showToast } = useAppToast();
   const [ocupado, setOcupado] = useState(false);
   const [confirmando, setConfirmando] = useState(false);
-  const [corrigindo, setCorrigindo] = useState(false);
+  // Escolha da conversa: veio do servidor (a regra não decidiu) ou "Ver conversas do cliente".
+  const [conversas, setConversas] = useState<{ op: "enviar" | "reenviar"; inicial: EscolhaConversa | null } | null>(null);
   const [liberando, setLiberando] = useState(false);
   // Diagnóstico do último envio feito nesta tela (só ADM; o servidor não grava).
   const [diagnostico, setDiagnostico] = useState<DiagnosticoChatGuru[] | null>(null);
@@ -92,11 +95,16 @@ export function AvisoPedidoPronto({
   const bloqueio = modelo ? (modelo.bloqueio ?? (modelo.dialogo ? null : SEM_MODELO)) : null;
   if (!aviso && !podeOperar) return null;
 
-  async function avisar() {
+  async function avisar(selecao?: SelecaoConversas) {
     if (ocupado) return;
     setOcupado(true);
-    const res = await enviarAvisoPronto(idInt);
+    const res = await enviarAvisoPronto(idInt, selecao);
     setOcupado(false);
+    if (res.ok && res.escolha) {
+      setConversas({ op: "enviar", inicial: res.escolha });
+      return;
+    }
+    setConversas(null);
     setDiagnostico(res.diagnostico_chatguru ?? null);
     onAviso(idInt, res.aviso, res.modo_teste, res.ja_existia ? undefined : (res.recusa_numero ?? null));
     if (!res.ok) {
@@ -111,16 +119,22 @@ export function AvisoPedidoPronto({
       });
       return;
     }
-    toastDoResultado(res.aviso ?? null, res.motivo_chatguru, res.recusa_numero ?? null, res.etapa_chatguru ?? null);
+    if (res.envios && res.envios.length > 1) toastDeVarias(res.envios);
+    else toastDoResultado(res.aviso ?? null, res.motivo_chatguru, res.recusa_numero ?? null, res.etapa_chatguru ?? null);
   }
 
-  async function reenviar() {
+  async function reenviar(selecao?: SelecaoConversas) {
     if (!aviso || ocupado) return;
     setOcupado(true);
-    const res = await reenviarAvisoPronto(idInt, aviso.seq);
+    const res = await reenviarAvisoPronto(idInt, aviso.seq, selecao);
     setOcupado(false);
-    setDiagnostico(res.diagnostico_chatguru ?? null);
     setConfirmando(false);
+    if (res.ok && res.escolha) {
+      setConversas({ op: "reenviar", inicial: res.escolha });
+      return;
+    }
+    setConversas(null);
+    setDiagnostico(res.diagnostico_chatguru ?? null);
     onAviso(idInt, res.aviso, res.modo_teste, res.ja_existia ? undefined : (res.recusa_numero ?? null));
     if (!res.ok) {
       showToast({ type: "error", title: "Reenvio não feito", description: res.mensagem });
@@ -130,7 +144,20 @@ export function AvisoPedidoPronto({
       showToast({ type: "info", title: "Outro envio chegou antes", description: "Nada foi enviado de novo." });
       return;
     }
-    toastDoResultado(res.aviso ?? null, res.motivo_chatguru, res.recusa_numero ?? null, res.etapa_chatguru ?? null);
+    if (res.envios && res.envios.length > 1) toastDeVarias(res.envios);
+    else toastDoResultado(res.aviso ?? null, res.motivo_chatguru, res.recusa_numero ?? null, res.etapa_chatguru ?? null);
+  }
+
+  function toastDeVarias(envios: EnvioPorConversa[]) {
+    const ok = envios.filter((e) => e.aviso?.estado === "executado").length;
+    const resumo = envios
+      .map((e) => `${e.nome}: ${e.recusa ? "não enviado" : e.aviso ? (ROTULO_ESTADO_AVISO[e.aviso.estado] ?? e.aviso.estado) : "—"}`)
+      .join("; ");
+    showToast({
+      type: ok === envios.length ? "success" : "warning",
+      title: `Aviso: ${ok} de ${envios.length} conversas com diálogo executado`,
+      description: resumo
+    });
   }
 
   async function atualizarStatus() {
@@ -181,13 +208,13 @@ export function AvisoPedidoPronto({
       showToast({
         type: "error",
         title: `Número não encontrado no ChatGuru: ${recusa.numero_enviado}`,
-        description: `${motivo ? `ChatGuru: ${motivo} ` : ""}Nada saiu. ${podeEditarCadastro ? "Use Corrigir número e depois Reenviar." : "Peça a correção a quem pode editar o cadastro."}`
+        description: `${motivo ? `ChatGuru: ${motivo} ` : ""}Nada saiu. Use Ver conversas do cliente para escolher outra conversa.`
       });
     } else if (a.estado === "falhou") {
       showToast({
         type: "error",
         title: `O ChatGuru recusou o envio${naEtapa}`,
-        description: `${motivo ? `ChatGuru: ${motivo} ` : ""}Nada saiu. Confira o WhatsApp do contato e use Reenviar.`
+        description: `${motivo ? `ChatGuru: ${motivo} ` : ""}Nada saiu. Confira a conversa no ChatGuru e use Reenviar.`
       });
     } else {
       showToast({
@@ -201,6 +228,21 @@ export function AvisoPedidoPronto({
   }
 
   const texto = compacto ? "text-[11px]" : "text-xs";
+  const janelaConversas = conversas ? (
+    <ConversasDoClienteModal
+      idInt={idInt}
+      titulo={conversas.inicial ? "Para qual conversa enviar?" : "Conversas do cliente"}
+      inicial={conversas.inicial}
+      descricaoEnvio={
+        conversas.op === "enviar"
+          ? "O cliente recebe o aviso de pedido pronto pelo WhatsApp da Ideal."
+          : "Cada conversa marcada recebe outra mensagem de pedido pronto."
+      }
+      ocupado={ocupado}
+      onEnviar={podeOperar ? (s) => void (conversas.op === "enviar" ? avisar(s) : reenviar(s)) : undefined}
+      onClose={() => setConversas(null)}
+    />
+  ) : null;
   const painelTeste =
     modoTeste && podeOperar && modelo?.testavel ? (
       <TestarModeloAviso idInt={idInt} teste={teste} ehAdm={ehAdm} onAviso={onAviso} />
@@ -222,6 +264,7 @@ export function AvisoPedidoPronto({
         {bloqueio && <span className="max-w-[16rem] text-right text-[11px] text-slate-600 dark:text-slate-300">{bloqueio}</span>}
         {modoTeste && <span className="text-[10px] font-semibold uppercase text-amber-700 dark:text-amber-300">modo teste</span>}
         {painelTeste}
+        {janelaConversas}
       </div>
     );
   }
@@ -229,10 +272,8 @@ export function AvisoPedidoPronto({
   const saiu = aviso.estado === "enviado" || aviso.estado === "aguardando" || aviso.estado === "executado";
   // Diálogo incerto segura o WhatsApp: Reenviar só depois de conferir no ChatGuru.
   const travado = aviso.estado === "desconhecido" && aviso.trava_conversa === true;
-  // Recusa por número desta tentativa (só nesta tela: o servidor não grava o número).
+  // Recusa por número desta tentativa (só nesta tela: o servidor não grava o motivo).
   const recusa = aviso.estado === "falhou" && recusaNumero && recusaNumero.seq === aviso.seq ? recusaNumero : null;
-  // Com recusa por número ainda não corrigida, quem pode corrigir corrige antes de reenviar.
-  const esperaCorrecao = Boolean(recusa && !recusa.corrigido && podeEditarCadastro);
   const cor =
     aviso.estado === "enviado" || aviso.estado === "executado"
       ? "text-emerald-700 dark:text-emerald-300"
@@ -296,24 +337,18 @@ export function AvisoPedidoPronto({
           Número não encontrado no ChatGuru: {recusa.numero_enviado}
         </span>
       )}
-      {recusa && recusa.corrigido && (
-        <span className="max-w-[18rem] text-emerald-700 dark:text-emerald-300">Número corrigido no cadastro. Use Reenviar.</span>
-      )}
-      {recusa && !recusa.corrigido && !podeEditarCadastro && (
-        <span className="max-w-[18rem] text-slate-600 dark:text-slate-300">Peça a correção a quem pode editar o cadastro.</span>
-      )}
-      {recusa && !recusa.corrigido && podeEditarCadastro && (
-        <button
-          type="button"
-          disabled={ocupado}
-          onClick={() => setCorrigindo(true)}
-          className="font-semibold text-red-700 underline-offset-2 hover:underline disabled:opacity-50 dark:text-red-300"
-        >
-          Corrigir número
-        </button>
-      )}
       {podeOperar && (
         <span className="flex gap-2">
+          {aviso.estado !== "preparando" && !travado && !bloqueio && (
+            <button
+              type="button"
+              disabled={ocupado}
+              onClick={() => setConversas({ op: "reenviar", inicial: null })}
+              className={`font-semibold underline-offset-2 hover:underline disabled:opacity-50 ${recusa ? "text-red-700 dark:text-red-300" : "text-emerald-800 dark:text-emerald-300"}`}
+            >
+              Ver conversas do cliente
+            </button>
+          )}
           {aviso.message_id && aviso.estado !== "enviado" && (
             <button
               type="button"
@@ -324,7 +359,7 @@ export function AvisoPedidoPronto({
               Atualizar status
             </button>
           )}
-          {aviso.estado !== "preparando" && !esperaCorrecao && !travado && !bloqueio && (
+          {aviso.estado !== "preparando" && !travado && !bloqueio && (
             <button
               type="button"
               disabled={ocupado}
@@ -336,18 +371,7 @@ export function AvisoPedidoPronto({
           )}
         </span>
       )}
-      {corrigindo && recusa && (
-        <CorrigirNumeroModal
-          idContato={recusa.id_contato}
-          numeroEnviado={recusa.numero_enviado}
-          onClose={() => setCorrigindo(false)}
-          onSalvo={() => {
-            setCorrigindo(false);
-            onNumeroCorrigido(idInt);
-            showToast({ type: "success", title: "Número salvo no cadastro", description: "Use Reenviar para mandar o aviso de novo." });
-          }}
-        />
-      )}
+      {janelaConversas}
       {liberando && (
         <LiberarNumeroModal
           idInt={idInt}

@@ -1,6 +1,6 @@
 # Expedição
 
-> **Última revisão:** 07/11/2026
+> **Última revisão:** 09/11/2026 (aviso pelo ChatGuru vai para a conversa do cliente no remetente 3478)
 > **Caminho no menu:** Expedição (item direto do menu lateral, sem subitens; é o quarto, depois de Conferência, Pedidos e Clientes). Também se chega pela aba **Expedição** no topo do Kanban e da Fila de impressão da Produção.
 > **Endereço:** `/expedicao`
 
@@ -21,7 +21,7 @@ A tela também avisa o que está atrasado ou prometido para hoje e segura o desp
 - **Avisar cliente: pedido pronto**, **Reenviar** e **Atualizar status** pedem a permissão **Processar Envio / Retirada** (ou Administrador). Quem só tem **Visualizar Expedição** vê o aviso já enviado, sem os botões.
 - **Liberar número** (no aviso por diálogo em resultado desconhecido) e o diagnóstico do ChatGuru aparecem só para o Administrador.
 - **Testar modelo** aparece só com o modo teste ligado, só em pedido do cliente de teste (#14) e só para quem tem **Processar Envio / Retirada** (ou Administrador).
-- **Corrigir número** (no aviso recusado por número) aparece só para quem tem a permissão **Editar Cadastros** (ou Administrador). O perfil Expedidor não tem: vê o número recusado e o pedido de correção.
+- **Ver conversas do cliente** (abaixo do aviso) aparece para quem tem **Processar Envio / Retirada** (ou Administrador). Não grava nada no cadastro.
 
 ## Botões e ações da tela
 
@@ -61,13 +61,14 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Confirmar coleta** | Idem. Pedido despachado aguardando coleta | Pede confirmação e leva o pedido para Em Trânsito |
 | **Confirmar retirada** | Idem. Pedido A Retirar | Abre a janela **Confirmar retirada** |
 | **Marcar entregue** | Idem. Pedido Em Trânsito | Pede confirmação e conclui o pedido como Entregue |
-| **Avisar cliente: pedido pronto ({diálogo})** | Abaixo das ações, na lista e no card; só em pedido Na Expedição ainda sem aviso | Executa no ChatGuru o diálogo da forma de envio do pedido (Sedex, Motoboy, Retira, Veppo, Azul ou Transportadora) para o contato da proposta. Fica apagado, com o motivo embaixo, quando a forma de envio não tem diálogo ou quando é SEDEX sem etiqueta |
+| **Avisar cliente: pedido pronto ({diálogo})** | Abaixo das ações, na lista e no card; só em pedido Na Expedição ainda sem aviso | Executa no ChatGuru o diálogo da forma de envio do pedido (Sedex, Motoboy, Retira, Veppo, Azul ou Transportadora) na conversa do cliente no ChatGuru (ver "Para qual conversa vai o aviso"); quando a regra não decide sozinha, abre antes a escolha da conversa. Fica apagado, com o motivo embaixo, quando a forma de envio não tem diálogo ou quando é SEDEX sem etiqueta |
 | "Aviso enviado em … por …" (ou "Tentativa de aviso em … por …") | No lugar do botão, depois do envio | Mostra quando, quem e o estado do aviso |
 | **Atualizar status** | Só nos avisos antigos por texto (até 06/11/2026), enquanto não estão entregues ao WhatsApp | Consulta o ChatGuru. Não envia nada. Aviso por diálogo não tem status para consultar |
 | **Reenviar** | Abaixo do aviso; some quando a forma de envio não tem diálogo, quando falta a etiqueta do SEDEX e quando o WhatsApp está travado | Pede confirmação e executa o diálogo de novo |
 | **Liberar número** | Só para o Administrador, abaixo do aviso por diálogo em **resultado desconhecido** | Abre a janela **Liberar número**: "Conferi no ChatGuru: a mensagem foi enviada" deixa o aviso como executado, sem reenviar; "não foi enviada" deixa como falhou, e o **Reenviar** volta. Registra quem liberou, quando e o que respondeu |
 | **Testar modelo** | Só com o modo teste ligado e em pedido do cliente #14, num quadro tracejado abaixo do aviso, com a lista dos seis diálogos | Pede confirmação e manda o diálogo escolhido ao contato do pedido, sem olhar a forma de envio. Não conta como aviso do pedido |
-| **Corrigir número** | Abaixo do aviso, quando o ChatGuru recusou pelo número ("Número não encontrado no ChatGuru: {número}") | Abre a janela **Corrigir número** com o WhatsApp do contato do pedido; salvar grava no cadastro do contato |
+| **Ver conversas do cliente** | Abaixo do aviso (em vermelho quando o ChatGuru recusou pelo número) | Abre a lista das conversas do cliente no ChatGuru (remetente 3478), com nome e número, e permite reenviar para uma, várias ou todas, com confirmação. Não grava no cadastro |
+| **Para qual conversa enviar?** | Janela que abre no **Avisar cliente**, no **Reenviar** ou no **Testar modelo** quando o WhatsApp do contato casa com várias conversas do cliente, ou com nenhuma | **Enviar para esta**, **Enviar para as marcadas** e **Enviar para todas**, cada um com confirmação; **Fechar** não envia |
 
 #### Menu de ações do pedido
 
@@ -200,7 +201,7 @@ O pedido também chega à Expedição pela Revisão do boletim da produção.
 Desde 07/11/2026 o aviso não é mais um texto livre: é um **diálogo** do ChatGuru, com modelo aprovado, um para cada forma de envio. Pela conta oficial do WhatsApp, texto livre só chega a quem falou com a Ideal nas últimas 24 horas.
 
 1. No pedido com status Na Expedição, clique em **Avisar cliente: pedido pronto ({diálogo})** (abaixo das ações, na lista e no card). O nome entre parênteses é o diálogo que vai ser usado.
-2. O Vibe grava na conversa do contato os campos do diálogo e depois executa o diálogo, no mesmo WhatsApp da Ideal.
+2. O Vibe escolhe a conversa do cliente no ChatGuru (regra abaixo, em "Para qual conversa vai o aviso"), grava nela os campos do diálogo e depois executa o diálogo, no mesmo WhatsApp da Ideal.
 3. O botão vira "Aviso enviado em {data e hora} por {usuário}" com o estado e o diálogo: **diálogo executado no ChatGuru**, **falhou** ou **resultado desconhecido**. "Executado" quer dizer que o ChatGuru aceitou executar o diálogo. O ChatGuru não devolve confirmação de entrega para diálogo.
 4. Para mandar de novo, clique em **Reenviar** e confirme na janela **Reenviar aviso de pedido pronto?**.
 5. Em **resultado desconhecido**, o WhatsApp do contato fica travado para novos avisos de pedido pronto, deste e de qualquer outro pedido, até alguém conferir no ChatGuru se o diálogo foi executado. O aviso mostra "Este WhatsApp fica travado para novos avisos até alguém conferir no ChatGuru (avise o ADM)". O Vibe não reenvia sozinho.
@@ -226,13 +227,21 @@ Qual diálogo vai, pela forma de envio do pedido (a do despacho, se o expedidor 
 
 Correios PAC, Correios sem o serviço dito e frete sem forma definida ("Frete Incluso", "Sem custo", "a definir") não têm diálogo. O botão fica apagado com "Sem modelo de mensagem para esta forma de envio." Nenhum outro diálogo é usado no lugar. SEDEX sem código de rastreio fica apagado com "Gere a etiqueta dos Correios antes."
 
-Se o ChatGuru recusar pelo número, o aviso mostra "Número não encontrado no ChatGuru: {número enviado}":
+#### Para qual conversa vai o aviso (desde 09/11/2026)
 
-1. Clique em **Corrigir número**. A janela abre com o WhatsApp do contato do pedido, como está no cadastro.
-2. Corrija o número e clique em **Salvar número**. A gravação vai para o cadastro do contato, a mesma do cadastro do cliente.
-3. Aparece "Número corrigido no cadastro. Use Reenviar." Clique em **Reenviar** e confirme.
+O aviso vai para a conversa do cliente no WhatsApp da Ideal (ChatGuru, remetente 3478), não mais para o WhatsApp gravado no cadastro do contato. Decisão da diretoria: nenhum contato do Vibe é editado para isso. O Vibe procura as conversas do 3478 cujo código é o número do cliente do pedido e compara com o WhatsApp do contato responsável, pelo DDD e pelos 8 últimos dígitos (assim tanto faz ter ou não o nono dígito):
 
-Quem não tem **Editar Cadastros** vê "Peça a correção a quem pode editar o cadastro." O Vibe não tenta outro formato do número sozinho: tira só a formatação e põe o 55 quando falta, sem mexer no nono dígito. Na prova de 06/11/2026 o ChatGuru aceitou o número de teste só sem o nono dígito (51 8460-8848); com o 9, em qualquer formato, respondeu "Chat não encontrado." O número recusado só fica na tela até ela ser recarregada; depois o aviso aparece só como **falhou**, com **Reenviar**.
+- casou com exatamente uma conversa: o aviso vai para ela, sem perguntar;
+- casou com mais de uma, ou com nenhuma, mas o cliente tem conversas no 3478: abre a janela **Para qual conversa enviar?** com a lista das conversas do cliente (nome no ChatGuru e número). Dá para usar **Enviar para esta** numa linha, marcar várias e usar **Enviar para as marcadas**, ou **Enviar para todas**. Cada escolha pede confirmação. Nada sai antes disso;
+- o cliente não tem nenhuma conversa no 3478: nada é enviado e aparece "Cliente sem conversa no ChatGuru (remetente 3478)".
+
+Cada conversa que recebe o aviso fica registrada no aviso, com a conversa usada. Com várias conversas, sai um aviso para cada uma, uma depois da outra, e o resumo mostra o resultado de cada. A trava por WhatsApp vale por conversa: uma conversa travada não impede as outras.
+
+**Ver conversas do cliente** (abaixo do aviso, para quem pode avisar) abre a mesma lista, com a conversa que a regra escolheria. Dali dá para reenviar para uma, várias ou todas, sempre com confirmação. Ele substitui o antigo **Corrigir número**, que gravava o número no cadastro do contato e saiu.
+
+Se o ChatGuru recusar pelo número, o aviso mostra "Número não encontrado no ChatGuru: {número usado}" e o **Ver conversas do cliente** em vermelho, para escolher outra conversa. O Vibe não tenta outro número sozinho.
+
+Até 08/11/2026 o aviso ia para o WhatsApp do cadastro do contato, e o ChatGuru só aceitava o número de teste sem o nono dígito (prova de 06/11/2026). Por isso a conversa agora sai do próprio ChatGuru, com o número como ele guarda.
 
 #### Testar modelo (só no modo teste, pedido do cliente #14)
 
@@ -245,7 +254,7 @@ Serve para ver cada um dos seis diálogos chegar ao WhatsApp, sem mudar a forma 
 
 Cada clique é um envio novo e fica registrado como teste, com o diálogo usado. O teste não conta como aviso do pedido: não troca o "Aviso enviado em…", não aciona a regra de "já enviado" e não impede o **Avisar cliente**. A trava por WhatsApp vale igual: com um aviso ou teste em andamento ou em resultado desconhecido para o mesmo número, o teste é recusado, e o Administrador libera pelo **Liberar número** do próprio quadro. Fora do modo teste ou fora do cliente #14 o quadro não aparece, e o servidor recusa a chamada.
 
-Enquanto o **modo teste** estiver ligado (aparece "modo teste" no botão e no aviso), só pedidos do cliente de teste (#14), com contato desse cliente, podem ser avisados; o de qualquer outro cliente é recusado. O diálogo vai para o WhatsApp do contato do pedido, como está no cadastro. O modo teste não se desliga pela tela.
+Enquanto o **modo teste** estiver ligado (aparece "modo teste" no botão e no aviso), só pedidos do cliente de teste (#14), com contato desse cliente, podem ser avisados; o de qualquer outro cliente é recusado. O diálogo vai para a conversa do cliente #14 no ChatGuru (a conversa de teste se chama "Edison Junior - 14"). O modo teste não se desliga pela tela.
 
 Prova de 07/11/2026 no 24880: o SEDEX, sem etiqueta, apareceu apagado com "Gere a etiqueta dos Correios antes.", e o servidor recusou a chamada direta sem reservar nada. Com a forma trocada para retirada, o diálogo Retira foi tentado para o contato que estava no pedido naquela hora (64814, 5551991107694). O ChatGuru recusou já na gravação dos campos com "Chat não encontrado.", e nada saiu. Na segunda tentativa, às 13:05 de Brasília, com o contato 65040 (555184608848), o ChatGuru aceitou os campos, mas a resposta da execução do diálogo não foi nem "Diálogo executado" nem uma recusa. O aviso ficou em **resultado desconhecido**, e o número ficou travado até a conferência no ChatGuru. A mensagem tinha chegado.
 
@@ -393,8 +402,9 @@ Em resumo: no pedido Na Expedição, clique em **Despachar**, confira peso, volu
 | O que aparece | Por que acontece | O que fazer |
 |---|---|---|
 | "O pedido não tem contato. Escolha o contato na proposta." ou "O contato do pedido não pertence ao cliente nem ao faturado." | O aviso de pedido pronto não tem para quem ir | Corrigir o contato na proposta e clicar de novo em **Avisar cliente: pedido pronto** |
-| "O WhatsApp do contato do pedido está vazio ou inválido." | O contato não tem WhatsApp válido | Corrigir o WhatsApp no cadastro do contato |
-| "Número não encontrado no ChatGuru: {número}" | O número não tem conversa no WhatsApp da Ideal nesse formato (o ChatGuru pode guardar a conversa sem o nono dígito; o Vibe não cria conversa nova) | **Corrigir número** e depois **Reenviar**. Sem a permissão, pedir a correção a quem edita o cadastro |
+| "Cliente sem conversa no ChatGuru (remetente 3478)" | O cliente do pedido não tem nenhuma conversa no WhatsApp da Ideal com o código dele no nome | Nada é enviado. A conversa precisa existir no ChatGuru com o código do cliente no nome ("Nome - {código}"); o Vibe não cria conversa |
+| Janela **Para qual conversa enviar?** | O WhatsApp do contato responsável casa com mais de uma conversa do cliente, ou com nenhuma | Escolha a conversa (ou várias, ou todas) e confirme |
+| "Número não encontrado no ChatGuru: {número}" | O ChatGuru recusou a conversa usada | **Ver conversas do cliente** e escolha outra conversa |
 | "Modo teste: só pedidos do cliente #14 podem ser avisados." | O modo teste está ligado e o pedido é de outro cliente | Nada a fazer pela tela: o aviso fica liberado quando o modo teste for desligado |
 | "Este pedido já tinha aviso" | Já houve aviso para o pedido | Nada foi enviado de novo. Para mandar outra mensagem, use **Reenviar** |
 | Aviso em **resultado desconhecido** | O ChatGuru não respondeu a tempo ou respondeu algo inesperado | Conferir no ChatGuru se a mensagem saiu. Aviso por diálogo deixa o WhatsApp travado: o Administrador confere e usa **Liberar número** |
@@ -492,12 +502,13 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/app/(erp)/expedicao/page.tsx`
 - `src/app/api/expedicao/`
 - `src/features/expedicao/components/AvisoPedidoPronto.tsx`
-- `src/features/expedicao/components/CorrigirNumeroModal.tsx`
+- `src/features/expedicao/components/ConversasDoCliente.tsx`
 - `src/features/expedicao/components/LiberarNumeroModal.tsx`
 - `src/features/expedicao/components/TestarModeloAviso.tsx`
 - `src/features/expedicao/hooks/useAvisosPedidoPronto.ts`
 - `src/features/expedicao/services/aviso-pronto.client.ts`
 - `supabase/functions/expedicao-pedido-pronto/index.ts`
+- `supabase/migrations/20261109_expedicao_aviso_pronto_chat_id.sql`
 - `supabase/functions/expedicao-pedido-pronto/logica.ts`
 - `supabase/migrations/20261106_expedicao_aviso_pronto.sql`
 - `supabase/migrations/20261107_expedicao_aviso_pronto_dialogo.sql`

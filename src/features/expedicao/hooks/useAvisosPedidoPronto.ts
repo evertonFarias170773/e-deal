@@ -5,9 +5,9 @@ import { listarAvisosPronto, type AvisoPronto, type ModeloAviso, type RecusaPorN
 
 /**
  * Recusa por número da tentativa `seq`, guardada só nesta tela (o servidor não
- * grava o número). `corrigido`: o número já foi salvo pelo "Corrigir número".
+ * grava o motivo). Desde 09/11/2026 leva ao "Ver conversas do cliente".
  */
-export type RecusaNumeroDoAviso = RecusaPorNumero & { seq: number; corrigido: boolean };
+export type RecusaNumeroDoAviso = RecusaPorNumero & { seq: number };
 
 /**
  * Último aviso "pedido pronto" de cada pedido do painel que está na bancada
@@ -75,7 +75,7 @@ export function useAvisosPedidoPronto(pedidos: readonly { idInt: number; statusI
       const anterior = atual.get(idInt);
       if (anterior && anterior.seq === aviso.seq && recusa === undefined) return atual;
       const novo = new Map(atual);
-      if (recusa) novo.set(idInt, { ...recusa, seq: aviso.seq, corrigido: false });
+      if (recusa) novo.set(idInt, { ...recusa, seq: aviso.seq });
       else novo.delete(idInt);
       return novo;
     });
@@ -88,15 +88,5 @@ export function useAvisosPedidoPronto(pedidos: readonly { idInt: number; statusI
     []
   );
 
-  const marcarCorrigido = useCallback((idInt: number) => {
-    setRecusas((atual) => {
-      const r = atual.get(idInt);
-      if (!r) return atual;
-      const novo = new Map(atual);
-      novo.set(idInt, { ...r, corrigido: true });
-      return novo;
-    });
-  }, []);
-
-  return { avisos, modoTeste, atualizar, recusas, marcarCorrigido, modelos, testes };
+  return { avisos, modoTeste, atualizar, recusas, modelos, testes };
 }

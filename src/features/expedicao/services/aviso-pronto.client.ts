@@ -10,6 +10,11 @@ import { getSupabaseClient } from "@/lib/supabase/client";
  * Tudo passa pela Edge Function `expedicao-pedido-pronto`: ela confere a
  * sessão e a permissão, relê pedido e contato, reserva e envia. A tabela
  * `expedicao_aviso_pronto` é só do service_role; a tela nunca lê nem grava nela.
+ *
+ * Destino (09/11/2026): a conversa do ChatGuru (remetente 3478) do cliente do
+ * pedido, lida pelo servidor na visão chatguru_contatos_3478. Quando a regra não
+ * decide sozinha, a resposta traz `escolha` e nada é enviado: a tela pergunta e
+ * chama de novo com a seleção (`SelecaoConversas`).
  */
 
 export type EstadoAviso = "preparando" | "aguardando" | "enviado" | "executado" | "falhou" | "desconhecido";
@@ -47,13 +52,35 @@ export type AvisoPronto = {
   evento?: "pedido_pronto" | "pedido_em_producao";
   /** "Liberar número" (ADM): quem conferiu no ChatGuru, quando e o que respondeu. */
   liberacao?: { por: string | null; em: string; resposta: "enviada" | "nao_enviada" | null } | null;
+  /** Conversa do ChatGuru usada (09/11/2026); nulo nos avisos anteriores. */
+  chat_id?: string | null;
   autor_nome: string | null;
   criado_em: string;
   atualizado_em: string;
 };
 
-/** Recusa do ChatGuru por número: o número que foi enviado e o contato do pedido. */
-export type RecusaPorNumero = { numero_enviado: string; id_contato: number };
+/** Recusa do ChatGuru por número: o número e a conversa usados. */
+export type RecusaPorNumero = { numero_enviado: string; chat_id: string };
+
+/** Conversa do cliente no ChatGuru (remetente 3478): nome no Guru e número. */
+export type ConversaChatGuru = { chat_id: string; nome: string; numero: string };
+
+/**
+ * A regra não decidiu sozinha: o WhatsApp do contato casa com mais de uma
+ * conversa ("varias") ou com nenhuma ("nenhuma"). Nada foi enviado.
+ */
+export type EscolhaConversa = { motivo: "varias" | "nenhuma"; conversas: ConversaChatGuru[] };
+
+/** Escolha feita na tela: uma ou várias conversas, ou todas as do cliente. */
+export type SelecaoConversas = { chatIds: string[] } | { todas: true };
+
+/** Resultado de cada conversa num envio para várias. */
+export type EnvioPorConversa = ConversaChatGuru & {
+  aviso: AvisoPronto | null;
+  /** Não reservou (conversa travada ou envio concorrente): nada foi enviado para ela. */
+  recusa: string | null;
+  motivo_chatguru: string | null;
+};
 
 type Resposta = {
   ok: boolean;
@@ -68,8 +95,19 @@ type Resposta = {
   teste?: CamposDoTeste | null;
   /** Pedido em produção: contato responsável da proposta (para quem vai). */
   destinatario?: { id_contato: number; nome: string; whatsapp: string } | null;
-  /** Pedido em produção: por que o envio seria recusado (modo teste, contato). */
+  /** Pedido em produção: por que o envio seria recusado (modo teste, contato, sem conversa). */
   bloqueio?: string | null;
+  /** Conversa escolhida pela regra (preparar do pedido em produção). */
+  conversa?: ConversaChatGuru | null;
+  /** A regra não decidiu: lista para a tela perguntar. Nada foi enviado. */
+  escolha?: EscolhaConversa | null;
+  /** Envio para várias conversas: o resultado de cada uma. */
+  envios?: EnvioPorConversa[];
+  /** "Ver conversas do cliente". */
+  conversas?: ConversaChatGuru[];
+  decisao?: { modo: "automatica"; chat_id: string } | { modo: "escolha"; motivo: "varias" | "nenhuma" } | { modo: "sem_conversa"; mensagem: string };
+  contato?: { id_contato: number; nome: string; whatsapp: string } | null;
+  envio_recusado_pelo_modo_teste?: boolean;
   modelos?: Record<string, ModeloAviso>;
   modelo?: ModeloAviso | null;
   /** Etapa em que o ChatGuru recusou ou ficou incerto: campos ou diálogo. */
@@ -110,14 +148,25 @@ export function listarAvisosPronto(ids: number[]) {
   return chamar({ acao: "listar", ids });
 }
 
+/** Seleção da tela no formato do servidor (chat_ids ou todas). */
+function comSelecao(selecao?: SelecaoConversas): Record<string, unknown> {
+  if (!selecao) return {};
+  return "todas" in selecao ? { todas: true } : { chat_ids: selecao.chatIds };
+}
+
 /** Primeiro aviso. Se já houve um, o servidor devolve o que existe e não envia. */
-export function enviarAvisoPronto(idInt: number) {
-  return chamar({ acao: "enviar", id_int: idInt });
+export function enviarAvisoPronto(idInt: number, selecao?: SelecaoConversas) {
+  return chamar({ acao: "enviar", id_int: idInt, ...comSelecao(selecao) });
 }
 
 /** Nova reserva e novo envio — só depois da confirmação na tela. */
-export function reenviarAvisoPronto(idInt: number, seqAtual: number) {
-  return chamar({ acao: "reenviar", id_int: idInt, seq_atual: seqAtual, confirmado: true });
+export function reenviarAvisoPronto(idInt: number, seqAtual: number, selecao?: SelecaoConversas) {
+  return chamar({ acao: "reenviar", id_int: idInt, seq_atual: seqAtual, confirmado: true, ...comSelecao(selecao) });
+}
+
+/** "Ver conversas do cliente": só leitura, as conversas do 3478 do cliente e a decisão da regra. */
+export function verConversasDoCliente(idInt: number) {
+  return chamar({ acao: "conversas", id_int: idInt });
 }
 
 /**
@@ -133,8 +182,8 @@ export function liberarNumeroAviso(idInt: number, seq: number, resposta: "enviad
  * "Testar modelo" (só modo teste, só pedido do cliente #14): envia o diálogo
  * escolhido, sem olhar a forma de envio. Cada chamada é um envio novo.
  */
-export function testarModeloAviso(idInt: number, dialogo: DialogoAviso) {
-  return chamar({ acao: "testar", id_int: idInt, dialogo, confirmado: true });
+export function testarModeloAviso(idInt: number, dialogo: DialogoAviso, selecao?: SelecaoConversas) {
+  return chamar({ acao: "testar", id_int: idInt, dialogo, confirmado: true, ...comSelecao(selecao) });
 }
 
 /**
@@ -146,11 +195,11 @@ export function prepararAvisoProducao(idInt: number) {
   return chamar({ acao: "producao_preparar", id_int: idInt });
 }
 
-export function enviarAvisoProducao(idInt: number, reenvio?: { seqAtual: number }) {
+export function enviarAvisoProducao(idInt: number, reenvio?: { seqAtual: number }, selecao?: SelecaoConversas) {
   return chamar(
     reenvio
-      ? { acao: "producao_enviar", id_int: idInt, reenviar: true, seq_atual: reenvio.seqAtual, confirmado: true }
-      : { acao: "producao_enviar", id_int: idInt }
+      ? { acao: "producao_enviar", id_int: idInt, reenviar: true, seq_atual: reenvio.seqAtual, confirmado: true, ...comSelecao(selecao) }
+      : { acao: "producao_enviar", id_int: idInt, ...comSelecao(selecao) }
   );
 }
 

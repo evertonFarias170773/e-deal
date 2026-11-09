@@ -6,6 +6,7 @@ import { useAppToast } from "@/components/common/AppToast";
 import { formatDateTime } from "@/lib/formatters/date";
 import { ConfirmarAcaoModal } from "./ConfirmarAcaoModal";
 import { LiberarNumeroModal } from "./LiberarNumeroModal";
+import { ConversasDoClienteModal } from "./ConversasDoCliente";
 import {
   DIALOGOS_AVISO,
   ROTULO_ESTADO_AVISO,
@@ -15,7 +16,9 @@ import {
   type CamposDoTeste,
   type DiagnosticoChatGuru,
   type DialogoAviso,
-  type RecusaPorNumero
+  type EscolhaConversa,
+  type RecusaPorNumero,
+  type SelecaoConversas
 } from "../services/aviso-pronto.client";
 
 /**
@@ -25,6 +28,8 @@ import {
  * pedido não tem vai com valor de teste (Sedex_Conhecimento TESTE000000BR,
  * Cidade_Destino Porto Alegre/RS, Nota_Fiscal —). Cada teste é um envio novo,
  * com confirmação, e não conta como aviso do pedido; a trava por conversa vale.
+ * A conversa segue a mesma regra do aviso (09/11/2026): se o servidor não decide
+ * sozinho, abre a escolha entre as conversas do cliente #14 no ChatGuru.
  */
 export function TestarModeloAviso({
   idInt,
@@ -43,18 +48,24 @@ export function TestarModeloAviso({
   const [confirmando, setConfirmando] = useState(false);
   const [liberando, setLiberando] = useState(false);
   const [ocupado, setOcupado] = useState(false);
+  const [escolha, setEscolha] = useState<EscolhaConversa | null>(null);
   // Só desta tela: campos enviados e diagnóstico (o servidor não grava).
   const [campos, setCampos] = useState<CamposDoTeste | null>(null);
   const [diagnostico, setDiagnostico] = useState<DiagnosticoChatGuru[] | null>(null);
 
   const travado = teste?.estado === "desconhecido" && teste.trava_conversa === true;
 
-  async function testar() {
+  async function testar(selecao?: SelecaoConversas) {
     if (ocupado) return;
     setOcupado(true);
-    const res = await testarModeloAviso(idInt, dialogo);
+    const res = await testarModeloAviso(idInt, dialogo, selecao);
     setOcupado(false);
     setConfirmando(false);
+    if (res.ok && res.escolha) {
+      setEscolha(res.escolha);
+      return;
+    }
+    setEscolha(null);
     setDiagnostico(res.diagnostico_chatguru ?? null);
     setCampos(res.teste ?? null);
     onAviso(idInt, res.aviso, res.modo_teste);
@@ -175,6 +186,17 @@ export function TestarModeloAviso({
           salvando={ocupado}
           onConfirmar={() => void testar()}
           onClose={() => setConfirmando(false)}
+        />
+      )}
+      {escolha && (
+        <ConversasDoClienteModal
+          idInt={idInt}
+          titulo={`Para qual conversa enviar o teste ${dialogo}?`}
+          inicial={escolha}
+          descricaoEnvio={`Cada conversa marcada recebe o diálogo ${dialogo} de teste.`}
+          ocupado={ocupado}
+          onEnviar={(s) => void testar(s)}
+          onClose={() => setEscolha(null)}
         />
       )}
       {liberando && (

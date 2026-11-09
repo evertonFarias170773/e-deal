@@ -4,10 +4,9 @@ import { useEffect, useState } from "react";
 import { AlertTriangle, MessageCircle, X } from "lucide-react";
 import { useAppToast } from "@/components/common/AppToast";
 import { useAuth } from "@/features/auth/AuthProvider";
-import { hasPermissao } from "@/features/auth/usuarios.service";
 import { formatDateTime } from "@/lib/formatters/date";
 import { liberarPropostaParaProducaoPeloServidor } from "@/features/orcamentos/services/orcamentos.service";
-import { CorrigirNumeroModal } from "@/features/expedicao/components/CorrigirNumeroModal";
+import { ConversasDoClienteModal, ListaConversas, MOTIVO_ESCOLHA } from "@/features/expedicao/components/ConversasDoCliente";
 import { LiberarNumeroModal } from "@/features/expedicao/components/LiberarNumeroModal";
 import {
   ROTULO_ESTADO_AVISO,
@@ -15,12 +14,20 @@ import {
   liberarNumeroAviso,
   prepararAvisoProducao,
   type AvisoPronto,
+  type ConversaChatGuru,
   type DiagnosticoChatGuru,
-  type RecusaPorNumero
+  type EnvioPorConversa,
+  type EscolhaConversa,
+  type RecusaPorNumero,
+  type SelecaoConversas
 } from "@/features/expedicao/services/aviso-pronto.client";
 
 type Preparo = {
   destinatario: { id_contato: number; nome: string; whatsapp: string } | null;
+  /** Conversa do ChatGuru escolhida pela regra (uma só casou com o WhatsApp do contato). */
+  conversa: ConversaChatGuru | null;
+  /** A regra não decidiu: a janela pergunta para qual conversa vai. */
+  escolha: EscolhaConversa | null;
   bloqueio: string | null;
   modoTeste: boolean;
 };
@@ -29,18 +36,25 @@ type Preparo = {
  * "Liberar para Produção" com o aviso "Pedido em Produção" pelo WhatsApp da Ideal
  * (ChatGuru), 07/11/2026. Usado na lista de Pedidos e no menu da proposta.
  *
- * modo "liberar": pergunta se manda a mensagem e mostra para quem vai (contato
- * responsável da proposta). "Liberar e enviar" libera exatamente como antes
- * (`liberarPropostaParaProducaoPeloServidor`) e só depois de dar certo envia.
- * "Liberar sem enviar" só libera. "Cancelar" não faz nada. Falha no envio não
- * desfaz a liberação: mostra o motivo e oferece Reenviar, com confirmação.
+ * modo "liberar": pergunta se manda a mensagem e mostra para quem vai. "Liberar e
+ * enviar" libera exatamente como antes (`liberarPropostaParaProducaoPeloServidor`)
+ * e só depois de dar certo envia. "Liberar sem enviar" só libera. "Cancelar" não
+ * faz nada. Falha no envio não desfaz a liberação: mostra o motivo e oferece
+ * Reenviar, com confirmação.
  *
  * modo "avisar": pedido já liberado. Mostra o último aviso e envia/reenvia.
  *
+ * Destino (09/11/2026): a conversa do cliente no ChatGuru (remetente 3478), lida
+ * pelo servidor na visão chatguru_contatos_3478. O WhatsApp do contato
+ * responsável casou com uma conversa: vai para ela. Casou com várias ou com
+ * nenhuma: a janela lista as conversas para marcar (uma, várias ou todas). Sem
+ * conversa: "Cliente sem conversa no ChatGuru (remetente 3478)" e não envia.
+ * "Ver conversas do cliente" substitui o "Corrigir número"; nada grava em contatos.
+ *
  * O envio é o mesmo do aviso de pedido pronto (Edge Function
  * expedicao-pedido-pronto, evento pedido_em_producao): reserva contra duplicidade,
- * trava por conversa, modo teste (só cliente #14), "Corrigir número" e, para o
- * ADM, "Liberar número" e o diagnóstico do ChatGuru.
+ * trava por conversa, modo teste (só cliente #14) e, para o ADM, "Liberar número"
+ * e o diagnóstico do ChatGuru.
  */
 export function AvisoProducaoModal({
   idInt,
@@ -57,7 +71,6 @@ export function AvisoProducaoModal({
   const { showToast } = useAppToast();
   const { user } = useAuth();
   const ehAdm = Boolean(user?.isSuperAdmin || user?.isAdmin);
-  const podeEditarCadastro = Boolean(ehAdm || hasPermissao(user, "cadastros.edit"));
 
   const [preparo, setPreparo] = useState<Preparo | null>(null);
   const [erroPreparo, setErroPreparo] = useState<string | null>(null);
@@ -66,11 +79,15 @@ export function AvisoProducaoModal({
   const [liberou, setLiberou] = useState(false);
   const [mostrarResultado, setMostrarResultado] = useState(modo === "avisar");
   const [motivo, setMotivo] = useState<string | null>(null);
-  const [recusa, setRecusa] = useState<(RecusaPorNumero & { seq: number; corrigido: boolean }) | null>(null);
+  const [recusa, setRecusa] = useState<(RecusaPorNumero & { seq: number }) | null>(null);
+  const [envios, setEnvios] = useState<EnvioPorConversa[] | null>(null);
   const [diagnostico, setDiagnostico] = useState<DiagnosticoChatGuru[] | null>(null);
   const [confirmandoReenvio, setConfirmandoReenvio] = useState(false);
-  const [corrigindo, setCorrigindo] = useState(false);
   const [liberandoNumero, setLiberandoNumero] = useState(false);
+  // Conversas marcadas na própria janela, quando a regra não decidiu.
+  const [selecionadas, setSelecionadas] = useState<string[]>([]);
+  // Janela das conversas: escolha que o servidor pediu ou "Ver conversas do cliente".
+  const [conversas, setConversas] = useState<{ reenvio: boolean; inicial: EscolhaConversa | null } | null>(null);
 
   useEffect(() => {
     let vivo = true;
@@ -78,11 +95,18 @@ export function AvisoProducaoModal({
       const res = await prepararAvisoProducao(idInt);
       if (!vivo) return;
       if (!res.ok) {
-        setErroPreparo(res.mensagem ?? "Não foi possível ler o contato do pedido.");
-        setPreparo({ destinatario: null, bloqueio: res.mensagem ?? "Não foi possível ler o contato do pedido.", modoTeste: true });
+        const m = res.mensagem ?? "Não foi possível ler o contato do pedido.";
+        setErroPreparo(m);
+        setPreparo({ destinatario: null, conversa: null, escolha: null, bloqueio: m, modoTeste: true });
         return;
       }
-      setPreparo({ destinatario: res.destinatario ?? null, bloqueio: res.bloqueio ?? null, modoTeste: res.modo_teste !== false });
+      setPreparo({
+        destinatario: res.destinatario ?? null,
+        conversa: res.conversa ?? null,
+        escolha: res.escolha ?? null,
+        bloqueio: res.bloqueio ?? null,
+        modoTeste: res.modo_teste !== false
+      });
       setAviso(res.aviso ?? null);
     })();
     return () => {
@@ -96,12 +120,24 @@ export function AvisoProducaoModal({
     else onClose();
   }
 
-  async function enviar(reenvio?: { seqAtual: number }) {
+  /** Seleção da própria janela (quando a regra pediu escolha). */
+  function selecaoDaJanela(): SelecaoConversas | undefined {
+    if (!preparo?.escolha) return undefined;
+    return selecionadas.length === preparo.escolha.conversas.length ? { todas: true } : { chatIds: selecionadas };
+  }
+
+  async function enviar(reenvio?: { seqAtual: number }, selecao?: SelecaoConversas) {
     setOcupado(true);
-    const res = await enviarAvisoProducao(idInt, reenvio);
+    const res = await enviarAvisoProducao(idInt, reenvio, selecao);
     setOcupado(false);
     setConfirmandoReenvio(false);
     setMostrarResultado(true);
+    if (res.ok && res.escolha) {
+      // A lista mudou desde que a janela abriu (ou faltou escolher): pergunta de novo.
+      setConversas({ reenvio: Boolean(reenvio), inicial: res.escolha });
+      return;
+    }
+    setConversas(null);
     setDiagnostico(res.diagnostico_chatguru ?? null);
     if (!res.ok) {
       setMotivo(res.mensagem ?? "O aviso não foi enviado.");
@@ -110,9 +146,19 @@ export function AvisoProducaoModal({
     }
     if (res.aviso) setAviso(res.aviso);
     setMotivo(res.motivo_chatguru ?? null);
-    setRecusa(res.recusa_numero && res.aviso ? { ...res.recusa_numero, seq: res.aviso.seq, corrigido: false } : null);
+    setEnvios(res.envios && res.envios.length > 1 ? res.envios : null);
+    setRecusa(res.recusa_numero && res.aviso ? { ...res.recusa_numero, seq: res.aviso.seq } : null);
     if (res.ja_existia) {
       showToast({ type: "info", title: "Este pedido já tinha aviso de produção", description: "Nada foi enviado de novo. Para mandar outra mensagem, use Reenviar." });
+      return;
+    }
+    if (res.envios && res.envios.length > 1) {
+      const ok = res.envios.filter((e) => e.aviso?.estado === "executado").length;
+      showToast({
+        type: ok === res.envios.length ? "success" : "warning",
+        title: `Aviso: ${ok} de ${res.envios.length} conversas com diálogo executado`,
+        description: `Pedido ${idInt}.`
+      });
       return;
     }
     const a = res.aviso;
@@ -141,7 +187,7 @@ export function AvisoProducaoModal({
       onConcluido(true);
       return;
     }
-    await enviar();
+    await enviar(undefined, selecaoDaJanela());
   }
 
   async function liberarNumero(resposta: "enviada" | "nao_enviada") {
@@ -160,13 +206,13 @@ export function AvisoProducaoModal({
 
   const destinatario = preparo?.destinatario ?? null;
   const bloqueio = preparo?.bloqueio ?? null;
+  const escolhaDaJanela = preparo?.escolha ?? null;
+  const faltaEscolher = Boolean(escolhaDaJanela && selecionadas.length === 0);
   const travado = aviso?.estado === "desconhecido" && aviso.trava_conversa === true;
   const recusaAtual = recusa && aviso && recusa.seq === aviso.seq && aviso.estado === "falhou" ? recusa : null;
-  const esperaCorrecao = Boolean(recusaAtual && !recusaAtual.corrigido && podeEditarCadastro);
-  const podeReenviar = Boolean(aviso && aviso.estado !== "preparando" && !travado && !esperaCorrecao && !bloqueio);
+  const podeReenviar = Boolean(aviso && aviso.estado !== "preparando" && !travado && !bloqueio);
 
-  const botao =
-    "rounded-2xl px-4 py-2.5 text-sm font-semibold shadow-sm transition disabled:opacity-50";
+  const botao = "rounded-2xl px-4 py-2.5 text-sm font-semibold shadow-sm transition disabled:opacity-50";
 
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/50 p-4" role="dialog" aria-modal="true">
@@ -186,7 +232,7 @@ export function AvisoProducaoModal({
           </button>
         </div>
 
-        <div className="space-y-4 p-6 text-sm text-slate-700 dark:text-slate-300">
+        <div className="max-h-[70vh] space-y-4 overflow-y-auto p-6 text-sm text-slate-700 dark:text-slate-300">
           {modo === "liberar" && !mostrarResultado && (
             <>
               <p>
@@ -208,8 +254,8 @@ export function AvisoProducaoModal({
 
           <div className="flex items-start gap-2 rounded-xl border border-slate-200 p-3 dark:border-slate-700">
             <MessageCircle className="mt-0.5 h-4 w-4 shrink-0 text-emerald-700 dark:text-emerald-300" />
-            <div>
-              <p className="text-xs text-slate-500 dark:text-slate-400">Para quem vai (contato responsável do pedido)</p>
+            <div className="min-w-0 flex-1 space-y-1">
+              <p className="text-xs text-slate-500 dark:text-slate-400">Contato responsável do pedido</p>
               {!preparo ? (
                 <p>Lendo o contato...</p>
               ) : destinatario ? (
@@ -219,12 +265,31 @@ export function AvisoProducaoModal({
               ) : (
                 <p className="font-semibold text-red-700 dark:text-red-300">{erroPreparo ?? "O pedido não tem contato responsável."}</p>
               )}
+              {preparo?.conversa && (
+                <p>
+                  <span className="text-xs text-slate-500 dark:text-slate-400">Vai para a conversa do ChatGuru: </span>
+                  <span className="font-semibold text-slate-900 dark:text-slate-100">
+                    {preparo.conversa.nome} · {preparo.conversa.numero}
+                  </span>
+                </p>
+              )}
+              {escolhaDaJanela && !bloqueio && (
+                <div className="space-y-2">
+                  <p>{MOTIVO_ESCOLHA[escolhaDaJanela.motivo]}</p>
+                  <ListaConversas
+                    conversas={escolhaDaJanela.conversas}
+                    selecionadas={selecionadas}
+                    onChange={setSelecionadas}
+                    disabled={ocupado || liberou}
+                  />
+                </div>
+              )}
               {preparo?.modoTeste && (
                 <p className="text-[11px] font-semibold uppercase text-amber-700 dark:text-amber-300">
                   modo teste: só pedidos e contatos do cliente #14
                 </p>
               )}
-              {bloqueio && <p className="mt-1 text-red-700 dark:text-red-300">Envio recusado: {bloqueio}</p>}
+              {bloqueio && <p className="text-red-700 dark:text-red-300">Envio recusado: {bloqueio}</p>}
             </div>
           </div>
 
@@ -249,17 +314,24 @@ export function AvisoProducaoModal({
               )}
             </div>
           )}
-          {mostrarResultado && motivo && (!aviso || aviso.estado !== "executado") && (
+          {envios && (
+            <ul className="space-y-0.5">
+              {envios.map((e) => (
+                <li key={e.chat_id}>
+                  {e.nome} · {e.numero}:{" "}
+                  <strong>{e.recusa ? "não enviado" : e.aviso ? (ROTULO_ESTADO_AVISO[e.aviso.estado] ?? e.aviso.estado) : "—"}</strong>
+                  {e.recusa ? ` (${e.recusa})` : e.motivo_chatguru && e.aviso?.estado !== "executado" ? ` (ChatGuru: ${e.motivo_chatguru})` : ""}
+                </li>
+              ))}
+            </ul>
+          )}
+          {mostrarResultado && motivo && !envios && (!aviso || aviso.estado !== "executado") && (
             <p className="text-red-700 dark:text-red-300">Motivo: {motivo}</p>
           )}
           {recusaAtual && (
             <p className="font-semibold text-red-700 dark:text-red-300">
-              Número não encontrado no ChatGuru: {recusaAtual.numero_enviado}
-              {recusaAtual.corrigido ? " (corrigido no cadastro; use Reenviar)" : ""}
+              Número não encontrado no ChatGuru: {recusaAtual.numero_enviado}. Use Ver conversas do cliente para escolher outra conversa.
             </p>
-          )}
-          {recusaAtual && !recusaAtual.corrigido && !podeEditarCadastro && (
-            <p className="text-slate-600 dark:text-slate-300">Peça a correção a quem pode editar o cadastro.</p>
           )}
           {ehAdm && diagnostico && diagnostico.length > 0 && (
             <div className="break-words font-mono text-[10px] text-slate-500 dark:text-slate-400">
@@ -289,8 +361,8 @@ export function AvisoProducaoModal({
                 </button>
                 <button
                   type="button"
-                  disabled={ocupado}
-                  onClick={() => void enviar({ seqAtual: aviso.seq })}
+                  disabled={ocupado || faltaEscolher}
+                  onClick={() => void enviar({ seqAtual: aviso.seq }, selecaoDaJanela())}
                   className={`${botao} bg-[#0b2f4a] text-white hover:bg-[#123f61]`}
                 >
                   {ocupado ? "Enviando..." : "Reenviar"}
@@ -322,8 +394,8 @@ export function AvisoProducaoModal({
               <button
                 type="button"
                 onClick={() => void liberarProducao(true)}
-                disabled={ocupado || !preparo || Boolean(bloqueio)}
-                title={bloqueio ?? undefined}
+                disabled={ocupado || !preparo || Boolean(bloqueio) || faltaEscolher}
+                title={bloqueio ?? (faltaEscolher ? "Marque para qual conversa vai o aviso." : undefined)}
                 className={`${botao} bg-[#0b2f4a] text-white hover:bg-[#123f61]`}
               >
                 {ocupado ? "Liberando..." : "Liberar e enviar"}
@@ -341,22 +413,22 @@ export function AvisoProducaoModal({
                   Liberar número
                 </button>
               )}
-              {recusaAtual && !recusaAtual.corrigido && podeEditarCadastro && (
+              {aviso && podeReenviar && (
                 <button
                   type="button"
                   disabled={ocupado}
-                  onClick={() => setCorrigindo(true)}
-                  className={`${botao} border border-red-300 bg-white text-red-700 dark:bg-slate-900 dark:text-red-300`}
+                  onClick={() => setConversas({ reenvio: true, inicial: null })}
+                  className={`${botao} border bg-white dark:bg-slate-900 ${recusaAtual ? "border-red-300 text-red-700 dark:text-red-300" : "border-slate-200 text-slate-700 dark:border-slate-700 dark:text-slate-200"}`}
                 >
-                  Corrigir número
+                  Ver conversas do cliente
                 </button>
               )}
               {!aviso && modo === "avisar" && (
                 <button
                   type="button"
-                  disabled={ocupado || !preparo || Boolean(bloqueio)}
-                  title={bloqueio ?? undefined}
-                  onClick={() => void enviar()}
+                  disabled={ocupado || !preparo || Boolean(bloqueio) || faltaEscolher}
+                  title={bloqueio ?? (faltaEscolher ? "Marque para qual conversa vai o aviso." : undefined)}
+                  onClick={() => void enviar(undefined, selecaoDaJanela())}
                   className={`${botao} bg-[#0b2f4a] text-white hover:bg-[#123f61]`}
                 >
                   {ocupado ? "Enviando..." : "Enviar aviso"}
@@ -385,16 +457,19 @@ export function AvisoProducaoModal({
         </div>
       </div>
 
-      {corrigindo && recusaAtual && (
-        <CorrigirNumeroModal
-          idContato={recusaAtual.id_contato}
-          numeroEnviado={recusaAtual.numero_enviado}
-          onClose={() => setCorrigindo(false)}
-          onSalvo={() => {
-            setCorrigindo(false);
-            setRecusa((r) => (r ? { ...r, corrigido: true } : r));
-            showToast({ type: "success", title: "Número salvo no cadastro", description: "Use Reenviar para mandar o aviso de novo." });
-          }}
+      {conversas && (
+        <ConversasDoClienteModal
+          idInt={idInt}
+          titulo={conversas.inicial ? "Para qual conversa enviar?" : "Conversas do cliente"}
+          inicial={conversas.inicial}
+          descricaoEnvio={
+            conversas.reenvio
+              ? "Cada conversa marcada recebe outra mensagem de pedido em produção."
+              : "O cliente recebe o aviso de pedido em produção pelo WhatsApp da Ideal."
+          }
+          ocupado={ocupado}
+          onEnviar={(s) => void (conversas.reenvio && aviso ? enviar({ seqAtual: aviso.seq }, s) : enviar(undefined, s))}
+          onClose={() => setConversas(null)}
         />
       )}
       {liberandoNumero && (

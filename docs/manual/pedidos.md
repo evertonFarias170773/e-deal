@@ -1,6 +1,6 @@
 # Pedidos (lista)
 
-> **Última revisão:** 07/11/2026 (aviso Pedido em Produção na liberação)
+> **Última revisão:** 09/11/2026 (aviso Pedido em Produção vai para a conversa do cliente no ChatGuru)
 > **Caminho no menu:** Pedidos (item direto do menu lateral, sem submenu; é o segundo, logo abaixo de Conferência)
 > **Endereço:** `/orcamentos`
 
@@ -195,19 +195,20 @@ As datas pequenas aparecem como dia/mês e hora, no horário de Brasília.
 
 1. Clique no card **Revisão atendente** para ver a fila.
 2. No menu da linha, clique em **Liberar para Produção**.
-3. A janela **Liberar proposta para Produção?** traz o aviso de sempre e pergunta "Enviar mensagem ao cliente avisando que o pedido entrou em produção?". Logo abaixo aparece para quem vai: o nome e o WhatsApp do contato responsável do pedido.
+3. A janela **Liberar proposta para Produção?** traz o aviso de sempre e pergunta "Enviar mensagem ao cliente avisando que o pedido entrou em produção?". Logo abaixo aparece o contato responsável do pedido (nome e WhatsApp) e a conversa do ChatGuru que vai receber: "Vai para a conversa do ChatGuru: {nome no ChatGuru} · {número}". Quando o WhatsApp do contato casa com várias conversas do cliente, ou com nenhuma, a janela lista as conversas para marcar (uma, várias ou **Todas**) e o **Liberar e enviar** só acende depois de marcar.
 4. Escolha:
    - **Liberar e enviar**: libera exatamente como antes e, só se a liberação der certo, manda pelo WhatsApp da Ideal (ChatGuru) o diálogo "Pedido em Produção". A janela continua aberta e mostra o resultado do aviso.
    - **Liberar sem enviar**: só libera, como antes.
    - **Cancelar**: não libera nem envia.
 5. Se a liberação tiver pendência, aparece "Erro de Validação" com o motivo, e nada é enviado. Se tudo estiver certo, aparece "Proposta liberada" e o pedido passa para REVISAO PRODUCAO.
-6. Se o aviso falhar, a liberação continua valendo. A janela mostra o motivo e oferece **Reenviar** (pede confirmação). Para mandar depois, use **Aviso: pedido em produção** no menu da linha do pedido liberado.
+6. Se o aviso falhar, a liberação continua valendo. A janela mostra o motivo e oferece **Reenviar** (pede confirmação) e **Ver conversas do cliente**, para escolher outra conversa. Para mandar depois, use **Aviso: pedido em produção** no menu da linha do pedido liberado.
 
 Regras do aviso, as mesmas do aviso de pedido pronto da Expedição:
 
 - Um aviso por pedido: abrir de novo não manda segunda mensagem; só **Reenviar**, confirmado, manda outra.
 - Dois avisos para o mesmo WhatsApp nunca correm juntos. Se o ChatGuru não confirmar, o aviso fica em **resultado desconhecido** e o WhatsApp fica travado para novos avisos (deste e da Expedição) até o Administrador conferir no ChatGuru e usar **Liberar número**.
-- Se o ChatGuru recusar pelo número, aparece "Número não encontrado no ChatGuru: {número}" e, para quem tem **Editar Cadastros** (ou Administrador), **Corrigir número**; depois, **Reenviar**.
+- O aviso vai para a conversa do cliente no ChatGuru (remetente 3478), escolhida pelo DDD e pelos 8 últimos dígitos do WhatsApp do contato responsável; o cadastro do contato não é alterado. Regra completa em [Expedição](expedicao.md), "Para qual conversa vai o aviso". Cliente sem nenhuma conversa: "Envio recusado: Cliente sem conversa no ChatGuru (remetente 3478)" e o **Liberar e enviar** fica apagado.
+- Se o ChatGuru recusar pelo número, aparece "Número não encontrado no ChatGuru: {número}" e **Ver conversas do cliente**, para escolher outra conversa e reenviar.
 - **Modo teste**: enquanto estiver ligado, só pedido e contato do cliente de teste (#14) recebem o aviso. Em pedido de outro cliente a janela aparece, mostra "Envio recusado: Modo teste: só pedidos do cliente #14 podem ser avisados." e o **Liberar e enviar** fica apagado; **Liberar sem enviar** funciona normalmente.
 - O Administrador vê também a resposta do ChatGuru (código e texto, sem a chave nem os dados do contato).
 
@@ -294,6 +295,7 @@ A liberação é recusada quando já existe NF-e de venda autorizada ou em proce
 | "Envio recusado: Modo teste: só pedidos do cliente #14 podem ser avisados." | O aviso Pedido em Produção ainda está em teste. | Use **Liberar sem enviar**. O aviso passa a valer para todos quando o modo teste for desligado. |
 | "Há um aviso sem confirmação para o WhatsApp {número}." | Outro aviso para o mesmo WhatsApp (de produção ou de pedido pronto) ficou em resultado desconhecido. | Avise o Administrador: ele confere no ChatGuru e usa **Liberar número**. |
 | "O pedido {número} ainda não foi liberado para a produção. Nada foi enviado." | Tentativa de aviso antes da liberação. | Libere primeiro; o aviso sai depois. |
+| "Envio recusado: Cliente sem conversa no ChatGuru (remetente 3478)" | O cliente não tem conversa no WhatsApp da Ideal com o código dele no nome. | Use **Liberar sem enviar**. A conversa precisa existir no ChatGuru como "Nome - {código do cliente}". |
 | "Nenhuma proposta encontrada" | Os filtros não trazem nenhum pedido, ou o pedido está escondido (entregue, teste encerrado, cancelado). | Clique em **Limpar filtros** e busque pelo número. Veja "Achar o que a lista esconde". |
 | Busquei pelo valor ou pela OS Ideal e o pedido não veio | A busca na base inteira é por número, código e nome do cliente, CPF ou CNPJ do cliente, atendente, nome de quem recebe a nota e nome do evento. Valor e OS Ideal não fazem parte da busca. | Busque pelo número do pedido, pelo nome ou pelo CPF/CNPJ do cliente. |
 | O número do card não bate com o total do rodapé | O card ignora o status específico escolhido no filtro Status, ou a leitura do período inteiro ainda não terminou (alguns segundos depois de abrir), ou há busca ou filtro específico ligado (no máximo 100 pedidos). | Espere os cards se acertarem, use **Ativos** ou **Todos status**, ou use o "Total de propostas encontradas" do rodapé. |
@@ -344,6 +346,7 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/features/orcamentos/components/FiltroProdutoDrop.tsx`
 - `src/features/orcamentos/components/AvisoProducaoModal.tsx`
 - `src/features/expedicao/services/aviso-pronto.client.ts`
+- `src/features/expedicao/components/ConversasDoCliente.tsx`
 - `supabase/functions/expedicao-pedido-pronto/index.ts`
 - `supabase/migrations/20261107d_expedicao_aviso_pronto_evento.sql`
 - `src/features/orcamentos/components/MarcarEntregueModal.tsx`

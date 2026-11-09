@@ -69,14 +69,14 @@ export function conferirModoTeste(modoTeste: boolean, idClientePedido: unknown, 
 
 /**
  * Recusa do ChatGuru por causa do número (ex.: "Chat não encontrado."): a tela
- * mostra o número enviado e oferece "Corrigir número". O Vibe não tenta outro
- * formato sozinho.
+ * mostra o número usado e oferece "Ver conversas do cliente" (09/11/2026). O
+ * Vibe não tenta outro número sozinho.
  */
 export function recusaPorNumero(motivo: string | null | undefined): boolean {
   return /chat\s+n[aã]o\s+encontrad|n[uú]mero|telefone|chat_number|whats/i.test(motivo ?? "");
 }
 
-// ───────────────────────── Diálogos (07/11/2026) ─────────────────────────
+// --- Diálogos (07/11/2026) ---
 
 export type CampoDialogo = "Pedido_Atual" | "Nota_Fiscal" | "Cidade_Destino" | "Sedex_Conhecimento";
 export type NomeDialogo = "Sedex" | "Motoboy" | "Retira" | "Veppo" | "Azul" | "Transportadora";
@@ -284,7 +284,7 @@ export function camposDoDialogo(
   return campos;
 }
 
-// ───────────────────────── Testar modelo (07/11/2026) ─────────────────────────
+// --- Testar modelo (07/11/2026) ---
 
 /** Os seis diálogos na ordem da tela. */
 export const NOMES_DIALOGO = Object.keys(DIALOGOS) as NomeDialogo[];
@@ -427,4 +427,67 @@ export function limpar(texto: unknown, max = 150): string {
   if (typeof texto !== "string") return "";
   // deno-lint-ignore no-control-regex
   return texto.replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim().slice(0, max);
+}
+
+// --- Conversa do ChatGuru (09/11/2026, decisão da diretoria) ---
+//
+// O destino dos avisos sai da visão chatguru_contatos_3478 (conversas do remetente
+// 3478, codigo_cliente = id_cliente do pedido), não mais de contatos.whats. Nenhum
+// contato do Vibe é editado para isso.
+
+export const SEM_CONVERSA = "Cliente sem conversa no ChatGuru (remetente 3478)";
+
+export type Conversa = { chat_id: string; nome: string; numero: string };
+
+/** DDD + 8 últimos dígitos (10 dígitos), sem DDI e sem o nono dígito; null se não dá para saber. */
+export function dddFinal8(valor: unknown): string | null {
+  if (typeof valor !== "string" && typeof valor !== "number") return null;
+  let n = String(valor).replace(/\D/g, "").replace(/^0+/, "");
+  if (/^55\d{10,11}$/.test(n)) n = n.slice(2);
+  if (!/^[1-9]\d{9,10}$/.test(n)) return null;
+  return n.slice(0, 2) + n.slice(-8);
+}
+
+/** Número da conversa como o ChatGuru guarda (DDI 55 + DDD + número, com ou sem o 9). */
+export function numeroDaConversa(valor: unknown): string | null {
+  const n = typeof valor === "string" ? valor.replace(/\D/g, "") : "";
+  return /^55[1-9]\d{9,10}$/.test(n) ? n : null;
+}
+
+export type DecisaoConversa =
+  | { modo: "automatica"; conversa: Conversa }
+  | { modo: "escolha"; motivo: "varias" | "nenhuma"; conversas: Conversa[] }
+  | { modo: "sem_conversa" };
+
+/**
+ * Regra: o telefone do contato responsável casa (DDD + 8 últimos) com exatamente
+ * uma conversa do cliente -> envia para ela, sem perguntar. Casa com mais de uma,
+ * ou com nenhuma, e o cliente tem conversas -> escolha na tela. Sem conversa -> não envia.
+ * Conversa com número inválido fica fora.
+ */
+export function decidirConversa(telefoneContato: unknown, conversas: Conversa[]): DecisaoConversa {
+  const validas = conversas.filter((c) => c.chat_id && numeroDaConversa(c.numero));
+  if (!validas.length) return { modo: "sem_conversa" };
+  const alvo = dddFinal8(telefoneContato);
+  const casam = alvo ? validas.filter((c) => dddFinal8(c.numero) === alvo) : [];
+  if (casam.length === 1) return { modo: "automatica", conversa: casam[0] };
+  return { modo: "escolha", motivo: casam.length > 1 ? "varias" : "nenhuma", conversas: validas };
+}
+
+/**
+ * Conversas escolhidas na tela: só chat_id que está na lista do cliente, relida
+ * na hora; sem repetição. Lista vazia ou chat_id de fora -> recusa.
+ */
+export function conversasEscolhidas(pedidas: unknown, doCliente: Conversa[], todas = false): Conversa[] {
+  const validas = doCliente.filter((c) => c.chat_id && numeroDaConversa(c.numero));
+  if (todas) {
+    if (!validas.length) throw new Recusa(422, SEM_CONVERSA);
+    return validas;
+  }
+  const ids = Array.isArray(pedidas) ? Array.from(new Set(pedidas.map((x) => String(x ?? "").trim()).filter(Boolean))) : [];
+  if (!ids.length) throw new Recusa(400, "Escolha ao menos uma conversa do cliente.");
+  const porId = new Map(validas.map((c) => [c.chat_id, c]));
+  const fora = ids.filter((id) => !porId.has(id));
+  if (fora.length) throw new Recusa(409, "Uma das conversas escolhidas não é deste cliente no ChatGuru. Abra a lista de novo.");
+  return ids.map((id) => porId.get(id)!);
 }
