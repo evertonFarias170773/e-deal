@@ -6,6 +6,7 @@ import { useAppToast } from "@/components/common/AppToast";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { formatDateTime } from "@/lib/formatters/date";
 import { liberarPropostaParaProducaoPeloServidor } from "@/features/orcamentos/services/orcamentos.service";
+import { liberarComAviso } from "@/features/orcamentos/lib/liberar-com-aviso";
 import { ConversasDoClienteModal, ListaConversas, MOTIVO_ESCOLHA } from "@/features/expedicao/components/ConversasDoCliente";
 import { LiberarNumeroModal } from "@/features/expedicao/components/LiberarNumeroModal";
 import {
@@ -136,8 +137,15 @@ export function AvisoProducaoModal({
 
   async function enviar(reenvio?: { seqAtual: number }, selecao?: SelecaoConversas) {
     setOcupado(true);
-    const res = await enviarAvisoProducao(idInt, reenvio, selecao);
-    setOcupado(false);
+    // Erro de rede no aviso não pode prender a janela (09/11/2026): o "ocupado" sempre volta.
+    let res: Awaited<ReturnType<typeof enviarAvisoProducao>>;
+    try {
+      res = await enviarAvisoProducao(idInt, reenvio, selecao);
+    } catch (e) {
+      res = { ok: false, mensagem: e instanceof Error && e.message ? e.message : "Não foi possível falar com o servidor do aviso." };
+    } finally {
+      setOcupado(false);
+    }
     setConfirmandoReenvio(false);
     setMostrarResultado(true);
     if (res.ok && res.escolha) {
@@ -183,20 +191,31 @@ export function AvisoProducaoModal({
     if (ocupado) return;
     setOcupado(true);
     showToast({ type: "info", title: "Liberando para produção...", description: "Aguarde a validação das regras." });
-    const res = await liberarPropostaParaProducaoPeloServidor(idInt);
+    // A liberação é a antiga e não depende do aviso (lib/liberar-com-aviso). Sem enviar,
+    // o aviso nem é chamado; com enviar, ele só roda depois e seu erro não desfaz nada.
+    const reenvio = aviso ? { seqAtual: aviso.seq } : undefined;
+    const selecao = selecaoDaJanela();
+    let liberouAgora = false;
+    const r = await liberarComAviso({
+      liberar: async () => {
+        const res = await liberarPropostaParaProducaoPeloServidor(idInt);
+        setOcupado(false);
+        if (res.success) {
+          liberouAgora = true;
+          setLiberou(true);
+          showToast({ type: "success", title: "Proposta liberada", description: "A proposta agora está na lista de Produção/Pedidos." });
+        }
+        return res;
+      },
+      // Já houve aviso: "Liberar e enviar" manda de novo, pela tentativa que a janela mostrou.
+      enviarAviso: comAviso ? () => enviar(reenvio, selecao) : undefined
+    });
     setOcupado(false);
-    if (!res.success) {
-      showToast({ type: "error", title: "Erro de Validação", description: res.errorMessage || "Não foi possível enviar para produção." });
+    if (!r.liberou) {
+      showToast({ type: "error", title: "Erro de Validação", description: r.erroLiberacao ?? "Não foi possível enviar para produção." });
       return;
     }
-    setLiberou(true);
-    showToast({ type: "success", title: "Proposta liberada", description: "A proposta agora está na lista de Produção/Pedidos." });
-    if (!comAviso) {
-      onConcluido(true);
-      return;
-    }
-    // Já houve aviso: "Liberar e enviar" manda de novo, pela tentativa que a janela mostrou.
-    await enviar(aviso ? { seqAtual: aviso.seq } : undefined, selecaoDaJanela());
+    if (!comAviso && liberouAgora) onConcluido(true);
   }
 
   async function liberarNumero(resposta: "enviada" | "nao_enviada") {
