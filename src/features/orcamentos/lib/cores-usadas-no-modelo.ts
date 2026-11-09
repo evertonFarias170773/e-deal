@@ -1,33 +1,33 @@
 /**
- * Cor do papel que não se repete (05/11/2026, pedido 24806).
+ * Cor do papel que não se repete — SÓ EM PRODUTO DE PRATELEIRA.
  *
- * Dentro do mesmo produto, dois lotes com o MESMO Modelo não levam a mesma cor:
- * a lista de cor de cada lote esconde as cores que os outros lotes desse Modelo
- * já usam. Lotes de Modelo diferente repetem a cor à vontade (ex.: 24808, Branca
- * em AFTER / LOUNGE / NA RODA / SUBSOLO) — escolha do dono.
+ * 05/11/2026 (ce1f4402, pedido 24806): a lista de cor de cada lote escondia as
+ * cores que os outros lotes do mesmo Modelo já usavam, em qualquer produto.
+ * 09/11/2026: o dono restringiu à prateleira (`produtos.is_estoque`, copiado em
+ * `produtos_proposta.is_estoque`, lido por `isItemPrateleira`). Na prateleira o
+ * Modelo é o próprio produto, então a cor usada some de TODOS os outros lotes
+ * dele. Nos demais produtos a lista volta a mostrar todas as cores do formato,
+ * e dois lotes podem levar a mesma cor, inclusive com o mesmo Modelo.
  *
- * Só a tela filtra. Pedido antigo com cor repetida abre e grava como antes:
+ * Só a tela filtra. Pedido gravado com cor repetida abre e grava como antes:
  * a cor do próprio lote continua sempre na lista dele, e o servidor não confere.
  */
 
-/** Chave de comparação do Modelo: sem espaços nas pontas e sem caixa. */
-function chaveDoModelo(nome: string | null | undefined): string {
-  return (nome ?? "").trim().toLocaleLowerCase("pt-BR");
-}
+const NENHUMA: ReadonlySet<string> = new Set<string>();
 
 /**
- * As cores que os OUTROS lotes do produto, com o mesmo Modelo, já usam.
- * `outros` não inclui o próprio lote.
+ * As cores que os OUTROS lotes do produto já usam e que somem da lista deste
+ * lote. Fora da prateleira, nenhuma. `outros` não inclui o próprio lote.
  */
-export function coresUsadasNoMesmoModelo(
-  nomeDoLote: string | null | undefined,
-  outros: ReadonlyArray<{ nome_modelo: string | null | undefined; padrao: string | null | undefined }>
-): Set<string> {
-  const chave = chaveDoModelo(nomeDoLote);
+export function coresUsadasNosOutrosLotes(
+  prateleira: boolean,
+  outros: ReadonlyArray<{ padrao: string | null | undefined }>
+): ReadonlySet<string> {
+  if (!prateleira) return NENHUMA;
   const usadas = new Set<string>();
   for (const o of outros) {
     const cor = o.padrao?.trim();
-    if (cor && chaveDoModelo(o.nome_modelo) === chave) usadas.add(cor);
+    if (cor) usadas.add(cor);
   }
   return usadas;
 }

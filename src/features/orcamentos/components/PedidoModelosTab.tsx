@@ -21,7 +21,7 @@ import {
   type ChecklistVisivel
 } from "@/features/orcamentos/lib/checklist-lote";
 import { versoInicialDoModelo } from "@/features/orcamentos/lib/verso-do-modelo";
-import { coresUsadasNoMesmoModelo } from "@/features/orcamentos/lib/cores-usadas-no-modelo";
+import { coresUsadasNosOutrosLotes } from "@/features/orcamentos/lib/cores-usadas-no-modelo";
 import { listChecklistDeProdutos } from "@/features/produtos/services/produto-boletim-campos.service";
 import type { PedidoModeloRow, ModeloInput } from "@/features/orcamentos/services/pedidos-modelos.service";
 import {
@@ -227,7 +227,7 @@ function ModeloInlineCard({
   onUpdateParent,
 }: {
   modelo: PedidoModeloState;
-  /** Cores de outros lotes do produto com o mesmo Modelo (lib/cores-usadas-no-modelo). */
+  /** Cores dos outros lotes do produto de prateleira (lib/cores-usadas-no-modelo); fora dela, vazio. */
   coresJaUsadas?: ReadonlySet<string>;
   maxQtd: number;
   itemIdModeloCorNum?: string | null;
@@ -1279,8 +1279,8 @@ export function PedidoModelosTab({
                         numeracoesOpcoes={numeracoesOpcoes}
                         formatosOpcoes={formatosOpcoes}
                         visivel={visivelDoItem(item)}
-                        coresJaUsadas={coresUsadasNoMesmoModelo(
-                          m.nome_modelo,
+                        coresJaUsadas={coresUsadasNosOutrosLotes(
+                          isItemPrateleira(item),
                           modelosDoItem.filter((o) => o !== m)
                         )}
                         onRemove={() => {

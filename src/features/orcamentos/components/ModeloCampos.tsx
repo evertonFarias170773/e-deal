@@ -463,8 +463,9 @@ export function ModeloCampos({
   /** Motivo para o Nº Inicial ficar somente leitura, ou null. */
   numeracaoInicioTravada?: string | null;
   /**
-   * Cores que outros lotes do produto com o mesmo Modelo já usam
+   * Cores que os outros lotes do produto de prateleira já usam
    * (lib/cores-usadas-no-modelo): somem da lista, menos a cor deste lote.
+   * Fora da prateleira vem vazio e a lista mostra todas as cores do formato.
    */
   coresJaUsadas?: ReadonlySet<string>;
 }) {
