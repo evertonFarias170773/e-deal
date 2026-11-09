@@ -541,3 +541,61 @@ export function linkDoCliente(idInt: number, linhas: { numero_pedido?: unknown; 
   }
   return `${PORTAL_CLIENTE}/cliente/${numero}-${token}`;
 }
+
+// --- v19: pausa e trava compartilhada com o Imposition (proposta revisão 4) ---
+//
+// A conversa é a mesma linha de imposition_whatsapp_conversas que o envio de arte
+// do Imposition usa. O Vibe ocupa com 'vibe:<id do aviso>' depois de reservar a
+// linha em expedicao_aviso_pronto (o banco confere que o aviso existe) e antes de
+// qualquer POST ao ChatGuru. A margem depois do "Diálogo Executado" é do banco
+// (chatguru_trava_config.margem, aplicada pelo soltar); o Vibe não guarda valor.
+
+export const AVISOS_PAUSADOS = "Envio de avisos pausado por alguns minutos. Tente de novo em instantes.";
+export const TRAVA_OCUPADA = "Há uma operação pendente para esta conversa. Nada foi enviado. Tente de novo em instantes.";
+export const TRAVA_INDISPONIVEL = "Trava compartilhada indisponível. Nada foi enviado.";
+
+/**
+ * Interruptor CHATGURU_AVISOS_PAUSA. Vazio ou "desligada": envia. "ligada", ou
+ * qualquer outro valor (erro de digitação), pausa: na dúvida, não envia.
+ */
+export function avisosPausados(valor: string | undefined | null): boolean {
+  const v = (valor ?? "").trim().toLowerCase();
+  return v !== "" && v !== "desligada";
+}
+
+/** Recusa todo aviso novo enquanto a pausa estiver ligada (antes de reservar a linha). */
+export function conferirPausa(valor: string | undefined | null): void {
+  if (avisosPausados(valor)) throw new Recusa(423, AVISOS_PAUSADOS);
+}
+
+/** Chave do Vibe na trava compartilhada: 'vibe:' + id (uuid) do aviso. */
+export function chaveDaTrava(idAviso: string): string {
+  const id = String(idAviso ?? "").trim().toLowerCase();
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(id)) {
+    throw new Recusa(503, TRAVA_INDISPONIVEL);
+  }
+  return `vibe:${id}`;
+}
+
+/**
+ * Resposta do imposition_whatsapp_conversa_travar. Só "reservado" deixa enviar.
+ * Erro de chamada (função ainda não existe, banco fora, permissão) ou resposta
+ * estranha: indisponível, e nada sai (fail-closed).
+ */
+export function resultadoTrava(data: unknown, erro: unknown): "reservado" | "ocupado" | "indisponivel" {
+  if (erro) return "indisponivel";
+  if (data === "reservado") return "reservado";
+  if (data === "ocupado") return "ocupado";
+  return "indisponivel";
+}
+
+/**
+ * Depois do ChatGuru: 'executado' solta com margem; 'falhou' (inclusive a recusa
+ * dos 120 s) solta sem margem; 'desconhecido' ou 'preparando' não solta (fica
+ * presa até o ADM conferir e usar Liberar número).
+ */
+export function comoSoltar(estado: string): { soltar: boolean; executado: boolean } {
+  if (estado === "executado") return { soltar: true, executado: true };
+  if (estado === "falhou") return { soltar: true, executado: false };
+  return { soltar: false, executado: false };
+}

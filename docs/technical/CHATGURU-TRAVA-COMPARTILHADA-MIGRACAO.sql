@@ -2,10 +2,14 @@
 -- Trava compartilhada ChatGuru (Vibe + Imposition) - revisão 4
 --
 -- NÃO APLICADA. Fica fora de supabase/migrations de propósito.
--- Aplicar inteira, numa transação, só com autorização nominal, na ordem da
--- seção "Transição" de docs/technical/CHATGURU-TRAVA-COMPARTILHADA-PROPOSTA.md.
+-- Aplicar inteira, só com autorização nominal, pelo roteiro
+-- docs/technical/CHATGURU-TRAVA-JANELA.md. No SQL Editor: o arquivo INTEIRO numa
+-- execução, sem BEGIN nem COMMIT (não há nenhum ativo aqui). O editor roda tudo
+-- numa transação implícita: qualquer erro, inclusive a drenagem da parte 0,
+-- desfaz tudo e não deixa transação aberta.
 -- Teste: CHATGURU-TRAVA-COMPARTILHADA-TESTE.sql (ROLLBACK) e -TESTE-EDITOR.sql
--- (SQL Editor). Primeira rodada 09/11: 2c e M1 corrigidos; segunda pendente.
+-- (SQL Editor). 09/11: aprovada pela equipe do Imposition (46 casos que devem
+-- passar, reproduzidos por eles). Reversão pronta: CHATGURU-TRAVA-COMPARTILHADA-REVERSAO.sql.
 --
 -- Partes:
 --   0. drenagem: aborta se houver envio em andamento de qualquer lado
@@ -367,7 +371,8 @@ update public.imposition_whatsapp_conversas c
 --      a v19 segue sem enviar: pausada e, sem a função travar, fail-closed.
 -- O Imposition não precisa voltar código: as RPCs voltam ao texto de antes.
 -- =====================================================================
--- begin;
+-- (Sem BEGIN/COMMIT: rodar descomentado e inteiro numa execucao, como a ida.
+--  O mesmo texto, pronto para rodar, esta em CHATGURU-TRAVA-COMPARTILHADA-REVERSAO.sql.)
 -- select public.chatguru_trava_drenagem(true);  -- aborta se houver envio em andamento
 -- -- solta as travas do Vibe (a chave estrangeira volta e não aceita 'vibe:')
 -- update public.imposition_whatsapp_conversas set chave_envio = null, atualizado_em = now()
@@ -456,4 +461,3 @@ update public.imposition_whatsapp_conversas c
 -- drop table public.chatguru_trava_registro;   -- guardar uma cópia antes, se já tiver linhas
 -- drop table public.chatguru_trava_config;
 -- drop function public.chatguru_trava_drenagem(boolean);
--- commit;

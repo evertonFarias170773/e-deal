@@ -5,6 +5,8 @@
 > - **2c**, chave fora do formato: foi recusada, mas com `invalid input syntax for type uuid`, porque o gatilho convertia para uuid antes de conferir o formato. Corrigido: o gatilho confere o formato primeiro e recusa com "Chave da trava fora do formato". O caso 2c2 cobre o lado da arte.
 > - **M1**, margem de 15 s: leu 10 s. O defeito era do teste: o UPDATE e a leitura estavam no mesmo comando (CTE), e a consulta principal enxerga a foto de antes do UPDATE. O teste foi separado em gravar e ler (M1a a M1d, 15 s e depois 20 s), e o M1e confere que `chatguru_trava_margem()` é STABLE.
 >
+> **Aprovação técnica (09/11/2026):** a equipe do Imposition reproduziu os 46 casos que devem passar. A aplicação será integral e transacional, numa janela com os dois sistemas pausados, pelo roteiro [CHATGURU-TRAVA-JANELA.md](CHATGURU-TRAVA-JANELA.md). A reversão, pronta para rodar, está em [CHATGURU-TRAVA-COMPARTILHADA-REVERSAO.sql](CHATGURU-TRAVA-COMPARTILHADA-REVERSAO.sql).
+>
 > **Esperado na segunda rodada:** 49 casos, 46 PASSA e 3 FALHA (R3-1, R3-2 e R3-3). Entraram os casos D1 a D5 da drenagem (item 6). D3 e D5 também dão FALHA se houver envio real em andamento na hora: é a drenagem funcionando, e basta rodar de novo.
 > **Alcance:** a trava compartilhada vale para **todos os avisos do Vibe** que usam a Edge Function `expedicao-pedido-pronto`: o aviso de pedido pronto da Expedição (seis diálogos), o "Testar modelo" e o "Pedido em Produção".
 > **Enquanto não existir:** o "Pedido em Produção" só envia em modo teste e para o cliente #14; os demais veem "Envio de aviso de produção em ajuste" e só liberam. O aviso de pedido pronto da Expedição está limitado pelo modo teste (só cliente #14). Desligar o modo teste da Expedição antes da trava compartilhada deixa aberta a corrida em `Pedido_Atual` descrita abaixo.
@@ -294,7 +296,9 @@ Envio em `preparando` de qualquer idade aborta, inclusive o que ficou preso por 
 
 D3 e D5 também dão FALHA se houver envio real em andamento na hora do teste: é a drenagem funcionando, e basta rodar de novo.
 
-## Lado do Vibe (Edge Function `expedicao-pedido-pronto`, v19, não feita)
+## Lado do Vibe (Edge Function `expedicao-pedido-pronto`, v19: pronta no repositório, sem deploy)
+
+Feita em 09/11/2026 como descrito abaixo, com a pausa `CHATGURU_AVISOS_PAUSA`. Testes da lógica: casos O e P de `scripts/testes/expedicao-aviso-pronto.test.mts`. Deploy só na janela: roteiro em [CHATGURU-TRAVA-JANELA.md](CHATGURU-TRAVA-JANELA.md).
 
 No caminho comum a todos os avisos (`enviarParaConversas` -> `reservarLinha`), o que cobre de uma vez o pedido pronto, o Testar modelo e o Pedido em Produção:
 

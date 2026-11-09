@@ -80,6 +80,20 @@
  * Recusa do ChatGuru por número ("Chat não encontrado."): a resposta traz o
  * número enviado e o chat_id, para a tela oferecer "Ver conversas do cliente".
  * O Vibe não tenta outro número sozinho.
+ *
+ * v19 — TRAVA COMPARTILHADA COM O IMPOSITION (proposta revisão 4,
+ * docs/technical/CHATGURU-TRAVA-COMPARTILHADA-PROPOSTA.md):
+ *   - PAUSA: CHATGURU_AVISOS_PAUSA "ligada" (ou qualquer valor que não seja vazio
+ *     ou "desligada") recusa todo aviso novo antes de reservar a linha, com
+ *     "Envio de avisos pausado por alguns minutos. Tente de novo em instantes.".
+ *     Liberar número, listar e conversas seguem funcionando.
+ *   - TRAVAR: depois de reservar a linha e antes de qualquer POST,
+ *     imposition_whatsapp_conversa_travar(destino_chave, 'vibe:<id>'). "ocupado"
+ *     (envio de arte em curso ou margem correndo) ou qualquer erro (função ainda
+ *     não existe, banco fora): a linha vira 'falhou' e nada sai (fail-closed).
+ *   - SOLTAR: 'executado' solta com a margem do banco; 'falhou' (inclusive a recusa
+ *     dos 120 s) solta sem margem; 'desconhecido' não solta. O Liberar número
+ *     solta sem margem.
  */
 import { createClient } from "npm:@supabase/supabase-js@2";
 import {
@@ -116,6 +130,12 @@ import {
   recusaPorNumero,
   recusaTempoMinimo,
   TEMPO_MINIMO_GURU,
+  TRAVA_INDISPONIVEL,
+  TRAVA_OCUPADA,
+  chaveDaTrava,
+  comoSoltar,
+  conferirPausa,
+  resultadoTrava,
   textoDaResposta,
   type EscolhaDialogo,
   type NomeDialogo
@@ -484,6 +504,54 @@ async function chamarChatGuru(cfg: ReturnType<typeof configChatGuru>, action: st
   return { http: resposta.status, data: data as any, texto };
 }
 
+/** v19: recusa todo aviso novo com a pausa ligada (lida a cada chamada, sem deploy). */
+function conferirPausaDoServidor(): void {
+  conferirPausa(Deno.env.get("CHATGURU_AVISOS_PAUSA"));
+}
+
+/**
+ * v19: ocupa a conversa na trava compartilhada (imposition_whatsapp_conversas)
+ * para o aviso já reservado. Qualquer erro vira "indisponivel" (nada sai).
+ */
+async function travarConversa(destinoChave: string, idAviso: string): Promise<{ resultado: "reservado" | "ocupado" | "indisponivel"; chave: string | null }> {
+  let chave: string;
+  try {
+    chave = chaveDaTrava(idAviso);
+  } catch {
+    return { resultado: "indisponivel", chave: null };
+  }
+  try {
+    const { data, error } = await admin.rpc("imposition_whatsapp_conversa_travar", { p_destino: destinoChave, p_chave: chave });
+    if (error) console.error("[expedicao-pedido-pronto] travar", error.code ?? "erro");
+    return { resultado: resultadoTrava(data, error), chave };
+  } catch {
+    console.error("[expedicao-pedido-pronto] travar", "sem resposta");
+    return { resultado: "indisponivel", chave };
+  }
+}
+
+/**
+ * v19: solta a trava compartilhada, só se a conversa ainda é deste aviso (o banco
+ * confere). Com executado = true o banco aplica a margem. Tenta duas vezes; se
+ * não conseguir, a conversa fica ocupada (lado seguro) e o erro vai para o log.
+ */
+async function soltarConversa(destinoChave: string, chave: string, executado: boolean): Promise<boolean> {
+  for (let tentativa = 0; tentativa < 2; tentativa++) {
+    try {
+      const { data, error } = await admin.rpc("imposition_whatsapp_conversa_soltar", {
+        p_destino: destinoChave,
+        p_chave: chave,
+        p_executado: executado
+      });
+      if (!error) return data === true;
+    } catch {
+      // tenta de novo
+    }
+  }
+  console.error("[expedicao-pedido-pronto] soltar", "falhou: conversa segue ocupada");
+  return false;
+}
+
 /** Grava o resultado SÓ na reserva que este pedido criou e que ainda está em 'preparando'. */
 async function salvar(idReserva: string, estado: string): Promise<Registro> {
   const { data, error } = await admin
@@ -568,6 +636,8 @@ async function enviarParaConversas(p: {
   conversas: Conversa[];
   ocultar: (string | null | undefined)[];
 }): Promise<ResultadoEnvio[]> {
+  // v19: a pausa vale para todos os avisos, antes de qualquer reserva.
+  conferirPausaDoServidor();
   const cfg = configChatGuru();
   const out: ResultadoEnvio[] = [];
   for (const conversa of p.conversas) {
@@ -598,6 +668,18 @@ async function enviarParaConversas(p: {
       out.push({ conversa, ...vazio, recusa: "Outro envio deste pedido começou ao mesmo tempo. Nada foi enviado." });
       continue;
     }
+    // v19: trava compartilhada com o Imposition antes de qualquer POST ao ChatGuru.
+    const trava = await travarConversa(chave, res.id);
+    if (trava.resultado !== "reservado" || !trava.chave) {
+      const falhou = await salvar(res.id, "falhou");
+      out.push({
+        conversa,
+        ...vazio,
+        aviso: publico(falhou),
+        recusa: trava.resultado === "ocupado" ? TRAVA_OCUPADA : TRAVA_INDISPONIVEL
+      });
+      continue;
+    }
     const r = await executarDialogo(res.id, cfg, destino, p.dialogoId, p.campos, [
       cfg.key,
       cfg.account,
@@ -615,6 +697,9 @@ async function enviarParaConversas(p: {
       recusa_numero: r.porNumero ? { numero_enviado: destino, chat_id: conversa.chat_id } : null,
       diagnostico_chatguru: p.quem.adm ? r.diagnostico : null
     });
+    // v19: solta conforme o resultado; 'desconhecido' segue ocupando a conversa.
+    const como = comoSoltar(r.resultado.estado);
+    if (como.soltar) await soltarConversa(chave, trava.chave, como.executado);
   }
   return out;
 }
@@ -828,6 +913,10 @@ Deno.serve(async (req) => {
         .maybeSingle();
       if (errLib) throw new Recusa(503, "Não foi possível liberar o número. Nada mudou.");
       if (!lib) throw new Recusa(409, "Este aviso não está mais travado (ou não é de diálogo). Atualize a tela.");
+      // v19: solta também a trava compartilhada, sem margem (a conferência levou tempo).
+      // Aviso de antes da trava compartilhada não ocupa a conversa: soltar devolve false.
+      const libReg = lib as Registro;
+      if (libReg.destino_chave) await soltarConversa(libReg.destino_chave, chaveDaTrava(libReg.id), false);
       return responder(200, { ok: true, modo_teste: modoTeste, aviso: publico(lib as Registro) });
     }
 
@@ -884,6 +973,7 @@ Deno.serve(async (req) => {
         let conversa: Conversa | null = null;
         let escolha: Destinos["escolha"] = null;
         try {
+          conferirPausaDoServidor();
           const ctxP = await contextoProducao(idP, modoTeste);
           await linkDoPedido(idP);
           const dest = await destinosDoAviso(ctxP.p.id_cliente, ctxP.contato.whats, {});
@@ -911,6 +1001,7 @@ Deno.serve(async (req) => {
       } else if (ultimoP) {
         return responder(200, { ok: true, modo_teste: modoTeste, ja_existia: true, aviso: publico(ultimoP) });
       }
+      conferirPausaDoServidor();
       const linkP = await linkDoPedido(idP);
       const destP = await destinosDoAviso(ctxP.p.id_cliente, ctxP.contato.whats, corpo);
       if (destP.escolha) {
@@ -943,6 +1034,7 @@ Deno.serve(async (req) => {
       const nome = dialogoValido(corpo?.dialogo);
       if (!nome) throw new Recusa(400, "Escolha um dos seis diálogos.");
       if (corpo?.confirmado !== true) throw new Recusa(409, "Confirme o envio de teste.");
+      conferirPausaDoServidor();
       const ctxT = await contextoDoPedido(idInt, modoTeste, nome);
       const destT = await destinosDoAviso(ctxT.idCliente, ctxT.contato.whats, corpo);
       if (destT.escolha) {
@@ -1007,6 +1099,7 @@ Deno.serve(async (req) => {
       if (ultimo.estado === "preparando") throw new Recusa(409, "Já há um envio em andamento para este pedido.");
     }
 
+    conferirPausaDoServidor();
     const ctx = await contextoDoPedido(idInt, modoTeste);
     const dest = await destinosDoAviso(ctx.idCliente, ctx.contato.whats, corpo);
     const modelo = { dialogo: ctx.dialogo, bloqueio: null };

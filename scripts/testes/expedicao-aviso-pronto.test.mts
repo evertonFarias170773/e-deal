@@ -20,7 +20,10 @@
  *   L. conversa do ChatGuru (09/11): DDD + 8 últimos casa com uma -> automática;
  *      várias ou nenhuma -> escolha; sem conversa -> não envia; escolha só do cliente;
  *   M. produção (09/11): só modo teste + cliente #14; Link_do_Cliente do próprio pedido;
- *   N. regra dos 120 s do ChatGuru: recusa explícita (falhou), com a mensagem da tela.
+ *   N. regra dos 120 s do ChatGuru: recusa explícita (falhou), com a mensagem da tela;
+ *   O. v19: pausa CHATGURU_AVISOS_PAUSA (vazio ou "desligada" envia; o resto pausa);
+ *   P. v19: trava compartilhada (chave vibe:<id>, só "reservado" envia, erro = nada
+ *      sai; executado solta com margem, falhou sem margem, desconhecido não solta).
  */
 import assert from "node:assert/strict";
 import {
@@ -61,7 +64,15 @@ import {
   rastreioCorreiosValido,
   recusaPorNumero,
   servicoCorreios,
-  telefoneWhatsApp
+  telefoneWhatsApp,
+  AVISOS_PAUSADOS,
+  TRAVA_INDISPONIVEL,
+  TRAVA_OCUPADA,
+  avisosPausados,
+  chaveDaTrava,
+  comoSoltar,
+  conferirPausa,
+  resultadoTrava
 } from "../../supabase/functions/expedicao-pedido-pronto/logica.ts";
 
 let n = 0;
@@ -326,6 +337,44 @@ caso("N. regra dos 120 s do ChatGuru", () => {
   assert.equal(recusaTempoMinimo({ code: 200, dialog_execution_return: "Diálogo Executado", result: "success" }), false);
   assert.equal(envioRecusado(200, { code: 200, result: "error", description: "algo inesperado" }), false);
   assert.equal(envioRecusado(500, r), false);
+});
+
+caso("O. v19: pausa dos avisos", () => {
+  assert.equal(avisosPausados(undefined), false);
+  assert.equal(avisosPausados(""), false);
+  assert.equal(avisosPausados("  "), false);
+  assert.equal(avisosPausados("desligada"), false);
+  assert.equal(avisosPausados(" Desligada "), false);
+  assert.equal(avisosPausados("ligada"), true);
+  assert.equal(avisosPausados("LIGADA"), true);
+  // Erro de digitação pausa: na dúvida, não envia.
+  assert.equal(avisosPausados("ligado"), true);
+  assert.equal(avisosPausados("desligado"), true);
+  assert.throws(() => conferirPausa("ligada"), (e: any) => e.status === 423 && e.message === AVISOS_PAUSADOS);
+  assert.doesNotThrow(() => conferirPausa(undefined));
+  assert.equal(AVISOS_PAUSADOS, "Envio de avisos pausado por alguns minutos. Tente de novo em instantes.");
+});
+
+caso("P. v19: trava compartilhada", () => {
+  // Chave no formato que o banco aceita (check e gatilho da migração).
+  assert.equal(chaveDaTrava("0E8F1C2A-1234-4abc-8def-0123456789ab"), "vibe:0e8f1c2a-1234-4abc-8def-0123456789ab");
+  assert.match(chaveDaTrava("00000000-0000-4000-8000-0000000000a3"), /^vibe:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+  assert.throws(() => chaveDaTrava("nao-uuid"), (e: any) => e.message === TRAVA_INDISPONIVEL);
+  assert.throws(() => chaveDaTrava(""), /indisponível/);
+  // Só "reservado" deixa enviar; erro ou resposta estranha = indisponível (nada sai).
+  assert.equal(resultadoTrava("reservado", null), "reservado");
+  assert.equal(resultadoTrava("ocupado", null), "ocupado");
+  assert.equal(resultadoTrava(null, { code: "PGRST202", message: "Could not find the function" }), "indisponivel");
+  assert.equal(resultadoTrava("reservado", { code: "57014" }), "indisponivel");
+  assert.equal(resultadoTrava(null, null), "indisponivel");
+  assert.equal(resultadoTrava("RESERVADO", null), "indisponivel");
+  // Soltar: executado com margem, falhou sem margem, desconhecido e preparando não soltam.
+  assert.deepEqual(comoSoltar("executado"), { soltar: true, executado: true });
+  assert.deepEqual(comoSoltar("falhou"), { soltar: true, executado: false });
+  assert.deepEqual(comoSoltar("desconhecido"), { soltar: false, executado: false });
+  assert.deepEqual(comoSoltar("preparando"), { soltar: false, executado: false });
+  assert.equal(TRAVA_OCUPADA, "Há uma operação pendente para esta conversa. Nada foi enviado. Tente de novo em instantes.");
+  assert.equal(TRAVA_INDISPONIVEL, "Trava compartilhada indisponível. Nada foi enviado.");
 });
 
 console.log(`\n${n} casos ok`);
