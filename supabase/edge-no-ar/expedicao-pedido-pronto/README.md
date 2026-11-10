@@ -1,6 +1,6 @@
 # expedicao-pedido-pronto: v23 (fora de supabase/functions de propósito)
 
-**v23 (10/11/2026), código nesta pasta:** a v22 com o aviso de pedido pronto no clique do "Confirmar despacho".
+**v23 no ar desde 10/11/2026 17:53 (Brasília)**, versão 23 no painel da Supabase, conferida arquivo a arquivo igual a esta pasta (index.ts, logica.ts e a cópia de transportadoras-parceiras.ts). É a v22 com o aviso de pedido pronto no clique do "Confirmar despacho".
 - `enviar` e `reenviar` aceitam o pedido em EXPEDICAO, A RETIRAR ou EM TRANSITO (`logica.STATUS_AVISO_PRONTO`), porque o despacho já mudou o status quando o aviso sai.
 - Ação nova `preparar` (só leitura): para a caixa da janela do despacho, o último aviso, o modelo pela forma de envio que está na tela (`logica.despachoDaTela`), a conversa ou a escolha e o motivo de bloqueio. Nada é gravado.
 - Aviso de produção e trava: sem mudança. A v19 da janela (`supabase/functions/`) **não** tem a v23: antes da janela da trava, levar estas duas mudanças para ela.
@@ -19,7 +19,7 @@ Esta pasta guarda a **v21**, que é a v18 (commit 46808cb5) mais o modo homologa
 
 A v19 do repositório tem a mesma homologação e o mesmo formato do link.
 
-Situação: **v22 no ar desde 10/11/2026 15:30 (Brasília)**, versão 21 no painel da Supabase, conferida arquivo a arquivo igual a esta pasta. A v22 é a v21 sem o bloqueio "Envio de aviso de produção em ajuste": decisão da diretoria de 10/11, antes da trava compartilhada, assumindo o risco de colisão de campos com o envio de arte do Imposition. Com o modo teste desligado, o Pedido em Produção vai para o cliente real como o aviso da Expedição. A v21 (Link_do_Cliente só com o final) ficou no ar de 14:59 a 15:30 (versão 20 no painel); a v20 de 13:24 a 14:59.
+Histórico: a **v22 ficou no ar de 10/11/2026 15:30 a 17:53 (Brasília)**, versão 21 no painel da Supabase, conferida arquivo a arquivo igual a esta pasta. A v22 é a v21 sem o bloqueio "Envio de aviso de produção em ajuste": decisão da diretoria de 10/11, antes da trava compartilhada, assumindo o risco de colisão de campos com o envio de arte do Imposition. Com o modo teste desligado, o Pedido em Produção vai para o cliente real como o aviso da Expedição. A v21 (Link_do_Cliente só com o final) ficou no ar de 14:59 a 15:30 (versão 20 no painel); a v20 de 13:24 a 14:59.
 
 ## Como subir
 
