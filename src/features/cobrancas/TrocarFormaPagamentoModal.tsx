@@ -8,12 +8,14 @@ import { getSupabaseClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/formatters/currency";
 import { listarModelosCobranca } from "@/features/cobrancas/services/modelos-cobranca";
 import type { ModeloCobranca } from "@/features/cobrancas/types";
+import type { DestinoDaTroca, TipoDestinoDaTroca } from "@/features/cobrancas/troca-forma-pagamento";
 
 /**
- * Trocar forma de pagamento: PIX não pago -> Faturado, mesma proposta, mesmo
- * valor e mesmo pagador. Quem decide se pode é o servidor
+ * Trocar forma de pagamento: PIX não pago -> forma interna (Faturado,
+ * E-Permuta, E-Amostra, E-Retrabalho), mesma proposta, mesmo valor e mesmo
+ * pagador. Quem decide se pode, e para quais formas, é o servidor
  * (GET /api/cobrancas/trocar-forma-pagamento), consultado ao abrir; a tela só
- * escolhe a condição e o motivo.
+ * escolhe a forma, a condição (quando a forma pede) e o motivo.
  */
 type Props = {
   cobrancaId: string;
@@ -28,7 +30,20 @@ type Avaliacao = {
   notaAutorizada?: boolean;
   idPagamento?: string | null;
   valor?: number;
+  destinos?: DestinoDaTroca[];
 };
+
+/** O que muda no resumo "Ao confirmar" conforme a forma escolhida. */
+function depoisDaTroca(destino: DestinoDaTroca): string {
+  switch (destino.tipo) {
+    case "E-FATURADO":
+      return "O Faturado segue o caminho de sempre: análise de crédito, Conferência e títulos no Registro de recebíveis.";
+    case "E-PERMUTA":
+      return "A E-Permuta segue o caminho da família faturado: liberação pelo financeiro e depois a Conferência. Não gera títulos.";
+    default:
+      return `A ${destino.rotulo} é cortesia, sem condição de pagamento: segue para liberação pelo financeiro e depois para a Conferência.`;
+  }
+}
 
 async function tokenDaSessao(): Promise<string> {
   const client = getSupabaseClient();
@@ -62,6 +77,7 @@ export function TrocarFormaPagamentoModal({ cobrancaId, onClose, onSuccess }: Pr
   const [erroAvaliacao, setErroAvaliacao] = useState<string | null>(null);
   const [modelos, setModelos] = useState<ModeloCobranca[]>([]);
   const [modeloId, setModeloId] = useState("");
+  const [tipo, setTipo] = useState<TipoDestinoDaTroca>("E-FATURADO");
   const [motivo, setMotivo] = useState("");
   const [enviando, setEnviando] = useState(false);
 
@@ -83,7 +99,10 @@ export function TrocarFormaPagamentoModal({ cobrancaId, onClose, onSuccess }: Pr
           setErroAvaliacao(dados?.message || "Não foi possível verificar se a forma de pagamento pode ser trocada.");
           return;
         }
-        setAvaliacao(dados as Avaliacao);
+        const lida = dados as Avaliacao;
+        setAvaliacao(lida);
+        const primeiro = lida.destinos?.[0]?.tipo;
+        if (primeiro) setTipo(primeiro);
       } catch (err) {
         if (ativo) setErroAvaliacao(err instanceof Error ? err.message : "Erro desconhecido.");
       }
@@ -102,7 +121,14 @@ export function TrocarFormaPagamentoModal({ cobrancaId, onClose, onSuccess }: Pr
   }, []);
 
   const carregando = !avaliacao && !erroAvaliacao;
-  const podeConfirmar = avaliacao?.pode === true && Boolean(modeloId) && motivo.trim().length > 0 && !enviando;
+  const destinos = avaliacao?.destinos ?? [];
+  const destino = destinos.find((d) => d.tipo === tipo) ?? null;
+  const podeConfirmar =
+    avaliacao?.pode === true &&
+    destino !== null &&
+    (!destino.exigeCondicao || Boolean(modeloId)) &&
+    motivo.trim().length > 0 &&
+    !enviando;
 
   async function confirmar() {
     if (!podeConfirmar) return;
@@ -112,7 +138,12 @@ export function TrocarFormaPagamentoModal({ cobrancaId, onClose, onSuccess }: Pr
       const resposta = await fetch("/api/cobrancas/trocar-forma-pagamento", {
         method: "POST",
         headers: { "content-type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ id: cobrancaId, id_modelo_cobranca: modeloId, motivo: motivo.trim() })
+        body: JSON.stringify({
+          id: cobrancaId,
+          tipo: destino?.tipo,
+          id_modelo_cobranca: destino?.exigeCondicao ? modeloId : null,
+          motivo: motivo.trim()
+        })
       });
       const dados = await resposta.json().catch(() => null);
       if (!resposta.ok || !dados?.success) {
@@ -124,13 +155,18 @@ export function TrocarFormaPagamentoModal({ cobrancaId, onClose, onSuccess }: Pr
         void refreshCobrancas();
         return;
       }
-      const liberado = dados.nova?.id ? await acionarLiberacaoAutomatica(token, dados.nova.id) : false;
+      // A liberação automática só vale para o Faturado (como no Gerar cobrança).
+      const ehFaturado = destino?.tipo === "E-FATURADO";
+      const liberado = ehFaturado && dados.nova?.id ? await acionarLiberacaoAutomatica(token, dados.nova.id) : false;
+      const rotulo = destino?.rotulo ?? "Faturado";
       showToast({
         type: "success",
         title: "Forma de pagamento trocada",
         description: liberado
           ? "O PIX foi cancelado e o Faturado foi liberado automaticamente. Ele segue para a Conferência."
-          : "O PIX foi cancelado e o Faturado foi enviado para análise financeira."
+          : ehFaturado
+            ? "O PIX foi cancelado e o Faturado foi enviado para análise financeira."
+            : `O PIX foi cancelado e a ${rotulo} foi criada. Ela aguarda a liberação do financeiro.`
       });
       await refreshCobrancas();
       onSuccess?.();
@@ -148,7 +184,7 @@ export function TrocarFormaPagamentoModal({ cobrancaId, onClose, onSuccess }: Pr
         <div className="flex items-start justify-between border-b border-slate-100 pb-4">
           <div>
             <h2 className="text-xl font-semibold text-slate-950">Trocar forma de pagamento</h2>
-            <p className="text-sm text-slate-500 mt-1">PIX para Faturado, mesmo valor e mesma proposta.</p>
+            <p className="text-sm text-slate-500 mt-1">PIX para outra forma, mesmo valor e mesma proposta.</p>
           </div>
           <button type="button" onClick={onClose} disabled={enviando} className="rounded-2xl bg-slate-100 p-2 text-slate-700 hover:bg-slate-200 transition disabled:opacity-50">
             <X className="h-5 w-5" />
@@ -179,23 +215,51 @@ export function TrocarFormaPagamentoModal({ cobrancaId, onClose, onSuccess }: Pr
             </div>
           ) : (
             <>
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-slate-700">
-                <p className="text-xs font-semibold text-slate-900">Ao confirmar</p>
-                <ul className="mt-1.5 space-y-1 text-xs leading-relaxed list-disc pl-4">
-                  <li>
-                    Nasce uma cobrança Faturado de {formatCurrency(Number(avaliacao?.valor ?? 0))}, com o mesmo pagador.
-                  </li>
-                  <li>
-                    Depois, o PIX {avaliacao?.idPagamento ?? ""} é cancelado no banco. Se o banco não confirmar, o PIX continua
-                    ativo e o Faturado é cancelado.
-                  </li>
-                  {avaliacao?.notaAutorizada ? (
-                    <li>A nota fiscal autorizada continua como está. Se precisar, o financeiro faz a carta de correção.</li>
-                  ) : null}
-                  <li>O Faturado segue o caminho de sempre: análise de crédito, Conferência e títulos no Registro de recebíveis.</li>
-                </ul>
+              <div className="space-y-1.5">
+                <p className="text-xs font-semibold text-slate-700">
+                  Nova forma de pagamento <span className="text-red-500">*</span>
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  {destinos.map((d) => {
+                    const marcada = d.tipo === tipo;
+                    return (
+                      <button
+                        key={d.tipo}
+                        type="button"
+                        onClick={() => setTipo(d.tipo)}
+                        disabled={enviando}
+                        aria-pressed={marcada}
+                        className={`rounded-2xl border px-3 py-2 text-sm font-semibold transition disabled:opacity-50 ${
+                          marcada ? "border-[#0f9f9a] bg-[#dff8f6] text-slate-900" : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                        }`}
+                      >
+                        {d.rotulo}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
 
+              {destino ? (
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-slate-700">
+                  <p className="text-xs font-semibold text-slate-900">Ao confirmar</p>
+                  <ul className="mt-1.5 space-y-1 text-xs leading-relaxed list-disc pl-4">
+                    <li>
+                      Nasce uma cobrança {destino.rotulo} de {formatCurrency(Number(avaliacao?.valor ?? 0))}, com o mesmo pagador.
+                    </li>
+                    <li>
+                      Depois, o PIX {avaliacao?.idPagamento ?? ""} é cancelado no banco. Se o banco não confirmar, o PIX continua
+                      ativo e a {destino.rotulo} é cancelada.
+                    </li>
+                    {avaliacao?.notaAutorizada ? (
+                      <li>A nota fiscal autorizada continua como está. Se precisar, o financeiro faz a carta de correção.</li>
+                    ) : null}
+                    <li>{depoisDaTroca(destino)}</li>
+                  </ul>
+                </div>
+              ) : null}
+
+              {destino?.exigeCondicao ? (
               <div className="space-y-1.5">
                 <label htmlFor="troca_condicao" className="text-xs font-semibold text-slate-700">
                   Condição de pagamento <span className="text-red-500">*</span>
@@ -217,6 +281,7 @@ export function TrocarFormaPagamentoModal({ cobrancaId, onClose, onSuccess }: Pr
                     ))}
                 </select>
               </div>
+              ) : null}
 
               <div className="space-y-1.5">
                 <label htmlFor="troca_motivo" className="text-xs font-semibold text-slate-700">

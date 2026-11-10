@@ -14,7 +14,9 @@
  *   D. cancelar sem trocar continua barrado pela nota (rota cancelar-externo);
  *   E. recusas antes de gravar: Birô, produção, paga, sem motivo, troca em
  *      andamento, falha ao criar a nova;
- *   F. a consulta GET que a janela faz ao abrir.
+ *   F. a consulta GET que a janela faz ao abrir;
+ *   G. as outras formas internas (10/11/2026): E-Permuta, E-Amostra e
+ *      E-Retrabalho; E-Crédito e as formas de banco recusadas.
  */
 import { registerHooks } from "node:module";
 import { pathToFileURL, fileURLToPath } from "node:url";
@@ -266,6 +268,119 @@ prepararBanco({ antiga: { id_empresa: 2 } });
 {
   const j = await consultar();
   confere("Birô: não pode trocar, com o motivo", j.success === true && j.pode === false && j.code === "EMPRESA_NAO_ACEITA", j);
+}
+
+
+// ── G. outras formas internas (10/11/2026) ──────────────────────────────────
+console.log("== G. outras formas internas: E-Permuta, E-Amostra, E-Retrabalho; E-Crédito e externas fora");
+/** Contexto do retrabalho: motivo_copia na proposta e E-Retrabalho anterior no pedido. */
+function contextoRetrabalho(motivoCopia: string | null, jaTeveRetrabalho: boolean) {
+  falso.interceptar("pagamentos_v2:select", (_p, chamada) =>
+    chamada.filtros.some((f) => f[0] === "ilike") ? { data: jaTeveRetrabalho ? [{ id: "r1" }] : [], error: null } : undefined
+  );
+  falso.responder("propostas:select", {
+    data: { id_int: 24692, status_interno: "AGUARDANDO", is_prd_aprovado: false, is_avulso: false, empresa: "E3 BRINDES LTDA", vendedor: "Y", motivo_copia: motivoCopia },
+    error: null
+  });
+}
+const tipos = (j: Record<string, unknown>) => ((j.destinos ?? []) as { tipo: string }[]).map((d) => d.tipo).join(",");
+
+prepararBanco();
+contextoRetrabalho(null, false);
+{
+  const j = await consultar();
+  confere("pedido comum: a janela oferece Faturado, E-Permuta e E-Amostra", j.pode === true && tipos(j) === "E-FATURADO,E-PERMUTA,E-AMOSTRA", j.destinos);
+  confere("pedido comum: E-Crédito, E-Retrabalho e formas de banco não aparecem", !/E-CREDITO|E-RETRABALHO|BOLETO|PIX|CARD/.test(tipos(j)), j.destinos);
+}
+prepararBanco();
+contextoRetrabalho("RETRABALHO", false);
+{
+  const j = await consultar();
+  confere("pedido de retrabalho: só E-Retrabalho", j.pode === true && tipos(j) === "E-RETRABALHO", j.destinos);
+}
+
+// E-Amostra: cortesia, sem condição.
+prepararBanco();
+contextoRetrabalho(null, false);
+fetchFalso({ corpo: CONFIRMOU });
+{
+  const r = await trocar({ tipo: "E-AMOSTRA", id_modelo_cobranca: "", motivo: "amostra combinada" });
+  const linha = ((r.insertNova?.payload as Record<string, unknown>[]) ?? [])[0] ?? {};
+  confere("E-Amostra: troca concluída", r.status === 200 && r.json.success === true && /E-Amostra/.test(String(r.json.message)), r.json);
+  confere("E-Amostra: nova com o mesmo valor, A_VENCER, não confirmada", linha.tipo_cobranca === "E-AMOSTRA" && linha.valor === 213 && linha.status === "A_VENCER" && linha.confirmado === false, linha);
+  confere("E-Amostra: sem condição (forma_fatu, id_modelo e p_* nulos)", linha.forma_fatu === null && linha.id_modelo_cobranca === null && linha.p_qtd_parcelas === null, linha);
+  confere("E-Amostra: condição nem é lida", !r.chamadas.some((c) => c.tabela === "modelos_cobranca"));
+  confere("E-Amostra: a nova nasce antes de a antiga cair", r.posInsert >= 0 && r.posCancelaAntiga > r.posInsert);
+  const pc = (r.cancelaAntiga?.payload ?? {}) as Record<string, unknown>;
+  confere("E-Amostra: antiga cai citando a forma nova", /E-Amostra/.test(String(pc.motivo_cancela)) && /Trocada por E-Amostra, cobrança 24692-B/.test(String(pc.motivo_troca)), pc);
+  confere("E-Amostra: Histórico liga as duas e diz a forma", r.historico.some((m) => m.includes("24692-A") && m.includes("24692-B") && m.includes("(E-Amostra)") && m.includes("amostra combinada")), r.historico);
+  confere("E-Amostra: nada em propostas nem em notas", !r.gravouProposta && !r.chamadas.some((c) => c.tabela === "notas_fiscais" && c.op !== "select"));
+}
+
+// E-Amostra com o banco recusando: a antiga continua, a nova é desfeita.
+prepararBanco();
+contextoRetrabalho(null, false);
+fetchFalso({ corpo: `=[Object: ${JSON.stringify(RECUSOU)}]` });
+{
+  const r = await trocar({ tipo: "E-AMOSTRA", id_modelo_cobranca: "", motivo: "amostra combinada" });
+  confere("E-Amostra, banco recusa: não trocou", r.json.success === false && r.json.code === "PIX_NAO_CANCELADO_NO_BANCO", r.json);
+  confere("E-Amostra, banco recusa: antiga intacta, nova cancelada, marca solta", !r.cancelaAntiga && Boolean(r.cancelaNova) && r.soltouMarca);
+  confere("E-Amostra, banco recusa: Histórico cita a E-Amostra cancelada", r.historico.some((m) => /não concluída/.test(m) && m.includes("(E-Amostra) foi cancelada")), r.historico);
+}
+
+// E-Permuta: exige condição, como no Gerar cobrança.
+await (async () => {
+  prepararBanco();
+  contextoRetrabalho(null, false);
+  fetchFalso({ corpo: CONFIRMOU });
+  const r = await trocar({ tipo: "E-PERMUTA", id_modelo_cobranca: "" });
+  confere("E-Permuta sem condição: recusa sem gravar", r.json.success === false && r.escritas.length === 0 && r.aoBanco.length === 0, r.json);
+})();
+prepararBanco();
+contextoRetrabalho(null, false);
+fetchFalso({ corpo: CONFIRMOU });
+{
+  const r = await trocar({ tipo: "E-PERMUTA" });
+  const linha = ((r.insertNova?.payload as Record<string, unknown>[]) ?? [])[0] ?? {};
+  confere("E-Permuta com condição: nova E-PERMUTA com a condição", r.json.success === true && linha.tipo_cobranca === "E-PERMUTA" && linha.forma_fatu === "30 DIAS" && linha.id_modelo_cobranca === MODELO.id, linha);
+  confere("E-Permuta: Histórico com forma e condição", r.historico.some((m) => m.includes("(E-Permuta, 30 DIAS)")), r.historico);
+}
+
+// Regra do retrabalho, antes de gravar.
+async function recusaDeDestino(nome: string, contexto: [string | null, boolean], corpo: Record<string, unknown>, codigo: string) {
+  prepararBanco();
+  contextoRetrabalho(...contexto);
+  fetchFalso({ corpo: CONFIRMOU });
+  const r = await trocar(corpo);
+  confere(`${nome}: recusa (${codigo})`, r.json.success === false && r.json.code === codigo, r.json);
+  confere(`${nome}: nada gravado e nada ao banco`, r.escritas.length === 0 && r.aoBanco.length === 0, r.escritas);
+}
+await recusaDeDestino("E-Retrabalho em pedido comum", [null, false], { tipo: "E-RETRABALHO", id_modelo_cobranca: "" }, "DESTINO_NAO_PERMITIDO");
+await recusaDeDestino("Faturado em pedido de retrabalho", ["RETRABALHO", false], { tipo: "E-FATURADO" }, "DESTINO_NAO_PERMITIDO");
+await recusaDeDestino("E-Crédito (fora nesta etapa)", [null, false], { tipo: "E-CREDITO", id_modelo_cobranca: "" }, "DESTINO_NAO_ACEITO");
+await recusaDeDestino("Boleto (forma de banco, fora)", [null, false], { tipo: "BOLETO" }, "DESTINO_NAO_ACEITO");
+await recusaDeDestino("PIX novo (forma de banco, fora)", [null, false], { tipo: "PIX" }, "DESTINO_NAO_ACEITO");
+await recusaDeDestino("Cartão (forma de banco, fora)", [null, false], { tipo: "CARD_PARCELADO" }, "DESTINO_NAO_ACEITO");
+
+// E-Retrabalho em pedido de retrabalho: passa, sem condição.
+prepararBanco();
+contextoRetrabalho("RETRABALHO", false);
+fetchFalso({ corpo: CONFIRMOU });
+{
+  const r = await trocar({ tipo: "E-RETRABALHO", id_modelo_cobranca: "" });
+  const linha = ((r.insertNova?.payload as Record<string, unknown>[]) ?? [])[0] ?? {};
+  confere("E-Retrabalho em retrabalho: troca concluída, sem condição", r.json.success === true && linha.tipo_cobranca === "E-RETRABALHO" && linha.forma_fatu === null, r.json);
+}
+
+// Faturado sem tipo no corpo (a tela antiga): igual a antes.
+prepararBanco();
+contextoRetrabalho(null, false);
+fetchFalso({ corpo: CONFIRMOU });
+{
+  const r = await trocar();
+  const linha = ((r.insertNova?.payload as Record<string, unknown>[]) ?? [])[0] ?? {};
+  confere("Faturado sem tipo no corpo: E-FATURADO com a condição, mensagem de sempre", r.json.success === true && linha.tipo_cobranca === "E-FATURADO" && linha.forma_fatu === "30 DIAS" && String(r.json.message).includes("(Faturado) criada"), r.json);
+  confere("Faturado: Histórico de sempre", r.historico.some((m) => m.includes("(Faturado, 30 DIAS)")), r.historico);
 }
 
 console.log(falhas === 0 ? "\nTODOS OS TESTES PASSARAM" : `\n${falhas} FALHA(S)`);

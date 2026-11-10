@@ -12,8 +12,12 @@ import {
 } from "@/features/cobrancas/services/cancelamento-pix";
 import { recusaDoGatilhoNoErro } from "@/features/cobrancas/lib/tipo-x-retrabalho";
 import { statusEhEntregue, MENSAGEM_PEDIDO_ENTREGUE, CODIGO_PEDIDO_ENTREGUE } from "@/features/orcamentos/services/pedido-entregue";
+import { lerContextoRetrabalhoDoPedido } from "@/features/cobrancas/services/tipo-x-retrabalho.service";
 import {
   RECUSAS_DA_TROCA,
+  destinoDaTroca,
+  destinosPermitidosNoPedido,
+  type DestinoDaTroca,
   marcadorEmAndamento,
   mensagemHistoricoDaTroca,
   mensagemHistoricoDaTrocaDesfeita,
@@ -28,17 +32,20 @@ import {
 } from "@/features/cobrancas/troca-forma-pagamento";
 
 /**
- * Trocar forma de pagamento: PIX não pago (C6, empresas 1 e 3) -> Faturado,
- * mesma proposta, mesmo valor, mesmo pagador. Vale inclusive com NF-e
- * autorizada — a nota não é tocada.
+ * Trocar forma de pagamento: PIX não pago (C6, empresas 1 e 3) -> uma forma
+ * interna (Faturado, E-Permuta, E-Amostra ou E-Retrabalho; ver
+ * DESTINOS_DA_TROCA), mesma proposta, mesmo valor, mesmo pagador. Vale
+ * inclusive com NF-e autorizada — a nota não é tocada.
  *
- *   GET  ?id=<cobrança>  — a troca é possível? (a janela consulta ao abrir)
- *   POST { id, id_modelo_cobranca, motivo }
+ *   GET  ?id=<cobrança>  — a troca é possível, e para quais formas? (a janela
+ *        consulta ao abrir)
+ *   POST { id, tipo, id_modelo_cobranca, motivo } — tipo vazio é Faturado;
+ *        id_modelo_cobranca só para Faturado e E-Permuta.
  *
  * Ordem do POST, que garante que a antiga só sai depois que a nova existe:
  *   1. marca a antiga como "troca em andamento" (gravação condicional: é a
  *      trava contra duas trocas ao mesmo tempo; não cancela nada);
- *   2. cria a nova (Faturado, A_VENCER, não confirmada — nada fora do Vibe);
+ *   2. cria a nova (A_VENCER, não confirmada, nada consumido — nada fora do Vibe);
  *   3. cancela o PIX no banco, pelo mesmo cancelamento de PIX da rota
  *      cancelar-externo (o Vibe só aceita com a confirmação do C6);
  *   4a. banco confirmou: grava CANCELADO na antiga e registra no Histórico;
@@ -164,7 +171,9 @@ async function carregarContexto(request: Request, idCobranca: string): Promise<C
 }
 
 /** Veredito da troca: recusas de cancelamento (menos a nota) + regras da troca. */
-async function avaliarTroca(ctx: Contexto): Promise<{ pode: true; notaAutorizada: boolean } | Falha> {
+async function avaliarTroca(
+  ctx: Contexto
+): Promise<{ pode: true; notaAutorizada: boolean; destinos: DestinoDaTroca[] } | Falha> {
   const elegibilidade = await avaliarCancelamentoNoServidor(ctx.supabase, ctx.pagamento.id, RECUSAS_DA_TROCA);
   if (!elegibilidade.ok) {
     return falha(elegibilidade.erro === "NAO_ENCONTRADA" ? 404 : 503, elegibilidade.mensagem, elegibilidade.erro);
@@ -188,7 +197,12 @@ async function avaliarTroca(ctx: Contexto): Promise<{ pode: true; notaAutorizada
     return falha(409, "Proposta cancelada não recebe cobrança nova.", "PROPOSTA_CANCELADA");
   }
 
-  return { pode: true, notaAutorizada: veredito.recusas.some((r) => r.code === "NOTA_AUTORIZADA") };
+  // E-Retrabalho só em retrabalho; retrabalho só com E-Retrabalho (mesma regra do gatilho).
+  const contextoRetrabalho = await lerContextoRetrabalhoDoPedido(ctx.supabase, Number(ctx.pagamento.id_int));
+  const destinos = destinosPermitidosNoPedido(contextoRetrabalho);
+  if (destinos.length === 0) return falha(409, "Nenhuma forma de pagamento interna vale para este pedido.", "SEM_DESTINO");
+
+  return { pode: true, notaAutorizada: veredito.recusas.some((r) => r.code === "NOTA_AUTORIZADA"), destinos };
 }
 
 async function registrarHistorico(ctx: Contexto, mensagem: string) {
@@ -235,7 +249,8 @@ export async function GET(request: Request) {
       pode: true,
       notaAutorizada: avaliacao.notaAutorizada,
       idPagamento: ctx.pagamento.id_pagamento,
-      valor: Number(ctx.pagamento.valor)
+      valor: Number(ctx.pagamento.valor),
+      destinos: avaliacao.destinos
     });
   } catch (e) {
     console.error("[trocar-forma-pagamento][GET]", e);
@@ -249,25 +264,35 @@ export async function POST(request: Request) {
     const id = String(body.id ?? "").trim();
     const idModelo = String(body.id_modelo_cobranca ?? "").trim();
     const motivo = String(body.motivo ?? "").trim();
+    const destino = destinoDaTroca(body.tipo);
     if (!id) return erro(400, "Informe a cobrança.");
-    if (!idModelo) return erro(400, "Selecione uma condição de pagamento.");
+    if (!destino) return erro(400, "Forma de pagamento não aceita na troca.", "DESTINO_NAO_ACEITO");
+    if (destino.exigeCondicao && !idModelo) return erro(400, "Selecione uma condição de pagamento.");
     if (!motivo) return erro(400, "Motivo da troca é obrigatório.");
 
     const ctx = await carregarContexto(request, id);
     if (ehFalha(ctx)) return responderFalha(ctx);
     const avaliacao = await avaliarTroca(ctx);
     if (ehFalha(avaliacao)) return responderFalha(avaliacao);
+    if (!avaliacao.destinos.some((d) => d.tipo === destino.tipo)) {
+      return erro(409, `${destino.rotulo} não vale para este pedido.`, "DESTINO_NAO_PERMITIDO");
+    }
 
     const { pagamento, supabase } = ctx;
     const antigaRef = pagamento.id_pagamento || pagamento.id;
+    const rotulo = destino.rotulo;
 
-    const { data: modelo, error: erroModelo } = await supabase
-      .from("modelos_cobranca")
-      .select("id, resultado, qtd_parcela, inicio, intervalo, entrada_porcento")
-      .eq("id", idModelo)
-      .maybeSingle<ModeloDaTroca>();
-    if (erroModelo) return erro(503, "Não foi possível ler a condição de pagamento.");
-    if (!modeloValidoParaTroca(modelo)) return erro(400, "Selecione uma condição de pagamento válida.");
+    let modelo: ModeloDaTroca | null = null;
+    if (destino.exigeCondicao) {
+      const { data: lido, error: erroModelo } = await supabase
+        .from("modelos_cobranca")
+        .select("id, resultado, qtd_parcela, inicio, intervalo, entrada_porcento")
+        .eq("id", idModelo)
+        .maybeSingle<ModeloDaTroca>();
+      if (erroModelo) return erro(503, "Não foi possível ler a condição de pagamento.");
+      if (!modeloValidoParaTroca(lido)) return erro(400, "Selecione uma condição de pagamento válida.");
+      modelo = lido;
+    }
 
     // 1. Trava: só uma troca por cobrança. Não cancela nada.
     const marca = marcadorEmAndamento(ctx.autor, motivo);
@@ -298,7 +323,9 @@ export async function POST(request: Request) {
         atendente: pagamento.atendente,
         obs_v2: pagamento.obs_v2
       },
-      modelo
+      modelo,
+      new Date(),
+      destino
     );
     const { data: nova, error: erroNova } = await supabase
       .from("pagamentos_v2")
@@ -308,7 +335,7 @@ export async function POST(request: Request) {
     if (erroNova || !nova) {
       await soltarMarca(ctx, marca);
       const recusa = recusaDoGatilhoNoErro(erroNova?.message);
-      return erro(recusa ? 409 : 500, recusa || "Não foi possível criar a cobrança faturada. O PIX continua ativo e nada foi alterado.");
+      return erro(recusa ? 409 : 500, recusa || `Não foi possível criar a cobrança ${rotulo}. O PIX continua ativo e nada foi alterado.`);
     }
     const novaRef = nova.id_pagamento || nova.id;
 
@@ -337,17 +364,17 @@ export async function POST(request: Request) {
       if (erroDesfaz) {
         await registrarHistorico(
           ctx,
-          `ATENÇÃO: troca de forma de pagamento não concluída e a cobrança ${novaRef} (Faturado) ficou ativa junto com o PIX ${antigaRef}. Cancele a ${novaRef}.`
+          `ATENÇÃO: troca de forma de pagamento não concluída e a cobrança ${novaRef} (${rotulo}) ficou ativa junto com o PIX ${antigaRef}. Cancele a ${novaRef}.`
         );
         return erro(
           500,
-          `O banco não confirmou o cancelamento do PIX e não foi possível desfazer a cobrança ${novaRef} (Faturado). Cancele a ${novaRef} antes de qualquer outra ação.`,
+          `O banco não confirmou o cancelamento do PIX e não foi possível desfazer a cobrança ${novaRef} (${rotulo}). Cancele a ${novaRef} antes de qualquer outra ação.`,
           "DESFAZER_FALHOU"
         );
       }
       await registrarHistorico(
         ctx,
-        mensagemHistoricoDaTrocaDesfeita({ antigaIdPagamento: antigaRef, novaIdPagamento: novaRef, autor: ctx.autor, motivo })
+        mensagemHistoricoDaTrocaDesfeita({ antigaIdPagamento: antigaRef, novaIdPagamento: novaRef, autor: ctx.autor, motivo, rotulo })
       );
       return erro(
         decisao.statusHttp,
@@ -358,23 +385,23 @@ export async function POST(request: Request) {
     }
 
     // 4a. Banco confirmou: a antiga sai.
-    const condicao = String(modelo.resultado);
+    const condicao = modelo ? String(modelo.resultado) : null;
     const { error: erroAntiga } = await supabase
       .from("pagamentos_v2")
       .update({
         status: "CANCELADO",
-        motivo_cancela: motivoCancelaDaAntiga(novaRef, motivo),
-        motivo_troca: registroDaTrocaNaAntiga({ autor: ctx.autor, motivo, novaIdPagamento: novaRef, condicao })
+        motivo_cancela: motivoCancelaDaAntiga(novaRef, motivo, rotulo),
+        motivo_troca: registroDaTrocaNaAntiga({ autor: ctx.autor, motivo, novaIdPagamento: novaRef, condicao, rotulo })
       })
       .eq("id", pagamento.id);
     if (erroAntiga) {
       await registrarHistorico(
         ctx,
-        `ATENÇÃO: o PIX ${antigaRef} foi cancelado no banco, mas não no sistema. A cobrança ${novaRef} (Faturado) é a que vale. Motivo da troca: ${motivo}`
+        `ATENÇÃO: o PIX ${antigaRef} foi cancelado no banco, mas não no sistema. A cobrança ${novaRef} (${rotulo}) é a que vale. Motivo da troca: ${motivo}`
       );
       return erro(
         500,
-        `O PIX foi cancelado no banco e a cobrança ${novaRef} (Faturado) foi criada, mas não foi possível marcar o PIX como cancelado no sistema. Não tente de novo antes de conferir.`,
+        `O PIX foi cancelado no banco e a cobrança ${novaRef} (${rotulo}) foi criada, mas não foi possível marcar o PIX como cancelado no sistema. Não tente de novo antes de conferir.`,
         "ANTIGA_NAO_GRAVADA"
       );
     }
@@ -388,14 +415,15 @@ export async function POST(request: Request) {
         permissao: ctx.permissao,
         condicao,
         valor: Number(linhaNova.valor),
-        motivo
+        motivo,
+        rotulo
       })
     );
 
     return NextResponse.json({
       success: true,
-      message: `Forma de pagamento trocada: ${antigaRef} (PIX) cancelada e ${novaRef} (Faturado) criada.`,
-      nova: { id: nova.id, id_pagamento: nova.id_pagamento }
+      message: `Forma de pagamento trocada: ${antigaRef} (PIX) cancelada e ${novaRef} (${rotulo}) criada.`,
+      nova: { id: nova.id, id_pagamento: nova.id_pagamento, tipo: destino.tipo }
     });
   } catch (e) {
     console.error("[trocar-forma-pagamento][POST]", e);

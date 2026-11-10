@@ -1,6 +1,6 @@
 # Proposta: aba Pagamentos
 
-> **Última revisão:** 06/11/2026 (Faturado com entrada; total em centavos exatos; títulos do Registro de recebíveis contam por cobrança)
+> **Última revisão:** 10/11/2026 (Trocar forma de pagamento também para E-Permuta, E-Amostra e E-Retrabalho)
 > **Caminho no menu:** Pedidos → abrir um pedido → aba Pagamentos
 > **Endereço:** `/orcamentos/<número>/editar?tab=pagamentos`
 
@@ -62,7 +62,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Confirmar Cancelamento** e **Voltar** | Janela **Cancelar Cobrança** | Cancela a cobrança, ou fecha sem cancelar. |
 | **Ir para Notas Fiscais**, **Ir para Pedidos**, **Ir para Contas a Receber** | Janela **Cancelar Cobrança**, quando o cancelamento é recusado | Levam à tela onde a pendência se resolve. |
 | **Trocar forma de pagamento** | Detalhe, quadro **Ações Administrativas**; e janela **Cancelar Cobrança**, quando a recusa é por nota fiscal autorizada | Abre a janela **Trocar forma de pagamento**. Só aparece em PIX não pago da Ideal Gráfica e da E3 Brindes (não na Ideal Birô) e para quem pode cancelar cobrança. |
-| **Condição de pagamento \***, **Motivo da troca \***, **Confirmar troca** e **Voltar** | Janela **Trocar forma de pagamento** | Escolhem a condição do Faturado e o motivo, e confirmam a troca ou fecham sem trocar. |
+| **Nova forma de pagamento \*** (**Faturado**, **E-Permuta**, **E-Amostra**, **E-Retrabalho**), **Condição de pagamento \***, **Motivo da troca \***, **Confirmar troca** e **Voltar** | Janela **Trocar forma de pagamento** | Escolhem a forma nova, a condição (só Faturado e E-Permuta) e o motivo, e confirmam a troca ou fecham sem trocar. A lista mostra só as formas que o pedido aceita. |
 | **Aprovar**, **Alterar**, **Reprovar** | Abas da janela **Análise de Faturamento** | Escolhem o que fazer com a condição pedida pelo vendedor. |
 | **Confirmar Autorização**, **Alterar Condição**, **Reprovar e cancelar cobrança** | Rodapé da janela **Análise de Faturamento** | Executam a ação da aba escolhida. |
 | **Atualizar Limite**, **Ver Contas a Receber do Cliente**, **Fechar** | Janela **Análise de Crédito** | Gravam o novo limite de crédito, abrem a carteira do cliente, ou fecham. |
@@ -188,7 +188,7 @@ Cobrança cancelada sai da lista.
 3. A cobrança sai da fila de conferência e fica disponível para boletos, fiscal, expedição e produção.
 4. Para desfazer, use **Voltar para lista principal** no mesmo menu.
 
-### Cancelar uma cobrança ou trocar a forma de pagamento (PIX para Faturado)
+### Cancelar uma cobrança ou trocar a forma de pagamento de um PIX
 
 1. Na linha da cobrança, clique em **Excluir** (ou, no detalhe, em **Cancelar cobrança**).
 2. A janela **Cancelar Cobrança** confere com o servidor se a cobrança pode ser cancelada.
@@ -196,16 +196,19 @@ Cobrança cancelada sai da lista.
 4. Se não pode, a janela mostra **Não é possível cancelar agora**, o motivo e, quando existe, um botão que leva à tela onde resolver.
 5. Depois do cancelamento, a cobrança sai da lista, o saldo da proposta reabre e **Gerar cobrança** volta a aparecer.
 
-#### Trocar a forma de pagamento de PIX para Faturado
+#### Trocar a forma de pagamento de um PIX
 
-Use quando geraram PIX, mas o cliente paga faturado, inclusive com nota fiscal já autorizada (nota antecipada). A nota continua como está; se precisar, o financeiro faz a carta de correção.
+Use quando geraram PIX, mas o pedido vai ser pago de outro jeito: faturado, em permuta, ou é cortesia (amostra ou retrabalho). Vale inclusive com nota fiscal já autorizada (nota antecipada). A nota continua como está; se precisar, o financeiro faz a carta de correção.
+
+As formas que a troca oferece são as internas, que não passam por banco: **Faturado**, **E-Permuta**, **E-Amostra** e **E-Retrabalho**. **E-Retrabalho** só aparece em pedido de retrabalho, e pedido de retrabalho só oferece **E-Retrabalho**. **E-Crédito**, boleto, PIX novo e cartão ainda não estão na troca.
 
 1. No detalhe da cobrança PIX, clique em **Trocar forma de pagamento**. Se você tentou cancelar e a janela recusou por nota autorizada, o mesmo botão aparece no aviso **Não é possível cancelar agora**, ao lado de **Ir para Notas Fiscais**.
 2. A janela **Trocar forma de pagamento** confere com o servidor se a troca pode ser feita.
-3. Escolha a **Condição de pagamento \***, preencha o **Motivo da troca \*** e clique em **Confirmar troca**.
-4. O sistema cria a cobrança Faturado com o mesmo valor, a mesma proposta e o mesmo pagador. Só depois cancela o PIX no banco. Se o banco confirmar, o PIX passa a CANCELADO. Se o banco não confirmar, o PIX continua ativo e o Faturado é cancelado, com o motivo.
-5. O Faturado segue o caminho de sempre: o sistema tenta a liberação automática; se não der, ele espera a análise do financeiro. Depois vêm a Conferência e os títulos no **Registro de recebíveis**.
-6. O **Histórico** registra a troca com as duas cobranças, quem fez e o motivo.
+3. Escolha a **Nova forma de pagamento \***. Para **Faturado** e **E-Permuta**, escolha também a **Condição de pagamento \***; **E-Amostra** e **E-Retrabalho** são cortesia e não pedem condição. O quadro **Ao confirmar** muda conforme a forma escolhida.
+4. Preencha o **Motivo da troca \*** e clique em **Confirmar troca**.
+5. O sistema cria a cobrança nova com o mesmo valor, a mesma proposta e o mesmo pagador. Só depois cancela o PIX no banco. Se o banco confirmar, o PIX passa a CANCELADO. Se o banco não confirmar, o PIX continua ativo e a cobrança nova é cancelada, com o motivo.
+6. O Faturado segue o caminho de sempre: o sistema tenta a liberação automática; se não der, ele espera a análise do financeiro. Depois vêm a Conferência e os títulos no **Registro de recebíveis**. E-Permuta, E-Amostra e E-Retrabalho esperam a liberação do financeiro e seguem para a Conferência, sem títulos.
+7. O **Histórico** registra a troca com as duas cobranças, a forma nova, quem fez e o motivo.
 
 ### Resolver a diferença quando o cliente ficou devendo
 
@@ -246,8 +249,8 @@ Se a janela for fechada sem escolher, a proposta fica com a faixa **Revisão fin
 - Cancelar é irreversível e exige motivo. O cancelamento é feito primeiro no banco ou no provedor do cartão; se ele recusar, nada muda no sistema.
 - Não dá para cancelar cobrança já recebida pelo **Excluir**: o caso é devolução, não cancelamento.
 - E-Amostra, E-Retrabalho e E-Permuta ficam como pagas na liberação, mas não movimentam dinheiro e não impedem o cancelamento da proposta: se todas as cobranças ativas do pedido são desses tipos, **Cancelar proposta** cancela o pedido e elas saem canceladas junto (administrador em qualquer status; os demais, com o pedido em AGUARDANDO). Com qualquer cobrança com dinheiro junto, a recusa continua.
-- Não dá para cancelar cobrança de proposta com nota fiscal autorizada: cancele a nota antes. Se o objetivo é só mudar a forma de pagamento de um PIX para Faturado, use **Trocar forma de pagamento**, que mantém a nota.
-- **Trocar forma de pagamento** vale só para PIX não pago da Ideal Gráfica e da E3 Brindes, e só para Faturado. Na Ideal Birô a ação não aparece. Exige a mesma permissão do cancelamento de cobrança. As outras travas do cancelamento continuam valendo: produção ativa, cobrança paga, pedido entregue, Conta Corrente. O valor, a proposta e o pagador não mudam.
+- Não dá para cancelar cobrança de proposta com nota fiscal autorizada: cancele a nota antes. Se o objetivo é só mudar a forma de pagamento de um PIX (para Faturado, E-Permuta, E-Amostra ou E-Retrabalho), use **Trocar forma de pagamento**, que mantém a nota.
+- **Trocar forma de pagamento** vale só para PIX não pago da Ideal Gráfica e da E3 Brindes, e só para as formas internas: Faturado, E-Permuta, E-Amostra e E-Retrabalho (esta só em pedido de retrabalho). E-Crédito, boleto, PIX novo e cartão não estão na troca. Na Ideal Birô a ação não aparece. Exige a mesma permissão do cancelamento de cobrança. As outras travas do cancelamento continuam valendo: produção ativa, cobrança paga, pedido entregue, Conta Corrente. O valor, a proposta e o pagador não mudam.
 - Não dá para cancelar cobrança de proposta que já está em produção: o gerente precisa devolver a proposta para REVISAO ATENDENTE ou retirá-la da produção.
 - Não dá para cancelar uma cobrança faturada enquanto ela tiver título em aberto: cancele o título primeiro na Carteira (**Cancelar recebível**). Cancelar o título não cancela a cobrança; são dois passos separados.
 - Cancelar só uma parcela de um faturado parcelado não deixa relançar. A cobrança continua ativa pelo valor inteiro, então **Gerar cobrança** não reaparece; e ela só volta ao Registro de recebíveis quando ela não tem mais nenhum título ativo (títulos de outra cobrança do pedido, como o boleto da entrada, não contam). Para lançar de novo é preciso cancelar todas as parcelas em aberto. Para só corrigir um dado do boleto (número da NF, descrição, vencimento), use **Refazer boleto** na Carteira, que troca o boleto e mantém a parcela; ele não vale para a Ideal Birô.
@@ -263,7 +266,7 @@ Se a janela for fechada sem escolher, a proposta fica com a faixa **Revisão fin
 ## O que não confundir
 
 - **Excluir** (na linha) e **Cancelar cobrança** (no detalhe): abrem a mesma janela. A cobrança não é apagada; ela fica cancelada e sai da lista de ativas.
-- **Cancelar cobrança** e **Trocar forma de pagamento**: cancelar só tira a cobrança; trocar cria o Faturado e só então cancela o PIX, sem deixar o pedido sem cobrança.
+- **Cancelar cobrança** e **Trocar forma de pagamento**: cancelar só tira a cobrança; trocar cria a cobrança nova e só então cancela o PIX, sem deixar o pedido sem cobrança.
 - **Cancelar cobrança** e **Cancelar recebível**: a cobrança é o que nasce nesta aba; o recebível (título) é cada parcela do faturado na Carteira. Cancelar um não cancela o outro.
 - **Cancelar recebível** e **Refazer boleto** (Carteira): o primeiro tira a parcela do Contas a receber; o segundo só troca o boleto e mantém a parcela.
 - **Não confirmado** e não pago: **Não confirmado** é cobrança emitida e ainda não paga. Cobrança paga que espera a Conferência aparece como **Pago / A liberar**.
@@ -319,8 +322,9 @@ Se a janela for fechada sem escolher, a proposta fica com a faixa **Revisão fin
 | "Pedido com E-Amostra, E-Retrabalho ou E-Permuta em ...: só o administrador cancela fora de AGUARDANDO." | Quem não é administrador tentou cancelar o pedido fora de AGUARDANDO. | Peça ao administrador. |
 | "O título ... desta cobrança ... foi liquidado ... A cobrança inteira vira devolução — não cancele por aqui." | Uma parcela do faturado já foi paga. | Trate como devolução com o financeiro. |
 | "A proposta ... tem NF-e nº ... autorizada. Cancele a nota em Fiscal › Notas Fiscais antes de cancelar a cobrança." | Há nota fiscal autorizada na proposta. | Se o cliente vai pagar faturado, clique em **Trocar forma de pagamento** (PIX da Ideal Gráfica e da E3 Brindes). Se é para cancelar de vez, clique em **Ir para Notas Fiscais** e cancele a nota. |
-| "A forma de pagamento não foi trocada. ..." | O banco não confirmou o cancelamento do PIX (recusou, consta pago, não respondeu). | O PIX continua ativo e o Faturado foi cancelado. Leia o resto do aviso; tente de novo em alguns minutos e não gere outra cobrança. |
+| "A forma de pagamento não foi trocada. ..." | O banco não confirmou o cancelamento do PIX (recusou, consta pago, não respondeu). | O PIX continua ativo e a cobrança nova foi cancelada. Leia o resto do aviso; tente de novo em alguns minutos e não gere outra cobrança. |
 | "A troca de forma de pagamento não vale para a Ideal Birô. Use o cancelamento da cobrança." | A cobrança é da Ideal Birô. | Use **Cancelar cobrança**. |
+| "... não vale para este pedido." | A forma escolhida não vale para o pedido (E-Retrabalho fora de retrabalho, ou outra forma em pedido de retrabalho). | Escolha uma das formas que a janela mostra. |
 | "A cobrança mudou ou já está em troca. Atualize a tela. Nada foi alterado." | Outra pessoa já está trocando esta cobrança, ou ela mudou. | Atualize a página e confira as cobranças. |
 | "Proposta ... está ... Peça ao gerente para devolver a proposta para REVISAO ATENDENTE antes de cancelar a cobrança." | A proposta já entrou na produção. | Peça ao gerente; depois cancele. |
 | "Esta cobrança tem o título ... em aberto no banco ... Cancele o título primeiro em Contas a Receber — a cobrança continua ativa e volta para o Registro de Recebíveis." | Faturado com título em aberto. | Clique em **Ir para Contas a Receber**, cancele o título e volte para cancelar a cobrança. |
@@ -396,9 +400,9 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/lib/formatters/status.ts`
 - `src/lib/mocks/pagamentos.mock.ts`
 
-> **Mudança desta revisão:** 05/11/2026 — **Trocar forma de pagamento**: PIX não pago (Ideal Gráfica e E3 Brindes) vira Faturado com o mesmo valor, mesmo com nota fiscal autorizada; a nova cobrança nasce antes de o PIX ser cancelado no banco (caso 24692).
+> **Mudança desta revisão:** 10/11/2026 — **Trocar forma de pagamento** oferece também E-Permuta (com condição), E-Amostra e E-Retrabalho (cortesia, sem condição; E-Retrabalho só em retrabalho), com o quadro **Ao confirmar** conforme a forma. E-Crédito fica de fora por ora (caso 24574).
 >
-> **Revisão anterior:** 03/11/2026 — E-Amostra, E-Retrabalho e E-Permuta não impedem o cancelamento da proposta (caso 24533).
+> **Revisão anterior:** 05/11/2026 — **Trocar forma de pagamento**: PIX não pago (Ideal Gráfica e E3 Brindes) vira Faturado com o mesmo valor, mesmo com nota fiscal autorizada; a nova cobrança nasce antes de o PIX ser cancelado no banco (caso 24692).
 >
 > **Revisão anterior:** 28/10/2026 — **Gerar cobrança** com E-Crédito ficava apagado em alguns saldos (caso 20361: crédito R$ 791,99, saldo R$ 790,99) por erro de arredondamento na tela; agora a comparação é feita ao centavo.
 >

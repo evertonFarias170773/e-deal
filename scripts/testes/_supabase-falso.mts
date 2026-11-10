@@ -28,7 +28,7 @@ const estado = {
   sequencias: new Map<string, Resposta[]>(),
   // Opcional: decide a resposta olhando o payload (ex.: imitar um gatilho que
   // recusa certo INSERT). Devolver `undefined` cai na resposta combinada.
-  interceptadores: new Map<string, (payload: unknown) => Resposta | undefined>(),
+  interceptadores: new Map<string, (payload: unknown, chamada: Chamada) => Resposta | undefined>(),
   // Opcional: id do usuário de `auth.getUser()` (padrão "usuario-de-teste").
   usuarioId: "usuario-de-teste"
 };
@@ -44,7 +44,7 @@ export const falso = {
   responderEmSequencia(chave: string, respostas: Resposta[]) {
     estado.sequencias.set(chave, [...respostas]);
   },
-  interceptar(chave: string, decidir: (payload: unknown) => Resposta | undefined) {
+  interceptar(chave: string, decidir: (payload: unknown, chamada: Chamada) => Resposta | undefined) {
     estado.interceptadores.set(chave, decidir);
   },
   definirUsuario(id: string) {
@@ -74,7 +74,7 @@ function construtor(tabela: string) {
 
   const resposta = (): Resposta => {
     const chave = `${tabela}:${chamada.op}`;
-    const interceptada = estado.interceptadores.get(chave)?.(chamada.payload);
+    const interceptada = estado.interceptadores.get(chave)?.(chamada.payload, chamada);
     if (interceptada) return interceptada;
     const fila = estado.sequencias.get(chave);
     if (fila && fila.length > 0) return fila.length > 1 ? (fila.shift() as Resposta) : fila[0];

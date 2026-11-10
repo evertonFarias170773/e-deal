@@ -72,7 +72,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Confirmar Cancelamento** | Janela **Cancelar Cobrança** | Cancela a cobrança. Só habilita depois que o sistema libera e o motivo é preenchido. |
 | **Voltar** | Janela **Cancelar Cobrança** | Fecha a janela sem cancelar. |
 | **Ir para Notas Fiscais**, **Ir para Pedidos**, **Ir para Contas a Receber** | Janela **Cancelar Cobrança**, quando o cancelamento é recusado | Leva à tela onde a pendência se resolve. |
-| **Trocar forma de pagamento** | **Ações Administrativas** do detalhe, e janela **Cancelar Cobrança** quando a recusa é por nota fiscal autorizada | Troca um PIX não pago da Ideal Gráfica ou da E3 Brindes por Faturado, com o mesmo valor e mantendo a nota. Passo a passo na ficha [Proposta: aba Pagamentos](proposta-pagamentos.md). |
+| **Trocar forma de pagamento** | **Ações Administrativas** do detalhe, e janela **Cancelar Cobrança** quando a recusa é por nota fiscal autorizada | Troca um PIX não pago da Ideal Gráfica ou da E3 Brindes por Faturado, E-Permuta, E-Amostra ou E-Retrabalho, com o mesmo valor e mantendo a nota. Passo a passo na ficha [Proposta: aba Pagamentos](proposta-pagamentos.md). |
 | **Voltar para cobranças** | Topo do detalhe | Retorna à lista. |
 | **Atualizar status** | Detalhe, no aviso **Gerando código PIX...** | Recarrega os dados da cobrança. |
 | **Abrir** e **Copiar** | Detalhe, bloco **Links e Códigos de Pagamento**, linha **Link de Pagamento** | Abre o link de pagamento em outra aba ou o copia. O link aparece inteiro (pay.ai-ideal.com.br/functions/v1/pagamento-publico?token=...); para mandar ao cliente, use **Copiar**. |
@@ -151,7 +151,7 @@ O que acontece:
 - Se não sobrar nenhuma cobrança ativa, a proposta volta para **NOVO** e o tipo de cobrança é limpo. Pedido que já avançou (liberado, em revisão, em produção, em expedição ou entregue) não regride.
 - O chat da proposta registra quem cancelou e o motivo.
 
-Se o cancelamento não for possível, a janela mostra **Não é possível cancelar agora**, explica o motivo e, quando existe uma tela para resolver, oferece o botão que leva até ela (**Ir para Notas Fiscais**, **Ir para Pedidos** ou **Ir para Contas a Receber**). Quando a recusa é por nota fiscal autorizada e a cobrança é um PIX não pago da Ideal Gráfica ou da E3 Brindes, aparece também **Trocar forma de pagamento**, que troca o PIX por Faturado e mantém a nota.
+Se o cancelamento não for possível, a janela mostra **Não é possível cancelar agora**, explica o motivo e, quando existe uma tela para resolver, oferece o botão que leva até ela (**Ir para Notas Fiscais**, **Ir para Pedidos** ou **Ir para Contas a Receber**). Quando a recusa é por nota fiscal autorizada e a cobrança é um PIX não pago da Ideal Gráfica ou da E3 Brindes, aparece também **Trocar forma de pagamento**, que troca o PIX por Faturado (ou E-Permuta, E-Amostra, E-Retrabalho) e mantém a nota.
 
 ### Cancelar um faturamento já conferido (para refaturar)
 
@@ -291,7 +291,7 @@ Outros:
 | "O banco não respondeu a tempo, e não se sabe se o PIX foi cancelado. A cobrança continua ativa no sistema: não gere outra cobrança e tente de novo em alguns minutos." | O banco demorou mais do que o limite de espera. | Não gere outra cobrança. Tente de novo em alguns minutos; repetir o cancelamento de um PIX já removido não causa problema. |
 | "Esta cobrança já foi recebida em (data). Cancelar não devolve o dinheiro — o caso é devolução, não cancelamento." | A cobrança já está paga. | A tela não cancela cobrança paga. Trate como devolução, com o financeiro. |
 | "O título ... desta cobrança ... foi liquidado ... A cobrança inteira vira devolução — não cancele por aqui." | Um título ligado à cobrança já foi pago. | Trate como devolução. |
-| "A proposta ... tem NF-e nº ... autorizada. Cancele a nota em Fiscal › Notas Fiscais antes de cancelar a cobrança." | O pedido tem nota fiscal autorizada. | Se o cliente vai pagar faturado, use **Trocar forma de pagamento** (PIX da Ideal Gráfica e da E3 Brindes). Se é para cancelar de vez, use **Ir para Notas Fiscais**, cancele a nota e volte. |
+| "A proposta ... tem NF-e nº ... autorizada. Cancele a nota em Fiscal › Notas Fiscais antes de cancelar a cobrança." | O pedido tem nota fiscal autorizada. | Se o cliente vai pagar de outro jeito (faturado, permuta, cortesia), use **Trocar forma de pagamento** (PIX da Ideal Gráfica e da E3 Brindes). Se é para cancelar de vez, use **Ir para Notas Fiscais**, cancele a nota e volte. |
 | "Proposta ... está (status). Peça ao gerente para devolver a proposta para REVISAO ATENDENTE antes de cancelar a cobrança." | O pedido já passou pela revisão do gerente. | Peça a devolução ao gerente e tente de novo. |
 | "Proposta ... consta liberada para a produção. Peça ao gerente para retirá-la da produção antes de cancelar a cobrança." | O pedido está liberado para a produção. | Peça ao gerente para retirar da produção e tente de novo. |
 | "Esta cobrança tem o título ... em aberto no banco. Cancele o título primeiro em Contas a Receber ..." | Faturamento com título ainda ativo. | Use **Ir para Contas a Receber**, cancele o título e volte. |
