@@ -30,9 +30,10 @@
  *   sucesso, mesmo modo teste, mesmo "Ver conversas do cliente" e "Liberar número".
  *
  * LINK E BLOQUEIO (09/11/2026): o template do Pedido em Produção usa {Link_do_Cliente}.
- * Antes do dialog_execute o Vibe grava field__Link_do_Cliente com o link de aprovação
- * do próprio pedido (pedidos_links_cliente, os_id "vibe_<id_int>", ativo; nunca gera
- * token). Sem link: "Pedido sem link de aprovação". Enquanto a trava por conversa não
+ * Antes do dialog_execute o Vibe grava field__Link_do_Cliente com o final do link de
+ * aprovação do próprio pedido, numero_pedido-token como o Imposition (10/11/2026; o
+ * template tem o começo fixo), de pedidos_links_cliente (os_id "vibe_<id_int>", ativo;
+ * nunca gera token). Sem link: "Pedido sem link de aprovação". Enquanto a trava por conversa não
  * for a mesma do envio de arte do Imposition, só modo teste + cliente #14 envia; o
  * resto recebe "Envio de aviso de produção em ajuste" (a liberação segue igual).
  *

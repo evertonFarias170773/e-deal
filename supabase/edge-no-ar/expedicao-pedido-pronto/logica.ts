@@ -512,10 +512,12 @@ export function conversasEscolhidas(pedidas: unknown, doCliente: Conversa[], tod
 // o campo, o ChatGuru usa o último valor da conversa (no teste de 09/11, o link do
 // 24880 chegou no aviso do 24917). Por isso o Vibe grava field__Link_do_Cliente com
 // o link do próprio pedido antes do dialog_execute, montado como o Imposition monta.
+// Desde 10/11/2026 o campo leva só o final do link (numero_pedido-token, ex.:
+// 24880-30b9b9), como o envio de arte do Imposition grava: o template já tem o
+// começo fixo https://imposition.ai-ideal.com.br/cliente/.
 
 export const AVISO_PRODUCAO_EM_AJUSTE = "Envio de aviso de produção em ajuste";
 export const SEM_LINK_APROVACAO = "Pedido sem link de aprovação";
-export const PORTAL_CLIENTE = "https://imposition.ai-ideal.com.br";
 
 /**
  * Enquanto o Vibe e o envio de arte do Imposition não respeitam a mesma trava por
@@ -571,9 +573,11 @@ export function conversaTesteOcupada(p: { emAndamento: boolean; ultimoExecutadoE
 }
 
 /**
- * Link de aprovação do pedido, como o Imposition monta: linhas ativas de
- * pedidos_links_cliente com os_id "vibe_<id_int>"; exatamente uma, do próprio
- * pedido, com token de 6 a 12 letras/dígitos. Nunca gera token novo.
+ * Final do link de aprovação do pedido para o campo Link_do_Cliente, no formato do
+ * Imposition (numero_pedido-token, sem o começo https://imposition.ai-ideal.com.br/cliente/,
+ * que é fixo no template): linhas ativas de pedidos_links_cliente com os_id
+ * "vibe_<id_int>"; exatamente uma, do próprio pedido, com token de 6 a 12
+ * letras/dígitos. Nunca gera token novo.
  */
 export function linkDoCliente(idInt: number, linhas: { numero_pedido?: unknown; token?: unknown }[] | null | undefined): string {
   const ativas = linhas ?? [];
@@ -583,5 +587,5 @@ export function linkDoCliente(idInt: number, linhas: { numero_pedido?: unknown; 
   if (!/^[1-9]\d*$/.test(numero) || numero !== String(idInt) || !/^[a-zA-Z0-9]{6,12}$/.test(token)) {
     throw new Recusa(422, SEM_LINK_APROVACAO);
   }
-  return `${PORTAL_CLIENTE}/cliente/${numero}-${token}`;
+  return `${numero}-${token}`;
 }

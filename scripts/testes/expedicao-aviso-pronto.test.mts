@@ -332,7 +332,10 @@ caso("M. produção: link do cliente e bloqueio", () => {
   assert.doesNotThrow(() => conferirEnvioProducao(true, 70130));
   assert.doesNotThrow(() => conferirEnvioProducao(true, 14));
   // Link: exatamente uma linha ativa do próprio pedido.
-  assert.equal(linkDoCliente(24917, [{ numero_pedido: "24917", token: "ab12cd" }]), "https://imposition.ai-ideal.com.br/cliente/24917-ab12cd");
+  // Só o final do link, como o Imposition grava (o template tem o começo fixo).
+  assert.equal(linkDoCliente(24917, [{ numero_pedido: "24917", token: "ab12cd" }]), "24917-ab12cd");
+  assert.equal(linkDoCliente(24880, [{ numero_pedido: 24880, token: " 30b9b9 " }]), "24880-30b9b9");
+  assert.ok(!linkDoCliente(24917, [{ numero_pedido: "24917", token: "ab12cd" }]).includes("/"));
   assert.throws(() => linkDoCliente(24917, []), /Pedido sem link de aprovação/);
   assert.throws(() => linkDoCliente(24917, null), /Pedido sem link de aprovação/);
   assert.throws(() => linkDoCliente(24917, [{ numero_pedido: "24880", token: "ab12cd" }]), /sem link/);
