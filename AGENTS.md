@@ -24,16 +24,22 @@ Quando o usuário pedir "publica", "coloca no ar", "commit e push" ou "sobe":
 
 1. **Valide antes**: `npx tsc --noEmit` (e `npx eslint` nos arquivos alterados) — nunca publique com erro.
    Rode também `node scripts/checar-manual.mjs`: ele avisa se alguma ficha do manual pode ter ficado desatualizada (ver "Manual de uso" abaixo).
-2. **Publique TUDO**: `git add -A` (o `.gitignore` já exclui rascunhos, diagnósticos e segredos) — o dono quer SEMPRE o estado local completo publicado, nunca pedaços escolhidos a dedo.
-3. **Mensagem de commit**: `tipo(modulo): descricao` em ASCII (sem acentos), SEM aspas duplas — no PowerShell 5.1 aspas duplas quebram; use here-string com aspas simples (`@'...'@`).
-4. **Push**: `git push origin erp-ideal-preview` → deploy automático de produção na Vercel.
-5. Se o usuário pedir só "commit" (sem publicar), pare antes do push.
+2. **Confira a árvore**: rode `git status` e compare com os arquivos que VOCÊ alterou nesta tarefa. Se houver arquivo alterado ou novo que você não tocou, ele é de outra sessão em andamento — então **NÃO publique**: diga ao dono quais são esses arquivos e que parecem ser de outra sessão, e espere a decisão dele.
+   - **"pode publicar junto"** (a outra sessão terminou) → siga para o passo 3, publicando tudo, inclusive o que veio da outra sessão.
+   - **"espera"** (a outra publica primeiro) → pare sem commitar nada e volte ao trabalho; o estado local continua acumulando.
+
+   Enquanto espera, **não mexa no trabalho da outra sessão**: nada de `git stash`, `git checkout --`, `git reset` nem commit parcial para separar o que é seu. Os arquivos ficam exatamente como estão.
+3. **Publique TUDO**: `git add -A` (o `.gitignore` já exclui rascunhos, diagnósticos e segredos) — o dono quer SEMPRE o estado local completo publicado, nunca pedaços escolhidos a dedo. Isso vale igual depois da liberação do passo 2: autorizado a publicar, sai o estado local INTEIRO, com o trabalho da outra sessão junto.
+4. **Mensagem de commit**: `tipo(modulo): descricao` em ASCII (sem acentos), SEM aspas duplas — no PowerShell 5.1 aspas duplas quebram; use here-string com aspas simples (`@'...'@`).
+5. **Push**: `git push origin erp-ideal-preview` → deploy automático de produção na Vercel.
+6. Se o usuário pedir só "commit" (sem publicar), pare antes do push.
 
 Enquanto o usuário NÃO pedir publicação: trabalhe e valide normalmente, sem
 commitar — o estado local acumula e sai completo no próximo "publica".
 
 NUNCA:
 - criar branch nova, worktree ou cherry-pick — o fluxo é branch única;
+- descartar, guardar ou separar o trabalho de outra sessão (`git stash`, `git checkout --`, `git reset`, commit parcial) — o estado local sai inteiro ou não sai;
 - commitar `.env.local` ou segredos (arquivos de rascunho/diagnóstico ficam fora via `.gitignore` — rascunhos novos vão na pasta `scratch/`);
 - `git push --force`, `git reset --hard` em branch publicada ou rebase interativo;
 - criar/alterar variáveis de ambiente do deploy (Vercel) — decisão do dono; variáveis novas nascem só no `.env.local` local.
