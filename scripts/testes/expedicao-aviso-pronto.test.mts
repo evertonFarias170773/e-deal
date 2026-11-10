@@ -327,8 +327,9 @@ caso("L. conversa do ChatGuru", () => {
 caso("M. produção: link do cliente e bloqueio", () => {
   // Bloqueio: só com o modo teste ligado. Desde 10/11/2026 o cliente real também
   // passa (em homologação, para a conversa de teste).
-  assert.throws(() => conferirEnvioProducao(false, 14), /Envio de aviso de produção em ajuste/);
-  assert.throws(() => conferirEnvioProducao(false, 70130), /Envio de aviso de produção em ajuste/);
+  // Desde 10/11/2026 o aviso de produção sai para o cliente real: sem o "em ajuste".
+  assert.doesNotThrow(() => conferirEnvioProducao(false, 14));
+  assert.doesNotThrow(() => conferirEnvioProducao(false, 70130));
   assert.doesNotThrow(() => conferirEnvioProducao(true, 70130));
   assert.doesNotThrow(() => conferirEnvioProducao(true, 14));
   // Link: exatamente uma linha ativa do próprio pedido.

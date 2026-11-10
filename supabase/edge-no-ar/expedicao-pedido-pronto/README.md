@@ -1,4 +1,4 @@
-# expedicao-pedido-pronto: v21 (fora de supabase/functions de propósito)
+# expedicao-pedido-pronto: v22 (fora de supabase/functions de propósito)
 
 A v19 em `supabase/functions/expedicao-pedido-pronto/` usa a trava compartilhada com o Imposition. Ela só pode subir na janela da trava (docs/technical/CHATGURU-TRAVA-JANELA.md): antes da migração, ela não envia nada, porque falha fechado.
 
@@ -13,7 +13,7 @@ Esta pasta guarda a **v21**, que é a v18 (commit 46808cb5) mais o modo homologa
 
 A v19 do repositório tem a mesma homologação e o mesmo formato do link.
 
-Situação: **v21 no ar desde 10/11/2026 14:59 (Brasília)**, versão 20 no painel da Supabase. O conteúdo foi conferido arquivo a arquivo e é igual a esta pasta. A v20 ficou no ar de 13:24 a 14:59 (versão 19 no painel). Prova da v21 no 25006: diálogo executado às 15:03:01 na conversa de teste, com o Link_do_Cliente só com o final do link.
+Situação: **v22 no ar desde 10/11/2026 15:30 (Brasília)**, versão 21 no painel da Supabase, conferida arquivo a arquivo igual a esta pasta. A v22 é a v21 sem o bloqueio "Envio de aviso de produção em ajuste": decisão da diretoria de 10/11, antes da trava compartilhada, assumindo o risco de colisão de campos com o envio de arte do Imposition. Com o modo teste desligado, o Pedido em Produção vai para o cliente real como o aviso da Expedição. A v21 (Link_do_Cliente só com o final) ficou no ar de 14:59 a 15:30 (versão 20 no painel); a v20 de 13:24 a 14:59.
 
 ## Como subir
 

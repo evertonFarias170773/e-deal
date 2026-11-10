@@ -36,6 +36,8 @@
  * nunca gera token). Sem link: "Pedido sem link de aprovação". Enquanto a trava por conversa não
  * for a mesma do envio de arte do Imposition, só modo teste + cliente #14 envia; o
  * resto recebe "Envio de aviso de produção em ajuste" (a liberação segue igual).
+ * Desde 10/11/2026 esse bloqueio saiu (decisão da diretoria): o aviso de produção
+ * vai para o cliente real como o da Expedição, regido só pelo modo teste.
  *
  * enviar, reenviar, testar e producao_enviar aceitam também chat_ids (string[]) ou
  * todas = true: a escolha feita na tela quando a regra do DESTINO pediu.

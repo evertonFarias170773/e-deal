@@ -55,8 +55,10 @@ type Preparo = {
  * reenvio, pela tentativa vista). "Liberar sem enviar" segue sem mensagem.
  *
  * Link e bloqueio (09/11/2026): o servidor grava o Link_do_Cliente do próprio pedido
- * antes do diálogo; sem link, "Pedido sem link de aprovação". Fora do modo teste ou
- * do cliente #14, "Envio de aviso de produção em ajuste" e só "Liberar sem enviar".
+ * antes do diálogo; sem link, "Pedido sem link de aprovação". Até 10/11/2026, fora
+ * do modo teste, "Envio de aviso de produção em ajuste" e só "Liberar sem enviar";
+ * desde então o aviso vai para o cliente real (a janela mostra o bloqueio que o
+ * servidor devolver).
  *
  * Modo homologação (10/11/2026): com o modo teste ligado, pedido de cliente real
  * envia com os dados dele, mas sempre para a conversa de teste do Edison

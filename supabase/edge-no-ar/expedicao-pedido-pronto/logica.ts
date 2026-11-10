@@ -520,14 +520,14 @@ export const AVISO_PRODUCAO_EM_AJUSTE = "Envio de aviso de produção em ajuste"
 export const SEM_LINK_APROVACAO = "Pedido sem link de aprovação";
 
 /**
- * Enquanto o Vibe e o envio de arte do Imposition não respeitam a mesma trava por
- * conversa (imposition_whatsapp_conversas), o aviso de produção só sai no modo
- * teste: pedido do cliente #14 como sempre, e pedido de cliente real em
- * homologação (vai para a conversa de teste, 10/11/2026). Com o modo teste
- * desligado: "Envio de aviso de produção em ajuste".
+ * De 09/11 a 10/11/2026 o aviso de produção só saía no modo teste; com ele
+ * desligado, "Envio de aviso de produção em ajuste". Desde 10/11/2026 (decisão
+ * da diretoria, antes da trava compartilhada com o Imposition) o aviso sai para
+ * o cliente real como o aviso da Expedição: esta conferência não recusa mais.
+ * Fica para quem a chama; a constante fica para o histórico e o teste.
  */
-export function conferirEnvioProducao(modoTeste: boolean, _idClientePedido?: unknown): void {
-  if (!modoTeste) throw new Recusa(423, AVISO_PRODUCAO_EM_AJUSTE);
+export function conferirEnvioProducao(_modoTeste: boolean, _idClientePedido?: unknown): void {
+  return;
 }
 
 // --- Modo homologação (10/11/2026) ---

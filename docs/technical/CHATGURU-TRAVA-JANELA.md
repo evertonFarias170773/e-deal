@@ -9,6 +9,8 @@
 >
 > **Nada aplicado.**
 >
+> **Produção sem a trava (10/11/2026, 15:30):** decisão do Everton e do Edison, assumindo o risco de colisão de campos com o envio de arte do Imposition. A v22 tirou o bloqueio "Envio de aviso de produção em ajuste", e o modo teste será desligado. A janela fica para depois. Antes dela, revisar o `CHATGURU-TRAVA-FICHAS.patch` e o passo 8, que ainda falam do modo teste e do "em ajuste" ligados.
+>
 > Arquivos:
 > - migração: [CHATGURU-TRAVA-COMPARTILHADA-MIGRACAO.sql](CHATGURU-TRAVA-COMPARTILHADA-MIGRACAO.sql)
 > - reversão: [CHATGURU-TRAVA-COMPARTILHADA-REVERSAO.sql](CHATGURU-TRAVA-COMPARTILHADA-REVERSAO.sql)
@@ -51,7 +53,7 @@ Com o secret gravado antes, a v19 já nasce pausada. Pausada, ela não chama a t
 
 Qualquer valor no secret diferente de vazio ou `desligada` também pausa: um erro de digitação deixa o Vibe parado, nunca enviando. O "Liberar número", a lista e "Ver conversas" seguem funcionando.
 
-**Versão de volta (10/11/2026).** Desde a homologação, a função de antes da janela é a **v21**: a v18 mais o modo homologação e o Link_do_Cliente só com o final (numero_pedido-token, como o Imposition), sem a trava compartilhada. A fonte está em `supabase/edge-no-ar/expedicao-pedido-pronto/` (`index.ts` e `logica.ts`; a cópia de `transportadoras-parceiras.ts` vai como antes). A v21 está no ar desde 10/11/2026 14:59 (versão 20 no painel da Supabase): a volta sobe a v21. A v20 (commit `2ecbc78b`) grava o link inteiro e não deve voltar. A v18 (commit `46808cb5`) só serve se for preciso tirar também a homologação. A v19 do repositório já traz a homologação, então a ida não a perde.
+**Versão de volta (10/11/2026).** Desde a homologação, a função de antes da janela é a **v22**: a v18 mais o modo homologação, o Link_do_Cliente só com o final (numero_pedido-token, como o Imposition) e sem o bloqueio "em ajuste" (10/11, decisão da diretoria), sem a trava compartilhada. A fonte está em `supabase/edge-no-ar/expedicao-pedido-pronto/` (`index.ts` e `logica.ts`; a cópia de `transportadoras-parceiras.ts` vai como antes). A v22 está no ar desde 10/11/2026 15:30 (versão 21 no painel da Supabase): a volta sobe a v22. A v21 ainda tem o bloqueio "em ajuste". A v20 (commit `2ecbc78b`) grava o link inteiro e não deve voltar. A v18 (commit `46808cb5`) só serve se for preciso tirar também a homologação. A v19 do repositório já traz a homologação, então a ida não a perde.
 
 **Fichas da trava depois das da homologação.** O `CHATGURU-TRAVA-FICHAS.patch` foi gerado de novo em 10/11/2026, sobre as fichas com a homologação e o formato do link já aplicados. Se alguma ficha de Expedição ou Pedidos mudar antes da janela, gerar o patch de novo, conferindo com `git apply --check`.
 
