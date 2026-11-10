@@ -1,11 +1,11 @@
 diff --git a/docs/manual/expedicao.md b/docs/manual/expedicao.md
-index 0593c109..a4ead0ff 100644
+index 05eb3c25..d639d036 100644
 --- a/docs/manual/expedicao.md
 +++ b/docs/manual/expedicao.md
 @@ -1,6 +1,6 @@
  # Expedição
  
--> **Última revisão:** 09/11/2026 (cadastro de Porto Alegre dos Correios nas listas de transportadoras; aviso pelo ChatGuru: conversa do cliente no remetente 3478, campos por diálogo, regra dos 2 minutos)
+-> **Última revisão:** 10/11/2026 (aviso pelo ChatGuru: modo homologação, envio de pedido de cliente real para a conversa de teste do Edison com o modo teste ligado)
 +> **Última revisão:** {DATA DA JANELA} (aviso pelo ChatGuru: trava por conversa compartilhada com o envio de arte do Imposition, Liberar número para conversa presa, pausa de manutenção)
  > **Caminho no menu:** Expedição (item direto do menu lateral, sem subitens; é o quarto, depois de Conferência, Pedidos e Clientes). Também se chega pela aba **Expedição** no topo do Kanban e da Fila de impressão da Produção.
  > **Endereço:** `/expedicao`
@@ -30,7 +30,7 @@ index 0593c109..a4ead0ff 100644
  | **Testar modelo** | Só com o modo teste ligado e em pedido do cliente #14, num quadro tracejado abaixo do aviso, com a lista dos seis diálogos | Pede confirmação e manda o diálogo escolhido ao contato do pedido, sem olhar a forma de envio. Não conta como aviso do pedido |
  | **Ver conversas do cliente** | Abaixo do aviso (em vermelho quando o ChatGuru recusou pelo número) | Abre a lista das conversas do cliente no ChatGuru (remetente 3478), com nome e número, e permite reenviar para uma, várias ou todas, com confirmação. Não grava no cadastro |
  | **Para qual conversa enviar?** | Janela que abre no **Avisar cliente**, no **Reenviar** ou no **Testar modelo** quando o WhatsApp do contato casa com várias conversas do cliente, ou com nenhuma | **Enviar para esta**, **Enviar para as marcadas** e **Enviar para todas**, cada um com confirmação; **Fechar** não envia |
-@@ -229,6 +229,18 @@ O Vibe só grava esses campos. O ChatGuru guarda na conversa o último valor de
+@@ -229,6 +229,19 @@ O Vibe só grava esses campos. O ChatGuru guarda na conversa o último valor de
  
  Correios PAC, Correios sem o serviço dito e frete sem forma definida ("Frete Incluso", "Sem custo", "a definir") não têm diálogo. O botão fica apagado com "Sem modelo de mensagem para esta forma de envio." Nenhum outro diálogo é usado no lugar. SEDEX sem código de rastreio fica apagado com "Gere a etiqueta dos Correios antes."
  
@@ -43,13 +43,14 @@ index 0593c109..a4ead0ff 100644
 +3. Se a trava não responder, nada sai: "Trava compartilhada indisponível. Nada foi enviado."
 +4. Diálogo executado ou falhou solta a conversa. **Resultado desconhecido** segura a conversa também para o envio de arte, até o Administrador usar **Liberar número**.
 +5. Se o Vibe não conseguir soltar a conversa depois de um aviso que já terminou, o aviso mostra "A conversa deste WhatsApp ficou presa na trava compartilhada com o Imposition. Novos envios para ela ficam parados até o ADM usar Liberar número." O **Reenviar** e o **Ver conversas do cliente** somem até lá. O Administrador clica em **Liberar número** e, na janela, em **Soltar a conversa**: nada é reenviado e o estado do aviso não muda. O aviso passa a mostrar "Liberado por {usuário} em {data e hora}: conversa solta na trava compartilhada." O **Liberar número** só solta a trava do próprio aviso do Vibe, nunca a de um envio de arte do Imposition.
++6. A homologação também passa pela trava compartilhada, na conversa de teste "Edison Junior - 14": um envio de arte do Imposition para essa conversa também a ocupa.
 +
 +Durante uma manutenção combinada entre os dois sistemas, os avisos podem ficar pausados por alguns minutos: aparece "Envio de avisos pausado por alguns minutos. Tente de novo em instantes." e nada é enviado nem registrado. O **Liberar número** continua funcionando.
 +
  #### Para qual conversa vai o aviso (desde 09/11/2026)
  
  O aviso vai para a conversa do cliente no WhatsApp da Ideal (ChatGuru, remetente 3478), não mais para o WhatsApp gravado no cadastro do contato. Decisão da diretoria: nenhum contato do Vibe é editado para isso. O Vibe procura as conversas do 3478 cujo código é o número do cliente do pedido e compara com o WhatsApp do contato responsável, pelo DDD e pelos 8 últimos dígitos (assim tanto faz ter ou não o nono dígito):
-@@ -331,7 +343,7 @@ Em resumo: no pedido Na Expedição, clique em **Despachar**, confira peso, volu
+@@ -341,7 +354,7 @@ Em resumo: no pedido Na Expedição, clique em **Despachar**, confira peso, volu
  
  ## Regras e bloqueios
  
@@ -58,7 +59,7 @@ index 0593c109..a4ead0ff 100644
  - **Pedido entregue não pode ser alterado** na proposta (produtos, salvar, cobrança nova, valor negociado). Para alterar, use **Voltar status** passo a passo até Em Acabamento; a produção devolve o pedido ao atendente com **Voltar para Revisão Atendente**, o que só é possível sem nota fiscal emitida.
  - **Cadastros dos Correios (09/11/2026).** As listas de transportadoras passam a mostrar também o cadastro da Superintendência Estadual RS (EMPRESA BRASILEIRA DE CORREIOS E TELEGRAFOS, Porto Alegre), além do anterior, da sede em Brasília. Os dois continuam contando como Correios para a prepostagem e o aviso. Na nota fiscal sai sempre o de Porto Alegre, e **Corrigir a transportadora (admin)** na proposta grava o de Porto Alegre quando se escolhe o de Brasília.
  - Não dá para despachar sem a modalidade do frete, a transportadora, o endereço de entrega, o peso aferido e a quantidade de volumes. Em retirada, basta a modalidade. O rastreio é opcional.
-@@ -417,6 +429,12 @@ Em resumo: no pedido Na Expedição, clique em **Despachar**, confira peso, volu
+@@ -428,6 +441,12 @@ Em resumo: no pedido Na Expedição, clique em **Despachar**, confira peso, volu
  | "Sem modelo de mensagem para esta forma de envio." | A forma de envio do pedido não tem diálogo (Correios PAC, Correios sem serviço, frete sem forma definida) | Nada a fazer pelo aviso. Se a forma estiver errada, corrigir no orçamento ou no despacho |
  | "Gere a etiqueta dos Correios antes." | Pedido SEDEX sem código de rastreio | Gerar a etiqueta (prepostagem) dos Correios; o botão acende depois |
  | "Há um aviso de pedido pronto sem confirmação para o WhatsApp {número}." | Outro aviso para o mesmo WhatsApp está em andamento ou em resultado desconhecido | Esperar terminar ou, se ficou desconhecido, conferir no ChatGuru com o ADM |
@@ -72,39 +73,42 @@ index 0593c109..a4ead0ff 100644
  | Falta informar o peso aferido (ou a transportadora, o endereço de entrega, a quantidade de volumes, a modalidade do frete) | Falta dado mínimo do despacho | Preencher o campo indicado. Endereço e transportadora se corrigem na proposta |
  | Esta proposta não tem endereço de entrega definido. Defina o endereço na proposta para poder despachar. | A proposta está sem endereço de entrega | Definir o endereço na proposta |
 diff --git a/docs/manual/pedidos.md b/docs/manual/pedidos.md
-index 37ab6b70..be76b2f3 100644
+index 418c11c3..d9c90767 100644
 --- a/docs/manual/pedidos.md
 +++ b/docs/manual/pedidos.md
 @@ -1,6 +1,6 @@
  # Pedidos (lista)
  
--> **Última revisão:** 09/11/2026 (aviso Pedido em Produção: link do próprio pedido, envio em ajuste para clientes reais, reenvio na nova liberação)
+-> **Última revisão:** 10/11/2026 (aviso Pedido em Produção: modo homologação, envio de pedido de cliente real para a conversa de teste do Edison com o modo teste ligado; link do pedido gravado só com o final, como o Imposition)
 +> **Última revisão:** {DATA DA JANELA} (aviso Pedido em Produção: trava por conversa compartilhada com o envio de arte do Imposition, Liberar número para conversa presa, pausa de manutenção)
  > **Caminho no menu:** Pedidos (item direto do menu lateral, sem submenu; é o segundo, logo abaixo de Conferência)
  > **Endereço:** `/orcamentos`
  
-@@ -205,10 +205,11 @@ As datas pequenas aparecem como dia/mês e hora, no horário de Brasília.
+@@ -205,13 +205,14 @@ As datas pequenas aparecem como dia/mês e hora, no horário de Brasília.
  
  Regras do aviso, as mesmas do aviso de pedido pronto da Expedição:
  
--- **Envio em ajuste (desde 09/11/2026)**: para clientes reais o aviso não sai. A janela mostra "Envio de aviso de produção em ajuste", o **Liberar e enviar** fica apagado e o **Liberar sem enviar** libera normalmente. Só o pedido de teste (cliente #14, com o modo teste ligado) envia, até o Vibe e o envio de arte do Imposition usarem a mesma trava por conversa.
-+- **Envio em ajuste (desde 09/11/2026)**: para clientes reais o aviso não sai. A janela mostra "Envio de aviso de produção em ajuste", o **Liberar e enviar** fica apagado e o **Liberar sem enviar** libera normalmente. Só o pedido de teste (cliente #14, com o modo teste ligado) envia. Desde {DATA DA JANELA} o Vibe e o envio de arte do Imposition usam a mesma trava por conversa; o envio para clientes reais volta depois de uma semana de conferência da trava.
- - **Link do pedido**: o modelo da mensagem usa o link de aprovação do cliente. Antes de executar o diálogo, o Vibe grava na conversa o link do próprio pedido (o mesmo link ativo que o Imposition usa). Pedido sem link ativo não envia: aparece "Pedido sem link de aprovação".
+-- **Envio em ajuste (desde 09/11/2026)**: o aviso de verdade para clientes reais não sai até o Vibe e o envio de arte do Imposition usarem a mesma trava por conversa. Com o modo teste desligado, a janela mostra "Envio de aviso de produção em ajuste", o **Liberar e enviar** fica apagado e o **Liberar sem enviar** libera normalmente. Com o modo teste ligado, vale o modo homologação abaixo.
++- **Envio em ajuste (desde 09/11/2026)**: o aviso de verdade para clientes reais não sai. Desde {DATA DA JANELA} o Vibe e o envio de arte do Imposition usam a mesma trava por conversa; o envio para clientes reais volta depois de uma semana de conferência da trava. Com o modo teste desligado, a janela mostra "Envio de aviso de produção em ajuste", o **Liberar e enviar** fica apagado e o **Liberar sem enviar** libera normalmente. Com o modo teste ligado, vale o modo homologação abaixo.
+ - **Modo homologação (desde 10/11/2026)**: enquanto o modo teste estiver ligado, o **Liberar e enviar** também funciona em pedido de cliente real, mas a mensagem vai sempre para a conversa de teste "Edison Junior - 14" (a do cliente #14 no remetente 3478), nunca para o cliente. A janela mostra em destaque "Modo homologação: a mensagem vai para a conversa de teste do Edison, não para o cliente." e "Vai para a conversa de teste: Edison Junior - 14". A mensagem leva os dados reais do pedido, inclusive o link de aprovação do próprio pedido, que só é gravado na conversa de teste. O envio fica registrado como homologação, separado do aviso de verdade: quando o modo teste for desligado, o pedido ainda recebe o aviso de verdade, sem o "já recebeu o aviso". A liberação continua igual e não depende do envio. Cada **Liberar e enviar** (ou **Reenviar**, ou **Enviar aviso** em **Aviso: pedido em produção**) manda uma homologação nova, e a janela mostra "Este pedido já teve homologação em {data}" quando já houve uma. O **Ver conversas do cliente** some, porque a conversa é sempre a de teste.
+ - **Conversa de teste ocupada**: o ChatGuru exige 2 minutos entre mensagens na mesma conversa. Se outra homologação (de qualquer vendedor) foi enviada para a conversa de teste há menos de 2 minutos, ou ainda está saindo, o aviso é recusado com "Conversa de teste ocupada, tente em 2 minutos." Nada é gravado nem travado, e a liberação já feita continua valendo. Para não esperar, use **Liberar sem enviar**.
+ - Prova de 10/11/2026: pedido 25006 (cliente real, já em produção, sem liberar de novo), mesmo envio do **Liberar e enviar**. Diálogo executado às 13:25:39 de Brasília na conversa de teste "Edison Junior - 14", com o link do próprio 25006; o registro ficou como homologação e o pedido continua sem aviso de verdade.
+ - **Link do pedido**: o modelo da mensagem usa o link de aprovação do cliente. Antes de executar o diálogo, o Vibe grava na conversa o link do próprio pedido (o mesmo link ativo que o Imposition usa). Desde 10/11/2026 grava só o final do link, no formato número do pedido e token (por exemplo, 24880-30b9b9), igual ao envio de arte do Imposition: o começo `https://imposition.ai-ideal.com.br/cliente/` já está fixo no modelo da mensagem. Prova: homologação do 25006 às 15:03:01 de 10/11/2026, na conversa de teste. Pedido sem link ativo não envia: aparece "Pedido sem link de aprovação".
  - Abrir de novo a janela do aviso não manda segunda mensagem; só **Reenviar** (confirmado) ou uma nova liberação com **Liberar e enviar** manda outra.
  - Dois avisos para o mesmo WhatsApp nunca correm juntos. Se o ChatGuru não confirmar, o aviso fica em **resultado desconhecido** e o WhatsApp fica travado para novos avisos (deste e da Expedição) até o Administrador conferir no ChatGuru e usar **Liberar número**.
-+- **Trava compartilhada (desde {DATA DA JANELA})**: a trava por conversa vale também com o envio de arte do Imposition. Com um envio de arte em andamento para a mesma conversa, ou nos segundos logo depois de um diálogo executado nela, o aviso é recusado com "Há uma operação pendente para esta conversa. Nada foi enviado. Tente de novo em instantes." e fica como **falhou**. Se o Vibe não conseguir soltar a conversa depois de um aviso que já terminou, a janela mostra que a conversa ficou presa e o Administrador usa **Liberar número** → **Soltar a conversa** (nada é reenviado; fica registrado quem soltou e quando). Regra completa em [Expedição](expedicao.md), "Trava compartilhada com o envio de arte do Imposition".
++- **Trava compartilhada (desde {DATA DA JANELA})**: a trava por conversa vale também com o envio de arte do Imposition, inclusive na homologação (conversa de teste). Com um envio de arte em andamento para a mesma conversa, ou nos segundos logo depois de um diálogo executado nela, o aviso é recusado com "Há uma operação pendente para esta conversa. Nada foi enviado. Tente de novo em instantes." e fica como **falhou**. Se o Vibe não conseguir soltar a conversa depois de um aviso que já terminou, a janela mostra que a conversa ficou presa e o Administrador usa **Liberar número** → **Soltar a conversa** (nada é reenviado; fica registrado quem soltou e quando). Regra completa em [Expedição](expedicao.md), "Trava compartilhada com o envio de arte do Imposition".
  - O aviso vai para a conversa do cliente no ChatGuru (remetente 3478), escolhida pelo DDD e pelos 8 últimos dígitos do WhatsApp do contato responsável; o cadastro do contato não é alterado. Regra completa em [Expedição](expedicao.md), "Para qual conversa vai o aviso". Cliente sem nenhuma conversa: "Cliente sem conversa no ChatGuru (remetente 3478)" e o **Liberar e enviar** fica apagado.
  - Se o ChatGuru recusar pelo número, aparece "Número não encontrado no ChatGuru: {número}" e **Ver conversas do cliente**, para escolher outra conversa e reenviar.
- - **Modo teste**: enquanto estiver ligado, só pedido e contato do cliente de teste (#14) recebem o aviso.
-@@ -294,7 +295,10 @@ A liberação é recusada quando já existe NF-e de venda autorizada ou em proce
+ - **Modo teste**: enquanto estiver ligado, pedido do cliente de teste (#14) envia para a conversa do próprio cliente #14, e pedido de qualquer outro cliente vai em homologação para a conversa de teste. O modo teste não se desliga pela tela.
+@@ -297,7 +298,10 @@ A liberação é recusada quando já existe NF-e de venda autorizada ou em proce
  |---|---|---|
  | "Sem permissão para retirar da produção (propostas.release_producao)." | Seu perfil não tem a permissão "Liberar para Produção". | Peça a quem tem a permissão. |
  | "Sem permissão para liberar para produção (propostas.release_producao)." | Seu perfil não tem a permissão "Liberar para Produção". | Peça a liberação a quem tem a permissão, ou peça ao administrador para incluí-la no seu perfil. |
--| "Envio de aviso de produção em ajuste" | O aviso Pedido em Produção está suspenso para clientes reais até a trava por conversa ser a mesma do envio de arte do Imposition. | Use **Liberar sem enviar**. |
-+| "Envio de aviso de produção em ajuste" | O aviso Pedido em Produção está suspenso para clientes reais durante a semana de conferência da trava compartilhada com o envio de arte do Imposition. | Use **Liberar sem enviar**. |
+-| "Envio de aviso de produção em ajuste" | O aviso Pedido em Produção está suspenso para clientes reais até a trava por conversa ser a mesma do envio de arte do Imposition (com o modo teste desligado). | Use **Liberar sem enviar**. |
++| "Envio de aviso de produção em ajuste" | O aviso Pedido em Produção está suspenso para clientes reais (com o modo teste desligado) durante a semana de conferência da trava compartilhada com o envio de arte do Imposition. | Use **Liberar sem enviar**. |
 +| "Há uma operação pendente para esta conversa. Nada foi enviado. Tente de novo em instantes." | Um envio de arte do Imposition está em andamento para a mesma conversa, ou um diálogo acabou de ser executado nela. Nada saiu; a liberação continua valendo. | Espere alguns segundos e use **Reenviar** na janela ou em **Aviso: pedido em produção**. |
 +| "Trava compartilhada indisponível. Nada foi enviado." | O Vibe não conseguiu ocupar a conversa na trava compartilhada. Nada saiu; a liberação continua valendo. | Tente de novo em instantes. Se repetir, avise o suporte. |
 +| "Envio de avisos pausado por alguns minutos. Tente de novo em instantes." | Manutenção combinada entre o Vibe e o Imposition. A liberação continua valendo. | Espere e use **Reenviar** em **Aviso: pedido em produção**. |
+ | "Conversa de teste ocupada, tente em 2 minutos." | Modo homologação: outra mensagem foi para a conversa de teste há menos de 2 minutos, ou ainda está saindo. Nada foi gravado; a liberação continua valendo. | Espere 2 minutos e use **Reenviar** em **Aviso: pedido em produção**, ou siga com **Liberar sem enviar**. |
  | "O ChatGuru exige 2 minutos entre mensagens para a mesma conversa. Tente de novo em instantes." | Saiu outra mensagem para a mesma conversa há menos de 2 minutos. Nada saiu; a liberação continua valendo. | Espere 2 minutos e use **Reenviar** na janela ou em **Aviso: pedido em produção**. |
  | "Pedido sem link de aprovação" | O pedido não tem link ativo de aprovação do cliente (o mesmo do Imposition). | Use **Liberar sem enviar**. O aviso só sai com o link do próprio pedido. |
- | "Há um aviso sem confirmação para o WhatsApp {número}." | Outro aviso para o mesmo WhatsApp (de produção ou de pedido pronto) ficou em resultado desconhecido. | Avise o Administrador: ele confere no ChatGuru e usa **Liberar número**. |

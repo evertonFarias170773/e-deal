@@ -2,6 +2,13 @@
 
 > **Situação (09/11/2026):** a equipe do Imposition aprovou tecnicamente a revisão 4 (reproduziu os 46 testes que devem passar). **Nada aplicado.** A janela será combinada com os dois sistemas pausados. A v19 do Vibe está pronta no repositório, **sem deploy**.
 >
+> **Atualização (10/11/2026):** o Imposition publicou a função `painel` v285, com a pausa `CHATGURU_ARTES_PAUSA` e a recusa dos 120 s do ChatGuru tratada como falha. Conferido por leitura no mesmo dia:
+> - as três RPCs do Imposition (reservar, reenviar e finalizar) seguem com o md5 de corpo aprovado em 09/11, então a parte 0b da migração não aborta por elas;
+> - a v19 do repositório tem tudo da v21 no ar (homologação e Link_do_Cliente só com o final), somado à trava;
+> - o `CHATGURU-TRAVA-FICHAS.patch` foi gerado de novo sobre as fichas atuais e aplica com `git apply`.
+>
+> **Nada aplicado.**
+>
 > Arquivos:
 > - migração: [CHATGURU-TRAVA-COMPARTILHADA-MIGRACAO.sql](CHATGURU-TRAVA-COMPARTILHADA-MIGRACAO.sql)
 > - reversão: [CHATGURU-TRAVA-COMPARTILHADA-REVERSAO.sql](CHATGURU-TRAVA-COMPARTILHADA-REVERSAO.sql)
@@ -20,16 +27,16 @@ Todos os SQL rodam no **SQL Editor da Supabase** (projeto de produção): a IDE 
 
 ## Antes do dia
 
-1. O Imposition tem a pausa pronta: um interruptor no `painel` conferido antes de chamar `imposition_whatsapp_dialogo_reservar` e `_reenviar`. Ele confirma que nada mais chama essas RPCs, como reenvio automático ou rotina agendada.
+1. O Imposition tem a pausa pronta: o secret `CHATGURU_ARTES_PAUSA`, lido pela função `painel` (v285, no ar desde 10/11/2026) antes de chamar `imposition_whatsapp_dialogo_reservar` e `_reenviar`. Ele confirma que nada mais chama essas RPCs, como reenvio automático ou rotina agendada.
 2. Autorização nominal do dono para a migração e para o deploy da v19.
 3. Abrir em abas, antes de começar, os dois arquivos SQL e as consultas deste roteiro.
 4. A janela leva uns 15 minutos, com os avisos do Vibe e o envio de arte parados. Escolher um horário de pouco movimento.
 
 ## Ida
 
-**Diferença em relação à lista combinada:** o deploy da v19 vem **antes** da migração, logo depois do secret. A v18, que está no ar hoje, não lê `CHATGURU_AVISOS_PAUSA`, então só a v19 pausa o Vibe. Com o deploy depois da migração, haveria dois problemas:
+**Diferença em relação à lista combinada:** o deploy da v19 vem **antes** da migração, logo depois do secret. A v21, que está no ar hoje (como a v18 antes dela), não lê `CHATGURU_AVISOS_PAUSA`, então só a v19 pausa o Vibe. Com o deploy depois da migração, haveria dois problemas:
 - durante a migração, o Vibe estaria enviando;
-- entre a migração e o deploy, a v18 enviaria sem respeitar a trava compartilhada.
+- entre a migração e o deploy, a v21 enviaria sem respeitar a trava compartilhada.
 
 Com o secret gravado antes, a v19 já nasce pausada. Pausada, ela não chama a trava, então pode ir ao ar antes da migração sem risco.
 
@@ -46,7 +53,7 @@ Qualquer valor no secret diferente de vazio ou `desligada` também pausa: um err
 
 **Versão de volta (10/11/2026).** Desde a homologação, a função de antes da janela é a **v21**: a v18 mais o modo homologação e o Link_do_Cliente só com o final (numero_pedido-token, como o Imposition), sem a trava compartilhada. A fonte está em `supabase/edge-no-ar/expedicao-pedido-pronto/` (`index.ts` e `logica.ts`; a cópia de `transportadoras-parceiras.ts` vai como antes). A v21 está no ar desde 10/11/2026 14:59 (versão 20 no painel da Supabase): a volta sobe a v21. A v20 (commit `2ecbc78b`) grava o link inteiro e não deve voltar. A v18 (commit `46808cb5`) só serve se for preciso tirar também a homologação. A v19 do repositório já traz a homologação, então a ida não a perde.
 
-**Fichas da trava depois das da homologação.** Se as fichas da homologação (`CHATGURU-HOMOLOGACAO-FICHAS.patch`) já tiverem entrado no manual, o `CHATGURU-TRAVA-FICHAS.patch` não aplica mais como está: os dois mudam a linha "Última revisão" e o parágrafo "Envio em ajuste" de Pedidos. Antes da janela, gerar de novo o patch da trava sobre o manual atual.
+**Fichas da trava depois das da homologação.** O `CHATGURU-TRAVA-FICHAS.patch` foi gerado de novo em 10/11/2026, sobre as fichas com a homologação e o formato do link já aplicados. Se alguma ficha de Expedição ou Pedidos mudar antes da janela, gerar o patch de novo, conferindo com `git apply --check`.
 
 **Fichas do manual, no mesmo commit do deploy.** As fichas de Expedição e Pedidos com a trava compartilhada estão prontas em [CHATGURU-TRAVA-FICHAS.patch](CHATGURU-TRAVA-FICHAS.patch). Elas não entram antes porque o manual descreve o que está no ar, e o Maestro lê o manual. Logo depois do deploy:
 
@@ -63,9 +70,19 @@ Depois, commit e publicação, como sempre (AGENTS.md). Anotar o hash desse comm
 
 | | |
 |---|---|
-| **Quem** | Imposition |
-| **Faz** | Liga o interruptor de pausa no `painel`. |
-| **Confere** | Uma tentativa de envio de arte volta a mensagem de pausa deles, e nenhum envio novo vira `preparando`. |
+| **Quem** | Imposition (pausa e tentativa), Vibe (leitura) |
+| **Faz** | (a) Liga a pausa: secret `CHATGURU_ARTES_PAUSA` da função `painel` (v285). (b) Anota a hora e faz **uma tentativa autenticada** de envio de arte, com um usuário de verdade do painel, como no uso normal. |
+| **Confere** | A tentativa mostra a mensagem de pausa do Imposition. A consulta 2b, com a hora anotada, volta **zero linhas**: nenhuma arte foi criada ou mexida depois da tentativa, nem há registro `preparando`. |
+| **Se não pausar** | Se a tentativa enviou, ou se a 2b mostrar linha nova ou `preparando`, a janela para aqui. O Vibe já está pausado e continua assim, sem risco, até o Imposition corrigir a pausa. Uma tentativa sem login, recusada por falta de sessão, não vale como conferência da pausa. |
+
+```sql
+-- 2b. Depois da tentativa (precisa voltar vazio). Trocar a hora pela anotada, em Brasília.
+select left(chave, 12) || '...' as arte, estado, criado_em, atualizado_em
+  from public.imposition_whatsapp_artes
+ where estado = 'preparando'
+    or criado_em >= timestamptz 'AAAA-MM-DD HH:MI:SS-03'
+    or atualizado_em >= timestamptz 'AAAA-MM-DD HH:MI:SS-03';
+```
 
 ### 3. Conferir a drenagem (leitura)
 
@@ -133,7 +150,7 @@ Já feito no passo 1. A v19 está no ar desde então, pausada. Pausada, ela não
 | | |
 |---|---|
 | **Quem** | Imposition (envio), Vibe (leitura) |
-| **Faz** | O Imposition desliga a pausa e faz **um** envio de arte de teste. |
+| **Faz** | O Imposition desliga a pausa (`CHATGURU_ARTES_PAUSA`) e faz **um** envio de arte de teste. |
 | **Confere** | O envio chega. A consulta 6b mostra, para essa conversa, `imposition reservado` e depois `imposition executado`, e a conversa fica com `livre_em` cerca de 10 s no futuro logo após o envio. |
 
 ```sql
@@ -220,7 +237,7 @@ select
 | **Faz** | Desliga a pausa e faz um envio de arte de teste. O código deles não muda: as RPCs voltaram da cópia guardada pela migração, iguais às de antes (definição, dono e permissões). |
 | **Confere** | O envio chega e a conversa é solta no fim, como antes da trava compartilhada. |
 
-### V6. Retomar o Vibe: deploy da v18
+### V6. Retomar o Vibe: deploy da versão de volta (v21)
 
 | | |
 |---|---|
@@ -234,4 +251,5 @@ select
 - **A volta está no teste.** O teste do editor (63 casos) roda a ida, depois o texto de `CHATGURU-TRAVA-COMPARTILHADA-REVERSAO.sql` comando a comando, e compara o catálogo com uma foto tirada antes da ida (casos X0 a X11).
 - **As RPCs do Imposition voltam da cópia.** A migração guarda, logo depois da drenagem, a definição, o dono e as permissões das três RPCs em `chatguru_trava_rpcs_originais` (parte 0b), e aborta se alguma não for a da aprovação. A reversão restaura dessa cópia, confere cada uma em md5 e só depois apaga a cópia. Motivo: na rodada de 10/11, as RPCs recriadas a partir do texto escrito no arquivo não voltaram iguais (X7 a X9).
 - **CRLF do SQL Editor.** O editor entrega o texto com CRLF. Toda função que a migração cria ou altera fica gravada com `\r` no fim das linhas. Isso inclui as três RPCs do Imposition na versão rev4, as funções novas e os gatilhos. Não muda o funcionamento: 234 das 535 funções de `public` já estão assim. Nenhum texto entre aspas nas funções da migração ocupa mais de uma linha, então o `\r` não entra em mensagem nem em comparação. As conferências de md5 de corpo deste roteiro tiram o `\r` antes do md5. **Para a equipe do Imposition:** depois da janela, `pg_get_functiondef` das três RPCs mostra CRLF. Quem comparar com o código deles deve tirar o `\r` antes. Depois de uma reversão, elas voltam da cópia, com LF, iguais às de hoje.
-- **A tela já tem o "Soltar a conversa"** desde a publicação do repositório, mas ele fica sem efeito enquanto a v18 estiver no ar: a v18 nunca marca uma conversa como presa.
+- **A tela já tem o "Soltar a conversa"** desde a publicação do repositório, mas ele fica sem efeito enquanto a v21 (ou qualquer versão sem a trava) estiver no ar: essas versões nunca marcam uma conversa como presa.
+- **Recusa dos 120 s no Imposition (v285).** Desde a v285 do `painel`, a recusa "tempo mínimo" do ChatGuru é falha no envio de arte, e não mais resultado desconhecido. É a mesma regra do Vibe desde 09/11: a arte fica como falhou e a conversa é solta, em vez de ficar presa até alguém conferir.
