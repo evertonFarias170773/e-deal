@@ -61,6 +61,8 @@ import {
   conferirServico,
   conferirValor,
   descricaoDosItens,
+  moedaDoUnitario,
+  valoresDoItemNaNota,
   conferirNbsDigitado,
   nbsEditavelNaNota,
   type DescontoParaDescricao,
@@ -965,7 +967,7 @@ export function GerarNfseModal({
                                   </td>
                                   <td className="px-3 py-2 font-medium">{item.nome}</td>
                                   <td className="px-3 py-2 text-right">{item.quantidade.toLocaleString("pt-BR")}</td>
-                                  <td className="px-3 py-2 text-right">{formatCurrency(item.valorUnitario)}</td>
+                                  <td className="px-3 py-2 text-right" data-unitario-da-nota>{moedaDoUnitario(valoresDoItemNaNota(item)?.unitario ?? item.valorUnitario)}</td>
                                   <td className="px-3 py-2 text-right font-semibold">{formatCurrency(item.subtotal)}</td>
                                 </tr>
                               );
@@ -987,7 +989,7 @@ export function GerarNfseModal({
                     )}
                     {contexto.itens.length > 0 && (
                       <p className="text-xs text-slate-500">
-                        O subtotal do item é o que está gravado no pedido (inclui o valor fixo, quando há).
+                        O subtotal do item é o que está gravado no pedido (inclui o valor fixo, quando há), e o unitário é o subtotal dividido pela quantidade, como na NF-e.
                         {contexto.freteDoPedido > 0 ? (
                           <span data-texto-frete>
                             {freteNaNota > 0

@@ -42,7 +42,7 @@ const item138 = { id: 3759, nome: "* Horas Tratam de Imagem - Valor Unit R$ 190,
 const fator138 = fatorDoDesconto(90, 100);
 checar("nota 138",
   descricaoDosItens(23733, [item138], { fator: fator138, percentualTabelaEspecial: 10, temOutroDesconto: false }),
-  "Pedido 23733\n1 x * Horas Tratam de Imagem - R$ 100,00\nDesconto tabela especial (10%): - R$ 10,00\nTotal: R$ 90,00");
+  "Pedido 23733\n1 x * Horas Tratam de Imagem - R$ 100,00 un. - Subtotal R$ 100,00\nDesconto tabela especial (10%): - R$ 10,00\nTotal: R$ 90,00");
 
 // ── 3. Total = valor sugerido ────────────────────────────────────────────────
 const itens = [
@@ -59,8 +59,8 @@ checar("bruto - desconto = total, em centavos", texto.includes("- R$ 15,72"), tr
 // ── 4. Sem desconto ──────────────────────────────────────────────────────────
 checar("sem desconto: texto simples, sem o Valor Unit",
   descricaoDosItens(23733, [item138], { fator: 1, percentualTabelaEspecial: null, temOutroDesconto: false }),
-  "Pedido 23733\n1 x * Horas Tratam de Imagem - R$ 100,00 un.");
-checar("sem informacao de desconto: igual", descricaoDosItens(23733, [item138]), "Pedido 23733\n1 x * Horas Tratam de Imagem - R$ 100,00 un.");
+  "Pedido 23733\n1 x * Horas Tratam de Imagem - R$ 100,00 un. - Subtotal R$ 100,00");
+checar("sem informacao de desconto: igual", descricaoDosItens(23733, [item138]), "Pedido 23733\n1 x * Horas Tratam de Imagem - R$ 100,00 un. - Subtotal R$ 100,00");
 
 // ── 5. Rotulo generico ───────────────────────────────────────────────────────
 checar("tabela especial mais outro desconto: rotulo generico",
@@ -76,7 +76,7 @@ checar("desconto sem tabela especial: rotulo generico",
 // ── 6. Sem como derivar ──────────────────────────────────────────────────────
 checar("item sem subtotal: texto simples",
   descricaoDosItens(5, [{ ...item138, subtotal: null }], { fator: 0.9, percentualTabelaEspecial: 10, temOutroDesconto: false }),
-  "Pedido 5\n1 x * Horas Tratam de Imagem - R$ 100,00 un.");
+  "Pedido 5\n1 x * Horas Tratam de Imagem - R$ 100,00 un. - Subtotal R$ 100,00");
 checar("fator fora de 0..1: texto simples",
   [1.2, 0, Number.NaN].map((f) => descricaoDosItens(5, [item138], { fator: f, percentualTabelaEspecial: 10, temOutroDesconto: false }).includes("Desconto")),
   [false, false, false]);

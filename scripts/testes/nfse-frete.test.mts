@@ -40,7 +40,7 @@ checar("23991 integral: valor 353 + 25 = 378", valorSugeridoComFrete(itens23991,
 const desc = descricaoDaNfse(descricaoDosItens(23991, itens23991), freteQueEntraNaNota(itens23991, todos, 25)).split("\n");
 checar("23991: itens e frete, terminando no frete", desc, [
   "Pedido 23991",
-  "400 x Ingresso MOBI - R$ 0,23 un.",
+  "400 x Ingresso MOBI - R$ 0,8825 un. - Subtotal R$ 353,00",
   "Frete - R$ 25,00"
 ]);
 

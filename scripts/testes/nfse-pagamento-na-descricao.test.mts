@@ -39,8 +39,8 @@ const itens24623 = descricaoDosItens(24623, [
 const desc24623 = descricaoDaNfse(itens24623);
 checar("24623: so os itens, acabando no ultimo", desc24623.split("\n"), [
   "Pedido 24623",
-  "1.520 x Ingressos MOBI - R$ 0,23 un.",
-  "1.520 x Pulseira ColorBand - R$ 0,21 un."
+  "1.520 x Ingressos MOBI - R$ 0,23 un. - Subtotal R$ 349,60",
+  "1.520 x Pulseira ColorBand - R$ 0,21 un. - Subtotal R$ 319,20"
 ]);
 checar("24623: sem frase de pagamento nem natureza", /Forma de pagamento|Vencimento|Natureza da opera/.test(desc24623), false);
 checar("24623: a descricao passa na conferencia da rota", conferirDescricao(desc24623).ok, true);

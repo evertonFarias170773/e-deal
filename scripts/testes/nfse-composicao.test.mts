@@ -110,7 +110,7 @@ checar("itens: o ultimo marcado nao se desmarca", [...alternarItemMarcado(new Se
 // 3. Descrição
 const marcados = new Set([1, 3]);
 const descricao = descricaoDosItens(23180, itens.filter((i) => marcados.has(i.id)));
-checar("descricao: so os itens marcados, no formato N x nome - R$ ... un.", descricao, ["Pedido 23180", "580 x Ingresso MOBI - R$ 0,23 un.", "1 x Arte - R$ 20,00 un."].join("\n"));
+checar("descricao: so os itens marcados, no formato N x nome - R$ ... un. - Subtotal R$ ..., unitario com o valor fixo como na NF-e", descricao, ["Pedido 23180", "580 x Ingresso MOBI - R$ 0,2989655172 un. - Subtotal R$ 173,40", "1 x Arte - R$ 20,00 un. - Subtotal R$ 20,00"].join("\n"));
 checar("descricao: gerada cabe no limite", conferirDescricao(descricao).ok, true);
 checar("descricao: acima de 1000 caracteres bloqueia", [LIMITE_DESCRICAO_NFSE, conferirDescricao("x".repeat(1001)).ok], [1000, false]);
 

@@ -246,15 +246,68 @@ export const LIMITE_DESCRICAO_NFSE = 1000;
  * que a frase do pagamento ainda caiu nas informações complementares depois do
  * 6e123a7b. Mude o valor quando a composição da nota mudar.
  */
-export const VERSAO_DA_JANELA_NFSE = "2026-11-05.1";
+export const VERSAO_DA_JANELA_NFSE = "2026-11-10.1";
 
 export type ItemDoPedidoParaNfse = {
   nome: string | null;
   quantidade: number | null;
   valorUnitario: number | null;
-  /** Subtotal gravado do item (quantidade × unitário + fixo). Usado só quando há desconto. */
+  /** Subtotal gravado do item (quantidade × unitário + fixo + acréscimo das variações). */
   subtotal?: number | null;
 };
+
+/**
+ * O unitário que a nota mostra (10/11/2026, item "Tirante 120cm" do 24847).
+ *
+ * A MESMA regra da NF-e (`valoresDosItensDaNota`, em nfe/lib/valor-item-nfe.ts):
+ * o total do item é o SUBTOTAL gravado (que já tem o valor fixo do lote e o
+ * acréscimo das variações), e o unitário é esse total dividido pela quantidade,
+ * em 10 casas. O valor fixo fica embutido no unitário, sem linha separada. No
+ * 24847: 1.100 x R$ 3,50 + R$ 20,00 de fixo = R$ 3.870,00, unitário
+ * R$ 3,5181818182, e 1.100 x 3,5181818182 arredonda no centavo para 3.870,00.
+ *
+ * Copiada, não importada, porque este módulo não tem imports; o teste
+ * nfse-valor-fixo confere que as duas dão o mesmo número.
+ *
+ * Sem subtotal gravado vale quantidade × unitário, e o unitário fica o do pedido.
+ */
+export function valoresDoItemNaNota(item: ItemDoPedidoParaNfse): { subtotal: number; unitario: number } | null {
+  const quantidade = Number(item.quantidade);
+  const unitarioDoPedido = Number(item.valorUnitario);
+  const gravado = Number(item.subtotal);
+  const temQuantidade = Number.isFinite(quantidade) && quantidade > 0;
+  if (item.subtotal != null && Number.isFinite(gravado) && gravado > 0) {
+    return { subtotal: gravado, unitario: temQuantidade ? Number((gravado / quantidade).toFixed(10)) : 0 };
+  }
+  if (temQuantidade && Number.isFinite(unitarioDoPedido) && unitarioDoPedido > 0) {
+    return { subtotal: Math.round(quantidade * unitarioDoPedido * 100) / 100, unitario: unitarioDoPedido };
+  }
+  return null;
+}
+
+/**
+ * Unitário em reais com as casas que ele tem: no mínimo 2, no máximo 10, sem
+ * zero sobrando no fim ("R$ 3,50", "R$ 0,2044444444"). Com 2 casas o unitário do
+ * item com valor fixo não fecharia a conta (1.100 x 3,52 = 3.872,00).
+ */
+export function moedaDoUnitario(valor: number): string {
+  if (!Number.isFinite(valor)) return "R$ 0,00";
+  const [inteiro, casas] = valor.toFixed(10).split(".");
+  const decimais = casas.replace(/0+$/, "").padEnd(2, "0");
+  return `R$ ${inteiro.replace(/\B(?=(\d{3})+(?!\d))/g, ".")},${decimais}`;
+}
+
+/** "1.100 x Tirante 120cm - R$ 3,5181818182 un. - Subtotal R$ 3.870,00". */
+function linhaDoItem(item: ItemDoPedidoParaNfse): string {
+  const nome = nomeSemValorUnitDoCadastro(item.nome);
+  if (!nome) return "";
+  const quantidade = Number(item.quantidade);
+  const qtd = Number.isFinite(quantidade) && quantidade > 0 ? `${quantidade.toLocaleString("pt-BR")} x ` : "";
+  const valores = valoresDoItemNaNota(item);
+  if (!valores) return `${qtd}${nome}`;
+  const unitario = valores.unitario > 0 ? ` - ${moedaDoUnitario(valores.unitario)} un.` : "";
+  return `${qtd}${nome}${unitario} - Subtotal ${moeda(valores.subtotal)}`;
+}
 
 /**
  * O desconto do pedido para a descrição (16/10/2026, nota 138 do 23733).
@@ -295,31 +348,21 @@ function moeda(valor: number): string {
 }
 
 /**
- * Uma linha por item: "100 x Ingresso MOBI - R$ 1,50 un.". Texto de partida, editável.
+ * Uma linha por item, que fecha a conta (quantidade x unitário = subtotal):
+ *   "100 x Ingresso MOBI - R$ 1,50 un. - Subtotal R$ 150,00".
+ * O unitário e o subtotal são os da nota (`valoresDoItemNaNota`). Texto de
+ * partida, editável.
  *
  * Com desconto derivável (`desconto.fator` < 1 e subtotal em todos os itens),
- * cada item sai com o subtotal e o texto fecha com o desconto e o total:
- *   1 x Horas Tratam de Imagem - R$ 100,00
+ * o texto fecha com o desconto e o total:
+ *   1 x Horas Tratam de Imagem - R$ 100,00 un. - Subtotal R$ 100,00
  *   Desconto tabela especial (10%): - R$ 10,00
  *   Total: R$ 90,00
- * Sem desconto, ou sem como derivar, fica o texto simples.
  */
 export function descricaoDosItens(idInt: number, itens: readonly ItemDoPedidoParaNfse[], desconto?: DescontoParaDescricao | null): string {
   const comDesconto = linhasComDesconto(itens, desconto);
   if (comDesconto) return [`Pedido ${idInt}`, ...comDesconto].join("\n");
-
-  const linhas = itens
-    .map((item) => {
-      const nome = nomeSemValorUnitDoCadastro(item.nome);
-      if (!nome) return "";
-      const quantidade = Number(item.quantidade);
-      const unitario = Number(item.valorUnitario);
-      const qtd = Number.isFinite(quantidade) && quantidade > 0 ? `${quantidade.toLocaleString("pt-BR")} x ` : "";
-      const valor = Number.isFinite(unitario) && unitario > 0 ? ` - ${moeda(unitario)} un.` : "";
-      return `${qtd}${nome}${valor}`;
-    })
-    .filter(Boolean);
-  return [`Pedido ${idInt}`, ...linhas].join("\n");
+  return [`Pedido ${idInt}`, ...itens.map(linhaDoItem).filter(Boolean)].join("\n");
 }
 
 /** As linhas da descrição com desconto, ou `null` quando não há desconto a mostrar. */
@@ -346,12 +389,7 @@ function linhasComDesconto(itens: readonly ItemDoPedidoParaNfse[], desconto?: De
     ? `Desconto tabela especial (${percentualFormatado(tabela)}%)`
     : `Desconto (${percentualFormatado(percentualDerivado)}%)`;
 
-  const linhas = validos.map((item) => {
-    const quantidade = Number(item.quantidade);
-    const qtd = Number.isFinite(quantidade) && quantidade > 0 ? `${quantidade.toLocaleString("pt-BR")} x ` : "";
-    return `${qtd}${nomeSemValorUnitDoCadastro(item.nome)} - ${moeda(Number(item.subtotal))}`;
-  });
-  return [...linhas, `${rotulo}: - ${moeda(descontoCentavos / 100)}`, `Total: ${moeda(totalCentavos / 100)}`];
+  return [...validos.map(linhaDoItem),`${rotulo}: - ${moeda(descontoCentavos / 100)}`, `Total: ${moeda(totalCentavos / 100)}`];
 }
 
 export type ConferenciaDaDescricao = { ok: true; texto: string } | { ok: false; motivo: string };

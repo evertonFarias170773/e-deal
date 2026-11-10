@@ -147,7 +147,7 @@ checar(
     { nome: "Arte", quantidade: null, valorUnitario: null },
     { nome: "", quantidade: 3, valorUnitario: 1 }
   ]),
-  ["Pedido 22760", "1.500 x Ingresso MOBI - R$ 0,35 un.", "2 x Pulseira - R$ 1.234,50 un.", "Arte"].join("\n")
+  ["Pedido 22760", "1.500 x Ingresso MOBI - R$ 0,35 un. - Subtotal R$ 525,00", "2 x Pulseira - R$ 1.234,50 un. - Subtotal R$ 2.469,00", "Arte"].join("\n")
 );
 checar("descricao: pedido sem item", descricaoDosItens(1, []), "Pedido 1");
 checar("descricao: limite da Focus", LIMITE_DESCRICAO_NFSE, 1000);
