@@ -59,9 +59,18 @@ const linhas = (notas ?? []) as { ref: string; status: string; payload_retorno: 
 console.log(`notas com retorno guardado no banco: ${linhas.length}`);
 checar("ha retorno real para testar", linhas.length > 0, true);
 
+// Nem toda nota com retorno guardado foi emitida (10/11/2026). A NFS-22552-001
+// (homologacao, 05/10/2026) guardou o "processando_autorizacao" da Focus e virou
+// ERRO_AUTORIZACAO um minuto depois, sem numero: ela precisa PASSAR, para poder
+// ser reenviada. Ate aqui o teste esperava barrar todas e caiu desde aquele dia.
+const EMITIDA = new Set(["AUTORIZADA", "CANCELADA"]);
 for (const nota of linhas) {
   const evidencia = detectarNfseJaEmitida(nota.payload_retorno);
   console.log(`  ${nota.ref} (${nota.status}) -> ${evidencia ? `${evidencia.regra}, numero ${evidencia.numero}` : "PASSARIA"}`);
+  if (!EMITIDA.has(String(nota.status).toUpperCase())) {
+    checar(`${nota.ref}: nao emitida, o payload deixa reenviar`, evidencia, null);
+    continue;
+  }
   checar(`${nota.ref}: o payload barra o reenvio`, Boolean(evidencia), true);
   checar(`${nota.ref}: pela regra do status da Focus`, evidencia?.regra, "STATUS_FOCUS");
   checar(`${nota.ref}: com o numero da NFS-e na evidencia`, Boolean(evidencia?.numero), true);
