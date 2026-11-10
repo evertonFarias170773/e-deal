@@ -12,6 +12,11 @@
 -- passar, reproduzidos por eles). Reversão pronta: CHATGURU-TRAVA-COMPARTILHADA-REVERSAO.sql.
 -- 10/11: parte 0b (cópia das RPCs) entra porque, no teste do editor, as RPCs
 -- recriadas a partir do texto do rodapé não voltaram iguais (casos X7 a X9).
+-- Causa: o SQL Editor entrega o texto com CRLF. Por isso as funções criadas ou
+-- alteradas aqui ficam gravadas com \r no fim das linhas (sem efeito no
+-- funcionamento; 234 das 535 funções de public já estão assim). Nenhum texto
+-- entre aspas ocupa mais de uma linha, então o \r não entra em mensagem nem em
+-- comparação. A cópia da parte 0b guarda os corpos de hoje, com LF.
 --
 -- Partes:
 --   0. drenagem: aborta se houver envio em andamento de qualquer lado
@@ -85,7 +90,8 @@ select public.chatguru_trava_drenagem(false);
 --     definição (pg_get_functiondef), dono e permissões. A reversão restaura
 --     daqui e só depois apaga a cópia, sem depender do texto escrito no rodapé
 --     nem de como o editor o entrega. Aborta se alguma das três não for a da
---     aprovação (md5 do corpo conferido em 09/11/2026).
+--     aprovação (md5 do corpo conferido em 09/11/2026). Essa conferência tira
+--     o \r antes do md5: o mesmo corpo gravado pelo SQL Editor (CRLF) passa.
 create table public.chatguru_trava_rpcs_originais (
   assinatura text primary key,
   proname text not null unique,
@@ -93,25 +99,26 @@ create table public.chatguru_trava_rpcs_originais (
   dono text not null,
   permissoes aclitem[],
   md5_corpo text not null,
+  md5_corpo_sem_cr text not null,
   md5_definicao text not null,
   guardado_em timestamptz not null default now());
 alter table public.chatguru_trava_rpcs_originais enable row level security;
 revoke all on public.chatguru_trava_rpcs_originais from public, anon, authenticated, service_role;
-insert into public.chatguru_trava_rpcs_originais(assinatura, proname, definicao, dono, permissoes, md5_corpo, md5_definicao)
+insert into public.chatguru_trava_rpcs_originais(assinatura, proname, definicao, dono, permissoes, md5_corpo, md5_corpo_sem_cr, md5_definicao)
 select format('public.%I(%s)', p.proname, oidvectortypes(p.proargtypes)), p.proname, pg_get_functiondef(p.oid),
-       pg_get_userbyid(p.proowner), p.proacl, md5(p.prosrc), md5(pg_get_functiondef(p.oid))
+       pg_get_userbyid(p.proowner), p.proacl, md5(p.prosrc), md5(replace(p.prosrc, chr(13), '')), md5(pg_get_functiondef(p.oid))
   from pg_proc p
  where p.pronamespace = 'public'::regnamespace
    and p.proname in ('imposition_whatsapp_dialogo_reservar', 'imposition_whatsapp_dialogo_reenviar', 'imposition_whatsapp_dialogo_finalizar');
 do $copia$
 declare v_fora text;
 begin
-  select string_agg(e.proname || coalesce(' com md5 ' || c.md5_corpo, ' ausente'), ', ' order by e.proname) into v_fora
+  select string_agg(e.proname || coalesce(' com md5 ' || c.md5_corpo_sem_cr, ' ausente'), ', ' order by e.proname) into v_fora
     from (values ('imposition_whatsapp_dialogo_reservar', '5d0f974f88467b896d9afb998697cb0c'),
                  ('imposition_whatsapp_dialogo_reenviar', 'cfbdf0700bea66367eb8bd630f8891d5'),
                  ('imposition_whatsapp_dialogo_finalizar', '0018beec294adc90c673277f2fbefa9d')) e(proname, md5_corpo)
     left join public.chatguru_trava_rpcs_originais c on c.proname = e.proname
-   where c.md5_corpo is distinct from e.md5_corpo;
+   where c.md5_corpo_sem_cr is distinct from e.md5_corpo;
   if v_fora is not null or (select count(*) from public.chatguru_trava_rpcs_originais) <> 3 then
     raise exception 'Migracao abortada: as RPCs do Imposition nao sao as da aprovacao (%). Conferir com a equipe do Imposition.',
       coalesce(v_fora, 'copia com outra contagem') using errcode = '55000';
@@ -453,7 +460,8 @@ update public.imposition_whatsapp_conversas c
 --       end loop;
 --     end if;
 --     if not exists (select 1 from pg_proc p where p.oid = r.assinatura::regprocedure
---                      and md5(p.prosrc) = r.md5_corpo and md5(pg_get_functiondef(p.oid)) = r.md5_definicao
+--                      and md5(p.prosrc) = r.md5_corpo and p.prokind = 'f'
+--                      and case when p.prokind = 'f' then md5(pg_get_functiondef(p.oid)) end = r.md5_definicao
 --                      and pg_get_userbyid(p.proowner) = r.dono and p.proacl is not distinct from r.permissoes) then
 --       raise exception 'Reversao abortada: % nao voltou igual a copia guardada pela migracao', r.proname using errcode = '55000';
 --     end if;

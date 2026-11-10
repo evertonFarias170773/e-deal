@@ -11,16 +11,18 @@
  * - De: PIX não pago, das empresas que recebem pelo C6 (1 e 3). No C6 o Vibe
  *   só dá o PIX por cancelado quando o banco confirma; no Inter (Ideal Birô)
  *   essa confirmação ainda não existe, e por isso a troca não vale lá.
- * - Para: Faturado. É a única forma que nasce sem nada fora do Vibe (os
- *   boletos só existem depois, no Registro de Recebíveis). É isso que permite
- *   criar a nova ANTES de cancelar a antiga e desfazer a nova se o banco não
- *   confirmar.
+ * - Para: as formas internas da família faturado (Faturado, E-Permuta,
+ *   E-Amostra, E-Retrabalho — ver DESTINOS_DA_TROCA). Nascem sem nada fora do
+ *   Vibe (os boletos do faturado só existem depois, no Registro de
+ *   Recebíveis). É isso que permite criar a nova ANTES de cancelar a antiga e
+ *   desfazer a nova se o banco não confirmar.
  *
  * A rota é `src/app/api/cobrancas/trocar-forma-pagamento/route.ts`.
  */
 import { formatCurrency } from "@/lib/formatters/currency";
 import { getLocalDateInSaoPaulo } from "@/features/cobrancas/cobrancas-utils";
 import { TODAS_AS_RECUSAS, type CodigoVeredito } from "@/features/cobrancas/cancelamento-elegibilidade";
+import { recusaDoTipoNoPedido, type ContextoRetrabalhoDoPedido } from "@/features/cobrancas/lib/tipo-x-retrabalho";
 
 /** Empresas cujo PIX sai pelo C6, com confirmação do banco no cancelamento. */
 export const EMPRESAS_DA_TROCA: readonly number[] = [1, 3];
@@ -28,8 +30,53 @@ export const EMPRESAS_DA_TROCA: readonly number[] = [1, 3];
 /** Forma de origem aceita. */
 export const TIPO_DE_ORIGEM_DA_TROCA = "PIX";
 
-/** Forma de destino aceita. */
+/** Forma de destino padrão (a única até 10/11/2026). */
 export const TIPO_DE_DESTINO_DA_TROCA = "E-FATURADO";
+
+export type TipoDestinoDaTroca = "E-FATURADO" | "E-PERMUTA" | "E-AMOSTRA" | "E-RETRABALHO";
+
+export type DestinoDaTroca = {
+  tipo: TipoDestinoDaTroca;
+  rotulo: string;
+  /** Faturado e E-Permuta pedem condição, como no Gerar cobrança; cortesia não. */
+  exigeCondicao: boolean;
+};
+
+/**
+ * Formas internas aceitas como destino (10/11/2026): a família faturado do
+ * Gerar cobrança. Nenhuma passa por banco nem consome nada ao nascer — por
+ * isso desfazer a nova é só cancelá-la no Vibe.
+ *
+ * Fora, de propósito:
+ * - E-Crédito: nasce consumindo o saldo do cliente, e a única devolução que
+ *   existe hoje (`mc_estornar_uso_pedido`) recusa pedido com nota autorizada
+ *   e exige ADM. Sem uma devolução própria da troca, não dá para desfazer.
+ * - Boleto, PIX novo e cartão: nascem no banco (mapa em estudo, sem código).
+ */
+export const DESTINOS_DA_TROCA: readonly DestinoDaTroca[] = [
+  { tipo: "E-FATURADO", rotulo: "Faturado", exigeCondicao: true },
+  { tipo: "E-PERMUTA", rotulo: "E-Permuta", exigeCondicao: true },
+  { tipo: "E-AMOSTRA", rotulo: "E-Amostra", exigeCondicao: false },
+  { tipo: "E-RETRABALHO", rotulo: "E-Retrabalho", exigeCondicao: false }
+];
+
+/** O destino pelo tipo pedido; vazio é Faturado (o corpo antigo da rota). */
+export function destinoDaTroca(tipo: unknown): DestinoDaTroca | null {
+  const texto = String(tipo ?? "").trim();
+  const alvo = texto ? texto.toUpperCase().replace(/_/g, "-") : TIPO_DE_DESTINO_DA_TROCA;
+  return DESTINOS_DA_TROCA.find((d) => d.tipo === alvo) ?? null;
+}
+
+/**
+ * As formas que o pedido aceita, pela mesma regra do gatilho do retrabalho:
+ * E-Retrabalho só em retrabalho, e retrabalho só com E-Retrabalho. Sem o
+ * contexto, esconde só a E-Retrabalho (o banco recusa o resto, se for o caso).
+ */
+export function destinosPermitidosNoPedido(contexto: ContextoRetrabalhoDoPedido | null): DestinoDaTroca[] {
+  return DESTINOS_DA_TROCA.filter((d) =>
+    contexto ? recusaDoTipoNoPedido(d.tipo, contexto) === null : d.tipo !== "E-RETRABALHO"
+  );
+}
 
 /**
  * As recusas de cancelamento que valem para a troca: todas as de hoje, menos
@@ -175,13 +222,43 @@ export type CobrancaAntigaParaCopia = {
  */
 export function montarCobrancaDaTroca(
   antiga: CobrancaAntigaParaCopia,
-  modelo: ModeloDaTroca,
-  agora: Date = new Date()
+  modelo: ModeloDaTroca | null,
+  agora: Date = new Date(),
+  destino: DestinoDaTroca = DESTINOS_DA_TROCA[0]
 ): Record<string, unknown> {
   const valor = Math.round(Number(antiga.valor) * 100) / 100;
   const hoje = getLocalDateInSaoPaulo(agora);
-  const entrada = Number(modelo.entrada_porcento ?? 0);
   const referencia = antiga.id_pagamento || "anterior";
+  if (!destino.exigeCondicao || !modelo) {
+    // Cortesia (E-Amostra, E-Retrabalho): sem condição, como no Gerar cobrança —
+    // nulo em forma_fatu, forma_pgto, id_modelo_cobranca e nos p_*.
+    return {
+      id_int: antiga.id_int,
+      id_cliente: antiga.id_cliente,
+      cliente: antiga.cliente,
+      documento: antiga.documento,
+      valor,
+      status: "A_VENCER",
+      tipo_cobranca: destino.tipo,
+      empresa: antiga.empresa,
+      id_empresa: antiga.id_empresa,
+      os_ideal: antiga.os_ideal,
+      atendente: antiga.atendente,
+      descricao: `Cobrança ${destino.tipo} da proposta #${antiga.id_int} (troca da ${referencia})`,
+      vencimento: hoje,
+      obs_v2: antiga.obs_v2,
+      confirmado: false,
+      forma_fatu: null,
+      forma_pgto: null,
+      id_modelo_cobranca: null,
+      p_valor_entrada: null,
+      p_qtd_parcelas: null,
+      p_dias_pra_inicio: null,
+      p_intervalo: null,
+      paid_at: null
+    };
+  }
+  const entrada = Number(modelo.entrada_porcento ?? 0);
   return {
     id_int: antiga.id_int,
     id_cliente: antiga.id_cliente,
@@ -189,12 +266,12 @@ export function montarCobrancaDaTroca(
     documento: antiga.documento,
     valor,
     status: "A_VENCER",
-    tipo_cobranca: TIPO_DE_DESTINO_DA_TROCA,
+    tipo_cobranca: destino.tipo,
     empresa: antiga.empresa,
     id_empresa: antiga.id_empresa,
     os_ideal: antiga.os_ideal,
     atendente: antiga.atendente,
-    descricao: `Cobrança E-FATURADO da proposta #${antiga.id_int} (troca da ${referencia})`,
+    descricao: `Cobrança ${destino.tipo} da proposta #${antiga.id_int} (troca da ${referencia})`,
     vencimento: somarDiasIso(hoje, Number(modelo.inicio)),
     obs_v2: antiga.obs_v2,
     confirmado: false,
@@ -209,6 +286,12 @@ export function montarCobrancaDaTroca(
   };
 }
 
+/** "Faturado (30 DIAS)" ou só "E-Amostra", quando não há condição. */
+function descreverForma(rotulo: string | undefined, condicao: string | null): string {
+  const nome = rotulo ?? "Faturado";
+  return condicao ? `${nome} (${condicao})` : nome;
+}
+
 /** O que fica gravado em `motivo_troca` da antiga enquanto a troca corre. */
 export function marcadorEmAndamento(autor: string, motivo: string): string {
   return `${PREFIXO_TROCA_EM_ANDAMENTO} por ${autor}. Motivo: ${motivo}`;
@@ -219,14 +302,16 @@ export function registroDaTrocaNaAntiga(entrada: {
   autor: string;
   motivo: string;
   novaIdPagamento: string;
-  condicao: string;
+  condicao: string | null;
+  rotulo?: string;
 }): string {
-  return `Trocada por Faturado (${entrada.condicao}), cobrança ${entrada.novaIdPagamento}, por ${entrada.autor}. Motivo: ${entrada.motivo}`;
+  const forma = descreverForma(entrada.rotulo, entrada.condicao);
+  return `Trocada por ${forma}, cobrança ${entrada.novaIdPagamento}, por ${entrada.autor}. Motivo: ${entrada.motivo}`;
 }
 
 /** `motivo_cancela` da antiga. */
-export function motivoCancelaDaAntiga(novaIdPagamento: string, motivo: string): string {
-  return `Troca de forma de pagamento: substituída pela cobrança ${novaIdPagamento} (Faturado). Motivo: ${motivo}`;
+export function motivoCancelaDaAntiga(novaIdPagamento: string, motivo: string, rotulo = "Faturado"): string {
+  return `Troca de forma de pagamento: substituída pela cobrança ${novaIdPagamento} (${rotulo}). Motivo: ${motivo}`;
 }
 
 /** `motivo_cancela` da nova, quando o banco não confirma o cancelamento do PIX. */
@@ -243,14 +328,16 @@ export function mensagemHistoricoDaTroca(entrada: {
   novaIdPagamento: string;
   autor: string;
   permissao: string;
-  condicao: string;
+  condicao: string | null;
   valor: number;
   motivo: string;
+  rotulo?: string;
 }): string {
+  const rotulo = entrada.rotulo ?? "Faturado";
   return (
     `Forma de pagamento trocada por ${entrada.autor} (${entrada.permissao}): ` +
     `cobrança ${entrada.antigaIdPagamento} (PIX) cancelada e substituída pela ${entrada.novaIdPagamento} ` +
-    `(Faturado, ${entrada.condicao}), mesmo valor ${formatCurrency(entrada.valor)}. ` +
+    `(${entrada.condicao ? `${rotulo}, ${entrada.condicao}` : rotulo}), mesmo valor ${formatCurrency(entrada.valor)}. ` +
     `Nota fiscal mantida. Motivo: ${entrada.motivo}`
   );
 }
@@ -261,10 +348,11 @@ export function mensagemHistoricoDaTrocaDesfeita(entrada: {
   novaIdPagamento: string;
   autor: string;
   motivo: string;
+  rotulo?: string;
 }): string {
   return (
     `Troca de forma de pagamento não concluída (tentada por ${entrada.autor}): o banco não confirmou o cancelamento do PIX ` +
-    `${entrada.antigaIdPagamento}, que continua ativo. A cobrança ${entrada.novaIdPagamento} (Faturado) foi cancelada. ` +
+    `${entrada.antigaIdPagamento}, que continua ativo. A cobrança ${entrada.novaIdPagamento} (${entrada.rotulo ?? "Faturado"}) foi cancelada. ` +
     `Motivo da troca: ${entrada.motivo}`
   );
 }

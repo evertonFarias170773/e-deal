@@ -223,31 +223,32 @@ create table public.chatguru_trava_rpcs_originais (
   dono text not null,
   permissoes aclitem[],
   md5_corpo text not null,
+  md5_corpo_sem_cr text not null,
   md5_definicao text not null,
   guardado_em timestamptz not null default now());
 alter table public.chatguru_trava_rpcs_originais enable row level security;
 revoke all on public.chatguru_trava_rpcs_originais from public, anon, authenticated, service_role;
-insert into public.chatguru_trava_rpcs_originais(assinatura, proname, definicao, dono, permissoes, md5_corpo, md5_definicao)
+insert into public.chatguru_trava_rpcs_originais(assinatura, proname, definicao, dono, permissoes, md5_corpo, md5_corpo_sem_cr, md5_definicao)
 select format('public.%I(%s)', p.proname, oidvectortypes(p.proargtypes)), p.proname, pg_get_functiondef(p.oid),
-       pg_get_userbyid(p.proowner), p.proacl, md5(p.prosrc), md5(pg_get_functiondef(p.oid))
+       pg_get_userbyid(p.proowner), p.proacl, md5(p.prosrc), md5(replace(p.prosrc, chr(13), '')), md5(pg_get_functiondef(p.oid))
   from pg_proc p
  where p.pronamespace = 'public'::regnamespace
    and p.proname in ('imposition_whatsapp_dialogo_reservar', 'imposition_whatsapp_dialogo_reenviar', 'imposition_whatsapp_dialogo_finalizar');
 do $copia$
 declare v_fora text;
 begin
-  select string_agg(e.proname || coalesce(' com md5 ' || c.md5_corpo, ' ausente'), ', ' order by e.proname) into v_fora
+  select string_agg(e.proname || coalesce(' com md5 ' || c.md5_corpo_sem_cr, ' ausente'), ', ' order by e.proname) into v_fora
     from (values ('imposition_whatsapp_dialogo_reservar', '5d0f974f88467b896d9afb998697cb0c'),
                  ('imposition_whatsapp_dialogo_reenviar', 'cfbdf0700bea66367eb8bd630f8891d5'),
                  ('imposition_whatsapp_dialogo_finalizar', '0018beec294adc90c673277f2fbefa9d')) e(proname, md5_corpo)
     left join public.chatguru_trava_rpcs_originais c on c.proname = e.proname
-   where c.md5_corpo is distinct from e.md5_corpo;
+   where c.md5_corpo_sem_cr is distinct from e.md5_corpo;
   if v_fora is not null or (select count(*) from public.chatguru_trava_rpcs_originais) <> 3 then
     raise exception 'Migracao abortada: as RPCs do Imposition nao sao as da aprovacao (%). Conferir com a equipe do Imposition.',
       coalesce(v_fora, 'copia com outra contagem') using errcode = '55000';
   end if;
 end $copia$;
-select pg_temp.reg('G1 copia das tres RPCs guardada: 3 linhas com o md5 do corpo e da definicao iguais aos do banco', 'ok:true', pg_temp.tenta($q$select ((select count(*) from public.chatguru_trava_rpcs_originais c join pg_proc p on p.oid = c.assinatura::regprocedure where md5(p.prosrc) = c.md5_corpo and md5(pg_get_functiondef(p.oid)) = c.md5_definicao and p.proacl is not distinct from c.permissoes and pg_get_userbyid(p.proowner) = c.dono) = 3)::text$q$));
+select pg_temp.reg('G1 copia das tres RPCs guardada: 3 linhas com o md5 do corpo e da definicao iguais aos do banco', 'ok:true', pg_temp.tenta($q$select ((select count(*) from public.chatguru_trava_rpcs_originais c join pg_proc p on p.oid = c.assinatura::regprocedure where p.prokind = 'f' and md5(p.prosrc) = c.md5_corpo and case when p.prokind = 'f' then md5(pg_get_functiondef(p.oid)) end = c.md5_definicao and p.proacl is not distinct from c.permissoes and pg_get_userbyid(p.proowner) = c.dono) = 3)::text$q$));
 select pg_temp.reg('G2 copia fechada para anon, authenticated e service_role', 'ok:true', pg_temp.tenta($q$select (not has_table_privilege('anon', 'public.chatguru_trava_rpcs_originais', 'select') and not has_table_privilege('authenticated', 'public.chatguru_trava_rpcs_originais', 'select') and not has_table_privilege('service_role', 'public.chatguru_trava_rpcs_originais', 'select') and not has_table_privilege('service_role', 'public.chatguru_trava_rpcs_originais', 'insert, update, delete'))::text$q$));
 
 create table public.chatguru_trava_config (
@@ -540,7 +541,8 @@ begin
       end loop;
     end if;
     if not exists (select 1 from pg_proc p where p.oid = r.assinatura::regprocedure
-                     and md5(p.prosrc) = r.md5_corpo and md5(pg_get_functiondef(p.oid)) = r.md5_definicao
+                     and md5(p.prosrc) = r.md5_corpo and p.prokind = 'f'
+                     and case when p.prokind = 'f' then md5(pg_get_functiondef(p.oid)) end = r.md5_definicao
                      and pg_get_userbyid(p.proowner) = r.dono and p.proacl is not distinct from r.permissoes) then
       raise exception 'Reversao abortada: % nao voltou igual a copia guardada pela migracao', r.proname using errcode = '55000';
     end if;

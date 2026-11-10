@@ -59,7 +59,8 @@ begin
       end loop;
     end if;
     if not exists (select 1 from pg_proc p where p.oid = r.assinatura::regprocedure
-                     and md5(p.prosrc) = r.md5_corpo and md5(pg_get_functiondef(p.oid)) = r.md5_definicao
+                     and md5(p.prosrc) = r.md5_corpo and p.prokind = 'f'
+                     and case when p.prokind = 'f' then md5(pg_get_functiondef(p.oid)) end = r.md5_definicao
                      and pg_get_userbyid(p.proowner) = r.dono and p.proacl is not distinct from r.permissoes) then
       raise exception 'Reversao abortada: % nao voltou igual a copia guardada pela migracao', r.proname using errcode = '55000';
     end if;
