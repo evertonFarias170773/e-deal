@@ -135,7 +135,11 @@ export function ConversasDoClienteModal({
         setNota(c ? `Pela regra, o aviso vai para ${c.nome} (${c.numero}): é a única conversa que casa com o WhatsApp do contato responsável.` : null);
       }
       if (res.envio_recusado_pelo_modo_teste) {
-        setErro("Modo teste: só pedidos do cliente #14 podem ser avisados. A lista é só para consulta.");
+        setErro(
+          res.homologacao
+            ? "Modo homologação: o aviso deste pedido vai para a conversa de teste do Edison, não para o cliente. A lista é só para consulta."
+            : "Modo teste: só pedidos do cliente #14 podem ser avisados. A lista é só para consulta."
+        );
       }
     })();
     return () => {

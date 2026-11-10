@@ -16,6 +16,7 @@ import {
   travaCompartilhadaPresa,
   textoDaLiberacao,
   TEXTO_TRAVA_PRESA,
+  TEXTO_HOMOLOGACAO,
   type RespostaLiberacao,
   prepararAvisoProducao,
   type AvisoPronto,
@@ -35,6 +36,8 @@ type Preparo = {
   escolha: EscolhaConversa | null;
   bloqueio: string | null;
   modoTeste: boolean;
+  /** Modo homologação: pedido de cliente real com o modo teste ligado; vai para a conversa de teste. */
+  homologacao: boolean;
 };
 
 /**
@@ -54,6 +57,12 @@ type Preparo = {
  * Link e bloqueio (09/11/2026): o servidor grava o Link_do_Cliente do próprio pedido
  * antes do diálogo; sem link, "Pedido sem link de aprovação". Fora do modo teste ou
  * do cliente #14, "Envio de aviso de produção em ajuste" e só "Liberar sem enviar".
+ *
+ * Modo homologação (10/11/2026): com o modo teste ligado, pedido de cliente real
+ * envia com os dados dele, mas sempre para a conversa de teste do Edison
+ * (cliente #14). A janela avisa em destaque; cada envio é uma homologação nova,
+ * fora do "já enviado" do pedido. Conversa de teste ocupada (regra dos 2 minutos):
+ * "Conversa de teste ocupada, tente em 2 minutos." e a liberação segue valendo.
  *
  * modo "avisar": pedido já liberado. Mostra o último aviso e envia/reenvia.
  *
@@ -110,7 +119,7 @@ export function AvisoProducaoModal({
       if (!res.ok) {
         const m = res.mensagem ?? "Não foi possível ler o contato do pedido.";
         setErroPreparo(m);
-        setPreparo({ destinatario: null, conversa: null, escolha: null, bloqueio: m, modoTeste: true });
+        setPreparo({ destinatario: null, conversa: null, escolha: null, bloqueio: m, modoTeste: true, homologacao: false });
         return;
       }
       setPreparo({
@@ -118,7 +127,8 @@ export function AvisoProducaoModal({
         conversa: res.conversa ?? null,
         escolha: res.escolha ?? null,
         bloqueio: res.bloqueio ?? null,
-        modoTeste: res.modo_teste !== false
+        modoTeste: res.modo_teste !== false,
+        homologacao: res.homologacao === true
       });
       setAviso(res.aviso ?? null);
     })();
@@ -182,7 +192,9 @@ export function AvisoProducaoModal({
       return;
     }
     const a = res.aviso;
-    if (a?.estado === "executado") {
+    if (a?.estado === "executado" && res.homologacao) {
+      showToast({ type: "success", title: "Homologação enviada", description: `Pedido ${idInt}: mensagem na conversa de teste do Edison, não para o cliente.` });
+    } else if (a?.estado === "executado") {
       showToast({ type: "success", title: "Aviso enviado", description: `Pedido ${idInt}: ${ROTULO_ESTADO_AVISO.executado}.` });
     } else if (a?.estado === "falhou") {
       showToast({ type: "error", title: "O ChatGuru recusou o aviso", description: `${res.motivo_chatguru ? `ChatGuru: ${res.motivo_chatguru} ` : ""}Nada saiu.` });
@@ -241,6 +253,7 @@ export function AvisoProducaoModal({
   }
 
   const destinatario = preparo?.destinatario ?? null;
+  const homologacao = preparo?.homologacao === true;
   const bloqueio = preparo?.bloqueio ?? null;
   const escolhaDaJanela = preparo?.escolha ?? null;
   const faltaEscolher = Boolean(escolhaDaJanela && selecionadas.length === 0);
@@ -289,10 +302,18 @@ export function AvisoProducaoModal({
               </p>
               {aviso && (
                 <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 font-semibold text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-100">
-                  Este pedido já recebeu o aviso de produção em {formatDateTime(aviso.criado_em)}. Liberar e enviar manda a mensagem de novo.
+                  {aviso.homologacao
+                    ? `Este pedido já teve homologação em ${formatDateTime(aviso.criado_em)}. Liberar e enviar manda outra para a conversa de teste.`
+                    : `Este pedido já recebeu o aviso de produção em ${formatDateTime(aviso.criado_em)}. Liberar e enviar manda a mensagem de novo.`}
                 </p>
               )}
             </>
+          )}
+
+          {homologacao && (
+            <p className="rounded-xl border-2 border-sky-400 bg-sky-50 p-3 font-semibold text-sky-900 dark:border-sky-600 dark:bg-sky-950/40 dark:text-sky-100">
+              {TEXTO_HOMOLOGACAO}
+            </p>
           )}
 
           <div className="flex items-start gap-2 rounded-xl border border-slate-200 p-3 dark:border-slate-700">
@@ -310,7 +331,9 @@ export function AvisoProducaoModal({
               )}
               {preparo?.conversa && (
                 <p>
-                  <span className="text-xs text-slate-500 dark:text-slate-400">Vai para a conversa do ChatGuru: </span>
+                  <span className="text-xs text-slate-500 dark:text-slate-400">
+                    {homologacao ? "Vai para a conversa de teste: " : "Vai para a conversa do ChatGuru: "}
+                  </span>
                   <span className="font-semibold text-slate-900 dark:text-slate-100">
                     {preparo.conversa.nome} · {preparo.conversa.numero}
                   </span>
@@ -327,7 +350,7 @@ export function AvisoProducaoModal({
                   />
                 </div>
               )}
-              {preparo?.modoTeste && (
+              {preparo?.modoTeste && !homologacao && (
                 <p className="text-[11px] font-semibold uppercase text-amber-700 dark:text-amber-300">
                   modo teste: só pedidos e contatos do cliente #14
                 </p>
@@ -342,7 +365,7 @@ export function AvisoProducaoModal({
                 {aviso.estado === "executado" || aviso.estado === "enviado" ? "Aviso enviado" : "Tentativa de aviso"} em{" "}
                 {formatDateTime(aviso.criado_em)} por {aviso.autor_nome || "—"}:{" "}
                 <strong>{ROTULO_ESTADO_AVISO[aviso.estado] ?? aviso.estado}</strong>
-                {aviso.modo_teste ? " · modo teste" : ""}
+                {aviso.homologacao ? " · homologação (conversa de teste)" : aviso.modo_teste ? " · modo teste" : ""}
               </p>
               {aviso.liberacao && (
                 <p className="text-slate-600 dark:text-slate-300">
@@ -389,9 +412,11 @@ export function AvisoProducaoModal({
             <div className="rounded-xl border border-slate-300 p-3 dark:border-slate-600">
               <p className="font-semibold text-slate-950 dark:text-slate-100">Reenviar aviso de pedido em produção?</p>
               <p className="mt-1">
-                {aviso.estado === "desconhecido"
-                  ? "Não se sabe se o aviso anterior saiu. Confira no ChatGuru antes: se ele saiu, o cliente vai receber duas mensagens."
-                  : "O cliente vai receber outra mensagem pelo WhatsApp."}
+                {homologacao
+                  ? "A conversa de teste do Edison recebe outra mensagem com os dados deste pedido. O cliente não recebe nada."
+                  : aviso.estado === "desconhecido"
+                    ? "Não se sabe se o aviso anterior saiu. Confira no ChatGuru antes: se ele saiu, o cliente vai receber duas mensagens."
+                    : "O cliente vai receber outra mensagem pelo WhatsApp."}
               </p>
               <div className="mt-3 flex justify-end gap-2">
                 <button
@@ -456,7 +481,7 @@ export function AvisoProducaoModal({
                   Liberar número
                 </button>
               )}
-              {aviso && podeReenviar && (
+              {aviso && podeReenviar && !homologacao && (
                 <button
                   type="button"
                   disabled={ocupado}

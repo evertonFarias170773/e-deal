@@ -35,6 +35,14 @@ import {
   AVISO_PRODUCAO_EM_AJUSTE,
   SEM_LINK_APROVACAO,
   conferirEnvioProducao,
+  CONVERSA_TESTE_NOME,
+  CONVERSA_TESTE_OCUPADA,
+  INTERVALO_GURU_MS,
+  SEM_CONVERSA_TESTE,
+  TEXTO_HOMOLOGACAO,
+  conversaDeTeste,
+  conversaTesteOcupada,
+  emHomologacao,
   linkDoCliente,
   SEM_CONVERSA,
   conversasEscolhidas,
@@ -317,9 +325,11 @@ caso("L. conversa do ChatGuru", () => {
 });
 
 caso("M. produção: link do cliente e bloqueio", () => {
-  // Bloqueio: só modo teste e cliente #14.
+  // Bloqueio: só com o modo teste ligado. Desde 10/11/2026 o cliente real também
+  // passa (em homologação, para a conversa de teste).
   assert.throws(() => conferirEnvioProducao(false, 14), /Envio de aviso de produção em ajuste/);
-  assert.throws(() => conferirEnvioProducao(true, 70130), /Envio de aviso de produção em ajuste/);
+  assert.throws(() => conferirEnvioProducao(false, 70130), /Envio de aviso de produção em ajuste/);
+  assert.doesNotThrow(() => conferirEnvioProducao(true, 70130));
   assert.doesNotThrow(() => conferirEnvioProducao(true, 14));
   // Link: exatamente uma linha ativa do próprio pedido.
   assert.equal(linkDoCliente(24917, [{ numero_pedido: "24917", token: "ab12cd" }]), "https://imposition.ai-ideal.com.br/cliente/24917-ab12cd");
@@ -402,6 +412,33 @@ caso("Q. v19: Liberar número da trava compartilhada presa", () => {
   assert.throws(() => chaveDaTrava("b".repeat(64)), /indisponível/);
   assert.equal(TRAVA_NAO_PRESA, "A conversa deste aviso não está presa. Atualize a tela.");
   assert.equal(TRAVA_NAO_SOLTA, "Não foi possível soltar a conversa. Nada mudou. Tente de novo.");
+});
+
+caso("R. modo homologação", () => {
+  // Só com o modo teste ligado e pedido fora do cliente #14.
+  assert.equal(emHomologacao(true, 70130), true);
+  assert.equal(emHomologacao(true, "70130"), true);
+  assert.equal(emHomologacao(true, 14), false);
+  assert.equal(emHomologacao(false, 70130), false);
+  assert.equal(emHomologacao(false, 14), false);
+  // Conversa de teste: a única do cliente #14, ou a única com o nome dela.
+  const edison = { chat_id: "6071ddf6861416b62a289286", nome: CONVERSA_TESTE_NOME, numero: "555184608848" };
+  const outra = { chat_id: "x1", nome: "Outra - 14", numero: "5551999999999" };
+  assert.deepEqual(conversaDeTeste([edison]), edison);
+  assert.deepEqual(conversaDeTeste([outra, edison]), edison);
+  assert.throws(() => conversaDeTeste([]), /Conversa de teste do cliente #14 não encontrada/);
+  assert.throws(() => conversaDeTeste([outra, { ...outra, chat_id: "x2" }]), /não encontrada/);
+  // Regra dos 2 minutos: em andamento ou executado há menos de 120 s.
+  const agora = Date.parse("2026-11-10T15:00:00Z");
+  assert.equal(INTERVALO_GURU_MS, 120000);
+  assert.equal(conversaTesteOcupada({ emAndamento: true, ultimoExecutadoEm: null, agoraMs: agora }), true);
+  assert.equal(conversaTesteOcupada({ emAndamento: false, ultimoExecutadoEm: null, agoraMs: agora }), false);
+  assert.equal(conversaTesteOcupada({ emAndamento: false, ultimoExecutadoEm: "2026-11-10T14:58:01Z", agoraMs: agora }), true);
+  assert.equal(conversaTesteOcupada({ emAndamento: false, ultimoExecutadoEm: "2026-11-10T14:58:00Z", agoraMs: agora }), false);
+  assert.equal(conversaTesteOcupada({ emAndamento: false, ultimoExecutadoEm: "lixo", agoraMs: agora }), false);
+  assert.equal(CONVERSA_TESTE_OCUPADA, "Conversa de teste ocupada, tente em 2 minutos.");
+  assert.equal(TEXTO_HOMOLOGACAO, "Modo homologação: a mensagem vai para a conversa de teste do Edison, não para o cliente.");
+  assert.match(SEM_CONVERSA_TESTE, /Nada foi enviado/);
 });
 
 console.log(`\n${n} casos ok`);

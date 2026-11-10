@@ -28,6 +28,8 @@ export type ModeloAviso = {
   bloqueio: string | null;
   /** "Testar modelo": modo teste ligado e pedido do cliente #14 (o servidor decide e confere de novo). */
   testavel?: boolean;
+  /** Modo homologação (10/11/2026): modo teste ligado e pedido fora do cliente #14; o aviso vai para a conversa de teste. */
+  homologacao?: boolean;
 };
 
 /** Os seis diálogos do ChatGuru, na ordem do "Testar modelo". */
@@ -51,8 +53,10 @@ export type AvisoPronto = {
    */
   trava_compartilhada_presa?: boolean;
   modo_teste: boolean;
-  /** Envio do "Testar modelo" (não conta como aviso do pedido). */
+  /** Envio do "Testar modelo" ou da homologação (não conta como aviso do pedido). */
   teste?: boolean;
+  /** Modo homologação (10/11/2026): pedido de cliente real enviado para a conversa de teste. */
+  homologacao?: boolean;
   /** pedido_pronto (Expedição) ou pedido_em_producao (Liberar para Produção). */
   evento?: "pedido_pronto" | "pedido_em_producao";
   /** "Liberar número" (ADM): quem conferiu no ChatGuru, quando e o que respondeu (nulo: só soltou a conversa presa). */
@@ -91,6 +95,8 @@ type Resposta = {
   ok: boolean;
   mensagem?: string;
   modo_teste?: boolean;
+  /** Modo homologação: o envio foi (ou vai) para a conversa de teste do Edison, não para o cliente. */
+  homologacao?: boolean;
   ja_existia?: boolean;
   aviso?: AvisoPronto | null;
   avisos?: Record<string, AvisoPronto | null>;
@@ -129,6 +135,14 @@ type Resposta = {
 export type DiagnosticoChatGuru = { etapa: string; http: number | null; texto: string };
 
 const FUNCAO = "expedicao-pedido-pronto";
+
+/**
+ * Modo homologação (10/11/2026): com o modo teste ligado, pedido de cliente real
+ * envia com os dados dele, mas sempre para a conversa de teste "Edison Junior - 14"
+ * (cliente #14 no remetente 3478). Fica registrado à parte, fora do "já enviado".
+ */
+export const TEXTO_HOMOLOGACAO = "Modo homologação: a mensagem vai para a conversa de teste do Edison, não para o cliente.";
+export const CONVERSA_TESTE_OCUPADA = "Conversa de teste ocupada, tente em 2 minutos.";
 
 async function chamar(corpo: Record<string, unknown>): Promise<Resposta> {
   const supabase = getSupabaseClient();

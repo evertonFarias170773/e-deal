@@ -40,9 +40,13 @@ Com o secret gravado antes, a v19 já nasce pausada. Pausada, ela não chama a t
 | **Quem** | Vibe (deploy com autorização do dono) |
 | **Faz** | (a) No painel da Supabase, Edge Functions → Secrets, grava `CHATGURU_AVISOS_PAUSA` = `ligada`. (b) Faz o deploy da `expedicao-pedido-pronto` (v19) a partir do repositório. |
 | **Confere** | A função aparece com a versão nova no painel. No pedido de teste **24880**, "Avisar cliente" (ou "Testar modelo") volta "Envio de avisos pausado por alguns minutos. Tente de novo em instantes." e nenhuma linha nova aparece em `expedicao_aviso_pronto`. |
-| **Se não pausar** | Esperar 1 minuto e tentar de novo. Se seguir enviando, parar a janela e voltar a v18 (deploy do commit `46808cb5`). |
+| **Se não pausar** | Esperar 1 minuto e tentar de novo. Se seguir enviando, parar a janela e voltar à versão que estava no ar antes (ver "Versão de volta" abaixo). |
 
 Qualquer valor no secret diferente de vazio ou `desligada` também pausa: um erro de digitação deixa o Vibe parado, nunca enviando. O "Liberar número", a lista e "Ver conversas" seguem funcionando.
+
+**Versão de volta (10/11/2026).** Desde a homologação, a função de antes da janela é a **v20**: a v18 mais o modo homologação, sem a trava compartilhada. A fonte está em `supabase/edge-no-ar/expedicao-pedido-pronto/` (`index.ts` e `logica.ts`; a cópia de `transportadoras-parceiras.ts` vai como antes). Se a v20 ainda não tiver subido quando a janela abrir, a versão de volta continua sendo a v18 (commit `46808cb5`). A v19 do repositório já traz a homologação, então a ida não a perde.
+
+**Fichas da trava depois das da homologação.** Se as fichas da homologação (`CHATGURU-HOMOLOGACAO-FICHAS.patch`) já tiverem entrado no manual, o `CHATGURU-TRAVA-FICHAS.patch` não aplica mais como está: os dois mudam a linha "Última revisão" e o parágrafo "Envio em ajuste" de Pedidos. Antes da janela, gerar de novo o patch da trava sobre o manual atual.
 
 **Fichas do manual, no mesmo commit do deploy.** As fichas de Expedição e Pedidos com a trava compartilhada estão prontas em [CHATGURU-TRAVA-FICHAS.patch](CHATGURU-TRAVA-FICHAS.patch). Elas não entram antes porque o manual descreve o que está no ar, e o Maestro lê o manual. Logo depois do deploy:
 
@@ -221,7 +225,7 @@ select
 | | |
 |---|---|
 | **Quem** | Vibe, com autorização do dono para o deploy |
-| **Faz** | Deploy da `expedicao-pedido-pronto` no texto da v18 (commit `46808cb5`, que não usa a trava compartilhada). Depois, apaga o secret `CHATGURU_AVISOS_PAUSA`: a v18 não o lê. No mesmo commit, desfaz as fichas: `git revert <hash do commit das fichas>`. |
+| **Faz** | Deploy da `expedicao-pedido-pronto` na versão de volta (ver "Versão de volta" abaixo; nenhuma delas usa a trava compartilhada). Depois, apaga o secret `CHATGURU_AVISOS_PAUSA`: a versão de volta não o lê. No mesmo commit, desfaz as fichas: `git revert <hash do commit das fichas>`. |
 | **Confere** | Um aviso no 24880 (modo teste) chega e fica executado. Até esse deploy, a v19 não envia: está pausada e, sem a função `travar`, recusa tudo. |
 
 ## Pontos de atenção

@@ -75,7 +75,22 @@
  *                          ("Ver conversas do cliente"); não olha o modo teste.
  *
  * MODO TESTE: ligado enquanto CHATGURU_PEDIDO_PRONTO_MODO_TESTE não for
- * "desligado". Ligado, só pedido do cliente #14 (e contato do cliente #14).
+ * "desligado". Ligado, pedido do cliente #14 (e contato do cliente #14) envia como
+ * sempre, para a conversa do próprio cliente #14.
+ *
+ * MODO HOMOLOGAÇÃO (10/11/2026): com o modo teste ligado, pedido de cliente real
+ * (fora do #14) nos dois avisos (enviar/reenviar e producao_enviar) sai com os
+ * dados reais do pedido (número, nota, cidade, rastreio, link de aprovação), mas
+ * SEMPRE para a conversa de teste do cliente #14 no 3478 (logica.conversaDeTeste,
+ * "Edison Junior - 14"), nunca para o cliente; chat_ids/todas da tela são
+ * ignorados. Linha com envio_teste = true (publico.homologacao): fora do "já
+ * enviado", então o aviso de verdade continua possível com o modo teste
+ * desligado. Cada chamada é um envio novo. Regra dos 2 minutos: envio em
+ * andamento na conversa de teste, ou diálogo executado nela há menos de 120 s,
+ * recusa antes de reservar com "Conversa de teste ocupada, tente em 2 minutos."
+ * (nada gravado nem travado); a recusa dos 120 s do próprio ChatGuru vira o mesmo
+ * texto. A liberação para a produção não depende do envio. Desligar o modo teste
+ * continua sendo só pela variável do servidor.
  *
  * Recusa do ChatGuru por número ("Chat não encontrado."): a resposta traz o
  * número enviado e o chat_id, para a tela oferecer "Ver conversas do cliente".
@@ -145,6 +160,10 @@ import {
   modoDaLiberacao,
   podeTerTravaPresa,
   textoDaResposta,
+  CONVERSA_TESTE_OCUPADA,
+  conversaDeTeste,
+  conversaTesteOcupada,
+  emHomologacao,
   type EscolhaDialogo,
   type NomeDialogo
 } from "./logica.ts";
@@ -192,9 +211,12 @@ type Evento = "pedido_pronto" | "pedido_em_producao";
 const COLUNAS =
   "id, id_int, seq, estado, message_id, dialogo_id, destino_chave, modo_teste, autor_nome, criado_em, atualizado_em, liberado_por_nome, liberado_em, liberacao_resposta, envio_teste, evento, chat_id";
 
-function publico(r: Registro | null, presas?: Set<string>) {
+function publico(r: Registro | null, presas?: Set<string>, pedidoEmHomologacao = false) {
   if (!r) return null;
   return {
+    // Modo homologação (10/11/2026): envio de pedido de cliente real para a conversa
+    // de teste. É um envio_teste de pedido que não é do cliente #14.
+    homologacao: r.envio_teste === true && pedidoEmHomologacao,
     seq: r.seq,
     estado: r.estado,
     message_id: r.message_id,
@@ -232,6 +254,62 @@ async function ultimoRegistro(idInt: number, todos = false, evento: Evento = "pe
   const { data, error } = await q.order("seq", { ascending: false }).limit(1).maybeSingle();
   if (error) throw new Recusa(503, "Não foi possível ler o aviso no banco. Tente de novo.");
   return (data as Registro | null) ?? null;
+}
+
+/** Última homologação do pedido no evento (envio_teste de pedido fora do cliente #14). */
+async function ultimaHomologacao(idInt: number, evento: Evento): Promise<Registro | null> {
+  const { data, error } = await admin
+    .from("expedicao_aviso_pronto")
+    .select(COLUNAS)
+    .eq("id_int", idInt)
+    .eq("envio_teste", true)
+    .eq("evento", evento)
+    .order("seq", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new Recusa(503, "Não foi possível ler o aviso no banco. Tente de novo.");
+  return (data as Registro | null) ?? null;
+}
+
+/** Cliente do pedido (para saber se o envio é homologação). */
+async function clienteDoPedido(idInt: number): Promise<number | null> {
+  const { data, error } = await admin.from("propostas").select("id_cliente").eq("id_int", idInt).maybeSingle();
+  if (error) throw new Recusa(503, "Não foi possível ler o pedido. Tente de novo.");
+  if (!data) throw new Recusa(404, `Pedido ${idInt} não encontrado.`);
+  const n = Number(data.id_cliente);
+  return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * Homologação: a conversa de teste do cliente #14 no 3478, relida agora. Com
+ * `conferirOcupada`, aplica a regra dos 2 minutos antes de qualquer reserva:
+ * recusa sem gravar nem travar nada.
+ */
+async function conversaDaHomologacao(conferirOcupada: boolean): Promise<Conversa> {
+  const conversa = conversaDeTeste(await conversasDoCliente(CLIENTE_TESTE));
+  if (!conferirOcupada) return conversa;
+  const [andamento, executado] = await Promise.all([
+    admin.from("expedicao_aviso_pronto").select("estado").eq("chat_id", conversa.chat_id).in("estado", ["preparando", "desconhecido"]).limit(5),
+    admin
+      .from("expedicao_aviso_pronto")
+      .select("atualizado_em")
+      .eq("chat_id", conversa.chat_id)
+      .eq("estado", "executado")
+      .order("atualizado_em", { ascending: false })
+      .limit(1)
+  ]);
+  if (andamento.error || executado.error) throw new Recusa(503, "Não foi possível conferir a conversa de teste. Nada foi enviado.");
+  // Resultado desconhecido trava a conversa de teste como qualquer outra: só o ADM libera.
+  if ((andamento.data ?? []).some((r) => r.estado === "desconhecido")) {
+    throw new Recusa(409, "Há um aviso sem confirmação na conversa de teste. Nada foi enviado. Ela fica travada até o ADM usar Liberar número.");
+  }
+  const ocupada = conversaTesteOcupada({
+    emAndamento: (andamento.data ?? []).length > 0,
+    ultimoExecutadoEm: executado.data?.[0]?.atualizado_em ?? null,
+    agoraMs: Date.now()
+  });
+  if (ocupada) throw new Recusa(409, CONVERSA_TESTE_OCUPADA);
+  return conversa;
 }
 
 /** Usuário do Vibe pelo JWT + as permissões da Expedição (mesma regra da tela). */
@@ -393,7 +471,9 @@ async function contextoDoPedido(idInt: number, modoTeste: boolean, dialogoTeste:
     throw new Recusa(409, `O pedido ${idInt} não está pronto para expedir (status ${p.status_interno ?? "vazio"}).`);
   }
   if (dialogoTeste) conferirTeste(modoTeste, p.id_cliente);
-  conferirModoTeste(modoTeste, p.id_cliente);
+  // Homologação: pedido de cliente real com o modo teste ligado; vai para a conversa de teste.
+  const homologacao = !dialogoTeste && emHomologacao(modoTeste, p.id_cliente);
+  if (!homologacao) conferirModoTeste(modoTeste, p.id_cliente);
 
   const idContato = Number(String(p.id_contato ?? "").trim());
   if (!Number.isInteger(idContato) || idContato <= 0) {
@@ -411,7 +491,7 @@ async function contextoDoPedido(idInt: number, modoTeste: boolean, dialogoTeste:
     throw new Recusa(409, "O contato do pedido não pertence ao cliente nem ao faturado. Corrija o contato na proposta.");
   }
   if (dialogoTeste) conferirTeste(modoTeste, p.id_cliente, contato.id_cliente);
-  conferirModoTeste(modoTeste, p.id_cliente, contato.id_cliente);
+  if (!homologacao) conferirModoTeste(modoTeste, p.id_cliente, contato.id_cliente);
 
   const frete = (await fretesDosPedidos([idInt])).get(idInt);
   if (!frete) throw new Recusa(503, "Não foi possível ler a forma de envio do pedido.");
@@ -432,9 +512,9 @@ async function contextoDoPedido(idInt: number, modoTeste: boolean, dialogoTeste:
   const valores = { idInt, notaFiscal: await notaDoPedido(idInt), cidadeDestino: cidade, rastreio: frete.rastreio };
   if (dialogoTeste) {
     const t = camposDeTeste(dialogo, valores);
-    return { idCliente: p.id_cliente, idContato, contato, dialogo, campos: t.campos, teste: { valores: t.valores, de_teste: t.deTeste } };
+    return { idCliente: p.id_cliente, idContato, contato, dialogo, campos: t.campos, teste: { valores: t.valores, de_teste: t.deTeste }, homologacao: false };
   }
-  return { idCliente: p.id_cliente, idContato, contato, dialogo, campos: camposDoDialogo(dialogo, valores), teste: null };
+  return { idCliente: p.id_cliente, idContato, contato, dialogo, campos: camposDoDialogo(dialogo, valores), teste: null, homologacao };
 }
 
 /**
@@ -450,9 +530,11 @@ async function contextoProducao(idInt: number, modoTeste: boolean) {
     .maybeSingle();
   if (error) throw new Recusa(503, "Não foi possível ler o pedido. Tente de novo.");
   if (!p) throw new Recusa(404, `Pedido ${idInt} não encontrado.`);
-  // Bloqueio de 09/11: fora do modo teste ou fora do cliente #14, não envia.
+  // Bloqueio de 09/11: fora do modo teste, não envia. Com ele ligado, pedido de
+  // cliente real vai em homologação para a conversa de teste (10/11/2026).
   conferirEnvioProducao(modoTeste, p.id_cliente);
-  conferirModoTeste(modoTeste, p.id_cliente);
+  const homologacao = emHomologacao(modoTeste, p.id_cliente);
+  if (!homologacao) conferirModoTeste(modoTeste, p.id_cliente);
   const idContato = Number(String(p.id_contato ?? "").trim());
   if (!Number.isInteger(idContato) || idContato <= 0) {
     throw new Recusa(422, "O pedido não tem contato responsável. Escolha o contato na proposta.");
@@ -468,8 +550,8 @@ async function contextoProducao(idInt: number, modoTeste: boolean) {
   if (!donos.includes(Number(contato.id_cliente))) {
     throw new Recusa(409, "O contato do pedido não pertence ao cliente nem ao faturado. Corrija o contato na proposta.");
   }
-  conferirModoTeste(modoTeste, p.id_cliente, contato.id_cliente);
-  return { p, idContato, contato };
+  if (!homologacao) conferirModoTeste(modoTeste, p.id_cliente, contato.id_cliente);
+  return { p, idContato, contato, homologacao };
 }
 
 /** Link de aprovação do pedido (pedidos_links_cliente), só leitura. Ver logica.linkDoCliente. */
@@ -683,6 +765,8 @@ async function enviarParaConversas(p: {
   campos: Record<string, string>;
   conversas: Conversa[];
   ocultar: (string | null | undefined)[];
+  /** Homologação: a conversa é a de teste; ocupada ou recusa dos 120 s viram CONVERSA_TESTE_OCUPADA. */
+  homologacao?: boolean;
 }): Promise<ResultadoEnvio[]> {
   // v19: a pausa vale para todos os avisos, antes de qualquer reserva.
   conferirPausaDoServidor();
@@ -704,6 +788,11 @@ async function enviarParaConversas(p: {
       modoTeste: p.modoTeste
     });
     const vazio = { aviso: null, etapa_chatguru: null, motivo_chatguru: null, recusa_numero: null, diagnostico_chatguru: null };
+    if (res.resultado === "ocupado" && p.homologacao) {
+      // Outro envio pegou a conversa de teste depois da conferência dos 2 minutos.
+      out.push({ conversa, ...vazio, recusa: CONVERSA_TESTE_OCUPADA });
+      continue;
+    }
     if (res.resultado === "ocupado") {
       out.push({
         conversa,
@@ -723,7 +812,7 @@ async function enviarParaConversas(p: {
       out.push({
         conversa,
         ...vazio,
-        aviso: publico(falhou),
+        aviso: publico(falhou, undefined, p.homologacao),
         recusa: trava.resultado === "ocupado" ? TRAVA_OCUPADA : TRAVA_INDISPONIVEL
       });
       continue;
@@ -741,10 +830,10 @@ async function enviarParaConversas(p: {
     const soltou = como.soltar ? await soltarConversa(chave, trava.chave, como.executado) : null;
     out.push({
       conversa,
-      aviso: publico(r.resultado, soltou === "erro" ? new Set([r.resultado.id]) : undefined),
+      aviso: publico(r.resultado, soltou === "erro" ? new Set([r.resultado.id]) : undefined, p.homologacao),
       recusa: null,
       etapa_chatguru: r.resultado.estado === "executado" ? null : r.etapa,
-      motivo_chatguru: r.motivo,
+      motivo_chatguru: p.homologacao && r.motivo === TEMPO_MINIMO_GURU ? CONVERSA_TESTE_OCUPADA : r.motivo,
       recusa_numero: r.porNumero ? { numero_enviado: destino, chat_id: conversa.chat_id } : null,
       diagnostico_chatguru: p.quem.adm ? r.diagnostico : null
     });
@@ -804,17 +893,25 @@ async function listar(ids: unknown, modoTeste: boolean) {
   }
   // v19: conversa presa na trava compartilhada depois de um aviso já terminado.
   const presas = await travasPresas([...Object.values(ultimos), ...Object.values(ultimosTeste)]);
+  const fretes = await fretesDosPedidos(lista);
+  // Envio de teste de pedido fora do cliente #14 é homologação (10/11/2026).
+  const foraDoTeste = (id: number) => {
+    const c = fretes.get(id)?.idCliente;
+    return c != null && c !== CLIENTE_TESTE;
+  };
   const avisos: Record<number, ReturnType<typeof publico>> = {};
   const testes: Record<number, ReturnType<typeof publico>> = {};
   for (const r of Object.values(ultimos)) avisos[r.id_int] = publico(r, presas);
-  for (const r of Object.values(ultimosTeste)) testes[r.id_int] = publico(r, presas);
-  const modelos: Record<number, { dialogo: string | null; bloqueio: string | null; testavel: boolean }> = {};
-  for (const [id, f] of await fretesDosPedidos(lista)) {
+  for (const r of Object.values(ultimosTeste)) testes[r.id_int] = publico(r, presas, foraDoTeste(r.id_int));
+  const modelos: Record<number, { dialogo: string | null; bloqueio: string | null; testavel: boolean; homologacao: boolean }> = {};
+  for (const [id, f] of fretes) {
     modelos[id] = {
       dialogo: f.escolha.dialogo,
       bloqueio: f.escolha.bloqueio,
       // "Testar modelo" só existe com o modo teste ligado e para pedido do cliente #14.
-      testavel: modoTeste && f.idCliente === CLIENTE_TESTE
+      testavel: modoTeste && f.idCliente === CLIENTE_TESTE,
+      // Modo homologação: o aviso deste pedido vai para a conversa de teste.
+      homologacao: emHomologacao(modoTeste, f.idCliente)
     };
   }
   return { avisos, testes, modelos };
@@ -1046,7 +1143,10 @@ Deno.serve(async (req) => {
             : d.modo === "escolha"
               ? { modo: "escolha", motivo: d.motivo }
               : { modo: "sem_conversa", mensagem: SEM_CONVERSA },
-        envio_recusado_pelo_modo_teste: modoTeste && Number(pv.id_cliente) !== CLIENTE_TESTE
+        // Fora do cliente #14 com o modo teste ligado, o aviso vai em homologação para a
+        // conversa de teste: a lista do cliente é só para consulta.
+        envio_recusado_pelo_modo_teste: modoTeste && Number(pv.id_cliente) !== CLIENTE_TESTE,
+        homologacao: emHomologacao(modoTeste, pv.id_cliente)
       });
     }
 
@@ -1069,18 +1169,27 @@ Deno.serve(async (req) => {
         let bloqueio: string | null = null;
         let conversa: Conversa | null = null;
         let escolha: Destinos["escolha"] = null;
+        // Modo homologação: a janela mostra a conversa de teste e a última homologação.
+        const homologacaoP = emHomologacao(modoTeste, await clienteDoPedido(idP));
         try {
           conferirPausaDoServidor();
           const ctxP = await contextoProducao(idP, modoTeste);
           await linkDoPedido(idP);
-          const dest = await destinosDoAviso(ctxP.p.id_cliente, ctxP.contato.whats, {});
-          conversa = dest.conversas[0] ?? null;
-          escolha = dest.escolha;
+          if (ctxP.homologacao) {
+            conversa = await conversaDaHomologacao(false);
+          } else {
+            const dest = await destinosDoAviso(ctxP.p.id_cliente, ctxP.contato.whats, {});
+            conversa = dest.conversas[0] ?? null;
+            escolha = dest.escolha;
+          }
         } catch (e) {
           if (!(e instanceof Recusa)) throw e;
           bloqueio = e.message;
         }
-        return responder(200, { ok: true, modo_teste: modoTeste, destinatario, conversa, escolha, bloqueio, aviso: publico(ultimoP, await travasPresas([ultimoP])) });
+        const avisoP = homologacaoP
+          ? publico(await ultimaHomologacao(idP, "pedido_em_producao"), undefined, true)
+          : publico(ultimoP, await travasPresas([ultimoP]));
+        return responder(200, { ok: true, modo_teste: modoTeste, homologacao: homologacaoP, destinatario, conversa, escolha, bloqueio, aviso: avisoP });
       }
 
       // producao_enviar: modo teste e contato primeiro (recusa antes de olhar o resto).
@@ -1089,6 +1198,29 @@ Deno.serve(async (req) => {
         throw new Recusa(409, `O pedido ${idP} ainda não foi liberado para a produção. Nada foi enviado.`);
       }
       if ((ctxP.p.status_interno ?? "").toUpperCase() === "CANCELADO") throw new Recusa(409, "Pedido cancelado. Nada foi enviado.");
+      if (ctxP.homologacao) {
+        // Modo homologação: dados reais do pedido, sempre para a conversa de teste.
+        // Cada chamada é um envio novo; o aviso de verdade do pedido não é tocado.
+        if (corpo?.reenviar === true && corpo?.confirmado !== true) throw new Recusa(409, "Confirme o reenvio.");
+        conferirPausaDoServidor();
+        const linkH = await linkDoPedido(idP);
+        const conversaH = await conversaDaHomologacao(true);
+        const outH = await enviarParaConversas({
+          idInt: idP,
+          idContato: ctxP.idContato,
+          quem,
+          modoTeste,
+          evento: "pedido_em_producao",
+          envioTeste: true,
+          dialogoId: DIALOGO_PRODUCAO,
+          // O Link_do_Cliente do pedido só é gravado na conversa de teste.
+          campos: { field__Link_do_Cliente: linkH },
+          conversas: [conversaH],
+          ocultar: [ctxP.contato.whats, ctxP.contato.nome_contato, linkH],
+          homologacao: true
+        });
+        return respostaDosEnvios(modoTeste, outH, { homologacao: true });
+      }
       if (corpo?.reenviar === true) {
         if (!ultimoP) throw new Recusa(409, "Este pedido ainda não teve aviso de produção.");
         if (corpo?.confirmado !== true || Number(corpo?.seq_atual) !== ultimoP.seq) {
@@ -1150,6 +1282,29 @@ Deno.serve(async (req) => {
         ocultar: [ctxT.contato.whats, ctxT.contato.nome_contato]
       });
       return respostaDosEnvios(modoTeste, outT, { teste: ctxT.teste });
+    }
+
+    if (acao !== "status" && emHomologacao(modoTeste, await clienteDoPedido(idInt))) {
+      // Modo homologação (pedido pronto): dados reais do pedido, sempre para a
+      // conversa de teste. Não olha nem muda o aviso de verdade do pedido.
+      if (acao === "reenviar" && corpo?.confirmado !== true) throw new Recusa(409, "Confirme o reenvio.");
+      conferirPausaDoServidor();
+      const ctxH = await contextoDoPedido(idInt, modoTeste);
+      const conversaH = await conversaDaHomologacao(true);
+      const outH = await enviarParaConversas({
+        idInt,
+        idContato: ctxH.idContato,
+        quem,
+        modoTeste,
+        evento: "pedido_pronto",
+        envioTeste: true,
+        dialogoId: DIALOGOS[ctxH.dialogo].id,
+        campos: ctxH.campos,
+        conversas: [conversaH],
+        ocultar: [ctxH.contato.whats, ctxH.contato.nome_contato],
+        homologacao: true
+      });
+      return respostaDosEnvios(modoTeste, outH, { modelo: { dialogo: ctxH.dialogo, bloqueio: null }, homologacao: true });
     }
 
     const ultimo = await ultimoRegistro(idInt);

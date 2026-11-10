@@ -17,6 +17,7 @@ import {
   travaCompartilhadaPresa,
   textoDaLiberacao,
   TEXTO_TRAVA_PRESA,
+  TEXTO_HOMOLOGACAO,
   type RespostaLiberacao,
   reenviarAvisoPronto,
   type AvisoPronto,
@@ -56,6 +57,11 @@ const SEM_MODELO = "Sem modelo de mensagem para esta forma de envio.";
  *
  * "Testar modelo" (TestarModeloAviso): só com o modo teste ligado e em pedido do
  * cliente #14 (modelo.testavel, decidido no servidor).
+ *
+ * Modo homologação (10/11/2026, modelo.homologacao): modo teste ligado e pedido de
+ * cliente real. O botão vira "Enviar homologação" e manda os dados do pedido para a
+ * conversa de teste do Edison, nunca para o cliente. A homologação fica à parte
+ * (prop `teste`), fora do aviso do pedido; cada clique é um envio novo.
  */
 export function AvisoPedidoPronto({
   idInt,
@@ -97,6 +103,7 @@ export function AvisoPedidoPronto({
   if ((statusInterno ?? "").toUpperCase() !== "EXPEDICAO") return null;
   // Forma de envio sem diálogo, ou SEDEX sem etiqueta: botão apagado com o aviso.
   const bloqueio = modelo ? (modelo.bloqueio ?? (modelo.dialogo ? null : SEM_MODELO)) : null;
+  const homologacao = modelo?.homologacao === true;
   if (!aviso && !podeOperar) return null;
 
   async function avisar(selecao?: SelecaoConversas) {
@@ -204,7 +211,13 @@ export function AvisoPedidoPronto({
   ) {
     if (!a) return;
     const naEtapa = etapa === "campos" ? " (na gravação dos campos)" : etapa === "dialogo" ? " (na execução do diálogo)" : "";
-    if (a.estado === "executado" || a.estado === "enviado" || a.estado === "aguardando") {
+    if (a.homologacao && a.estado === "executado") {
+      showToast({
+        type: "success",
+        title: "Homologação enviada",
+        description: `Pedido ${idInt}: ${a.dialogo ? `diálogo ${a.dialogo}, ` : ""}mensagem na conversa de teste do Edison, não para o cliente.`
+      });
+    } else if (a.estado === "executado" || a.estado === "enviado" || a.estado === "aguardando") {
       showToast({
         type: "success",
         title: "Aviso enviado",
@@ -249,6 +262,17 @@ export function AvisoPedidoPronto({
       onClose={() => setConversas(null)}
     />
   ) : null;
+  const linhaHomologacao = homologacao ? (
+    <span className="max-w-[18rem] text-right text-[11px] font-semibold text-sky-800 dark:text-sky-200">
+      {TEXTO_HOMOLOGACAO}
+      {teste?.homologacao && (
+        <span className="block font-normal text-slate-600 dark:text-slate-300">
+          Última homologação em {formatDateTime(teste.criado_em)} por {teste.autor_nome || "—"}: {ROTULO_ESTADO_AVISO[teste.estado] ?? teste.estado}
+          {teste.dialogo ? ` · ${teste.dialogo}` : ""}
+        </span>
+      )}
+    </span>
+  ) : null;
   const painelTeste =
     modoTeste && podeOperar && modelo?.testavel ? (
       <TestarModeloAviso idInt={idInt} teste={teste} ehAdm={ehAdm} onAviso={onAviso} />
@@ -265,10 +289,13 @@ export function AvisoPedidoPronto({
           className={`inline-flex items-center gap-1 rounded-2xl border border-emerald-300 bg-emerald-50 px-2.5 py-1.5 ${texto} font-semibold text-emerald-800 transition hover:bg-emerald-100 disabled:opacity-50 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200`}
         >
           <MessageCircle className="h-3.5 w-3.5" />
-          {ocupado ? "Enviando..." : `Avisar cliente: pedido pronto${modelo?.dialogo ? ` (${modelo.dialogo})` : ""}`}
+          {ocupado
+            ? "Enviando..."
+            : `${homologacao ? "Enviar homologação" : "Avisar cliente"}: pedido pronto${modelo?.dialogo ? ` (${modelo.dialogo})` : ""}`}
         </button>
         {bloqueio && <span className="max-w-[16rem] text-right text-[11px] text-slate-600 dark:text-slate-300">{bloqueio}</span>}
-        {modoTeste && <span className="text-[10px] font-semibold uppercase text-amber-700 dark:text-amber-300">modo teste</span>}
+        {modoTeste && !homologacao && <span className="text-[10px] font-semibold uppercase text-amber-700 dark:text-amber-300">modo teste</span>}
+        {linhaHomologacao}
         {painelTeste}
         {janelaConversas}
       </div>
@@ -347,7 +374,7 @@ export function AvisoPedidoPronto({
       )}
       {podeOperar && (
         <span className="flex gap-2">
-          {aviso.estado !== "preparando" && !travado && !presa && !bloqueio && (
+          {aviso.estado !== "preparando" && !travado && !presa && !bloqueio && !homologacao && (
             <button
               type="button"
               disabled={ocupado}
@@ -379,6 +406,7 @@ export function AvisoPedidoPronto({
           )}
         </span>
       )}
+      {linhaHomologacao}
       {janelaConversas}
       {liberando && (
         <LiberarNumeroModal
@@ -393,11 +421,13 @@ export function AvisoPedidoPronto({
         <ConfirmarAcaoModal
           titulo="Reenviar aviso de pedido pronto?"
           descricao={
-            aviso.estado === "desconhecido"
+            homologacao
+              ? `A conversa de teste do Edison recebe outra mensagem com os dados do pedido ${idInt}. O cliente não recebe nada.`
+              : aviso.estado === "desconhecido"
               ? `Não se sabe se o aviso anterior do pedido ${idInt} saiu. Confira no ChatGuru antes: se ele saiu, o cliente vai receber duas mensagens.`
               : `O cliente do pedido ${idInt} vai receber outra mensagem pelo WhatsApp.`
           }
-          detalhe={modoTeste ? "Modo teste: só pedidos e contatos do cliente #14." : undefined}
+          detalhe={homologacao ? TEXTO_HOMOLOGACAO : modoTeste ? "Modo teste: só pedidos e contatos do cliente #14." : undefined}
           rotuloConfirmar={ocupado ? "Enviando..." : "Reenviar"}
           salvando={ocupado}
           onConfirmar={() => void reenviar()}

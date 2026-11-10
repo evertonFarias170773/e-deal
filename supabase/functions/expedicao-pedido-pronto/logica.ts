@@ -520,10 +520,54 @@ export const PORTAL_CLIENTE = "https://imposition.ai-ideal.com.br";
 /**
  * Enquanto o Vibe e o envio de arte do Imposition não respeitam a mesma trava por
  * conversa (imposition_whatsapp_conversas), o aviso de produção só sai no modo
- * teste e só para o cliente #14. Fora disso: "Envio de aviso de produção em ajuste".
+ * teste: pedido do cliente #14 como sempre, e pedido de cliente real em
+ * homologação (vai para a conversa de teste, 10/11/2026). Com o modo teste
+ * desligado: "Envio de aviso de produção em ajuste".
  */
-export function conferirEnvioProducao(modoTeste: boolean, idClientePedido: unknown): void {
-  if (!modoTeste || Number(idClientePedido) !== CLIENTE_TESTE) throw new Recusa(423, AVISO_PRODUCAO_EM_AJUSTE);
+export function conferirEnvioProducao(modoTeste: boolean, _idClientePedido?: unknown): void {
+  if (!modoTeste) throw new Recusa(423, AVISO_PRODUCAO_EM_AJUSTE);
+}
+
+// --- Modo homologação (10/11/2026) ---
+//
+// Com o modo teste ligado, pedido de cliente real (fora do #14) não é mais recusado
+// nos dois avisos (pedido pronto e pedido em produção): a mensagem sai com os dados
+// reais do pedido, mas SEMPRE para a conversa de teste do cliente #14 no remetente
+// 3478 ("Edison Junior - 14"), nunca para o cliente. Os campos do diálogo (inclusive
+// o Link_do_Cliente) só são gravados nessa conversa. A linha fica com
+// envio_teste = true: não conta como aviso já enviado do pedido, e o aviso de
+// verdade continua possível quando o modo teste for desligado.
+
+export const CONVERSA_TESTE_NOME = "Edison Junior - 14";
+export const TEXTO_HOMOLOGACAO = "Modo homologação: a mensagem vai para a conversa de teste do Edison, não para o cliente.";
+export const CONVERSA_TESTE_OCUPADA = "Conversa de teste ocupada, tente em 2 minutos.";
+export const SEM_CONVERSA_TESTE = "Conversa de teste do cliente #14 não encontrada no ChatGuru (remetente 3478). Nada foi enviado.";
+/** Regra do ChatGuru: 120 s entre diálogos executados na mesma conversa. */
+export const INTERVALO_GURU_MS = 120_000;
+
+/** Homologação: modo teste ligado e pedido de cliente que não é o #14. */
+export function emHomologacao(modoTeste: boolean, idClientePedido: unknown): boolean {
+  return modoTeste && Number(idClientePedido) !== CLIENTE_TESTE;
+}
+
+/** A conversa de teste entre as do cliente #14: a única, ou a única com o nome dela. */
+export function conversaDeTeste(lista: Conversa[]): Conversa {
+  if (lista.length === 1) return lista[0];
+  const porNome = lista.filter((c) => c.nome.trim() === CONVERSA_TESTE_NOME);
+  if (porNome.length === 1) return porNome[0];
+  throw new Recusa(422, SEM_CONVERSA_TESTE);
+}
+
+/**
+ * Regra dos 2 minutos na conversa de teste: há envio em andamento nela, ou o último
+ * diálogo executado nela foi há menos de 120 s. O aviso é recusado antes de reservar
+ * (nada é gravado nem travado).
+ */
+export function conversaTesteOcupada(p: { emAndamento: boolean; ultimoExecutadoEm: string | null | undefined; agoraMs: number }): boolean {
+  if (p.emAndamento) return true;
+  if (!p.ultimoExecutadoEm) return false;
+  const t = Date.parse(p.ultimoExecutadoEm);
+  return Number.isFinite(t) && p.agoraMs - t < INTERVALO_GURU_MS;
 }
 
 /**
