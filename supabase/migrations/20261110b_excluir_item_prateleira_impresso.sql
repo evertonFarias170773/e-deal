@@ -1,7 +1,9 @@
 -- =============================================================================
--- EXCLUIR ITEM DE PRATELEIRA COM MODELO IMPRESSO (10/11/2026) — NÃO APLICADA
+-- EXCLUIR ITEM DE PRATELEIRA COM MODELO IMPRESSO (10/11/2026) — AUTORIZADA em 10/11/2026, aplicar no SQL Editor
 --
--- Espera o OK do Edison: o gatilho alterado (carimba_status_impressao_em) é do
+-- Autorizada pelo Everton, sem esperar a aprovação do Imposition, depois
+-- do teste com ROLLBACK no SQL Editor (A sai com o Histórico; B, C, D e E
+-- barrados). O gatilho alterado (carimba_status_impressao_em) é do
 -- lado Imposition (usa a variável imposition.retorno_manual_modelo e a RPC
 -- retornar_impressao_aguardando). Não está no repositório do Vibe nem no
 -- histórico de migrations.

@@ -1,9 +1,9 @@
 # Excluir item de prateleira com modelo impresso
 
 > **Data:** 10/11/2026
-> **Situação:** migração pronta, **não aplicada**. Espera o OK do Edison, porque o gatilho alterado é do lado Imposition.
+> **Situação:** aplicação **autorizada** pelo Everton em 10/11, sem esperar o Imposition. Pela sessão do agente a aplicação foi recusada; o dono roda a migração no SQL Editor.
 > **Arquivos:**
-> - Migração: [EXCLUIR-ITEM-PRATELEIRA-IMPRESSO-MIGRACAO.sql](EXCLUIR-ITEM-PRATELEIRA-IMPRESSO-MIGRACAO.sql)
+> - Migração: [20261110b_excluir_item_prateleira_impresso.sql](../../supabase/migrations/20261110b_excluir_item_prateleira_impresso.sql)
 > - Teste com ROLLBACK: [EXCLUIR-ITEM-PRATELEIRA-IMPRESSO-TESTE.sql](EXCLUIR-ITEM-PRATELEIRA-IMPRESSO-TESTE.sql)
 
 ## Decisão
@@ -188,7 +188,7 @@ Arquivo: [EXCLUIR-ITEM-PRATELEIRA-IMPRESSO-TESTE.sql](EXCLUIR-ITEM-PRATELEIRA-IM
 | D. Modelo impresso apagado direto | DELETE do 1007015 sem excluir o item | BARRADO, 23514 |
 | E. Marca forjada | `vibe.exclusao_item_prateleira = 5420` ligada à mão e DELETE direto do 1007015 | BARRADO, 23514 |
 
-**Resultado:** pendente. O teste não rodou pela sessão do agente, porque a execução no banco de produção foi recusada pela permissão. O dono vai rodar no SQL Editor.
+**Resultado (10/11, rodado pelo dono no SQL Editor):** A saiu, com a linha no Histórico; B, C, D e E barrados. Conferido depois, por leitura: o teste não deixou nada no banco (item 5420 e modelo 1007015 presentes, 24985 em NOVO sem pagamento nem Histórico novo, gatilho e função como antes).
 
 ## Depois de aplicada
 

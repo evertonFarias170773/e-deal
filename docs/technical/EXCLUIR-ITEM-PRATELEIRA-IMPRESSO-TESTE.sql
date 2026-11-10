@@ -1,4 +1,4 @@
--- TESTE COM ROLLBACK da EXCLUIR-ITEM-PRATELEIRA-IMPRESSO-MIGRACAO.sql (10/11/2026).
+-- TESTE COM ROLLBACK da supabase/migrations/20261110b_excluir_item_prateleira_impresso.sql (10/11/2026).
 -- Aplica a migracao e roda os casos A-E dentro de UMA transacao, que sempre termina em erro
 -- (ZZ999 com o resultado em JSON na mensagem, e SELECT 1/0 de reserva): nada fica gravado.
 -- Rodar no SQL Editor (postgres). Para o retrato de HOJE, rode so o bloco DO (sem a migracao).
