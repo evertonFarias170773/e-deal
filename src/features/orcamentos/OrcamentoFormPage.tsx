@@ -71,6 +71,7 @@ import {
   sortEnderecosPorPrioridade
 } from "@/features/orcamentos/orcamento-utils";
 import { bonusDaEdicao } from "@/features/orcamentos/lib/bonus-da-proposta";
+import { motivoDaExclusaoRecusada } from "@/features/orcamentos/lib/motivo-exclusao-produto";
 import { bonusPercentDosItens, resumoNoCentavo } from "@/features/orcamentos/lib/total-no-centavo";
 import { contatosDaEdicao } from "@/features/orcamentos/lib/contato-da-edicao";
 import { contatosParaEscolher, primeiroContatoAtivo } from "@/features/cadastros/lib/contatos-ativos";
@@ -3379,7 +3380,8 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
           showToast({
             type: "error",
             title: "Erro ao excluir produto",
-            description: "Não foi possível remover o produto. Tente novamente."
+            // O motivo real (ex.: modelo já marcado como impresso), não "tente novamente".
+            description: motivoDaExclusaoRecusada(deleteError)
           });
           return; // Produto NÃO some da tela
         }

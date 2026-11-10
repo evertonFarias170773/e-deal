@@ -167,6 +167,38 @@ export function listarAvisosPronto(ids: number[]) {
   return chamar({ acao: "listar", ids });
 }
 
+/**
+ * Status em que o aviso de pedido pronto pode sair (v23, 10/11/2026): na bancada
+ * e logo depois do despacho (SEDEX e PAC vão para EM TRANSITO, a retirada para
+ * A RETIRAR). Mesma lista de STATUS_AVISO_PRONTO na lógica da Edge Function, que
+ * é quem confere de verdade.
+ */
+export const STATUS_AVISO_PRONTO = ["EXPEDICAO", "A RETIRAR", "EM TRANSITO"] as const;
+
+export function statusPermiteAvisoPronto(status: string | null | undefined): boolean {
+  return (STATUS_AVISO_PRONTO as readonly string[]).includes((status ?? "").trim().toUpperCase());
+}
+
+/** Forma de envio que está na janela do despacho, ainda não gravada. */
+export type DespachoParaAviso = {
+  tipo_frete: string | null;
+  modalidade_frete: string | null;
+  transportadora_nome: string | null;
+  id_transportadora_cliente: number | null;
+  rastreio: string | null;
+  id_endereco_entrega: string | null;
+};
+
+/**
+ * Só leitura (v23): o que a caixa "Avisar o cliente pelo WhatsApp" da janela do
+ * despacho mostra antes de confirmar: o último aviso, o modelo pela forma de envio
+ * da tela, para qual conversa vai (ou a escolha) e, se o envio seria recusado, o
+ * motivo. Nada é gravado nem enviado.
+ */
+export function prepararAvisoPronto(idInt: number, despacho: DespachoParaAviso) {
+  return chamar({ acao: "preparar", id_int: idInt, despacho });
+}
+
 /** Seleção da tela no formato do servidor (chat_ids ou todas). */
 function comSelecao(selecao?: SelecaoConversas): Record<string, unknown> {
   if (!selecao) return {};

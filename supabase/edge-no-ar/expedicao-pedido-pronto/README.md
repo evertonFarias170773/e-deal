@@ -1,4 +1,10 @@
-# expedicao-pedido-pronto: v22 (fora de supabase/functions de propósito)
+# expedicao-pedido-pronto: v23 (fora de supabase/functions de propósito)
+
+**v23 (10/11/2026), código nesta pasta:** a v22 com o aviso de pedido pronto no clique do "Confirmar despacho".
+- `enviar` e `reenviar` aceitam o pedido em EXPEDICAO, A RETIRAR ou EM TRANSITO (`logica.STATUS_AVISO_PRONTO`), porque o despacho já mudou o status quando o aviso sai.
+- Ação nova `preparar` (só leitura): para a caixa da janela do despacho, o último aviso, o modelo pela forma de envio que está na tela (`logica.despachoDaTela`), a conversa ou a escolha e o motivo de bloqueio. Nada é gravado.
+- Aviso de produção e trava: sem mudança. A v19 da janela (`supabase/functions/`) **não** tem a v23: antes da janela da trava, levar estas duas mudanças para ela.
+- Teste: `node --experimental-strip-types scripts/testes/expedicao-aviso-pronto-v23.test.mts`.
 
 A v19 em `supabase/functions/expedicao-pedido-pronto/` usa a trava compartilhada com o Imposition. Ela só pode subir na janela da trava (docs/technical/CHATGURU-TRAVA-JANELA.md): antes da migração, ela não envia nada, porque falha fechado.
 

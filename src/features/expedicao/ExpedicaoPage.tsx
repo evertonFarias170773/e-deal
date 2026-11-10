@@ -72,8 +72,8 @@ import type { GrupoVinculado } from "./lib/vinculos-do-painel";
 import { useVinculosDoPainel } from "./hooks/useVinculosDoPainel";
 import { useInstrucoesDeEntrega } from "./hooks/useInstrucoesDeEntrega";
 import { AvisoInstrucaoEntrega } from "./components/AvisoInstrucaoEntrega";
-import { AvisoPedidoPronto } from "./components/AvisoPedidoPronto";
-import { useAvisosPedidoPronto } from "./hooks/useAvisosPedidoPronto";
+import { AvisarClienteModal } from "./components/AvisarClienteModal";
+import { statusPermiteAvisoPronto } from "./services/aviso-pronto.client";
 import { classeFaixaDoCard, destaqueDoCard } from "./lib/vinculos-do-painel";
 import type { EtapaExpedicao, PedidoExpedicao, TipoFreteNormalizado } from "./types";
 
@@ -204,26 +204,10 @@ export function ExpedicaoPage() {
   const podeSoltarDoGrupo = Boolean(user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "expedicao.admin"));
   const [isLoaded, setIsLoaded] = useState(false);
   const canOperar = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "expedicao.processar");
-  // Aviso "pedido pronto" pelo ChatGuru (06/11/2026): ultimo aviso dos pedidos na
-  // bancada, lido pela Edge Function (a tabela e so do service_role).
-  const avisosPronto = useAvisosPedidoPronto(pedidos, Boolean(user));
-  function avisoPronto(p: PedidoExpedicao, compacto = false) {
-    return (
-      <AvisoPedidoPronto
-        idInt={p.idInt}
-        statusInterno={p.statusInterno}
-        aviso={avisosPronto.avisos.get(p.idInt)}
-        modoTeste={avisosPronto.modoTeste}
-        podeOperar={Boolean(canOperar)}
-        ehAdm={Boolean(user?.isSuperAdmin || user?.isAdmin)}
-        recusaNumero={avisosPronto.recusas.get(p.idInt)}
-        modelo={avisosPronto.modelos.get(p.idInt)}
-        teste={avisosPronto.testes.get(p.idInt)}
-        compacto={compacto}
-        onAviso={avisosPronto.atualizar}
-      />
-    );
-  }
+  // Aviso "pedido pronto" pelo ChatGuru (06/11/2026). Desde 10/11/2026 sai no
+  // "Confirmar despacho" (caixa na janela do despacho); o botão saiu da frente do
+  // card e o reenvio fica no menu ⋯, em "Avisar cliente" (AvisarClienteModal).
+  const [pedidoAviso, setPedidoAviso] = useState<PedidoExpedicao | null>(null);
   // Telefone do destinatario editavel no despacho: quem pode editar cadastros (`cadastros.edit`).
   const podeEditarCadastro = Boolean(user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "cadastros.edit"));
   /**
@@ -576,6 +560,9 @@ export function ExpedicaoPage() {
       // o que foi produzido, não a negociação. Sempre `modo=edicao` — pedido que
       // chegou à expedição já tem OS aberta.
       { label: "Boletim da produção", onClick: () => router.push(`/pedidos/boletim?id_int=${p.idInt}&modo=edicao`) },
+      // Aviso pelo WhatsApp (10/11/2026): sai no Confirmar despacho; aqui o reenvio,
+      // na bancada e logo depois do despacho (EXPEDICAO, A RETIRAR, EM TRANSITO).
+      ...(statusPermiteAvisoPronto(p.statusInterno) ? [{ label: "Avisar cliente", onClick: () => setPedidoAviso(p) }] : []),
       // Liberacao da recotacao de frete. Sem filtro por modalidade de proposito:
       // o admin costuma liberar ANTES de o expedidor declarar CIF na bancada, e
       // esconder o item nesse momento o deixaria sem affordance e sem
@@ -1208,7 +1195,6 @@ export function ExpedicaoPage() {
           etapaFiltro={filters.etapa}
           vinculosPorPedido={vinculosPorPedido}
           instrucoesPorPedido={instrucoesPorPedido}
-          rodapeDoCard={(p) => avisoPronto(p, true)}
           onSoltarDoGrupo={podeSoltarDoGrupo ? (idInt, grupo) => setSoltarAlvo({ idInt, grupo }) : undefined}
         />
       ) : (
@@ -1450,7 +1436,6 @@ export function ExpedicaoPage() {
                     )}
                     <ActionsMenu items={acoesMenu} />
                   </div>
-                  {avisoPronto(p)}
                 </div>
               );
             }
@@ -1587,7 +1572,6 @@ export function ExpedicaoPage() {
                 )}
                 <ActionsMenu items={acoesMenu} />
               </div>
-              {avisoPronto(p)}
             </article>
           );
         }}
@@ -1603,8 +1587,18 @@ export function ExpedicaoPage() {
           podeLiberarDespacho={canAdminExpedicao}
           podeEditarTelefone={podeEditarCadastro}
           ehAdmNoCadastro={user?.isAdmNoCadastro === true}
+          podeAvisarCliente={Boolean(canOperar)}
           onClose={() => setPedidoDespacho(null)}
           onDone={() => { setPedidoDespacho(null); void recarregar(); }}
+        />
+      )}
+      {pedidoAviso && (
+        <AvisarClienteModal
+          idInt={pedidoAviso.idInt}
+          statusInterno={pedidoAviso.statusInterno}
+          podeOperar={Boolean(canOperar)}
+          ehAdm={Boolean(user?.isSuperAdmin || user?.isAdmin)}
+          onClose={() => setPedidoAviso(null)}
         />
       )}
       {pedidoRetirada && (

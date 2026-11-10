@@ -10,12 +10,22 @@
  *   status   { id_int }                       message_status, só para avisos antigos (message_send)
  *   liberar  { id_int, seq, resposta, confirmado } só ADM: aviso de diálogo em 'desconhecido'
  *            depois de conferir no ChatGuru; "enviada" -> 'executado', "nao_enviada" -> 'falhou'
+ *   preparar { id_int, despacho? }            só leitura (v23, 10/11/2026): para a janela do
+ *            despacho, o último aviso, o modelo pela forma de envio que está na tela
+ *            (despacho: tipo_frete, modalidade_frete, transportadora_nome,
+ *            id_transportadora_cliente, rastreio, id_endereco_entrega; nada é gravado),
+ *            para qual conversa vai (ou a escolha) e, se o envio seria recusado, o motivo
  *   testar   { id_int, dialogo, confirmado }   "Testar modelo": só modo teste e cliente #14;
  *            diálogo escolhido na tela, sem olhar a forma de envio; campo que o
  *            pedido não tem vai com valor de teste (logica.camposDeTeste). Linha
  *            nova com envio_teste = true: não conta como "aviso já enviado", mas a
  *            trava por conversa vale igual.
- * enviar/reenviar/status/testar exigem expedicao.processar (ou ADM).
+ * enviar/reenviar/status/testar/preparar exigem expedicao.processar (ou ADM).
+ *
+ * v23 (10/11/2026): o aviso de pedido pronto sai no clique do "Confirmar despacho",
+ * logo depois de o despacho ser gravado. Por isso enviar e reenviar aceitam o pedido
+ * em EXPEDICAO, A RETIRAR ou EM TRANSITO (logica.STATUS_AVISO_PRONTO); antes, só
+ * EXPEDICAO. O resto do envio não mudou.
  *
  * AVISO "PEDIDO EM PRODUÇÃO" (07/11/2026), fora da Expedição, mesma tabela com
  * evento = 'pedido_em_producao' (o pedido pronto é 'pedido_pronto'):
@@ -131,6 +141,9 @@ import {
   nomeDoDialogo,
   notaParaODialogo,
   rastreioCorreiosValido,
+  despachoDaTela,
+  statusPermiteAvisoPronto,
+  type DespachoDaTela,
   recusaPorNumero,
   recusaTempoMinimo,
   TEMPO_MINIMO_GURU,
@@ -331,7 +344,7 @@ type Frete = {
  * Forma de envio e diálogo de cada pedido, em lote (o listar da tela e o envio
  * usam o mesmo caminho). Só leitura.
  */
-async function fretesDosPedidos(ids: number[]): Promise<Map<number, Frete>> {
+async function fretesDosPedidos(ids: number[], tela: DespachoDaTela | null = null): Promise<Map<number, Frete>> {
   const mapa = new Map<number, Frete>();
   for (let i = 0; i < ids.length; i += 200) {
     const lote = ids.slice(i, i + 200);
@@ -367,11 +380,19 @@ async function fretesDosPedidos(ids: number[]): Promise<Map<number, Frete>> {
     for (const p of propRes.data ?? []) {
       const idInt = Number(p.id_int);
       const e = exps.get(idInt) ?? null;
-      const rastreio = e && !e.prepostagem_cancelada_em
-        ? rastreioCorreiosValido(e.correios_codigo_objeto as string | null, e.codigo_rastreamento as string | null)
-        : null;
+      // "preparar" (v23): o rastreio digitado na janela conta como o que o despacho
+      // vai gravar em codigo_rastreamento; prepostagem cancelada continua sem rastreio.
+      const rastreio = tela
+        ? e?.prepostagem_cancelada_em
+          ? null
+          : rastreioCorreiosValido(e?.correios_codigo_objeto as string | null, tela.rastreio)
+        : e && !e.prepostagem_cancelada_em
+          ? rastreioCorreiosValido(e.correios_codigo_objeto as string | null, e.codigo_rastreamento as string | null)
+          : null;
       const escolha = escolherDialogo({
-        despacho: e
+        despacho: tela
+          ? tela.despacho
+          : e
           ? {
               tipo_frete: e.tipo_frete as string | null,
               modalidade_frete: e.modalidade_frete as string | null,
@@ -389,7 +410,8 @@ async function fretesDosPedidos(ids: number[]): Promise<Map<number, Frete>> {
         },
         rastreioCorreios: rastreio
       });
-      const idEndereco = String((e?.id_endereco_entrega as string | null) ?? p.id_endereco_ent ?? "").trim() || null;
+      const idEndereco =
+        tela?.idEnderecoEntrega ?? (String((e?.id_endereco_entrega as string | null) ?? p.id_endereco_ent ?? "").trim() || null);
       const idCliente = Number(p.id_cliente);
       mapa.set(idInt, { escolha, rastreio, idEndereco, idCliente: Number.isFinite(idCliente) ? idCliente : null });
     }
@@ -430,7 +452,12 @@ async function notaDoPedido(idInt: number): Promise<string> {
  * `dialogoTeste` ("Testar modelo"): usa esse diálogo sem olhar a forma de envio,
  * e o campo que o pedido não tem vai com o valor de teste.
  */
-async function contextoDoPedido(idInt: number, modoTeste: boolean, dialogoTeste: NomeDialogo | null = null) {
+async function contextoDoPedido(
+  idInt: number,
+  modoTeste: boolean,
+  dialogoTeste: NomeDialogo | null = null,
+  tela: DespachoDaTela | null = null
+) {
   const { data: p, error } = await admin
     .from("propostas")
     .select("id_int, id_cliente, id_faturado, id_contato, status_interno")
@@ -438,8 +465,9 @@ async function contextoDoPedido(idInt: number, modoTeste: boolean, dialogoTeste:
     .maybeSingle();
   if (error) throw new Recusa(503, "Não foi possível ler o pedido. Tente de novo.");
   if (!p) throw new Recusa(404, `Pedido ${idInt} não encontrado.`);
-  if ((p.status_interno ?? "").toUpperCase() !== "EXPEDICAO") {
-    throw new Recusa(409, `O pedido ${idInt} não está pronto para expedir (status ${p.status_interno ?? "vazio"}).`);
+  // v23: na bancada ou logo depois do despacho (A RETIRAR, EM TRANSITO).
+  if (!statusPermiteAvisoPronto(p.status_interno)) {
+    throw new Recusa(409, `O pedido ${idInt} não está na Expedição (status ${p.status_interno ?? "vazio"}). Nada foi enviado.`);
   }
   if (dialogoTeste) conferirTeste(modoTeste, p.id_cliente);
   // Homologação: pedido de cliente real com o modo teste ligado; vai para a conversa de teste.
@@ -464,7 +492,7 @@ async function contextoDoPedido(idInt: number, modoTeste: boolean, dialogoTeste:
   if (dialogoTeste) conferirTeste(modoTeste, p.id_cliente, contato.id_cliente);
   if (!homologacao) conferirModoTeste(modoTeste, p.id_cliente, contato.id_cliente);
 
-  const frete = (await fretesDosPedidos([idInt])).get(idInt);
+  const frete = (await fretesDosPedidos([idInt], tela)).get(idInt);
   if (!frete) throw new Recusa(503, "Não foi possível ler a forma de envio do pedido.");
   let dialogo: NomeDialogo;
   if (dialogoTeste) {
@@ -1064,10 +1092,48 @@ Deno.serve(async (req) => {
       return respostaDosEnvios(modoTeste, outP);
     }
 
-    if (!["enviar", "reenviar", "status", "testar"].includes(acao)) throw new Recusa(400, "Ação inválida.");
+    if (!["enviar", "reenviar", "status", "testar", "preparar"].includes(acao)) throw new Recusa(400, "Ação inválida.");
     if (!quem.podeOperar) throw new Recusa(403, "Sem permissão para operar a Expedição (expedicao.processar).");
     const idInt = Number(corpo?.id_int);
     if (!Number.isInteger(idInt) || idInt <= 0) throw new Recusa(400, "Pedido inválido.");
+
+    if (acao === "preparar") {
+      // Só leitura (v23): o que a caixa "Avisar o cliente pelo WhatsApp" da janela do
+      // despacho mostra antes de confirmar. Nada é gravado nem enviado.
+      const tela = despachoDaTela(corpo?.despacho);
+      const ultimoR = await ultimoRegistro(idInt);
+      const homologacaoR = emHomologacao(modoTeste, await clienteDoPedido(idInt));
+      const freteR = (await fretesDosPedidos([idInt], tela)).get(idInt);
+      const modeloR = freteR
+        ? { dialogo: freteR.escolha.dialogo, bloqueio: freteR.escolha.bloqueio ?? (freteR.escolha.dialogo ? null : SEM_MODELO) }
+        : null;
+      let bloqueioR: string | null = null;
+      let conversaR: Conversa | null = null;
+      let escolhaR: Destinos["escolha"] = null;
+      try {
+        const ctxR = await contextoDoPedido(idInt, modoTeste, null, tela);
+        if (homologacaoR) {
+          conversaR = await conversaDaHomologacao(false);
+        } else {
+          const destR = await destinosDoAviso(ctxR.idCliente, ctxR.contato.whats, {});
+          conversaR = destR.conversas[0] ?? null;
+          escolhaR = destR.escolha;
+        }
+      } catch (e) {
+        if (!(e instanceof Recusa)) throw e;
+        bloqueioR = e.message;
+      }
+      return responder(200, {
+        ok: true,
+        modo_teste: modoTeste,
+        homologacao: homologacaoR,
+        aviso: publico(ultimoR),
+        modelo: modeloR,
+        conversa: conversaR,
+        escolha: escolhaR,
+        bloqueio: bloqueioR
+      });
+    }
 
     if (acao === "testar") {
       // "Testar modelo": só modo teste, só cliente #14 (conferido de novo no contexto).

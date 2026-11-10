@@ -1,6 +1,6 @@
 # Expedição
 
-> **Última revisão:** 10/11/2026 (aviso pelo ChatGuru em produção: vai para a conversa do cliente; modo teste e homologação desligados; risco de colisão com o envio de arte do Imposition)
+> **Última revisão:** 10/11/2026 (aviso de pedido pronto sai no Confirmar despacho, com a caixa "Avisar o cliente pelo WhatsApp"; o botão saiu da frente do card e o reenvio foi para o menu, em Avisar cliente)
 > **Caminho no menu:** Expedição (item direto do menu lateral, sem subitens; é o quarto, depois de Conferência, Pedidos e Clientes). Também se chega pela aba **Expedição** no topo do Kanban e da Fila de impressão da Produção.
 > **Endereço:** `/expedicao`
 
@@ -18,7 +18,7 @@ A tela também avisa o que está atrasado ou prometido para hoje e segura o desp
 - **Corrigir frete** aparece para quem tem a permissão **Editar Proposta Paga** (ou Administrador).
 - **Reenviar (pedido devolvido)** aparece para quem tem a permissão **Reenviar Pedido Devolvido** (ou Administrador). Nenhum perfil nasce com ela: quem administra os perfis concede.
 - **Encerrar teste** é exclusivo do Super Administrador.
-- **Avisar cliente: pedido pronto**, **Reenviar** e **Atualizar status** pedem a permissão **Processar Envio / Retirada** (ou Administrador). Quem só tem **Visualizar Expedição** vê o aviso já enviado, sem os botões.
+- A caixa **Avisar o cliente pelo WhatsApp** do despacho e, na janela **Avisar cliente** do menu, os botões **Avisar cliente: pedido pronto**, **Reenviar** e **Atualizar status** pedem a permissão **Processar Envio / Retirada** (ou Administrador). Quem só tem **Visualizar Expedição** abre a janela **Avisar cliente** e vê o aviso já enviado, sem os botões.
 - **Liberar número** (no aviso por diálogo em resultado desconhecido) e o diagnóstico do ChatGuru aparecem só para o Administrador.
 - **Testar modelo** aparece só com o modo teste ligado, só em pedido do cliente de teste (#14) e só para quem tem **Processar Envio / Retirada** (ou Administrador).
 - **Ver conversas do cliente** (abaixo do aviso) aparece para quem tem **Processar Envio / Retirada** (ou Administrador). Não grava nada no cadastro.
@@ -61,8 +61,8 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Confirmar coleta** | Idem. Pedido despachado aguardando coleta | Pede confirmação e leva o pedido para Em Trânsito |
 | **Confirmar retirada** | Idem. Pedido A Retirar | Abre a janela **Confirmar retirada** |
 | **Marcar entregue** | Idem. Pedido Em Trânsito | Pede confirmação e conclui o pedido como Entregue |
-| **Avisar cliente: pedido pronto ({diálogo})** | Abaixo das ações, na lista e no card; só em pedido Na Expedição ainda sem aviso | Executa no ChatGuru o diálogo da forma de envio do pedido (Sedex, Motoboy, Retira, Veppo, Azul ou Transportadora) na conversa do cliente no ChatGuru (ver "Para qual conversa vai o aviso"); quando a regra não decide sozinha, abre antes a escolha da conversa. Fica apagado, com o motivo embaixo, quando a forma de envio não tem diálogo ou quando é SEDEX sem etiqueta |
-| "Aviso enviado em … por …" (ou "Tentativa de aviso em … por …") | No lugar do botão, depois do envio | Mostra quando, quem e o estado do aviso |
+| **Avisar cliente: pedido pronto ({diálogo})** | Janela **Avisar cliente** do menu de ações (desde 10/11/2026 não fica mais na frente do card, na lista, no celular nem no Kanban); só em pedido sem aviso | Executa no ChatGuru o diálogo da forma de envio do pedido (Sedex, Motoboy, Retira, Veppo, Azul ou Transportadora) na conversa do cliente no ChatGuru (ver "Para qual conversa vai o aviso"); quando a regra não decide sozinha, abre antes a escolha da conversa. Fica apagado, com o motivo embaixo, quando a forma de envio não tem diálogo ou quando é SEDEX sem etiqueta |
+| "Aviso enviado em … por …" (ou "Tentativa de aviso em … por …") | Janela **Avisar cliente**, no lugar do botão, depois do envio | Mostra quando, quem e o estado do aviso |
 | **Atualizar status** | Só nos avisos antigos por texto (até 06/11/2026), enquanto não estão entregues ao WhatsApp | Consulta o ChatGuru. Não envia nada. Aviso por diálogo não tem status para consultar |
 | **Reenviar** | Abaixo do aviso; some quando a forma de envio não tem diálogo, quando falta a etiqueta do SEDEX e quando o WhatsApp está travado | Pede confirmação e executa o diálogo de novo |
 | **Liberar número** | Só para o Administrador, abaixo do aviso por diálogo em **resultado desconhecido** | Abre a janela **Liberar número**: "Conferi no ChatGuru: a mensagem foi enviada" deixa o aviso como executado, sem reenviar; "não foi enviada" deixa como falhou, e o **Reenviar** volta. Registra quem liberou, quando e o que respondeu |
@@ -82,6 +82,7 @@ Os itens aparecem nesta ordem, cada um só quando se aplica.
 | **Editar dados de expedição** | Menu de ações; pedido com etiqueta gerada ou já despachado | Abre a mesma janela do despacho em modo de edição |
 | **Declaração de conteúdo** | Menu de ações; pedido que já chegou à Expedição e não tem nota autorizada | Abre o PDF da declaração |
 | **Boletim da produção** | Menu de ações; sempre | Abre o boletim do pedido |
+| **Avisar cliente** | Menu de ações; pedido Na Expedição, A Retirar ou Em Trânsito | Abre a janela **Avisar cliente**, com o último aviso de pedido pronto e os botões **Avisar cliente: pedido pronto**, **Reenviar**, **Ver conversas do cliente** e, para o Administrador, **Liberar número**. É o caminho do reenvio e do aviso que não saiu no despacho |
 | **Liberar aplicação da recotação** | Menu de ações; só administrador da Expedição, pedido Na Expedição | Autoriza uma aplicação de recotação na proposta |
 | **Recotação já liberada** | No lugar do item acima, apagado | Só informa que já há liberação ativa |
 | **Cancelar liberação** | Menu de ações, abaixo de "Recotação já liberada" | Desfaz a liberação ainda não usada |
@@ -111,10 +112,13 @@ Os itens aparecem nesta ordem, cada um só quando se aplica.
 | **Cliente vai retirar no balcão** | Caixa de marcar no topo do **Despachar**; só ADM pelo cadastro, em pedido CIF | Despacha o pedido CIF como retirada (A Retirar), sem mudar frete, total, modalidade da proposta nem nota. Exige **Liberar despacho (ADM)** |
 | **Cancelar liberação** | Quadro verde "Despacho liberado"; só administrador da Expedição | Desfaz a liberação do despacho |
 | **Fone** (telefone do destinatário) | Quadro de conferência, ao lado do bairro | Quando o cadastro tem mais de um telefone, um seletor acima do campo lista os preenchidos (WhatsApp 1, Telefone fixo comercial, WhatsApp 2), com "sem DDD" nos que têm menos de 10 dígitos; escolher um preenche o campo. Editável para quem tem a permissão de editar cadastros. Ao confirmar, se o número final for diferente do WhatsApp 1 do cadastro, ele é gravado no WhatsApp 1 do cadastro do destinatário (o pagador, quando é diferente do cliente) e vale na etiqueta e na prepostagem; os outros telefones nunca mudam. Sem a permissão, só mostra o número e o seletor fica bloqueado |
+| **Avisar o cliente pelo WhatsApp** | Caixa de marcar acima dos botões do rodapé, só no despacho | Já vem marcada, com o modelo (Sedex, Motoboy, Retira, Veppo, Azul ou Transportadora) e a conversa do ChatGuru que vai receber. Marcada, o aviso de pedido pronto sai logo depois do despacho, no mesmo clique. Desmarcada, despacha sem enviar. Vem desmarcada quando o pedido já recebeu o aviso (com a data do anterior) e apagada quando o aviso não pode sair (o motivo aparece embaixo) |
+| Lista das conversas do cliente | Dentro da caixa acima, quando o WhatsApp do contato casa com várias conversas do cliente, ou com nenhuma | Marque para qual conversa (uma, várias ou **Todas**) antes de confirmar |
 | **Cancelar** | Rodapé | Fecha sem gravar |
-| **Salvar sem despachar** | Rodapé, só no despacho | Guarda o que foi preenchido; o pedido segue Na Expedição |
-| **Confirmar despacho** | Rodapé, no despacho por transporte | Despacha o pedido |
-| **Confirmar: aguardando retirada** | Rodapé, no despacho de retirada | Leva o pedido para A Retirar |
+| **Salvar sem despachar** | Rodapé, só no despacho | Guarda o que foi preenchido; o pedido segue Na Expedição. Não envia aviso |
+| **Confirmar despacho** | Rodapé, no despacho por transporte | Despacha o pedido e, com a caixa marcada, envia o aviso logo depois |
+| **Confirmar: aguardando retirada** | Rodapé, no despacho de retirada | Leva o pedido para A Retirar e, com a caixa marcada, envia o aviso Retira logo depois |
+| **Fechar** | Rodapé, depois do despacho, quando o aviso não saiu | Fecha a janela. O despacho já está gravado |
 | **Salvar dados** | Rodapé, no modo de edição | Grava as correções sem mudar o status |
 
 #### Outras janelas
@@ -200,14 +204,23 @@ O pedido também chega à Expedição pela Revisão do boletim da produção.
 
 Desde 07/11/2026 o aviso não é mais um texto livre: é um **diálogo** do ChatGuru, com modelo aprovado, um para cada forma de envio. Pela conta oficial do WhatsApp, texto livre só chega a quem falou com a Ideal nas últimas 24 horas.
 
-1. No pedido com status Na Expedição, clique em **Avisar cliente: pedido pronto ({diálogo})** (abaixo das ações, na lista e no card). O nome entre parênteses é o diálogo que vai ser usado.
-2. O Vibe escolhe a conversa do cliente no ChatGuru (regra abaixo, em "Para qual conversa vai o aviso"), grava nela os campos do diálogo e depois executa o diálogo, no mesmo WhatsApp da Ideal.
-3. O botão vira "Aviso enviado em {data e hora} por {usuário}" com o estado e o diálogo: **diálogo executado no ChatGuru**, **falhou** ou **resultado desconhecido**. "Executado" quer dizer que o ChatGuru aceitou executar o diálogo. O ChatGuru não devolve confirmação de entrega para diálogo.
-4. Para mandar de novo, clique em **Reenviar** e confirme na janela **Reenviar aviso de pedido pronto?**.
+Desde 10/11/2026 o aviso sai no **Confirmar despacho** (ou **Confirmar: aguardando retirada**), no mesmo clique. O botão **Avisar cliente: pedido pronto** saiu da frente do card (lista, celular e Kanban) e foi para a janela **Avisar cliente** do menu de ações, que serve para o reenvio.
+
+1. Em **Despachar**, acima dos botões, a caixa **Avisar o cliente pelo WhatsApp** já vem marcada. Ela mostra o modelo ("Modelo: Sedex") e a conversa que vai receber ("vai para {nome no ChatGuru} ({número})"). O modelo acompanha o que está na janela: trocar o transporte, gerar a prepostagem ou digitar o rastreio muda o que a caixa mostra.
+2. Se o WhatsApp do contato casa com várias conversas do cliente, ou com nenhuma, a lista das conversas aparece dentro da caixa. Marque uma, várias ou **Todas** antes de confirmar. Sem marcar, o **Confirmar despacho** avisa "Escolha a conversa do aviso ou desmarque a caixa."
+3. Clique em **Confirmar despacho**. O despacho é gravado primeiro; o aviso sai logo depois. O Vibe grava na conversa os campos do diálogo e executa o diálogo, no mesmo WhatsApp da Ideal. O botão mostra "Enviando aviso..." enquanto isso.
+4. Saiu: a janela fecha e aparece "Aviso enviado ao cliente", com o diálogo e o estado (**diálogo executado no ChatGuru**). "Executado" quer dizer que o ChatGuru aceitou executar o diálogo. O ChatGuru não devolve confirmação de entrega para diálogo.
+5. Não saiu (sem conversa no ChatGuru, sem modelo para a forma de envio, rastreio faltando, regra dos 2 minutos do ChatGuru, recusa do ChatGuru, resultado desconhecido): **o despacho continua valendo**. A janela fica aberta com "Despacho confirmado." e o motivo, e o botão **Fechar**. O reenvio fica no menu de ações do card, em **Avisar cliente**.
+6. Para despachar sem enviar, desmarque a caixa. **Salvar sem despachar** nunca envia nada.
+7. Pedido que já recebeu o aviso: a caixa vem desmarcada, com "Este pedido já recebeu o aviso em {data e hora} por {usuário}". Marcar de novo manda outra mensagem (é um reenvio). Com um aviso em andamento ou em **resultado desconhecido**, a caixa fica apagada: confira no ChatGuru e use o menu.
+8. Quando o aviso não pode sair, a caixa fica apagada com "O aviso não vai sair: {motivo}". O despacho pode ser confirmado normalmente.
+9. Para mandar de novo depois, no menu de ações do card clique em **Avisar cliente** e, na janela, em **Reenviar**; confirme em **Reenviar aviso de pedido pronto?**. A janela vale para pedido Na Expedição, A Retirar ou Em Trânsito.
+
+**Correios SEDEX e o rastreio no Confirmar despacho.** O diálogo Sedex precisa do código de rastreio. Ele já existe no Confirmar despacho quando a prepostagem foi gerada antes (na própria janela, por **Gerar prepostagem SEDEX**, que preenche o rastreio) ou quando o código foi digitado em **Código de rastreio (manual)**. É o caso comum: dos 617 despachos pelos Correios desde 01/10/2026, 613 têm rastreio hoje. Sem o código, o despacho segue (o rastreio não é obrigatório para despachar), mas a caixa fica apagada com "O aviso não vai sair: Gere a etiqueta dos Correios antes." Gerada a prepostagem ou digitado o código na mesma janela, a caixa volta marcada. Se o pedido já foi despachado sem rastreio, preencha o código em **Editar dados de expedição** e use **Avisar cliente** no menu.
 5. Em **resultado desconhecido**, o WhatsApp do contato fica travado para novos avisos de pedido pronto, deste e de qualquer outro pedido, até alguém conferir no ChatGuru se o diálogo foi executado. O aviso mostra "Este WhatsApp fica travado para novos avisos até alguém conferir no ChatGuru (avise o ADM)". O Vibe não reenvia sozinho.
 6. O Administrador confere no ChatGuru e clica em **Liberar número**. Na janela, escolhe **Conferi no ChatGuru: a mensagem foi enviada** (o aviso passa a **diálogo executado no ChatGuru**, sem reenviar) ou **Conferi no ChatGuru: a mensagem não foi enviada** (o aviso passa a **falhou** e o **Reenviar** volta). O aviso passa a mostrar "Liberado por {usuário} em {data e hora}: conferido no ChatGuru, a mensagem foi / não foi enviada".
 
-Para o Administrador, depois de **Avisar cliente** ou **Reenviar**, o card mostra também o que o ChatGuru respondeu em cada etapa: "ChatGuru · campos · HTTP {código}: {texto}" e "ChatGuru · diálogo · HTTP {código}: {texto}". O texto sai sem a chave da integração e sem os dados do contato. Não é gravado: some ao recarregar a tela.
+Para o Administrador, depois de **Avisar cliente** ou **Reenviar** na janela **Avisar cliente**, ela mostra também o que o ChatGuru respondeu em cada etapa: "ChatGuru · campos · HTTP {código}: {texto}" e "ChatGuru · diálogo · HTTP {código}: {texto}". O texto sai sem a chave da integração e sem os dados do contato. Não é gravado: some ao recarregar a tela.
 
 Qual diálogo vai, pela forma de envio do pedido (a do despacho, se o expedidor já declarou, vence a do orçamento):
 
@@ -227,19 +240,19 @@ Qual diálogo vai, pela forma de envio do pedido (a do despacho, se o expedidor 
 
 O Vibe só grava esses campos. O ChatGuru guarda na conversa o último valor de cada campo: se o modelo de um diálogo usar um campo que o Vibe não grava (por exemplo, o link de aprovação, Link_do_Cliente, que o envio de arte do Imposition grava), a mensagem sai com o valor de outro envio. Foi o que aconteceu com o aviso Pedido em Produção em 09/11/2026. Mudança de modelo no ChatGuru precisa ser combinada antes. A lista completa, com o envio de arte do Imposition, está em `docs/technical/CHATGURU-TRAVA-COMPARTILHADA-PROPOSTA.md`.
 
-Correios PAC, Correios sem o serviço dito e frete sem forma definida ("Frete Incluso", "Sem custo", "a definir") não têm diálogo. O botão fica apagado com "Sem modelo de mensagem para esta forma de envio." Nenhum outro diálogo é usado no lugar. SEDEX sem código de rastreio fica apagado com "Gere a etiqueta dos Correios antes."
+Correios PAC, Correios sem o serviço dito e frete sem forma definida ("Frete Incluso", "Sem custo", "a definir") não têm diálogo. A caixa do despacho e o botão da janela **Avisar cliente** ficam apagados com "Sem modelo de mensagem para esta forma de envio." Nenhum outro diálogo é usado no lugar. SEDEX sem código de rastreio fica apagado com "Gere a etiqueta dos Correios antes."
 
 #### Para qual conversa vai o aviso (desde 09/11/2026)
 
 O aviso vai para a conversa do cliente no WhatsApp da Ideal (ChatGuru, remetente 3478), não mais para o WhatsApp gravado no cadastro do contato. Decisão da diretoria: nenhum contato do Vibe é editado para isso. O Vibe procura as conversas do 3478 cujo código é o número do cliente do pedido e compara com o WhatsApp do contato responsável, pelo DDD e pelos 8 últimos dígitos (assim tanto faz ter ou não o nono dígito):
 
 - casou com exatamente uma conversa: o aviso vai para ela, sem perguntar;
-- casou com mais de uma, ou com nenhuma, mas o cliente tem conversas no 3478: abre a janela **Para qual conversa enviar?** com a lista das conversas do cliente (nome no ChatGuru e número). Dá para usar **Enviar para esta** numa linha, marcar várias e usar **Enviar para as marcadas**, ou **Enviar para todas**. Cada escolha pede confirmação. Nada sai antes disso;
+- casou com mais de uma, ou com nenhuma, mas o cliente tem conversas no 3478: no despacho, a lista aparece dentro da caixa **Avisar o cliente pelo WhatsApp**, para marcar antes de confirmar; na janela **Avisar cliente** do menu, abre a janela **Para qual conversa enviar?** com a lista das conversas do cliente (nome no ChatGuru e número). Dá para usar **Enviar para esta** numa linha, marcar várias e usar **Enviar para as marcadas**, ou **Enviar para todas**. Cada escolha pede confirmação. Nada sai antes disso;
 - o cliente não tem nenhuma conversa no 3478: nada é enviado e aparece "Cliente sem conversa no ChatGuru (remetente 3478)".
 
 Cada conversa que recebe o aviso fica registrada no aviso, com a conversa usada. Com várias conversas, sai um aviso para cada uma, uma depois da outra, e o resumo mostra o resultado de cada. A trava por WhatsApp vale por conversa: uma conversa travada não impede as outras.
 
-**Ver conversas do cliente** (abaixo do aviso, para quem pode avisar) abre a mesma lista, com a conversa que a regra escolheria. Dali dá para reenviar para uma, várias ou todas, sempre com confirmação. Ele substitui o antigo **Corrigir número**, que gravava o número no cadastro do contato e saiu.
+**Ver conversas do cliente** (na janela **Avisar cliente**, abaixo do aviso, para quem pode avisar) abre a mesma lista, com a conversa que a regra escolheria. Dali dá para reenviar para uma, várias ou todas, sempre com confirmação. Ele substitui o antigo **Corrigir número**, que gravava o número no cadastro do contato e saiu.
 
 Se o ChatGuru recusar pelo número, o aviso mostra "Número não encontrado no ChatGuru: {número usado}" e o **Ver conversas do cliente** em vermelho, para escolher outra conversa. O Vibe não tenta outro número sozinho.
 
@@ -323,7 +336,7 @@ Também é possível digitar o código em **Código de rastreio (manual)**, que 
 
 O fim do fluxo tem ficha própria: despachar, recotar e corrigir frete, confirmar a coleta, o rastreio, a retirada no balcão e a entrega, voltar um passo, reenviar pedido devolvido, editar um pedido já despachado, despachar pedido com complemento, cancelar a prepostagem e imprimir a declaração de conteúdo estão em [Expedição: despachar e entregar](expedicao-despacho.md).
 
-Em resumo: no pedido Na Expedição, clique em **Despachar**, confira peso, volumes e endereço, resolva o quadro do frete se ele aparecer e clique em **Confirmar despacho** (em retirada, **Confirmar: aguardando retirada**). Daí o pedido vai para Em Trânsito, fica aguardando a coleta da transportadora ou vai para A Retirar, e termina como Entregue por **Confirmar coleta**, **Confirmar retirada** ou **Marcar entregue**.
+Em resumo: no pedido Na Expedição, clique em **Despachar**, confira peso, volumes e endereço, resolva o quadro do frete se ele aparecer, confira a caixa **Avisar o cliente pelo WhatsApp** e clique em **Confirmar despacho** (em retirada, **Confirmar: aguardando retirada**). Daí o pedido vai para Em Trânsito, fica aguardando a coleta da transportadora ou vai para A Retirar, e termina como Entregue por **Confirmar coleta**, **Confirmar retirada** ou **Marcar entregue**.
 
 ### Abrir o boletim da produção
 

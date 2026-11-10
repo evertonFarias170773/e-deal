@@ -15,6 +15,7 @@ import {
   enviarAvisoPronto,
   liberarNumeroAviso,
   travaCompartilhadaPresa,
+  statusPermiteAvisoPronto,
   textoDaLiberacao,
   TEXTO_TRAVA_PRESA,
   TEXTO_HOMOLOGACAO,
@@ -34,7 +35,10 @@ const SEM_MODELO = "Sem modelo de mensagem para esta forma de envio.";
 /**
  * "Avisar cliente: pedido pronto" pelo WhatsApp da Ideal (ChatGuru), 06/11/2026.
  *
- * Só pedido na bancada (status EXPEDICAO) e só quem opera a Expedição. Depois do
+ * Desde 10/11/2026 não fica mais na frente do card: o aviso sai no "Confirmar
+ * despacho" (AvisoNoDespacho) e este componente vive na janela "Avisar cliente"
+ * do menu ⋯ (AvisarClienteModal), para o reenvio. Vale em EXPEDICAO, A RETIRAR e
+ * EM TRANSITO, e só quem opera a Expedição envia. Depois do
  * envio o botão vira "Aviso enviado em {data e hora} por {usuário}" com o
  * estado. "Reenviar" pede confirmação e o servidor faz uma reserva nova. Em
  * "resultado desconhecido" nada é reenviado sozinho: a tela pede para conferir
@@ -74,6 +78,7 @@ export function AvisoPedidoPronto({
   modelo,
   teste,
   compacto = false,
+  naJanela = false,
   onAviso
 }: {
   idInt: number;
@@ -89,6 +94,8 @@ export function AvisoPedidoPronto({
   /** Último envio do "Testar modelo" do pedido. */
   teste?: AvisoPronto;
   compacto?: boolean;
+  /** Dentro da janela "Avisar cliente" do menu ⋯ (10/11/2026): alinhado à esquerda. */
+  naJanela?: boolean;
   onAviso: (idInt: number, aviso: AvisoPronto | null | undefined, modoTeste?: boolean, recusa?: RecusaPorNumero | null) => void;
 }) {
   const { showToast } = useAppToast();
@@ -100,7 +107,8 @@ export function AvisoPedidoPronto({
   // Diagnóstico do último envio feito nesta tela (só ADM; o servidor não grava).
   const [diagnostico, setDiagnostico] = useState<DiagnosticoChatGuru[] | null>(null);
 
-  if ((statusInterno ?? "").toUpperCase() !== "EXPEDICAO") return null;
+  // Na bancada ou logo depois do despacho (v23, 10/11/2026).
+  if (!statusPermiteAvisoPronto(statusInterno)) return null;
   // Forma de envio sem diálogo, ou SEDEX sem etiqueta: botão apagado com o aviso.
   const bloqueio = modelo ? (modelo.bloqueio ?? (modelo.dialogo ? null : SEM_MODELO)) : null;
   const homologacao = modelo?.homologacao === true;
@@ -247,6 +255,7 @@ export function AvisoPedidoPronto({
   }
 
   const texto = compacto ? "text-[11px]" : "text-xs";
+  const lado = naJanela ? "items-start text-left" : "items-end text-right";
   const janelaConversas = conversas ? (
     <ConversasDoClienteModal
       idInt={idInt}
@@ -280,7 +289,7 @@ export function AvisoPedidoPronto({
 
   if (!aviso) {
     return (
-      <div className="mt-1.5 flex flex-col items-end gap-0.5">
+      <div className={`mt-1.5 flex flex-col gap-0.5 ${lado}`}>
         <button
           type="button"
           disabled={ocupado || Boolean(bloqueio)}
@@ -319,7 +328,7 @@ export function AvisoPedidoPronto({
           : "text-amber-700 dark:text-amber-300";
 
   return (
-    <div className={`mt-1.5 flex flex-col items-end gap-0.5 text-right ${texto}`}>
+    <div className={`mt-1.5 flex flex-col gap-0.5 ${lado} ${texto}`}>
       <span className="inline-flex items-center gap-1 text-slate-600 dark:text-slate-300">
         <MessageCircle className="h-3.5 w-3.5" />
         {saiu ? "Aviso enviado" : "Tentativa de aviso"} em {formatDateTime(aviso.criado_em)} por {aviso.autor_nome || "—"}

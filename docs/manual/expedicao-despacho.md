@@ -1,6 +1,6 @@
 # Expedição: despachar e entregar
 
-> **Última revisão:** 06/11/2026
+> **Última revisão:** 10/11/2026 (aviso de pedido pronto pelo WhatsApp sai no Confirmar despacho)
 > **Caminho no menu:** Expedição → card do pedido → **Despachar** (os outros passos saem do menu de ações do card)
 > **Endereço:** `/expedicao`
 
@@ -34,7 +34,8 @@ Nomes exatamente como aparecem na tela. A tabela completa da tela está em [Expe
 | **Regravar frete** | Janela **Frete subsidiado** | Confirma a regravação do frete em cliente com **Pode editar valor do frete** |
 | **Desvincular e despachar separado** | Caixa de marcar no quadro do pedido complementar | Separa o complemento, com motivo obrigatório |
 | **Salvar sem despachar** | Rodapé, só no despacho | Guarda o que foi preenchido; o pedido segue Na Expedição |
-| **Confirmar despacho** | Rodapé, no despacho por transporte | Despacha o pedido |
+| **Avisar o cliente pelo WhatsApp** | Caixa de marcar acima dos botões do rodapé, já marcada | Com ela marcada, o aviso de pedido pronto sai logo depois do despacho. Regra completa em [Expedição](expedicao.md), "Avisar o cliente que o pedido está pronto" |
+| **Confirmar despacho** | Rodapé, no despacho por transporte | Despacha o pedido e, com a caixa marcada, envia o aviso logo depois |
 | **Confirmar: aguardando retirada** | Rodapé, no despacho de retirada | Leva o pedido para A Retirar |
 | **Corrigir frete** | Menu de ações; quem pode editar proposta paga, sem nota autorizada, sem despacho confirmado | Abre a janela **Corrigir frete** |
 | **Rodoviário** / **Aéreo** | Janela **Corrigir frete**, pergunta "Como vai o transporte?" | Define a coluna do Kanban quando o sistema não reconhece a transportadora |
@@ -64,7 +65,7 @@ Nomes exatamente como aparecem na tela. A tabela completa da tela está em [Expe
 2. Se o pedido não tem nota autorizada, marque **Despachar mesmo assim (há justificativa: remessa sem NF, retirada, etc.)**.
 3. Se aparecer um quadro sobre o frete, resolva-o antes (veja "Recotar o frete").
 4. Se o telefone do destinatário estiver errado, escolha em **Fone** o telefone certo entre os do cadastro (o seletor só aparece quando há mais de um) ou corrija o número no campo (só números, com DDD, mínimo 10 dígitos; telefone inválido bloqueia o botão). O número novo é gravado no cadastro do destinatário ao confirmar, antes do despacho. Se a gravação falhar, o pedido não é despachado e a tela mostra o erro. O número vai sempre para o WhatsApp 1; o Telefone fixo e o WhatsApp 2 do cadastro não são alterados. Sem alteração (inclusive só abrir e confirmar), nada é gravado no cadastro. Quem não pode editar cadastros vê o telefone, mas não edita nem troca o seletor, e o despacho segue com o número cadastrado. Uma prepostagem dos Correios já gerada mantém o telefone antigo.
-5. Clique em **Confirmar despacho**. Em retirada, o botão se chama **Confirmar: aguardando retirada**.
+5. Confira a caixa **Avisar o cliente pelo WhatsApp** (modelo e conversa) ou desmarque para não enviar. Clique em **Confirmar despacho**. Em retirada, o botão se chama **Confirmar: aguardando retirada**. O despacho é gravado primeiro e o aviso sai logo depois; se o aviso falhar, o despacho continua valendo, a janela mostra o motivo e o reenvio fica no menu, em **Avisar cliente**.
 6. O destino depende de como o pedido sai:
    - Correios — vai direto para Em Trânsito;
    - transportadora ou motoboy — continua Na Expedição como "aguardando coleta", com o card laranja, até o carro passar;
@@ -203,11 +204,11 @@ As regras da tela inteira estão em [Expedição](expedicao.md). Estas são as q
 
 ## O que não confundir
 
-- **Avisar cliente: pedido pronto** x **Despachar**: o aviso só manda a mensagem de pedido pronto pelo WhatsApp e não muda o status do pedido. Detalhes em [Expedição](expedicao.md).
+- **Avisar cliente** (menu) x **Confirmar despacho**: desde 10/11/2026 o aviso de pedido pronto sai no próprio Confirmar despacho, com a caixa marcada. O **Avisar cliente** do menu só manda (ou reenvia) a mensagem e não muda o status do pedido. Detalhes em [Expedição](expedicao.md).
 - **Recotar frete** x **Corrigir frete**: recotar busca preços novos para o mesmo envio e só grava com liberação; corrigir troca a modalidade (quem paga) e a transportadora, e muda o total do pedido.
 - **Confirmar coleta** x **Marcar entregue**: a coleta é o carro levando o volume (vai para Em Trânsito); a entrega é a chegada ao cliente (vai para Entregue).
 - **Voltar status** x **Reenviar (pedido devolvido)**: voltar um passo desfaz a última mudança; o reenvio registra que o pedido voltou devolvido e o devolve Na Expedição com o selo **Reenvio N**, guardando o primeiro envio.
-- **Salvar sem despachar** x **Confirmar despacho**: o primeiro só guarda o que foi preenchido; o segundo muda o status do pedido.
+- **Salvar sem despachar** x **Confirmar despacho**: o primeiro só guarda o que foi preenchido e não envia aviso; o segundo muda o status do pedido e, com a caixa marcada, avisa o cliente.
 - **Marcar prepostagem como cancelada** x cancelar nos Correios: o Vibe não cancela nos Correios. O cancelamento é feito no portal; aqui só se registra.
 
 ## Erros comuns

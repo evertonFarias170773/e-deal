@@ -111,6 +111,50 @@ export const DIALOGO_PRODUCAO = "6071c6dbe34a18c2cc684747";
 export const SEM_MODELO = "Sem modelo de mensagem para esta forma de envio.";
 export const SEM_ETIQUETA = "Gere a etiqueta dos Correios antes.";
 
+/**
+ * Status em que o aviso de pedido pronto pode sair. Até 10/11/2026 só na bancada
+ * (EXPEDICAO). Desde a v23 o aviso sai no clique do "Confirmar despacho", logo
+ * DEPOIS de gravar o despacho, e o despacho já mudou o status: SEDEX e PAC vão
+ * para EM TRANSITO, a retirada para A RETIRAR (transportadora e motoboy seguem em
+ * EXPEDICAO esperando a coleta). O reenvio pelo menu do card vale nos mesmos três.
+ */
+export const STATUS_AVISO_PRONTO = ["EXPEDICAO", "A RETIRAR", "EM TRANSITO"] as const;
+
+export function statusPermiteAvisoPronto(status: string | null | undefined): boolean {
+  const s = (status ?? "").trim().toUpperCase();
+  return (STATUS_AVISO_PRONTO as readonly string[]).includes(s);
+}
+
+/**
+ * Forma de envio que está na janela do despacho, ainda não gravada (v23,
+ * acao "preparar"). Só serve para a janela mostrar o modelo antes de confirmar;
+ * o envio de verdade relê o que o despacho gravou.
+ */
+export type DespachoDaTela = {
+  despacho: DespachoFrete;
+  rastreio: string | null;
+  idEnderecoEntrega: string | null;
+};
+
+export function despachoDaTela(v: unknown): DespachoDaTela | null {
+  if (!v || typeof v !== "object") return null;
+  const o = v as Record<string, unknown>;
+  const texto = (x: unknown, max: number) => (typeof x === "string" ? x.trim().slice(0, max) : "") || null;
+  const id = Number(o.id_transportadora_cliente);
+  const endereco = texto(o.id_endereco_entrega, 40);
+  return {
+    despacho: {
+      tipo_frete: texto(o.tipo_frete, 40),
+      modalidade_frete: texto(o.modalidade_frete, 20),
+      categoria_frete: texto(o.categoria_frete, 40),
+      transportadora_nome: texto(o.transportadora_nome, 120),
+      id_transportadora_cliente: Number.isInteger(id) && id > 0 ? id : null
+    },
+    rastreio: texto(o.rastreio, 40),
+    idEnderecoEntrega: endereco && /^[0-9a-f-]{36}$/i.test(endereco) ? endereco : null
+  };
+}
+
 export type DespachoFrete = {
   tipo_frete?: string | null;
   modalidade_frete?: string | null;

@@ -1,6 +1,6 @@
 # Proposta: aba Orçamento (produtos)
 
-> **Última revisão:** 06/11/2026 (total em centavos exatos)
+> **Última revisão:** 10/11/2026 (motivo real quando a exclusão é recusada)
 > **Caminho no menu:** Pedidos → abrir um pedido → aba **Orçamento**
 > **Endereço:** `/orcamentos/<número>/editar?tab=produtos` (em proposta nova, `/orcamentos/novo`)
 
@@ -148,6 +148,7 @@ A marcação de prateleira é guardada no item no momento em que ele entra na pr
 - Com revisão financeira pendente, a aba também fica travada, mesmo para quem tem permissão. Resolva a diferença antes.
 - Com a proposta em AGUARDANDO, a lixeira fica desabilitada para quem não tem a permissão de editar proposta paga: "Item não pode ser removido neste status".
 - Com cobrança ativa, não dá para remover produto sem a permissão. Cancele a cobrança pendente antes.
+- Produto cujo modelo já está marcado como impresso não pode ser excluído: o registro de impressão é permanente. Item de prateleira entra nesse caso logo depois de ir para a aba Pedido, porque a aprovação automática da prateleira aprova a arte e marca o modelo como impresso na mesma hora.
 - Mesmo com permissão, não dá para inativar produto que já tem pedido, arte ou produção vinculada. Cancele ou conclua a produção (e a nota, se houver) antes.
 - Com cobrança enviada ao cliente e ainda não paga, não dá para mudar quantidade, preço, produto ou desconto: o link de pagamento tem valor fixo. Cancele a cobrança, altere e gere outra. O que conta é o valor: o preço unitário é comparado já com o acréscimo das variações escolhidas, então salvar só arte, observação ou modelos não aciona o bloqueio, mesmo em item com variação paga. Trocar a variação por outra de acréscimo diferente muda o valor e aciona.
 - Em proposta paga, quem tem permissão altera os produtos, e a diferença de valor é tratada ao salvar. Veja [Proposta: visão geral e abas](proposta.md).
@@ -189,6 +190,8 @@ A marcação de prateleira é guardada no item no momento em que ele entra na pr
 | **Remoção bloqueada** — "Não é possível remover produtos pois existe uma cobrança ativa..." | A proposta tem cobrança e seu perfil não pode editá-la. | Cancele a cobrança pendente ou peça a quem tem a permissão. |
 | **Inativação bloqueada** — "Este produto já possui pedido/arte/produção vinculada..." | O item já tem modelo, arte ou produção. | Cancele ou conclua a produção (e a nota, se houver) antes. |
 | "Item não pode ser removido neste status" | Proposta em AGUARDANDO e perfil sem permissão. | Peça a quem tem a permissão de editar proposta paga. |
+| **Erro ao excluir produto** — "O produto não pode ser excluído: o modelo dele já está marcado como impresso, e o registro de impressão é permanente." | O modelo do item na aba Pedido já está como impresso. Acontece com item de prateleira. | Tentar de novo não resolve. Fale com o administrador do sistema. |
+| **Erro ao excluir produto** — outra mensagem do banco | O banco recusou a exclusão e a mensagem diz o motivo. | Siga o que a mensagem diz. Se não estiver claro, fale com o administrador. |
 | **Erro ao excluir produto** — "O produto não foi encontrado no banco ou a exclusão foi bloqueada. Recarregue a página." | O item já não existe ou a exclusão foi barrada. | Recarregue a página e confira a lista. |
 | "Aguarde a cotação do frete terminar" | O **Salvar item** está travado durante a cotação. | Espere alguns segundos e clique de novo. |
 | "Esta proposta tem uma cobrança enviada ao cliente no valor de ..." | A alteração muda o valor e a cobrança ainda não foi paga. | Cancele a cobrança na aba Pagamentos, altere e gere uma nova. |

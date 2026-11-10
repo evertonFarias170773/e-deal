@@ -64,6 +64,8 @@ import { avisosDoReenvio } from "../lib/reenvio";
 import { conferirFreteSubsidiado, mensagemFreteSubsidiado } from "../lib/frete-subsidiado";
 import { barreiraNfAutorizada } from "../services/corrigir-frete-simulacao";
 import { getSupabaseClient } from "@/lib/supabase/client";
+import { CaixaAvisoNoDespacho, ResultadoAvisoNoDespacho, useAvisoNoDespacho, type ResultadoAvisoDespacho } from "./AvisoNoDespacho";
+import type { AvisoPronto, RecusaPorNumero } from "../services/aviso-pronto.client";
 
 const TIPOS_VOLUME = ["Pacote", "Caixa", "Envelope", "Outro"];
 
@@ -185,7 +187,9 @@ export function DespacharModal({
   podeLiberarDespacho = false,
   podeEditarTelefone = false,
   ehAdmNoCadastro = false,
-  instrucaoEntrega
+  instrucaoEntrega,
+  podeAvisarCliente = false,
+  onAviso
 }: {
   pedido: PedidoExpedicao;
   /**
@@ -211,6 +215,13 @@ export function DespacharModal({
   podeEditarTelefone?: boolean;
   /** ADM pelo cadastro (is_admin/is_super_adm): ve "Cliente vai retirar no balcao" em pedido CIF (lib/retirada-adm). */
   ehAdmNoCadastro?: boolean;
+  /**
+   * Caixa "Avisar o cliente pelo WhatsApp" (10/11/2026): só no despacho, para quem
+   * opera a Expedição. O aviso sai depois de o despacho ser gravado (AvisoNoDespacho).
+   */
+  podeAvisarCliente?: boolean;
+  /** Atualiza o aviso do pedido no painel depois do envio. */
+  onAviso?: (idInt: number, aviso: AvisoPronto | null | undefined, modoTeste?: boolean, recusa?: RecusaPorNumero | null) => void;
 }) {
   const { showToast } = useAppToast();
   const exp = pedido.expedicao;
@@ -362,6 +373,9 @@ export function DespacharModal({
   >([]);
   const [confirmaTrocaCorreios, setConfirmaTrocaCorreios] = useState(false);
   const [salvando, setSalvando] = useState(false);
+  // Aviso pelo WhatsApp depois do despacho (10/11/2026).
+  const [avisando, setAvisando] = useState(false);
+  const [resultadoAviso, setResultadoAviso] = useState<ResultadoAvisoDespacho | null>(null);
   const [correiosOk, setCorreiosOk] = useState(false);
   const [gerandoPrepostagem, setGerandoPrepostagem] = useState(false);
   /**
@@ -1110,8 +1124,36 @@ export function DespacharModal({
     };
   }, [previaBase, qtdVolumes, nfNumeroManual, obsEtiqueta, temNotaAutorizada]);
 
+  /**
+   * A forma de envio como o despacho vai gravar (os mesmos campos de
+   * `handleConfirmar`), para a caixa do aviso mostrar o modelo antes de confirmar.
+   */
+  const despachoParaAviso = useMemo(
+    () => ({
+      tipo_frete: tipoEntrega === "RETIRADA" ? "RETIRA_BALCAO" : tipoFrete,
+      modalidade_frete: modalidade,
+      transportadora_nome: tipoEntrega === "RETIRADA" ? "Retira balcão" : nomeTransportadoraParaGravar || null,
+      id_transportadora_cliente: tipoEntrega === "RETIRADA" ? null : idTransportadoraCliente,
+      rastreio: codigoRastreamento.trim() || null,
+      id_endereco_entrega: idEnderecoEntrega
+    }),
+    [tipoEntrega, tipoFrete, modalidade, nomeTransportadoraParaGravar, idTransportadoraCliente, codigoRastreamento, idEnderecoEntrega]
+  );
+  const avisoCliente = useAvisoNoDespacho({
+    idInt: pedido.idInt,
+    despacho: despachoParaAviso,
+    ativo: !modoEdicao && podeAvisarCliente,
+    onAviso
+  });
+
   async function handleConfirmar() {
     if (salvando) return;
+    // Caixa do aviso marcada: a escolha da conversa vem antes do despacho.
+    const pendenciaAviso = modoEdicao ? null : avisoCliente.pendenciaAntesDeConfirmar();
+    if (pendenciaAviso) {
+      showToast({ type: "warning", title: "Aviso pelo WhatsApp", description: pendenciaAviso });
+      return;
+    }
     if (modalidade === null) {
       showToast({
         type: "warning",
@@ -1231,6 +1273,18 @@ export function DespacharModal({
           title: "Complemento não saiu junto",
           description: res.complementosComFalha.map((c) => `#${c.idInt}: ${c.error}`).join(" ")
         });
+      }
+      // AVISO NO MESMO CLIQUE (10/11/2026): só depois do despacho gravado. Falhou,
+      // o despacho fica e a janela mostra o motivo (o Fechar recarrega o painel).
+      if (!modoEdicao && avisoCliente.marcado) {
+        setAvisando(true);
+        const r = await avisoCliente.enviarDepoisDoDespacho();
+        setAvisando(false);
+        if (r && !r.ok) {
+          setResultadoAviso(r);
+          return;
+        }
+        if (r) showToast({ type: "success", title: r.titulo, description: r.texto });
       }
       onDone();
     } else {
@@ -1542,7 +1596,7 @@ export function DespacharModal({
               </span>
             )}
           </div>
-          <button type="button" onClick={onClose} disabled={salvando} className="rounded-2xl bg-slate-100 p-2 text-slate-700 transition hover:bg-slate-200 disabled:opacity-50 dark:bg-slate-800 dark:text-slate-300">
+          <button type="button" onClick={resultadoAviso ? onDone : onClose} disabled={salvando || avisando} className="rounded-2xl bg-slate-100 p-2 text-slate-700 transition hover:bg-slate-200 disabled:opacity-50 dark:bg-slate-800 dark:text-slate-300">
             <X className="h-5 w-5" />
           </button>
         </div>
@@ -2348,8 +2402,21 @@ export function DespacharModal({
           </div>
         )}
 
+        {!modoEdicao && podeAvisarCliente && (resultadoAviso ? (
+          <ResultadoAvisoNoDespacho resultado={resultadoAviso} />
+        ) : (
+          <CaixaAvisoNoDespacho aviso={avisoCliente} ocupado={salvando || avisando} />
+        ))}
+
+        {resultadoAviso ? (
+          <div className="flex items-center justify-end gap-3 border-t border-slate-100 bg-slate-50 p-5 dark:border-slate-800 dark:bg-slate-900/60">
+            <button type="button" onClick={onDone} className="rounded-2xl bg-[#0b2f4a] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[#123f61]">
+              Fechar
+            </button>
+          </div>
+        ) : (
         <div className="flex items-center justify-end gap-3 border-t border-slate-100 bg-slate-50 p-5 dark:border-slate-800 dark:bg-slate-900/60">
-          <button type="button" onClick={onClose} disabled={salvando} className="rounded-2xl border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
+          <button type="button" onClick={onClose} disabled={salvando || avisando} className="rounded-2xl border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
             Cancelar
           </button>
           {!modoEdicao && (
@@ -2357,7 +2424,7 @@ export function DespacharModal({
               type="button"
               onClick={() => void handleSalvarRascunho()}
               // A retirada do ADM so se grava no despacho, com a liberacao (lib/retirada-adm).
-              disabled={salvando || retiradaAdmMarcada}
+              disabled={salvando || avisando || retiradaAdmMarcada}
               title={retiradaAdmMarcada ? "A retirada no balcão só é gravada no despacho, com a liberação de um ADM." : undefined}
               className="rounded-2xl border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
             >
@@ -2373,10 +2440,11 @@ export function DespacharModal({
               Bloqueado: {mensagemTrava}
             </span>
           ) : null}
-          <button type="button" onClick={() => void handleConfirmar()} disabled={salvando || faltamParaSalvar || travaBloqueia || bloqueioPorComplemento || avaliacaoTelefone.bloqueia} title={avaliacaoTelefone.bloqueia ? "Corrija o telefone do destinatário" : undefined} className="rounded-2xl bg-[#0b2f4a] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[#123f61] disabled:cursor-not-allowed disabled:opacity-50">
-            {salvando ? "Salvando..." : modoEdicao ? "Salvar dados" : tipoEntrega === "RETIRADA" ? "Confirmar: aguardando retirada" : "Confirmar despacho"}
+          <button type="button" onClick={() => void handleConfirmar()} disabled={salvando || avisando || faltamParaSalvar || travaBloqueia || bloqueioPorComplemento || avaliacaoTelefone.bloqueia} title={avaliacaoTelefone.bloqueia ? "Corrija o telefone do destinatário" : undefined} className="rounded-2xl bg-[#0b2f4a] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[#123f61] disabled:cursor-not-allowed disabled:opacity-50">
+            {avisando ? "Enviando aviso..." : salvando ? "Salvando..." : modoEdicao ? "Salvar dados" : tipoEntrega === "RETIRADA" ? "Confirmar: aguardando retirada" : "Confirmar despacho"}
           </button>
         </div>
+        )}
       </div>
     </div>
 

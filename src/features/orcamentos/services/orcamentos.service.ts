@@ -9,6 +9,7 @@ import {
 } from "@/features/orcamentos/lib/transporte-categoria";
 import { calculateResumo, calculateItemSubtotal, itensComOBonusDoSalvar } from "@/features/orcamentos/orcamento-utils";
 import { resumoNoCentavo } from "@/features/orcamentos/lib/total-no-centavo";
+import { motivoDaExclusaoRecusada } from "@/features/orcamentos/lib/motivo-exclusao-produto";
 import { FORMA_RETRABALHO, cobrancaEhRetrabalho } from "@/lib/retrabalho";
 import {
   TIPO_DESCONTO_TABELA_ESPECIAL,
@@ -4226,7 +4227,7 @@ export async function saveProposta(
           }
 
           if (explicitDeleteError) {
-            throw new Error("Não foi possível excluir um ou mais produtos da proposta. Recarregue a página e tente novamente.");
+            throw new Error(motivoDaExclusaoRecusada(explicitDeleteError));
           }
         }
       }
@@ -4276,7 +4277,7 @@ export async function saveProposta(
           }
 
           if (deleteRemovedItemsError) {
-            throw new Error("Não foi possível excluir um ou mais produtos da proposta. Recarregue a página e tente novamente.");
+            throw new Error(motivoDaExclusaoRecusada(deleteRemovedItemsError));
           }
         }
       }

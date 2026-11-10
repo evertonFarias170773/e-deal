@@ -1,7 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { listarAvisosPronto, type AvisoPronto, type ModeloAviso, type RecusaPorNumero } from "../services/aviso-pronto.client";
+import {
+  listarAvisosPronto,
+  statusPermiteAvisoPronto,
+  type AvisoPronto,
+  type ModeloAviso,
+  type RecusaPorNumero
+} from "../services/aviso-pronto.client";
 
 /**
  * Recusa por número da tentativa `seq`, guardada só nesta tela (o servidor não
@@ -10,10 +16,11 @@ import { listarAvisosPronto, type AvisoPronto, type ModeloAviso, type RecusaPorN
 export type RecusaNumeroDoAviso = RecusaPorNumero & { seq: number };
 
 /**
- * Último aviso "pedido pronto" de cada pedido do painel que está na bancada
- * (status EXPEDICAO). Leitura à parte, como `useInstrucoesDeEntrega`: a consulta
- * do painel não muda. Falhou a leitura, o mapa fica vazio e o botão aparece
- * como "Avisar cliente" — o servidor recusa o segundo envio de qualquer forma.
+ * Último aviso "pedido pronto" dos pedidos (status EXPEDICAO, A RETIRAR ou
+ * EM TRANSITO desde 10/11/2026). Leitura à parte: a consulta do painel não muda.
+ * Desde 10/11/2026 só a janela "Avisar cliente" do menu ⋯ usa, com um pedido.
+ * Falhou a leitura, o mapa fica vazio, `erro` diz o motivo e o botão aparece como
+ * "Avisar cliente" — o servidor recusa o segundo envio de qualquer forma.
  */
 const VAZIO: Map<number, AvisoPronto> = new Map();
 
@@ -25,13 +32,16 @@ export function useAvisosPedidoPronto(pedidos: readonly { idInt: number; statusI
   const [modelos, setModelos] = useState<Map<number, ModeloAviso>>(new Map());
   // Último envio do "Testar modelo" de cada pedido (fora do aviso do pedido).
   const [testes, setTestes] = useState<Map<number, AvisoPronto>>(new Map());
+  // A primeira leitura voltou (com ou sem erro).
+  const [carregado, setCarregado] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
 
   useEffect(() => {
     let vivo = true;
     const ids = Array.from(
       new Set(
         pedidos
-          .filter((p) => (p.statusInterno ?? "").toUpperCase() === "EXPEDICAO")
+          .filter((p) => statusPermiteAvisoPronto(p.statusInterno))
           .map((p) => p.idInt)
           .filter((id) => Number.isFinite(id) && id > 0)
       )
@@ -40,10 +50,13 @@ export function useAvisosPedidoPronto(pedidos: readonly { idInt: number; statusI
     void (async () => {
       const res = await listarAvisosPronto(ids);
       if (!vivo) return;
+      setCarregado(true);
       if (!res.ok) {
         console.warn("[useAvisosPedidoPronto] Não foi possível ler os avisos:", res.mensagem);
+        setErro(`Não foi possível ler o aviso: ${res.mensagem ?? "erro"}`);
         return;
       }
+      setErro(null);
       const mapa = new Map<number, AvisoPronto>();
       for (const [id, aviso] of Object.entries(res.avisos ?? {})) {
         if (aviso) mapa.set(Number(id), aviso);
@@ -88,5 +101,5 @@ export function useAvisosPedidoPronto(pedidos: readonly { idInt: number; statusI
     []
   );
 
-  return { avisos, modoTeste, atualizar, recusas, modelos, testes };
+  return { avisos, modoTeste, atualizar, recusas, modelos, testes, carregado, erro };
 }
