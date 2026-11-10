@@ -72,7 +72,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Confirmar Cancelamento** | Janela **Cancelar Cobrança** | Cancela a cobrança. Só habilita depois que o sistema libera e o motivo é preenchido. |
 | **Voltar** | Janela **Cancelar Cobrança** | Fecha a janela sem cancelar. |
 | **Ir para Notas Fiscais**, **Ir para Pedidos**, **Ir para Contas a Receber** | Janela **Cancelar Cobrança**, quando o cancelamento é recusado | Leva à tela onde a pendência se resolve. |
-| **Trocar forma de pagamento** | **Ações Administrativas** do detalhe, e janela **Cancelar Cobrança** quando a recusa é por nota fiscal autorizada | Troca um PIX não pago da Ideal Gráfica ou da E3 Brindes por Faturado, E-Permuta, E-Amostra ou E-Retrabalho, com o mesmo valor e mantendo a nota. Passo a passo na ficha [Proposta: aba Pagamentos](proposta-pagamentos.md). |
+| **Trocar forma de pagamento** | **Ações Administrativas** do detalhe, e janela **Cancelar Cobrança** quando a recusa é por nota fiscal autorizada | Troca um PIX não pago da Ideal Gráfica ou da E3 Brindes por Faturado, E-Permuta, E-Amostra, E-Retrabalho ou E-Crédito, com o mesmo valor e mantendo a nota. Passo a passo na ficha [Proposta: aba Pagamentos](proposta-pagamentos.md). |
 | **Voltar para cobranças** | Topo do detalhe | Retorna à lista. |
 | **Atualizar status** | Detalhe, no aviso **Gerando código PIX...** | Recarrega os dados da cobrança. |
 | **Abrir** e **Copiar** | Detalhe, bloco **Links e Códigos de Pagamento**, linha **Link de Pagamento** | Abre o link de pagamento em outra aba ou o copia. O link aparece inteiro (pay.ai-ideal.com.br/functions/v1/pagamento-publico?token=...); para mandar ao cliente, use **Copiar**. |
@@ -151,7 +151,7 @@ O que acontece:
 - Se não sobrar nenhuma cobrança ativa, a proposta volta para **NOVO** e o tipo de cobrança é limpo. Pedido que já avançou (liberado, em revisão, em produção, em expedição ou entregue) não regride.
 - O chat da proposta registra quem cancelou e o motivo.
 
-Se o cancelamento não for possível, a janela mostra **Não é possível cancelar agora**, explica o motivo e, quando existe uma tela para resolver, oferece o botão que leva até ela (**Ir para Notas Fiscais**, **Ir para Pedidos** ou **Ir para Contas a Receber**). Quando a recusa é por nota fiscal autorizada e a cobrança é um PIX não pago da Ideal Gráfica ou da E3 Brindes, aparece também **Trocar forma de pagamento**, que troca o PIX por Faturado (ou E-Permuta, E-Amostra, E-Retrabalho) e mantém a nota.
+Se o cancelamento não for possível, a janela mostra **Não é possível cancelar agora**, explica o motivo e, quando existe uma tela para resolver, oferece o botão que leva até ela (**Ir para Notas Fiscais**, **Ir para Pedidos** ou **Ir para Contas a Receber**). Quando a recusa é por nota fiscal autorizada e a cobrança é um PIX não pago da Ideal Gráfica ou da E3 Brindes, aparece também **Trocar forma de pagamento**, que troca o PIX por Faturado (ou E-Permuta, E-Amostra, E-Retrabalho, E-Crédito) e mantém a nota.
 
 ### Cancelar um faturamento já conferido (para refaturar)
 

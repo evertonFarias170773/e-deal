@@ -33,32 +33,65 @@ export const TIPO_DE_ORIGEM_DA_TROCA = "PIX";
 /** Forma de destino padrão (a única até 10/11/2026). */
 export const TIPO_DE_DESTINO_DA_TROCA = "E-FATURADO";
 
-export type TipoDestinoDaTroca = "E-FATURADO" | "E-PERMUTA" | "E-AMOSTRA" | "E-RETRABALHO";
+export type TipoDestinoDaTroca = "E-FATURADO" | "E-PERMUTA" | "E-AMOSTRA" | "E-RETRABALHO" | "E-CREDITO";
 
 export type DestinoDaTroca = {
   tipo: TipoDestinoDaTroca;
   rotulo: string;
   /** Faturado e E-Permuta pedem condição, como no Gerar cobrança; cortesia não. */
   exigeCondicao: boolean;
+  /** E-Crédito: nasce paga, consumindo o saldo de crédito do cliente. */
+  consomeCredito?: boolean;
 };
 
 /**
  * Formas internas aceitas como destino (10/11/2026): a família faturado do
- * Gerar cobrança. Nenhuma passa por banco nem consome nada ao nascer — por
- * isso desfazer a nova é só cancelá-la no Vibe.
+ * Gerar cobrança e o E-Crédito. Nenhuma passa por banco.
+ * - Família faturado: não consome nada ao nascer; desfazer é cancelá-la.
+ * - E-Crédito: nasce paga e consome o crédito do cliente (pendências mais
+ *   antigas primeiro, depois o avulso, como em usar-credito). Só vale se o
+ *   saldo cobrir o valor inteiro. Desfazer é a função do banco
+ *   `mc_desfazer_credito_da_troca`, que devolve exatamente o que a troca
+ *   consumiu e cancela a cobrança, numa transação só.
  *
- * Fora, de propósito:
- * - E-Crédito: nasce consumindo o saldo do cliente, e a única devolução que
- *   existe hoje (`mc_estornar_uso_pedido`) recusa pedido com nota autorizada
- *   e exige ADM. Sem uma devolução própria da troca, não dá para desfazer.
- * - Boleto, PIX novo e cartão: nascem no banco (mapa em estudo, sem código).
+ * Fora, de propósito: boleto, PIX novo e cartão, que nascem no banco.
  */
 export const DESTINOS_DA_TROCA: readonly DestinoDaTroca[] = [
   { tipo: "E-FATURADO", rotulo: "Faturado", exigeCondicao: true },
   { tipo: "E-PERMUTA", rotulo: "E-Permuta", exigeCondicao: true },
   { tipo: "E-AMOSTRA", rotulo: "E-Amostra", exigeCondicao: false },
-  { tipo: "E-RETRABALHO", rotulo: "E-Retrabalho", exigeCondicao: false }
+  { tipo: "E-RETRABALHO", rotulo: "E-Retrabalho", exigeCondicao: false },
+  { tipo: "E-CREDITO", rotulo: "E-Crédito", exigeCondicao: false, consomeCredito: true }
 ];
+
+/** Saldo cobre o valor? Em centavos, sem sobra de ponto flutuante. */
+export function saldoCobreOValor(saldo: number, valor: number): boolean {
+  return Math.round(saldo * 100) >= Math.round(valor * 100);
+}
+
+export type FatiaDoCredito = { idPendencia: number | null; centavos: number };
+
+/**
+ * Como o crédito é consumido: pendências a favor do cliente, mais antigas
+ * primeiro, e o resto no crédito avulso (a mesma ordem de usar-credito).
+ */
+export function fatiasDoConsumo(
+  valorCentavos: number,
+  pendencias: { id: number; valor_saldo: number | string }[]
+): FatiaDoCredito[] {
+  const fatias: FatiaDoCredito[] = [];
+  let restante = valorCentavos;
+  for (const p of pendencias) {
+    if (restante <= 0) break;
+    const saldo = Math.round(Number(p.valor_saldo) * 100);
+    const fatia = Math.min(restante, saldo);
+    if (fatia < 1) continue;
+    fatias.push({ idPendencia: p.id, centavos: fatia });
+    restante -= fatia;
+  }
+  if (restante > 0) fatias.push({ idPendencia: null, centavos: restante });
+  return fatias;
+}
 
 /** O destino pelo tipo pedido; vazio é Faturado (o corpo antigo da rota). */
 export function destinoDaTroca(tipo: unknown): DestinoDaTroca | null {
@@ -203,6 +236,8 @@ export function modeloValidoParaTroca(modelo: ModeloDaTroca | null | undefined):
 
 export type CobrancaAntigaParaCopia = {
   id_int: number;
+  /** uuid da antiga: referência da descrição quando não há id_pagamento. */
+  id?: string | null;
   id_pagamento: string | null;
   id_cliente: number | null;
   cliente: string | null;
@@ -228,17 +263,21 @@ export function montarCobrancaDaTroca(
 ): Record<string, unknown> {
   const valor = Math.round(Number(antiga.valor) * 100) / 100;
   const hoje = getLocalDateInSaoPaulo(agora);
-  const referencia = antiga.id_pagamento || "anterior";
+  // A função do banco que desfaz o E-Crédito confere esta referência.
+  const referencia = antiga.id_pagamento || antiga.id || "anterior";
   if (!destino.exigeCondicao || !modelo) {
-    // Cortesia (E-Amostra, E-Retrabalho): sem condição, como no Gerar cobrança —
-    // nulo em forma_fatu, forma_pgto, id_modelo_cobranca e nos p_*.
+    // Cortesia (E-Amostra, E-Retrabalho) e E-Crédito: sem condição, como no
+    // Gerar cobrança — nulo em forma_fatu, forma_pgto, id_modelo_cobranca e
+    // nos p_*. O E-Crédito nasce PAID (o crédito sai do saldo na hora) e não
+    // confirmado: conferir é do Financeiro, como em usar-credito.
+    const credito = destino.consomeCredito === true;
     return {
       id_int: antiga.id_int,
       id_cliente: antiga.id_cliente,
       cliente: antiga.cliente,
       documento: antiga.documento,
       valor,
-      status: "A_VENCER",
+      status: credito ? "PAID" : "A_VENCER",
       tipo_cobranca: destino.tipo,
       empresa: antiga.empresa,
       id_empresa: antiga.id_empresa,
@@ -255,7 +294,7 @@ export function montarCobrancaDaTroca(
       p_qtd_parcelas: null,
       p_dias_pra_inicio: null,
       p_intervalo: null,
-      paid_at: null
+      paid_at: credito ? agora.toISOString() : null
     };
   }
   const entrada = Number(modelo.entrada_porcento ?? 0);

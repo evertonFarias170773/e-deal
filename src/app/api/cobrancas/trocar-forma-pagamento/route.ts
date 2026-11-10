@@ -13,10 +13,14 @@ import {
 import { recusaDoGatilhoNoErro } from "@/features/cobrancas/lib/tipo-x-retrabalho";
 import { statusEhEntregue, MENSAGEM_PEDIDO_ENTREGUE, CODIGO_PEDIDO_ENTREGUE } from "@/features/orcamentos/services/pedido-entregue";
 import { lerContextoRetrabalhoDoPedido } from "@/features/cobrancas/services/tipo-x-retrabalho.service";
+import { lerTodas } from "@/lib/supabase/ler-todas";
+import { formatCurrency } from "@/lib/formatters/currency";
 import {
   RECUSAS_DA_TROCA,
   destinoDaTroca,
   destinosPermitidosNoPedido,
+  fatiasDoConsumo,
+  saldoCobreOValor,
   type DestinoDaTroca,
   marcadorEmAndamento,
   mensagemHistoricoDaTroca,
@@ -41,6 +45,13 @@ import {
  *        consulta ao abrir)
  *   POST { id, tipo, id_modelo_cobranca, motivo } — tipo vazio é Faturado;
  *        id_modelo_cobranca só para Faturado e E-Permuta.
+ *
+ * E-Crédito (10/11/2026, caso 24574): exige também credito.usar e saldo de
+ * crédito do pagador que cubra o valor inteiro. A nova nasce PAID e consome o
+ * crédito logo depois do insert (pendências mais antigas primeiro, depois o
+ * avulso, pelas mesmas funções do banco de usar-credito). Se o consumo falhar
+ * ou o banco não confirmar o cancelamento do PIX, `mc_desfazer_credito_da_troca`
+ * devolve exatamente o que foi consumido e cancela a nova, numa transação só.
  *
  * Ordem do POST, que garante que a antiga só sai depois que a nova existe:
  *   1. marca a antiga como "troca em andamento" (gravação condicional: é a
@@ -173,7 +184,7 @@ async function carregarContexto(request: Request, idCobranca: string): Promise<C
 /** Veredito da troca: recusas de cancelamento (menos a nota) + regras da troca. */
 async function avaliarTroca(
   ctx: Contexto
-): Promise<{ pode: true; notaAutorizada: boolean; destinos: DestinoDaTroca[] } | Falha> {
+): Promise<{ pode: true; notaAutorizada: boolean; destinos: DestinoDaTroca[]; credito: CreditoDaTroca | null } | Falha> {
   const elegibilidade = await avaliarCancelamentoNoServidor(ctx.supabase, ctx.pagamento.id, RECUSAS_DA_TROCA);
   if (!elegibilidade.ok) {
     return falha(elegibilidade.erro === "NAO_ENCONTRADA" ? 404 : 503, elegibilidade.mensagem, elegibilidade.erro);
@@ -199,10 +210,113 @@ async function avaliarTroca(
 
   // E-Retrabalho só em retrabalho; retrabalho só com E-Retrabalho (mesma regra do gatilho).
   const contextoRetrabalho = await lerContextoRetrabalhoDoPedido(ctx.supabase, Number(ctx.pagamento.id_int));
-  const destinos = destinosPermitidosNoPedido(contextoRetrabalho);
+  let destinos = destinosPermitidosNoPedido(contextoRetrabalho);
+
+  // E-Crédito só aparece se quem troca pode usar crédito e o saldo cobre tudo.
+  let credito: CreditoDaTroca | null = null;
+  if (destinos.some((d) => d.consomeCredito)) {
+    credito = await avaliarCredito(ctx);
+    if (!credito.disponivel) destinos = destinos.filter((d) => !d.consomeCredito);
+  }
   if (destinos.length === 0) return falha(409, "Nenhuma forma de pagamento interna vale para este pedido.", "SEM_DESTINO");
 
-  return { pode: true, notaAutorizada: veredito.recusas.some((r) => r.code === "NOTA_AUTORIZADA"), destinos };
+  return { pode: true, notaAutorizada: veredito.recusas.some((r) => r.code === "NOTA_AUTORIZADA"), destinos, credito };
+}
+
+type CreditoDaTroca = { disponivel: boolean; saldo: number | null; motivo: string | null };
+
+/** Saldo de crédito do cliente: toda a razão não cancelada (mesma conta de usar-credito). */
+async function saldoDeCredito(supabase: SupabaseClient, idCliente: number): Promise<number | null> {
+  const leitura = await lerTodas<{ id: number; valor: number | string; tipo: string }>(
+    () => supabase.from("movimento_credito").select("id, valor, tipo").eq("id_cliente", idCliente).eq("cancelado", false) as never,
+    { chave: "id" }
+  );
+  if (leitura.error || !leitura.completo) return null;
+  const centavos = leitura.data.reduce((soma, r) => {
+    const v = Math.round(Number(r.valor) * 100) || 0;
+    return soma + (String(r.tipo).toUpperCase() === "CREDITO" ? v : -v);
+  }, 0);
+  return centavos / 100;
+}
+
+async function avaliarCredito(ctx: Contexto): Promise<CreditoDaTroca> {
+  if (!(await verificarPermissaoServerSide(ctx.supabase, ctx.userId, "credito.usar"))) {
+    return { disponivel: false, saldo: null, motivo: "E-Crédito exige a permissão de usar crédito (credito.usar)." };
+  }
+  if (ctx.pagamento.id_cliente == null) {
+    return { disponivel: false, saldo: null, motivo: "A cobrança não tem cliente pagador para usar crédito." };
+  }
+  const saldo = await saldoDeCredito(ctx.supabase, Number(ctx.pagamento.id_cliente));
+  if (saldo == null) return { disponivel: false, saldo: null, motivo: "Não foi possível ler o saldo de crédito do cliente." };
+  const valor = Number(ctx.pagamento.valor);
+  if (!saldoCobreOValor(saldo, valor)) {
+    return {
+      disponivel: false,
+      saldo: Math.max(0, saldo),
+      motivo: `Saldo de crédito insuficiente: o cliente tem ${formatCurrency(Math.max(0, saldo))} e a cobrança é de ${formatCurrency(valor)}.`
+    };
+  }
+  return { disponivel: true, saldo, motivo: null };
+}
+
+type ResultadoDoConsumo = { ok: true } | { ok: false; mensagem: string };
+
+/**
+ * Consome o crédito na E-Crédito nova: pendências a favor do cliente, mais
+ * antigas primeiro, e o resto no avulso — as funções do banco de usar-credito.
+ */
+async function consumirCredito(ctx: Contexto, idNova: string, valor: number, observacao: string): Promise<ResultadoDoConsumo> {
+  const idCliente = Number(ctx.pagamento.id_cliente);
+  const idInt = Number(ctx.pagamento.id_int);
+  const { data: pendencias, error: erroPendencias } = await ctx.supabase
+    .from("conta_corrente_pendencias")
+    .select("id, valor_saldo")
+    .eq("id_cliente", idCliente)
+    .eq("direcao", "FAVOR_CLIENTE")
+    .in("status", ["ABERTA", "PARCIALMENTE_RESOLVIDA"])
+    .order("created_at", { ascending: true });
+  if (erroPendencias) return { ok: false, mensagem: "Não foi possível ler as pendências de crédito do cliente." };
+
+  const fatias = fatiasDoConsumo(Math.round(valor * 100), (pendencias ?? []) as { id: number; valor_saldo: number }[]);
+  for (const fatia of fatias) {
+    const { error } =
+      fatia.idPendencia != null
+        ? await ctx.supabase.rpc("cc_usar_pendencia", {
+            p_id_pendencia: fatia.idPendencia,
+            p_valor: fatia.centavos / 100,
+            p_modo: "CREDITO_IMEDIATO",
+            p_id_int_destino: idInt,
+            p_id_pagamento: idNova,
+            p_chave_reserva: null,
+            p_observacao: observacao
+          })
+        : await ctx.supabase.rpc("mc_usar_credito_avulso", {
+            p_id_cliente: idCliente,
+            p_valor: fatia.centavos / 100,
+            p_id_pagamento: idNova,
+            p_id_int_destino: idInt,
+            p_observacao: observacao
+          });
+    if (error) {
+      console.error("[trocar-forma-pagamento][CREDITO] falha ao consumir:", error.message);
+      return { ok: false, mensagem: error.message.replace(/^[A-Z_]+:\s*/, "") };
+    }
+  }
+  return { ok: true };
+}
+
+/** Devolve o crédito da E-Crédito da troca e a cancela (função do banco, transação única). */
+async function desfazerCredito(ctx: Contexto, idNova: string, motivoCancela: string): Promise<{ ok: boolean; mensagem?: string }> {
+  const { error } = await ctx.supabase.rpc("mc_desfazer_credito_da_troca", {
+    p_id_pagamento: idNova,
+    p_id_pagamento_antiga: ctx.pagamento.id,
+    p_motivo: motivoCancela
+  });
+  if (error) {
+    console.error("[trocar-forma-pagamento][CREDITO] falha ao devolver o crédito:", error.message);
+    return { ok: false, mensagem: error.message };
+  }
+  return { ok: true };
 }
 
 async function registrarHistorico(ctx: Contexto, mensagem: string) {
@@ -250,7 +364,8 @@ export async function GET(request: Request) {
       notaAutorizada: avaliacao.notaAutorizada,
       idPagamento: ctx.pagamento.id_pagamento,
       valor: Number(ctx.pagamento.valor),
-      destinos: avaliacao.destinos
+      destinos: avaliacao.destinos,
+      credito: avaliacao.credito
     });
   } catch (e) {
     console.error("[trocar-forma-pagamento][GET]", e);
@@ -274,6 +389,11 @@ export async function POST(request: Request) {
     if (ehFalha(ctx)) return responderFalha(ctx);
     const avaliacao = await avaliarTroca(ctx);
     if (ehFalha(avaliacao)) return responderFalha(avaliacao);
+    if (destino.consomeCredito && avaliacao.credito && !avaliacao.credito.disponivel) {
+      return erro(409, avaliacao.credito.motivo || "E-Crédito indisponível.", "CREDITO_INDISPONIVEL", {
+        saldoCredito: avaliacao.credito.saldo
+      });
+    }
     if (!avaliacao.destinos.some((d) => d.tipo === destino.tipo)) {
       return erro(409, `${destino.rotulo} não vale para este pedido.`, "DESTINO_NAO_PERMITIDO");
     }
@@ -312,6 +432,7 @@ export async function POST(request: Request) {
     const linhaNova = montarCobrancaDaTroca(
       {
         id_int: pagamento.id_int as number,
+        id: pagamento.id,
         id_pagamento: pagamento.id_pagamento,
         id_cliente: pagamento.id_cliente,
         cliente: pagamento.cliente,
@@ -339,6 +460,33 @@ export async function POST(request: Request) {
     }
     const novaRef = nova.id_pagamento || nova.id;
 
+    // 2b. E-Crédito: o crédito sai do saldo agora. Falhou? Devolve o que saiu,
+    // cancela a nova e o PIX nem vai ao banco.
+    if (destino.consomeCredito) {
+      const consumo = await consumirCredito(
+        ctx,
+        nova.id,
+        Number(linhaNova.valor),
+        `Crédito aplicado como pagamento da proposta #${pagamento.id_int} (troca do PIX ${antigaRef})`
+      );
+      if (!consumo.ok) {
+        const volta = await desfazerCredito(
+          ctx,
+          nova.id,
+          `Troca de forma de pagamento não concluída: falha ao consumir o crédito (${consumo.mensagem}). O PIX ${antigaRef} continua ativo. Motivo da troca: ${motivo}`
+        );
+        await soltarMarca(ctx, marca);
+        if (!volta.ok) {
+          await registrarHistorico(
+            ctx,
+            `ATENÇÃO: troca para E-Crédito não concluída e o crédito da cobrança ${novaRef} não foi devolvido. Conferência manual do Financeiro na Conta Corrente. PIX ${antigaRef} segue ativo.`
+          );
+          return erro(500, `Falha ao usar o crédito e ao devolvê-lo. A cobrança ${novaRef} precisa de conferência manual. O PIX continua ativo.`, "DESFAZER_FALHOU");
+        }
+        return erro(409, `A forma de pagamento não foi trocada: ${consumo.mensagem}. O crédito não foi usado e o PIX continua ativo.`, "CREDITO_NAO_CONSUMIDO");
+      }
+    }
+
     // 3. Cancela o PIX no banco — o mesmo cancelamento de cancelar-externo.
     const resposta = await chamarCancelamentoDePix({
       corpo: corpoDoCancelamentoPix({
@@ -356,15 +504,26 @@ export async function POST(request: Request) {
 
     // 4b. Banco não confirmou: desfaz a nova; a antiga segue ativa.
     if (!decisao.cancelarNoVibe) {
-      const { error: erroDesfaz } = await supabase
-        .from("pagamentos_v2")
-        .update({ status: "CANCELADO", motivo_cancela: motivoCancelaDaNovaDesfeita(antigaRef, decisao.desfecho, motivo) })
-        .eq("id", nova.id);
+      const motivoCancelaNova = motivoCancelaDaNovaDesfeita(antigaRef, decisao.desfecho, motivo);
+      let erroDesfaz: unknown = null;
+      if (destino.consomeCredito) {
+        // Devolve o crédito e cancela a nova juntos. Precisa da marca: vem antes de soltá-la.
+        const volta = await desfazerCredito(ctx, nova.id, motivoCancelaNova);
+        if (!volta.ok) erroDesfaz = volta.mensagem;
+      } else {
+        const { error } = await supabase
+          .from("pagamentos_v2")
+          .update({ status: "CANCELADO", motivo_cancela: motivoCancelaNova })
+          .eq("id", nova.id);
+        erroDesfaz = error;
+      }
       await soltarMarca(ctx, marca);
       if (erroDesfaz) {
         await registrarHistorico(
           ctx,
-          `ATENÇÃO: troca de forma de pagamento não concluída e a cobrança ${novaRef} (${rotulo}) ficou ativa junto com o PIX ${antigaRef}. Cancele a ${novaRef}.`
+          destino.consomeCredito
+            ? `ATENÇÃO: troca de forma de pagamento não concluída e a cobrança ${novaRef} (E-Crédito) ficou ativa junto com o PIX ${antigaRef}, com o crédito consumido. Conferência manual do Financeiro.`
+            : `ATENÇÃO: troca de forma de pagamento não concluída e a cobrança ${novaRef} (${rotulo}) ficou ativa junto com o PIX ${antigaRef}. Cancele a ${novaRef}.`
         );
         return erro(
           500,

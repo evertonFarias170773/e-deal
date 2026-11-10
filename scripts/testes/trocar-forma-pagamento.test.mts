@@ -16,7 +16,9 @@
  *      andamento, falha ao criar a nova;
  *   F. a consulta GET que a janela faz ao abrir;
  *   G. as outras formas internas (10/11/2026): E-Permuta, E-Amostra e
- *      E-Retrabalho; E-Crédito e as formas de banco recusadas.
+ *      E-Retrabalho; as formas de banco recusadas;
+ *   H. E-Crédito: consome o crédito, devolve se o banco não confirmar,
+ *      recusa sem saldo.
  */
 import { registerHooks } from "node:module";
 import { pathToFileURL, fileURLToPath } from "node:url";
@@ -357,7 +359,6 @@ async function recusaDeDestino(nome: string, contexto: [string | null, boolean],
 }
 await recusaDeDestino("E-Retrabalho em pedido comum", [null, false], { tipo: "E-RETRABALHO", id_modelo_cobranca: "" }, "DESTINO_NAO_PERMITIDO");
 await recusaDeDestino("Faturado em pedido de retrabalho", ["RETRABALHO", false], { tipo: "E-FATURADO" }, "DESTINO_NAO_PERMITIDO");
-await recusaDeDestino("E-Crédito (fora nesta etapa)", [null, false], { tipo: "E-CREDITO", id_modelo_cobranca: "" }, "DESTINO_NAO_ACEITO");
 await recusaDeDestino("Boleto (forma de banco, fora)", [null, false], { tipo: "BOLETO" }, "DESTINO_NAO_ACEITO");
 await recusaDeDestino("PIX novo (forma de banco, fora)", [null, false], { tipo: "PIX" }, "DESTINO_NAO_ACEITO");
 await recusaDeDestino("Cartão (forma de banco, fora)", [null, false], { tipo: "CARD_PARCELADO" }, "DESTINO_NAO_ACEITO");
@@ -381,6 +382,126 @@ fetchFalso({ corpo: CONFIRMOU });
   const linha = ((r.insertNova?.payload as Record<string, unknown>[]) ?? [])[0] ?? {};
   confere("Faturado sem tipo no corpo: E-FATURADO com a condição, mensagem de sempre", r.json.success === true && linha.tipo_cobranca === "E-FATURADO" && linha.forma_fatu === "30 DIAS" && String(r.json.message).includes("(Faturado) criada"), r.json);
   confere("Faturado: Histórico de sempre", r.historico.some((m) => m.includes("(Faturado, 30 DIAS)")), r.historico);
+}
+
+
+// ── H. E-Crédito (10/11/2026, caso 24574) ───────────────────────────────────
+console.log("== H. E-Crédito: consome o crédito, devolve se o banco não confirmar, recusa sem saldo");
+/** Saldo de crédito do pagador e, se quiser, uma pendência a favor do cliente. */
+function prepararCredito(saldo: number, opcoes: { pendencia?: number; consumoFalha?: string; desfazerFalha?: string } = {}) {
+  prepararBanco();
+  contextoRetrabalho(null, false);
+  falso.responder("movimento_credito:select", { data: [{ id: 1, valor: saldo, tipo: "CREDITO" }], error: null });
+  falso.responder("conta_corrente_pendencias:select", {
+    data: opcoes.pendencia ? [{ id: 77, valor_saldo: opcoes.pendencia }] : [],
+    error: null
+  });
+  falso.responder("rpc:cc_usar_pendencia", { data: 900, error: null });
+  falso.responder("rpc:mc_usar_credito_avulso", opcoes.consumoFalha ? { data: null, error: { message: opcoes.consumoFalha } } : { data: 901, error: null });
+  falso.responder(
+    "rpc:mc_desfazer_credito_da_troca",
+    opcoes.desfazerFalha ? { data: null, error: { message: opcoes.desfazerFalha } } : { data: { ja_desfeito: false, devolvido: 213, movimentos: [902] }, error: null }
+  );
+}
+const rpcs = (r: { chamadas: { tabela: string; payload?: unknown }[] }, nome: string) =>
+  r.chamadas.filter((c) => c.tabela === `rpc:${nome}`).map((c) => (c.payload ?? {}) as Record<string, unknown>);
+const posicao = (r: { chamadas: { tabela: string; op: string; payload?: unknown }[] }, pred: (c: { tabela: string; op: string; payload?: unknown }) => boolean) =>
+  r.chamadas.findIndex(pred);
+
+// GET: com saldo, E-Crédito aparece, com o saldo.
+prepararCredito(500);
+{
+  const j = await consultar();
+  const cred = j.credito as { disponivel: boolean; saldo: number } | null;
+  confere("com saldo: a janela oferece E-Crédito, com o saldo", tipos(j).includes("E-CREDITO") && cred?.disponivel === true && cred?.saldo === 500, j);
+}
+
+// PROVA 1: com saldo, banco confirma — a nova nasce e consome o crédito, a antiga cai.
+prepararCredito(500);
+fetchFalso({ corpo: CONFIRMOU });
+{
+  const r = await trocar({ tipo: "E-CREDITO", id_modelo_cobranca: "", motivo: "cliente pagou o PIX pela chave" });
+  const linha = ((r.insertNova?.payload as Record<string, unknown>[]) ?? [])[0] ?? {};
+  const usos = rpcs(r, "mc_usar_credito_avulso");
+  confere("E-Crédito com saldo: troca concluída", r.status === 200 && r.json.success === true && /E-Crédito/.test(String(r.json.message)), r.json);
+  confere("E-Crédito: nova E-CREDITO paga, não conferida, mesmo valor", linha.tipo_cobranca === "E-CREDITO" && linha.status === "PAID" && Boolean(linha.paid_at) && linha.confirmado === false && linha.valor === 213, linha);
+  confere("E-Crédito: descrição liga a nova ao PIX (a função do banco confere)", String(linha.descricao).includes("(troca da 24692-A)"), linha.descricao);
+  confere("E-Crédito: consome o valor inteiro na nova", usos.length === 1 && usos[0].p_valor === 213 && usos[0].p_id_pagamento === NOVA.id && usos[0].p_id_cliente === 777, usos);
+  const posConsumo = posicao(r, (c) => c.tabela === "rpc:mc_usar_credito_avulso");
+  confere("ORDEM: nova -> consumo -> antiga cai", r.posInsert >= 0 && posConsumo > r.posInsert && r.posCancelaAntiga > posConsumo, { insert: r.posInsert, consumo: posConsumo, antiga: r.posCancelaAntiga });
+  confere("E-Crédito: o PIX foi ao banco uma vez", r.aoBanco.length === 1);
+  confere("E-Crédito: nada devolvido (troca concluída)", rpcs(r, "mc_desfazer_credito_da_troca").length === 0);
+  const pc = (r.cancelaAntiga?.payload ?? {}) as Record<string, unknown>;
+  confere("E-Crédito: antiga cai citando a E-Crédito", /Trocada por E-Crédito, cobrança 24692-B/.test(String(pc.motivo_troca)), pc);
+  confere("E-Crédito: Histórico liga as duas", r.historico.some((m) => m.includes("24692-A") && m.includes("24692-B") && m.includes("(E-Crédito)")), r.historico);
+  confere("E-Crédito: nada em propostas nem em notas", !r.gravouProposta && !r.chamadas.some((c) => c.tabela === "notas_fiscais" && c.op !== "select"));
+}
+
+// Pendência primeiro, o resto no avulso (ordem de usar-credito).
+prepararCredito(500, { pendencia: 100 });
+fetchFalso({ corpo: CONFIRMOU });
+{
+  const r = await trocar({ tipo: "E-CREDITO", id_modelo_cobranca: "" });
+  const pend = rpcs(r, "cc_usar_pendencia");
+  const avulso = rpcs(r, "mc_usar_credito_avulso");
+  confere("E-Crédito: pendência 100 primeiro, avulso 113 depois", pend.length === 1 && pend[0].p_valor === 100 && pend[0].p_id_pendencia === 77 && pend[0].p_modo === "CREDITO_IMEDIATO" && avulso.length === 1 && avulso[0].p_valor === 113, { pend, avulso });
+}
+
+// PROVA 2: banco recusa — a antiga continua, a nova é desfeita e o crédito volta.
+prepararCredito(500);
+fetchFalso({ corpo: `=[Object: ${JSON.stringify(RECUSOU)}]` });
+{
+  const r = await trocar({ tipo: "E-CREDITO", id_modelo_cobranca: "", motivo: "cliente pagou o PIX pela chave" });
+  const volta = rpcs(r, "mc_desfazer_credito_da_troca");
+  confere("E-Crédito, banco recusa: não trocou", r.json.success === false && r.json.code === "PIX_NAO_CANCELADO_NO_BANCO", r.json);
+  confere("E-Crédito, banco recusa: o crédito volta pela função do banco, ligada às duas cobranças", volta.length === 1 && volta[0].p_id_pagamento === NOVA.id && volta[0].p_id_pagamento_antiga === ANTIGA.id && /não confirmou/.test(String(volta[0].p_motivo)), volta);
+  const posVolta = posicao(r, (c) => c.tabela === "rpc:mc_desfazer_credito_da_troca");
+  const posSolta = posicao(r, (c) => c.tabela === "pagamentos_v2" && c.op === "update" && ((c.payload ?? {}) as Record<string, unknown>).motivo_troca === null);
+  confere("E-Crédito, banco recusa: devolve antes de soltar a marca (a função exige a troca em andamento)", posVolta >= 0 && posSolta > posVolta, { posVolta, posSolta });
+  confere("E-Crédito, banco recusa: a antiga continua", !r.cancelaAntiga);
+  confere("E-Crédito, banco recusa: a nova não é cancelada à parte (a função cancela junto)", !r.cancelaNova);
+  confere("E-Crédito, banco recusa: Histórico registra", r.historico.some((m) => /não concluída/.test(m) && m.includes("(E-Crédito) foi cancelada")), r.historico);
+}
+
+// PROVA 3: sem saldo — recusa mostrando o saldo, sem gravar nada.
+prepararCredito(100);
+{
+  const j = await consultar();
+  const cred = j.credito as { disponivel: boolean; saldo: number; motivo: string } | null;
+  confere("sem saldo: E-Crédito não aparece na lista", j.pode === true && !tipos(j).includes("E-CREDITO") && tipos(j).includes("E-FATURADO"), j.destinos);
+  confere("sem saldo: a janela recebe o saldo e o motivo", cred?.disponivel === false && cred?.saldo === 100 && /R\$\s100,00/.test(cred?.motivo ?? "") && /R\$\s213,00/.test(cred?.motivo ?? ""), cred);
+}
+prepararCredito(100);
+fetchFalso({ corpo: CONFIRMOU });
+{
+  const r = await trocar({ tipo: "E-CREDITO", id_modelo_cobranca: "" });
+  confere("sem saldo: recusa (CREDITO_INDISPONIVEL) mostrando o saldo", r.json.success === false && r.json.code === "CREDITO_INDISPONIVEL" && r.json.saldoCredito === 100 && /R\$\s100,00/.test(String(r.json.message)), r.json);
+  confere("sem saldo: nada gravado, nenhum crédito usado, nada ao banco", r.escritas.length === 0 && rpcs(r, "mc_usar_credito_avulso").length === 0 && r.aoBanco.length === 0, r.escritas);
+}
+
+// Consumo falha: devolve o que saiu, cancela a nova e o PIX nem vai ao banco.
+prepararCredito(500, { consumoFalha: "CC_SALDO_INSUFICIENTE: saldo R$ 10 < solicitado R$ 213" });
+fetchFalso({ corpo: CONFIRMOU });
+{
+  const r = await trocar({ tipo: "E-CREDITO", id_modelo_cobranca: "" });
+  confere("consumo falha: não trocou e avisa que o PIX segue", r.json.code === "CREDITO_NAO_CONSUMIDO" && /PIX continua ativo/.test(String(r.json.message)), r.json);
+  confere("consumo falha: devolve pela função do banco, PIX intocado e fora do banco", rpcs(r, "mc_desfazer_credito_da_troca").length === 1 && !r.cancelaAntiga && r.aoBanco.length === 0 && r.soltouMarca);
+}
+
+// Devolução falha depois da recusa do banco: alerta forte.
+prepararCredito(500, { desfazerFalha: "MC_CONCORRENCIA: mudou" });
+fetchFalso({ corpo: `=[Object: ${JSON.stringify(RECUSOU)}]` });
+{
+  const r = await trocar({ tipo: "E-CREDITO", id_modelo_cobranca: "" });
+  confere("devolução falha: DESFAZER_FALHOU e ATENÇÃO no Histórico", r.json.code === "DESFAZER_FALHOU" && r.historico.some((m) => m.startsWith("ATENÇÃO") && m.includes("E-Crédito")), r);
+}
+
+// E-Crédito em pedido de retrabalho: não vale (regra do gatilho).
+prepararCredito(500);
+contextoRetrabalho("RETRABALHO", false);
+{
+  const j = await consultar();
+  confere("retrabalho: E-Crédito não aparece", !tipos(j).includes("E-CREDITO"), j.destinos);
 }
 
 console.log(falhas === 0 ? "\nTODOS OS TESTES PASSARAM" : `\n${falhas} FALHA(S)`);

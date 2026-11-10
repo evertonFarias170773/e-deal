@@ -31,6 +31,8 @@ type Avaliacao = {
   idPagamento?: string | null;
   valor?: number;
   destinos?: DestinoDaTroca[];
+  /** E-Crédito: saldo do cliente, ou por que ele não aparece na lista. */
+  credito?: { disponivel: boolean; saldo: number | null; motivo: string | null } | null;
 };
 
 /** O que muda no resumo "Ao confirmar" conforme a forma escolhida. */
@@ -38,6 +40,8 @@ function depoisDaTroca(destino: DestinoDaTroca): string {
   switch (destino.tipo) {
     case "E-FATURADO":
       return "O Faturado segue o caminho de sempre: análise de crédito, Conferência e títulos no Registro de recebíveis.";
+    case "E-CREDITO":
+      return "A E-Crédito nasce paga, com o crédito já descontado do saldo do cliente, e segue para a Conferência. Não gera títulos.";
     case "E-PERMUTA":
       return "A E-Permuta segue o caminho da família faturado: liberação pelo financeiro e depois a Conferência. Não gera títulos.";
     default:
@@ -166,7 +170,9 @@ export function TrocarFormaPagamentoModal({ cobrancaId, onClose, onSuccess }: Pr
           ? "O PIX foi cancelado e o Faturado foi liberado automaticamente. Ele segue para a Conferência."
           : ehFaturado
             ? "O PIX foi cancelado e o Faturado foi enviado para análise financeira."
-            : `O PIX foi cancelado e a ${rotulo} foi criada. Ela aguarda a liberação do financeiro.`
+            : destino?.consomeCredito
+              ? "O PIX foi cancelado e a E-Crédito foi criada com o crédito do cliente. Ela segue para a Conferência."
+              : `O PIX foi cancelado e a ${rotulo} foi criada. Ela aguarda a liberação do financeiro.`
       });
       await refreshCobrancas();
       onSuccess?.();
@@ -240,16 +246,24 @@ export function TrocarFormaPagamentoModal({ cobrancaId, onClose, onSuccess }: Pr
                 </div>
               </div>
 
+              {avaliacao?.credito && !avaliacao.credito.disponivel && avaliacao.credito.motivo ? (
+                <p className="text-xs leading-relaxed text-slate-500">E-Crédito não aparece: {avaliacao.credito.motivo}</p>
+              ) : null}
+
               {destino ? (
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-slate-700">
                   <p className="text-xs font-semibold text-slate-900">Ao confirmar</p>
                   <ul className="mt-1.5 space-y-1 text-xs leading-relaxed list-disc pl-4">
                     <li>
                       Nasce uma cobrança {destino.rotulo} de {formatCurrency(Number(avaliacao?.valor ?? 0))}, com o mesmo pagador.
+                      {destino.consomeCredito && avaliacao?.credito?.saldo != null
+                        ? ` O valor sai do crédito do cliente (saldo hoje: ${formatCurrency(avaliacao.credito.saldo)}).`
+                        : ""}
                     </li>
                     <li>
                       Depois, o PIX {avaliacao?.idPagamento ?? ""} é cancelado no banco. Se o banco não confirmar, o PIX continua
-                      ativo e a {destino.rotulo} é cancelada.
+                      ativo e a {destino.rotulo} é cancelada
+                      {destino.consomeCredito ? ", com o crédito devolvido ao saldo do cliente." : "."}
                     </li>
                     {avaliacao?.notaAutorizada ? (
                       <li>A nota fiscal autorizada continua como está. Se precisar, o financeiro faz a carta de correção.</li>
