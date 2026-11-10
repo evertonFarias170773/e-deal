@@ -1,6 +1,6 @@
 # Expedição
 
-> **Última revisão:** 09/11/2026 (cadastro de Porto Alegre dos Correios nas listas de transportadoras; aviso pelo ChatGuru: conversa do cliente no remetente 3478, campos por diálogo, regra dos 2 minutos)
+> **Última revisão:** 10/11/2026 (aviso pelo ChatGuru: modo homologação, envio de pedido de cliente real para a conversa de teste do Edison com o modo teste ligado)
 > **Caminho no menu:** Expedição (item direto do menu lateral, sem subitens; é o quarto, depois de Conferência, Pedidos e Clientes). Também se chega pela aba **Expedição** no topo do Kanban e da Fila de impressão da Produção.
 > **Endereço:** `/expedicao`
 
@@ -256,7 +256,17 @@ Serve para ver cada um dos seis diálogos chegar ao WhatsApp, sem mudar a forma 
 
 Cada clique é um envio novo e fica registrado como teste, com o diálogo usado. O teste não conta como aviso do pedido: não troca o "Aviso enviado em…", não aciona a regra de "já enviado" e não impede o **Avisar cliente**. A trava por WhatsApp vale igual: com um aviso ou teste em andamento ou em resultado desconhecido para o mesmo número, o teste é recusado, e o Administrador libera pelo **Liberar número** do próprio quadro. Fora do modo teste ou fora do cliente #14 o quadro não aparece, e o servidor recusa a chamada.
 
-Enquanto o **modo teste** estiver ligado (aparece "modo teste" no botão e no aviso), só pedidos do cliente de teste (#14), com contato desse cliente, podem ser avisados; o de qualquer outro cliente é recusado. O diálogo vai para a conversa do cliente #14 no ChatGuru (a conversa de teste se chama "Edison Junior - 14"). O modo teste não se desliga pela tela.
+Enquanto o **modo teste** estiver ligado, pedido do cliente de teste (#14), com contato desse cliente, é avisado como sempre (aparece "modo teste" no botão e no aviso), na conversa do cliente #14 no ChatGuru ("Edison Junior - 14"). Pedido de qualquer outro cliente vai em homologação para essa mesma conversa de teste (ver "Modo homologação"). O modo teste não se desliga pela tela.
+
+#### Modo homologação (desde 10/11/2026)
+
+Enquanto o **modo teste** estiver ligado, o aviso de pedido pronto também funciona em pedido de cliente real (fora do #14), mas sempre para a conversa de teste "Edison Junior - 14" (a do cliente #14 no remetente 3478), nunca para o cliente:
+
+1. No pedido Na Expedição, o botão aparece como **Enviar homologação: pedido pronto ({diálogo})**, com a frase "Modo homologação: a mensagem vai para a conversa de teste do Edison, não para o cliente." embaixo.
+2. A mensagem sai com os dados reais do pedido: número, nota, cidade e rastreio, no diálogo da forma de envio do pedido. Os campos só são gravados na conversa de teste.
+3. O envio fica registrado como homologação, separado do aviso de verdade: o card mostra "Última homologação em {data e hora} por {usuário}: {estado}", o botão continua disponível e, quando o modo teste for desligado, o pedido ainda recebe o aviso de verdade, sem o "já tinha aviso".
+4. Cada clique manda uma homologação nova. Se a conversa de teste recebeu mensagem há menos de 2 minutos, ou outra ainda está saindo, aparece "Conversa de teste ocupada, tente em 2 minutos." e nada é gravado nem travado.
+5. O **Ver conversas do cliente** some, porque a conversa é sempre a de teste.
 
 Prova de 07/11/2026 no 24880: o SEDEX, sem etiqueta, apareceu apagado com "Gere a etiqueta dos Correios antes.", e o servidor recusou a chamada direta sem reservar nada. Com a forma trocada para retirada, o diálogo Retira foi tentado para o contato que estava no pedido naquela hora (64814, 5551991107694). O ChatGuru recusou já na gravação dos campos com "Chat não encontrado.", e nada saiu. Na segunda tentativa, às 13:05 de Brasília, com o contato 65040 (555184608848), o ChatGuru aceitou os campos, mas a resposta da execução do diálogo não foi nem "Diálogo executado" nem uma recusa. O aviso ficou em **resultado desconhecido**, e o número ficou travado até a conferência no ChatGuru. A mensagem tinha chegado.
 
@@ -409,7 +419,8 @@ Em resumo: no pedido Na Expedição, clique em **Despachar**, confira peso, volu
 | Janela **Para qual conversa enviar?** | O WhatsApp do contato responsável casa com mais de uma conversa do cliente, ou com nenhuma | Escolha a conversa (ou várias, ou todas) e confirme |
 | "Número não encontrado no ChatGuru: {número}" | O ChatGuru recusou a conversa usada | **Ver conversas do cliente** e escolha outra conversa |
 | "O ChatGuru exige 2 minutos entre mensagens para a mesma conversa. Tente de novo em instantes." | Saiu outra mensagem por diálogo para a mesma conversa há menos de 2 minutos (deste aviso, de outro pedido ou do envio de arte do Imposition). O ChatGuru recusa e nada sai | Espere 2 minutos e use **Reenviar**. O aviso fica como **falhou** e o WhatsApp não fica travado |
-| "Modo teste: só pedidos do cliente #14 podem ser avisados." | O modo teste está ligado e o pedido é de outro cliente | Nada a fazer pela tela: o aviso fica liberado quando o modo teste for desligado |
+| "Conversa de teste ocupada, tente em 2 minutos." | Modo homologação: a conversa de teste recebeu mensagem há menos de 2 minutos, ou outra ainda está saindo | Espere 2 minutos e clique de novo. Nada foi gravado |
+| "Há um aviso sem confirmação na conversa de teste…" | Modo homologação: um envio para a conversa de teste ficou em resultado desconhecido | O Administrador confere no ChatGuru e usa **Liberar número** no pedido daquele envio |
 | "Este pedido já tinha aviso" | Já houve aviso para o pedido | Nada foi enviado de novo. Para mandar outra mensagem, use **Reenviar** |
 | Aviso em **resultado desconhecido** | O ChatGuru não respondeu a tempo ou respondeu algo inesperado | Conferir no ChatGuru se a mensagem saiu. Aviso por diálogo deixa o WhatsApp travado: o Administrador confere e usa **Liberar número** |
 | "Testar modelo só existe com o modo teste ligado." / "Testar modelo: só pedidos do cliente #14." | Chamada de teste fora do modo teste ou em pedido de outro cliente | Nada a fazer: o teste só existe para o pedido de teste |

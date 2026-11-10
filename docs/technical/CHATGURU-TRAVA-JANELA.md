@@ -44,7 +44,7 @@ Com o secret gravado antes, a v19 já nasce pausada. Pausada, ela não chama a t
 
 Qualquer valor no secret diferente de vazio ou `desligada` também pausa: um erro de digitação deixa o Vibe parado, nunca enviando. O "Liberar número", a lista e "Ver conversas" seguem funcionando.
 
-**Versão de volta (10/11/2026).** Desde a homologação, a função de antes da janela é a **v20**: a v18 mais o modo homologação, sem a trava compartilhada. A fonte está em `supabase/edge-no-ar/expedicao-pedido-pronto/` (`index.ts` e `logica.ts`; a cópia de `transportadoras-parceiras.ts` vai como antes). Se a v20 ainda não tiver subido quando a janela abrir, a versão de volta continua sendo a v18 (commit `46808cb5`). A v19 do repositório já traz a homologação, então a ida não a perde.
+**Versão de volta (10/11/2026).** Desde a homologação, a função de antes da janela é a **v20**: a v18 mais o modo homologação, sem a trava compartilhada. A fonte está em `supabase/edge-no-ar/expedicao-pedido-pronto/` (`index.ts` e `logica.ts`; a cópia de `transportadoras-parceiras.ts` vai como antes). A v20 está no ar desde 10/11/2026 (versão 19 no painel da Supabase): a volta sobe a v20. A v18 (commit `46808cb5`) só serve se for preciso tirar também a homologação. A v19 do repositório já traz a homologação, então a ida não a perde.
 
 **Fichas da trava depois das da homologação.** Se as fichas da homologação (`CHATGURU-HOMOLOGACAO-FICHAS.patch`) já tiverem entrado no manual, o `CHATGURU-TRAVA-FICHAS.patch` não aplica mais como está: os dois mudam a linha "Última revisão" e o parágrafo "Envio em ajuste" de Pedidos. Antes da janela, gerar de novo o patch da trava sobre o manual atual.
 

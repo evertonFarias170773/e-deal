@@ -140,7 +140,7 @@ export type EntradaDialogo = {
 export type EscolhaDialogo = { dialogo: NomeDialogo | null; bloqueio: string | null; origem: "despacho" | "orcamento" | null };
 
 function normalizar(t: string | null | undefined): string {
-  return (t ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().replace(/\s+/g, " ").trim();
+  return (t ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toUpperCase().replace(/\s+/g, " ").trim();
 }
 
 /** Serviço dos Correios dito no texto: SEDEX, PAC ou nenhum (fronteira de palavra). */

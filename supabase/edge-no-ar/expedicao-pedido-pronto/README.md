@@ -11,7 +11,7 @@ Esta pasta guarda a **v20**, que é a v18 no ar (commit 46808cb5) mais o modo ho
 
 A v19 do repositório tem a mesma homologação.
 
-Situação em 10/11/2026: **ainda não subiu**. A v18 segue no ar.
+Situação: **no ar desde 10/11/2026 13:24 (Brasília)**, versão 19 no painel da Supabase. O conteúdo foi conferido arquivo a arquivo e é igual a esta pasta. A prova foi feita no 25006 (13:25:39, diálogo executado na conversa de teste).
 
 ## Como subir
 

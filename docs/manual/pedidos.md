@@ -1,6 +1,6 @@
 # Pedidos (lista)
 
-> **Última revisão:** 09/11/2026 (aviso Pedido em Produção: link do próprio pedido, envio em ajuste para clientes reais, reenvio na nova liberação)
+> **Última revisão:** 10/11/2026 (aviso Pedido em Produção: modo homologação, envio de pedido de cliente real para a conversa de teste do Edison com o modo teste ligado)
 > **Caminho no menu:** Pedidos (item direto do menu lateral, sem submenu; é o segundo, logo abaixo de Conferência)
 > **Endereço:** `/orcamentos`
 
@@ -205,13 +205,16 @@ As datas pequenas aparecem como dia/mês e hora, no horário de Brasília.
 
 Regras do aviso, as mesmas do aviso de pedido pronto da Expedição:
 
-- **Envio em ajuste (desde 09/11/2026)**: para clientes reais o aviso não sai. A janela mostra "Envio de aviso de produção em ajuste", o **Liberar e enviar** fica apagado e o **Liberar sem enviar** libera normalmente. Só o pedido de teste (cliente #14, com o modo teste ligado) envia, até o Vibe e o envio de arte do Imposition usarem a mesma trava por conversa.
+- **Envio em ajuste (desde 09/11/2026)**: o aviso de verdade para clientes reais não sai até o Vibe e o envio de arte do Imposition usarem a mesma trava por conversa. Com o modo teste desligado, a janela mostra "Envio de aviso de produção em ajuste", o **Liberar e enviar** fica apagado e o **Liberar sem enviar** libera normalmente. Com o modo teste ligado, vale o modo homologação abaixo.
+- **Modo homologação (desde 10/11/2026)**: enquanto o modo teste estiver ligado, o **Liberar e enviar** também funciona em pedido de cliente real, mas a mensagem vai sempre para a conversa de teste "Edison Junior - 14" (a do cliente #14 no remetente 3478), nunca para o cliente. A janela mostra em destaque "Modo homologação: a mensagem vai para a conversa de teste do Edison, não para o cliente." e "Vai para a conversa de teste: Edison Junior - 14". A mensagem leva os dados reais do pedido, inclusive o link de aprovação do próprio pedido, que só é gravado na conversa de teste. O envio fica registrado como homologação, separado do aviso de verdade: quando o modo teste for desligado, o pedido ainda recebe o aviso de verdade, sem o "já recebeu o aviso". A liberação continua igual e não depende do envio. Cada **Liberar e enviar** (ou **Reenviar**, ou **Enviar aviso** em **Aviso: pedido em produção**) manda uma homologação nova, e a janela mostra "Este pedido já teve homologação em {data}" quando já houve uma. O **Ver conversas do cliente** some, porque a conversa é sempre a de teste.
+- **Conversa de teste ocupada**: o ChatGuru exige 2 minutos entre mensagens na mesma conversa. Se outra homologação (de qualquer vendedor) foi enviada para a conversa de teste há menos de 2 minutos, ou ainda está saindo, o aviso é recusado com "Conversa de teste ocupada, tente em 2 minutos." Nada é gravado nem travado, e a liberação já feita continua valendo. Para não esperar, use **Liberar sem enviar**.
+- Prova de 10/11/2026: pedido 25006 (cliente real, já em produção, sem liberar de novo), mesmo envio do **Liberar e enviar**. Diálogo executado às 13:25:39 de Brasília na conversa de teste "Edison Junior - 14", com o link do próprio 25006; o registro ficou como homologação e o pedido continua sem aviso de verdade.
 - **Link do pedido**: o modelo da mensagem usa o link de aprovação do cliente. Antes de executar o diálogo, o Vibe grava na conversa o link do próprio pedido (o mesmo link ativo que o Imposition usa). Pedido sem link ativo não envia: aparece "Pedido sem link de aprovação".
 - Abrir de novo a janela do aviso não manda segunda mensagem; só **Reenviar** (confirmado) ou uma nova liberação com **Liberar e enviar** manda outra.
 - Dois avisos para o mesmo WhatsApp nunca correm juntos. Se o ChatGuru não confirmar, o aviso fica em **resultado desconhecido** e o WhatsApp fica travado para novos avisos (deste e da Expedição) até o Administrador conferir no ChatGuru e usar **Liberar número**.
 - O aviso vai para a conversa do cliente no ChatGuru (remetente 3478), escolhida pelo DDD e pelos 8 últimos dígitos do WhatsApp do contato responsável; o cadastro do contato não é alterado. Regra completa em [Expedição](expedicao.md), "Para qual conversa vai o aviso". Cliente sem nenhuma conversa: "Cliente sem conversa no ChatGuru (remetente 3478)" e o **Liberar e enviar** fica apagado.
 - Se o ChatGuru recusar pelo número, aparece "Número não encontrado no ChatGuru: {número}" e **Ver conversas do cliente**, para escolher outra conversa e reenviar.
-- **Modo teste**: enquanto estiver ligado, só pedido e contato do cliente de teste (#14) recebem o aviso.
+- **Modo teste**: enquanto estiver ligado, pedido do cliente de teste (#14) envia para a conversa do próprio cliente #14, e pedido de qualquer outro cliente vai em homologação para a conversa de teste. O modo teste não se desliga pela tela.
 - O Administrador vê também a resposta do ChatGuru (código e texto, sem a chave nem os dados do contato).
 
 ### Liberar a nota antecipada (nota antes do pagamento)
@@ -294,7 +297,8 @@ A liberação é recusada quando já existe NF-e de venda autorizada ou em proce
 |---|---|---|
 | "Sem permissão para retirar da produção (propostas.release_producao)." | Seu perfil não tem a permissão "Liberar para Produção". | Peça a quem tem a permissão. |
 | "Sem permissão para liberar para produção (propostas.release_producao)." | Seu perfil não tem a permissão "Liberar para Produção". | Peça a liberação a quem tem a permissão, ou peça ao administrador para incluí-la no seu perfil. |
-| "Envio de aviso de produção em ajuste" | O aviso Pedido em Produção está suspenso para clientes reais até a trava por conversa ser a mesma do envio de arte do Imposition. | Use **Liberar sem enviar**. |
+| "Envio de aviso de produção em ajuste" | O aviso Pedido em Produção está suspenso para clientes reais até a trava por conversa ser a mesma do envio de arte do Imposition (com o modo teste desligado). | Use **Liberar sem enviar**. |
+| "Conversa de teste ocupada, tente em 2 minutos." | Modo homologação: outra mensagem foi para a conversa de teste há menos de 2 minutos, ou ainda está saindo. Nada foi gravado; a liberação continua valendo. | Espere 2 minutos e use **Reenviar** em **Aviso: pedido em produção**, ou siga com **Liberar sem enviar**. |
 | "O ChatGuru exige 2 minutos entre mensagens para a mesma conversa. Tente de novo em instantes." | Saiu outra mensagem para a mesma conversa há menos de 2 minutos. Nada saiu; a liberação continua valendo. | Espere 2 minutos e use **Reenviar** na janela ou em **Aviso: pedido em produção**. |
 | "Pedido sem link de aprovação" | O pedido não tem link ativo de aprovação do cliente (o mesmo do Imposition). | Use **Liberar sem enviar**. O aviso só sai com o link do próprio pedido. |
 | "Há um aviso sem confirmação para o WhatsApp {número}." | Outro aviso para o mesmo WhatsApp (de produção ou de pedido pronto) ficou em resultado desconhecido. | Avise o Administrador: ele confere no ChatGuru e usa **Liberar número**. |
