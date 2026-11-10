@@ -9,6 +9,8 @@
 >
 > **Volta no teste (09/11/2026, antes da janela):** o teste do editor passou a rodar também a reversão, depois da ida e na mesma execução: o texto de [CHATGURU-TRAVA-COMPARTILHADA-REVERSAO.sql](CHATGURU-TRAVA-COMPARTILHADA-REVERSAO.sql), comando a comando, e os casos X0 a X11, que comparam o catálogo com uma foto tirada antes da ida. Eles conferem a chave estrangeira original, que nenhuma função, tabela, visão, índice ou gatilho novo ficou, que a coluna livre_em saiu e que o md5 do corpo das três RPCs do Imposition voltou ao de antes. Os corpos no arquivo de reversão já batem em md5 com os do banco (conferido por leitura). **Esperado na nova rodada: 61 casos, 58 PASSA e 3 FALHA (R3).**
 >
+> **Rodada da volta (10/11/2026):** 55 PASSA e 6 FALHA. Além dos três R3, falharam X7, X8 e X9: as três RPCs recriadas a partir do texto escrito no arquivo de reversão não voltaram iguais, embora esse texto bata em md5 com o banco quando lido direto do arquivo. Correção: a migração guarda, logo depois da drenagem, a definição (pg_get_functiondef), o dono e as permissões das três RPCs na tabela `chatguru_trava_rpcs_originais` (parte 0b, fechada para anon, authenticated e service_role) e aborta se alguma não tiver o md5 da aprovação. A reversão restaura dessa tabela, confere cada RPC contra a cópia (md5 do corpo e da definição, dono e permissões) e só depois apaga a cópia. A drenagem continua no começo dos dois. O teste ganhou os casos G1 e G2 e um diagnóstico da volta, que não conta no resultado: compara o texto antigo do arquivo, do jeito que o editor o entrega, com o corpo no banco, e lista cada função de `public` que mudou entre a foto e a volta. **Esperado na nova rodada: 63 casos, 60 PASSA e 3 FALHA (R3).**
+>
 > **Esperado na segunda rodada:** 49 casos, 46 PASSA e 3 FALHA (R3-1, R3-2 e R3-3). Entraram os casos D1 a D5 da drenagem (item 6). D3 e D5 também dão FALHA se houver envio real em andamento na hora: é a drenagem funcionando, e basta rodar de novo.
 > **Alcance:** a trava compartilhada vale para **todos os avisos do Vibe** que usam a Edge Function `expedicao-pedido-pronto`: o aviso de pedido pronto da Expedição (seis diálogos), o "Testar modelo" e o "Pedido em Produção".
 > **Enquanto não existir:** o "Pedido em Produção" só envia em modo teste e para o cliente #14; os demais veem "Envio de aviso de produção em ajuste" e só liberam. O aviso de pedido pronto da Expedição está limitado pelo modo teste (só cliente #14). Desligar o modo teste da Expedição antes da trava compartilhada deixa aberta a corrida em `Pedido_Atual` descrita abaixo.
@@ -167,7 +169,7 @@ O PL/pgSQL resolve **todos** os campos citados ao preparar a expressão, não s�
 - a passagem dos avisos do Vibe em "desconhecido". Em 09/11/2026 não havia nenhum;
 - na frente de tudo, a drenagem (item 6): aborta, listando, se houver envio em andamento de qualquer lado.
 
-O rodapé traz a reversão completa: as RPCs voltam ao texto de hoje e a chave estrangeira volta. Ele começa pela mesma drenagem.
+O rodapé traz a reversão completa: as RPCs voltam da cópia guardada pela migração antes de alterar (parte 0b) e a chave estrangeira volta. Ele começa pela mesma drenagem.
 
 **Ordem, sem janela em que um sistema ignore a trava do outro:**
 

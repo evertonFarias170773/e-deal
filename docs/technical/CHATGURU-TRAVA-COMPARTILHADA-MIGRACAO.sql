@@ -10,9 +10,12 @@
 -- Teste: CHATGURU-TRAVA-COMPARTILHADA-TESTE.sql (ROLLBACK) e -TESTE-EDITOR.sql
 -- (SQL Editor). 09/11: aprovada pela equipe do Imposition (46 casos que devem
 -- passar, reproduzidos por eles). Reversão pronta: CHATGURU-TRAVA-COMPARTILHADA-REVERSAO.sql.
+-- 10/11: parte 0b (cópia das RPCs) entra porque, no teste do editor, as RPCs
+-- recriadas a partir do texto do rodapé não voltaram iguais (casos X7 a X9).
 --
 -- Partes:
 --   0. drenagem: aborta se houver envio em andamento de qualquer lado
+--  0b. cópia das três RPCs do Imposition (chatguru_trava_rpcs_originais), para a reversão
 --   1. margem configurável (chatguru_trava_config, padrão 10 s)
 --   2. registro para conferir a margem (chatguru_trava_registro + visão)
 --   3. imposition_whatsapp_conversas: sai a chave estrangeira, entra check e livre_em
@@ -77,6 +80,43 @@ begin
 end $$;
 revoke all on function public.chatguru_trava_drenagem(boolean) from public, anon, authenticated;
 select public.chatguru_trava_drenagem(false);
+
+-- 0b) Cópia das três RPCs do Imposition, como estão antes de qualquer mudança:
+--     definição (pg_get_functiondef), dono e permissões. A reversão restaura
+--     daqui e só depois apaga a cópia, sem depender do texto escrito no rodapé
+--     nem de como o editor o entrega. Aborta se alguma das três não for a da
+--     aprovação (md5 do corpo conferido em 09/11/2026).
+create table public.chatguru_trava_rpcs_originais (
+  assinatura text primary key,
+  proname text not null unique,
+  definicao text not null,
+  dono text not null,
+  permissoes aclitem[],
+  md5_corpo text not null,
+  md5_definicao text not null,
+  guardado_em timestamptz not null default now());
+alter table public.chatguru_trava_rpcs_originais enable row level security;
+revoke all on public.chatguru_trava_rpcs_originais from public, anon, authenticated, service_role;
+insert into public.chatguru_trava_rpcs_originais(assinatura, proname, definicao, dono, permissoes, md5_corpo, md5_definicao)
+select format('public.%I(%s)', p.proname, oidvectortypes(p.proargtypes)), p.proname, pg_get_functiondef(p.oid),
+       pg_get_userbyid(p.proowner), p.proacl, md5(p.prosrc), md5(pg_get_functiondef(p.oid))
+  from pg_proc p
+ where p.pronamespace = 'public'::regnamespace
+   and p.proname in ('imposition_whatsapp_dialogo_reservar', 'imposition_whatsapp_dialogo_reenviar', 'imposition_whatsapp_dialogo_finalizar');
+do $copia$
+declare v_fora text;
+begin
+  select string_agg(e.proname || coalesce(' com md5 ' || c.md5_corpo, ' ausente'), ', ' order by e.proname) into v_fora
+    from (values ('imposition_whatsapp_dialogo_reservar', '5d0f974f88467b896d9afb998697cb0c'),
+                 ('imposition_whatsapp_dialogo_reenviar', 'cfbdf0700bea66367eb8bd630f8891d5'),
+                 ('imposition_whatsapp_dialogo_finalizar', '0018beec294adc90c673277f2fbefa9d')) e(proname, md5_corpo)
+    left join public.chatguru_trava_rpcs_originais c on c.proname = e.proname
+   where c.md5_corpo is distinct from e.md5_corpo;
+  if v_fora is not null or (select count(*) from public.chatguru_trava_rpcs_originais) <> 3 then
+    raise exception 'Migracao abortada: as RPCs do Imposition nao sao as da aprovacao (%). Conferir com a equipe do Imposition.',
+      coalesce(v_fora, 'copia com outra contagem') using errcode = '55000';
+  end if;
+end $copia$;
 
 -- 1) Margem configurável -------------------------------------------------
 create table public.chatguru_trava_config (
@@ -369,7 +409,7 @@ update public.imposition_whatsapp_conversas c
 --   4. retomar: primeiro sai a pausa do Imposition (volta às RPCs de antes);
 --      depois o Vibe volta para a v18, que não usa a trava. Até esse deploy
 --      a v19 segue sem enviar: pausada e, sem a função travar, fail-closed.
--- O Imposition não precisa voltar código: as RPCs voltam ao texto de antes.
+-- O Imposition não precisa voltar código: as RPCs voltam da cópia da parte 0b.
 -- =====================================================================
 -- (Sem BEGIN/COMMIT: rodar descomentado e inteiro numa execucao, como a ida.
 --  O mesmo texto, pronto para rodar, esta em CHATGURU-TRAVA-COMPARTILHADA-REVERSAO.sql.)
@@ -385,70 +425,41 @@ update public.imposition_whatsapp_conversas c
 -- drop function public.imposition_whatsapp_conversa_travar(text, text);
 -- drop function public.imposition_whatsapp_conversa_soltar(text, text, boolean);
 --
--- CREATE OR REPLACE FUNCTION public.imposition_whatsapp_dialogo_reservar(p_chave text, p_destino text, p_os_id text, p_autor uuid, p_dialogo text, p_repetir boolean DEFAULT false)
---  RETURNS text LANGUAGE plpgsql SET search_path TO ''
--- AS $function$
--- DECLARE ocupado text; atual public.imposition_whatsapp_artes;
--- BEGIN
---  INSERT INTO public.imposition_whatsapp_conversas(destino_chave) VALUES(p_destino) ON CONFLICT DO NOTHING;
---  SELECT chave_envio INTO ocupado FROM public.imposition_whatsapp_conversas WHERE destino_chave=p_destino FOR UPDATE;
---  IF ocupado IS NOT NULL THEN RETURN 'ocupado'; END IF;
---  SELECT * INTO atual FROM public.imposition_whatsapp_artes WHERE chave=p_chave FOR UPDATE;
---  IF FOUND THEN
---    IF NOT p_repetir OR atual.estado<>'falhou' OR atual.message_id IS NOT NULL OR atual.dialogo_executado OR atual.os_id<>p_os_id THEN RETURN 'existente'; END IF;
---    UPDATE public.imposition_whatsapp_artes SET estado='preparando', autor=p_autor,
---      dialogo_id=p_dialogo, atualizado_em=now(), tentativas=tentativas+1 WHERE chave=p_chave;
---  ELSE
---    INSERT INTO public.imposition_whatsapp_artes(chave,os_id,autor,dialogo_id) VALUES(p_chave,p_os_id,p_autor,p_dialogo)
---      ON CONFLICT DO NOTHING;
---    IF NOT FOUND THEN RETURN 'existente'; END IF;
---  END IF;
---  UPDATE public.imposition_whatsapp_conversas SET chave_envio=p_chave, atualizado_em=now() WHERE destino_chave=p_destino;
---  RETURN 'reservado';
--- END;
--- $function$;
---
--- CREATE OR REPLACE FUNCTION public.imposition_whatsapp_dialogo_reenviar(p_chave text, p_destino text, p_os_id text, p_autor uuid, p_dialogo text, p_atualizado_em timestamp with time zone)
---  RETURNS text LANGUAGE plpgsql SET search_path TO ''
--- AS $function$
--- DECLARE ocupado text; atual public.imposition_whatsapp_artes;
--- BEGIN
---  INSERT INTO public.imposition_whatsapp_conversas(destino_chave) VALUES(p_destino) ON CONFLICT DO NOTHING;
---  SELECT chave_envio INTO ocupado FROM public.imposition_whatsapp_conversas WHERE destino_chave=p_destino FOR UPDATE;
---  IF ocupado IS NOT NULL THEN RETURN 'ocupado'; END IF;
---  SELECT * INTO atual FROM public.imposition_whatsapp_artes WHERE chave=p_chave FOR UPDATE;
---  IF NOT FOUND THEN RETURN 'existente'; END IF;
---  IF atual.os_id<>p_os_id OR atual.estado NOT IN ('aguardando','enviado')
---     OR (atual.message_id IS NULL AND NOT atual.dialogo_executado)
---     OR atual.atualizado_em IS DISTINCT FROM p_atualizado_em
---     OR clock_timestamp()<atual.atualizado_em+interval '120 seconds' THEN RETURN 'existente'; END IF;
---  INSERT INTO public.imposition_whatsapp_reenvios(chave,registro_anterior) VALUES(p_chave,to_jsonb(atual));
---  UPDATE public.imposition_whatsapp_artes SET estado='preparando',autor=p_autor,
---    dialogo_id=p_dialogo,dialogo_executado=false,message_id=NULL,concluido=false,
---    atualizado_em=clock_timestamp(),tentativas=tentativas+1 WHERE chave=p_chave;
---  UPDATE public.imposition_whatsapp_conversas SET chave_envio=p_chave,atualizado_em=clock_timestamp() WHERE destino_chave=p_destino;
---  RETURN 'reservado';
--- END;
--- $function$;
---
--- CREATE OR REPLACE FUNCTION public.imposition_whatsapp_dialogo_finalizar(p_chave text, p_destino text, p_estado text)
---  RETURNS SETOF public.imposition_whatsapp_artes LANGUAGE plpgsql SET search_path TO ''
--- AS $function$
--- DECLARE ocupado text;
--- BEGIN
---  IF p_estado NOT IN ('aguardando','falhou','desconhecido') THEN RAISE EXCEPTION 'Estado invalido'; END IF;
---  SELECT chave_envio INTO ocupado FROM public.imposition_whatsapp_conversas WHERE destino_chave=p_destino FOR UPDATE;
---  IF ocupado IS DISTINCT FROM p_chave THEN RAISE EXCEPTION 'Reserva da conversa nao confirmada'; END IF;
---  RETURN QUERY UPDATE public.imposition_whatsapp_artes SET estado=p_estado,
---    dialogo_executado=(p_estado='aguardando'), atualizado_em=now()
---    WHERE chave=p_chave AND estado='preparando' AND message_id IS NULL AND dialogo_id IS NOT NULL RETURNING *;
---  IF NOT FOUND THEN RAISE EXCEPTION 'Registro do dialogo nao confirmado'; END IF;
---  -- Incerteza não libera a conversa: confirmar no CRM antes de reconciliar.
---  IF p_estado<>'desconhecido' THEN
---    UPDATE public.imposition_whatsapp_conversas SET chave_envio=NULL, atualizado_em=now() WHERE destino_chave=p_destino;
---  END IF;
--- END;
--- $function$;
+-- -- RPCs do Imposition: voltam da cópia guardada na parte 0b (definição, dono e
+-- -- permissões, conferidas contra a cópia); só depois a cópia é apagada.
+-- do $rpcs$
+-- declare r record; g record; v_n int;
+-- begin
+--   select count(*) into v_n from public.chatguru_trava_rpcs_originais;
+--   if v_n <> 3 then
+--     raise exception 'Reversao abortada: copia das RPCs do Imposition com % de 3 linhas', v_n using errcode = '55000';
+--   end if;
+--   for r in select * from public.chatguru_trava_rpcs_originais order by proname loop
+--     execute r.definicao;
+--     if (select pg_get_userbyid(proowner) from pg_proc where oid = r.assinatura::regprocedure) <> r.dono then
+--       execute format('alter function %s owner to %I', r.assinatura, r.dono);
+--     end if;
+--     if (select proacl from pg_proc where oid = r.assinatura::regprocedure) is distinct from r.permissoes and r.permissoes is not null then
+--       execute format('revoke all on function %s from public', r.assinatura);
+--       for g in select distinct a.grantee from pg_proc p cross join lateral aclexplode(p.proacl) a
+--                 where p.oid = r.assinatura::regprocedure and a.grantee <> 0 loop
+--         execute format('revoke all on function %s from %I', r.assinatura, pg_get_userbyid(g.grantee));
+--       end loop;
+--       for g in select a.grantee, a.privilege_type, a.is_grantable
+--                  from aclexplode(r.permissoes) with ordinality as a(grantor, grantee, privilege_type, is_grantable, ord) order by a.ord loop
+--         execute format('grant %s on function %s to %s%s', g.privilege_type, r.assinatura,
+--                        case when g.grantee = 0 then 'public' else quote_ident(pg_get_userbyid(g.grantee)) end,
+--                        case when g.is_grantable then ' with grant option' else '' end);
+--       end loop;
+--     end if;
+--     if not exists (select 1 from pg_proc p where p.oid = r.assinatura::regprocedure
+--                      and md5(p.prosrc) = r.md5_corpo and md5(pg_get_functiondef(p.oid)) = r.md5_definicao
+--                      and pg_get_userbyid(p.proowner) = r.dono and p.proacl is not distinct from r.permissoes) then
+--       raise exception 'Reversao abortada: % nao voltou igual a copia guardada pela migracao', r.proname using errcode = '55000';
+--     end if;
+--   end loop;
+-- end $rpcs$;
+-- drop table public.chatguru_trava_rpcs_originais;
 --
 -- drop index public.imposition_whatsapp_conversas_chave_envio;
 -- alter table public.imposition_whatsapp_conversas drop column livre_em;

@@ -99,7 +99,7 @@ select left(c.destino_chave, 12) || '...' as conversa, left(a.chave, 12) || '...
 | **Quem** | Dono, com a autorização nominal da migração |
 | **Faz** | No SQL Editor, cola o conteúdo **inteiro** de `CHATGURU-TRAVA-COMPARTILHADA-MIGRACAO.sql` e clica em Run **uma vez**. Não acrescenta BEGIN nem COMMIT. O rodapé de reversão está todo comentado e não roda. |
 | **Confere** | Termina sem erro, em cerca de 1 segundo. Depois roda a consulta 4b; todas as colunas devem dar `true`. |
-| **Se abortar** | "Migracao abortada: ha envio em andamento…" lista o que estava em curso, e **nada foi aplicado**. Voltar ao passo 3. Um erro de bloqueio (`lock timeout`) também não aplicou nada: rodar de novo. |
+| **Se abortar** | "Migracao abortada: ha envio em andamento…" lista o que estava em curso, e **nada foi aplicado**. Voltar ao passo 3. Um erro de bloqueio (`lock timeout`) também não aplicou nada: rodar de novo. "Migracao abortada: as RPCs do Imposition nao sao as da aprovacao…" quer dizer que uma das três RPCs mudou desde 09/11; **nada foi aplicado**, a janela para e a migração volta para revisão com a equipe do Imposition. |
 
 ```sql
 -- 4b. Conferência depois da migração (todas true)
@@ -108,6 +108,7 @@ select
   exists (select 1 from pg_constraint where conname = 'imposition_whatsapp_conversas_chave_envio_check') as check_entrou,
   exists (select 1 from information_schema.columns where table_schema = 'public'
           and table_name = 'imposition_whatsapp_conversas' and column_name = 'livre_em') as livre_em_existe,
+  (select count(*) from public.chatguru_trava_rpcs_originais) = 3 as copia_das_rpcs_guardada,
   (select count(*) from pg_trigger where not tgisinternal and tgname in
      ('imposition_whatsapp_conversas_dono', 'expedicao_aviso_pronto_trava_nao_apagar',
       'imposition_whatsapp_artes_trava_nao_apagar')) = 3 as tres_gatilhos,
@@ -188,7 +189,7 @@ select left(destino_chave, 12) || '...' as conversa, livre_em
 | **Quem** | Dono, com a autorização nominal |
 | **Faz** | No SQL Editor, cola o conteúdo **inteiro** de `CHATGURU-TRAVA-COMPARTILHADA-REVERSAO.sql` e clica em Run uma vez. A primeira linha é a drenagem. |
 | **Confere** | Sem erro. Depois, a consulta V4b deve dar `true` em todas as colunas. |
-| **Se abortar** | "Reversao abortada…" lista envio em andamento ou margem correndo, e **nada foi desfeito**. Voltar ao V3. |
+| **Se abortar** | "Reversao abortada…" lista envio em andamento ou margem correndo, e **nada foi desfeito**. Voltar ao V3. "Reversao abortada: copia das RPCs…" ou "…nao voltou igual a copia…" também não desfez nada: parar e chamar o suporte, sem rodar de novo. |
 
 ```sql
 -- V4b. Conferência depois da reversão (todas true)
@@ -200,8 +201,10 @@ select
   not exists (select 1 from pg_proc where pronamespace = 'public'::regnamespace and proname in
      ('imposition_whatsapp_conversa_travar', 'imposition_whatsapp_conversa_soltar',
       'chatguru_trava_margem', 'chatguru_trava_drenagem')) as funcoes_sairam,
-  (select count(*) from pg_proc where pronamespace = 'public'::regnamespace
-     and proname like 'imposition_whatsapp_dialogo_%' and prosrc like '%livre_em%') = 0 as rpcs_voltaram,
+  (select string_agg(proname || ':' || md5(prosrc), ',' order by proname) from pg_proc
+    where pronamespace = 'public'::regnamespace and proname like 'imposition_whatsapp_dialogo_%')
+    = 'imposition_whatsapp_dialogo_finalizar:0018beec294adc90c673277f2fbefa9d,imposition_whatsapp_dialogo_reenviar:cfbdf0700bea66367eb8bd630f8891d5,imposition_whatsapp_dialogo_reservar:5d0f974f88467b896d9afb998697cb0c' as rpcs_voltaram,
+  to_regclass('public.chatguru_trava_rpcs_originais') is null as copia_saiu,
   not exists (select 1 from public.imposition_whatsapp_conversas where chave_envio like 'vibe:%') as sem_trava_vibe;
 ```
 
@@ -210,7 +213,7 @@ select
 | | |
 |---|---|
 | **Quem** | Imposition |
-| **Faz** | Desliga a pausa e faz um envio de arte de teste. O código deles não muda: as RPCs voltaram ao texto de antes. |
+| **Faz** | Desliga a pausa e faz um envio de arte de teste. O código deles não muda: as RPCs voltaram da cópia guardada pela migração, iguais às de antes (definição, dono e permissões). |
 | **Confere** | O envio chega e a conversa é solta no fim, como antes da trava compartilhada. |
 
 ### V6. Retomar o Vibe: deploy da v18
@@ -224,5 +227,6 @@ select
 ## Pontos de atenção
 
 - **Soltar que falha:** se a v19 não conseguir soltar a conversa depois do ChatGuru (duas tentativas), a conversa fica ocupada. Esse é o lado seguro, e o erro vai para o log da função. O aviso volta marcado com a conversa presa, e o Administrador solta pelo **Liberar número** → **Soltar a conversa**, que exige confirmação e registra quem soltou e quando, em `liberado_por`/`liberado_em`. Só solta a chave `vibe:` do próprio aviso: o banco só apaga a trava quando `chave_envio` é exatamente essa, então nunca solta um envio de arte do Imposition.
-- **A volta está no teste.** O teste do editor (61 casos) roda a ida, depois o texto de `CHATGURU-TRAVA-COMPARTILHADA-REVERSAO.sql` comando a comando, e compara o catálogo com uma foto tirada antes da ida (casos X0 a X11).
+- **A volta está no teste.** O teste do editor (63 casos) roda a ida, depois o texto de `CHATGURU-TRAVA-COMPARTILHADA-REVERSAO.sql` comando a comando, e compara o catálogo com uma foto tirada antes da ida (casos X0 a X11).
+- **As RPCs do Imposition voltam da cópia.** A migração guarda, logo depois da drenagem, a definição, o dono e as permissões das três RPCs em `chatguru_trava_rpcs_originais` (parte 0b), e aborta se alguma não for a da aprovação. A reversão restaura dessa cópia, confere cada uma em md5 e só depois apaga a cópia. Motivo: na rodada de 10/11, as RPCs recriadas a partir do texto escrito no arquivo não voltaram iguais (X7 a X9).
 - **A tela já tem o "Soltar a conversa"** desde a publicação do repositório, mas ele fica sem efeito enquanto a v18 estiver no ar: a v18 nunca marca uma conversa como presa.
