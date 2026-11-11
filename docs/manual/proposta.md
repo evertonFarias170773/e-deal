@@ -1,6 +1,6 @@
 # Proposta: visão geral e abas
 
-> **Última revisão:** 06/11/2026 (total em centavos exatos na visualização e no texto do WhatsApp)
+> **Última revisão:** 11/11/2026 (aba **Produção / Expedição / Notas**, com a **Observação para a nota fiscal**, que também fica no bloco 4 da aba Geral). 06/11/2026 (total em centavos exatos na visualização e no texto do WhatsApp)
 > **Caminho no menu:** Pedidos → **+ Nova proposta** (proposta nova) ou Pedidos → abrir um pedido → **Editar proposta**
 > **Endereço:** `/orcamentos/novo` e `/orcamentos/<número>/editar`
 
@@ -52,7 +52,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Fretes** | Barra de abas | Modalidade, transportadora e cotações. |
 | **Pedido** | Barra de abas | Modelos e lotes de cada produto. |
 | **Artes** | Barra de abas | Briefing e arquivos de arte. |
-| **Produção / Expedição** | Barra de abas | Orientação técnica de produção. |
+| **Produção / Expedição / Notas** | Barra de abas | Orientação técnica de produção, instruções de entrega e **Observação para a nota fiscal**. |
 | **Pagamentos** | Barra de abas | Cobranças da proposta. |
 | **Histórico** | Barra de abas | Timeline da proposta e movimentos de crédito. |
 | **Salvar proposta** / **Salvar alterações** | Barra fixa do rodapé | Salva a proposta inteira. Enquanto grava, mostra **Salvando...** |
@@ -106,9 +106,9 @@ A barra de abas acompanha a rolagem da tela. São oito abas, nesta ordem:
 | **Fretes** | Modalidade, transportadora e cotações | [Aba Fretes](proposta-fretes.md) |
 | **Pedido** | Modelos e lotes de cada produto | [Aba Pedido](proposta-pedido.md) |
 | **Artes** | Briefing e arquivos de arte | [Aba Artes](proposta-artes.md) |
-| **Produção / Expedição** | Orientação técnica de produção | [Abas Produção / Expedição, Boletim e Histórico](proposta-producao-boletim-historico.md) |
+| **Produção / Expedição / Notas** | Orientação técnica de produção, instruções de entrega e observação para a nota fiscal | [Abas Produção / Expedição / Notas, Boletim e Histórico](proposta-producao-boletim-historico.md) |
 | **Pagamentos** | Cobranças da proposta | [Aba Pagamentos](proposta-pagamentos.md) |
-| **Histórico** | Timeline da proposta e movimentos de crédito | [Abas Produção / Expedição, Boletim e Histórico](proposta-producao-boletim-historico.md) |
+| **Histórico** | Timeline da proposta e movimentos de crédito | [Abas Produção / Expedição / Notas, Boletim e Histórico](proposta-producao-boletim-historico.md) |
 
 A aba de produtos aparece na tela com o nome **Orçamento**.
 
@@ -123,7 +123,7 @@ Na coluna da direita ficam até quatro blocos, e **cada aba mostra só os que lh
 | Fretes | 5 e 10 |
 | Pedido | 9 e 10 |
 | Artes | só o 10, em tamanho maior |
-| Produção / Expedição | só o 10, em tamanho maior |
+| Produção / Expedição / Notas | só o 10, em tamanho maior |
 | Pagamentos | 8 e 10 |
 | Histórico | 9 e 10 |
 
@@ -194,7 +194,7 @@ O detalhe é a tela só de leitura, aberta por **Ver proposta**. Ele mostra o me
 
 O que a tela permite depende do aviso amarelo que aparece no topo:
 
-1. **Atenção: Cobranças Geradas** — você não tem permissão para editar proposta cobrada. Os campos das abas Orçamento e Fretes e o desconto geral ficam travados. Salvar grava só as **Observações e Condições** e a orientação técnica da aba Produção / Expedição, e o aviso é **Salvamento Parcial**.
+1. **Atenção: Cobranças Geradas** — você não tem permissão para editar proposta cobrada. Os campos das abas Orçamento e Fretes e o desconto geral ficam travados. Salvar grava só as **Observações e Condições**, a **Observação para a nota fiscal** e os textos da aba Produção / Expedição / Notas, e o aviso é **Salvamento Parcial**.
 2. **Cobrança Ativa — Pagamento Ainda Não Confirmado** — você tem permissão, mas a cobrança ainda não foi paga. Não dá para mudar nada que altere o valor: o link de pagamento já está com o cliente e tem valor fixo. Para mudar o valor, cancele a cobrança na aba Pagamentos e gere outra depois.
 3. **Modo Edição Autorizada — Proposta com Pagamento Confirmado** — você tem permissão e o pagamento foi confirmado. A proposta salva por inteiro. Se o novo total ficar **abaixo** do que já foi pago, a tela abre a janela **Diferença Financeira — Crédito ao Cliente** e você escolhe o destino do crédito antes de concluir. Se ficar **acima**, a alteração salva direto e a diferença vira saldo a cobrar da própria proposta, resolvido na aba Pagamentos.
 4. **Faturado a Vencer — Alteração Liberada** — a cobrança é faturada e o dinheiro ainda não entrou. O pedido pode ser alterado e a cobrança acompanha o novo total. Ao salvar, a janela **Alterar proposta faturada** mostra o valor antigo, o valor novo e os títulos que sairão do Contas a Receber. Confirme em **Excluir títulos e salvar** (ou **Salvar alterações**, quando não há título).
@@ -350,7 +350,7 @@ Duas ações do mesmo menu têm o passo a passo em outra ficha: **Enviar para Fi
 ## O que não confundir
 
 - **Menu Pedidos** x título **Orcamentos** x aba **Orçamento**: o menu lateral **Pedidos** abre a lista de propostas, cuja página tem o título **Orcamentos** (sem cedilha); a aba **Orçamento** fica dentro de uma proposta e guarda os produtos dela.
-- Aba **Pedido** x aba **Produção / Expedição** x menu **Produção**: a aba **Pedido** tem os modelos e lotes de cada produto; a aba **Produção / Expedição** é só o texto da orientação técnica; o menu lateral **Produção** é outra tela, a das ordens de serviço.
+- Aba **Pedido** x aba **Produção / Expedição / Notas** x menu **Produção**: a aba **Pedido** tem os modelos e lotes de cada produto; a aba **Produção / Expedição / Notas** tem os textos do pedido (orientação técnica, instruções de entrega e observação para a nota fiscal); o menu lateral **Produção** é outra tela, a das ordens de serviço.
 - **Salvar alterações** x **Salvar item** x sair do campo: **Salvar alterações** (rodapé) salva tudo e recarrega a tela; **Salvar item** salva tudo e fecha o cartão do produto; sair do campo grava sozinho só Quantidade, Valor Unitário e Fixo, e só em proposta com número e sem cobrança.
 - **Cancelar** x **Cancelar proposta** x **Cancelar só a cobrança**: **Cancelar** (rodapé) apenas sai da edição; **Cancelar proposta** encerra o pedido e não se desfaz pela tela (só um administrador reativa, pelo suporte); **Cancelar só a cobrança** mantém o pedido e reabre o saldo para uma cobrança nova.
 - **Gerar PDF da proposta** x **Gerar OC**: o primeiro é o orçamento, com validade de 15 dias, para o cliente decidir; o segundo é a autorização de faturamento, que o cliente devolve assinada. Os dois saem com o modelo da empresa da proposta e entram na timeline como "PDF da proposta gerado." e "PDF da OC gerado.".
@@ -405,7 +405,7 @@ Duas ações do mesmo menu têm o passo a passo em outra ficha: **Enviar para Fi
 - [Proposta: aba Pagamentos](proposta-pagamentos.md)
 - [Proposta: aba Artes](proposta-artes.md)
 - [Proposta: aba Pedido (Boletim Técnico & Lotes)](proposta-pedido.md)
-- [Proposta: abas Produção / Expedição, Boletim e Histórico](proposta-producao-boletim-historico.md)
+- [Proposta: abas Produção / Expedição / Notas, Boletim e Histórico](proposta-producao-boletim-historico.md)
 - [Notas fiscais](notas-fiscais.md)
 - [Conferência](conferencia.md)
 - [Carteira (contas a receber)](carteira.md)

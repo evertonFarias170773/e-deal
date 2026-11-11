@@ -2484,6 +2484,7 @@ export async function getPropostaDetailById(idInt: number, overrideClient?: Supa
       observacoes: proposalRow.obs_proposta || "",
       obsTecnica: proposalRow.obs_tecnica || "",
       obsEntrega: proposalRow.obs_entrega || "",
+      obsNotaFiscal: proposalRow.obs_nota_fiscal ? String(proposalRow.obs_nota_fiscal) : "",
       is_avulso: proposalRow.is_avulso === true,
       clienteNaoCadastrado: isClienteNaoCadastrado,
       id_faturado: proposalRow.id_faturado ?? null,
@@ -3135,7 +3136,10 @@ export async function saveProposta(
               obs_tecnica: formState.obsTecnica,
               // As instrucoes de entrega seguem a mesma regra: a Expedicao
               // precisa do texto mesmo com cobranca ativa.
-              obs_entrega: formState.obsEntrega
+              obs_entrega: formState.obsEntrega,
+              // A observacao para a nota fiscal (11/11/2026) tambem: o
+              // faturamento precisa dela mesmo com cobranca ativa.
+              obs_nota_fiscal: formState.obsNotaFiscal?.trim() ? formState.obsNotaFiscal : null
             })
             .eq("id_int", id_int);
 
@@ -3784,6 +3788,7 @@ export async function saveProposta(
       obs_proposta: formState.observacoes,
       obs_tecnica: formState.obsTecnica,
       obs_entrega: formState.obsEntrega,
+      obs_nota_fiscal: formState.obsNotaFiscal?.trim() ? formState.obsNotaFiscal : null,
       texto_whatsapp: informalText,
       contato: contatoNome,
       cep: cepText,

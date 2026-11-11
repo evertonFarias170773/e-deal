@@ -231,6 +231,13 @@ export type Proposta = {
    * boletim, nos PDFs da OS e nos cards da Expedicao.
    */
   obsEntrega: string;
+  /**
+   * `propostas.obs_nota_fiscal` (11/11/2026) - "Observacao para a nota fiscal".
+   * Vai para as Informacoes Complementares da NF-e e da NFS-e. Editada no bloco 4
+   * da aba Geral e na aba Producao / Expedicao / Notas (a MESMA coluna). Nao se
+   * confunde com `observacoes` (`obs_proposta`, bloco 10), que e interna.
+   */
+  obsNotaFiscal: string;
   is_avulso?: boolean;
   clienteNaoCadastrado?: boolean;
   id_faturado?: number | null;
@@ -362,6 +369,8 @@ export type PropostaFormState = {
   obsTecnica: string;
   /** `propostas.obs_entrega` — instrucoes de entrega (aba Producao / Expedicao). */
   obsEntrega: string;
+  /** `propostas.obs_nota_fiscal` - observacao para a nota fiscal (bloco 4 e aba Producao / Expedicao / Notas). */
+  obsNotaFiscal: string;
   isAvulso?: boolean;
   valorProdutosManual?: string;
   valorFreteManual?: string;

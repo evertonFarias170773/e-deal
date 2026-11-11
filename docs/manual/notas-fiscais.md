@@ -1,6 +1,6 @@
 # Notas fiscais
 
-> **Última revisão:** 09/11/2026 (transportadora dos Correios na nota é sempre o cadastro de Porto Alegre). 06/11/2026 (lançamento no contas a receber: a parcela conta por cobrança). 05/11/2026 (a condição de pagamento não vai mais escrita na NFS-e). 04/11/2026 (Histórico em duas abas, NF-e e NFS-e; NFS-e com busca própria, mais nova primeiro e começando em Produção; selo Boleto em processamento no banco)
+> **Última revisão:** 11/11/2026 (**Observação para a nota fiscal** do pedido nas Informações Complementares da NF-e, com contagem até 5.000 e o botão **Incluir**; selos **Obs. para a NF** e **Obs. interna** na Fila e nas telas das notas). 09/11/2026 (transportadora dos Correios na nota é sempre o cadastro de Porto Alegre). 06/11/2026 (lançamento no contas a receber: a parcela conta por cobrança). 05/11/2026 (a condição de pagamento não vai mais escrita na NFS-e). 04/11/2026 (Histórico em duas abas, NF-e e NFS-e; NFS-e com busca própria, mais nova primeiro e começando em Produção; selo Boleto em processamento no banco)
 > **Caminho no menu:** Financeiro → Notas fiscais (primeiro item da seção Financeiro do menu lateral)
 > **Endereço:** `/notas-fiscais` (a nota aberta fica em `/notas-fiscais/[id]`)
 
@@ -40,6 +40,9 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | Número do pedido (**#N**, dica "Abrir a proposta") | Aba Fila, coluna **Pedido** | Abre a proposta do pedido. |
 | Nome do cliente (dica "Abrir o cadastro do cliente") | Aba Fila, coluna **Cliente / Destinatário** | Abre o cadastro do cliente em edição. |
 | Selo **Remessa necessária** (vermelho) ou **Conferir remessa** (âmbar) | Aba Fila, abaixo do nome do cliente; só em pedido com entrega em endereço diferente do da NF-e | Não abre nada: é um aviso. Passe o mouse para ver a frase e os dois endereços (o de entrega e o da NF-e) |
+| Selo **Obs. para a NF** (roxo) | Aba Fila, abaixo do nome do cliente, e no topo da tela da NF-e e da janela **NFS-e · Pedido**; só em pedido com **Observação para a nota fiscal** | Passe o mouse para ler o texto; clique para abrir o texto embaixo do selo (clique de novo para fechar). É o texto que vai nas Informações Complementares. |
+| Selo **Obs. interna** (âmbar, com cadeado) | Mesmos lugares; só em pedido com texto em **10. Observações e Condições** | Passe o mouse ou clique para ler o bloco 10 sem abrir a proposta. Esse texto é interno e não vai para a nota. |
+| **Incluir nas Informações Complementares** | Tela da NF-e, bloco **Informações adicionais**, quando a observação do pedido não está no texto | Põe a observação do pedido no fim do texto, em linha própria, sem apagar o que já está. Só muda a tela: grave com **Salvar e sair** ou siga para **Emitir NF-e**, que salva antes de emitir. |
 | **Nota emitida no sistema antigo** | Aba Fila, coluna **Ação** | Abre a janela que pede o número da nota emitida no sistema antigo. **Marcar nota emitida** grava a marca e tira o pedido da fila. Enquanto grava mostra "Marcando...". |
 | **Marcar como entregue** | Aba Fila, coluna **Ação**, ao lado de **Nota emitida no sistema antigo**; só administrador (marca de administrador no cadastro do usuário) | Aparece em pedido Liberado (LIBERADO, ou APROVADO sem produção, OS nem nota emitida) e em pedido que foi só à Fila de Faturamento, sem produção (status REVISAO ATENDENTE). Abre a janela **Marcar como entregue?**; ao confirmar, o status vira ENTREGUE e a data de entrega gravada é a de hoje. O pedido continua na fila. Não há desmarcar. |
 | **Faturar** | Aba Fila, coluna **Ação** | Confere o pedido e abre (ou cria) o rascunho da NF-e. Não transmite nada. |
@@ -138,7 +141,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 ### Entender a Fila Faturamento
 
 1. Abra **Financeiro → Notas fiscais**. A tela já abre na aba **Fila Faturamento**, com a quantidade de pedidos entre parênteses.
-2. A primeira lista é a dos **pedidos** que esperam nota. Cada linha mostra **Pedido** (clique no número para abrir a proposta), **Cliente / Destinatário** (clique para abrir o cadastro; quando quem paga é outro cadastro, aparece **Sócio pagador**), **Em produção desde**, **Empresa Emitente**, **Valor Total**, **Tipo de cobrança** e **Status do pedido**. Abaixo do nome do cliente pode aparecer o selo **Remessa necessária** ou **Conferir remessa**: o pedido é entregue em endereço diferente do que vai na NF-e. Pedido de **retrabalho** (criado como Retrabalho pelo Duplicar proposta, ou com cobrança E-Retrabalho não cancelada) aparece com contorno vermelho, o número do pedido em vermelho e o selo **Retrabalho de #<original>** (o pedido de onde ele nasceu; só **Retrabalho** quando não há original gravado), na tabela e no cartão do celular. E-Amostra e E-Permuta não ganham o destaque. O destaque não muda a ordem nem as ações da fila.
+2. A primeira lista é a dos **pedidos** que esperam nota. Cada linha mostra **Pedido** (clique no número para abrir a proposta), **Cliente / Destinatário** (clique para abrir o cadastro; quando quem paga é outro cadastro, aparece **Sócio pagador**), **Em produção desde**, **Empresa Emitente**, **Valor Total**, **Tipo de cobrança** e **Status do pedido**. Abaixo do nome do cliente pode aparecer o selo **Remessa necessária** ou **Conferir remessa**: o pedido é entregue em endereço diferente do que vai na NF-e. Ali também aparecem o selo roxo **Obs. para a NF** (o pedido tem texto que vai impresso na nota) e o selo âmbar **Obs. interna** (o pedido tem texto no bloco 10, que não vai para a nota); passe o mouse ou clique no selo para ler o texto. Pedido de **retrabalho** (criado como Retrabalho pelo Duplicar proposta, ou com cobrança E-Retrabalho não cancelada) aparece com contorno vermelho, o número do pedido em vermelho e o selo **Retrabalho de #<original>** (o pedido de onde ele nasceu; só **Retrabalho** quando não há original gravado), na tabela e no cartão do celular. E-Amostra e E-Permuta não ganham o destaque. O destaque não muda a ordem nem as ações da fila.
 3. A lista vem **ordenada pela previsão de entrega** (a segunda linha de **Em produção desde**): primeiro os atrasados e os de hoje (horário de Brasília), com o mais atrasado no topo; depois os de data futura, do mais próximo ao mais distante; no fim, os que ainda não têm previsão, como os pedidos em REVISAO ATENDENTE. A ordem é refeita a cada abertura: quando a produção define a data de um pedido, ele sobe sozinho. Pedidos com a mesma data ficam na ordem do número, do mais novo para o mais antigo. Os filtros continuam valendo e não mudam a ordem.
 4. Use os filtros do topo: a busca **Buscar fila por Ref, ID Cliente ou Nome...** (também acha por sócio pagador e por vendedor), **Todas as Empresas Emitentes**, **Todos os status do pedido** e a caixa **Só faturados**, que deixa só os pedidos com cobrança do tipo faturado. A caixa **Mostrar também pedidos com NFS-e emitida** traz de volta os pedidos que já têm nota de serviço autorizada.
 5. Abaixo vem a seção **Notas em processo**. Ela lista toda nota que ainda não é documento fiscal: pendente, pronta para envio, processando ou com erro. Os filtros do topo não escondem nada desta seção, de propósito.
@@ -206,7 +209,7 @@ O servidor recusa pedido fora de AGUARDANDO, já na produção, marcado como not
    - **Itens**: descrição, unidade, quantidade, valores, NCM e peso. O CFOP não se digita. O botão **CST** abre a situação tributária do item. **Adicionar Item Fiscal** inclui um item; **Salvar \*** grava a linha alterada; **Excluir** remove.
    - **Transporte/Frete**: **Modalidade do Frete**, transportadora, valor do frete, volumes e pesos. Em pedido dos Correios a transportadora já vem preenchida com **EMPRESA BRASILEIRA DE CORREIOS E TELEGRAFOS (34028316002661) - Porto Alegre - RS** (veja "Regras e bloqueios").
    - **Pagamentos**: **Forma de Pagamento** e parcelas (veja a tarefa seguinte).
-   - **Informações adicionais**: **Informações Complementares (Impresso na DANFE)**, que já nasce com o número do pedido, e **Observações Internas**, que não vão para a nota.
+   - **Informações adicionais**: **Informações Complementares (Impresso na DANFE)**, que já nasce com o número do pedido ("Pedido N") e, se o pedido tiver **Observação para a nota fiscal**, com ela na linha de baixo. Revise o texto antes de emitir. Embaixo do campo, a contagem mostra quantos caracteres vão no XML (com o endereço de entrega, quando há) e fica vermelha acima de 5.000, o limite da NF-e. Se a observação do pedido não estiver no texto (rascunho criado antes de ela ser escrita, ou apagada), aparece o quadro roxo com o texto e o botão **Incluir nas Informações Complementares**. **Observações Internas** não vão para a nota.
 6. Se quiser ver como a nota vai ficar, clique em **DANFE Preview**, no cabeçalho. A prévia não tem validade fiscal.
 7. Clique em **Emitir NF-e**. O sistema salva, valida e abre a confirmação **Emitir NF-e**. Leia o aviso (**Esta ação não pode ser desfeita**) e confirme em **Emitir NF-e**.
 8. Acompanhe na própria janela: **Enviando nota para Focus...**, **Nota enviada. Aguardando processamento da Focus...** e **Consultando autorização e documentos fiscais...**. Enquanto aparecer **Não feche esta tela...**, espere.
@@ -357,7 +360,12 @@ Ação temporária, da transição entre sistemas. Use só quando a nota do pedi
 - Nota de remessa e nota de pedido pago por PIX, cartão, crédito ou boleto à vista não oferecem **Lançar no Contas a Receber**.
 - A empresa emitente é uma de três: **INGRESSO IDEAL**, **BIRÔ IDEAL** e **E3 BRINDES**. Ela vem do pedido e pode ser trocada no bloco Emitente enquanto a nota ainda puder ser editada.
 
+- **Observação para a nota fiscal** (11/11/2026): o texto que o vendedor escreve na proposta (bloco **4. Dados para nota fiscal** da aba Geral, ou aba **Produção / Expedição / Notas**) vai para as Informações Complementares da NF-e e da NFS-e, depois do que já sai, sem apagar nada. Na NF-e, só o rascunho novo nasce com ele; rascunho que já existia ganha o botão **Incluir nas Informações Complementares**. Nota já emitida não muda; para corrigir uma autorizada, use a carta de correção. O bloco **10. Observações e Condições** é interno e nunca entra na nota: aparece só no selo **Obs. interna**.
+- Limites das Informações Complementares: **NF-e até 5.000 caracteres** (o texto mais o endereço de entrega, quando há); **NFS-e até 2.000**. A proposta e as telas das notas avisam em vermelho quando passa; a janela da NFS-e não cria o rascunho acima de 2.000.
+
 ## O que não confundir
+
+- **Observação para a nota fiscal** x **Observações e Condições** (bloco 10) x **Observações Internas** da NF-e: a primeira é da proposta e sai impressa na nota; a segunda é da proposta e é interna (só o selo **Obs. interna**); a terceira é da própria nota e não vai para o XML.
 
 - Lista de pedidos da **Fila Faturamento**, **Notas em processo** e **Histórico**: a primeira é de pedidos que ainda não têm nota; a segunda é de notas que ainda não são documento fiscal; o Histórico só tem nota autorizada ou cancelada.
 - Número da aba **Fila Faturamento (N)** e **Notas em processo (N)**: o da aba conta só os pedidos a faturar; as notas em processo têm contador próprio.
@@ -442,6 +450,10 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 
 - `src/app/(erp)/notas-fiscais/`
 - `src/features/fiscal/NotasFiscaisPage.tsx`
+- `src/features/fiscal/lib/observacao-nota-fiscal.ts`
+- `src/features/fiscal/components/SelosDeObservacao.tsx`
+- `src/features/fiscal/services/observacoes-do-pedido.service.ts`
+- `src/features/fiscal/hooks/useObservacoesDoPedido.ts`
 - `src/features/fiscal/services/conferencia-faturamento.ts`
 - `src/features/fiscal/components/ConferenciaFaturamentoModal.tsx`
 - `src/lib/fiscal/correcao-de-cadastro.ts`

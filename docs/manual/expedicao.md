@@ -187,11 +187,11 @@ Os itens aparecem nesta ordem, cada um só quando se aplica.
 
 ### Ler as instruções de entrega
 
-1. Pedido com **Instruções de entrega** escritas (na aba **Produção / Expedição** do pedido ou no boletim) mostra um ícone de aviso âmbar no card do Kanban, ao lado do menu de ações, e no cartão do celular, ao lado do número. Passe o mouse (ou toque e segure) para ler o texto.
+1. Pedido com **Instruções de entrega** escritas (na aba **Produção / Expedição / Notas** do pedido ou no boletim) mostra um ícone de aviso âmbar no card do Kanban, ao lado do menu de ações, e no cartão do celular, ao lado do número. Passe o mouse (ou toque e segure) para ler o texto.
 2. Na lista, o texto aparece inteiro na coluna **Pedido**, em um quadro âmbar **Instruções de entrega**.
 3. Na janela **Despachar pedido** (e em **Editar dados de expedição**), o mesmo quadro aparece no topo, antes dos campos.
 4. Pedido sem instruções não mostra nada: nem ícone, nem quadro.
-5. A Expedição só lê. Para mudar o texto, edite o pedido (aba **Produção / Expedição**) ou a OS (**BLOCO 2**).
+5. A Expedição só lê. Para mudar o texto, edite o pedido (aba **Produção / Expedição / Notas**) ou a OS (**BLOCO 2**).
 
 ### Marcar o pedido como pronto
 
@@ -481,7 +481,7 @@ Em resumo: no pedido Na Expedição, clique em **Despachar**, confira peso, volu
 - [Produção (ordens de serviço)](producao.md)
 - [Proposta: aba Fretes](proposta-fretes.md)
 - [Proposta: aba Pagamentos](proposta-pagamentos.md)
-- [Proposta: abas Produção / Expedição, Boletim e Histórico](proposta-producao-boletim-historico.md)
+- [Proposta: abas Produção / Expedição / Notas, Boletim e Histórico](proposta-producao-boletim-historico.md)
 - [Notas fiscais](notas-fiscais.md)
 - [Carteira (contas a receber)](carteira.md)
 - [Conferência](conferencia.md)

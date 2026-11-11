@@ -74,6 +74,8 @@ import { SeloDaPrevisao } from "@/features/fiscal/components/SeloDaPrevisao";
 import { useAvisoDeRemessa } from "@/features/fiscal/hooks/useAvisoDeRemessa";
 import { SeloDeRemessa } from "@/features/fiscal/components/AvisoDeRemessa";
 import { avisoDeRemessaDaLinha } from "@/features/fiscal/lib/aviso-remessa";
+import { useObservacoesDoPedido } from "@/features/fiscal/hooks/useObservacoesDoPedido";
+import { SelosDeObservacao } from "@/features/fiscal/components/SelosDeObservacao";
 import { dataHoraDeBrasilia, hojeEmBrasilia, linhaDaPrevisao, ordenarPelaPrevisao } from "@/features/fiscal/lib/fila-producao-desde";
 import { decidirNfseDoPedido, empresaLiberadaParaNfse, rotuloDoBotaoNfse } from "@/features/nfse/lib/regras-emissao";
 import { pedidoOcultoPorNfse, rotuloDosOcultosPorNfse } from "@/features/nfse/lib/fila-nfse";
@@ -2140,6 +2142,13 @@ export function NotasFiscaisPage() {
   const leituraDosAvisosDeRemessa = useAvisoDeRemessa(
     faturaveisList.map((item) => Number(item.id_int)).filter((id) => Number.isFinite(id) && id > 0)
   );
+  /**
+   * As observacoes do pedido (11/11/2026): "Obs. para a NF" (vai na nota) e
+   * "Obs. interna" (bloco 10, nao vai). Leitura a parte, em lote, como a remessa.
+   */
+  const observacoesDosPedidos = useObservacoesDoPedido(
+    faturaveisList.map((item) => Number(item.id_int)).filter((id) => Number.isFinite(id) && id > 0)
+  );
   const hojeDeBrasilia = hojeEmBrasilia();
   /** As duas linhas de "Em produção desde": data e hora (Brasília) e, embaixo, a previsão. */
   const renderEmProducaoDesde = (item: FaturavelOrigem, compacto = false) => {
@@ -2794,6 +2803,7 @@ export function NotasFiscaisPage() {
                       aoAbrirCadastro={(id) => router.push(`/cadastros/${id}/editar`)}
                     />
                     <SeloDeRemessa aviso={avisoDeRemessaDaLinha(item.id_int, leituraDosAvisosDeRemessa)} />
+                    <SelosDeObservacao observacoes={observacoesDosPedidos.get(Number(item.id_int))} />
                   </div>
                 )
               },
@@ -2885,6 +2895,7 @@ export function NotasFiscaisPage() {
                         idCliente={item.id_cliente}
                       />
                       <SeloDeRemessa aviso={avisoDeRemessaDaLinha(item.id_int, leituraDosAvisosDeRemessa)} />
+                      <SelosDeObservacao observacoes={observacoesDosPedidos.get(Number(item.id_int))} />
                     </div>
                     <p className="mt-1 text-xs text-slate-500">
                       Vendedor: {String(item.vendedor || "").trim() || "-"}

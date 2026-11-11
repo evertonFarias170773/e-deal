@@ -218,6 +218,7 @@ export async function salvarCotacaoComoPropostaReal(
     // vendedor na aba Producao ou o gerente no boletim.
     obsTecnica: '',
     obsEntrega: '',
+    obsNotaFiscal: '',
     isAvulso: false,
     clienteNaoCadastrado: false,
   };

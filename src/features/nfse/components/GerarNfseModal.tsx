@@ -50,6 +50,8 @@ import { getSupabaseClient } from "@/lib/supabase/client";
 import { fetchComSessao, SessaoExpiradaError } from "@/lib/supabase/sessao";
 import { abrirLinkDeDocumentoFiscal } from "@/lib/fiscal/documento-nota";
 import { formatCurrency } from "@/lib/formatters/currency";
+import { observacaoLimpa } from "@/features/fiscal/lib/observacao-nota-fiscal";
+import { SelosDeObservacao } from "@/features/fiscal/components/SelosDeObservacao";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { mensagemSemPercentual, percentualParaTela, rotuloDaCompetencia } from "@/features/nfse/lib/percentual-simples";
 import {
@@ -313,9 +315,10 @@ export function GerarNfseModal({
     const sugerido = valorSugeridoComFrete(lido.itens, todos, lido.valorDosProdutos, lido.freteDoPedido);
     setMarcados(todos);
     setValorTexto(sugerido > 0 ? sugerido.toFixed(2).replace(".", ",") : "");
-    // Descrição: itens e frete, sem pagamento nem natureza (05/11/2026); as complementares nascem vazias.
+    // Descrição: itens e frete, sem pagamento nem natureza (05/11/2026). As complementares
+    // nascem com a "Observação para a nota fiscal" do pedido (11/11/2026); sem ela, vazias.
     setDescricao(descricaoDaNfse(descricaoDosItens(lido.idInt, lido.itens, descontoParaDescricao(lido)), freteQueEntraNaNota(lido.itens, todos, lido.freteDoPedido)));
-    setInfComp("");
+    setInfComp(observacaoLimpa(lido.observacaoParaNota));
     setValorMexido(false);
     setDescricaoMexida(false);
     setAlertas([]);
@@ -732,6 +735,11 @@ export function GerarNfseModal({
                   "Nota fiscal de serviço ainda sem rascunho"
                 )}
               </p>
+              {contexto ? (
+                <div className="mt-2">
+                  <SelosDeObservacao observacoes={{ paraNota: contexto.observacaoParaNota ?? "", interna: contexto.observacaoInterna ?? "" }} />
+                </div>
+              ) : null}
             </div>
             <div className="flex items-center gap-3">
               {contexto && modo.tipo !== "CARREGANDO" && modo.tipo !== "FALHA" && (

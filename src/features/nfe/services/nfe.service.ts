@@ -28,6 +28,7 @@ import {
   tipoContribuintePorDocumento
 } from "@/lib/fiscal/tipo-contribuinte";
 import { escolherEnderecoPrincipal } from "@/lib/fiscal/endereco-principal";
+import { complementaresComObservacao } from "@/features/fiscal/lib/observacao-nota-fiscal";
 import { idDoPagadorDoPedido } from "@/lib/fiscal/pagador-do-pedido";
 
 export const NFE_SELECT_COLUMNS = [
@@ -1293,7 +1294,12 @@ export async function createOrReuseNfeDraft(idInt: number): Promise<SupabaseNfeR
     // numero aparecer na nota, sem tocar na funcao do banco. O campo esta vazio
     // em todas as notas anteriores a 16/09/2026, e nenhuma delas e reescrita:
     // isto vale so para rascunho novo.
-    informacoes_complementares: `Pedido ${idInt}`,
+    //
+    // Observacao para a nota fiscal do pedido (`propostas.obs_nota_fiscal`,
+    // 11/11/2026): vai na linha de baixo, sem apagar o "Pedido N". O bloco 10
+    // (`obs_proposta`) e interno e NAO entra. Rascunho que ja existia nao muda
+    // aqui: a tela da nota oferece "Incluir".
+    informacoes_complementares: complementaresComObservacao(`Pedido ${idInt}`, proposta.obsNotaFiscal),
     // Os dois triggers de peso reescrevem estas duas colunas a partir da soma
     // dos itens assim que eles entram. Gravamos aqui o MESMO numero que eles vao
     // impor, para que a linha nunca exista com um peso que ninguem mais defende.

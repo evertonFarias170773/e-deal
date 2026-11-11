@@ -1,18 +1,18 @@
-# Proposta: abas Produção / Expedição, Boletim e Histórico
+# Proposta: abas Produção / Expedição / Notas, Boletim e Histórico
 
-> **Última revisão:** 10/11/2026 (Liberar e enviar manda o aviso para a conversa do cliente; fim do "em ajuste" e da homologação)
-> **Caminho no menu:** Pedidos → abrir um pedido → Editar proposta → aba Produção / Expedição ou aba Histórico. Não existe aba Boletim na barra de abas: a OS (boletim) abre pelo menu Produção → clicar no pedido.
-> **Endereço:** `/orcamentos/[número]/editar?tab=producao` e `/orcamentos/[número]/editar?tab=historico`. A aba se chamava **Produção** até 09/10/2026; só o nome mudou, o endereço `?tab=producao` é o mesmo. A OS fica em `/pedidos/boletim?id_int=[número]&modo=edicao`.
+> **Última revisão:** 11/11/2026 (a aba passou a se chamar **Produção / Expedição / Notas** e ganhou o quadro **Notas fiscais**, com a **Observação para a nota fiscal**). 10/11/2026 (Liberar e enviar manda o aviso para a conversa do cliente; fim do "em ajuste" e da homologação)
+> **Caminho no menu:** Pedidos → abrir um pedido → Editar proposta → aba Produção / Expedição / Notas ou aba Histórico. Não existe aba Boletim na barra de abas: a OS (boletim) abre pelo menu Produção → clicar no pedido.
+> **Endereço:** `/orcamentos/[número]/editar?tab=producao` e `/orcamentos/[número]/editar?tab=historico`. A aba se chamava **Produção** até 09/10/2026 e **Produção / Expedição** até 11/11/2026; só o nome mudou, o endereço `?tab=producao` é o mesmo. A OS fica em `/pedidos/boletim?id_int=[número]&modo=edicao`.
 
 ## Para que serve
 
-A aba **Produção / Expedição** guarda a orientação técnica do pedido: o que a bancada precisa saber para fabricar. A aba **Histórico** mostra tudo o que aconteceu com o pedido (mensagens da equipe, registros automáticos do sistema e os movimentos de crédito).
+A aba **Produção / Expedição / Notas** guarda três textos do pedido: a orientação técnica (o que a bancada precisa saber para fabricar), as instruções de entrega (para a Expedição) e a **Observação para a nota fiscal** (o que sai impresso na NF-e e na NFS-e). A aba **Histórico** mostra tudo o que aconteceu com o pedido (mensagens da equipe, registros automáticos do sistema e os movimentos de crédito).
 
 Esta página explica também como o pedido sai do atendimento e entra na fábrica: a liberação para a produção, a passagem de REVISAO ATENDENTE para REVISAO PRODUCAO e a OS (boletim), onde ficam a data e a hora de entrega e a impressão.
 
 ## Quem acessa
 
-- Quem abre a edição do pedido vê as abas **Produção / Expedição** e **Histórico**. A aba Produção / Expedição aparece também em proposta avulsa e em pedido só de prateleira.
+- Quem abre a edição do pedido vê as abas **Produção / Expedição / Notas** e **Histórico**. A aba Produção / Expedição / Notas aparece também em proposta avulsa e em pedido só de prateleira.
 - **Liberar para Produção** fica na lista de Pedidos e aparece só para Administrador, Super Administrador ou quem tem a permissão **Liberar para Produção** no perfil, quando o pedido está em REVISAO ATENDENTE. O servidor confere a mesma permissão e, depois, pagamento, arte e modelos. A liberação automática de pedido só de prateleira, que acontece quando o pagamento é confirmado, não depende dessa permissão.
 - **Retirar da Produção** aparece só para Administrador, Super Administrador ou quem tem a permissão **Liberar para Produção** no perfil, e só em pedido em REVISAO PRODUCAO. O servidor confere a mesma permissão antes de retirar e recusa o pedido que já é da produção.
 - **Voltar para Revisão Atendente** (tela Produção) aparece só para Administrador, Super Administrador ou quem tem a permissão **Ações Administrativas de OS**. O servidor confere a mesma permissão.
@@ -27,7 +27,7 @@ Nomes exatamente como aparecem na tela.
 
 | Nome na tela | Onde fica | O que faz |
 |---|---|---|
-| **Produção / Expedição** | Barra de abas do pedido, entre **Artes** e **Pagamentos** | Abre a aba com os campos **Orientação técnica de produção** e **Instruções de entrega**. |
+| **Produção / Expedição / Notas** | Barra de abas do pedido, entre **Artes** e **Pagamentos** | Abre a aba com os campos **Orientação técnica de produção**, **Instruções de entrega** e, no quadro **Notas fiscais**, **Observação para a nota fiscal**. |
 | **Histórico** | Barra de abas do pedido, última aba | Abre a **Timeline da proposta** e os movimentos de crédito. |
 | **Salvar alterações** | Barra fixa no rodapé do pedido | Grava a orientação técnica junto com o resto do pedido. |
 | Ícone de clipe (dica "Anexar arquivo (até 10MB)") | Aba Histórico, rodapé da timeline | Escolhe arquivos para enviar com a mensagem. |
@@ -55,19 +55,19 @@ Nomes exatamente como aparecem na tela.
 
 ## Passo a passo
 
-### Escrever a orientação técnica (aba Produção / Expedição)
+### Escrever a orientação técnica (aba Produção / Expedição / Notas)
 
-1. Abra o pedido e clique na aba **Produção / Expedição**.
+1. Abra o pedido e clique na aba **Produção / Expedição / Notas**.
 2. No campo **Orientação técnica de produção**, escreva o que a bancada precisa saber. Exemplo da própria tela: "pulseira de pino sem o pino; entregar em bobina de 100; conferir a cor contra a amostra aprovada...".
 3. Clique em **Salvar alterações**.
 
 É um campo só por pedido. O mesmo texto aparece na OS, em **BLOCO 2 — Orientação Técnica de Produção**, onde o campo se chama **Instruções de fabricação · sai na OS impressa** e a produção pode revisá-lo, e sai por inteiro nos dois PDFs da OS.
 
-Na OS e nos dois PDFs esse texto sai em **vermelho, negrito e letra grande** (18 px na tela, 16 pt no PDF), para a bancada não passar por cima dele. É só aparência: o texto é gravado normal, e a aba Produção / Expedição continua mostrando o campo com a letra de sempre. Sem instrução nenhuma, a OS mostra só o traço, como antes.
+Na OS e nos dois PDFs esse texto sai em **vermelho, negrito e letra grande** (18 px na tela, 16 pt no PDF), para a bancada não passar por cima dele. É só aparência: o texto é gravado normal, e a aba Produção / Expedição / Notas continua mostrando o campo com a letra de sempre. Sem instrução nenhuma, a OS mostra só o traço, como antes.
 
-### Escrever as instruções de entrega (aba Produção / Expedição)
+### Escrever as instruções de entrega (aba Produção / Expedição / Notas)
 
-1. Abra o pedido e clique na aba **Produção / Expedição**.
+1. Abra o pedido e clique na aba **Produção / Expedição / Notas**.
 2. No campo **Instruções de entrega**, logo abaixo da orientação técnica, escreva o que a Expedição precisa saber para entregar. Exemplo da própria tela: "entregar na quinta pela manhã; ligar antes de sair; deixar na portaria com o porteiro...".
 3. Clique em **Salvar alterações**.
 
@@ -78,6 +78,16 @@ Na OS e nos dois PDFs esse texto sai em **vermelho, negrito e letra grande** (18
 - na Expedição: ícone de aviso no card e no cartão do celular, e o texto inteiro na lista e na janela **Despachar pedido**.
 
 As instruções de entrega não são copiadas quando o pedido é duplicado nem quando se cria um complemento: escreva de novo no pedido novo, se valerem para ele.
+
+### Escrever o que sai impresso na nota (quadro Notas fiscais)
+
+1. Abra o pedido e clique na aba **Produção / Expedição / Notas**.
+2. No quadro **Notas fiscais**, o último da aba, escreva em **Observação para a nota fiscal** o texto que a nota precisa levar. Exemplo: nome do projeto e número de captação da Lei Rouanet ("Projeto Festival de Inverno - PRONAC 123456").
+3. Clique em **Salvar alterações**. Grava também com cobrança ativa (salvamento parcial).
+
+É o mesmo campo do fim do bloco **4. Dados para nota fiscal**, na aba Geral: editar num lugar muda o outro. Embaixo do campo, a tela mostra o tamanho em cada nota (NF-e até 5.000 caracteres contando o "Pedido N"; NFS-e até 2.000) e fica vermelha se passar.
+
+O texto vai para as **Informações Complementares** da NF-e (rascunho criado pelo **Faturar**, na linha de baixo do "Pedido N") e da NFS-e (a janela **NFS-e · Pedido** abre com ele), sem apagar o que já sai. Quem fatura revisa antes de emitir e vê o selo **Obs. para a NF** na Fila de faturamento. Nota já emitida não muda. As **Observações e Condições** da aba Geral (bloco 10) continuam internas e não vão para a nota. Detalhes em [Notas Fiscais](notas-fiscais.md) e [Notas Fiscais: NFS-e](notas-fiscais-nfse.md).
 
 ### Saber quando o pedido chega em REVISAO ATENDENTE
 
@@ -169,11 +179,11 @@ As mensagens são internas: o cliente não vê.
 
 ## O que não confundir
 
-- Menu **Produção** e aba **Produção / Expedição** são coisas diferentes. O menu é a tela da fábrica, com as OS; a aba, dentro do pedido, tem só o campo de orientação técnica.
+- Menu **Produção** e aba **Produção / Expedição / Notas** são coisas diferentes. O menu é a tela da fábrica, com as OS; a aba, dentro do pedido, tem os textos do pedido: orientação técnica, instruções de entrega e observação para a nota fiscal.
 - Não existe aba **Boletim** no pedido. O endereço com `tab=boletim` mostra só "Boletim — Aguarde orientações.". O boletim de verdade é a OS, que abre pela tela Produção.
 - **Boletim Técnico & Lotes** é o título da aba **Pedido** (a divisão em modelos). Não é o boletim da OS.
 - **Orientação técnica de produção** e **Instruções de entrega** são dois campos da mesma aba: o primeiro é para quem fabrica, o segundo é para quem entrega. Os dois saem na OS, em blocos separados.
-- **Orientação técnica de produção** (aba Produção / Expedição) não é **Observações e Condições** (aba Geral). A primeira vai para a OS impressa; a segunda é comercial e não chega à produção.
+- **Orientação técnica de produção** (aba Produção / Expedição / Notas) não é **Observações e Condições** (aba Geral). A primeira vai para a OS impressa; a segunda é comercial e não chega à produção.
 - **REVISAO ATENDENTE** e **REVISAO PRODUCAO** são etapas seguidas, de pessoas diferentes. Na primeira, o atendente confere e libera; na segunda, a produção confere a OS e, ao salvá-la, o pedido vira EM PRODUCAO.
 - **Liberar para Produção** não é **LIBERADO**. LIBERADO é o status de pedido pago, ainda no atendimento; a liberação para a produção é a ação que leva o pedido de REVISAO ATENDENTE para REVISAO PRODUCAO.
 - **Retirar da Produção** e **Voltar para Revisão Atendente** fazem a mesma gravação (tiram da fila e devolvem o status para REVISAO ATENDENTE). A diferença é onde valem: retirar é para o pedido em REVISAO PRODUCAO e sem OS; **Voltar para Revisão Atendente**, na tela Produção, é como a produção devolve o pedido que já está em produção.
@@ -234,6 +244,7 @@ O que fazer:
 ## Arquivos de origem
 
 - `src/features/orcamentos/OrcamentoFormPage.tsx`
+- `src/features/orcamentos/components/CampoObservacaoNotaFiscal.tsx`
 - `src/features/orcamentos/OrcamentosListPageReal.tsx`
 - `src/features/orcamentos/components/AvisoProducaoModal.tsx`
 - `src/features/orcamentos/components/PropostaChatPanel.tsx`
@@ -256,4 +267,4 @@ O que fazer:
 
 > **Mudança desta revisão:** 09/10/2026 — nova seção sobre a página que mostra a mensagem This page could not load: é erro de carregamento, com a causa já vista (data inválida no pedido, tratada no commit `6693958`) e o que fazer.
 
-> **Mudança desta revisão:** 27/10/2026 — no BLOCO 2 da OS o campo aparece como **Instruções de fabricação · sai na OS impressa** e o texto digitado sai em vermelho, negrito e letra grande, na tela e nos dois PDFs da OS. Só exibição: a gravação, o campo da aba Produção / Expedição e as Instruções de entrega não mudaram.
+> **Mudança desta revisão:** 27/10/2026 — no BLOCO 2 da OS o campo aparece como **Instruções de fabricação · sai na OS impressa** e o texto digitado sai em vermelho, negrito e letra grande, na tela e nos dois PDFs da OS. Só exibição: a gravação, o campo da aba Produção / Expedição / Notas e as Instruções de entrega não mudaram.

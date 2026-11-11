@@ -25,6 +25,7 @@ import { escolherEnderecoPrincipal } from "@/lib/fiscal/endereco-principal";
 import { motivoSemEnderecoDoTomador } from "@/features/nfse/lib/composicao-nfse";
 import type { PercentualVigente } from "@/features/nfse/lib/percentual-simples";
 import { lerPercentualSimplesVigente } from "@/features/nfse/services/percentual-simples.server";
+import { observacaoLimpa } from "@/features/fiscal/lib/observacao-nota-fiscal";
 
 /**
  * NFS-e pela Fila — o que as rotas `/api/fiscal/rascunho-nfse` e
@@ -99,6 +100,13 @@ export type ContextoNfseDoPedido = {
   valorDosProdutos: number;
   /** `propostas.valor_frete`. Não entra na nota de serviço; aparece só para explicar a diferença. */
   freteDoPedido: number;
+  /**
+   * `propostas.obs_nota_fiscal` (11/11/2026): a "Observação para a nota fiscal".
+   * A janela abre com ela nas informações complementares. Vazio = sem observação.
+   */
+  observacaoParaNota: string;
+  /** `propostas.obs_proposta` (bloco 10): interna, NÃO vai para a nota; só aparece no selo. */
+  observacaoInterna: string;
   empresa: { id: number; nome: string; ambiente: AmbienteDaEmpresa; liberada: boolean };
   /**
    * O TOMADOR da nota: o pagador do pedido (`propostas.id_faturado`) quando há
@@ -263,7 +271,7 @@ export async function lerContextoNfseDoPedido(
 ): Promise<{ ok: true; contexto: ContextoNfseDoPedido } | Falha> {
   const { data: propostaRow, error: propostaError } = await supabase
     .from("propostas")
-    .select("id_int, id_cliente, id_faturado, cliente, empresa, valor, valor_total, valor_frete")
+    .select("id_int, id_cliente, id_faturado, cliente, empresa, valor, valor_total, valor_frete, obs_nota_fiscal, obs_proposta")
     .eq("id_int", idInt)
     .maybeSingle();
   if (propostaError) {
@@ -280,6 +288,8 @@ export async function lerContextoNfseDoPedido(
     valor: number | null;
     valor_total: number | null;
     valor_frete: number | null;
+    obs_nota_fiscal: string | null;
+    obs_proposta: string | null;
   };
   const idEmpresa = empresaEmitenteDoTexto(proposta.empresa);
   const idClienteDoPedido = proposta.id_cliente != null && Number(proposta.id_cliente) > 0 ? Number(proposta.id_cliente) : null;
@@ -443,6 +453,8 @@ export async function lerContextoNfseDoPedido(
       totalDoPedido: Number(proposta.valor_total) || Number(proposta.valor) || 0,
       valorDosProdutos: Number(proposta.valor) || 0,
       freteDoPedido: Number(proposta.valor_frete) || 0,
+      observacaoParaNota: observacaoLimpa(proposta.obs_nota_fiscal),
+      observacaoInterna: observacaoLimpa(proposta.obs_proposta),
       empresa: {
         id: idEmpresa,
         nome: texto(empresa?.nome_fantasia) || `Empresa ${idEmpresa}`,

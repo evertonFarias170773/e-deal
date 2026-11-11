@@ -10,6 +10,7 @@ import { codecs } from "@/lib/url-state";
 import { Copy, Search, Trash2, X, Edit2, AlertTriangle, AlertOctagon, Check, ExternalLink } from "lucide-react";
 import { useAppToast } from "@/components/common/AppToast";
 import { ContactEditModal } from "@/features/orcamentos/components/ContactEditModal";
+import { CampoObservacaoNotaFiscal } from "@/features/orcamentos/components/CampoObservacaoNotaFiscal";
 import { PedidoModelosTab, type AcoesDaAbaPedido } from "@/features/orcamentos/components/PedidoModelosTab";
 import { copiarLinkPagamentoExterno } from "@/features/area-cliente/lib/copiar-link-pagamento";
 import {
@@ -6546,8 +6547,9 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
             { id: "fretes", label: "Fretes" },
             { id: "pedido", label: "Pedido" },
             { id: "artes", label: "Artes" },
-            // So o rotulo mudou (09/10/2026): o id e o ?tab=producao continuam os mesmos.
-            { id: "producao", label: "Produção / Expedição" },
+            // So o rotulo mudou (09/10/2026 e 11/11/2026, com a observacao para a
+            // nota fiscal): o id e o ?tab=producao continuam os mesmos.
+            { id: "producao", label: "Produção / Expedição / Notas" },
             { id: "pagamentos", label: "Pagamentos" },
             { id: "historico", label: "Histórico" }
           ].filter(tab => {
@@ -6745,6 +6747,22 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                 expedidor nos cards da Expedição e na janela Despachar. O que é de
                 fabricação continua na <strong>Orientação técnica de produção</strong>, acima.
               </p>
+            </FormSection>
+          )}
+          {/* Observacao para a nota fiscal (`propostas.obs_nota_fiscal`, 11/11/2026):
+              o MESMO campo do bloco 4 da aba Geral, repetido aqui. */}
+          {activeFormTab === "producao" && shouldShowRest && (
+            <FormSection
+              title="Notas fiscais"
+              description="O que precisa sair impresso na NF-e e na NFS-e deste pedido."
+            >
+              <CampoObservacaoNotaFiscal
+                valor={form.obsNotaFiscal}
+                idInt={form.id_int}
+                aoMudar={(valor) => updateField("obsNotaFiscal", valor)}
+                inputClassName={inputClass}
+                onde="producao"
+              />
             </FormSection>
           )}
           {activeFormTab === "boletim" && shouldShowRest && (
@@ -7371,6 +7389,18 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                         />
                       </>
                     )}
+                    {/* Observacao para a nota fiscal (11/11/2026): o MESMO campo da
+                        aba Producao / Expedicao / Notas. Fica fora da trava do
+                        bloco, como as observacoes: o salvamento parcial grava. */}
+                    <div className="mt-5 border-t border-slate-100 pt-5 dark:border-slate-800">
+                      <CampoObservacaoNotaFiscal
+                        valor={form.obsNotaFiscal}
+                        idInt={form.id_int}
+                        aoMudar={(valor) => updateField("obsNotaFiscal", valor)}
+                        inputClassName={inputClass}
+                        onde="geral"
+                      />
+                    </div>
                   </FormSection>
                   )}
 
@@ -10166,6 +10196,7 @@ function createInitialState(proposta?: Proposta): PropostaFormState {
     observacoes: proposta?.observacoes ?? "",
     obsTecnica: proposta?.obsTecnica ?? "",
     obsEntrega: proposta?.obsEntrega ?? "",
+    obsNotaFiscal: proposta?.obsNotaFiscal ?? "",
     isAvulso,
     valorProdutosManual: isAvulso ? formatCurrencyWithoutPrefix(proposta?.resumo.subtotalProdutos ?? 0) : "",
     valorFreteManual: isAvulso ? formatCurrencyWithoutPrefix(proposta?.resumo.frete ?? 0) : "",

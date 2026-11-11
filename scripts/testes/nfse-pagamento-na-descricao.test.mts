@@ -67,7 +67,8 @@ checar("cancelada: nao preenche", parcelasParaLancamento(cob({ status: "CANCELAD
 
 // 5. Quem usa o montador
 const modal = readFileSync("src/features/nfse/components/GerarNfseModal.tsx", "utf8");
-checar("modal: complementares nascem vazias", /setInfComp\(""\)/.test(modal) && !/setInfComp\(textoDoPagamentoParaNota/.test(modal), true);
+// 11/11/2026: nascem com a Observacao para a nota fiscal do pedido (vazias sem ela), nunca com o pagamento.
+checar("modal: complementares nascem so com a observacao para a nota", /setInfComp\(observacaoLimpa\(lido\.observacaoParaNota\)\)/.test(modal) &&!/setInfComp\(textoDoPagamentoParaNota/.test(modal), true);
 checar("modal: as tres portas da descricao usam descricaoDaNfse", (modal.match(/descricaoDaNfse\(\s*descricaoDosItens\(/g) ?? []).length, 3);
 checar("modal: nada de pagamento nem natureza na descricao", /descricaoComPagamento|LINHA_NATUREZA_NFSE|textoDoPagamentoParaNota/.test(modal), false);
 const nfe = ["src/features/nfe/components/NfeDetailPage.tsx", "src/features/nfe/services/nfe.service.ts"].map((f) => readFileSync(f, "utf8")).join("\n");

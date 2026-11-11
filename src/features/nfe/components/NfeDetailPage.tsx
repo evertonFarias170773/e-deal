@@ -34,6 +34,14 @@ import { StatusBadge } from "@/components/common/StatusBadge";
 import { buscarEnderecoDestinatario, salvarRecebedorDoEndereco } from "@/features/nfe/services/remessa.service";
 import { lerAvisoDeRemessaDoPedido } from "@/features/fiscal/services/aviso-remessa.service";
 import { FaixaDeRemessa } from "@/features/fiscal/components/AvisoDeRemessa";
+import { SelosDeObservacao } from "@/features/fiscal/components/SelosDeObservacao";
+import { useObservacoesDoPedido } from "@/features/fiscal/hooks/useObservacoesDoPedido";
+import {
+  LIMITE_INFORMACOES_COMPLEMENTARES_NFE,
+  complementaresComObservacao,
+  observacaoJaNoTexto,
+  tamanhoNoXmlDaNfe
+} from "@/features/fiscal/lib/observacao-nota-fiscal";
 import type { AvisoDeRemessa } from "@/features/fiscal/lib/aviso-remessa";
 import {
   getNfeById,
@@ -946,6 +954,15 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
   /** Nulo enquanto lê, sem aviso, se a leitura falhou ou se a nota não é de venda editável. */
   const avisoDeRemessa =
     chaveDoAvisoDeRemessa && avisoDeRemessaLido.chave === chaveDoAvisoDeRemessa ? avisoDeRemessaLido.aviso : null;
+
+  // OBSERVACOES DO PEDIDO (11/11/2026): "Obs. para a NF" (`obs_nota_fiscal`, vai
+  // nas Informacoes Complementares) e "Obs. interna" (bloco 10, nao vai). So
+  // leitura. O rascunho novo ja nasce com a observacao; o que ja existia ganha o
+  // botao "Incluir" no bloco Informacoes adicionais.
+  const observacoesDaNota = useObservacoesDoPedido(
+    Number.isFinite(idIntParaAvisoDeRemessa) && idIntParaAvisoDeRemessa > 0 ? [idIntParaAvisoDeRemessa] : []
+  );
+  const observacoesDoPedido = observacoesDaNota.get(idIntParaAvisoDeRemessa) ?? null;
 
   // Destino fiscal em efeito proprio: fica fora do loadData memoizado e depende
   // so do pedido e da empresa da nota.
@@ -2595,6 +2612,9 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
               DANFE Preview
             </button>
           </p>
+          <div className="mt-2">
+            <SelosDeObservacao observacoes={observacoesDoPedido} />
+          </div>
         </div>
 
         {/*
@@ -4506,6 +4526,51 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
                   placeholder="Textos obrigatórios exigidos pela SEFAZ ou mensagens comerciais do pedido."
                   className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm bg-white outline-none focus:border-[#0b2f4a] font-medium"
                 />
+                {(() => {
+                  // O que vai no XML (infCpl): este texto e, com endereco de
+                  // entrega, " | " e o endereco, como `fn_montar_payload_nfe`.
+                  const enderecoNoXml =
+                    useDeliveryAddress && deliveryCep && deliveryLogradouro
+                      ? [deliveryLogradouro, deliveryNumero, deliveryComplemento, deliveryBairro, deliveryCidade, deliveryUf, deliveryCep ? `CEP: ${deliveryCep}` : ""]
+                          .map((parte) => String(parte ?? "").trim())
+                          .filter(Boolean)
+                          .join(", ")
+                      : "";
+                  const tamanho = tamanhoNoXmlDaNfe(infoComplementares, enderecoNoXml);
+                  const passou = tamanho > LIMITE_INFORMACOES_COMPLEMENTARES_NFE;
+                  return (
+                    <p
+                      data-tamanho-infcpl
+                      role={passou ? "alert" : undefined}
+                      className={`mt-1 text-xs ${passou ? "font-bold text-red-600" : "text-slate-500"}`}
+                    >
+                      {tamanho.toLocaleString("pt-BR")} de {LIMITE_INFORMACOES_COMPLEMENTARES_NFE.toLocaleString("pt-BR")} caracteres no XML
+                      {enderecoNoXml ? " (com o endereço de entrega)" : ""}
+                      {passou ? ". Passou do limite da NF-e: encurte o texto, senão a SEFAZ recusa a nota." : ""}
+                    </p>
+                  );
+                })()}
+                {observacoesDoPedido?.paraNota && !observacaoJaNoTexto(infoComplementares, observacoesDoPedido.paraNota) ? (
+                  <div data-obs-nota-fora-do-texto className="mt-3 rounded-xl border border-violet-200 bg-violet-50 p-3 text-xs text-violet-950">
+                    <p className="font-bold">A observação para a nota fiscal do pedido não está neste texto.</p>
+                    <p className="mt-1 whitespace-pre-wrap break-words">{observacoesDoPedido.paraNota}</p>
+                    {!isReadOnly ? (
+                      <button
+                        type="button"
+                        data-incluir-obs-nota
+                        onClick={() => setInfoComplementares((atual) => complementaresComObservacao(atual, observacoesDoPedido.paraNota))}
+                        className="mt-2 inline-flex items-center rounded-lg bg-violet-600 px-3 py-1.5 font-semibold text-white hover:bg-violet-700"
+                      >
+                        Incluir nas Informações Complementares
+                      </button>
+                    ) : null}
+                  </div>
+                ) : null}
+                {observacoesDoPedido?.interna ? (
+                  <p className="mt-2 text-xs text-slate-500">
+                    As <strong>Observações e Condições</strong> do pedido (bloco 10) são internas e não vão para a nota. Veja no selo <strong>Obs. interna</strong>, no topo.
+                  </p>
+                ) : null}
               </div>
 
               <div>

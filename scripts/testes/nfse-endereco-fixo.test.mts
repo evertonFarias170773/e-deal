@@ -55,7 +55,8 @@ checar("janela: manda a versão, não o endereço", /versao_janela: VERSAO_DA_JA
 checar("rota: endereço do servidor, não do navegador", /p_id_endereco_tomador: enderecoDoTomador\.id/.test(rota) && !/corpo\?\.id_endereco/.test(rota), true);
 checar("rota: recusa janela de versão anterior", /corpo\?\.versao_janela !== VERSAO_DA_JANELA_NFSE/.test(rota) && /JANELA_DESATUALIZADA/.test(rota), true);
 checar("servidor: principal pela regra da NF-e", /escolherEnderecoPrincipal\(/.test(servidor) && /data_criacao/.test(servidor), true);
-checar("janela: complementares seguem nascendo vazias", /setInfComp\(""\)/.test(modal), true);
+// 11/11/2026: as complementares nascem com a Observacao para a nota fiscal do pedido (vazias sem ela).
+checar("janela: complementares nascem so com a observacao para a nota", /setInfComp\(observacaoLimpa\(lido\.observacaoParaNota\)\)/.test(modal), true);
 
 console.log(falhas === 0 ? "\nTODOS OS TESTES PASSARAM" : `\n${falhas} TESTE(S) FALHARAM`);
 process.exitCode = falhas === 0 ? 0 : 1;

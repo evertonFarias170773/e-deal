@@ -1,6 +1,6 @@
 # Proposta: aba Geral
 
-> **Última revisão:** 11/11/2026 (bloco **Conversa do WhatsApp** no Contato responsável: escolhe a conversa do ChatGuru, a mesma do Comprador da aba Artes)
+> **Última revisão:** 11/11/2026 (campo **Observação para a nota fiscal** no fim do bloco 4, que sai impresso na NF-e e na NFS-e; o bloco 10 continua interno. Antes, no mesmo dia: bloco **Conversa do WhatsApp** no Contato responsável: escolhe a conversa do ChatGuru, a mesma do Comprador da aba Artes)
 > **Caminho no menu:** Pedidos → abrir um pedido → aba **Geral**
 > **Endereço:** `/orcamentos/<número>/editar` (em proposta nova, `/orcamentos/novo`)
 
@@ -41,6 +41,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Copiar dados** | Painel do pagador selecionado | Copia os dados fiscais do pagador. |
 | **Abrir cadastro** | Painel do pagador selecionado | Abre o cadastro do pagador em outra aba. |
 | **+ Adicionar novo sócio** | Bloco **4. Dados para nota fiscal** | Abre a busca de sócio por CPF ou CNPJ. |
+| Campo **Observação para a nota fiscal** | Bloco **4. Dados para nota fiscal**, no fim | Texto que sai impresso nas Informações Complementares da NF-e e da NFS-e do pedido. É o mesmo campo da aba **Produção / Expedição / Notas**. |
 | **Buscar** | Busca de sócio | Procura o documento digitado. |
 | **Selecionar como pagador** | Resultado "já é vínculo deste cliente" | Usa o sócio como pagador. |
 | **Vincular e usar como pagador** | Resultado "cadastro existente, ainda sem vínculo" | Cria o vínculo e usa o sócio como pagador. |
@@ -131,6 +132,22 @@ Corrigir um contato que já é do cadastro (lápis) vale só para esta proposta:
 4. **Copiar dados** copia os dados fiscais do pagador. **Abrir cadastro** abre o cadastro dele em outra aba.
 5. Trocar o pagador não troca o endereço de entrega. Se o endereço que estava escolhido deixar de existir na lista, a seleção fica vazia e você escolhe outro no bloco 5.
 
+### Escrever o que sai impresso na nota (Observação para a nota fiscal)
+
+Use quando a nota precisa levar um texto do pedido, por exemplo o nome do projeto e o número de captação da Lei Rouanet ("Projeto Festival de Inverno - PRONAC 123456").
+
+1. No fim do bloco **4. Dados para nota fiscal**, escreva o texto em **Observação para a nota fiscal**.
+2. Clique em **Salvar alterações**. O campo grava também quando a proposta tem cobrança ativa (salvamento parcial).
+3. O mesmo campo aparece na aba **Produção / Expedição / Notas**, no quadro **Notas fiscais**. Editar num lugar muda o outro: é um texto só por pedido.
+4. Embaixo do campo, a tela mostra quantos caracteres o texto ocupa em cada nota: **NF-e** até 5.000 (contando o "Pedido N" que já sai) e **NFS-e** até 2.000. Passou, a linha fica vermelha.
+
+O que acontece depois:
+
+- **NF-e:** o rascunho criado pelo **Faturar** nasce com "Pedido N" e, na linha de baixo, a observação, nas **Informações Complementares (Impresso na DANFE)**. O faturamento revisa antes de emitir. Rascunho que já existia antes de você escrever não muda sozinho: a tela da nota mostra o texto e o botão **Incluir nas Informações Complementares**.
+- **NFS-e:** a janela **NFS-e · Pedido** abre com a observação nas **Informações complementares**, para revisar antes de criar o rascunho.
+- **Fila de faturamento:** o pedido ganha o selo roxo **Obs. para a NF**.
+- Nota já emitida não muda.
+
 ### Incluir um sócio como pagador
 
 1. No bloco 4, clique em **+ Adicionar novo sócio**.
@@ -170,7 +187,7 @@ Aqui na aba Geral aparecem os blocos 8, 9 e 10. As outras abas mostram só algun
 1. **8. Resumo do orçamento** mostra **Entrega em**, **Subtotal bruto**, o abatimento da tabela especial, **Subtotal produtos**, **Desconto geral**, **Frete escolhido**, **Peso total** e **Total final**. O total é calculado em centavos exatos, com a mesma conta da trava de despacho da Expedição e da Conta Corrente: cada item é arredondado ao centavo, o desconto da tabela especial sai da soma dos itens, e o total é arredondado ao centavo (meio centavo para cima). O desconto da tabela especial mostrado é o subtotal bruto menos o total, então o resumo sempre fecha. Exemplo: subtotal bruto R$ 1.006,95 com 10% dá total R$ 906,26 e desconto R$ 100,69.
 2. Para dar desconto na proposta inteira, escolha o **Tipo** (**%** ou **R$**) e digite o valor em **Desconto geral**. O desconto nunca passa do subtotal dos produtos.
 3. **9. Envio do orçamento** traz o texto informal da proposta. Clique em **Copiar resumo para WhatsApp**. O botão só libera depois que um frete foi escolhido.
-4. **10. Observações e Condições** é o texto comercial da proposta. Ele não chega à produção: a instrução para a bancada fica na aba Produção / Expedição.
+4. **10. Observações e Condições** é o texto comercial da proposta. Ele é interno: não chega à produção (a instrução para a bancada fica na aba Produção / Expedição / Notas) e **não vai para a nota fiscal**. O que precisa sair na nota vai em **Observação para a nota fiscal**, no bloco 4. Quem fatura vê o bloco 10 sem abrir a proposta: na Fila de faturamento e nas janelas das notas, o pedido com texto aqui ganha o selo âmbar **Obs. interna**.
 
 ### Proposta avulsa x proposta com produtos
 
@@ -190,7 +207,8 @@ A escolha entre proposta avulsa e proposta com produtos do catálogo não fica n
 - Editar um endereço de entrega usado por outros pedidos em aberto muda também as etiquetas deles. A tela avisa quantos são.
 - Não dá para vincular cliente cadastrado a um orçamento rápido que tenha cobrança ativa ou pagamento confirmado. Cancele as cobranças antes.
 - No pedido complementar, contato, pagador e endereço ficam travados com o aviso **Herdado do pedido #<número>**. Um endereço novo cadastrado ali vai para o cadastro do cliente, mas a entrega continua sendo a do pedido principal.
-- Com cobrança ativa e sem a permissão de editar proposta paga, alterações de vendedor, empresa, contato e endereço não são gravadas: o salvamento guarda só as observações e a orientação técnica.
+- Com cobrança ativa e sem a permissão de editar proposta paga, alterações de vendedor, empresa, contato e endereço não são gravadas: o salvamento guarda só as observações (inclusive a **Observação para a nota fiscal**), a orientação técnica e as instruções de entrega.
+- A **Observação para a nota fiscal** não é copiada quando a proposta é duplicada ou vira pedido complementar.
 
 ## O que não confundir
 
@@ -206,7 +224,8 @@ A escolha entre proposta avulsa e proposta com produtos do catálogo não fica n
 - Quadro **Tabela especial** x **Desconto geral**: a tabela especial vem do cadastro do cliente e entra sozinha em cada item; o desconto geral é digitado na proposta e exige permissão.
 - **Limite Faturado / Risco** x **Saldo na Conta Corrente**: o primeiro mostra o limite e o risco que estão no cadastro do cliente; o segundo é crédito que o cliente já tem a usar e aparece em aviso verde no topo da tela.
 - Selo **Endereço de sócio** x selo **REQUER NOTA DE TRANSPORTE**: o primeiro só diz de quem é o endereço; o segundo avisa que a entrega é em cidade diferente da do endereço principal do pagador.
-- **Observações e Condições** x orientação técnica da aba Produção / Expedição: a primeira é comercial e não chega à produção.
+- **Observações e Condições** x orientação técnica da aba Produção / Expedição / Notas: a primeira é comercial e não chega à produção.
+- **Observação para a nota fiscal** (bloco 4) x **Observações e Condições** (bloco 10): a primeira sai impressa na NF-e e na NFS-e; a segunda é interna e nunca vai para a nota. Não existe outro campo de observação no bloco 4.
 - **id_int** x código do cliente: **id_int** é o número da proposta; o código do cliente é o número que aparece com `#` ao lado do nome dele.
 
 ## Erros comuns
@@ -243,7 +262,7 @@ A escolha entre proposta avulsa e proposta com produtos do catálogo não fica n
 - [Proposta: aba Orçamento (produtos)](proposta-produtos.md)
 - [Proposta: aba Fretes](proposta-fretes.md)
 - [Proposta: aba Pagamentos](proposta-pagamentos.md)
-- [Proposta: abas Produção / Expedição, Boletim e Histórico](proposta-producao-boletim-historico.md)
+- [Proposta: abas Produção / Expedição / Notas, Boletim e Histórico](proposta-producao-boletim-historico.md)
 - [Pedidos (lista)](pedidos.md)
 - [Notas fiscais](notas-fiscais.md)
 - [Expedição](expedicao.md)
@@ -266,3 +285,5 @@ A escolha entre proposta avulsa e proposta com produtos do catálogo não fica n
 - `src/features/orcamentos/lib/conversa-whatsapp.ts`
 - `src/features/orcamentos/services/conversa-whatsapp.client.ts`
 - `src/app/api/orcamentos/conversa-whatsapp/route.ts`
+- `src/features/orcamentos/components/CampoObservacaoNotaFiscal.tsx`
+- `src/features/fiscal/lib/observacao-nota-fiscal.ts`
