@@ -157,6 +157,24 @@ function normalizar(texto: string | null | undefined): string {
 }
 
 /**
+ * A transportadora de um card relido: `cotacao_frete` guarda só o serviço.
+ *
+ * Os cards padrão que a proposta sem cotação mostra (orcamentos.service) são
+ * "Correios SEDEX" com serviço "Entrega Expressa" e "Correios PAC" com
+ * "Entrega Econômica". Só o serviço ia para o banco, e o card relido perdia os
+ * Correios: virava "frete manual" e o Salvar seguinte gravava "Entrega
+ * Expressa" em `frete_escolhido` (25052, 11/11/2026).
+ */
+export function transportadoraDoServicoGravado(servico: string | null | undefined): string {
+  if (servico === "SEDEX") return "Correios SEDEX";
+  if (servico === "PAC") return "Correios PAC";
+  const servicoNormalizado = normalizar(servico);
+  if (servicoNormalizado === "ENTREGA EXPRESSA") return "Correios SEDEX";
+  if (servicoNormalizado === "ENTREGA ECONOMICA") return "Correios PAC";
+  return servico || "Transportadora";
+}
+
+/**
  * Qual parceira é o card de cotação — ou `null` quando não é nenhuma delas.
  *
  * `null` é resposta legítima e comum: cotação manual, transportadora avulsa
@@ -204,7 +222,13 @@ export function resolverTransportadoraParceira(
  *   FOB ............ o da tela: vem do drop, escolha explícita do vendedor.
  *   RETIRA ......... o da tela (a tela já zera ao virar retirada).
  *   CIF / sem modalidade, card de parceira ... a parceira do card.
- *   CIF / sem modalidade, outro card ......... o da tela.
+ *   CIF / sem modalidade, outro card ......... o da tela, MENOS os Correios.
+ *
+ * CORREIOS SÓ COM FRETE DOS CORREIOS (11/11/2026). Card escolhido que não é dos
+ * Correios (frete manual, transportadora avulsa) com os Correios na tela é
+ * vínculo que sobrou de um SEDEX escolhido antes: grava nulo. Era o que a tela
+ * mostrava como "SUPERINTENDENCIA ESTADUAL RS" num frete manual. O clique no
+ * card já zerava; aqui o Salvar segue a mesma regra.
  */
 export function vinculoPeloCardEscolhido(args: {
   modalidade: string | null | undefined;
@@ -214,7 +238,44 @@ export function vinculoPeloCardEscolhido(args: {
   const idDaTela = args.idDaTela === undefined || args.idDaTela === null ? null : Number(args.idDaTela);
   const modalidade = normalizar(args.modalidade);
   if (modalidade === "FOB" || modalidade === "RETIRA") return idDaTela;
-  return resolverTransportadoraParceira(args.card) ?? idDaTela;
+  const doCard = resolverTransportadoraParceira(args.card);
+  if (doCard !== null) return doCard;
+  if (cardTemServico(args.card) && ehCadastroCorreios(idDaTela)) return null;
+  return idDaTela;
+}
+
+/** O card escolhido diz alguma coisa? Card sem texto não decide nada. */
+function cardTemServico(card: { transportadora?: string | null; servico?: string | null } | null | undefined): boolean {
+  return Boolean(card && (normalizar(card.servico) || normalizar(card.transportadora)));
+}
+
+/**
+ * O vínculo gravado precisa de correção do admin? (11/11/2026)
+ *
+ * O quadro "Corrigir a transportadora (admin)" só aparece quando sim. É a
+ * mesma pergunta do Salvar, ao contrário: a transportadora gravada é a do
+ * frete escolhido?
+ *   RETIRA ..... com vínculo: sim (balcão não tem transportadora).
+ *   FOB ........ sem vínculo e sem motoboy: sim.
+ *   CIF ........ card de parceira: o vínculo tem de ser ela (Correios aceita 663).
+ *                outro card: sem vínculo, ou com os Correios, sim.
+ *                sem card: não há com o que comparar.
+ */
+export function transportadoraPrecisaCorrecao(args: {
+  modalidade: string | null | undefined;
+  card: { transportadora?: string | null; servico?: string | null } | null | undefined;
+  idVinculo: number | null | undefined;
+  motoboyFob?: boolean;
+}): boolean {
+  const id = args.idVinculo === undefined || args.idVinculo === null ? null : Number(args.idVinculo);
+  const modalidade = normalizar(args.modalidade);
+  if (modalidade === "RETIRA") return id !== null;
+  if (modalidade === "FOB") return id === null && !args.motoboyFob;
+  if (!cardTemServico(args.card)) return false;
+  const doCard = resolverTransportadoraParceira(args.card);
+  if (doCard === TRANSPORTADORAS_PARCEIRAS.CORREIOS) return !ehCadastroCorreios(id);
+  if (doCard !== null) return canonizarTransportadora(id) !== doCard;
+  return id === null || ehCadastroCorreios(id);
 }
 
 /**
@@ -224,6 +285,11 @@ export function vinculoPeloCardEscolhido(args: {
  * categoria do transporte ou a coluna do painel da Expedição. Retirada nunca é.
  * Em FOB o card não conta: o SEDEX que sobra ali é resíduo de cotação que
  * ninguém contratou (o mesmo de `correiosResiduoDeCotacaoFob`).
+ *
+ * Fora de FOB, CARD ESCOLHIDO DECIDE (11/11/2026): com card, só é Correios se o
+ * card for dos Correios. A categoria gravada pode ter sobrado de um SEDEX
+ * trocado por frete manual (25052), e não pode pôr os Correios na nota de um
+ * frete que eles não levam. As categorias valem só sem card.
  */
 export function pedidoEhDosCorreios(args: {
   modalidade?: string | null;
@@ -234,7 +300,9 @@ export function pedidoEhDosCorreios(args: {
 }): boolean {
   const modalidade = normalizar(args.modalidade);
   if (modalidade === "RETIRA") return false;
-  if (modalidade !== "FOB" && resolverTransportadoraParceira(args.card) === TRANSPORTADORAS_PARCEIRAS.CORREIOS) return true;
+  if (modalidade !== "FOB" && cardTemServico(args.card)) {
+    return resolverTransportadoraParceira(args.card) === TRANSPORTADORAS_PARCEIRAS.CORREIOS;
+  }
   return [args.transporteCategoria, args.categoriaFrete, args.categoriaFreteExpedicao].some(
     (valor) => normalizar(valor) === "CORREIOS"
   );

@@ -1,6 +1,6 @@
 # Proposta: aba Fretes
 
-> **Última revisão:** 09/11/2026 (o Salvar vincula a transportadora do card escolhido mesmo sem clique)
+> **Última revisão:** 11/11/2026 (Transportadora mostra a do frete escolhido; Corrigir a transportadora só com algo a corrigir; card padrão do SEDEX relido como Correios; rua com erro no cadastro)
 > **Caminho no menu:** Pedidos → abrir um pedido → aba Fretes
 > **Endereço:** `/orcamentos/<número>/editar?tab=fretes`
 
@@ -13,7 +13,7 @@
 - Quem abre a proposta para editar vê a aba Fretes (bloco **7. Fretes e Entrega**).
 - Na fase de orçamento (proposta em NOVO ou AGUARDANDO, com ou sem arte), quem edita a proposta escolhe a modalidade e o frete livremente.
 - Depois que o pedido é liberado, trocar a modalidade, a transportadora ou o frete escolhido exige a permissão **Editar Proposta Paga**. Sem ela, os campos ficam apagados e a tela mostra o motivo.
-- O bloco **Corrigir a transportadora (admin)**, com o campo do valor negociado do frete, só aparece para quem tem a permissão **Configurar Expedição**.
+- Os blocos **Corrigir a transportadora (admin)** e **Valor negociado do frete (admin)** só aparecem para quem tem a permissão **Configurar Expedição**. O primeiro aparece só quando a transportadora gravada não é a do frete escolhido.
 - Cotar e aplicar o frete complementar exige a permissão **Criar Complemento** (o mesmo botão que cria o complemento, antes chamado **Criar pedido complementar**). **O Complemento está em reformulação.** Está sendo revisto para aceitar mais de um complemento por pedido e para valer também antes da produção. Ainda não há mudança publicada, e não há data definida. Enquanto isso, vale o que esta ficha descreve: só em pedido pago, entre LIBERADO e EXPEDICAO, e com um complemento aberto por pedido. Quando a regra mudar, esta ficha muda junto.
 - Proposta com cobrança gerada fica com a aba inteira travada para quem não tem a permissão de editar proposta paga (nem a de editar proposta com faturado a vencer, quando é esse o caso). Também trava enquanto houver revisão financeira pendente e em proposta avulsa já paga.
 
@@ -29,7 +29,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **CIF — por conta da empresa** | Caixa **Modalidade do frete — quem paga** | Marca CIF: a empresa contrata o transporte e o frete entra no total. Abre a cotação e os cards. |
 | **Transportadora definida \*** (lista, começa em "— escolha a transportadora —") | Caixa da modalidade, em FOB | Escolhe a transportadora do cliente que vai retirar a mercadoria. |
 | **Motoboy** | Ao lado da lista de transportadora, em FOB | Informa que um motoboy leva; dispensa a transportadora. Clicar de novo desmarca. |
-| **Transportadora** (lista) | Caixa da modalidade, em CIF | Escolhe quem leva. Se a transportadora tem card cotado, escolhe o card dela; se não tem, cria um frete manual dela. |
+| **Transportadora** (lista) | Caixa da modalidade, em CIF | Mostra a transportadora do frete escolhido e escolhe quem leva. Se a transportadora tem card cotado, escolhe o card dela; se não tem, cria um frete manual dela. Frete manual que ficou com os Correios de um SEDEX escolhido antes aparece vazio, nunca como Correios. |
 | **Serviço** (lista) | Caixa da modalidade, em CIF, entre **Transportadora** e **Valor cobrado (R$)** | Escolhe o serviço da transportadora. Só aparece para transportadora com mais de um serviço: hoje, a SVT TRANSPORTES, com **AZUL ECOMM**, **AZUL STANDARD**, **AZUL EXPRESSO** e **AZUL PREMIUM**. |
 | **Valor cobrado (R$)** | Caixa da modalidade, em CIF | Define quanto o cliente paga de frete. Grava ao sair do campo ou no Enter; Esc desfaz. Só edita na fase de orçamento, e só em frete manual: com um card calculado escolhido (SEDEX, VEPPO, São Miguel, Azul) ele fica só leitura, com o valor do card. Exceção: com o **MOTOBOY INTERNO** escolhido, o valor do card de motoboy pode ser editado por qualquer usuário. **Transportadora** segue aberta: é por ela que se troca o card por um frete manual. |
 | **Rodoviário** / **Aéreo** | Pergunta **Como vai o transporte?**, na caixa da modalidade | Diz à Expedição em qual coluna o pedido entra, quando o sistema não reconhece a transportadora sozinho. Clicar de novo desmarca. |
@@ -37,8 +37,8 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Escolher** | Em cada card de frete | Torna aquele card o frete da proposta. |
 | **Escolhido** | Selo no card | Indica o frete que está valendo. Não é clicável. |
 | **Remover** | Só no card **MANUAL / TRANSP.** | Tira o frete manual da lista. Se ele era o escolhido, nenhum card fica escolhido, o frete do resumo volta a zero e a **Transportadora** volta a vazia, até você escolher outro card ou transportadora. Só aparece na fase de orçamento, sem pagamento confirmado. Cards calculados não têm o botão. |
-| **Corrigir a transportadora (admin)** (lista, com a opção "— Sem transportadora —") | Caixa da modalidade, depois da liberação | Troca só a transportadora, na hora, sem passar pelo **Salvar alterações**. |
-| Campo **Frete R$** (dica: "Valor negociado do frete, em reais") | Ao lado da lista **Corrigir a transportadora (admin)** | Grava o valor negociado do frete e o novo total da proposta, ao sair do campo ou no Enter. |
+| **Corrigir a transportadora (admin)** (lista, com a opção "— Sem transportadora —") | Caixa da modalidade, depois da liberação, só quando a transportadora gravada não é a do frete escolhido | Troca só a transportadora, na hora, sem passar pelo **Salvar alterações**. Mostra a mesma transportadora do campo **Transportadora**. |
+| Campo **Frete R$** (dica: "Valor negociado do frete, em reais") | Bloco **Valor negociado do frete (admin)**, depois da liberação | Grava o valor negociado do frete e o novo total da proposta, ao sair do campo ou no Enter. |
 | **Cotar frete complementar** (ou **Salve os itens antes de cotar**, **Salve as alterações antes de cotar**, **Cotando...**) | Card **Frete complementar do pedido #...**, em pedido complementar | Cota o frete do peso somado do pedido principal com este pedido. |
 | **Aplicar** (vira **Aplicando...**) | Em cada opção da cotação complementar | Grava a diferença de frete neste pedido. |
 | **Serviço / Transportadora \*** | Proposta avulsa | Campo de texto com o nome do transporte. |
@@ -156,9 +156,9 @@ Depois da liberação o campo **Valor cobrado (R$)** fica só para leitura: o va
 
 ### Corrigir só a transportadora ou o valor negociado (administrador da Expedição)
 
-1. Em proposta já liberada, localize **Corrigir a transportadora (admin)** na caixa da modalidade.
+1. Em proposta já liberada, localize **Corrigir a transportadora (admin)** na caixa da modalidade. Ele só aparece quando há algo a corrigir: card de parceira com outra transportadora gravada, frete manual sem transportadora ou com os Correios, retirada com transportadora, FOB sem transportadora e sem Motoboy.
 2. Para trocar quem leva, escolha a transportadora na lista. A troca é gravada na hora, sem o **Salvar alterações**, e não mexe na modalidade nem no valor do frete. A Expedição vê a troca no próximo carregamento da tela.
-3. Para mudar o valor que o cliente paga, digite no campo **Frete R$** e pressione Enter ou saia do campo. O frete e o total da proposta são gravados juntos.
+3. Para mudar o valor que o cliente paga, digite no campo **Frete R$** do bloco **Valor negociado do frete (admin)**, que aparece sempre depois da liberação, e pressione Enter ou saia do campo. O frete e o total da proposta são gravados juntos.
 4. Leia o aviso que aparece: ele mostra o total anterior e o novo, o saldo a cobrar na aba **Pagamentos** quando houver, e a mudança de status quando houver.
 5. **Cobrança faturada a vencer ainda sem boleto.** Quando a única cobrança da proposta é E-Faturado a vencer, sem pagamento e sem nenhum título no Contas a Receber, o campo também grava para quem tem a permissão **Editar Proposta Paga** ou **Editar Proposta com Faturado a Vencer**. A cobrança passa a valer o total novo e continua em **Registro de recebíveis**; o aviso mostra "Cobrança faturada: R$ … → R$ …", e o chat do pedido registra o valor anterior, o novo e o responsável. Gravar o mesmo valor de novo não muda nada. Se a cobrança não puder ser ajustada, o frete volta ao valor anterior e nada fica alterado. Um rascunho de nota fiscal que já existia não é refeito: confira-o antes de emitir.
 
@@ -209,7 +209,7 @@ Repetir **Aplicar** não duplica: a segunda tentativa devolve o mesmo frete comp
 
 | Pergunta do usuário | O que verificar | O que fazer | Quando chamar o suporte |
 |---|---|---|---|
-| "Não consigo gerar a cobrança deste pedido" | É pedido complementar? Tem frete complementar aplicado na aba **Fretes**? | Cotar, aplicar e só então gerar a cobrança | Se a aplicação recusar de novo depois de cotar outra vez |
+| "Não consigo gerar a cobrança deste pedido" | É pedido complementar em CIF? Tem frete complementar aplicado na aba **Fretes**? (Em RETIRA ou FOB não há frete a aplicar e a cobrança não fica presa nele.) | Cotar, aplicar e só então gerar a cobrança | Se a aplicação recusar de novo depois de cotar outra vez |
 | "Aparece em vermelho que a opção não está na cotação" | Qual transporte, e a página está atualizada | Recarregar a página, cotar de novo e aplicar | Se repetir com a página recarregada |
 | "É retirada ou FOB e a cobrança não sai" | O card diz "sem frete a cobrar" | Não há frete a aplicar | Sempre: é problema conhecido, sem solução publicada |
 | "Apliquei duas vezes, cobrou em dobro?" | O frete no total do pedido complementar | Nada: repetir não duplica | Se o total mostrar o frete duas vezes |
@@ -245,15 +245,18 @@ Repetir **Aplicar** não duplica: a segunda tentativa devolve o mesmo frete comp
 - O campo **Frete R$** não aceita valor em FOB nem em retirada, porque nessas modalidades o cliente não paga frete à empresa.
 - O valor negociado é recusado em pedido entregue ("Pedido entregue não pode ser alterado…"; o caminho para alterar está na ficha da [Proposta](proposta.md)).
 - O valor negociado é recusado quando o pedido tem NF-e autorizada (a mesma regra da troca de frete: cancele a nota antes; nota cancelada ou denegada não impede). Nesse caso o campo **Frete R$** fica desabilitado e a mensagem aparece abaixo dele. Também é recusado quando a proposta tem cobrança faturada a vencer com título no Contas a Receber ou junto de outras cobranças, ou quando quem grava não tem uma das duas permissões acima (nesses casos, abra a proposta, altere o frete e clique em **Salvar alterações**, com a permissão **Editar Proposta com Faturado a Vencer** ou **Editar Proposta Paga**), quando tem cobrança enviada ao cliente e ainda não paga (cancele a cobrança antes, na aba **Pagamentos**), quando é avulsa já paga, quando é pedido complementar, e quando o valor novo deixaria crédito a favor do cliente em proposta que não estava integralmente paga (o destino do crédito se decide editando a proposta e clicando em **Salvar alterações**, com a permissão **Editar Proposta Paga**).
-- O card escolhido vincula a transportadora ao pedido no **Salvar alterações** (na fase de orçamento, ou depois dela quando o frete é trocado), tenha ele sido escolhido com o clique em **Escolher**, pela cotação automática, por **Atualizar fretes** ou pelo Maestro (desde 09/11/2026; antes, só o clique vinculava). Vale em CIF e em proposta sem modalidade, para os cards de Correios, Azul, Motoboy, VEPPO e São Miguel. Em FOB vale a **Transportadora definida \***; card que não é de parceira (frete manual) mantém a transportadora que já estava.
+- O card escolhido vincula a transportadora ao pedido no **Salvar alterações** (na fase de orçamento, ou depois dela quando o frete é trocado), tenha ele sido escolhido com o clique em **Escolher**, pela cotação automática, por **Atualizar fretes** ou pelo Maestro (desde 09/11/2026; antes, só o clique vinculava). Vale em CIF e em proposta sem modalidade, para os cards de Correios, Azul, Motoboy, VEPPO e São Miguel. Em FOB vale a **Transportadora definida \***; card que não é de parceira (frete manual) mantém a transportadora que já estava, menos os Correios: frete manual com os Correios que sobraram de um SEDEX anterior grava sem transportadora (11/11/2026).
+- O card padrão do SEDEX ("Correios SEDEX", serviço "Entrega Expressa", R$ 80,00) e o do PAC ("Entrega Econômica"), que aparecem quando a proposta não tem cotação, voltam como Correios quando a proposta é reaberta (11/11/2026). Antes voltavam como "Entrega Expressa", com cara de frete manual, e o **Salvar alterações** seguinte gravava esse nome no frete do pedido (caso 25052).
+- Na nota fiscal, os Correios entram pelo card escolhido: com card escolhido, só é Correios se o card for dos Correios; a categoria de transporte gravada vale só quando não há card (11/11/2026).
 - O cadastro dos Correios vinculado é o da **Superintendência Estadual RS** (desde 08/10/2026; o anterior era o da sede em Brasília). É esse cadastro que vai para a nota fiscal como transportador, também nos pedidos antigos com o cadastro de Brasília: a nota troca sozinha (09/11/2026). Os dois seguem valendo como Correios na Expedição e na prepostagem.
 - **Corrigir a transportadora (admin)** com o cadastro de Brasília grava o da Superintendência Estadual RS.
-- Na tela, os dois cadastros dos Correios aparecem como **Correios**, e não pela fantasia do cadastro. As outras transportadoras continuam aparecendo pelo nome de sempre.
+- Na tela, os dois cadastros dos Correios aparecem como **Correios** nas listas **Transportadora**, **Transportadora definida *** e **Corrigir a transportadora (admin)**, e não como "SUPERINTENDENCIA ESTADUAL RS" ou "EMPRESA BRASILEIRA DE CORREIOS E TELEGRAFOS". Na nota fiscal fica o nome do cadastro. As outras transportadoras aparecem pela fantasia (ou pelo nome, sem fantasia).
+- Endereço com a rua gravada como "[object Object]" aparece como **Rua com erro no cadastro (corrija pelo lápis)**, e o lápis abre a edição com a rua em branco para ser digitada (11/11/2026).
 - Em pedido complementar, a modalidade e a transportadora vêm do pedido principal e ficam travadas. Não há cards nem **Atualizar fretes**.
 - Pedido complementar fora de CIF não cobra frete: a tela mostra "... herdado do pedido #... — sem frete a cobrar neste pedido."
 - O frete complementar é só a diferença entre a cotação do peso somado e o frete que o pedido principal já cobra. Se o somado sair mais barato, este pedido cobra R$ 0,00 e nada é creditado. O pedido principal não é alterado.
 - O frete complementar só pode ser aplicado com o pedido complementar em NOVO ou AGUARDANDO, com o pedido principal entre LIBERADO e EXPEDICAO e ainda sem despacho, e com os dois pedidos no mesmo endereço de entrega.
-- Não dá para gerar cobrança de um pedido complementar antes de aplicar o frete complementar. Isso vale também para o complementar em RETIRA ou FOB, que não tem frete a aplicar: hoje ele fica bloqueado, e é problema conhecido, sem solução publicada.
+- Não dá para gerar cobrança de um pedido complementar em CIF antes de aplicar o frete complementar. O complementar em RETIRA ou FOB herda a modalidade do pedido principal e não tem frete a aplicar: a cobrança sai sem cotar nada (a aba **Fretes** mostra "Herdado do pedido #...: RETIRA" ou "FOB").
 - Clicar em **Aplicar** de novo no frete complementar não duplica: a segunda tentativa devolve o frete que já está aplicado.
 
 ## O que não confundir
@@ -289,7 +292,7 @@ Repetir **Aplicar** não duplica: a segunda tentativa devolve o mesmo frete comp
 | "Troca de frete bloqueada" — "Voce nao tem permissao para corrigir o frete de um pedido ja liberado." | Pedido já liberado e o seu perfil não tem a permissão de editar proposta paga. | Peça a troca a quem tem a permissão. |
 | "Troca de frete bloqueada" — "Pedido #... tem a NF-e ... autorizada. ... Cancele a nota antes de corrigir o frete." | A nota já foi transmitida com o valor atual. | Cancele a nota em Notas fiscais e refaça a troca. |
 | "Troca de frete bloqueada" — "Pedido #... ja foi despachado. Para corrigir o frete, volte um passo pelo menu Acoes do painel da Expedicao e tente de novo." | O despacho já foi confirmado. | Volte um passo na Expedição. Para trocar só a transportadora, o administrador usa **Corrigir a transportadora (admin)**. |
-| "O frete precisa ser atualizado" (ao gerar cobrança) | O peso da proposta mudou depois da cotação, ou o pedido complementar está sem o frete complementar aplicado. | Clique em **Recalcular frete**, refaça o frete nesta aba e gere a cobrança de novo. |
+| "O frete precisa ser atualizado" (ao gerar cobrança) | O peso da proposta mudou depois da cotação, ou o pedido complementar em CIF está sem o frete complementar aplicado. | Clique em **Recalcular frete**, refaça o frete nesta aba e gere a cobrança de novo. |
 | "Frete não gravado" | O valor negociado foi recusado; a descrição diz o motivo (NF-e autorizada, faturado a vencer, cobrança enviada e não paga, modalidade sem frete, entre outros). | Siga a orientação da mensagem. Nada foi alterado. |
 | "Frete gravado, mas com pendência" | O valor foi gravado, mas a diferença financeira não foi tratada. | Avise o financeiro e confira a aba **Pagamentos**. |
 | "O preço mudou desde a consulta: R$ ... agora, R$ ... na sua tela. Cote de novo para confirmar." | O frete complementar mudou de preço entre a cotação e o **Aplicar**. | Clique em **Cotar frete complementar** de novo e aplique. |
@@ -329,6 +332,7 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/features/orcamentos/lib/cotacao-veppo.ts`
 - `src/features/orcamentos/lib/origem-frete.ts`
 - `src/features/orcamentos/services/frete-desatualizado.ts`
+- `src/app/api/propostas/frete-status/route.ts`
 - `src/features/orcamentos/services/valor-frete-negociado.ts`
 - `src/lib/auth/permissao-editar-paga.ts`
 - `src/features/orcamentos/services/orcamentos.service.ts`
@@ -353,6 +357,8 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 > - **09/10/2026 (adendo):** o grupo Acompanhar deixa de ter limite de 10 pedidos (limite de segurança de 50, com aviso acima de 10); pedido com status vazio fica só para leitura.
 >
 > - **09/11/2026:** o **Salvar alterações** grava a transportadora do card escolhido mesmo sem o clique em **Escolher** (cotação automática, **Atualizar fretes**, Maestro). Na nota fiscal os Correios são sempre o cadastro de Porto Alegre, também em pedido antigo com o de Brasília.
+>
+> - **11/11/2026:** pedido complementar em RETIRA ou FOB deixa de ficar preso no frete ao gerar a cobrança: ele herda a modalidade e não tem frete complementar a aplicar. Em CIF nada mudou (caso 25107).
 >
 > - **28/10/2026:** o card **MANUAL / TRANSP.** ganhou o botão **Remover**, na fase de orçamento sem pagamento.
 >

@@ -12,7 +12,8 @@ import {
   camposDoCartaoDeEndereco,
   cepExibicao,
   logradouroDe,
-  semTraco
+  semTraco,
+  textoDoEndereco
 } from "../../src/features/orcamentos/lib/campos-do-endereco.ts";
 
 let falhas = 0;
@@ -70,6 +71,11 @@ checar("complemento '-' e vazio", [mapa({ endereco: "X", complemento: "-" }).com
 checar("complemento so com espacos e vazio", mapa({ endereco: "X", complemento: "   " }).complemento.apagado, true);
 checar("CEP com menos de 8 digitos fica como veio", mapa({ endereco: "X", cep: "1234" }).cep.valor, "1234");
 checar("endereco sem rua, so numero", logradouroDe({ numero: "10" }), "10");
+// 11/11/2026 (25052): rua gravada como "[object Object]" no cadastro.
+checar("rua [object Object] vira o aviso", logradouroDe({ endereco: "[object Object]", numero: "1316" }), "Rua com erro no cadastro (corrija pelo lápis), 1316");
+checar("bairro [object Object] fica vazio", mapa({ endereco: "X", bairro: "[object Object]" }).bairro.apagado, true);
+checar("rua quebrada abre vazia na edicao", textoDoEndereco("[object Object]"), "");
+checar("rua boa fica", textoDoEndereco(" Rua A "), "Rua A");
 checar("semTraco / cepExibicao (movidos da pagina)", [semTraco(" - "), semTraco("Apto 2"), cepExibicao("80010000"), cepExibicao(null)], ["", "Apto 2", "80010-000", ""]);
 checar("dados internos de frete nao entram no cartao", camposDoCartaoDeEndereco(completo).some((x) => /lat|long|dist/i.test(x.chave + x.rotulo)), false);
 

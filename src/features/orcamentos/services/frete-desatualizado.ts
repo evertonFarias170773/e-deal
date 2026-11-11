@@ -42,14 +42,20 @@ export type MotivoFreteCobranca =
   | "SEM_ANCORA"
   | "SEM_ITENS"
   | "PESO_DIVERGENTE"
-  /** Pedido complementar sem frete complementar aplicado. Bloqueia. */
+  /** Pedido complementar CIF sem frete complementar aplicado. Bloqueia. */
   | "FRETE_COMPLEMENTAR_PENDENTE"
+  /**
+   * Pedido complementar em RETIRA ou FOB: herda a modalidade do original e sai
+   * junto, sem cotação e sem frete complementar (PEDIDO-COMPLEMENTAR.md §5.1,
+   * §7.6 e §11). Não há frete a cobrar. Não bloqueia.
+   */
+  | "FRETE_COMPLEMENTAR_HERDADO"
   /** Pedido complementar desvinculado: o frete aplicado não vale mais. Bloqueia. */
   | "FRETE_COMPLEMENTAR_INVALIDADO";
 
 export type SituacaoFreteCobranca = {
   /**
-   * Impede gerar cobrança? Impedem `PESO_DIVERGENTE` e, no pedido complementar,
+   * Impede gerar cobrança? Impedem `PESO_DIVERGENTE` e, no pedido complementar (CIF),
    * `FRETE_COMPLEMENTAR_PENDENTE` e `FRETE_COMPLEMENTAR_INVALIDADO`.
    */
   bloqueia: boolean;
@@ -93,12 +99,16 @@ export function avaliarFreteParaCobranca(entrada: {
    * segue exatamente a regra de sempre.
    *   - `vinculado`: `propostas.id_int_pedido_principal` preenchido;
    *   - `temFreteAplicado`: existe linha vigente em `complementos_frete`;
-   *   - `desvinculado`: a linha vigente tem `desvinculado_em` preenchido.
+   *   - `desvinculado`: a linha vigente tem `desvinculado_em` preenchido;
+   *   - `modalidade`: `propostas.modalidade_frete` do complemento, herdada
+   *     do original na criação e travada — a mesma que a tela mostra em
+   *     "Herdado do pedido #X: <modalidade>".
    */
   complemento?: {
     vinculado: boolean;
     temFreteAplicado: boolean;
     desvinculado: boolean;
+    modalidade?: string | null;
   };
 }): SituacaoFreteCobranca {
   const pesoAtual = numero(entrada.pesoAtualGramas);
@@ -122,6 +132,13 @@ export function avaliarFreteParaCobranca(entrada: {
     return { ...base, bloqueia: true, motivo: "FRETE_COMPLEMENTAR_INVALIDADO" };
   }
   if (entrada.complemento?.vinculado && !entrada.complemento.temFreteAplicado) {
+    // RETIRA e FOB não têm frete a cobrar: o complemento nunca terá linha em
+    // complementos_frete, e bloquear aqui travava a cobrança para sempre
+    // (caso 25107, complemento do 24984 em RETIRA). CIF segue bloqueando.
+    const modalidade = String(entrada.complemento.modalidade ?? "").trim().toUpperCase();
+    if (modalidade === "RETIRA" || modalidade === "FOB") {
+      return { ...base, bloqueia: false, motivo: "FRETE_COMPLEMENTAR_HERDADO" };
+    }
     return { ...base, bloqueia: true, motivo: "FRETE_COMPLEMENTAR_PENDENTE" };
   }
 

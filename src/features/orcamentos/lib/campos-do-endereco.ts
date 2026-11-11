@@ -1,4 +1,5 @@
 import { formatDocument } from "@/lib/formatters/document";
+import { textoDeCadastroInvalido } from "@/features/nfse/lib/composicao-nfse";
 
 /**
  * Os campos que o CARTAO FECHADO do endereco de entrega mostra (box 5, 12/10/2026).
@@ -56,18 +57,30 @@ export function cepExibicao(cep: string | null | undefined): string {
   return digitos.length === 8 ? `${digitos.slice(0, 5)}-${digitos.slice(5)}` : cep ?? "";
 }
 
-/** "Rua X, 123": rua e numero, sem virgula sobrando. */
+/** O que a tela mostra no lugar de uma rua gravada como lixo ("[object Object]"). */
+export const RUA_COM_ERRO_NO_CADASTRO = "Rua com erro no cadastro (corrija pelo lápis)";
+
+/**
+ * Campo do endereço sem o lixo de cadastro quebrado (11/11/2026): "[object Object]",
+ * "NULL" e afins viram vazio. 20 endereços têm "[object Object]" na rua (25052).
+ */
+export function textoDoEndereco(valor: string | null | undefined): string {
+  return textoDeCadastroInvalido(valor) ? "" : (valor ?? "").trim();
+}
+
+/** "Rua X, 123": rua e numero, sem virgula sobrando. Rua quebrada vira o aviso. */
 export function logradouroDe(endereco: EnderecoParaCartao): string {
-  return [endereco.endereco, endereco.numero].map((p) => (p ?? "").trim()).filter(Boolean).join(", ");
+  const rua = textoDeCadastroInvalido(endereco.endereco) ? RUA_COM_ERRO_NO_CADASTRO : (endereco.endereco ?? "").trim();
+  return [rua, textoDoEndereco(endereco.numero)].filter(Boolean).join(", ");
 }
 
 const ou = (texto: string) => texto || "—";
 
 export function camposDoCartaoDeEndereco(endereco: EnderecoParaCartao): CampoDoCartao[] {
   const logradouro = logradouroDe(endereco);
-  const complemento = semTraco(endereco.complemento);
-  const bairro = (endereco.bairro ?? "").trim();
-  const cidadeUf = [endereco.cidade, endereco.uf].map((p) => (p ?? "").trim()).filter(Boolean).join("/");
+  const complemento = semTraco(textoDoEndereco(endereco.complemento));
+  const bairro = textoDoEndereco(endereco.bairro);
+  const cidadeUf = [endereco.cidade, endereco.uf].map(textoDoEndereco).filter(Boolean).join("/");
   const cep = cepExibicao(endereco.cep).trim();
   const tipo = (endereco.tipo ?? "").trim();
   const recebedor = (endereco.recebedor ?? "").trim();

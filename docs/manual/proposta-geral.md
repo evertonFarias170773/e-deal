@@ -1,6 +1,6 @@
 # Proposta: aba Geral
 
-> **Última revisão:** 11/11/2026 (campo **Observação para a nota fiscal** no fim do bloco 4, que sai impresso na NF-e e na NFS-e; o bloco 10 continua interno. Antes, no mesmo dia: bloco **Conversa do WhatsApp** no Contato responsável: escolhe a conversa do ChatGuru, a mesma do Comprador da aba Artes)
+> **Última revisão:** 11/11/2026 (endereço com a rua gravada como "[object Object]" aparece como **Rua com erro no cadastro (corrija pelo lápis)** e abre com a rua em branco. Antes, no mesmo dia: campo **Observação para a nota fiscal** no fim do bloco 4, que sai impresso na NF-e e na NFS-e; o bloco 10 continua interno. Antes, no mesmo dia: bloco **Conversa do WhatsApp** no Contato responsável: escolhe a conversa do ChatGuru, a mesma do Comprador da aba Artes)
 > **Caminho no menu:** Pedidos → abrir um pedido → aba **Geral**
 > **Endereço:** `/orcamentos/<número>/editar` (em proposta nova, `/orcamentos/novo`)
 
@@ -166,6 +166,7 @@ O que acontece depois:
 3. Com pagador diferente do cliente, ao escolher um endereço que não é o principal do pagador a tela pergunta: "Endereço de ENTREGA não corresponde ao endereço constante na Nota Fiscal". Clique em **Confirmar** para seguir. O endereço precisa ter o CPF do recebedor.
 4. Se a cidade da entrega for diferente da cidade do endereço principal do pagador, o endereço ganha o selo **REQUER NOTA DE TRANSPORTE**. Os selos ficam numa linha própria, logo abaixo do título do cartão, um por linha quando o espaço é curto (na lateral da aba Fretes e no celular) e lado a lado quando cabem (na aba Geral). Ninguém muda de cor nem de texto: só o formato, em retângulo arredondado, com a mesma altura e a mesma fonte.
 5. O ícone de copiar leva o endereço completo para a área de transferência. O lápis, que existe no cartão selecionado e em cada opção, abre a edição.
+   Endereço com a rua gravada errada no cadastro ("[object Object]") aparece como **Rua com erro no cadastro (corrija pelo lápis)**. O lápis abre a edição com a rua em branco: digite a rua e salve. Bairro, complemento ou cidade com o mesmo erro aparecem vazios (—).
 6. Trocar o endereço muda o destino do frete. As cotações são refeitas e a escolha anterior de frete é descartada.
 
 O destino escolhido aparece também no topo do bloco **8. Resumo do orçamento**, em **Entrega em**.

@@ -99,7 +99,11 @@ import { buscarStatusArteDaProposta, classeDoStatusArte } from "@/features/orcam
 import { solicitarCotacaoSedex, solicitarCotacaoAzulCargo, solicitarCotacaoTransportadoras, solicitarCotacaoVeppo } from "@/features/orcamentos/services/frete.service";
 import { rotuloMargemAzul } from "@/features/orcamentos/lib/cotacao-azul";
 import { idIntParaCorteVeppo, rotuloMargemVeppo } from "@/features/orcamentos/lib/cotacao-veppo";
-import { resolverTransportadoraParceira } from "@/features/orcamentos/lib/transportadoras-parceiras";
+import {
+  resolverTransportadoraParceira,
+  transportadoraPrecisaCorrecao,
+  vinculoPeloCardEscolhido
+} from "@/features/orcamentos/lib/transportadoras-parceiras";
 import { PermissionGuard } from "@/components/common/PermissionGuard";
 import {
   aplicarModalidadeNosFretes,
@@ -130,7 +134,7 @@ import {
 import { enviarPedidoParaFilaPeloServidor } from "@/features/orcamentos/services/enviar-fila-faturamento.service";
 import { podeVerRetirarDaProducao } from "@/features/orcamentos/lib/retirar-producao";
 import { useNotasQueImpedemDevolucao } from "@/features/orcamentos/hooks/useNotasQueImpedemDevolucao";
-import { cepExibicao, semTraco } from "@/features/orcamentos/lib/campos-do-endereco";
+import { cepExibicao, semTraco, textoDoEndereco } from "@/features/orcamentos/lib/campos-do-endereco";
 import { CartaoEndereco } from "@/features/orcamentos/components/CartaoEndereco";
 import {
   freteEhDoServico,
@@ -1328,6 +1332,19 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
       : form.vendedor;
 
   const freteEscolhido = form.fretes.find((frete) => frete.id === form.freteEscolhidoId);
+  /**
+   * A transportadora do frete escolhido de fato (11/11/2026), a mesma que o
+   * Salvar grava (`vinculoPeloCardEscolhido`). Frete manual com os Correios que
+   * sobraram de um SEDEX anterior mostra vazio, nunca os Correios.
+   */
+  const transportadoraDoFreteEscolhido =
+    form.modalidadeFrete === "CIF"
+      ? vinculoPeloCardEscolhido({
+          modalidade: form.modalidadeFrete,
+          card: freteEscolhido ?? null,
+          idDaTela: form.idTransportadoraCliente ?? null
+        })
+      : form.idTransportadoraCliente ?? null;
   /** Card calculado escolhido (origem COTACAO): transportadora e "Valor cobrado" so leitura (lib/origem-frete). */
   const freteTravadoNoCard = freteTravadoPeloCard(freteEscolhido);
   /**
@@ -6043,7 +6060,8 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                           setAddressDraft({
                             tipo: (item.tipo as any) || "entrega",
                             cep: item.cep || "",
-                            endereco: item.endereco || "",
+                            // Rua gravada como "[object Object]" abre em branco para ser digitada (11/11/2026).
+                            endereco: textoDoEndereco(item.endereco),
                             numero: item.numero || "",
                             complemento: item.complemento || "",
                             bairro: item.bairro || "",
@@ -6072,8 +6090,8 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                             texts.push(`CPF do responsável: ${maskCpf(item.cpfRecebedor)}`);
                           }
                           
-                          if (item.endereco && item.numero) texts.push(`Endereço: ${item.endereco}, ${item.numero}`);
-                          else if (item.endereco) texts.push(`Endereço: ${item.endereco}`);
+                          if (textoDoEndereco(item.endereco) && item.numero) texts.push(`Endereço: ${textoDoEndereco(item.endereco)}, ${item.numero}`);
+                          else if (textoDoEndereco(item.endereco)) texts.push(`Endereço: ${textoDoEndereco(item.endereco)}`);
                           
                           if (item.complemento) texts.push(`Complemento: ${item.complemento}`);
                           if (item.bairro) texts.push(`Bairro: ${item.bairro}`);
@@ -7723,7 +7741,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                         Transportadora
                       </label>
                       <SelectTransportadora
-                        value={form.idTransportadoraCliente}
+                        value={transportadoraDoFreteEscolhido}
                         transportadoras={transportadoras}
                         disabled={Boolean(bloqueioTrocaFrete)}
                         onChange={escolherTransportadoraCif}
@@ -7883,28 +7901,50 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                     barreira da Expedição. Continua mexendo SÓ em quem transporta.
                   */}
                   <PermissionGuard permission="expedicao.admin" fallback={null}>
+                    {/*
+                      Só aparece com algo a corrigir (11/11/2026): a transportadora
+                      gravada não é a do frete escolhido (`transportadoraPrecisaCorrecao`).
+                      Com tudo certo, fica só o valor negociado, logo abaixo.
+                    */}
+                    {(transportadoraPrecisaCorrecao({
+                      modalidade: form.modalidadeFrete,
+                      card: freteEscolhido ?? null,
+                      idVinculo: form.idTransportadoraCliente ?? null,
+                      motoboyFob: fobPorMotoboy
+                    }) || salvandoTransportadoraAdmin) && (
                     <div className="space-y-2 border-t border-amber-200 pt-3 dark:border-amber-900">
                       <label className="block text-xs font-bold text-amber-900 dark:text-amber-200">
                         Corrigir a transportadora (admin)
                       </label>
-                      <div className="flex flex-col gap-2 sm:flex-row">
-                        <select
-                          value={form.idTransportadoraCliente ?? ""}
+                      <select
+                          value={transportadoraDoFreteEscolhido ?? ""}
                           disabled={salvandoTransportadoraAdmin}
                           onChange={(e) => {
                             void gravarTransportadoraAdmin(
                               e.target.value ? Number(e.target.value) : null
                             );
                           }}
-                          className="flex-1 rounded-xl border border-amber-300 bg-white px-3 py-2 text-xs font-medium outline-none focus:border-amber-500 dark:border-amber-800 dark:bg-slate-900"
+                          className="w-full rounded-xl border border-amber-300 bg-white px-3 py-2 text-xs font-medium outline-none focus:border-amber-500 dark:border-amber-800 dark:bg-slate-900"
                         >
                           <option value="">— Sem transportadora —</option>
                           {transportadoras.map((t) => (
                             <option key={t.id_cliente} value={t.id_cliente}>
-                              {t.nome || t.fantasia}
+                              {nomeTransportadoraCadastro(t)}
                             </option>
                           ))}
                         </select>
+                      <p className="text-[11px] text-amber-800 dark:text-amber-300">
+                        {salvandoTransportadoraAdmin
+                          ? "Gravando…"
+                          : "A transportadora gravada não é a do frete escolhido. Grava na hora, sozinha — não passa pelo Salvar do orçamento e não mexe na modalidade nem no valor do frete. A Expedição lê o valor novo no próximo carregamento da tela."}
+                      </p>
+                    </div>
+                    )}
+                    <div className="space-y-2 border-t border-slate-200 pt-3 dark:border-slate-700">
+                      <label className="block text-xs font-bold text-slate-600 dark:text-slate-300">
+                        Valor negociado do frete (admin)
+                      </label>
+                      <div className="flex flex-col gap-2 sm:flex-row">
                         {/* Valor negociado — o que o cliente paga. Grava ao sair do
                             campo ou no Enter, pela rota própria; a validação vale
                             no servidor. */}
@@ -7927,15 +7967,10 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                             }
                             if (e.key === "Escape") setValorFreteAdminDraft(null);
                           }}
-                          className="w-full rounded-xl border border-amber-300 bg-white px-3 py-2 text-right text-xs font-medium outline-none focus:border-amber-500 disabled:cursor-not-allowed disabled:opacity-60 sm:w-32 dark:border-amber-800 dark:bg-slate-900"
+                          className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-right text-xs font-medium outline-none focus:border-slate-500 disabled:cursor-not-allowed disabled:opacity-60 sm:w-32 dark:border-slate-700 dark:bg-slate-900"
                         />
                       </div>
-                      <p className="text-[11px] text-amber-800 dark:text-amber-300">
-                        {salvandoTransportadoraAdmin
-                          ? "Gravando…"
-                          : "Grava na hora, sozinha — não passa pelo Salvar do orçamento e não mexe na modalidade nem no valor do frete. A Expedição lê o valor novo no próximo carregamento da tela."}
-                      </p>
-                      <p className="text-[11px] text-amber-800 dark:text-amber-300">
+                      <p className="text-[11px] text-slate-600 dark:text-slate-300">
                         {salvandoValorFreteAdmin
                           ? "Gravando o frete…"
                           : !modalidadeCobraFrete(form.modalidadeFrete)
@@ -9748,7 +9783,8 @@ function SelectTransportadora({
       <option value="">— escolha a transportadora —</option>
       {transportadoras.map((t) => (
         <option key={t.id_cliente} value={t.id_cliente}>
-          {t.fantasia || t.nome || `#${t.id_cliente}`}
+          {/* 39975 e 663 aparecem como "Correios" (11/11/2026); o nome fiscal fica na NF-e. */}
+          {nomeTransportadoraCadastro(t)}
         </option>
       ))}
     </select>

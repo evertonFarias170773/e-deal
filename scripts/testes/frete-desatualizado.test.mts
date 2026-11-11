@@ -156,5 +156,19 @@ checar("mensagem diz mais pesado", msg.includes("mais pesado"), true);
 checar("mensagem do mais leve diz mais leve", mensagemFreteDesatualizado(maisLeve).includes("mais leve"), true);
 checar("sem bloqueio a mensagem e vazia", mensagemFreteDesatualizado(avaliarFreteParaCobranca(cotado())), "");
 
+// — Pedido complementar: RETIRA e FOB herdam, CIF bloqueia (11/11/2026, caso 25107) —
+const complemento = (modalidade: string | null, extra: Record<string, unknown> = {}) =>
+  avaliarFreteParaCobranca({
+    pesoCotadoGramas: null, pesoAtualGramas: 300, valorFrete: null, temCotacao: false, temItens: true,
+    complemento: { vinculado: true, temFreteAplicado: false, desvinculado: false, modalidade, ...extra }
+  });
+checar("complemento RETIRA sem frete aplicado: nao bloqueia", [complemento("RETIRA").bloqueia, complemento("RETIRA").motivo], [false, "FRETE_COMPLEMENTAR_HERDADO"]);
+checar("complemento FOB sem frete aplicado: nao bloqueia", [complemento("FOB").bloqueia, complemento("FOB").motivo], [false, "FRETE_COMPLEMENTAR_HERDADO"]);
+checar("modalidade em minusculas e com espaco: mesma regra", complemento(" retira ").motivo, "FRETE_COMPLEMENTAR_HERDADO");
+checar("complemento CIF sem frete aplicado: continua bloqueado", [complemento("CIF").bloqueia, complemento("CIF").motivo], [true, "FRETE_COMPLEMENTAR_PENDENTE"]);
+checar("complemento sem modalidade declarada: continua bloqueado", [complemento(null).bloqueia, complemento(null).motivo], [true, "FRETE_COMPLEMENTAR_PENDENTE"]);
+checar("complemento RETIRA desvinculado: continua invalidado", [complemento("RETIRA", { desvinculado: true }).bloqueia, complemento("RETIRA", { desvinculado: true }).motivo], [true, "FRETE_COMPLEMENTAR_INVALIDADO"]);
+checar("herdado nao tem mensagem de bloqueio", mensagemFreteDesatualizado(complemento("RETIRA")), "");
+
 console.log(falhas === 0 ? "\nTODOS OS TESTES PASSARAM" : `\n${falhas} TESTE(S) FALHARAM`);
 process.exitCode = falhas === 0 ? 0 : 1;

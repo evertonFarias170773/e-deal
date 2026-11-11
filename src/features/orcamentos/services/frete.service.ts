@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import { tokenDaSessao } from "@/lib/supabase/bearer";
 import type { PropostaFrete } from "@/features/orcamentos/types";
+import { transportadoraDoServicoGravado } from "@/features/orcamentos/lib/transportadoras-parceiras";
 import { fetchComSessao } from "@/lib/supabase/sessao";
 import { regraAtualPermiteVeppo } from "@/features/orcamentos/lib/cidade-veppo";
 import {
@@ -34,7 +35,7 @@ export function mapCotacaoRowToPropostaFrete(row: {
   return {
     id: String(row.id),
     id_int: Number(row.id_int),
-    transportadora: row.servico === "SEDEX" ? "Correios SEDEX" : row.servico === "PAC" ? "Correios PAC" : row.servico || "Transportadora",
+    transportadora: transportadoraDoServicoGravado(row.servico),
     servico: row.servico || "",
     valor: Number(row.valor || 0),
     prazo: row.prazo || "Sob consulta",

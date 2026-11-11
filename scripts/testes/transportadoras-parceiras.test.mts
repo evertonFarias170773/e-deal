@@ -32,6 +32,8 @@ import {
   ehCadastroCorreios,
   vinculoPeloCardEscolhido,
   pedidoEhDosCorreios,
+  transportadoraDoServicoGravado,
+  transportadoraPrecisaCorrecao,
   TRANSPORTADORAS_PARCEIRAS as IDS
 } from "@/features/orcamentos/lib/transportadoras-parceiras";
 
@@ -132,6 +134,38 @@ checar("FOB: SEDEX residuo nao conta", pedidoEhDosCorreios({ modalidade: "FOB", 
 checar("RETIRA nunca", pedidoEhDosCorreios({ modalidade: "RETIRA", transporteCategoria: "CORREIOS" }), false);
 checar("Azul nao e Correios", pedidoEhDosCorreios({ modalidade: "CIF", card: AZUL, transporteCategoria: "TRANSPORTADORA" }), false);
 checar("sem sinal nenhum", pedidoEhDosCorreios({ modalidade: "CIF" }), false);
+
+console.log("\n--- 11/11/2026: Correios so com frete dos Correios (25052) ---");
+const ENTREGA_EXPRESSA_RELIDA = { transportadora: transportadoraDoServicoGravado("Entrega Expressa"), servico: "Entrega Expressa" };
+checar("card padrao do SEDEX relido e Correios SEDEX", transportadoraDoServicoGravado("Entrega Expressa"), "Correios SEDEX");
+checar("card padrao do PAC relido e Correios PAC", transportadoraDoServicoGravado("Entrega Econômica"), "Correios PAC");
+checar("SEDEX relido", transportadoraDoServicoGravado("SEDEX"), "Correios SEDEX");
+checar("servico qualquer fica o servico", transportadoraDoServicoGravado("BRASPRESS"), "BRASPRESS");
+checar("sem servico", transportadoraDoServicoGravado(null), "Transportadora");
+checar("Entrega Expressa relida resolve 39975", resolverTransportadoraParceira(ENTREGA_EXPRESSA_RELIDA), 39975);
+checar("CIF + manual com 39975 velho -> null", vinculoPeloCardEscolhido({ modalidade: "CIF", card: MANUAL, idDaTela: 39975 }), null);
+checar("CIF + manual com 663 velho -> null", vinculoPeloCardEscolhido({ modalidade: "CIF", card: MANUAL, idDaTela: 663 }), null);
+checar("CIF sem card mantem 39975", vinculoPeloCardEscolhido({ modalidade: "CIF", card: null, idDaTela: 39975 }), 39975);
+checar("FOB com 39975 declarado fica", vinculoPeloCardEscolhido({ modalidade: "FOB", card: MANUAL, idDaTela: 39975 }), 39975);
+checar("NF-e: categoria CORREIOS velha com card manual nao e Correios", pedidoEhDosCorreios({ modalidade: "CIF", card: MANUAL, transporteCategoria: "CORREIOS" }), false);
+checar("NF-e: card padrao do SEDEX relido e Correios", pedidoEhDosCorreios({ modalidade: "CIF", card: ENTREGA_EXPRESSA_RELIDA }), true);
+checar("NF-e: card sem servico deixa a categoria decidir", pedidoEhDosCorreios({ modalidade: "CIF", card: { transportadora: null, servico: "" }, transporteCategoria: "CORREIOS" }), true);
+
+console.log("\n--- quadro do admin: so com algo a corrigir ---");
+checar("SEDEX com 39975: nada", transportadoraPrecisaCorrecao({ modalidade: "CIF", card: SEDEX, idVinculo: 39975 }), false);
+checar("SEDEX com 663: nada", transportadoraPrecisaCorrecao({ modalidade: "CIF", card: SEDEX, idVinculo: 663 }), false);
+checar("SEDEX sem vinculo: corrigir", transportadoraPrecisaCorrecao({ modalidade: "CIF", card: SEDEX, idVinculo: null }), true);
+checar("Azul com 39975: corrigir", transportadoraPrecisaCorrecao({ modalidade: "CIF", card: AZUL, idVinculo: 39975 }), true);
+checar("Azul com 808: nada", transportadoraPrecisaCorrecao({ modalidade: "CIF", card: AZUL, idVinculo: 808 }), false);
+checar("manual com 39975: corrigir", transportadoraPrecisaCorrecao({ modalidade: "CIF", card: MANUAL, idVinculo: 39975 }), true);
+checar("manual com a dele: nada", transportadoraPrecisaCorrecao({ modalidade: "CIF", card: MANUAL, idVinculo: 120009 }), false);
+checar("manual sem vinculo: corrigir", transportadoraPrecisaCorrecao({ modalidade: "CIF", card: MANUAL, idVinculo: null }), true);
+checar("Entrega Expressa relida com 39975 (25052): nada", transportadoraPrecisaCorrecao({ modalidade: "CIF", card: ENTREGA_EXPRESSA_RELIDA, idVinculo: 39975 }), false);
+checar("RETIRA com vinculo: corrigir", transportadoraPrecisaCorrecao({ modalidade: "RETIRA", card: null, idVinculo: 39975 }), true);
+checar("RETIRA sem vinculo: nada", transportadoraPrecisaCorrecao({ modalidade: "RETIRA", card: null, idVinculo: null }), false);
+checar("FOB sem vinculo: corrigir", transportadoraPrecisaCorrecao({ modalidade: "FOB", card: null, idVinculo: null }), true);
+checar("FOB motoboy: nada", transportadoraPrecisaCorrecao({ modalidade: "FOB", card: null, idVinculo: null, motoboyFob: true }), false);
+checar("CIF sem card: nada", transportadoraPrecisaCorrecao({ modalidade: "CIF", card: null, idVinculo: null }), false);
 
 console.log(falhas === 0 ? "\nTODOS OS TESTES PASSARAM" : `\n${falhas} TESTE(S) FALHARAM`);
 process.exitCode = falhas === 0 ? 0 : 1;

@@ -218,7 +218,8 @@ checar("tela: Valor cobrado trava pela regra do valor (com a 997); dropdown de t
   tela.includes("disabled={!faseDeOrcamento || !freteEscolhido || Boolean(bloqueioTrocaFrete) || valorTravadoNoCard}") &&
     tela.includes("const valorTravadoNoCard = valorTravadoPeloCard(freteEscolhido, form.idTransportadoraCliente, clientePodeEditarFrete);"),
   tela.includes("const freteTravadoNoCard = freteTravadoPeloCard(freteEscolhido);"),
-  /<SelectTransportadora\s+value=\{form\.idTransportadoraCliente\}\s+transportadoras=\{transportadoras\}\s+disabled=\{Boolean\(bloqueioTrocaFrete\)\}\s+onChange=\{escolherTransportadoraCif\}/.test(tela)
+  // 11/11/2026: o valor mostrado e a transportadora do frete escolhido (vinculoPeloCardEscolhido).
+  /<SelectTransportadora\s+value=\{transportadoraDoFreteEscolhido\}\s+transportadoras=\{transportadoras\}\s+disabled=\{Boolean\(bloqueioTrocaFrete\)\}\s+onChange=\{escolherTransportadoraCif\}/.test(tela)
 ], [false, true, true, true]);
 checar("tela: escolherTransportadoraCif so recusa 'nenhuma' com card; Valor cobrado recusa", [
   /function escolherTransportadoraCif\([^)]*\) \{[\s\S]{0,600}?if \(freteTravadoNoCard && idTransportadora === null\) return;/.test(tela),

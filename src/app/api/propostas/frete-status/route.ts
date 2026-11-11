@@ -88,9 +88,9 @@ export async function GET(request: Request) {
   const [{ data: vinculo, error: erroVinculo }, { data: freteComplementar, error: erroLedger }] = await Promise.all([
     supabase
       .from("propostas")
-      .select("id_int_pedido_principal")
+      .select("id_int_pedido_principal, modalidade_frete")
       .eq("id_int", idInt)
-      .maybeSingle<{ id_int_pedido_principal: number | null }>(),
+      .maybeSingle<{ id_int_pedido_principal: number | null; modalidade_frete: string | null }>(),
     supabase
       .from("complementos_frete")
       .select("id, desvinculado_em")
@@ -120,7 +120,9 @@ export async function GET(request: Request) {
     complemento: {
       vinculado: vinculo?.id_int_pedido_principal != null,
       temFreteAplicado: Boolean(freteComplementar),
-      desvinculado: Boolean(freteComplementar?.desvinculado_em)
+      desvinculado: Boolean(freteComplementar?.desvinculado_em),
+      // A modalidade do complemento, herdada do original (a da tela).
+      modalidade: vinculo?.modalidade_frete ?? null
     }
   });
 

@@ -1,6 +1,6 @@
 # Proposta: aba Pagamentos
 
-> **Última revisão:** 10/11/2026 (Trocar forma de pagamento também para E-Permuta, E-Amostra, E-Retrabalho e E-Crédito)
+> **Última revisão:** 11/11/2026 (pedido complementar em RETIRA ou FOB gera a cobrança sem frete complementar)
 > **Caminho no menu:** Pedidos → abrir um pedido → aba Pagamentos
 > **Endereço:** `/orcamentos/<número>/editar?tab=pagamentos`
 
@@ -140,6 +140,8 @@ O débito fica reservado nesta cobrança e só é baixado na Conta Corrente quan
 
 ### Gerar a cobrança de um pedido complementar
 
+Em **RETIRA** ou **FOB**, o complementar herda a modalidade do pedido principal e não tem frete a cobrar: gere a cobrança direto, sem os passos abaixo. Os passos valem para o complementar em **CIF**.
+
 1. Antes de tudo, vá à aba **Fretes** do complementar e clique em **Cotar frete complementar**.
 2. Confira **A cobrar aqui**, que é a diferença: o frete do peso somado dos dois pedidos menos o que o pedido principal já cobra.
 3. Clique em **Aplicar** na opção escolhida. Repetir **Aplicar** não duplica.
@@ -149,7 +151,7 @@ Sem esse passo, o clique em **Gerar cobrança** abre a janela "O frete precisa s
 
 O frete complementar é devido. O crédito do cliente na Conta Corrente pode ser usado para quitar a cobrança, pelo fluxo oficial e com autoria registrada, mas não dispensa o frete nem autoriza editar o valor da cobrança. Não gere a cobrança por outro caminho para driblar o bloqueio: ela sairia sem o frete.
 
-Complementar em **RETIRA** ou **FOB** não tem frete a cobrar e mesmo assim fica bloqueado nessa janela. É problema conhecido e sem solução publicada; peça ajuda em vez de contornar.
+Complementar em **RETIRA** ou **FOB** não passa por essa janela: não tem frete a cobrar.
 
 ### Enviar o pagamento ao cliente
 
@@ -238,7 +240,7 @@ Se a janela for fechada sem escolher, a proposta fica com a faixa **Revisão fin
 - **E-Retrabalho** só em pedido criado como Retrabalho, ou em pedido antigo que já teve uma E-Retrabalho. Pedido criado como Retrabalho só aceita **E-Retrabalho** (nem PIX, boleto, cartão, faturado nem crédito). A regra vale também na área do cliente e no uso de crédito.
 - **Gerar cobrança** só aparece enquanto há saldo. O saldo é o total da proposta menos a soma das cobranças ativas, pagas ou não. O valor de uma cobrança não pode passar do saldo.
 - Com **Pedido do sistema antigo** marcado, não dá para gerar cobrança sem **OS Ideal**. A marca fica gravada no pedido e volta na próxima cobrança.
-- Não dá para gerar cobrança com o frete desatualizado (peso da proposta diferente do peso cotado) nem, em pedido complementar, sem o frete complementar aplicado. No complementar em RETIRA ou FOB, que não tem frete a aplicar, esse bloqueio é um problema conhecido e sem solução publicada.
+- Não dá para gerar cobrança com o frete desatualizado (peso da proposta diferente do peso cotado) nem, em pedido complementar em CIF, sem o frete complementar aplicado. O complementar em RETIRA ou FOB não tem frete a aplicar e gera a cobrança normalmente.
 - Cobrança real exige nome e CPF/CNPJ do cliente e endereço de entrega com logradouro, cidade, UF e CEP. Boleto exige também e-mail do cliente.
 - Boleto e cartão exigem telefone válido no cadastro de quem paga; o cartão exige celular. Sem isso abre a janela **Telefone do cliente impede a cobrança**, onde o telefone é corrigido na hora.
 - **Cartão de crédito** existe para a Ideal Gráfica e a E3 Brindes; a Ideal Birô não tem. **Cartão Asaas** é só da IDEAL GRÁFICA EXPRESSA EIRELI. PIX, boleto e a família do faturado valem para as três empresas.
@@ -406,9 +408,9 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/lib/formatters/status.ts`
 - `src/lib/mocks/pagamentos.mock.ts`
 
-> **Mudança desta revisão:** 10/11/2026 — **Trocar forma de pagamento** oferece também E-Permuta (com condição), E-Amostra e E-Retrabalho (cortesia, sem condição; E-Retrabalho só em retrabalho) e E-Crédito (saldo que cubra tudo; se o banco não confirmar, o crédito volta), com o quadro **Ao confirmar** conforme a forma (caso 24574).
+> **Mudança desta revisão:** 11/11/2026 — pedido complementar em RETIRA ou FOB gera a cobrança sem frete complementar; em CIF continua exigindo o frete aplicado (caso 25107).
 >
-> **Revisão anterior:** 05/11/2026 — **Trocar forma de pagamento**: PIX não pago (Ideal Gráfica e E3 Brindes) vira Faturado com o mesmo valor, mesmo com nota fiscal autorizada; a nova cobrança nasce antes de o PIX ser cancelado no banco (caso 24692).
+> **Revisão anterior:** 10/11/2026 — **Trocar forma de pagamento** oferece também E-Permuta (com condição), E-Amostra e E-Retrabalho (cortesia, sem condição; E-Retrabalho só em retrabalho) e E-Crédito (saldo que cubra tudo; se o banco não confirmar, o crédito volta), com o quadro **Ao confirmar** conforme a forma (caso 24574).
 >
 > **Revisão anterior:** 28/10/2026 — **Gerar cobrança** com E-Crédito ficava apagado em alguns saldos (caso 20361: crédito R$ 791,99, saldo R$ 790,99) por erro de arredondamento na tela; agora a comparação é feita ao centavo.
 >
