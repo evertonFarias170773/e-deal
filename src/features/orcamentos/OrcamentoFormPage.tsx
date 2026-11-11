@@ -98,6 +98,7 @@ import {
 import { buscarStatusArteDaProposta, classeDoStatusArte } from "@/features/orcamentos/services/status-arte-lista.service";
 import { solicitarCotacaoSedex, solicitarCotacaoAzulCargo, solicitarCotacaoTransportadoras, solicitarCotacaoVeppo } from "@/features/orcamentos/services/frete.service";
 import { rotuloMargemAzul } from "@/features/orcamentos/lib/cotacao-azul";
+import { fontesQueNaoCotaram, type ResultadoDaFonte } from "@/features/orcamentos/lib/cotacao-sem-valor";
 import { idIntParaCorteVeppo, rotuloMargemVeppo } from "@/features/orcamentos/lib/cotacao-veppo";
 import {
   resolverTransportadoraParceira,
@@ -1132,6 +1133,8 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
   const [isQuotingAzul, setIsQuotingAzul] = useState(false);
   const [isQuotingTransp, setIsQuotingTransp] = useState(false);
   const [isQuotingVeppo, setIsQuotingVeppo] = useState(false);
+  /** Fontes que não cotaram na última cotação (lib/cotacao-sem-valor, 11/11/2026). */
+  const [fretesNaoCotados, setFretesNaoCotados] = useState<string[]>([]);
   const [compradorAddresses, setCompradorAddresses] = useState<CadastroEndereco[]>([]);
   /**
    * Cadastro COMPLETO do pagador quando ele e um vinculo (05/09/2026).
@@ -2254,6 +2257,12 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
       setIsQuotingAzul(true);
       setIsQuotingVeppo(true);
 
+      // Fontes que não cotaram (lib/cotacao-sem-valor, 11/11/2026).
+      const sedexFonte: ResultadoDaFonte = { fonte: "SEDEX" };
+      const azulFonte: ResultadoDaFonte = { fonte: "AZUL" };
+      const transpFonte: ResultadoDaFonte = { fonte: "TRANSPORTADORAS" };
+      const veppoFonte: ResultadoDaFonte = { fonte: "VEPPO" };
+
       let transportadorasPromise = Promise.resolve([] as PropostaFrete[]);
       if (cidade && uf) {
         setIsQuotingTransp(true);
@@ -2263,6 +2272,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
           uf
         }).catch((err) => {
           console.error("Erro na cotação automática de Transportadoras:", err);
+          transpFonte.erro = err;
           return [];
         }).finally(() => {
           setIsQuotingTransp(false);
@@ -2281,9 +2291,10 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
               peso: resumo.pesoTotal,
               vol: volumes,
               cep
-            });
+            }, { aoDescartarSemValor: (s) => { sedexFonte.descartados = s; } });
           } catch (err) {
             console.error("Erro na cotação automática SEDEX:", err);
+            sedexFonte.erro = err;
           } finally {
             setIsQuotingSedex(false);
           }
@@ -2301,9 +2312,10 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
               // Azul só onde há unidade de retirada (lib/unidades-azul).
               destino: { cidade, uf },
               verificarUnidade: true
-            });
+            }, { aoDescartarSemValor: (s) => { azulFonte.descartados = s; } });
           } catch (err) {
             console.error("Erro na cotação automática Azul Cargo:", err);
+            azulFonte.erro = err;
           } finally {
             setIsQuotingAzul(false);
           }
@@ -2323,9 +2335,10 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
               cidade,
               uf,
               id_int: idIntParaCorteVeppo(form.id_int)
-            });
+            }, { aoNaoCotar: () => { veppoFonte.naoCotou = true; } });
           } catch (err) {
             console.error("Erro na cotação automática VEPPO:", err);
+            veppoFonte.erro = err;
           } finally {
             setIsQuotingVeppo(false);
           }
@@ -2338,6 +2351,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
       if (cotacaoEpochRef.current !== epochAtStart) {
         return;
       }
+      setFretesNaoCotados(fontesQueNaoCotaram([sedexFonte, azulFonte, transpFonte, veppoFonte]));
 
       // Sem o card "Retirada Local" (14/09/2026): ele duplicava o botao RETIRA
       // da barra de modalidade. Retirada se declara la, nao escolhendo cotacao.
@@ -3875,9 +3889,19 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     setIsQuotingVeppo(true);
     if (cidade && uf) setIsQuotingTransp(true);
 
+    // Fontes que não cotaram (lib/cotacao-sem-valor, 11/11/2026).
+    const sedexFonte: ResultadoDaFonte = { fonte: "SEDEX" };
+    const azulFonte: ResultadoDaFonte = { fonte: "AZUL" };
+    const transpFonte: ResultadoDaFonte = { fonte: "TRANSPORTADORAS" };
+    const veppoFonte: ResultadoDaFonte = { fonte: "VEPPO" };
+    const anotarErro = (fonte: ResultadoDaFonte) => (err: unknown) => {
+      fonte.erro = err;
+      return [] as PropostaFrete[];
+    };
+
     const [sedex, azul, transp, veppo] = await Promise.all([
-      solicitarCotacaoSedex({ peso: resumo.pesoTotal, vol: volumes, cep })
-        .catch(() => [] as PropostaFrete[])
+      solicitarCotacaoSedex({ peso: resumo.pesoTotal, vol: volumes, cep }, { aoDescartarSemValor: (s) => { sedexFonte.descartados = s; } })
+        .catch(anotarErro(sedexFonte))
         .finally(() => setIsQuotingSedex(false)),
       (uf?.toUpperCase() === "RS"
         ? Promise.resolve([] as PropostaFrete[])
@@ -3887,20 +3911,24 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
             valorTotal: resumo.subtotalProdutos,
             destino: { cidade, uf },
             verificarUnidade: true
-          }).catch(() => [] as PropostaFrete[])
+          }, { aoDescartarSemValor: (s) => { azulFonte.descartados = s; } }).catch(anotarErro(azulFonte))
       ).finally(() => setIsQuotingAzul(false)),
       (cidade && uf
-        ? solicitarCotacaoTransportadoras({ peso: resumo.pesoTotal, cidade, uf }).catch(() => [] as PropostaFrete[])
+        ? solicitarCotacaoTransportadoras({ peso: resumo.pesoTotal, cidade, uf }).catch(anotarErro(transpFonte))
         : Promise.resolve([] as PropostaFrete[])
       ).finally(() => setIsQuotingTransp(false)),
       (cidade && uf
-        ? solicitarCotacaoVeppo({ peso: resumo.pesoTotal, valor: resumo.subtotalProdutos, cidade, uf, id_int: idIntParaCorteVeppo(form.id_int) }).catch(() => [] as PropostaFrete[])
+        ? solicitarCotacaoVeppo(
+            { peso: resumo.pesoTotal, valor: resumo.subtotalProdutos, cidade, uf, id_int: idIntParaCorteVeppo(form.id_int) },
+            { aoNaoCotar: () => { veppoFonte.naoCotou = true; } }
+          ).catch(anotarErro(veppoFonte))
         : Promise.resolve([] as PropostaFrete[])
       ).finally(() => setIsQuotingVeppo(false))
     ]);
 
     // Mesma guarda da cotação automática: a vinculação de cliente mudou no meio.
     if (cotacaoEpochRef.current !== epocaNoInicio) return;
+    setFretesNaoCotados(fontesQueNaoCotaram([sedexFonte, azulFonte, transpFonte, veppoFonte]));
 
     setForm((prev) => {
       const chavesPresentes = new Set(prev.fretes.map((f) => getStableFreightKey(f)));
@@ -4006,6 +4034,12 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     let transpError = "";
     let veppoError = "";
 
+    // Fontes que não cotaram (lib/cotacao-sem-valor, 11/11/2026).
+    const sedexFonte: ResultadoDaFonte = { fonte: "SEDEX" };
+    const azulFonte: ResultadoDaFonte = { fonte: "AZUL" };
+    const transpFonte: ResultadoDaFonte = { fonte: "TRANSPORTADORAS" };
+    const veppoFonte: ResultadoDaFonte = { fonte: "VEPPO" };
+
     let transportadorasPromise = Promise.resolve([] as PropostaFrete[]);
     if (!cidade || !uf) {
       transpError = "Cidade ou UF não preenchida no endereço de entrega.";
@@ -4018,6 +4052,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
       }).catch((err) => {
         console.error("Erro ao cotar Transportadoras manualmente:", err);
         transpError = err instanceof Error ? err.message : "Erro desconhecido";
+        transpFonte.erro = err;
         return [];
       }).finally(() => {
         setIsQuotingTransp(false);
@@ -4031,10 +4066,11 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
             peso: resumo.pesoTotal,
             vol: volumes,
             cep
-          });
+          }, { aoDescartarSemValor: (s) => { sedexFonte.descartados = s; } });
         } catch (err) {
           console.error("Erro ao cotar SEDEX manualmente:", err);
           sedexError = err instanceof Error ? err.message : "Erro desconhecido";
+          sedexFonte.erro = err;
         } finally {
           setIsQuotingSedex(false);
         }
@@ -4052,10 +4088,11 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
             // Azul só onde há unidade de retirada (lib/unidades-azul).
             destino: { cidade, uf },
             verificarUnidade: true
-          });
+          }, { aoDescartarSemValor: (s) => { azulFonte.descartados = s; } });
         } catch (err) {
           console.error("Erro ao cotar Azul Cargo manualmente:", err);
           azulError = err instanceof Error ? err.message : "Erro desconhecido";
+          azulFonte.erro = err;
         } finally {
           setIsQuotingAzul(false);
         }
@@ -4072,15 +4109,19 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
             cidade: cidade!,
             uf: uf!,
             id_int: idIntParaCorteVeppo(form.id_int)
-          });
+          }, { aoNaoCotar: () => { veppoFonte.naoCotou = true; } });
         } catch (err) {
           console.error("Erro ao cotar VEPPO manualmente:", err);
           veppoError = err instanceof Error ? err.message : "Erro desconhecido";
+          veppoFonte.erro = err;
         } finally {
           setIsQuotingVeppo(false);
         }
       })()
     ]);
+
+    const naoCotaram = fontesQueNaoCotaram([sedexFonte, azulFonte, transpFonte, veppoFonte]);
+    setFretesNaoCotados(naoCotaram);
 
     // Find currently selected frete
     let currentChosen = form.fretes.find((f) => f.id === form.freteEscolhidoId || f.escolhido);
@@ -4223,6 +4264,12 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
         type: "warning",
         title: "Cotação parcial realizada",
         description: `Alguns serviços falharam: ${errorsList.join(" | ")}`
+      });
+    } else if (naoCotaram.length > 0) {
+      showToast({
+        type: "warning",
+        title: "Cotação parcial realizada",
+        description: `Não cotaram: ${naoCotaram.join(" | ")}`
       });
     } else {
       showToast({
@@ -8118,6 +8165,20 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                     * A cotação utiliza o CEP do endereço selecionado e o peso total da proposta em gramas ({formatWeightFromGrams(resumo.pesoTotal)}).
                   </p>
                 </div>
+
+                {/* Fonte que falhou ou respondeu sem valor nao vira card de R$ 0,00
+                    (lib/cotacao-sem-valor, 11/11/2026, caso 25058). */}
+                {!ehComplemento && !form.isAvulso && fretesNaoCotados.length > 0 && (
+                  <div data-testid="aviso-frete-nao-cotou" className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+                    <p className="font-semibold">Transportadora que não cotou</p>
+                    <ul className="mt-1 list-disc pl-5">
+                      {fretesNaoCotados.map((linha) => (
+                        <li key={linha}>{linha}</li>
+                      ))}
+                    </ul>
+                    <p className="mt-1">Sem valor, a opção não aparece como card. Clique em &apos;Atualizar fretes&apos; para cotar de novo.</p>
+                  </div>
+                )}
 
                 {hasPreservedFreight && (
                   <div className="mb-4 p-4 bg-amber-50 border border-amber-200 rounded-3xl flex items-start gap-3 text-amber-800 animate-in fade-in slide-in-from-top-1 duration-200">

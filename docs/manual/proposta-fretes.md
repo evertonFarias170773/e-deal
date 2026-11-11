@@ -1,6 +1,6 @@
 # Proposta: aba Fretes
 
-> **Última revisão:** 11/11/2026 (Transportadora mostra a do frete escolhido; Corrigir a transportadora só com algo a corrigir; card padrão do SEDEX relido como Correios; rua com erro no cadastro)
+> **Última revisão:** 11/11/2026 (cotação sem valor não vira card, aviso "Transportadora que não cotou"; Transportadora mostra a do frete escolhido; Corrigir a transportadora só com algo a corrigir; card padrão do SEDEX relido como Correios; rua com erro no cadastro)
 > **Caminho no menu:** Pedidos → abrir um pedido → aba Fretes
 > **Endereço:** `/orcamentos/<número>/editar?tab=fretes`
 
@@ -64,6 +64,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 2. Marque **CIF — por conta da empresa**.
 3. A tela cota sozinha quando o endereço ou o peso mudam. Para cotar de novo, clique em **Atualizar fretes**.
 4. Aparecem os cards das opções: **SEDEX EXPRESS** e **PAC ECONÔMICO** (Correios), **AZUL CARGO**, **TRANSP. SÃO MIGUEL**, **ENTREGA MOTOBOY** e **VEPPO**, conforme o que cada parceiro devolver para aquele destino. Cada card mostra a transportadora, o prazo, o valor e o peso usado. O card **VEPPO** só aparece no Rio Grande do Sul, fora de Porto Alegre, e só para as cidades que a VEPPO atende; nas outras cidades ele não aparece e as demais opções seguem normais.
+   Só vira card a opção que volta com valor maior que zero. Se um parceiro falhar ou responder sem valor (SEDEX ou PAC dos Correios, Azul Cargo, São Miguel e Motoboy, VEPPO), o card dele não aparece, e o quadro amarelo **Transportadora que não cotou** diz qual foi, por exemplo "Correios (SEDEX/PAC): respondeu sem valor". Clique em **Atualizar fretes** para cotar de novo. Parceiro que não atende o destino (Azul no RS ou sem unidade na cidade, VEPPO fora das cidades atendidas, São Miguel ou Motoboy sem tarifa) continua sem card e sem aviso.
 5. Clique em **Escolher** no card desejado. Ele ganha o selo **Escolhido**, e os campos **Transportadora** e **Valor cobrado (R$)** acima são preenchidos com ele.
 6. Clique em **Salvar alterações**.
 
@@ -281,7 +282,8 @@ Repetir **Aplicar** não duplica: a segunda tentativa devolve o mesmo frete comp
 | "CEP não encontrado" — "Selecione um endereço de entrega válido com CEP para cotar." | A proposta está sem endereço de entrega, ou o endereço está sem CEP. | Escolha o endereço na aba **Geral** e volte para cotar. No orçamento rápido, preencha o CEP de entrega. |
 | "Peso inválido" — "Adicione pelo menos um produto com peso maior que zero para cotar." | A proposta não tem produto com peso. | Inclua os produtos na aba **Orçamento**. |
 | "Falha na cotação de todos os fretes" | Nenhum parceiro respondeu à cotação. | Tente **Atualizar fretes** de novo em instantes. |
-| "Cotação parcial realizada" — "Alguns serviços falharam: ..." | Um ou mais parceiros não responderam; os outros vieram. | Escolha entre as opções que vieram, ou atualize de novo. |
+| "Cotação parcial realizada" — "Alguns serviços falharam: ..." ou "Não cotaram: ..." | Um ou mais parceiros não responderam ou responderam sem valor; os outros vieram. | Escolha entre as opções que vieram, ou atualize de novo. |
+| "Transportadora que não cotou" — "Correios (SEDEX/PAC): respondeu sem valor" (ou "não respondeu", "não cotou", "PAC sem valor") | O parceiro falhou ou voltou sem valor, e a opção dele não virou card de R$ 0,00. Era assim que o 25058 ficou com SEDEX a R$ 0,00. Se o frete escolhido antes era desse parceiro, ele fica preservado com o valor anterior e aparece **Cotação Defasada**. | Clique em **Atualizar fretes** em instantes. Se continuar, escolha outra opção ou avise o suporte. |
 | "Nenhum frete cotado para esta proposta." | Em CIF, ainda não há cotação. | Confira endereço e produtos e clique em **Atualizar fretes**. |
 | "Frete não selecionado" — "Selecione ou informe o frete antes de salvar o orçamento." | Em CIF, nenhum card está como **Escolhido**. | Clique em **Escolher** em um card ou escolha a **Transportadora**. |
 | "Transportadora obrigatória em FOB" — "Escolha a transportadora que vai retirar, ou marque Motoboy, antes de salvar o orçamento." | FOB sem transportadora e sem **Motoboy**. | Preencha **Transportadora definida \*** ou clique em **Motoboy**. |
@@ -343,6 +345,9 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/app/api/orcamentos/complementar/cotar-frete/route.ts`
 - `src/app/api/orcamentos/complementar/aplicar-frete/route.ts`
 - `src/features/orcamentos/lib/transportadoras-parceiras.ts`
+- `src/features/orcamentos/lib/cotacao-sem-valor.ts`
+- `src/features/orcamentos/lib/cotacao-sedex.ts`
+- `src/features/orcamentos/lib/cotacao-azul.ts`
 
 > **Mudanças de 08/10/2026:**
 >

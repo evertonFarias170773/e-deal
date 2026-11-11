@@ -52,6 +52,7 @@
  *   frete complementar acham a opção escolhida por esse id.
  */
 import type { PropostaFrete } from "@/features/orcamentos/types";
+import { valorCotadoValido } from "@/features/orcamentos/lib/cotacao-sem-valor";
 
 /** Nome devolvido pela Azul (`NomeServico`) → texto gravado no Vibe. */
 const NOME_GRAVADO_POR_SERVICO_AZUL: Readonly<Record<string, string>> = {
@@ -209,6 +210,8 @@ export function mapearCotacoesAzul(
      * do filtro de nomes e ANTES da margem.
      */
     servicosPermitidos?: readonly string[] | null;
+    /** Serviço que veio sem valor (Total vazio ou zero): não vira card (11/11/2026). */
+    aoDescartarSemValor?: (servico: string) => void;
   }
 ): PropostaFrete[] {
   const { plano, servicosPermitidos } = input;
@@ -224,6 +227,11 @@ export function mapearCotacoesAzul(
     const prazo = item.Prazo as number | undefined;
     // d envios ECOMM = d cotações iguais; o n8n só repassa o Total, então é só ele.
     const total = Number((Number(item.Total || 0) * plano.divisor).toFixed(2));
+    // Sem valor não vira card de R$ 0,00 (lib/cotacao-sem-valor, 11/11/2026).
+    if (!valorCotadoValido(total)) {
+      input.aoDescartarSemValor?.(servico);
+      continue;
+    }
     const margem = margemDoServicoAzul(servico);
     const valorFinal = total * margem;
     const prazoText = prazo ? (prazo === 1 ? "1 dia útil" : `${prazo} dias úteis`) : "Sob consulta";

@@ -15,6 +15,8 @@ import {
   type PlanoCotacaoAzul
 } from "@/features/orcamentos/lib/cotacao-azul";
 import { servicosAzulDaCidade, type UnidadeAzul } from "@/features/orcamentos/lib/unidades-azul";
+import { cardsDaRespostaSedex } from "@/features/orcamentos/lib/cotacao-sedex";
+import { CotacaoSemValorError, valorCotadoValido, veppoDeviaTerCotado } from "@/features/orcamentos/lib/cotacao-sem-valor";
 
 /**
  * Maps a single row from public.cotacao_frete to PropostaFrete type.
@@ -58,7 +60,7 @@ export async function solicitarCotacaoSedex(input: {
   vol: number;
   cep: string;
   id_int?: number | string;
-}): Promise<PropostaFrete[]> {
+}, opcoes: { aoDescartarSemValor?: (servicos: string[]) => void } = {}): Promise<PropostaFrete[]> {
   const cleanCep = input.cep.replace(/\D/g, "");
   
   let finalPeso = input.peso;
@@ -88,39 +90,10 @@ export async function solicitarCotacaoSedex(input: {
     throw new Error(`Erro na cotação SEDEX (${response.status}): ${errorText || response.statusText}`);
   }
 
-  const data = await response.json();
-  let arrayData: Record<string, unknown>[] = [];
-  if (Array.isArray(data)) {
-    arrayData = data;
-  } else if (data && typeof data === "object") {
-    arrayData = [data as Record<string, unknown>];
-  } else {
-    throw new Error("Resposta inválida do serviço de frete.");
-  }
-
-  return arrayData.map((item: Record<string, unknown>, idx: number) => {
-    const prazo = item.prazo as number | undefined;
-    const servico = item.servico as string | undefined;
-    const valor = item.valor as number | undefined;
-    const texto_entrega = item.texto_entrega as string | undefined;
-
-    const prazoText = prazo 
-      ? (prazo === 1 ? "1 dia útil" : `${prazo} dias úteis`)
-      : "Sob consulta";
-      
-    return {
-      id: `frete_${String(servico || "sedex").toLowerCase()}_${idx}`,
-      id_int: typeof input.id_int === "number" ? input.id_int : (Number(input.id_int) || 0),
-      transportadora: servico === "SEDEX" ? "Correios SEDEX" : servico === "PAC" ? "Correios PAC" : (servico || "Correios"),
-      servico: servico || "SEDEX",
-      valor: Number(valor || 0),
-      prazo: prazoText,
-      observacao: texto_entrega || "",
-      escolhido: false,
-      pesoUsado: input.peso,
-      volumes: finalVol
-    };
-  });
+  // Item sem valor não vira card; nenhum com valor lança CotacaoSemValorError
+  // (lib/cotacao-sedex, 11/11/2026, caso 25058).
+  const data: unknown = await response.json();
+  return cardsDaRespostaSedex(data, { peso: input.peso, id_int: input.id_int, volumes: finalVol }, opcoes.aoDescartarSemValor);
 }
 
 /**
@@ -268,6 +241,7 @@ async function cotarGrupoAzul(
     id_int?: number | string;
     pesoGramas: number;
     servicosPermitidos: readonly string[] | null;
+    aoDescartarSemValor: (servico: string) => void;
   }
 ): Promise<PropostaFrete[]> {
   const response = await fetch(URL_COTACAO_AZUL, {
@@ -289,7 +263,8 @@ async function cotarGrupoAzul(
     id_int: input.id_int,
     pesoGramas: input.pesoGramas,
     plano,
-    servicosPermitidos: input.servicosPermitidos
+    servicosPermitidos: input.servicosPermitidos,
+    aoDescartarSemValor: input.aoDescartarSemValor
   });
 }
 
@@ -304,7 +279,7 @@ export async function solicitarCotacaoAzulCargo(
     /** Liga a verificação em `azul_unidades`. Padrão: desligada (como antes). */
     verificarUnidade?: boolean;
   },
-  opcoes: { supabase?: SupabaseClient } = {}
+  opcoes: { supabase?: SupabaseClient; aoDescartarSemValor?: (servicos: string[]) => void } = {}
 ): Promise<PropostaFrete[]> {
   let servicosPermitidos: readonly string[] | null = null;
   if (input.verificarUnidade) {
@@ -323,12 +298,17 @@ export async function solicitarCotacaoAzulCargo(
     }
   }
 
+  // Serviços que vieram sem valor (lib/cotacao-sem-valor, 11/11/2026).
+  const semValor: string[] = [];
   const ctx = {
     cep: input.cep.replace(/\D/g, ""),
     valorTotal: Number(input.valorTotal || 0),
     id_int: input.id_int,
     pesoGramas: input.peso,
-    servicosPermitidos
+    servicosPermitidos,
+    aoDescartarSemValor: (servico: string) => {
+      semValor.push(servico);
+    }
   };
   const pesoTotalKg = input.peso / 1000;
   const grupos: GrupoCotacaoAzul[] = ["ECOMM", "DEMAIS"];
@@ -343,6 +323,12 @@ export async function solicitarCotacaoAzulCargo(
   }
   for (const erro of erros) {
     console.warn("[FreteService] Um grupo da cotação Azul falhou; seguindo com o outro:", erro);
+  }
+  if (semValor.length > 0) {
+    console.warn("[FreteService] Azul Cargo: opção sem valor descartada:", semValor);
+    // Só opções sem valor: a Azul respondeu, mas não cotou.
+    if (cards.length === 0) throw new CotacaoSemValorError("Azul Cargo");
+    opcoes.aoDescartarSemValor?.(semValor);
   }
   return cards;
 }
@@ -493,11 +479,13 @@ export async function solicitarCotacaoVeppo(input: {
   cidade: string;
   uf: string;
   id_int?: number | string;
-}): Promise<PropostaFrete[]> {
+}, opcoes: { aoNaoCotar?: () => void } = {}): Promise<PropostaFrete[]> {
   if (!regraAtualPermiteVeppo(input.uf, input.cidade)) {
     return [];
   }
 
+  // "Não cotou" (11/11/2026) = a VEPPO devia cotar e não cotou: falha da rota,
+  // n8n sem valor, lista ou corte não conferidos. Cidade não atendida não avisa.
   try {
     const response = await fetchComSessao("/api/frete/veppo", {
       method: "POST",
@@ -506,11 +494,15 @@ export async function solicitarCotacaoVeppo(input: {
     });
     const data = await response.json().catch(() => null);
     if (!response.ok || !data?.success || !Array.isArray(data.fretes)) {
+      opcoes.aoNaoCotar?.();
       return [];
     }
-    return data.fretes as PropostaFrete[];
+    const fretes = (data.fretes as PropostaFrete[]).filter((f) => valorCotadoValido(f.valor));
+    if (veppoDeviaTerCotado(data.status) && fretes.length === 0) opcoes.aoNaoCotar?.();
+    return fretes;
   } catch (error) {
     console.warn(`[FreteService] Erro ao consultar VEPPO:`, error);
+    opcoes.aoNaoCotar?.();
     return [];
   }
 }
