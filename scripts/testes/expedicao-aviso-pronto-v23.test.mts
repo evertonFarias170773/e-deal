@@ -9,11 +9,13 @@
  *   B. despacho da tela ("preparar"): só texto curto, id inteiro, endereço uuid;
  *   C. o modelo da janela pela forma de envio da tela: SEDEX sem rastreio fica
  *      "Gere a etiqueta dos Correios antes."; com rastreio, Sedex; PAC sem modelo;
- *      retirada, motoboy e transportadora pelo que está na tela.
+ *      retirada, motoboy e transportadora pelo que está na tela;
+ *   D. v24: conversa escolhida na aba Artes vale só se ainda é do cliente.
  */
 import assert from "node:assert/strict";
 import {
   SEM_ETIQUETA,
+  conversaDaProposta,
   SEM_MODELO,
   STATUS_AVISO_PRONTO,
   despachoDaTela,
@@ -89,6 +91,18 @@ caso("C. modelo pela forma de envio da tela", () => {
     escolherDialogo({ despacho: { tipo_frete: "TRANSPORTADORA", transportadora_nome: "Rodonaves" }, orcamento, rastreioCorreios: null }).dialogo,
     "Transportadora"
   );
+});
+
+caso("D. v24: conversa escolhida na aba Artes", () => {
+  const lista = [
+    { chat_id: "a1", nome: "Cliente - 25847", numero: "5551991010423" },
+    { chat_id: "b2", nome: "Financeiro - 25847", numero: "5551984608848" }
+  ];
+  assert.equal(conversaDaProposta("b2", lista)?.chat_id, "b2");
+  assert.equal(conversaDaProposta(" a1 ", lista)?.chat_id, "a1");
+  assert.equal(conversaDaProposta("zz", lista), null);
+  assert.equal(conversaDaProposta(null, lista), null);
+  assert.equal(conversaDaProposta("", lista), null);
 });
 
 console.log(`\n${n} casos ok`);

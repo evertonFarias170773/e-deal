@@ -1,4 +1,11 @@
-# expedicao-pedido-pronto: v23 (fora de supabase/functions de propósito)
+# expedicao-pedido-pronto: v24 no repositório, v23 no ar (fora de supabase/functions de propósito)
+
+**v24 (10/11/2026), código nesta pasta, SEM deploy:** conversa escolhida na aba Artes (`propostas.chatguru_chat_id`, o Comprador da arte).
+- Nos dois avisos (pedido em produção e pedido pronto), se a proposta tem conversa escolhida e ela ainda é do cliente no Guru, o aviso vai direto para ela, sem casar o telefone do contato.
+- Sem conversa escolhida, ou se ela saiu do cliente, vale a regra de antes. A escolha feita na tela (chat_ids/todas) continua vencendo.
+- O "Ver conversas do cliente" (ação `conversas`) também mostra a escolhida como a decisão.
+- Regra pura: `logica.conversaDaProposta`. Teste: caso D de `scripts/testes/expedicao-aviso-pronto-v23.test.mts`.
+- Subir só com autorização. Enquanto a v23 estiver no ar, a escolha da aba Artes fica gravada, mas os avisos seguem casando o telefone.
 
 **v23 no ar desde 10/11/2026 17:53 (Brasília)**, versão 23 no painel da Supabase, conferida arquivo a arquivo igual a esta pasta (index.ts, logica.ts e a cópia de transportadoras-parceiras.ts). É a v22 com o aviso de pedido pronto no clique do "Confirmar despacho".
 - `enviar` e `reenviar` aceitam o pedido em EXPEDICAO, A RETIRAR ou EM TRANSITO (`logica.STATUS_AVISO_PRONTO`), porque o despacho já mudou o status quando o aviso sai.

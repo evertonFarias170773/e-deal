@@ -20,6 +20,8 @@ import {
 import { useCoresDeProducao } from "@/features/orcamentos/hooks/useCoresDeProducao";
 import { listChecklistDeProdutos } from "@/features/produtos/services/produto-boletim-campos.service";
 import { ArtesTab, type BriefingArtesDraft } from "@/features/orcamentos/components/ArtesTab";
+import { useConversaDaArte } from "./components/ArtesCompradorCard";
+import { numeroParaExibir } from "@/features/orcamentos/lib/conversa-whatsapp";
 import { ProductSearchSelector } from "@/features/orcamentos/components/ProductSearchSelector";
 import { LiberarFaturadoModal } from "@/features/orcamentos/components/LiberarFaturadoModal";
 import { PropostaChatPanel } from "@/features/orcamentos/components/PropostaChatPanel";
@@ -1651,27 +1653,15 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
   isDirtyRef.current = isDirty;
 
   /**
-   * Comprador escolhido na aba Artes (07/11/2026): já gravado em
-   * `propostas.id_contato`, que é o "Contato responsável" desta tela. Troca o
-   * `contatoId` do formulário e também o do retrato salvo, para a troca não
-   * deixar o formulário "com alteração não salva" — o banco já a tem.
+   * Comprador da aba Artes (10/11/2026): a conversa do WhatsApp (ChatGuru) do
+   * cliente, gravada em `propostas.chatguru_chat_id`. Lida aqui, e não na aba,
+   * para a Geral mostrar a escolhida só para leitura. Não mexe no Contato
+   * responsável (`propostas.id_contato`), que voltou a ser só do cadastro.
    */
-  const aplicarContatoGravadoPelaArtes = useCallback((contato: CadastroContato) => {
-    setProposalContacts((lista) =>
-      lista.some((c) => c.id === contato.id) ? lista.map((c) => (c.id === contato.id ? { ...c, ...contato } : c)) : [...lista, contato]
-    );
-    // Retrato primeiro, depois um form novo (mesmo com o contato igual) para o `isDirty` recalcular.
-    if (initialFormSnapshot.current) {
-      try {
-        const salvo = JSON.parse(initialFormSnapshot.current);
-        salvo.contatoId = contato.id;
-        initialFormSnapshot.current = JSON.stringify(salvo);
-      } catch {
-        // Retrato ilegível: o formulário só aparece como alterado.
-      }
-    }
-    setForm((prev) => ({ ...prev, contatoId: contato.id }));
-  }, []);
+  const conversaDaArte = useConversaDaArte(
+    form.id_int === "NOVO" ? null : Number(form.id_int),
+    form.clienteId || null
+  );
 
   const currentAddress = useMemo(() => {
     return combinedAddresses.find((a) => a.id === form.enderecoId);
@@ -6696,17 +6686,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
             />
           )}
           {activeFormTab === "artes" && shouldShowRest && (
-            <ArtesTab
-              form={form}
-              onBriefingChange={handleBriefingChange}
-              // Comprador gravado pela aba Artes entra (ou se atualiza) na lista de contatos da proposta.
-              onContatoDoClienteGravado={(contato) =>
-                setProposalContacts((lista) =>
-                  lista.some((c) => c.id === contato.id) ? lista.map((c) => (c.id === contato.id ? { ...c, ...contato } : c)) : [...lista, contato]
-                )
-              }
-              onContatoDaPropostaGravado={aplicarContatoGravadoPelaArtes}
-            />
+            <ArtesTab form={form} onBriefingChange={handleBriefingChange} comprador={conversaDaArte} />
           )}
           {/* Producao: a aba NAO some por prateleira nem por avulsa. Produto de
               estoque tambem e separado, conferido e embalado — a bancada
@@ -7219,6 +7199,12 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                       <p className="text-sm text-slate-500 bg-slate-50 rounded-2xl p-4">Nenhum contato cadastrado para este cliente.</p>
                     )}
                     <button type="button" onClick={() => setIsContactModalOpen(true)} disabled={ehComplemento} className="mt-4 rounded-2xl border border-[#d7e5e8] bg-white px-4 py-3 text-sm font-semibold text-[#0b2f4a] disabled:cursor-not-allowed disabled:opacity-60">+ Adicionar novo contato</button>
+                    {/* Só leitura (10/11/2026): a conversa do WhatsApp escolhida na aba Artes. */}
+                    {conversaDaArte.gravada && (
+                      <p data-conversa-whatsapp className="mt-3 text-sm text-slate-600 dark:text-slate-300">
+                        Conversa do WhatsApp: <span className="font-semibold">{conversaDaArte.gravada.nome}</span> · {numeroParaExibir(conversaDaArte.gravada.numero)}
+                      </p>
+                    )}
                   </FormSection>
                 )}
 

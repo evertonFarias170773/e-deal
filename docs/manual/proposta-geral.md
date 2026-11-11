@@ -1,6 +1,6 @@
 # Proposta: aba Geral
 
-> **Última revisão:** 07/11/2026 (contato responsável é o mesmo Comprador da aba Artes; total do resumo em centavos exatos; contato inativo fora da escolha; cargo do contato em lista)
+> **Última revisão:** 10/11/2026 (contato responsável volta a ser só do cadastro; mostra a conversa do WhatsApp escolhida na aba Artes, só para leitura)
 > **Caminho no menu:** Pedidos → abrir um pedido → aba **Geral**
 > **Endereço:** `/orcamentos/<número>/editar` (em proposta nova, `/orcamentos/novo`)
 
@@ -32,6 +32,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Vendedor** (lista; primeira opção "Selecione o vendedor") | Bloco **2. Dados da proposta** | Define o vendedor, para quem pode alterar. |
 | Linha de **Outros contatos** | Bloco **3. Contato responsável** | Troca o contato selecionado. |
 | **+ Adicionar novo contato** | Bloco **3. Contato responsável** | Abre a janela **Adicionar novo contato**. |
+| "Conversa do WhatsApp: {nome} · {número}" | Bloco **3. Contato responsável**, abaixo do botão | Só leitura: a conversa do ChatGuru escolhida na aba Artes como Comprador. Aparece depois que a conversa é gravada. Para trocar, use a aba Artes. |
 | **Adicionar** | Janela **Adicionar novo contato** | Inclui o contato na tela e já o seleciona. Ao salvar a proposta, ele entra no cadastro do cliente. |
 | Botão de lápis (dica: "Editar") | No contato e no endereço, selecionado ou da lista | Abre a edição do contato ou do endereço. |
 | **Salvar** | Janela **Editar contato (Modo Local)** | Aplica a correção do contato na tela. |
@@ -101,7 +102,7 @@ Enquanto o cliente não é escolhido numa proposta nova, os outros blocos e abas
 4. Para corrigir um contato, clique no lápis ao lado dele, altere na janela **Editar contato (Modo Local)** e clique em **Salvar**.
 5. Salve a proposta para o contato escolhido valer.
 
-O contato responsável é também o **Comprador** da aba Artes (quem recebe a arte): trocar aqui troca lá, e escolher um Comprador na aba Artes troca o contato daqui, já gravado. Para enviar para arte, ele precisa ter cargo **Comprador**, WhatsApp e e-mail.
+Desde 10/11/2026 o contato responsável é só o contato do cadastro do cliente (e-mail e telefone para etiqueta, cobrança e checkout). O **Comprador** da aba Artes é outra coisa: uma conversa do cliente no WhatsApp da Ideal (ChatGuru), escolhida lá. Abaixo do bloco aparece, só para leitura, "Conversa do WhatsApp: {nome} · {número}" com a conversa escolhida; trocar o contato aqui não muda a conversa, e escolher a conversa na aba Artes não muda o contato.
 
 O nome do contato é o que aparece na proposta enviada ao cliente.
 

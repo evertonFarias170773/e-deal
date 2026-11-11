@@ -1,383 +1,160 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, CheckCircle2, Mail, Phone, UserCheck, UserPlus, Pencil, X } from "lucide-react";
-import type { CadastroContato } from "@/features/cadastros/types";
-import { createCadastroContatos, updateCadastroContato } from "@/features/cadastros/services/cadastros.service";
-import { formatPhoneBR } from "@/lib/formatters/phone";
+import { AlertTriangle, CheckCircle2, MessageCircle } from "lucide-react";
+import { arteJaEnviada } from "@/features/orcamentos/lib/comprador-da-arte";
 import {
-  arteJaEnviada,
-  contatosParaVirarComprador,
-  faltasDoComprador,
-  situacaoDoComprador,
-  type SituacaoDoComprador,
-} from "@/features/orcamentos/lib/comprador-da-arte";
-import { carregarCompradorDaArte, gravarContatoDaProposta } from "@/features/orcamentos/services/comprador-da-arte.service";
+  numeroParaExibir,
+  situacaoDaConversa,
+  type ConversaWhatsapp,
+  type SituacaoDaConversa
+} from "@/features/orcamentos/lib/conversa-whatsapp";
+import { carregarConversasDaProposta, gravarConversaDaProposta } from "@/features/orcamentos/services/conversa-whatsapp.client";
 
 /**
- * Comprador da aba Artes (06/11/2026). O hook lê os contatos do cliente e o
- * status da arte; o card mostra o Comprador ao lado do "Enviar para arte",
- * deixa escolher entre vários e abre o cadastro rápido (cargo fixo Comprador)
- * sem sair da aba. Regra em lib/comprador-da-arte.
+ * Comprador da aba Artes = conversa do WhatsApp (ChatGuru) do cliente (10/11/2026).
  *
- * Um contato só (07/11/2026): o Comprador é o "Contato responsável" da aba
- * Geral. A aba lê o `form.contatoId` da tela (mudou na Geral, aparece aqui sem
- * salvar) e, ao escolher, grava `propostas.id_contato` e devolve a escolha à
- * tela por `onContatoDaPropostaGravado` (mudou aqui, aparece na Geral).
+ * Decisão do Everton: a visão do Guru (chatguru_contatos_3478) é só para falar com
+ * o cliente pelo WhatsApp; a tabela contatos é o cadastro da pessoa e não muda
+ * aqui. O bloco lista as conversas do cliente (codigo_cliente = id_cliente) com o
+ * nome da conversa e o número; a escolha fica em `propostas.chatguru_chat_id`,
+ * gravada pela rota /api/orcamentos/conversa-whatsapp. Não se cadastra conversa
+ * pelo Vibe: saíram o "Adicionar Comprador" e o "Usar como Comprador".
+ *
+ * O hook vive na página da proposta, para a aba Geral mostrar a conversa escolhida.
+ * Regra em lib/conversa-whatsapp.
  */
 
-export type CompradorDaArte = {
+export type ConversaDaArte = {
   carregando: boolean;
-  /** Todos os contatos do cliente (ativos e inativos), como lidos do cadastro. */
-  contatos: CadastroContato[];
   erro: string | null;
-  situacao: SituacaoDoComprador<CadastroContato>;
+  situacao: SituacaoDaConversa;
+  /** A conversa gravada na proposta (a que a aba Geral mostra). */
+  gravada: ConversaWhatsapp | null;
   jaEnviada: boolean;
-  /** Complemento usa o contato do pedido principal: a aba não troca o contato. */
-  bloqueiaTroca: boolean;
-  escolher: (contato: CadastroContato) => Promise<{ ok: boolean; erro?: string }>;
-  /** Grava na proposta o Comprador da tela (o único, ou o responsável trocado na Geral sem salvar) se o banco ainda não o tem. */
+  escolher: (chatId: string) => Promise<{ ok: boolean; erro?: string }>;
+  /** Grava a conversa da tela (a única do cliente) se a proposta ainda não a tem. */
   gravarEscolhaSeFaltar: () => Promise<{ ok: boolean; erro?: string }>;
-  contatoGravado: (contato: CadastroContato) => Promise<{ ok: boolean; erro?: string }>;
 };
 
-export function useCompradorDaArte(
-  idInt: number | null,
-  idCliente: string | null,
-  /** `form.contatoId`: o "Contato responsável" como está na tela agora. */
-  idContatoDaTela: string | null,
-  ehComplemento: boolean,
-  onContatoDaPropostaGravado: (contato: CadastroContato) => void
-): CompradorDaArte {
-  // `carregadoPara` = a chave (proposta + cliente) da última leitura; difere da atual enquanto carrega.
+export function useConversaDaArte(idInt: number | null, idCliente: string | null): ConversaDaArte {
+  // Recarrega quando muda a proposta ou o cliente (a rota lê o cliente gravado).
   const chave = `${idInt ?? ""}|${idCliente ?? ""}`;
   const [carregadoPara, setCarregadoPara] = useState<string | null>(null);
   const [erro, setErro] = useState<string | null>(null);
-  const [contatos, setContatos] = useState<CadastroContato[]>([]);
-  /** `propostas.id_contato` no banco: decide se o envio precisa gravar a escolha. */
-  const [idGravado, setIdGravado] = useState<string | null>(null);
+  const [conversas, setConversas] = useState<ConversaWhatsapp[]>([]);
+  const [chatIdGravado, setChatIdGravado] = useState<string | null>(null);
   const [statusArte, setStatusArte] = useState<string | null>(null);
   const carregando = Boolean(idInt) && carregadoPara !== chave;
 
   useEffect(() => {
     let vivo = true;
     if (!idInt) return;
-    carregarCompradorDaArte(idInt, idCliente).then((r) => {
+    carregarConversasDaProposta(idInt).then((r) => {
       if (!vivo) return;
       if (r.ok) {
-        setContatos(r.dados.contatos);
-        setIdGravado(r.dados.idContatoGravado);
+        setConversas(r.dados.conversas);
+        setChatIdGravado(r.dados.chatIdGravado);
         setStatusArte(r.dados.statusArte);
         setErro(null);
       } else {
         setErro(r.erro);
       }
-      setCarregadoPara(`${idInt}|${idCliente ?? ""}`);
+      setCarregadoPara(chave);
     });
     return () => {
       vivo = false;
     };
-  }, [idInt, idCliente]);
+  }, [idInt, chave]);
 
-  // A tela manda: o contato da Geral (mesmo sem salvar); sem tela, o do banco.
-  const idResponsavel = idContatoDaTela ?? idGravado;
-  const situacao = useMemo(() => situacaoDoComprador(contatos, idResponsavel), [contatos, idResponsavel]);
+  const situacao = useMemo(() => situacaoDaConversa(conversas, chatIdGravado), [conversas, chatIdGravado]);
+  const gravada = useMemo(() => conversas.find((c) => c.chat_id === chatIdGravado) ?? null, [conversas, chatIdGravado]);
 
   const escolher = useCallback(
-    async (contato: CadastroContato) => {
+    async (chatId: string) => {
       if (!idInt) return { ok: false, erro: "Salve a proposta antes." };
-      if (ehComplemento) return { ok: false, erro: "Complemento usa o contato do pedido principal: troque o contato lá." };
-      const r = await gravarContatoDaProposta(idInt, contato);
+      const r = await gravarConversaDaProposta(idInt, chatId);
       if (!r.ok) return { ok: false, erro: r.erro };
-      setIdGravado(contato.id);
-      onContatoDaPropostaGravado(contato);
+      setChatIdGravado(chatId);
       return { ok: true };
     },
-    [idInt, ehComplemento, onContatoDaPropostaGravado]
+    [idInt]
   );
 
   const gravarEscolhaSeFaltar = useCallback(async () => {
-    const escolhido = situacao.escolhido;
-    if (!escolhido || escolhido.id === idGravado || ehComplemento) return { ok: true };
-    return escolher(escolhido);
-  }, [situacao.escolhido, idGravado, ehComplemento, escolher]);
+    const e = situacao.escolhida;
+    if (!e || situacao.gravada) return { ok: true };
+    return escolher(e.chat_id);
+  }, [situacao.escolhida, situacao.gravada, escolher]);
 
-  const contatoGravado = useCallback(
-    async (contato: CadastroContato) => {
-      setContatos((lista) => {
-        const existe = lista.some((c) => c.id === contato.id);
-        return existe ? lista.map((c) => (c.id === contato.id ? contato : c)) : [...lista, contato];
-      });
-      // Complemento: o contato muda no cadastro, mas o da proposta é o do principal.
-      if (ehComplemento) return { ok: true };
-      return escolher(contato);
-    },
-    [escolher, ehComplemento]
-  );
-
-  return {
-    carregando,
-    contatos,
-    erro,
-    situacao,
-    bloqueiaTroca: ehComplemento,
-    jaEnviada: arteJaEnviada(statusArte),
-    escolher,
-    gravarEscolhaSeFaltar,
-    contatoGravado,
-  };
+  return { carregando, erro, situacao, gravada, jaEnviada: arteJaEnviada(statusArte), escolher, gravarEscolhaSeFaltar };
 }
 
-type Rascunho = { id: string | null; nome: string; whatsapp: string; email: string };
-
 interface ArtesCompradorCardProps {
-  comprador: CompradorDaArte;
+  conversa: ConversaDaArte;
   idCliente: string | null;
-  podeEditarContato: boolean;
-  /** Avisa a proposta do contato gravado, para a lista de contatos da aba Geral. */
-  onContatoDoClienteGravado?: (contato: CadastroContato) => void;
   onAviso: (tipo: "success" | "error" | "warning", titulo: string, descricao?: string) => void;
 }
 
-const inputClass =
-  "w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-indigo-400";
-
-export function ArtesCompradorCard({ comprador, idCliente, podeEditarContato, onContatoDoClienteGravado, onAviso }: ArtesCompradorCardProps) {
-  const { carregando, erro, situacao, jaEnviada } = comprador;
-  const [rascunho, setRascunho] = useState<Rascunho | null>(null);
+export function ArtesCompradorCard({ conversa, idCliente, onAviso }: ArtesCompradorCardProps) {
+  const { carregando, erro, situacao, jaEnviada } = conversa;
   const [gravando, setGravando] = useState(false);
-  const [usandoExistente, setUsandoExistente] = useState(false);
   const clienteCadastrado = Boolean(idCliente && /^\d+$/.test(idCliente));
-  const candidatos = useMemo(() => contatosParaVirarComprador(comprador.contatos), [comprador.contatos]);
+  const escolhida = situacao.escolhida;
 
-  // Contato existente vira Comprador: a mesma gravação do cadastro (updateCadastroContato),
-  // só com o cargo trocado; nome, fone e e-mail seguem os que o contato tem.
-  const marcarComoComprador = async (c: CadastroContato) => {
+  const escolher = async (chatId: string) => {
+    if (gravando || (chatId === escolhida?.chat_id && situacao.gravada)) return;
     setGravando(true);
-    try {
-      const r = await updateCadastroContato(c.id, { nome_contato: c.nome, cargo: "Comprador", whats: c.whatsapp, e_mail: c.email });
-      if (!r.success) throw new Error(r.errorMessage || "Falha ao atualizar o contato.");
-      const contato: CadastroContato = { ...c, nome: c.nome.trim(), cargo: "Comprador" };
-      onContatoDoClienteGravado?.(contato);
-      const escolha = await comprador.contatoGravado(contato);
-      setUsandoExistente(false);
-      if (!escolha.ok) {
-        onAviso("error", "Contato virou Comprador, mas não ficou escolhido na proposta", escolha.erro);
-        return;
-      }
-      const faltas = faltasDoComprador(contato);
-      if (faltas.length > 0) {
-        onAviso("warning", `${contato.nome || "Contato"} agora é Comprador`, `Falta ${faltas.join(" e ")}: complete para enviar para arte.`);
-        abrirCompletar(contato);
-      } else {
-        onAviso("success", `${contato.nome || "Contato"} agora é Comprador`);
-      }
-    } catch (e) {
-      onAviso("error", "Não foi possível marcar o contato como Comprador", e instanceof Error ? e.message : undefined);
-    } finally {
-      setGravando(false);
-    }
+    const r = await conversa.escolher(chatId);
+    setGravando(false);
+    if (!r.ok) onAviso("error", "Não foi possível gravar a conversa", r.erro);
   };
-
-  const abrirNovo = () => setRascunho({ id: null, nome: "", whatsapp: "", email: "" });
-  const abrirCompletar = (c: CadastroContato) => setRascunho({ id: c.id, nome: c.nome, whatsapp: c.whatsapp, email: c.email });
-
-  const faltasDoRascunho = rascunho ? faltasDoComprador(rascunho) : [];
-
-  const gravarRascunho = async () => {
-    if (!rascunho || !clienteCadastrado) return;
-    if (faltasDoRascunho.length > 0) {
-      onAviso("warning", "Comprador incompleto", `Preencha ${faltasDoRascunho.join(", ")}.`);
-      return;
-    }
-    setGravando(true);
-    try {
-      const dados = {
-        nome_contato: rascunho.nome.trim(),
-        cargo: "Comprador",
-        whats: rascunho.whatsapp.trim(),
-        e_mail: rascunho.email.trim(),
-      };
-      let id = rascunho.id;
-      if (id) {
-        const r = await updateCadastroContato(id, dados);
-        if (!r.success) throw new Error(r.errorMessage || "Falha ao atualizar o contato.");
-      } else {
-        const r = await createCadastroContatos([{ id_cliente: Number(idCliente), ...dados }]);
-        id = r.success ? r.ids?.[0] ?? null : null;
-        if (!id) throw new Error((!r.success && r.errorMessage) || "Falha ao gravar o contato.");
-      }
-      const contato: CadastroContato = {
-        id,
-        nome: dados.nome_contato,
-        cargo: "Comprador",
-        whatsapp: dados.whats,
-        email: dados.e_mail,
-        ativo: true,
-      };
-      onContatoDoClienteGravado?.(contato);
-      const escolha = await comprador.contatoGravado(contato);
-      if (!escolha.ok) {
-        onAviso("error", "Contato gravado, mas não ficou escolhido na proposta", escolha.erro);
-      } else {
-        onAviso("success", rascunho.id ? "Comprador atualizado no cadastro" : "Comprador adicionado ao cliente");
-      }
-      setRascunho(null);
-    } catch (e) {
-      onAviso("error", "Não foi possível gravar o Comprador", e instanceof Error ? e.message : undefined);
-    } finally {
-      setGravando(false);
-    }
-  };
-
-  const escolhido = situacao.escolhido;
 
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <p className="text-sm font-bold text-slate-800">Comprador do cliente</p>
-          <p className="text-xs text-slate-500">
-            Quem recebe a arte. É o mesmo Contato responsável da aba Geral: mudar aqui muda lá. Sem um Comprador com nome, fone e e-mail o pedido não vai para arte.
-          </p>
-        </div>
-        {podeEditarContato && clienteCadastrado && !rascunho && !carregando && (
-          <div className="flex flex-wrap gap-2">
-            {candidatos.length > 0 && (
-              <button
-                type="button"
-                onClick={() => setUsandoExistente((v) => !v)}
-                className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50"
-              >
-                <UserCheck size={14} /> Usar contato existente como Comprador
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={() => {
-                setUsandoExistente(false);
-                abrirNovo();
-              }}
-              className="flex items-center gap-1.5 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-bold text-indigo-700 hover:bg-indigo-100"
-            >
-              <UserPlus size={14} /> Adicionar Comprador
-            </button>
-          </div>
-        )}
-      </div>
-
-      {usandoExistente && !rascunho && (
-        <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
-          <div className="mb-2 flex items-center justify-between">
-            <p className="text-xs font-bold text-slate-700">Contatos ativos do cliente que não são Comprador</p>
-            <button type="button" onClick={() => setUsandoExistente(false)} className="text-slate-400 hover:text-slate-600" aria-label="Fechar">
-              <X size={14} />
-            </button>
-          </div>
-          <ul className="space-y-1.5">
-            {candidatos.map((c) => (
-              <li key={c.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-white px-3 py-2 text-xs">
-                <span className="text-slate-700">
-                  <span className="font-semibold">{c.nome || "(sem nome)"}</span>
-                  <span className="text-slate-500">
-                    {" · "}
-                    {c.cargo.trim() || "sem cargo"}
-                    {" · "}
-                    {c.whatsapp.trim() ? formatPhoneBR(c.whatsapp) : "sem fone"}
-                    {" · "}
-                    {c.email.trim() || "sem e-mail"}
-                  </span>
-                </span>
-                <button
-                  type="button"
-                  disabled={gravando}
-                  onClick={() => marcarComoComprador(c)}
-                  className="rounded-lg bg-indigo-600 px-3 py-1.5 font-bold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {gravando ? "Gravando..." : "Usar como Comprador"}
-                </button>
-              </li>
-            ))}
-          </ul>
-          <p className="mt-2 text-[11px] text-slate-500">Quem não está na lista entra pelo Adicionar Comprador.</p>
-        </div>
-      )}
+      <p className="text-sm font-bold text-slate-800">Comprador do cliente</p>
+      <p className="text-xs text-slate-500">
+        Quem recebe a arte: uma conversa do cliente no WhatsApp da Ideal (ChatGuru). A conversa é aberta pelo atendimento, com o código do cliente no nome.
+      </p>
 
       <div className="mt-4 space-y-3">
         {carregando ? (
-          <p className="text-sm text-slate-500">Carregando contatos do cliente...</p>
+          <p className="text-sm text-slate-500">Lendo as conversas do cliente no ChatGuru...</p>
         ) : erro ? (
           <p className="text-sm text-red-600">{erro}</p>
         ) : !clienteCadastrado ? (
-          <p className="text-sm text-amber-700">Proposta sem cliente cadastrado: não há Comprador para escolher.</p>
+          <p className="text-sm text-amber-700">Proposta sem cliente cadastrado: não há conversa para escolher.</p>
         ) : (
           <>
-            {/* Responsável da Geral que não é Comprador: aviso + "Usar como Comprador" ou escolher outro abaixo. */}
-            {situacao.responsavelNaoComprador && (
-              <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm">
-                <p className="text-amber-800">
-                  O contato responsável da proposta, <span className="font-semibold">{situacao.responsavelNaoComprador.nome || "(sem nome)"}</span>,{" "}
-                  {situacao.responsavelNaoComprador.ativo === false ? "está inativo." : "não é Comprador."}
-                </p>
-                {podeEditarContato && situacao.responsavelNaoComprador.ativo !== false && (
-                  <button
-                    type="button"
-                    disabled={gravando}
-                    onClick={() => marcarComoComprador(situacao.responsavelNaoComprador!)}
-                    className="mt-2 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {gravando ? "Gravando..." : "Usar como Comprador"}
-                  </button>
-                )}
-              </div>
-            )}
-
-            {(situacao.compradores.length > 1 || (situacao.responsavelNaoComprador && situacao.compradores.length > 0)) && (
-              <label className="block">
-                <span className="mb-1 block text-xs font-semibold text-slate-600">
-                  {situacao.responsavelNaoComprador ? "Ou escolha outro Comprador" : "Comprador que recebe a arte"}
-                  <span className="font-normal text-slate-400"> · é também o Contato responsável da aba Geral</span>
-                </span>
-                <select
-                  value={escolhido?.id ?? ""}
-                  disabled={comprador.bloqueiaTroca || gravando}
-                  onChange={async (e) => {
-                    const alvo = situacao.compradores.find((c) => c.id === e.target.value);
-                    if (!alvo) return;
-                    const r = await comprador.escolher(alvo);
-                    if (!r.ok) onAviso("error", "Não foi possível gravar a escolha", r.erro);
-                  }}
-                  className={inputClass}
-                >
-                  <option value="">Escolha o Comprador</option>
-                  {situacao.compradores.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.nome || "(sem nome)"}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
-
-            {escolhido && (
-              <div className="rounded-xl border border-slate-100 bg-slate-50 p-3 text-sm">
-                <p className="font-semibold text-slate-800">{escolhido.nome || "(sem nome)"}</p>
-                <p className="mt-1 flex items-center gap-1.5 text-slate-600">
-                  <Phone size={13} /> {escolhido.whatsapp.trim() ? formatPhoneBR(escolhido.whatsapp) : <span className="text-amber-700">sem fone</span>}
-                </p>
-                <p className="mt-0.5 flex items-center gap-1.5 text-slate-600">
-                  <Mail size={13} /> {escolhido.email.trim() || <span className="text-amber-700">sem e-mail</span>}
-                </p>
-                {situacao.faltas.length > 0 && podeEditarContato && !rascunho && (
-                  <button
-                    type="button"
-                    onClick={() => abrirCompletar(escolhido)}
-                    className="mt-2 flex items-center gap-1.5 text-xs font-bold text-indigo-700 hover:underline"
-                  >
-                    <Pencil size={12} /> Completar {situacao.faltas.join(" e ")}
-                  </button>
-                )}
-              </div>
+            {situacao.conversas.length > 0 && (
+              <ul className="divide-y divide-slate-100 rounded-xl border border-slate-200">
+                {situacao.conversas.map((c) => {
+                  const marcada = escolhida?.chat_id === c.chat_id;
+                  return (
+                    <li key={c.chat_id}>
+                      <label className={`flex cursor-pointer items-center gap-3 px-3 py-2 text-sm ${marcada ? "bg-indigo-50" : "hover:bg-slate-50"}`}>
+                        <input
+                          type="radio"
+                          name="conversa-da-arte"
+                          checked={marcada}
+                          disabled={gravando}
+                          onChange={() => void escolher(c.chat_id)}
+                          // Única conversa já marcada e ainda não gravada: o clique nela grava.
+                          onClick={() => {
+                            if (marcada && !situacao.gravada) void escolher(c.chat_id);
+                          }}
+                        />
+                        <MessageCircle size={14} className="shrink-0 text-emerald-700" />
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate font-semibold text-slate-800">{c.nome}</span>
+                          <span className="block text-xs text-slate-500">{numeroParaExibir(c.numero)}</span>
+                        </span>
+                        {marcada && <span className="text-[11px] font-semibold text-indigo-700">{situacao.gravada ? "escolhida" : "única conversa"}</span>}
+                      </label>
+                    </li>
+                  );
+                })}
+              </ul>
             )}
 
             {situacao.aviso && !jaEnviada && (
@@ -393,63 +170,7 @@ export function ArtesCompradorCard({ comprador, idCliente, podeEditarContato, on
             {jaEnviada && (
               <p className="text-xs text-slate-500">Pedido já enviado para arte: a exigência do Comprador vale só para o primeiro envio.</p>
             )}
-            {comprador.bloqueiaTroca && (
-              <p className="text-xs text-slate-500">Complemento: o contato é o do pedido principal. Para trocar, troque no pedido principal.</p>
-            )}
-            {!podeEditarContato && !situacao.liberado && (
-              <p className="text-xs text-slate-500">Sem permissão para editar contatos do cliente (Editar Cadastros). Peça a quem tem para completar o Comprador.</p>
-            )}
           </>
-        )}
-
-        {rascunho && (
-          <div className="rounded-xl border border-indigo-200 bg-indigo-50/40 p-3">
-            <div className="mb-2 flex items-center justify-between">
-              <p className="text-xs font-bold text-indigo-800">
-                {rascunho.id ? "Completar Comprador" : "Novo Comprador"} <span className="font-normal text-slate-500">· cargo Comprador</span>
-              </p>
-              <button type="button" onClick={() => setRascunho(null)} className="text-slate-400 hover:text-slate-600" aria-label="Fechar">
-                <X size={14} />
-              </button>
-            </div>
-            <div className="grid gap-2 sm:grid-cols-3">
-              <input
-                placeholder="Nome"
-                value={rascunho.nome}
-                onChange={(e) => setRascunho({ ...rascunho, nome: e.target.value })}
-                className={inputClass}
-              />
-              <input
-                placeholder="WhatsApp com DDD"
-                value={rascunho.whatsapp}
-                onChange={(e) => setRascunho({ ...rascunho, whatsapp: e.target.value })}
-                className={inputClass}
-              />
-              <input
-                placeholder="E-mail"
-                type="email"
-                value={rascunho.email}
-                onChange={(e) => setRascunho({ ...rascunho, email: e.target.value })}
-                className={inputClass}
-              />
-            </div>
-            {faltasDoRascunho.length > 0 && (
-              <p className="mt-2 text-[11px] text-slate-500">Falta: {faltasDoRascunho.join(", ")}.</p>
-            )}
-            <div className="mt-2 flex justify-end gap-2">
-              <button type="button" onClick={() => setRascunho(null)} className="rounded-xl px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100">
-                Cancelar
-              </button>
-              <button
-                type="button"
-                disabled={gravando || faltasDoRascunho.length > 0}
-                onClick={gravarRascunho}
-                className="rounded-xl bg-indigo-600 px-4 py-2 text-xs font-bold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {gravando ? "Gravando..." : "Gravar no cliente"}
-              </button>
-            </div>
-          </div>
         )}
       </div>
     </div>

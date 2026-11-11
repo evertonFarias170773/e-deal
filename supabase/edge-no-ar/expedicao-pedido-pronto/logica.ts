@@ -533,6 +533,17 @@ export function decidirConversa(telefoneContato: unknown, conversas: Conversa[])
 }
 
 /**
+ * Conversa escolhida na aba Artes (propostas.chatguru_chat_id, v24 de 10/11/2026):
+ * só vale se ainda está entre as conversas do cliente, relidas agora. Saiu do
+ * cliente (renomeada no Guru, por exemplo) ou vazia: null, e vale a regra de casar o telefone.
+ */
+export function conversaDaProposta(chatId: unknown, doCliente: Conversa[]): Conversa | null {
+  const id = typeof chatId === "string" ? chatId.trim() : "";
+  if (!id) return null;
+  return doCliente.find((c) => c.chat_id === id && numeroDaConversa(c.numero)) ?? null;
+}
+
+/**
  * Conversas escolhidas na tela: só chat_id que está na lista do cliente, relida
  * na hora; sem repetição. Lista vazia ou chat_id de fora -> recusa.
  */

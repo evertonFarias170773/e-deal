@@ -1,113 +1,80 @@
 /**
- * Comprador da arte (06/11/2026): trava do "Enviar para arte".
+ * Comprador da arte pela conversa do WhatsApp (10/11/2026): trava do "Enviar para arte".
  *
  *   node --experimental-strip-types --import ./scripts/testes/_alias-hook.mjs \
  *        scripts/testes/comprador-da-arte.test.mts
  *
- * SEM banco: só a regra de lib/comprador-da-arte.
- *   A. cliente sem Comprador: travado; adicionando um completo, libera;
- *   B. dois Compradores: precisa escolher; escolhido gravado libera;
- *   C. Comprador sem e-mail: travado, com o aviso do que falta;
- *   D. inativo, Financeiro e sem cargo não contam como Comprador;
- *   E. responsável que deixou de ser Comprador: avisa (não troca sozinho);
- *   G. contato existente vira Comprador; H. um contato só: responsável da Geral = Comprador da Artes;
+ * SEM banco: só a regra de lib/conversa-whatsapp e o corte de lib/comprador-da-arte.
+ *   A. sem conversa no Guru: travado, com o aviso para o atendimento;
+ *   B. uma conversa: já vem escolhida e libera (gravada = false até gravar);
+ *   C. várias: precisa escolher; a gravada libera; gravada que saiu do cliente não vale;
+ *   D. conversa sem nome ou com número inválido;
+ *   E. número para exibir;
  *   F. arte já enviada (EM ARTE, APROVADO...) não é travada; AGUARDANDO/PENDENTE/vazio são primeiro envio.
  */
 import assert from "node:assert/strict";
-import { arteJaEnviada, contatosParaVirarComprador, situacaoDoComprador } from "@/features/orcamentos/lib/comprador-da-arte";
+import { arteJaEnviada } from "@/features/orcamentos/lib/comprador-da-arte";
+import {
+  SEM_CONVERSA_NO_GURU,
+  numeroParaExibir,
+  situacaoDaConversa
+} from "@/features/orcamentos/lib/conversa-whatsapp";
 
-type C = { id: string; nome: string; cargo: string; whatsapp: string; email: string; ativo?: boolean };
-const contato = (id: string, extra: Partial<C> = {}): C => ({
-  id, nome: `Contato ${id}`, cargo: "Comprador", whatsapp: "51999998888", email: `c${id}@ex.com.br`, ativo: true, ...extra,
+const conversa = (id: string, extra: Partial<{ nome: string; numero: string }> = {}) => ({
+  chat_id: id,
+  nome: `Cliente - 25847 (${id})`,
+  numero: "5551991010423",
+  ...extra
 });
 
 let n = 0;
 const caso = (nome: string, fn: () => void) => { fn(); n++; console.log(`ok  ${nome}`); };
 
-caso("A. sem Comprador fica travado", () => {
-  const s = situacaoDoComprador([contato("1", { cargo: "Financeiro" })], null);
+caso("A. sem conversa no Guru fica travado", () => {
+  const s = situacaoDaConversa([], null);
   assert.equal(s.liberado, false);
-  assert.equal(s.compradores.length, 0);
-  assert.match(s.aviso!, /não tem contato Comprador/);
-});
-caso("A. adicionando um Comprador completo, libera e vem escolhido", () => {
-  const s = situacaoDoComprador([contato("1", { cargo: "Financeiro" }), contato("2")], null);
-  assert.equal(s.liberado, true);
-  assert.equal(s.escolhido?.id, "2");
-});
-caso("B. dois Compradores: precisa escolher", () => {
-  const s = situacaoDoComprador([contato("1"), contato("2")], null);
-  assert.equal(s.liberado, false);
-  assert.equal(s.precisaEscolher, true);
-  assert.match(s.aviso!, /2 Compradores/);
-});
-caso("B. dois Compradores com escolha gravada: libera o escolhido", () => {
-  const s = situacaoDoComprador([contato("1"), contato("2")], "2");
-  assert.equal(s.liberado, true);
-  assert.equal(s.escolhido?.id, "2");
-});
-caso("C. Comprador sem e-mail fica travado", () => {
-  const s = situacaoDoComprador([contato("1", { email: "" })], null);
-  assert.equal(s.liberado, false);
-  assert.deepEqual(s.faltas, ["e-mail"]);
-  assert.match(s.aviso!, /Falta e-mail no Comprador Contato 1/);
-});
-caso("C. fone curto e e-mail inválido também travam", () => {
-  const s = situacaoDoComprador([contato("1", { whatsapp: "9999-8888", email: "sem-arroba" })], null);
-  assert.deepEqual(s.faltas, ["fone", "e-mail"]);
-  assert.match(s.aviso!, /Falta fone e e-mail/);
-});
-caso("D. inativo e sem cargo não contam", () => {
-  const s = situacaoDoComprador([contato("1", { ativo: false }), contato("2", { cargo: "" })], null);
-  assert.equal(s.compradores.length, 0);
-});
-caso("E. responsável que deixou de ser Comprador (inativo) não é trocado sozinho: avisa", () => {
-  const s = situacaoDoComprador([contato("1", { ativo: false }), contato("2"), contato("3")], "1");
-  assert.equal(s.liberado, false);
-  assert.equal(s.responsavelNaoComprador?.id, "1");
-  assert.equal(s.escolhido, null);
-  const unico = situacaoDoComprador([contato("1", { ativo: false }), contato("2")], "1");
-  assert.equal(unico.escolhido, null);
-  assert.equal(unico.responsavelNaoComprador?.id, "1");
-});
-caso("E. sem responsável na proposta e um só Comprador: ele vem escolhido", () => {
-  assert.equal(situacaoDoComprador([contato("2")], "").escolhido?.id, "2");
-  assert.equal(situacaoDoComprador([contato("2")], "999").escolhido?.id, "2"); // responsável de fora do cliente
-});
-caso("H. um contato só (24880): o responsável da Geral é o Comprador da Artes", () => {
-  const cliente14 = [contato("330", { nome: "Eduardo - Financeiro" }), contato("64814", { nome: "Everton Farias" })];
-  assert.equal(situacaoDoComprador(cliente14, "330").escolhido?.id, "330"); // Geral = Eduardo -> Artes = Eduardo
-  assert.equal(situacaoDoComprador(cliente14, "64814").escolhido?.id, "64814"); // Geral = Everton -> Artes = Everton
-  assert.equal(situacaoDoComprador(cliente14, "64814").precisaEscolher, false);
-});
-caso("H. responsável da Geral sem cargo: aviso com Usar como Comprador, sem liberar", () => {
-  const s = situacaoDoComprador([contato("1", { nome: "Paula", cargo: "" }), contato("2")], "1");
-  assert.equal(s.liberado, false);
-  assert.equal(s.responsavelNaoComprador?.id, "1");
-  assert.match(s.aviso!, /O contato responsável \(Paula\) não é Comprador/);
-  assert.deepEqual(s.compradores.map((c) => c.id), ["2"]); // "escolher outro Comprador"
-});
-caso("F. arte já enviada não trava; rascunho trava", () => {
-  for (const st of ["EM ARTE", "Em Aprovação", "APROVADO", "Enviar Arte", "Dados Pendentes"]) assert.equal(arteJaEnviada(st), true, st);
-  for (const st of [null, undefined, "", " ", "AGUARDANDO", "Pendente"]) assert.equal(arteJaEnviada(st), false, String(st));
+  assert.equal(s.semConversa, true);
+  assert.equal(s.aviso, SEM_CONVERSA_NO_GURU);
+  assert.equal(
+    SEM_CONVERSA_NO_GURU,
+    "Cliente sem conversa no ChatGuru: peça ao atendimento para abrir a conversa com o código do cliente no nome"
+  );
 });
 
-caso("G. Edison Jr sem cargo: aparece em Usar contato existente e, virando Comprador, libera sem contato novo", () => {
-  const antes = [contato("64813", { nome: "Edison Jr", cargo: "" }), contato("330", { cargo: "Financeiro" }), contato("9", { cargo: "", ativo: false })];
-  assert.equal(situacaoDoComprador(antes, null).liberado, false);
-  const candidatos = contatosParaVirarComprador(antes);
-  assert.deepEqual(candidatos.map((c) => c.id), ["64813", "330"]); // inativo fora
-  const depois = antes.map((c) => (c.id === "64813" ? { ...c, cargo: "Comprador" } : c));
-  const s = situacaoDoComprador(depois, "64813");
+caso("B. uma conversa já vem escolhida", () => {
+  const s = situacaoDaConversa([conversa("a")], null);
   assert.equal(s.liberado, true);
-  assert.equal(s.escolhido?.id, "64813");
-  assert.equal(depois.length, antes.length);
-  assert.equal(contatosParaVirarComprador(depois).some((c) => c.id === "64813"), false);
+  assert.equal(s.escolhida?.chat_id, "a");
+  assert.equal(s.gravada, false);
+  assert.equal(situacaoDaConversa([conversa("a")], "a").gravada, true);
 });
-caso("G. contato existente sem e-mail vira Comprador e segue travado (abre o Completar)", () => {
-  const s = situacaoDoComprador([contato("1", { cargo: "Comprador", email: "" })], "1");
+
+caso("C. várias conversas exigem escolha", () => {
+  const lista = [conversa("a"), conversa("b", { numero: "5551984608848" })];
+  const s = situacaoDaConversa(lista, null);
   assert.equal(s.liberado, false);
-  assert.deepEqual(s.faltas, ["e-mail"]);
+  assert.equal(s.precisaEscolher, true);
+  assert.match(s.aviso ?? "", /2 conversas/);
+  const g = situacaoDaConversa(lista, "b");
+  assert.equal(g.liberado, true);
+  assert.equal(g.escolhida?.chat_id, "b");
+  // A gravada saiu do cliente (renomeada no Guru): volta a pedir escolha.
+  assert.equal(situacaoDaConversa(lista, "zzz").precisaEscolher, true);
+});
+
+caso("D. sem nome ou número inválido", () => {
+  assert.equal(situacaoDaConversa([conversa("a", { nome: "—" })], null).liberado, false);
+  assert.equal(situacaoDaConversa([conversa("a", { numero: "123" })], null).semConversa, true);
+});
+
+caso("E. número para exibir", () => {
+  assert.equal(numeroParaExibir("5551991010423"), "(51) 99101-0423");
+  assert.equal(numeroParaExibir("555184608848"), "(51) 8460-8848");
+});
+
+caso("F. arte já enviada não trava", () => {
+  for (const s of ["EM ARTE", "Em Aprovação", "APROVADO"]) assert.equal(arteJaEnviada(s), true, s);
+  for (const s of [null, "", "AGUARDANDO", "pendente"]) assert.equal(arteJaEnviada(s), false, String(s));
 });
 
 console.log(`\n${n} casos ok`);

@@ -22,6 +22,12 @@
  *            trava por conversa vale igual.
  * enviar/reenviar/status/testar/preparar exigem expedicao.processar (ou ADM).
  *
+ * v24 (10/11/2026): conversa escolhida na aba Artes (propostas.chatguru_chat_id, o
+ * Comprador da arte). Nos dois avisos, se a proposta tem conversa escolhida e ela
+ * ainda é do cliente no Guru, o aviso vai direto para ela, sem casar o telefone do
+ * contato. Sem conversa escolhida (ou se ela saiu do cliente), a regra de antes.
+ * A escolha feita na tela (chat_ids/todas) continua vencendo as duas.
+ *
  * v23 (10/11/2026): o aviso de pedido pronto sai no clique do "Confirmar despacho",
  * logo depois de o despacho ser gravado. Por isso enviar e reenviar aceitam o pedido
  * em EXPEDICAO, A RETIRAR ou EM TRANSITO (logica.STATUS_AVISO_PRONTO); antes, só
@@ -131,6 +137,7 @@ import {
   linkDoCliente,
   SEM_CONVERSA,
   conversasEscolhidas,
+  conversaDaProposta,
   decidirConversa,
   numeroDaConversa,
   type Conversa,
@@ -460,7 +467,7 @@ async function contextoDoPedido(
 ) {
   const { data: p, error } = await admin
     .from("propostas")
-    .select("id_int, id_cliente, id_faturado, id_contato, status_interno")
+    .select("id_int, id_cliente, id_faturado, id_contato, status_interno, chatguru_chat_id")
     .eq("id_int", idInt)
     .maybeSingle();
   if (error) throw new Recusa(503, "Não foi possível ler o pedido. Tente de novo.");
@@ -511,9 +518,18 @@ async function contextoDoPedido(
   const valores = { idInt, notaFiscal: await notaDoPedido(idInt), cidadeDestino: cidade, rastreio: frete.rastreio };
   if (dialogoTeste) {
     const t = camposDeTeste(dialogo, valores);
-    return { idCliente: p.id_cliente, idContato, contato, dialogo, campos: t.campos, teste: { valores: t.valores, de_teste: t.deTeste }, homologacao: false };
+    return { idCliente: p.id_cliente, idContato, contato, dialogo, campos: t.campos, teste: { valores: t.valores, de_teste: t.deTeste }, homologacao: false, chatEscolhido: null };
   }
-  return { idCliente: p.id_cliente, idContato, contato, dialogo, campos: camposDoDialogo(dialogo, valores), teste: null, homologacao };
+  return {
+    idCliente: p.id_cliente,
+    idContato,
+    contato,
+    dialogo,
+    campos: camposDoDialogo(dialogo, valores),
+    teste: null,
+    homologacao,
+    chatEscolhido: (p.chatguru_chat_id as string | null) ?? null
+  };
 }
 
 /**
@@ -524,7 +540,7 @@ async function contextoDoPedido(
 async function contextoProducao(idInt: number, modoTeste: boolean) {
   const { data: p, error } = await admin
     .from("propostas")
-    .select("id_int, id_cliente, id_faturado, id_contato, status_interno, is_prd_aprovado")
+    .select("id_int, id_cliente, id_faturado, id_contato, status_interno, is_prd_aprovado, chatguru_chat_id")
     .eq("id_int", idInt)
     .maybeSingle();
   if (error) throw new Recusa(503, "Não foi possível ler o pedido. Tente de novo.");
@@ -642,12 +658,15 @@ type Destinos =
  * Para quais conversas vai o aviso. Com chat_ids ou todas (escolha feita na tela):
  * só conversas do cliente, relidas agora. Sem escolha: a regra de decidirConversa.
  */
-async function destinosDoAviso(idCliente: unknown, telefoneContato: unknown, corpo: any): Promise<Destinos> {
+async function destinosDoAviso(idCliente: unknown, telefoneContato: unknown, corpo: any, chatEscolhido: unknown = null): Promise<Destinos> {
   const lista = await conversasDoCliente(idCliente);
   if (!lista.length) throw new Recusa(422, SEM_CONVERSA);
   if (corpo?.todas === true || Array.isArray(corpo?.chat_ids)) {
     return { conversas: conversasEscolhidas(corpo?.chat_ids, lista, corpo?.todas === true), escolha: null };
   }
+  // v24: a conversa escolhida na aba Artes vai direto, se ainda é do cliente.
+  const escolhida = conversaDaProposta(chatEscolhido, lista);
+  if (escolhida) return { conversas: [escolhida], escolha: null };
   const d = decidirConversa(telefoneContato, lista);
   if (d.modo === "automatica") return { conversas: [d.conversa], escolha: null };
   if (d.modo === "escolha") return { conversas: [], escolha: { motivo: d.motivo, conversas: d.conversas } };
@@ -965,7 +984,7 @@ Deno.serve(async (req) => {
       if (!quem.podeVer && !quem.podeLiberar) throw new Recusa(403, "Sem permissão para ver os avisos do pedido.");
       const idV = Number(corpo?.id_int);
       if (!Number.isInteger(idV) || idV <= 0) throw new Recusa(400, "Pedido inválido.");
-      const { data: pv, error: errV } = await admin.from("propostas").select("id_cliente, id_contato").eq("id_int", idV).maybeSingle();
+      const { data: pv, error: errV } = await admin.from("propostas").select("id_cliente, id_contato, chatguru_chat_id").eq("id_int", idV).maybeSingle();
       if (errV) throw new Recusa(503, "Não foi possível ler o pedido. Tente de novo.");
       if (!pv) throw new Recusa(404, `Pedido ${idV} não encontrado.`);
       const idCv = Number(String(pv.id_contato ?? "").trim());
@@ -975,7 +994,9 @@ Deno.serve(async (req) => {
         if (c) contatoV = { id_contato: idCv, nome: limpar(c.nome_contato) || "—", whatsapp: limpar(c.whats, 40) };
       }
       const listaV = await conversasDoCliente(pv.id_cliente);
-      const d = decidirConversa(contatoV?.whatsapp ?? null, listaV);
+      // v24: a conversa escolhida na aba Artes é a decisão, se ainda é do cliente.
+      const daPropostaV = conversaDaProposta(pv.chatguru_chat_id, listaV);
+      const d = daPropostaV ? ({ modo: "automatica", conversa: daPropostaV } as const) : decidirConversa(contatoV?.whatsapp ?? null, listaV);
       return responder(200, {
         ok: true,
         modo_teste: modoTeste,
@@ -1022,7 +1043,7 @@ Deno.serve(async (req) => {
           if (ctxP.homologacao) {
             conversa = await conversaDaHomologacao(false);
           } else {
-            const dest = await destinosDoAviso(ctxP.p.id_cliente, ctxP.contato.whats, {});
+            const dest = await destinosDoAviso(ctxP.p.id_cliente, ctxP.contato.whats, {}, ctxP.p.chatguru_chat_id);
             conversa = dest.conversas[0] ?? null;
             escolha = dest.escolha;
           }
@@ -1072,7 +1093,7 @@ Deno.serve(async (req) => {
         return responder(200, { ok: true, modo_teste: modoTeste, ja_existia: true, aviso: publico(ultimoP) });
       }
       const linkP = await linkDoPedido(idP);
-      const destP = await destinosDoAviso(ctxP.p.id_cliente, ctxP.contato.whats, corpo);
+      const destP = await destinosDoAviso(ctxP.p.id_cliente, ctxP.contato.whats, corpo, ctxP.p.chatguru_chat_id);
       if (destP.escolha) {
         return responder(200, { ok: true, modo_teste: modoTeste, ja_existia: false, aviso: publico(ultimoP), escolha: destP.escolha });
       }
@@ -1115,7 +1136,7 @@ Deno.serve(async (req) => {
         if (homologacaoR) {
           conversaR = await conversaDaHomologacao(false);
         } else {
-          const destR = await destinosDoAviso(ctxR.idCliente, ctxR.contato.whats, {});
+          const destR = await destinosDoAviso(ctxR.idCliente, ctxR.contato.whats, {}, ctxR.chatEscolhido);
           conversaR = destR.conversas[0] ?? null;
           escolhaR = destR.escolha;
         }
@@ -1228,7 +1249,7 @@ Deno.serve(async (req) => {
     }
 
     const ctx = await contextoDoPedido(idInt, modoTeste);
-    const dest = await destinosDoAviso(ctx.idCliente, ctx.contato.whats, corpo);
+    const dest = await destinosDoAviso(ctx.idCliente, ctx.contato.whats, corpo, ctx.chatEscolhido);
     const modelo = { dialogo: ctx.dialogo, bloqueio: null };
     if (dest.escolha) {
       return responder(200, { ok: true, modo_teste: modoTeste, ja_existia: false, aviso: publico(ultimo), modelo, escolha: dest.escolha });

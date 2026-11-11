@@ -9,10 +9,8 @@ import { ArtesUltimosPedidosCard } from "./ArtesUltimosPedidosCard";
 import { carregarBriefingArtes, salvarBriefingArtes, listarArquivosDaProposta } from "@/features/pedidos/services/pedidos-artes.service";
 import { useAppToast } from "@/components/common/AppToast";
 import { useAuth } from "@/features/auth/AuthProvider";
-import { hasPermissao } from "@/features/auth/usuarios.service";
-import type { CadastroContato } from "@/features/cadastros/types";
-import { formatPhoneBR } from "@/lib/formatters/phone";
-import { ArtesCompradorCard, useCompradorDaArte } from "./ArtesCompradorCard";
+import { ArtesCompradorCard, type ConversaDaArte } from "./ArtesCompradorCard";
+import { numeroParaExibir } from "@/features/orcamentos/lib/conversa-whatsapp";
 import { Save, Send } from "lucide-react";
 import { dataDoEventoNoIntervalo, MENSAGEM_DATA_EVENTO_FORA } from "@/features/orcamentos/lib/data-do-evento";
 
@@ -29,26 +27,18 @@ export interface BriefingArtesDraft {
 interface ArtesTabProps {
   form: PropostaFormState;
   onBriefingChange?: (draft: BriefingArtesDraft) => void;
-  /** Contato gravado pelo cadastro rápido do Comprador (para a lista de contatos da proposta). */
-  onContatoDoClienteGravado?: (contato: CadastroContato) => void;
-  /** O Comprador escolhido aqui foi gravado em `propostas.id_contato`: a aba Geral passa a mostrá-lo. */
-  onContatoDaPropostaGravado: (contato: CadastroContato) => void;
+  /**
+   * Comprador da arte (10/11/2026): a conversa do WhatsApp (ChatGuru) do cliente,
+   * lida e gravada pelo hook useConversaDaArte da página (a aba Geral mostra a
+   * mesma). Trava o primeiro "Enviar para arte". Não mexe no Contato responsável.
+   */
+  comprador: ConversaDaArte;
 }
 
-export function ArtesTab({ form, onBriefingChange, onContatoDoClienteGravado, onContatoDaPropostaGravado }: ArtesTabProps) {
+export function ArtesTab({ form, onBriefingChange, comprador }: ArtesTabProps) {
   const idCliente = form.clienteId || null;
   const { showToast } = useAppToast();
   const { user } = useAuth();
-  // Comprador da arte (lib/comprador-da-arte): trava o primeiro "Enviar para arte".
-  // É o mesmo "Contato responsável" da Geral (form.contatoId / propostas.id_contato).
-  const comprador = useCompradorDaArte(
-    form.id_int === "NOVO" ? null : Number(form.id_int),
-    idCliente,
-    form.contatoId?.trim() ? form.contatoId : null,
-    Boolean(form.idIntPedidoPrincipal),
-    onContatoDaPropostaGravado
-  );
-  const podeEditarContato = Boolean(user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "cadastros.edit"));
 
   const [nomeEvento, setNomeEvento] = useState("");
   const [dataEvento, setDataEvento] = useState("");
@@ -175,7 +165,7 @@ export function ArtesTab({ form, onBriefingChange, onContatoDoClienteGravado, on
       if (exigeComprador) {
         const escolha = await comprador.gravarEscolhaSeFaltar();
         if (!escolha.ok) {
-          showToast({ type: "error", title: "Não foi possível gravar o Comprador na proposta", description: escolha.erro });
+          showToast({ type: "error", title: "Não foi possível gravar a conversa do Comprador na proposta", description: escolha.erro });
           return;
         }
       }
@@ -257,10 +247,8 @@ export function ArtesTab({ form, onBriefingChange, onContatoDoClienteGravado, on
         </div>
 
         <ArtesCompradorCard
-          comprador={comprador}
+          conversa={comprador}
           idCliente={idCliente}
-          podeEditarContato={podeEditarContato}
-          onContatoDoClienteGravado={onContatoDoClienteGravado}
           onAviso={(type, title, description) => showToast({ type, title, description })}
         />
       </div>
@@ -303,12 +291,10 @@ export function ArtesTab({ form, onBriefingChange, onContatoDoClienteGravado, on
               comprador.situacao.liberado ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-amber-200 bg-amber-50 text-amber-800"
             }`}
           >
-            {comprador.situacao.liberado && comprador.situacao.escolhido ? (
+            {comprador.situacao.liberado && comprador.situacao.escolhida ? (
               <>
-                <span className="font-bold">Comprador: {comprador.situacao.escolhido.nome}</span>
-                <span className="block">
-                  {formatPhoneBR(comprador.situacao.escolhido.whatsapp)} · {comprador.situacao.escolhido.email}
-                </span>
+                <span className="font-bold">Comprador: {comprador.situacao.escolhida.nome}</span>
+                <span className="block">WhatsApp {numeroParaExibir(comprador.situacao.escolhida.numero)}</span>
               </>
             ) : (
               <span className="font-semibold">{comprador.situacao.aviso}</span>
