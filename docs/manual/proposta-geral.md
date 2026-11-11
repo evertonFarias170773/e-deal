@@ -1,6 +1,6 @@
 # Proposta: aba Geral
 
-> **Última revisão:** 10/11/2026 (contato responsável volta a ser só do cadastro; mostra a conversa do WhatsApp escolhida na aba Artes, só para leitura)
+> **Última revisão:** 11/11/2026 (bloco **Conversa do WhatsApp** no Contato responsável: escolhe a conversa do ChatGuru, a mesma do Comprador da aba Artes)
 > **Caminho no menu:** Pedidos → abrir um pedido → aba **Geral**
 > **Endereço:** `/orcamentos/<número>/editar` (em proposta nova, `/orcamentos/novo`)
 
@@ -32,7 +32,8 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Vendedor** (lista; primeira opção "Selecione o vendedor") | Bloco **2. Dados da proposta** | Define o vendedor, para quem pode alterar. |
 | Linha de **Outros contatos** | Bloco **3. Contato responsável** | Troca o contato selecionado. |
 | **+ Adicionar novo contato** | Bloco **3. Contato responsável** | Abre a janela **Adicionar novo contato**. |
-| "Conversa do WhatsApp: {nome} · {número}" | Bloco **3. Contato responsável**, abaixo do botão | Só leitura: a conversa do ChatGuru escolhida na aba Artes como Comprador. Aparece depois que a conversa é gravada. Para trocar, use a aba Artes. |
+| Bloco **Conversa do WhatsApp**, com o selo "WhatsApp · ChatGuru" | Bloco **3. Contato responsável**, abaixo do **+ Adicionar novo contato** | Lista as conversas do cliente no WhatsApp da Ideal (ChatGuru), com o nome da conversa e o número. Clicar escolhe a conversa. Não edita nada: só escolhe. É a mesma escolha do **Comprador** da aba Artes: trocar numa aba troca na outra. |
+| Marca ao lado da conversa | Bloco **Conversa do WhatsApp** | "gravada": é a conversa gravada na proposta. "única conversa": o cliente só tem essa, ainda não gravada. "escolhida": marcada na tela, ainda não gravada. As duas últimas vêm com "A conversa marcada é gravada ao salvar a proposta." |
 | **Adicionar** | Janela **Adicionar novo contato** | Inclui o contato na tela e já o seleciona. Ao salvar a proposta, ele entra no cadastro do cliente. |
 | Botão de lápis (dica: "Editar") | No contato e no endereço, selecionado ou da lista | Abre a edição do contato ou do endereço. |
 | **Salvar** | Janela **Editar contato (Modo Local)** | Aplica a correção do contato na tela. |
@@ -102,7 +103,19 @@ Enquanto o cliente não é escolhido numa proposta nova, os outros blocos e abas
 4. Para corrigir um contato, clique no lápis ao lado dele, altere na janela **Editar contato (Modo Local)** e clique em **Salvar**.
 5. Salve a proposta para o contato escolhido valer.
 
-Desde 10/11/2026 o contato responsável é só o contato do cadastro do cliente (e-mail e telefone para etiqueta, cobrança e checkout). O **Comprador** da aba Artes é outra coisa: uma conversa do cliente no WhatsApp da Ideal (ChatGuru), escolhida lá. Abaixo do bloco aparece, só para leitura, "Conversa do WhatsApp: {nome} · {número}" com a conversa escolhida; trocar o contato aqui não muda a conversa, e escolher a conversa na aba Artes não muda o contato.
+Desde 10/11/2026 o contato responsável é só o contato do cadastro do cliente (e-mail e telefone para etiqueta, cobrança e checkout). A conversa do WhatsApp é outra coisa: uma conversa do cliente no WhatsApp da Ideal (ChatGuru), que recebe a arte e os avisos do pedido. Trocar o contato não muda a conversa, e escolher a conversa não muda o contato.
+
+### Conversa do WhatsApp (desde 11/11/2026)
+
+O bloco **Conversa do WhatsApp**, abaixo do contato, lista as conversas do cliente no ChatGuru: as que têm o código do cliente no nome, abertas pelo atendimento. É a mesma escolha do **Comprador** da aba Artes; mudar numa aba muda na outra.
+
+- Com uma conversa só, ela já vem escolhida.
+- Com várias, aparece "O cliente tem N conversas no ChatGuru. Escolha qual é a do cliente." e o vendedor clica na conversa.
+- Sem conversa, aparece "Cliente sem conversa no ChatGuru." com a orientação: peça ao atendimento para abrir a conversa com o código do cliente no nome e depois reabra a proposta.
+- Proposta já salva: clicar grava na hora.
+- Proposta nova, ou cliente trocado e ainda não salvo: a escolha (ou a única conversa) fica marcada e é gravada no **Salvar**, junto com a proposta. Se a proposta salvar e a conversa não, aparece o aviso "Proposta salva, mas a conversa do WhatsApp não foi gravada"; escolha de novo.
+- Proposta salva com uma conversa só, ainda não gravada: ela é gravada no próximo **Salvar**.
+- O **Salvar** não é barrado sem conversa escolhida; a exigência continua sendo só a do primeiro **Enviar para arte**, na aba Artes.
 
 O nome do contato é o que aparece na proposta enviada ao cliente.
 
@@ -249,3 +262,7 @@ A escolha entre proposta avulsa e proposta com produtos do catálogo não fica n
 - `src/features/orcamentos/orcamento-utils.ts`
 - `src/lib/mocks/empresas.mock.ts`
 - `src/features/cadastros/CadastroDetailPage.tsx`
+- `src/features/orcamentos/components/ArtesCompradorCard.tsx`
+- `src/features/orcamentos/lib/conversa-whatsapp.ts`
+- `src/features/orcamentos/services/conversa-whatsapp.client.ts`
+- `src/app/api/orcamentos/conversa-whatsapp/route.ts`

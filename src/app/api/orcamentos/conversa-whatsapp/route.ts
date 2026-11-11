@@ -3,11 +3,17 @@ import { createClient as createSupabaseClient, type SupabaseClient } from "@supa
 import { numeroDaConversa, type ConversaWhatsapp } from "@/features/orcamentos/lib/conversa-whatsapp";
 
 /**
- * Conversa do WhatsApp da proposta (Comprador da aba Artes), 10/11/2026.
+ * Conversa do WhatsApp da proposta (abas Geral e Artes), 10/11/2026.
  *
- * GET  ?id_int=   as conversas do Guru do cliente da proposta (visão
+ * GET  ?id_int=&id_cliente=   as conversas do Guru do cliente (visão
  *                 chatguru_contatos_3478, codigo_cliente = id_cliente), a
  *                 escolhida (`propostas.chatguru_chat_id`) e o status da arte.
+ *                 id_cliente (11/11/2026) é o cliente que está na tela: proposta
+ *                 nova (sem id_int) ou cliente trocado e ainda não salvo. Aí a
+ *                 lista é desse cliente, a escolhida da proposta não vale
+ *                 (`clienteDaProposta` = false) e a tela guarda a escolha até o
+ *                 Salvar, que grava por este mesmo POST. O cliente só é lido se a
+ *                 sessão do usuário enxerga o cadastro dele.
  * POST {id_int, chat_id}  grava a escolha, só se o chat_id é de uma conversa do
  *                 cliente da proposta, relida agora.
  *
@@ -90,27 +96,52 @@ function idDoPedido(valor: unknown): number | null {
   return Number.isInteger(n) && n > 0 ? n : null;
 }
 
+/** Cliente da tela: só se a sessão do usuário enxerga o cadastro dele. */
+async function clienteVisivel(usuario: SupabaseClient, idCliente: number): Promise<boolean | null> {
+  const { data, error } = await usuario.from("clientes").select("id_cliente").eq("id_cliente", idCliente).maybeSingle();
+  if (error) return null;
+  return Boolean(data);
+}
+
 export async function GET(request: Request) {
   const ctx = await contexto(request);
   if (ctx instanceof NextResponse) return ctx;
-  const idInt = idDoPedido(new URL(request.url).searchParams.get("id_int"));
-  if (!idInt) return erro("Pedido inválido.", 400);
+  const params = new URL(request.url).searchParams;
+  const idInt = idDoPedido(params.get("id_int"));
+  const idClienteTela = idDoPedido(params.get("id_cliente"));
+  if (!idInt && !idClienteTela) return erro("Pedido ou cliente inválido.", 400);
 
-  const p = await proposta(ctx.usuario, idInt);
-  if ("erro" in p) return erro(p.erro ?? "Falha.", p.status ?? 500);
-  const [conversas, arte] = await Promise.all([
-    conversasDoCliente(ctx.servico, p.dados.id_cliente),
-    ctx.usuario.from("pedidos_artes").select("status").eq("id_int", idInt).order("created_at", { ascending: false }).limit(1)
-  ]);
+  let idCliente: number | null = idClienteTela;
+  let chatIdGravado: string | null = null;
+  let statusArte: string | null = null;
+  let clienteDaProposta = false;
+  if (idInt) {
+    const p = await proposta(ctx.usuario, idInt);
+    if ("erro" in p) return erro(p.erro ?? "Falha.", p.status ?? 500);
+    const gravado = idDoPedido(p.dados.id_cliente);
+    clienteDaProposta = gravado !== null && (idClienteTela === null || idClienteTela === gravado);
+    if (clienteDaProposta) {
+      idCliente = gravado;
+      chatIdGravado = limpar(p.dados.chatguru_chat_id, 80) || null;
+    }
+    const arte = await ctx.usuario
+      .from("pedidos_artes")
+      .select("status")
+      .eq("id_int", idInt)
+      .order("created_at", { ascending: false })
+      .limit(1);
+    if (arte.error) return erro("Não foi possível ler o status da arte.", 500);
+    statusArte = (arte.data?.[0]?.status as string | null | undefined) ?? null;
+  }
+  if (!clienteDaProposta && idCliente !== null) {
+    const visivel = await clienteVisivel(ctx.usuario, idCliente);
+    if (visivel === null) return erro("Não foi possível ler o cliente.", 500);
+    if (!visivel) return erro("Cliente não encontrado.", 404);
+  }
+  const conversas = await conversasDoCliente(ctx.servico, idCliente);
   if (conversas === null) return erro("Não foi possível ler as conversas do cliente no ChatGuru.", 503);
-  if (arte.error) return erro("Não foi possível ler o status da arte.", 500);
 
-  return NextResponse.json({
-    success: true,
-    conversas,
-    chatIdGravado: limpar(p.dados.chatguru_chat_id, 80) || null,
-    statusArte: (arte.data?.[0]?.status as string | null | undefined) ?? null
-  });
+  return NextResponse.json({ success: true, conversas, chatIdGravado, statusArte, clienteDaProposta });
 }
 
 export async function POST(request: Request) {

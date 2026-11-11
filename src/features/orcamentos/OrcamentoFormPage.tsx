@@ -20,8 +20,7 @@ import {
 import { useCoresDeProducao } from "@/features/orcamentos/hooks/useCoresDeProducao";
 import { listChecklistDeProdutos } from "@/features/produtos/services/produto-boletim-campos.service";
 import { ArtesTab, type BriefingArtesDraft } from "@/features/orcamentos/components/ArtesTab";
-import { useConversaDaArte } from "./components/ArtesCompradorCard";
-import { numeroParaExibir } from "@/features/orcamentos/lib/conversa-whatsapp";
+import { ListaDeConversas, useConversaDaArte } from "./components/ArtesCompradorCard";
 import { ProductSearchSelector } from "@/features/orcamentos/components/ProductSearchSelector";
 import { LiberarFaturadoModal } from "@/features/orcamentos/components/LiberarFaturadoModal";
 import { PropostaChatPanel } from "@/features/orcamentos/components/PropostaChatPanel";
@@ -1662,6 +1661,19 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     form.id_int === "NOVO" ? null : Number(form.id_int),
     form.clienteId || null
   );
+
+  /**
+   * Depois do Salvar (11/11/2026): grava a conversa do WhatsApp escolhida na tela
+   * (proposta nova, cliente trocado ou a única conversa ainda não gravada), pela
+   * mesma rota da aba Artes. Falha aqui não desfaz o Salvar: só avisa.
+   */
+  const gravarConversaDoSalvar = async (idSalvo: number) => {
+    if (form.clienteNaoCadastrado) return;
+    const r = await conversaDaArte.gravarAoSalvar(idSalvo);
+    if (!r.ok) {
+      showToast({ type: "warning", title: "Proposta salva, mas a conversa do WhatsApp não foi gravada", description: r.erro });
+    }
+  };
 
   const currentAddress = useMemo(() => {
     return combinedAddresses.find((a) => a.id === form.enderecoId);
@@ -5372,6 +5384,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
         const { diferenca, pendenciaAtiva } = apiResult;
         const idPendencia = pendenciaAtiva?.id;
         const finalIdInt = Number(formToSave.id_int);
+        await gravarConversaDoSalvar(finalIdInt);
 
         // Lotes novos da lista rápida passam a valer como gravados, com o id
         // do banco. Sem isto, quando a tela continua aberta (aba Pagamentos) um
@@ -5578,6 +5591,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
         }
 
         const finalIdInt = res.id_int || formToSave.id_int;
+        await gravarConversaDoSalvar(Number(finalIdInt));
         if (formToSave.id_int === "NOVO") {
           window.history.replaceState(null, "", `/orcamentos/${finalIdInt}/editar`);
           setForm(prev => ({ ...prev, id_int: String(finalIdInt), deletedProdutoPropostaIds: [], itens: aplicarSyncItens(prev.itens), pedidosModelos: aplicarSync(prev.pedidosModelos) }));
@@ -5780,6 +5794,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
         initialFormSnapshot.current = JSON.stringify(savedSnap);
 
         const finalIdInt = res.id_int || formToSave.id_int;
+        await gravarConversaDoSalvar(Number(finalIdInt));
         if (form.id_int === "NOVO") {
           showToast({ type: "success", title: "Orçamento salvo antes de gerar cobrança." });
           router.replace(`/orcamentos/${finalIdInt}/editar?tab=pagamentos`);
@@ -7199,12 +7214,27 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                       <p className="text-sm text-slate-500 bg-slate-50 rounded-2xl p-4">Nenhum contato cadastrado para este cliente.</p>
                     )}
                     <button type="button" onClick={() => setIsContactModalOpen(true)} disabled={ehComplemento} className="mt-4 rounded-2xl border border-[#d7e5e8] bg-white px-4 py-3 text-sm font-semibold text-[#0b2f4a] disabled:cursor-not-allowed disabled:opacity-60">+ Adicionar novo contato</button>
-                    {/* Só leitura (10/11/2026): a conversa do WhatsApp escolhida na aba Artes. */}
-                    {conversaDaArte.gravada && (
-                      <p data-conversa-whatsapp className="mt-3 text-sm text-slate-600 dark:text-slate-300">
-                        Conversa do WhatsApp: <span className="font-semibold">{conversaDaArte.gravada.nome}</span> · {numeroParaExibir(conversaDaArte.gravada.numero)}
+                    {/* Conversa do WhatsApp (11/11/2026): a mesma escolha do Comprador da aba Artes
+                        (propostas.chatguru_chat_id). Só escolher: o contato acima é o do cadastro. */}
+                    <div data-conversa-whatsapp className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50/40 p-4 dark:border-emerald-900 dark:bg-emerald-950/20">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-sm font-bold text-slate-800 dark:text-slate-100">Conversa do WhatsApp</p>
+                        <span className="rounded-full border border-emerald-300 bg-white px-2.5 py-0.5 text-[11px] font-semibold text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-200">
+                          WhatsApp · ChatGuru
+                        </span>
+                      </div>
+                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                        A conversa do cliente no WhatsApp da Ideal que recebe a arte e os avisos do pedido. É a mesma escolha do Comprador da aba Artes.
                       </p>
-                    )}
+                      <div className="mt-3">
+                        <ListaDeConversas
+                          conversa={conversaDaArte}
+                          idCliente={form.clienteId || null}
+                          onde="geral"
+                          onAviso={(type, title, description) => showToast({ type, title, description })}
+                        />
+                      </div>
+                    </div>
                   </FormSection>
                 )}
 

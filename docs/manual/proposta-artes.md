@@ -1,6 +1,6 @@
 # Proposta: aba Artes
 
-> **Última revisão:** 10/11/2026 (Comprador é uma conversa do WhatsApp do cliente no ChatGuru; saíram o cadastro rápido e o "Usar como Comprador")
+> **Última revisão:** 11/11/2026 (o Comprador é a mesma escolha do bloco Conversa do WhatsApp da aba Geral; trocar numa aba troca na outra)
 > **Caminho no menu:** Pedidos → abrir um pedido → Editar proposta → aba Artes
 > **Endereço:** `/orcamentos/[número]/editar?tab=artes`
 
@@ -35,7 +35,7 @@ Nomes exatamente como aparecem na tela.
 | Ícone de download (dica "Abrir arquivo") | Em cada arquivo de **Arquivos Anexados** | Abre o arquivo em nova aba. |
 | Ícone de lixeira (dica "Excluir arquivo") | Em cada arquivo de **Arquivos Anexados** | Apaga o arquivo, depois de confirmar. |
 | Linha do designer | Bloco **Designers Ideal** | Clicar seleciona o designer (selo **Selecionado**); clicar de novo desmarca. |
-| Linha da conversa (nome da conversa e número do WhatsApp) | Bloco **Comprador do cliente** | Lista as conversas do cliente no WhatsApp da Ideal (ChatGuru), as que têm o código do cliente no nome. Clicar escolhe a conversa e grava na hora na proposta. Com uma conversa só, ela já vem marcada, com "única conversa"; a escolhida mostra "escolhida". |
+| Linha da conversa (nome da conversa e número do WhatsApp) | Bloco **Comprador do cliente** | Lista as conversas do cliente no WhatsApp da Ideal (ChatGuru), as que têm o código do cliente no nome. Clicar escolhe a conversa e grava na hora na proposta. Com uma conversa só, ela já vem marcada, com "única conversa"; a gravada mostra "gravada". É a mesma escolha do bloco **Conversa do WhatsApp** da aba Geral. |
 | **Enviar para arte** | Botão flutuante da aba, quando há designer selecionado | Grava o briefing e o designer e põe o status da arte em EM ARTE. No primeiro envio, fica apagado sem a conversa do Comprador; ao lado dele aparece a conversa (nome e WhatsApp) ou o que falta. |
 | **Salvar dados da arte** | O mesmo botão flutuante, quando não há designer selecionado | Grava o briefing e põe o status da arte em AGUARDANDO. |
 | **Ver histórico completo** | Rodapé do bloco **Últimos pedidos** | Hoje não abre nada. |
@@ -137,7 +137,7 @@ O bloco **Últimos pedidos** lista as cinco propostas mais recentes do mesmo cli
 - Não dá para enviar para arte sem o **Nome do Evento / Tema**.
 - Não dá para enviar para arte pela primeira vez sem a conversa do Comprador: uma conversa do cliente no ChatGuru (remetente 3478, código do cliente no nome), com nome e número do WhatsApp. E-mail não é exigido. Com várias conversas, é preciso escolher.
 - A exigência do Comprador vale só para o primeiro envio. Pedido cuja arte já saiu (qualquer status de arte que não seja AGUARDANDO nem PENDENTE) não é travado; pedido sem arte gravada, ou em AGUARDANDO ou PENDENTE, é primeiro envio. **Salvar dados da arte** (sem designer) também não é travado.
-- A conversa escolhida fica gravada na proposta e aparece, só para leitura, no bloco **3. Contato responsável** da aba Geral, como "Conversa do WhatsApp: {nome} · {número}". O **Contato responsável** é outra coisa: é o contato do cadastro do cliente (e-mail e telefone para etiqueta, cobrança e checkout), escolhido só na aba Geral. A aba Artes não o troca.
+- A conversa escolhida fica gravada na proposta e é a mesma do bloco **Conversa do WhatsApp**, no **3. Contato responsável** da aba Geral, onde também dá para escolher (desde 11/11/2026). Trocar numa aba troca na outra. O **Contato responsável** é outra coisa: é o contato do cadastro do cliente (e-mail e telefone para etiqueta, cobrança e checkout), escolhido só na aba Geral. A aba Artes não o troca.
 - A tabela de conversas do ChatGuru serve só para falar com o cliente pelo WhatsApp. Conversa nova ou com o nome errado se resolve no ChatGuru, pelo atendimento: não há cadastro de conversa no Vibe.
 - Se a conversa gravada sair do cliente no ChatGuru (por exemplo, renomeada sem o código), ela deixa de valer: com uma conversa só, a que restou vem escolhida; com várias, é preciso escolher de novo.
 - A **Data do Evento** só aceita ano entre 1900 e 9999. Com o ano digitado errado (por exemplo 20206 no lugar de 2026), o botão flutuante avisa **Data do evento inválida: confira o ano** e não grava.
@@ -212,7 +212,9 @@ O bloco **Últimos pedidos** lista as cinco propostas mais recentes do mesmo cli
 - `src/features/orcamentos/services/status-engine.service.ts`
 - `src/features/orcamentos/services/orcamentos.service.ts`
 
-> **Mudança desta revisão:** 10/11/2026 — decisão do Everton: o Comprador passou a ser uma conversa do WhatsApp do cliente no ChatGuru (nome e número, sem e-mail), gravada na proposta; uma conversa já vem escolhida, várias exigem escolha, sem conversa o envio fica apagado. Saíram **Adicionar Comprador**, **Usar como Comprador**, **Usar contato existente como Comprador** e **Completar**. O **Contato responsável** da aba Geral voltou a ser só do cadastro.
+> **Mudança desta revisão:** 11/11/2026 — a escolha da conversa também fica na aba Geral (bloco **Conversa do WhatsApp**); é o mesmo campo, e a regra do **Enviar para arte** não mudou.
+>
+> **Revisão de 10/11/2026:** decisão do Everton: o Comprador passou a ser uma conversa do WhatsApp do cliente no ChatGuru (nome e número, sem e-mail), gravada na proposta; uma conversa já vem escolhida, várias exigem escolha, sem conversa o envio fica apagado. Saíram **Adicionar Comprador**, **Usar como Comprador**, **Usar contato existente como Comprador** e **Completar**. O **Contato responsável** da aba Geral voltou a ser só do cadastro.
 >
 > **Revisão de 07/11/2026:** o Comprador da aba Artes passou a ser o **Contato responsável** da aba Geral (um campo só); responsável que não é Comprador mostra o aviso com **Usar como Comprador**.
 >
