@@ -1,6 +1,6 @@
 # Expedição
 
-> **Última revisão:** 10/11/2026 (aviso de pedido pronto sai no Confirmar despacho, com a caixa "Avisar o cliente pelo WhatsApp"; o botão saiu da frente do card e o reenvio foi para o menu, em Avisar cliente)
+> **Última revisão:** 11/11/2026 (o aviso vai para a conversa escolhida na aba Artes, quando a proposta tem uma; sem ela, a regra de comparar o WhatsApp do contato)
 > **Caminho no menu:** Expedição (item direto do menu lateral, sem subitens; é o quarto, depois de Conferência, Pedidos e Clientes). Também se chega pela aba **Expedição** no topo do Kanban e da Fila de impressão da Produção.
 > **Endereço:** `/expedicao`
 
@@ -68,7 +68,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Liberar número** | Só para o Administrador, abaixo do aviso por diálogo em **resultado desconhecido** | Abre a janela **Liberar número**: "Conferi no ChatGuru: a mensagem foi enviada" deixa o aviso como executado, sem reenviar; "não foi enviada" deixa como falhou, e o **Reenviar** volta. Registra quem liberou, quando e o que respondeu |
 | **Testar modelo** | Só com o modo teste ligado e em pedido do cliente #14, num quadro tracejado abaixo do aviso, com a lista dos seis diálogos | Pede confirmação e manda o diálogo escolhido ao contato do pedido, sem olhar a forma de envio. Não conta como aviso do pedido |
 | **Ver conversas do cliente** | Abaixo do aviso (em vermelho quando o ChatGuru recusou pelo número) | Abre a lista das conversas do cliente no ChatGuru (remetente 3478), com nome e número, e permite reenviar para uma, várias ou todas, com confirmação. Não grava no cadastro |
-| **Para qual conversa enviar?** | Janela que abre no **Avisar cliente**, no **Reenviar** ou no **Testar modelo** quando o WhatsApp do contato casa com várias conversas do cliente, ou com nenhuma | **Enviar para esta**, **Enviar para as marcadas** e **Enviar para todas**, cada um com confirmação; **Fechar** não envia |
+| **Para qual conversa enviar?** | Janela que abre no **Avisar cliente**, no **Reenviar** ou no **Testar modelo** quando a proposta não tem conversa escolhida na aba Artes e o WhatsApp do contato casa com várias conversas do cliente, ou com nenhuma (o **Testar modelo** não usa a conversa da aba Artes) | **Enviar para esta**, **Enviar para as marcadas** e **Enviar para todas**, cada um com confirmação; **Fechar** não envia |
 
 #### Menu de ações do pedido
 
@@ -113,7 +113,7 @@ Os itens aparecem nesta ordem, cada um só quando se aplica.
 | **Cancelar liberação** | Quadro verde "Despacho liberado"; só administrador da Expedição | Desfaz a liberação do despacho |
 | **Fone** (telefone do destinatário) | Quadro de conferência, ao lado do bairro | Quando o cadastro tem mais de um telefone, um seletor acima do campo lista os preenchidos (WhatsApp 1, Telefone fixo comercial, WhatsApp 2), com "sem DDD" nos que têm menos de 10 dígitos; escolher um preenche o campo. Editável para quem tem a permissão de editar cadastros. Ao confirmar, se o número final for diferente do WhatsApp 1 do cadastro, ele é gravado no WhatsApp 1 do cadastro do destinatário (o pagador, quando é diferente do cliente) e vale na etiqueta e na prepostagem; os outros telefones nunca mudam. Sem a permissão, só mostra o número e o seletor fica bloqueado |
 | **Avisar o cliente pelo WhatsApp** | Caixa de marcar acima dos botões do rodapé, só no despacho | Já vem marcada, com o modelo (Sedex, Motoboy, Retira, Veppo, Azul ou Transportadora) e a conversa do ChatGuru que vai receber. Marcada, o aviso de pedido pronto sai logo depois do despacho, no mesmo clique. Desmarcada, despacha sem enviar. Vem desmarcada quando o pedido já recebeu o aviso (com a data do anterior) e apagada quando o aviso não pode sair (o motivo aparece embaixo) |
-| Lista das conversas do cliente | Dentro da caixa acima, quando o WhatsApp do contato casa com várias conversas do cliente, ou com nenhuma | Marque para qual conversa (uma, várias ou **Todas**) antes de confirmar |
+| Lista das conversas do cliente | Dentro da caixa acima, quando a proposta não tem conversa escolhida na aba Artes e o WhatsApp do contato casa com várias conversas do cliente, ou com nenhuma | Marque para qual conversa (uma, várias ou **Todas**) antes de confirmar |
 | **Cancelar** | Rodapé | Fecha sem gravar |
 | **Salvar sem despachar** | Rodapé, só no despacho | Guarda o que foi preenchido; o pedido segue Na Expedição. Não envia aviso |
 | **Confirmar despacho** | Rodapé, no despacho por transporte | Despacha o pedido e, com a caixa marcada, envia o aviso logo depois |
@@ -207,7 +207,7 @@ Desde 07/11/2026 o aviso não é mais um texto livre: é um **diálogo** do Chat
 Desde 10/11/2026 o aviso sai no **Confirmar despacho** (ou **Confirmar: aguardando retirada**), no mesmo clique. O botão **Avisar cliente: pedido pronto** saiu da frente do card (lista, celular e Kanban) e foi para a janela **Avisar cliente** do menu de ações, que serve para o reenvio.
 
 1. Em **Despachar**, acima dos botões, a caixa **Avisar o cliente pelo WhatsApp** já vem marcada. Ela mostra o modelo ("Modelo: Sedex") e a conversa que vai receber ("vai para {nome no ChatGuru} ({número})"). O modelo acompanha o que está na janela: trocar o transporte, gerar a prepostagem ou digitar o rastreio muda o que a caixa mostra.
-2. Se o WhatsApp do contato casa com várias conversas do cliente, ou com nenhuma, a lista das conversas aparece dentro da caixa. Marque uma, várias ou **Todas** antes de confirmar. Sem marcar, o **Confirmar despacho** avisa "Escolha a conversa do aviso ou desmarque a caixa."
+2. Se a proposta não tem conversa escolhida na aba Artes e o WhatsApp do contato casa com várias conversas do cliente, ou com nenhuma, a lista das conversas aparece dentro da caixa. Marque uma, várias ou **Todas** antes de confirmar. Sem marcar, o **Confirmar despacho** avisa "Escolha a conversa do aviso ou desmarque a caixa."
 3. Clique em **Confirmar despacho**. O despacho é gravado primeiro; o aviso sai logo depois. O Vibe grava na conversa os campos do diálogo e executa o diálogo, no mesmo WhatsApp da Ideal. O botão mostra "Enviando aviso..." enquanto isso.
 4. Saiu: a janela fecha e aparece "Aviso enviado ao cliente", com o diálogo e o estado (**diálogo executado no ChatGuru**). "Executado" quer dizer que o ChatGuru aceitou executar o diálogo. O ChatGuru não devolve confirmação de entrega para diálogo.
 5. Não saiu (sem conversa no ChatGuru, sem modelo para a forma de envio, rastreio faltando, regra dos 2 minutos do ChatGuru, recusa do ChatGuru, resultado desconhecido): **o despacho continua valendo**. A janela fica aberta com "Despacho confirmado." e o motivo, e o botão **Fechar**. O reenvio fica no menu de ações do card, em **Avisar cliente**.
@@ -244,7 +244,11 @@ Correios PAC, Correios sem o serviço dito e frete sem forma definida ("Frete In
 
 #### Para qual conversa vai o aviso (desde 09/11/2026)
 
-O aviso vai para a conversa do cliente no WhatsApp da Ideal (ChatGuru, remetente 3478), não mais para o WhatsApp gravado no cadastro do contato. Decisão da diretoria: nenhum contato do Vibe é editado para isso. O Vibe procura as conversas do 3478 cujo código é o número do cliente do pedido e compara com o WhatsApp do contato responsável, pelo DDD e pelos 8 últimos dígitos (assim tanto faz ter ou não o nono dígito):
+O aviso vai para a conversa do cliente no WhatsApp da Ideal (ChatGuru, remetente 3478), não mais para o WhatsApp gravado no cadastro do contato. Decisão da diretoria: nenhum contato do Vibe é editado para isso. O Vibe procura as conversas do 3478 cujo código é o número do cliente do pedido.
+
+Desde 11/11/2026, se a proposta tem uma conversa escolhida na aba Artes (o **Comprador** que recebe a arte), o aviso vai direto para ela, sem comparar telefone, enquanto ela continuar sendo do cliente no ChatGuru. A janela mostra essa conversa como a que vai receber, e o **Ver conversas do cliente** a mostra como a escolhida. Se ela saiu do cliente no ChatGuru (renomeada sem o código, por exemplo), vale a regra abaixo. Uma escolha feita na hora do envio (lista da caixa do despacho ou janela **Para qual conversa enviar?**) vence a da aba Artes.
+
+Sem conversa escolhida na aba Artes, o Vibe compara as conversas do cliente com o WhatsApp do contato responsável, pelo DDD e pelos 8 últimos dígitos (assim tanto faz ter ou não o nono dígito):
 
 - casou com exatamente uma conversa: o aviso vai para ela, sem perguntar;
 - casou com mais de uma, ou com nenhuma, mas o cliente tem conversas no 3478: no despacho, a lista aparece dentro da caixa **Avisar o cliente pelo WhatsApp**, para marcar antes de confirmar; na janela **Avisar cliente** do menu, abre a janela **Para qual conversa enviar?** com a lista das conversas do cliente (nome no ChatGuru e número). Dá para usar **Enviar para esta** numa linha, marcar várias e usar **Enviar para as marcadas**, ou **Enviar para todas**. Cada escolha pede confirmação. Nada sai antes disso;
@@ -425,7 +429,7 @@ Em resumo: no pedido Na Expedição, clique em **Despachar**, confira peso, volu
 |---|---|---|
 | "O pedido não tem contato. Escolha o contato na proposta." ou "O contato do pedido não pertence ao cliente nem ao faturado." | O aviso de pedido pronto não tem para quem ir | Corrigir o contato na proposta e clicar de novo em **Avisar cliente: pedido pronto** |
 | "Cliente sem conversa no ChatGuru (remetente 3478)" | O cliente do pedido não tem nenhuma conversa no WhatsApp da Ideal com o código dele no nome | Nada é enviado. A conversa precisa existir no ChatGuru com o código do cliente no nome ("Nome - {código}"); o Vibe não cria conversa |
-| Janela **Para qual conversa enviar?** | O WhatsApp do contato responsável casa com mais de uma conversa do cliente, ou com nenhuma | Escolha a conversa (ou várias, ou todas) e confirme |
+| Janela **Para qual conversa enviar?** | A proposta não tem conversa escolhida na aba Artes e o WhatsApp do contato responsável casa com mais de uma conversa do cliente, ou com nenhuma | Escolha a conversa (ou várias, ou todas) e confirme. Para não perguntar nos próximos avisos, escolha a conversa do Comprador na aba Artes da proposta |
 | "Número não encontrado no ChatGuru: {número}" | O ChatGuru recusou a conversa usada | **Ver conversas do cliente** e escolha outra conversa |
 | "O ChatGuru exige 2 minutos entre mensagens para a mesma conversa. Tente de novo em instantes." | Saiu outra mensagem por diálogo para a mesma conversa há menos de 2 minutos (deste aviso, de outro pedido ou do envio de arte do Imposition). O ChatGuru recusa e nada sai | Espere 2 minutos e use **Reenviar**. O aviso fica como **falhou** e o WhatsApp não fica travado |
 | "Este pedido já tinha aviso" | Já houve aviso para o pedido | Nada foi enviado de novo. Para mandar outra mensagem, use **Reenviar** |

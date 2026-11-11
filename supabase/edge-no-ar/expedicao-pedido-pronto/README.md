@@ -1,13 +1,14 @@
-# expedicao-pedido-pronto: v24 no repositório, v23 no ar (fora de supabase/functions de propósito)
+# expedicao-pedido-pronto: v24 no ar (fora de supabase/functions de propósito)
 
-**v24 (10/11/2026), código nesta pasta, SEM deploy:** conversa escolhida na aba Artes (`propostas.chatguru_chat_id`, o Comprador da arte).
+**v24 no ar desde 11/11/2026 (versão 24 no painel da Supabase), conferida arquivo a arquivo igual a esta pasta (index.ts, logica.ts e a cópia de transportadoras-parceiras.ts):** conversa escolhida na aba Artes (`propostas.chatguru_chat_id`, o Comprador da arte).
 - Nos dois avisos (pedido em produção e pedido pronto), se a proposta tem conversa escolhida e ela ainda é do cliente no Guru, o aviso vai direto para ela, sem casar o telefone do contato.
 - Sem conversa escolhida, ou se ela saiu do cliente, vale a regra de antes. A escolha feita na tela (chat_ids/todas) continua vencendo.
 - O "Ver conversas do cliente" (ação `conversas`) também mostra a escolhida como a decisão.
 - Regra pura: `logica.conversaDaProposta`. Teste: caso D de `scripts/testes/expedicao-aviso-pronto-v23.test.mts`.
-- Subir só com autorização. Enquanto a v23 estiver no ar, a escolha da aba Artes fica gravada, mas os avisos seguem casando o telefone.
+- Prova sem envio, depois do deploy: preparar do 24880 (pedido pronto e pedido em produção) devolveu a conversa "Edison Junior - 14", a gravada na proposta; nenhuma linha de aviso criada. No 24880 o WhatsApp do contato também casa com essa conversa, então a prova de que a escolha vence o telefone é o caso D do teste.
+- A v19 da janela (`supabase/functions/`) também não tem a v24: levar junto com a v23.
 
-**v23 no ar desde 10/11/2026 17:53 (Brasília)**, versão 23 no painel da Supabase, conferida arquivo a arquivo igual a esta pasta (index.ts, logica.ts e a cópia de transportadoras-parceiras.ts). É a v22 com o aviso de pedido pronto no clique do "Confirmar despacho".
+**v23 ficou no ar de 10/11/2026 17:53 (Brasília) até a v24**, versão 23 no painel da Supabase, conferida arquivo a arquivo igual a esta pasta (index.ts, logica.ts e a cópia de transportadoras-parceiras.ts). É a v22 com o aviso de pedido pronto no clique do "Confirmar despacho".
 - `enviar` e `reenviar` aceitam o pedido em EXPEDICAO, A RETIRAR ou EM TRANSITO (`logica.STATUS_AVISO_PRONTO`), porque o despacho já mudou o status quando o aviso sai.
 - Ação nova `preparar` (só leitura): para a caixa da janela do despacho, o último aviso, o modelo pela forma de envio que está na tela (`logica.despachoDaTela`), a conversa ou a escolha e o motivo de bloqueio. Nada é gravado.
 - Aviso de produção e trava: sem mudança. A v19 da janela (`supabase/functions/`) **não** tem a v23: antes da janela da trava, levar estas duas mudanças para ela.
