@@ -1,6 +1,13 @@
-# expedicao-pedido-pronto: v24 no ar (fora de supabase/functions de propósito)
+# expedicao-pedido-pronto: v25 no ar (fora de supabase/functions de propósito)
 
-**v24 no ar desde 11/11/2026 (versão 24 no painel da Supabase), conferida arquivo a arquivo igual a esta pasta (index.ts, logica.ts e a cópia de transportadoras-parceiras.ts):** conversa escolhida na aba Artes (`propostas.chatguru_chat_id`, o Comprador da arte).
+**v25 no ar desde 11/11/2026 (versão 25 no painel da Supabase), conferida arquivo a arquivo igual a esta pasta (index.ts, logica.ts e a cópia de transportadoras-parceiras.ts, esta igual à da v24).** É a v24 com a Azul reconhecida pelo cadastro.
+- Antes do deploy, a v24 do painel foi conferida igual a esta pasta.
+- `formaDoDespacho` e `formaDoOrcamento`: `id_transportadora_cliente` = `TRANSPORTADORAS_PARCEIRAS.AZUL` (808) dá o diálogo Azul. O cadastro 808 é "SVT PROVEDOR LOGISTICO LTDA" (no despacho, "SVT TRANSPORTES"), sem AZUL no nome: até a v24 o despacho pela Azul saía com o diálogo Transportadora.
+- Avisos que saíram com o diálogo Transportadora em pedidos da 808, não reenviados: 24881 (2x) e 25023 no modo teste (10/11); 25011, 24655 e 24838 para o cliente (11/11).
+- Teste: caso E de `scripts/testes/expedicao-aviso-pronto-v23.test.mts`, com as entradas reais de expedicoes do 25011 (Azul) e do 24952 (São Miguel, continua Transportadora). Sem a mudança, o caso E falha com Transportadora.
+- A mesma mudança foi levada à v19 da janela (`supabase/functions/`).
+
+**v24 ficou no ar em 11/11/2026, até a v25 (versão 24 no painel da Supabase), conferida arquivo a arquivo igual a esta pasta (index.ts, logica.ts e a cópia de transportadoras-parceiras.ts):** conversa escolhida na aba Artes (`propostas.chatguru_chat_id`, o Comprador da arte).
 - Nos dois avisos (pedido em produção e pedido pronto), se a proposta tem conversa escolhida e ela ainda é do cliente no Guru, o aviso vai direto para ela, sem casar o telefone do contato.
 - Sem conversa escolhida, ou se ela saiu do cliente, vale a regra de antes. A escolha feita na tela (chat_ids/todas) continua vencendo.
 - O "Ver conversas do cliente" (ação `conversas`) também mostra a escolhida como a decisão.

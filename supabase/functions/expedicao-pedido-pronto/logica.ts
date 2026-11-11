@@ -178,7 +178,7 @@ function formaDoDespacho(d: DespachoFrete): Forma | undefined {
     }
     if (parceira === TRANSPORTADORAS_PARCEIRAS.CORREIOS || ehCorreiosId(id)) return "CORREIOS";
     if (parceira === TRANSPORTADORAS_PARCEIRAS.MOTOBOY) return "Motoboy";
-    if (parceira === TRANSPORTADORAS_PARCEIRAS.AZUL) return "Azul";
+    if (parceira === TRANSPORTADORAS_PARCEIRAS.AZUL || id === TRANSPORTADORAS_PARCEIRAS.AZUL) return "Azul";
     return "Transportadora";
   }
   return undefined;
@@ -195,7 +195,7 @@ function formaDoOrcamento(o: OrcamentoFrete): Forma {
   if (parceira === TRANSPORTADORAS_PARCEIRAS.CORREIOS || ehCorreiosId(id)) return "CORREIOS";
   if (parceira === TRANSPORTADORAS_PARCEIRAS.MOTOBOY) return "Motoboy";
   if (parceira === TRANSPORTADORAS_PARCEIRAS.VEPPO || id === TRANSPORTADORAS_PARCEIRAS.VEPPO) return "Veppo";
-  if (parceira === TRANSPORTADORAS_PARCEIRAS.AZUL) return "Azul";
+  if (parceira === TRANSPORTADORAS_PARCEIRAS.AZUL || id === TRANSPORTADORAS_PARCEIRAS.AZUL) return "Azul";
   if (parceira === TRANSPORTADORAS_PARCEIRAS.SAO_MIGUEL) return "Transportadora";
   if (Number.isFinite(id) && id > 0) return "Transportadora";
   const categoria = normalizar(o.categoria_frete);

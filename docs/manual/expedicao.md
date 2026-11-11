@@ -1,6 +1,6 @@
 # Expedição
 
-> **Última revisão:** 11/11/2026 (o aviso vai para a conversa escolhida na aba Artes, quando a proposta tem uma; sem ela, a regra de comparar o WhatsApp do contato)
+> **Última revisão:** 11/11/2026 (pedido pela Azul reconhecido pelo cadastro 808 e não mais só pelo nome: sai o diálogo Azul; antes, o aviso vai para a conversa escolhida na aba Artes, quando a proposta tem uma; sem ela, a regra de comparar o WhatsApp do contato)
 > **Caminho no menu:** Expedição (item direto do menu lateral, sem subitens; é o quarto, depois de Conferência, Pedidos e Clientes). Também se chega pela aba **Expedição** no topo do Kanban e da Fila de impressão da Produção.
 > **Endereço:** `/expedicao`
 
@@ -230,7 +230,7 @@ Qual diálogo vai, pela forma de envio do pedido (a do despacho, se o expedidor 
 | Motoboy | Motoboy | Pedido_Atual, Nota_Fiscal |
 | Correios SEDEX | Sedex | Sedex_Conhecimento, Pedido_Atual, Nota_Fiscal |
 | Transportadora Veppo | Veppo | Cidade_Destino, Pedido_Atual, Nota_Fiscal |
-| Azul Cargo | Azul | Pedido_Atual, Nota_Fiscal, Cidade_Destino |
+| Azul Cargo (cadastro 808, SVT Provedor Logístico, ou nome com AZUL) | Azul | Pedido_Atual, Nota_Fiscal, Cidade_Destino |
 | Qualquer outra transportadora | Transportadora | Cidade_Destino, Pedido_Atual, Nota_Fiscal |
 
 - **Pedido_Atual:** o número do pedido.
@@ -239,6 +239,8 @@ Qual diálogo vai, pela forma de envio do pedido (a do despacho, se o expedidor 
 - **Sedex_Conhecimento:** o código de rastreio dos Correios.
 
 O Vibe só grava esses campos. O ChatGuru guarda na conversa o último valor de cada campo: se o modelo de um diálogo usar um campo que o Vibe não grava (por exemplo, o link de aprovação, Link_do_Cliente, que o envio de arte do Imposition grava), a mensagem sai com o valor de outro envio. Foi o que aconteceu com o aviso Pedido em Produção em 09/11/2026. Mudança de modelo no ChatGuru precisa ser combinada antes. A lista completa, com o envio de arte do Imposition, está em `docs/technical/CHATGURU-TRAVA-COMPARTILHADA-PROPOSTA.md`.
+
+A Azul é reconhecida pelo cadastro da transportadora (808, "SVT PROVEDOR LOGISTICO LTDA", que aparece no despacho como "SVT TRANSPORTES"), no despacho e no orçamento, como a Veppo. Até 11/11/2026 ela só era reconhecida pelo nome, e o nome do cadastro não tem "AZUL": seis avisos de pedidos da 808 saíram com o diálogo Transportadora (24881 e 25023 no modo teste, em 10/11; 25011, 24655 e 24838 para o cliente, em 11/11 — o 24881 duas vezes). Não foram reenviados.
 
 Correios PAC, Correios sem o serviço dito e frete sem forma definida ("Frete Incluso", "Sem custo", "a definir") não têm diálogo. A caixa do despacho e o botão da janela **Avisar cliente** ficam apagados com "Sem modelo de mensagem para esta forma de envio." Nenhum outro diálogo é usado no lugar. SEDEX sem código de rastreio fica apagado com "Gere a etiqueta dos Correios antes."
 
