@@ -1,6 +1,6 @@
 # Carteira (contas a receber)
 
-> **Última revisão:** 06/11/2026 (Registro de recebíveis: títulos contam por cobrança)
+> **Última revisão:** 12/11/2026 (título vencido que ganha data nova volta a vencer na rotina da madrugada)
 > **Caminho no menu:** Financeiro → Carteira
 > **Endereço:** `/contas-a-receber`
 
@@ -119,7 +119,7 @@ A aba **Previsão de recebimento** mostra **Previsão por semana** (**Semana atu
 | **Boleto em processamento no banco** | O banco aceitou a cobrança, mas ainda não emitiu o boleto. Não tem botão **Registrar**: registrar de novo criaria um segundo boleto real. O status muda para **Boleto registrado** quando o banco conclui. |
 | **Boleto registrado** | Boleto registrado no banco e a vencer. |
 | **Depósito em conta** | Título sem boleto: o cliente paga por depósito, PIX ou outra forma, e a baixa é manual. |
-| **Vencido** | Passou do vencimento sem pagamento. |
+| **Vencido** | Passou do vencimento sem pagamento. Quem marca é uma rotina automática do sistema, toda madrugada (por volta da meia-noite). Se o título vencido ganhar uma data nova, de hoje em diante, e não tiver pagamento nem baixa, a mesma rotina o devolve para a vencer. |
 | **Pago** | Título liquidado. |
 | **Cancelado** | Título cancelado. Fica na lista como histórico. |
 | **Cancelado** com **Substituído** embaixo | Boleto antigo de um **Refazer boleto**. A parcela continua ativa em outra linha, com o boleto novo. Passe o mouse para ler quem refez e o motivo. |
@@ -224,6 +224,7 @@ O boleto é cancelado no banco e o título continua ativo, agora como **Depósit
 
 1. Na aba **Depósitos**, abra o menu de ações.
 2. Para mudar a data, clique em **Editar depósito**, informe a **Nova data de vencimento** e clique em **Salvar vencimento**. Só o vencimento muda.
+   - Depósito que já estava **Vencido**: a data nova grava na hora, mas ele continua em **Vencidos** e no cartão **Cobranças Vencidas** até a rotina da madrugada, que o devolve para a vencer (caso 20717-B).
 3. Para emitir boleto, clique em **Transformar em boleto** e siga o registro na janela **Revisar para Geração Bancária**. Se você não registrar, o título fica como boleto pendente de registro.
 
 ### Ver os detalhes de um título

@@ -633,12 +633,13 @@ export function OrcamentosListPageReal() {
   // registro de outro mês. O vendedor herdado do ESCOPO não conta aqui: ele é
   // restrição de acesso, não escolha de filtro. Os cards também não entram, pois
   // as somas deles são declaradamente por período.
+  // O filtro Cobrança NÃO liga a busca ampla (12/11/2026, decisão do Everton): ele
+  // respeita o período escolhido, com a paginação normal da lista.
   const ignorarPeriodo = Boolean(
     search.trim() ||
     statusEhEspecifico(status) ||
     modelo !== "TODOS_MODELOS" ||
     vendedor !== "TODOS" ||
-    filterTipoCobranca !== "TODOS" ||
     produtoFiltro !== "TODOS"
   );
 
@@ -707,12 +708,11 @@ export function OrcamentosListPageReal() {
           search.trim() ||
             modelo !== "TODOS_MODELOS" ||
             vendedor !== "TODOS" ||
-            filterTipoCobranca !== "TODOS" ||
             produtoFiltro !== "TODOS"
         ) ||
         undefined
     }),
-    [queryFilters, search, status, modelo, vendedor, filterTipoCobranca, produtoFiltro]
+    [queryFilters, search, status, modelo, vendedor, produtoFiltro]
   );
   const [baseCardEmArte, setBaseCardEmArte] = useState<OrcamentoListItem[]>([]);
   /**
