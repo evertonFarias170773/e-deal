@@ -1,6 +1,6 @@
 # Pedidos (lista)
 
-> **Última revisão:** 12/11/2026 (filtro Cobrança com todas as formas de pagamento: Cartão de crédito, E-Crédito, E-Amostra e E-Permuta)
+> **Última revisão:** 12/11/2026 (filtro Cobrança com todas as formas de pagamento e sem o corte que escondia parte dos pedidos com PIX e cartão)
 > **Caminho no menu:** Pedidos (item direto do menu lateral, sem submenu; é o segundo, logo abaixo de Conferência)
 > **Endereço:** `/orcamentos`
 
@@ -121,7 +121,7 @@ Cada filtro da barra tem um título pequeno acima dele, com o nome do que ele fi
 2. **Todos modelos**: AVULSO, PROPOSTA ou ENCERRADOS (teste). Esta última mostra só os pedidos de teste encerrados.
 3. **Todos produtos**: abre uma lista com busca por **Código ou nome**. Mostra os pedidos que têm pelo menos um item daquele produto. Só os produtos ativos aparecem, na lista e na pesquisa; produto inativo fica de fora, então os pedidos antigos dele não são achados por este filtro. Um link antigo que traga um produto inativo volta sozinho para **Todos produtos**.
 4. **Todos vendedores**: escolha um atendente. As opções são os usuários marcados como vendedor no cadastro de usuários, em ordem alfabética, e não mudam com o status, os outros filtros nem a página. Quem tem o escopo restrito (só vê o que é dele) vê só o próprio nome. Um link antigo com um vendedor que não está no cadastro continua funcionando: o nome aparece como opção. Quem tem pedidos mas não está marcado como vendedor (por exemplo, um diretor) não aparece na lista; para achar os pedidos dele, use a busca.
-5. **Todas cobranças**: escolha a forma de pagamento, na ordem **PIX**, **Boleto**, **Cartão de crédito**, **E-Faturado**, **E-Crédito**, **E-Retrabalho**, **E-Amostra** e **E-Permuta**. A lista mostra os pedidos com cobrança daquela forma. **Cartão de crédito** inclui também o cartão antigo, usado até abril de 2026. **E-Faturado** inclui os pedidos gravados com a grafia antiga "E-Faturado".
+5. **Todas cobranças**: escolha a forma de pagamento, na ordem **PIX**, **Boleto**, **Cartão de crédito**, **E-Faturado**, **E-Crédito**, **E-Retrabalho**, **E-Amostra** e **E-Permuta**. A lista mostra os pedidos com cobrança daquela forma. **Cartão de crédito** inclui também o cartão antigo, usado até abril de 2026. **E-Faturado** inclui os pedidos gravados com a grafia antiga "E-Faturado". Conta só cobrança não cancelada: o pedido que só tem a cobrança cancelada daquela forma não aparece. A procura vale para todos os períodos e considera todos os pedidos (até 12/11/2026 o PIX e o Cartão enxergavam só parte deles). Como em todo filtro desse tipo, a lista mostra no máximo 100 pedidos; com mais, o rodapé mostra 100 e é preciso combinar com outro filtro, como status ou vendedor.
 6. **Período**: a tela abre em **15 dias**, que traz os pedidos alterados nos últimos 15 dias (não os criados). As outras opções são os seis últimos meses e trazem os pedidos criados naquele mês.
 7. Os filtros se combinam. **Limpar filtros** devolve tudo ao padrão, inclusive o Status em **Ativos**. Um link antigo com `status=TODOS` continua mostrando todos os status; um link sem status abre em **Ativos**.
 
@@ -341,6 +341,7 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 
 - `src/features/orcamentos/OrcamentosListPageReal.tsx`
 - `src/features/cobrancas/tipos-cobranca.ts`
+- `src/features/orcamentos/lib/filtro-cobranca-leitura.ts`
 - `src/features/cobrancas/CobrancasSobDemanda.tsx`
 - `src/features/orcamentos/lib/cobrancas-na-fila.ts`
 - `src/features/orcamentos/lib/empresa-pdf.ts`

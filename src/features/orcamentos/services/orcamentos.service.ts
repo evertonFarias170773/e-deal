@@ -115,6 +115,13 @@ import {
 // MESMA regra que a Conferencia usa por cobranca, sem copia.
 import { getConferenciaStatusLabel } from "@/features/cobrancas/cobrancas-utils";
 import { grafiasDoFiltroCobranca } from "@/features/cobrancas/tipos-cobranca";
+import { lerTodas, type ConsultaPaginavel } from "@/lib/supabase/ler-todas";
+import {
+  idsComCobrancaDoTipo,
+  juntarLotesNaOrdem,
+  lotesDaConsulta,
+  type ConsultaCobrancas
+} from "@/features/orcamentos/lib/filtro-cobranca-leitura";
 import { mensagensDaCopia, type MotivoDaCopia } from "@/features/orcamentos/lib/motivo-copia";
 import { recusaPorPedidoEntregue } from "@/features/orcamentos/services/pedido-entregue";
 import {
@@ -993,19 +1000,15 @@ async function fetchPropostaRows(
         .ilike("tipo_cobranca", FORMA_RETRABALHO);
       const vivos = Array.from(new Set((retrabalhos || []).filter(cobrancaEhRetrabalho).map((p) => p.id_int).filter(Boolean)));
       idsTipoCobranca = vivos.length > 0 ? vivos : [-1];
-    } else if (filters?.filterTipoCobranca && filters.filterTipoCobranca !== "TODOS") {
-      // Grafias gravadas da opcao, da constante unica (cobrancas/tipos-cobranca,
-      // 12/11/2026). Em 12/11 o `.in` trouxe o mesmo conjunto do `ilike` antigo
-      // em PIX, Cartao, Boleto e E-Faturado. Opcao desconhecida: lista vazia.
-      const grafias = grafiasDoFiltroCobranca(filters.filterTipoCobranca);
-      const { data: paymentRows } = await client
-        .from("pagamentos_v2")
-        .select("id_int")
-        .in("tipo_cobranca", grafias.length > 0 ? grafias : ["__nenhum__"]);
-
-      const matchedIds = Array.from(new Set((paymentRows || []).map(p => p.id_int).filter(Boolean)));
-      idsTipoCobranca = matchedIds.length > 0 ? matchedIds : [-1];
     }
+    // As outras opcoes (12/11/2026): grafias gravadas da constante unica
+    // (cobrancas/tipos-cobranca). A leitura acontece DEPOIS de `consultaFiltrada`,
+    // so entre as propostas que passam pelos outros filtros, e sem o corte de
+    // 1.000 linhas (lib/filtro-cobranca-leitura). Opcao desconhecida: lista vazia.
+    const grafiasDoFiltro =
+      filters?.filterTipoCobranca && filters.filterTipoCobranca !== "TODOS" && filters.filterTipoCobranca !== FORMA_RETRABALHO
+        ? grafiasDoFiltroCobranca(filters.filterTipoCobranca)
+        : null;
 
     // Card "Arte Aprovada": mesma mecanica do EM_ARTE — os id_int vem de
     // `pedidos_artes` e dobram no `.in`.
@@ -1065,10 +1068,16 @@ async function fetchPropostaRows(
      * na mesma ordem. Montada de novo para cada grupo da ordenacao abaixo
      * (supabase-js nao clona consulta), sempre a partir das pre-consultas acima.
      */
-    const consultaFiltrada = (opcoes: { count: "exact"; head?: boolean }) => {
+    // `recorte` (12/11/2026, filtro Cobranca): `colunas` para ler so o id_int dos
+    // candidatos; `idsCobranca` e o lote de numeros desta chamada (padrao: todos).
+    const consultaFiltrada = (
+      opcoes?: { count: "exact"; head?: boolean },
+      recorte?: { colunas?: string; idsCobranca?: number[] | null }
+    ) => {
       // A VIEW, nao a tabela: e `propostas` + `status_alterado_em`, com
       // security_invoker — a RLS e a de `propostas` para quem consulta.
-      let query = client.from("vw_propostas_lista").select(columnsToSelect, opcoes);
+      let query = client.from("vw_propostas_lista").select(recorte?.colunas ?? columnsToSelect, opcoes);
+      const idsDaCobranca = recorte && "idsCobranca" in recorte ? recorte.idsCobranca ?? null : idsTipoCobranca;
 
       if (periodoFilter) {
         // A coluna vem do proprio filtro: os meses seguem em `created_at`, exatamente
@@ -1158,10 +1167,35 @@ async function fetchPropostaRows(
 
       if (condicaoBusca) query = query.or(condicaoBusca);
       if (idsProduto) query = query.in("id_int", idsProduto);
-      if (idsTipoCobranca) query = query.in("id_int", idsTipoCobranca);
+      if (idsDaCobranca) query = query.in("id_int", idsDaCobranca);
 
       return query;
     };
+
+    // ── Filtro Cobranca (12/11/2026, lib/filtro-cobranca-leitura): candidatos com
+    //    os outros filtros, cobrancas ATIVAS do tipo so entre eles, sem corte.
+    let erroFiltroCobranca: { message: string } | null = null;
+    if (grafiasDoFiltro) {
+      const candidatos = await lerTodas(
+        () => consultaFiltrada(undefined, { colunas: "id_int", idsCobranca: null }) as unknown as ConsultaPaginavel<{ id_int: number }>,
+        { chave: "id_int" }
+      );
+      if (candidatos.error || !candidatos.completo) {
+        erroFiltroCobranca = { message: `Filtro Cobrança: não foi possível ler as propostas (${candidatos.error?.message ?? "leitura incompleta"}).` };
+      } else {
+        const leitura = await idsComCobrancaDoTipo(
+          () => client.from("pagamentos_v2").select("id, id_int") as unknown as ConsultaCobrancas,
+          { candidatos: candidatos.data.map((linha) => Number(linha.id_int)).filter((id) => Number.isFinite(id) && id > 0), grafias: grafiasDoFiltro }
+        );
+        if (leitura.error) {
+          erroFiltroCobranca = { message: `Filtro Cobrança: não foi possível ler as cobranças (${leitura.error.message}).` };
+        } else {
+          idsTipoCobranca = leitura.ids.length > 0 ? leitura.ids : [-1];
+        }
+      }
+    }
+    // Acima de LIMITE_IDS_POR_CONSULTA a consulta da lista roda em lotes.
+    const lotesCobranca = lotesDaConsulta(idsTipoCobranca);
 
     /**
      * ORDEM DA LISTA (25/09/2026, pedido da direcao), para a lista INTEIRA e
@@ -1204,12 +1238,49 @@ async function fetchPropostaRows(
       }
     ];
 
-    const contagens = await Promise.all(
-      grupos.map((recorte) => recorte(consultaFiltrada({ count: "exact", head: true })))
+    // Contagem por grupo E por lote do filtro Cobranca (um lote so no caso comum).
+    const contagensPorLote = await Promise.all(
+      grupos.map((recorte) =>
+        Promise.all(lotesCobranca.map((lote) => recorte(consultaFiltrada({ count: "exact", head: true }, { idsCobranca: lote }))))
+      )
     );
-    let error = contagens.find((c) => c.error)?.error ?? null;
-    const porGrupo = contagens.map((c) => c.count ?? 0);
+    let error: { message: string } | null =
+      erroFiltroCobranca ?? contagensPorLote.flat().find((c) => c.error)?.error ?? null;
+    const porGrupoELote = contagensPorLote.map((doGrupo) => doGrupo.map((c) => c.count ?? 0));
+    const porGrupo = porGrupoELote.map((doGrupo) => doGrupo.reduce((soma, n) => soma + n, 0));
     const totalCount = porGrupo.reduce((soma, n) => soma + n, 0);
+    /**
+     * As linhas [primeiro, ultimo] do grupo `i`, na ordem da lista. Um lote: a
+     * consulta de sempre. Varios lotes: cada um traz as primeiras `ultimo + 1`
+     * e a juncao refaz a ordem do banco antes de fatiar.
+     */
+    const linhasDoGrupo = async (
+      i: number,
+      primeiro: number,
+      ultimo: number
+    ): Promise<{ data: SupabasePropostaRow[]; error: { message: string } | null }> => {
+      const recorte = grupos[i];
+      const ordenada = (lote: number[] | null) =>
+        recorte(consultaFiltrada({ count: "exact" }, { idsCobranca: lote }))
+          // Dentro do grupo: a ultima mudanca real de status, nao o `updated_at`
+          // (que qualquer UPDATE carimba, ate a migracao APROVADO -> LIBERADO).
+          .order("status_alterado_em", { ascending: false, nullsFirst: false })
+          .order("id_int", { ascending: false });
+      if (lotesCobranca.length === 1) {
+        const r = await ordenada(lotesCobranca[0]).range(primeiro, ultimo).returns<SupabasePropostaRow[]>();
+        return { data: r.data ?? [], error: r.error };
+      }
+      const porLote = await Promise.all(
+        lotesCobranca.map((lote, l) =>
+          porGrupoELote[i][l] === 0
+            ? Promise.resolve({ data: [] as SupabasePropostaRow[], error: null })
+            : ordenada(lote).range(0, Math.min(ultimo, porGrupoELote[i][l] - 1)).returns<SupabasePropostaRow[]>()
+        )
+      );
+      const falha = porLote.find((r) => r.error)?.error ?? null;
+      if (falha) return { data: [], error: falha };
+      return { data: juntarLotesNaOrdem(porLote.map((r) => r.data ?? [])).slice(primeiro, ultimo + 1), error: null };
+    };
 
     let data: SupabasePropostaRow[] | null = null;
     if (!error && statusArteDoCardPorId) {
@@ -1224,14 +1295,10 @@ async function fetchPropostaRows(
        * conjunto inteiro e barato; a contagem continua sendo a das consultas.
        */
       const completos = await Promise.all(
-        grupos.map((recorte, i) =>
+        grupos.map((_recorte, i) =>
           porGrupo[i] === 0
             ? Promise.resolve({ data: [] as SupabasePropostaRow[], error: null })
-            : recorte(consultaFiltrada({ count: "exact" }))
-                .order("status_alterado_em", { ascending: false, nullsFirst: false })
-                .order("id_int", { ascending: false })
-                .range(0, porGrupo[i] - 1)
-                .returns<SupabasePropostaRow[]>()
+            : linhasDoGrupo(i, 0, porGrupo[i] - 1)
         )
       );
       error = completos.find((r) => r.error)?.error ?? null;
@@ -1250,18 +1317,12 @@ async function fetchPropostaRows(
       }
     } else if (!error) {
       let inicioDoGrupo = 0;
-      const fatias = grupos.map((recorte, i) => {
+      const fatias = grupos.map((_recorte, i) => {
         const primeiro = Math.max(from, inicioDoGrupo) - inicioDoGrupo;
         const ultimo = Math.min(to, inicioDoGrupo + porGrupo[i] - 1) - inicioDoGrupo;
         inicioDoGrupo += porGrupo[i];
         if (ultimo < primeiro) return Promise.resolve({ data: [] as SupabasePropostaRow[], error: null });
-        return recorte(consultaFiltrada({ count: "exact" }))
-          // Dentro do grupo: a ultima mudanca real de status, nao o `updated_at`
-          // (que qualquer UPDATE carimba, ate a migracao APROVADO -> LIBERADO).
-          .order("status_alterado_em", { ascending: false, nullsFirst: false })
-          .order("id_int", { ascending: false })
-          .range(primeiro, ultimo)
-          .returns<SupabasePropostaRow[]>();
+        return linhasDoGrupo(i, primeiro, ultimo);
       });
       const resultados = await Promise.all(fatias);
       error = resultados.find((r) => r.error)?.error ?? null;
