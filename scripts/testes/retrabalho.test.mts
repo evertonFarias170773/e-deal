@@ -116,10 +116,13 @@ checar("servidor: a lista padrao (neq CANCELADO / neq ENTREGUE) nao corta com E-
   servico.includes('if (!condicaoBusca) query = query.neq("status_interno", "ENTREGUE");')
 ], [true, true]);
 checar("tela: o corte de CANCELADO do cliente tambem respeita o filtro", tela.includes('(filterTipoCobranca === "E-RETRABALHO" || item.status !== "CANCELADO")'), true);
-checar("servidor: as outras opcoes seguem com o mesmo ilike de antes", servico.includes('.ilike("tipo_cobranca", `%${searchTipo}%`)'), true);
+// 12/11/2026: as opcoes saem da constante unica (cobrancas/tipos-cobranca); as outras
+// consultam as grafias gravadas dela (mesmo conjunto do ilike antigo, tipos-cobranca.test).
+checar("servidor: as outras opcoes consultam as grafias da constante", servico.includes("grafiasDoFiltroCobranca(filters.filterTipoCobranca)"), true);
+const constanteCobranca = readFileSync("src/features/cobrancas/tipos-cobranca.ts", "utf8");
 checar("tela: opcao no enum e no dropdown, e os dois filtros do cliente usam isRetrabalho", [
-  tela.includes('"E-FATURADO", "E-RETRABALHO", "CARTAO"'),
-  tela.includes('<option value="E-RETRABALHO">E-RETRABALHO</option>'),
+  tela.includes("const TIPOS_COBRANCA = VALORES_FILTRO_COBRANCA;") && constanteCobranca.includes('filtro: "E-RETRABALHO"'),
+  tela.includes("{OPCOES_FILTRO_COBRANCA.map(") && constanteCobranca.includes('rotulo: "E-Retrabalho"'),
   (tela.match(/if \(filterTipoCobranca === "E-RETRABALHO"\)/g) ?? []).length,
   (tela.match(/filtroCobranca: filterTipoCobranca/g) ?? []).length
 ], [true, true, 2, 2]);

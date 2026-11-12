@@ -1,6 +1,6 @@
 # Pedidos (lista)
 
-> **Última revisão:** 11/11/2026 (aviso Pedido em Produção vai para a conversa escolhida na aba Artes, quando a proposta tem uma)
+> **Última revisão:** 12/11/2026 (filtro Cobrança com todas as formas de pagamento: Cartão de crédito, E-Crédito, E-Amostra e E-Permuta)
 > **Caminho no menu:** Pedidos (item direto do menu lateral, sem submenu; é o segundo, logo abaixo de Conferência)
 > **Endereço:** `/orcamentos`
 
@@ -45,7 +45,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Todos modelos** | Barra de filtros | Filtra por AVULSO, PROPOSTA ou ENCERRADOS (teste). |
 | **Todos produtos** | Barra de filtros | Abre a lista de produtos, com o campo **Código ou nome**, e filtra os pedidos que têm o produto escolhido. Só produtos ativos aparecem. |
 | **Todos vendedores** | Barra de filtros | Filtra por atendente. As opções são os usuários marcados como vendedor no cadastro, sempre os mesmos e em ordem alfabética. |
-| **Todas cobranças** | Barra de filtros | Filtra por PIX, BOLETO, E-FATURADO ou CARTÃO. |
+| **Todas cobranças** | Barra de filtros | Filtra pela forma de pagamento das cobranças do pedido: PIX, Boleto, Cartão de crédito, E-Faturado, E-Crédito, E-Retrabalho, E-Amostra ou E-Permuta. |
 | **15 dias** (e os meses, como "Out/26") | Barra de filtros, último seletor | Troca o período da lista e dos cards. |
 | **Limpar filtros** | Barra de filtros, à direita | Devolve todos os filtros ao padrão e desliga o card. |
 | Coluna **id - Cliente** | Linha da lista | O clique abre o cadastro do cliente; sem cadastro, abre a proposta. |
@@ -121,7 +121,7 @@ Cada filtro da barra tem um título pequeno acima dele, com o nome do que ele fi
 2. **Todos modelos**: AVULSO, PROPOSTA ou ENCERRADOS (teste). Esta última mostra só os pedidos de teste encerrados.
 3. **Todos produtos**: abre uma lista com busca por **Código ou nome**. Mostra os pedidos que têm pelo menos um item daquele produto. Só os produtos ativos aparecem, na lista e na pesquisa; produto inativo fica de fora, então os pedidos antigos dele não são achados por este filtro. Um link antigo que traga um produto inativo volta sozinho para **Todos produtos**.
 4. **Todos vendedores**: escolha um atendente. As opções são os usuários marcados como vendedor no cadastro de usuários, em ordem alfabética, e não mudam com o status, os outros filtros nem a página. Quem tem o escopo restrito (só vê o que é dele) vê só o próprio nome. Um link antigo com um vendedor que não está no cadastro continua funcionando: o nome aparece como opção. Quem tem pedidos mas não está marcado como vendedor (por exemplo, um diretor) não aparece na lista; para achar os pedidos dele, use a busca.
-5. **Todas cobranças**: PIX, BOLETO, E-FATURADO ou CARTÃO.
+5. **Todas cobranças**: escolha a forma de pagamento, na ordem **PIX**, **Boleto**, **Cartão de crédito**, **E-Faturado**, **E-Crédito**, **E-Retrabalho**, **E-Amostra** e **E-Permuta**. A lista mostra os pedidos com cobrança daquela forma. **Cartão de crédito** inclui também o cartão antigo, usado até abril de 2026. **E-Faturado** inclui os pedidos gravados com a grafia antiga "E-Faturado".
 6. **Período**: a tela abre em **15 dias**, que traz os pedidos alterados nos últimos 15 dias (não os criados). As outras opções são os seis últimos meses e trazem os pedidos criados naquele mês.
 7. Os filtros se combinam. **Limpar filtros** devolve tudo ao padrão, inclusive o Status em **Ativos**. Um link antigo com `status=TODOS` continua mostrando todos os status; um link sem status abre em **Ativos**.
 
@@ -148,7 +148,7 @@ Com o card **Em arte** ligado, a ordem passa a ser primeiro pelo Status Arte, e 
 7. Em Arte.
 8. Os demais.
 
-Pedido de **retrabalho** (criado como **Retrabalho** pelo **Duplicar proposta**, ou com cobrança E-Retrabalho que não foi cancelada) aparece com contorno vermelho, o número do pedido em vermelho e o selo **Retrabalho de #<original>** (o pedido de onde ele nasceu; só **Retrabalho** quando não há original gravado) logo abaixo do número, na tabela e no cartão do celular, nos temas claro e escuro. E-Amostra e E-Permuta não ganham esse destaque. No filtro **Cobrança**, a opção **E-RETRABALHO** continua pela cobrança: lista os pedidos com cobrança E-Retrabalho não cancelada em qualquer fase, inclusive Entregue, Em trânsito e Cancelado: com ela o status **Ativos** e o corte padrão de Entregue e Cancelado não escondem nada. As outras escolhas (modelo, vendedor, produto) continuam valendo; como toda opção do filtro Cobrança, ela procura em todos os períodos.
+Pedido de **retrabalho** (criado como **Retrabalho** pelo **Duplicar proposta**, ou com cobrança E-Retrabalho que não foi cancelada) aparece com contorno vermelho, o número do pedido em vermelho e o selo **Retrabalho de #<original>** (o pedido de onde ele nasceu; só **Retrabalho** quando não há original gravado) logo abaixo do número, na tabela e no cartão do celular, nos temas claro e escuro. E-Amostra e E-Permuta não ganham esse destaque. No filtro **Cobrança**, a opção **E-Retrabalho** continua pela cobrança: lista os pedidos com cobrança E-Retrabalho não cancelada em qualquer fase, inclusive Entregue, Em trânsito e Cancelado: com ela o status **Ativos** e o corte padrão de Entregue e Cancelado não escondem nada. As outras escolhas (modelo, vendedor, produto) continuam valendo; como toda opção do filtro Cobrança, ela procura em todos os períodos.
 
 No celular a lista vira cartões, e só a revisão atendente ganha fundo azul. O cartão mostra o status do pedido e, quando o pedido tem arte, o selo **Arte** com a situação dela, o mesmo da coluna Status Arte.
 
@@ -340,6 +340,7 @@ A liberação é recusada quando já existe NF-e de venda autorizada ou em proce
 Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê esta lista: quando um deles muda e a ficha não, ele avisa. Um caminho por item, entre crases, a partir da raiz do repositório; pasta termina com `/` e vale para tudo dentro dela.
 
 - `src/features/orcamentos/OrcamentosListPageReal.tsx`
+- `src/features/cobrancas/tipos-cobranca.ts`
 - `src/features/cobrancas/CobrancasSobDemanda.tsx`
 - `src/features/orcamentos/lib/cobrancas-na-fila.ts`
 - `src/features/orcamentos/lib/empresa-pdf.ts`

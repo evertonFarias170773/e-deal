@@ -91,6 +91,7 @@ import { ConfirmarLiberacaoModal } from "@/features/cobrancas/ConfirmarLiberacao
 import { isFilaPadrao } from "@/features/cobrancas/cobrancas-utils";
 import { lerCobrancaPorId, listarCobrancasDaProposta } from "@/features/cobrancas/services/pagamentos-v2.service";
 import type { Cobranca } from "@/features/cobrancas/types";
+import { opcoesDoFiltroCobranca, tipoEntraNoFiltroCobranca, VALORES_FILTRO_COBRANCA } from "@/features/cobrancas/tipos-cobranca";
 import {
   podeVerConfirmarConferenciaNaLista,
   rotuloDaOpcaoDeConferencia
@@ -218,9 +219,11 @@ function diaMesHora(iso: string | null | undefined): string {
   return FORMATO_DIA_MES_HORA.format(data).replace(",", "");
 }
 
+// Opcoes do filtro "Cobranca": da constante unica (cobrancas/tipos-cobranca, 12/11/2026).
 // E-RETRABALHO (19/10/2026): so cobranca viva, e o "Ativos" nao esconde o pedido (lib/status-ativos).
-const TIPOS_COBRANCA = ["TODOS", "PIX", "BOLETO", "E-FATURADO", "E-RETRABALHO", "CARTAO"] as const;
+const TIPOS_COBRANCA = VALORES_FILTRO_COBRANCA;
 type TipoCobrancaFiltro = (typeof TIPOS_COBRANCA)[number];
+const OPCOES_FILTRO_COBRANCA = opcoesDoFiltroCobranca();
 
 /**
  * O que a LISTA mostra no lugar do valor gravado. So o cartao entra (18/09/2026,
@@ -482,14 +485,7 @@ function passaFiltrosDosCards(
     // A mesma regra do destaque: so cobranca de retrabalho VIVA.
     if (!item.isRetrabalho) return false;
   } else if (filterTipoCobranca !== "TODOS") {
-    const hasCartao = filterTipoCobranca === "CARTAO";
-    const ok = item.tiposCobranca.some(t => {
-      const upper = t.trim().toUpperCase();
-      return hasCartao
-        ? upper.includes("CARD") || upper.includes("CARTAO") || upper.includes("CARTÃO")
-        : upper === filterTipoCobranca;
-    });
-    if (!ok) return false;
+    if (!item.tiposCobranca.some((t) => tipoEntraNoFiltroCobranca(t, filterTipoCobranca))) return false;
   }
   return true;
 }
@@ -992,14 +988,7 @@ export function OrcamentosListPageReal() {
         // A mesma regra do destaque: so cobranca de retrabalho VIVA.
         if (!item.isRetrabalho) continue;
       } else if (filterTipoCobranca !== "TODOS") {
-        const hasCartao = filterTipoCobranca === "CARTAO";
-        const ok = item.tiposCobranca.some(t => {
-          const upper = t.trim().toUpperCase();
-          return hasCartao
-            ? upper.includes("CARD") || upper.includes("CARTAO") || upper.includes("CARTÃO")
-            : upper === filterTipoCobranca;
-        });
-        if (!ok) continue;
+        if (!item.tiposCobranca.some((t) => tipoEntraNoFiltroCobranca(t, filterTipoCobranca))) continue;
       }
 
       result.push(item);
@@ -2248,11 +2237,11 @@ Ela volta a aparecer nas listas operacionais.`
           <CampoFiltro titulo="Cobrança" htmlFor="filtro-cobranca">
             <select id="filtro-cobranca" value={filterTipoCobranca} onChange={(event) => setFilter("cob", event.target.value as TipoCobrancaFiltro)} className={filterSelectClass}>
               <option value="TODOS">Todas cobranças</option>
-              <option value="PIX">PIX</option>
-              <option value="BOLETO">BOLETO</option>
-              <option value="E-FATURADO">E-FATURADO</option>
-              <option value="E-RETRABALHO">E-RETRABALHO</option>
-              <option value="CARTAO">CARTÃO</option>
+              {OPCOES_FILTRO_COBRANCA.map((opcao) => (
+                <option key={opcao.valor} value={opcao.valor}>
+                  {opcao.rotulo}
+                </option>
+              ))}
             </select>
           </CampoFiltro>
 

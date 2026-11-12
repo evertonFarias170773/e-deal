@@ -114,6 +114,7 @@ import {
 // Grupos "Aguardando financeiro" e "Pago / A liberar" da lista de Pedidos: a
 // MESMA regra que a Conferencia usa por cobranca, sem copia.
 import { getConferenciaStatusLabel } from "@/features/cobrancas/cobrancas-utils";
+import { grafiasDoFiltroCobranca } from "@/features/cobrancas/tipos-cobranca";
 import { mensagensDaCopia, type MotivoDaCopia } from "@/features/orcamentos/lib/motivo-copia";
 import { recusaPorPedidoEntregue } from "@/features/orcamentos/services/pedido-entregue";
 import {
@@ -993,11 +994,14 @@ async function fetchPropostaRows(
       const vivos = Array.from(new Set((retrabalhos || []).filter(cobrancaEhRetrabalho).map((p) => p.id_int).filter(Boolean)));
       idsTipoCobranca = vivos.length > 0 ? vivos : [-1];
     } else if (filters?.filterTipoCobranca && filters.filterTipoCobranca !== "TODOS") {
-      const searchTipo = filters.filterTipoCobranca === "CARTAO" ? "CARD" : filters.filterTipoCobranca;
+      // Grafias gravadas da opcao, da constante unica (cobrancas/tipos-cobranca,
+      // 12/11/2026). Em 12/11 o `.in` trouxe o mesmo conjunto do `ilike` antigo
+      // em PIX, Cartao, Boleto e E-Faturado. Opcao desconhecida: lista vazia.
+      const grafias = grafiasDoFiltroCobranca(filters.filterTipoCobranca);
       const { data: paymentRows } = await client
         .from("pagamentos_v2")
         .select("id_int")
-        .ilike("tipo_cobranca", `%${searchTipo}%`);
+        .in("tipo_cobranca", grafias.length > 0 ? grafias : ["__nenhum__"]);
 
       const matchedIds = Array.from(new Set((paymentRows || []).map(p => p.id_int).filter(Boolean)));
       idsTipoCobranca = matchedIds.length > 0 ? matchedIds : [-1];

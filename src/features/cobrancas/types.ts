@@ -1,8 +1,10 @@
 import type { Proposta } from "@/features/orcamentos/types";
+// Sai da constante única de tipos de cobrança (tipos-cobranca.ts, 12/11/2026).
+import type { CobrancaTipo } from "./tipos-cobranca";
+
+export type { CobrancaTipo };
 
 export type CobrancaStatus = "A_RECEBER" | "A_VENCER" | "PAID" | "CANCELADO";
-
-export type CobrancaTipo = "PIX" | "BOLETO" | "CREDIT_CARD" | "CARD_PARCELADO" | "E-FATURADO" | "E-RETRABALHO" | "E-PERMUTA" | "E-AMOSTRA" | "E-CREDITO";
 
 // ---------------------------------------------------------------------------
 // movimento_credito — estrutura real (12 colunas, confirmada em 2026-07-16)
