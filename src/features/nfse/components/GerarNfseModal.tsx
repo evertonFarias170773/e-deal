@@ -80,6 +80,8 @@ import {
   pagamentosParaConferencia,
   tamanhoDasInformacoesComplementares,
   descricaoDaNfse,
+  trocarTotalDaDescricao,
+  conferirTotalDaDescricao,
   mostraLinhaDeServicos,
   rotuloDosItensMarcados,
   seloDoCabecalho,
@@ -315,9 +317,10 @@ export function GerarNfseModal({
     const sugerido = valorSugeridoComFrete(lido.itens, todos, lido.valorDosProdutos, lido.freteDoPedido);
     setMarcados(todos);
     setValorTexto(sugerido > 0 ? sugerido.toFixed(2).replace(".", ",") : "");
-    // Descrição: itens e frete, sem pagamento nem natureza (05/11/2026). As complementares
-    // nascem com a "Observação para a nota fiscal" do pedido (11/11/2026); sem ela, vazias.
-    setDescricao(descricaoDaNfse(descricaoDosItens(lido.idInt, lido.itens, descontoParaDescricao(lido)), freteQueEntraNaNota(lido.itens, todos, lido.freteDoPedido)));
+    // Descrição: itens, frete e "Total: R$ X" igual ao Valor da nota (12/11/2026), sem
+    // pagamento nem natureza (05/11/2026). As complementares nascem com a "Observação
+    // para a nota fiscal" do pedido (11/11/2026); sem ela, vazias.
+    setDescricao(descricaoDaNfse(descricaoDosItens(lido.idInt, lido.itens, descontoParaDescricao(lido)), freteQueEntraNaNota(lido.itens, todos, lido.freteDoPedido), sugerido));
     setInfComp(observacaoLimpa(lido.observacaoParaNota));
     setValorMexido(false);
     setDescricaoMexida(false);
@@ -354,18 +357,34 @@ export function GerarNfseModal({
     if (!contexto) return;
     const novo = alternarItemMarcado(marcados, id);
     setMarcados(novo);
+    // O Total da descrição é o Valor da nota: o sugerido novo, ou o que foi digitado.
+    let valorDaNota = conferirValor(valorTexto);
     if (!valorMexido) {
       const sugerido = valorSugeridoComFrete(contexto.itens, novo, contexto.valorDosProdutos, contexto.freteDoPedido);
       setValorTexto(sugerido > 0 ? sugerido.toFixed(2).replace(".", ",") : "");
+      valorDaNota = sugerido > 0 ? { ok: true, valor: sugerido } : { ok: false, motivo: "" };
     }
     if (!descricaoMexida) {
       setDescricao(
         descricaoDaNfse(
           descricaoDosItens(contexto.idInt, contexto.itens.filter((item) => novo.has(item.id)), descontoParaDescricao(contexto)),
-          freteQueEntraNaNota(contexto.itens, novo, contexto.freteDoPedido)
+          freteQueEntraNaNota(contexto.itens, novo, contexto.freteDoPedido),
+          valorDaNota.ok ? valorDaNota.valor : null
         )
       );
+    } else if (valorDaNota.ok) {
+      // Descrição mexida: só a linha "Total:" acompanha o valor novo.
+      const total = valorDaNota.valor;
+      setDescricao((atual) => trocarTotalDaDescricao(atual, total));
     }
+  }
+
+  /** O Valor da nota mudou (digitado ou "Usar a soma"): a linha "Total:" da descrição acompanha. */
+  function mudarValor(texto: string, mexido: boolean) {
+    setValorMexido(mexido);
+    setValorTexto(texto);
+    const valor = conferirValor(texto);
+    if (valor.ok) setDescricao((atual) => trocarTotalDaDescricao(atual, valor.valor));
   }
 
   /** Lê e mostra. Usado ao abrir a janela e nos botões que voltam ao estado do pedido. */
@@ -480,6 +499,8 @@ export function GerarNfseModal({
     if (!desc.ok) return setValidacao(desc.motivo);
     const valor = conferirValor(valorTexto);
     if (!valor.ok) return setValidacao(valor.motivo);
+    const total = conferirTotalDaDescricao(desc.texto, valor.valor);
+    if (!total.ok) return setValidacao(total.motivo);
     if (contexto.motivoSemEndereco) return setValidacao(contexto.motivoSemEndereco);
     if (contexto.itens.length > 0 && marcados.size === 0) return setValidacao("Marque pelo menos um item do pedido.");
     const servicoDoRascunho = conferirServico(contexto.servicos.find((sv) => sv.id === idServico) ?? null);
@@ -1029,10 +1050,7 @@ export function GerarNfseModal({
                           inputMode="decimal"
                           value={valorTexto}
                           disabled={ocupado !== null}
-                          onChange={(e) => {
-                            setValorMexido(true);
-                            setValorTexto(e.target.value);
-                          }}
+                          onChange={(e) => mudarValor(e.target.value, true)}
                           className={CAMPO_NFSE}
                         />
                         {valorConferido.ok && contexto.itens.length > 0 && Math.round(valorConferido.valor * 100) !== Math.round(sugeridoDaNota * 100) && (
@@ -1041,10 +1059,7 @@ export function GerarNfseModal({
                             <button
                               type="button"
                               className="underline"
-                              onClick={() => {
-                                setValorMexido(false);
-                                setValorTexto(sugeridoDaNota > 0 ? sugeridoDaNota.toFixed(2).replace(".", ",") : "");
-                              }}
+                              onClick={() => mudarValor(sugeridoDaNota > 0 ? sugeridoDaNota.toFixed(2).replace(".", ",") : "", false)}
                             >
                               Usar a soma
                             </button>
@@ -1077,7 +1092,13 @@ export function GerarNfseModal({
                                 className="underline"
                                 onClick={() => {
                                   setDescricaoMexida(false);
-                                  setDescricao(descricaoDaNfse(descricaoDosItens(contexto.idInt, contexto.itens.filter((item) => marcados.has(item.id)), descontoParaDescricao(contexto)), freteNaNota));
+                                  setDescricao(
+                                    descricaoDaNfse(
+                                      descricaoDosItens(contexto.idInt, contexto.itens.filter((item) => marcados.has(item.id)), descontoParaDescricao(contexto)),
+                                      freteNaNota,
+                                      valorConferido.ok ? valorConferido.valor : null
+                                    )
+                                  );
                                 }}
                               >
                                 Refazer a partir dos itens

@@ -7,7 +7,7 @@ import {
   lerServicosNfse,
   respostaDeErro
 } from "@/features/nfse/services/nfse-pedido.server";
-import { limparInformacoesComplementares } from "@/features/nfse/lib/composicao-nfse";
+import { conferirTotalDaDescricao, limparInformacoesComplementares } from "@/features/nfse/lib/composicao-nfse";
 import {
   SERVICO_NFSE,
   VERSAO_DA_JANELA_NFSE,
@@ -169,6 +169,10 @@ export async function POST(request: Request) {
 
     const valor = conferirValor(corpo?.valor);
     if (!valor.ok) return respostaDeErro(422, valor.motivo, { code: "VALOR_INVALIDO" });
+
+    // A linha "Total:" da descrição tem de ser o Valor da nota (12/11/2026).
+    const total = conferirTotalDaDescricao(descricao.texto, valor.valor);
+    if (!total.ok) return respostaDeErro(422, total.motivo, { code: "TOTAL_DIFERENTE_DO_VALOR" });
 
     // O serviço escolhido, relido do cadastro (inativos inclusive, para a recusa
     // dizer o motivo certo). Sem escolha, vale o padrão.

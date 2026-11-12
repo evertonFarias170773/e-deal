@@ -67,7 +67,7 @@ checar("frete nulo não quebra", freteQueEntraNaNota(dois, new Set([1, 2]), null
 // Janela e servidor
 const modal = readFileSync("src/features/nfse/components/GerarNfseModal.tsx", "utf8");
 const servidor = readFileSync("src/features/nfse/services/nfse-pedido.server.ts", "utf8");
-checar("janela: as três montagens da descrição passam o frete", (modal.match(/freteQueEntraNaNota\((lido|contexto)\.itens, (todos|novo), (lido|contexto)\.freteDoPedido\)|\), freteNaNota\)\);/g) ?? []).length, 3);
+checar("janela: as três montagens da descrição passam o frete", (modal.match(/freteQueEntraNaNota\((lido|contexto)\.itens, (todos|novo), (lido|contexto)\.freteDoPedido\)|\),\s*freteNaNota,\s*valorConferido/g) ?? []).length, 3);
 checar("janela: valor sugerido com frete ao abrir e ao marcar", (modal.match(/valorSugeridoComFrete\(/g) ?? []).length, 2);
 checar("janela: texto da nota parcial", /nota parcial/.test(modal) && !/não entra na nota de serviço/.test(modal), true);
 checar("janela: aviso amarelo da NF-e com frete, só quando o frete entra", /freteNaNota > 0 && contexto\.nfeDeVendaComFrete/.test(modal) && /já inclui o frete; confira para não cobrá-lo duas vezes/.test(modal), true);

@@ -98,6 +98,22 @@ export function ehCategoriaFrete(valor: unknown): valor is CategoriaFrete {
 }
 
 /**
+ * As categorias que o USUÁRIO declara na aba Fretes ("Como vai o transporte?"),
+ * quando o frete escolhido não se explica sozinho (12/11/2026, caso 24974).
+ *
+ * Só estas contam como declaração ao salvar. As outras (Correios, Motoboy,
+ * Veppo, Retira, Extras) sempre saem do frete escolhido; relidas do banco, são o
+ * resto de um frete anterior. Tratá-las como escolha do usuário fazia o
+ * CORREIOS de um SEDEX trocado por transportadora ser regravado, e o pedido ia
+ * para a coluna Correios da Expedição.
+ */
+export const CATEGORIAS_DECLARAVEIS = ["RODOVIARIO", "AEREO"] as const satisfies readonly CategoriaFrete[];
+
+export function ehCategoriaDeclaravel(valor: unknown): valor is (typeof CATEGORIAS_DECLARAVEIS)[number] {
+  return typeof valor === "string" && (CATEGORIAS_DECLARAVEIS as readonly string[]).includes(valor);
+}
+
+/**
  * A coluna em que um pedido aparece, dada uma categoria possivelmente nula.
  *
  * Ponto único da regra "NULL cai em EXTRAS", para o painel não decidir isso por

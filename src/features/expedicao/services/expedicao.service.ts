@@ -16,6 +16,7 @@ import {
 } from "@/features/orcamentos/lib/categoria-frete";
 import { bairroExibivel } from "../lib/bairro-do-card";
 import {
+  cifComTransportadoraForaDosCorreios,
   cifPorTransportadora,
   cifTransportadoraBarradaPorPrepostagem,
   labelTipoFrete,
@@ -901,6 +902,7 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
       prepostagemCanceladaEm: exp?.prepostagemCanceladaEm ?? null
     };
     const porTransportadoraEmCif = cifPorTransportadora(entradaCif);
+    const colunaCorreiosNaoVale = cifComTransportadoraForaDosCorreios(entradaCif);
     const transportadoraComPrepostagemViva = cifTransportadoraBarradaPorPrepostagem(entradaCif);
 
     const tipoFrete: TipoFreteNormalizado = porTransportadoraEmCif
@@ -1081,11 +1083,13 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
       // resíduo do serviço cotado (o próprio Corrigir frete o regrava), e não
       // pode prender o pedido na coluna dos Correios. Qualquer outra categoria
       // gravada continua valendo.
+      // Desde 12/11/2026 (24974) vale qualquer que seja o texto da cotação:
+      // `cifComTransportadoraForaDosCorreios`, so para a coluna.
       categoriaFrete: categoriaFreteVigente(
-        ehCategoriaFrete(p.categoria_frete) && !(porTransportadoraEmCif && p.categoria_frete === "CORREIOS")
+        ehCategoriaFrete(p.categoria_frete) && !(colunaCorreiosNaoVale && p.categoria_frete === "CORREIOS")
           ? p.categoria_frete
           : null,
-        porTransportadoraEmCif && exp?.categoriaFrete === "CORREIOS" ? null : (exp?.categoriaFrete ?? null),
+        colunaCorreiosNaoVale && exp?.categoriaFrete === "CORREIOS" ? null : (exp?.categoriaFrete ?? null),
         despachoConfirmado,
         categoriaDerivadaNaLeitura
       ),

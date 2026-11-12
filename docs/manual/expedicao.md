@@ -1,6 +1,6 @@
 # Expedição
 
-> **Última revisão:** 11/11/2026 (pedido pela Azul reconhecido pelo cadastro 808 e não mais só pelo nome: sai o diálogo Azul; antes, o aviso vai para a conversa escolhida na aba Artes, quando a proposta tem uma; sem ela, a regra de comparar o WhatsApp do contato)
+> **Última revisão:** 12/11/2026 (pedido CIF por transportadora não fica na coluna Correios por causa de um SEDEX anterior, caso 24974)
 > **Caminho no menu:** Expedição (item direto do menu lateral, sem subitens; é o quarto, depois de Conferência, Pedidos e Clientes). Também se chega pela aba **Expedição** no topo do Kanban e da Fila de impressão da Produção.
 > **Endereço:** `/expedicao`
 
@@ -162,7 +162,7 @@ Os itens aparecem nesta ordem, cada um só quando se aplica.
 
 ### Usar o Kanban e a lista
 
-1. A tela abre no Kanban. As colunas são as categorias de transporte, nesta ordem: **Correios**, **Motoboy**, **Retira balcão**, **Rodoviário**, **Aéreo**, **Veppo** e **Extras**. Coluna vazia não aparece. Pedido ainda sem categoria definida fica em **Extras**.
+1. A tela abre no Kanban. As colunas são as categorias de transporte, nesta ordem: **Correios**, **Motoboy**, **Retira balcão**, **Rodoviário**, **Aéreo**, **Veppo** e **Extras**. Coluna vazia não aparece. Pedido ainda sem categoria definida fica em **Extras**. Pedido CIF com transportadora escolhida que não é os Correios não fica na coluna **Correios** antes do despacho, mesmo que um SEDEX anterior tenha deixado a categoria Correios gravada, e qualquer que seja o texto do frete. A exceção é a prepostagem dos Correios já gerada e não cancelada: o pedido segue em **Correios** até alguém cancelá-la. Depois do despacho, vale a categoria registrada no despacho.
 2. A barra no topo do Kanban lista as colunas com a quantidade de cada uma. Clique no nome para ir até a coluna; as setas rolam uma coluna por vez.
 3. Dentro de cada coluna, os pedidos prontos para despachar aparecem primeiro.
 4. Cada card mostra o número do pedido, o cadastro (`cli 8469`), o nome do cliente, a cidade de entrega, o pagador (quando é outra pessoa), quem leva, o último acontecimento com data e hora ("Pronto", "No balcão", "Despachado", "Coletado", "Entregue"), a data prevista (`prev`), peso, volumes e o frete cobrado. Nas entregas por motoboy (coluna **Motoboy**), o bairro aparece em negrito ao lado da cidade, para montar a rota do dia.

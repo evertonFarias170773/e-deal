@@ -162,6 +162,7 @@ import {
 import { avisoDaDiferencaNaTela, salvarItemSoNaTela, salvarSemMudancaEmPropostaPaga } from "@/features/orcamentos/lib/salvar-item-paga";
 import { verificarPermissaoServerSide } from "@/lib/auth/verificar-permissao";
 import {
+  CATEGORIAS_DECLARAVEIS,
   categoriaDoServico,
   LABEL_CATEGORIA_FRETE,
   type CategoriaFrete
@@ -7878,7 +7879,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                     Como vai o transporte?
                   </span>
                   <div className="flex flex-col gap-2 sm:flex-row">
-                    {(["RODOVIARIO", "AEREO"] as CategoriaFrete[]).map((c) => (
+                    {CATEGORIAS_DECLARAVEIS.map((c) => (
                       <button
                         key={c}
                         type="button"

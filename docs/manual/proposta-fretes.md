@@ -1,6 +1,6 @@
 # Proposta: aba Fretes
 
-> **Última revisão:** 11/11/2026 (cotação sem valor não vira card, aviso "Transportadora que não cotou"; Transportadora mostra a do frete escolhido; Corrigir a transportadora só com algo a corrigir; card padrão do SEDEX relido como Correios; rua com erro no cadastro)
+> **Última revisão:** 12/11/2026 (SEDEX trocado por transportadora não deixa a categoria Correios gravada; cotação sem valor não vira card, aviso "Transportadora que não cotou"; Transportadora mostra a do frete escolhido; Corrigir a transportadora só com algo a corrigir; card padrão do SEDEX relido como Correios; rua com erro no cadastro)
 > **Caminho no menu:** Pedidos → abrir um pedido → aba Fretes
 > **Endereço:** `/orcamentos/<número>/editar?tab=fretes`
 
@@ -219,6 +219,7 @@ Repetir **Aplicar** não duplica: a segunda tentativa devolve o mesmo frete comp
 
 - Retirada e FOB não cobram frete: o total da proposta sai sem frete, qualquer que seja a cotação. Só CIF cobra.
 - Card calculado escolhido: o valor cobrado é o do card, menos no card do **MOTOBOY INTERNO** e nos pedidos de cliente com **Pode editar valor do frete**, que aceitam o valor digitado (R$ 0,00 incluído). O **Salvar alterações** recusa outro valor ou outra transportadora nesse caso. Escolher uma transportadora sem card troca o card por um frete manual, que segue livre.
+- Trocar um frete dos Correios (SEDEX, PAC) por uma transportadora e salvar tira a categoria Correios do pedido. A categoria passa a vir da transportadora, de **Rodoviário** ou **Aéreo** marcados em **Como vai o transporte?**, ou fica em branco (Extras na Expedição). Só Rodoviário e Aéreo contam como escolha do usuário; as outras categorias sempre vêm do frete escolhido.
 - Em CIF não dá para salvar sem um frete escolhido. Em FOB não dá para salvar sem a transportadora ou o **Motoboy**. Em retirada não é preciso escolher nada.
 - Sem modalidade marcada, a tela não mostra cards e pede: "Escolha a modalidade do frete acima para continuar."
 - Trocar de modalidade limpa a transportadora (fora de FOB) e desfaz a escolha de retirada. Confira a caixa da modalidade depois de trocar.

@@ -35,6 +35,7 @@ import {
 import {
   categoriaDoServico,
   categoriaPorNomeConhecido,
+  ehCategoriaDeclaravel,
   ehCategoriaFrete,
   type CategoriaFrete
 } from "@/features/orcamentos/lib/categoria-frete";
@@ -3957,7 +3958,10 @@ export async function saveProposta(
         modalidadeVigente === "FOB" ? null : (chosenFrete?.servico ?? null),
         modalidadeVigente
       );
-      const categoriaDeclarada = ehCategoriaFrete(formState.categoriaFreteDeclarada)
+      // So Rodoviario e Aereo sao declaracao do usuario (12/11/2026, caso 24974):
+      // um CORREIOS relido do banco e resto do SEDEX anterior, e regrava-lo poria
+      // na coluna Correios um pedido que vai por transportadora.
+      const categoriaDeclarada = ehCategoriaDeclaravel(formState.categoriaFreteDeclarada)
         ? formState.categoriaFreteDeclarada
         : null;
       /**

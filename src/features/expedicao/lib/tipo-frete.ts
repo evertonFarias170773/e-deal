@@ -303,6 +303,29 @@ export function cifTransportadoraBarradaPorPrepostagem(e: EntradaCifPorTransport
   return cifComTransportadoraDeclarada(e) && prepostagemViva(e.correiosIdPrepostagem, e.prepostagemCanceladaEm);
 }
 
+/**
+ * A COLUNA CORREIOS NÃO VALE PARA ESTE PEDIDO (12/11/2026, caso 24974).
+ *
+ * CIF, ainda não despachado, com transportadora vinculada cujo cadastro não é
+ * dos Correios, e sem prepostagem viva: o "CORREIOS" gravado na proposta ou no
+ * rascunho do despacho é resto de um SEDEX anterior e não põe o pedido na
+ * coluna Correios, QUALQUER QUE SEJA o texto da cotação. `cifPorTransportadora`
+ * só valia com texto cotado dos Correios, sem custo ou não reconhecido; com a
+ * transportadora escrita na cotação (frete manual, 24974 e 25008) o CORREIOS
+ * velho decidia a coluna até o despacho.
+ *
+ * Só a COLUNA usa este predicado. Tipo de frete, forma de envio e prepostagem
+ * seguem com `cifPorTransportadora`.
+ */
+export function cifComTransportadoraForaDosCorreios(e: Omit<EntradaCifPorTransportadora, "tipoFreteCotado">): boolean {
+  if (e.modalidade !== "CIF" || e.despachoConfirmado) return false;
+  if (e.idTransportadora === null || e.idTransportadora === undefined) return false;
+  if (ehCadastroCorreios(e.idTransportadora)) return false;
+  const nome = String(e.nomeTransportadora ?? "").trim();
+  if (!nome || transportadoraEhOsCorreios(e.idTransportadora, nome)) return false;
+  return !prepostagemViva(e.correiosIdPrepostagem, e.prepostagemCanceladaEm);
+}
+
 /** O aviso do modal quando `cifTransportadoraBarradaPorPrepostagem` vale. */
 export const AVISO_PREPOSTAGEM_VIVA_COM_TRANSPORTADORA =
   "Já há prepostagem dos Correios gerada; cancele-a para despachar por transportadora";

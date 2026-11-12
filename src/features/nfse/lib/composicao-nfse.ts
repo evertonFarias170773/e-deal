@@ -372,10 +372,75 @@ export function textoDoPagamentoParaNota(cobrancas: readonly CobrancaDoPedido[])
  * A descrição que a janela PROPÕE: as linhas dos itens e, na nota integral, a
  * linha do frete. Termina aí (05/11/2026, decisão do financeiro): a frase do
  * pagamento e a linha da natureza da operação, que entraram em 04/11, saíram da
- * descrição. As informações complementares seguem vazias.
+ * descrição. Desde 12/11/2026 fecha com "Total: R$ X", o Valor da nota
+ * (`valorDaNota`); sem valor, termina no frete como antes. A frase do pagamento
+ * continua fora.
  */
-export function descricaoDaNfse(descricaoDosItens: string, freteNaNota = 0): string {
-  return [descricaoDosItens.trim(), linhaDoFrete(freteNaNota)].filter(Boolean).join("\n");
+export function descricaoDaNfse(descricaoDosItens: string, freteNaNota = 0, valorDaNota?: number | null): string {
+  const total = Math.round((Number(valorDaNota) || 0) * 100) / 100;
+  if (!(total > 0)) return [descricaoDosItens.trim(), linhaDoFrete(freteNaNota)].filter(Boolean).join("\n");
+  // Com o Total no fim (12/11/2026), o "Total:" do desconto (que fecha só os
+  // itens) sai: a descrição tem um Total só, o da nota, depois do frete.
+  const linhas = descricaoDosItens.replace(/\r\n/g, "\n").trim().split("\n");
+  if (linhas.length > 1 && LINHA_DO_TOTAL.test(linhas[linhas.length - 1])) linhas.pop();
+  return [...linhas, linhaDoFrete(freteNaNota), linhaDoTotal(total)].filter(Boolean).join("\n");
+}
+
+/* ------------------------------------------------------------------- total */
+
+/** Uma linha que começa com "Total:". */
+const LINHA_DO_TOTAL = /^\s*Total\s*:/i;
+
+/**
+ * "Total: R$ 108,50", a última linha da descrição (12/11/2026, pedido do
+ * Everton, caso 25173). É SEMPRE o campo "Valor da nota": nunca uma conta à
+ * parte, para a descrição não divergir do valor que vai para a Focus.
+ */
+export function linhaDoTotal(valorDaNota: number): string {
+  return `Total: ${reais(Math.round(valorDaNota * 100) / 100)}`;
+}
+
+/** O índice da última linha "Total:" do texto, ou -1. */
+function indiceDoTotal(linhas: readonly string[]): number {
+  for (let i = linhas.length - 1; i >= 0; i -= 1) if (LINHA_DO_TOTAL.test(linhas[i])) return i;
+  return -1;
+}
+
+/**
+ * O Valor da nota mudou: troca a última linha "Total:" pelo valor novo, mesmo
+ * que a descrição tenha sido editada à mão. Sem linha "Total:", o texto fica
+ * como está (quem apagou a linha decidiu não ter o total).
+ */
+export function trocarTotalDaDescricao(texto: string, valorDaNota: number): string {
+  if (!(valorDaNota > 0)) return texto;
+  const linhas = texto.replace(/\r\n/g, "\n").split("\n");
+  const i = indiceDoTotal(linhas);
+  if (i < 0) return texto;
+  const nova = linhaDoTotal(valorDaNota);
+  if (linhas[i] === nova) return texto;
+  linhas[i] = nova;
+  return linhas.join("\n");
+}
+
+export type ConferenciaDoTotal = { ok: true } | { ok: false; motivo: string };
+
+/**
+ * A linha "Total:" da descrição bate com o Valor da nota? A janela e a rota do
+ * rascunho recusam quando não bate. Sem linha "Total:", passa.
+ */
+export function conferirTotalDaDescricao(texto: unknown, valorDaNota: number): ConferenciaDoTotal {
+  const linhas = (typeof texto === "string" ? texto : "").replace(/\r\n/g, "\n").split("\n");
+  const i = indiceDoTotal(linhas);
+  if (i < 0) return { ok: true };
+  const m = /^\s*Total\s*:\s*R\$\s*([\d.]+(?:,\d{1,2})?)\s*$/i.exec(linhas[i]);
+  const escrito = m ? Math.round(Number(m[1].replace(/\./g, "").replace(",", ".")) * 100) : NaN;
+  const daNota = Math.round(valorDaNota * 100);
+  if (Number.isFinite(escrito) && escrito === daNota) return { ok: true };
+  const lido = Number.isFinite(escrito) ? reais(escrito / 100) : `"${linhas[i].trim()}"`;
+  return {
+    ok: false,
+    motivo: `A linha Total da descrição (${lido}) não bate com o Valor da nota (${reais(daNota / 100)}). Corrija um dos dois ou use "Refazer a partir dos itens".`
+  };
 }
 
 /* ------------------------------------------------------------------- frete */
