@@ -1,6 +1,7 @@
 "use client";
 
 import { eCreditoBloqueado } from "./lib/e-credito-botao";
+import { mensagemPermissaoCombinado, permissoesDoPagamentoCombinado } from "./lib/permissoes-pagamento-combinado";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -304,6 +305,17 @@ export function PropostaCobrancaPanel({
   const chaveIdempotenciaCobrancaRef = useRef<string | null>(null);
   const [isUserEditingValor, setIsUserEditingValor] = useState(false);
   const [tipoSecundario, setTipoSecundario] = useState<CobrancaTipo>("PIX");
+  // Permissões que faltam para o combinado com o restante escolhido (mesma
+  // regra da rota: PIX não pede permissão de boleto; caso 25197, 12/11/2026).
+  const faltandoNoCombinado = useMemo(
+    () =>
+      user?.isSuperAdmin
+        ? []
+        : permissoesDoPagamentoCombinado(tipoSecundario).filter((p) =>
+            p === "credito.usar" ? !canUsarCredito : !hasPermissao(user, p)
+          ),
+    [user, tipoSecundario, canUsarCredito]
+  );
   const [condicaoSecundaria, setCondicaoSecundaria] = useState<string>("");
   const cobrancasDaProposta = getCobrancasByProposta(proposta.id_int);
 
@@ -1267,6 +1279,12 @@ export function PropostaCobrancaPanel({
     }
 
     if (form.tipoCobranca === "E-CREDITO") {
+      // Combinado: confere a permissão da forma do restante antes de chamar a
+      // rota, que confere de novo no servidor.
+      if (roundedValor < roundedSaldoRestante && faltandoNoCombinado.length > 0) {
+        showToast({ type: "warning", title: mensagemPermissaoCombinado(faltandoNoCombinado) });
+        return;
+      }
       // `isSaving` é ligado e desligado pelo handleSubmit, dono da trava.
       setRefreshingSaldo(true);
       // Chave de idempotência: gerada uma vez por operação lógica e reutilizada
@@ -2620,6 +2638,11 @@ export function PropostaCobrancaPanel({
                             <option value="CARD_PARCELADO">Cartão de Crédito</option>
                             <option value="E-FATURADO">E-Faturado</option>
                           </select>
+                          {faltandoNoCombinado.length > 0 && (
+                            <p className="text-xs font-semibold text-red-700">
+                              Seu perfil não pode gerar o restante nesta forma (falta {faltandoNoCombinado.join(" e ")}). Escolha PIX ou peça ao financeiro.
+                            </p>
+                          )}
                         </div>
                         
                         {tipoSecundario === "E-FATURADO" && (

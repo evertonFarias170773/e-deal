@@ -4,6 +4,7 @@ import { criarTarefaAutomaticaFinanceiro } from "@/features/tarefas/lib/tarefa-a
 import crypto from "crypto";
 import { resolveEmpresaIdFromTexto, montarUrlPublicaCobranca } from "@/features/cobrancas/cobrancas-utils";
 import { verificarPermissaoServerSide } from "@/lib/auth/verificar-permissao";
+import { mensagemPermissaoCombinado, permissoesDoPagamentoCombinado } from "@/features/cobrancas/lib/permissoes-pagamento-combinado";
 import { calcularSituacaoQuitacaoProposta } from "@/features/cobrancas/services/conferencia-financeira.service";
 import { gerarPixBancoInter } from "@/features/cobrancas/services/banco-inter.service";
 import { recusaDoGatilhoNoErro, recusaDoTipoNoPedido } from "@/features/cobrancas/lib/tipo-x-retrabalho";
@@ -40,16 +41,6 @@ export async function POST(request: NextRequest) {
   }
   const user = { id: authData.user.id, email: authData.user.email ?? "", nome: authData.user.user_metadata?.name || "Usuário" };
 
-  const temPermissaoCredito = await verificarPermissaoServerSide(supabaseUser, user.id, "credito.usar");
-  const temPermissaoEmitir = await verificarPermissaoServerSide(supabaseUser, user.id, "cobrancas.emitir_boleto");
-
-  if (!temPermissaoCredito || !temPermissaoEmitir) {
-    return NextResponse.json(
-      { success: false, error: "Você não tem permissões suficientes para realizar o pagamento combinado (credito.usar e cobrancas.emitir_boleto)." },
-      { status: 403 }
-    );
-  }
-
   // 3. Payload
   let body;
   try {
@@ -78,6 +69,20 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       { success: false, error: "Parâmetros obrigatórios ausentes." },
       { status: 400 }
+    );
+  }
+
+  // Permissão da forma usada de fato no restante (12/11/2026, caso 25197):
+  // E-Crédito pede credito.usar; PIX não pede permissão de boleto; Boleto,
+  // Cartão e E-Faturado seguem pedindo cobrancas.emitir_boleto.
+  const faltando: string[] = [];
+  for (const permissao of permissoesDoPagamentoCombinado(tipoSecundario)) {
+    if (!(await verificarPermissaoServerSide(supabaseUser, user.id, permissao))) faltando.push(permissao);
+  }
+  if (faltando.length > 0) {
+    return NextResponse.json(
+      { success: false, error: mensagemPermissaoCombinado(faltando) },
+      { status: 403 }
     );
   }
   if (!chaveIdempotencia || typeof chaveIdempotencia !== "string" || !/^[0-9a-f-]{36}$/i.test(chaveIdempotencia)) {

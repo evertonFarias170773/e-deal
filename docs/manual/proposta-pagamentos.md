@@ -1,6 +1,6 @@
 # Proposta: aba Pagamentos
 
-> **Última revisão:** 11/11/2026 (pedido complementar em RETIRA ou FOB gera a cobrança sem frete complementar)
+> **Última revisão:** 12/11/2026 (pagamento combinado E-Crédito + PIX sem a permissão de boleto)
 > **Caminho no menu:** Pedidos → abrir um pedido → aba Pagamentos
 > **Endereço:** `/orcamentos/<número>/editar?tab=pagamentos`
 
@@ -11,7 +11,7 @@
 ## Quem acessa
 
 - Quem abre a proposta vê a aba e pode gerar cobrança. A proposta precisa estar salva e ter cliente cadastrado.
-- A forma **E-Crédito** só aparece para administrador ou perfil com a permissão **Usar Crédito Acumulado**, e só quando o cliente tem saldo. O pagamento combinado (crédito mais outra forma) exige também a permissão **Emitir Boleto**.
+- A forma **E-Crédito** só aparece para administrador ou perfil com a permissão **Usar Crédito Acumulado**, e só quando o cliente tem saldo. No pagamento combinado (crédito mais outra forma), com o restante em **PIX** basta a permissão de usar crédito; com o restante em **Boleto**, **Cartão de Crédito** ou **E-Faturado**, exige também a permissão **Emitir Boleto**.
 - O botão **Excluir** (cancelar cobrança) fica apagado para quem não é administrador e não tem a permissão **Cancelar / Estornar Cobranças** nem **Cancelar Cobrança Não Paga**. Com a segunda, só dá para cancelar cobrança emitida e ainda não paga, de proposta que o usuário enxerga, e que não esteja ligada à Conta Corrente.
 - **Abonar diferença** só aparece para administrador e super administrador.
 - **Analisar condição** (aprovar, alterar ou reprovar o faturamento) aparece para administrador ou perfil com a permissão **Liberar OS / Confirmar**.
@@ -126,7 +126,7 @@ Use quando o cliente paga uma parte agora e o resto faturado. As duas cobranças
 2. Escolha **E-Crédito**. O quadro **Campos do E-Crédito** mostra **Saldo de Crédito** e **Saldo Restante OS**.
 3. Em **Valor da cobrança \***, informe quanto do crédito usar. Não pode passar do saldo de crédito nem do saldo da proposta.
 4. Se o crédito cobre tudo, a tela mostra **Pagamento integral com E-Crédito**. Clique em **Gerar cobrança**. O botão fica habilitado sempre que o **Saldo de Crédito** é maior ou igual ao valor da cobrança, conferido ao centavo (R$ 791,99 cobre R$ 790,99), e o valor não passa do **Saldo Restante OS**.
-5. Se o crédito cobre só uma parte, a tela mostra **Cobrança Parcial (Pagamento Combinado)**. Escolha a **Forma de Pagamento Secundária \*** (PIX, Boleto, Cartão de Crédito ou E-Faturado). Em E-Faturado, escolha também a **Condição Secundária \***. Clique em **Gerar cobrança**: as duas cobranças nascem juntas. A cobrança do restante em PIX tem link de pagamento próprio, igual ao de um PIX comum, com QR e código para copiar.
+5. Se o crédito cobre só uma parte, a tela mostra **Cobrança Parcial (Pagamento Combinado)**. Escolha a **Forma de Pagamento Secundária \*** (PIX, Boleto, Cartão de Crédito ou E-Faturado). Em E-Faturado, escolha também a **Condição Secundária \***. Se o seu perfil não pode gerar o restante na forma escolhida, um aviso em vermelho aparece embaixo dela e a cobrança não é gerada: escolha PIX ou peça ao financeiro. Clique em **Gerar cobrança**: as duas cobranças nascem juntas. A cobrança do restante em PIX tem link de pagamento próprio, igual ao de um PIX comum, com QR e código para copiar.
 
 O crédito é debitado do saldo do cliente na hora. A cobrança de E-Crédito nasce paga, mas ainda passa pela Conferência para ser confirmada.
 
@@ -317,6 +317,7 @@ Se a janela for fechada sem escolher, a proposta fica com a faixa **Revisão fin
 | **Faturamento em análise** | O cliente não tem limite livre, tem faturamento vencido ou restrição. | Aguarde o financeiro analisar a condição. |
 | "Falha ao aplicar crédito" — "Saldo insuficiente. Disponível: R$ ... Solicitado: R$ ..." | O saldo de crédito mudou ou é menor que o valor pedido. | Confira o saldo e reduza o valor. |
 | "Sua sessão expirou" — "Nada foi cobrado e o crédito do cliente segue intacto. ..." | A sessão caiu antes de aplicar o crédito. | Saia, entre de novo e repita. |
+| "Você não tem permissões suficientes para realizar o pagamento combinado (cobrancas.emitir_boleto)." | O restante foi escolhido em Boleto, Cartão de Crédito ou E-Faturado, e o seu perfil não tem a permissão **Emitir Boleto**. | Escolha PIX para o restante, ou peça ao financeiro para gerar a cobrança. |
 | "Cobrança Parcial" | No pagamento combinado, o crédito foi aplicado, mas a segunda cobrança falhou e ficou pendente. | Não repita o crédito. Leia o aviso, que diz o que falhou, e confira na lista a segunda cobrança, que ficou pendente. |
 | "Cobrança criada, mas a lista não recarregou" | A cobrança foi gravada e a releitura falhou. | Atualize a página. |
 | "Sem permissão para cancelar cobrança" (dica do botão **Excluir** apagado) | O perfil não pode cancelar cobrança. | Peça a quem tem a permissão. |
@@ -399,6 +400,7 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/app/api/cobrancas/usar-credito/route.ts`
 - `src/features/cobrancas/lib/e-credito-botao.ts`
 - `src/app/api/cobrancas/pagamento-combinado/route.ts`
+- `src/features/cobrancas/lib/permissoes-pagamento-combinado.ts`
 - `src/app/api/cobrancas/faturado-com-entrada/route.ts`
 - `src/features/cobrancas/lib/faturado-com-entrada.ts`
 - `src/features/cobrancas/FaturadoComEntradaCampos.tsx`
@@ -408,7 +410,9 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/lib/formatters/status.ts`
 - `src/lib/mocks/pagamentos.mock.ts`
 
-> **Mudança desta revisão:** 11/11/2026 — pedido complementar em RETIRA ou FOB gera a cobrança sem frete complementar; em CIF continua exigindo o frete aplicado (caso 25107).
+> **Mudança desta revisão:** 12/11/2026 — pagamento combinado com o restante em PIX não exige mais a permissão **Emitir Boleto**: o vendedor faz E-Crédito + PIX. Boleto, Cartão e E-Faturado no restante continuam exigindo (caso 25197).
+>
+> **Revisão anterior:** 11/11/2026 — pedido complementar em RETIRA ou FOB gera a cobrança sem frete complementar; em CIF continua exigindo o frete aplicado (caso 25107).
 >
 > **Revisão anterior:** 10/11/2026 — **Trocar forma de pagamento** oferece também E-Permuta (com condição), E-Amostra e E-Retrabalho (cortesia, sem condição; E-Retrabalho só em retrabalho) e E-Crédito (saldo que cubra tudo; se o banco não confirmar, o crédito volta), com o quadro **Ao confirmar** conforme a forma (caso 24574).
 >
