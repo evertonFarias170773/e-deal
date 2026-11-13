@@ -192,7 +192,7 @@ Cobrança cancelada sai da lista.
 3. A cobrança sai da fila de conferência e fica disponível para boletos, fiscal, expedição e produção.
 4. Para desfazer, use **Voltar para lista principal** no mesmo menu.
 
-### Cancelar uma cobrança ou trocar a forma de pagamento de um PIX
+### Cancelar uma cobrança, trocar a forma de pagamento de um PIX ou registrar devolução
 
 1. Na linha da cobrança, clique em **Excluir** (ou, no detalhe, em **Cancelar cobrança**).
 2. A janela **Cancelar Cobrança** confere com o servidor se a cobrança pode ser cancelada.
@@ -217,7 +217,7 @@ Use **E-Crédito** quando o cliente pagou por fora da cobrança (por exemplo, um
 6. O Faturado segue o caminho de sempre: o sistema tenta a liberação automática; se não der, ele espera a análise do financeiro. Depois vêm a Conferência e os títulos no **Registro de recebíveis**. E-Permuta, E-Amostra e E-Retrabalho esperam a liberação do financeiro e seguem para a Conferência, sem títulos. O E-Crédito nasce paga e segue para a Conferência, sem títulos.
 7. O **Histórico** registra a troca com as duas cobranças, a forma nova, quem fez e o motivo.
 
-### Registrar a devolução e cancelar o pedido
+**Registrar a devolução e cancelar o pedido**
 
 Use quando o cliente já pagou por PIX, boleto ou cartão e o dinheiro foi devolvido pelo aplicativo do banco. O Vibe **não devolve dinheiro**: ele só registra a devolução e cancela o pedido.
 
