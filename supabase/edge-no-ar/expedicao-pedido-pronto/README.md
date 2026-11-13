@@ -6,6 +6,7 @@
 - Colocando em Produção (DIALOGO_PRODUCAO, 6071c6dbe34a18c2cc684747): Link_do_Cliente com `#arte` no fim (`linkDoAvisoProducao`). Só nesse aviso; o envio de arte do Imposition não muda. O portal do cliente só abre na aba Arte se a arte ainda não foi aprovada (secaoDeAbertura em cliente-shell.js do Imposition); com a arte aprovada, vai à próxima etapa pendente, com ou sem a âncora.
 - IDs dos dois diálogos conferidos: são os informados pelo Edinão.
 - Teste: caso F de `scripts/testes/expedicao-aviso-pronto-v23.test.mts`.
+- Prova de envio, só na conversa de teste Edison Junior - 14 (pedido de teste 24880), em 13/11/2026: Colocando em Produção (seq 25) e aviso pronto com o diálogo Transportadora e a Troca (seq 26), os dois com Diálogo Executado. Para o Transportadora, o despacho do 24880 foi trocado para a Troca (796) só em tipo_frete, transportadora_nome e id_transportadora_cliente, com autorização do Everton, e voltou ao valor guardado: resumo md5 da linha igual antes e depois (7afe52bf...). Nenhum gatilho de expedicoes repassa essas colunas para a proposta ou o frete.
 - A mesma mudança foi levada à v19 da janela (`supabase/functions/`).
 
 **v25 ficou no ar de 11/11/2026 até 13/11/2026 (versão 25 no painel da Supabase), conferida arquivo a arquivo igual a esta pasta (index.ts, logica.ts e a cópia de transportadoras-parceiras.ts, esta igual à da v24).** É a v24 com a Azul reconhecida pelo cadastro.
