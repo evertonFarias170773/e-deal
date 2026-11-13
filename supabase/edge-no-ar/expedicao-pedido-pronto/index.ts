@@ -156,6 +156,11 @@ import {
   recusaPorNumero,
   recusaTempoMinimo,
   TEMPO_MINIMO_GURU,
+  CONVERSA_TRAVADA,
+  DIALOGO_ORCAMENTO,
+  LIMITE_ORCAMENTO,
+  segundosParaLiberar,
+  textoDoOrcamento,
   textoDaResposta,
   CONVERSA_TESTE_OCUPADA,
   conversaDeTeste,
@@ -939,6 +944,102 @@ async function executarDialogo(
   return { resultado, motivo, etapa, porNumero, diagnostico };
 }
 
+// --- Orçamento pelo WhatsApp (v27, 13/11/2026) ---
+// Ação à parte: não grava em expedicao_aviso_pronto (o evento de lá só aceita os
+// avisos de pedido) e não muda nenhuma ação existente.
+
+/** A proposta pela sessão de quem clicou: quem não a enxerga (RLS) não envia. */
+async function propostaVisivel(req: Request, idInt: number): Promise<boolean> {
+  const usuario = createClient(env("SUPABASE_URL"), env("SUPABASE_ANON_KEY"), {
+    global: { headers: { Authorization: req.headers.get("authorization") ?? "" } },
+    auth: { persistSession: false, autoRefreshToken: false }
+  });
+  const { data, error } = await usuario.from("propostas").select("id_int").eq("id_int", idInt).maybeSingle();
+  if (error) throw new Recusa(503, "Não foi possível ler a proposta. Tente de novo.");
+  return Boolean(data);
+}
+
+async function contextoOrcamento(req: Request, idInt: number, modoTeste: boolean) {
+  if (!(await propostaVisivel(req, idInt))) throw new Recusa(404, `Proposta ${idInt} não encontrada.`);
+  const { data: p, error } = await admin
+    .from("propostas")
+    .select("id_int, id_cliente, id_contato, texto_whatsapp, chatguru_chat_id")
+    .eq("id_int", idInt)
+    .maybeSingle();
+  if (error || !p) throw new Recusa(503, "Não foi possível ler a proposta. Tente de novo.");
+  conferirModoTeste(modoTeste, p.id_cliente);
+  const texto = textoDoOrcamento(p.texto_whatsapp);
+  let whats: string | null = null;
+  let nomeContato: string | null = null;
+  const idContato = Number(String(p.id_contato ?? "").trim());
+  if (Number.isInteger(idContato) && idContato > 0) {
+    const { data: c } = await admin.from("contatos").select("whats, nome_contato, ativo").eq("id", idContato).maybeSingle();
+    if (c && c.ativo !== false) {
+      whats = (c.whats as string | null) ?? null;
+      nomeContato = (c.nome_contato as string | null) ?? null;
+    }
+  }
+  return { p, texto, whats, nomeContato };
+}
+
+/** Trava (aviso sem confirmação), envio em andamento e os 120 s do ChatGuru, pela conversa. */
+async function conferirConversaLivre(chatId: string) {
+  const [andamento, executado] = await Promise.all([
+    admin.from("expedicao_aviso_pronto").select("estado").eq("chat_id", chatId).in("estado", ["preparando", "desconhecido"]).limit(5),
+    admin
+      .from("expedicao_aviso_pronto")
+      .select("atualizado_em")
+      .eq("chat_id", chatId)
+      .eq("estado", "executado")
+      .order("atualizado_em", { ascending: false })
+      .limit(1)
+  ]);
+  if (andamento.error || executado.error) throw new Recusa(503, "Não foi possível conferir a conversa. Nada foi enviado.");
+  if ((andamento.data ?? []).some((r) => r.estado === "desconhecido")) throw new Recusa(409, CONVERSA_TRAVADA);
+  if ((andamento.data ?? []).length > 0) throw new Recusa(409, "Há um envio em andamento para esta conversa. Tente de novo em instantes.");
+  const faltam = segundosParaLiberar(executado.data?.[0]?.atualizado_em ?? null, Date.now());
+  if (faltam > 0) {
+    throw new Recusa(409, `O ChatGuru exige 2 minutos entre mensagens para a mesma conversa. Tente de novo em ${faltam} s. Nada foi enviado.`);
+  }
+}
+
+/** Campos e diálogo no ChatGuru, sem linha de reserva (mesmas regras de executarDialogo). */
+async function executarSemRegistro(
+  cfg: ReturnType<typeof configChatGuru>,
+  destino: string,
+  dialogId: string,
+  campos: Record<string, string>,
+  ocultar: (string | null | undefined)[]
+) {
+  let estado: "executado" | "falhou" | "desconhecido";
+  let motivo: string | null = null;
+  let etapa: "campos" | "dialogo" = "campos";
+  const diagnostico: { etapa: string; http: number | null; texto: string }[] = [];
+  try {
+    const r1 = await chamarChatGuru(cfg, "chat_update_custom_fields", { chat_number: destino, ...campos });
+    diagnostico.push({ etapa: "campos", http: r1.http, texto: diagnosticoSeguro(r1.texto, ocultar) });
+    if (!camposAceitos(r1.http, r1.data)) {
+      motivo = textoDaResposta(r1.data) || null;
+      estado = envioRecusado(r1.http, r1.data) ? "falhou" : "desconhecido";
+    } else {
+      etapa = "dialogo";
+      const r2 = await chamarChatGuru(cfg, "dialog_execute", { chat_number: destino, dialog_id: dialogId });
+      diagnostico.push({ etapa: "dialogo", http: r2.http, texto: diagnosticoSeguro(r2.texto, ocultar) });
+      if (dialogoExecutado(r2.http, r2.data)) {
+        estado = "executado";
+      } else {
+        motivo = recusaTempoMinimo(r2.data) ? TEMPO_MINIMO_GURU : textoDaResposta(r2.data) || null;
+        estado = envioRecusado(r2.http, r2.data) ? "falhou" : "desconhecido";
+      }
+    }
+  } catch (e) {
+    if (e instanceof Recusa) throw e;
+    diagnostico.push({ etapa, http: null, texto: "Sem resposta do ChatGuru (tempo esgotado ou falha de rede)." });
+    estado = "desconhecido";
+  }
+  return { estado, motivo, etapa, diagnostico };
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (req.method !== "POST") return responder(405, { ok: false, mensagem: "Use POST." });
@@ -1118,6 +1219,63 @@ Deno.serve(async (req) => {
         ocultar: [ctxP.contato.whats, ctxP.contato.nome_contato, linkP]
       });
       return respostaDosEnvios(modoTeste, outP);
+    }
+
+    if (acao === "orcamento_preparar" || acao === "orcamento_enviar") {
+      // Orçamento pelo WhatsApp (v27): diálogo "Orçamento Whatsapp" com o texto do box 9.
+      const idO = Number(corpo?.id_int);
+      if (!Number.isInteger(idO) || idO <= 0) throw new Recusa(400, "Proposta inválida.");
+      if (acao === "orcamento_preparar") {
+        // Só leitura: para qual conversa iria e, se o envio seria recusado, o motivo.
+        let bloqueio: string | null = null;
+        let conversaO: Conversa | null = null;
+        let escolhaO: Destinos["escolha"] = null;
+        let tamanho: number | null = null;
+        try {
+          const ctxO = await contextoOrcamento(req, idO, modoTeste);
+          tamanho = ctxO.texto.length;
+          const destO = await destinosDoAviso(ctxO.p.id_cliente, ctxO.whats, {}, ctxO.p.chatguru_chat_id);
+          conversaO = destO.conversas[0] ?? null;
+          escolhaO = destO.escolha;
+          if (conversaO) await conferirConversaLivre(conversaO.chat_id);
+        } catch (e) {
+          if (!(e instanceof Recusa)) throw e;
+          bloqueio = e.message;
+        }
+        return responder(200, { ok: true, modo_teste: modoTeste, conversa: conversaO, escolha: escolhaO, bloqueio, tamanho, limite: LIMITE_ORCAMENTO });
+      }
+      if (corpo?.confirmado !== true) throw new Recusa(409, "Confirme o envio do orçamento.");
+      const ctxO = await contextoOrcamento(req, idO, modoTeste);
+      const destO = await destinosDoAviso(
+        ctxO.p.id_cliente,
+        ctxO.whats,
+        Array.isArray(corpo?.chat_ids) ? { chat_ids: corpo.chat_ids } : {},
+        ctxO.p.chatguru_chat_id
+      );
+      if (destO.escolha) return responder(200, { ok: true, modo_teste: modoTeste, escolha: destO.escolha });
+      if (destO.conversas.length !== 1) throw new Recusa(409, "Escolha uma conversa só para o orçamento.");
+      const conversaO = destO.conversas[0];
+      await conferirConversaLivre(conversaO.chat_id);
+      const cfg = configChatGuru();
+      const r = await executarSemRegistro(cfg, conversaO.numero, DIALOGO_ORCAMENTO, { field__Orcamento: ctxO.texto }, [
+        cfg.key,
+        cfg.account,
+        cfg.phone,
+        conversaO.numero,
+        conversaO.nome,
+        ctxO.whats,
+        ctxO.nomeContato
+      ]);
+      return responder(200, {
+        ok: true,
+        modo_teste: modoTeste,
+        conversa: conversaO,
+        estado: r.estado,
+        etapa_chatguru: r.estado === "executado" ? null : r.etapa,
+        motivo_chatguru: r.motivo,
+        tamanho: ctxO.texto.length,
+        diagnostico_chatguru: quem.adm ? r.diagnostico : null
+      });
     }
 
     if (!["enviar", "reenviar", "status", "testar", "preparar"].includes(acao)) throw new Recusa(400, "Ação inválida.");

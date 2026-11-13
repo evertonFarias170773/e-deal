@@ -698,3 +698,45 @@ export const ANCORA_ARTE = "#arte";
 export function linkDoAvisoProducao(finalDoLink: string): string {
   return `${finalDoLink}${ANCORA_ARTE}`;
 }
+
+// --- Orçamento pelo WhatsApp (v27, 13/11/2026) ---
+
+/**
+ * Diálogo "Orçamento Whatsapp" criado pelo Edinão em 13/11/2026: o campo Orcamento
+ * leva o texto do box 9 da proposta (propostas.texto_whatsapp, gravado no Salvar),
+ * com as quebras de linha como estão.
+ */
+export const DIALOGO_ORCAMENTO = "6aef91d13ce8e563d886694f";
+
+/** Corpo de uma mensagem modelo do WhatsApp: até 1.024 caracteres. */
+export const LIMITE_ORCAMENTO = 1024;
+
+export const SEM_TEXTO_ORCAMENTO = "A proposta não tem o texto do orçamento gravado. Salve a proposta antes de enviar.";
+
+export const CONVERSA_TRAVADA =
+  "Há um aviso sem confirmação nesta conversa. Nada foi enviado. Ela fica travada até o ADM usar Liberar número na Expedição.";
+
+/**
+ * Texto do campo Orcamento: o do box 9 sem mudar a diagramação. Só troca \r\n por
+ * \n, tira caracteres de controle (menos a quebra de linha) e espaços no fim.
+ */
+export function textoDoOrcamento(texto: unknown): string {
+  if (typeof texto !== "string") throw new Recusa(422, SEM_TEXTO_ORCAMENTO);
+  const t = texto
+    .replace(/\r\n?/g, "\n")
+    .replace(/[\u0000-\u0009\u000b-\u001f\u007f]/g, "")
+    .replace(/\s+$/, "");
+  if (!t.trim()) throw new Recusa(422, SEM_TEXTO_ORCAMENTO);
+  if (t.length > LIMITE_ORCAMENTO) {
+    throw new Recusa(422, `O texto do orçamento tem ${t.length} caracteres; o limite da mensagem do WhatsApp é ${LIMITE_ORCAMENTO}. Nada foi enviado.`);
+  }
+  return t;
+}
+
+/** Segundos que faltam para a regra dos 120 s do ChatGuru liberar a conversa (0 = livre). */
+export function segundosParaLiberar(ultimoExecutadoEm: string | null | undefined, agoraMs: number): number {
+  if (!ultimoExecutadoEm) return 0;
+  const t = Date.parse(ultimoExecutadoEm);
+  if (!Number.isFinite(t)) return 0;
+  return Math.max(0, Math.ceil((t + INTERVALO_GURU_MS - agoraMs) / 1000));
+}

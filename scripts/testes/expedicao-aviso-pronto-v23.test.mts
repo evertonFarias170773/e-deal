@@ -20,7 +20,11 @@ import assert from "node:assert/strict";
 import {
   SEM_ETIQUETA,
   SEM_TRANSPORTADORA,
+  SEM_TEXTO_ORCAMENTO,
+  LIMITE_ORCAMENTO,
   camposDoDialogo,
+  segundosParaLiberar,
+  textoDoOrcamento,
   conversaDaProposta,
   linkDoAvisoProducao,
   linkDoCliente,
@@ -214,6 +218,24 @@ caso("F. v26: campo Transportadora e #arte", () => {
   const final = linkDoCliente(25220, [{ numero_pedido: 25220, token: "h42mny" }]);
   assert.equal(final, "25220-h42mny");
   assert.equal(linkDoAvisoProducao(final), "25220-h42mny#arte");
+});
+
+caso("G. v27: texto do Orçamento Whatsapp e os 120 s", () => {
+  // Texto do 25197 (box 9) como está gravado: as quebras de linha ficam.
+  const box9 = "Olá, 😀\n\nOrçamento para:\n*Edison Jr*\n\n📄 Proposta *25197*\n\n✅ *300* Ingresso MOBI: *R$ 98,10* (1 dia útil)\n\nTabela especial do cliente aplicada (-10%)  -R$ 10,90";
+  assert.equal(textoDoOrcamento(box9), box9);
+  assert.equal(textoDoOrcamento("a\r\nb\rc\n\n"), "a\nb\nc");
+  assert.equal(textoDoOrcamento("a\tb\u0007c"), "abc");
+  assert.throws(() => textoDoOrcamento("   \n "), { message: SEM_TEXTO_ORCAMENTO });
+  assert.throws(() => textoDoOrcamento(null), { message: SEM_TEXTO_ORCAMENTO });
+  assert.equal(textoDoOrcamento("x".repeat(LIMITE_ORCAMENTO)).length, LIMITE_ORCAMENTO);
+  assert.throws(() => textoDoOrcamento("x".repeat(LIMITE_ORCAMENTO + 1)), /limite da mensagem do WhatsApp/);
+
+  const agora = Date.parse("2026-11-13T19:00:00Z");
+  assert.equal(segundosParaLiberar(null, agora), 0);
+  assert.equal(segundosParaLiberar("2026-11-13T18:58:00Z", agora), 0);
+  assert.equal(segundosParaLiberar("2026-11-13T18:59:30Z", agora), 90);
+  assert.equal(segundosParaLiberar("lixo", agora), 0);
 });
 
 console.log(`\n${n} casos ok`);

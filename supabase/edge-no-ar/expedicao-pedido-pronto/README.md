@@ -1,6 +1,14 @@
-# expedicao-pedido-pronto: v26 no ar (fora de supabase/functions de propósito)
+# expedicao-pedido-pronto: v27 no ar (fora de supabase/functions de propósito)
 
-**v26 no ar desde 13/11/2026 (versão 26 no painel da Supabase), conferida arquivo a arquivo igual a esta pasta (index.ts, logica.ts e a cópia de transportadoras-parceiras.ts, igual à da v24).** Deploy autorizado pelo Everton, só desta versão. É a v25 com os modelos alterados pelo Edinão em 13/11:
+**v27 no ar desde 13/11/2026 (versão 27 no painel da Supabase), conferida arquivo a arquivo igual a esta pasta.** Deploy autorizado pelo Everton só desta versão. É a v26 com uma ação nova, sem mudar as existentes:
+- `orcamento_preparar` (só leitura) e `orcamento_enviar`: diálogo "Orçamento Whatsapp" (`DIALOGO_ORCAMENTO`, 6aef91d13ce8e563d886694f), campo `Orcamento` com `propostas.texto_whatsapp` (o texto do box 9 gravado no Salvar), com as quebras de linha (`textoDoOrcamento`; limite 1.024).
+- Só envia quem enxerga a proposta pela própria sessão (RLS). Conversa: a escolhida no Comprador (`propostas.chatguru_chat_id`); sem ela, a do WhatsApp do contato, como os avisos. Conversa travada, envio em andamento ou diálogo executado há menos de 120 s recusam antes de gravar campo; a recusa dos 120 s do próprio Guru também aparece.
+- Não grava em `expedicao_aviso_pronto`: o evento de lá só aceita `pedido_pronto` e `pedido_em_producao` (ampliar exige DDL). Por isso o envio do orçamento não fica no histórico e um resultado desconhecido dele não trava a conversa.
+- Envio de teste em 13/11/2026 19:51 (UTC): 25197 para Edison Junior - 14, campos salvos e Diálogo Executado. Botão do box 9 ainda não ligado: espera a conferência de como o texto chegou no WhatsApp.
+- A v19 da janela (`supabase/functions/`) não tem esta ação: levar junto com a v23 a v26.
+- Teste: caso G de `scripts/testes/expedicao-aviso-pronto-v23.test.mts`.
+
+**v26 ficou no ar em 13/11/2026, até a v27 (versão 26 no painel da Supabase), conferida arquivo a arquivo igual a esta pasta (index.ts, logica.ts e a cópia de transportadoras-parceiras.ts, igual à da v24).** Deploy autorizado pelo Everton, só desta versão. É a v25 com os modelos alterados pelo Edinão em 13/11:
 - Antes do deploy, a v25 do painel foi conferida igual a esta pasta.
 - Diálogo Transportadora (6aef36a7eab83021c5d20230): campo novo `Transportadora`, o nome curto da transportadora (despacho vence orçamento) pela lista `NOMES_CURTOS_TRANSPORTADORA` de logica.ts; fora da lista, a fantasia gravada no despacho. Sem nome, recusa com SEM_TRANSPORTADORA. Nota_Fiscal continua gravada. Veppo, Azul e os outros diálogos sem mudança.
 - Colocando em Produção (DIALOGO_PRODUCAO, 6071c6dbe34a18c2cc684747): Link_do_Cliente com `#arte` no fim (`linkDoAvisoProducao`). Só nesse aviso; o envio de arte do Imposition não muda. O portal do cliente só abre na aba Arte se a arte ainda não foi aprovada (secaoDeAbertura em cliente-shell.js do Imposition); com a arte aprovada, vai à próxima etapa pendente, com ou sem a âncora.
