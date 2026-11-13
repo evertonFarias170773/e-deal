@@ -16,6 +16,8 @@ import {
 import { useGlobalChat } from "@/features/chat/context/GlobalChatContext";
 import { AnaliseCreditoModal } from "./AnaliseCreditoModal";
 import { CancelCobrancaModal } from "./CancelCobrancaModal";
+import { RegistrarDevolucaoModal } from "./RegistrarDevolucaoModal";
+import { cobrancaAceitaDevolucao, podeRegistrarDevolucao } from "./lib/devolucao-pagamento";
 import { AutorizarFaturamentoModal } from "./AutorizarFaturamentoModal";
 import { ConfirmarLiberacaoModal } from "./ConfirmarLiberacaoModal";
 import { RevisarGeracaoBancariaModal } from "@/features/contas-a-receber/components/RevisarGeracaoBancariaModal";
@@ -71,6 +73,7 @@ export function CobrancaActionsMenu({ cobranca, label }: CobrancaActionsMenuProp
   const [isUpdating, setIsUpdating] = useState(false);
   const [isCreditModalOpen, setIsCreditModalOpen] = useState(false);
   const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
+  const [isDevolucaoOpen, setIsDevolucaoOpen] = useState(false);
   const [isAutorizarModalOpen, setIsAutorizarModalOpen] = useState(false);
   const [isLiberarModalOpen, setIsLiberarModalOpen] = useState(false);
   const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
@@ -261,6 +264,15 @@ export function CobrancaActionsMenu({ cobranca, label }: CobrancaActionsMenuProp
       label: "Nova tarefa",
       onClick: () => setIsNovaTarefaOpen(true)
     },
+    // Devolução feita no app do banco: registra e cancela o pedido (13/11/2026).
+    // Só super admin e só cobrança paga em dinheiro; a função do banco confere tudo.
+    ...(podeRegistrarDevolucao(user) && cobrancaAceitaDevolucao(cobranca) && cobranca.id_int
+      ? [{
+          label: "Registrar devolução e cancelar pedido",
+          destructive: true,
+          onClick: () => setIsDevolucaoOpen(true)
+        }]
+      : []),
     {
       label: "Cancelar cobrança",
       destructive: true,
@@ -310,6 +322,15 @@ export function CobrancaActionsMenu({ cobranca, label }: CobrancaActionsMenuProp
         cobranca={cobranca}
         onCreditApproved={handleCreditApproved}
       />
+      {isDevolucaoOpen && cobranca.id_int ? (
+        <RegistrarDevolucaoModal
+          aberto
+          idInt={Number(cobranca.id_int)}
+          idCobranca={cobranca.id}
+          onFechar={() => setIsDevolucaoOpen(false)}
+          onConcluido={() => void refreshCobrancas()}
+        />
+      ) : null}
       <CancelCobrancaModal
         isOpen={isCancelModalOpen}
         onClose={() => setIsCancelModalOpen(false)}

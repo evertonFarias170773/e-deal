@@ -21,6 +21,8 @@ import type { Cobranca, CobrancaTipo, CriarCobrancaFormValues, CreditAnalysisRes
 import type { Proposta } from "@/features/orcamentos/types";
 import { CobrancaDetail } from "@/features/cobrancas/CobrancaDetail";
 import { CancelCobrancaModal } from "./CancelCobrancaModal";
+import { RegistrarDevolucaoModal } from "./RegistrarDevolucaoModal";
+import { cobrancaAceitaDevolucao, podeRegistrarDevolucao } from "./lib/devolucao-pagamento";
 import { CorrigirTelefonePagadorModal } from "./CorrigirTelefonePagadorModal";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import { fetchComSessao, obterAccessToken, SessaoExpiradaError } from "@/lib/supabase/sessao";
@@ -2930,6 +2932,7 @@ function CobrancasDaPropostaList({ cobrancas, onSelectCobranca, onRefreshPropost
   const { showToast } = useAppToast();
   const { user } = useAuth();
   const [cobrancaParaExcluir, setCobrancaParaExcluir] = useState<Cobranca | null>(null);
+  const [cobrancaParaDevolver, setCobrancaParaDevolver] = useState<Cobranca | null>(null);
 
   // Boleto baixando agora (id da cobrança), para travar o botão no clique.
   const [baixandoBoletoId, setBaixandoBoletoId] = useState<string | null>(null);
@@ -3208,6 +3211,17 @@ function CobrancasDaPropostaList({ cobrancas, onSelectCobranca, onRefreshPropost
                   Excluir
                 </button>
 
+                {podeRegistrarDevolucao(user) && cobrancaAceitaDevolucao(cobranca) ? (
+                  <button
+                    type="button"
+                    onClick={() => setCobrancaParaDevolver(cobranca)}
+                    title="Registrar devolução feita no app do banco e cancelar o pedido"
+                    className="h-10 min-w-[120px] px-4 inline-flex items-center justify-center rounded-xl text-sm font-semibold whitespace-nowrap bg-rose-600 text-white hover:bg-rose-700 transition"
+                  >
+                    Registrar devolução
+                  </button>
+                ) : null}
+
               </div>
             </div>
 
@@ -3271,6 +3285,16 @@ function CobrancasDaPropostaList({ cobrancas, onSelectCobranca, onRefreshPropost
                   >
                     Excluir
                   </button>
+                  {podeRegistrarDevolucao(user) && cobrancaAceitaDevolucao(cobranca) ? (
+                    <button
+                      type="button"
+                      onClick={() => setCobrancaParaDevolver(cobranca)}
+                      title="Registrar devolução feita no app do banco e cancelar o pedido"
+                      className="inline-flex items-center justify-center rounded-xl bg-rose-600 px-2.5 py-1.5 text-xs font-semibold text-white transition hover:bg-rose-700"
+                    >
+                      Registrar devolução
+                    </button>
+                  ) : null}
                   {isBoleto ? (
                     <>
                       {boletoUrl ? (
@@ -3394,6 +3418,15 @@ function CobrancasDaPropostaList({ cobrancas, onSelectCobranca, onRefreshPropost
         );
       })}
 
+      {cobrancaParaDevolver && cobrancaParaDevolver.id_int ? (
+        <RegistrarDevolucaoModal
+          aberto
+          idInt={Number(cobrancaParaDevolver.id_int)}
+          idCobranca={cobrancaParaDevolver.id}
+          onFechar={() => setCobrancaParaDevolver(null)}
+          onConcluido={() => onRefreshProposta?.()}
+        />
+      ) : null}
       {cobrancaParaExcluir ? (
         <CancelCobrancaModal
           isOpen={true}

@@ -1,6 +1,6 @@
 # Proposta: aba Pagamentos
 
-> **Última revisão:** 12/11/2026 (pagamento combinado E-Crédito + PIX sem a permissão de boleto)
+> **Última revisão:** 13/11/2026 (Registrar devolução e cancelar pedido)
 > **Caminho no menu:** Pedidos → abrir um pedido → aba Pagamentos
 > **Endereço:** `/orcamentos/<número>/editar?tab=pagamentos`
 
@@ -12,6 +12,7 @@
 
 - Quem abre a proposta vê a aba e pode gerar cobrança. A proposta precisa estar salva e ter cliente cadastrado.
 - A forma **E-Crédito** só aparece para administrador ou perfil com a permissão **Usar Crédito Acumulado**, e só quando o cliente tem saldo. No pagamento combinado (crédito mais outra forma), com o restante em **PIX** basta a permissão de usar crédito; com o restante em **Boleto**, **Cartão de Crédito** ou **E-Faturado**, exige também a permissão **Emitir Boleto**.
+- **Registrar devolução e cancelar pedido** aparece só para super administrador, e o servidor confere de novo.
 - O botão **Excluir** (cancelar cobrança) fica apagado para quem não é administrador e não tem a permissão **Cancelar / Estornar Cobranças** nem **Cancelar Cobrança Não Paga**. Com a segunda, só dá para cancelar cobrança emitida e ainda não paga, de proposta que o usuário enxerga, e que não esteja ligada à Conta Corrente.
 - **Abonar diferença** só aparece para administrador e super administrador.
 - **Analisar condição** (aprovar, alterar ou reprovar o faturamento) aparece para administrador ou perfil com a permissão **Liberar OS / Confirmar**.
@@ -39,6 +40,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Copiar** | Linha de cobrança com link | Copia o link, o código PIX ou a linha digitável da cobrança. |
 | **Ver cobrança** (no celular: **Ver**) | Linha de cobrança | Abre o detalhe da cobrança dentro da aba. |
 | **Excluir** | Linha de cobrança | Abre a janela **Cancelar Cobrança**. |
+| **Registrar devolução** | Linha de cobrança paga por PIX, boleto ou cartão, ao lado de **Excluir** | Abre a janela **Registrar devolução e cancelar pedido**. Só super administrador. |
 | **Empresa recebedora** | Janela **Criar cobrança** | Escolhe a empresa que recebe: IDEAL GRÁFICA EXPRESSA EIRELI, IDEAL BIRÔ SERV. GRAFICOS ou E3 BRINDES LTDA. |
 | **Pedido do sistema antigo** | Janela **Criar cobrança** | Marque quando o pedido veio do sistema antigo. Vem desmarcado; numa proposta já marcada antes, vem marcado. |
 | **OS Ideal \*** | Janela **Criar cobrança** | Número da OS no sistema antigo, só dígitos, até 6. Fica na mesma linha do valor; só aparece, e só é obrigatório, com **Pedido do sistema antigo** marcado. |
@@ -215,6 +217,21 @@ Use **E-Crédito** quando o cliente pagou por fora da cobrança (por exemplo, um
 6. O Faturado segue o caminho de sempre: o sistema tenta a liberação automática; se não der, ele espera a análise do financeiro. Depois vêm a Conferência e os títulos no **Registro de recebíveis**. E-Permuta, E-Amostra e E-Retrabalho esperam a liberação do financeiro e seguem para a Conferência, sem títulos. O E-Crédito nasce paga e segue para a Conferência, sem títulos.
 7. O **Histórico** registra a troca com as duas cobranças, a forma nova, quem fez e o motivo.
 
+### Registrar a devolução e cancelar o pedido
+
+Use quando o cliente já pagou por PIX, boleto ou cartão e o dinheiro foi devolvido pelo aplicativo do banco. O Vibe **não devolve dinheiro**: ele só registra a devolução e cancela o pedido.
+
+1. Faça a devolução no aplicativo do banco e guarde o e2eId da devolução ou o comprovante.
+2. Na linha da cobrança paga, clique em **Registrar devolução** (ao lado de **Excluir**).
+3. Na janela **Registrar devolução e cancelar pedido**, confira a **Cobrança devolvida** e o **Valor devolvido**, que é sempre o valor total da cobrança (não há devolução parcial).
+4. Informe a **Data da devolução** (hoje ou antes, nunca antes do pagamento), o **e2eId da devolução** (32 letras e números) e/ou a **Identificação do comprovante**, e o **Motivo \***. É preciso preencher o e2eId, o comprovante ou os dois.
+5. Se o pagamento foi confirmado em mês já fechado, marque a confirmação de que o faturamento daquele mês vai mudar.
+6. Clique em **Registrar devolução e cancelar pedido**.
+
+A cobrança e o pedido ficam cancelados, e o valor sai do faturamento, do Relatório de vendas pagas, da comissão, da Curva ABC, do ranking e do Dashboard. O **Histórico** do pedido registra quem registrou, a data da devolução, o valor, o e2eId ou o comprovante e o motivo. Registrar de novo a mesma cobrança não grava nada: a janela avisa que a devolução já estava registrada.
+
+O sistema recusa, sem gravar nada e dizendo o motivo, quando o pedido tem nota fiscal autorizada (cancele a nota antes), já foi para a produção ou além, ou tem despacho; tem outra cobrança ativa; é pedido complementar ou tem complemento aberto; usou E-Crédito; ou quando a cobrança é de forma sem dinheiro recebido (E-Faturado, E-Crédito, E-Amostra, E-Retrabalho, E-Permuta), ou o e2eId já foi usado em outra devolução.
+
 ### Resolver a diferença quando o cliente ficou devendo
 
 1. Quando uma proposta já paga é alterada e o total sobe, a alteração é salva direto e a diferença vira saldo da própria proposta.
@@ -369,6 +386,9 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/features/cobrancas/CobrancaDetail.tsx`
 - `src/features/cobrancas/CobrancaActionsMenu.tsx`
 - `src/features/cobrancas/CancelCobrancaModal.tsx`
+- `src/features/cobrancas/RegistrarDevolucaoModal.tsx`
+- `src/features/cobrancas/lib/devolucao-pagamento.ts`
+- `src/app/api/cobrancas/registrar-devolucao/route.ts`
 - `src/features/cobrancas/TrocarFormaPagamentoModal.tsx`
 - `src/features/cobrancas/troca-forma-pagamento.ts`
 - `src/app/api/cobrancas/trocar-forma-pagamento/route.ts`
@@ -410,7 +430,9 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/lib/formatters/status.ts`
 - `src/lib/mocks/pagamentos.mock.ts`
 
-> **Mudança desta revisão:** 12/11/2026 — pagamento combinado com o restante em PIX não exige mais a permissão **Emitir Boleto**: o vendedor faz E-Crédito + PIX. Boleto, Cartão e E-Faturado no restante continuam exigindo (caso 25197).
+> **Mudança desta revisão:** 13/11/2026 — nova ação **Registrar devolução e cancelar pedido** (só super administrador): registra a devolução feita pelo aplicativo do banco (valor total, data, e2eId ou comprovante, motivo e autor), cancela a cobrança e o pedido e tira o valor do faturamento (caso 25098).
+>
+> **Revisão anterior:** 12/11/2026 — pagamento combinado com o restante em PIX não exige mais a permissão **Emitir Boleto**: o vendedor faz E-Crédito + PIX. Boleto, Cartão e E-Faturado no restante continuam exigindo (caso 25197).
 >
 > **Revisão anterior:** 11/11/2026 — pedido complementar em RETIRA ou FOB gera a cobrança sem frete complementar; em CIF continua exigindo o frete aplicado (caso 25107).
 >

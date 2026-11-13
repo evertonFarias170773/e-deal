@@ -1,6 +1,6 @@
 # Pedidos (lista)
 
-> **Última revisão:** 13/11/2026 (link do aviso Pedido em Produção com #arte no final; antes, 12/11/2026: filtro Cobrança com todas as formas de pagamento, sem o corte que escondia parte dos pedidos com PIX e cartão, e respeitando o período com páginas normais)
+> **Última revisão:** 13/11/2026 (Registrar devolução e cancelar pedido; link do aviso Pedido em Produção com #arte no final; antes, 12/11/2026: filtro Cobrança com todas as formas de pagamento, sem o corte que escondia parte dos pedidos com PIX e cartão, e respeitando o período com páginas normais)
 > **Caminho no menu:** Pedidos (item direto do menu lateral, sem submenu; é o segundo, logo abaixo de Conferência)
 > **Endereço:** `/orcamentos`
 
@@ -17,6 +17,7 @@ No alto da tela o título aparece como "Orcamentos", com a etiqueta "Pedidos". �
 - Todo usuário logado vê o item **Pedidos** no menu e abre a tela. É também a página inicial de quem é vendedor e dos perfis que não têm outra página inicial definida.
 - Quem tem o perfil configurado para ver apenas as próprias propostas (por exemplo, o perfil Atendente) só enxerga os pedidos em que aparece como atendente. Quem vê todas as propostas (Gerente comercial, Super Administrador e perfis sem restrição de escopo) enxerga a lista inteira.
 - **Cancelar proposta**: só o Super Administrador e quem tem a permissão "Cancelar Propostas" (o perfil Gerente comercial já vem com ela).
+- **Registrar devolução e cancelar pedido** aparece só para super administrador, e o servidor confere de novo.
 - **Criar Complemento**: só quem tem a permissão "Criar Complemento".
 - **Duplicar proposta**: só o vendedor da proposta, o administrador ou quem vê todas as propostas. Para os demais a cópia é recusada com o aviso "Você só pode duplicar proposta em que é o vendedor".
 - **Liberar para Produção** e **Retirar da Produção**: só administrador, Super Administrador ou quem tem a permissão "Liberar para Produção". Sem ela, os dois itens não aparecem no menu, e o servidor recusa tanto a liberação quanto a retirada. **Retirar da Produção** só aparece em pedido em REVISAO PRODUCAO.
@@ -67,6 +68,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Baixar XML** | Menu da linha | Baixa o XML da nota. |
 | **Gerar cobrança** | Menu da linha | Abre a geração de cobrança da proposta. |
 | **Confirmar Conferência** (com mais de uma cobrança na Fila: **Confirmar Conferência — forma valor**, uma opção por cobrança) | Menu da linha, depois de **Gerar cobrança**; só administrador, em pedido com cobrança na Fila de Conferência | Abre a janela **Confirmar Liberação Operacional**, a mesma da tela Conferência. |
+| **Registrar devolução e cancelar pedido** | Menu da linha (em vermelho), em pedido não cancelado | Abre a janela que registra a devolução feita no banco e cancela a cobrança paga e o pedido. Só super administrador. |
 | **Cancelar proposta** | Menu da linha | Abre a janela **Cancelar Proposta**. |
 | **Liberar para Produção** | Menu da linha | Abre a janela "Liberar proposta para Produção?", que pergunta se manda ao cliente o aviso "Pedido em Produção" e mostra para quem vai: **Liberar e enviar**, **Liberar sem enviar** ou **Cancelar**. |
 | **Aviso: pedido em produção** | Menu da linha, em pedido já liberado, para quem pode liberar | Abre a mesma janela só com o aviso: mostra a última tentativa, **Enviar aviso** se ainda não houve e **Reenviar** (com confirmação). |
@@ -182,6 +184,7 @@ As datas pequenas aparecem como dia/mês e hora, no horário de Brasília.
 11. **Gerar cobrança**: abre a geração de cobrança. Não aparece em pedido sem cliente cadastrado.
 12. **Confirmar Conferência**: aparece só para administrador, no pedido que tem cobrança na Fila de Conferência (paga e ainda não conferida, ou faturado a vencer já autorizado). É a mesma ação da tela Conferência: abre a janela **Confirmar Liberação Operacional**, e **Confirmar Liberação** grava a conferência pela rota oficial, que confere a permissão no servidor. Com mais de uma cobrança na Fila, o menu traz uma opção por cobrança, com a forma e o valor. Depois de confirmar, a lista atualiza e a opção some do pedido. Se a cobrança já foi conferida por outra pessoa, o sistema avisa e só atualiza a lista.
 13. **Cancelar proposta**: abre a janela de cancelamento, que exige o **Motivo do Cancelamento**.
+    **Registrar devolução e cancelar pedido** (logo acima, só super administrador): para o pedido já pago cujo dinheiro foi devolvido pelo banco. Veja "Registrar a devolução e cancelar o pedido".
 14. **Liberar para Produção**: aparece para quem tem a permissão "Liberar para Produção", em pedido não avulso que está em REVISAO ATENDENTE e ainda não foi liberado. Depois de liberado, no lugar dela fica o aviso **✓ Liberada para produção**, que não é clicável, e o item **Aviso: pedido em produção**.
 15. **Rastrear objeto**: aparece quando o despacho é pelos Correios e já existe código de rastreio.
     **Ver conhecimento**: aparece quando o despacho é por transportadora ou motoboy e o conhecimento já foi preenchido na Expedição. Mostra o número e deixa copiar, sem consultar os Correios.
@@ -226,6 +229,21 @@ Para o cliente que só paga mediante a nota. Só administrador, Super Administra
 4. Quando a nota antecipada já saiu no sistema antigo, a marca é feita na **Fila de Faturamento**, pela ação **Nota emitida no sistema antigo** da linha do pedido, que pede o **Número da nota no sistema antigo \*** — não há mais essa ação neste menu. Para marcar um pedido em AGUARDANDO, ele precisa estar na fila antes: é o **Liberar nota antecipada (Fila de Faturamento)** que o põe lá. O passo a passo está em [Notas fiscais](notas-fiscais.md). Para desfazer, volte a este menu e clique em **Voltar para a Fila de Faturamento (desfazer nota no sistema antigo)**.
 
 A liberação é recusada quando já existe NF-e de venda autorizada ou em processamento; o **Desfazer nota antecipada** é recusado quando já existe NF-e de venda, inclusive rascunho.
+
+### Registrar a devolução e cancelar o pedido
+
+Use quando o cliente já pagou por PIX, boleto ou cartão e o dinheiro foi devolvido pelo aplicativo do banco. O Vibe **não devolve dinheiro**: ele só registra a devolução e cancela o pedido.
+
+1. Faça a devolução no aplicativo do banco e guarde o e2eId da devolução ou o comprovante.
+2. No menu da linha do pedido, clique em **Registrar devolução e cancelar pedido**. A janela lê as cobranças do pedido; se nenhuma estiver paga por PIX, boleto ou cartão, ela avisa que não há o que devolver.
+3. Na janela **Registrar devolução e cancelar pedido**, confira a **Cobrança devolvida** e o **Valor devolvido**, que é sempre o valor total da cobrança (não há devolução parcial).
+4. Informe a **Data da devolução** (hoje ou antes, nunca antes do pagamento), o **e2eId da devolução** (32 letras e números) e/ou a **Identificação do comprovante**, e o **Motivo \***. É preciso preencher o e2eId, o comprovante ou os dois.
+5. Se o pagamento foi confirmado em mês já fechado, marque a confirmação de que o faturamento daquele mês vai mudar.
+6. Clique em **Registrar devolução e cancelar pedido**.
+
+A cobrança e o pedido ficam cancelados, e o valor sai do faturamento, do Relatório de vendas pagas, da comissão, da Curva ABC, do ranking e do Dashboard. O **Histórico** do pedido registra quem registrou, a data da devolução, o valor, o e2eId ou o comprovante e o motivo. Registrar de novo a mesma cobrança não grava nada: a janela avisa que a devolução já estava registrada.
+
+O sistema recusa, sem gravar nada e dizendo o motivo, quando o pedido tem nota fiscal autorizada (cancele a nota antes), já foi para a produção ou além, ou tem despacho; tem outra cobrança ativa; é pedido complementar ou tem complemento aberto; usou E-Crédito; ou quando a cobrança é de forma sem dinheiro recebido (E-Faturado, E-Crédito, E-Amostra, E-Retrabalho, E-Permuta), ou o e2eId já foi usado em outra devolução.
 
 ### Achar o que a lista esconde
 
@@ -279,6 +297,7 @@ A liberação é recusada quando já existe NF-e de venda autorizada ou em proce
 - Linha amarela (Aguardando financeiro) e linha azul bem claro (Pago / A liberar): as duas vêm da situação da cobrança na Conferência; se o pedido tem cobranças nas duas situações, vale Aguardando financeiro.
 - Linha azul clara (revisão atendente) e linha azul bem claro (Pago / A liberar): a primeira é pelo status do pedido e fica no topo; a segunda é pela cobrança e fica no quarto grupo.
 - Fundo laranja da linha (Enviar Arte) e card **Em arte** laranja: a linha fica laranja por Enviar Arte, e vermelha por Pendente Informação, só com o card ligado; o card fica laranja quando há pedido em Pendente Informação ou Corrigir Dados.
+- **Cancelar proposta** e **Registrar devolução e cancelar pedido**: a primeira recusa o pedido com cobrança paga; a segunda é para esse caso, depois que o dinheiro foi devolvido pelo banco.
 - **Cancelar proposta** e **Cancelar só a cobrança**: a primeira encerra o pedido e não tem volta; a segunda mantém o pedido e reabre o saldo para uma cobrança nova.
 - **Encerrar teste** e **Cancelar proposta**: encerrar teste só esconde o pedido das listas operacionais, sem mudar o status, e pode ser desfeito; cancelar é irreversível.
 - **Encerrar teste** e **Retirar da Produção**: encerrar teste não mexe na liberação do pedido; retirar desfaz a entrada na fila da produção e devolve o pedido ao atendente.
@@ -370,6 +389,9 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/features/orcamentos/services/marcar-entregue.service.ts`
 - `src/app/api/orcamentos/marcar-entregue/route.ts`
 - `src/features/orcamentos/components/CancelPropostaModal.tsx`
+- `src/features/cobrancas/RegistrarDevolucaoModal.tsx`
+- `src/features/cobrancas/lib/devolucao-pagamento.ts`
+- `src/app/api/cobrancas/registrar-devolucao/route.ts`
 - `src/features/orcamentos/components/CriarComplementoModal.tsx`
 - `src/features/orcamentos/services/prazo-envio-lista.service.ts`
 - `src/features/orcamentos/services/rastreio-lista.service.ts`

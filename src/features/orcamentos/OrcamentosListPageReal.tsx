@@ -97,6 +97,8 @@ import {
   rotuloDaOpcaoDeConferencia
 } from "@/features/orcamentos/lib/cobrancas-na-fila";
 import { CriarComplementoModal } from "@/features/orcamentos/components/CriarComplementoModal";
+import { RegistrarDevolucaoModal } from "@/features/cobrancas/RegistrarDevolucaoModal";
+import { podeRegistrarDevolucao } from "@/features/cobrancas/lib/devolucao-pagamento";
 import type { Proposta } from "@/features/orcamentos/types";
 import { copiarLinkPagamentoExterno } from "@/features/area-cliente/lib/copiar-link-pagamento";
 
@@ -535,6 +537,8 @@ export function OrcamentosListPageReal() {
   const [modoAvisoProducao, setModoAvisoProducao] = useState<"liberar" | "avisar">("liberar");
 
   const [isCancelPropostaModalOpen, setIsCancelPropostaModalOpen] = useState(false);
+  // "Registrar devolução e cancelar pedido" (13/11/2026): pedido escolhido no menu.
+  const [pedidoParaDevolver, setPedidoParaDevolver] = useState<number | null>(null);
   const [selectedPropostaForCancel, setSelectedPropostaForCancel] = useState<OrcamentoListItem | null>(null);
 
   const [selectedPropostaForComplemento, setSelectedPropostaForComplemento] = useState<OrcamentoListItem | null>(null);
@@ -1941,6 +1945,13 @@ Ela volta a aparecer nas listas operacionais.`
             onClick: () => void abrirConferenciaDaCobranca(cobrancaNaFila.id)
           }))
         : []),
+      // Devolução feita no app do banco: só super admin. A janela lê as cobranças
+      // do pedido e diz quando não há cobrança paga em dinheiro para devolver.
+      ...(podeRegistrarDevolucao(user) && item.status !== "CANCELADO" ? [{
+        label: "Registrar devolução e cancelar pedido",
+        destructive: true,
+        onClick: () => setPedidoParaDevolver(item.id_int)
+      }] : []),
       ...(canCancelarProposta && item.status !== "CANCELADO" ? [{
         label: "Cancelar proposta",
         destructive: true,
@@ -2909,6 +2920,15 @@ Ela volta a aparecer nas listas operacionais.`
       )}
 
       {modalDuplicar}
+
+      {pedidoParaDevolver !== null ? (
+        <RegistrarDevolucaoModal
+          aberto
+          idInt={pedidoParaDevolver}
+          onFechar={() => setPedidoParaDevolver(null)}
+          onConcluido={() => triggerRefresh()}
+        />
+      ) : null}
 
       {pedidoParaEnviarAFila && (
         <EnviarFilaFaturamentoModal

@@ -1,6 +1,6 @@
 # Conferência
 
-> **Última revisão:** 06/11/2026 (total da proposta em centavos exatos na conferência; Faturado com entrada)
+> **Última revisão:** 13/11/2026 (Registrar devolução e cancelar pedido)
 > **Caminho no menu:** Conferência (primeiro item do menu lateral; é um link direto, sem subitens)
 > **Endereço:** `/cobrancas` (o detalhe de uma cobrança abre em `/cobrancas/<cobrança>`)
 
@@ -19,6 +19,7 @@ No topo da tela, o título é **Conferência de pagamentos**. A lista tem as col
 - **Autorizar e conferir**, na aba **Aprovar** da mesma janela, exige as duas permissões: **Liberar OS / Confirmar** e **Confirmar Pagamento** (administradores têm as duas). O botão só aparece para quem tem as duas, e o servidor confere de novo.
 - **Cancelar cobrança** de uma cobrança que ainda não foi paga fica habilitado para administradores e para quem tem **Cancelar / Estornar Cobranças** ou **Cancelar Cobrança Não Paga**. Além da permissão, é preciso ter acesso à proposta daquela cobrança.
 - **Cancelar cobrança** de uma cobrança já paga só fica habilitado para super administrador, e mesmo para ele a tela recusa o cancelamento (veja "Regras e bloqueios").
+- **Registrar devolução e cancelar pedido** aparece só para super administrador, e o servidor confere de novo.
 - As demais ações do menu (ver cobrança, abrir proposta, ver cliente, chat, copiar PIX, copiar linha digitável, nova tarefa) ficam disponíveis para quem vê a tela.
 
 ## Botões e ações da tela
@@ -54,6 +55,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Copiar PIX** | Menu de ações (não aparece em cartão parcelado) | Copia o código PIX. Desabilitado quando a cobrança não tem PIX. |
 | **Copiar linha digitável** | Menu de ações (não aparece em cartão parcelado) | Copia a linha digitável do boleto. Desabilitado quando não há boleto. |
 | **Nova tarefa** | Menu de ações | Cria uma tarefa para um colega, já com o pedido, o cliente e a descrição da cobrança. |
+| **Registrar devolução e cancelar pedido** | Menu de ações (em vermelho), só em cobrança paga por PIX, boleto ou cartão, e no menu do detalhe | Abre a janela que registra a devolução feita no banco e cancela a cobrança e o pedido. Só super administrador. |
 | **Cancelar cobrança** | Menu de ações (em vermelho) e **Ações Administrativas** do detalhe | Abre a janela **Cancelar Cobrança**. |
 | **Confirmar Liberação** | Janela **Confirmar Liberação Operacional** | Confirma a conferência da cobrança. Enquanto confirma, o botão mostra "Confirmando..." e fica apagado; a janela fecha assim que a confirmação é gravada. |
 | Aviso **Atualizando a lista...** | Na linha das abas, à direita | Aparece depois de uma confirmação, enquanto a lista inteira é recarregada. Não é preciso esperar: a tela continua liberada. |
@@ -162,6 +164,21 @@ São três passos, cada um feito por você. Nenhum dispara o seguinte.
 3. Volte à Conferência, aba **Cobranças Confirmadas**, e use **Cancelar cobrança**.
 
 Enquanto houver título em aberto, a Conferência recusa o cancelamento, lista os títulos e oferece o botão **Ir para Contas a Receber**.
+
+### Registrar a devolução e cancelar o pedido
+
+Use quando o cliente já pagou por PIX, boleto ou cartão e o dinheiro foi devolvido pelo aplicativo do banco. O Vibe **não devolve dinheiro**: ele só registra a devolução e cancela o pedido.
+
+1. Faça a devolução no aplicativo do banco e guarde o e2eId da devolução ou o comprovante.
+2. No menu de ações da cobrança paga (ou no menu do detalhe), clique em **Registrar devolução e cancelar pedido**.
+3. Na janela **Registrar devolução e cancelar pedido**, confira a **Cobrança devolvida** e o **Valor devolvido**, que é sempre o valor total da cobrança (não há devolução parcial).
+4. Informe a **Data da devolução** (hoje ou antes, nunca antes do pagamento), o **e2eId da devolução** (32 letras e números) e/ou a **Identificação do comprovante**, e o **Motivo \***. É preciso preencher o e2eId, o comprovante ou os dois.
+5. Se o pagamento foi confirmado em mês já fechado, marque a confirmação de que o faturamento daquele mês vai mudar.
+6. Clique em **Registrar devolução e cancelar pedido**.
+
+A cobrança e o pedido ficam cancelados, e o valor sai do faturamento, do Relatório de vendas pagas, da comissão, da Curva ABC, do ranking e do Dashboard. O **Histórico** do pedido registra quem registrou, a data da devolução, o valor, o e2eId ou o comprovante e o motivo. Registrar de novo a mesma cobrança não grava nada: a janela avisa que a devolução já estava registrada.
+
+O sistema recusa, sem gravar nada e dizendo o motivo, quando o pedido tem nota fiscal autorizada (cancele a nota antes), já foi para a produção ou além, ou tem despacho; tem outra cobrança ativa; é pedido complementar ou tem complemento aberto; usou E-Crédito; ou quando a cobrança é de forma sem dinheiro recebido (E-Faturado, E-Crédito, E-Amostra, E-Retrabalho, E-Permuta), ou o e2eId já foi usado em outra devolução.
 
 ### Abrir o detalhe de uma cobrança
 
@@ -309,7 +326,9 @@ Outros:
 | "Nenhuma cobrança encontrada" | Nada bate com os filtros, a aba e a busca. | Troque de aba, ajuste o período ou use **Limpar filtros**. |
 | "Lista incompleta: há mais cobranças do que o limite carregado. Avise o suporte." | A tela carrega no máximo 30.000 cobranças, das mais novas para as mais antigas, e o total passou disso. | Avise o suporte. Enquanto o aviso aparecer, a aba Pagamentos da proposta não mostra as cobranças nem deixa gerar cobrança nova, para não duplicar uma antiga que não foi carregada. |
 
-> **Mudança desta revisão:** 05/11/2026 — o filtro **Todos os vendedores** passou a mostrar as cobranças das propostas do vendedor escolhido, quem quer que tenha lançado. Antes mostrava só as que ele mesmo lançou, e as cobranças da área do cliente, da Edina e do financeiro ficavam de fora.
+> **Mudança desta revisão:** 13/11/2026 — nova ação **Registrar devolução e cancelar pedido** (só super administrador): registra a devolução feita pelo aplicativo do banco (valor total, data, e2eId ou comprovante, motivo e autor), cancela a cobrança e o pedido e tira o valor do faturamento (caso 25098).
+>
+> **Revisão anterior:** 05/11/2026 — o filtro **Todos os vendedores** passou a mostrar as cobranças das propostas do vendedor escolhido, quem quer que tenha lançado. Antes mostrava só as que ele mesmo lançou, e as cobranças da área do cliente, da Edina e do financeiro ficavam de fora.
 
 ## Veja também
 
@@ -345,6 +364,9 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/features/cobrancas/AutorizarFaturamentoModal.tsx`
 - `src/features/cobrancas/AnaliseCreditoModal.tsx`
 - `src/features/cobrancas/CancelCobrancaModal.tsx`
+- `src/features/cobrancas/RegistrarDevolucaoModal.tsx`
+- `src/features/cobrancas/lib/devolucao-pagamento.ts`
+- `src/app/api/cobrancas/registrar-devolucao/route.ts`
 - `src/features/cobrancas/TrocarFormaPagamentoModal.tsx`
 - `src/app/api/cobrancas/trocar-forma-pagamento/route.ts`
 - `src/features/cobrancas/CobrancasProvider.tsx`
