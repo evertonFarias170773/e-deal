@@ -78,7 +78,7 @@ export function recusaPorNumero(motivo: string | null | undefined): boolean {
 
 // --- Diálogos (07/11/2026) ---
 
-export type CampoDialogo = "Pedido_Atual" | "Nota_Fiscal" | "Cidade_Destino" | "Sedex_Conhecimento";
+export type CampoDialogo = "Pedido_Atual" | "Nota_Fiscal" | "Cidade_Destino" | "Sedex_Conhecimento" | "Transportadora";
 export type NomeDialogo = "Sedex" | "Motoboy" | "Retira" | "Veppo" | "Azul" | "Transportadora";
 
 /**
@@ -93,7 +93,8 @@ export const DIALOGOS: Record<NomeDialogo, { id: string; campos: readonly CampoD
   Retira: { id: "6aef3674e2ff0962de8545fc", campos: ["Pedido_Atual", "Nota_Fiscal"] },
   Veppo: { id: "6aef3678e11ead8b0e4f40b6", campos: ["Cidade_Destino", "Pedido_Atual", "Nota_Fiscal"] },
   Azul: { id: "6aef367de2ff0962de8545ff", campos: ["Pedido_Atual", "Nota_Fiscal", "Cidade_Destino"] },
-  Transportadora: { id: "6aef36a7eab83021c5d20230", campos: ["Cidade_Destino", "Pedido_Atual", "Nota_Fiscal"] }
+  // v26 (13/11/2026): o modelo do Transportadora ganhou o campo Transportadora (nome curto).
+  Transportadora: { id: "6aef36a7eab83021c5d20230", campos: ["Cidade_Destino", "Pedido_Atual", "Nota_Fiscal", "Transportadora"] }
 };
 
 export function nomeDoDialogo(id: string | null | undefined): NomeDialogo | null {
@@ -107,6 +108,32 @@ export function nomeDoDialogo(id: string | null | undefined): NomeDialogo | null
  * sem campos personalizados (dono, 07/11): só dialog_execute.
  */
 export const DIALOGO_PRODUCAO = "6071c6dbe34a18c2cc684747";
+
+/**
+ * Nome curto da transportadora para o campo Transportadora do diálogo (v26,
+ * 13/11/2026, lista aprovada pelo Everton): o cadastro de várias só tem a razão
+ * social. Fora da lista, sai o nome gravado (a fantasia do despacho).
+ */
+export const NOMES_CURTOS_TRANSPORTADORA: Readonly<Record<number, string>> = {
+  120026: "São Miguel",
+  120027: "São Miguel",
+  796: "Troca",
+  70010: "Melhor Envio",
+  120009: "Braspress",
+  120011: "Braspress",
+  925: "Jamef",
+  120005: "Atual Cargas",
+  70009: "TW Transportes",
+  120006: "Avi Azul"
+};
+
+export function nomeCurtoTransportadora(id: unknown, nomeGravado: string | null | undefined): string | null {
+  const curto = NOMES_CURTOS_TRANSPORTADORA[Number(id)];
+  if (curto) return curto;
+  return limpar(nomeGravado, 80) || null;
+}
+
+export const SEM_TRANSPORTADORA = "O pedido não tem transportadora no despacho. Confira a transportadora antes de avisar.";
 
 export const SEM_MODELO = "Sem modelo de mensagem para esta forma de envio.";
 export const SEM_ETIQUETA = "Gere a etiqueta dos Correios antes.";
@@ -294,6 +321,18 @@ export function notaParaODialogo(e: {
 }
 
 /** "Santa Cruz do Sul/RS"; sem cidade, null. */
+/**
+ * Transportadora do aviso: a do despacho (o que o expedidor declarou) vence a do
+ * orçamento. Só o diálogo Transportadora usa o campo.
+ */
+export function transportadoraDoAviso(e: EntradaDialogo, escolha: EscolhaDialogo): string | null {
+  const doDespacho =
+    escolha.origem === "despacho" && e.despacho
+      ? nomeCurtoTransportadora(e.despacho.id_transportadora_cliente, e.despacho.transportadora_nome)
+      : null;
+  return doDespacho ?? nomeCurtoTransportadora(e.orcamento.id_transportadora_cliente, e.orcamento.nomeTransportadora);
+}
+
 export function cidadeDestino(cidade: string | null | undefined, uf: string | null | undefined): string | null {
   const c = limpar(cidade, 80);
   const u = limpar(uf, 2).toUpperCase();
@@ -307,13 +346,14 @@ export function cidadeDestino(cidade: string | null | undefined, uf: string | nu
  */
 export function camposDoDialogo(
   dialogo: NomeDialogo,
-  v: { idInt: number; notaFiscal: string; cidadeDestino: string | null; rastreio: string | null }
+  v: { idInt: number; notaFiscal: string; cidadeDestino: string | null; rastreio: string | null; transportadora?: string | null }
 ): Record<string, string> {
   const valores: Record<CampoDialogo, string | null> = {
     Pedido_Atual: String(v.idInt),
     Nota_Fiscal: v.notaFiscal || "—",
     Cidade_Destino: v.cidadeDestino,
-    Sedex_Conhecimento: v.rastreio
+    Sedex_Conhecimento: v.rastreio,
+    Transportadora: v.transportadora ?? null
   };
   const campos: Record<string, string> = {};
   for (const nome of DIALOGOS[dialogo].campos) {
@@ -321,6 +361,7 @@ export function camposDoDialogo(
     if (!valor) {
       if (nome === "Sedex_Conhecimento") throw new Recusa(409, SEM_ETIQUETA);
       if (nome === "Cidade_Destino") throw new Recusa(422, "O pedido não tem cidade de entrega. Confira o endereço de entrega.");
+      if (nome === "Transportadora") throw new Recusa(422, SEM_TRANSPORTADORA);
       throw new Recusa(422, `Campo ${nome} sem valor.`);
     }
     campos[`field__${nome}`] = valor;
@@ -341,7 +382,8 @@ export function dialogoValido(nome: unknown): NomeDialogo | null {
 export const VALORES_TESTE = {
   Sedex_Conhecimento: "TESTE000000BR",
   Cidade_Destino: "Porto Alegre/RS",
-  Nota_Fiscal: "—"
+  Nota_Fiscal: "—",
+  Transportadora: "São Miguel"
 } as const;
 
 /**
@@ -365,13 +407,14 @@ export function conferirTeste(modoTeste: boolean, idClientePedido: unknown, idCl
  */
 export function camposDeTeste(
   dialogo: NomeDialogo,
-  v: { idInt: number; notaFiscal: string; cidadeDestino: string | null; rastreio: string | null }
+  v: { idInt: number; notaFiscal: string; cidadeDestino: string | null; rastreio: string | null; transportadora?: string | null }
 ): { campos: Record<string, string>; valores: Partial<Record<CampoDialogo, string>>; deTeste: CampoDialogo[] } {
   const doPedido: Record<CampoDialogo, string | null> = {
     Pedido_Atual: String(v.idInt),
     Nota_Fiscal: v.notaFiscal && v.notaFiscal !== "—" ? v.notaFiscal : null,
     Cidade_Destino: v.cidadeDestino,
-    Sedex_Conhecimento: v.rastreio
+    Sedex_Conhecimento: v.rastreio,
+    Transportadora: v.transportadora ?? null
   };
   const campos: Record<string, string> = {};
   const valores: Partial<Record<CampoDialogo, string>> = {};
@@ -643,4 +686,15 @@ export function linkDoCliente(idInt: number, linhas: { numero_pedido?: unknown; 
     throw new Recusa(422, SEM_LINK_APROVACAO);
   }
   return `${numero}-${token}`;
+}
+
+/**
+ * v26 (13/11/2026): só no aviso Colocando em Produção (DIALOGO_PRODUCAO) o
+ * Link_do_Cliente leva a âncora da aba Arte, ex.: 25220-h42mny#arte. O envio de
+ * arte do Imposition grava o campo do jeito dele; nada muda lá.
+ */
+export const ANCORA_ARTE = "#arte";
+
+export function linkDoAvisoProducao(finalDoLink: string): string {
+  return `${finalDoLink}${ANCORA_ARTE}`;
 }

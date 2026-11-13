@@ -1,6 +1,6 @@
 # Expedição
 
-> **Última revisão:** 12/11/2026 (pedido CIF por transportadora não fica na coluna Correios por causa de um SEDEX anterior, caso 24974)
+> **Última revisão:** 13/11/2026 (diálogo Transportadora com o campo Transportadora, nome curto da transportadora do despacho; antes, 12/11/2026: pedido CIF por transportadora não fica na coluna Correios por causa de um SEDEX anterior, caso 24974)
 > **Caminho no menu:** Expedição (item direto do menu lateral, sem subitens; é o quarto, depois de Conferência, Pedidos e Clientes). Também se chega pela aba **Expedição** no topo do Kanban e da Fila de impressão da Produção.
 > **Endereço:** `/expedicao`
 
@@ -231,12 +231,13 @@ Qual diálogo vai, pela forma de envio do pedido (a do despacho, se o expedidor 
 | Correios SEDEX | Sedex | Sedex_Conhecimento, Pedido_Atual, Nota_Fiscal |
 | Transportadora Veppo | Veppo | Cidade_Destino, Pedido_Atual, Nota_Fiscal |
 | Azul Cargo (cadastro 808, SVT Provedor Logístico, ou nome com AZUL) | Azul | Pedido_Atual, Nota_Fiscal, Cidade_Destino |
-| Qualquer outra transportadora | Transportadora | Cidade_Destino, Pedido_Atual, Nota_Fiscal |
+| Qualquer outra transportadora | Transportadora | Cidade_Destino, Pedido_Atual, Nota_Fiscal, Transportadora (desde 13/11/2026) |
 
 - **Pedido_Atual:** o número do pedido.
 - **Nota_Fiscal:** o número da NF-e de venda (ou da NFS-e) autorizada do pedido. Pedido marcado como faturado no sistema antigo usa o número digitado na expedição (NF manual), só os dígitos: "41.030" vira "41030". Sem nota, vai "—".
 - **Cidade_Destino:** cidade/UF do endereço de entrega.
 - **Sedex_Conhecimento:** o código de rastreio dos Correios.
+- **Transportadora** (só no diálogo Transportadora, desde 13/11/2026): o nome curto da transportadora. Vale a do despacho; sem despacho declarado, a do orçamento. Como o cadastro de várias só tem a razão social, o nome vem de uma lista fixa por cadastro: 120026 e 120027 São Miguel, 796 Troca, 70010 Melhor Envio, 120009 e 120011 Braspress, 925 Jamef, 120005 Atual Cargas, 70009 TW Transportes, 120006 Avi Azul. Fora da lista, sai o nome gravado no despacho (a fantasia do cadastro). Sem nenhum nome, o aviso não sai: "O pedido não tem transportadora no despacho. Confira a transportadora antes de avisar." Transportadora nova que só tenha a razão social precisa entrar na lista (`NOMES_CURTOS_TRANSPORTADORA` em `supabase/edge-no-ar/expedicao-pedido-pronto/logica.ts`) e subir a função.
 
 O Vibe só grava esses campos. O ChatGuru guarda na conversa o último valor de cada campo: se o modelo de um diálogo usar um campo que o Vibe não grava (por exemplo, o link de aprovação, Link_do_Cliente, que o envio de arte do Imposition grava), a mensagem sai com o valor de outro envio. Foi o que aconteceu com o aviso Pedido em Produção em 09/11/2026. Mudança de modelo no ChatGuru precisa ser combinada antes. A lista completa, com o envio de arte do Imposition, está em `docs/technical/CHATGURU-TRAVA-COMPARTILHADA-PROPOSTA.md`.
 

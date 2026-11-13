@@ -134,7 +134,9 @@ import {
   CLIENTE_TESTE,
   DIALOGO_PRODUCAO,
   conferirEnvioProducao,
+  linkDoAvisoProducao,
   linkDoCliente,
+  transportadoraDoAviso,
   SEM_CONVERSA,
   conversasEscolhidas,
   conversaDaProposta,
@@ -345,6 +347,8 @@ type Frete = {
   rastreio: string | null;
   idEndereco: string | null;
   idCliente: number | null;
+  /** Nome curto para o campo Transportadora (v26): despacho vence orçamento. */
+  transportadora: string | null;
 };
 
 /**
@@ -396,7 +400,7 @@ async function fretesDosPedidos(ids: number[], tela: DespachoDaTela | null = nul
         : e && !e.prepostagem_cancelada_em
           ? rastreioCorreiosValido(e.correios_codigo_objeto as string | null, e.codigo_rastreamento as string | null)
           : null;
-      const escolha = escolherDialogo({
+      const entrada = {
         despacho: tela
           ? tela.despacho
           : e
@@ -416,11 +420,13 @@ async function fretesDosPedidos(ids: number[], tela: DespachoDaTela | null = nul
           servicoCotacao: cots.get(idInt) ?? p.frete_escolhido ?? null
         },
         rastreioCorreios: rastreio
-      });
+      };
+      const escolha = escolherDialogo(entrada);
+      const transportadora = transportadoraDoAviso(entrada, escolha);
       const idEndereco =
         tela?.idEnderecoEntrega ?? (String((e?.id_endereco_entrega as string | null) ?? p.id_endereco_ent ?? "").trim() || null);
       const idCliente = Number(p.id_cliente);
-      mapa.set(idInt, { escolha, rastreio, idEndereco, idCliente: Number.isFinite(idCliente) ? idCliente : null });
+      mapa.set(idInt, { escolha, rastreio, idEndereco, idCliente: Number.isFinite(idCliente) ? idCliente : null, transportadora });
     }
   }
   return mapa;
@@ -515,7 +521,7 @@ async function contextoDoPedido(
     const { data: end } = await admin.from("enderecos").select("cidade, uf").eq("id", frete.idEndereco).maybeSingle();
     cidade = cidadeDestino(end?.cidade, end?.uf);
   }
-  const valores = { idInt, notaFiscal: await notaDoPedido(idInt), cidadeDestino: cidade, rastreio: frete.rastreio };
+  const valores = { idInt, notaFiscal: await notaDoPedido(idInt), cidadeDestino: cidade, rastreio: frete.rastreio, transportadora: frete.transportadora };
   if (dialogoTeste) {
     const t = camposDeTeste(dialogo, valores);
     return { idCliente: p.id_cliente, idContato, contato, dialogo, campos: t.campos, teste: { valores: t.valores, de_teste: t.deTeste }, homologacao: false, chatEscolhido: null };
@@ -578,7 +584,8 @@ async function linkDoPedido(idInt: number): Promise<string> {
     .eq("ativo", true)
     .limit(2);
   if (error) throw new Recusa(503, "Não foi possível ler o link de aprovação do pedido. Nada foi enviado.");
-  return linkDoCliente(idInt, data);
+  // Só o aviso Colocando em Produção usa esta função: leva a âncora #arte (v26).
+  return linkDoAvisoProducao(linkDoCliente(idInt, data));
 }
 
 function configChatGuru() {

@@ -1,6 +1,14 @@
-# expedicao-pedido-pronto: v25 no ar (fora de supabase/functions de propósito)
+# expedicao-pedido-pronto: v26 no ar (fora de supabase/functions de propósito)
 
-**v25 no ar desde 11/11/2026 (versão 25 no painel da Supabase), conferida arquivo a arquivo igual a esta pasta (index.ts, logica.ts e a cópia de transportadoras-parceiras.ts, esta igual à da v24).** É a v24 com a Azul reconhecida pelo cadastro.
+**v26 no ar desde 13/11/2026 (versão 26 no painel da Supabase), conferida arquivo a arquivo igual a esta pasta (index.ts, logica.ts e a cópia de transportadoras-parceiras.ts, igual à da v24).** Deploy autorizado pelo Everton, só desta versão. É a v25 com os modelos alterados pelo Edinão em 13/11:
+- Antes do deploy, a v25 do painel foi conferida igual a esta pasta.
+- Diálogo Transportadora (6aef36a7eab83021c5d20230): campo novo `Transportadora`, o nome curto da transportadora (despacho vence orçamento) pela lista `NOMES_CURTOS_TRANSPORTADORA` de logica.ts; fora da lista, a fantasia gravada no despacho. Sem nome, recusa com SEM_TRANSPORTADORA. Nota_Fiscal continua gravada. Veppo, Azul e os outros diálogos sem mudança.
+- Colocando em Produção (DIALOGO_PRODUCAO, 6071c6dbe34a18c2cc684747): Link_do_Cliente com `#arte` no fim (`linkDoAvisoProducao`). Só nesse aviso; o envio de arte do Imposition não muda. O portal do cliente só abre na aba Arte se a arte ainda não foi aprovada (secaoDeAbertura em cliente-shell.js do Imposition); com a arte aprovada, vai à próxima etapa pendente, com ou sem a âncora.
+- IDs dos dois diálogos conferidos: são os informados pelo Edinão.
+- Teste: caso F de `scripts/testes/expedicao-aviso-pronto-v23.test.mts`.
+- A mesma mudança foi levada à v19 da janela (`supabase/functions/`).
+
+**v25 ficou no ar de 11/11/2026 até 13/11/2026 (versão 25 no painel da Supabase), conferida arquivo a arquivo igual a esta pasta (index.ts, logica.ts e a cópia de transportadoras-parceiras.ts, esta igual à da v24).** É a v24 com a Azul reconhecida pelo cadastro.
 - Antes do deploy, a v24 do painel foi conferida igual a esta pasta.
 - `formaDoDespacho` e `formaDoOrcamento`: `id_transportadora_cliente` = `TRANSPORTADORAS_PARCEIRAS.AZUL` (808) dá o diálogo Azul. O cadastro 808 é "SVT PROVEDOR LOGISTICO LTDA" (no despacho, "SVT TRANSPORTES"), sem AZUL no nome: até a v24 o despacho pela Azul saía com o diálogo Transportadora.
 - Avisos que saíram com o diálogo Transportadora em pedidos da 808, não reenviados: 24881 (2x) e 25023 no modo teste (10/11); 25011, 24655 e 24838 para o cliente (11/11).

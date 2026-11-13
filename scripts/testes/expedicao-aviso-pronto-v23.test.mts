@@ -12,12 +12,20 @@
  *      retirada, motoboy e transportadora pelo que está na tela;
  *   D. v24: conversa escolhida na aba Artes vale só se ainda é do cliente;
  *   E. v25: Azul pelo cadastro 808 (SVT, sem AZUL no nome), no despacho e no
- *      orçamento; outra transportadora continua Transportadora.
+ *      orçamento; outra transportadora continua Transportadora;
+ *   F. v26: campo Transportadora (nome curto pela lista, despacho vence orçamento,
+ *      só no diálogo Transportadora) e #arte só no link do Colocando em Produção.
  */
 import assert from "node:assert/strict";
 import {
   SEM_ETIQUETA,
+  SEM_TRANSPORTADORA,
+  camposDoDialogo,
   conversaDaProposta,
+  linkDoAvisoProducao,
+  linkDoCliente,
+  nomeCurtoTransportadora,
+  transportadoraDoAviso,
   SEM_MODELO,
   STATUS_AVISO_PRONTO,
   despachoDaTela,
@@ -154,6 +162,58 @@ caso("E. v25: Azul pelo cadastro 808", () => {
     }).dialogo,
     "Transportadora"
   );
+});
+
+caso("F. v26: campo Transportadora e #arte", () => {
+  // Lista aprovada (13/11/2026).
+  assert.equal(nomeCurtoTransportadora(120026, "EXPRESSO SAO MIGUEL S/A"), "São Miguel");
+  assert.equal(nomeCurtoTransportadora("120027", "EXPRESSO SAO MIGUEL S/A"), "São Miguel");
+  assert.equal(nomeCurtoTransportadora(796, "TROCA TRANSPORTES LTDA"), "Troca");
+  assert.equal(nomeCurtoTransportadora(120011, "BTU - BRASPRESS - CSJ"), "Braspress");
+  assert.equal(nomeCurtoTransportadora(120006, "ECCOM"), "Avi Azul");
+  // Fora da lista: a fantasia gravada.
+  assert.equal(nomeCurtoTransportadora(4321, "  RODONAVES  "), "RODONAVES");
+  assert.equal(nomeCurtoTransportadora(null, ""), null);
+
+  // Despacho vence orçamento.
+  const orcamento = {
+    modalidade_frete: "CIF",
+    categoria_frete: "RODOVIARIO",
+    id_transportadora_cliente: 796,
+    nomeTransportadora: "TROCA TRANSPORTES LTDA"
+  };
+  const despacho = {
+    tipo_frete: "TRANSPORTADORA",
+    modalidade_frete: "CIF",
+    transportadora_nome: "EXPRESSO SAO MIGUEL S/A",
+    id_transportadora_cliente: 120026
+  };
+  const e1 = { despacho, orcamento, rastreioCorreios: null };
+  const c1 = escolherDialogo(e1);
+  assert.equal(c1.dialogo, "Transportadora");
+  assert.equal(transportadoraDoAviso(e1, c1), "São Miguel");
+  const e2 = { despacho: null, orcamento, rastreioCorreios: null };
+  assert.equal(transportadoraDoAviso(e2, escolherDialogo(e2)), "Troca");
+  // Despacho sem nome nem id: cai no orçamento.
+  const e3 = { despacho: { tipo_frete: "TRANSPORTADORA", transportadora_nome: "" }, orcamento, rastreioCorreios: null };
+  assert.equal(transportadoraDoAviso(e3, escolherDialogo(e3)), "Troca");
+
+  // Campo só no diálogo Transportadora; Veppo e Azul sem mudança.
+  const v = { idInt: 24880, notaFiscal: "123", cidadeDestino: "Porto Alegre/RS", rastreio: null, transportadora: "São Miguel" };
+  assert.deepEqual(camposDoDialogo("Transportadora", v), {
+    field__Cidade_Destino: "Porto Alegre/RS",
+    field__Pedido_Atual: "24880",
+    field__Nota_Fiscal: "123",
+    field__Transportadora: "São Miguel"
+  });
+  assert.deepEqual(Object.keys(camposDoDialogo("Azul", v)), ["field__Pedido_Atual", "field__Nota_Fiscal", "field__Cidade_Destino"]);
+  assert.deepEqual(Object.keys(camposDoDialogo("Veppo", v)), ["field__Cidade_Destino", "field__Pedido_Atual", "field__Nota_Fiscal"]);
+  assert.throws(() => camposDoDialogo("Transportadora", { ...v, transportadora: null }), { message: SEM_TRANSPORTADORA });
+
+  // #arte só no aviso de produção; o final do link continua igual.
+  const final = linkDoCliente(25220, [{ numero_pedido: 25220, token: "h42mny" }]);
+  assert.equal(final, "25220-h42mny");
+  assert.equal(linkDoAvisoProducao(final), "25220-h42mny#arte");
 });
 
 console.log(`\n${n} casos ok`);
