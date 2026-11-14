@@ -109,7 +109,7 @@ O que a escolha faz:
 - **Salvar** não é barrado sem conversa. A exigência fica no primeiro **Enviar para arte** (aba Artes) e na **Liberação para produção**, inclusive a automática de prateleira, que deixa o pedido em REVISAO ATENDENTE e avisa no chat.
 - A Expedição mostra as conversas marcadas no despacho e não oferece a lista de conversas de novo. O aviso de pedido pronto vai para a principal.
 - O nome da principal é o que aparece na proposta enviada ao cliente ("Orçamento para:").
-- O pedido também guarda um contato do cadastro, que os avisos do ChatGuru exigem. Ao gravar a principal, se o pedido não tem um contato ativo do cliente, ele passa a usar o contato do cliente com o mesmo telefone da principal; se não houver nenhum, o contato é criado no cadastro com o nome e o telefone da conversa. Um contato ativo que o pedido já tem fica.
+- O pedido também pode guardar um contato do cadastro. Ao gravar a principal, se o pedido não tem um contato ativo do cliente, ele passa a usar o contato do cliente com o mesmo telefone da principal; se não houver nenhum, o pedido fica sem contato do cadastro e os avisos do ChatGuru vão para a principal. A aba Geral nunca cria contato no cadastro de contatos. Um contato ativo que o pedido já tem fica.
 - E-mail e telefone da cobrança não vêm mais do contato: veja a ficha de Pagamentos.
 
 Pedido antigo sem conversa escolhida continua como estava. Abaixo do bloco aparece "Contato anterior (cadastro)" com o nome e o WhatsApp do contato que ele já tinha, só para leitura. Os contatos do cadastro continuam existindo e se editam no cadastro do cliente.

@@ -587,6 +587,43 @@ export function conversaDaProposta(chatId: unknown, doCliente: Conversa[]): Conv
 }
 
 /**
+ * v28 (14/11/2026): contato da tabela contatos nos avisos. Com conversa principal
+ * (propostas.chatguru_chat_id, espelho de propostas_contatos_chatguru) o contato
+ * não é exigido: se faltar, estiver inativo ou for de outro cliente, o aviso segue
+ * sem ele e vai para a principal. Sem principal, a regra de antes (recusa).
+ */
+export type ContatoLido = { id_cliente: unknown; nome_contato: string | null; whats: string | null; ativo: boolean | null };
+
+export function temPrincipal(chatPrincipal: unknown): boolean {
+  return typeof chatPrincipal === "string" && chatPrincipal.trim() !== "";
+}
+
+export function contatoDoAviso(
+  idContatoBruto: unknown,
+  lido: ContatoLido | null | undefined,
+  donos: number[],
+  chatPrincipal: unknown,
+  semContato: string
+): { idContato: number | null; contato: ContatoLido | null } {
+  const principal = temPrincipal(chatPrincipal);
+  const semEle = (status: number, msg: string) => {
+    if (principal) return { idContato: null, contato: null };
+    throw new Recusa(status, msg);
+  };
+  const id = Number(String(idContatoBruto ?? "").trim());
+  if (!Number.isInteger(id) || id <= 0) return semEle(422, semContato);
+  if (!lido) return semEle(422, "O contato do pedido não existe mais no cadastro.");
+  if (lido.ativo === false) return semEle(422, "O contato do pedido está inativo no cadastro.");
+  if (!donos.includes(Number(lido.id_cliente))) {
+    return semEle(409, "O contato do pedido não pertence ao cliente nem ao faturado. Corrija o contato na proposta.");
+  }
+  return { idContato: id, contato: lido };
+}
+
+export const PRINCIPAL_FORA_DO_CLIENTE =
+  "A conversa principal do pedido não está mais entre as conversas do cliente no ChatGuru e o pedido não tem contato. Escolha a principal de novo em Contatos do pedido. Nada foi enviado.";
+
+/**
  * Conversas escolhidas na tela: só chat_id que está na lista do cliente, relida
  * na hora; sem repetição. Lista vazia ou chat_id de fora -> recusa.
  */

@@ -14,7 +14,9 @@
  *   E. v25: Azul pelo cadastro 808 (SVT, sem AZUL no nome), no despacho e no
  *      orçamento; outra transportadora continua Transportadora;
  *   F. v26: campo Transportadora (nome curto pela lista, despacho vence orçamento,
- *      só no diálogo Transportadora) e #arte só no link do Colocando em Produção.
+ *      só no diálogo Transportadora) e #arte só no link do Colocando em Produção;
+ *   G. v27: texto do Orçamento Whatsapp e os 120 s;
+ *   H. v28: com conversa principal o contato da tabela contatos não é exigido.
  */
 import assert from "node:assert/strict";
 import {
@@ -26,6 +28,8 @@ import {
   segundosParaLiberar,
   textoDoOrcamento,
   conversaDaProposta,
+  contatoDoAviso,
+  temPrincipal,
   linkDoAvisoProducao,
   linkDoCliente,
   nomeCurtoTransportadora,
@@ -236,6 +240,29 @@ caso("G. v27: texto do Orçamento Whatsapp e os 120 s", () => {
   assert.equal(segundosParaLiberar("2026-11-13T18:58:00Z", agora), 0);
   assert.equal(segundosParaLiberar("2026-11-13T18:59:30Z", agora), 90);
   assert.equal(segundosParaLiberar("lixo", agora), 0);
+});
+
+caso("H. v28: contato não exigido com conversa principal", () => {
+  const semC = "O pedido não tem contato. Escolha o contato na proposta.";
+  const ok = { id_cliente: 14, nome_contato: "Edison", whats: "51984608848", ativo: true };
+  const donos = [14];
+  // Sem principal: a regra de antes.
+  assert.throws(() => contatoDoAviso(null, null, donos, null, semC), { message: semC });
+  assert.throws(() => contatoDoAviso("", null, donos, "  ", semC), { message: semC });
+  assert.throws(() => contatoDoAviso(7, null, donos, null, semC), /não existe mais/);
+  assert.throws(() => contatoDoAviso(7, { ...ok, ativo: false }, donos, null, semC), /inativo/);
+  assert.throws(() => contatoDoAviso(7, { ...ok, id_cliente: 99 }, donos, null, semC), /não pertence/);
+  assert.deepEqual(contatoDoAviso("7", ok, donos, null, semC), { idContato: 7, contato: ok });
+  // Com principal: segue sem contato; contato válido continua usado.
+  const chat = "6900aa11bb22cc33dd44ee55";
+  for (const lido of [null, { ...ok, ativo: false }, { ...ok, id_cliente: 99 }]) {
+    assert.deepEqual(contatoDoAviso(7, lido, donos, chat, semC), { idContato: null, contato: null });
+  }
+  assert.deepEqual(contatoDoAviso(null, null, donos, chat, semC), { idContato: null, contato: null });
+  assert.deepEqual(contatoDoAviso(7, ok, donos, chat, semC), { idContato: 7, contato: ok });
+  assert.equal(temPrincipal(chat), true);
+  assert.equal(temPrincipal(" "), false);
+  assert.equal(temPrincipal(null), false);
 });
 
 console.log(`\n${n} casos ok`);

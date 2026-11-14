@@ -68,6 +68,7 @@ const maestro = ler("src/features/maestro/core/simple/maestro-save-proposta.serv
 const despacho = ler("src/features/expedicao/components/DespacharModal.tsx");
 const nucleo = ler("src/features/cobrancas/services/conferencia-nucleo.server.ts");
 checar("rota grava a tabela, a principal e espelha chatguru_chat_id", [rota.includes('from("propostas_contatos_chatguru")'), rota.includes("chatguru_chat_id: principal.chat_id"), rota.includes("contatoParaAPrincipal(")], [true, true, true]);
+checar("rota nunca grava na tabela contatos (só lê)", [/from\("contatos"\)\s*\.(insert|upsert|update|delete)\(/.test(rota), (rota.match(/from\("contatos"\)/g) ?? []).length, /from\("contatos"\)\s*\.select\(/.test(rota)], [false, 1, true]);
 checar("rota aceita a escolha inteira e só a principal", [rota.includes("Array.isArray(corpo?.chat_ids)"), rota.includes("principalPedida = limpar(corpo?.chat_id, 80)")], [true, true]);
 checar("Salvar não exige mais contato da tabela", servico.includes('"Selecione um contato antes de salvar o orçamento."'), false);
 checar("Salvar não regrava id_contato e contato na alteração", servico.includes("delete (propostaData as Record<string, unknown>).id_contato;"), true);

@@ -1,6 +1,12 @@
-# expedicao-pedido-pronto: v27 no ar (fora de supabase/functions de propósito)
+# expedicao-pedido-pronto: v28 no ar (fora de supabase/functions de propósito)
 
-**v27 no ar desde 13/11/2026 (versão 27 no painel da Supabase), conferida arquivo a arquivo igual a esta pasta.** Deploy autorizado pelo Everton só desta versão. É a v26 com uma ação nova, sem mudar as existentes:
+**v28 no ar desde 14/11/2026 (versão 28 no painel da Supabase).** Deploy autorizado pelo Everton só desta versão. Antes do deploy, a v27 do painel foi conferida igual a esta pasta. É a v27 com uma mudança: pedido com conversa principal não exige mais contato da tabela contatos (o ChatGuru virou a fonte dos contatos do pedido em 8fe7afe9).
+- `contatoDoAviso` (logica.ts), usado no pedido pronto (`contextoDoPedido`) e no Colocando em Produção (`contextoProducao`): com `propostas.chatguru_chat_id` preenchido (espelho da principal de `propostas_contatos_chatguru`), `id_contato` vazio, contato apagado, inativo ou de outro cliente deixam o aviso seguir sem contato; o registro em `expedicao_aviso_pronto` fica com `id_contato` vazio (a coluna aceita). Contato válido continua sendo lido. Sem principal, as recusas de antes.
+- Destino sem mudança: a principal, se ainda é do cliente no Guru. Sem contato e com a principal fora do cliente, recusa (`PRINCIPAL_FORA_DO_CLIENTE`) em vez de abrir a lista de conversas.
+- Diálogos, campos e o Orçamento Whatsapp sem mudança. "Testar modelo" segue a regra de antes (não usa a principal).
+- Teste: caso H de `scripts/testes/expedicao-aviso-pronto-v23.test.mts`.
+
+**v27 ficou no ar em 13/11/2026 e 14/11/2026, até a v28 (versão 27 no painel da Supabase), conferida arquivo a arquivo igual a esta pasta.** Deploy autorizado pelo Everton só desta versão. É a v26 com uma ação nova, sem mudar as existentes:
 - `orcamento_preparar` (só leitura) e `orcamento_enviar`: diálogo "Orçamento Whatsapp" (`DIALOGO_ORCAMENTO`, 6aef91d13ce8e563d886694f), campo `Orcamento` com `propostas.texto_whatsapp` (o texto do box 9 gravado no Salvar), com as quebras de linha (`textoDoOrcamento`; limite 1.024).
 - Só envia quem enxerga a proposta pela própria sessão (RLS). Conversa: a escolhida no Comprador (`propostas.chatguru_chat_id`); sem ela, a do WhatsApp do contato, como os avisos. Conversa travada, envio em andamento ou diálogo executado há menos de 120 s recusam antes de gravar campo; a recusa dos 120 s do próprio Guru também aparece.
 - Não grava em `expedicao_aviso_pronto`: o evento de lá só aceita `pedido_pronto` e `pedido_em_producao` (ampliar exige DDL). Por isso o envio do orçamento não fica no histórico e um resultado desconhecido dele não trava a conversa.

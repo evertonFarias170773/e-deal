@@ -22,6 +22,12 @@
  *            trava por conversa vale igual.
  * enviar/reenviar/status/testar/preparar exigem expedicao.processar (ou ADM).
  *
+ * v28 (14/11/2026): com conversa principal (propostas.chatguru_chat_id, espelho
+ * de propostas_contatos_chatguru) os avisos não exigem id_contato: contato
+ * ausente, inativo ou de outro cliente deixa o aviso seguir só para a principal
+ * (registro com id_contato vazio). Sem principal, a regra de antes. Sem contato e
+ * com a principal fora do cliente no Guru: recusa, sem lista de conversas.
+ *
  * v24 (10/11/2026): conversa escolhida na aba Artes (propostas.chatguru_chat_id, o
  * Comprador da arte). Nos dois avisos, se a proposta tem conversa escolhida e ela
  * ainda é do cliente no Guru, o aviso vai direto para ela, sem casar o telefone do
@@ -140,6 +146,10 @@ import {
   SEM_CONVERSA,
   conversasEscolhidas,
   conversaDaProposta,
+  contatoDoAviso,
+  temPrincipal,
+  PRINCIPAL_FORA_DO_CLIENTE,
+  type ContatoLido,
   decidirConversa,
   numeroDaConversa,
   type Conversa,
@@ -492,23 +502,12 @@ async function contextoDoPedido(
   const homologacao = !dialogoTeste && emHomologacao(modoTeste, p.id_cliente);
   if (!homologacao) conferirModoTeste(modoTeste, p.id_cliente);
 
-  const idContato = Number(String(p.id_contato ?? "").trim());
-  if (!Number.isInteger(idContato) || idContato <= 0) {
-    throw new Recusa(422, "O pedido não tem contato. Escolha o contato na proposta.");
+  // v28: com conversa principal, o contato da tabela contatos não é exigido.
+  const { idContato, contato } = await contatoDoPedido(p, "O pedido não tem contato. Escolha o contato na proposta.");
+  if (contato) {
+    if (dialogoTeste) conferirTeste(modoTeste, p.id_cliente, contato.id_cliente);
+    if (!homologacao) conferirModoTeste(modoTeste, p.id_cliente, contato.id_cliente);
   }
-  const { data: contato } = await admin
-    .from("contatos")
-    .select("id, id_cliente, nome_contato, whats, ativo")
-    .eq("id", idContato)
-    .maybeSingle();
-  if (!contato) throw new Recusa(422, "O contato do pedido não existe mais no cadastro.");
-  if (contato.ativo === false) throw new Recusa(422, "O contato do pedido está inativo no cadastro.");
-  const donos = [Number(p.id_cliente), Number(p.id_faturado)].filter((n) => Number.isFinite(n) && n > 0);
-  if (!donos.includes(Number(contato.id_cliente))) {
-    throw new Recusa(409, "O contato do pedido não pertence ao cliente nem ao faturado. Corrija o contato na proposta.");
-  }
-  if (dialogoTeste) conferirTeste(modoTeste, p.id_cliente, contato.id_cliente);
-  if (!homologacao) conferirModoTeste(modoTeste, p.id_cliente, contato.id_cliente);
 
   const frete = (await fretesDosPedidos([idInt], tela)).get(idInt);
   if (!frete) throw new Recusa(503, "Não foi possível ler a forma de envio do pedido.");
@@ -561,23 +560,26 @@ async function contextoProducao(idInt: number, modoTeste: boolean) {
   conferirEnvioProducao(modoTeste, p.id_cliente);
   const homologacao = emHomologacao(modoTeste, p.id_cliente);
   if (!homologacao) conferirModoTeste(modoTeste, p.id_cliente);
-  const idContato = Number(String(p.id_contato ?? "").trim());
-  if (!Number.isInteger(idContato) || idContato <= 0) {
-    throw new Recusa(422, "O pedido não tem contato responsável. Escolha o contato na proposta.");
-  }
-  const { data: contato } = await admin
-    .from("contatos")
-    .select("id, id_cliente, nome_contato, whats, ativo")
-    .eq("id", idContato)
-    .maybeSingle();
-  if (!contato) throw new Recusa(422, "O contato do pedido não existe mais no cadastro.");
-  if (contato.ativo === false) throw new Recusa(422, "O contato do pedido está inativo no cadastro.");
-  const donos = [Number(p.id_cliente), Number(p.id_faturado)].filter((n) => Number.isFinite(n) && n > 0);
-  if (!donos.includes(Number(contato.id_cliente))) {
-    throw new Recusa(409, "O contato do pedido não pertence ao cliente nem ao faturado. Corrija o contato na proposta.");
-  }
-  if (!homologacao) conferirModoTeste(modoTeste, p.id_cliente, contato.id_cliente);
+  // v28: com conversa principal, o contato da tabela contatos não é exigido.
+  const { idContato, contato } = await contatoDoPedido(p, "O pedido não tem contato responsável. Escolha o contato na proposta.");
+  if (contato && !homologacao) conferirModoTeste(modoTeste, p.id_cliente, contato.id_cliente);
   return { p, idContato, contato, homologacao };
+}
+
+/** Lê o contato da proposta (se houver id) e aplica logica.contatoDoAviso. */
+async function contatoDoPedido(
+  p: { id_cliente: unknown; id_faturado: unknown; id_contato: unknown; chatguru_chat_id: unknown },
+  semContato: string
+) {
+  const id = Number(String(p.id_contato ?? "").trim());
+  let lido: ContatoLido | null = null;
+  if (Number.isInteger(id) && id > 0) {
+    const { data, error } = await admin.from("contatos").select("id_cliente, nome_contato, whats, ativo").eq("id", id).maybeSingle();
+    if (error) throw new Recusa(503, "Não foi possível ler o contato do pedido. Tente de novo.");
+    lido = (data as ContatoLido | null) ?? null;
+  }
+  const donos = [Number(p.id_cliente), Number(p.id_faturado)].filter((n) => Number.isFinite(n) && n > 0);
+  return contatoDoAviso(p.id_contato, lido, donos, p.chatguru_chat_id, semContato);
 }
 
 /** Link de aprovação do pedido (pedidos_links_cliente), só leitura. Ver logica.linkDoCliente. */
@@ -679,6 +681,8 @@ async function destinosDoAviso(idCliente: unknown, telefoneContato: unknown, cor
   // v24: a conversa escolhida na aba Artes vai direto, se ainda é do cliente.
   const escolhida = conversaDaProposta(chatEscolhido, lista);
   if (escolhida) return { conversas: [escolhida], escolha: null };
+  // v28: pedido sem contato vai só para a principal; se ela saiu do cliente, recusa (sem lista).
+  if (temPrincipal(chatEscolhido) && !String(telefoneContato ?? "").trim()) throw new Recusa(422, PRINCIPAL_FORA_DO_CLIENTE);
   const d = decidirConversa(telefoneContato, lista);
   if (d.modo === "automatica") return { conversas: [d.conversa], escolha: null };
   if (d.modo === "escolha") return { conversas: [], escolha: { motivo: d.motivo, conversas: d.conversas } };
@@ -702,7 +706,7 @@ type ResultadoEnvio = {
  */
 async function enviarParaConversas(p: {
   idInt: number;
-  idContato: number;
+  idContato: number | null;
   quem: { id: string; nome: string; adm: boolean };
   modoTeste: boolean;
   evento: Evento;
@@ -848,7 +852,7 @@ async function listar(ids: unknown, modoTeste: boolean) {
  */
 async function reservarLinha(p: {
   idInt: number;
-  idContato: number;
+  idContato: number | null;
   autor: string;
   autorNome: string;
   dialogoId: string;
@@ -1151,7 +1155,7 @@ Deno.serve(async (req) => {
           if (ctxP.homologacao) {
             conversa = await conversaDaHomologacao(false);
           } else {
-            const dest = await destinosDoAviso(ctxP.p.id_cliente, ctxP.contato.whats, {}, ctxP.p.chatguru_chat_id);
+            const dest = await destinosDoAviso(ctxP.p.id_cliente, ctxP.contato?.whats, {}, ctxP.p.chatguru_chat_id);
             conversa = dest.conversas[0] ?? null;
             escolha = dest.escolha;
           }
@@ -1186,7 +1190,7 @@ Deno.serve(async (req) => {
           // O Link_do_Cliente do pedido só é gravado na conversa de teste.
           campos: { field__Link_do_Cliente: linkH },
           conversas: [conversaH],
-          ocultar: [ctxP.contato.whats, ctxP.contato.nome_contato, linkH],
+          ocultar: [ctxP.contato?.whats, ctxP.contato?.nome_contato, linkH],
           homologacao: true
         });
         return respostaDosEnvios(modoTeste, outH, { homologacao: true });
@@ -1201,7 +1205,7 @@ Deno.serve(async (req) => {
         return responder(200, { ok: true, modo_teste: modoTeste, ja_existia: true, aviso: publico(ultimoP) });
       }
       const linkP = await linkDoPedido(idP);
-      const destP = await destinosDoAviso(ctxP.p.id_cliente, ctxP.contato.whats, corpo, ctxP.p.chatguru_chat_id);
+      const destP = await destinosDoAviso(ctxP.p.id_cliente, ctxP.contato?.whats, corpo, ctxP.p.chatguru_chat_id);
       if (destP.escolha) {
         return responder(200, { ok: true, modo_teste: modoTeste, ja_existia: false, aviso: publico(ultimoP), escolha: destP.escolha });
       }
@@ -1216,7 +1220,7 @@ Deno.serve(async (req) => {
         // O link do próprio pedido vai no campo antes do diálogo (09/11/2026).
         campos: { field__Link_do_Cliente: linkP },
         conversas: destP.conversas,
-        ocultar: [ctxP.contato.whats, ctxP.contato.nome_contato, linkP]
+        ocultar: [ctxP.contato?.whats, ctxP.contato?.nome_contato, linkP]
       });
       return respostaDosEnvios(modoTeste, outP);
     }
@@ -1301,7 +1305,7 @@ Deno.serve(async (req) => {
         if (homologacaoR) {
           conversaR = await conversaDaHomologacao(false);
         } else {
-          const destR = await destinosDoAviso(ctxR.idCliente, ctxR.contato.whats, {}, ctxR.chatEscolhido);
+          const destR = await destinosDoAviso(ctxR.idCliente, ctxR.contato?.whats, {}, ctxR.chatEscolhido);
           conversaR = destR.conversas[0] ?? null;
           escolhaR = destR.escolha;
         }
@@ -1328,7 +1332,7 @@ Deno.serve(async (req) => {
       if (!nome) throw new Recusa(400, "Escolha um dos seis diálogos.");
       if (corpo?.confirmado !== true) throw new Recusa(409, "Confirme o envio de teste.");
       const ctxT = await contextoDoPedido(idInt, modoTeste, nome);
-      const destT = await destinosDoAviso(ctxT.idCliente, ctxT.contato.whats, corpo);
+      const destT = await destinosDoAviso(ctxT.idCliente, ctxT.contato?.whats, corpo);
       if (destT.escolha) {
         return responder(200, { ok: true, modo_teste: modoTeste, ja_existia: false, aviso: null, teste: ctxT.teste, escolha: destT.escolha });
       }
@@ -1342,7 +1346,7 @@ Deno.serve(async (req) => {
         dialogoId: DIALOGOS[nome].id,
         campos: ctxT.campos,
         conversas: destT.conversas,
-        ocultar: [ctxT.contato.whats, ctxT.contato.nome_contato]
+        ocultar: [ctxT.contato?.whats, ctxT.contato?.nome_contato]
       });
       return respostaDosEnvios(modoTeste, outT, { teste: ctxT.teste });
     }
@@ -1363,7 +1367,7 @@ Deno.serve(async (req) => {
         dialogoId: DIALOGOS[ctxH.dialogo].id,
         campos: ctxH.campos,
         conversas: [conversaH],
-        ocultar: [ctxH.contato.whats, ctxH.contato.nome_contato],
+        ocultar: [ctxH.contato?.whats, ctxH.contato?.nome_contato],
         homologacao: true
       });
       return respostaDosEnvios(modoTeste, outH, { modelo: { dialogo: ctxH.dialogo, bloqueio: null }, homologacao: true });
@@ -1414,7 +1418,7 @@ Deno.serve(async (req) => {
     }
 
     const ctx = await contextoDoPedido(idInt, modoTeste);
-    const dest = await destinosDoAviso(ctx.idCliente, ctx.contato.whats, corpo, ctx.chatEscolhido);
+    const dest = await destinosDoAviso(ctx.idCliente, ctx.contato?.whats, corpo, ctx.chatEscolhido);
     const modelo = { dialogo: ctx.dialogo, bloqueio: null };
     if (dest.escolha) {
       return responder(200, { ok: true, modo_teste: modoTeste, ja_existia: false, aviso: publico(ultimo), modelo, escolha: dest.escolha });
@@ -1430,7 +1434,7 @@ Deno.serve(async (req) => {
       dialogoId: DIALOGOS[ctx.dialogo].id,
       campos: ctx.campos,
       conversas: dest.conversas,
-      ocultar: [ctx.contato.whats, ctx.contato.nome_contato]
+      ocultar: [ctx.contato?.whats, ctx.contato?.nome_contato]
     });
     return respostaDosEnvios(modoTeste, out, { modelo });
   } catch (e) {

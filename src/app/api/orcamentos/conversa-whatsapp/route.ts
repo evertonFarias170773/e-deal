@@ -7,7 +7,6 @@ import {
   type ContatoEscolhido,
   type ConversaWhatsapp
 } from "@/features/orcamentos/lib/conversa-whatsapp";
-import { telefoneParaApi } from "@/lib/telefone/telefone-br";
 
 /*
  * Contatos do pedido pelo ChatGuru (14/11/2026, decisão da diretoria): o pedido
@@ -20,12 +19,11 @@ import { telefoneParaApi } from "@/lib/telefone/telefone-br";
  * POST aceita {id_int, chat_ids, principal} (a escolha inteira, aba Geral) ou
  * {id_int, chat_id} (só a principal, aba Artes: as outras ficam).
  *
- * PONTE COM O CONTATO DO PEDIDO: os avisos do ChatGuru (função
- * expedicao-pedido-pronto, que não muda nesta rodada) recusam pedido sem
- * `propostas.id_contato` ativo do cliente. Ao gravar a principal, se o pedido não
- * tem um contato válido, ele passa a apontar para o contato do cliente com o
- * mesmo telefone da principal; sem nenhum, o contato é criado a partir da
- * conversa (nome e telefone do Guru). Contato válido que já existe fica.
+ * CONTATO DO CADASTRO: ao gravar a principal, se o pedido não tem um contato
+ * válido, ele passa a apontar para o contato ativo do cliente com o mesmo
+ * telefone da principal. Sem nenhum, o pedido fica sem contato: esta rota NUNCA
+ * cria linha em `contatos` (14/11/2026; a v28 da expedicao-pedido-pronto aceita
+ * a principal sem `id_contato`). Contato válido que já existe fica.
  */
 
 /**
@@ -116,7 +114,8 @@ async function escolhidasDoPedido(usuario: SupabaseClient, idInt: number) {
 
 /**
  * Ponte com o contato do pedido (ver o topo): devolve o contato que o pedido deve
- * ter, ou null quando o atual já serve. Escrita só no insert do contato novo.
+ * ter, ou null quando o atual já serve ou não há contato do mesmo telefone.
+ * Só lê a tabela contatos; nunca grava nela.
  */
 async function contatoParaAPrincipal(
   usuario: SupabaseClient,
@@ -135,13 +134,9 @@ async function contatoParaAPrincipal(
   if (atual) return null;
   const doTelefone = ativos.find((c) => mesmoTelefone(c.whats, principal.numero));
   if (doTelefone) return { id: doTelefone.id, nome: limpar(doTelefone.nome_contato) || principal.nome };
-  const { data: criado, error: erroCriar } = await usuario
-    .from("contatos")
-    .insert({ id_cliente: idCliente, nome_contato: principal.nome, whats: telefoneParaApi(principal.numero) || principal.numero, ativo: true })
-    .select("id")
-    .single();
-  if (erroCriar || !criado) return { erro: "Não foi possível criar o contato do pedido a partir da conversa." };
-  return { id: Number((criado as { id: number }).id), nome: principal.nome };
+  // Sem contato com o mesmo telefone: o pedido fica como está. A tabela contatos
+  // não recebe nada daqui (14/11/2026); a v28 dos avisos aceita a principal sem contato.
+  return null;
 }
 
 /**
