@@ -777,3 +777,36 @@ export function segundosParaLiberar(ultimoExecutadoEm: string | null | undefined
   if (!Number.isFinite(t)) return 0;
   return Math.max(0, Math.ceil((t + INTERVALO_GURU_MS - agoraMs) / 1000));
 }
+
+// --- Orçamento para as conversas escolhidas (v29, 14/11/2026) ---
+
+export const SEM_CONVERSA_ORCAMENTO =
+  "A proposta não tem conversa escolhida. Marque as conversas em Contatos do pedido, na aba Geral, e salve antes de enviar.";
+
+export const CONVERSA_FORA_DO_CLIENTE = "Esta conversa não é mais do cliente no ChatGuru. Nada foi enviado para ela.";
+
+/**
+ * Destino do orçamento: todas as conversas escolhidas em Contatos do pedido
+ * (propostas_contatos_chatguru), a principal primeiro. Só vai para as que ainda
+ * são do cliente no Guru, relidas agora; as outras voltam em `fora`, sem envio.
+ * Nenhuma escolhida: recusa.
+ */
+export function conversasDoOrcamento(
+  escolhidas: { chat_id: unknown; nome?: unknown; principal?: unknown }[],
+  doCliente: Conversa[]
+): { validas: Conversa[]; fora: { chat_id: string; nome: string }[] } {
+  const vistas = new Set<string>();
+  const ordem = [...escolhidas].sort((a, b) => Number(b.principal === true) - Number(a.principal === true));
+  const validas: Conversa[] = [];
+  const fora: { chat_id: string; nome: string }[] = [];
+  for (const e of ordem) {
+    const id = typeof e.chat_id === "string" ? e.chat_id.trim() : "";
+    if (!id || vistas.has(id)) continue;
+    vistas.add(id);
+    const c = doCliente.find((x) => x.chat_id === id && numeroDaConversa(x.numero));
+    if (c) validas.push(c);
+    else fora.push({ chat_id: id, nome: typeof e.nome === "string" && e.nome.trim() ? e.nome.trim() : "—" });
+  }
+  if (!validas.length && !fora.length) throw new Recusa(422, SEM_CONVERSA_ORCAMENTO);
+  return { validas, fora };
+}

@@ -114,7 +114,7 @@ A aba de produtos aparece na tela com o nome **Orçamento**.
 
 **Boletim** não é aba visível: a barra não tem botão com esse nome. Quem abre o endereço da proposta com `?tab=boletim` vê só o quadro "Boletim — Aguarde orientações."
 
-Na coluna da direita ficam até quatro blocos, e **cada aba mostra só os que lhe cabem**: **5. Endereço de entrega**, **8. Resumo do orçamento** (valores, peso, destino da entrega e o desconto geral), **9. Envio do orçamento** (texto pronto, com o botão **Copiar resumo para WhatsApp**) e **10. Observações e Condições**.
+Na coluna da direita ficam até quatro blocos, e **cada aba mostra só os que lhe cabem**: **5. Endereço de entrega**, **8. Resumo do orçamento** (valores, peso, destino da entrega e o desconto geral), **9. Envio do orçamento** (texto pronto, com os botões **Copiar resumo para WhatsApp** e **Enviar pelo ChatGuru**, este desde 14/11/2026) e **10. Observações e Condições**.
 
 | Aba | Blocos na coluna da direita |
 |---|---|

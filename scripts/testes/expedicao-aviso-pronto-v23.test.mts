@@ -16,7 +16,8 @@
  *   F. v26: campo Transportadora (nome curto pela lista, despacho vence orçamento,
  *      só no diálogo Transportadora) e #arte só no link do Colocando em Produção;
  *   G. v27: texto do Orçamento Whatsapp e os 120 s;
- *   H. v28: com conversa principal o contato da tabela contatos não é exigido.
+ *   H. v28: com conversa principal o contato da tabela contatos não é exigido;
+ *   I. v29: orçamento para todas as conversas de Contatos do pedido.
  */
 import assert from "node:assert/strict";
 import {
@@ -30,6 +31,8 @@ import {
   conversaDaProposta,
   contatoDoAviso,
   temPrincipal,
+  conversasDoOrcamento,
+  SEM_CONVERSA_ORCAMENTO,
   linkDoAvisoProducao,
   linkDoCliente,
   nomeCurtoTransportadora,
@@ -263,6 +266,29 @@ caso("H. v28: contato não exigido com conversa principal", () => {
   assert.equal(temPrincipal(chat), true);
   assert.equal(temPrincipal(" "), false);
   assert.equal(temPrincipal(null), false);
+});
+
+caso("I. v29: orçamento para as conversas de Contatos do pedido", () => {
+  const edison = { chat_id: "6071ddf6861416b62a289286", nome: "Edison Junior - 14", numero: "5551984608848" };
+  const outra = { chat_id: "aaaabbbbccccddddeeeeffff", nome: "Lisiane - 14", numero: "5551999990000" };
+  const doCliente = [edison, outra];
+  // Principal primeiro, sem repetir; conversa que saiu do cliente vai para `fora`.
+  const r = conversasDoOrcamento(
+    [
+      { chat_id: outra.chat_id, nome: "Lisiane - 14", principal: false },
+      { chat_id: edison.chat_id, nome: "Edison", principal: true },
+      { chat_id: edison.chat_id, nome: "Edison", principal: false },
+      { chat_id: "ffff0000ffff0000ffff0000", nome: "Antiga", principal: false }
+    ],
+    doCliente
+  );
+  assert.deepEqual(r.validas.map((c) => c.chat_id), [edison.chat_id, outra.chat_id]);
+  assert.deepEqual(r.fora, [{ chat_id: "ffff0000ffff0000ffff0000", nome: "Antiga" }]);
+  // Nenhuma escolhida: recusa e pede para escolher na aba Geral.
+  assert.throws(() => conversasDoOrcamento([], doCliente), { message: SEM_CONVERSA_ORCAMENTO });
+  assert.throws(() => conversasDoOrcamento([{ chat_id: "  " }], doCliente), { message: SEM_CONVERSA_ORCAMENTO });
+  // Todas fora do cliente: nada válido, todas em `fora`.
+  assert.deepEqual(conversasDoOrcamento([{ chat_id: edison.chat_id, nome: "Edison" }], []).validas, []);
 });
 
 console.log(`\n${n} casos ok`);

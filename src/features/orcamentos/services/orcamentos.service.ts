@@ -3379,6 +3379,10 @@ export async function saveProposta(
 
     // Find the address selected (searching client addresses and comprador addresses if comprador selected)
     let cepText = "";
+    // Cidade e UF do texto do box 9 (linha "Cidade:"), as mesmas que a tela usa
+    // (14/11/2026): o texto gravado tem de ser igual ao do box para o envio pelo ChatGuru.
+    let cidadeDoTexto: string | undefined = formState.clienteNaoCadastrado ? formState.cidadeLivre : undefined;
+    let ufDoTexto: string | undefined = formState.clienteNaoCadastrado ? formState.ufLivre : undefined;
     if (formState.clienteNaoCadastrado) {
       if (!isNonEmpty(formState.cepLivre)) {
         return { success: false, errorMessage: "O CEP é obrigatório para cálculo de frete." };
@@ -3408,6 +3412,8 @@ export async function saveProposta(
       const allAddresses = [...((cadastro as Cadastro)?.enderecos || []), ...compradorAddresses];
       const selectedAddress = allAddresses.find((e) => e.id === formState.enderecoId);
       cepText = selectedAddress ? selectedAddress.cep : "";
+      cidadeDoTexto = selectedAddress?.cidade;
+      ufDoTexto = selectedAddress?.uf;
     }
 
     // Proposta não-avulsa sem produtos itemizados: salvar é permitido (decisão
@@ -3797,6 +3803,8 @@ export async function saveProposta(
       formaPagamento: formState.formaPagamento || "A combinar",
       isAvulso: formState.isAvulso,
       contatoNome: contatoNome,
+      cidade: cidadeDoTexto,
+      uf: ufDoTexto,
       bonusPercent: bonusDaVenda,
       // O texto gravado fala da modalidade que vai ser gravada, não do card.
       modalidade: modalidadeVigente

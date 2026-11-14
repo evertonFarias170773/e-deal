@@ -8,6 +8,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useUrlFilters } from "@/hooks/useUrlFilters";
 import { codecs } from "@/lib/url-state";
 import { Copy, Search, Trash2, X, Edit2, AlertTriangle, AlertOctagon, Check, ExternalLink } from "lucide-react";
+import { EnviarOrcamentoChatGuru } from "@/features/orcamentos/components/EnviarOrcamentoChatGuru";
 import { useAppToast } from "@/components/common/AppToast";
 import { ContactEditModal } from "@/features/orcamentos/components/ContactEditModal";
 import { CampoObservacaoNotaFiscal } from "@/features/orcamentos/components/CampoObservacaoNotaFiscal";
@@ -8417,6 +8418,11 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                 <Copy className="h-4 w-4" />
                 Copiar resumo para WhatsApp
               </button>
+              <EnviarOrcamentoChatGuru
+                idInt={Number(form.id_int) > 0 ? Number(form.id_int) : null}
+                textoDoBox={informalText}
+                alteracoesNaoSalvas={isDirty || lotesNaoGravados}
+              />
             </FormSection>
             )}
 

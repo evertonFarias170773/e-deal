@@ -1,6 +1,15 @@
-# expedicao-pedido-pronto: v28 no ar (fora de supabase/functions de propósito)
+# expedicao-pedido-pronto: v29 no ar (fora de supabase/functions de propósito)
 
-**v28 no ar desde 14/11/2026 (versão 28 no painel da Supabase).** Deploy autorizado pelo Everton só desta versão. Antes do deploy, a v27 do painel foi conferida igual a esta pasta. É a v27 com uma mudança: pedido com conversa principal não exige mais contato da tabela contatos (o ChatGuru virou a fonte dos contatos do pedido em 8fe7afe9).
+**v29 no ar desde 14/11/2026 (versão 29 no painel da Supabase), conferida arquivo a arquivo igual a esta pasta.** Deploy e migration autorizados pelo Everton só desta mudança. É a v28 com o orçamento do box 9:
+- Migration `20261114b_expedicao_aviso_pronto_evento_orcamento` aplicada: o evento da tabela aceita `orcamento_whatsapp` (só amplia a lista; 240 + 215 linhas iguais).
+- `orcamento_enviar`: vai para todas as conversas de `propostas_contatos_chatguru` da proposta que ainda são do cliente (`conversasDoOrcamento`, principal primeiro); nenhuma escolhida recusa (`SEM_CONVERSA_ORCAMENTO`); a que saiu do cliente volta com recusa sem envio. Por conversa: trava, envio em andamento e os 120 s conferidos antes (`motivoConversaOcupada`), depois a mesma reserva e o mesmo envio dos avisos (`enviarParaConversas`), com linha em `expedicao_aviso_pronto` (evento `orcamento_whatsapp`). Resposta: `envios` por conversa.
+- `orcamento_preparar`: texto gravado, cada conversa com o bloqueio dela, orçamentos travados da proposta e `pode_liberar` (ADM). O Liberar número é a ação `liberar` de sempre.
+- Sai `executarSemRegistro` (envio sem linha da v27). Ações dos avisos sem mudança.
+- Tela: `EnviarOrcamentoChatGuru` no box 9; não envia com alteração não salva nem com o texto gravado diferente do box. Junto, autorizado: o Salvar (`orcamentos.service`) passa cidade e UF ao texto, como a tela, para o gravado ter a linha Cidade.
+- Prova (autorizada): proposta nova 25281 do cliente 14 pelo Duplicar do 25197, conversa Edison Junior - 14 marcada, SEDEX escolhido e salva; enviada pelo botão em 14/11/2026 21:21 (UTC): campos salvos, Diálogo Executado, linha seq 1 `orcamento_whatsapp` executado. 18353 (sem conversa) recusa no botão com `SEM_CONVERSA_ORCAMENTO`.
+- Teste: caso I de `scripts/testes/expedicao-aviso-pronto-v23.test.mts`.
+
+**v28 ficou no ar em 14/11/2026, até a v29 (versão 28 no painel da Supabase).** Deploy autorizado pelo Everton só desta versão. Antes do deploy, a v27 do painel foi conferida igual a esta pasta. É a v27 com uma mudança: pedido com conversa principal não exige mais contato da tabela contatos (o ChatGuru virou a fonte dos contatos do pedido em 8fe7afe9).
 - `contatoDoAviso` (logica.ts), usado no pedido pronto (`contextoDoPedido`) e no Colocando em Produção (`contextoProducao`): com `propostas.chatguru_chat_id` preenchido (espelho da principal de `propostas_contatos_chatguru`), `id_contato` vazio, contato apagado, inativo ou de outro cliente deixam o aviso seguir sem contato; o registro em `expedicao_aviso_pronto` fica com `id_contato` vazio (a coluna aceita). Contato válido continua sendo lido. Sem principal, as recusas de antes.
 - Destino sem mudança: a principal, se ainda é do cliente no Guru. Sem contato e com a principal fora do cliente, recusa (`PRINCIPAL_FORA_DO_CLIENTE`) em vez de abrir a lista de conversas.
 - Diálogos, campos e o Orçamento Whatsapp sem mudança. "Testar modelo" segue a regra de antes (não usa a principal).

@@ -1,6 +1,6 @@
 # Proposta: aba Geral
 
-> **Última revisão:** 14/11/2026 (bloco 3 vira **Contatos do pedido**: uma ou mais conversas do ChatGuru, uma principal que é o Comprador; sai a lista de contatos do cadastro; contato exigido no Enviar para arte e na Liberação para produção. Antes, 11/11/2026: endereço com a rua gravada como "[object Object]" aparece como **Rua com erro no cadastro (corrija pelo lápis)** e abre com a rua em branco. Antes, no mesmo dia: campo **Observação para a nota fiscal** no fim do bloco 4, que sai impresso na NF-e e na NFS-e; o bloco 10 continua interno. Antes, no mesmo dia: bloco **Conversa do WhatsApp** no Contato responsável: escolhe a conversa do ChatGuru, a mesma do Comprador da aba Artes)
+> **Última revisão:** 14/11/2026 (botão **Enviar pelo ChatGuru** no bloco 9; bloco 3 vira **Contatos do pedido**: uma ou mais conversas do ChatGuru, uma principal que é o Comprador; sai a lista de contatos do cadastro; contato exigido no Enviar para arte e na Liberação para produção. Antes, 11/11/2026: endereço com a rua gravada como "[object Object]" aparece como **Rua com erro no cadastro (corrija pelo lápis)** e abre com a rua em branco. Antes, no mesmo dia: campo **Observação para a nota fiscal** no fim do bloco 4, que sai impresso na NF-e e na NFS-e; o bloco 10 continua interno. Antes, no mesmo dia: bloco **Conversa do WhatsApp** no Contato responsável: escolhe a conversa do ChatGuru, a mesma do Comprador da aba Artes)
 > **Caminho no menu:** Pedidos → abrir um pedido → aba **Geral**
 > **Endereço:** `/orcamentos/<número>/editar` (em proposta nova, `/orcamentos/novo`)
 
@@ -54,6 +54,9 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | Botão **X** (dica: "Limpar pesquisa") | Campo de pesquisa das listas com mais de quatro opções | Limpa a pesquisa. |
 | **Tipo** (**%** ou **R$**) e **Desconto geral** | Bloco **8. Resumo do orçamento** | Aplicam desconto sobre o subtotal dos produtos. |
 | **Copiar resumo para WhatsApp** | Bloco **9. Envio do orçamento** | Copia o texto informal da proposta. |
+| **Enviar pelo ChatGuru** | Bloco **9. Envio do orçamento**, abaixo do **Copiar** | Abre a conferência do envio: as conversas de **Contatos do pedido** que vão receber o orçamento e, em cada uma, se o envio seria recusado. Nada é enviado nesse clique. |
+| **Confirmar envio para N conversas** | Conferência do **Enviar pelo ChatGuru** | Manda o orçamento pelo WhatsApp da Ideal (diálogo **Orçamento Whatsapp** do ChatGuru) para cada conversa liberada e mostra o resultado de cada uma. |
+| **Chegou no WhatsApp** / **Não chegou** (só ADM) | Conferência do **Enviar pelo ChatGuru**, em orçamento sem confirmação do ChatGuru | **Liberar número**: depois de conferir a conversa no ChatGuru, registra o que aconteceu e solta a conversa para novos envios. |
 
 ## Passo a passo
 
@@ -177,8 +180,24 @@ Aqui na aba Geral aparecem os blocos 8, 9 e 10. As outras abas mostram só algun
 
 1. **8. Resumo do orçamento** mostra **Entrega em**, **Subtotal bruto**, o abatimento da tabela especial, **Subtotal produtos**, **Desconto geral**, **Frete escolhido**, **Peso total** e **Total final**. O total é calculado em centavos exatos, com a mesma conta da trava de despacho da Expedição e da Conta Corrente: cada item é arredondado ao centavo, o desconto da tabela especial sai da soma dos itens, e o total é arredondado ao centavo (meio centavo para cima). O desconto da tabela especial mostrado é o subtotal bruto menos o total, então o resumo sempre fecha. Exemplo: subtotal bruto R$ 1.006,95 com 10% dá total R$ 906,26 e desconto R$ 100,69.
 2. Para dar desconto na proposta inteira, escolha o **Tipo** (**%** ou **R$**) e digite o valor em **Desconto geral**. O desconto nunca passa do subtotal dos produtos.
-3. **9. Envio do orçamento** traz o texto informal da proposta. Clique em **Copiar resumo para WhatsApp**. O botão só libera depois que um frete foi escolhido.
+3. **9. Envio do orçamento** traz o texto informal da proposta. Clique em **Copiar resumo para WhatsApp**. O botão só libera depois que um frete foi escolhido. Para mandar o texto direto pelo WhatsApp da Ideal, use **Enviar pelo ChatGuru** (veja a seção abaixo).
 4. **10. Observações e Condições** é o texto comercial da proposta. Ele é interno: não chega à produção (a instrução para a bancada fica na aba Produção / Expedição / Notas) e **não vai para a nota fiscal**. O que precisa sair na nota vai em **Observação para a nota fiscal**, no bloco 4. Quem fatura vê o bloco 10 sem abrir a proposta: na Fila de faturamento e nas janelas das notas, o pedido com texto aqui ganha o selo âmbar **Obs. interna**.
+
+### Enviar o orçamento pelo ChatGuru (bloco 9)
+
+Desde 14/11/2026 o bloco **9. Envio do orçamento** tem o botão **Enviar pelo ChatGuru**, abaixo do **Copiar resumo para WhatsApp**. Ele manda o texto do bloco 9 pelo WhatsApp da Ideal, no diálogo **Orçamento Whatsapp** do ChatGuru, sem copiar e colar.
+
+1. Marque as conversas do cliente em **3. Contatos do pedido** e salve a proposta.
+2. Clique em **Enviar pelo ChatGuru**. A conferência mostra cada conversa marcada e, ao lado, **Pronta para receber** ou o motivo de não poder receber agora.
+3. Clique em **Confirmar envio para N conversas**. O orçamento vai para cada conversa liberada, uma de cada vez, e a tela mostra o resultado de cada uma.
+
+O resultado de cada conversa pode ser:
+- **Enviado: diálogo executado no ChatGuru.**
+- **Não enviado**, com o motivo dado pelo ChatGuru.
+- Uma recusa antes do envio, como a dos 2 minutos (abaixo). Nesse caso nada foi enviado para essa conversa.
+- **Sem confirmação do ChatGuru**: o ChatGuru não respondeu se enviou. Confira a conversa no ChatGuru. A conversa fica travada para novos envios, inclusive os avisos da Expedição, até um ADM usar **Liberar número** aqui no bloco 9 (**Chegou no WhatsApp** ou **Não chegou**).
+
+O texto enviado é o que a proposta tem gravado, o mesmo do bloco 9 depois do último **Salvar**. Por isso o envio só sai com a proposta salva e sem alteração pendente. Cada envio fica registrado no histórico de avisos do ChatGuru, junto com os avisos de pedido pronto e de produção.
 
 ### Proposta avulsa x proposta com produtos
 
@@ -222,6 +241,11 @@ A escolha entre proposta avulsa e proposta com produtos do catálogo não fica n
 
 | O que aparece | Por que acontece | O que fazer |
 |---|---|---|
+| "A proposta não tem conversa escolhida. Marque as conversas em Contatos do pedido, na aba Geral, e salve antes de enviar." | **Enviar pelo ChatGuru** sem conversa marcada no bloco 3. | Marque as conversas em **3. Contatos do pedido** e salve. |
+| "Há alterações não salvas. Salve a proposta antes de enviar..." ou "O texto gravado na proposta é diferente do box 9." | O texto gravado não é o que o bloco 9 mostra; o envio mandaria o texto antigo. | Clique em **Salvar alterações** e envie de novo. |
+| "O ChatGuru exige 2 minutos entre mensagens para a mesma conversa. Tente de novo em N s." | Aquela conversa recebeu uma mensagem do Vibe há menos de 2 minutos. | Espere o tempo indicado e envie de novo. |
+| "Há um aviso sem confirmação nesta conversa." | Um envio anterior para a conversa ficou sem resposta do ChatGuru. | Um ADM confere no ChatGuru e usa **Liberar número** (no bloco 9 ou na Expedição). |
+| "Esta conversa não é mais do cliente no ChatGuru." | A conversa marcada foi renomeada ou saiu do cliente no ChatGuru. | Marque a conversa certa em **3. Contatos do pedido**. |
 | **Cliente obrigatório** — "Selecione um cliente para a proposta." | Nenhum cliente escolhido. | Busque e selecione o cliente. |
 | **Nome do cliente obrigatório** | Orçamento rápido sem nome. | Preencha **Nome livre do cliente / empresa**. |
 | **CEP obrigatório** | Orçamento rápido sem CEP. | Preencha o **CEP de entrega**. |
@@ -273,6 +297,9 @@ A escolha entre proposta avulsa e proposta com produtos do catálogo não fica n
 - `src/features/orcamentos/components/ArtesCompradorCard.tsx`
 - `src/features/orcamentos/lib/conversa-whatsapp.ts`
 - `src/features/orcamentos/services/conversa-whatsapp.client.ts`
+- `src/features/orcamentos/components/EnviarOrcamentoChatGuru.tsx`
+- `src/features/orcamentos/services/orcamento-chatguru.client.ts`
+- `supabase/edge-no-ar/expedicao-pedido-pronto/index.ts` (ações `orcamento_preparar` e `orcamento_enviar`)
 - `src/app/api/orcamentos/conversa-whatsapp/route.ts`
 - `src/features/orcamentos/components/CampoObservacaoNotaFiscal.tsx`
 - `src/features/fiscal/lib/observacao-nota-fiscal.ts`
