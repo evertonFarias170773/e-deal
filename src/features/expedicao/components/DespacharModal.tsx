@@ -64,6 +64,7 @@ import { avisosDoReenvio } from "../lib/reenvio";
 import { conferirFreteSubsidiado, mensagemFreteSubsidiado } from "../lib/frete-subsidiado";
 import { barreiraNfAutorizada } from "../services/corrigir-frete-simulacao";
 import { getSupabaseClient } from "@/lib/supabase/client";
+import { ContatosDoPedidoNoDespacho } from "./ContatosDoPedidoNoDespacho";
 import { CaixaAvisoNoDespacho, ResultadoAvisoNoDespacho, useAvisoNoDespacho, type ResultadoAvisoDespacho } from "./AvisoNoDespacho";
 import type { AvisoPronto, RecusaPorNumero } from "../services/aviso-pronto.client";
 
@@ -1602,6 +1603,8 @@ export function DespacharModal({
         </div>
         {/* Instrucoes de entrega: o texto inteiro, antes de qualquer campo. */}
         <AvisoInstrucaoEntrega texto={instrucaoEntrega} formato="texto" className="mx-5 mt-4" />
+        {/* Contatos do pedido escolhidos na aba Geral (ChatGuru), 14/11/2026. */}
+        <ContatosDoPedidoNoDespacho idInt={pedido.idInt} className="mx-5 mt-4" />
         {/* REENVIO ABERTO (22/10/2026): o pedido voltou devolvido e sai de novo. */}
         {reenvioAberto ? (
           <div className="mx-5 mt-4 space-y-2 rounded-2xl border border-violet-200 bg-violet-50 px-4 py-3 text-sm text-violet-900 dark:border-violet-900 dark:bg-violet-950/40 dark:text-violet-200">

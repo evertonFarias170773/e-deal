@@ -1,6 +1,6 @@
 # Proposta: abas Produção / Expedição / Notas, Boletim e Histórico
 
-> **Última revisão:** 11/11/2026 (a aba passou a se chamar **Produção / Expedição / Notas** e ganhou o quadro **Notas fiscais**, com a **Observação para a nota fiscal**). 10/11/2026 (Liberar e enviar manda o aviso para a conversa do cliente; fim do "em ajuste" e da homologação)
+> **Última revisão:** 14/11/2026 (Liberar para Produção recusa pedido sem contato do ChatGuru). 11/11/2026 (a aba passou a se chamar **Produção / Expedição / Notas** e ganhou o quadro **Notas fiscais**, com a **Observação para a nota fiscal**). 10/11/2026 (Liberar e enviar manda o aviso para a conversa do cliente; fim do "em ajuste" e da homologação)
 > **Caminho no menu:** Pedidos → abrir um pedido → Editar proposta → aba Produção / Expedição / Notas ou aba Histórico. Não existe aba Boletim na barra de abas: a OS (boletim) abre pelo menu Produção → clicar no pedido.
 > **Endereço:** `/orcamentos/[número]/editar?tab=producao` e `/orcamentos/[número]/editar?tab=historico`. A aba se chamava **Produção** até 09/10/2026 e **Produção / Expedição** até 11/11/2026; só o nome mudou, o endereço `?tab=producao` é o mesmo. A OS fica em `/pedidos/boletim?id_int=[número]&modo=edicao`.
 
@@ -198,6 +198,7 @@ As mensagens são internas: o cliente não vê.
 
 | O que aparece | Por que acontece | O que fazer |
 |---|---|---|
+| "Escolha o contato do pedido na aba Geral (Conversas do WhatsApp). Cliente sem conversa: cadastre a conversa no ChatGuru." | Desde 14/11/2026 a liberação exige um contato do ChatGuru no pedido, e ele não tem. | Marque a conversa no bloco **3. Contatos do pedido** da aba Geral. Sem conversa no ChatGuru, peça ao atendimento para abrir a conversa com o código do cliente no nome. |
 | "Status precisa ser REVISAO ATENDENTE." | O pedido mudou de status antes de você confirmar a liberação. | Atualize a lista e confira o status. |
 | "Pendências financeiras. Todos os pagamentos ativos precisam estar confirmados (Paid/A Vencer) e deve haver pelo menos um." | Há cobrança ativa ainda não confirmada, ou nenhuma cobrança confirmada. | Confirme o pagamento na Conferência ou cancele a cobrança que sobrou, e libere de novo. |
 | "Pendências de arte. Todas as artes devem estar com status APROVADO." | O status da arte do pedido não é APROVADO. | Aguarde a aprovação da arte. Veja a aba **Artes**. |

@@ -28,6 +28,7 @@ import { getSupabaseClient } from "@/lib/supabase/client";
 import { fetchComSessao, obterAccessToken, SessaoExpiradaError } from "@/lib/supabase/sessao";
 import { resolverTelefonePagador } from "@/lib/telefone/telefone-br";
 import { semCobrancaDeReenvio } from "@/features/cobrancas/lib/cobranca-reenvio";
+import { lerContatoDaCobranca, MENSAGEM_PAGADOR_SEM_EMAIL } from "@/features/cobrancas/lib/contato-da-cobranca";
 import { baixarBoletoComNome, salvarArquivoNoNavegador } from "@/features/cobrancas/services/baixar-boleto";
 import {
   ROTULO_SISTEMA_ANTIGO,
@@ -431,6 +432,14 @@ export function PropostaCobrancaPanel({
   ): Promise<{ success: boolean; error?: string }> {
     try {
       const seuNumero = idEmpresaCobranca === 2 ? (idPagamentoCobranca || String(proposta.id_int)) : String(proposta.id_int);
+      // Telefone da conversa principal do Guru, com o 9 (lib/contato-da-cobranca, 14/11/2026).
+      const clienteBanco = getSupabaseClient();
+      if (!clienteBanco) return { success: false, error: "Sistema indisponível no momento. Tente novamente." };
+      const contatoCobranca = await lerContatoDaCobranca(
+        clienteBanco,
+        Number(proposta.id_int),
+        proposta.contato?.whatsapp || proposta.cliente?.whatsapp || ""
+      );
       const res = await fetch("/api/cobrancas/gerar-pix", {
         method: "POST",
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
@@ -440,7 +449,7 @@ export function PropostaCobrancaPanel({
           seuNumero,
           valorNominal,
           dataVencimento: getDefaultVencimento(0),
-          telefone: proposta.contato?.whatsapp || proposta.cliente?.whatsapp || "",
+          telefone: contatoCobranca.telefone,
           endereco: `${proposta.enderecoEntrega?.endereco || ""}, ${proposta.enderecoEntrega?.numero || ""} ${proposta.enderecoEntrega?.complemento || ""}`.trim(),
           cidade: proposta.enderecoEntrega?.cidade || "",
           uf: proposta.enderecoEntrega?.uf || "",
@@ -1484,10 +1493,18 @@ export function PropostaCobrancaPanel({
       return;
     }
 
+    // E-mail do cadastro do pagador, na ordem da NF-e (lib/contato-da-cobranca, 14/11/2026).
     if (source === "supabase" && form.tipoCobranca === "BOLETO") {
-      const emailCliente = proposta.contato?.email?.trim() || proposta.cliente?.email?.trim() || "";
-      if (!emailCliente) {
-        showToast({ type: "error", title: "Cliente sem e-mail cadastrado para geração do boleto." });
+      const clienteBanco = getSupabaseClient();
+      let emailPagador = "";
+      try {
+        emailPagador = clienteBanco ? (await lerContatoDaCobranca(clienteBanco, Number(proposta.id_int), "")).email : "";
+      } catch (erro) {
+        showToast({ type: "error", title: erro instanceof Error ? erro.message : "Não foi possível ler o e-mail do pagador." });
+        return;
+      }
+      if (!emailPagador) {
+        showToast({ type: "error", title: MENSAGEM_PAGADOR_SEM_EMAIL });
         return;
       }
     }

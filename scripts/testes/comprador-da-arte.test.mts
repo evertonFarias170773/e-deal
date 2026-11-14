@@ -35,10 +35,8 @@ caso("A. sem conversa no Guru fica travado", () => {
   assert.equal(s.liberado, false);
   assert.equal(s.semConversa, true);
   assert.equal(s.aviso, SEM_CONVERSA_NO_GURU);
-  assert.equal(
-    SEM_CONVERSA_NO_GURU,
-    "Cliente sem conversa no ChatGuru: peça ao atendimento para abrir a conversa com o código do cliente no nome"
-  );
+  // 14/11/2026: a trava diz "cadastre a conversa no ChatGuru" (decisão da diretoria).
+  assert.ok(SEM_CONVERSA_NO_GURU.startsWith("Cadastre a conversa no ChatGuru"));
 });
 
 caso("B. uma conversa já vem escolhida", () => {

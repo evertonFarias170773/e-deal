@@ -21,7 +21,7 @@ import {
 import { useCoresDeProducao } from "@/features/orcamentos/hooks/useCoresDeProducao";
 import { listChecklistDeProdutos } from "@/features/produtos/services/produto-boletim-campos.service";
 import { ArtesTab, type BriefingArtesDraft } from "@/features/orcamentos/components/ArtesTab";
-import { ListaDeConversas, useConversaDaArte } from "./components/ArtesCompradorCard";
+import { ContatosDoPedido, useConversaDaArte } from "./components/ArtesCompradorCard";
 import { ProductSearchSelector } from "@/features/orcamentos/components/ProductSearchSelector";
 import { LiberarFaturadoModal } from "@/features/orcamentos/components/LiberarFaturadoModal";
 import { PropostaChatPanel } from "@/features/orcamentos/components/PropostaChatPanel";
@@ -1821,7 +1821,12 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
 
 
   const selectedContact = proposalContacts.find((c) => c.id === form.contatoId);
-  const contatoNome = form.clienteNaoCadastrado ? "Contato Rápido" : (selectedContact ? selectedContact.nome : "");
+  // Contato do pedido (14/11/2026): a conversa principal do ChatGuru; pedido
+  // antigo sem escolha segue com o contato da tabela contatos.
+  const nomeDoContatoPrincipal = conversaDaArte.contatos.find((c) => c.principal)?.nome ?? "";
+  const contatoNome = form.clienteNaoCadastrado
+    ? "Contato Rápido"
+    : nomeDoContatoPrincipal || (selectedContact ? selectedContact.nome : "");
 
   const informalText = buildPropostaInformalText({
     id_int: form.id_int || "NOVO",
@@ -3077,15 +3082,8 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     return falha ? { ok: false, motivo: falha } : { ok: true, trocas };
   }
 
-  function openEditContact(contato: CadastroContato) {
-    setEditingContactId(contato.id);
-    setEditContactDraft({
-      nome: contato.nome,
-      cargo: contato.cargo ?? "",
-      whatsapp: contato.whatsapp,
-      email: contato.email ?? ""
-    });
-  }
+  // `openEditContact` saiu em 14/11/2026 com a lista da tabela contatos da aba
+  // Geral (contatos do pedido pelo ChatGuru). A edição segue no cadastro do cliente.
 
   function saveEditedContact() {
     // Mesmo cuidado do addContact: sem trim, um espaço em branco passava e
@@ -4988,7 +4986,9 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
       form.clienteNaoCadastrado && !isNonEmpty(form.nomeClienteLivre) ? "nomeClienteLivre" : null,
       form.clienteNaoCadastrado && !isNonEmpty(form.cepLivre) ? "cepLivre" : null,
       !form.clienteNaoCadastrado && !isNonEmpty(form.enderecoId) ? "enderecoId" : null,
-      !form.clienteNaoCadastrado && !isNonEmpty(form.contatoId) ? "contatoId" : null,
+      // Contato da tabela contatos deixou de ser obrigatório (14/11/2026): os
+      // contatos do pedido são as conversas do ChatGuru, exigidas no Enviar para
+      // arte e na Liberação para produção.
       !form.isAvulso && form.itens.length === 0 ? "itens" : null,
       !form.isAvulso && hasInvalidQuantity ? "quantidade" : null,
       !form.isAvulso && hasInvalidSubtotal ? "subtotal_itens" : null,
@@ -5014,9 +5014,6 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
       } else if (form.clienteNaoCadastrado && !isNonEmpty(form.cepLivre)) {
         title = "CEP obrigatório";
         desc = "Informe o CEP para entrega / cálculo de frete.";
-      } else if (!form.clienteNaoCadastrado && !isNonEmpty(form.contatoId)) {
-        title = "Contato obrigatório";
-        desc = "Selecione um contato antes de salvar o orçamento.";
       } else if (!form.clienteNaoCadastrado && !isNonEmpty(form.enderecoId)) {
         title = "Endereço obrigatório";
         desc = "Selecione um endereço de entrega antes de salvar o orçamento.";
@@ -5298,7 +5295,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     const formToSave = {
       ...form,
       vendedor: vendedorParaSalvar,
-      contatoNome: contatoSelecionado?.nome?.trim() ?? "",
+      contatoNome: nomeDoContatoPrincipal || (contatoSelecionado?.nome?.trim() ?? ""),
       // Diz ao `saveProposta` se o frete desta gravação é o da tela ou o gravado.
       freteDeclaracaoAlterada
     };
@@ -5842,7 +5839,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     const formToSave = {
       ...form,
       vendedor: vendedorParaSalvar,
-      contatoNome: contatoSelecionado?.nome?.trim() ?? "",
+      contatoNome: nomeDoContatoPrincipal || (contatoSelecionado?.nome?.trim() ?? ""),
       // Diz ao `saveProposta` se o frete desta gravação é o da tela ou o gravado.
       freteDeclaracaoAlterada
     };
@@ -7262,63 +7259,35 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
               </FormSection>
 
               {!form.clienteNaoCadastrado && (
-                  <FormSection title="3. Contato responsável" description="Contato usado para envio da proposta informal e retorno comercial.">
-                    {proposalContacts.length > 0 ? (
-                      <SelectorPainel
-                        items={proposalContacts}
-                        selectedId={form.contatoId}
-                        onSelect={(id) => updateField("contatoId", id)}
-                        disabled={ehComplemento}
-                        avisoDesabilitado={`Herdado do pedido #${form.idIntPedidoPrincipal}`}
-                        rotuloOutros="Outros contatos"
-                        // Sem o campo Nome na grade: a faixa ja o carrega, e repetir
-                        // e ruido (decisao do dono, 05/09/2026).
-                        painel={(contato) => ({
-                          kicker: "Contato selecionado",
-                          titulo: contato.nome,
-                          subtitulo: contato.cargo || "Sem cargo",
-                          campos: [
-                            { rotulo: "Cargo", valor: contato.cargo || "Sem cargo", apagado: !contato.cargo },
-                            { rotulo: "WhatsApp", valor: contato.whatsapp || "—", apagado: !contato.whatsapp },
-                            { rotulo: "E-mail", valor: contato.email || "Sem e-mail", apagado: !contato.email }
-                          ]
-                        })}
-                        linha={(contato) => [
-                          { principal: contato.nome, secundaria: contato.cargo || "Sem cargo" },
-                          { principal: contato.whatsapp || "—", secundaria: "WhatsApp" },
-                          { principal: contato.email || "Sem e-mail", secundaria: "E-mail" }
-                        ]}
-                        extraClassNameForItem={(contato) => {
-                          return form.contatoId === contato.id ? "!bg-[#3d9790] !border-[#3d9790] !text-white" : "";
-                        }}
-                        onEdit={(contato) => openEditContact(contato)}
-                        searchPlaceholder="Pesquisar contato por nome, cargo, WhatsApp ou e-mail..."
-                      />
-                    ) : (
-                      <p className="text-sm text-slate-500 bg-slate-50 rounded-2xl p-4">Nenhum contato cadastrado para este cliente.</p>
-                    )}
-                    <button type="button" onClick={() => setIsContactModalOpen(true)} disabled={ehComplemento} className="mt-4 rounded-2xl border border-[#d7e5e8] bg-white px-4 py-3 text-sm font-semibold text-[#0b2f4a] disabled:cursor-not-allowed disabled:opacity-60">+ Adicionar novo contato</button>
-                    {/* Conversa do WhatsApp (11/11/2026): a mesma escolha do Comprador da aba Artes
-                        (propostas.chatguru_chat_id). Só escolher: o contato acima é o do cadastro. */}
-                    <div data-conversa-whatsapp className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50/40 p-4 dark:border-emerald-900 dark:bg-emerald-950/20">
+                  <FormSection title="3. Contatos do pedido" description="Conversas do cliente no WhatsApp da Ideal (ChatGuru). A principal é o Comprador da aba Artes.">
+                    {/* Contatos do pedido (14/11/2026, decisão da diretoria): uma ou mais conversas
+                        do ChatGuru, uma principal. Substitui a lista da tabela contatos. */}
+                    <div data-conversa-whatsapp className="rounded-2xl border border-emerald-200 bg-emerald-50/40 p-4 dark:border-emerald-900 dark:bg-emerald-950/20">
                       <div className="flex flex-wrap items-center justify-between gap-2">
-                        <p className="text-sm font-bold text-slate-800 dark:text-slate-100">Conversa do WhatsApp</p>
+                        <p className="text-sm font-bold text-slate-800 dark:text-slate-100">Conversas do WhatsApp</p>
                         <span className="rounded-full border border-emerald-300 bg-white px-2.5 py-0.5 text-[11px] font-semibold text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-200">
                           WhatsApp · ChatGuru
                         </span>
                       </div>
                       <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                        A conversa do cliente no WhatsApp da Ideal que recebe a arte e os avisos do pedido. É a mesma escolha do Comprador da aba Artes.
+                        Marque uma ou mais conversas do cliente. A principal recebe a arte e os avisos do pedido; a Expedição vê todas as marcadas.
                       </p>
                       <div className="mt-3">
-                        <ListaDeConversas
+                        <ContatosDoPedido
                           conversa={conversaDaArte}
                           idCliente={form.clienteId || null}
-                          onde="geral"
+                          somenteLeitura={ehComplemento}
                           onAviso={(type, title, description) => showToast({ type, title, description })}
                         />
                       </div>
                     </div>
+                    {/* Pedido antigo sem conversa escolhida: o contato da tabela contatos fica à vista, só leitura. */}
+                    {conversaDaArte.contatos.length === 0 && selectedContact ? (
+                      <p className="mt-3 text-xs text-slate-500 dark:text-slate-400" data-contato-antigo>
+                        Contato anterior (cadastro): <span className="font-semibold">{selectedContact.nome}</span>
+                        {selectedContact.whatsapp ? ` · ${selectedContact.whatsapp}` : ""}
+                      </p>
+                    ) : null}
                   </FormSection>
                 )}
 

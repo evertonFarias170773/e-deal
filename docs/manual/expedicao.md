@@ -1,6 +1,6 @@
 # Expedição
 
-> **Última revisão:** 13/11/2026 (diálogo Transportadora com o campo Transportadora, nome curto da transportadora do despacho; antes, 12/11/2026: pedido CIF por transportadora não fica na coluna Correios por causa de um SEDEX anterior, caso 24974)
+> **Última revisão:** 14/11/2026 (aviso vai para a conversa principal dos Contatos do pedido da aba Geral). 13/11/2026 (diálogo Transportadora com o campo Transportadora, nome curto da transportadora do despacho; antes, 12/11/2026: pedido CIF por transportadora não fica na coluna Correios por causa de um SEDEX anterior, caso 24974)
 > **Caminho no menu:** Expedição (item direto do menu lateral, sem subitens; é o quarto, depois de Conferência, Pedidos e Clientes). Também se chega pela aba **Expedição** no topo do Kanban e da Fila de impressão da Produção.
 > **Endereço:** `/expedicao`
 
@@ -249,7 +249,7 @@ Correios PAC, Correios sem o serviço dito e frete sem forma definida ("Frete In
 
 O aviso vai para a conversa do cliente no WhatsApp da Ideal (ChatGuru, remetente 3478), não mais para o WhatsApp gravado no cadastro do contato. Decisão da diretoria: nenhum contato do Vibe é editado para isso. O Vibe procura as conversas do 3478 cujo código é o número do cliente do pedido.
 
-Desde 11/11/2026, se a proposta tem uma conversa escolhida na aba Artes (o **Comprador** que recebe a arte), o aviso vai direto para ela, sem comparar telefone, enquanto ela continuar sendo do cliente no ChatGuru. A janela mostra essa conversa como a que vai receber, e o **Ver conversas do cliente** a mostra como a escolhida. Se ela saiu do cliente no ChatGuru (renomeada sem o código, por exemplo), vale a regra abaixo. Uma escolha feita na hora do envio (lista da caixa do despacho ou janela **Para qual conversa enviar?**) vence a da aba Artes.
+Desde 14/11/2026 os contatos do pedido são as conversas marcadas no bloco **3. Contatos do pedido** da aba Geral; a principal é o **Comprador** da aba Artes, e o despacho mostra todas no quadro **Contatos do pedido** (ficha Expedição: despachar e entregar). Desde 11/11/2026, se a proposta tem uma conversa escolhida na aba Artes (o **Comprador** que recebe a arte, a principal), o aviso vai direto para ela, sem comparar telefone, enquanto ela continuar sendo do cliente no ChatGuru. A janela mostra essa conversa como a que vai receber, e o **Ver conversas do cliente** a mostra como a escolhida. Se ela saiu do cliente no ChatGuru (renomeada sem o código, por exemplo), vale a regra abaixo. Uma escolha feita na hora do envio (lista da caixa do despacho ou janela **Para qual conversa enviar?**) vence a da aba Artes.
 
 Sem conversa escolhida na aba Artes, o Vibe compara as conversas do cliente com o WhatsApp do contato responsável, pelo DDD e pelos 8 últimos dígitos (assim tanto faz ter ou não o nono dígito):
 

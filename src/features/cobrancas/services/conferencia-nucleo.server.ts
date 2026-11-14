@@ -255,6 +255,24 @@ export async function liberarPrateleiraAutomaticamente(
           id_cliente: null
         });
       }
+      // Sem contato do ChatGuru (14/11/2026): mesmo aviso no chat, mesmo status.
+      if (liberacao.code === "SEM_CONTATO_CHATGURU") {
+        await sendPropostaChatMessage({
+          id_int: idInt,
+          mensagem:
+            "Liberação automática para Produção RECUSADA: o pedido não tem contato do ChatGuru.\n" +
+            `${liberacao.errorMessage}\nA proposta segue em [REVISAO ATENDENTE]. Escolha o contato e libere pelo botão de sempre.`,
+          tipo: "SISTEMA",
+          autor_uid: usuario.uid || null,
+          autor_nome: LIBERADOR_AUTOMATICO,
+          autor_email: usuario.email || null,
+          setor: "AUTO_FINANCEIRO",
+          avatar: null,
+          visivel_externo: false,
+          anexos: null,
+          id_cliente: null
+        });
+      }
       return;
     }
 

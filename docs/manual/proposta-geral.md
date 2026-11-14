@@ -1,6 +1,6 @@
 # Proposta: aba Geral
 
-> **Última revisão:** 11/11/2026 (endereço com a rua gravada como "[object Object]" aparece como **Rua com erro no cadastro (corrija pelo lápis)** e abre com a rua em branco. Antes, no mesmo dia: campo **Observação para a nota fiscal** no fim do bloco 4, que sai impresso na NF-e e na NFS-e; o bloco 10 continua interno. Antes, no mesmo dia: bloco **Conversa do WhatsApp** no Contato responsável: escolhe a conversa do ChatGuru, a mesma do Comprador da aba Artes)
+> **Última revisão:** 14/11/2026 (bloco 3 vira **Contatos do pedido**: uma ou mais conversas do ChatGuru, uma principal que é o Comprador; sai a lista de contatos do cadastro; contato exigido no Enviar para arte e na Liberação para produção. Antes, 11/11/2026: endereço com a rua gravada como "[object Object]" aparece como **Rua com erro no cadastro (corrija pelo lápis)** e abre com a rua em branco. Antes, no mesmo dia: campo **Observação para a nota fiscal** no fim do bloco 4, que sai impresso na NF-e e na NFS-e; o bloco 10 continua interno. Antes, no mesmo dia: bloco **Conversa do WhatsApp** no Contato responsável: escolhe a conversa do ChatGuru, a mesma do Comprador da aba Artes)
 > **Caminho no menu:** Pedidos → abrir um pedido → aba **Geral**
 > **Endereço:** `/orcamentos/<número>/editar` (em proposta nova, `/orcamentos/novo`)
 
@@ -30,13 +30,10 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Cancelar vinculação** | Bloco **1. Cliente**, durante a vinculação | Desfaz a troca e volta ao que era. |
 | **Empresa** (lista: **Ideal**, **Biro**, **E3**) | Bloco **2. Dados da proposta** | Define a empresa que vende. |
 | **Vendedor** (lista; primeira opção "Selecione o vendedor") | Bloco **2. Dados da proposta** | Define o vendedor, para quem pode alterar. |
-| Linha de **Outros contatos** | Bloco **3. Contato responsável** | Troca o contato selecionado. |
-| **+ Adicionar novo contato** | Bloco **3. Contato responsável** | Abre a janela **Adicionar novo contato**. |
-| Bloco **Conversa do WhatsApp**, com o selo "WhatsApp · ChatGuru" | Bloco **3. Contato responsável**, abaixo do **+ Adicionar novo contato** | Lista as conversas do cliente no WhatsApp da Ideal (ChatGuru), com o nome da conversa e o número. Clicar escolhe a conversa. Não edita nada: só escolhe. É a mesma escolha do **Comprador** da aba Artes: trocar numa aba troca na outra. |
-| Marca ao lado da conversa | Bloco **Conversa do WhatsApp** | "gravada": é a conversa gravada na proposta. "única conversa": o cliente só tem essa, ainda não gravada. "escolhida": marcada na tela, ainda não gravada. As duas últimas vêm com "A conversa marcada é gravada ao salvar a proposta." |
-| **Adicionar** | Janela **Adicionar novo contato** | Inclui o contato na tela e já o seleciona. Ao salvar a proposta, ele entra no cadastro do cliente. |
-| Botão de lápis (dica: "Editar") | No contato e no endereço, selecionado ou da lista | Abre a edição do contato ou do endereço. |
-| **Salvar** | Janela **Editar contato (Modo Local)** | Aplica a correção do contato na tela. |
+| Caixa ao lado da conversa | Bloco **3. Contatos do pedido**, lista **Conversas do WhatsApp** | Marca ou desmarca a conversa como contato do pedido. Proposta salva: grava na hora. |
+| **Tornar principal** | Na conversa marcada que não é a principal | Torna a conversa a **Principal · Comprador**, que recebe a arte e os avisos. É a mesma escolha do **Comprador** da aba Artes. |
+| Selo **Principal · Comprador** | Na conversa principal | Mostra qual conversa é a principal. |
+| Botão de lápis (dica: "Editar") | No endereço, selecionado ou da lista | Abre a edição do endereço. |
 | Linha de **Outras opções de pagador** | Bloco **4. Dados para nota fiscal** | Troca o pagador. Em proposta com número, grava na hora. |
 | **Copiar dados** | Painel do pagador selecionado | Copia os dados fiscais do pagador. |
 | **Abrir cadastro** | Painel do pagador selecionado | Abre o cadastro do pagador em outra aba. |
@@ -65,7 +62,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 1. Em proposta nova, escolha entre **Cliente cadastrado** e **Cliente não cadastrado / orçamento rápido**.
 2. Para cliente cadastrado, digite no campo de busca o código, o nome, o apelido, o documento, o telefone, o WhatsApp ou o e-mail. A busca começa com dois caracteres. Só números, a partir de quatro, acham o código exato (sempre em primeiro), o documento e trechos de telefone fixo, WhatsApp 1 e WhatsApp 2, com ou sem pontuação no cadastro e sem precisar do 55. Quando o cliente aparece pelo telefone, WhatsApp ou e-mail, a linha mostra qual deles bateu, como "Encontrado por WhatsApp 2: ...".
 3. Clique no cliente na lista. Cada linha mostra o código, o nome, o documento, a cidade e o vendedor do cadastro.
-4. O sistema preenche sozinho o primeiro contato, o endereço de entrega (o do tipo entrega; se não houver, o principal), o vendedor padrão e a empresa padrão do cliente. Confira cada um nos blocos seguintes.
+4. O sistema preenche sozinho o endereço de entrega (o do tipo entrega; se não houver, o principal), o vendedor padrão e a empresa padrão do cliente. Confira cada um nos blocos seguintes e marque os contatos do pedido no bloco 3.
 5. Abaixo da busca aparecem três quadros: **Cliente**, **Limite Faturado / Risco** e **Tabela especial**. Este último mostra o percentual da tabela especial do cliente, escrito na tela como "+N% applied nos produtos", ou "Sem acréscimo especial".
 6. Para trocar o cliente, clique no **X** do campo de busca e escolha outro.
 
@@ -96,33 +93,26 @@ Enquanto o cliente não é escolhido numa proposta nova, os outros blocos e abas
 3. **Vendedor**: escolha na lista, se o seu perfil permite. Se o cliente não tem vendedor padrão, a tela avisa **Vendedor não vinculado** e o campo precisa ser preenchido.
 4. **Status** mostra o status atual. Ele é definido pelo sistema.
 
-### Escolher ou incluir o contato (bloco 3. Contato responsável)
+### Escolher os contatos do pedido (bloco 3. Contatos do pedido)
 
-1. O contato selecionado aparece no painel de cima, com cargo, WhatsApp e e-mail. Os demais ficam em **Outros contatos**. Contato inativado no cadastro do cliente não aparece para escolher; numa proposta antiga que já o usa, ele continua selecionado.
-2. Para trocar, clique em outro contato da lista. Com mais de quatro contatos, a lista ganha um campo de pesquisa.
-3. Para incluir, clique em **+ Adicionar novo contato**, preencha **Nome** e **WhatsApp** (obrigatórios), escolha o **Cargo** na lista (**Comprador**, **Financeiro** ou **Sem cargo**), preencha o **E-mail** e clique em **Adicionar**.
-4. Para corrigir um contato, clique no lápis ao lado dele, altere na janela **Editar contato (Modo Local)** e clique em **Salvar**.
-5. Salve a proposta para o contato escolhido valer.
+Desde 14/11/2026 os contatos do pedido são conversas do cliente no WhatsApp da Ideal (ChatGuru), e não mais a lista de contatos do cadastro. O bloco **Conversas do WhatsApp**, com o selo "WhatsApp · ChatGuru", lista as conversas do cliente: as que têm o código do cliente no nome, abertas pelo atendimento, com o nome da conversa e o número.
 
-Desde 10/11/2026 o contato responsável é só o contato do cadastro do cliente (e-mail e telefone para etiqueta, cobrança e checkout). A conversa do WhatsApp é outra coisa: uma conversa do cliente no WhatsApp da Ideal (ChatGuru), que recebe a arte e os avisos do pedido. Trocar o contato não muda a conversa, e escolher a conversa não muda o contato.
+1. Marque a caixa de uma ou mais conversas. Cada conversa marcada é um contato do pedido.
+2. Uma delas é a **Principal · Comprador**: recebe a arte e os avisos do pedido e é o **Comprador** da aba Artes. A primeira marcada vira a principal. Para trocar, clique em **Tornar principal** em outra conversa marcada.
+3. Desmarcar a principal passa a principal para a próxima marcada. Deixe pelo menos uma marcada.
+4. Proposta já salva: cada clique grava na hora. Proposta nova, ou cliente trocado e ainda não salvo: a escolha fica marcada e é gravada no **Salvar**, junto com a proposta ("A escolha é gravada ao salvar a proposta."). Se a proposta salvar e a escolha não, aparece o aviso "Proposta salva, mas a conversa do WhatsApp não foi gravada"; marque de novo.
+5. Com uma conversa só, ela já vem marcada como principal e é gravada no próximo **Salvar**.
+6. Sem conversa, aparece **Cadastre a conversa no ChatGuru.** com a orientação: peça ao atendimento para abrir a conversa com o código do cliente no nome e depois reabra a proposta.
 
-### Conversa do WhatsApp (desde 11/11/2026)
+O que a escolha faz:
 
-O bloco **Conversa do WhatsApp**, abaixo do contato, lista as conversas do cliente no ChatGuru: as que têm o código do cliente no nome, abertas pelo atendimento. É a mesma escolha do **Comprador** da aba Artes; mudar numa aba muda na outra.
+- **Salvar** não é barrado sem conversa. A exigência fica no primeiro **Enviar para arte** (aba Artes) e na **Liberação para produção**, inclusive a automática de prateleira, que deixa o pedido em REVISAO ATENDENTE e avisa no chat.
+- A Expedição mostra as conversas marcadas no despacho e não oferece a lista de conversas de novo. O aviso de pedido pronto vai para a principal.
+- O nome da principal é o que aparece na proposta enviada ao cliente ("Orçamento para:").
+- O pedido também guarda um contato do cadastro, que os avisos do ChatGuru exigem. Ao gravar a principal, se o pedido não tem um contato ativo do cliente, ele passa a usar o contato do cliente com o mesmo telefone da principal; se não houver nenhum, o contato é criado no cadastro com o nome e o telefone da conversa. Um contato ativo que o pedido já tem fica.
+- E-mail e telefone da cobrança não vêm mais do contato: veja a ficha de Pagamentos.
 
-- Com uma conversa só, ela já vem escolhida.
-- Com várias, aparece "O cliente tem N conversas no ChatGuru. Escolha qual é a do cliente." e o vendedor clica na conversa.
-- Sem conversa, aparece "Cliente sem conversa no ChatGuru." com a orientação: peça ao atendimento para abrir a conversa com o código do cliente no nome e depois reabra a proposta.
-- Proposta já salva: clicar grava na hora.
-- Proposta nova, ou cliente trocado e ainda não salvo: a escolha (ou a única conversa) fica marcada e é gravada no **Salvar**, junto com a proposta. Se a proposta salvar e a conversa não, aparece o aviso "Proposta salva, mas a conversa do WhatsApp não foi gravada"; escolha de novo.
-- Proposta salva com uma conversa só, ainda não gravada: ela é gravada no próximo **Salvar**.
-- O **Salvar** não é barrado sem conversa escolhida; a exigência continua sendo só a do primeiro **Enviar para arte**, na aba Artes.
-
-O nome do contato é o que aparece na proposta enviada ao cliente.
-
-Contato **novo**, incluído em **+ Adicionar novo contato**, entra no cadastro do cliente quando você salva a proposta, com nome, cargo, WhatsApp e e-mail, e a proposta passa a usar esse contato do cadastro. Se o cliente já tem um contato com o mesmo nome (sem diferença de acento ou maiúscula), a proposta usa o que já existe e nada é criado nem alterado. Nome diferente cria um contato novo, mesmo que o WhatsApp ou o e-mail já estejam em outro contato do cliente. Se a gravação no cadastro falhar, a proposta não é salva e aparece o aviso **Contato não gravado no cadastro**.
-
-Corrigir um contato que já é do cadastro (lápis) vale só para esta proposta: o cadastro do cliente não muda. Propostas antigas com contato que ficou só na proposta mostram esse contato na lista com o nome gravado, sem cargo, WhatsApp e e-mail, e ele continua selecionado.
+Pedido antigo sem conversa escolhida continua como estava. Abaixo do bloco aparece "Contato anterior (cadastro)" com o nome e o WhatsApp do contato que ele já tinha, só para leitura. Os contatos do cadastro continuam existindo e se editam no cadastro do cliente.
 
 ### Definir quem paga e sai na nota (bloco 4. Dados para nota fiscal)
 
@@ -196,7 +186,7 @@ A escolha entre proposta avulsa e proposta com produtos do catálogo não fica n
 
 ## Regras e bloqueios
 
-- Não dá para salvar proposta de cliente cadastrado sem cliente, contato e endereço de entrega selecionados.
+- Não dá para salvar proposta de cliente cadastrado sem cliente e endereço de entrega selecionados. O contato do pedido (conversa do ChatGuru) não barra o Salvar; ele é exigido no primeiro **Enviar para arte** e na **Liberação para produção**.
 - Não dá para salvar orçamento rápido sem o nome do cliente e sem o CEP.
 - Não dá para salvar sem vendedor e sem empresa.
 - Quem não pode alterar o vendedor não consegue salvar com vendedor diferente do cadastro do cliente.
@@ -207,18 +197,17 @@ A escolha entre proposta avulsa e proposta com produtos do catálogo não fica n
 - O complemento do endereço tem limite de 60 caracteres, o mesmo da nota fiscal.
 - Editar um endereço de entrega usado por outros pedidos em aberto muda também as etiquetas deles. A tela avisa quantos são.
 - Não dá para vincular cliente cadastrado a um orçamento rápido que tenha cobrança ativa ou pagamento confirmado. Cancele as cobranças antes.
-- No pedido complementar, contato, pagador e endereço ficam travados com o aviso **Herdado do pedido #<número>**. Um endereço novo cadastrado ali vai para o cadastro do cliente, mas a entrega continua sendo a do pedido principal.
+- No pedido complementar, os contatos do pedido, o pagador e o endereço ficam travados com o aviso **Herdado do pedido #<número>**. Um endereço novo cadastrado ali vai para o cadastro do cliente, mas a entrega continua sendo a do pedido principal.
 - Com cobrança ativa e sem a permissão de editar proposta paga, alterações de vendedor, empresa, contato e endereço não são gravadas: o salvamento guarda só as observações (inclusive a **Observação para a nota fiscal**), a orientação técnica e as instruções de entrega.
 - A **Observação para a nota fiscal** não é copiada quando a proposta é duplicada ou vira pedido complementar.
 
 ## O que não confundir
 
 - Cliente x pagador x recebedor: o cliente (bloco 1) é de quem é a proposta; o pagador (bloco 4) é quem sai na nota fiscal; o recebedor é a pessoa ou empresa do endereço de entrega (bloco 5).
-- Contato responsável x recebedor: o contato recebe o orçamento e aparece na proposta enviada; o recebedor é quem recebe a mercadoria.
+- Contato do pedido x recebedor: o contato do pedido é a conversa do WhatsApp que recebe o orçamento, a arte e os avisos; o recebedor é quem recebe a mercadoria.
 - Endereço de entrega x endereço fiscal: o de entrega é o escolhido no bloco 5 e é o destino do frete; o fiscal é o endereço principal do pagador, mostrado no bloco 4, e não se escolhe aqui.
 - **Cliente não cadastrado / orçamento rápido** x **Proposta avulsa**: o orçamento rápido é proposta sem cliente no cadastro; a avulsa é proposta sem produtos do catálogo, marcada na aba Orçamento. Uma coisa não depende da outra.
 - **Salvar endereço** x **Salvar alterações**: **Salvar endereço** só abre a janela do endereço selecionado; quem salva a proposta é **Salvar alterações**, no rodapé.
-- **Salvar** da janela de endereço x **Salvar** da janela de contato: o endereço grava na hora no cadastro do cliente; o contato do cadastro corrigido fica na tela ("Modo Local") e o nome dele só vai para a proposta ao salvar, sem mudar o cadastro; já o contato novo entra no cadastro ao salvar a proposta.
 - Trocar o pagador x trocar o endereço: trocar o pagador muda a lista de endereços disponíveis, mas não escolhe o endereço de entrega por você.
 - Vendedor da proposta x vendedor do cadastro: o campo **Vendedor** nasce com o vendedor padrão do cliente; só quem tem permissão grava um vendedor diferente.
 - **Empresa** x cliente: **Empresa** é quem vende (Ideal, Biro ou E3), não a empresa do cliente.
@@ -237,7 +226,6 @@ A escolha entre proposta avulsa e proposta com produtos do catálogo não fica n
 | **Nome do cliente obrigatório** | Orçamento rápido sem nome. | Preencha **Nome livre do cliente / empresa**. |
 | **CEP obrigatório** | Orçamento rápido sem CEP. | Preencha o **CEP de entrega**. |
 | **CEP não encontrado** | O CEP digitado não existe na consulta. | Confira o número ou preencha cidade e UF à mão. |
-| **Contato obrigatório** | Nenhum contato selecionado. | Selecione um contato ou adicione um novo. |
 | **Nome obrigatório** / **WhatsApp obrigatório** | Contato novo sem nome ou sem WhatsApp. | Preencha os dois campos. |
 | **Contato não gravado no cadastro** | O contato novo não pôde ser gravado no cadastro do cliente ao salvar (o motivo vem no aviso). | Nada foi salvo e o que você digitou continua na tela. Tente salvar de novo; se repetir, avise o suporte com o motivo. |
 | **Endereço obrigatório** | Nenhum endereço de entrega selecionado. | Selecione um endereço no bloco 5. |

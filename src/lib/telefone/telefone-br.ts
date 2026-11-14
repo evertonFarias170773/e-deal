@@ -73,6 +73,34 @@ export function normalizarTelefoneBR(valor: unknown, opcoes?: OpcoesTelefone): s
   return "";
 }
 
+/**
+ * O número para as APIs (PIX, boleto à vista e o que mais exigir celular com o
+ * 9), a partir do telefone da conversa do ChatGuru (14/11/2026, decisão da
+ * diretoria). FUNÇÃO ÚNICA: quem manda telefone do Guru para fora passa por aqui.
+ *
+ * O Guru guarda 55 + DDD + número, e 82% dos números estão sem o 9 (o WhatsApp
+ * antigo). A regra:
+ *   - DDI 55 sai quando sobra um número nacional (10 ou 11 dígitos);
+ *   - celular de 8 dígitos (começa de 6 a 9) ganha o 9 depois do DDD;
+ *   - fixo (8 dígitos começando de 2 a 5) fica como está;
+ *   - celular que já tem o 9 (11 dígitos) fica como está;
+ *   - o resto (DDD inválido, tamanho errado, vazio) devolve "".
+ * Devolve DDD + número, só dígitos, como o cadastro guarda.
+ */
+export function telefoneParaApi(valor: unknown): string {
+  let digitos = soDigitos(valor);
+  if ((digitos.length === 12 || digitos.length === 13) && digitos.startsWith("55")) digitos = digitos.slice(2);
+  if (digitos.length !== 10 && digitos.length !== 11) return "";
+  const ddd = Number(digitos.slice(0, 2));
+  if (!(ddd >= DDD_MIN && ddd <= DDD_MAX)) return "";
+  const numero = digitos.slice(2);
+  if (numero.length === 9) return numero[0] === "9" ? digitos : "";
+  // 8 dígitos: celular antigo (6 a 9) ganha o 9; fixo (2 a 5) fica.
+  if (numero[0] >= "6" && numero[0] <= "9") return `${digitos.slice(0, 2)}9${numero}`;
+  if (numero[0] >= "2" && numero[0] <= "5") return digitos;
+  return "";
+}
+
 export type FontesTelefonePagador = {
   /** Contato gravado na própria cobrança (`pagamentos_v2.whats_contato`). */
   whatsContato?: string | null;

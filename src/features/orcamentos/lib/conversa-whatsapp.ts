@@ -13,8 +13,37 @@
 
 export type ConversaWhatsapp = { chat_id: string; nome: string; numero: string };
 
+/** Conversa escolhida como contato do pedido (14/11/2026). A principal é o Comprador. */
+export type ContatoEscolhido = ConversaWhatsapp & { principal: boolean };
+
+/** Mensagem da trava (Enviar para arte e Liberação para produção) quando o cliente não tem conversa. */
 export const SEM_CONVERSA_NO_GURU =
-  "Cliente sem conversa no ChatGuru: peça ao atendimento para abrir a conversa com o código do cliente no nome";
+  "Cadastre a conversa no ChatGuru: o cliente não tem conversa no WhatsApp da Ideal. Peça ao atendimento para abrir a conversa com o código do cliente no nome";
+
+/**
+ * A escolha da aba Geral, limpa: sem repetição, na ordem em que veio, e com a
+ * principal dentro do conjunto (principal ausente ou fora dele = a primeira).
+ * Nenhuma conversa = null.
+ */
+export function escolhaDeContatos(chatIds: readonly string[], principal: string | null | undefined): { chatIds: string[]; principal: string } | null {
+  const lista = Array.from(new Set(chatIds.map((c) => String(c ?? "").trim()).filter(Boolean)));
+  if (lista.length === 0) return null;
+  const p = String(principal ?? "").trim();
+  return { chatIds: lista, principal: lista.includes(p) ? p : lista[0] };
+}
+
+/** Chave de comparação de telefone: DDD + os 8 últimos dígitos (o 9 e o 55 não contam). */
+export function chaveDoTelefone(valor: unknown): string | null {
+  let n = typeof valor === "string" || typeof valor === "number" ? String(valor).replace(/\D/g, "") : "";
+  if ((n.length === 12 || n.length === 13) && n.startsWith("55")) n = n.slice(2);
+  if (n.length !== 10 && n.length !== 11) return null;
+  return `${n.slice(0, 2)}${n.slice(-8)}`;
+}
+
+export function mesmoTelefone(a: unknown, b: unknown): boolean {
+  const ka = chaveDoTelefone(a);
+  return ka !== null && ka === chaveDoTelefone(b);
+}
 
 /** Número como o ChatGuru guarda: DDI 55 + DDD + número (com ou sem o 9). */
 export function numeroDaConversa(valor: unknown): string | null {

@@ -29,6 +29,13 @@ import { mensagemDaLeituraDeCobrancas, statusDaLeituraDeCobrancas } from "@/feat
 import type { DestinoValorCancelado, MotivoCancelamentoPago } from "@/features/cobrancas/cancelamento-pago";
 import { recusaDoGatilhoNoErro } from "@/features/cobrancas/lib/tipo-x-retrabalho";
 import { recusaPorPedidoEntregue } from "@/features/orcamentos/services/pedido-entregue";
+import {
+  emailDoPagador,
+  lerContatoDaCobranca,
+  MENSAGEM_PAGADOR_SEM_EMAIL,
+  telefoneDaCobranca,
+  type ContatoDaCobranca
+} from "@/features/cobrancas/lib/contato-da-cobranca";
 
 /** Payload do cancelamento de cobrança JÁ PAGA — espelha o objeto que o
  *  CancelCobrancaModal monta e o contrato de POST /api/cobrancas/cancelar-pago. */
@@ -304,15 +311,17 @@ function montarPayloadBoletoAVista(params: {
   idPagamento: string;
   idEmpresa: number;
   cobrancaId: string;
+  /** E-mail do pagador e telefone das APIs (lib/contato-da-cobranca). */
+  contatoCobranca: ContatoDaCobranca;
 }): Record<string, unknown> {
-  const { proposta, valor, idPagamento, idEmpresa, cobrancaId } = params;
+  const { proposta, valor, idPagamento, idEmpresa, cobrancaId, contatoCobranca } = params;
 
   const payload: Record<string, unknown> = {
     external_reference_id: String(proposta.id_int),
     valor_total: roundMoney(valor),
     cobrancaId,
     id_pagamento: idPagamento,
-    email: proposta.contato?.email?.trim() || proposta.cliente?.email?.trim() || "",
+    email: contatoCobranca.email,
     logradouro: proposta.enderecoEntrega?.endereco || "",
     numero: proposta.enderecoEntrega?.numero || "S/N",
     complemento: proposta.enderecoEntrega?.complemento || "",
@@ -328,8 +337,8 @@ function montarPayloadBoletoAVista(params: {
     nf: "",
     status: "A_RECEBER",
     "e-faturado": false,
-    contato: proposta.contato?.whatsapp || proposta.cliente.whatsapp || "",
-    whats: proposta.contato?.whatsapp || proposta.cliente.whatsapp || "",
+    contato: contatoCobranca.telefone,
+    whats: contatoCobranca.telefone,
     enviar_whats: false,
     avulso: false,
     empresa: String(idEmpresa),
@@ -740,16 +749,20 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
         throw new Error("Dados da proposta sao obrigatorios para criar a cobranca.");
       }
 
-      if (values.tipoCobranca === "BOLETO") {
-        const emailCliente = proposta.contato?.email?.trim() || proposta.cliente?.email?.trim() || "";
-        if (!emailCliente) {
-          throw new Error("Cliente sem e-mail cadastrado para geração do boleto.");
-        }
-      }
-
       const client = getSupabaseClient();
       if (!client) {
         throw new Error("Sistema indisponivel no momento. Tente novamente.");
+      }
+
+      // E-mail do cadastro do pagador e telefone da conversa principal do Guru
+      // (lib/contato-da-cobranca, 14/11/2026). Uma leitura, usada no boleto e no PIX.
+      const contatoCobranca = await lerContatoDaCobranca(
+        client,
+        Number(proposta.id_int),
+        proposta.contato?.whatsapp || proposta.cliente.whatsapp || ""
+      );
+      if (values.tipoCobranca === "BOLETO" && !contatoCobranca.email) {
+        throw new Error(MENSAGEM_PAGADOR_SEM_EMAIL);
       }
 
       // Pedido entregue não recebe cobrança nova (02/11/2026): status lido do
@@ -868,7 +881,8 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
                   valor: values.valor,
                   idPagamento: equivalente.id_pagamento,
                   idEmpresa,
-                  cobrancaId: equivalente.id
+                  cobrancaId: equivalente.id,
+                  contatoCobranca
                 })
               )
             });
@@ -1064,7 +1078,8 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
           valor: values.valor,
           idPagamento: createdRow.id_pagamento || String(proposta.id_int),
           idEmpresa,
-          cobrancaId
+          cobrancaId,
+          contatoCobranca
         });
 
         const sessionResponse = await client.auth.getSession();
@@ -1086,7 +1101,7 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
           seuNumero: idEmpresa === 2 ? ((createdRow as { id_pagamento?: string }).id_pagamento || String(proposta.id_int)) : String(proposta.id_int),
           valorNominal: roundMoney(values.valor),
           dataVencimento: values.vencimento || new Date().toISOString().split("T")[0],
-          telefone: proposta.contato?.whatsapp || proposta.cliente.whatsapp || "",
+          telefone: contatoCobranca.telefone,
           // `nome`/`cpfCnpj` não são mais enviados: a rota lê os dois da linha
           // de pagamentos_v2 (o pagador). Mandar daqui era o que fazia o Inter
           // receber o cliente da proposta no lugar de quem paga.
@@ -1302,10 +1317,13 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
     if (!client || source !== "supabase") {
       throw new Error("Faturado com entrada só funciona com o banco conectado.");
     }
-    if (params.formaEntrada === "BOLETO") {
-      const emailCliente = proposta.contato?.email?.trim() || proposta.cliente?.email?.trim() || "";
-      if (!emailCliente) throw new Error("Cliente sem e-mail cadastrado para geração do boleto.");
-    }
+    // E-mail do cadastro do pagador e telefone da principal do Guru (lib/contato-da-cobranca).
+    const contatoCobranca = await lerContatoDaCobranca(
+      client,
+      Number(proposta.id_int),
+      proposta.contato?.whatsapp || proposta.cliente.whatsapp || ""
+    );
+    if (params.formaEntrada === "BOLETO" && !contatoCobranca.email) throw new Error(MENSAGEM_PAGADOR_SEM_EMAIL);
     const entregue = await recusaPorPedidoEntregue(client, Number(proposta.id_int));
     if (entregue) throw new Error(entregue.message);
 
@@ -1349,7 +1367,8 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
               valor: entrada.valor,
               idPagamento: entrada.id_pagamento || String(proposta.id_int),
               idEmpresa: params.idEmpresa,
-              cobrancaId: entrada.id
+              cobrancaId: entrada.id,
+              contatoCobranca
             }))
           })
         : await fetch("/api/cobrancas/gerar-pix", {
@@ -1361,7 +1380,7 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
               seuNumero: params.idEmpresa === 2 ? (entrada.id_pagamento || String(proposta.id_int)) : String(proposta.id_int),
               valorNominal: roundMoney(entrada.valor),
               dataVencimento: getLocalDateInSaoPauloHoje(3),
-              telefone: proposta.contato?.whatsapp || proposta.cliente.whatsapp || "",
+              telefone: contatoCobranca.telefone,
               endereco: proposta.enderecoEntrega?.endereco || "",
               cidade: proposta.enderecoEntrega?.cidade || "",
               uf: proposta.enderecoEntrega?.uf || "",
@@ -1965,23 +1984,28 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
           .eq("id_cliente", cobranca.id_cliente)
           .maybeSingle();
 
-        if (clientData) {
-          email = clientData.email_financeiro || clientData.email || clientData.email_contato || "";
-          whats = clientData.whatsapp_1 || clientData.whatsapp_2 || "";
-        }
+        // E-mail só do cadastro do pagador, na ordem da NF-e; telefone da conversa
+        // principal do Guru (lib/contato-da-cobranca, 14/11/2026). A tabela
+        // contatos não entra mais no e-mail nem no telefone.
+        email = emailDoPagador(clientData);
+        const { data: principalData } = await client
+          .from("propostas_contatos_chatguru")
+          .select("nome, telefone")
+          .eq("id_int", cobranca.id_int)
+          .eq("principal", true)
+          .maybeSingle();
+        whats = telefoneDaCobranca(principalData?.telefone, clientData?.whatsapp_1 || clientData?.whatsapp_2 || "").telefone;
+        contato = principalData?.nome || "";
 
-        // Contato inativado (06/11/2026) não recebe envio automático.
-        const { data: contactData } = await client
-          .from("contatos")
-          .select("nome_contato, whats, e_mail")
-          .eq("id_cliente", cobranca.id_cliente)
-          .eq("ativo", true)
-          .limit(1);
-
-        if (contactData && contactData.length > 0) {
-          contato = contactData[0].nome_contato || "";
-          if (!email) email = contactData[0].e_mail || "";
-          if (!whats) whats = contactData[0].whats || "";
+        if (!contato) {
+          // Só o nome, para o pedido sem conversa escolhida (contato inativo fora, 06/11/2026).
+          const { data: contactData } = await client
+            .from("contatos")
+            .select("nome_contato")
+            .eq("id_cliente", cobranca.id_cliente)
+            .eq("ativo", true)
+            .limit(1);
+          if (contactData && contactData.length > 0) contato = contactData[0].nome_contato || "";
         }
 
         const { data: addressData } = await client
@@ -2003,7 +2027,7 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
       }
 
       if (!email) {
-        return { success: false, errorMessage: "Cliente sem e-mail cadastrado para geração do boleto." };
+        return { success: false, errorMessage: MENSAGEM_PAGADOR_SEM_EMAIL };
       }
 
       // 3. Chamar a rota local de geração de boleto

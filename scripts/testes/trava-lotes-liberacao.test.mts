@@ -81,7 +81,7 @@ const orcamentos = await import("../../src/features/orcamentos/services/orcament
 const cliente = getSupabaseClient() as unknown as Parameters<typeof orcamentos.liberarPropostaParaProducao>[1];
 
 /** Proposta pronta para liberar, em tudo menos nos lotes. */
-function cenario(itens: unknown[], lotes: unknown, erroLotes = false) {
+function cenario(itens: unknown[], lotes: unknown, erroLotes = false, contatosChatGuru = 1) {
   falso.zerar();
   falso.responder("propostas:select", {
     data: { is_avulso: false, status_interno: "REVISAO ATENDENTE", is_prd_aprovado: false },
@@ -89,6 +89,8 @@ function cenario(itens: unknown[], lotes: unknown, erroLotes = false) {
   });
   falso.responder("pagamentos_v2:select", { data: [{ status: "PAID", confirmado: true }], error: null });
   falso.responder("pedidos_artes:select", { data: [{ status: "APROVADO" }], error: null });
+  // Contato do pedido pelo ChatGuru (14/11/2026): obrigatório antes dos lotes.
+  falso.responder("propostas_contatos_chatguru:select", { data: null, count: contatosChatGuru, error: null } as never);
   falso.responder("produtos_proposta:select", { data: itens, error: null });
   falso.responder(
     "pedidos_modelos:select",
@@ -137,6 +139,13 @@ cenario([{ id: 30, nome_produto: "Cordão", qtd: 10 }], null, true);
 const semLeitura = await orcamentos.liberarPropostaParaProducao(22501, cliente);
 checar("leitura dos lotes falhou: recusa", semLeitura.success, false);
 checar("leitura dos lotes falhou: nenhum UPDATE", updatesEmPropostas().length, 0);
+
+// Contato do pedido pelo ChatGuru (14/11/2026): sem conversa escolhida, recusa.
+cenario([{ id: 40, nome_produto: "Cordão", qtd: 10 }], [{ id_produto_proposta_origem: 40, quantidade: 10 }], false, 0);
+const semContato = await orcamentos.liberarPropostaParaProducao(22502, cliente);
+checar("sem contato do ChatGuru: recusa com o code", [semContato.success, semContato.code], [false, "SEM_CONTATO_CHATGURU"]);
+checar("sem contato do ChatGuru: a mensagem manda cadastrar a conversa", /cadastre a conversa no ChatGuru/.test(semContato.errorMessage ?? ""), true);
+checar("sem contato do ChatGuru: nenhum UPDATE", updatesEmPropostas().length, 0);
 
 console.log(falhas === 0 ? "\nTUDO OK" : `\n${falhas} FALHA(S)`);
 process.exitCode = falhas === 0 ? 0 : 1;

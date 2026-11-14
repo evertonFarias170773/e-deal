@@ -3360,9 +3360,10 @@ export async function saveProposta(
     if (formState.clienteNaoCadastrado) {
       contatoNome = "Contato Rápido";
     } else {
-      if (!isNonEmpty(formState.contatoId)) {
-        return { success: false, errorMessage: "Selecione um contato antes de salvar o orçamento." };
-      }
+      // Contato da tabela contatos NÃO é mais obrigatório (14/11/2026): os
+      // contatos do pedido são as conversas do ChatGuru, gravadas pela rota
+      // /api/orcamentos/conversa-whatsapp, que também acerta id_contato e
+      // contato. A obrigatoriedade fica no Enviar para arte e na Liberação.
       // Ordem: o nome resolvido pela tela primeiro (única fonte que enxerga
       // contato adicionado na própria proposta), depois o cadastro.
       //
@@ -3833,7 +3834,7 @@ export async function saveProposta(
       id_cliente: formState.clienteNaoCadastrado ? null : Number(formState.clienteId),
       id_faturado: id_faturado,
       id_endereco_ent: formState.enderecoId || null,
-      id_contato: formState.clienteNaoCadastrado ? null : formState.contatoId,
+      id_contato: formState.clienteNaoCadastrado || !isNonEmpty(formState.contatoId) ? null : formState.contatoId,
       cliente: clienteNome,
       empresa: formState.empresa,
       vendedor: formState.vendedor,
@@ -4013,6 +4014,13 @@ export async function saveProposta(
     let persistedValorTotal = valorTotal;
 
     if (isUpdate) {
+      // Contato do pedido (14/11/2026): na alteração, `id_contato` e `contato` são
+      // da rota da conversa do ChatGuru (ponte com o contato que os avisos
+      // exigem). Regravá-los com o que a tela carregou desfaria a ponte.
+      if (!formState.clienteNaoCadastrado) {
+        delete (propostaData as Record<string, unknown>).id_contato;
+        delete (propostaData as Record<string, unknown>).contato;
+      }
       // 2a. UPDATE PROPOSTA
       let atualizacaoProposta = client.from("propostas").update(propostaData).eq("id_int", id_int!);
       if (usarFreteGravado) {
@@ -5883,8 +5891,8 @@ export async function cancelarProposta(idInt: number, motivo: string): Promise<C
 export type ResultadoLiberacao = {
   success: boolean;
   errorMessage?: string;
-  /** `LOTES_DIVERGENTES` quando a recusa veio da trava de quantidade. */
-  code?: "LOTES_DIVERGENTES";
+  /** `LOTES_DIVERGENTES`: trava de quantidade. `SEM_CONTATO_CHATGURU`: pedido sem contato do ChatGuru (14/11/2026). */
+  code?: "LOTES_DIVERGENTES" | "SEM_CONTATO_CHATGURU";
   /** Cada item cuja quantidade vendida não bate com a soma dos lotes. */
   divergencias?: DivergenciaDeLote[];
 };
@@ -5907,6 +5915,20 @@ export type ResultadoLiberacao = {
  *   validações abaixo valem igual nos dois casos: o parâmetro troca por onde a
  *   consulta sai, não o que ela exige.
  */
+export const MENSAGEM_SEM_CONTATO_CHATGURU =
+  "Escolha o contato do pedido na aba Geral (Conversas do WhatsApp). Cliente sem conversa: cadastre a conversa no ChatGuru.";
+
+/** O pedido tem contato do ChatGuru (linha da tabela ou chatguru_chat_id antigo)? null = falha de leitura. */
+async function temContatoDoChatGuru(client: SupabaseClient, idInt: number): Promise<boolean | null> {
+  const [linhas, proposta] = await Promise.all([
+    client.from("propostas_contatos_chatguru").select("chat_id", { count: "exact", head: true }).eq("id_int", idInt),
+    client.from("propostas").select("chatguru_chat_id").eq("id_int", idInt).maybeSingle()
+  ]);
+  if (linhas.error || proposta.error) return null;
+  const chat = String((proposta.data as { chatguru_chat_id?: string | null } | null)?.chatguru_chat_id ?? "").trim();
+  return (linhas.count ?? 0) > 0 || chat !== "";
+}
+
 export async function liberarPropostaParaProducao(
   idInt: number,
   clientExterno?: SupabaseClient
@@ -5952,6 +5974,17 @@ export async function liberarPropostaParaProducao(
   
   if (hasPendenciasArte) {
     return { success: false, errorMessage: "Pendências de arte. Todas as artes devem estar com status APROVADO." };
+  }
+
+  // 3b. Contato do pedido pelo ChatGuru (14/11/2026, decisão da diretoria):
+  //     obrigatório na liberação. Vale a tabela propostas_contatos_chatguru ou,
+  //     no pedido antigo, a conversa já gravada em chatguru_chat_id. Vale também
+  //     para a liberação automática de prateleira, que deixa o pedido em REVISAO
+  //     ATENDENTE e avisa no chat (conferencia-nucleo).
+  const contatoDoPedido = await temContatoDoChatGuru(client, idInt);
+  if (contatoDoPedido === null) return { success: false, errorMessage: "Erro ao buscar os contatos do pedido no ChatGuru." };
+  if (!contatoDoPedido) {
+    return { success: false, code: "SEM_CONTATO_CHATGURU", errorMessage: MENSAGEM_SEM_CONTATO_CHATGURU };
   }
 
   // 4. Quantidade vendida × soma dos lotes (Etapa 7).

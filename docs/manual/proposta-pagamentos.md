@@ -1,6 +1,6 @@
 # Proposta: aba Pagamentos
 
-> **Última revisão:** 13/11/2026 (Registrar devolução e cancelar pedido)
+> **Última revisão:** 14/11/2026 (e-mail do boleto à vista pelo cadastro do pagador; telefone do PIX e do boleto pela conversa principal do ChatGuru, com o 9 no celular). 13/11/2026 (Registrar devolução e cancelar pedido)
 > **Caminho no menu:** Pedidos → abrir um pedido → aba Pagamentos
 > **Endereço:** `/orcamentos/<número>/editar?tab=pagamentos`
 
@@ -250,6 +250,8 @@ Se a janela for fechada sem escolher, a proposta fica com a faixa **Revisão fin
 
 ## Regras e bloqueios
 
+- **E-mail e telefone da cobrança (desde 14/11/2026).** O e-mail do boleto à vista (e a checagem antes de gerar o boleto, inclusive no **Emitir boleto**) é o do cadastro de quem paga (o pagador do bloco 4 da aba Geral, senão o cliente): primeiro o **E-mail financeiro**, depois o e-mail, depois o e-mail de contato, na mesma ordem da NF-e. O e-mail dos contatos do cadastro não entra mais.
+- O telefone mandado no PIX e no boleto à vista é o da conversa **principal** do ChatGuru (bloco **3. Contatos do pedido** da aba Geral). Celular gravado sem o 9 (8 dígitos começando de 6 a 9) vai com o 9 depois do DDD; telefone fixo vai como está. Pedido antigo sem conversa escolhida usa o telefone de antes (o do contato da proposta ou o do cliente), com a mesma regra do 9. O cartão continua com o celular do cadastro do pagador.
 - **Pedido entregue não recebe cobrança nova.** Em status ENTREGUE, **Gerar cobrança** fica desabilitado com a mensagem "Pedido entregue não pode ser alterado. Para alterar, volte o status na Expedição até a Revisão Atendente (só é possível antes da NF)." Vale para todos, administrador incluído, e o servidor recusa também o uso de crédito, o pagamento combinado e a emissão de boleto à vista, PIX e cartão. A página de pagamento do cliente já não aceitava pagar pedido entregue. O registro do boleto de uma cobrança faturada que já existia segue normal. O caminho para alterar está na ficha da [Proposta](proposta.md).
 - Não dá para entrar na aba com alteração não salva: a tela pede **Salvar e continuar**.
 - Não dá para entrar na aba enquanto houver diferença financeira pendente: "Resolva a diferença financeira pendente antes de acessar Pagamentos."
@@ -325,7 +327,7 @@ Se a janela for fechada sem escolher, a proposta fica com a faixa **Revisão fin
 | **Cobranças criadas, mas a entrada não foi emitida no banco** | As duas cobranças foram criadas, mas o PIX ou o boleto da entrada não saiu no banco. | Não gere outra cobrança. Tente gerar a entrada de novo pela linha dela; se não der, fale com o financeiro. |
 | "O valor da cobrança (R$ ...) não pode ser maior que o saldo restante (R$ ...)." | O valor digitado passa do saldo. | Reduza o valor. |
 | "O frete precisa ser atualizado" | O peso mudou depois da cotação, ou falta o frete complementar. | Clique em **Recalcular frete**, cote e aplique o frete na aba **Fretes** e volte para gerar a cobrança. Se ao aplicar aparecer em vermelho que a opção não está na cotação, recarregue a página e cote de novo: isso acontecia sempre com Motoboy, São Miguel e VEPPO até a correção de 08/10/2026 (commit `2387164`). |
-| "Cliente sem e-mail cadastrado para geração do boleto." | O contato e o cliente estão sem e-mail. | Preencha o e-mail no cadastro. |
+| "Pagador sem e-mail no cadastro (e-mail financeiro, e-mail ou e-mail de contato). Preencha o cadastro do cliente para gerar o boleto." | O cadastro de quem paga está sem os três e-mails. Desde 14/11/2026 o e-mail do contato não conta mais. | Preencha o **E-mail financeiro** (ou o e-mail) no cadastro do pagador. |
 | "Documento (CPF/CNPJ) do cliente é obrigatório para gerar cobrança real." | Cadastro sem documento. | Complete o cadastro do cliente. |
 | "CEP do endereço de entrega é obrigatório para gerar cobrança real." (ou logradouro, cidade, UF) | Endereço de entrega incompleto. | Complete o endereço na aba Geral. |
 | **Telefone do cliente impede a cobrança** | Boleto ou cartão com telefone inválido no cadastro de quem paga. | Informe o telefone correto na própria janela e gere de novo. |

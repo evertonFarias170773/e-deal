@@ -4,12 +4,18 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, CheckCircle2, MessageCircle } from "lucide-react";
 import { arteJaEnviada } from "@/features/orcamentos/lib/comprador-da-arte";
 import {
+  escolhaDeContatos,
   numeroParaExibir,
   situacaoDaConversa,
+  type ContatoEscolhido,
   type ConversaWhatsapp,
   type SituacaoDaConversa
 } from "@/features/orcamentos/lib/conversa-whatsapp";
-import { carregarConversasDaProposta, gravarConversaDaProposta } from "@/features/orcamentos/services/conversa-whatsapp.client";
+import {
+  carregarConversasDaProposta,
+  gravarContatosDaProposta,
+  type EscolhaGravada
+} from "@/features/orcamentos/services/conversa-whatsapp.client";
 
 /**
  * Conversa do WhatsApp (ChatGuru) da proposta: o Comprador da aba Artes e o bloco
@@ -35,20 +41,31 @@ type Resultado = { ok: boolean; erro?: string };
 export type ConversaDaArte = {
   carregando: boolean;
   erro: string | null;
+  /** Regra do Comprador (a principal): a mesma de antes, lib/conversa-whatsapp. */
   situacao: SituacaoDaConversa;
-  /** A conversa gravada na proposta. */
+  /** A principal gravada na proposta. */
   gravada: ConversaWhatsapp | null;
-  /** A escolhida na tela ainda não está gravada: vai no Salvar da proposta. */
+  /** A escolha da tela ainda não está gravada: vai no Salvar da proposta. */
   pendente: boolean;
   jaEnviada: boolean;
+  /**
+   * Contatos do pedido (14/11/2026): as conversas escolhidas, a principal primeiro.
+   * Com uma conversa só no cliente e nada escolhido, ela vem como principal (a gravar).
+   */
+  contatos: ContatoEscolhido[];
+  /** Torna a conversa principal (Comprador); entra nos contatos se não estava. */
   escolher: (chatId: string) => Promise<Resultado>;
+  /** Liga ou desliga a conversa nos contatos do pedido (aba Geral). */
+  alternar: (chatId: string) => Promise<Resultado>;
   /** Grava a escolhida (a única do cliente ou a marcada) se a proposta ainda não a tem. */
   gravarEscolhaSeFaltar: () => Promise<Resultado>;
-  /** Depois do Salvar: grava a escolhida na proposta salva (nova ou com cliente trocado). */
+  /** Depois do Salvar: grava a escolha na proposta salva (nova ou com cliente trocado). */
   gravarAoSalvar: (idInt: number) => Promise<Resultado>;
 };
 
 const clienteNumerico = (id: string | null) => (id && /^\d+$/.test(id) ? id : null);
+
+type Marcacao = { cliente: string; chatIds: string[]; principal: string };
 
 export function useConversaDaArte(idInt: number | null, idClienteTela: string | null): ConversaDaArte {
   const idCliente = clienteNumerico(idClienteTela);
@@ -58,11 +75,11 @@ export function useConversaDaArte(idInt: number | null, idClienteTela: string | 
   const [clienteCarregado, setClienteCarregado] = useState<string | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [conversas, setConversas] = useState<ConversaWhatsapp[]>([]);
-  const [chatIdGravado, setChatIdGravado] = useState<string | null>(null);
+  const [gravadas, setGravadas] = useState<EscolhaGravada[]>([]);
   const [clienteDaProposta, setClienteDaProposta] = useState(false);
   const [statusArte, setStatusArte] = useState<string | null>(null);
   // Escolha feita na tela e ainda não gravada, presa ao cliente em que foi feita.
-  const [marcada, setMarcada] = useState<{ cliente: string; chatId: string } | null>(null);
+  const [marcada, setMarcada] = useState<Marcacao | null>(null);
   const vaiCarregar = Boolean(idInt || idCliente);
   // Recarga do mesmo cliente (ex.: a proposta nova acabou de ganhar número) não esconde a lista.
   const carregando = vaiCarregar && carregadoPara !== chave && clienteCarregado !== idCliente;
@@ -74,7 +91,7 @@ export function useConversaDaArte(idInt: number | null, idClienteTela: string | 
       if (!vivo) return;
       if (r.ok) {
         setConversas(r.dados.conversas);
-        setChatIdGravado(r.dados.chatIdGravado);
+        setGravadas(r.dados.escolhidas);
         setClienteDaProposta(r.dados.clienteDaProposta);
         setStatusArte(r.dados.statusArte);
         setErro(null);
@@ -91,46 +108,87 @@ export function useConversaDaArte(idInt: number | null, idClienteTela: string | 
   }, [idInt, idCliente, chave]);
 
   const listaValida = vaiCarregar && clienteCarregado === idCliente;
-  const marcadaAqui = marcada && marcada.cliente === idCliente ? marcada.chatId : null;
+  const marcadaAqui = marcada && marcada.cliente === idCliente ? marcada : null;
+  const gravadasAqui = useMemo(() => (clienteDaProposta ? gravadas : []), [clienteDaProposta, gravadas]);
+  const principalGravada = gravadasAqui.find((g) => g.principal)?.chat_id ?? null;
   const situacao = useMemo(
-    () => situacaoDaConversa(listaValida ? conversas : [], marcadaAqui ?? (clienteDaProposta ? chatIdGravado : null)),
-    [listaValida, conversas, marcadaAqui, clienteDaProposta, chatIdGravado]
+    () => situacaoDaConversa(listaValida ? conversas : [], marcadaAqui?.principal ?? principalGravada),
+    [listaValida, conversas, marcadaAqui, principalGravada]
   );
   const gravada = useMemo(
-    () => (clienteDaProposta && listaValida ? conversas.find((c) => c.chat_id === chatIdGravado) ?? null : null),
-    [clienteDaProposta, listaValida, conversas, chatIdGravado]
+    () => (listaValida && principalGravada ? conversas.find((c) => c.chat_id === principalGravada) ?? null : null),
+    [listaValida, conversas, principalGravada]
   );
-  const pendente = Boolean(situacao.escolhida && situacao.escolhida.chat_id !== gravada?.chat_id);
+
+  // O conjunto que a tela mostra: o marcado, senão o gravado, senão a única conversa.
+  const conjunto = useMemo((): { chatIds: string[]; principal: string | null } => {
+    if (marcadaAqui) return { chatIds: marcadaAqui.chatIds, principal: marcadaAqui.principal };
+    if (gravadasAqui.length > 0) return { chatIds: gravadasAqui.map((g) => g.chat_id), principal: principalGravada };
+    if (situacao.escolhida) return { chatIds: [situacao.escolhida.chat_id], principal: situacao.escolhida.chat_id };
+    return { chatIds: [], principal: null };
+  }, [marcadaAqui, gravadasAqui, principalGravada, situacao.escolhida]);
+  const contatos = useMemo(() => {
+    if (!listaValida) return [];
+    const lista = conjunto.chatIds
+      .map((id) => conversas.find((c) => c.chat_id === id))
+      .filter((c): c is ConversaWhatsapp => Boolean(c))
+      .map((c) => ({ ...c, principal: c.chat_id === conjunto.principal }));
+    return lista.sort((a, b) => Number(b.principal) - Number(a.principal));
+  }, [listaValida, conjunto, conversas]);
+
+  const gravadoIgual =
+    gravadasAqui.length === conjunto.chatIds.length &&
+    conjunto.chatIds.every((id) => gravadasAqui.some((g) => g.chat_id === id)) &&
+    principalGravada === conjunto.principal;
+  const pendente = contatos.length > 0 && !gravadoIgual;
   const podeGravarJa = Boolean(idInt && clienteDaProposta);
 
-  const gravar = useCallback(async (id: number, chatId: string): Promise<Resultado> => {
-    const r = await gravarConversaDaProposta(id, chatId);
+  const gravarConjunto = useCallback(async (id: number, chatIds: string[], principal: string): Promise<Resultado> => {
+    const escolha = escolhaDeContatos(chatIds, principal);
+    if (!escolha) return { ok: false, erro: "Escolha pelo menos uma conversa do ChatGuru." };
+    const r = await gravarContatosDaProposta(id, escolha.chatIds, escolha.principal);
     if (!r.ok) return { ok: false, erro: r.erro };
-    setChatIdGravado(chatId);
+    setGravadas(escolha.chatIds.map((c) => ({ chat_id: c, principal: c === escolha.principal })));
     setClienteDaProposta(true);
     setMarcada(null);
     return { ok: true };
   }, []);
 
-  const escolher = useCallback(
-    async (chatId: string): Promise<Resultado> => {
-      if (podeGravarJa && idInt) return gravar(idInt, chatId);
+  /** Aplica a nova escolha: grava já (proposta salva) ou guarda para o Salvar. */
+  const aplicar = useCallback(
+    async (chatIds: string[], principal: string): Promise<Resultado> => {
+      const escolha = escolhaDeContatos(chatIds, principal);
+      if (!escolha) return { ok: false, erro: "Deixe pelo menos uma conversa do ChatGuru no pedido." };
+      if (podeGravarJa && idInt) return gravarConjunto(idInt, escolha.chatIds, escolha.principal);
       if (!idCliente) return { ok: false, erro: "Escolha o cliente antes." };
-      // Proposta nova ou cliente trocado: grava no Salvar.
-      setMarcada({ cliente: idCliente, chatId });
+      setMarcada({ cliente: idCliente, chatIds: escolha.chatIds, principal: escolha.principal });
       return { ok: true };
     },
-    [podeGravarJa, idInt, idCliente, gravar]
+    [podeGravarJa, idInt, idCliente, gravarConjunto]
+  );
+
+  const escolher = useCallback(
+    (chatId: string) => aplicar(conjunto.chatIds.includes(chatId) ? conjunto.chatIds : [...conjunto.chatIds, chatId], chatId),
+    [aplicar, conjunto]
+  );
+
+  const alternar = useCallback(
+    (chatId: string) => {
+      const tem = conjunto.chatIds.includes(chatId);
+      const proximos = tem ? conjunto.chatIds.filter((c) => c !== chatId) : [...conjunto.chatIds, chatId];
+      const principal = conjunto.principal && proximos.includes(conjunto.principal) ? conjunto.principal : proximos[0] ?? "";
+      return aplicar(proximos, principal);
+    },
+    [aplicar, conjunto]
   );
 
   const gravarAoSalvar = useCallback(
     async (idSalvo: number): Promise<Resultado> => {
-      const alvo = situacao.escolhida;
-      if (!alvo || !Number.isInteger(idSalvo) || idSalvo <= 0) return { ok: true };
-      if (podeGravarJa && idSalvo === idInt && alvo.chat_id === chatIdGravado) return { ok: true };
-      return gravar(idSalvo, alvo.chat_id);
+      if (conjunto.chatIds.length === 0 || !conjunto.principal || !Number.isInteger(idSalvo) || idSalvo <= 0) return { ok: true };
+      if (podeGravarJa && idSalvo === idInt && gravadoIgual) return { ok: true };
+      return gravarConjunto(idSalvo, conjunto.chatIds, conjunto.principal);
     },
-    [situacao.escolhida, podeGravarJa, idInt, chatIdGravado, gravar]
+    [conjunto, podeGravarJa, idInt, gravadoIgual, gravarConjunto]
   );
 
   const gravarEscolhaSeFaltar = useCallback(async (): Promise<Resultado> => {
@@ -145,7 +203,9 @@ export function useConversaDaArte(idInt: number | null, idClienteTela: string | 
     gravada,
     pendente,
     jaEnviada: arteJaEnviada(statusArte),
+    contatos,
     escolher,
+    alternar,
     gravarEscolhaSeFaltar,
     gravarAoSalvar
   };
@@ -256,6 +316,103 @@ export function ListaDeConversas({ conversa, idCliente, onAviso, onde }: ListaDe
       {onde === "artes" && jaEnviada && (
         <p className="text-xs text-slate-500">Pedido já enviado para arte: a exigência do Comprador vale só para o primeiro envio.</p>
       )}
+    </div>
+  );
+}
+
+interface ContatosDoPedidoProps {
+  conversa: ConversaDaArte;
+  idCliente: string | null;
+  onAviso: (tipo: "success" | "error" | "warning", titulo: string, descricao?: string) => void;
+  /** Herdado do pedido principal (complemento): só leitura. */
+  somenteLeitura?: boolean;
+}
+
+/**
+ * CONTATOS DO PEDIDO, aba Geral (14/11/2026, decisão da diretoria): uma ou mais
+ * conversas do ChatGuru do cliente, uma delas a principal (o Comprador da aba
+ * Artes). Substitui a lista da tabela contatos.
+ */
+export function ContatosDoPedido({ conversa, idCliente, onAviso, somenteLeitura }: ContatosDoPedidoProps) {
+  const { carregando, erro, situacao, contatos, pendente } = conversa;
+  const [gravando, setGravando] = useState(false);
+
+  const agir = async (acao: () => Promise<Resultado>, falha: string) => {
+    if (gravando || somenteLeitura) return;
+    setGravando(true);
+    const r = await acao();
+    setGravando(false);
+    if (!r.ok) onAviso("error", falha, r.erro);
+  };
+
+  if (!clienteNumerico(idCliente)) {
+    return <p className="text-sm text-amber-700">Proposta sem cliente cadastrado: não há conversa para escolher.</p>;
+  }
+  if (carregando) return <p className="text-sm text-slate-500">Lendo as conversas do cliente no ChatGuru...</p>;
+  if (erro) return <p className="text-sm text-red-600">{erro}</p>;
+
+  if (situacao.semConversa) {
+    return (
+      <div className="flex items-start gap-1.5 text-xs text-amber-700" data-contatos-do-pedido="sem-conversa">
+        <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+        <span>
+          <span className="font-semibold">Cadastre a conversa no ChatGuru.</span> O cliente não tem conversa no WhatsApp da Ideal. Peça ao
+          atendimento para abrir a conversa com o código do cliente no nome; depois reabra a proposta. Sem conversa, o pedido não vai para
+          arte nem para produção.
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3" data-contatos-do-pedido="lista">
+      <ul className="divide-y divide-slate-100 rounded-xl border border-slate-200 dark:divide-slate-700 dark:border-slate-700">
+        {situacao.conversas.map((c) => {
+          const escolhido = contatos.find((x) => x.chat_id === c.chat_id);
+          return (
+            <li key={c.chat_id} className={`flex items-center gap-3 px-3 py-2 text-sm ${escolhido ? "bg-emerald-50/60 dark:bg-emerald-950/30" : ""}`}>
+              <input
+                type="checkbox"
+                aria-label={`Contato do pedido: ${c.nome}`}
+                checked={Boolean(escolhido)}
+                disabled={gravando || somenteLeitura}
+                onChange={() => void agir(() => conversa.alternar(c.chat_id), "Não foi possível gravar os contatos do pedido")}
+              />
+              <MessageCircle size={14} className="shrink-0 text-emerald-700" />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate font-semibold text-slate-800 dark:text-slate-100">{c.nome}</span>
+                <span className="block text-xs text-slate-500 dark:text-slate-400">{numeroParaExibir(c.numero)}</span>
+              </span>
+              {escolhido?.principal ? (
+                <span className="rounded-full bg-emerald-700 px-2 py-0.5 text-[11px] font-semibold text-white" data-principal>
+                  Principal · Comprador
+                </span>
+              ) : escolhido ? (
+                <button
+                  type="button"
+                  disabled={gravando || somenteLeitura}
+                  onClick={() => void agir(() => conversa.escolher(c.chat_id), "Não foi possível trocar o contato principal")}
+                  className="rounded-full border border-emerald-300 px-2 py-0.5 text-[11px] font-semibold text-emerald-800 disabled:opacity-60 dark:border-emerald-800 dark:text-emerald-200"
+                >
+                  Tornar principal
+                </button>
+              ) : null}
+            </li>
+          );
+        })}
+      </ul>
+      {contatos.length === 0 && (
+        <p className="flex items-start gap-1.5 text-xs font-semibold text-amber-700">
+          <AlertTriangle size={14} className="mt-0.5 shrink-0" /> Marque pelo menos uma conversa: sem contato escolhido, o pedido não vai
+          para arte nem para produção.
+        </p>
+      )}
+      {situacao.liberado === false && contatos.length > 0 && situacao.aviso && (
+        <p className="flex items-start gap-1.5 text-xs font-semibold text-amber-700">
+          <AlertTriangle size={14} className="mt-0.5 shrink-0" /> {situacao.aviso}
+        </p>
+      )}
+      {pendente && <p className="text-xs text-slate-500 dark:text-slate-400">A escolha é gravada ao salvar a proposta.</p>}
     </div>
   );
 }

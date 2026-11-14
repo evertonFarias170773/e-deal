@@ -76,7 +76,7 @@ O arquivo é gravado na hora em que você clica em **Adicionar**. Não é precis
 3. Confira o bloco **Comprador do cliente**. É quem recebe a arte: uma conversa do cliente no WhatsApp da Ideal (ChatGuru), com o nome da conversa e o número. As conversas são abertas pelo atendimento no ChatGuru, com o código do cliente no nome; o Vibe não cadastra conversa.
    - Com uma conversa só, ela já vem escolhida.
    - Com várias, clique na que recebe a arte. A escolha é gravada na hora.
-   - Sem conversa, o **Enviar para arte** fica apagado com "Cliente sem conversa no ChatGuru: peça ao atendimento para abrir a conversa com o código do cliente no nome".
+   - Sem conversa, o **Enviar para arte** fica apagado com "Cadastre a conversa no ChatGuru: o cliente não tem conversa no WhatsApp da Ideal. Peça ao atendimento para abrir a conversa com o código do cliente no nome".
 4. Clique no botão flutuante **Enviar para arte**.
 5. O aviso "Dados da arte salvos com sucesso!" confirma. O status da arte passa a **EM ARTE** e o designer e a conversa do Comprador ficam gravados no pedido.
 
@@ -137,7 +137,7 @@ O bloco **Últimos pedidos** lista as cinco propostas mais recentes do mesmo cli
 - Não dá para enviar para arte sem o **Nome do Evento / Tema**.
 - Não dá para enviar para arte pela primeira vez sem a conversa do Comprador: uma conversa do cliente no ChatGuru (remetente 3478, código do cliente no nome), com nome e número do WhatsApp. E-mail não é exigido. Com várias conversas, é preciso escolher.
 - A exigência do Comprador vale só para o primeiro envio. Pedido cuja arte já saiu (qualquer status de arte que não seja AGUARDANDO nem PENDENTE) não é travado; pedido sem arte gravada, ou em AGUARDANDO ou PENDENTE, é primeiro envio. **Salvar dados da arte** (sem designer) também não é travado.
-- A conversa escolhida fica gravada na proposta e é a mesma do bloco **Conversa do WhatsApp**, no **3. Contato responsável** da aba Geral, onde também dá para escolher (desde 11/11/2026). Trocar numa aba troca na outra. O **Contato responsável** é outra coisa: é o contato do cadastro do cliente (e-mail e telefone para etiqueta, cobrança e checkout), escolhido só na aba Geral. A aba Artes não o troca.
+- A conversa escolhida fica gravada na proposta e é a conversa **principal** do bloco **3. Contatos do pedido** da aba Geral (desde 14/11/2026 o pedido pode ter várias conversas; a principal é o Comprador), onde também dá para escolher (desde 11/11/2026). Trocar numa aba troca na outra. O **Contato responsável** é outra coisa: é o contato do cadastro do cliente (e-mail e telefone para etiqueta, cobrança e checkout), escolhido só na aba Geral. A aba Artes não o troca.
 - A tabela de conversas do ChatGuru serve só para falar com o cliente pelo WhatsApp. Conversa nova ou com o nome errado se resolve no ChatGuru, pelo atendimento: não há cadastro de conversa no Vibe.
 - Se a conversa gravada sair do cliente no ChatGuru (por exemplo, renomeada sem o código), ela deixa de valer: com uma conversa só, a que restou vem escolhida; com várias, é preciso escolher de novo.
 - A **Data do Evento** só aceita ano entre 1900 e 9999. Com o ano digitado errado (por exemplo 20206 no lugar de 2026), o botão flutuante avisa **Data do evento inválida: confira o ano** e não grava.
@@ -167,7 +167,7 @@ O bloco **Últimos pedidos** lista as cinco propostas mais recentes do mesmo cli
 | Janela **Modelos incompletos**: "Antes de acessar Artes, complete os modelos do Pedido." | Há modelo na aba Pedido sem algum campo que o produto exige. | Clique em **Entendi**, vá à aba **Pedido**, preencha o que a lista apontou e grave. |
 | "Configure os modelos/lotes na aba Pedido antes de iniciar a etapa de Artes." | O pedido não tem nenhum modelo. | Crie os modelos na aba **Pedido**. |
 | "Informe o Nome do Evento / Tema antes de enviar para arte." | Há designer selecionado, mas o nome do evento está vazio. | Preencha **Nome do Evento / Tema** e clique de novo em **Enviar para arte**. |
-| **Enviar para arte** apagado, com "Cliente sem conversa no ChatGuru: peça ao atendimento para abrir a conversa com o código do cliente no nome" | O cliente não tem conversa no WhatsApp da Ideal (ChatGuru) com o código dele no nome. | Peça ao atendimento para abrir a conversa no ChatGuru com o código do cliente no nome; depois reabra a aba. |
+| **Enviar para arte** apagado, com "Cadastre a conversa no ChatGuru: o cliente não tem conversa no WhatsApp da Ideal. Peça ao atendimento para abrir a conversa com o código do cliente no nome" | O cliente não tem conversa no WhatsApp da Ideal (ChatGuru) com o código dele no nome. | Peça ao atendimento para abrir a conversa no ChatGuru com o código do cliente no nome; depois reabra a aba. |
 | **Enviar para arte** apagado, com "O cliente tem N conversas no ChatGuru. Escolha qual recebe a arte." | Há mais de uma conversa e nenhuma escolhida. | Clique na conversa que recebe a arte. |
 | **Enviar para arte** apagado, com "A conversa escolhida está sem nome no ChatGuru..." | A conversa não tem nome no ChatGuru. | Peça ao atendimento para pôr o nome com o código do cliente. |
 | "Não foi possível gravar a conversa" | O servidor não gravou a escolha (sessão caída, conversa que deixou de ser do cliente). | Reabra a aba e escolha de novo. Se continuar, avise o suporte. |

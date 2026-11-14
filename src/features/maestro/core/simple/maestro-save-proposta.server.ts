@@ -13,7 +13,8 @@
  *   - Usa o Supabase client autenticado com JWT do usuário logado (RLS funciona).
  *   - Não usa service_role.
  *   - Status sempre "NOVO".
- *   - Se contatoId não existir → bloqueia e retorna mensagem clara.
+ *   - Sem contatoId: usa o primeiro contato ativo do cliente; sem nenhum, salva
+ *     sem contato (14/11/2026) — o contato do pedido é a conversa do ChatGuru.
  *   - Busca vendedor (nome_usuario) pela tabela usuarios via user.id.
  *   - Empresa fixa "Ideal Grafica" (padrão da ERP).
  *
@@ -89,15 +90,10 @@ export async function salvarCotacaoComoPropostaReal(
       console.error('[MaestroSave] Erro ao buscar contato do cliente:', err);
     }
 
-    if (!contatoId) {
-      return {
-        success: false,
-        bloqueadoPorContato: true,
-        errorMessage:
-          'Não consegui salvar porque o cliente não possui contato cadastrado. ' +
-          'Abra o cadastro do cliente, adicione um contato e tente novamente.',
-      };
-    }
+    // Sem contato na tabela contatos o salvar NÃO trava mais (14/11/2026, decisão
+    // da diretoria): os contatos do pedido são as conversas do ChatGuru,
+    // escolhidas na aba Geral e exigidas no Enviar para arte e na Liberação.
+    // A proposta nasce sem id_contato.
   }
 
   // ── 2. Resolver vendedor (nome_usuario) pelo user.id ─────────────────────

@@ -1,6 +1,6 @@
 # Expedição: despachar e entregar
 
-> **Última revisão:** 10/11/2026 (aviso de pedido pronto pelo WhatsApp sai no Confirmar despacho)
+> **Última revisão:** 14/11/2026 (quadro **Contatos do pedido** no Despachar, com as conversas do ChatGuru escolhidas na aba Geral). 10/11/2026 (aviso de pedido pronto pelo WhatsApp sai no Confirmar despacho)
 > **Caminho no menu:** Expedição → card do pedido → **Despachar** (os outros passos saem do menu de ações do card)
 > **Endereço:** `/expedicao`
 
@@ -62,6 +62,7 @@ Nomes exatamente como aparecem na tela. A tabela completa da tela está em [Expe
 ### Despachar
 
 1. No pedido com status Na Expedição, clique em **Despachar** e faça a conferência.
+   No topo da janela, o quadro **Contatos do pedido · WhatsApp (ChatGuru)** mostra as conversas marcadas na aba Geral (bloco **3. Contatos do pedido**), com nome e número; a principal traz o selo **Principal · recebe o aviso**. A Expedição usa essas conversas e não oferece a lista de conversas de novo: o aviso de pedido pronto vai para a principal. Pedido antigo sem conversa marcada não mostra o quadro e segue como antes (desde 14/11/2026).
 2. Se o pedido não tem nota autorizada, marque **Despachar mesmo assim (há justificativa: remessa sem NF, retirada, etc.)**.
 3. Se aparecer um quadro sobre o frete, resolva-o antes (veja "Recotar o frete").
 4. Se o telefone do destinatário estiver errado, escolha em **Fone** o telefone certo entre os do cadastro (o seletor só aparece quando há mais de um) ou corrija o número no campo (só números, com DDD, mínimo 10 dígitos; telefone inválido bloqueia o botão). O número novo é gravado no cadastro do destinatário ao confirmar, antes do despacho. Se a gravação falhar, o pedido não é despachado e a tela mostra o erro. O número vai sempre para o WhatsApp 1; o Telefone fixo e o WhatsApp 2 do cadastro não são alterados. Sem alteração (inclusive só abrir e confirmar), nada é gravado no cadastro. Quem não pode editar cadastros vê o telefone, mas não edita nem troca o seletor, e o despacho segue com o número cadastrado. Uma prepostagem dos Correios já gerada mantém o telefone antigo.
@@ -239,6 +240,7 @@ A tabela completa dos avisos da Expedição está em [Expedição](expedicao.md)
 
 - `src/features/expedicao/ExpedicaoPage.tsx`
 - `src/features/expedicao/components/DespacharModal.tsx`
+- `src/features/expedicao/components/ContatosDoPedidoNoDespacho.tsx`
 - `src/features/expedicao/components/ConferenciaDespacho.tsx`
 - `src/features/expedicao/components/ConfirmarAcaoModal.tsx`
 - `src/features/expedicao/components/CorrigirFreteModal.tsx`

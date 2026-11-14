@@ -1,6 +1,6 @@
 # Pedidos (lista)
 
-> **Última revisão:** 13/11/2026 (Registrar devolução e cancelar pedido; link do aviso Pedido em Produção com #arte no final; antes, 12/11/2026: filtro Cobrança com todas as formas de pagamento, sem o corte que escondia parte dos pedidos com PIX e cartão, e respeitando o período com páginas normais)
+> **Última revisão:** 14/11/2026 (Liberar para Produção exige contato do ChatGuru no pedido; antes, 13/11/2026: Registrar devolução e cancelar pedido; link do aviso Pedido em Produção com #arte no final; antes, 12/11/2026: filtro Cobrança com todas as formas de pagamento, sem o corte que escondia parte dos pedidos com PIX e cartão, e respeitando o período com páginas normais)
 > **Caminho no menu:** Pedidos (item direto do menu lateral, sem submenu; é o segundo, logo abaixo de Conferência)
 > **Endereço:** `/orcamentos`
 
@@ -204,6 +204,7 @@ As datas pequenas aparecem como dia/mês e hora, no horário de Brasília.
    - **Liberar sem enviar**: só libera, como antes.
    - **Cancelar**: não libera nem envia.
 5. Se a liberação tiver pendência, aparece "Erro de Validação" com o motivo, e nada é enviado. Se tudo estiver certo, aparece "Proposta liberada" e o pedido passa para REVISAO PRODUCAO.
+   Desde 14/11/2026 o pedido precisa ter um contato do ChatGuru (conversa marcada no bloco **3. Contatos do pedido** da aba Geral). Sem ele, a liberação é recusada com "Escolha o contato do pedido na aba Geral (Conversas do WhatsApp). Cliente sem conversa: cadastre a conversa no ChatGuru." Pedido antigo que já tinha a conversa escolhida na aba Artes passa. A liberação automática de pedido de prateleira segue a mesma regra: sem contato, o pedido fica em REVISAO ATENDENTE e o chat do pedido diz o motivo.
 6. Se o aviso falhar, a liberação continua valendo. A janela mostra o motivo e oferece **Reenviar** (pede confirmação) e **Ver conversas do cliente**, para escolher outra conversa. Para mandar depois, use **Aviso: pedido em produção** no menu da linha do pedido liberado.
 
 Regras do aviso, as mesmas do aviso de pedido pronto da Expedição:

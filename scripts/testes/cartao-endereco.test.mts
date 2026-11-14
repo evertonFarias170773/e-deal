@@ -94,9 +94,10 @@ checar('"Salvar endereço" continua uma vez so', contar(pagina, "Salvar endereç
 checar("o destaque e a unica diferenca: o cartao recebe destaque e onClick, nao outro layout", box5.includes("destaque={opcoes.destaque}") && box5.includes("onClick={opcoes.onClick}"), true);
 
 const chamadas = pagina.split("<SelectorPainel").length - 1;
-checar("ha 3 seletores (boxes 3, 4 e 5)", chamadas, 3);
+// 14/11/2026: o box 3 (contatos do pedido) virou a lista de conversas do ChatGuru.
+checar("ha 2 seletores (boxes 4 e 5)", chamadas, 2);
 checar("so um deles usa o cartao proprio (o box 5)", contar(pagina, "renderCartao={"), 1);
-checar("os boxes 3 e 4 seguem com painel e linha de antes", contar(pagina, "painel={"), 2);
+checar("o box 4 segue com painel e linha de antes", contar(pagina, "painel={"), 1);
 
 const semComentarios = cartao.replace(/\/\*[\s\S]*?\*\//g, "");
 checar("o destaque e UM par de cores, o do sistema (fundo escuro e texto branco), aplicado so no contêiner", contar(semComentarios, '"border-[#0b2f4a] bg-[#0b2f4a] text-white"'), 1);

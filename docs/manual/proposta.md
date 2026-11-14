@@ -370,7 +370,6 @@ Duas ações do mesmo menu têm o passo a passo em outra ficha: **Enviar para Fi
 | O que aparece | Por que acontece | O que fazer |
 |---|---|---|
 | **Cliente obrigatório** | Nenhum cliente foi escolhido. | Escolha o cliente na aba Geral. |
-| **Contato obrigatório** | Nenhum contato está selecionado. | Selecione ou adicione um contato na aba Geral. |
 | **Endereço obrigatório** | Nenhum endereço de entrega está selecionado. | Selecione o endereço na aba Geral. |
 | **Vendedor obrigatório** | A proposta está sem vendedor. | Selecione o vendedor ou peça para cadastrar o vendedor padrão do cliente. |
 | **Produtos obrigatórios** | A proposta não tem nenhum produto. | Adicione um produto na aba Orçamento ou marque a proposta como avulsa. |
