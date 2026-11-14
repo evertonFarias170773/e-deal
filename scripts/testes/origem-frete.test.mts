@@ -300,8 +300,9 @@ checar("saveProposta: recusa antes de escrever e grava a origem", [
   })(),
   srv.includes("origem: origemParaGravar(chosenFrete, { modalidade: modalidadeVigente, isAvulso: formState.isAvulso === true })")
 ], [true, true, true]);
-const freteSrv = ler("src/features/orcamentos/services/frete.service.ts");
-checar("releitura le a origem (so os dois valores do CHECK)", freteSrv.includes('row.origem === "COTACAO" || row.origem === "MANUAL" ? row.origem : null'), true);
+// A releitura mora em lib/frete-do-texto desde 14/11/2026 (frete.service a reexporta).
+const releitura = ler("src/features/orcamentos/lib/frete-do-texto.ts");
+checar("releitura le a origem (so os dois valores do CHECK)", releitura.includes('row.origem === "COTACAO" || row.origem === "MANUAL" ? row.origem : null'), true);
 
 const mig = ler("supabase/migrations/20261021_cotacao_frete_origem.sql");
 const ativo = mig.slice(0, mig.indexOf("-- ROLLBACK —"));

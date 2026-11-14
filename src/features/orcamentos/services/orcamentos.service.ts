@@ -3783,6 +3783,44 @@ export async function saveProposta(
       return { success: false, errorMessage: "Selecione ou informe o frete antes de salvar o orçamento." };
     }
 
+    // Linha que o Salvar grava em `cotacao_frete` (o INSERT mais abaixo usa esta).
+    // O frete do texto do box 9 sai dela, relido como o banco o devolve.
+    const linhaDaCotacao = {
+      // Sem card (RETIRA/FOB), `freteNome` é a decisão real: a transportadora
+      // declarada em FOB — ou "Motoboy" — e "RETIRADA" no balcão. É o mesmo
+      // texto que vai para `propostas.frete_escolhido`, então as duas pontas
+      // não divergem.
+      //
+      // RETIRA (15/09/2026): o card que sobrou marcado na tela NAO e o
+      // transporte. `freteNome` ja saiu "RETIRADA" de `nomeTransporteEfetivo`,
+      // e o prazo de balcao e imediato. A avulsa segue gravando o texto que o
+      // vendedor digitou: ela nao tem card, e o formulario dela rele esse texto.
+      servico: formState.isAvulso
+        ? formState.observacoesFreteManual || "Frete Manual"
+        : modalidadeVigente === "RETIRA"
+          ? freteNome
+          : chosenFrete?.servico || freteNome || "",
+      valor: freteValor,
+      prazo: formState.isAvulso
+        ? "A combinar"
+        : modalidadeVigente === "RETIRA"
+          ? "Imediato"
+          : (chosenFrete?.prazo || "A combinar"),
+      // Peso COTADO, não o peso de agora. Esta linha é a única memória de
+      // com quanto o frete foi calculado: gravar o peso atual aqui apagava
+      // a própria evidência da divergência — depois de qualquer salvamento
+      // a proposta parecia estar com o frete em dia, mesmo com a
+      // quantidade alterada, e o aviso de "frete desatualizado" nunca
+      // disparava.
+      //
+      // `||` e não `??`: os fretes sintetizados para proposta sem linha em
+      // cotacao_frete nascem com pesoUsado 0, e `??` gravaria esse zero —
+      // que é justamente o valor que desliga qualquer comparação.
+      peso: formState.isAvulso ? 0 : (chosenFrete?.pesoUsado || resumo.pesoTotal || null),
+      // COTACAO (card calculado, so leitura) ou MANUAL; nulo fora de CIF e no antigo.
+      origem: origemParaGravar(chosenFrete, { modalidade: modalidadeVigente, isAvulso: formState.isAvulso === true })
+    };
+
     // Generate informal WhatsApp text
     const informalText = buildPropostaInformalText({
       id_int: formState.id_int || "NOVO",
@@ -3799,12 +3837,13 @@ export async function saveProposta(
         escolhido: true,
         pesoUsado: 0
       // Travado, a linha do frete do texto fala do valor GRAVADO, o mesmo do total.
-      // Card de proposta sem cotação: com o nome com que volta do banco, o mesmo
-      // do box 9 depois de salvar (lib/frete-do-texto, 14/11/2026).
+      // Quando o Salvar regrava a cotação, o card do texto é a linha gravada relida
+      // como o banco a devolve: o mesmo do box 9 depois de recarregar, para
+      // qualquer frete (lib/frete-do-texto, 14/11/2026).
       } : freteDoTextoGravado(usarFreteGravado && chosenFrete ? { ...chosenFrete, valor: freteValor } : chosenFrete, {
-        // Mesma condição e mesmo serviço do INSERT em cotacao_frete mais abaixo.
-        regravaCotacao: regravaFrete && !ehComplemento && modalidadeVigente !== "RETIRA",
-        servicoGravado: chosenFrete?.servico || freteNome || ""
+        // Mesma condição do INSERT em cotacao_frete mais abaixo (sem avulsa: ela não usa card).
+        regravaCotacao: regravaFrete && !ehComplemento,
+        linha: linhaDaCotacao
       }),
       resumo,
       formaPagamento: formState.formaPagamento || "A combinar",
@@ -4452,41 +4491,11 @@ export async function saveProposta(
         // Inserir apenas o frete escolhido atual
         const insertPayload: Record<string, unknown> = {
           id_int: id_int!,
-          // Sem card (RETIRA/FOB), `freteNome` é a decisão real: a transportadora
-          // declarada em FOB — ou "Motoboy" — e "RETIRADA" no balcão. É o mesmo
-          // texto que vai para `propostas.frete_escolhido`, então as duas pontas
-          // não divergem.
-          //
-          // RETIRA (15/09/2026): o card que sobrou marcado na tela NAO e o
-          // transporte. `freteNome` ja saiu "RETIRADA" de `nomeTransporteEfetivo`,
-          // e o prazo de balcao e imediato. A avulsa segue gravando o texto que o
-          // vendedor digitou: ela nao tem card, e o formulario dela rele esse texto.
-          servico: formState.isAvulso
-            ? formState.observacoesFreteManual || "Frete Manual"
-            : modalidadeVigente === "RETIRA"
-              ? freteNome
-              : chosenFrete?.servico || freteNome || "",
-          valor: freteValor,
-          prazo: formState.isAvulso
-            ? "A combinar"
-            : modalidadeVigente === "RETIRA"
-              ? "Imediato"
-              : (chosenFrete?.prazo || "A combinar"),
+          // Serviço, valor, prazo, peso e origem: a mesma linha que montou o
+          // frete do texto do box 9 (`linhaDaCotacao`, acima do texto).
+          ...linhaDaCotacao,
           cep: cepText || null,
-          // Peso COTADO, não o peso de agora. Esta linha é a única memória de
-          // com quanto o frete foi calculado: gravar o peso atual aqui apagava
-          // a própria evidência da divergência — depois de qualquer salvamento
-          // a proposta parecia estar com o frete em dia, mesmo com a
-          // quantidade alterada, e o aviso de "frete desatualizado" nunca
-          // disparava.
-          //
-          // `||` e não `??`: os fretes sintetizados para proposta sem linha em
-          // cotacao_frete nascem com pesoUsado 0, e `??` gravaria esse zero —
-          // que é justamente o valor que desliga qualquer comparação.
-          peso: formState.isAvulso ? 0 : (chosenFrete?.pesoUsado || resumo.pesoTotal || null),
-          escolhido: true,
-          // COTACAO (card calculado, so leitura) ou MANUAL; nulo fora de CIF e no antigo.
-          origem: origemParaGravar(chosenFrete, { modalidade: modalidadeVigente, isAvulso: formState.isAvulso === true })
+          escolhido: true
         };
 
         if (!formState.isAvulso && chosenFrete?.id_cotacao !== undefined) {

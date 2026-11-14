@@ -2,7 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import { tokenDaSessao } from "@/lib/supabase/bearer";
 import type { PropostaFrete } from "@/features/orcamentos/types";
-import { rotuloDoServicoGravado } from "@/features/orcamentos/lib/frete-do-texto";
+import { mapCotacaoRowToPropostaFrete } from "@/features/orcamentos/lib/frete-do-texto";
 import { fetchComSessao } from "@/lib/supabase/sessao";
 import { regraAtualPermiteVeppo } from "@/features/orcamentos/lib/cidade-veppo";
 import {
@@ -19,36 +19,10 @@ import { cardsDaRespostaSedex } from "@/features/orcamentos/lib/cotacao-sedex";
 import { CotacaoSemValorError, valorCotadoValido, veppoDeviaTerCotado } from "@/features/orcamentos/lib/cotacao-sem-valor";
 
 /**
- * Maps a single row from public.cotacao_frete to PropostaFrete type.
+ * Linha de public.cotacao_frete -> card da proposta. A regra mora em
+ * lib/frete-do-texto, a mesma que o Salvar usa no texto do box 9 (14/11/2026).
  */
-export function mapCotacaoRowToPropostaFrete(row: {
-  id: number | string;
-  id_int: number | string;
-  servico?: string | null;
-  valor?: number | string | null;
-  prazo?: string | null;
-  funcionamento_loja?: string | null;
-  escolhido?: boolean | null;
-  peso?: number | null;
-  origem?: string | null;
-}): PropostaFrete {
-  // Origem (21/10/2026): so os dois valores do CHECK contam; o resto e linha antiga.
-  const origem = row.origem === "COTACAO" || row.origem === "MANUAL" ? row.origem : null;
-  return {
-    id: String(row.id),
-    id_int: Number(row.id_int),
-    // Mesmo nome que o Salvar usa no texto do box 9 (lib/frete-do-texto).
-    ...rotuloDoServicoGravado(row.servico),
-    valor: Number(row.valor || 0),
-    prazo: row.prazo || "Sob consulta",
-    observacao: row.funcionamento_loja || "",
-    escolhido: Boolean(row.escolhido),
-    pesoUsado: Number(row.peso || 0),
-    origem,
-    // Card calculado relido: o valor gravado E o do card (ele nao se edita).
-    ...(origem === "COTACAO" ? { valorCotado: Number(row.valor || 0) } : {})
-  };
-}
+export { mapCotacaoRowToPropostaFrete };
 
 /**
  * Request SEDEX freight quote from the webhook.
