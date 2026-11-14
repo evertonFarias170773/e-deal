@@ -77,6 +77,7 @@ import { getProdutoByIdProduto } from "@/features/produtos/services/produtos.ser
 import { listVariacoesGlobais } from "@/features/produtos/services/produto-variacoes.service";
 import { buildPropostaInformalText, formatVariacoesItem, getClienteBonusPercent, isItemPrateleira, pesoUnitarioSemVariacoes, STATUS_INICIAL_MODELO } from "@/features/orcamentos/orcamento-utils";
 import { listarCotacoesFrete } from "@/features/orcamentos/services/frete.service";
+import { freteDoTextoGravado } from "@/features/orcamentos/lib/frete-do-texto";
 import { parseCurrencyBR } from "@/lib/formatters/currency";
 import type { Cadastro, CadastroEndereco } from "@/features/cadastros/types";
 import type { Produto } from "@/features/produtos/types";
@@ -3798,7 +3799,13 @@ export async function saveProposta(
         escolhido: true,
         pesoUsado: 0
       // Travado, a linha do frete do texto fala do valor GRAVADO, o mesmo do total.
-      } : (usarFreteGravado && chosenFrete ? { ...chosenFrete, valor: freteValor } : chosenFrete),
+      // Card de proposta sem cotação: com o nome com que volta do banco, o mesmo
+      // do box 9 depois de salvar (lib/frete-do-texto, 14/11/2026).
+      } : freteDoTextoGravado(usarFreteGravado && chosenFrete ? { ...chosenFrete, valor: freteValor } : chosenFrete, {
+        // Mesma condição e mesmo serviço do INSERT em cotacao_frete mais abaixo.
+        regravaCotacao: regravaFrete && !ehComplemento && modalidadeVigente !== "RETIRA",
+        servicoGravado: chosenFrete?.servico || freteNome || ""
+      }),
       resumo,
       formaPagamento: formState.formaPagamento || "A combinar",
       isAvulso: formState.isAvulso,

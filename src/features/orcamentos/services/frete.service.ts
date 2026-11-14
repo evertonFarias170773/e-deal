@@ -2,7 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import { tokenDaSessao } from "@/lib/supabase/bearer";
 import type { PropostaFrete } from "@/features/orcamentos/types";
-import { transportadoraDoServicoGravado } from "@/features/orcamentos/lib/transportadoras-parceiras";
+import { rotuloDoServicoGravado } from "@/features/orcamentos/lib/frete-do-texto";
 import { fetchComSessao } from "@/lib/supabase/sessao";
 import { regraAtualPermiteVeppo } from "@/features/orcamentos/lib/cidade-veppo";
 import {
@@ -37,8 +37,8 @@ export function mapCotacaoRowToPropostaFrete(row: {
   return {
     id: String(row.id),
     id_int: Number(row.id_int),
-    transportadora: transportadoraDoServicoGravado(row.servico),
-    servico: row.servico || "",
+    // Mesmo nome que o Salvar usa no texto do box 9 (lib/frete-do-texto).
+    ...rotuloDoServicoGravado(row.servico),
     valor: Number(row.valor || 0),
     prazo: row.prazo || "Sob consulta",
     observacao: row.funcionamento_loja || "",
