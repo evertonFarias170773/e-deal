@@ -5,6 +5,8 @@
 - Destino sem mudança: a principal, se ainda é do cliente no Guru. Sem contato e com a principal fora do cliente, recusa (`PRINCIPAL_FORA_DO_CLIENTE`) em vez de abrir a lista de conversas.
 - Diálogos, campos e o Orçamento Whatsapp sem mudança. "Testar modelo" segue a regra de antes (não usa a principal).
 - Teste: caso H de `scripts/testes/expedicao-aviso-pronto-v23.test.mts`.
+- Depois do deploy, a v28 do painel foi conferida arquivo a arquivo igual a esta pasta. Leitura: 25172 (com contato e principal) vai para Edison Junior - 14; 18353 (sem contato e sem principal) segue recusado como antes.
+- Prova (autorizada pelo Everton, escrita temporária só no 25172): linha guardada (md5 sem updated_at ff0dc093), gatilhos de propostas conferidos (nenhum cita id_contato nem repassa a mudança), id_contato gravado vazio, Colocando em Produção reenviado em 14/11/2026 20:25 (UTC) para Edison Junior - 14: campos salvos e Diálogo Executado, registro seq 2 com id_contato vazio. id_contato voltou a 64813; md5 sem updated_at igual antes e depois (só updated_at mudou, pelo gatilho).
 
 **v27 ficou no ar em 13/11/2026 e 14/11/2026, até a v28 (versão 27 no painel da Supabase), conferida arquivo a arquivo igual a esta pasta.** Deploy autorizado pelo Everton só desta versão. É a v26 com uma ação nova, sem mudar as existentes:
 - `orcamento_preparar` (só leitura) e `orcamento_enviar`: diálogo "Orçamento Whatsapp" (`DIALOGO_ORCAMENTO`, 6aef91d13ce8e563d886694f), campo `Orcamento` com `propostas.texto_whatsapp` (o texto do box 9 gravado no Salvar), com as quebras de linha (`textoDoOrcamento`; limite 1.024).
