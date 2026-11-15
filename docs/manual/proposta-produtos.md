@@ -1,6 +1,6 @@
 # Proposta: aba Orçamento (produtos)
 
-> **Última revisão:** 10/11/2026 (motivo real quando a exclusão é recusada)
+> **Última revisão:** 15/11/2026 (proposta com desconto da gerência trava itens, quantidades, preços e frete para quem não tem a permissão de desconto). 10/11/2026 (motivo real quando a exclusão é recusada)
 > **Caminho no menu:** Pedidos → abrir um pedido → aba **Orçamento**
 > **Endereço:** `/orcamentos/<número>/editar?tab=produtos` (em proposta nova, `/orcamentos/novo`)
 
@@ -14,7 +14,7 @@ Na tela, esta aba aparece com o nome **Orçamento** e o bloco se chama **6. Prod
 
 - Quem abre a proposta inclui produtos, quantidades, variações e descrição.
 - **Valor Unitário (R$)** e **Fixo (R$)** só são editáveis para administrador. Para os demais, o preço é sempre o do produto ou o da tabela do cliente.
-- O **Desconto geral** (bloco **8. Resumo do orçamento**) só é editável para administrador, gerente ou perfil com a permissão de desconto geral.
+- O **Desconto geral** (bloco **8. Resumo do orçamento**) só é editável para administrador, gerente ou perfil com a permissão de desconto geral. Em proposta com desconto, os demais não mudam itens, quantidades, preços, variações nem frete: o desconto em **%** se recalcula sobre o subtotal e o em **R$** fica fixo, então qualquer mudança mexeria no acordo da gerência.
 - Em proposta com cobrança, só mexe nos produtos quem tem a permissão **Editar Proposta Paga**. Quem tem a permissão **Editar Proposta com Faturado a Vencer** mexe apenas quando a cobrança é faturada e ainda não foi recebida.
 
 ## Botões e ações da tela
@@ -195,7 +195,8 @@ A marcação de prateleira é guardada no item no momento em que ele entra na pr
 | **Erro ao excluir produto** — "O produto não foi encontrado no banco ou a exclusão foi bloqueada. Recarregue a página." | O item já não existe ou a exclusão foi barrada. | Recarregue a página e confira a lista. |
 | "Aguarde a cotação do frete terminar" | O **Salvar item** está travado durante a cotação. | Espere alguns segundos e clique de novo. |
 | "Esta proposta tem uma cobrança enviada ao cliente no valor de ..." | A alteração muda o valor e a cobrança ainda não foi paga. | Cancele a cobrança na aba Pagamentos, altere e gere uma nova. |
-| **Desconto geral não autorizado** | Há desconto geral e seu perfil não pode aplicá-lo. | Zere o desconto ou peça a um gerente ou administrador. |
+| **Desconto geral não autorizado** | Proposta nova com desconto geral digitado e seu perfil não pode aplicá-lo. | Zere o desconto ou peça a um gerente ou administrador. |
+| **Desconto da gerência** — "Esta proposta tem desconto concedido pela gerência. Para alterar itens, quantidades, preços ou frete, peça ao gerente." | A proposta tem desconto, você não tem a permissão de desconto e mudou item, quantidade, preço, variação ou frete (também ao sair do campo **Quantidade**). | Volte o valor de antes ou saia sem salvar; para mudar, peça ao gerente. |
 | "Nenhum produto correspondente encontrado." | A pesquisa não achou produto ativo. | Tente outro nome, o código ou um apelido. |
 | **O frete precisa ser atualizado** | A quantidade mudou pela aba Pedido e o peso ficou diferente do cotado. | Atualize o frete na aba Fretes antes de gerar a cobrança. |
 

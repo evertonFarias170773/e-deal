@@ -1,6 +1,6 @@
 # Proposta: aba Geral
 
-> **Última revisão:** 14/11/2026 (botão **Enviar pelo ChatGuru** no bloco 9; bloco 3 vira **Contatos do pedido**: uma ou mais conversas do ChatGuru, uma principal que é o Comprador; sai a lista de contatos do cadastro; contato exigido no Enviar para arte e na Liberação para produção. Antes, 11/11/2026: endereço com a rua gravada como "[object Object]" aparece como **Rua com erro no cadastro (corrija pelo lápis)** e abre com a rua em branco. Antes, no mesmo dia: campo **Observação para a nota fiscal** no fim do bloco 4, que sai impresso na NF-e e na NFS-e; o bloco 10 continua interno. Antes, no mesmo dia: bloco **Conversa do WhatsApp** no Contato responsável: escolhe a conversa do ChatGuru, a mesma do Comprador da aba Artes)
+> **Última revisão:** 15/11/2026 (proposta com desconto da gerência: os demais salvam o que não afeta o valor; erro **Desconto da gerência**). 14/11/2026 (botão **Enviar pelo ChatGuru** no bloco 9; bloco 3 vira **Contatos do pedido**: uma ou mais conversas do ChatGuru, uma principal que é o Comprador; sai a lista de contatos do cadastro; contato exigido no Enviar para arte e na Liberação para produção. Antes, 11/11/2026: endereço com a rua gravada como "[object Object]" aparece como **Rua com erro no cadastro (corrija pelo lápis)** e abre com a rua em branco. Antes, no mesmo dia: campo **Observação para a nota fiscal** no fim do bloco 4, que sai impresso na NF-e e na NFS-e; o bloco 10 continua interno. Antes, no mesmo dia: bloco **Conversa do WhatsApp** no Contato responsável: escolhe a conversa do ChatGuru, a mesma do Comprador da aba Artes)
 > **Caminho no menu:** Pedidos → abrir um pedido → aba **Geral**
 > **Endereço:** `/orcamentos/<número>/editar` (em proposta nova, `/orcamentos/novo`)
 
@@ -12,7 +12,7 @@
 
 - Quem abre a proposta vê e preenche a aba Geral.
 - O campo **Vendedor** só é editável para administrador, gerente ou perfil com a permissão de alterar o vendedor responsável. Para os demais ele aparece cinza, com o vendedor do cadastro do cliente.
-- O **Desconto geral**, no bloco **8. Resumo do orçamento**, só é editável para administrador, gerente ou perfil com a permissão de desconto geral.
+- O **Desconto geral**, no bloco **8. Resumo do orçamento**, só é editável para administrador, gerente ou perfil com a permissão de desconto geral. Em proposta com desconto, os demais continuam salvando tudo o que não afeta o valor (detalhe na página da Proposta).
 - Em proposta com cobrança, o botão **+ Adicionar novo sócio** fica travado para quem não tem a permissão de editar proposta paga.
 
 ## Botões e ações da tela
@@ -261,7 +261,8 @@ A escolha entre proposta avulsa e proposta com produtos do catálogo não fica n
 | **Vendedor obrigatório** | Proposta sem vendedor. | Selecione o vendedor antes de salvar. |
 | **Vendedor não autorizado** | Seu perfil não pode trocar o vendedor herdado do cliente. | Mantenha o vendedor do cadastro ou peça a troca a um gerente. |
 | **Empresa obrigatória** | Campo Empresa vazio. | Escolha a empresa. |
-| **Desconto geral não autorizado** | Há desconto geral e seu perfil não pode aplicá-lo. | Zere o desconto ou peça a um gerente ou administrador. |
+| **Desconto geral não autorizado** | Proposta nova com desconto geral digitado e seu perfil não pode aplicá-lo. | Zere o desconto ou peça a um gerente ou administrador. |
+| **Desconto da gerência** — "Esta proposta tem desconto concedido pela gerência. Para alterar itens, quantidades, preços ou frete, peça ao gerente." | A proposta tem desconto, você não tem a permissão de desconto e mudou algo que afeta o valor. Observações, contatos e os demais campos salvam normalmente. | Desfaça a mudança de valor e salve; para mudá-la, peça ao gerente. |
 | **Pagador sem endereço** | O pagador escolhido não tem endereço cadastrado. | Escolha o endereço de entrega no bloco 5 ou cadastre um endereço para o pagador. |
 | **Falha ao salvar pagador** | A troca do pagador não foi gravada. | Tente de novo. Se continuar, avise o administrador. |
 | **Documento inválido** | CPF ou CNPJ do sócio com dígitos errados. | Confira os dígitos. Nenhuma consulta foi feita. |

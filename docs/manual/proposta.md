@@ -1,6 +1,6 @@
 # Proposta: visão geral e abas
 
-> **Última revisão:** 11/11/2026 (aba **Produção / Expedição / Notas**, com a **Observação para a nota fiscal**, que também fica no bloco 4 da aba Geral). 06/11/2026 (total em centavos exatos na visualização e no texto do WhatsApp)
+> **Última revisão:** 15/11/2026 (proposta com desconto da gerência: quem não pode mexer no desconto salva tudo o que não afeta o valor). 11/11/2026 (aba **Produção / Expedição / Notas**, com a **Observação para a nota fiscal**, que também fica no bloco 4 da aba Geral). 06/11/2026 (total em centavos exatos na visualização e no texto do WhatsApp)
 > **Caminho no menu:** Pedidos → **+ Nova proposta** (proposta nova) ou Pedidos → abrir um pedido → **Editar proposta**
 > **Endereço:** `/orcamentos/novo` e `/orcamentos/<número>/editar`
 
@@ -14,7 +14,8 @@ Esta página explica o que vale para a tela inteira: cabeçalho, abas, como salv
 
 - Quem tem acesso ao menu **Pedidos** abre a tela. Na lista, o perfil configurado para ver apenas as próprias propostas encontra só as dele.
 - Trocar o **Vendedor** da proposta: administrador, gerente ou perfil com a permissão de alterar o vendedor responsável. Para os demais, o vendedor vem do cadastro do cliente.
-- Usar o **Desconto geral**: administrador, gerente ou perfil com a permissão de desconto geral.
+- Usar o **Desconto geral**: administrador, gerente ou perfil com a permissão de desconto geral. Só eles dão, mudam ou tiram o desconto.
+- Proposta com desconto, para quem não tem essa permissão (o vendedor, por exemplo): ele continua editando e salvando observações, contatos, arte, entrega, prazo e os demais campos que não mexem no valor. Desconto, itens, quantidades, preços e frete têm de ficar como estavam gravados; para mudar algum deles, peça ao gerente. Vale também para o bônus do cliente que o Maestro grava como desconto geral.
 - Digitar **Valor Unitário (R$)** e **Fixo (R$)** de um item: só administrador.
 - Alterar proposta que já tem cobrança ou pagamento: só quem tem a permissão **Editar Proposta Paga**. Quem tem a permissão **Editar Proposta com Faturado a Vencer** altera apenas a proposta cuja cobrança é faturada e ainda não foi recebida.
 - Na diferença financeira de uma proposta paga, as opções de devolver, bonificar e registrar débito futuro aparecem só para quem tem a permissão de cada uma.
@@ -330,6 +331,7 @@ Duas ações do mesmo menu têm o passo a passo em outra ficha: **Enviar para Fi
 - Em FOB, não dá para salvar sem transportadora ou sem marcar **Motoboy**: é o dado que a Expedição usa no despacho.
 - O status não é editável. Ele muda com as cobranças, os pagamentos, as artes e as etapas da produção e da expedição.
 - Com cobrança ativa e sem a permissão de editar proposta paga, produtos, valores, descontos e frete ficam travados.
+- **Desconto concedido pela gerência:** em proposta com desconto geral, quem não tem a permissão de desconto geral salva normalmente o que não afeta o valor. Se desconto, item, quantidade, preço, variação ou frete mudar em relação ao que estava gravado quando a tela abriu, o salvamento é recusado, inclusive o automático ao sair do campo **Quantidade**. O motivo: o desconto em **%** se recalcula sobre o subtotal dos produtos (mais quantidade, mais desconto em reais), e o desconto em **R$** fica parado enquanto o total muda. Essa trava é da tela.
 - Com cobrança enviada e ainda não paga, não dá para alterar o valor da proposta, nem com permissão. Cancele a cobrança antes. Salvar só arte, observação ou modelos não muda o valor e passa normalmente.
 - Proposta avulsa já paga não pode ser alterada por ninguém. A exceção é a avulsa com faturado a vencer, porque o dinheiro ainda não entrou.
 - Com cobrança de retrabalho, permuta ou amostra, o total pode subir sem cancelar a cobrança: ela fica como está e a diferença vira saldo a cobrar, com uma segunda cobrança na aba Pagamentos.
@@ -376,6 +378,7 @@ Duas ações do mesmo menu têm o passo a passo em outra ficha: **Enviar para Fi
 | **Valor inválido** | O subtotal ou o total está zerado. | Confira quantidades e preços, ou o valor dos produtos da avulsa. |
 | **Frete não selecionado** | Em CIF, nenhuma cotação foi escolhida. | Escolha um frete na aba Fretes. |
 | **Transportadora obrigatória em FOB** | FOB sem transportadora e sem Motoboy. | Na aba Fretes, escolha a transportadora ou marque Motoboy. |
+| **Desconto da gerência** — "Esta proposta tem desconto concedido pela gerência. Para alterar itens, quantidades, preços ou frete, peça ao gerente." | A proposta tem desconto geral, você não tem a permissão de desconto e mudou algo que afeta o valor. | Desfaça a mudança (ou saia sem salvar) e salve o resto; para mudar o valor, peça ao gerente. |
 | **Modelos incompletos na aba Pedido** | Há linha incompleta na lista rápida. Nada foi gravado. | Complete ou remova a linha e salve de novo. |
 | **Salvamento Parcial** — "Campos operacionais salvos. Produtos, valores, descontos e frete permanecem bloqueados porque existe cobrança gerada." | A proposta tem cobrança e você não tem permissão para editá-la. | Peça a alteração a quem tem a permissão de editar proposta paga. |
 | "Esta proposta tem uma cobrança enviada ao cliente no valor de ..." | A alteração muda o valor e a cobrança ainda não foi paga. | Cancele a cobrança na aba Pagamentos, altere e gere uma nova. |
@@ -416,6 +419,7 @@ Duas ações do mesmo menu têm o passo a passo em outra ficha: **Enviar para Fi
 ## Arquivos de origem
 
 - `src/features/orcamentos/OrcamentoFormPage.tsx`
+- `src/features/orcamentos/lib/desconto-da-gerencia.ts`
 - `src/features/orcamentos/hooks/useAcoesDaListaNaProposta.tsx`
 - `src/features/orcamentos/lib/nota-x-pedido.ts`
 - `src/features/orcamentos/components/NotaDivergenteModal.tsx`

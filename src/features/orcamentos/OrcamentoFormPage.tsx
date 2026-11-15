@@ -161,6 +161,13 @@ import {
   valorTravadoPeloCard
 } from "@/features/orcamentos/lib/origem-frete";
 import { avisoDaDiferencaNaTela, salvarItemSoNaTela, salvarSemMudancaEmPropostaPaga } from "@/features/orcamentos/lib/salvar-item-paga";
+import {
+  MENSAGEM_DESCONTO_DA_GERENCIA,
+  assinaturaDeValor,
+  conferirDescontoDaGerencia,
+  temDescontoGeral,
+  type AssinaturaDeValor
+} from "@/features/orcamentos/lib/desconto-da-gerencia";
 import { verificarPermissaoServerSide } from "@/lib/auth/verificar-permissao";
 import {
   CATEGORIAS_DECLARAVEIS,
@@ -1591,6 +1598,16 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     }
     return noCentavo(calculado);
   }, [form.isAvulso, form.valorProdutosManual, form.valorFreteManual, form.itens, form.fretes, form.modalidadeFrete, form.descontoGeralValor, form.descontoGeralTipo, recalculaFrete, proposta]);
+
+  // Desconto concedido pela gerência (lib/desconto-da-gerencia): o que afeta o
+  // valor, como estava gravado quando a tela abriu. Só para proposta existente.
+  const valorNaAberturaRef = useRef<{ assinatura: AssinaturaDeValor; temDesconto: boolean } | null>(null);
+  if (proposta && valorNaAberturaRef.current === null) {
+    valorNaAberturaRef.current = {
+      assinatura: assinaturaDeValor(form, resumo),
+      temDesconto: temDescontoGeral(form.descontoGeralValor)
+    };
+  }
 
   const volumes = Math.max(1, Math.ceil(resumo.pesoTotal / 14500));
 
@@ -4979,7 +4996,17 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     const isSellerEmpty = !isNonEmpty(vendedorAtual);
     const isCompanyEmpty = !isNonEmpty(form.empresa);
 
-    const hasUnauthorizedGeneralDiscount = !canEditarDescontoGeral && Number(form.descontoGeralValor) > 0;
+    // Desconto da gerência (15/11/2026): quem não pode mexer no desconto salva
+    // tudo o que não afeta o valor; desconto, itens, quantidades, preços e frete
+    // têm de estar iguais ao gravado (lib/desconto-da-gerencia).
+    const conferenciaDoDesconto = conferirDescontoDaGerencia({
+      podeEditarDesconto: canEditarDescontoGeral,
+      base: valorNaAberturaRef.current?.assinatura ?? null,
+      descontoNaBase: valorNaAberturaRef.current?.temDesconto ?? false,
+      atual: assinaturaDeValor(form, resumo),
+      descontoAtual: temDescontoGeral(form.descontoGeralValor)
+    });
+    const hasUnauthorizedGeneralDiscount = conferenciaDoDesconto === "sem_permissao";
     const sellerChangedWithoutPermission = Boolean(cliente && vendedorAtual !== getClienteVendedorPadrao(cliente) && !canAlterarVendedor);
 
     const fields = [
@@ -5128,6 +5155,11 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
 
     if (hasUnauthorizedGeneralDiscount) {
       showToast({ type: "error", title: "Desconto geral não autorizado", description: "Apenas admin ou gerente pode aplicar desconto geral." });
+      return false;
+    }
+
+    if (conferenciaDoDesconto === "valor_mudou") {
+      showToast({ type: "error", title: "Desconto da gerência", description: MENSAGEM_DESCONTO_DA_GERENCIA });
       return false;
     }
 
