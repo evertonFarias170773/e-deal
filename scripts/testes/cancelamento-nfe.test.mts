@@ -8,7 +8,7 @@
  *   A. a decisão com os retornos REAIS gravados em notas_eventos
  *      (fixtures/cancelamento-nfe-retornos-reais.json: 14 cancelados, 3 "autorizado");
  *   B. os embrulhos que o webhook pode devolver e as respostas que não confirmam;
- *   C. o prazo de 24 h pela data de autorização;
+ *   C. o prazo de 168 h (RS, desde 16/11/2026) pela data de autorização;
  *   D. a linha de notas_eventos (confirmado x falha) e quem a lê;
  *   E. a rota POST /api/fiscal/cancelar-nfe até a chamada do webhook simulado.
  */
@@ -111,20 +111,29 @@ for (const vazio of [null, undefined, "", "=[object Object]", {}, [], { success:
 confere("retornoDaFocus nao inventa objeto de texto solto", retornoDaFocus("erro qualquer") === null);
 
 // ── C. prazo ────────────────────────────────────────────────────────────────
-console.log("== C. prazo de 24 h");
+console.log("== C. prazo de 168 h");
 const agora = new Date("2026-10-27T15:00:00Z");
 const horasAntes = (h: number) => new Date(agora.getTime() - h * 3600_000).toISOString();
-confere("prazo e de 24 h", PRAZO_CANCELAMENTO_HORAS === 24);
+confere("prazo e de 168 h", PRAZO_CANCELAMENTO_HORAS === 168);
 confere("autorizada ha 1 h -> dentro", prazoDoCancelamento(horasAntes(1), agora).dentro === true);
-confere("autorizada ha 23h59 -> dentro", prazoDoCancelamento(horasAntes(23 + 59 / 60), agora).dentro === true);
+confere("autorizada ha 24 h -> dentro (era o limite antigo)", prazoDoCancelamento(horasAntes(24), agora).dentro === true);
+confere("autorizada ha 167h59 -> dentro", prazoDoCancelamento(horasAntes(167 + 59 / 60), agora).dentro === true);
 {
-  const p = prazoDoCancelamento(horasAntes(24), agora);
-  confere("autorizada ha exatamente 24 h -> fora", !p.dentro && p.motivo === "FORA_DO_PRAZO" && /contabilidade/.test(p.mensagem), p);
+  const p = prazoDoCancelamento(horasAntes(168), agora);
+  confere("autorizada ha exatamente 168 h -> fora", !p.dentro && p.motivo === "FORA_DO_PRAZO" && /contabilidade/.test(p.mensagem), p);
 }
 {
-  // NFE-23138-001: autorizada 09/10 11:42, cancelamento pedido 14/10 13:15 (horario de Brasilia).
+  // NFE-23138-001: autorizada 09/10 11:42, cancelamento pedido 14/10 13:15 (horario de Brasilia): 5 dias, dentro das 168 h.
   const p = prazoDoCancelamento("2026-10-09T14:42:00+00:00", new Date("2026-10-14T16:15:00Z"));
-  confere("caso real 23138 (5 dias depois) -> fora do prazo", !p.dentro && p.motivo === "FORA_DO_PRAZO", p);
+  confere("caso real 23138 (5 dias depois) -> dentro do prazo", p.dentro === true, p);
+}
+{
+  // NFE-25028-002: autorizada 12/11 15:31:21 (Brasilia); limite 19/11 15:31:21.
+  const aut = "2026-11-12T18:31:21+00:00";
+  confere("caso real 25028-002 em 16/11 16:03 -> dentro", prazoDoCancelamento(aut, new Date("2026-11-16T19:03:00Z")).dentro === true);
+  confere("caso real 25028-002 um segundo antes do limite -> dentro", prazoDoCancelamento(aut, new Date("2026-11-19T18:31:20Z")).dentro === true);
+  const p = prazoDoCancelamento(aut, new Date("2026-11-19T18:31:21Z"));
+  confere("caso real 25028-002 no limite -> fora, orienta contabilidade", !p.dentro && p.motivo === "FORA_DO_PRAZO" && /168 horas/.test(p.mensagem) && /contabilidade/.test(p.mensagem), p);
 }
 for (const sem of [null, undefined, "", "lixo"]) {
   const p = prazoDoCancelamento(sem as string | null, agora);
@@ -250,7 +259,7 @@ for (const l of REAIS.autorizados) {
 // 4. fora do prazo / sem data
 {
   webhookFalso({ corpo: OK });
-  const r = await cancelar({ ...NOTA, data_autorizacao: new Date(Date.now() - 25 * 3600_000).toISOString() });
+  const r = await cancelar({ ...NOTA, data_autorizacao: new Date(Date.now() - 169 * 3600_000).toISOString() });
   confere("FORA DO PRAZO: 422, nada enviado a Focus, nada gravado", r.status === 422 && r.corpo.code === "FORA_DO_PRAZO" && r.webhook.length === 0 && r.escritas.length === 0 && /contabilidade/.test(String(r.corpo.message)), r.corpo);
 }
 {

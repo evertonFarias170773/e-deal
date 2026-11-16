@@ -1437,7 +1437,7 @@ export function NotasFiscaisPage() {
       }
 
       if (canCancelNf) {
-        // Prazo de 24 h da autorização (lib/fiscal/cancelamento-nfe). Fora dele,
+        // Prazo de 168 h da autorização (lib/fiscal/cancelamento-nfe). Fora dele,
         // o item não abre o pedido: explica e orienta procurar a contabilidade.
         // A rota confere a mesma regra antes de chamar a Focus.
         const prazo = prazoDoCancelamento(item.data_autorizacao, new Date());

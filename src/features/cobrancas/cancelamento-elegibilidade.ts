@@ -314,7 +314,7 @@ function montarRecusas(dossie: DossieCancelamento): Recusa[] {
     });
   }
 
-  // 2. Nota fiscal antes de produção: tem prazo legal (24h SEFAZ) e a tarefa é
+  // 2. Nota fiscal antes de produção: tem prazo legal (168 h no RS) e a tarefa é
   //    do próprio financeiro/fiscal, enquanto devolver a OS depende do gerente.
   const notaImpeditiva = notas.find(isNotaImpeditiva);
   if (notaImpeditiva) {

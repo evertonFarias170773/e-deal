@@ -22,8 +22,11 @@
 /** Códigos da SEFAZ que confirmam o evento de cancelamento. */
 export const CSTAT_CANCELAMENTO_CONFIRMADO = ["135", "155"] as const;
 
-/** Prazo de cancelamento contado da autorização (regra autorizada em 27/10/2026). */
-export const PRAZO_CANCELAMENTO_HORAS = 24;
+/**
+ * Prazo de cancelamento contado da autorização. Era 24 h (27/10/2026); passou a
+ * 168 h em 16/11/2026, o prazo legal no RS, onde as três empresas emitem.
+ */
+export const PRAZO_CANCELAMENTO_HORAS = 168;
 
 export const MENSAGEM_FORA_DO_PRAZO =
   `O prazo de ${PRAZO_CANCELAMENTO_HORAS} horas para cancelar esta NF-e já passou. ` +

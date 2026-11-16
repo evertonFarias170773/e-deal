@@ -110,7 +110,7 @@ falso.responder("notas_servico:select", { data: null, error: null });
 
 /* ------------------------------------------- B. cancelar NF-e: como sempre */
 
-// Contrato desde ee5cb824 (27/10/2026): prazo de 24 h pela data_autorizacao,
+// Contrato desde ee5cb824 (27/10/2026): prazo de 168 h (era 24 h ate 16/11/2026) pela data_autorizacao,
 // confere evento "cancelado" anterior, CANCELADA so com status cancelado +
 // cStat 135/155 + caminho do XML, autoria no mesmo UPDATE final e o evento
 // gravado em notas_eventos. A regra fina do cancelamento esta em

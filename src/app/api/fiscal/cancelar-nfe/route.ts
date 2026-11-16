@@ -35,7 +35,7 @@ import {
  *   A tela não grava mais nada do cancelamento.
  *
  *   Antes do webhook a rota recusa, sem chamar a Focus: nota fora do prazo de
- *   24 h (ou sem data de autorização) e nota que já tem evento "cancelado".
+ *   168 h (ou sem data de autorização) e nota que já tem evento "cancelado".
  */
 
 export const maxDuration = 60;
