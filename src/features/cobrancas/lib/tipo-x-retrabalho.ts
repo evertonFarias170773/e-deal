@@ -18,6 +18,8 @@
 
 export const MENSAGEM_E_RETRABALHO_FORA_DE_RETRABALHO = "E-Retrabalho só pode ser usado em pedido criado como Retrabalho";
 export const MENSAGEM_OUTRO_TIPO_EM_RETRABALHO = "Pedido de retrabalho só aceita cobrança E-Retrabalho";
+/** Igual a MENSAGEM_FRETE_CIF_ZERO (lib/frete-cif-zero.ts), repetida para este arquivo seguir sem imports. */
+export const MENSAGEM_GATILHO_FRETE_CIF_ZERO = "Frete CIF não pode ser R$ 0,00. Cote ou informe o valor do frete.";
 
 export type ContextoRetrabalhoDoPedido = {
   /** `propostas.motivo_copia`: DUPLICACAO, RETRABALHO ou nulo. */
@@ -51,5 +53,9 @@ export function recusaDoGatilhoNoErro(mensagemDeErro: unknown): string | null {
   const texto = String(mensagemDeErro ?? "");
   if (texto.includes(MENSAGEM_E_RETRABALHO_FORA_DE_RETRABALHO)) return MENSAGEM_E_RETRABALHO_FORA_DE_RETRABALHO;
   if (texto.includes(MENSAGEM_OUTRO_TIPO_EM_RETRABALHO)) return MENSAGEM_OUTRO_TIPO_EM_RETRABALHO;
+  // Gatilho do frete CIF zero (16/11/2026): o mesmo texto de lib/frete-cif-zero.ts
+  // (MENSAGEM_FRETE_CIF_ZERO; o teste confere que sao iguais). Aqui para toda porta
+  // que ja limpa a recusa do gatilho devolver a mensagem do frete tambem.
+  if (texto.includes(MENSAGEM_GATILHO_FRETE_CIF_ZERO)) return MENSAGEM_GATILHO_FRETE_CIF_ZERO;
   return null;
 }

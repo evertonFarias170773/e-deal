@@ -1,6 +1,6 @@
 # Proposta: aba Fretes
 
-> **Última revisão:** 12/11/2026 (SEDEX trocado por transportadora não deixa a categoria Correios gravada; cotação sem valor não vira card, aviso "Transportadora que não cotou"; Transportadora mostra a do frete escolhido; Corrigir a transportadora só com algo a corrigir; card padrão do SEDEX relido como Correios; rua com erro no cadastro)
+> **Última revisão:** 16/11/2026 (frete CIF não pode ficar em R$ 0,00 no Salvar nem na primeira cobrança; SEDEX trocado por transportadora não deixa a categoria Correios gravada; cotação sem valor não vira card, aviso "Transportadora que não cotou"; Transportadora mostra a do frete escolhido; Corrigir a transportadora só com algo a corrigir; card padrão do SEDEX relido como Correios; rua com erro no cadastro)
 > **Caminho no menu:** Pedidos → abrir um pedido → aba Fretes
 > **Endereço:** `/orcamentos/<número>/editar?tab=fretes`
 
@@ -221,6 +221,7 @@ Repetir **Aplicar** não duplica: a segunda tentativa devolve o mesmo frete comp
 - Card calculado escolhido: o valor cobrado é o do card, menos no card do **MOTOBOY INTERNO** e nos pedidos de cliente com **Pode editar valor do frete**, que aceitam o valor digitado (R$ 0,00 incluído). O **Salvar alterações** recusa outro valor ou outra transportadora nesse caso. Escolher uma transportadora sem card troca o card por um frete manual, que segue livre.
 - Trocar um frete dos Correios (SEDEX, PAC) por uma transportadora e salvar tira a categoria Correios do pedido. A categoria passa a vir da transportadora, de **Rodoviário** ou **Aéreo** marcados em **Como vai o transporte?**, ou fica em branco (Extras na Expedição). Só Rodoviário e Aéreo contam como escolha do usuário; as outras categorias sempre vêm do frete escolhido.
 - Em CIF não dá para salvar sem um frete escolhido. Em FOB não dá para salvar sem a transportadora ou o **Motoboy**. Em retirada não é preciso escolher nada.
+- **Frete CIF nunca é R$ 0,00** (desde 16/11/2026). Em CIF, o **Salvar alterações** recusa frete zero, venha ele de um **Valor cobrado (R$)** digitado como 0 no motoboy, de um card sem valor ou da cópia de uma proposta com frete zero. A geração de cobrança também recusa: a primeira cobrança de um pedido CIF com frete zero não é criada, pela tela, pela área do cliente ou por qualquer outro caminho. Não existe frete grátis: desconto é abono do gerente, no desconto da proposta. Ficam fora da regra: retirada e FOB; a proposta avulsa (**Frete Incluso**); o pedido complementar cuja diferença de frete dá zero ou menos; o pedido sem produto ativo; e os pedidos de cliente com **Pode editar valor do frete**, até a diretoria decidir. Pedido que já tinha frete zero antes dessa data não é corrigido: ele só é recusado quando o frete for salvo de novo na fase de orçamento, ou quando não tiver nenhuma cobrança viva e alguém gerar a primeira. O **Valor negociado do frete (admin)** não muda.
 - Sem modalidade marcada, a tela não mostra cards e pede: "Escolha a modalidade do frete acima para continuar."
 - Trocar de modalidade limpa a transportadora (fora de FOB) e desfaz a escolha de retirada. Confira a caixa da modalidade depois de trocar.
 - A modalidade e a transportadora só valem depois do **Salvar alterações**.
@@ -284,6 +285,7 @@ Repetir **Aplicar** não duplica: a segunda tentativa devolve o mesmo frete comp
 | "Peso inválido" — "Adicione pelo menos um produto com peso maior que zero para cotar." | A proposta não tem produto com peso. | Inclua os produtos na aba **Orçamento**. |
 | "Falha na cotação de todos os fretes" | Nenhum parceiro respondeu à cotação. | Tente **Atualizar fretes** de novo em instantes. |
 | "Cotação parcial realizada" — "Alguns serviços falharam: ..." ou "Não cotaram: ..." | Um ou mais parceiros não responderam ou responderam sem valor; os outros vieram. | Escolha entre as opções que vieram, ou atualize de novo. |
+| "Frete CIF não pode ser R$ 0,00. Cote ou informe o valor do frete." | O pedido está em CIF com frete zero: motoboy com valor 0, card sem valor ou cópia que trouxe frete zero. Aparece no **Salvar alterações** e ao gerar a primeira cobrança. | Clique em **Atualizar fretes** e escolha um card com valor, ou digite o valor do motoboy. Se o cliente vai buscar ou contratou o transporte, marque **Retirada** ou **FOB**. |
 | "Transportadora que não cotou" — "Correios (SEDEX/PAC): respondeu sem valor" (ou "não respondeu", "não cotou", "PAC sem valor") | O parceiro falhou ou voltou sem valor, e a opção dele não virou card de R$ 0,00. Era assim que o 25058 ficou com SEDEX a R$ 0,00. Se o frete escolhido antes era desse parceiro, ele fica preservado com o valor anterior e aparece **Cotação Defasada**. | Clique em **Atualizar fretes** em instantes. Se continuar, escolha outra opção ou avise o suporte. |
 | "Nenhum frete cotado para esta proposta." | Em CIF, ainda não há cotação. | Confira endereço e produtos e clique em **Atualizar fretes**. |
 | "Frete não selecionado" — "Selecione ou informe o frete antes de salvar o orçamento." | Em CIF, nenhum card está como **Escolhido**. | Clique em **Escolher** em um card ou escolha a **Transportadora**. |
@@ -349,6 +351,10 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/features/orcamentos/lib/cotacao-sem-valor.ts`
 - `src/features/orcamentos/lib/cotacao-sedex.ts`
 - `src/features/orcamentos/lib/cotacao-azul.ts`
+- `src/features/orcamentos/lib/frete-cif-zero.ts`
+- `supabase/migrations/20261116_pagamentos_v2_frete_cif_zero.sql`
+
+> **Mudança desta revisão:** 16/11/2026 — frete CIF não pode ficar em R$ 0,00: o **Salvar alterações** e a primeira cobrança do pedido recusam, com as exceções da regra (retirada, FOB, avulsa, complementar, pedido sem produto e cliente com **Pode editar valor do frete**).
 
 > **Mudanças de 08/10/2026:**
 >

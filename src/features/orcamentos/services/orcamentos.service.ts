@@ -60,6 +60,7 @@ import {
   recusaDoFreteCalculado,
   valorDigitadoRelido
 } from "@/features/orcamentos/lib/origem-frete";
+import { freteCifZeroRecusado, MENSAGEM_FRETE_CIF_ZERO } from "@/features/orcamentos/lib/frete-cif-zero";
 import { verificarPermissaoServerSide } from "@/lib/auth/verificar-permissao";
 import type {
   SupabasePagamentoTipoCobrancaRow,
@@ -3647,6 +3648,25 @@ export async function saveProposta(
           : (chosenFrete ? chosenFrete.valor : 0),
       modalidadeVigente
     );
+
+    // FRETE CIF NUNCA É R$ 0,00 (11/11/2026; trava em 16/11/2026, lib/frete-cif-zero).
+    // Sobre o valor final: pega Motoboy digitado 0, card sem valor e a cópia que
+    // trouxe frete zero. Só quando esta gravação regrava o frete (fase de
+    // orçamento ou troca declarada): pedido existente não é corrigido aqui.
+    // "Pode editar valor do frete" vem do cadastro relido do banco.
+    if (
+      regravaFrete &&
+      !propostaSemItens &&
+      freteCifZeroRecusado({
+        modalidade: modalidadeVigente,
+        valorFrete: freteValor,
+        isAvulso: formState.isAvulso === true,
+        ehComplemento,
+        clientePodeEditarFrete: cadastro?.podeEditarFrete === true
+      })
+    ) {
+      return { success: false, errorMessage: MENSAGEM_FRETE_CIF_ZERO };
+    }
 
     // Map internal freight name
     let freteNome = "RETIRADA";
