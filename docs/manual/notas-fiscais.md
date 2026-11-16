@@ -1,6 +1,6 @@
 # Notas fiscais
 
-> **Última revisão:** 16/11/2026 (prazo para cancelar NF-e passou de 24 para 168 horas, o prazo do RS; antes, no mesmo dia: menu da nota ganhou **Copiar chave de acesso**, na NF-e e na NFS-e autorizada ou cancelada, e **Baixar comprovante de cancelamento** na NF-e cancelada). 15/11/2026 (o telefone do destinatário na NF-e passou a ser o da conversa principal do pedido no ChatGuru, com o 9; antes, no mesmo dia: a NF-e passou a levar o e-mail do destinatário no campo que a Focus lê). 11/11/2026 (com card de frete escolhido, o rascunho só nasce com os Correios se o card for dos Correios; a categoria de frete vale só sem card. Antes, no mesmo dia: **Observação para a nota fiscal** do pedido nas Informações Complementares da NF-e, com contagem até 5.000 e o botão **Incluir**; selos **Obs. para a NF** e **Obs. interna** na Fila e nas telas das notas). 09/11/2026 (transportadora dos Correios na nota é sempre o cadastro de Porto Alegre). 06/11/2026 (lançamento no contas a receber: a parcela conta por cobrança). 05/11/2026 (a condição de pagamento não vai mais escrita na NFS-e). 04/11/2026 (Histórico em duas abas, NF-e e NFS-e; NFS-e com busca própria, mais nova primeiro e começando em Produção; selo Boleto em processamento no banco)
+> **Última revisão:** 16/11/2026 (**Baixar comprovante de cancelamento (PDF)**, gerado pelo Vibe a partir do XML do evento; o ícone **Baixar DANFE** da linha passou a baixar a própria nota da linha, inclusive a cancelada, e não mais a nota que a substituiu. Antes, no mesmo dia: prazo para cancelar NF-e passou de 24 para 168 horas, o prazo do RS; antes, no mesmo dia: menu da nota ganhou **Copiar chave de acesso**, na NF-e e na NFS-e autorizada ou cancelada, e **Baixar comprovante de cancelamento** na NF-e cancelada). 15/11/2026 (o telefone do destinatário na NF-e passou a ser o da conversa principal do pedido no ChatGuru, com o 9; antes, no mesmo dia: a NF-e passou a levar o e-mail do destinatário no campo que a Focus lê). 11/11/2026 (com card de frete escolhido, o rascunho só nasce com os Correios se o card for dos Correios; a categoria de frete vale só sem card. Antes, no mesmo dia: **Observação para a nota fiscal** do pedido nas Informações Complementares da NF-e, com contagem até 5.000 e o botão **Incluir**; selos **Obs. para a NF** e **Obs. interna** na Fila e nas telas das notas). 09/11/2026 (transportadora dos Correios na nota é sempre o cadastro de Porto Alegre). 06/11/2026 (lançamento no contas a receber: a parcela conta por cobrança). 05/11/2026 (a condição de pagamento não vai mais escrita na NFS-e). 04/11/2026 (Histórico em duas abas, NF-e e NFS-e; NFS-e com busca própria, mais nova primeiro e começando em Produção; selo Boleto em processamento no banco)
 > **Caminho no menu:** Financeiro → Notas fiscais (primeiro item da seção Financeiro do menu lateral)
 > **Endereço:** `/notas-fiscais` (a nota aberta fica em `/notas-fiscais/[id]`)
 
@@ -47,7 +47,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Marcar como entregue** | Aba Fila, coluna **Ação**, ao lado de **Nota emitida no sistema antigo**; só administrador (marca de administrador no cadastro do usuário) | Aparece em pedido Liberado (LIBERADO, ou APROVADO sem produção, OS nem nota emitida) e em pedido que foi só à Fila de Faturamento, sem produção (status REVISAO ATENDENTE). Abre a janela **Marcar como entregue?**; ao confirmar, o status vira ENTREGUE e a data de entrega gravada é a de hoje. O pedido continua na fila. Não há desmarcar. |
 | **Faturar** | Aba Fila, coluna **Ação** | Confere o pedido e abre (ou cria) o rascunho da NF-e. Não transmite nada. |
 | **Notas em processo (N)** | Aba Fila, abaixo da lista de pedidos | Seção com as notas que ainda não são documento fiscal. |
-| Ícone de arquivo com seta (dica "Baixar DANFE - ..." ou "Baixar DANFE (N notas)") | Linha da nota, coluna **Ações** | Abre a DANFE; com mais de uma nota no pedido, abre a lista **Baixar DANFE** para escolher. |
+| Ícone de arquivo com seta (dica "Baixar DANFE - ...") | Linha da nota, coluna **Ações** | Abre a DANFE **da própria nota da linha**, autorizada ou cancelada. Não oferece as outras notas do pedido: cada uma tem a sua linha. |
 | **Acoes** (na versão de celular, **Ações**) | Linha da nota, coluna **Ações** | Abre o menu da nota. Os itens mudam com o status. |
 | **Editar** | Menu da nota Pendente | Abre a nota para edição. |
 | **DANFE Preview** | Menu da nota Pendente ou Pronta para Envio; cabeçalho da nota aberta | Gera uma prévia da DANFE em outra aba, sem validade fiscal. |
@@ -76,7 +76,8 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Abrir XML** | Menu da nota Cancelada ou Denegada; menu da NFS-e | Abre o XML da nota. |
 | **Descartar rascunho** | Menu da nota que nunca foi transmitida | Pede confirmação e apaga o rascunho. |
 | **Copiar chave de acesso** | Menu da NF-e e da NFS-e Autorizada ou Cancelada | Copia só os números da chave: 44 dígitos na NF-e, 50 na NFS-e Nacional. Aparece **Chave copiada**. |
-| **Baixar comprovante de cancelamento** | Menu da NF-e Cancelada | Baixa o XML do evento de cancelamento registrado na SEFAZ (com o protocolo), com o nome `Cancelamento-NF-e-<número>-Pedido-<pedido>.xml`. |
+| **Baixar comprovante de cancelamento (PDF)** | Menu da NF-e Cancelada | Baixa um PDF para mandar ao cliente, gerado pelo Vibe a partir do XML do evento: emitente, destinatário, número e série, chave de acesso, data e protocolo de autorização, data e protocolo do cancelamento, código 135 e justificativa. Nome `Cancelamento-NF-e-<número>-Pedido-<pedido>.pdf`. |
+| **Baixar comprovante de cancelamento (XML)** | Menu da NF-e Cancelada | Baixa o XML do evento de cancelamento registrado na SEFAZ (com o protocolo), que é o documento com valor fiscal. Nome `Cancelamento-NF-e-<número>-Pedido-<pedido>.xml`. |
 | **Copiar Ref** | Último item do menu de toda nota | Copia a referência da nota. |
 | **Buscar por Nº Nota, Ref, ID ou Nome...** | Histórico NF-e, filtros | Busca nas notas autorizadas e canceladas. |
 | **Todos os Status** | Histórico NF-e (Autorizada, Cancelada) e Histórico NFS-e (Pendente, Pronta para envio, Processando, Autorizada, Erro de Envio, Rejeitada, Cancelada, Em análise) | Filtra pelo status da nota. |
@@ -268,7 +269,7 @@ Abra o menu de ações da nota (em **Notas em processo** ou no **Histórico**). 
 | Autorizada | Documento fiscal válido. | Baixar DANFE e XML, carta de correção, cancelamento. |
 | Rejeitada | A SEFAZ recusou. | **Ver detalhes** para ler o motivo, **Corrigir rascunho** para reabrir, corrigir e emitir de novo. |
 | ERRO_ENVIO, Falha de integração/envio, Retorno Focus, Não encontrada no Focus | A nota não chegou a ser autorizada por falha no envio ou recusa antes da SEFAZ. | **Atualizar status** primeiro. Se confirmar que não saiu, **Corrigir rascunho** ou **Reenviar NF-e**. |
-| CANCELADA | Cancelada na SEFAZ. | **Visualizar detalhes**, **Abrir XML**, **Baixar comprovante de cancelamento** e **Copiar chave de acesso**. |
+| CANCELADA | Cancelada na SEFAZ. | **Visualizar detalhes**, **Abrir XML**, **Baixar comprovante de cancelamento (PDF)** e **(XML)**, **Copiar chave de acesso** e o ícone **Baixar DANFE** com a DANFE da própria nota. |
 
 - **Corrigir rascunho** devolve a nota para Pendente, limpa o erro anterior e abre a nota para edição.
 - **Reenviar NF-e** prepara a nota de novo e abre a confirmação de emissão, sem passar pela edição.
@@ -276,12 +277,12 @@ Abra o menu de ações da nota (em **Notas em processo** ou no **Histórico**). 
 
 ### Baixar DANFE e XML
 
-1. Na linha da nota, clique no ícone **Baixar DANFE**. Com uma nota só, o PDF abre direto. Com mais de uma nota no pedido, o menu mostra **NF venda**, **NF complementar** e **NF remessa**, cada uma com número e referência.
+1. Na linha da nota, clique no ícone **Baixar DANFE**. O PDF que abre é o da nota daquela linha. Na linha de uma nota cancelada, abre a DANFE da cancelada, e não a da nota que a substituiu. Para a DANFE de outra nota do mesmo pedido, use a linha dela.
 2. No menu de ações da nota autorizada há **Abrir DANFE (PDF)**, **Copiar Link (PDF)**, **Baixar XML** e **Copiar Link (XML)**.
 3. O link copiado vale por 7 dias a partir do momento em que foi copiado. Para mandar de novo depois disso, copie outro.
 4. Para colar a chave de acesso em outro lugar (portal da SEFAZ, e-mail ao cliente ou ao contador), use **Copiar chave de acesso** no menu da nota. Vai só o número, sem o "NFe" da frente. Aparece **Chave copiada**.
 
-O ícone **Baixar DANFE** só aparece para nota autorizada em produção, com número e com o arquivo disponível.
+O ícone **Baixar DANFE** só aparece para nota autorizada ou cancelada em produção, com número e com o arquivo disponível. Nas telas de Orçamentos e Expedição o ícone continua mostrando todas as DANFEs autorizadas do pedido (**NF venda**, **NF complementar**, **NF remessa**). A aba NFS-e não tem esse ícone: o PDF da NFS-e fica no menu de ações.
 
 ### Enviar carta de correção (CC-e)
 
@@ -300,7 +301,7 @@ O ícone **Baixar DANFE** só aparece para nota autorizada em produção, com n�
 
 #### Comprovante de cancelamento
 
-Na NF-e cancelada, o menu mostra **Baixar comprovante de cancelamento**. O arquivo é o XML do evento de cancelamento que a SEFAZ registrou (código 135, com o protocolo). A Focus não gera PDF do cancelamento da NF-e: o comprovante é esse XML. O Vibe guarda uma cópia dele no momento do cancelamento e o download sai dessa cópia, sem chamar a Focus de novo e sem cancelar nada.
+Na NF-e cancelada, o menu mostra **Baixar comprovante de cancelamento (PDF)** e **Baixar comprovante de cancelamento (XML)**. O XML é o evento de cancelamento que a SEFAZ registrou (código 135, com o protocolo) e é o documento com valor fiscal. A Focus não gera PDF do cancelamento da NF-e: o PDF é montado pelo Vibe com os dados desse XML, para mandar ao cliente, e só sai quando o XML é de cancelamento confirmado e a chave é a da própria nota. O Vibe guarda uma cópia dele no momento do cancelamento e o download sai dessa cópia, sem chamar a Focus de novo e sem cancelar nada.
 
 Se a nota não tem o comprovante guardado, aparece **Comprovante de cancelamento indisponível**. Isso acontece com notas marcadas como canceladas no Vibe sem a SEFAZ ter confirmado o cancelamento. Confira a situação dela na SEFAZ.
 
@@ -393,7 +394,7 @@ Ação temporária, da transição entre sistemas. Use só quando a nota do pedi
 - Etiqueta **faturado no sistema antigo** e tipo de cobrança **Faturado**: a etiqueta diz que a nota saiu por fora; Faturado é a forma de cobrança do pedido (venda a prazo que vira título).
 - Caixa **Só faturados** e pedidos já faturados: a caixa filtra pela forma de cobrança Faturado; pedido que já tem nota não aparece na lista de pedidos.
 - **Gerar outra nota de venda (faturamento parcial)**, **Gerar nota de remessa** e **Nova nota avulsa**: as duas primeiras criam mais uma nota de um pedido que já tem nota autorizada; a avulsa não tem pedido.
-- **NF venda**, **NF complementar** e **NF remessa** na lista **Baixar DANFE**: venda é a primeira nota de venda autorizada do pedido; complementar é cada nota de venda seguinte; remessa acompanha a mercadoria e não cobra.
+- **NF venda**, **NF complementar** e **NF remessa** na lista **Baixar DANFE** (Orçamentos e Expedição): venda é a primeira nota de venda autorizada do pedido; complementar é cada nota de venda seguinte; remessa acompanha a mercadoria e não cobra.
 - **Nº Nota**, referência (`NFE-...`) e **Pedido**: o número é o que a SEFAZ deu e só existe depois da autorização (antes aparece `****`); a referência identifica a nota no Vibe desde o rascunho; o pedido é o número da proposta.
 - Status da nota e status do pedido na coluna **Status**: a etiqueta de cima é da nota; a de baixo, em cinza, é do pedido e não interfere na emissão.
 - Parcelas da nota (**Gerar Parcelas Fiscais**) e títulos do contas a receber (**Lançar no Contas a Receber**): as parcelas são o que a nota declara à SEFAZ; os títulos são a cobrança na Carteira e só nascem com o lançamento.
@@ -463,6 +464,7 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/features/fiscal/NotasFiscaisPage.tsx`
 - `src/lib/fiscal/chave-de-acesso.ts`
 - `src/lib/fiscal/comprovante-cancelamento.ts`
+- `src/features/fiscal/pdf/ComprovanteCancelamentoPdfDocument.tsx`
 - `src/app/api/fiscal/comprovante-cancelamento/route.ts`
 - `src/features/fiscal/lib/observacao-nota-fiscal.ts`
 - `src/features/fiscal/components/SelosDeObservacao.tsx`

@@ -106,3 +106,31 @@ export function danfesDoPedido(notas: readonly NotaParaDanfe[] | null | undefine
 export function rotuloDaDanfe(danfe: DanfeDoPedido): string {
   return `${danfe.rotulo} - nº ${danfe.numero}${danfe.ref ? ` (${danfe.ref})` : ""}`;
 }
+
+/**
+ * A DANFE da PRÓPRIA nota, para o ícone da linha no Histórico de Notas fiscais
+ * (16/11/2026).
+ *
+ * POR QUE NÃO `danfesDoPedido` AQUI
+ *   A linha do Histórico recebia as DANFEs do pedido inteiro. Como só entram
+ *   autorizadas, na linha de uma nota CANCELADA a própria nota ficava de fora e
+ *   o ícone baixava a nota que a substituiu (NFE-25028-001 baixava a 002): a
+ *   Edina mandava ao cliente a nota errada. No Histórico cada linha é UMA nota,
+ *   e o ícone baixa o documento dela. Orçamentos e Expedição continuam com o
+ *   inventário do pedido (`danfesDoPedido`).
+ *
+ * Mesmo recorte de resto: produção, com número e com o DANFE guardado. Vale
+ * para AUTORIZADA e CANCELADA (a cancelada tem a DANFE de quando foi
+ * autorizada; o comprovante do cancelamento é outro item do menu).
+ */
+export function danfeDaNota(nota: NotaParaDanfe | null | undefined): DanfeDoPedido[] {
+  if (!nota) return [];
+  const status = String(nota.status ?? "").toUpperCase();
+  if (status !== "AUTORIZADA" && status !== "CANCELADA") return [];
+  if (String(nota.ambiente ?? "").trim().toUpperCase() !== "PRODUCAO") return [];
+  const numero = String(nota.numero_nf ?? "").trim();
+  const url = String(nota.url_danfe ?? "").trim();
+  if (!numero || !url) return [];
+  const rotulo = status === "CANCELADA" ? "NF cancelada" : ehRemessa(nota) ? "NF remessa" : "NF venda";
+  return [{ ref: String(nota.ref ?? "").trim(), numero, rotulo, url }];
+}

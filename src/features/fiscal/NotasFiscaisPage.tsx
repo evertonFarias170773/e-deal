@@ -51,7 +51,7 @@ import { podeVerMarcarComoEntregue } from "@/features/orcamentos/lib/marcar-entr
 import { marcarPedidoComoEntreguePeloServidor } from "@/features/orcamentos/services/marcar-entregue.service";
 import { criarRascunhoRemessa } from "@/features/nfe/services/remessa.service";
 import { COLUNAS_NOTA_DO_PEDIDO } from "@/lib/fiscal/nota-do-pedido";
-import { danfesDoPedido, type DanfeDoPedido } from "@/lib/fiscal/danfes-do-pedido";
+import { danfeDaNota } from "@/lib/fiscal/danfes-do-pedido";
 import {
   abrirLinkDeDocumentoFiscal,
   linkCompartilhavelDoLinkGravado
@@ -450,25 +450,10 @@ export function NotasFiscaisPage() {
   // Sem lista simulada: o que a tela mostra vem do banco, e so.
   const nfeListCombined = nfeData.nfeList;
 
-  /**
-   * As DANFEs de cada pedido, calculadas UMA vez para a lista inteira.
-   *
-   * O Histórico já traz todas as notas na consulta única que ele sempre fez —
-   * então aqui não há consulta nova nenhuma, só um agrupamento por `id_int`.
-   * É o que permite a linha de uma REMESSA oferecer também a DANFE da venda do
-   * mesmo pedido: o operador raramente quer uma sem a outra.
-   */
-  const danfesPorPedido = useMemo(() => {
-    const notasPorPedido = new Map<number, NfeReadModel[]>();
-    for (const nota of nfeListCombined) {
-      const idInt = Number(nota.id_int);
-      if (!Number.isFinite(idInt)) continue;
-      notasPorPedido.set(idInt, [...(notasPorPedido.get(idInt) ?? []), nota]);
-    }
-    const porPedido = new Map<number, DanfeDoPedido[]>();
-    for (const [idInt, notas] of notasPorPedido) porPedido.set(idInt, danfesDoPedido(notas));
-    return porPedido;
-  }, [nfeListCombined]);
+  // O ícone de DANFE de cada linha baixa o documento DA PRÓPRIA NOTA
+  // (`danfeDaNota`, 16/11/2026). Antes ele recebia as DANFEs autorizadas do
+  // pedido inteiro: na linha de uma nota cancelada a própria nota ficava de
+  // fora e o ícone baixava a nota que a substituiu (NFE-25028-001 baixava a 002).
   const nfseListCombined = nfseData.nfseList;
 
   const [nfePaymentsCountMap, setNfePaymentsCountMap] = useState<Record<string, number>>({});
@@ -994,11 +979,11 @@ export function NotasFiscaisPage() {
     ? nfeData.isLoading
     : nfseData.isLoading;
 
-  /** Baixa o XML do evento de cancelamento pelo servidor (bucket privado) e salva com nome legível. */
-  async function baixarComprovanteDeCancelamento(item: NfeReadModel) {
+  /** Baixa o comprovante de cancelamento (XML do evento ou o PDF gerado dele) pelo servidor e salva com nome legível. */
+  async function baixarComprovanteDeCancelamento(item: NfeReadModel, formato: "xml" | "pdf") {
     try {
       const resposta = await fetchComSessao(
-        `/api/fiscal/comprovante-cancelamento?ref=${encodeURIComponent(item.ref)}`,
+        `/api/fiscal/comprovante-cancelamento?ref=${encodeURIComponent(item.ref)}&formato=${formato}`,
         { cache: "no-store" }
       );
       if (!resposta.ok) {
@@ -1014,7 +999,7 @@ export function NotasFiscaisPage() {
       const endereco = URL.createObjectURL(arquivo);
       const link = document.createElement("a");
       link.href = endereco;
-      link.download = nomeDoComprovanteDeCancelamento({ numero: item.numero_nf, idInt: item.id_int, ref: item.ref });
+      link.download = nomeDoComprovanteDeCancelamento({ numero: item.numero_nf, idInt: item.id_int, ref: item.ref }, formato);
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -1518,10 +1503,18 @@ export function NotasFiscaisPage() {
       // (rota /api/fiscal/comprovante-cancelamento). Só CANCELADA: denegada
       // não tem evento.
       if (status === "CANCELADA") {
+        // PDF gerado pelo Vibe a partir do XML do evento (a Focus não gera PDF
+        // do cancelamento da NF-e). O XML, que é o documento fiscal, continua.
         actions.push({
-          label: "Baixar comprovante de cancelamento",
+          label: "Baixar comprovante de cancelamento (PDF)",
           onClick: () => {
-            void baixarComprovanteDeCancelamento(item);
+            void baixarComprovanteDeCancelamento(item, "pdf");
+          }
+        });
+        actions.push({
+          label: "Baixar comprovante de cancelamento (XML)",
+          onClick: () => {
+            void baixarComprovanteDeCancelamento(item, "xml");
           }
         });
       }
@@ -2497,7 +2490,7 @@ export function NotasFiscaisPage() {
                 header: "Ações",
                 cell: (item) => (
                   <div className="flex items-center justify-end gap-1">
-                    <BotaoDanfe danfes={danfesPorPedido.get(Number(item.id_int))} />
+                    <BotaoDanfe danfes={danfeDaNota(item)} />
                     <ActionsMenu items={getNfeActions(item)} />
                   </div>
                 ),
@@ -2552,7 +2545,7 @@ export function NotasFiscaisPage() {
                   <p>Data: {formatDate(item.created_at)} {formatTime(item.created_at)}</p>
                 </div>
                 <div className="flex items-center justify-end gap-1 pt-2">
-                  <BotaoDanfe danfes={danfesPorPedido.get(Number(item.id_int))} />
+                  <BotaoDanfe danfes={danfeDaNota(item)} />
                   <ActionsMenu items={getNfeActions(item)} label="Ações" />
                 </div>
               </article>
