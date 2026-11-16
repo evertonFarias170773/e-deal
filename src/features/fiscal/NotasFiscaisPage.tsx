@@ -94,6 +94,9 @@ import {
   statusExibidoDaNfse
 } from "@/features/nfse/lib/historico-nfse";
 import { prazoDoCancelamento } from "@/lib/fiscal/cancelamento-nfe";
+import { chaveParaCopiar, MENSAGEM_CHAVE_COPIADA } from "@/lib/fiscal/chave-de-acesso";
+import { nomeDoComprovanteDeCancelamento } from "@/lib/fiscal/comprovante-cancelamento";
+import { fetchComSessao } from "@/lib/supabase/sessao";
 import { estadoDoRegistroBancario } from "@/features/cobrancas/lib/registro-bancario";
 
 
@@ -991,6 +994,40 @@ export function NotasFiscaisPage() {
     ? nfeData.isLoading
     : nfseData.isLoading;
 
+  /** Baixa o XML do evento de cancelamento pelo servidor (bucket privado) e salva com nome legível. */
+  async function baixarComprovanteDeCancelamento(item: NfeReadModel) {
+    try {
+      const resposta = await fetchComSessao(
+        `/api/fiscal/comprovante-cancelamento?ref=${encodeURIComponent(item.ref)}`,
+        { cache: "no-store" }
+      );
+      if (!resposta.ok) {
+        const dados = (await resposta.json().catch(() => ({}))) as { message?: string };
+        showToast({
+          type: "error",
+          title: "Comprovante de cancelamento indisponível",
+          description: dados.message || "Não foi possível baixar o comprovante."
+        });
+        return;
+      }
+      const arquivo = await resposta.blob();
+      const endereco = URL.createObjectURL(arquivo);
+      const link = document.createElement("a");
+      link.href = endereco;
+      link.download = nomeDoComprovanteDeCancelamento({ numero: item.numero_nf, idInt: item.id_int, ref: item.ref });
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(endereco), 60_000);
+    } catch (err) {
+      showToast({
+        type: "error",
+        title: "Não foi possível baixar o comprovante.",
+        description: err instanceof Error ? err.message : undefined
+      });
+    }
+  }
+
   async function copyToClipboard(text: string, title: string) {
     try {
       await navigator.clipboard.writeText(text);
@@ -1477,6 +1514,27 @@ export function NotasFiscaisPage() {
           }
         });
       }
+      // XML do evento de cancelamento, guardado pelo n8n ao cancelar
+      // (rota /api/fiscal/comprovante-cancelamento). Só CANCELADA: denegada
+      // não tem evento.
+      if (status === "CANCELADA") {
+        actions.push({
+          label: "Baixar comprovante de cancelamento",
+          onClick: () => {
+            void baixarComprovanteDeCancelamento(item);
+          }
+        });
+      }
+    }
+
+    const chaveNfe = chaveParaCopiar({ modelo: "nfe", status, chave_nfe: item.chave_nfe });
+    if (chaveNfe) {
+      actions.push({
+        label: "Copiar chave de acesso",
+        onClick: () => {
+          void copyToClipboard(chaveNfe, MENSAGEM_CHAVE_COPIADA);
+        }
+      });
     }
 
     // DESCARTAR: rascunho que nunca foi transmitido não precisa ficar na lista.
@@ -1519,6 +1577,17 @@ export function NotasFiscaisPage() {
     ];
 
     const nfseStatus = (item.status || "").toUpperCase();
+    // Chave de 50 dígitos da NFS-e Nacional (lib/fiscal/chave-de-acesso).
+    const chaveNfse = chaveParaCopiar({ modelo: "nfse", status: nfseStatus, payload_retorno: item.payload_retorno });
+    if (chaveNfse) {
+      actions.push({
+        label: "Copiar chave de acesso",
+        onClick: () => {
+          void copyToClipboard(chaveNfse, MENSAGEM_CHAVE_COPIADA);
+        },
+        icon: Copy
+      });
+    }
     if (nfseStatus === "AUTORIZADA") {
       if (canCancelNf) {
         // À vista, DESLIGADO e sem ação: o cancelamento de NFS-e ainda não
