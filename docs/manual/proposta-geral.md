@@ -1,6 +1,6 @@
 # Proposta: aba Geral
 
-> **Última revisão:** 15/11/2026 (proposta com desconto da gerência: os demais salvam o que não afeta o valor; erro **Desconto da gerência**). 14/11/2026 (botão **Enviar pelo ChatGuru** no bloco 9; bloco 3 vira **Contatos do pedido**: uma ou mais conversas do ChatGuru, uma principal que é o Comprador; sai a lista de contatos do cadastro; contato exigido no Enviar para arte e na Liberação para produção. Antes, 11/11/2026: endereço com a rua gravada como "[object Object]" aparece como **Rua com erro no cadastro (corrija pelo lápis)** e abre com a rua em branco. Antes, no mesmo dia: campo **Observação para a nota fiscal** no fim do bloco 4, que sai impresso na NF-e e na NFS-e; o bloco 10 continua interno. Antes, no mesmo dia: bloco **Conversa do WhatsApp** no Contato responsável: escolhe a conversa do ChatGuru, a mesma do Comprador da aba Artes)
+> **Última revisão:** 16/11/2026 (conversa do ChatGuru com número de fora do Brasil aparece em **Contatos do pedido**). 15/11/2026 (proposta com desconto da gerência: os demais salvam o que não afeta o valor; erro **Desconto da gerência**). 14/11/2026 (botão **Enviar pelo ChatGuru** no bloco 9; bloco 3 vira **Contatos do pedido**: uma ou mais conversas do ChatGuru, uma principal que é o Comprador; sai a lista de contatos do cadastro; contato exigido no Enviar para arte e na Liberação para produção. Antes, 11/11/2026: endereço com a rua gravada como "[object Object]" aparece como **Rua com erro no cadastro (corrija pelo lápis)** e abre com a rua em branco. Antes, no mesmo dia: campo **Observação para a nota fiscal** no fim do bloco 4, que sai impresso na NF-e e na NFS-e; o bloco 10 continua interno. Antes, no mesmo dia: bloco **Conversa do WhatsApp** no Contato responsável: escolhe a conversa do ChatGuru, a mesma do Comprador da aba Artes)
 > **Caminho no menu:** Pedidos → abrir um pedido → aba **Geral**
 > **Endereço:** `/orcamentos/<número>/editar` (em proposta nova, `/orcamentos/novo`)
 
@@ -98,7 +98,7 @@ Enquanto o cliente não é escolhido numa proposta nova, os outros blocos e abas
 
 ### Escolher os contatos do pedido (bloco 3. Contatos do pedido)
 
-Desde 14/11/2026 os contatos do pedido são conversas do cliente no WhatsApp da Ideal (ChatGuru), e não mais a lista de contatos do cadastro. O bloco **Conversas do WhatsApp**, com o selo "WhatsApp · ChatGuru", lista as conversas do cliente: as que têm o código do cliente no nome, abertas pelo atendimento, com o nome da conversa e o número.
+Desde 14/11/2026 os contatos do pedido são conversas do cliente no WhatsApp da Ideal (ChatGuru), e não mais a lista de contatos do cadastro. O bloco **Conversas do WhatsApp**, com o selo "WhatsApp · ChatGuru", lista as conversas do cliente: as que têm o código do cliente no nome, abertas pelo atendimento, com o nome da conversa e o número. Desde 16/11/2026 a conversa com número de fora do Brasil também aparece, com o código do país na frente, por exemplo "+598 95038797" (Uruguai). Antes ela sumia da lista.
 
 1. Marque a caixa de uma ou mais conversas. Cada conversa marcada é um contato do pedido.
 2. Uma delas é a **Principal · Comprador**: recebe a arte e os avisos do pedido e é o **Comprador** da aba Artes. A primeira marcada vira a principal. Para trocar, clique em **Tornar principal** em outra conversa marcada.

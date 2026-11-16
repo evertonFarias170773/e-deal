@@ -11,7 +11,9 @@
  * apagado. Pedido já enviado para arte não é travado (arteJaEnviada).
  */
 
-export type ConversaWhatsapp = { chat_id: string; nome: string; numero: string };
+import { numeroEstrangeiro } from "@/lib/telefone/telefone-br";
+
+export type ConversaWhatsapp ={ chat_id: string; nome: string; numero: string };
 
 /** Conversa escolhida como contato do pedido (14/11/2026). A principal é o Comprador. */
 export type ContatoEscolhido = ConversaWhatsapp & { principal: boolean };
@@ -45,14 +47,21 @@ export function mesmoTelefone(a: unknown, b: unknown): boolean {
   return ka !== null && ka === chaveDoTelefone(b);
 }
 
-/** Número como o ChatGuru guarda: DDI 55 + DDD + número (com ou sem o 9). */
+/**
+ * Número como o ChatGuru guarda: DDI 55 + DDD + número (com ou sem o 9), ou
+ * número de fora do Brasil com o DDI (16/11/2026: a conversa uruguaia 598...
+ * sumia da aba Geral). A regra do estrangeiro é a de lib/telefone (numeroEstrangeiro).
+ */
 export function numeroDaConversa(valor: unknown): string | null {
   const n = typeof valor === "string" ? valor.replace(/\D/g, "") : "";
-  return /^55[1-9]\d{9,10}$/.test(n) ? n : null;
+  if (/^55[1-9]\d{9,10}$/.test(n)) return n;
+  return numeroEstrangeiro(n);
 }
 
-/** "(51) 99101-0423" a partir de "5551991010423"; sem formato conhecido, o número cru. */
+/** "(51) 99101-0423" a partir de "5551991010423"; de fora do Brasil, "+598 95038797"; sem formato conhecido, o número cru. */
 export function numeroParaExibir(numero: string): string {
+  const estrangeiro = numeroEstrangeiro(numero);
+  if (estrangeiro) return `+${estrangeiro.slice(0, 3)} ${estrangeiro.slice(3)}`;
   const n = numero.replace(/\D/g, "").replace(/^55/, "");
   if (n.length === 11) return `(${n.slice(0, 2)}) ${n.slice(2, 7)}-${n.slice(7)}`;
   if (n.length === 10) return `(${n.slice(0, 2)}) ${n.slice(2, 6)}-${n.slice(6)}`;

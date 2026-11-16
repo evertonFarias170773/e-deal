@@ -73,6 +73,29 @@ export function normalizarTelefoneBR(valor: unknown, opcoes?: OpcoesTelefone): s
   return "";
 }
 
+/** DDDs que existem no Brasil (Anatel). Fora desta lista, 11 dígitos não são número nacional. */
+const DDDS_DO_BRASIL = new Set([
+  11, 12, 13, 14, 15, 16, 17, 18, 19, 21, 22, 24, 27, 28, 31, 32, 33, 34, 35, 37, 38,
+  41, 42, 43, 44, 45, 46, 47, 48, 49, 51, 53, 54, 55, 61, 62, 63, 64, 65, 66, 67, 68, 69,
+  71, 73, 74, 75, 77, 79, 81, 82, 83, 84, 85, 86, 87, 88, 89, 91, 92, 93, 94, 95, 96, 97, 98, 99
+]);
+
+/**
+ * Número de fora do Brasil, com o DDI, como o ChatGuru guarda (16/11/2026; ex.:
+ * Uruguai 598 95038797). Devolve os dígitos sem mudança, ou null.
+ *   - não começa com 55;
+ *   - 12 ou 13 dígitos (nenhum número nacional tem esse tamanho sem o 55);
+ *   - 11 dígitos só quando os dois primeiros NÃO são DDD do Brasil, para não
+ *     confundir com celular nacional gravado sem o 55 (ex.: 51 98460-8848).
+ * Ids de 14 ou 15 dígitos do WhatsApp não são telefone e ficam de fora.
+ */
+export function numeroEstrangeiro(valor: unknown): string | null {
+  const n = typeof valor === "string" || typeof valor === "number" ? soDigitos(valor) : "";
+  if (!/^[1-9]\d{10,12}$/.test(n) || n.startsWith("55")) return null;
+  if (n.length === 11 && DDDS_DO_BRASIL.has(Number(n.slice(0, 2)))) return null;
+  return n;
+}
+
 /**
  * O número para as APIs (PIX, boleto à vista e o que mais exigir celular com o
  * 9), a partir do telefone da conversa do ChatGuru (14/11/2026, decisão da
@@ -84,10 +107,15 @@ export function normalizarTelefoneBR(valor: unknown, opcoes?: OpcoesTelefone): s
  *   - celular de 8 dígitos (começa de 6 a 9) ganha o 9 depois do DDD;
  *   - fixo (8 dígitos começando de 2 a 5) fica como está;
  *   - celular que já tem o 9 (11 dígitos) fica como está;
+ *   - número de fora do Brasil (numeroEstrangeiro) vai como está (16/11/2026);
+ *     a cópia no banco (fn_telefone_para_api, NF-e) ainda devolve nulo para ele;
  *   - o resto (DDD inválido, tamanho errado, vazio) devolve "".
  * Devolve DDD + número, só dígitos, como o cadastro guarda.
  */
 export function telefoneParaApi(valor: unknown): string {
+  // Número de fora do Brasil (16/11/2026): vai como está, sem o 9 e sem corte.
+  const estrangeiro = numeroEstrangeiro(valor);
+  if (estrangeiro) return estrangeiro;
   let digitos = soDigitos(valor);
   if ((digitos.length === 12 || digitos.length === 13) && digitos.startsWith("55")) digitos = digitos.slice(2);
   if (digitos.length !== 10 && digitos.length !== 11) return "";
