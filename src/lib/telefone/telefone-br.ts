@@ -97,6 +97,17 @@ export function numeroEstrangeiro(valor: unknown): string | null {
 }
 
 /**
+ * DDD + número (10 ou 11 dígitos, sem o 55) com DDD que existe no Brasil, ou
+ * null. Não confere o 9 nem o prefixo: é só "isto é um telefone do Brasil".
+ */
+export function nacionalComDddDoBrasil(valor: unknown): string | null {
+  let digitos = soDigitos(valor);
+  if ((digitos.length === 12 || digitos.length === 13) && digitos.startsWith("55")) digitos = digitos.slice(2);
+  if (digitos.length !== 10 && digitos.length !== 11) return null;
+  return DDDS_DO_BRASIL.has(Number(digitos.slice(0, 2))) ? digitos : null;
+}
+
+/**
  * O número para as APIs (PIX, boleto à vista e o que mais exigir celular com o
  * 9), a partir do telefone da conversa do ChatGuru (14/11/2026, decisão da
  * diretoria). FUNÇÃO ÚNICA: quem manda telefone do Guru para fora passa por aqui.
@@ -107,20 +118,18 @@ export function numeroEstrangeiro(valor: unknown): string | null {
  *   - celular de 8 dígitos (começa de 6 a 9) ganha o 9 depois do DDD;
  *   - fixo (8 dígitos começando de 2 a 5) fica como está;
  *   - celular que já tem o 9 (11 dígitos) fica como está;
- *   - número de fora do Brasil (numeroEstrangeiro) vai como está (16/11/2026);
- *     a cópia no banco (fn_telefone_para_api, NF-e) ainda devolve nulo para ele;
- *   - o resto (DDD inválido, tamanho errado, vazio) devolve "".
+ *   - número de fora do Brasil (numeroEstrangeiro) e DDD que não existe no
+ *     Brasil devolvem "" (16/11/2026, decisão do Everton: nunca mandamos número
+ *     estrangeiro para banco; o "5989503879" uruguaio do cadastro virava
+ *     59989503879). A cópia no banco (fn_telefone_para_api, NF-e) ficou com a
+ *     faixa 11 a 99 de antes, por decisão: a NF-e não muda;
+ *   - o resto (tamanho errado, vazio) devolve "".
  * Devolve DDD + número, só dígitos, como o cadastro guarda.
  */
 export function telefoneParaApi(valor: unknown): string {
-  // Número de fora do Brasil (16/11/2026): vai como está, sem o 9 e sem corte.
-  const estrangeiro = numeroEstrangeiro(valor);
-  if (estrangeiro) return estrangeiro;
-  let digitos = soDigitos(valor);
-  if ((digitos.length === 12 || digitos.length === 13) && digitos.startsWith("55")) digitos = digitos.slice(2);
-  if (digitos.length !== 10 && digitos.length !== 11) return "";
-  const ddd = Number(digitos.slice(0, 2));
-  if (!(ddd >= DDD_MIN && ddd <= DDD_MAX)) return "";
+  if (numeroEstrangeiro(valor)) return "";
+  const digitos = nacionalComDddDoBrasil(valor);
+  if (!digitos) return "";
   const numero = digitos.slice(2);
   if (numero.length === 9) return numero[0] === "9" ? digitos : "";
   // 8 dígitos: celular antigo (6 a 9) ganha o 9; fixo (2 a 5) fica.

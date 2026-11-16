@@ -549,10 +549,37 @@ export function dddFinal8(valor: unknown): string | null {
   return n.slice(0, 2) + n.slice(-8);
 }
 
-/** Número da conversa como o ChatGuru guarda (DDI 55 + DDD + número, com ou sem o 9). */
+/** DDDs que existem no Brasil (Anatel). Cópia de src/lib/telefone/telefone-br.ts. */
+const DDDS_DO_BRASIL = new Set([
+  11, 12, 13, 14, 15, 16, 17, 18, 19, 21, 22, 24, 27, 28, 31, 32, 33, 34, 35, 37, 38,
+  41, 42, 43, 44, 45, 46, 47, 48, 49, 51, 53, 54, 55, 61, 62, 63, 64, 65, 66, 67, 68, 69,
+  71, 73, 74, 75, 77, 79, 81, 82, 83, 84, 85, 86, 87, 88, 89, 91, 92, 93, 94, 95, 96, 97, 98, 99
+]);
+
+/**
+ * v30 (16/11/2026): número de fora do Brasil, com o DDI, como o ChatGuru guarda
+ * (ex.: Uruguai 59895038797). CÓPIA de numeroEstrangeiro em
+ * src/lib/telefone/telefone-br.ts (084ba9c5): mudou lá, muda aqui.
+ *   - não começa com 55;
+ *   - 12 ou 13 dígitos, ou 11 dígitos cujos dois primeiros NÃO são DDD do Brasil
+ *     (celular nacional gravado sem o 55 continua fora);
+ *   - ids de 14/15 dígitos do WhatsApp ficam de fora.
+ */
+export function numeroEstrangeiro(valor: unknown): string | null {
+  const n = typeof valor === "string" || typeof valor === "number" ? String(valor).replace(/\D/g, "") : "";
+  if (!/^[1-9]\d{10,12}$/.test(n) || n.startsWith("55")) return null;
+  if (n.length === 11 && DDDS_DO_BRASIL.has(Number(n.slice(0, 2)))) return null;
+  return n;
+}
+
+/**
+ * Número da conversa como o ChatGuru guarda: brasileiro (DDI 55 + DDD + número,
+ * com ou sem o 9, regra de antes) ou, desde a v30, estrangeiro (numeroEstrangeiro).
+ */
 export function numeroDaConversa(valor: unknown): string | null {
   const n = typeof valor === "string" ? valor.replace(/\D/g, "") : "";
-  return /^55[1-9]\d{9,10}$/.test(n) ? n : null;
+  if (/^55[1-9]\d{9,10}$/.test(n)) return n;
+  return typeof valor === "string" ? numeroEstrangeiro(valor) : null;
 }
 
 export type DecisaoConversa =

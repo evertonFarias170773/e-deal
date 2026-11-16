@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { telefoneParaApi } from "@/lib/telefone/telefone-br";
+import { nacionalComDddDoBrasil, telefoneParaApi } from "@/lib/telefone/telefone-br";
 
 /**
  * E-MAIL E TELEFONE QUE A COBRANÇA MANDA PARA FORA (14/11/2026, decisão da diretoria).
@@ -48,8 +48,10 @@ export function telefoneDaCobranca(telefoneDoGuru: string | null | undefined, te
   if (doGuru) return { telefone: doGuru, origemTelefone: "CHATGURU" as const };
   const antigo = telefoneParaApi(telefoneAntigo);
   if (antigo) return { telefone: antigo, origemTelefone: "ANTIGO" as const };
-  // Número fora do padrão: vai como estava (só dígitos), o banco decide.
-  const cru = String(telefoneAntigo ?? "").replace(/\D/g, "");
+  // Número brasileiro fora do padrão (ex.: 11 dígitos sem o 9): vai como estava,
+  // o banco decide. Número que não é do Brasil (estrangeiro ou DDD que não
+  // existe) não vai: sai sem telefone (16/11/2026, decisão do Everton).
+  const cru = nacionalComDddDoBrasil(telefoneAntigo) ? String(telefoneAntigo ?? "").replace(/\D/g, "") : "";
   return { telefone: cru, origemTelefone: cru ? ("ANTIGO" as const) : null };
 }
 

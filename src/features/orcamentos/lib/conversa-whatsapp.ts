@@ -51,6 +51,7 @@ export function mesmoTelefone(a: unknown, b: unknown): boolean {
  * Número como o ChatGuru guarda: DDI 55 + DDD + número (com ou sem o 9), ou
  * número de fora do Brasil com o DDI (16/11/2026: a conversa uruguaia 598...
  * sumia da aba Geral). A regra do estrangeiro é a de lib/telefone (numeroEstrangeiro).
+ * Só a lista aceita: para o PIX e o boleto, telefoneParaApi devolve "" para ele.
  */
 export function numeroDaConversa(valor: unknown): string | null {
   const n = typeof valor === "string" ? valor.replace(/\D/g, "") : "";

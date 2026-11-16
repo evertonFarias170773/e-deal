@@ -1,6 +1,6 @@
 # Expedição
 
-> **Última revisão:** 14/11/2026 (aviso vai para a conversa principal dos Contatos do pedido da aba Geral; com principal, o pedido não precisa de contato do cadastro). 13/11/2026 (diálogo Transportadora com o campo Transportadora, nome curto da transportadora do despacho; antes, 12/11/2026: pedido CIF por transportadora não fica na coluna Correios por causa de um SEDEX anterior, caso 24974)
+> **Última revisão:** 16/11/2026 (conversa do ChatGuru com número de fora do Brasil, por exemplo +598 95038797, recebe o aviso quando é a escolhida; antes o aviso recusava). 14/11/2026 (aviso vai para a conversa principal dos Contatos do pedido da aba Geral; com principal, o pedido não precisa de contato do cadastro). 13/11/2026 (diálogo Transportadora com o campo Transportadora, nome curto da transportadora do despacho; antes, 12/11/2026: pedido CIF por transportadora não fica na coluna Correios por causa de um SEDEX anterior, caso 24974)
 > **Caminho no menu:** Expedição (item direto do menu lateral, sem subitens; é o quarto, depois de Conferência, Pedidos e Clientes). Também se chega pela aba **Expedição** no topo do Kanban e da Fila de impressão da Produção.
 > **Endereço:** `/expedicao`
 

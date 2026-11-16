@@ -98,7 +98,7 @@ Enquanto o cliente não é escolhido numa proposta nova, os outros blocos e abas
 
 ### Escolher os contatos do pedido (bloco 3. Contatos do pedido)
 
-Desde 14/11/2026 os contatos do pedido são conversas do cliente no WhatsApp da Ideal (ChatGuru), e não mais a lista de contatos do cadastro. O bloco **Conversas do WhatsApp**, com o selo "WhatsApp · ChatGuru", lista as conversas do cliente: as que têm o código do cliente no nome, abertas pelo atendimento, com o nome da conversa e o número. Desde 16/11/2026 a conversa com número de fora do Brasil também aparece, com o código do país na frente, por exemplo "+598 95038797" (Uruguai). Antes ela sumia da lista.
+Desde 14/11/2026 os contatos do pedido são conversas do cliente no WhatsApp da Ideal (ChatGuru), e não mais a lista de contatos do cadastro. O bloco **Conversas do WhatsApp**, com o selo "WhatsApp · ChatGuru", lista as conversas do cliente: as que têm o código do cliente no nome, abertas pelo atendimento, com o nome da conversa e o número. Desde 16/11/2026 a conversa com número de fora do Brasil também aparece, com o código do país na frente, por exemplo "+598 95038797" (Uruguai). Antes ela sumia da lista. Desde a mesma data, escolhida, ela recebe os avisos do pedido e o orçamento do botão **Enviar pelo ChatGuru**, como qualquer outra conversa.
 
 1. Marque a caixa de uma ou mais conversas. Cada conversa marcada é um contato do pedido.
 2. Uma delas é a **Principal · Comprador**: recebe a arte e os avisos do pedido e é o **Comprador** da aba Artes. A primeira marcada vira a principal. Para trocar, clique em **Tornar principal** em outra conversa marcada.

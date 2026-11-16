@@ -1,6 +1,12 @@
-# expedicao-pedido-pronto: v29 no ar (fora de supabase/functions de propósito)
+# expedicao-pedido-pronto: v30 no ar (fora de supabase/functions de propósito)
 
-**v29 no ar desde 14/11/2026 (versão 29 no painel da Supabase), conferida arquivo a arquivo igual a esta pasta.** Deploy e migration autorizados pelo Everton só desta mudança. É a v28 com o orçamento do box 9:
+**v30 no ar desde 16/11/2026 (versão 30 no painel da Supabase), conferida arquivo a arquivo igual a esta pasta.** Deploy autorizado pelo Everton só desta mudança. É a v29 com uma mudança: conversa com número de fora do Brasil.
+- `numeroDaConversa` aceita o brasileiro como antes (55 + DDD + número, com ou sem o 9) ou o estrangeiro (`numeroEstrangeiro`, cópia da regra do Vibe de 084ba9c5 em `src/lib/telefone/telefone-br.ts`: não começa com 55, 12 ou 13 dígitos, ou 11 dígitos cujos dois primeiros não são DDD do Brasil). Mudou lá, muda aqui.
+- Com isso a conversa estrangeira entra na lista do cliente (`conversasDoCliente`) e os avisos e o Enviar pelo ChatGuru vão para ela quando escolhida: a conversa é achada pelo chat_id e o envio usa o número dela como o Guru guarda (`chat_number`, a chave das chamadas da API). Diálogos e campos sem mudança.
+- Caso real: pedido 25289, "Olga Lencina - 58011", 59895038797. Nada foi enviado para ela.
+- Teste: `scripts/testes/expedicao-conversa-estrangeira.test.mts`.
+
+**v29 ficou no ar de 14/11/2026 a 16/11/2026 (versão 29 no painel da Supabase), conferida arquivo a arquivo igual a esta pasta.** Deploy e migration autorizados pelo Everton só desta mudança. É a v28 com o orçamento do box 9:
 - Migration `20261114b_expedicao_aviso_pronto_evento_orcamento` aplicada: o evento da tabela aceita `orcamento_whatsapp` (só amplia a lista; 240 + 215 linhas iguais).
 - `orcamento_enviar`: vai para todas as conversas de `propostas_contatos_chatguru` da proposta que ainda são do cliente (`conversasDoOrcamento`, principal primeiro); nenhuma escolhida recusa (`SEM_CONVERSA_ORCAMENTO`); a que saiu do cliente volta com recusa sem envio. Por conversa: trava, envio em andamento e os 120 s conferidos antes (`motivoConversaOcupada`), depois a mesma reserva e o mesmo envio dos avisos (`enviarParaConversas`), com linha em `expedicao_aviso_pronto` (evento `orcamento_whatsapp`). Resposta: `envios` por conversa.
 - `orcamento_preparar`: texto gravado, cada conversa com o bloqueio dela, orçamentos travados da proposta e `pode_liberar` (ADM). O Liberar número é a ação `liberar` de sempre.

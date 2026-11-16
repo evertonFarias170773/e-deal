@@ -22,6 +22,11 @@
  *            trava por conversa vale igual.
  * enviar/reenviar/status/testar/preparar exigem expedicao.processar (ou ADM).
  *
+ * v30 (16/11/2026): conversa com número de fora do Brasil (logica.numeroEstrangeiro,
+ * cópia da regra do Vibe de 084ba9c5) entra na lista do cliente; avisos e orçamento
+ * vão para ela pelo chat_id escolhido, com o número dela como o Guru guarda (chat_number).
+ * A regra do número brasileiro não mudou.
+ *
  * v29 (14/11/2026): orçamento pelo botão "Enviar pelo ChatGuru" do box 9. Vai para
  * todas as conversas de Contatos do pedido (propostas_contatos_chatguru) que ainda
  * são do cliente; sem nenhuma escolhida, recusa. Por conversa: 120 s, envio em
