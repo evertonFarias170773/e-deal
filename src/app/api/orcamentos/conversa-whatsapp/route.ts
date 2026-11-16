@@ -1,12 +1,13 @@
 import { NextResponse } from "next/server";
 import { createClient as createSupabaseClient, type SupabaseClient } from "@supabase/supabase-js";
+import { escolhaDeContatos } from "@/features/orcamentos/lib/conversa-whatsapp";
 import {
-  escolhaDeContatos,
-  mesmoTelefone,
-  numeroDaConversa,
-  type ContatoEscolhido,
-  type ConversaWhatsapp
-} from "@/features/orcamentos/lib/conversa-whatsapp";
+  conversasDoCliente,
+  escolhidasDoPedido,
+  gravarEscolha,
+  lerPropostaDaConversa as proposta,
+  limpar
+} from "@/features/orcamentos/services/contatos-do-pedido.server";
 
 /*
  * Contatos do pedido pelo ChatGuru (14/11/2026, decisão da diretoria): o pedido
@@ -51,11 +52,6 @@ function erro(mensagem: string, status: number) {
   return NextResponse.json({ success: false, message: mensagem }, { status });
 }
 
-function limpar(texto: unknown, max = 150): string {
-  if (typeof texto !== "string") return "";
-  return texto.replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim().slice(0, max);
-}
-
 type Contexto = { usuario: SupabaseClient; servico: SupabaseClient; uid: string; quem: string };
 
 async function contexto(request: Request): Promise<Contexto | NextResponse> {
@@ -79,158 +75,6 @@ async function contexto(request: Request): Promise<Contexto | NextResponse> {
   const meta = (data.user.user_metadata ?? {}) as Record<string, unknown>;
   const quem = limpar(meta.name ?? meta.nome ?? data.user.email ?? "", 120) || "Usuário";
   return { usuario, servico, uid: data.user.id, quem };
-}
-
-type PropostaDaConversa = {
-  id_int: number;
-  id_cliente: number | string | null;
-  chatguru_chat_id: string | null;
-  id_contato: string | null;
-};
-
-/** A proposta pela sessão do usuário: se a RLS não a mostra, não há conversa para ver. */
-async function proposta(usuario: SupabaseClient, idInt: number) {
-  const { data, error } = await usuario
-    .from("propostas")
-    .select("id_int, id_cliente, chatguru_chat_id, id_contato")
-    .eq("id_int", idInt)
-    .maybeSingle();
-  if (error) return { erro: "Não foi possível ler a proposta.", status: 500 } as const;
-  if (!data) return { erro: `Proposta #${idInt} não encontrada.`, status: 404 } as const;
-  return { dados: data as PropostaDaConversa } as const;
-}
-
-/** As conversas escolhidas do pedido (linhas da tabela), pela sessão do usuário. */
-async function escolhidasDoPedido(usuario: SupabaseClient, idInt: number) {
-  const { data, error } = await usuario
-    .from("propostas_contatos_chatguru")
-    .select("chat_id, nome, telefone, principal")
-    .eq("id_int", idInt)
-    .order("principal", { ascending: false })
-    .order("escolhido_em", { ascending: true });
-  if (error) return null;
-  return (data ?? []) as { chat_id: string; nome: string | null; telefone: string | null; principal: boolean }[];
-}
-
-/**
- * Ponte com o contato do pedido (ver o topo): devolve o contato que o pedido deve
- * ter, ou null quando o atual já serve ou não há contato do mesmo telefone.
- * Só lê a tabela contatos; nunca grava nela.
- */
-async function contatoParaAPrincipal(
-  usuario: SupabaseClient,
-  idCliente: number,
-  principal: ConversaWhatsapp,
-  idContatoAtual: string | null
-): Promise<{ id: number; nome: string } | null | { erro: string }> {
-  const { data, error } = await usuario
-    .from("contatos")
-    .select("id, nome_contato, whats, ativo")
-    .eq("id_cliente", idCliente);
-  if (error) return { erro: "Não foi possível ler os contatos do cliente." };
-  const ativos = ((data ?? []) as { id: number; nome_contato: string | null; whats: string | null; ativo: boolean | null }[])
-    .filter((c) => c.ativo !== false);
-  const atual = ativos.find((c) => String(c.id) === String(idContatoAtual ?? "").trim());
-  if (atual) return null;
-  const doTelefone = ativos.find((c) => mesmoTelefone(c.whats, principal.numero));
-  if (doTelefone) return { id: doTelefone.id, nome: limpar(doTelefone.nome_contato) || principal.nome };
-  // Sem contato com o mesmo telefone: o pedido fica como está. A tabela contatos
-  // não recebe nada daqui (14/11/2026); a v28 dos avisos aceita a principal sem contato.
-  return null;
-}
-
-/**
- * Grava a escolha: linhas da tabela (insere as novas, apaga as que saíram, uma
- * principal) e, na proposta, `chatguru_chat_id` = principal e a ponte do contato.
- * A ordem deixa o pedido sempre com no máximo uma principal (índice único).
- */
-async function gravarEscolha(
-  ctx: Contexto,
-  dados: PropostaDaConversa,
-  conversas: ConversaWhatsapp[],
-  escolha: { chatIds: string[]; principal: string }
-): Promise<{ escolhidas: ContatoEscolhido[] } | { erro: string; status: number }> {
-  const idInt = dados.id_int;
-  const porId = new Map(conversas.map((c) => [c.chat_id, c]));
-  const atuais = await escolhidasDoPedido(ctx.usuario, idInt);
-  if (atuais === null) return { erro: "Não foi possível ler os contatos do pedido.", status: 500 };
-
-  const novas = escolha.chatIds.filter((id) => !atuais.some((a) => a.chat_id === id));
-  if (novas.length > 0) {
-    const { error } = await ctx.usuario.from("propostas_contatos_chatguru").insert(
-      novas.map((id) => ({
-        id_int: idInt,
-        chat_id: id,
-        nome: porId.get(id)?.nome ?? null,
-        telefone: porId.get(id)?.numero ?? null,
-        principal: false,
-        escolhido_por: ctx.uid,
-        escolhido_por_nome: ctx.quem
-      }))
-    );
-    if (error) return { erro: error.message || "Não foi possível gravar os contatos do pedido.", status: 500 };
-  }
-  const saem = atuais.filter((a) => !escolha.chatIds.includes(a.chat_id)).map((a) => a.chat_id);
-  if (saem.length > 0) {
-    const { error } = await ctx.usuario.from("propostas_contatos_chatguru").delete().eq("id_int", idInt).in("chat_id", saem);
-    if (error) return { erro: error.message || "Não foi possível tirar contatos do pedido.", status: 500 };
-  }
-  const tirar = await ctx.usuario
-    .from("propostas_contatos_chatguru")
-    .update({ principal: false })
-    .eq("id_int", idInt)
-    .eq("principal", true)
-    .neq("chat_id", escolha.principal);
-  if (tirar.error) return { erro: tirar.error.message || "Não foi possível trocar o contato principal.", status: 500 };
-  const marcar = await ctx.usuario
-    .from("propostas_contatos_chatguru")
-    .update({ principal: true })
-    .eq("id_int", idInt)
-    .eq("chat_id", escolha.principal);
-  if (marcar.error) return { erro: marcar.error.message || "Não foi possível marcar o contato principal.", status: 500 };
-
-  const principal = porId.get(escolha.principal)!;
-  const atualizacao: Record<string, unknown> = { chatguru_chat_id: principal.chat_id };
-  const idCliente = Number(dados.id_cliente);
-  if (Number.isInteger(idCliente) && idCliente > 0) {
-    const contato = await contatoParaAPrincipal(ctx.usuario, idCliente, principal, dados.id_contato);
-    if (contato && "erro" in contato) return { erro: contato.erro, status: 500 };
-    if (contato) {
-      atualizacao.id_contato = String(contato.id);
-      atualizacao.contato = contato.nome;
-    }
-  }
-  const { data, error } = await ctx.usuario.from("propostas").update(atualizacao).eq("id_int", idInt).select("id_int");
-  if (error) return { erro: error.message || "Não foi possível gravar a conversa na proposta.", status: 500 };
-  if (!data || data.length === 0) return { erro: "A proposta não aceitou a gravação.", status: 403 };
-
-  return {
-    escolhidas: escolha.chatIds.map((id) => ({ ...porId.get(id)!, principal: id === escolha.principal }))
-  };
-}
-
-async function conversasDoCliente(servico: SupabaseClient, idCliente: unknown): Promise<ConversaWhatsapp[] | null> {
-  const id = Number(idCliente);
-  if (!Number.isInteger(id) || id <= 0) return [];
-  const { data, error } = await servico
-    .from("chatguru_contatos_3478")
-    .select("chat_id, nome_chatguru, telefone_normalizado")
-    .eq("codigo_cliente", String(id))
-    .limit(50);
-  if (error) {
-    console.error("[API][ConversaWhatsapp] leitura do Guru:", error.message);
-    return null;
-  }
-  const vistas = new Set<string>();
-  const lista: ConversaWhatsapp[] = [];
-  for (const c of data ?? []) {
-    const chat = limpar(c.chat_id, 80);
-    const numero = numeroDaConversa(c.telefone_normalizado);
-    if (!chat || !numero || vistas.has(chat)) continue;
-    vistas.add(chat);
-    lista.push({ chat_id: chat, nome: limpar(c.nome_chatguru) || "—", numero });
-  }
-  return lista.sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
 }
 
 function idDoPedido(valor: unknown): number | null {

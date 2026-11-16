@@ -19,6 +19,7 @@ import { aplicarStatusRecomendadoProposta } from "@/features/orcamentos/services
 import { validarStatusProposta } from "@/features/orcamentos/services/status-shadow.service";
 import { liberarPropostaParaProducao, sendPropostaChatMessage } from "@/features/orcamentos/services/orcamentos.service";
 import { linhaDaDivergencia } from "@/features/orcamentos/lib/divergencia-lotes";
+import { contatoUnicoNaLiberacao } from "@/features/orcamentos/services/contatos-do-pedido.server";
 
 /** O aviso que a tela grava no chat ao confirmar (ConfirmarLiberacaoModal). */
 export const MENSAGEM_CHAT_COBRANCA_CONFERIDA =
@@ -225,7 +226,13 @@ export async function liberarPrateleiraAutomaticamente(
     if (diagnostico.statusRecomendado !== "REVISAO ATENDENTE") return;
     if (diagnostico.evidenciasUsadas?.arteDispensada !== true) return;
 
-    const liberacao = await liberarPropostaParaProducao(idInt, supabase);
+    // Sem contato gravado e com uma única conversa do cliente no Guru, grava essa
+    // conversa como principal antes de conferir (16/11/2026, caso 25289).
+    const liberacao = await liberarPropostaParaProducao(
+      idInt,
+      supabase,
+      contatoUnicoNaLiberacao({ usuario: supabase, uid: usuario.uid || null, quem: LIBERADOR_AUTOMATICO })
+    );
 
     if (!liberacao.success) {
       console.warn(

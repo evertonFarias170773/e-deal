@@ -22,6 +22,7 @@ import { NextResponse } from "next/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { liberarPropostaParaProducao } from "@/features/orcamentos/services/orcamentos.service";
 import { verificarPermissaoServerSide } from "@/lib/auth/verificar-permissao";
+import { contatoUnicoNaLiberacao } from "@/features/orcamentos/services/contatos-do-pedido.server";
 
 /**
  * A chave do catalogo "Liberar para Produção". Ate 02/10/2026 esta rota so
@@ -77,7 +78,16 @@ export async function POST(request: Request) {
     );
   }
 
-  const resultado = await liberarPropostaParaProducao(idInt, supabase);
+  // Sem contato gravado e com uma única conversa do cliente no Guru, a liberação
+  // grava essa conversa como principal (16/11/2026, caso 25289), com a sessão de
+  // quem clicou.
+  const meta = (authData.user.user_metadata ?? {}) as Record<string, unknown>;
+  const quem = String(meta.name ?? meta.nome ?? authData.user.email ?? "").trim().slice(0, 120) || "Usuário";
+  const resultado = await liberarPropostaParaProducao(
+    idInt,
+    supabase,
+    contatoUnicoNaLiberacao({ usuario: supabase, uid: authData.user.id, quem })
+  );
 
   if (!resultado.success) {
     return NextResponse.json(

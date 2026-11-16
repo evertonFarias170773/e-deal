@@ -59,7 +59,10 @@ checar("trava diz cadastre a conversa no ChatGuru", SEM_CONVERSA_NO_GURU.startsW
 
 // ── 5. As ligações ──
 const ler = (p: string) => readFileSync(p, "utf8");
-const rota = ler("src/app/api/orcamentos/conversa-whatsapp/route.ts");
+// 16/11/2026: a gravação saiu da rota para contatos-do-pedido.server.ts (a liberação usa a mesma).
+const moduloContatos = ler("src/features/orcamentos/services/contatos-do-pedido.server.ts");
+const rota = ler("src/app/api/orcamentos/conversa-whatsapp/route.ts") + moduloContatos;
+const rotaLiberar = ler("src/app/api/orcamentos/liberar-producao/route.ts");
 const servico = ler("src/features/orcamentos/services/orcamentos.service.ts");
 const pagina = ler("src/features/orcamentos/OrcamentoFormPage.tsx");
 const provedor = ler("src/features/cobrancas/CobrancasProvider.tsx");
@@ -72,7 +75,7 @@ checar("rota nunca grava na tabela contatos (só lê)", [/from\("contatos"\)\s*\
 checar("rota aceita a escolha inteira e só a principal", [rota.includes("Array.isArray(corpo?.chat_ids)"), rota.includes("principalPedida = limpar(corpo?.chat_id, 80)")], [true, true]);
 checar("Salvar não exige mais contato da tabela", servico.includes('"Selecione um contato antes de salvar o orçamento."'), false);
 checar("Salvar não regrava id_contato e contato na alteração", servico.includes("delete (propostaData as Record<string, unknown>).id_contato;"), true);
-checar("liberação exige contato do ChatGuru", [servico.includes("const contatoDoPedido = await temContatoDoChatGuru(client, idInt);"), servico.includes('code: "SEM_CONTATO_CHATGURU"')], [true, true]);
+checar("liberação exige contato do ChatGuru", [servico.includes("let contatoDoPedido = await temContatoDoChatGuru(client, idInt);"), servico.includes('code: "SEM_CONTATO_CHATGURU"')], [true, true]);
 checar("liberação automática avisa no chat", nucleo.includes('liberacao.code === "SEM_CONTATO_CHATGURU"'), true);
 checar("aba Geral usa os contatos do Guru, sem a lista da tabela contatos", [pagina.includes("<ContatosDoPedido"), pagina.includes('rotuloOutros="Outros contatos"')], [true, false]);
 checar("cobrança não usa mais o e-mail nem o telefone do contato da tabela", [/proposta\.contato\?\.email/.test(provedor + painel), /telefone: proposta\.contato\?\.whatsapp/.test(provedor + painel), provedor.includes('.select("nome_contato, whats, e_mail")')], [false, false, false]);
@@ -87,6 +90,17 @@ checar("proposta paga sem mudança grava a pré-marcada antes do Nada para salva
 checar("salvar antes da cobrança sem mudança grava a pré-marcada", pagina.includes("if (contatosDoPedidoPorGravar) await gravarConversaDoSalvar(Number(form.id_int));"), true);
 checar("pré-marcada = pendente da tela, fora complemento e cliente não cadastrado",
   pagina.includes("!form.clienteNaoCadastrado && !ehComplemento && conversaDaArte.pendente && !conversaDaArte.carregando"), true);
+
+// 16/11/2026 (caso 25289): a liberação grava a única conversa do cliente quando nada está gravado.
+checar("liberação: sem contato gravado, tenta a única conversa do cliente",
+  servico.includes("if (contatoDoPedido === false && contatoUnico) contatoDoPedido = await contatoUnico(idInt);"), true);
+checar("liberação manual e automática passam o contatoUnico do servidor",
+  [rotaLiberar.includes("contatoUnicoNaLiberacao({ usuario: supabase, uid: authData.user.id, quem })"), nucleo.includes("contatoUnicoNaLiberacao({ usuario: supabase, uid: usuario.uid || null, quem: LIBERADOR_AUTOMATICO })")],
+  [true, true]);
+checar("só uma conversa grava; duas ou nenhuma, não; mesma regra de número da lista",
+  [moduloContatos.includes("if (conversas.length !== 1) return { situacao: \"sem_unica\", conversas: conversas.length };"), moduloContatos.includes("numeroDaConversa(c.telefone_normalizado)"), moduloContatos.includes("chatIds: [unica.chat_id], principal: unica.chat_id")],
+  [true, true, true]);
+checar("o serviço do navegador não importa o módulo de servidor", /from "[^"]*contatos-do-pedido.server"/.test(servico), false);
 
 if (falhas > 0) {
   console.log(`\n${falhas} falha(s).`);

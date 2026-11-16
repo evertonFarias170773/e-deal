@@ -5953,9 +5953,17 @@ async function temContatoDoChatGuru(client: SupabaseClient, idInt: number): Prom
   return (linhas.count ?? 0) > 0 || chat !== "";
 }
 
+/**
+ * Só no servidor: sem contato gravado, grava a ÚNICA conversa do cliente no Guru
+ * (a que a aba Geral pré-marca) e diz se o pedido passou a ter contato.
+ * Ver `contatoUnicoNaLiberacao` em contatos-do-pedido.server.ts.
+ */
+export type ContatoUnicoNaLiberacao = (idInt: number) => Promise<boolean | null>;
+
 export async function liberarPropostaParaProducao(
   idInt: number,
-  clientExterno?: SupabaseClient
+  clientExterno?: SupabaseClient,
+  contatoUnico?: ContatoUnicoNaLiberacao
 ): Promise<ResultadoLiberacao> {
   const client = clientExterno ?? getSupabaseClient();
   if (!client) return { success: false, errorMessage: "Cliente Supabase indisponível." };
@@ -6005,7 +6013,12 @@ export async function liberarPropostaParaProducao(
   //     no pedido antigo, a conversa já gravada em chatguru_chat_id. Vale também
   //     para a liberação automática de prateleira, que deixa o pedido em REVISAO
   //     ATENDENTE e avisa no chat (conferencia-nucleo).
-  const contatoDoPedido = await temContatoDoChatGuru(client, idInt);
+  //     16/11/2026 (caso 25289): sem nada gravado e com UMA conversa do cliente
+  //     no Guru, é a que a aba Geral mostra como principal ("única conversa") e
+  //     a que os avisos usam. O servidor a grava aqui, pela mesma gravação do
+  //     Salvar, em vez de recusar. Com duas ou mais, alguém escolhe na aba Geral.
+  let contatoDoPedido = await temContatoDoChatGuru(client, idInt);
+  if (contatoDoPedido === false && contatoUnico) contatoDoPedido = await contatoUnico(idInt);
   if (contatoDoPedido === null) return { success: false, errorMessage: "Erro ao buscar os contatos do pedido no ChatGuru." };
   if (!contatoDoPedido) {
     return { success: false, code: "SEM_CONTATO_CHATGURU", errorMessage: MENSAGEM_SEM_CONTATO_CHATGURU };
