@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Send } from "lucide-react";
 import {
   enviarOrcamentoChatGuru,
+  gravarTextoDoBox,
   liberarOrcamentoChatGuru,
   prepararOrcamentoChatGuru,
   textoComparavel,
@@ -14,8 +15,10 @@ import {
 /**
  * Botão "Enviar pelo ChatGuru" do box 9 (14/11/2026). Manda o diálogo "Orçamento
  * Whatsapp" com o texto gravado do box 9 para cada conversa de Contatos do pedido.
- * Com alteração não salva (ou texto gravado diferente do box), não envia: pede
- * para salvar antes. Primeiro mostra as conversas e o que seria recusado; o envio
+ * Com alteração não salva, não envia: pede para salvar antes. Sem alteração e com
+ * o texto gravado diferente do box (proposta paga, onde o Salvar responde "Nada
+ * para salvar", ou salva antes de 14/11), o Confirmar envio grava só
+ * propostas.texto_whatsapp com o texto do box 9 e envia (16/11/2026). Primeiro mostra as conversas e o que seria recusado; o envio
  * só sai na confirmação, e o resultado aparece por conversa.
  */
 
@@ -29,7 +32,8 @@ type Props = {
 
 export const SALVE_ANTES =
   "Há alterações não salvas. Salve a proposta antes de enviar, para o cliente não receber o texto antigo.";
-export const TEXTO_DIFERENTE = "O texto gravado na proposta é diferente do box 9. Salve a proposta antes de enviar.";
+export const TEXTO_SERA_GRAVADO =
+  "O texto gravado na proposta é diferente do box 9. Ao confirmar, o texto do box 9 é gravado na proposta (só o texto do WhatsApp) e enviado.";
 
 function quando(iso: string) {
   const d = new Date(iso);
@@ -85,7 +89,22 @@ export function EnviarOrcamentoChatGuru({ idInt, textoDoBox, alteracoesNaoSalvas
 
   async function enviar() {
     if (!idInt || enviando) return;
+    // Alteração pendente: continua pedindo para salvar (nada é gravado nem enviado).
+    if (alteracoesNaoSalvas) {
+      setPreparo((p) => ({ ...(p ?? { ok: false }), bloqueio: SALVE_ANTES }));
+      return;
+    }
     setEnviando(true);
+    // Sem alteração, o box 9 é o texto certo: grava só texto_whatsapp antes de enviar.
+    if (textoDiferente) {
+      const g = await gravarTextoDoBox(idInt, textoDoBox);
+      if (!g.ok) {
+        setEnviando(false);
+        setPreparo((p) => ({ ...(p ?? { ok: false }), bloqueio: g.mensagem ?? "Não foi possível gravar o texto do box 9." }));
+        return;
+      }
+      setPreparo((p) => (p ? { ...p, texto: textoDoBox } : p));
+    }
     const r = await enviarOrcamentoChatGuru(idInt);
     setEnviando(false);
     if (!r.ok) {
@@ -112,7 +131,7 @@ export function EnviarOrcamentoChatGuru({ idInt, textoDoBox, alteracoesNaoSalvas
   const conversas = preparo?.conversas ?? [];
   const livres = conversas.filter((c) => !c.bloqueio);
   const bloqueioGeral = !preparo ? null : !preparo.ok ? preparo.mensagem ?? "Não foi possível preparar o envio." : preparo.bloqueio ?? null;
-  const podeEnviar = !carregando && !enviando && !bloqueioGeral && !textoDiferente && livres.length > 0 && !envios;
+  const podeEnviar = !carregando && !enviando && !bloqueioGeral && !alteracoesNaoSalvas && livres.length > 0 && !envios;
 
   return (
     <div className="mt-3">
@@ -134,7 +153,10 @@ export function EnviarOrcamentoChatGuru({ idInt, textoDoBox, alteracoesNaoSalvas
           {carregando && <p className="text-xs text-slate-500 dark:text-slate-400">Conferindo as conversas…</p>}
 
           {!carregando && bloqueioGeral && <p className={`text-xs font-semibold ${TOM.erro}`}>{bloqueioGeral}</p>}
-          {!carregando && textoDiferente && <p className={`text-xs font-semibold ${TOM.erro}`}>{TEXTO_DIFERENTE}</p>}
+          {!carregando && alteracoesNaoSalvas && <p className={`text-xs font-semibold ${TOM.erro}`}>{SALVE_ANTES}</p>}
+          {!carregando && !alteracoesNaoSalvas && textoDiferente && !envios && (
+            <p className={`text-xs font-semibold ${TOM.alerta}`}>{TEXTO_SERA_GRAVADO}</p>
+          )}
 
           {!carregando && conversas.length > 0 && (
             <ul className="space-y-1.5">

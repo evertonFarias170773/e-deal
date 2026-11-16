@@ -81,6 +81,33 @@ export function liberarOrcamentoChatGuru(idInt: number, seq: number, resposta: "
   return chamar<{ ok: boolean; mensagem?: string }>({ acao: "liberar", id_int: idInt, seq, resposta, confirmado: true });
 }
 
+/**
+ * Grava só propostas.texto_whatsapp com o texto do box 9 (16/11/2026, pedido do
+ * Everton). Usado no Confirmar envio quando a tela não tem alteração pendente e o
+ * texto gravado difere do box: sem alteração, o box 9 é o texto certo. O texto do
+ * WhatsApp não é valor, então vale também em proposta paga; nenhuma outra coluna
+ * é tocada. Mesmo caminho do Salvar (update pela sessão de quem clicou, RLS).
+ * Confere a releitura antes de deixar enviar.
+ */
+export async function gravarTextoDoBox(idInt: number, texto: string): Promise<{ ok: boolean; mensagem?: string }> {
+  const supabase = getSupabaseClient();
+  if (!supabase) return { ok: false, mensagem: "Supabase não configurado." };
+  if (!textoComparavel(texto).trim()) return { ok: false, mensagem: "O box 9 está vazio. Nada foi gravado nem enviado." };
+  const { data, error } = await supabase
+    .from("propostas")
+    .update({ texto_whatsapp: texto })
+    .eq("id_int", idInt)
+    .select("texto_whatsapp")
+    .maybeSingle();
+  if (error || !data) {
+    return { ok: false, mensagem: "Não foi possível gravar o texto do box 9 na proposta. Nada foi enviado." };
+  }
+  if (textoComparavel((data as { texto_whatsapp?: string | null }).texto_whatsapp) !== textoComparavel(texto)) {
+    return { ok: false, mensagem: "O texto gravado não ficou igual ao box 9. Nada foi enviado." };
+  }
+  return { ok: true };
+}
+
 /** Mesma limpeza do servidor (textoDoOrcamento), para comparar o box 9 com o texto gravado. */
 export function textoComparavel(texto: string | null | undefined): string {
   return String(texto ?? "")

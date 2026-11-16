@@ -1,6 +1,6 @@
 # Proposta: aba Geral
 
-> **Última revisão:** 16/11/2026 (conversa do ChatGuru com número de fora do Brasil aparece em **Contatos do pedido**; a conversa pré-marcada e não gravada é gravada pelo **Salvar**, também em proposta paga). 15/11/2026 (proposta com desconto da gerência: os demais salvam o que não afeta o valor; erro **Desconto da gerência**). 14/11/2026 (botão **Enviar pelo ChatGuru** no bloco 9; bloco 3 vira **Contatos do pedido**: uma ou mais conversas do ChatGuru, uma principal que é o Comprador; sai a lista de contatos do cadastro; contato exigido no Enviar para arte e na Liberação para produção. Antes, 11/11/2026: endereço com a rua gravada como "[object Object]" aparece como **Rua com erro no cadastro (corrija pelo lápis)** e abre com a rua em branco. Antes, no mesmo dia: campo **Observação para a nota fiscal** no fim do bloco 4, que sai impresso na NF-e e na NFS-e; o bloco 10 continua interno. Antes, no mesmo dia: bloco **Conversa do WhatsApp** no Contato responsável: escolhe a conversa do ChatGuru, a mesma do Comprador da aba Artes)
+> **Última revisão:** 16/11/2026 (**Enviar pelo ChatGuru** sem alteração na tela grava só o texto do bloco 9 e envia, também em proposta paga; conversa do ChatGuru com número de fora do Brasil aparece em **Contatos do pedido**; a conversa pré-marcada e não gravada é gravada pelo **Salvar**, também em proposta paga). 15/11/2026 (proposta com desconto da gerência: os demais salvam o que não afeta o valor; erro **Desconto da gerência**). 14/11/2026 (botão **Enviar pelo ChatGuru** no bloco 9; bloco 3 vira **Contatos do pedido**: uma ou mais conversas do ChatGuru, uma principal que é o Comprador; sai a lista de contatos do cadastro; contato exigido no Enviar para arte e na Liberação para produção. Antes, 11/11/2026: endereço com a rua gravada como "[object Object]" aparece como **Rua com erro no cadastro (corrija pelo lápis)** e abre com a rua em branco. Antes, no mesmo dia: campo **Observação para a nota fiscal** no fim do bloco 4, que sai impresso na NF-e e na NFS-e; o bloco 10 continua interno. Antes, no mesmo dia: bloco **Conversa do WhatsApp** no Contato responsável: escolhe a conversa do ChatGuru, a mesma do Comprador da aba Artes)
 > **Caminho no menu:** Pedidos → abrir um pedido → aba **Geral**
 > **Endereço:** `/orcamentos/<número>/editar` (em proposta nova, `/orcamentos/novo`)
 
@@ -191,6 +191,10 @@ Desde 14/11/2026 o bloco **9. Envio do orçamento** tem o botão **Enviar pelo C
 2. Clique em **Enviar pelo ChatGuru**. A conferência mostra cada conversa marcada e, ao lado, **Pronta para receber** ou o motivo de não poder receber agora.
 3. Clique em **Confirmar envio para N conversas**. O orçamento vai para cada conversa liberada, uma de cada vez, e a tela mostra o resultado de cada uma.
 
+Com alteração não salva na tela, o envio não sai: aparece "Há alterações não salvas. Salve a proposta antes de enviar...". Salve e envie de novo.
+
+Desde 16/11/2026, sem alteração na tela, o texto do bloco 9 é o que vai. Se o texto gravado na proposta for outro, a conferência avisa "O texto gravado na proposta é diferente do box 9. Ao confirmar, o texto do box 9 é gravado na proposta (só o texto do WhatsApp) e enviado." O **Confirmar envio** grava só o texto do WhatsApp e envia. Isso vale também para proposta com pagamento, onde o **Salvar alterações** responde "Nada para salvar", e para proposta salva antes de 14/11/2026, sem a cidade ou com outro nome de frete no texto. Valores, itens e frete não mudam.
+
 O resultado de cada conversa pode ser:
 - **Enviado: diálogo executado no ChatGuru.**
 - **Não enviado**, com o motivo dado pelo ChatGuru.
@@ -242,7 +246,8 @@ A escolha entre proposta avulsa e proposta com produtos do catálogo não fica n
 | O que aparece | Por que acontece | O que fazer |
 |---|---|---|
 | "A proposta não tem conversa escolhida. Marque as conversas em Contatos do pedido, na aba Geral, e salve antes de enviar." | **Enviar pelo ChatGuru** sem conversa marcada no bloco 3. | Marque as conversas em **3. Contatos do pedido** e salve. |
-| "Há alterações não salvas. Salve a proposta antes de enviar..." ou "O texto gravado na proposta é diferente do box 9." | O texto gravado não é o que o bloco 9 mostra; o envio mandaria o texto antigo. | Clique em **Salvar alterações** e envie de novo. |
+| "Há alterações não salvas. Salve a proposta antes de enviar..." | Há alteração na tela ainda não salva; o envio mandaria o texto antigo. | Clique em **Salvar alterações** e envie de novo. |
+| "Não foi possível gravar o texto do box 9 na proposta. Nada foi enviado." | O **Confirmar envio** não conseguiu gravar o texto do bloco 9 (texto gravado diferente do box). | Tente de novo; se repetir, avise o suporte. |
 | "O ChatGuru exige 2 minutos entre mensagens para a mesma conversa. Tente de novo em N s." | Aquela conversa recebeu uma mensagem do Vibe há menos de 2 minutos. | Espere o tempo indicado e envie de novo. |
 | "Há um aviso sem confirmação nesta conversa." | Um envio anterior para a conversa ficou sem resposta do ChatGuru. | Um ADM confere no ChatGuru e usa **Liberar número** (no bloco 9 ou na Expedição). |
 | "Esta conversa não é mais do cliente no ChatGuru." | A conversa marcada foi renomeada ou saiu do cliente no ChatGuru. | Marque a conversa certa em **3. Contatos do pedido**. |
