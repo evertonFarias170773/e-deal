@@ -1707,13 +1707,24 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
    * (proposta nova, cliente trocado ou a única conversa ainda não gravada), pela
    * mesma rota da aba Artes. Falha aqui não desfaz o Salvar: só avisa.
    */
-  const gravarConversaDoSalvar = async (idSalvo: number) => {
+  const gravarConversaDoSalvar = async (idSalvo: number, avisarSucesso = false) => {
     if (form.clienteNaoCadastrado) return;
     const r = await conversaDaArte.gravarAoSalvar(idSalvo);
     if (!r.ok) {
       showToast({ type: "warning", title: "Proposta salva, mas a conversa do WhatsApp não foi gravada", description: r.erro });
+    } else if (avisarSucesso) {
+      showToast({ type: "success", title: "Contatos do pedido gravados", description: "A conversa marcada na aba Geral foi gravada no pedido." });
     }
   };
+
+  /**
+   * A aba Geral mostra uma escolha que o pedido ainda não tem (a única conversa
+   * pré-marcada, ou marcada antes do cliente ser gravado). Conta como alteração
+   * no Salvar (16/11/2026), inclusive em proposta paga ou com cobrança.
+   * Complemento herda os contatos do principal: fica de fora.
+   */
+  const contatosDoPedidoPorGravar =
+    !form.clienteNaoCadastrado && !ehComplemento && conversaDaArte.pendente && !conversaDaArte.carregando;
 
   const currentAddress = useMemo(() => {
     return combinedAddresses.find((a) => a.id === form.enderecoId);
@@ -5261,6 +5272,13 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
         totalCarregado: proposta?.resumo?.valorTotal
       })
     ) {
+      // Contato do pedido pré-marcado e não gravado (16/11/2026): é alteração.
+      // Grava só a escolha, pela rota das conversas; a editar-paga não é
+      // chamada, então nenhum valor da proposta paga muda.
+      if (contatosDoPedidoPorGravar && form.id_int !== "NOVO") {
+        await gravarConversaDoSalvar(Number(form.id_int), true);
+        return true;
+      }
       showToast({ type: "info", title: "Nada para salvar", description: "Nenhuma alteração desde o último salvamento." });
       return true;
     }
@@ -5850,7 +5868,9 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     }
 
     if (form.id_int !== "NOVO" && form.id_int && Number(form.id_int) > 0 && !isDirty) {
-      // Já está salvo e sem alterações locais
+      // Já está salvo e sem alterações locais. O contato do pedido pré-marcado e
+      // não gravado vai pela rota das conversas (16/11/2026), sem regravar a proposta.
+      if (contatosDoPedidoPorGravar) await gravarConversaDoSalvar(Number(form.id_int));
       return true;
     }
 

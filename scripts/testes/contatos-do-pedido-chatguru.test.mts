@@ -79,6 +79,14 @@ checar("cobrança não usa mais o e-mail nem o telefone do contato da tabela", [
 checar("cobrança lê e-mail e telefone pela função única", [(provedor.match(/lerContatoDaCobranca\(/g) ?? []).length, (painel.match(/lerContatoDaCobranca\(/g) ?? []).length], [2, 2]);
 checar("Maestro salva sem contato", maestro.includes("bloqueadoPorContato: true"), false);
 checar("Expedição mostra os contatos do pedido no despacho", despacho.includes("<ContatosDoPedidoNoDespacho idInt={pedido.idInt}"), true);
+// 16/11/2026: a conversa pré-marcada e não gravada conta como alteração no Salvar.
+const guardaPaga = pagina.slice(pagina.indexOf("salvarSemMudancaEmPropostaPaga({"), pagina.indexOf('title: "Nada para salvar"'));
+checar("proposta paga sem mudança grava a pré-marcada antes do Nada para salvar, sem editar-paga",
+  [guardaPaga.includes("if (contatosDoPedidoPorGravar && form.id_int !== \"NOVO\")"), guardaPaga.includes("await gravarConversaDoSalvar(Number(form.id_int), true);"), guardaPaga.includes("editar-paga\"")],
+  [true, true, false]);
+checar("salvar antes da cobrança sem mudança grava a pré-marcada", pagina.includes("if (contatosDoPedidoPorGravar) await gravarConversaDoSalvar(Number(form.id_int));"), true);
+checar("pré-marcada = pendente da tela, fora complemento e cliente não cadastrado",
+  pagina.includes("!form.clienteNaoCadastrado && !ehComplemento && conversaDaArte.pendente && !conversaDaArte.carregando"), true);
 
 if (falhas > 0) {
   console.log(`\n${falhas} falha(s).`);
