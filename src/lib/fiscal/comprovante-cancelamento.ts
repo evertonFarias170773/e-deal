@@ -54,12 +54,12 @@ export type EventoDeCancelamento = {
   ambiente: "producao" | "homologacao" | null;
 };
 
-function secao(xml: string, tag: string): string | null {
+export function secao(xml: string, tag: string): string | null {
   const achado = xml.match(new RegExp(`<${tag}[\\s>][\\s\\S]*?</${tag}>`));
   return achado ? achado[0] : null;
 }
 
-function campo(xml: string | null, tag: string): string {
+export function campo(xml: string | null, tag: string): string {
   if (!xml) return "";
   const achado = xml.match(new RegExp(`<${tag}>([^<]*)</${tag}>`));
   return achado ? desfazerEntidades(achado[1].trim()) : "";

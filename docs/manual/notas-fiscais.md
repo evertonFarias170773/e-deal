@@ -1,6 +1,6 @@
 # Notas fiscais
 
-> **Última revisão:** 16/11/2026 (**Baixar comprovante de cancelamento (PDF)**, gerado pelo Vibe a partir do XML do evento; o ícone **Baixar DANFE** da linha passou a baixar a própria nota da linha, inclusive a cancelada, e não mais a nota que a substituiu. Antes, no mesmo dia: prazo para cancelar NF-e passou de 24 para 168 horas, o prazo do RS; antes, no mesmo dia: menu da nota ganhou **Copiar chave de acesso**, na NF-e e na NFS-e autorizada ou cancelada, e **Baixar comprovante de cancelamento** na NF-e cancelada). 15/11/2026 (o telefone do destinatário na NF-e passou a ser o da conversa principal do pedido no ChatGuru, com o 9; antes, no mesmo dia: a NF-e passou a levar o e-mail do destinatário no campo que a Focus lê). 11/11/2026 (com card de frete escolhido, o rascunho só nasce com os Correios se o card for dos Correios; a categoria de frete vale só sem card. Antes, no mesmo dia: **Observação para a nota fiscal** do pedido nas Informações Complementares da NF-e, com contagem até 5.000 e o botão **Incluir**; selos **Obs. para a NF** e **Obs. interna** na Fila e nas telas das notas). 09/11/2026 (transportadora dos Correios na nota é sempre o cadastro de Porto Alegre). 06/11/2026 (lançamento no contas a receber: a parcela conta por cobrança). 05/11/2026 (a condição de pagamento não vai mais escrita na NFS-e). 04/11/2026 (Histórico em duas abas, NF-e e NFS-e; NFS-e com busca própria, mais nova primeiro e começando em Produção; selo Boleto em processamento no banco)
+> **Última revisão:** 17/11/2026 (carta de correção: **Baixar carta de correção (PDF)** e **(XML)** no menu, uma linha por carta; o PDF é gerado pelo Vibe a partir do XML da carta; antes, os itens de carta não apareciam em nenhuma nota). 16/11/2026 (**Baixar comprovante de cancelamento (PDF)**, gerado pelo Vibe a partir do XML do evento; o ícone **Baixar DANFE** da linha passou a baixar a própria nota da linha, inclusive a cancelada, e não mais a nota que a substituiu. Antes, no mesmo dia: prazo para cancelar NF-e passou de 24 para 168 horas, o prazo do RS; antes, no mesmo dia: menu da nota ganhou **Copiar chave de acesso**, na NF-e e na NFS-e autorizada ou cancelada, e **Baixar comprovante de cancelamento** na NF-e cancelada). 15/11/2026 (o telefone do destinatário na NF-e passou a ser o da conversa principal do pedido no ChatGuru, com o 9; antes, no mesmo dia: a NF-e passou a levar o e-mail do destinatário no campo que a Focus lê). 11/11/2026 (com card de frete escolhido, o rascunho só nasce com os Correios se o card for dos Correios; a categoria de frete vale só sem card. Antes, no mesmo dia: **Observação para a nota fiscal** do pedido nas Informações Complementares da NF-e, com contagem até 5.000 e o botão **Incluir**; selos **Obs. para a NF** e **Obs. interna** na Fila e nas telas das notas). 09/11/2026 (transportadora dos Correios na nota é sempre o cadastro de Porto Alegre). 06/11/2026 (lançamento no contas a receber: a parcela conta por cobrança). 05/11/2026 (a condição de pagamento não vai mais escrita na NFS-e). 04/11/2026 (Histórico em duas abas, NF-e e NFS-e; NFS-e com busca própria, mais nova primeiro e começando em Produção; selo Boleto em processamento no banco)
 > **Caminho no menu:** Financeiro → Notas fiscais (primeiro item da seção Financeiro do menu lateral)
 > **Endereço:** `/notas-fiscais` (a nota aberta fica em `/notas-fiscais/[id]`)
 
@@ -70,8 +70,8 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Ver contas a receber** | Menu da nota Autorizada que já tem títulos | Abre a Carteira com a busca pela referência da nota. |
 | **Cancelar NF-e** | Menu da nota Autorizada, nas 168 horas (7 dias) seguintes à autorização | Abre a janela **Cancelar NF-e**. |
 | **Cancelar NF-e (fora do prazo)** | Menu da nota Autorizada, depois de 168 horas da autorização ou sem data de autorização | Abre a janela **Cancelamento indisponível**, que explica o motivo e orienta procurar a contabilidade. Não envia nada à SEFAZ. |
-| **Abrir Carta de Correção (PDF)** | Menu da nota Autorizada que já tem carta | Abre o PDF da última carta de correção. |
-| **Baixar XML da Carta de Correção** | Menu da nota Autorizada que já tem carta | Abre o XML da última carta de correção. |
+| **Baixar carta de correção (PDF)** | Menu da nota Autorizada ou Cancelada que tem carta registrada pela SEFAZ | Baixa um PDF da carta, gerado pelo Vibe a partir do XML: emitente, destinatário, número e série, chave, sequência, data e protocolo da carta, o texto da correção e as condições de uso. Com mais de uma carta, aparece uma linha por carta: **Baixar carta de correção nº 1 (PDF)**, **nº 2**... Nome `Carta-de-Correcao-<sequência>-NF-e-<número>-Pedido-<pedido>.pdf`. |
+| **Baixar carta de correção (XML)** | Mesmo lugar | Baixa o XML da carta registrado na SEFAZ, que é o documento com valor fiscal. Uma linha por carta, como o PDF. |
 | **Carta de Correção** | Menu da nota Autorizada, para quem tem a permissão **Emitir Carta de Correção** | Abre a janela **Carta de Correção (CCe)**. |
 | **Abrir XML** | Menu da nota Cancelada ou Denegada; menu da NFS-e | Abre o XML da nota. |
 | **Descartar rascunho** | Menu da nota que nunca foi transmitida | Pede confirmação e apaga o rascunho. |
@@ -289,7 +289,8 @@ O ícone **Baixar DANFE** só aparece para nota autorizada ou cancelada em produ
 1. No **Histórico**, abra o menu da nota autorizada e clique em **Carta de Correção**.
 2. Escreva o texto da correção, com pelo menos 15 caracteres. O botão **Enviar CCe** só libera depois disso.
 3. Clique em **Enviar CCe**. Aparece **A solicitação foi enviada. Atualize a nota para conferir o status final.**
-4. Depois de registrada, o menu da nota passa a mostrar **Abrir Carta de Correção (PDF)** e **Baixar XML da Carta de Correção**. O evento também aparece em **Eventos fiscais**, no bloco Resumo da nota.
+4. Depois de registrada, o menu da nota passa a mostrar **Baixar carta de correção (PDF)** e **Baixar carta de correção (XML)**, uma linha de cada por carta. O evento também aparece em **Eventos fiscais**, no bloco Resumo da nota.
+5. O XML da carta é copiado da Focus para o Vibe uma vez por hora. Na primeira hora depois da carta, os dois itens podem responder **Carta de correção indisponível** com "O XML desta carta de correção ainda não foi copiado para o Vibe". Tente de novo mais tarde. O PDF da carta que a Focus guarda só abre com a senha da empresa na Focus; por isso o PDF do menu é montado pelo Vibe com os dados do XML.
 
 ### Cancelar uma nota
 
@@ -415,6 +416,7 @@ Ação temporária, da transição entre sistemas. Use só quando a nota do pedi
 | O que aparece | Por que acontece | O que fazer |
 |---|---|---|
 | "Sem permissão para emitir carta de correção (fiscal.carta_correcao)." | Seu perfil não tem a permissão **Emitir Carta de Correção**. | Peça o envio a quem tem a permissão. |
+| "O XML desta carta de correção ainda não foi copiado para o Vibe..." | A carta é recente e a cópia da Focus para o Vibe ainda não rodou (roda uma vez por hora). | Tente de novo depois de uma hora. Se continuar, avise o suporte com o número da nota. |
 | "Carta de correção não permitida: a nota está em ..." | A nota deixou de estar Autorizada (foi cancelada, por exemplo). | Atualize a lista e confira o status da nota. |
 | "A integração fiscal recusou a chamada (HTTP ...). Nenhuma carta foi enviada." | A integração fiscal (n8n) barrou o pedido antes de chegar à SEFAZ: a carta não saiu. O número entre parênteses é o código do erro. | Não adianta repetir. Avise o suporte com o número da nota e o código HTTP. |
 | "A integração fiscal respondeu sem confirmação (HTTP ...)." | A resposta foi cortada no caminho (tempo esgotado, por exemplo). A carta pode ter sido registrada. | Atualize a nota e confira **Eventos fiscais** antes de enviar de novo. Se a carta não aparecer, avise o suporte. |
@@ -464,6 +466,9 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/features/fiscal/NotasFiscaisPage.tsx`
 - `src/lib/fiscal/chave-de-acesso.ts`
 - `src/lib/fiscal/comprovante-cancelamento.ts`
+- `src/lib/fiscal/carta-correcao-arquivo.ts`
+- `src/app/api/fiscal/carta-correcao/arquivo/route.ts`
+- `src/features/fiscal/pdf/CartaCorrecaoPdfDocument.tsx`
 - `src/features/fiscal/pdf/ComprovanteCancelamentoPdfDocument.tsx`
 - `src/app/api/fiscal/comprovante-cancelamento/route.ts`
 - `src/features/fiscal/lib/observacao-nota-fiscal.ts`

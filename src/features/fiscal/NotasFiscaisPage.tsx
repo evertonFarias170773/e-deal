@@ -96,6 +96,7 @@ import {
 import { prazoDoCancelamento } from "@/lib/fiscal/cancelamento-nfe";
 import { chaveParaCopiar, MENSAGEM_CHAVE_COPIADA } from "@/lib/fiscal/chave-de-acesso";
 import { nomeDoComprovanteDeCancelamento } from "@/lib/fiscal/comprovante-cancelamento";
+import { cartasDaNota, nomeDaCartaDeCorrecao, rotulosDaCarta } from "@/lib/fiscal/carta-correcao-arquivo";
 import { fetchComSessao } from "@/lib/supabase/sessao";
 import { estadoDoRegistroBancario } from "@/features/cobrancas/lib/registro-bancario";
 
@@ -979,6 +980,62 @@ export function NotasFiscaisPage() {
     ? nfeData.isLoading
     : nfseData.isLoading;
 
+  /**
+   * Um PDF e um XML por carta de correção registrada (135), em ordem de
+   * sequência (lib/fiscal/carta-correcao-arquivo). Os arquivos vêm pela rota
+   * /api/fiscal/carta-correcao/arquivo, do XML que o n8n guarda; o link da
+   * Focus não é aberto direto (o PDF de lá só sai com o token da empresa).
+   */
+  function itensDasCartasDeCorrecao(item: NfeReadModel): ActionMenuItem[] {
+    const cartas = cartasDaNota(cceEventsMap[item.ref] || []);
+    return cartas.flatMap((sequencia) => {
+      const rotulos = rotulosDaCarta(sequencia, cartas.length);
+      return [
+        { label: rotulos.pdf, onClick: () => void baixarArquivoFiscal(item, { tipo: "carta", sequencia, formato: "pdf" }) },
+        { label: rotulos.xml, onClick: () => void baixarArquivoFiscal(item, { tipo: "carta", sequencia, formato: "xml" }) }
+      ];
+    });
+  }
+
+  /** Baixa a carta de correção (PDF ou XML) pelo servidor e salva com nome legível. */
+  async function baixarArquivoFiscal(
+    item: NfeReadModel,
+    pedido: { tipo: "carta"; sequencia: number; formato: "xml" | "pdf" }
+  ) {
+    const endereco = `/api/fiscal/carta-correcao/arquivo?ref=${encodeURIComponent(item.ref)}&seq=${pedido.sequencia}&formato=${pedido.formato}`;
+    const nome = nomeDaCartaDeCorrecao(
+      { numero: item.numero_nf, idInt: item.id_int, ref: item.ref, sequencia: pedido.sequencia },
+      pedido.formato
+    );
+    try {
+      const resposta = await fetchComSessao(endereco, { cache: "no-store" });
+      if (!resposta.ok) {
+        const dados = (await resposta.json().catch(() => ({}))) as { message?: string };
+        showToast({
+          type: "error",
+          title: "Carta de correção indisponível",
+          description: dados.message || "Não foi possível baixar a carta de correção."
+        });
+        return;
+      }
+      const arquivo = await resposta.blob();
+      const link = document.createElement("a");
+      const objeto = URL.createObjectURL(arquivo);
+      link.href = objeto;
+      link.download = nome;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(objeto), 60_000);
+    } catch (err) {
+      showToast({
+        type: "error",
+        title: "Não foi possível baixar a carta de correção.",
+        description: err instanceof Error ? err.message : undefined
+      });
+    }
+  }
+
   /** Baixa o comprovante de cancelamento (XML do evento ou o PDF gerado dele) pelo servidor e salva com nome legível. */
   async function baixarComprovanteDeCancelamento(item: NfeReadModel, formato: "xml" | "pdf") {
     try {
@@ -1439,41 +1496,7 @@ export function NotasFiscaisPage() {
         }
       }
 
-      const events = cceEventsMap[item.ref] || [];
-      const latestCceEvent = events.find(e => e.tipo_evento === "CARTA_CORRECAO");
-      const payloadRetorno = item.payload_retorno as Record<string, unknown> | null;
-      const fallbackPdf = payloadRetorno?.caminho_pdf_carta_correcao as string | undefined;
-      const fallbackXml = payloadRetorno?.caminho_xml_carta_correcao as string | undefined;
-
-      const hasCce = !!latestCceEvent || !!fallbackPdf || !!fallbackXml;
-
-      if (hasCce) {
-        const baseUrl = item.ambiente === "producao" ? "https://api.focusnfe.com.br" : "https://homologacao.focusnfe.com.br";
-        const pdfUrl = latestCceEvent?.url_pdf || latestCceEvent?.caminho_pdf
-          ? (latestCceEvent.url_pdf || `${baseUrl}${latestCceEvent.caminho_pdf}`)
-          : (fallbackPdf ? `${baseUrl}${fallbackPdf}` : null);
-
-        const xmlUrl = latestCceEvent?.url_xml || latestCceEvent?.caminho_xml
-          ? (latestCceEvent.url_xml || `${baseUrl}${latestCceEvent.caminho_xml}`)
-          : (fallbackXml ? `${baseUrl}${fallbackXml}` : null);
-
-        if (pdfUrl) {
-          actions.push({
-            label: "Abrir Carta de Correção (PDF)",
-            onClick: () => {
-              window.open(pdfUrl, "_blank");
-            }
-          });
-        }
-        if (xmlUrl) {
-          actions.push({
-            label: "Baixar XML da Carta de Correção",
-            onClick: () => {
-              window.open(xmlUrl, "_blank");
-            }
-          });
-        }
-      }
+      actions.push(...itensDasCartasDeCorrecao(item));
 
       if (canCartaCorrecao) {
         actions.push({
@@ -1503,6 +1526,7 @@ export function NotasFiscaisPage() {
       // (rota /api/fiscal/comprovante-cancelamento). Só CANCELADA: denegada
       // não tem evento.
       if (status === "CANCELADA") {
+        actions.push(...itensDasCartasDeCorrecao(item));
         // PDF gerado pelo Vibe a partir do XML do evento (a Focus não gera PDF
         // do cancelamento da NF-e). O XML, que é o documento fiscal, continua.
         actions.push({

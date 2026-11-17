@@ -3208,15 +3208,22 @@ export async function getNotaEventosForRefs(
   if (!client || refs.length === 0) return [];
 
   try {
-    const { data, error } = await client
-      .from("notas_eventos")
-      .select("*")
-      .eq("tipo_documento", tipoDocumento)
-      .in("ref", refs)
-      .order("created_at", { ascending: false });
-
-    if (error) throw error;
-    return data || [];
+    // Em lotes de refs (17/11/2026): o Histórico passa TODAS as notas (~1.600)
+    // e a URL com o `in` de todas passava de 14 mil caracteres; o servidor
+    // recusava, a lista de eventos voltava vazia e nenhuma carta de correção
+    // aparecia no menu (NF 41390). Mesma ordem de antes: mais recente primeiro.
+    const leitura = await lerPorIds<SupabaseNotaEventoRow, string>(
+      refs,
+      (lote) =>
+        client
+          .from("notas_eventos")
+          .select("*")
+          .eq("tipo_documento", tipoDocumento)
+          .in("ref", lote) as unknown as ConsultaPaginavel<SupabaseNotaEventoRow>,
+      { chave: "id" }
+    );
+    if (leitura.error || !leitura.completo) throw leitura.error ?? new Error("leitura incompleta dos eventos");
+    return [...leitura.data].sort((a, b) => String(b.created_at ?? "").localeCompare(String(a.created_at ?? "")));
   } catch (err) {
     console.error("[NfeService] getNotaEventosForRefs failed:", err);
     return [];
