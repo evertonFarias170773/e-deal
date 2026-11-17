@@ -34,7 +34,18 @@ checar("28 ocupados: SEM ESCANINHO LIVRE", textoDaTarjaDoEscaninho({ situacao: "
 checar("liberado, um setor, não liberado ou falha: sem tarja",
   [textoDaTarjaDoEscaninho({ situacao: "LIBERADO", nome: null }), textoDaTarjaDoEscaninho({ situacao: "UM_SETOR", nome: null }), textoDaTarjaDoEscaninho({ situacao: "NAO_LIBERADO", nome: null }), textoDaTarjaDoEscaninho(null)],
   [null, null, null, null]);
-checar("rótulo da tarja", ROTULO_ESCANINHO, "ESCANINHO DE ENCONTRO DAS O.S.:");
+checar("rótulo da tarja", ROTULO_ESCANINHO, "Escaninho de encontro das OS.");
+{
+  const fonte = readFileSync("src/features/pedidos/pdf/OsPdfDocument.tsx", "utf8");
+  const r = fonte.slice(fonte.indexOf("function ResumoDemaisSetores"));
+  checar("tarja: rótulo à esquerda e nome em caixa alta à direita",
+    [r.indexOf("styles.escaninhoRotulo") > 0 && r.indexOf("styles.escaninhoRotulo") < r.indexOf("styles.escaninhoTexto"),
+     r.includes("pdfSafe(escaninho).toUpperCase()"),
+     /escaninhoTarja: \{[^}]*flexDirection: "row",\s*justifyContent: "space-between"/.test(fonte),
+     /escaninhoTexto: \{[^}]*textAlign: "right"/.test(fonte),
+     /escaninhoRotulo: \{ fontSize: 9, fontFamily: "Helvetica",/.test(fonte)],
+    [true, true, true, true, true]);
+}
 
 const pdf = readFileSync("src/features/pedidos/pdf/OsPdfDocument.tsx", "utf8");
 const pagina = pdf.slice(pdf.indexOf("export function OsPdfPaginaBoletim"));

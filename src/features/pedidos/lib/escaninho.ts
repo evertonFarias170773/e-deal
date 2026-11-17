@@ -16,7 +16,8 @@ export type SituacaoEscaninho = "OCUPADO" | "SEM_LIVRE" | "LIBERADO" | "UM_SETOR
 
 export type EscaninhoDoBoletim = { situacao: SituacaoEscaninho; nome: string | null };
 
-export const ROTULO_ESCANINHO = "ESCANINHO DE ENCONTRO DAS O.S.:";
+/** Lado esquerdo da tarja, em maiúsculas e minúsculas; o nome vai à direita, em caixa alta. */
+export const ROTULO_ESCANINHO = "Escaninho de encontro das OS.";
 export const SEM_ESCANINHO_LIVRE = "SEM ESCANINHO LIVRE";
 
 /** O boletim é de pedido composto quando há modelos de outro setor além do dele. */

@@ -519,9 +519,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     marginTop: 2,
     marginBottom: 4,
+    // 17/11/2026 (2a versao): rotulo a esquerda, nome a direita. A altura segue
+    // a do nome (13pt), a mesma da tarja anterior.
+    flexDirection: "row",
+    justifyContent: "space-between",
     alignItems: "center"
   },
-  escaninhoTexto: { fontSize: 13, fontFamily: "Helvetica-Bold", color: "#ffffff", letterSpacing: 0.5, textAlign: "center" },
+  escaninhoRotulo: { fontSize: 9, fontFamily: "Helvetica", color: "#ffffff", paddingRight: 8 },
+  escaninhoTexto: { fontSize: 13, fontFamily: "Helvetica-Bold", color: "#ffffff", letterSpacing: 0.5, textAlign: "right" },
   // ── Observações / envio ────────────────────────────────────────────────────
   // Contorno removido em 27/08/2026: o texto passou a ser o que delimita o
   // bloco. O recuo horizontal saiu junto com a borda para o texto manter o
@@ -938,7 +943,8 @@ function ResumoDemaisSetores({
       <View wrap={false}>
         {escaninho ? (
           <View style={styles.escaninhoTarja}>
-            <Text style={styles.escaninhoTexto}>{`${ROTULO_ESCANINHO} ${pdfSafe(escaninho)}`}</Text>
+            <Text style={styles.escaninhoRotulo}>{ROTULO_ESCANINHO}</Text>
+            <Text style={styles.escaninhoTexto}>{pdfSafe(escaninho).toUpperCase()}</Text>
           </View>
         ) : null}
         <View style={styles.resumoBarra}>
