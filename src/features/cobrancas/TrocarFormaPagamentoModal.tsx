@@ -8,11 +8,13 @@ import { getSupabaseClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/formatters/currency";
 import { listarModelosCobranca } from "@/features/cobrancas/services/modelos-cobranca";
 import type { ModeloCobranca } from "@/features/cobrancas/types";
-import type { DestinoDaTroca, TipoDestinoDaTroca } from "@/features/cobrancas/troca-forma-pagamento";
+import { problemaNaChavePix, type DestinoDaTroca, type TipoDestinoDaTroca } from "@/features/cobrancas/troca-forma-pagamento";
+import { getLocalDateInSaoPaulo } from "@/features/cobrancas/cobrancas-utils";
 
 /**
  * Trocar forma de pagamento: PIX não pago -> forma interna (Faturado,
- * E-Permuta, E-Amostra, E-Retrabalho), mesma proposta, mesmo valor e mesmo
+ * Chave Pix, E-Permuta, E-Amostra, E-Retrabalho, E-Crédito), mesma proposta,
+ * mesmo valor e mesmo
  * pagador. Quem decide se pode, e para quais formas, é o servidor
  * (GET /api/cobrancas/trocar-forma-pagamento), consultado ao abrir; a tela só
  * escolhe a forma, a condição (quando a forma pede) e o motivo.
@@ -40,6 +42,8 @@ function depoisDaTroca(destino: DestinoDaTroca): string {
   switch (destino.tipo) {
     case "E-FATURADO":
       return "O Faturado segue o caminho de sempre: análise de crédito, Conferência e títulos no Registro de recebíveis.";
+    case "CHAVE-PIX":
+      return "Depois que o banco confirmar o cancelamento do PIX, a cobrança é conferida em seu nome, como um PIX pago: o pedido é liberado na hora e o valor entra no faturamento, nas vendas e na comissão.";
     case "E-CREDITO":
       return "A E-Crédito nasce paga, com o crédito já descontado do saldo do cliente, e segue para a Conferência. Não gera títulos.";
     case "E-PERMUTA":
@@ -83,6 +87,11 @@ export function TrocarFormaPagamentoModal({ cobrancaId, onClose, onSuccess }: Pr
   const [modeloId, setModeloId] = useState("");
   const [tipo, setTipo] = useState<TipoDestinoDaTroca>("E-FATURADO");
   const [motivo, setMotivo] = useState("");
+  // Chave Pix: o PIX já recebido na chave da empresa (17/11/2026).
+  const hoje = getLocalDateInSaoPaulo(new Date());
+  const [dataPagamento, setDataPagamento] = useState(hoje);
+  const [e2eId, setE2eId] = useState("");
+  const [comprovante, setComprovante] = useState("");
   const [enviando, setEnviando] = useState(false);
 
   useEffect(() => {
@@ -127,10 +136,12 @@ export function TrocarFormaPagamentoModal({ cobrancaId, onClose, onSuccess }: Pr
   const carregando = !avaliacao && !erroAvaliacao;
   const destinos = avaliacao?.destinos ?? [];
   const destino = destinos.find((d) => d.tipo === tipo) ?? null;
+  const problemaChave = destino?.recebidoNaChave ? problemaNaChavePix({ dataPagamento, e2eId, comprovante }, hoje) : null;
   const podeConfirmar =
     avaliacao?.pode === true &&
     destino !== null &&
     (!destino.exigeCondicao || Boolean(modeloId)) &&
+    !problemaChave &&
     motivo.trim().length > 0 &&
     !enviando;
 
@@ -146,7 +157,10 @@ export function TrocarFormaPagamentoModal({ cobrancaId, onClose, onSuccess }: Pr
           id: cobrancaId,
           tipo: destino?.tipo,
           id_modelo_cobranca: destino?.exigeCondicao ? modeloId : null,
-          motivo: motivo.trim()
+          motivo: motivo.trim(),
+          ...(destino?.recebidoNaChave
+            ? { data_pagamento: dataPagamento, e2e_id: e2eId.trim(), comprovante: comprovante.trim() }
+            : {})
         })
       });
       const dados = await resposta.json().catch(() => null);
@@ -172,6 +186,10 @@ export function TrocarFormaPagamentoModal({ cobrancaId, onClose, onSuccess }: Pr
             ? "O PIX foi cancelado e o Faturado foi enviado para análise financeira."
             : destino?.consomeCredito
               ? "O PIX foi cancelado e a E-Crédito foi criada com o crédito do cliente. Ela segue para a Conferência."
+              : destino?.recebidoNaChave
+                ? dados.conferida
+                  ? "O PIX do Vibe foi cancelado e o PIX recebido na chave foi registrado e conferido. O pedido foi liberado."
+                  : `O PIX do Vibe foi cancelado e o PIX recebido na chave foi registrado como pago, mas não foi conferido (${dados.motivoNaoConferida ?? "veja o Histórico"}). Ele segue na Conferência.`
               : `O PIX foi cancelado e a ${rotulo} foi criada. Ela aguarda a liberação do financeiro.`
       });
       await refreshCobrancas();
@@ -255,7 +273,9 @@ export function TrocarFormaPagamentoModal({ cobrancaId, onClose, onSuccess }: Pr
                   <p className="text-xs font-semibold text-slate-900">Ao confirmar</p>
                   <ul className="mt-1.5 space-y-1 text-xs leading-relaxed list-disc pl-4">
                     <li>
-                      Nasce uma cobrança {destino.rotulo} de {formatCurrency(Number(avaliacao?.valor ?? 0))}, com o mesmo pagador.
+                      {destino.recebidoNaChave
+                        ? `Nasce uma cobrança PIX (chave Pix) de ${formatCurrency(Number(avaliacao?.valor ?? 0))}, já paga, com o mesmo pagador, a data do pagamento e o e2eId ou comprovante.`
+                        : `Nasce uma cobrança ${destino.rotulo} de ${formatCurrency(Number(avaliacao?.valor ?? 0))}, com o mesmo pagador.`}
                       {destino.consomeCredito && avaliacao?.credito?.saldo != null
                         ? ` O valor sai do crédito do cliente (saldo hoje: ${formatCurrency(avaliacao.credito.saldo)}).`
                         : ""}
@@ -297,6 +317,57 @@ export function TrocarFormaPagamentoModal({ cobrancaId, onClose, onSuccess }: Pr
               </div>
               ) : null}
 
+              {destino?.recebidoNaChave ? (
+                <div className="space-y-3">
+                  <div className="space-y-1.5">
+                    <label htmlFor="troca_chave_data" className="text-xs font-semibold text-slate-700">
+                      Data do pagamento <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      id="troca_chave_data"
+                      type="date"
+                      value={dataPagamento}
+                      max={hoje}
+                      onChange={(e) => setDataPagamento(e.target.value)}
+                      disabled={enviando}
+                      className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-[#0b7774] focus:ring-4 focus:ring-teal-100 disabled:opacity-50"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label htmlFor="troca_chave_e2e" className="text-xs font-semibold text-slate-700">
+                      e2eId do PIX recebido
+                    </label>
+                    <input
+                      id="troca_chave_e2e"
+                      type="text"
+                      value={e2eId}
+                      onChange={(e) => setE2eId(e.target.value)}
+                      disabled={enviando}
+                      autoComplete="off"
+                      placeholder="32 letras e números, do extrato do banco"
+                      className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-[#0b7774] focus:ring-4 focus:ring-teal-100 disabled:opacity-50 font-mono"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label htmlFor="troca_chave_comprovante" className="text-xs font-semibold text-slate-700">
+                      Identificação do comprovante
+                    </label>
+                    <input
+                      id="troca_chave_comprovante"
+                      type="text"
+                      value={comprovante}
+                      onChange={(e) => setComprovante(e.target.value)}
+                      disabled={enviando}
+                      autoComplete="off"
+                      placeholder="Ex.: autenticação ou nº da operação no app do banco"
+                      className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-[#0b7774] focus:ring-4 focus:ring-teal-100 disabled:opacity-50"
+                    />
+                    <p className="text-[11px] text-slate-500">Preencha o e2eId, o comprovante ou os dois.</p>
+                  </div>
+                  {problemaChave ? <p className="text-xs font-semibold text-slate-600">{problemaChave}</p> : null}
+                </div>
+              ) : null}
+
               <div className="space-y-1.5">
                 <label htmlFor="troca_motivo" className="text-xs font-semibold text-slate-700">
                   Motivo da troca <span className="text-red-500">*</span>
@@ -307,7 +378,7 @@ export function TrocarFormaPagamentoModal({ cobrancaId, onClose, onSuccess }: Pr
                   value={motivo}
                   onChange={(e) => setMotivo(e.target.value)}
                   disabled={enviando}
-                  placeholder="Ex.: cliente paga faturado"
+                  placeholder={destino?.recebidoNaChave ? "Ex.: cliente pagou pela chave Pix da empresa" : "Ex.: cliente paga faturado"}
                   className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-[#0b7774] focus:ring-4 focus:ring-teal-100 disabled:opacity-50"
                 />
               </div>

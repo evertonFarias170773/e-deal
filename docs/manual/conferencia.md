@@ -1,6 +1,6 @@
 # Conferência
 
-> **Última revisão:** 13/11/2026 (Registrar devolução e cancelar pedido)
+> **Última revisão:** 17/11/2026 (Chave Pix na troca de forma de pagamento; antes, 13/11/2026: Registrar devolução e cancelar pedido)
 > **Caminho no menu:** Conferência (primeiro item do menu lateral; é um link direto, sem subitens)
 > **Endereço:** `/cobrancas` (o detalhe de uma cobrança abre em `/cobrancas/<cobrança>`)
 
@@ -74,7 +74,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Confirmar Cancelamento** | Janela **Cancelar Cobrança** | Cancela a cobrança. Só habilita depois que o sistema libera e o motivo é preenchido. |
 | **Voltar** | Janela **Cancelar Cobrança** | Fecha a janela sem cancelar. |
 | **Ir para Notas Fiscais**, **Ir para Pedidos**, **Ir para Contas a Receber** | Janela **Cancelar Cobrança**, quando o cancelamento é recusado | Leva à tela onde a pendência se resolve. |
-| **Trocar forma de pagamento** | **Ações Administrativas** do detalhe, e janela **Cancelar Cobrança** quando a recusa é por nota fiscal autorizada | Troca um PIX não pago da Ideal Gráfica ou da E3 Brindes por Faturado, E-Permuta, E-Amostra, E-Retrabalho ou E-Crédito, com o mesmo valor e mantendo a nota. Passo a passo na ficha [Proposta: aba Pagamentos](proposta-pagamentos.md). |
+| **Trocar forma de pagamento** | **Ações Administrativas** do detalhe, e janela **Cancelar Cobrança** quando a recusa é por nota fiscal autorizada | Troca um PIX não pago da Ideal Gráfica ou da E3 Brindes por Faturado, Chave Pix, E-Permuta, E-Amostra, E-Retrabalho ou E-Crédito, com o mesmo valor e mantendo a nota. A **Chave Pix** (PIX já recebido na chave da empresa) só aparece para quem confirma pagamento, e a cobrança nova já sai conferida em nome de quem trocou, depois que o banco confirma o cancelamento do PIX: ela não espera na fila. Aparece na lista como PIX. Passo a passo na ficha [Proposta: aba Pagamentos](proposta-pagamentos.md). |
 | **Voltar para cobranças** | Topo do detalhe | Retorna à lista. |
 | **Atualizar status** | Detalhe, no aviso **Gerando código PIX...** | Recarrega os dados da cobrança. |
 | **Abrir** e **Copiar** | Detalhe, bloco **Links e Códigos de Pagamento**, linha **Link de Pagamento** | Abre o link de pagamento em outra aba ou o copia. O link aparece inteiro (pay.ai-ideal.com.br/functions/v1/pagamento-publico?token=...); para mandar ao cliente, use **Copiar**. |
@@ -326,7 +326,9 @@ Outros:
 | "Nenhuma cobrança encontrada" | Nada bate com os filtros, a aba e a busca. | Troque de aba, ajuste o período ou use **Limpar filtros**. |
 | "Lista incompleta: há mais cobranças do que o limite carregado. Avise o suporte." | A tela carrega no máximo 30.000 cobranças, das mais novas para as mais antigas, e o total passou disso. | Avise o suporte. Enquanto o aviso aparecer, a aba Pagamentos da proposta não mostra as cobranças nem deixa gerar cobrança nova, para não duplicar uma antiga que não foi carregada. |
 
-> **Mudança desta revisão:** 13/11/2026 — nova ação **Registrar devolução e cancelar pedido** (só super administrador): registra a devolução feita pelo aplicativo do banco (valor total, data, e2eId ou comprovante, motivo e autor), cancela a cobrança e o pedido e tira o valor do faturamento (caso 25098).
+> **Mudança desta revisão:** 17/11/2026 — **Trocar forma de pagamento** ganhou **Chave Pix** (só para quem confirma pagamento): a cobrança PIX recebida na chave nasce paga e é conferida na própria troca, em nome de quem trocou. Se a conferência não passar, ela fica na fila com o motivo no Histórico.
+>
+> **Revisão anterior:** 13/11/2026 — nova ação **Registrar devolução e cancelar pedido** (só super administrador): registra a devolução feita pelo aplicativo do banco (valor total, data, e2eId ou comprovante, motivo e autor), cancela a cobrança e o pedido e tira o valor do faturamento (caso 25098).
 >
 > **Revisão anterior:** 05/11/2026 — o filtro **Todos os vendedores** passou a mostrar as cobranças das propostas do vendedor escolhido, quem quer que tenha lançado. Antes mostrava só as que ele mesmo lançou, e as cobranças da área do cliente, da Edina e do financeiro ficavam de fora.
 

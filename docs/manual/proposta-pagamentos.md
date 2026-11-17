@@ -1,6 +1,6 @@
 # Proposta: aba Pagamentos
 
-> **Última revisão:** 16/11/2026 (número de fora do Brasil nunca vai no PIX nem no boleto à vista). 14/11/2026 (e-mail do boleto à vista pelo cadastro do pagador; telefone do PIX e do boleto pela conversa principal do ChatGuru, com o 9 no celular). 13/11/2026 (Registrar devolução e cancelar pedido)
+> **Última revisão:** 17/11/2026 (Trocar forma de pagamento para Chave Pix). 16/11/2026 (número de fora do Brasil nunca vai no PIX nem no boleto à vista). 14/11/2026 (e-mail do boleto à vista pelo cadastro do pagador; telefone do PIX e do boleto pela conversa principal do ChatGuru, com o 9 no celular). 13/11/2026 (Registrar devolução e cancelar pedido)
 > **Caminho no menu:** Pedidos → abrir um pedido → aba Pagamentos
 > **Endereço:** `/orcamentos/<número>/editar?tab=pagamentos`
 
@@ -64,7 +64,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Confirmar Cancelamento** e **Voltar** | Janela **Cancelar Cobrança** | Cancela a cobrança, ou fecha sem cancelar. |
 | **Ir para Notas Fiscais**, **Ir para Pedidos**, **Ir para Contas a Receber** | Janela **Cancelar Cobrança**, quando o cancelamento é recusado | Levam à tela onde a pendência se resolve. |
 | **Trocar forma de pagamento** | Detalhe, quadro **Ações Administrativas**; e janela **Cancelar Cobrança**, quando a recusa é por nota fiscal autorizada | Abre a janela **Trocar forma de pagamento**. Só aparece em PIX não pago da Ideal Gráfica e da E3 Brindes (não na Ideal Birô) e para quem pode cancelar cobrança. |
-| **Nova forma de pagamento \*** (**Faturado**, **E-Permuta**, **E-Amostra**, **E-Retrabalho**, **E-Crédito**), **Condição de pagamento \***, **Motivo da troca \***, **Confirmar troca** e **Voltar** | Janela **Trocar forma de pagamento** | Escolhem a forma nova, a condição (só Faturado e E-Permuta) e o motivo, e confirmam a troca ou fecham sem trocar. A lista mostra só as formas que o pedido aceita; quando **E-Crédito** fica de fora, a janela diz por quê (por exemplo, o saldo do cliente). |
+| **Nova forma de pagamento \*** (**Faturado**, **Chave Pix**, **E-Permuta**, **E-Amostra**, **E-Retrabalho**, **E-Crédito**), **Condição de pagamento \***, **Data do pagamento \***, **e2eId do PIX recebido**, **Identificação do comprovante**, **Motivo da troca \***, **Confirmar troca** e **Voltar** | Janela **Trocar forma de pagamento** | Escolhem a forma nova, a condição (só Faturado e E-Permuta), os dados do PIX recebido (só Chave Pix) e o motivo, e confirmam a troca ou fecham sem trocar. A lista mostra só as formas que o pedido aceita; quando **E-Crédito** fica de fora, a janela diz por quê (por exemplo, o saldo do cliente). |
 | **Aprovar**, **Alterar**, **Reprovar** | Abas da janela **Análise de Faturamento** | Escolhem o que fazer com a condição pedida pelo vendedor. |
 | **Confirmar Autorização**, **Alterar Condição**, **Reprovar e cancelar cobrança** | Rodapé da janela **Análise de Faturamento** | Executam a ação da aba escolhida. |
 | **Atualizar Limite**, **Ver Contas a Receber do Cliente**, **Fechar** | Janela **Análise de Crédito** | Gravam o novo limite de crédito, abrem a carteira do cliente, ou fecham. |
@@ -206,15 +206,16 @@ Use quando geraram PIX, mas o pedido vai ser pago de outro jeito: faturado, em p
 
 As formas que a troca oferece são as internas, que não passam por banco: **Faturado**, **E-Permuta**, **E-Amostra**, **E-Retrabalho** e **E-Crédito**. **E-Retrabalho** só aparece em pedido de retrabalho, e pedido de retrabalho só oferece **E-Retrabalho**. **E-Crédito** só aparece para quem pode usar crédito e quando o saldo de crédito do cliente cobre o valor inteiro do PIX. Boleto, PIX novo e cartão ainda não estão na troca.
 
-Use **E-Crédito** quando o cliente pagou por fora da cobrança (por exemplo, um PIX pela chave) e o valor já entrou como crédito na Conta Corrente.
+Use **Chave Pix** quando o cliente já pagou por PIX direto na chave da empresa, fora do Vibe. A opção só aparece para quem confirma pagamento na Conferência (permissão **Confirmar Pagamento**, ou administrador). Use **E-Crédito** quando o valor pago por fora já entrou como crédito na Conta Corrente.
 
 1. No detalhe da cobrança PIX, clique em **Trocar forma de pagamento**. Se você tentou cancelar e a janela recusou por nota autorizada, o mesmo botão aparece no aviso **Não é possível cancelar agora**, ao lado de **Ir para Notas Fiscais**.
 2. A janela **Trocar forma de pagamento** confere com o servidor se a troca pode ser feita.
-3. Escolha a **Nova forma de pagamento \***. Para **Faturado** e **E-Permuta**, escolha também a **Condição de pagamento \***; **E-Amostra**, **E-Retrabalho** e **E-Crédito** não pedem condição. O quadro **Ao confirmar** muda conforme a forma escolhida; no **E-Crédito** ele mostra o saldo do cliente.
+3. Escolha a **Nova forma de pagamento \***. Para **Faturado** e **E-Permuta**, escolha também a **Condição de pagamento \***; **Chave Pix**, **E-Amostra**, **E-Retrabalho** e **E-Crédito** não pedem condição. Na **Chave Pix**, informe a **Data do pagamento \*** (hoje ou antes) e o **e2eId do PIX recebido** (32 letras e números, do extrato do banco) e/ou a **Identificação do comprovante**: um dos dois é obrigatório. O quadro **Ao confirmar** muda conforme a forma escolhida; no **E-Crédito** ele mostra o saldo do cliente.
 4. Preencha o **Motivo da troca \*** e clique em **Confirmar troca**.
 5. O sistema cria a cobrança nova com o mesmo valor, a mesma proposta e o mesmo pagador. Só depois cancela o PIX no banco. Se o banco confirmar, o PIX passa a CANCELADO. Se o banco não confirmar, o PIX continua ativo e a cobrança nova é cancelada, com o motivo.
+   - Na **Chave Pix**, o mesmo e2eId ou comprovante não vale para duas cobranças: o sistema recusa dizendo em qual cobrança ele já foi registrado. Se o banco não confirmar e a cobrança nova for cancelada, o e2eId fica livre para uma nova tentativa.
    - No **E-Crédito**, o crédito sai do saldo do cliente assim que a cobrança nova nasce, antes de o PIX ir ao banco. Se o banco não confirmar, o crédito volta inteiro ao saldo, e o **Histórico** registra a devolução.
-6. O Faturado segue o caminho de sempre: o sistema tenta a liberação automática; se não der, ele espera a análise do financeiro. Depois vêm a Conferência e os títulos no **Registro de recebíveis**. E-Permuta, E-Amostra e E-Retrabalho esperam a liberação do financeiro e seguem para a Conferência, sem títulos. O E-Crédito nasce paga e segue para a Conferência, sem títulos.
+6. O Faturado segue o caminho de sempre: o sistema tenta a liberação automática; se não der, ele espera a análise do financeiro. Depois vêm a Conferência e os títulos no **Registro de recebíveis**. E-Permuta, E-Amostra e E-Retrabalho esperam a liberação do financeiro e seguem para a Conferência, sem títulos. O E-Crédito nasce paga e segue para a Conferência, sem títulos. A Chave Pix nasce paga (uma cobrança PIX com a forma "CHAVE PIX") e, depois que o banco confirma o cancelamento do PIX do Vibe, é conferida em nome de quem trocou: o pedido é liberado na hora e o valor entra no faturamento, nas vendas e na comissão, como um PIX pago. Se a conferência não passar (por exemplo, o valor quitado é menor que o total), a troca vale e a cobrança fica na Fila de Conferência, com o motivo no **Histórico**.
 7. O **Histórico** registra a troca com as duas cobranças, a forma nova, quem fez e o motivo.
 
 **Registrar a devolução e cancelar o pedido**
@@ -273,8 +274,8 @@ Se a janela for fechada sem escolher, a proposta fica com a faixa **Revisão fin
 - Cancelar é irreversível e exige motivo. O cancelamento é feito primeiro no banco ou no provedor do cartão; se ele recusar, nada muda no sistema.
 - Não dá para cancelar cobrança já recebida pelo **Excluir**: o caso é devolução, não cancelamento.
 - E-Amostra, E-Retrabalho e E-Permuta ficam como pagas na liberação, mas não movimentam dinheiro e não impedem o cancelamento da proposta: se todas as cobranças ativas do pedido são desses tipos, **Cancelar proposta** cancela o pedido e elas saem canceladas junto (administrador em qualquer status; os demais, com o pedido em AGUARDANDO). Com qualquer cobrança com dinheiro junto, a recusa continua.
-- Não dá para cancelar cobrança de proposta com nota fiscal autorizada: cancele a nota antes. Se o objetivo é só mudar a forma de pagamento de um PIX (para Faturado, E-Permuta, E-Amostra, E-Retrabalho ou E-Crédito), use **Trocar forma de pagamento**, que mantém a nota.
-- **Trocar forma de pagamento** vale só para PIX não pago da Ideal Gráfica e da E3 Brindes, e só para as formas internas: Faturado, E-Permuta, E-Amostra, E-Retrabalho (esta só em pedido de retrabalho) e E-Crédito (exige a permissão de usar crédito e saldo que cubra o valor inteiro). Boleto, PIX novo e cartão não estão na troca. Na Ideal Birô a ação não aparece. Exige a mesma permissão do cancelamento de cobrança. As outras travas do cancelamento continuam valendo: produção ativa, cobrança paga, pedido entregue, Conta Corrente. O valor, a proposta e o pagador não mudam.
+- Não dá para cancelar cobrança de proposta com nota fiscal autorizada: cancele a nota antes. Se o objetivo é só mudar a forma de pagamento de um PIX (para Faturado, Chave Pix, E-Permuta, E-Amostra, E-Retrabalho ou E-Crédito), use **Trocar forma de pagamento**, que mantém a nota.
+- **Trocar forma de pagamento** vale só para PIX não pago da Ideal Gráfica e da E3 Brindes, e só para as formas internas: Faturado, Chave Pix (exige a permissão de confirmar pagamento; não vale em pedido de retrabalho), E-Permuta, E-Amostra, E-Retrabalho (esta só em pedido de retrabalho) e E-Crédito (exige a permissão de usar crédito e saldo que cubra o valor inteiro). Boleto, PIX novo e cartão não estão na troca. Na Ideal Birô a ação não aparece. Exige a mesma permissão do cancelamento de cobrança. As outras travas do cancelamento continuam valendo: produção ativa, cobrança paga, pedido entregue, Conta Corrente. O valor, a proposta e o pagador não mudam.
 - Não dá para cancelar cobrança de proposta que já está em produção: o gerente precisa devolver a proposta para REVISAO ATENDENTE ou retirá-la da produção.
 - Não dá para cancelar uma cobrança faturada enquanto ela tiver título em aberto: cancele o título primeiro na Carteira (**Cancelar recebível**). Cancelar o título não cancela a cobrança; são dois passos separados.
 - Cancelar só uma parcela de um faturado parcelado não deixa relançar. A cobrança continua ativa pelo valor inteiro, então **Gerar cobrança** não reaparece; e ela só volta ao Registro de recebíveis quando ela não tem mais nenhum título ativo (títulos de outra cobrança do pedido, como o boleto da entrada, não contam). Para lançar de novo é preciso cancelar todas as parcelas em aberto. Para só corrigir um dado do boleto (número da NF, descrição, vencimento), use **Refazer boleto** na Carteira, que troca o boleto e mantém a parcela; ele não vale para a Ideal Birô.
@@ -394,6 +395,7 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/features/cobrancas/TrocarFormaPagamentoModal.tsx`
 - `src/features/cobrancas/troca-forma-pagamento.ts`
 - `src/app/api/cobrancas/trocar-forma-pagamento/route.ts`
+- `supabase/migrations/20261117_troca_chave_pix.sql`
 - `supabase/migrations/20261110_mc_desfazer_credito_da_troca.sql`
 - `src/features/cobrancas/cancelamento-elegibilidade.ts`
 - `src/features/cobrancas/cancelamento-pago.ts`
@@ -432,7 +434,9 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/lib/formatters/status.ts`
 - `src/lib/mocks/pagamentos.mock.ts`
 
-> **Mudança desta revisão:** 13/11/2026 — nova ação **Registrar devolução e cancelar pedido** (só super administrador): registra a devolução feita pelo aplicativo do banco (valor total, data, e2eId ou comprovante, motivo e autor), cancela a cobrança e o pedido e tira o valor do faturamento (caso 25098).
+> **Mudança desta revisão:** 17/11/2026 — **Trocar forma de pagamento** ganhou **Chave Pix**: o PIX já recebido na chave da empresa vira uma cobrança PIX paga, com data, e2eId ou comprovante e autor; depois que o banco confirma o cancelamento do PIX do Vibe, ela é conferida em nome de quem trocou e o pedido é liberado. Só para quem confirma pagamento.
+>
+> **Revisão anterior:** 13/11/2026 — nova ação **Registrar devolução e cancelar pedido** (só super administrador): registra a devolução feita pelo aplicativo do banco (valor total, data, e2eId ou comprovante, motivo e autor), cancela a cobrança e o pedido e tira o valor do faturamento (caso 25098).
 >
 > **Revisão anterior:** 12/11/2026 — pagamento combinado com o restante em PIX não exige mais a permissão **Emitir Boleto**: o vendedor faz E-Crédito + PIX. Boleto, Cartão e E-Faturado no restante continuam exigindo (caso 25197).
 >

@@ -23,6 +23,7 @@ import { formatCurrency } from "@/lib/formatters/currency";
 import { getLocalDateInSaoPaulo } from "@/features/cobrancas/cobrancas-utils";
 import { TODAS_AS_RECUSAS, type CodigoVeredito } from "@/features/cobrancas/cancelamento-elegibilidade";
 import { recusaDoTipoNoPedido, type ContextoRetrabalhoDoPedido } from "@/features/cobrancas/lib/tipo-x-retrabalho";
+import { e2eValido, normalizarE2e } from "@/features/cobrancas/lib/devolucao-pagamento";
 
 /** Empresas cujo PIX sai pelo C6, com confirmação do banco no cancelamento. */
 export const EMPRESAS_DA_TROCA: readonly number[] = [1, 3];
@@ -33,7 +34,7 @@ export const TIPO_DE_ORIGEM_DA_TROCA = "PIX";
 /** Forma de destino padrão (a única até 10/11/2026). */
 export const TIPO_DE_DESTINO_DA_TROCA = "E-FATURADO";
 
-export type TipoDestinoDaTroca = "E-FATURADO" | "E-PERMUTA" | "E-AMOSTRA" | "E-RETRABALHO" | "E-CREDITO";
+export type TipoDestinoDaTroca = "E-FATURADO" | "CHAVE-PIX" | "E-PERMUTA" | "E-AMOSTRA" | "E-RETRABALHO" | "E-CREDITO";
 
 export type DestinoDaTroca = {
   tipo: TipoDestinoDaTroca;
@@ -42,7 +43,17 @@ export type DestinoDaTroca = {
   exigeCondicao: boolean;
   /** E-Crédito: nasce paga, consumindo o saldo de crédito do cliente. */
   consomeCredito?: boolean;
+  /**
+   * Chave Pix (17/11/2026): o cliente já pagou por PIX direto na chave da
+   * empresa, fora do Vibe. Nasce paga (tipo PIX, forma_pgto CHAVE PIX) pela
+   * função do banco `fin_troca_criar_chave_pix`, com a data do pagamento e o
+   * e2eId ou comprovante. Só para quem confirma pagamento na Conferência.
+   */
+  recebidoNaChave?: boolean;
 };
+
+/** Quem vê a Chave Pix: quem confirma pagamento na Conferência. */
+export const PERMISSAO_CHAVE_PIX = "conferencia.confirm";
 
 /**
  * Formas internas aceitas como destino (10/11/2026): a família faturado do
@@ -54,10 +65,15 @@ export type DestinoDaTroca = {
  *   `mc_desfazer_credito_da_troca`, que devolve exatamente o que a troca
  *   consumiu e cancela a cobrança, numa transação só.
  *
+ * - Chave Pix (17/11/2026): registro de um PIX já recebido na chave da
+ *   empresa. Nasce paga e nada fora do Vibe; desfazer é cancelá-la, como a
+ *   família faturado.
+ *
  * Fora, de propósito: boleto, PIX novo e cartão, que nascem no banco.
  */
 export const DESTINOS_DA_TROCA: readonly DestinoDaTroca[] = [
   { tipo: "E-FATURADO", rotulo: "Faturado", exigeCondicao: true },
+  { tipo: "CHAVE-PIX", rotulo: "Chave Pix", exigeCondicao: false, recebidoNaChave: true },
   { tipo: "E-PERMUTA", rotulo: "E-Permuta", exigeCondicao: true },
   { tipo: "E-AMOSTRA", rotulo: "E-Amostra", exigeCondicao: false },
   { tipo: "E-RETRABALHO", rotulo: "E-Retrabalho", exigeCondicao: false },
@@ -91,6 +107,52 @@ export function fatiasDoConsumo(
   }
   if (restante > 0) fatias.push({ idPendencia: null, centavos: restante });
   return fatias;
+}
+
+export type CamposDaChavePix = {
+  /** AAAA-MM-DD, data civil de São Paulo. */
+  dataPagamento: string;
+  e2eId: string;
+  comprovante: string;
+};
+
+/**
+ * Primeiro problema nos campos da Chave Pix, ou null. `hoje` em AAAA-MM-DD.
+ * A função do banco confere tudo de novo.
+ */
+export function problemaNaChavePix(campos: CamposDaChavePix, hoje: string): string | null {
+  const e2e = normalizarE2e(campos.e2eId);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(campos.dataPagamento)) return "Informe a data do pagamento.";
+  if (campos.dataPagamento > hoje) return "A data do pagamento não pode ser futura.";
+  if (!e2e && !campos.comprovante.trim()) return "Informe o e2eId do PIX recebido ou a identificação do comprovante.";
+  if (e2e && !e2eValido(e2e)) return "O e2eId tem 32 letras e números, sem espaços.";
+  return null;
+}
+
+/** "recebido na chave em 13/11/2026, e2eId E123…" — vai no Histórico e na antiga. */
+export function descricaoDaChavePix(campos: CamposDaChavePix): string {
+  const [ano, mes, dia] = campos.dataPagamento.split("-");
+  const partes = [`recebido na chave em ${dia}/${mes}/${ano}`];
+  const e2e = normalizarE2e(campos.e2eId);
+  if (e2e) partes.push(`e2eId ${e2e}`);
+  if (campos.comprovante.trim()) partes.push(`comprovante ${campos.comprovante.trim()}`);
+  return partes.join(", ");
+}
+
+const CODIGOS_CHAVE_DE_CAMPO = ["CHAVE_PARAMS", "CHAVE_DATA", "CHAVE_IDENTIFICACAO", "CHAVE_E2E"];
+
+/**
+ * Recusa da função `fin_troca_criar_chave_pix` (CHAVE_*, ou PERM/AUTH do
+ * cc__assert_permissao), pronta para a resposta. `null` = falha que não é recusa.
+ */
+export function recusaDaFuncaoChavePix(mensagem: string | null | undefined): { status: number; code: string; message: string } | null {
+  const achado = String(mensagem ?? "").match(/\b(CHAVE_[A-Z_]+|PERM|AUTH):\s*([\s\S]*)$/);
+  if (!achado) return null;
+  const permissao = achado[1] === "PERM" || achado[1] === "AUTH";
+  const code = permissao ? "CHAVE_PERMISSAO" : achado[1];
+  const corpo = permissao ? "sem permissão para confirmar pagamento (conferencia.confirm)" : achado[2].trim().replace(/\.$/, "");
+  const status = permissao ? 403 : CODIGOS_CHAVE_DE_CAMPO.includes(code) ? 400 : 409;
+  return { status, code, message: `A forma de pagamento não foi trocada: ${corpo}. O PIX continua ativo.` };
 }
 
 /** O destino pelo tipo pedido; vazio é Faturado (o corpo antigo da rota). */

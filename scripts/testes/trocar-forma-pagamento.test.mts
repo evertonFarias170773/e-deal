@@ -18,7 +18,9 @@
  *   G. as outras formas internas (10/11/2026): E-Permuta, E-Amostra e
  *      E-Retrabalho; as formas de banco recusadas;
  *   H. E-Crédito: consome o crédito, devolve se o banco não confirmar,
- *      recusa sem saldo.
+ *      recusa sem saldo;
+ *   I. Chave Pix (17/11/2026): PIX já recebido na chave da empresa; nasce
+ *      paga pela função do banco, só para quem confirma pagamento.
  */
 import { registerHooks } from "node:module";
 import { pathToFileURL, fileURLToPath } from "node:url";
@@ -291,8 +293,8 @@ prepararBanco();
 contextoRetrabalho(null, false);
 {
   const j = await consultar();
-  confere("pedido comum: a janela oferece Faturado, E-Permuta e E-Amostra", j.pode === true && tipos(j) === "E-FATURADO,E-PERMUTA,E-AMOSTRA", j.destinos);
-  confere("pedido comum: E-Crédito, E-Retrabalho e formas de banco não aparecem", !/E-CREDITO|E-RETRABALHO|BOLETO|PIX|CARD/.test(tipos(j)), j.destinos);
+  confere("pedido comum: a janela oferece Faturado, Chave Pix, E-Permuta e E-Amostra", j.pode === true && tipos(j) === "E-FATURADO,CHAVE-PIX,E-PERMUTA,E-AMOSTRA", j.destinos);
+  confere("pedido comum: E-Crédito, E-Retrabalho e formas de banco não aparecem", !tipos(j).split(",").some((t) => ["E-CREDITO", "E-RETRABALHO", "BOLETO", "PIX", "CARD_PARCELADO"].includes(t)), j.destinos);
 }
 prepararBanco();
 contextoRetrabalho("RETRABALHO", false);
@@ -502,6 +504,191 @@ contextoRetrabalho("RETRABALHO", false);
 {
   const j = await consultar();
   confere("retrabalho: E-Crédito não aparece", !tipos(j).includes("E-CREDITO"), j.destinos);
+}
+
+// ── I. Chave Pix (17/11/2026) ────────────────────────────────────────────────
+console.log("== I. Chave Pix: PIX já recebido na chave da empresa");
+const E2E = "E18236120202611171030ABCDEFGHIJK";
+const HOJE_SP = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+const NOVA_CHAVE = { id: NOVA.id, id_pagamento: NOVA.id_pagamento };
+
+{
+  const ok = { dataPagamento: HOJE_SP, e2eId: E2E.toLowerCase(), comprovante: "" };
+  confere("regra: campos completos passam", regras.problemaNaChavePix(ok, HOJE_SP) === null);
+  confere("regra: sem e2eId e sem comprovante recusa", /e2eId do PIX recebido ou/.test(regras.problemaNaChavePix({ ...ok, e2eId: "" }, HOJE_SP) ?? ""));
+  confere("regra: só o comprovante passa", regras.problemaNaChavePix({ ...ok, e2eId: "", comprovante: "Autenticação 9F2A" }, HOJE_SP) === null);
+  confere("regra: e2eId curto recusa", /32 letras/.test(regras.problemaNaChavePix({ ...ok, e2eId: "E123" }, HOJE_SP) ?? ""));
+  confere("regra: data futura recusa", /futura/.test(regras.problemaNaChavePix({ ...ok, dataPagamento: "2999-01-01" }, HOJE_SP) ?? ""));
+  confere("regra: descrição com data e e2eId normalizado", regras.descricaoDaChavePix({ dataPagamento: "2026-11-13", e2eId: " " + E2E.toLowerCase(), comprovante: "" }) === "recebido na chave em 13/11/2026, e2eId " + E2E);
+  const dup = regras.recusaDaFuncaoChavePix("CHAVE_DUPLICADA: este e2eId já foi registrado na cobrança 24500-B");
+  confere("regra: recusa da função vira 409 com a mensagem", dup?.status === 409 && dup.code === "CHAVE_DUPLICADA" && /24500-B/.test(dup.message), dup);
+  const perm = regras.recusaDaFuncaoChavePix("PERM: sem permissão conferencia.confirm");
+  confere("regra: PERM do banco vira 403", perm?.status === 403 && perm.code === "CHAVE_PERMISSAO", perm);
+  confere("regra: erro sem código não é recusa", regras.recusaDaFuncaoChavePix("connection reset") === null);
+}
+
+/** Usuário sem super admin: perfil com troca e escopo, com ou sem confirmar pagamento. */
+function usuarioComum(confirmaPagamento: boolean) {
+  falso.responder("usuarios:select", { data: { id_perfil: 5, id_empresa: 1, is_super_adm: false, is_admin: false, nome_usuario: "Atendente Teste" }, error: null });
+  falso.responder("perfis:select", {
+    data: { permissoes: ["cobrancas.cancel", "propostas.view_all", ...(confirmaPagamento ? ["conferencia.confirm"] : [])] },
+    error: null
+  });
+}
+/**
+ * Banco da Chave Pix: a função cria a nova; a releitura da nova, a lista de
+ * cobranças do pedido (trava de quitação) e a gravação da conferência.
+ */
+function prepararChave(opcoes: {
+  funcao?: { data: unknown; error: unknown };
+  totalProposta?: number;
+  outraAtiva?: number;
+  jaConferidaPorOutro?: boolean;
+} = {}) {
+  prepararBanco();
+  contextoRetrabalho(null, false);
+  falso.responder("rpc:fin_troca_criar_chave_pix", opcoes.funcao ?? { data: NOVA_CHAVE, error: null });
+  const novaLida = { ...ANTIGA, id: NOVA.id, id_pagamento: NOVA.id_pagamento, status: "PAID", paid_at: new Date().toISOString(), forma_pgto: "CHAVE PIX", motivo_troca: null, cod_solicitacao_inter: null };
+  const doPedido = [
+    { id: ANTIGA.id, id_int: 24692, valor: 213, status: "CANCELADO", confirmado: false, tipo_cobranca: "PIX" },
+    { id: NOVA.id, id_int: 24692, valor: 213, status: "PAID", confirmado: false, tipo_cobranca: "PIX" },
+    ...(opcoes.outraAtiva ? [{ id: "c0000000-0000-0000-0000-000000000009", id_int: 24692, valor: opcoes.outraAtiva, status: "A_RECEBER", confirmado: false, tipo_cobranca: "PIX" }] : [])
+  ];
+  const eq = (chamada: { filtros: unknown[][] }, campo: string) =>
+    (chamada.filtros.find((f) => f[0] === "eq" && (f[1] as unknown[])[0] === campo)?.[1] as unknown[] | undefined)?.[1];
+  falso.interceptar("pagamentos_v2:select", (_p, chamada) => {
+    if (chamada.filtros.some((f) => f[0] === "ilike")) return { data: [], error: null };
+    if (eq(chamada, "id") === NOVA.id) return { data: novaLida, error: null };
+    if (eq(chamada, "id_int") !== undefined && eq(chamada, "id") === undefined) return { data: doPedido, error: null };
+    return undefined;
+  });
+  falso.interceptar("pagamentos_v2:update", (payload) =>
+    (payload as Record<string, unknown>)?.confirmado === true
+      ? { data: opcoes.jaConferidaPorOutro ? [] : [{ id: NOVA.id }], error: null }
+      : undefined
+  );
+  falso.responder("propostas:select", {
+    data: { id_int: 24692, status_interno: "AGUARDANDO", is_prd_aprovado: false, is_avulso: false, empresa: "E3 BRINDES LTDA", vendedor: "Y", motivo_copia: null, valor_total: opcoes.totalProposta ?? 213 },
+    error: null
+  });
+}
+/** A gravação da conferência: update com confirmado = true. */
+const conferenciaGravada = (r: { chamadas: { tabela: string; op: string; payload?: unknown; filtros: unknown[][] }[] }) =>
+  r.chamadas.find((c) => c.tabela === "pagamentos_v2" && c.op === "update" && ((c.payload ?? {}) as Record<string, unknown>).confirmado === true);
+const corpoChave = { tipo: "CHAVE-PIX", id_modelo_cobranca: "", motivo: "cliente pagou pela chave Pix", data_pagamento: HOJE_SP, e2e_id: E2E, comprovante: "" };
+
+prepararChave();
+usuarioComum(false);
+{
+  const j = await consultar();
+  confere("sem conferencia.confirm: Chave Pix não aparece", j.pode === true && !tipos(j).includes("CHAVE-PIX") && tipos(j).includes("E-FATURADO"), j.destinos);
+}
+prepararChave();
+usuarioComum(true);
+{
+  const j = await consultar();
+  confere("com conferencia.confirm: Chave Pix aparece", tipos(j).includes("CHAVE-PIX"), j.destinos);
+}
+prepararChave();
+usuarioComum(false);
+fetchFalso({ corpo: CONFIRMOU });
+{
+  const r = await trocar(corpoChave);
+  confere("sem conferencia.confirm: POST recusa (DESTINO_NAO_PERMITIDO) sem gravar", r.json.code === "DESTINO_NAO_PERMITIDO" && r.escritas.length === 0 && r.aoBanco.length === 0, r.json);
+}
+
+// Feliz: banco confirma.
+prepararChave();
+fetchFalso({ corpo: CONFIRMOU });
+{
+  const r = await trocar(corpoChave);
+  const funcao = rpcs(r, "fin_troca_criar_chave_pix");
+  confere("Chave Pix: troca concluída", r.status === 200 && r.json.success === true && /Chave Pix/.test(String(r.json.message)), r.json);
+  confere("Chave Pix: a nova nasce pela função do banco, não por insert direto", funcao.length === 1 && !r.insertNova, { funcao, insert: r.insertNova });
+  confere("Chave Pix: a função recebe origem, data, e2eId, comprovante e motivo", funcao[0]?.p_id_origem === ANTIGA.id && funcao[0]?.p_data_pagamento === HOJE_SP && funcao[0]?.p_e2e_id === E2E && funcao[0]?.p_comprovante === null && funcao[0]?.p_motivo === "cliente pagou pela chave Pix", funcao[0]);
+  const posFuncao = posicao(r, (c) => c.tabela === "rpc:fin_troca_criar_chave_pix");
+  const posMarca = posicao(r, (c) => c.tabela === "pagamentos_v2" && c.op === "update" && String(((c.payload ?? {}) as Record<string, unknown>).motivo_troca ?? "").startsWith("TROCA EM ANDAMENTO"));
+  confere("ORDEM: marca -> nova (função) -> antiga cai", posMarca >= 0 && posFuncao > posMarca && r.posCancelaAntiga > posFuncao, { posMarca, posFuncao, antiga: r.posCancelaAntiga });
+  confere("Chave Pix: o PIX do Vibe foi ao banco uma vez", r.aoBanco.length === 1);
+  const pc = (r.cancelaAntiga?.payload ?? {}) as Record<string, unknown>;
+  confere("Chave Pix: antiga cai citando a Chave Pix, a data e o e2eId", /Trocada por Chave Pix \(recebido na chave em \d{2}\/\d{2}\/\d{4}, e2eId E18236/.test(String(pc.motivo_troca)) && /\(Chave Pix\)/.test(String(pc.motivo_cancela)), pc);
+  confere("Chave Pix: Histórico liga as duas, com o recebimento", r.historico.some((m) => m.includes("24692-A") && m.includes("24692-B") && m.includes("Chave Pix, recebido na chave em")), r.historico);
+  confere("Chave Pix: nada em notas", !r.chamadas.some((c) => c.tabela === "notas_fiscais" && c.op !== "select"));
+  const conf = conferenciaGravada(r);
+  const pconf = (conf?.payload ?? {}) as Record<string, unknown>;
+  const filtrosConf = JSON.stringify(conf?.filtros ?? []);
+  confere("AJUSTE: a Chave Pix é conferida pelo mesmo usuário (payload do Confirmar Conferência)", pconf.confirmado === true && pconf.confirmado_por === "Financeiro Teste" && Boolean(pconf.data_confirmacao), pconf);
+  confere("AJUSTE: grava só se ainda PAID e não conferida (mesma trava da conferência automática)", filtrosConf.includes(NOVA.id) && filtrosConf.includes('"status","PAID"') && filtrosConf.includes('"confirmado",false'), conf?.filtros);
+  const posConf = r.chamadas.indexOf(conf as never);
+  confere("AJUSTE: conferência só depois que o banco confirmou e a antiga caiu", r.aoBanco.length === 1 && posConf > r.posCancelaAntiga && r.posCancelaAntiga > 0, { posConf, antiga: r.posCancelaAntiga });
+  confere("AJUSTE: aviso de cobrança conferida no chat, em nome do usuário", r.historico.some((m) => m.startsWith("Cobrança conferida e liberada")), r.historico);
+  confere("AJUSTE: a resposta diz que foi conferida", r.json.conferida === true && r.json.motivoNaoConferida === null, r.json);
+}
+
+// AJUSTE: a trava de quitação barra — a troca vale, a cobrança fica na Conferência.
+prepararChave({ totalProposta: 500, outraAtiva: 287 });
+fetchFalso({ corpo: CONFIRMOU });
+{
+  const r = await trocar(corpoChave);
+  confere("quitação barra: a troca vale (antiga cai)", r.status === 200 && r.json.success === true && Boolean(r.cancelaAntiga), r.json);
+  confere("quitação barra: não confere e diz o motivo", r.json.conferida === false && /menor que o total/.test(String(r.json.motivoNaoConferida)) && !conferenciaGravada(r), r.json);
+  confere("quitação barra: Histórico avisa que segue na Fila de Conferência", r.historico.some((m) => m.includes("(Chave Pix) foi criada paga, mas não foi conferida") && m.includes("Fila de Conferência")), r.historico);
+}
+
+// AJUSTE: outra conferência chegou antes — vale como conferida, sem segundo aviso.
+prepararChave({ jaConferidaPorOutro: true });
+fetchFalso({ corpo: CONFIRMOU });
+{
+  const r = await trocar(corpoChave);
+  confere("já conferida por outro: responde conferida, sem aviso de conferência repetido", r.json.conferida === true && !r.historico.some((m) => m.startsWith("Cobrança conferida e liberada")), r.json);
+}
+
+// Banco recusa: a nova é cancelada, o PIX continua.
+prepararChave();
+fetchFalso({ corpo: `=[Object: ${JSON.stringify(RECUSOU)}]` });
+{
+  const r = await trocar(corpoChave);
+  const pn = (r.cancelaNova?.payload ?? {}) as Record<string, unknown>;
+  confere("Chave Pix, banco recusa: não trocou", r.json.success === false && r.json.code === "PIX_NAO_CANCELADO_NO_BANCO", r.json);
+  confere("Chave Pix, banco recusa: a nova é cancelada com o motivo e o PIX continua", /não confirmou o cancelamento do PIX 24692-A/.test(String(pn.motivo_cancela)) && !r.cancelaAntiga && r.soltouMarca, { pn, antiga: r.cancelaAntiga });
+  confere("Chave Pix, banco recusa: Histórico registra", r.historico.some((m) => /não concluída/.test(m) && m.includes("(Chave Pix) foi cancelada")), r.historico);
+  confere("AJUSTE, banco recusa: a nova não é conferida", !conferenciaGravada(r), r.chamadas.filter((c) => c.op === "update").map((c) => c.payload));
+}
+
+// A função recusa (e2eId já usado): nada ao banco, marca solta.
+prepararChave({ funcao: { data: null, error: { message: "CHAVE_DUPLICADA: este e2eId já foi registrado na cobrança 24500-B" } } });
+fetchFalso({ corpo: CONFIRMOU });
+{
+  const r = await trocar(corpoChave);
+  confere("e2eId repetido: 409 CHAVE_DUPLICADA dizendo a cobrança", r.status === 409 && r.json.code === "CHAVE_DUPLICADA" && /24500-B/.test(String(r.json.message)) && /PIX continua ativo/.test(String(r.json.message)), r.json);
+  confere("e2eId repetido: PIX fora do banco, antiga intacta, marca solta", r.aoBanco.length === 0 && !r.cancelaAntiga && r.soltouMarca);
+}
+prepararChave({ funcao: { data: null, error: { message: "PERM: sem permissão conferencia.confirm" } } });
+fetchFalso({ corpo: CONFIRMOU });
+{
+  const r = await trocar(corpoChave);
+  confere("banco nega a permissão: 403 CHAVE_PERMISSAO, nada ao banco", r.status === 403 && r.json.code === "CHAVE_PERMISSAO" && r.aoBanco.length === 0 && r.soltouMarca, r.json);
+}
+
+// Campos inválidos: recusa antes de qualquer leitura ou escrita.
+for (const [nome, extra] of [
+  ["sem e2eId e sem comprovante", { e2e_id: "", comprovante: "" }],
+  ["e2eId curto", { e2e_id: "E123" }],
+  ["data futura", { data_pagamento: "2999-01-01" }],
+  ["sem data", { data_pagamento: "" }]
+] as [string, Record<string, unknown>][]) {
+  prepararChave();
+  fetchFalso({ corpo: CONFIRMOU });
+  const r = await trocar({ ...corpoChave, ...extra });
+  confere(`${nome}: 400 CHAVE_CAMPOS sem gravar nem ir ao banco`, r.status === 400 && r.json.code === "CHAVE_CAMPOS" && r.escritas.length === 0 && r.aoBanco.length === 0, r.json);
+}
+
+// Chave Pix em pedido de retrabalho: não vale (PIX em retrabalho é recusado pelo gatilho).
+prepararChave();
+contextoRetrabalho("RETRABALHO", false);
+{
+  const j = await consultar();
+  confere("retrabalho: Chave Pix não aparece", !tipos(j).includes("CHAVE-PIX"), j.destinos);
 }
 
 console.log(falhas === 0 ? "\nTODOS OS TESTES PASSARAM" : `\n${falhas} FALHA(S)`);

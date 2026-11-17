@@ -1,6 +1,6 @@
 # Pedidos (lista)
 
-> **Última revisão:** 14/11/2026 (Liberar para Produção exige contato do ChatGuru no pedido; antes, 13/11/2026: Registrar devolução e cancelar pedido; link do aviso Pedido em Produção com #arte no final; antes, 12/11/2026: filtro Cobrança com todas as formas de pagamento, sem o corte que escondia parte dos pedidos com PIX e cartão, e respeitando o período com páginas normais)
+> **Última revisão:** 17/11/2026 (Chave Pix na troca de forma de pagamento; antes, 14/11/2026: Liberar para Produção exige contato do ChatGuru no pedido; antes, 13/11/2026: Registrar devolução e cancelar pedido; link do aviso Pedido em Produção com #arte no final; antes, 12/11/2026: filtro Cobrança com todas as formas de pagamento, sem o corte que escondia parte dos pedidos com PIX e cartão, e respeitando o período com páginas normais)
 > **Caminho no menu:** Pedidos (item direto do menu lateral, sem submenu; é o segundo, logo abaixo de Conferência)
 > **Endereço:** `/orcamentos`
 
@@ -85,7 +85,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Confirmar liberação** / **Cancelar** | Janela "Liberar proposta para Produção?" | Confirma a liberação, ou fecha sem liberar. |
 | **Confirmar Cancelamento** / **Voltar** | Janela "Cancelar Proposta" | Cancela a proposta (exige motivo), ou fecha sem cancelar. |
 | **Cancelar só a cobrança** | Janela "Cancelar Proposta", quando há uma única cobrança ativa | Troca para o cancelamento só da cobrança, sem cancelar o pedido. |
-| **Trocar forma de pagamento** | Aviso **Não é possível cancelar agora** do cancelamento só da cobrança, quando a recusa é por nota fiscal autorizada | Troca um PIX não pago da Ideal Gráfica ou da E3 Brindes por Faturado, E-Permuta, E-Amostra, E-Retrabalho ou E-Crédito, com o mesmo valor, mantendo a nota. Não aparece na Ideal Birô. |
+| **Trocar forma de pagamento** | Aviso **Não é possível cancelar agora** do cancelamento só da cobrança, quando a recusa é por nota fiscal autorizada | Troca um PIX não pago da Ideal Gráfica ou da E3 Brindes por Faturado, Chave Pix (PIX já recebido na chave da empresa; só para quem confirma pagamento), E-Permuta, E-Amostra, E-Retrabalho ou E-Crédito, com o mesmo valor, mantendo a nota. Não aparece na Ideal Birô. |
 | **Ver cobranças na aba Pagamentos** | Janela "Cancelar Proposta", quando há mais de uma cobrança ativa | Fecha a janela e abre a proposta na aba Pagamentos. |
 | **Anterior** / **Próxima** | Rodapé da lista | Muda de página. |
 | **Ver** | Cartão do pedido, só no celular | Abre a proposta para leitura. |

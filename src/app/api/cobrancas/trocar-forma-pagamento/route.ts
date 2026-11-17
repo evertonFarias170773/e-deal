@@ -15,8 +15,18 @@ import { statusEhEntregue, MENSAGEM_PEDIDO_ENTREGUE, CODIGO_PEDIDO_ENTREGUE } fr
 import { lerContextoRetrabalhoDoPedido } from "@/features/cobrancas/services/tipo-x-retrabalho.service";
 import { lerTodas } from "@/lib/supabase/ler-todas";
 import { formatCurrency } from "@/lib/formatters/currency";
+import { getLocalDateInSaoPaulo } from "@/features/cobrancas/cobrancas-utils";
+import { calcularSituacaoQuitacaoProposta } from "@/features/cobrancas/services/conferencia-financeira.service";
 import {
+  MENSAGEM_CHAT_COBRANCA_CONFERIDA,
+  executarPosConfirmacao,
+  montarPayloadConfirmacao
+} from "@/features/cobrancas/services/conferencia-nucleo.server";
+import { confirmacaoDeveSerRecusada } from "@/features/cobrancas/lib/cancelada-que-consta-paga";
+import {
+  PERMISSAO_CHAVE_PIX,
   RECUSAS_DA_TROCA,
+  descricaoDaChavePix,
   destinoDaTroca,
   destinosPermitidosNoPedido,
   fatiasDoConsumo,
@@ -29,7 +39,9 @@ import {
   montarCobrancaDaTroca,
   motivoCancelaDaAntiga,
   motivoCancelaDaNovaDesfeita,
+  problemaNaChavePix,
   recusaDaCobrancaParaTroca,
+  recusaDaFuncaoChavePix,
   registroDaTrocaNaAntiga,
   type ModeloDaTroca,
   type PagamentoDaTroca
@@ -52,6 +64,19 @@ import {
  * avulso, pelas mesmas funções do banco de usar-credito). Se o consumo falhar
  * ou o banco não confirmar o cancelamento do PIX, `mc_desfazer_credito_da_troca`
  * devolve exatamente o que foi consumido e cancela a nova, numa transação só.
+ *
+ * Chave Pix (17/11/2026): o cliente já pagou por PIX na chave da empresa,
+ * fora do Vibe. Só aparece para quem confirma pagamento na Conferência
+ * (conferencia.confirm, ou administrador). A nova nasce PAID, tipo PIX com
+ * forma_pgto CHAVE PIX, pela função do banco `fin_troca_criar_chave_pix`, que
+ * grava junto a data do pagamento, o e2eId ou comprovante e o autor, e recusa
+ * e2eId/comprovante já usados. Desfazer é cancelá-la, como o Faturado.
+ * Depois que o banco confirma o cancelamento do PIX de origem, a Chave Pix é
+ * conferida pelo mesmo usuário, pelo caminho do "Confirmar Conferência" (o
+ * núcleo comum de conferencia-nucleo.server: trava de quitação, payload,
+ * chat, Conta Corrente, status do pedido e prateleira), e o pedido é liberado
+ * na hora. Se a conferência não passar, a troca vale e a cobrança fica na
+ * Fila de Conferência, com o motivo no Histórico.
  *
  * Ordem do POST, que garante que a antiga só sai depois que a nova existe:
  *   1. marca a antiga como "troca em andamento" (gravação condicional: é a
@@ -93,6 +118,9 @@ type Contexto = {
   autor: string;
   permissao: "cobrancas.cancel" | "propostas.cancelar_cobranca_nao_paga";
   pagamento: PagamentoRow;
+  ehSuperAdm: boolean;
+  ehAdmin: boolean;
+  email: string;
 };
 
 function erro(status: number, message: string, code?: string, extra?: Record<string, unknown>) {
@@ -155,9 +183,9 @@ async function carregarContexto(request: Request, idCobranca: string): Promise<C
 
   const { data: usuarioRow } = await supabase
     .from("usuarios")
-    .select("is_super_adm, nome_usuario")
+    .select("is_super_adm, is_admin, nome_usuario")
     .eq("user_id", userId)
-    .maybeSingle<{ is_super_adm: boolean | null; nome_usuario: string | null }>();
+    .maybeSingle<{ is_super_adm: boolean | null; is_admin: boolean | null; nome_usuario: string | null }>();
   if (!usuarioRow) return falha(403, "Acesso negado a esta cobrança.");
 
   if (!usuarioRow.is_super_adm) {
@@ -177,8 +205,20 @@ async function carregarContexto(request: Request, idCobranca: string): Promise<C
     userId,
     autor: usuarioRow.nome_usuario || authData.user.email || "Sistema",
     permissao,
-    pagamento
+    pagamento,
+    ehSuperAdm: usuarioRow.is_super_adm === true,
+    ehAdmin: usuarioRow.is_admin === true,
+    email: authData.user.email || ""
   };
+}
+
+/**
+ * Quem confirma pagamento na Conferência: a mesma regra da rota confirmar e de
+ * cc__assert_permissao (super admin, administrador, ou perfil com a permissão).
+ */
+async function podeConfirmarPagamento(ctx: Contexto): Promise<boolean> {
+  if (ctx.ehSuperAdm || ctx.ehAdmin) return true;
+  return verificarPermissaoServerSide(ctx.supabase, ctx.userId, PERMISSAO_CHAVE_PIX);
 }
 
 /** Veredito da troca: recusas de cancelamento (menos a nota) + regras da troca. */
@@ -211,6 +251,11 @@ async function avaliarTroca(
   // E-Retrabalho só em retrabalho; retrabalho só com E-Retrabalho (mesma regra do gatilho).
   const contextoRetrabalho = await lerContextoRetrabalhoDoPedido(ctx.supabase, Number(ctx.pagamento.id_int));
   let destinos = destinosPermitidosNoPedido(contextoRetrabalho);
+
+  // Chave Pix: só para quem confirma pagamento na Conferência.
+  if (destinos.some((d) => d.recebidoNaChave) && !(await podeConfirmarPagamento(ctx))) {
+    destinos = destinos.filter((d) => !d.recebidoNaChave);
+  }
 
   // E-Crédito só aparece se quem troca pode usar crédito e o saldo cobre tudo.
   let credito: CreditoDaTroca | null = null;
@@ -319,6 +364,64 @@ async function desfazerCredito(ctx: Contexto, idNova: string, motivoCancela: str
   return { ok: true };
 }
 
+type ResultadoDaConferencia = { conferida: true; jaConferida: boolean } | { conferida: false; motivo: string };
+
+/**
+ * Confere a Chave Pix recém-criada pelo caminho do "Confirmar Conferência"
+ * (rota confirmar e conferência automática): recusa de cancelada que consta
+ * paga, trava de quitação, payload do núcleo, gravação só se a linha ainda é
+ * PAID e não conferida, aviso no chat e o pós-confirmação (Conta Corrente,
+ * status do pedido, prateleira). Nunca desfaz a troca: se não conferir, a
+ * cobrança fica na Fila de Conferência.
+ */
+async function conferirChavePix(ctx: Contexto, idNova: string): Promise<ResultadoDaConferencia> {
+  try {
+    const { data: cobranca, error } = await ctx.supabase.from("pagamentos_v2").select("*").eq("id", idNova).maybeSingle();
+    if (error || !cobranca) return { conferida: false, motivo: "não foi possível reler a cobrança nova" };
+    if (confirmacaoDeveSerRecusada(cobranca)) return { conferida: false, motivo: "a cobrança consta cancelada" };
+    if (cobranca.confirmado === true) return { conferida: true, jaConferida: true };
+
+    const situacao = await calcularSituacaoQuitacaoProposta(ctx.supabase, cobranca.id_int, idNova);
+    if (!situacao.podeConfirmar) return { conferida: false, motivo: "o valor quitado é menor que o total da proposta" };
+
+    const payload = montarPayloadConfirmacao(cobranca, ctx.autor, new Date().toISOString());
+    const { data: gravadas, error: erroGravacao } = await ctx.supabase
+      .from("pagamentos_v2")
+      .update(payload)
+      .eq("id", idNova)
+      .eq("status", "PAID")
+      .eq("confirmado", false)
+      .select("id");
+    if (erroGravacao) return { conferida: false, motivo: `falha ao gravar a conferência (${erroGravacao.message})` };
+    // Outra conferência (a automática, ou um clique) chegou antes: já está conferida.
+    if (!Array.isArray(gravadas) || gravadas.length === 0) return { conferida: true, jaConferida: true };
+
+    const { error: erroChat } = await ctx.supabase.from("propostas_chat").insert([
+      {
+        id_int: cobranca.id_int,
+        id_cliente: cobranca.id_cliente ?? null,
+        mensagem: MENSAGEM_CHAT_COBRANCA_CONFERIDA,
+        tipo: "SISTEMA",
+        autor_nome: ctx.autor,
+        setor: "Financeiro",
+        visivel_externo: false
+      }
+    ]);
+    if (erroChat) console.warn("[trocar-forma-pagamento][CHAVE] aviso de conferência não gravado:", erroChat.message);
+
+    await executarPosConfirmacao(ctx.supabase, cobranca, {
+      idCobranca: idNova,
+      confirmadoPor: ctx.autor,
+      // Engine sem uid, como na rota confirmar (ver o comentário de lá).
+      autorReconciliacao: { uid: "", nome: ctx.autor, email: ctx.email },
+      usuarioPrateleira: { uid: ctx.userId, email: ctx.email }
+    });
+    return { conferida: true, jaConferida: false };
+  } catch (e) {
+    return { conferida: false, motivo: e instanceof Error ? e.message : "erro inesperado" };
+  }
+}
+
 async function registrarHistorico(ctx: Contexto, mensagem: string) {
   const { error } = await ctx.supabase.from("propostas_chat").insert([
     {
@@ -384,6 +487,15 @@ export async function POST(request: Request) {
     if (!destino) return erro(400, "Forma de pagamento não aceita na troca.", "DESTINO_NAO_ACEITO");
     if (destino.exigeCondicao && !idModelo) return erro(400, "Selecione uma condição de pagamento.");
     if (!motivo) return erro(400, "Motivo da troca é obrigatório.");
+    const camposChave = {
+      dataPagamento: String(body.data_pagamento ?? "").trim(),
+      e2eId: String(body.e2e_id ?? ""),
+      comprovante: String(body.comprovante ?? "")
+    };
+    if (destino.recebidoNaChave) {
+      const problema = problemaNaChavePix(camposChave, getLocalDateInSaoPaulo(new Date()));
+      if (problema) return erro(400, problema, "CHAVE_CAMPOS");
+    }
 
     const ctx = await carregarContexto(request, id);
     if (ehFalha(ctx)) return responderFalha(ctx);
@@ -448,13 +560,34 @@ export async function POST(request: Request) {
       new Date(),
       destino
     );
-    const { data: nova, error: erroNova } = await supabase
-      .from("pagamentos_v2")
-      .insert([linhaNova])
-      .select("id, id_pagamento")
-      .single<{ id: string; id_pagamento: string | null }>();
+    let nova: { id: string; id_pagamento: string | null } | null = null;
+    let erroNova: { message: string } | null = null;
+    if (destino.recebidoNaChave) {
+      // Chave Pix: a cobrança paga e o registro do recebimento nascem juntos na
+      // função do banco, que confere a marca da troca e o e2eId/comprovante.
+      const criada = await supabase.rpc("fin_troca_criar_chave_pix", {
+        p_id_origem: pagamento.id,
+        p_data_pagamento: camposChave.dataPagamento,
+        p_e2e_id: camposChave.e2eId.trim() || null,
+        p_comprovante: camposChave.comprovante.trim() || null,
+        p_motivo: motivo
+      });
+      const dados = criada.data as { id?: string; id_pagamento?: string | null } | null;
+      if (criada.error || !dados?.id) erroNova = { message: criada.error?.message ?? "sem retorno" };
+      else nova = { id: dados.id, id_pagamento: dados.id_pagamento ?? null };
+    } else {
+      const inserida = await supabase
+        .from("pagamentos_v2")
+        .insert([linhaNova])
+        .select("id, id_pagamento")
+        .single<{ id: string; id_pagamento: string | null }>();
+      nova = inserida.data ?? null;
+      erroNova = inserida.error ?? null;
+    }
     if (erroNova || !nova) {
       await soltarMarca(ctx, marca);
+      const recusaChave = destino.recebidoNaChave ? recusaDaFuncaoChavePix(erroNova?.message) : null;
+      if (recusaChave) return erro(recusaChave.status, recusaChave.message, recusaChave.code);
       const recusa = recusaDoGatilhoNoErro(erroNova?.message);
       return erro(recusa ? 409 : 500, recusa || `Não foi possível criar a cobrança ${rotulo}. O PIX continua ativo e nada foi alterado.`);
     }
@@ -544,7 +677,7 @@ export async function POST(request: Request) {
     }
 
     // 4a. Banco confirmou: a antiga sai.
-    const condicao = modelo ? String(modelo.resultado) : null;
+    const condicao = modelo ? String(modelo.resultado) : destino.recebidoNaChave ? descricaoDaChavePix(camposChave) : null;
     const { error: erroAntiga } = await supabase
       .from("pagamentos_v2")
       .update({
@@ -579,10 +712,26 @@ export async function POST(request: Request) {
       })
     );
 
+    // Chave Pix: o banco confirmou, a antiga caiu — agora a conferência, pelo
+    // mesmo usuário, para liberar o pedido na hora.
+    let conferencia: ResultadoDaConferencia | null = null;
+    if (destino.recebidoNaChave) {
+      conferencia = await conferirChavePix(ctx, nova.id);
+      if (!conferencia.conferida) {
+        await registrarHistorico(
+          ctx,
+          `A cobrança ${novaRef} (Chave Pix) foi criada paga, mas não foi conferida na troca: ${conferencia.motivo}. Ela segue na Fila de Conferência.`
+        );
+      }
+    }
+
     return NextResponse.json({
       success: true,
       message: `Forma de pagamento trocada: ${antigaRef} (PIX) cancelada e ${novaRef} (${rotulo}) criada.`,
-      nova: { id: nova.id, id_pagamento: nova.id_pagamento, tipo: destino.tipo }
+      nova: { id: nova.id, id_pagamento: nova.id_pagamento, tipo: destino.tipo },
+      ...(conferencia
+        ? { conferida: conferencia.conferida, motivoNaoConferida: conferencia.conferida ? null : conferencia.motivo }
+        : {})
     });
   } catch (e) {
     console.error("[trocar-forma-pagamento][POST]", e);
