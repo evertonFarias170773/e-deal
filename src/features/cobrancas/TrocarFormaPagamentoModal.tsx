@@ -274,7 +274,7 @@ export function TrocarFormaPagamentoModal({ cobrancaId, onClose, onSuccess }: Pr
                   <ul className="mt-1.5 space-y-1 text-xs leading-relaxed list-disc pl-4">
                     <li>
                       {destino.recebidoNaChave
-                        ? `Nasce uma cobrança PIX (chave Pix) de ${formatCurrency(Number(avaliacao?.valor ?? 0))}, já paga, com o mesmo pagador, a data do pagamento e o e2eId ou comprovante.`
+                        ? `Nasce uma cobrança PIX (chave Pix) de ${formatCurrency(Number(avaliacao?.valor ?? 0))}, já paga, com o mesmo pagador e a data do pagamento (e o e2eId e o comprovante, se informados).`
                         : `Nasce uma cobrança ${destino.rotulo} de ${formatCurrency(Number(avaliacao?.valor ?? 0))}, com o mesmo pagador.`}
                       {destino.consomeCredito && avaliacao?.credito?.saldo != null
                         ? ` O valor sai do crédito do cliente (saldo hoje: ${formatCurrency(avaliacao.credito.saldo)}).`
@@ -362,7 +362,6 @@ export function TrocarFormaPagamentoModal({ cobrancaId, onClose, onSuccess }: Pr
                       placeholder="Ex.: autenticação ou nº da operação no app do banco"
                       className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-[#0b7774] focus:ring-4 focus:ring-teal-100 disabled:opacity-50"
                     />
-                    <p className="text-[11px] text-slate-500">Preencha o e2eId, o comprovante ou os dois.</p>
                   </div>
                   {problemaChave ? <p className="text-xs font-semibold text-slate-600">{problemaChave}</p> : null}
                 </div>

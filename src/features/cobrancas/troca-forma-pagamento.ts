@@ -47,7 +47,8 @@ export type DestinoDaTroca = {
    * Chave Pix (17/11/2026): o cliente já pagou por PIX direto na chave da
    * empresa, fora do Vibe. Nasce paga (tipo PIX, forma_pgto CHAVE PIX) pela
    * função do banco `fin_troca_criar_chave_pix`, com a data do pagamento e o
-   * e2eId ou comprovante. Só para quem confirma pagamento na Conferência.
+   * e2eId e o comprovante, que são opcionais. Só para quem confirma pagamento
+   * na Conferência.
    */
   recebidoNaChave?: boolean;
 };
@@ -124,7 +125,7 @@ export function problemaNaChavePix(campos: CamposDaChavePix, hoje: string): stri
   const e2e = normalizarE2e(campos.e2eId);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(campos.dataPagamento)) return "Informe a data do pagamento.";
   if (campos.dataPagamento > hoje) return "A data do pagamento não pode ser futura.";
-  if (!e2e && !campos.comprovante.trim()) return "Informe o e2eId do PIX recebido ou a identificação do comprovante.";
+  // e2eId e comprovante são opcionais (17/11/2026); informado, o e2eId tem de ter o formato.
   if (e2e && !e2eValido(e2e)) return "O e2eId tem 32 letras e números, sem espaços.";
   return null;
 }
@@ -139,7 +140,7 @@ export function descricaoDaChavePix(campos: CamposDaChavePix): string {
   return partes.join(", ");
 }
 
-const CODIGOS_CHAVE_DE_CAMPO = ["CHAVE_PARAMS", "CHAVE_DATA", "CHAVE_IDENTIFICACAO", "CHAVE_E2E"];
+const CODIGOS_CHAVE_DE_CAMPO = ["CHAVE_PARAMS", "CHAVE_DATA", "CHAVE_E2E"];
 
 /**
  * Recusa da função `fin_troca_criar_chave_pix` (CHAVE_*, ou PERM/AUTH do

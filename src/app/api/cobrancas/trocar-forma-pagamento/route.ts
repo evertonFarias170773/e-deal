@@ -69,7 +69,7 @@ import {
  * fora do Vibe. Só aparece para quem confirma pagamento na Conferência
  * (conferencia.confirm, ou administrador). A nova nasce PAID, tipo PIX com
  * forma_pgto CHAVE PIX, pela função do banco `fin_troca_criar_chave_pix`, que
- * grava junto a data do pagamento, o e2eId ou comprovante e o autor, e recusa
+ * grava junto a data do pagamento, o e2eId e o comprovante (opcionais) e o autor, e recusa
  * e2eId/comprovante já usados. Desfazer é cancelá-la, como o Faturado.
  * Depois que o banco confirma o cancelamento do PIX de origem, a Chave Pix é
  * conferida pelo mesmo usuário, pelo caminho do "Confirmar Conferência" (o

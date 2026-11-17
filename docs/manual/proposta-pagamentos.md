@@ -1,6 +1,6 @@
 # Proposta: aba Pagamentos
 
-> **Última revisão:** 17/11/2026 (Trocar forma de pagamento para Chave Pix). 16/11/2026 (número de fora do Brasil nunca vai no PIX nem no boleto à vista). 14/11/2026 (e-mail do boleto à vista pelo cadastro do pagador; telefone do PIX e do boleto pela conversa principal do ChatGuru, com o 9 no celular). 13/11/2026 (Registrar devolução e cancelar pedido)
+> **Última revisão:** 17/11/2026 (Trocar forma de pagamento para Chave Pix; e2eId e comprovante opcionais). 16/11/2026 (número de fora do Brasil nunca vai no PIX nem no boleto à vista). 14/11/2026 (e-mail do boleto à vista pelo cadastro do pagador; telefone do PIX e do boleto pela conversa principal do ChatGuru, com o 9 no celular). 13/11/2026 (Registrar devolução e cancelar pedido)
 > **Caminho no menu:** Pedidos → abrir um pedido → aba Pagamentos
 > **Endereço:** `/orcamentos/<número>/editar?tab=pagamentos`
 
@@ -210,10 +210,10 @@ Use **Chave Pix** quando o cliente já pagou por PIX direto na chave da empresa,
 
 1. No detalhe da cobrança PIX, clique em **Trocar forma de pagamento**. Se você tentou cancelar e a janela recusou por nota autorizada, o mesmo botão aparece no aviso **Não é possível cancelar agora**, ao lado de **Ir para Notas Fiscais**.
 2. A janela **Trocar forma de pagamento** confere com o servidor se a troca pode ser feita.
-3. Escolha a **Nova forma de pagamento \***. Para **Faturado** e **E-Permuta**, escolha também a **Condição de pagamento \***; **Chave Pix**, **E-Amostra**, **E-Retrabalho** e **E-Crédito** não pedem condição. Na **Chave Pix**, informe a **Data do pagamento \*** (hoje ou antes) e o **e2eId do PIX recebido** (32 letras e números, do extrato do banco) e/ou a **Identificação do comprovante**: um dos dois é obrigatório. O quadro **Ao confirmar** muda conforme a forma escolhida; no **E-Crédito** ele mostra o saldo do cliente.
+3. Escolha a **Nova forma de pagamento \***. Para **Faturado** e **E-Permuta**, escolha também a **Condição de pagamento \***; **Chave Pix**, **E-Amostra**, **E-Retrabalho** e **E-Crédito** não pedem condição. Na **Chave Pix**, informe a **Data do pagamento \*** (hoje ou antes). O **e2eId do PIX recebido** (32 letras e números, do extrato do banco) e a **Identificação do comprovante** são opcionais: preencha quando tiver. O quadro **Ao confirmar** muda conforme a forma escolhida; no **E-Crédito** ele mostra o saldo do cliente.
 4. Preencha o **Motivo da troca \*** e clique em **Confirmar troca**.
 5. O sistema cria a cobrança nova com o mesmo valor, a mesma proposta e o mesmo pagador. Só depois cancela o PIX no banco. Se o banco confirmar, o PIX passa a CANCELADO. Se o banco não confirmar, o PIX continua ativo e a cobrança nova é cancelada, com o motivo.
-   - Na **Chave Pix**, o mesmo e2eId ou comprovante não vale para duas cobranças: o sistema recusa dizendo em qual cobrança ele já foi registrado. Se o banco não confirmar e a cobrança nova for cancelada, o e2eId fica livre para uma nova tentativa.
+   - Na **Chave Pix**, quando informados, o mesmo e2eId ou comprovante não vale para duas cobranças: o sistema recusa dizendo em qual cobrança ele já foi registrado. Se o banco não confirmar e a cobrança nova for cancelada, o e2eId fica livre para uma nova tentativa.
    - No **E-Crédito**, o crédito sai do saldo do cliente assim que a cobrança nova nasce, antes de o PIX ir ao banco. Se o banco não confirmar, o crédito volta inteiro ao saldo, e o **Histórico** registra a devolução.
 6. O Faturado segue o caminho de sempre: o sistema tenta a liberação automática; se não der, ele espera a análise do financeiro. Depois vêm a Conferência e os títulos no **Registro de recebíveis**. E-Permuta, E-Amostra e E-Retrabalho esperam a liberação do financeiro e seguem para a Conferência, sem títulos. O E-Crédito nasce paga e segue para a Conferência, sem títulos. A Chave Pix nasce paga (uma cobrança PIX com a forma "CHAVE PIX") e, depois que o banco confirma o cancelamento do PIX do Vibe, é conferida em nome de quem trocou: o pedido é liberado na hora e o valor entra no faturamento, nas vendas e na comissão, como um PIX pago. Se a conferência não passar (por exemplo, o valor quitado é menor que o total), a troca vale e a cobrança fica na Fila de Conferência, com o motivo no **Histórico**.
 7. O **Histórico** registra a troca com as duas cobranças, a forma nova, quem fez e o motivo.
@@ -434,7 +434,7 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/lib/formatters/status.ts`
 - `src/lib/mocks/pagamentos.mock.ts`
 
-> **Mudança desta revisão:** 17/11/2026 — **Trocar forma de pagamento** ganhou **Chave Pix**: o PIX já recebido na chave da empresa vira uma cobrança PIX paga, com data, e2eId ou comprovante e autor; depois que o banco confirma o cancelamento do PIX do Vibe, ela é conferida em nome de quem trocou e o pedido é liberado. Só para quem confirma pagamento.
+> **Mudança desta revisão:** 17/11/2026 — **Trocar forma de pagamento** ganhou **Chave Pix**: o PIX já recebido na chave da empresa vira uma cobrança PIX paga, com data, autor e, quando informados, e2eId e comprovante (opcionais); depois que o banco confirma o cancelamento do PIX do Vibe, ela é conferida em nome de quem trocou e o pedido é liberado. Só para quem confirma pagamento.
 >
 > **Revisão anterior:** 13/11/2026 — nova ação **Registrar devolução e cancelar pedido** (só super administrador): registra a devolução feita pelo aplicativo do banco (valor total, data, e2eId ou comprovante, motivo e autor), cancela a cobrança e o pedido e tira o valor do faturamento (caso 25098).
 >

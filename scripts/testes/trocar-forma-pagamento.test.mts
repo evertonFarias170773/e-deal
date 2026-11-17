@@ -515,7 +515,7 @@ const NOVA_CHAVE = { id: NOVA.id, id_pagamento: NOVA.id_pagamento };
 {
   const ok = { dataPagamento: HOJE_SP, e2eId: E2E.toLowerCase(), comprovante: "" };
   confere("regra: campos completos passam", regras.problemaNaChavePix(ok, HOJE_SP) === null);
-  confere("regra: sem e2eId e sem comprovante recusa", /e2eId do PIX recebido ou/.test(regras.problemaNaChavePix({ ...ok, e2eId: "" }, HOJE_SP) ?? ""));
+  confere("regra: sem e2eId e sem comprovante passa (opcionais desde 17/11)", regras.problemaNaChavePix({ ...ok, e2eId: "", comprovante: "" }, HOJE_SP) === null);
   confere("regra: só o comprovante passa", regras.problemaNaChavePix({ ...ok, e2eId: "", comprovante: "Autenticação 9F2A" }, HOJE_SP) === null);
   confere("regra: e2eId curto recusa", /32 letras/.test(regras.problemaNaChavePix({ ...ok, e2eId: "E123" }, HOJE_SP) ?? ""));
   confere("regra: data futura recusa", /futura/.test(regras.problemaNaChavePix({ ...ok, dataPagamento: "2999-01-01" }, HOJE_SP) ?? ""));
@@ -670,9 +670,20 @@ fetchFalso({ corpo: CONFIRMOU });
   confere("banco nega a permissão: 403 CHAVE_PERMISSAO, nada ao banco", r.status === 403 && r.json.code === "CHAVE_PERMISSAO" && r.aoBanco.length === 0 && r.soltouMarca, r.json);
 }
 
+// Sem e2eId e sem comprovante (opcionais desde 17/11/2026): a troca segue e a função recebe nulo nos dois.
+prepararChave();
+fetchFalso({ corpo: CONFIRMOU });
+{
+  const r = await trocar({ ...corpoChave, e2e_id: "", comprovante: "  " });
+  const funcao = rpcs(r, "fin_troca_criar_chave_pix");
+  confere("sem e2eId e sem comprovante: troca concluída", r.status === 200 && r.json.success === true, r.json);
+  confere("sem e2eId e sem comprovante: a função recebe nulo nos dois", funcao[0]?.p_e2e_id === null && funcao[0]?.p_comprovante === null, funcao[0]);
+  const pc = (r.cancelaAntiga?.payload ?? {}) as Record<string, unknown>;
+  confere("sem e2eId e sem comprovante: a antiga cita só a data do recebimento", /Trocada por Chave Pix \(recebido na chave em \d{2}\/\d{2}\/\d{4}\)/.test(String(pc.motivo_troca)), pc.motivo_troca);
+}
+
 // Campos inválidos: recusa antes de qualquer leitura ou escrita.
 for (const [nome, extra] of [
-  ["sem e2eId e sem comprovante", { e2e_id: "", comprovante: "" }],
   ["e2eId curto", { e2e_id: "E123" }],
   ["data futura", { data_pagamento: "2999-01-01" }],
   ["sem data", { data_pagamento: "" }]
