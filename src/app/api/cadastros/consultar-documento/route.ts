@@ -104,8 +104,14 @@ function normalizeIsoDate(value: string) {
 }
 
 async function consultarCnpj(documentoDigits: string, idCliente: number | null): Promise<DocumentoConsultaPayload | null> {
+  const inicio = Date.now();
   const result = await fetchJsonWithTimeout<CnpjWsResposta>(`https://publica.cnpj.ws/cnpj/${documentoDigits}`);
   if (!result.ok) {
+    // Só o status e o tempo (sem o CNPJ): sem status = timeout de 12 s (tempo
+    // perto de 12000 ms), erro de rede ou JSON inválido. 17/11/2026.
+    console.warn(
+      `[API][ConsultarDocumento] publica.cnpj.ws falhou: status=${result.status ?? "sem resposta HTTP"} tempo=${Date.now() - inicio}ms`
+    );
     return null;
   }
 
