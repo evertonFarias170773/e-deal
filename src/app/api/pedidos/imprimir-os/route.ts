@@ -19,6 +19,7 @@ import { EMPRESA_LOGO_FILES } from "@/features/pedidos/pdf/os-pdf-assets";
 import { carregarImagemComoDataUrl } from "@/features/pedidos/pdf/os-pdf-images";
 import { nomeArquivoOs } from "@/features/pedidos/services/os-nome-arquivo";
 import { OPCOES_QR_DO_BOLETIM, conteudoQrDoBoletim } from "@/features/pedidos/lib/qr-do-boletim";
+import { boletimEhComposto, lerRespostaDoEscaninho } from "@/features/pedidos/lib/escaninho";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -239,6 +240,19 @@ export async function GET(request: Request) {
     vms.push(r.vm);
   }
   const vm = vms[0];
+
+  // ESCANINHO DE ENCONTRO (17/11/2026, lib/escaninho.ts): pedido composto pede ao
+  // banco o escaninho (atribui na primeira geração, devolve o mesmo na
+  // reimpressão). Uma chamada por PDF; o maço inteiro mostra o mesmo nome.
+  // Falha não impede o boletim: sai sem tarja e fica no log.
+  if (vms.some((v) => boletimEhComposto(v.boletim))) {
+    const { data: escData, error: escErr } = await supabase.rpc("escaninho_do_boletim", { p_id_int: idInt });
+    const escaninho = escErr ? null : lerRespostaDoEscaninho(escData);
+    if (escErr) console.warn("[imprimir-os] Escaninho de encontro indisponivel (nao-fatal):", escErr.message);
+    for (const v of vms) {
+      if (boletimEhComposto(v.boletim)) v.boletim.escaninho = escaninho;
+    }
+  }
 
   for (const atual of vms) {
     // Miniaturas de arte (pré-fetch server-side, falha → referência textual).

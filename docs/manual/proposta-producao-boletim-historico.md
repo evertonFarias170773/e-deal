@@ -1,6 +1,6 @@
 # Proposta: abas Produção / Expedição / Notas, Boletim e Histórico
 
-> **Última revisão:** 14/11/2026 (Liberar para Produção recusa pedido sem contato do ChatGuru). 11/11/2026 (a aba passou a se chamar **Produção / Expedição / Notas** e ganhou o quadro **Notas fiscais**, com a **Observação para a nota fiscal**). 10/11/2026 (Liberar e enviar manda o aviso para a conversa do cliente; fim do "em ajuste" e da homologação)
+> **Última revisão:** 17/11/2026 (escaninho de encontro do pedido composto no PDF da OS). 14/11/2026 (Liberar para Produção recusa pedido sem contato do ChatGuru). 11/11/2026 (a aba passou a se chamar **Produção / Expedição / Notas** e ganhou o quadro **Notas fiscais**, com a **Observação para a nota fiscal**). 10/11/2026 (Liberar e enviar manda o aviso para a conversa do cliente; fim do "em ajuste" e da homologação)
 > **Caminho no menu:** Pedidos → abrir um pedido → Editar proposta → aba Produção / Expedição / Notas ou aba Histórico. Não existe aba Boletim na barra de abas: a OS (boletim) abre pelo menu Produção → clicar no pedido.
 > **Endereço:** `/orcamentos/[número]/editar?tab=producao` e `/orcamentos/[número]/editar?tab=historico`. A aba se chamava **Produção** até 09/10/2026 e **Produção / Expedição** até 11/11/2026; só o nome mudou, o endereço `?tab=producao` é o mesmo. A OS fica em `/pedidos/boletim?id_int=[número]&modo=edicao`.
 
@@ -134,6 +134,17 @@ Pedido só com produtos de prateleira pode ser liberado pelo próprio sistema, n
 4. A qualquer momento, use **Imprimir OS · [setor]** no cabeçalho da OS, ou **Imprimir OS (PDF)** no menu **Ações** da tela Produção. O aviso "Gerando o PDF na nova aba" indica que o arquivo está sendo montado.
 5. Não existe mais PDF reduzido da OS: saiu do sistema em 28/10/2026, porque a produção não o usava.
 
+### Escaninho de encontro (pedido composto)
+
+A produção tem 28 escaninhos para juntar as partes de um **pedido composto**, que é o pedido com itens em dois ou mais setores. O setor que termina primeiro deixa a sua parte no escaninho, e a Expedição só recebe o pedido completo.
+
+1. Na primeira vez que o PDF da OS de um pedido composto é gerado, o sistema escolhe o **primeiro escaninho livre**, nesta ordem: ÁGUIA AMERICANA, ALCE, ANTA, ARRAIA, BALEIA AZUL, BISÃO, CAMELO, CROCODILO DO NILO, DRAGÃO DE KOMODO, ELEFANTE AFRICANO, GIRAFA, GORILA, HARPIA, HIPOPÓTAMO, LEÃO, LOBO, LONTRA, LULA COLOSSAL, MORSA, ONÇA PINTADA, ORCA, PANDA, RINOCERONTE BRANCO, SUCURI, TARTARUGA, TIGRE, URSO PARDO e URSO POLAR.
+2. O nome sai numa tarja vermelha, **ESCANINHO DE ENCONTRO DAS O.S.: [nome]**, logo depois do bloco CLIENTE / EVENTO / VENDEDOR e antes do primeiro produto. Embaixo dela vêm as caixas do que os outros setores produzem (**O restante do pedido - nao produzir aqui**).
+3. Todos os boletins do pedido, um por setor, mostram o mesmo escaninho. Reimprimir não troca o escaninho.
+4. O escaninho é liberado quando o pedido é **despachado na Expedição** ou **cancelado**. Liberado, ele volta a ser o primeiro candidato pela ordem: o próximo pedido composto o recebe, sem esperar a lista chegar ao fim.
+5. Com os 28 ocupados, a tarja sai como **ESCANINHO DE ENCONTRO DAS O.S.: SEM ESCANINHO LIVRE** e nada é bloqueado. A próxima impressão do mesmo pedido tenta de novo.
+6. Pedido de um setor só não tem tarja.
+
 ### Tirar um pedido da produção
 
 1. **Retirar da Produção** (menu de ações do pedido ou da lista de Pedidos): Retirar da Produção **devolve o pedido ao atendente**: ele sai da fila de Produção e o status volta para REVISAO ATENDENTE, juntos. Só vale em pedido em REVISAO PRODUCAO que ainda não tem OS; de EM PRODUCAO em diante, ou com OS, quem devolve o pedido é a produção e o sistema recusa com essa mensagem. Antes de retirar, uma janela explica o que acontece (o foco fica em **Cancelar**), e o nome de quem retirou e a data ficam registrados. Retirar de novo um pedido que já voltou ao atendente não grava nada.
@@ -174,6 +185,7 @@ As mensagens são internas: o cliente não vê.
 - Em OS que já existe, a data e a hora de entrega só mudam com a permissão **Editar Datas de Entrega**. Elas são a promessa feita ao cliente. A trava vale também fora da tela: o sistema recusa a alteração de quem não tem a permissão.
 - Na OS que já existe, cliente, quantidades e especificações dos modelos ficam travados. O que se altera lá é a orientação técnica, as observações e, para quem pode, a data e a hora.
 - **Imprimir OS** só aparece em pedido liberado para a produção.
+- O escaninho de encontro é escolhido e guardado pelo sistema, não pela tela. Dois boletins gerados ao mesmo tempo nunca recebem o mesmo escaninho. Pedido já despachado ou cancelado não recebe escaninho, e o PDF dele sai sem a tarja.
 - Não dá para ver o histórico de pedido que ainda não foi salvo: a aba mostra "Salve a proposta para visualizar o histórico.".
 - O status do pedido que já está na produção não é mais alterado por pagamento ou por arte. De REVISAO ATENDENTE em diante, ele só anda pelas ações da produção e da expedição.
 
@@ -192,6 +204,7 @@ As mensagens são internas: o cliente não vê.
 - **Salvar alterações** (pedido) e **Salvar Alterações** (OS) são botões de telas diferentes. O da OS é o que move o pedido para EM PRODUCAO.
 - **Timeline da proposta** (aba Histórico) e **Ver chat interno** mostram as mesmas mensagens. Não são dois históricos.
 - A tabela **Auditoria e Movimentos de Crédito** não é a lista de cobranças do pedido. Ela mostra só os movimentos de crédito e débito do cliente gerados por este pedido; as cobranças ficam na aba **Pagamentos**.
+- **Escaninho de encontro** não é o **setor** do boletim. O setor diz quem fabrica aquela página; o escaninho diz onde as partes de todos os setores se juntam antes da Expedição.
 - A aba **Revisão** da OS não está disponível na tela. A saída do pedido para a expedição é feita pela tela Expedição.
 
 ## Erros comuns
@@ -265,7 +278,13 @@ O que fazer:
 - `src/features/orcamentos/lib/retirar-producao.ts`
 - `src/features/orcamentos/services/retirar-producao.server.ts`
 - `src/features/orcamentos/components/RetirarProducaoModal.tsx`
+- `src/features/pedidos/lib/escaninho.ts`
+- `src/features/pedidos/pdf/OsPdfDocument.tsx`
+- `src/app/api/pedidos/imprimir-os/route.ts`
+- `supabase/migrations/20261117c_escaninhos_encontro.sql`
 
 > **Mudança desta revisão:** 09/10/2026 — nova seção sobre a página que mostra a mensagem This page could not load: é erro de carregamento, com a causa já vista (data inválida no pedido, tratada no commit `6693958`) e o que fazer.
 
 > **Mudança desta revisão:** 27/10/2026 — no BLOCO 2 da OS o campo aparece como **Instruções de fabricação · sai na OS impressa** e o texto digitado sai em vermelho, negrito e letra grande, na tela e nos dois PDFs da OS. Só exibição: a gravação, o campo da aba Produção / Expedição / Notas e as Instruções de entrega não mudaram.
+
+> **Mudança desta revisão:** 17/11/2026 — pedido composto (dois ou mais setores) ganha o **escaninho de encontro** no PDF da OS: o primeiro dos 28 escaninhos livre, na primeira impressão, liberado no despacho da Expedição ou no cancelamento. A tarja vermelha e as caixas dos outros setores subiram para logo depois do bloco CLIENTE / EVENTO / VENDEDOR. O resto do PDF não mudou.

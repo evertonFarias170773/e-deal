@@ -7,6 +7,7 @@ import { Document, Page, View, Text, Image, StyleSheet, Font } from "@react-pdf/
 import type { OsPdfViewModel, OsPdfProduto, OsPdfModelo } from "../services/os-viewmodel.service";
 import { textoDeEntrega } from "../lib/instrucoes-entrega";
 import { ordenarSetores } from "../setores";
+import { ROTULO_ESCANINHO, textoDaTarjaDoEscaninho } from "../lib/escaninho";
 
 /**
  * Documento PDF da OS (Boletim de Produção) — layout "OS 2027".
@@ -509,6 +510,18 @@ const styles = StyleSheet.create({
   },
   resumoItemNome: { fontSize: 7, flex: 1, paddingRight: 5, color: "#3f4b58" },
   resumoItemQtd: { fontSize: 7.5, fontFamily: "Helvetica-Bold" },
+  // Tarja vermelha do escaninho de encontro (17/11/2026, lib/escaninho.ts): em
+  // cima do resumo dos demais setores, no mesmo bloco indivisivel.
+  escaninhoTarja: {
+    backgroundColor: "#dc2626",
+    borderRadius: 4,
+    paddingVertical: 5,
+    paddingHorizontal: 8,
+    marginTop: 2,
+    marginBottom: 4,
+    alignItems: "center"
+  },
+  escaninhoTexto: { fontSize: 13, fontFamily: "Helvetica-Bold", color: "#ffffff", letterSpacing: 0.5, textAlign: "center" },
   // ── Observações / envio ────────────────────────────────────────────────────
   // Contorno removido em 27/08/2026: o texto passou a ser o que delimita o
   // bloco. O recuo horizontal saiu junto com a borda para o texto manter o
@@ -910,9 +923,12 @@ function ProdutoCard({ produto, corSetor, textoSetor, setor }: { produto: OsPdfP
  * produção enxergar o pedido inteiro sem misturar os modelos de outros setores.
  */
 function ResumoDemaisSetores({
-  setores
+  setores,
+  escaninho
 }: {
   setores: OsPdfViewModel["boletim"]["outrosSetores"];
+  /** Texto da tarja do escaninho (`textoDaTarjaDoEscaninho`); null = sem tarja. */
+  escaninho: string | null;
 }) {
   if (setores.length === 0) return null;
   const linhas = emGrupos(setores, MODELOS_POR_LINHA);
@@ -920,6 +936,11 @@ function ResumoDemaisSetores({
   return (
     <View style={styles.produtoCard}>
       <View wrap={false}>
+        {escaninho ? (
+          <View style={styles.escaninhoTarja}>
+            <Text style={styles.escaninhoTexto}>{`${ROTULO_ESCANINHO} ${pdfSafe(escaninho)}`}</Text>
+          </View>
+        ) : null}
         <View style={styles.resumoBarra}>
           <Text style={styles.resumoTitulo}>O restante do pedido - nao produzir aqui</Text>
         </View>
@@ -1161,14 +1182,19 @@ export function OsPdfPaginaBoletim({
         {/* Cliente e responsáveis (dados da proposta) */}
         <OsPdfBlocoCliente vm={vm} somenteEstoque={somenteEstoque} />
 
+        {/* Escaninho de encontro + o que os demais boletins da proposta produzem
+            (17/11/2026): subiu do rodape para logo depois de CLIENTE/EVENTO/VENDEDOR
+            e antes do primeiro produto. Pedido de um setor so nao tem nenhum dos dois. */}
+        <ResumoDemaisSetores
+          setores={vm.boletim.outrosSetores}
+          escaninho={textoDaTarjaDoEscaninho(vm.boletim.escaninho)}
+        />
+
         {/* Um card por produto, com os modelos DESTE boletim (setor). Produtos sem
             modelos no setor pertencem a outro boletim e saem do corpo do PDF. */}
         {produtosDoBoletim.map((produto, i) => (
           <ProdutoCard key={i} produto={produto} corSetor={cores.forte} textoSetor={cores.texto} setor={vm.boletim.setor} />
         ))}
-
-        {/* O que os demais boletins da proposta produzem */}
-        <ResumoDemaisSetores setores={vm.boletim.outrosSetores} />
 
         {/* Orientacao tecnica de producao (`propostas.obs_tecnica`) — a
             instrucao que a bancada segue. Sai INTEIRA: sem o corte de 200

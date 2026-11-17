@@ -4,6 +4,7 @@ import { obterPedidoOperacionalPorIdOuIdInt } from "./pedidos-detalhe.service";
 import { parsePedidosObs, obterFreteEscolhido } from "./boletim-propostas.service";
 import type { ParsedObs } from "./boletim-propostas.service";
 import { normalizarSetor } from "../setores";
+import type { EscaninhoDoBoletim } from "../lib/escaninho";
 // O MESMO rotulo da lista da Expedicao e da etiqueta de retirada: o formato do
 // numero do cadastro vive num lugar so, para as tres pecas nao divergirem.
 import { rotuloClienteComNumero } from "@/features/expedicao/lib/cliente-rotulo";
@@ -119,6 +120,12 @@ export interface OsPdfViewModel {
     eventoDoPagador: string | null;
     /** O que os demais boletins da proposta produzem, para o resumo do rodapé. */
     outrosSetores: { setor: string; itens: { produto: string; quantidade: number }[] }[];
+    /**
+     * Escaninho de encontro do pedido composto (17/11/2026, lib/escaninho.ts).
+     * O view-model não grava: a rota imprimir-os pede ao banco e preenche aqui.
+     * Ausente/null = sem tarja.
+     */
+    escaninho?: EscaninhoDoBoletim | null;
   };
   empresa: { id: EmpresaId; nome: string; cnpj: string | null };
   cliente: {
