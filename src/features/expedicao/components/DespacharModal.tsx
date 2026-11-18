@@ -60,7 +60,8 @@ import { LABEL_MODALIDADE, MODALIDADES_OFERECIDAS, TRANSPORTES_POR_MODALIDADE } 
 import type { ModalidadeFrete, PedidoExpedicao, TipoFreteNormalizado } from "../types";
 import { AvisoInstrucaoEntrega } from "./AvisoInstrucaoEntrega";
 import { mensagemDoSaldo, type SaldoDoDespacho } from "../lib/saldo-despacho";
-import { avisosDoReenvio } from "../lib/reenvio";
+import { avisosDoReenvio, type VereditoRedespacho } from "../lib/reenvio";
+import { avaliarRedespacho } from "../services/reenvio.client";
 import { conferirFreteSubsidiado, mensagemFreteSubsidiado } from "../lib/frete-subsidiado";
 import { barreiraNfAutorizada } from "../services/corrigir-frete-simulacao";
 import { getSupabaseClient } from "@/lib/supabase/client";
@@ -833,14 +834,45 @@ export function DespacharModal({
   }, [avaliaTrava, pedido.idInt]);
   const saldoBloqueia = avaliaTrava && saldoDespacho?.bloqueia === true;
 
+  /**
+   * REDESPACHO DO REENVIO (fase 2B, 18/11/2026). O veredito vem do banco
+   * (`exp_reenvio_redespacho`), a mesma funcao do gatilho que recusa o
+   * redespacho: envio do ciclo quando ele cotou o frete, saldo com a diferenca
+   * de frete do reenvio, e nota nova quando o tipo de envio mudou. Ciclo que
+   * cotou o frete dispensa a trava de frete (a diferenca ja foi decidida nele).
+   */
+  const [redespacho, setRedespacho] = useState<VereditoRedespacho | null>(null);
+  useEffect(() => {
+    if (!reenvioAberto || modoEdicao) return;
+    let vivo = true;
+    void avaliarRedespacho({
+      idInt: pedido.idInt,
+      cep: cepDoEnderecoEscolhido,
+      tipoFrete: tipoEntrega === "RETIRADA" ? "RETIRA_BALCAO" : tipoFrete
+    }).then((v) => {
+      if (vivo) setRedespacho(v);
+    });
+    return () => {
+      vivo = false;
+    };
+  }, [reenvioAberto, modoEdicao, pedido.idInt, cepDoEnderecoEscolhido, tipoFrete, tipoEntrega, versaoTrava]);
+  const freteDecididoNoReenvio = Boolean(reenvioAberto) && redespacho?.aberto === true && redespacho.freteDecidido;
+  /** O saldo ja aparece pela trava de saldo; aqui so o que e proprio do redespacho. */
+  const redespachoBloqueia =
+    Boolean(reenvioAberto) && !modoEdicao && redespacho?.aberto === true && redespacho.bloqueia && redespacho.situacao !== "SALDO";
+
   /** Trava de FRETE (com a liberacao de ADM): vale tambem para a prepostagem. */
-  const travaFreteBloqueia = avaliaTrava && (trava?.bloqueia === true || bloqueioRetiradaAdm);
+  const travaFreteBloqueia = avaliaTrava && !freteDecididoNoReenvio && (trava?.bloqueia === true || bloqueioRetiradaAdm);
   const mensagemTravaFrete = bloqueioRetiradaAdm
     ? MENSAGEM_RETIRADA_PRECISA_LIBERAR
     : trava?.mensagem || "diferença de frete acima do limite.";
   /** Qualquer trava do despacho: frete ou saldo. O saldo nao tem liberacao de ADM nem trava a prepostagem. */
-  const travaBloqueia = travaFreteBloqueia || saldoBloqueia;
-  const mensagemTrava = saldoBloqueia ? mensagemDoSaldo(saldoDespacho) : mensagemTravaFrete;
+  const travaBloqueia = travaFreteBloqueia || saldoBloqueia || redespachoBloqueia;
+  const mensagemTrava = saldoBloqueia
+    ? mensagemDoSaldo(saldoDespacho)
+    : redespachoBloqueia
+      ? redespacho?.mensagem || "Redespacho do reenvio bloqueado."
+      : mensagemTravaFrete;
 
   const [motivoLiberacaoDespacho, setMotivoLiberacaoDespacho] = useState("");
   const [liberandoDespacho, setLiberandoDespacho] = useState(false);
@@ -1612,6 +1644,18 @@ export function DespacharModal({
               Reenvio {reenvioAberto.ciclo}: {reenvioAberto.motivo}
             </p>
             <p>O endereço e o tipo de envio vêm do reenvio. Informe o rastreio ou conhecimento NOVO; o do primeiro envio está guardado no registro do reenvio.</p>
+            {reenvioAberto.diferenca > 0 ? (
+              <p>
+                Diferença de frete do reenvio: {formatCurrency(reenvioAberto.diferenca)}. O despacho só sai com ela paga (PIX na aba Pagamentos) ou abonada por um administrador.
+              </p>
+            ) : null}
+            {reenvioAberto.exigeNota ? (
+              <p className={redespacho?.notaNova ? "" : "font-semibold"}>
+                {redespacho?.notaNova
+                  ? `Nota nova emitida depois do reenvio: ${redespacho.notaNova.tipo}${redespacho.notaNova.numero ? ` nº ${redespacho.notaNova.numero}` : ""}.`
+                  : "O tipo de envio mudou: o despacho só sai depois de uma nota de produção emitida após o reenvio (NF-e de venda, de remessa ou NFS-e)."}
+              </p>
+            ) : null}
             {avisosReenvio.map((a) => (
               <p key={a} className="flex gap-2 text-amber-900 dark:text-amber-200">
                 <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /> <span>{a}</span>

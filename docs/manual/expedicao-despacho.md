@@ -1,6 +1,6 @@
 # Expedição: despachar e entregar
 
-> **Última revisão:** 14/11/2026 (quadro **Contatos do pedido** no Despachar, com as conversas do ChatGuru escolhidas na aba Geral). 10/11/2026 (aviso de pedido pronto pelo WhatsApp sai no Confirmar despacho)
+> **Última revisão:** 18/11/2026 (reenvio de pedido devolvido com diferença de frete: cotar o frete na janela **Reenviar**, PIX da diferença ou abono, nota nova quando o tipo de envio muda e trava do redespacho). 14/11/2026 (quadro **Contatos do pedido** no Despachar, com as conversas do ChatGuru escolhidas na aba Geral). 10/11/2026 (aviso de pedido pronto pelo WhatsApp sai no Confirmar despacho)
 > **Caminho no menu:** Expedição → card do pedido → **Despachar** (os outros passos saem do menu de ações do card)
 > **Endereço:** `/expedicao`
 
@@ -52,6 +52,8 @@ Nomes exatamente como aparecem na tela. A tabela completa da tela está em [Expe
 | **Voltar status** | Menu de ações; pedido que já chegou à Expedição | Abre a janela **Voltar status**, com **Voltar 1 passo** |
 | **Reenviar (pedido devolvido)** | Menu de ações; pedido Em Trânsito já despachado, sem entrega registrada, que não é complemento nem tem complemento; só com a permissão **Reenviar Pedido Devolvido** | Abre a janela **Reenviar** |
 | **Endereço de entrega do reenvio** / **Tipo de envio** / **Motivo** | Janela **Reenviar** | Escolhe o endereço (do cliente ou do pagador), o envio e o motivo, que fica na trilha |
+| **Cotar frete** / **Cotar de novo** | Quadro **Frete do reenvio**, na janela **Reenviar**, quando o pedido é CIF e o endereço ou o tipo de envio mudam | Cota o frete para o endereço escolhido e lista as opções do tipo de envio, com o valor de cada uma |
+| Campo do frete (só administrador da Expedição) | Quadro **Frete do reenvio**, quando a cotação não trouxe o tipo de envio escolhido | O administrador digita o frete combinado; fica registrado em nome dele |
 | **Voltar para a Expedição** | Rodapé da janela **Reenviar** | Registra o reenvio e põe o pedido Na Expedição. Fica apagado sem motivo |
 | **Editar dados de expedição** | Menu de ações; pedido com etiqueta gerada ou já despachado | Abre a mesma janela do despacho em modo de edição, com **Salvar dados** |
 | **Marcar prepostagem como cancelada** | Menu de ações; só administrador da Expedição, com prepostagem ainda não marcada | Registra que a prepostagem foi cancelada no portal dos Correios |
@@ -154,8 +156,16 @@ Use quando a transportadora ou os Correios devolveram um pedido que está Em Tr�
 1. No menu do pedido, clique em **Reenviar (pedido devolvido)**.
 2. Escolha o **Endereço de entrega do reenvio**. A lista traz os endereços do cliente e do pagador; o atual vem marcado. Mudar o endereço na proposta não muda o envio: depois do despacho vale o endereço escolhido aqui.
 3. Escolha o **Tipo de envio**. Quem paga o frete (CIF ou FOB) não muda.
-4. Escreva o motivo (mínimo de 3 letras) e clique em **Voltar para a Expedição**.
-5. O pedido volta para Na Expedição com o selo **Reenvio N**. Despache de novo pelo botão **Despachar**, informando o rastreio ou conhecimento novo. Nos Correios, gere a prepostagem de novo (a janela pede confirmação).
+4. Em CIF, se o endereço ou o tipo de envio mudaram, aparece o quadro **Frete do reenvio**, com o frete do envio anterior. Clique em **Cotar frete** e escolha uma das opções do tipo de envio (Azul, VEPPO, Correios...). Se a cotação não trouxer o tipo escolhido, só o administrador da Expedição pode digitar o frete combinado.
+5. O quadro mostra a diferença:
+   - **Sem diferença**: segue como antes.
+   - **Frete maior**: a diferença fica registrada no reenvio e é cobrada do cliente por um PIX próprio, na aba **Pagamentos** da proposta, ou abonada por um administrador. Ela não muda o total do pedido nem a nota.
+   - **Frete menor**: o botão fica apagado. Diferença a devolver ainda não existe no reenvio.
+6. Escreva o motivo (mínimo de 3 letras) e clique em **Voltar para a Expedição**.
+7. O pedido volta para Na Expedição com o selo **Reenvio N**. Antes de despachar de novo:
+   - com diferença de frete, ela precisa estar paga (PIX confirmado) ou abonada;
+   - se o tipo de envio mudou (por exemplo, de Correios para Transportadora), o pedido precisa de uma **nota nova**, emitida depois do reenvio: NF-e de venda, de remessa ou NFS-e. A nota do primeiro envio não vale.
+8. Despache pelo botão **Despachar**, com o endereço e o tipo de envio do reenvio e o rastreio ou conhecimento novo. A faixa do reenvio no Despachar mostra a diferença e se a nota nova já foi emitida. Nos Correios, gere a prepostagem de novo (a janela pede confirmação).
 
 O primeiro envio (data, rastreio, endereço, transportadora) fica guardado no registro do reenvio. Não há limite de reenvios por pedido.
 
@@ -191,7 +201,8 @@ A opção só aparece em pedido que já chegou à Expedição e não tem nota au
 As regras da tela inteira estão em [Expedição](expedicao.md). Estas são as que travam estes passos:
 
 - Não dá para despachar sem a modalidade do frete, a transportadora, o endereço de entrega, o peso aferido e a quantidade de volumes. Em retirada, basta a modalidade. O rastreio é opcional.
-- **Saldo a receber trava o despacho.** Se o total do pedido é maior que o pago confirmado, o despacho é recusado, mesmo que a diferença seja de R$ 0,01. Vale para qualquer modalidade, inclusive retirada no balcão, e para o complemento que sai junto. Não há liberação de ADM na Expedição para o saldo. A trava só age no primeiro despacho.
+- **Saldo a receber trava o despacho.** Se o total do pedido é maior que o pago confirmado, o despacho é recusado, mesmo que a diferença seja de R$ 0,01. Vale para qualquer modalidade, inclusive retirada no balcão, e para o complemento que sai junto. Não há liberação de ADM na Expedição para o saldo. A trava age no primeiro despacho e no redespacho de um pedido reenviado.
+- **Trava do redespacho (desde 18/11/2026).** O pedido reenviado só sai de novo quando: a diferença de frete do reenvio está paga ou abonada; o envio é o do reenvio (endereço e tipo), quando o reenvio cotou o frete; e, se o tipo de envio mudou, há nota de produção emitida depois do reenvio. Com o frete cotado no reenvio, a trava de frete da recotação não se aplica ao redespacho: a diferença já foi decidida no reenvio.
 - A trava de frete só vale em CIF: até R$ 4,00 acima do frete da proposta só avisa; acima disso, ou sem recotação para o CEP atual, o despacho e a prepostagem ficam bloqueados até a liberação de um administrador da Expedição.
 - **A prepostagem leva a NF-e do pedido (desde 03/11/2026).** Desde 01/11/2026 os Correios exigem NF-e para postar. Com NF-e de venda autorizada, a prepostagem envia aos Correios a chave de acesso e o número da nota, junto com os itens da declaração de conteúdo. Sem nota autorizada (pendente, cancelada, só de serviço ou faturada no sistema antigo), a prepostagem sai como antes, só com a declaração, sem bloqueio novo. Se os Correios recusarem, a janela mostra **Correios recusaram a prepostagem** com a mensagem deles. A recusa não fica registrada no pedido: anote ou tente de novo.
 - Recotar é livre para o expedidor. **Aplicar** depende de liberação do administrador e só aceita opção que barateia ou empata o frete. Com NF-e autorizada não se aplica nenhuma opção, nem a que barateia: a tela recusa antes de pedir confirmação, com a mesma mensagem do **Corrigir frete** (cancele a nota antes). Nota cancelada ou denegada não impede.
@@ -199,7 +210,7 @@ As regras da tela inteira estão em [Expedição](expedicao.md). Estas são as q
 - Pedido CIF só sai como retirada por **Cliente vai retirar no balcão**, com ADM pelo cadastro e **Liberar despacho (ADM)**.
 - **Corrigir frete** só vale para pedido Na Expedição ou A Retirar; não aparece com nota autorizada, com despacho confirmado ou com pedido entregue, e é recusado quando o total muda e o pedido tem título ativo no Contas a Receber.
 - Não dá para trocar o endereço de entrega nem a transportadora aqui: os dois vêm da proposta. A exceção é o pedido devolvido, em **Reenviar (pedido devolvido)**.
-- O reenvio é recusado quando o endereço ou o tipo de envio novos mudam o valor do frete em CIF, quando se tenta trocar quem paga, e quando há saldo a receber no pedido.
+- O reenvio é recusado quando o frete novo é menor que o do envio anterior (em CIF), quando se tenta trocar quem paga, e quando há saldo a receber no pedido (inclusive diferença de frete de um reenvio anterior ainda não paga).
 - Pedido complementar não é despachado sozinho enquanto o principal não foi despachado, e **Voltar status** no principal não volta o complemento.
 - Toda mudança de status confere se o pedido ainda está no status que a tela mostrava. Se outra pessoa mexeu antes, a ação é recusada e a lista recarrega.
 
@@ -225,6 +236,9 @@ A tabela completa dos avisos da Expedição está em [Expedição](expedicao.md)
 | Este pedido é complemento do #…: o despacho é feito pelo pedido principal, e os dois saem juntos. | Tentou despachar o complemento antes do principal | Despachar o principal |
 | Pedido #… ja foi despachado. Para corrigir o frete, volte um passo… | Corrigir frete com despacho confirmado | **Voltar status** e tentar de novo |
 | Você não tem a permissão de reenviar pedido (expedicao.reenvio). | O perfil não tem **Reenviar Pedido Devolvido** | Pedir a permissão a quem administra os perfis |
+| "Despacho bloqueado: falta receber R$ ... da diferença de frete do reenvio N." | O frete do reenvio ficou maior e a diferença não foi paga nem abonada | Gerar o PIX da diferença na aba **Pagamentos** e despachar depois da confirmação, ou pedir ao administrador para abonar |
+| "O reenvio N trocou o tipo de envio (... para ...) e exige nota nova" | O tipo de envio mudou e o pedido não tem nota emitida depois do reenvio | Emitir a nota nova (venda, remessa ou serviço) e despachar em seguida |
+| "O reenvio N cotou o frete para ... no CEP .... Despache com o tipo de envio e o endereço do reenvio." | O Despachar está com outro endereço ou tipo de envio | Usar o endereço e o tipo de envio do reenvio |
 | O pedido mudou de status em outra tela. A lista será recarregada. | Outra pessoa alterou o pedido antes | Conferir o pedido na lista recarregada |
 
 ## Veja também

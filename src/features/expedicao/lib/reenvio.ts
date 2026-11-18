@@ -16,6 +16,7 @@
  *   Despachar grava data nova e o fecha. Sem coluna nem trigger novos.
  */
 import type { TipoFreteNormalizado } from "../types";
+import { normalizarTipoFrete } from "./tipo-frete";
 
 /** Uma linha de `expedicao_reenvios`, como a lista le. */
 export interface LinhaReenvio {
@@ -27,6 +28,12 @@ export interface LinhaReenvio {
   tipo_frete_anterior: string | null;
   tipo_frete_novo: string | null;
   data_despacho_anterior: string;
+  /** Fase 2B (18/11/2026). Ausentes antes da migration 20261118: valem 0/false. */
+  diferenca?: number | string | null;
+  exige_nota?: boolean | null;
+  frete_origem?: string | null;
+  frete_novo?: number | string | null;
+  abono_valor?: number | string | null;
 }
 
 /** O que o pedido carrega sobre reenvio. */
@@ -41,7 +48,21 @@ export interface ReenvioDoPedido {
     criadoEm: string;
     tipoFreteAnterior: string | null;
     tipoFreteNovo: string | null;
+    /** Fase 2B: diferenca de frete do ciclo (0 sem diferenca). */
+    diferenca: number;
+    /** Fase 2B: o tipo de envio mudou; o redespacho exige nota nova. */
+    exigeNota: boolean;
+    /** Fase 2B: o ciclo cotou o frete (COTACAO ou DIGITADO_ADM). */
+    freteDecidido: boolean;
   } | null;
+  /** Frete gravado pelo ultimo ciclo que gravou frete (base do proximo). */
+  ultimoFrete: number | null;
+}
+
+function numeroOuNulo(v: unknown): number | null {
+  if (v === null || v === undefined || v === "") return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
 }
 
 function mesmoInstante(a: string | null | undefined, b: string | null | undefined): boolean {
@@ -66,10 +87,127 @@ export function reenvioDoPedido(linhas: LinhaReenvio[], dataDespachoAtual: strin
         autorNome: ultimo.autor_nome ?? null,
         criadoEm: String(ultimo.criado_em),
         tipoFreteAnterior: ultimo.tipo_frete_anterior ?? null,
-        tipoFreteNovo: ultimo.tipo_frete_novo ?? null
+        tipoFreteNovo: ultimo.tipo_frete_novo ?? null,
+        diferenca: numeroOuNulo(ultimo.diferenca) ?? 0,
+        exigeNota: ultimo.exige_nota === true,
+        freteDecidido: ultimo.frete_origem === "COTACAO" || ultimo.frete_origem === "DIGITADO_ADM"
       }
     : null;
-  return { ciclos: Number(ultimo.ciclo), aberto };
+  const comFrete = ordenadas.find((l) => numeroOuNulo(l.frete_novo) !== null);
+  return { ciclos: Number(ultimo.ciclo), aberto, ultimoFrete: comFrete ? numeroOuNulo(comFrete.frete_novo) : null };
+}
+
+// -----------------------------------------------------------------------------
+// FASE 2B (18/11/2026): frete do reenvio, diferenca e redespacho
+// -----------------------------------------------------------------------------
+
+/** Uma opcao da cotacao (`/api/expedicao/recotacao/cotar`). */
+export interface OpcaoCotadaReenvio {
+  id: string;
+  transportadora: string;
+  servico: string;
+  valor: number;
+  prazo: string;
+}
+
+/**
+ * Tipo de envio de uma opcao: o mesmo criterio do banco em
+ * `exp_reenviar_pedido` (servico; se nao classificar, a transportadora).
+ */
+export function tipoDaOpcao(o: Pick<OpcaoCotadaReenvio, "servico" | "transportadora">): TipoFreteNormalizado {
+  const peloServico = normalizarTipoFrete(o.servico || o.transportadora);
+  if (peloServico === "CORREIOS" || peloServico === "MOTOBOY" || peloServico === "TRANSPORTADORA") return peloServico;
+  return normalizarTipoFrete(o.transportadora);
+}
+
+/** So as opcoes do tipo de envio escolhido, da mais barata para a mais cara. */
+export function opcoesDoTipo<T extends OpcaoCotadaReenvio>(opcoes: T[], tipo: TipoFreteNormalizado): T[] {
+  return opcoes.filter((o) => tipoDaOpcao(o) === tipo && Number.isFinite(o.valor)).sort((a, b) => a.valor - b.valor);
+}
+
+/** Frete do envio anterior: o do ultimo ciclo com frete, ou o da proposta. */
+export function freteDoEnvioAnterior(reenvio: ReenvioDoPedido | null | undefined, freteProposta: number | null | undefined): number {
+  const base = reenvio?.ultimoFrete ?? freteProposta ?? 0;
+  return Math.round(Number(base) * 100) / 100;
+}
+
+/** O que a tela mostra da diferenca antes de gravar. A conta que vale e a do banco. */
+export function diferencaDoReenvio(freteAnterior: number, freteNovo: number): { diferenca: number; recusada: boolean } {
+  const centavos = Math.round(freteNovo * 100) - Math.round(freteAnterior * 100);
+  return { diferenca: centavos / 100, recusada: centavos < 0 };
+}
+
+/** Veredito de `exp_reenvio_redespacho`, a mesma funcao do gatilho do redespacho. */
+export interface VereditoRedespacho {
+  aberto: boolean;
+  bloqueia: boolean;
+  situacao: string;
+  mensagem: string | null;
+  ciclo: number | null;
+  freteDecidido: boolean;
+  diferenca: number;
+  exigeNota: boolean;
+  notaNova: { tipo: string; numero: string | null } | null;
+}
+
+export function lerVereditoRedespacho(raw: unknown): VereditoRedespacho | null {
+  if (!raw || typeof raw !== "object") return null;
+  const r = raw as Record<string, unknown>;
+  const nota = r.nota_nova && typeof r.nota_nova === "object" ? (r.nota_nova as Record<string, unknown>) : null;
+  return {
+    aberto: r.aberto === true,
+    bloqueia: r.bloqueia === true,
+    situacao: String(r.situacao ?? ""),
+    mensagem: typeof r.mensagem === "string" ? r.mensagem : null,
+    ciclo: numeroOuNulo(r.ciclo),
+    freteDecidido: r.frete_decidido === true,
+    diferenca: numeroOuNulo(r.diferenca) ?? 0,
+    exigeNota: r.exige_nota === true,
+    notaNova: nota ? { tipo: String(nota.tipo ?? ""), numero: nota.numero === null || nota.numero === undefined ? null : String(nota.numero) } : null
+  };
+}
+
+/** Um ciclo como `exp_reenvio_situacao` devolve (aba Pagamentos). */
+export interface SituacaoCicloReenvio {
+  ciclo: number;
+  chave: string;
+  freteAnterior: number | null;
+  freteNovo: number | null;
+  diferenca: number;
+  abono: number | null;
+  abonadoPor: string | null;
+  pago: number;
+  pendente: number;
+  cobrancaViva: { id: string; idPagamento: string | null; status: string; valor: number; idEmpresa: number | null; temPix: boolean } | null;
+}
+
+export function lerSituacaoDoReenvio(raw: unknown): SituacaoCicloReenvio[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((item) => {
+    const r = (item ?? {}) as Record<string, unknown>;
+    const viva = r.cobranca_viva && typeof r.cobranca_viva === "object" ? (r.cobranca_viva as Record<string, unknown>) : null;
+    return {
+      ciclo: Number(r.ciclo),
+      chave: String(r.chave ?? ""),
+      freteAnterior: numeroOuNulo(r.frete_anterior),
+      freteNovo: numeroOuNulo(r.frete_novo),
+      diferenca: numeroOuNulo(r.diferenca) ?? 0,
+      abono: numeroOuNulo(r.abono),
+      abonadoPor: typeof r.abonado_por === "string" ? r.abonado_por : null,
+      pago: numeroOuNulo(r.pago) ?? 0,
+      pendente: numeroOuNulo(r.pendente) ?? 0,
+      cobrancaViva: viva
+        ? {
+            id: String(viva.id),
+            idPagamento: viva.id_pagamento ? String(viva.id_pagamento) : null,
+            status: String(viva.status ?? ""),
+            valor: numeroOuNulo(viva.valor) ?? 0,
+            idEmpresa: numeroOuNulo(viva.id_empresa),
+            temPix: viva.pix_copia_cola === true
+          }
+        : null
+    };
+  });
 }
 
 /** Agrupa a consulta da lista por pedido. */
@@ -132,9 +270,9 @@ export function avisosDoReenvio(e: {
   return avisos;
 }
 
-/** Erro cru da RPC ("EXP_REENVIO_FRETE: ...", "PERM: ...") -> so o texto. */
+/** Erro cru da RPC ("EXP_REENVIO_FRETE: ...", "EXP_REDESPACHO_...: ...", "PERM: ...") -> so o texto. */
 export function textoDoErroDeReenvio(mensagem: string): string {
-  const semCodigo = mensagem.replace(/^EXP_REENVIO_[A-Z_]+:\s*/, "");
+  const semCodigo = mensagem.replace(/^EXP_RE(ENVIO|DESPACHO)_[A-Z_]+:\s*/, "");
   if (/^PERM:/.test(semCodigo)) return "Você não tem a permissão de reenviar pedido (expedicao.reenvio).";
   return semCodigo;
 }

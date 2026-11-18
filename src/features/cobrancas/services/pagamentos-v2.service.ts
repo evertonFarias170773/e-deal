@@ -45,7 +45,11 @@ export const PAGAMENTOS_V2_SELECT_COLUMNS = [
   "n_url_pdf",
   "boleto_enviadoo",
   "forma_pgto",
-  "forma_fatu"
+  "forma_fatu",
+  // Reenvio fase 2B (18/11/2026): a coluna existe desde a 2A (22/10); com ela
+  // na leitura, a cobrança da diferença de frete do reenvio sai do saldo da
+  // proposta na tela (semCobrancaDeReenvio) como já sai no banco.
+  "chave_reenvio"
 ] as const;
 
 export const PAGAMENTOS_V2_SELECT = PAGAMENTOS_V2_SELECT_COLUMNS.join(", ");

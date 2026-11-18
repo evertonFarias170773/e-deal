@@ -1,21 +1,36 @@
 "use client";
 
 /**
- * REENVIO DE PEDIDO DEVOLVIDO, FASE 1 (22/10/2026).
+ * REENVIO DE PEDIDO DEVOLVIDO (fase 1, 22/10/2026; fase 2B, 18/11/2026).
  *
  * Pedido EM TRANSITO devolvido pela transportadora volta para a Expedicao com
  * endereco e/ou tipo de envio novos. O endereco e ESCOLHA EXPLICITA: depois do
  * despacho vale o gravado em `expedicoes`, e mudar na proposta nao surte efeito.
  * Quem decide e o banco (`exp_reenviar_pedido`): permissao, frete e quem paga.
- * Diferenca de frete e a fase 2 — a RPC recusa e o texto dela aparece aqui.
+ *
+ * FASE 2B: em CIF, com endereco ou tipo de envio novos, o frete e cotado aqui
+ * (a mesma rota da recotacao, que registra a consulta) e o expedidor escolhe a
+ * opcao do tipo de envio. Sem opcao automatica para o tipo, so um ADM
+ * (expedicao.admin) digita o valor. O banco confere a opcao (consulta mais
+ * recente do CEP, tipo certo) e calcula a diferenca: positiva fica no ciclo e
+ * vira PIX na aba Pagamentos ou abono do ADM; negativa e recusada. Trocar o
+ * tipo de envio exige nota nova antes do redespacho.
  */
 import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, X } from "lucide-react";
 import { useAppToast } from "@/components/common/AppToast";
+import { useAuth } from "@/features/auth/AuthProvider";
+import { hasPermissao } from "@/features/auth/usuarios.service";
 import { formatCurrency } from "@/lib/formatters/currency";
-import { avisosDoReenvio } from "../lib/reenvio";
-import { listarEnderecosParaReenvio, reenviarPedido, type EnderecoParaReenvio } from "../services/reenvio.client";
-import { avaliarSaldoDoDespacho } from "../services/recotacao.client";
+import {
+  avisosDoReenvio,
+  diferencaDoReenvio,
+  freteDoEnvioAnterior,
+  opcoesDoTipo,
+  type OpcaoCotadaReenvio
+} from "../lib/reenvio";
+import { listarEnderecosParaReenvio, reenviarPedido, type EnderecoParaReenvio, type FreteDoReenvio } from "../services/reenvio.client";
+import { avaliarSaldoDoDespacho, recotarFrete } from "../services/recotacao.client";
 import { mensagemDoSaldo, type SaldoDoDespacho } from "../lib/saldo-despacho";
 import { TRANSPORTES_POR_MODALIDADE, type PedidoExpedicao, type TipoFreteNormalizado } from "../types";
 
@@ -24,6 +39,10 @@ const ROTULO_TIPO: Record<string, string> = {
   TRANSPORTADORA: "Transportadora",
   MOTOBOY: "Motoboy"
 };
+
+const soDigitos = (v: string | null | undefined) => String(v ?? "").replace(/\D/g, "");
+
+type CotacaoDoReenvio = { idEndereco: string; idConsulta: number; opcoes: OpcaoCotadaReenvio[]; avisos: string[] };
 
 export function ReenvioModal({
   pedido,
@@ -35,11 +54,14 @@ export function ReenvioModal({
   onDone: () => void;
 }) {
   const { showToast } = useAppToast();
+  const { user } = useAuth();
+  const ehAdmExpedicao = Boolean(user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "expedicao.admin"));
   const exp = pedido.expedicao;
   const modalidade = exp?.modalidadeFrete ?? pedido.modalidadeOrcamento ?? null;
   const tipos: TipoFreteNormalizado[] = modalidade === "CIF" || modalidade === "FOB" ? TRANSPORTES_POR_MODALIDADE[modalidade] : [];
   const tipoAtual = (exp?.tipoFrete ?? pedido.tipoFrete) as TipoFreteNormalizado;
   const ciclo = (pedido.reenvio?.ciclos ?? 0) + 1;
+  const freteAnterior = freteDoEnvioAnterior(pedido.reenvio, pedido.freteCobrado);
 
   const [enderecos, setEnderecos] = useState<EnderecoParaReenvio[] | null>(null);
   const [idEndereco, setIdEndereco] = useState<string>(exp?.idEnderecoEntrega ?? pedido.enderecoEntrega?.id ?? "");
@@ -49,12 +71,19 @@ export function ReenvioModal({
   /**
    * SALDO A DEFINIR (22/10/2026): o mesmo veredito da trava de saldo do despacho
    * (`exp_saldo_despacho`), que a RPC do reenvio tambem consulta antes de gravar.
-   * A tela so pergunta, para mostrar o valor e travar o botao antes do clique.
+   * Desde a 2B inclui a diferenca de frete pendente de reenvios anteriores.
    * Leitura que falha nao trava: a RPC segue recusando.
    */
   const [saldo, setSaldo] = useState<SaldoDoDespacho | null>(null);
   /** Recusa da RPC, mostrada dentro da janela (alem do aviso). */
   const [erroRpc, setErroRpc] = useState<string | null>(null);
+
+  // FASE 2B: cotacao do frete do reenvio.
+  const [cotacao, setCotacao] = useState<CotacaoDoReenvio | null>(null);
+  const [cotando, setCotando] = useState(false);
+  const [erroCotacao, setErroCotacao] = useState<string | null>(null);
+  const [idOpcao, setIdOpcao] = useState<string>("");
+  const [freteDigitado, setFreteDigitado] = useState("");
 
   useEffect(() => {
     let vivo = true;
@@ -87,9 +116,58 @@ export function ReenvioModal({
     [exp?.tipoFrete, exp?.correiosCodigoObjeto, exp?.prepostagemCanceladaEm, exp?.azulAwb]
   );
 
+  const cepAtual = soDigitos(enderecos?.find((e) => e.id === exp?.idEnderecoEntrega)?.cep);
+  const cepEscolhido = soDigitos(enderecos?.find((e) => e.id === idEndereco)?.cep);
+  const tipoMudou = tipoFrete !== tipoAtual;
+  /** Em CIF, endereco ou tipo novos pedem o frete cotado (a RPC confere). */
+  const precisaFrete = modalidade === "CIF" && enderecos !== null && (tipoMudou || (cepEscolhido !== "" && cepEscolhido !== cepAtual));
+
+  // A cotacao vale para o endereco cotado; trocar endereco ou tipo pede escolha nova.
+  const cotacaoVigente = cotacao && cotacao.idEndereco === idEndereco ? cotacao : null;
+  const opcoesTipo = useMemo(() => (cotacaoVigente ? opcoesDoTipo(cotacaoVigente.opcoes, tipoFrete) : []), [cotacaoVigente, tipoFrete]);
+  const opcaoEscolhida = opcoesTipo.find((o) => o.id === idOpcao) ?? null;
+  const valorDigitado = Number(freteDigitado.replace(/\./g, "").replace(",", "."));
+  const digitadoValido = Number.isFinite(valorDigitado) && valorDigitado > 0;
+  const semOpcaoAutomatica = Boolean(cotacaoVigente) && opcoesTipo.length === 0;
+
+  const freteNovo: number | null = !precisaFrete
+    ? null
+    : opcaoEscolhida
+      ? opcaoEscolhida.valor
+      : semOpcaoAutomatica && ehAdmExpedicao && digitadoValido
+        ? Math.round(valorDigitado * 100) / 100
+        : null;
+  const conta = freteNovo !== null ? diferencaDoReenvio(freteAnterior, freteNovo) : null;
+
+  const freteParaRpc: FreteDoReenvio = !precisaFrete
+    ? null
+    : opcaoEscolhida && cotacaoVigente
+      ? { origem: "COTACAO", idConsulta: cotacaoVigente.idConsulta, idOpcao: opcaoEscolhida.id }
+      : freteNovo !== null
+        ? { origem: "DIGITADO_ADM", valor: freteNovo }
+        : null;
+
+  async function handleCotar() {
+    if (!idEndereco) return;
+    setErroCotacao(null);
+    setCotando(true);
+    const res = await recotarFrete(pedido.idInt, idEndereco, { reenvio: true });
+    setCotando(false);
+    if (!res.success || !res.idConsulta) {
+      setCotacao(null);
+      setErroCotacao(res.errorMessage || "A cotação não pôde ser registrada. Tente de novo.");
+      return;
+    }
+    setCotacao({ idEndereco, idConsulta: res.idConsulta, opcoes: res.opcoes ?? [], avisos: res.avisos ?? [] });
+    const primeira = opcoesDoTipo(res.opcoes ?? [], tipoFrete)[0];
+    setIdOpcao(primeira?.id ?? "");
+  }
+
   const semQuemPaga = tipos.length === 0;
   const temSaldo = saldo?.bloqueia === true;
-  const pronto = !salvando && !semQuemPaga && !temSaldo && Boolean(idEndereco) && motivo.trim().length >= 3;
+  const freteResolvido = !precisaFrete || (freteParaRpc !== null && conta !== null && !conta.recusada);
+  const pronto =
+    !salvando && !semQuemPaga && !temSaldo && Boolean(idEndereco) && motivo.trim().length >= 3 && freteResolvido;
 
   async function handleConfirmar() {
     if (!pronto) return;
@@ -101,14 +179,21 @@ export function ReenvioModal({
       idEnderecoEntrega: idEndereco,
       tipoFrete,
       motivo: motivo.trim(),
-      modalidade
+      modalidade,
+      frete: freteParaRpc
     });
     setSalvando(false);
     if (res.success) {
+      const partes = [`#${pedido.idInt} voltou para a Expedição.`];
+      if (res.diferenca > 0) {
+        partes.push(`Diferença de frete de ${formatCurrency(res.diferenca)}: gere o PIX na aba Pagamentos ou peça o abono a um administrador.`);
+      }
+      if (res.exigeNota) partes.push("O tipo de envio mudou: emita a nota nova antes de despachar.");
+      partes.push("Despache de novo pelo botão Despachar.");
       showToast({
         type: "success",
         title: res.idempotente ? "Reenvio já registrado" : `Reenvio ${res.ciclo} registrado`,
-        description: `#${pedido.idInt} voltou para a Expedição. Despache de novo pelo botão Despachar.`
+        description: partes.join(" ")
       });
       onDone();
     } else {
@@ -159,7 +244,10 @@ export function ReenvioModal({
             ) : (
               <select
                 value={idEndereco}
-                onChange={(e) => setIdEndereco(e.target.value)}
+                onChange={(e) => {
+                  setIdEndereco(e.target.value);
+                  setIdOpcao("");
+                }}
                 className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
               >
                 {!enderecos.some((e) => e.id === idEndereco) ? <option value="">Escolha o endereço</option> : null}
@@ -178,7 +266,11 @@ export function ReenvioModal({
             <label className="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-500">Tipo de envio</label>
             <select
               value={tipoFrete}
-              onChange={(e) => setTipoFrete(e.target.value as TipoFreteNormalizado)}
+              onChange={(e) => {
+                const novo = e.target.value as TipoFreteNormalizado;
+                setTipoFrete(novo);
+                setIdOpcao(cotacaoVigente ? (opcoesDoTipo(cotacaoVigente.opcoes, novo)[0]?.id ?? "") : "");
+              }}
               disabled={semQuemPaga}
               className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm outline-none disabled:opacity-60 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
             >
@@ -190,10 +282,93 @@ export function ReenvioModal({
               ))}
             </select>
             <p className="mt-1 text-xs text-slate-500">
-              Quem paga não muda ({modalidade ?? "sem quem paga"}). Se o endereço ou o tipo de envio mudar o valor do frete, ou exigir recotar,
-              o reenvio é recusado: a diferença de frete fica para a fase 2.
+              Quem paga não muda ({modalidade ?? "sem quem paga"}).
+              {modalidade === "CIF"
+                ? " Com endereço ou tipo de envio novos, cote o frete abaixo: frete maior vira diferença a cobrar do cliente (ou abono); frete menor ainda é recusado."
+                : ""}
             </p>
           </div>
+
+          {precisaFrete ? (
+            <div className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm dark:border-slate-700 dark:bg-slate-800/60">
+              <div className="flex items-center justify-between gap-3">
+                <p className="font-semibold text-slate-800 dark:text-slate-100">Frete do reenvio</p>
+                <button
+                  type="button"
+                  onClick={() => void handleCotar()}
+                  disabled={cotando || !idEndereco}
+                  className="rounded-xl bg-[#0b2f4a] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#0d3a5c] disabled:opacity-50 dark:bg-sky-600 dark:hover:bg-sky-500"
+                >
+                  {cotando ? "Cotando..." : cotacaoVigente ? "Cotar de novo" : "Cotar frete"}
+                </button>
+              </div>
+              <p className="text-slate-600 dark:text-slate-300">Frete do envio anterior: {formatCurrency(freteAnterior)}</p>
+
+              {erroCotacao ? <p className="text-rose-700 dark:text-rose-300">{erroCotacao}</p> : null}
+
+              {cotacaoVigente && opcoesTipo.length > 0 ? (
+                <div className="space-y-1.5">
+                  {opcoesTipo.map((o) => (
+                    <label key={o.id} className="flex cursor-pointer items-center gap-2 rounded-xl bg-white px-3 py-2 dark:bg-slate-900">
+                      <input type="radio" name="opcao-reenvio" checked={idOpcao === o.id} onChange={() => setIdOpcao(o.id)} />
+                      <span className="flex-1">
+                        {o.transportadora}
+                        {o.servico && o.servico !== o.transportadora ? ` · ${o.servico}` : ""}
+                        {o.prazo ? <span className="text-slate-500"> · {o.prazo}</span> : null}
+                      </span>
+                      <span className="font-semibold">{formatCurrency(o.valor)}</span>
+                    </label>
+                  ))}
+                </div>
+              ) : null}
+
+              {semOpcaoAutomatica ? (
+                ehAdmExpedicao ? (
+                  <div>
+                    <p className="text-amber-800 dark:text-amber-200">
+                      A cotação automática não trouxe {ROTULO_TIPO[tipoFrete] ?? tipoFrete}. Como administrador, digite o frete combinado (fica gravado em seu nome).
+                    </p>
+                    <input
+                      value={freteDigitado}
+                      onChange={(e) => setFreteDigitado(e.target.value)}
+                      inputMode="decimal"
+                      placeholder="0,00"
+                      className="mt-1 w-40 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-sm outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                    />
+                  </div>
+                ) : (
+                  <p className="text-amber-800 dark:text-amber-200">
+                    A cotação automática não trouxe {ROTULO_TIPO[tipoFrete] ?? tipoFrete}. Peça a um administrador da Expedição para registrar o reenvio com o frete combinado.
+                  </p>
+                )
+              ) : null}
+
+              {cotacaoVigente?.avisos.map((a) => (
+                <p key={a} className="text-xs text-slate-500">{a}</p>
+              ))}
+
+              {conta ? (
+                conta.recusada ? (
+                  <p className="font-semibold text-rose-700 dark:text-rose-300">
+                    Frete novo {formatCurrency(freteNovo ?? 0)} é menor que o do envio anterior: diferença a devolver ainda não existe no reenvio.
+                  </p>
+                ) : conta.diferenca > 0 ? (
+                  <p className="font-semibold text-amber-800 dark:text-amber-200">
+                    Diferença de {formatCurrency(conta.diferenca)} a cobrar do cliente (PIX na aba Pagamentos) ou a abonar por um administrador. O pedido só é despachado depois.
+                  </p>
+                ) : (
+                  <p className="text-emerald-700 dark:text-emerald-300">Sem diferença de frete.</p>
+                )
+              ) : null}
+            </div>
+          ) : null}
+
+          {tipoMudou ? (
+            <p className="flex gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>Trocar o tipo de envio exige nota nova: o Despachar só libera depois de uma nota de produção emitida após este reenvio.</span>
+            </p>
+          ) : null}
 
           <div>
             <label className="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-500">Motivo (obrigatório — fica na trilha)</label>

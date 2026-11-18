@@ -111,6 +111,7 @@ export type DespachoInput = {
 import { camposMinimosDespacho, frasearFaltantes } from "../lib/campos-minimos-despacho";
 import { MENSAGEM_RETIRADA_PRECISA_LIBERAR, MOTIVO_RETIRADA_ADM, retiradaAdmLiberada } from "../lib/retirada-adm";
 import { avaliarSaldoDoDespacho, temLiberacaoDespachoAtiva } from "./recotacao.client";
+import { avaliarRedespacho } from "./reenvio.client";
 import { mensagemDoSaldo, textoDaTravaDoDespacho } from "../lib/saldo-despacho";
 
 const MSG_CONFLITO =
@@ -565,6 +566,22 @@ export async function despachar(
   // Regra das três saídas em `lib/destino-despacho.ts`. `null` = sem transição.
   const destino = destinoDoDespacho(input.tipoEntrega, input.tipoFrete);
 
+  // CEP do endereço escolhido: lido uma vez, para o redespacho e a trava de frete.
+  const { data: endereco } = input.idEnderecoEntrega
+    ? await client.from("enderecos").select("cep").eq("id", input.idEnderecoEntrega).maybeSingle()
+    : { data: null as { cep: string | null } | null };
+
+  // REENVIO, FASE 2B (18/11/2026). No redespacho de um ciclo de reenvio aberto
+  // quem decide é `exp_reenvio_redespacho`, a mesma função do gatilho
+  // `trg_exp_reenvio_redespacho` (que recusa no banco de qualquer jeito): envio
+  // do ciclo quando ele cotou o frete, saldo com a diferença de frete do
+  // reenvio, e nota nova quando o tipo de envio mudou. Sem ciclo aberto, nada
+  // muda. Leitura falha não recusa: o gatilho segue valendo.
+  const redespacho = await avaliarRedespacho({ idInt, cep: endereco?.cep ?? null, tipoFrete: input.tipoFrete });
+  if (redespacho?.aberto && redespacho.bloqueia) {
+    return { success: false, error: redespacho.mensagem || "Redespacho do reenvio bloqueado." };
+  }
+
   // TRAVA DE SALDO (21/10/2026). Quem garante e a trigger
   // `trg_exp_trava_despacho_saldo`, no banco: com saldo a receber (total do
   // pedido maior que o pago confirmado, R$ 0,01 ja conta) o despacho e recusado.
@@ -585,15 +602,18 @@ export async function despachar(
   // vez do erro cru da trigger. Com CEP ou transporte diferentes do cotado, vale
   // a ultima recotacao para o CEP de agora: ate R$ 4,00 acima do frete da
   // proposta passa; acima, ou sem recotacao, so com liberacao de ADM.
-  const { data: endereco } = input.idEnderecoEntrega
-    ? await client.from("enderecos").select("cep").eq("id", input.idEnderecoEntrega).maybeSingle()
-    : { data: null as { cep: string | null } | null };
-  const { data: trava } = await client.rpc("exp_trava_frete_despacho", {
-    p_id_int: idInt,
-    p_cep_destino: endereco?.cep ?? null,
-    p_tipo_frete: input.tipoFrete,
-    p_modalidade: input.modalidadeFrete
-  });
+  // Reenvio cujo ciclo cotou o frete (fase 2B): a diferença já foi decidida no
+  // ciclo (paga ou abonada, conferido acima), e comparar com o frete da
+  // proposta, que o reenvio não muda, travaria o redespacho por engano.
+  const { data: trava } =
+    redespacho?.aberto && redespacho.freteDecidido
+      ? { data: { bloqueia: false, situacao: "REENVIO_FRETE_DECIDIDO" } as unknown }
+      : await client.rpc("exp_trava_frete_despacho", {
+          p_id_int: idInt,
+          p_cep_destino: endereco?.cep ?? null,
+          p_tipo_frete: input.tipoFrete,
+          p_modalidade: input.modalidadeFrete
+        });
   const veredito = trava as { bloqueia?: boolean; mensagem?: string; situacao?: string } | null;
   const retiradaAdm = input.retiradaNoBalcaoAdm === true && input.tipoEntrega === "RETIRADA";
   if (veredito?.bloqueia) {

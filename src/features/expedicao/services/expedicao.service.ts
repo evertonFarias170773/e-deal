@@ -391,7 +391,9 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
     // aberto — o banco segue decidindo tudo na RPC.
     porLotes(ids, (lote) => client
       .from("expedicao_reenvios")
-      .select("id_int, ciclo, motivo, autor_nome, criado_em, tipo_frete_anterior, tipo_frete_novo, data_despacho_anterior")
+      // Fase 2B (18/11/2026): diferenca, nota nova e frete do ciclo. Exige a
+      // migration 20261118 aplicada antes deste codigo.
+      .select("id_int, ciclo, motivo, autor_nome, criado_em, tipo_frete_anterior, tipo_frete_novo, data_despacho_anterior, diferenca, exige_nota, frete_origem, frete_novo, abono_valor")
       .in("id_int", lote))
   ]);
   if (reenviosRes.error) {

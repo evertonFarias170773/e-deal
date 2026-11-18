@@ -35,6 +35,8 @@ export interface OpcaoRecotacao {
 export interface RecotacaoResult {
   success: boolean;
   errorMessage?: string;
+  /** Id do registro em `expedicao_recotacao_consultas` (o reenvio manda de volta para o banco conferir). */
+  idConsulta?: number;
   freteAtual?: number;
   subtotalItens?: number;
   pesoGramas?: number;
@@ -46,7 +48,8 @@ export interface RecotacaoResult {
 
 export async function recotarFrete(
   idInt: number,
-  idEnderecoEntrega?: string | null
+  idEnderecoEntrega?: string | null,
+  opcoes?: { reenvio?: boolean }
 ): Promise<RecotacaoResult> {
   const token = await tokenSessao();
   if (!token) return { success: false, errorMessage: "Sessão expirada. Faça login novamente." };
@@ -54,7 +57,8 @@ export async function recotarFrete(
     const res = await fetch("/api/expedicao/recotacao/cotar", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ id_int: idInt, id_endereco_entrega: idEnderecoEntrega ?? null })
+      // reenvio (fase 2B, 18/11/2026): cota com o pedido ainda EM TRANSITO.
+      body: JSON.stringify({ id_int: idInt, id_endereco_entrega: idEnderecoEntrega ?? null, reenvio: opcoes?.reenvio === true })
     });
     const data = (await res.json().catch(() => null)) as (RecotacaoResult & { message?: string }) | null;
     if (res.ok && data?.success) return data;

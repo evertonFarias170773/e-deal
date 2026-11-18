@@ -47,7 +47,14 @@ function clienteServiceRole() {
 /** Alçada do expedidor, medida sobre o VALOR DO FRETE NOVO — não sobre a diferença. */
 const ALCADA_EXPEDIDOR = 150;
 
-type Corpo = { id_int?: number; id_endereco_entrega?: string | null };
+/**
+ * `reenvio: true` (fase 2B do reenvio, 18/11/2026): a cotação do frete do
+ * reenvio, feita na janela "Reenviar" com o pedido ainda EM TRANSITO. Vale com
+ * `expedicao.reenvio` (ou `expedicao.processar`), e o registro em
+ * `expedicao_recotacao_consultas` é o mesmo — é dele que `exp_reenviar_pedido`
+ * tira e confere o valor da opção escolhida.
+ */
+type Corpo = { id_int?: number; id_endereco_entrega?: string | null; reenvio?: boolean };
 
 export async function POST(request: Request) {
   const body = (await request.json().catch(() => null)) as Corpo | null;
@@ -56,6 +63,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: false, message: "id_int inválido." }, { status: 400 });
   }
   const overrideEndereco = (body?.id_endereco_entrega || "").trim() || null;
+  const paraReenvio = body?.reenvio === true;
 
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
@@ -72,9 +80,14 @@ export async function POST(request: Request) {
   if (authError || !authData.user) {
     return NextResponse.json({ success: false, message: "Sessão expirada." }, { status: 401 });
   }
-  const temPermissao = await verificarPermissaoServerSide(supabase, authData.user.id, "expedicao.processar");
+  const temPermissao =
+    (await verificarPermissaoServerSide(supabase, authData.user.id, "expedicao.processar")) ||
+    (paraReenvio && (await verificarPermissaoServerSide(supabase, authData.user.id, "expedicao.reenvio")));
   if (!temPermissao) {
-    return NextResponse.json({ success: false, message: "Sem permissão (expedicao.processar)." }, { status: 403 });
+    return NextResponse.json(
+      { success: false, message: paraReenvio ? "Sem permissão (expedicao.reenvio)." : "Sem permissão (expedicao.processar)." },
+      { status: 403 }
+    );
   }
 
   const { data: proposta } = await supabase
@@ -107,11 +120,15 @@ export async function POST(request: Request) {
   ]);
 
   // Gates revalidados no servidor: a UI esconde o botão, mas quem decide é aqui.
-  if (String(proposta.status_interno ?? "").trim() !== "EXPEDICAO") {
+  // Reenvio: a cotação acontece antes de o pedido voltar para a Expedição.
+  const statusAceito = paraReenvio ? ["EXPEDICAO", "EM TRANSITO"] : ["EXPEDICAO"];
+  if (!statusAceito.includes(String(proposta.status_interno ?? "").trim())) {
     return NextResponse.json(
       {
         success: false,
-        message: `Recotação só no despacho: o pedido está em "${proposta.status_interno}", não em EXPEDICAO.`
+        message: paraReenvio
+          ? `A cotação do reenvio vale para pedido EM TRANSITO ou na Expedição; o pedido está em "${proposta.status_interno}".`
+          : `Recotação só no despacho: o pedido está em "${proposta.status_interno}", não em EXPEDICAO.`
       },
       { status: 409 }
     );

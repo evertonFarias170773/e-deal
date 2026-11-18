@@ -28,6 +28,7 @@ import { getSupabaseClient } from "@/lib/supabase/client";
 import { fetchComSessao, obterAccessToken, SessaoExpiradaError } from "@/lib/supabase/sessao";
 import { resolverTelefonePagador } from "@/lib/telefone/telefone-br";
 import { semCobrancaDeReenvio } from "@/features/cobrancas/lib/cobranca-reenvio";
+import { DiferencaFreteReenvioBox } from "@/features/cobrancas/DiferencaFreteReenvioBox";
 import { lerContatoDaCobranca, MENSAGEM_PAGADOR_SEM_EMAIL } from "@/features/cobrancas/lib/contato-da-cobranca";
 import { baixarBoletoComNome, salvarArquivoNoNavegador } from "@/features/cobrancas/services/baixar-boleto";
 import {
@@ -465,6 +466,18 @@ export function PropostaCobrancaPanel({
       return { success: false, error: err instanceof Error ? err.message : String(err) };
     }
   }
+
+  /** QR do PIX da diferenca de frete do reenvio (fase 2B): o mesmo "gerar de novo" das outras cobrancas. */
+  const gerarPixDaDiferencaDoReenvio = useCallback(
+    async (cobrancaId: string, idPagamento: string | null, idEmpresa: number, valor: number) => {
+      const token = await obterAccessToken();
+      if (!token) return { success: false, error: "Sessão expirada. Faça login novamente." };
+      return tentarGerarPixNovamente(cobrancaId, idPagamento, idEmpresa, valor, token);
+    },
+    // tentarGerarPixNovamente le a proposta do render atual.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [proposta]
+  );
 
   // E-RETRABALHO x pedido de retrabalho (20/10/2026): o que a lista de formas
   // oferece. Quem recusa de fato e o gatilho do banco (lib/tipo-x-retrabalho).
@@ -2275,6 +2288,14 @@ export function PropostaCobrancaPanel({
 
   return (
     <div className="space-y-6">
+      {/* Reenvio fase 2B (18/11/2026): diferenca de frete fora do total, PIX proprio ou abono. */}
+      <DiferencaFreteReenvioBox
+        idInt={Number(proposta.id_int)}
+        gerarPix={gerarPixDaDiferencaDoReenvio}
+        onMudou={async () => {
+          await refreshCobrancas();
+        }}
+      />
       <PanelCard
         title="Cobranças já geradas"
         description="A cobrança continua nascendo dentro da proposta. O modal de criação foi simplificado para um fluxo rápido e operacional."

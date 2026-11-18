@@ -10,9 +10,15 @@ import {
   agruparReenvios,
   avisosDoReenvio,
   chaveDoReenvio,
+  diferencaDoReenvio,
+  freteDoEnvioAnterior,
+  lerSituacaoDoReenvio,
+  lerVereditoRedespacho,
+  opcoesDoTipo,
   podeOferecerReenvio,
   reenvioDoPedido,
   textoDoErroDeReenvio,
+  tipoDaOpcao,
   type LinhaReenvio
 } from "../../src/features/expedicao/lib/reenvio.ts";
 
@@ -39,7 +45,7 @@ const linha = (ciclo: number, dataAnterior: string): LinhaReenvio => ({
 checar("sem linhas: sem reenvio", reenvioDoPedido([], DESPACHO_1), null);
 checar("aberto: data de despacho e a copiada", reenvioDoPedido([linha(1, DESPACHO_1)], DESPACHO_1)?.aberto?.ciclo, 1);
 checar("aberto mesmo com outro formato do mesmo instante", reenvioDoPedido([linha(1, DESPACHO_1)], "2026-10-22 11:54:51.652+00")?.aberto?.ciclo, 1);
-checar("fechado: redespachado (data nova)", reenvioDoPedido([linha(1, DESPACHO_1)], "2026-10-23T09:00:00+00:00"), { ciclos: 1, aberto: null });
+checar("fechado: redespachado (data nova)", reenvioDoPedido([linha(1, DESPACHO_1)], "2026-10-23T09:00:00+00:00"), { ciclos: 1, aberto: null, ultimoFrete: null });
 checar("fechado: data de despacho apagada (Voltar status)", reenvioDoPedido([linha(1, DESPACHO_1)], null)?.aberto, null);
 checar(
   "dois ciclos: vale o ultimo",
@@ -82,6 +88,98 @@ checar(
   true
 );
 checar("erro de permissao em portugues", textoDoErroDeReenvio("PERM: sem permissão expedicao.reenvio"), "Você não tem a permissão de reenviar pedido (expedicao.reenvio).");
+
+// -----------------------------------------------------------------------------
+// FASE 2B (18/11/2026): frete do reenvio, diferenca e redespacho
+// -----------------------------------------------------------------------------
+// Opcoes como a rota cotar devolve (formatos reais das consultas gravadas).
+const OPCOES = [
+  { id: "sedex", transportadora: "Correios SEDEX", servico: "SEDEX", valor: 41, prazo: "2 dias" },
+  { id: "azul-exp", transportadora: "Azul Cargo", servico: "AZUL EXPRESSO", valor: 120, prazo: "1 dia" },
+  { id: "azul-std", transportadora: "Azul Cargo", servico: "AZUL STANDARD", valor: 95, prazo: "3 dias" },
+  { id: "veppo", transportadora: "VEPPO", servico: "VEPPO", valor: 88.5, prazo: "2 dias" },
+  { id: "moto", transportadora: "Motoboy", servico: "MOTOBOY", valor: 25, prazo: "hoje" },
+  { id: "sm", transportadora: "Transportadora São Miguel", servico: "SÃO MIGUEL", valor: 70, prazo: "4 dias" },
+  { id: "retira", transportadora: "Retira no Balcão", servico: "Retirada no local", valor: 0, prazo: "" }
+];
+checar("tipo da opcao: Azul e transportadora", tipoDaOpcao(OPCOES[1]), "TRANSPORTADORA");
+checar("tipo da opcao: SEDEX e Correios", tipoDaOpcao(OPCOES[0]), "CORREIOS");
+checar("tipo da opcao: Sao Miguel com acento", tipoDaOpcao(OPCOES[5]), "TRANSPORTADORA");
+checar("tipo da opcao: servico sem tipo cai na transportadora", tipoDaOpcao({ servico: "ECONOMICO", transportadora: "Azul Cargo" }), "TRANSPORTADORA");
+checar("opcoes de Transportadora, da mais barata", opcoesDoTipo(OPCOES, "TRANSPORTADORA").map((o) => o.id), ["sm", "veppo", "azul-std", "azul-exp"]);
+checar("opcoes de Correios", opcoesDoTipo(OPCOES, "CORREIOS").map((o) => o.id), ["sedex"]);
+checar("retirada nao entra em nenhum tipo de envio do reenvio", opcoesDoTipo(OPCOES, "MOTOBOY").map((o) => o.id), ["moto"]);
+
+const linha2b = (ciclo: number, extra: Partial<LinhaReenvio>): LinhaReenvio => ({ ...linha(ciclo, DESPACHO_1), ...extra });
+checar("frete anterior: sem reenvio vale o da proposta", freteDoEnvioAnterior(null, 40.43), 40.43);
+checar(
+  "frete anterior: o do ultimo ciclo com frete",
+  freteDoEnvioAnterior(reenvioDoPedido([linha2b(1, { frete_novo: "95.00" }), linha2b(2, { frete_novo: null })], "x"), 40.43),
+  95
+);
+checar("diferenca positiva (24552: 40,43 -> 95,00)", diferencaDoReenvio(40.43, 95), { diferenca: 54.57, recusada: false });
+checar("diferenca zero", diferencaDoReenvio(40.43, 40.43), { diferenca: 0, recusada: false });
+checar("diferenca negativa e recusada", diferencaDoReenvio(40.43, 30), { diferenca: -10.43, recusada: true });
+checar("centavos sem erro de ponto flutuante", diferencaDoReenvio(0.1, 0.3).diferenca, 0.2);
+
+const aberto2b = reenvioDoPedido(
+  [linha2b(1, { diferenca: "54.57", exige_nota: true, frete_origem: "COTACAO", frete_novo: "95.00" })],
+  DESPACHO_1
+)?.aberto;
+checar("ciclo aberto carrega diferenca, nota e frete decidido", [aberto2b?.diferenca, aberto2b?.exigeNota, aberto2b?.freteDecidido], [54.57, true, true]);
+checar(
+  "ciclo da fase 1 (sem colunas novas): sem diferenca, sem nota, frete nao decidido",
+  [reenvioDoPedido([linha(1, DESPACHO_1)], DESPACHO_1)?.aberto?.diferenca, reenvioDoPedido([linha(1, DESPACHO_1)], DESPACHO_1)?.aberto?.exigeNota, reenvioDoPedido([linha(1, DESPACHO_1)], DESPACHO_1)?.aberto?.freteDecidido],
+  [0, false, false]
+);
+checar("frete TRAVA nao e decidido", reenvioDoPedido([linha2b(1, { frete_origem: "TRAVA" })], DESPACHO_1)?.aberto?.freteDecidido, false);
+
+checar("veredito: sem reenvio", lerVereditoRedespacho({ aberto: false, bloqueia: false, situacao: "SEM_REENVIO" })?.aberto, false);
+checar(
+  "veredito: falta a nota nova",
+  (() => {
+    const v = lerVereditoRedespacho({
+      aberto: true, bloqueia: true, situacao: "SEM_NOTA_NOVA", ciclo: 1, frete_decidido: true, diferenca: 54.57, exige_nota: true,
+      mensagem: "O reenvio 1 trocou o tipo de envio (CORREIOS para TRANSPORTADORA) e exige nota nova: ..."
+    });
+    return [v?.bloqueia, v?.situacao, v?.ciclo, v?.freteDecidido, v?.diferenca, v?.exigeNota, v?.notaNova];
+  })(),
+  [true, "SEM_NOTA_NOVA", 1, true, 54.57, true, null]
+);
+checar(
+  "veredito: liberado com a nota",
+  lerVereditoRedespacho({ aberto: true, bloqueia: false, situacao: "LIBERADO", nota_nova: { tipo: "NF-e", numero: "41500", em: "2026-11-19T10:00:00+00:00" } })?.notaNova,
+  { tipo: "NF-e", numero: "41500" }
+);
+checar("veredito: lixo vira null", lerVereditoRedespacho(null), null);
+
+const SITUACAO = [
+  {
+    ciclo: 1, chave: "REENVIO:24552:1", frete_anterior: 40.43, frete_novo: 95, frete_origem: "COTACAO", diferenca: 54.57,
+    abono: null, abonado_por: null, pago: 0, pendente: 54.57, exige_nota: true, criado_em: "2026-11-18T19:00:00+00:00",
+    cobranca_viva: { id: "11111111-2222-3333-4444-555555555555", id_pagamento: "24552-C", status: "A_RECEBER", valor: 54.57, id_empresa: 3, pix_copia_cola: false }
+  }
+];
+checar(
+  "situacao do ciclo: pendente e cobranca viva sem QR",
+  (() => {
+    const [c] = lerSituacaoDoReenvio(SITUACAO);
+    return [c.ciclo, c.pendente, c.cobrancaViva?.idPagamento, c.cobrancaViva?.temPix, c.cobrancaViva?.idEmpresa];
+  })(),
+  [1, 54.57, "24552-C", false, 3]
+);
+checar("situacao: resposta que nao e lista vira vazia", lerSituacaoDoReenvio({ erro: true }), []);
+
+checar(
+  "erro do gatilho do redespacho sem o codigo",
+  textoDoErroDeReenvio("EXP_REDESPACHO_SEM_NOTA_NOVA: O reenvio 1 trocou o tipo de envio (CORREIOS para TRANSPORTADORA) e exige nota nova."),
+  "O reenvio 1 trocou o tipo de envio (CORREIOS para TRANSPORTADORA) e exige nota nova."
+);
+checar(
+  "erro de frete menor sem o codigo",
+  textoDoErroDeReenvio("EXP_REENVIO_FRETE: o frete novo (R$ 30,00) e menor que o do envio anterior (R$ 40,43).").startsWith("o frete novo (R$ 30,00)"),
+  true
+);
 
 console.log(falhas === 0 ? "\nTUDO OK" : `\n${falhas} FALHA(S)`);
 if (falhas > 0) process.exit(1);
