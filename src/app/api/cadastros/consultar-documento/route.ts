@@ -6,6 +6,8 @@ import { normalizeDocumentDigits, validateDocumentByTipo, type DocumentoTipo } f
 import {
   findInscricaoEstadualAtiva,
   mapearEnderecoDoEstabelecimento,
+  registrarConsultaCnpjWs,
+  requisicaoCnpjWs,
   tipoContribuintePelaInscricao,
   type CnpjWsResposta
 } from "@/lib/documentos/cnpj-ws";
@@ -104,14 +106,14 @@ function normalizeIsoDate(value: string) {
 }
 
 async function consultarCnpj(documentoDigits: string, idCliente: number | null): Promise<DocumentoConsultaPayload | null> {
+  // Comercial com token (WS_NOVA_KEY) ou pública sem ele: ver requisicaoCnpjWs.
+  // O log leva só origem, status e tempo (sem CNPJ e sem token): sem status =
+  // timeout de 12 s, erro de rede ou JSON inválido.
   const inicio = Date.now();
-  const result = await fetchJsonWithTimeout<CnpjWsResposta>(`https://publica.cnpj.ws/cnpj/${documentoDigits}`);
+  const requisicao = requisicaoCnpjWs(documentoDigits, "ConsultarDocumento");
+  const result = await fetchJsonWithTimeout<CnpjWsResposta>(requisicao.url, requisicao.headers);
+  registrarConsultaCnpjWs("ConsultarDocumento", requisicao, result, inicio);
   if (!result.ok) {
-    // Só o status e o tempo (sem o CNPJ): sem status = timeout de 12 s (tempo
-    // perto de 12000 ms), erro de rede ou JSON inválido. 17/11/2026.
-    console.warn(
-      `[API][ConsultarDocumento] publica.cnpj.ws falhou: status=${result.status ?? "sem resposta HTTP"} tempo=${Date.now() - inicio}ms`
-    );
     return null;
   }
 

@@ -4,6 +4,8 @@ import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import {
   findInscricaoEstadualAtiva,
   mapearEnderecoDoEstabelecimento,
+  registrarConsultaCnpjWs,
+  requisicaoCnpjWs,
   tipoContribuintePelaInscricao
 } from "@/lib/documentos/cnpj-ws";
 
@@ -95,7 +97,10 @@ export async function POST(request: Request) {
         );
       }
 
-      const result = await fetchJsonWithTimeout<any>(`https://publica.cnpj.ws/cnpj/${cleanDoc}`);
+      const inicio = Date.now();
+      const requisicao = requisicaoCnpjWs(cleanDoc, "Verificacao");
+      const result = await fetchJsonWithTimeout<any>(requisicao.url, requisicao.headers);
+      registrarConsultaCnpjWs("Verificacao", requisicao, result, inicio);
       if (!result.ok) {
         return NextResponse.json(
           { success: false, errorMessage: "Não foi possível consultar o CNPJ no serviço externo." },

@@ -113,3 +113,46 @@ export function mapearEnderecoDoEstabelecimento(
 export function tipoContribuintePelaInscricao(insEstadual: string): CodigoTipoContribuinte {
   return insEstadual ? "1" : "9";
 }
+
+/**
+ * URL e header da consulta de CNPJ, num lugar só (18/11/2026).
+ *
+ * A diretoria contratou a API Comercial da cnpj.ws: com o token em
+ * `WS_NOVA_KEY` (variável só do servidor, nunca NEXT_PUBLIC), a consulta sai
+ * por `comercial.cnpj.ws` com o header `x_api_token`. O JSON é o mesmo da
+ * pública (conferido em 18/11: a comercial só acrescenta campos).
+ *
+ * Sem token configurado, continua na pública, como antes, e registra um aviso
+ * no log. O token nunca vai para o log, para o retorno nem para o navegador.
+ */
+export type RequisicaoCnpjWs = {
+  url: string;
+  headers: Record<string, string> | undefined;
+  origem: "comercial" | "publica";
+};
+
+export function requisicaoCnpjWs(digitos: string, contexto: string): RequisicaoCnpjWs {
+  const token = String(process.env.WS_NOVA_KEY ?? "").trim();
+  if (token) {
+    return {
+      url: `https://comercial.cnpj.ws/cnpj/${digitos}`,
+      headers: { x_api_token: token },
+      origem: "comercial"
+    };
+  }
+  console.warn(`[cnpj-ws][${contexto}] WS_NOVA_KEY ausente: consulta pela publica.cnpj.ws (sem plano, 3 por minuto).`);
+  return { url: `https://publica.cnpj.ws/cnpj/${digitos}`, headers: undefined, origem: "publica" };
+}
+
+/** Uma linha no log por consulta: por onde saiu, status e tempo. Sem CNPJ e sem token. */
+export function registrarConsultaCnpjWs(
+  contexto: string,
+  requisicao: RequisicaoCnpjWs,
+  resultado: { ok: boolean; status?: number },
+  inicio: number
+) {
+  const status = resultado.ok ? 200 : (resultado.status ?? "sem resposta HTTP");
+  const linha = `[cnpj-ws][${contexto}] ${requisicao.origem}.cnpj.ws status=${status} tempo=${Date.now() - inicio}ms`;
+  if (resultado.ok) console.info(linha);
+  else console.warn(linha);
+}

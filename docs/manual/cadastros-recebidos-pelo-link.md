@@ -1,6 +1,6 @@
 # Cadastros: Recebidos pelo link
 
-> **Última revisão:** 04/10/2026
+> **Última revisão:** 18/11/2026
 > **Caminho no menu:** Clientes → botão **Recebidos pelo link** (no topo da tela Cadastros)
 > **Endereço:** `/cadastros/online`
 
@@ -73,6 +73,7 @@ Cada envio mostra o nome, o documento, a situação (**Aprovado automaticamente*
 ## Regras e bloqueios
 
 - Cadastro de CNPJ entra direto: o cliente é criado na hora e o envio aparece como **Aprovado automaticamente**.
+- Ao digitar o CNPJ, a página consulta a Receita e preenche razão social, endereço e telefone. Se o CNPJ não existir, o cliente vê **Não encontramos este CNPJ na Receita. Preencha os dados abaixo.** Se a consulta falhar (serviço fora do ar ou lento), ele vê **A consulta à Receita está indisponível no momento. Você pode preencher os dados abaixo à mão.** Nos dois casos o formulário continua e o envio funciona normalmente.
 - Cadastro de CPF também entra direto quando o nome informado confere com o nome do CPF. Na fila ele aparece como **Aprovado automaticamente**, com **Nome confere**.
 - Cadastro de CPF fica **Pendente** quando o nome não confere (**NOME NÃO CONFERE — verifique antes de aprovar**) ou quando a consulta não pôde ser feita (**Não verificado**). Enquanto estiver pendente, o cliente não existe em Cadastros.
 - O nome confere quando é igual ao do CPF, ou quando o primeiro e o último nome são os mesmos e os nomes do meio informados existem no nome completo, na mesma ordem. Apelido e nome social não conferem.
@@ -107,6 +108,7 @@ Cada envio mostra o nome, o documento, a situação (**Aprovado automaticamente*
 | "Este link **não vai funcionar**..." | Ninguém com aquele código de vendedor está marcado como vendedor, ou a única pessoa marcada está com o acesso pendente. | Peça a um administrador para marcar a pessoa como vendedora antes de enviar o link. |
 | "Este código de vendedor é compartilhado." | Mais de uma pessoa usa o mesmo código de vendedor. | Saiba que o link é um só para todas, e que trocá-lo troca o de todas. |
 | "Não foi possível copiar" | O navegador bloqueou a cópia. | Selecione o endereço no campo e copie manualmente. |
+| (página do cliente) "A consulta à Receita está indisponível no momento. Você pode preencher os dados abaixo à mão." | O serviço de consulta de CNPJ não respondeu. | Oriente o cliente a preencher à mão e enviar. Confira os dados ao abrir o cadastro. |
 
 ## Veja também
 
@@ -123,5 +125,6 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/features/cadastros/services/cadastros-online.service.ts`
 - `src/features/cadastros/services/cadastro-online-cliente.server.ts`
 - `src/features/cadastros/services/cpfhub-nome.server.ts`
+- `src/features/cadastros/services/receita-cnpj.server.ts`
 - `src/app/api/cadastro-online/`
 - `src/app/c/[token]/`

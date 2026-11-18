@@ -167,6 +167,11 @@ export async function POST(request: Request) {
 
   // ------------------------------------------------------------- 5. CONSULTA
   const resultado = await consultarReceitaCnpj(validacao.digits, RECEITA_TIMEOUT_MS);
+  // Consulta que falhou (timeout, rede, 429, 5xx) nao e "CNPJ nao encontrado":
+  // a tela diz que esta indisponivel e que da para preencher a mao (18/11/2026).
+  if (resultado.estado === "INDISPONIVEL") {
+    return NextResponse.json({ ok: true, encontrado: false, motivo: "INDISPONIVEL" });
+  }
   if (resultado.estado !== "OK") {
     return NextResponse.json(NAO_ENCONTRADO);
   }

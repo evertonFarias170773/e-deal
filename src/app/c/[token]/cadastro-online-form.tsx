@@ -62,7 +62,10 @@ type RespostaEnvio = {
 /** Exatamente os campos que a rota de consulta devolve — nada alem disso. */
 type CamposDaReceita = Partial<Record<CampoPreenchivel, string>>;
 
-type RespostaConsulta = { ok?: boolean; encontrado?: boolean; campos?: CamposDaReceita };
+type RespostaConsulta = { ok?: boolean; encontrado?: boolean; motivo?: string; campos?: CamposDaReceita };
+
+const AVISO_CONSULTA_INDISPONIVEL =
+  "A consulta à Receita está indisponível no momento. Você pode preencher os dados abaixo à mão.";
 
 const UFS = [
   "AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", "MA", "MT", "MS", "MG",
@@ -240,6 +243,9 @@ export function CadastroOnlineForm({
           if (dados?.encontrado && dados.campos) {
             jaConsultados.current.set(documentoDigitos, dados.campos);
             aplicarDaReceita(dados.campos);
+          } else if (dados?.motivo === "INDISPONIVEL") {
+            // Falha passageira: nao guarda, para tentar de novo se o CNPJ mudar e voltar.
+            setAvisoConsulta(AVISO_CONSULTA_INDISPONIVEL);
           } else {
             jaConsultados.current.set(documentoDigitos, null);
             setAvisoConsulta("Não encontramos este CNPJ na Receita. Preencha os dados abaixo.");
@@ -247,7 +253,7 @@ export function CadastroOnlineForm({
         } catch {
           // Sem rede, sem servidor, o que for: o formulario continua. Nao guarda
           // no cache — falha de rede e passageira e merece nova tentativa.
-          if (ativo) setAvisoConsulta("Não foi possível consultar a Receita agora. Preencha os dados abaixo.");
+          if (ativo) setAvisoConsulta(AVISO_CONSULTA_INDISPONIVEL);
         } finally {
           if (ativo) setConsultando(false);
         }

@@ -1,7 +1,13 @@
 import { fetchJsonWithTimeout } from "@/lib/http/fetch-json-timeout";
+import { registrarConsultaCnpjWs, requisicaoCnpjWs } from "@/lib/documentos/cnpj-ws";
 
 /**
  * Consulta de CNPJ na Receita, server-only, com cache.
+ *
+ * 18/11/2026: com WS_NOVA_KEY configurada a consulta sai pela API Comercial
+ * (`comercial.cnpj.ws`, plano pago); sem ela, pela publica. URL e header ficam
+ * em `requisicaoCnpjWs` (lib/documentos/cnpj-ws). O texto abaixo e de quando
+ * so havia a publica.
  *
  * A API E A MESMA QUE O CADASTRO INTERNO JA USA: `publica.cnpj.ws`, sem chave e
  * sem cobranca por chamada. Nao ha servico novo nem contrato novo aqui — este
@@ -123,11 +129,10 @@ export async function consultarReceitaCnpj(
     return guardado.resultado;
   }
 
-  const resposta = await fetchJsonWithTimeout<RespostaCnpjWs>(
-    `https://publica.cnpj.ws/cnpj/${digitos}`,
-    undefined,
-    timeoutMs
-  );
+  const inicio = Date.now();
+  const requisicao = requisicaoCnpjWs(digitos, "receita-cnpj");
+  const resposta = await fetchJsonWithTimeout<RespostaCnpjWs>(requisicao.url, requisicao.headers, timeoutMs);
+  registrarConsultaCnpjWs("receita-cnpj", requisicao, resposta, inicio);
 
   if (!resposta.ok) {
     if (resposta.status === 404) {
@@ -136,7 +141,7 @@ export async function consultarReceitaCnpj(
       return naoAchou;
     }
     if (resposta.status === 429) {
-      console.warn("[receita-cnpj] 429 da publica.cnpj.ws — teto de 3 por minuto, por IP do servidor.");
+      console.warn(`[receita-cnpj] 429 da ${requisicao.origem}.cnpj.ws — cota esgotada (a pública aceita 3 por minuto, por IP do servidor).`);
     }
     return { estado: "INDISPONIVEL" };
   }
