@@ -186,6 +186,7 @@ import {
 import { DiferencaFinanceiraModal } from "@/features/orcamentos/components/DiferencaFinanceiraModal";
 import { FreteComplementarCard } from "@/features/orcamentos/components/FreteComplementarCard";
 import { AcompanharPedidoCard } from "@/features/orcamentos/components/AcompanharPedidoCard";
+import { ReenviosDoFreteCard } from "@/features/orcamentos/components/ReenviosDoFreteCard";
 import { TarefasDoPedido } from "@/features/tarefas/components/TarefasDoPedido";
 import { SocioPagadorInline, type SocioConfirmado } from "@/features/orcamentos/components/SocioPagadorInline";
 import type { AcaoFinanceiraDiferenca } from "@/features/cobrancas/types";
@@ -7673,6 +7674,11 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
 
       {activeFormTab === "fretes" && (
         <>
+        {/* REENVIO (18/11/2026): so leitura, fora do fieldset. A aba continua com o
+            frete do primeiro envio; o quadro mostra o envio e a cobranca de cada reenvio. */}
+        {form.id_int !== "NOVO" && !form.isAvulso && Number(form.id_int) > 0 ? (
+          <ReenviosDoFreteCard idInt={Number(form.id_int)} />
+        ) : null}
         <fieldset disabled={isFormBloqueadoPorCobranca} className="group space-y-6">
           <FormSection 
             title="7. Fretes e Entrega" 

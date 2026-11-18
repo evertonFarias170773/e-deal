@@ -1,6 +1,6 @@
 # Proposta: aba Fretes
 
-> **Última revisão:** 16/11/2026 (frete CIF não pode ficar em R$ 0,00 no Salvar nem na primeira cobrança; SEDEX trocado por transportadora não deixa a categoria Correios gravada; cotação sem valor não vira card, aviso "Transportadora que não cotou"; Transportadora mostra a do frete escolhido; Corrigir a transportadora só com algo a corrigir; card padrão do SEDEX relido como Correios; rua com erro no cadastro)
+> **Última revisão:** 18/11/2026 (quadro **Pedido reenviado**: o envio e a cobrança de cada reenvio de pedido devolvido; a aba continua com o frete do primeiro envio). 16/11/2026 (frete CIF não pode ficar em R$ 0,00 no Salvar nem na primeira cobrança; SEDEX trocado por transportadora não deixa a categoria Correios gravada; cotação sem valor não vira card, aviso "Transportadora que não cotou"; Transportadora mostra a do frete escolhido; Corrigir a transportadora só com algo a corrigir; card padrão do SEDEX relido como Correios; rua com erro no cadastro)
 > **Caminho no menu:** Pedidos → abrir um pedido → aba Fretes
 > **Endereço:** `/orcamentos/<número>/editar?tab=fretes`
 
@@ -48,6 +48,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Salvar alterações** (em proposta nova: **Salvar proposta**) | Barra fixa no rodapé | Grava a proposta, com a modalidade, a transportadora e o frete escolhido. |
 | **Cancelar** | Barra fixa no rodapé | Sai da edição. |
 | **Recalcular frete** | Aviso **O frete precisa ser atualizado**, que aparece ao gerar cobrança | Traz você para esta aba para refazer o frete. |
+| Quadro **Pedido reenviado** (só leitura) | Alto da aba, em pedido que voltou devolvido e foi reenviado pela Expedição | Uma linha por reenvio: "Reenvio N: transportadora R$ X, cobrança: modo R$ Y". Não tem botão. |
 
 ## Passo a passo
 
@@ -256,6 +257,7 @@ Repetir **Aplicar** não duplica: a segunda tentativa devolve o mesmo frete comp
 - Na tela, os dois cadastros dos Correios aparecem como **Correios** nas listas **Transportadora**, **Transportadora definida *** e **Corrigir a transportadora (admin)**, e não como "SUPERINTENDENCIA ESTADUAL RS" ou "EMPRESA BRASILEIRA DE CORREIOS E TELEGRAFOS". Na nota fiscal fica o nome do cadastro. As outras transportadoras aparecem pela fantasia (ou pelo nome, sem fantasia).
 - Endereço com a rua gravada como "[object Object]" aparece como **Rua com erro no cadastro (corrija pelo lápis)**, e o lápis abre a edição com a rua em branco para ser digitada (11/11/2026).
 - Em pedido complementar, a modalidade e a transportadora vêm do pedido principal e ficam travadas. Não há cards nem **Atualizar fretes**.
+- **Reenvio não muda esta aba (18/11/2026).** O reenvio de pedido devolvido (janela **Reenviar** da Expedição) não troca o frete da proposta nem a nota: a aba continua travada para troca, com o frete do primeiro envio. O quadro **Pedido reenviado** mostra, por reenvio, o envio novo, o frete dele e como ele é cobrado (diferença, frete cheio ou sem cobrança). A cobrança do reenvio fica na aba **Pagamentos**.
 - Pedido complementar fora de CIF não cobra frete: a tela mostra "... herdado do pedido #... — sem frete a cobrar neste pedido."
 - O frete complementar é só a diferença entre a cotação do peso somado e o frete que o pedido principal já cobra. Se o somado sair mais barato, este pedido cobra R$ 0,00 e nada é creditado. O pedido principal não é alterado.
 - O frete complementar só pode ser aplicado com o pedido complementar em NOVO ou AGUARDANDO, com o pedido principal entre LIBERADO e EXPEDICAO e ainda sem despacho, e com os dois pedidos no mesmo endereço de entrega.
@@ -264,6 +266,7 @@ Repetir **Aplicar** não duplica: a segunda tentativa devolve o mesmo frete comp
 
 ## O que não confundir
 
+- **Frete da proposta** e **frete do reenvio**: o da proposta é o do primeiro envio e é o da nota; o do reenvio aparece só no quadro **Pedido reenviado** e é cobrado à parte, na aba **Pagamentos**.
 - **Modalidade** e **transportadora**: a modalidade diz quem paga o transporte; a transportadora diz quem leva. SEDEX, por exemplo, pode levar tanto em CIF quanto em FOB.
 - **Retira no balcão** e **FOB — por conta do cliente**: nas duas a proposta sai sem frete, mas em retirada o cliente busca e não há transportadora; em FOB há uma transportadora (ou motoboy) do cliente, obrigatória.
 - Botão **Motoboy** (FOB) e card **ENTREGA MOTOBOY** (CIF): o botão só informa que um motoboy do cliente leva, sem valor; o card é uma opção cotada que a empresa contrata e cobra.
@@ -353,8 +356,11 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/features/orcamentos/lib/cotacao-azul.ts`
 - `src/features/orcamentos/lib/frete-cif-zero.ts`
 - `supabase/migrations/20261116_pagamentos_v2_frete_cif_zero.sql`
+- `src/features/orcamentos/components/ReenviosDoFreteCard.tsx`
 
-> **Mudança desta revisão:** 16/11/2026 — frete CIF não pode ficar em R$ 0,00: o **Salvar alterações** e a primeira cobrança do pedido recusam, com as exceções da regra (retirada, FOB, avulsa, complementar, pedido sem produto e cliente com **Pode editar valor do frete**).
+> **Mudança desta revisão:** 18/11/2026 — quadro **Pedido reenviado**, só leitura: em pedido devolvido e reenviado pela Expedição, uma linha por reenvio com a transportadora, o frete e a cobrança (modo e valor), para não parecer que o pedido segue no envio original. A aba continua com o frete do primeiro envio e travada para troca.
+
+> **Revisão anterior:** 16/11/2026 — frete CIF não pode ficar em R$ 0,00: o **Salvar alterações** e a primeira cobrança do pedido recusam, com as exceções da regra (retirada, FOB, avulsa, complementar, pedido sem produto e cliente com **Pode editar valor do frete**).
 
 > **Mudanças de 08/10/2026:**
 >

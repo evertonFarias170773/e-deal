@@ -7,7 +7,9 @@ import { getSupabaseClient } from "@/lib/supabase/client";
 import {
   lerSituacaoDoReenvio,
   lerVereditoRedespacho,
+  normalizarModoCobranca,
   textoDoErroDeReenvio,
+  type ModoCobrancaReenvio,
   type SituacaoCicloReenvio,
   type VereditoRedespacho
 } from "../lib/reenvio";
@@ -51,7 +53,15 @@ export async function listarEnderecosParaReenvio(idsCliente: number[]): Promise<
 }
 
 export type ResultadoReenvio =
-  | { success: true; ciclo: number; idempotente: boolean; diferenca: number; exigeNota: boolean }
+  | {
+      success: true;
+      ciclo: number;
+      idempotente: boolean;
+      diferenca: number;
+      exigeNota: boolean;
+      modoCobranca: ModoCobrancaReenvio;
+      valorCobrar: number;
+    }
   | { success: false; error: string };
 
 /**
@@ -72,6 +82,8 @@ export async function reenviarPedido(entrada: {
   motivo: string;
   modalidade: ModalidadeFrete | null;
   frete?: FreteDoReenvio;
+  /** Modo de cobranca do frete (18/11/2026). Sem ele o banco usa DIFERENCA. */
+  cobranca?: { modo: ModoCobrancaReenvio; motivo?: string | null };
 }): Promise<ResultadoReenvio> {
   const client = getSupabaseClient();
   if (!client) return { success: false, error: "Supabase não inicializado." };
@@ -85,16 +97,27 @@ export async function reenviarPedido(entrada: {
     p_modalidade: entrada.modalidade,
     p_id_consulta: frete?.origem === "COTACAO" ? frete.idConsulta : null,
     p_id_opcao: frete?.origem === "COTACAO" ? frete.idOpcao : null,
-    p_frete_digitado: frete?.origem === "DIGITADO_ADM" ? frete.valor : null
+    p_frete_digitado: frete?.origem === "DIGITADO_ADM" ? frete.valor : null,
+    p_modo_cobranca: entrada.cobranca?.modo ?? "DIFERENCA",
+    p_motivo_cobranca: entrada.cobranca?.motivo?.trim() || null
   });
   if (error) return { success: false, error: textoDoErroDeReenvio(error.message) };
-  const r = (data ?? {}) as { ciclo?: number; idempotente?: boolean; diferenca?: number | string; exige_nota?: boolean };
+  const r = (data ?? {}) as {
+    ciclo?: number;
+    idempotente?: boolean;
+    diferenca?: number | string;
+    exige_nota?: boolean;
+    modo_cobranca?: string;
+    valor_cobrar?: number | string;
+  };
   return {
     success: true,
     ciclo: Number(r.ciclo ?? entrada.ciclo),
     idempotente: r.idempotente === true,
     diferenca: Number(r.diferenca ?? 0) || 0,
-    exigeNota: r.exige_nota === true
+    exigeNota: r.exige_nota === true,
+    modoCobranca: normalizarModoCobranca(r.modo_cobranca),
+    valorCobrar: Number(r.valor_cobrar ?? r.diferenca ?? 0) || 0
   };
 }
 
@@ -159,7 +182,25 @@ export async function cobrarDiferencaDoReenvio(chave: string): Promise<CobrancaD
   };
 }
 
-/** Abono da diferenca do ciclo (so administrador; o banco confere). */
+/**
+ * Troca o modo de cobranca do frete do ultimo ciclo aberto (18/11/2026). So
+ * administrador, com motivo; o banco recusa com cobranca viva ou paga, com
+ * abono, ou DIFERENCA com frete menor.
+ */
+export async function trocarModoDeCobrancaDoReenvio(
+  chave: string,
+  modo: ModoCobrancaReenvio,
+  motivo: string
+): Promise<{ success: true; valorCobrar: number } | { success: false; error: string }> {
+  const client = getSupabaseClient();
+  if (!client) return { success: false, error: "Supabase não inicializado." };
+  const { data, error } = await client.rpc("exp_reenvio_trocar_modo", { p_chave: chave, p_modo: modo, p_motivo: motivo });
+  if (error) return { success: false, error: textoDoErroDeReenvio(error.message) };
+  const r = (data ?? {}) as { valor_cobrar?: number | string };
+  return { success: true, valorCobrar: Number(r.valor_cobrar ?? 0) || 0 };
+}
+
+/** Abono do valor a cobrar do ciclo (so administrador; o banco confere). */
 export async function abonarDiferencaDoReenvio(chave: string, motivo: string): Promise<{ success: true } | { success: false; error: string }> {
   const client = getSupabaseClient();
   if (!client) return { success: false, error: "Supabase não inicializado." };

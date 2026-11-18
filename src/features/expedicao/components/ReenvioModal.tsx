@@ -15,6 +15,11 @@
  * recente do CEP, tipo certo) e calcula a diferenca: positiva fica no ciclo e
  * vira PIX na aba Pagamentos ou abono do ADM; negativa e recusada. Trocar o
  * tipo de envio exige nota nova antes do redespacho.
+ *
+ * MODO DE COBRANCA (18/11/2026): em CIF escolhe-se como cobrar o frete do
+ * reenvio: DIFERENCA (novo - anterior; menor recusado), CHEIO (o frete novo
+ * inteiro) ou SEM_COBRANCA (so administrador, com motivo). O valor a cobrar
+ * sai do modo; e ele que trava o despacho e vira o PIX.
  */
 import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, X } from "lucide-react";
@@ -24,9 +29,13 @@ import { hasPermissao } from "@/features/auth/usuarios.service";
 import { formatCurrency } from "@/lib/formatters/currency";
 import {
   avisosDoReenvio,
-  diferencaDoReenvio,
   freteDoEnvioAnterior,
+  MODOS_COBRANCA_REENVIO,
   opcoesDoTipo,
+  ROTULO_MODO_COBRANCA,
+  tituloDoFreteDoReenvio,
+  valorACobrarDoReenvio,
+  type ModoCobrancaReenvio,
   type OpcaoCotadaReenvio
 } from "../lib/reenvio";
 import { listarEnderecosParaReenvio, reenviarPedido, type EnderecoParaReenvio, type FreteDoReenvio } from "../services/reenvio.client";
@@ -42,6 +51,12 @@ const ROTULO_TIPO: Record<string, string> = {
 
 const soDigitos = (v: string | null | undefined) => String(v ?? "").replace(/\D/g, "");
 
+const EXPLICA_MODO: Record<ModoCobrancaReenvio, string> = {
+  DIFERENCA: "frete novo menos o do envio anterior",
+  CHEIO: "o frete novo inteiro, sem desconto do anterior",
+  SEM_COBRANCA: "só administrador, com motivo"
+};
+
 type CotacaoDoReenvio = { idEndereco: string; idConsulta: number; opcoes: OpcaoCotadaReenvio[]; avisos: string[] };
 
 export function ReenvioModal({
@@ -56,6 +71,8 @@ export function ReenvioModal({
   const { showToast } = useAppToast();
   const { user } = useAuth();
   const ehAdmExpedicao = Boolean(user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "expedicao.admin"));
+  /** Sem cobranca: so administrador (is_admin/is_super_adm), como o Abonar. */
+  const ehAdministrador = Boolean(user?.isSuperAdmin || user?.isAdmin);
   const exp = pedido.expedicao;
   const modalidade = exp?.modalidadeFrete ?? pedido.modalidadeOrcamento ?? null;
   const tipos: TipoFreteNormalizado[] = modalidade === "CIF" || modalidade === "FOB" ? TRANSPORTES_POR_MODALIDADE[modalidade] : [];
@@ -84,6 +101,8 @@ export function ReenvioModal({
   const [erroCotacao, setErroCotacao] = useState<string | null>(null);
   const [idOpcao, setIdOpcao] = useState<string>("");
   const [freteDigitado, setFreteDigitado] = useState("");
+  const [modoCobranca, setModoCobranca] = useState<ModoCobrancaReenvio>("DIFERENCA");
+  const [motivoCobranca, setMotivoCobranca] = useState("");
 
   useEffect(() => {
     let vivo = true;
@@ -137,7 +156,18 @@ export function ReenvioModal({
       : semOpcaoAutomatica && ehAdmExpedicao && digitadoValido
         ? Math.round(valorDigitado * 100) / 100
         : null;
-  const conta = freteNovo !== null ? diferencaDoReenvio(freteAnterior, freteNovo) : null;
+  /**
+   * Base do valor a cobrar: o frete cotado/digitado; sem frete novo em CIF, o
+   * mesmo frete do envio anterior (como o banco grava). FOB nao cobra.
+   */
+  const freteDoReenvio: number | null = modalidade !== "CIF" ? null : precisaFrete ? freteNovo : freteAnterior;
+  const cobrancaPorModo =
+    freteDoReenvio !== null
+      ? (Object.fromEntries(
+          MODOS_COBRANCA_REENVIO.map((m) => [m, valorACobrarDoReenvio(m, freteAnterior, freteDoReenvio)])
+        ) as Record<ModoCobrancaReenvio, ReturnType<typeof valorACobrarDoReenvio>>)
+      : null;
+  const cobranca = cobrancaPorModo ? cobrancaPorModo[modoCobranca] : null;
 
   const freteParaRpc: FreteDoReenvio = !precisaFrete
     ? null
@@ -165,9 +195,20 @@ export function ReenvioModal({
 
   const semQuemPaga = tipos.length === 0;
   const temSaldo = saldo?.bloqueia === true;
-  const freteResolvido = !precisaFrete || (freteParaRpc !== null && conta !== null && !conta.recusada);
+  const freteResolvido = !precisaFrete || (freteParaRpc !== null && freteNovo !== null);
+  const cobrancaResolvida =
+    modalidade !== "CIF" ||
+    (cobranca !== null &&
+      !cobranca.recusado &&
+      (modoCobranca !== "SEM_COBRANCA" || (ehAdministrador && motivoCobranca.trim().length >= 5)));
   const pronto =
-    !salvando && !semQuemPaga && !temSaldo && Boolean(idEndereco) && motivo.trim().length >= 3 && freteResolvido;
+    !salvando &&
+    !semQuemPaga &&
+    !temSaldo &&
+    Boolean(idEndereco) &&
+    motivo.trim().length >= 3 &&
+    freteResolvido &&
+    cobrancaResolvida;
 
   async function handleConfirmar() {
     if (!pronto) return;
@@ -180,13 +221,21 @@ export function ReenvioModal({
       tipoFrete,
       motivo: motivo.trim(),
       modalidade,
-      frete: freteParaRpc
+      frete: freteParaRpc,
+      cobranca:
+        modalidade === "CIF"
+          ? { modo: modoCobranca, motivo: modoCobranca === "SEM_COBRANCA" ? motivoCobranca : null }
+          : undefined
     });
     setSalvando(false);
     if (res.success) {
       const partes = [`#${pedido.idInt} voltou para a Expedição.`];
-      if (res.diferenca > 0) {
-        partes.push(`Diferença de frete de ${formatCurrency(res.diferenca)}: gere o PIX na aba Pagamentos ou peça o abono a um administrador.`);
+      if (res.valorCobrar > 0) {
+        partes.push(
+          `${tituloDoFreteDoReenvio(res.modoCobranca)}: ${formatCurrency(res.valorCobrar)}. Gere o PIX na aba Pagamentos ou peça o abono a um administrador.`
+        );
+      } else if (res.modoCobranca === "SEM_COBRANCA") {
+        partes.push("Reenvio sem cobrança de frete.");
       }
       if (res.exigeNota) partes.push("O tipo de envio mudou: emita a nota nova antes de despachar.");
       partes.push("Despache de novo pelo botão Despachar.");
@@ -284,7 +333,7 @@ export function ReenvioModal({
             <p className="mt-1 text-xs text-slate-500">
               Quem paga não muda ({modalidade ?? "sem quem paga"}).
               {modalidade === "CIF"
-                ? " Com endereço ou tipo de envio novos, cote o frete abaixo: frete maior vira diferença a cobrar do cliente (ou abono); frete menor ainda é recusado."
+                ? " Com endereço ou tipo de envio novos, cote o frete abaixo. Depois escolha como cobrar o frete do reenvio: diferença, frete cheio ou sem cobrança (administrador)."
                 : ""}
             </p>
           </div>
@@ -347,17 +396,67 @@ export function ReenvioModal({
                 <p key={a} className="text-xs text-slate-500">{a}</p>
               ))}
 
-              {conta ? (
-                conta.recusada ? (
+            </div>
+          ) : null}
+
+          {modalidade === "CIF" ? (
+            <div className="space-y-2 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm dark:border-slate-700 dark:bg-slate-800/60">
+              <p className="font-semibold text-slate-800 dark:text-slate-100">Cobrança do frete do reenvio</p>
+              <p className="text-xs text-slate-500">
+                Frete do envio anterior {formatCurrency(freteAnterior)}
+                {freteDoReenvio !== null ? ` · frete do reenvio ${formatCurrency(freteDoReenvio)}` : " · cote o frete para ver os valores"}
+              </p>
+              <div className="space-y-1.5">
+                {MODOS_COBRANCA_REENVIO.map((m) => {
+                  const contaDoModo = cobrancaPorModo?.[m] ?? null;
+                  const soAdm = m === "SEM_COBRANCA" && !ehAdministrador;
+                  return (
+                    <label
+                      key={m}
+                      className={`flex items-center gap-2 rounded-xl bg-white px-3 py-2 dark:bg-slate-900 ${soAdm ? "cursor-not-allowed opacity-50" : "cursor-pointer"}`}
+                    >
+                      <input
+                        type="radio"
+                        name="modo-cobranca-reenvio"
+                        checked={modoCobranca === m}
+                        disabled={soAdm}
+                        onChange={() => setModoCobranca(m)}
+                      />
+                      <span className="flex-1">
+                        <span className="font-medium first-letter:uppercase">{ROTULO_MODO_COBRANCA[m]}</span>
+                        <span className="text-slate-500"> · {EXPLICA_MODO[m]}</span>
+                      </span>
+                      <span className={contaDoModo?.recusado ? "text-xs text-rose-700 dark:text-rose-300" : "font-semibold"}>
+                        {contaDoModo === null ? "—" : contaDoModo.recusado ? "frete menor: não vale" : formatCurrency(contaDoModo.valor)}
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+              {modoCobranca === "SEM_COBRANCA" ? (
+                <textarea
+                  value={motivoCobranca}
+                  onChange={(e) => setMotivoCobranca(e.target.value)}
+                  rows={2}
+                  maxLength={500}
+                  placeholder="Motivo de não cobrar o frete do reenvio (mínimo 5 caracteres; fica no ciclo)"
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                />
+              ) : null}
+              {cobranca ? (
+                cobranca.recusado ? (
                   <p className="font-semibold text-rose-700 dark:text-rose-300">
-                    Frete novo {formatCurrency(freteNovo ?? 0)} é menor que o do envio anterior: diferença a devolver ainda não existe no reenvio.
-                  </p>
-                ) : conta.diferenca > 0 ? (
-                  <p className="font-semibold text-amber-800 dark:text-amber-200">
-                    Diferença de {formatCurrency(conta.diferenca)} a cobrar do cliente (PIX na aba Pagamentos) ou a abonar por um administrador. O pedido só é despachado depois.
+                    Frete do reenvio {formatCurrency(freteDoReenvio ?? 0)} é menor que o do envio anterior: no modo diferença não há devolução.
+                    Escolha frete cheio ou sem cobrança.
                   </p>
                 ) : (
-                  <p className="text-emerald-700 dark:text-emerald-300">Sem diferença de frete.</p>
+                  <p className="font-semibold text-amber-800 dark:text-amber-200">
+                    {modoCobranca === "SEM_COBRANCA"
+                      ? "Cobrança: sem cobrança de frete neste reenvio (decisão de administrador, com motivo)."
+                      : cobranca.valor > 0
+                        ? `Cobrança: ${ROTULO_MODO_COBRANCA[modoCobranca]} de ${formatCurrency(cobranca.valor)} — PIX na aba Pagamentos (ou abono de administrador). O pedido só é despachado depois do pagamento.`
+                        : `Cobrança: ${ROTULO_MODO_COBRANCA[modoCobranca]} de ${formatCurrency(0)}, nada a cobrar.`}
+                  </p>
                 )
               ) : null}
             </div>

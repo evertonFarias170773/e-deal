@@ -1,6 +1,6 @@
 # Proposta: aba Pagamentos
 
-> **Última revisão:** 18/11/2026 (quadro **Diferença de frete do reenvio**: PIX da diferença ou abono). 17/11/2026 (Trocar forma de pagamento para Chave Pix; e2eId e comprovante opcionais). 16/11/2026 (número de fora do Brasil nunca vai no PIX nem no boleto à vista). 14/11/2026 (e-mail do boleto à vista pelo cadastro do pagador; telefone do PIX e do boleto pela conversa principal do ChatGuru, com o 9 no celular). 13/11/2026 (Registrar devolução e cancelar pedido)
+> **Última revisão:** 18/11/2026 (quadro do frete do reenvio diz o modo — **Diferença de frete do reenvio**, **Frete do reenvio (valor cheio)** ou **Reenvio sem cobrança** —, o PIX sai pelo valor a cobrar e o administrador troca o modo). 18/11/2026 (quadro **Diferença de frete do reenvio**: PIX da diferença ou abono). 17/11/2026 (Trocar forma de pagamento para Chave Pix; e2eId e comprovante opcionais). 16/11/2026 (número de fora do Brasil nunca vai no PIX nem no boleto à vista). 14/11/2026 (e-mail do boleto à vista pelo cadastro do pagador; telefone do PIX e do boleto pela conversa principal do ChatGuru, com o 9 no celular). 13/11/2026 (Registrar devolução e cancelar pedido)
 > **Caminho no menu:** Pedidos → abrir um pedido → aba Pagamentos
 > **Endereço:** `/orcamentos/<número>/editar?tab=pagamentos`
 
@@ -31,8 +31,9 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Salvar proposta agora** | Aba Pagamentos de proposta ainda não salva | Salva a proposta para liberar a geração de cobrança. |
 | **Gerar cobrança** | Painel **Cobranças já geradas**, ao lado de **Saldo restante a cobrar** | Salva a proposta e abre a janela **Criar cobrança**. Só aparece quando há saldo a cobrar. |
 | **Abonar diferença (R$ ...)** | Ao lado de **Gerar cobrança** | Registra um desconto no valor exato do saldo pendente de proposta já paga. |
-| **Gerar PIX da diferença (R$ ...)** | Quadro **Diferença de frete do reenvio**, no alto da aba, quando um reenvio de pedido devolvido ficou com frete maior | Cria a cobrança PIX da diferença de frete do reenvio e gera o QR. Só para quem cria cobrança. |
-| **Abonar** / **Confirmar abono de R$ ...** | Mesmo quadro, só para administrador | Abona a diferença de frete do reenvio, com motivo, que vai para o chat do pedido. |
+| **Gerar PIX da diferença (R$ ...)** / **Gerar PIX do frete do reenvio (R$ ...)** | Quadro do frete do reenvio, no alto da aba, quando um reenvio de pedido devolvido tem valor a cobrar | Cria a cobrança PIX pelo valor a cobrar do reenvio (a diferença ou o frete cheio, conforme o modo) e gera o QR. Só para quem cria cobrança. |
+| **Abonar** / **Confirmar abono de R$ ...** | Mesmo quadro, só para administrador | Abona o valor a cobrar do reenvio, com motivo, que vai para o chat do pedido. |
+| **Trocar modo de cobrança** → **Trocar para ...** | Mesmo quadro, só para administrador, enquanto não há PIX do reenvio nem abono | Troca o modo (diferença, frete cheio ou sem cobrança), com motivo, que vai para o chat do pedido. |
 | **Gerar o QR do PIX** | Mesmo quadro, quando o PIX da diferença foi criado sem o QR | Tenta gerar o QR de novo para a mesma cobrança. |
 | **Recarregar cobranças** | Aviso "Não foi possível carregar as cobranças desta proposta." | Lê de novo as cobranças da proposta. |
 | **Demorando? Tentar novamente** | Enquanto as cobranças carregam | Lê de novo as cobranças da proposta. |
@@ -243,11 +244,16 @@ O sistema recusa, sem gravar nada e dizendo o motivo, quando o pedido tem nota f
 3. Clique em **Gerar cobrança** para emitir a cobrança complementar, ou use **E-Crédito** se o cliente tem saldo.
 4. Se a empresa vai absorver a diferença, o administrador clica em **Abonar diferença (R$ ...)** e confirma.
 
-**Diferença de frete do reenvio (desde 18/11/2026).** Quando um pedido devolvido é reenviado com frete maior (janela **Reenviar** da Expedição), a diferença não entra no total do pedido nem no **Saldo restante a cobrar**: aparece no quadro **Diferença de frete do reenvio**, no alto da aba, com o frete anterior, o novo e a diferença.
+**Frete do reenvio (desde 18/11/2026).** Quando um pedido devolvido é reenviado (janela **Reenviar** da Expedição), escolhe-se como cobrar o frete novo, e o valor a cobrar não entra no total do pedido nem no **Saldo restante a cobrar**. Ele aparece no alto da aba, num quadro que diz o modo:
 
-1. Clique em **Gerar PIX da diferença (R$ ...)**. A cobrança PIX sai no nome do mesmo pagador das outras cobranças do pedido e aparece na lista com a descrição "Diferença de frete do reenvio ...". Se o QR não sair, use **Gerar o QR do PIX**.
-2. Ou, se a empresa vai absorver, o administrador clica em **Abonar**, escreve o motivo e clica em **Confirmar abono de R$ ...**. Com PIX da diferença já criado, o abono é recusado: cancele o PIX antes.
-3. O pedido só é despachado de novo depois do PIX confirmado ou do abono.
+- **Diferença de frete do reenvio**: frete novo menos o anterior.
+- **Frete do reenvio (valor cheio)**: o frete novo inteiro, sem desconto do anterior.
+- **Reenvio sem cobrança**: decisão de administrador, com o motivo. Não tem PIX.
+
+1. Clique em **Gerar PIX da diferença (R$ ...)** (no valor cheio, **Gerar PIX do frete do reenvio (R$ ...)**). A cobrança PIX sai pelo valor a cobrar, no nome do mesmo pagador das outras cobranças do pedido, e aparece na lista com a descrição "Diferença de frete do reenvio ..." ou "Frete do reenvio ... (valor cheio ...)". Se o QR não sair, use **Gerar o QR do PIX**.
+2. Ou, se a empresa vai absorver, o administrador clica em **Abonar**, escreve o motivo e clica em **Confirmar abono de R$ ...**. Com PIX do reenvio já criado, o abono é recusado: cancele o PIX antes.
+3. Para mudar o modo, o administrador clica em **Trocar modo de cobrança**, escolhe o novo, escreve o motivo e confirma. Vale só para o último reenvio, antes de ele ser despachado de novo, sem PIX do reenvio vivo ou pago e sem abono.
+4. O pedido só é despachado de novo depois do PIX confirmado ou do abono (no modo sem cobrança, sem esperar nada).
 
 ### Resolver a diferença quando o cliente ficou com crédito
 
@@ -262,7 +268,7 @@ Se a janela for fechada sem escolher, a proposta fica com a faixa **Revisão fin
 
 - **E-mail e telefone da cobrança (desde 14/11/2026).** O e-mail do boleto à vista (e a checagem antes de gerar o boleto, inclusive no **Emitir boleto**) é o do cadastro de quem paga (o pagador do bloco 4 da aba Geral, senão o cliente): primeiro o **E-mail financeiro**, depois o e-mail, depois o e-mail de contato, na mesma ordem da NF-e. O e-mail dos contatos do cadastro não entra mais.
 - O telefone mandado no PIX e no boleto à vista é o da conversa **principal** do ChatGuru (bloco **3. Contatos do pedido** da aba Geral). Celular gravado sem o 9 (8 dígitos começando de 6 a 9) vai com o 9 depois do DDD; telefone fixo vai como está. Pedido antigo sem conversa escolhida usa o telefone de antes (o do contato da proposta ou o do cliente), com a mesma regra do 9. O cartão continua com o celular do cadastro do pagador. Desde 16/11/2026 número de fora do Brasil (por exemplo o uruguaio 598...) ou com DDD que não existe nunca vai para o banco: com a conversa principal estrangeira vale o telefone do cadastro; se ele também não for do Brasil, o PIX e o boleto saem sem telefone.
-- **PIX da diferença de frete do reenvio fica fora do saldo da proposta.** Ele não conta no pago nem no **Saldo restante a cobrar**, não libera nem segura a proposta, e só existe um vivo por reenvio. Quem decide se o pedido pode ser despachado de novo é a trava do despacho da Expedição.
+- **PIX do frete do reenvio (diferença ou valor cheio) fica fora do saldo da proposta.** Ele não conta no pago nem no **Saldo restante a cobrar**, não libera nem segura a proposta, e só existe um vivo por reenvio. Quem decide se o pedido pode ser despachado de novo é a trava do despacho da Expedição.
 - **Pedido entregue não recebe cobrança nova.** Em status ENTREGUE, **Gerar cobrança** fica desabilitado com a mensagem "Pedido entregue não pode ser alterado. Para alterar, volte o status na Expedição até a Revisão Atendente (só é possível antes da NF)." Vale para todos, administrador incluído, e o servidor recusa também o uso de crédito, o pagamento combinado e a emissão de boleto à vista, PIX e cartão. A página de pagamento do cliente já não aceitava pagar pedido entregue. O registro do boleto de uma cobrança faturada que já existia segue normal. O caminho para alterar está na ficha da [Proposta](proposta.md).
 - Não dá para entrar na aba com alteração não salva: a tela pede **Salvar e continuar**.
 - Não dá para entrar na aba enquanto houver diferença financeira pendente: "Resolva a diferença financeira pendente antes de acessar Pagamentos."
@@ -445,7 +451,9 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/lib/formatters/status.ts`
 - `src/lib/mocks/pagamentos.mock.ts`
 
-> **Mudança desta revisão:** 17/11/2026 — **Trocar forma de pagamento** ganhou **Chave Pix**: o PIX já recebido na chave da empresa vira uma cobrança PIX paga, com data, autor e, quando informados, e2eId e comprovante (opcionais); depois que o banco confirma o cancelamento do PIX do Vibe, ela é conferida em nome de quem trocou e o pedido é liberado. Só para quem confirma pagamento.
+> **Mudança desta revisão:** 18/11/2026 — o quadro do frete do reenvio (pedido devolvido reenviado pela Expedição) diz o modo de cobrança (**Diferença de frete do reenvio**, **Frete do reenvio (valor cheio)** ou **Reenvio sem cobrança**), o PIX sai pelo valor a cobrar e o administrador troca o modo com **Trocar modo de cobrança**. O quadro e o PIX da diferença entraram no mesmo dia.
+>
+> **Revisão anterior:** 17/11/2026 — **Trocar forma de pagamento** ganhou **Chave Pix**: o PIX já recebido na chave da empresa vira uma cobrança PIX paga, com data, autor e, quando informados, e2eId e comprovante (opcionais); depois que o banco confirma o cancelamento do PIX do Vibe, ela é conferida em nome de quem trocou e o pedido é liberado. Só para quem confirma pagamento.
 >
 > **Revisão anterior:** 13/11/2026 — nova ação **Registrar devolução e cancelar pedido** (só super administrador): registra a devolução feita pelo aplicativo do banco (valor total, data, e2eId ou comprovante, motivo e autor), cancela a cobrança e o pedido e tira o valor do faturamento (caso 25098).
 >

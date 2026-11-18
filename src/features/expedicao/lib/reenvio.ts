@@ -34,6 +34,9 @@ export interface LinhaReenvio {
   frete_origem?: string | null;
   frete_novo?: number | string | null;
   abono_valor?: number | string | null;
+  /** Modo de cobranca (18/11/2026). Ausentes antes da migration 20261118c: DIFERENCA. */
+  modo_cobranca?: string | null;
+  valor_cobrar?: number | string | null;
 }
 
 /** O que o pedido carrega sobre reenvio. */
@@ -54,6 +57,9 @@ export interface ReenvioDoPedido {
     exigeNota: boolean;
     /** Fase 2B: o ciclo cotou o frete (COTACAO ou DIGITADO_ADM). */
     freteDecidido: boolean;
+    /** Como o frete do reenvio e cobrado e quanto (o que entra na trava de saldo). */
+    modoCobranca: ModoCobrancaReenvio;
+    valorCobrar: number;
   } | null;
   /** Frete gravado pelo ultimo ciclo que gravou frete (base do proximo). */
   ultimoFrete: number | null;
@@ -90,7 +96,9 @@ export function reenvioDoPedido(linhas: LinhaReenvio[], dataDespachoAtual: strin
         tipoFreteNovo: ultimo.tipo_frete_novo ?? null,
         diferenca: numeroOuNulo(ultimo.diferenca) ?? 0,
         exigeNota: ultimo.exige_nota === true,
-        freteDecidido: ultimo.frete_origem === "COTACAO" || ultimo.frete_origem === "DIGITADO_ADM"
+        freteDecidido: ultimo.frete_origem === "COTACAO" || ultimo.frete_origem === "DIGITADO_ADM",
+        modoCobranca: normalizarModoCobranca(ultimo.modo_cobranca),
+        valorCobrar: numeroOuNulo(ultimo.valor_cobrar) ?? numeroOuNulo(ultimo.diferenca) ?? 0
       }
     : null;
   const comFrete = ordenadas.find((l) => numeroOuNulo(l.frete_novo) !== null);
@@ -131,6 +139,53 @@ export function freteDoEnvioAnterior(reenvio: ReenvioDoPedido | null | undefined
   return Math.round(Number(base) * 100) / 100;
 }
 
+// -----------------------------------------------------------------------------
+// MODO DE COBRANCA DO FRETE DO REENVIO (18/11/2026)
+// -----------------------------------------------------------------------------
+
+/**
+ * DIFERENCA: frete novo - anterior (menor e recusado). CHEIO: o frete novo
+ * inteiro. SEM_COBRANCA: nada (so administrador, com motivo). O valor a cobrar
+ * e coluna gerada no banco (`expedicao_reenvios.valor_cobrar`).
+ */
+export type ModoCobrancaReenvio = "DIFERENCA" | "CHEIO" | "SEM_COBRANCA";
+
+export const MODOS_COBRANCA_REENVIO: ModoCobrancaReenvio[] = ["DIFERENCA", "CHEIO", "SEM_COBRANCA"];
+
+/** Rotulo curto do modo, como o chat e a aba Fretes escrevem. */
+export const ROTULO_MODO_COBRANCA: Record<ModoCobrancaReenvio, string> = {
+  DIFERENCA: "diferença",
+  CHEIO: "frete cheio",
+  SEM_COBRANCA: "sem cobrança"
+};
+
+/** Titulo do quadro da aba Pagamentos para o modo. */
+export function tituloDoFreteDoReenvio(modo: ModoCobrancaReenvio): string {
+  if (modo === "CHEIO") return "Frete do reenvio (valor cheio)";
+  if (modo === "SEM_COBRANCA") return "Reenvio sem cobrança";
+  return "Diferença de frete do reenvio";
+}
+
+export function normalizarModoCobranca(v: unknown): ModoCobrancaReenvio {
+  const s = String(v ?? "").trim().toUpperCase();
+  return s === "CHEIO" || s === "SEM_COBRANCA" ? s : "DIFERENCA";
+}
+
+/**
+ * O que a tela mostra do valor a cobrar antes de gravar (a conta que vale e a
+ * coluna gerada no banco). `recusado`: frete menor no modo DIFERENCA.
+ */
+export function valorACobrarDoReenvio(
+  modo: ModoCobrancaReenvio,
+  freteAnterior: number,
+  freteNovo: number
+): { valor: number; diferenca: number; recusado: boolean } {
+  const { diferenca, recusada } = diferencaDoReenvio(freteAnterior, freteNovo);
+  if (modo === "CHEIO") return { valor: Math.round(freteNovo * 100) / 100, diferenca, recusado: false };
+  if (modo === "SEM_COBRANCA") return { valor: 0, diferenca, recusado: false };
+  return { valor: recusada ? 0 : diferenca, diferenca, recusado: recusada };
+}
+
 /** O que a tela mostra da diferenca antes de gravar. A conta que vale e a do banco. */
 export function diferencaDoReenvio(freteAnterior: number, freteNovo: number): { diferenca: number; recusada: boolean } {
   const centavos = Math.round(freteNovo * 100) - Math.round(freteAnterior * 100);
@@ -146,6 +201,8 @@ export interface VereditoRedespacho {
   ciclo: number | null;
   freteDecidido: boolean;
   diferenca: number;
+  modoCobranca: ModoCobrancaReenvio;
+  valorCobrar: number;
   exigeNota: boolean;
   notaNova: { tipo: string; numero: string | null } | null;
 }
@@ -162,6 +219,8 @@ export function lerVereditoRedespacho(raw: unknown): VereditoRedespacho | null {
     ciclo: numeroOuNulo(r.ciclo),
     freteDecidido: r.frete_decidido === true,
     diferenca: numeroOuNulo(r.diferenca) ?? 0,
+    modoCobranca: normalizarModoCobranca(r.modo_cobranca),
+    valorCobrar: numeroOuNulo(r.valor_cobrar) ?? numeroOuNulo(r.diferenca) ?? 0,
     exigeNota: r.exige_nota === true,
     notaNova: nota ? { tipo: String(nota.tipo ?? ""), numero: nota.numero === null || nota.numero === undefined ? null : String(nota.numero) } : null
   };
@@ -173,7 +232,16 @@ export interface SituacaoCicloReenvio {
   chave: string;
   freteAnterior: number | null;
   freteNovo: number | null;
+  /** Tipo de envio e transportadora do ciclo (a opcao cotada, quando houve). */
+  tipoFreteNovo: string | null;
+  transportadora: string | null;
+  /** Informacao: frete novo - anterior (pode ser negativa fora do modo DIFERENCA). */
   diferenca: number;
+  modoCobranca: ModoCobrancaReenvio;
+  modoMotivo: string | null;
+  modoDefinidoPor: string | null;
+  /** O que se cobra do ciclo (pelo modo). */
+  valorCobrar: number;
   abono: number | null;
   abonadoPor: string | null;
   pago: number;
@@ -191,7 +259,13 @@ export function lerSituacaoDoReenvio(raw: unknown): SituacaoCicloReenvio[] {
       chave: String(r.chave ?? ""),
       freteAnterior: numeroOuNulo(r.frete_anterior),
       freteNovo: numeroOuNulo(r.frete_novo),
+      tipoFreteNovo: typeof r.tipo_frete_novo === "string" ? r.tipo_frete_novo : null,
+      transportadora: typeof r.transportadora === "string" && r.transportadora.trim() ? r.transportadora : null,
       diferenca: numeroOuNulo(r.diferenca) ?? 0,
+      modoCobranca: normalizarModoCobranca(r.modo_cobranca),
+      modoMotivo: typeof r.modo_motivo === "string" ? r.modo_motivo : null,
+      modoDefinidoPor: typeof r.modo_definido_por === "string" ? r.modo_definido_por : null,
+      valorCobrar: numeroOuNulo(r.valor_cobrar) ?? numeroOuNulo(r.diferenca) ?? 0,
       abono: numeroOuNulo(r.abono),
       abonadoPor: typeof r.abonado_por === "string" ? r.abonado_por : null,
       pago: numeroOuNulo(r.pago) ?? 0,

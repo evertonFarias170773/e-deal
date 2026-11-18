@@ -60,7 +60,7 @@ import { LABEL_MODALIDADE, MODALIDADES_OFERECIDAS, TRANSPORTES_POR_MODALIDADE } 
 import type { ModalidadeFrete, PedidoExpedicao, TipoFreteNormalizado } from "../types";
 import { AvisoInstrucaoEntrega } from "./AvisoInstrucaoEntrega";
 import { mensagemDoSaldo, type SaldoDoDespacho } from "../lib/saldo-despacho";
-import { avisosDoReenvio, type VereditoRedespacho } from "../lib/reenvio";
+import { avisosDoReenvio, tituloDoFreteDoReenvio, type VereditoRedespacho } from "../lib/reenvio";
 import { avaliarRedespacho } from "../services/reenvio.client";
 import { conferirFreteSubsidiado, mensagemFreteSubsidiado } from "../lib/frete-subsidiado";
 import { barreiraNfAutorizada } from "../services/corrigir-frete-simulacao";
@@ -1644,10 +1644,13 @@ export function DespacharModal({
               Reenvio {reenvioAberto.ciclo}: {reenvioAberto.motivo}
             </p>
             <p>O endereço e o tipo de envio vêm do reenvio. Informe o rastreio ou conhecimento NOVO; o do primeiro envio está guardado no registro do reenvio.</p>
-            {reenvioAberto.diferenca > 0 ? (
+            {/* Modo de cobranca (18/11/2026): o que se cobra e o valor do modo, nao a diferenca. */}
+            {reenvioAberto.valorCobrar > 0 ? (
               <p>
-                Diferença de frete do reenvio: {formatCurrency(reenvioAberto.diferenca)}. O despacho só sai com ela paga (PIX na aba Pagamentos) ou abonada por um administrador.
+                {tituloDoFreteDoReenvio(reenvioAberto.modoCobranca)}: {formatCurrency(reenvioAberto.valorCobrar)}. O despacho só sai com ele pago (PIX na aba Pagamentos) ou abonado por um administrador.
               </p>
+            ) : reenvioAberto.modoCobranca === "SEM_COBRANCA" ? (
+              <p>Reenvio sem cobrança de frete (decisão de administrador).</p>
             ) : null}
             {reenvioAberto.exigeNota ? (
               <p className={redespacho?.notaNova ? "" : "font-semibold"}>

@@ -14,11 +14,14 @@ import {
   freteDoEnvioAnterior,
   lerSituacaoDoReenvio,
   lerVereditoRedespacho,
+  normalizarModoCobranca,
   opcoesDoTipo,
   podeOferecerReenvio,
   reenvioDoPedido,
   textoDoErroDeReenvio,
   tipoDaOpcao,
+  tituloDoFreteDoReenvio,
+  valorACobrarDoReenvio,
   type LinhaReenvio
 } from "../../src/features/expedicao/lib/reenvio.ts";
 
@@ -179,6 +182,50 @@ checar(
   "erro de frete menor sem o codigo",
   textoDoErroDeReenvio("EXP_REENVIO_FRETE: o frete novo (R$ 30,00) e menor que o do envio anterior (R$ 40,43).").startsWith("o frete novo (R$ 30,00)"),
   true
+);
+
+// --- MODO DE COBRANCA (18/11/2026) -------------------------------------------
+// O caso do #24552: SEDEX R$ 40,43 -> Sao Miguel R$ 98,00.
+checar("modo DIFERENCA cobra 57,57", valorACobrarDoReenvio("DIFERENCA", 40.43, 98), { valor: 57.57, diferenca: 57.57, recusado: false });
+checar("modo CHEIO cobra 98,00", valorACobrarDoReenvio("CHEIO", 40.43, 98), { valor: 98, diferenca: 57.57, recusado: false });
+checar("modo SEM_COBRANCA cobra 0", valorACobrarDoReenvio("SEM_COBRANCA", 40.43, 98), { valor: 0, diferenca: 57.57, recusado: false });
+checar("frete menor: recusado so na DIFERENCA", valorACobrarDoReenvio("DIFERENCA", 98, 41).recusado, true);
+checar("frete menor: CHEIO aceita e cobra o frete novo", valorACobrarDoReenvio("CHEIO", 98, 41), { valor: 41, diferenca: -57, recusado: false });
+checar("frete menor: SEM_COBRANCA aceita", valorACobrarDoReenvio("SEM_COBRANCA", 98, 41), { valor: 0, diferenca: -57, recusado: false });
+checar("modo vazio/lixo vira DIFERENCA", [normalizarModoCobranca(null), normalizarModoCobranca("x"), normalizarModoCobranca(" cheio ")], ["DIFERENCA", "DIFERENCA", "CHEIO"]);
+checar(
+  "titulos do quadro da aba Pagamentos",
+  [tituloDoFreteDoReenvio("CHEIO"), tituloDoFreteDoReenvio("DIFERENCA"), tituloDoFreteDoReenvio("SEM_COBRANCA")],
+  ["Frete do reenvio (valor cheio)", "Diferença de frete do reenvio", "Reenvio sem cobrança"]
+);
+checar(
+  "ciclo aberto: modo e valor a cobrar (sem as colunas novas = DIFERENCA com a diferenca)",
+  [
+    reenvioDoPedido([linha2b(1, { modo_cobranca: "CHEIO", valor_cobrar: 98 })], DESPACHO_1)?.aberto?.modoCobranca,
+    reenvioDoPedido([linha2b(1, { modo_cobranca: "CHEIO", valor_cobrar: 98 })], DESPACHO_1)?.aberto?.valorCobrar,
+    reenvioDoPedido([linha2b(1, { diferenca: 54.57 })], DESPACHO_1)?.aberto?.modoCobranca,
+    reenvioDoPedido([linha2b(1, { diferenca: 54.57 })], DESPACHO_1)?.aberto?.valorCobrar
+  ],
+  ["CHEIO", 98, "DIFERENCA", 54.57]
+);
+checar(
+  "situacao: modo, valor a cobrar e transportadora",
+  (() => {
+    const [c] = lerSituacaoDoReenvio([
+      { ...SITUACAO[0], frete_novo: 98, diferenca: 57.57, modo_cobranca: "CHEIO", valor_cobrar: 98, pendente: 98,
+        tipo_frete_novo: "TRANSPORTADORA", transportadora: "Transportadora São Miguel", cobranca_viva: null }
+    ]);
+    return [c.modoCobranca, c.valorCobrar, c.diferenca, c.pendente, c.transportadora, c.tipoFreteNovo];
+  })(),
+  ["CHEIO", 98, 57.57, 98, "Transportadora São Miguel", "TRANSPORTADORA"]
+);
+checar(
+  "veredito do redespacho: modo e valor a cobrar",
+  (() => {
+    const v = lerVereditoRedespacho({ aberto: true, bloqueia: true, situacao: "SALDO", modo_cobranca: "SEM_COBRANCA", valor_cobrar: 0, diferenca: 57.57 });
+    return [v?.modoCobranca, v?.valorCobrar];
+  })(),
+  ["SEM_COBRANCA", 0]
 );
 
 console.log(falhas === 0 ? "\nTUDO OK" : `\n${falhas} FALHA(S)`);
