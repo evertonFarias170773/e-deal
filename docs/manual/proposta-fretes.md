@@ -1,6 +1,6 @@
 # Proposta: aba Fretes
 
-> **Última revisão:** 18/11/2026 (quadro **Pedido reenviado**: o envio e a cobrança de cada reenvio de pedido devolvido; a aba continua com o frete do primeiro envio). 16/11/2026 (frete CIF não pode ficar em R$ 0,00 no Salvar nem na primeira cobrança; SEDEX trocado por transportadora não deixa a categoria Correios gravada; cotação sem valor não vira card, aviso "Transportadora que não cotou"; Transportadora mostra a do frete escolhido; Corrigir a transportadora só com algo a corrigir; card padrão do SEDEX relido como Correios; rua com erro no cadastro)
+> **Última revisão:** 19/11/2026 (pedido reenviado: o card do frete da venda vira **Envio original**, o do reenvio vira **Envio atual** e aparece em destaque no alto; com reenvio ou NF autorizada não há **Escolher**). 18/11/2026 (quadro **Pedido reenviado**: o envio e a cobrança de cada reenvio de pedido devolvido; a aba continua com o frete do primeiro envio). 16/11/2026 (frete CIF não pode ficar em R$ 0,00 no Salvar nem na primeira cobrança; SEDEX trocado por transportadora não deixa a categoria Correios gravada; cotação sem valor não vira card, aviso "Transportadora que não cotou"; Transportadora mostra a do frete escolhido; Corrigir a transportadora só com algo a corrigir; card padrão do SEDEX relido como Correios; rua com erro no cadastro)
 > **Caminho no menu:** Pedidos → abrir um pedido → aba Fretes
 > **Endereço:** `/orcamentos/<número>/editar?tab=fretes`
 
@@ -34,8 +34,9 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Valor cobrado (R$)** | Caixa da modalidade, em CIF | Define quanto o cliente paga de frete. Grava ao sair do campo ou no Enter; Esc desfaz. Só edita na fase de orçamento, e só em frete manual: com um card calculado escolhido (SEDEX, VEPPO, São Miguel, Azul) ele fica só leitura, com o valor do card. Exceção: com o **MOTOBOY INTERNO** escolhido, o valor do card de motoboy pode ser editado por qualquer usuário. **Transportadora** segue aberta: é por ela que se troca o card por um frete manual. |
 | **Rodoviário** / **Aéreo** | Pergunta **Como vai o transporte?**, na caixa da modalidade | Diz à Expedição em qual coluna o pedido entra, quando o sistema não reconhece a transportadora sozinho. Clicar de novo desmarca. |
 | **Atualizar fretes** (vira **Atualizando...**) | Acima dos cards, em CIF | Refaz a cotação com o CEP do endereço e o peso atual da proposta. |
-| **Escolher** | Em cada card de frete | Torna aquele card o frete da proposta. |
-| **Escolhido** | Selo no card | Indica o frete que está valendo. Não é clicável. |
+| **Escolher** | Em cada card de frete, menos no escolhido. Não aparece em pedido com NF autorizada nem em pedido reenviado | Torna aquele card o frete da proposta. |
+| **Escolhido** | Selo no card | Indica o frete que está valendo. Não é clicável. Em pedido reenviado vira **Envio original** (ou **Envio original (devolvido)**, quando o motivo do reenvio fala em devolução). |
+| **Envio atual** | Selo roxo no card, em pedido reenviado | Marca o card da opção usada no último reenvio, quando ele está na lista. Não é clicável. |
 | **Remover** | Só no card **MANUAL / TRANSP.** | Tira o frete manual da lista. Se ele era o escolhido, nenhum card fica escolhido, o frete do resumo volta a zero e a **Transportadora** volta a vazia, até você escolher outro card ou transportadora. Só aparece na fase de orçamento, sem pagamento confirmado. Cards calculados não têm o botão. |
 | **Corrigir a transportadora (admin)** (lista, com a opção "— Sem transportadora —") | Caixa da modalidade, depois da liberação, só quando a transportadora gravada não é a do frete escolhido | Troca só a transportadora, na hora, sem passar pelo **Salvar alterações**. Mostra a mesma transportadora do campo **Transportadora**. |
 | Campo **Frete R$** (dica: "Valor negociado do frete, em reais") | Bloco **Valor negociado do frete (admin)**, depois da liberação | Grava o valor negociado do frete e o novo total da proposta, ao sair do campo ou no Enter. |
@@ -48,7 +49,8 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Salvar alterações** (em proposta nova: **Salvar proposta**) | Barra fixa no rodapé | Grava a proposta, com a modalidade, a transportadora e o frete escolhido. |
 | **Cancelar** | Barra fixa no rodapé | Sai da edição. |
 | **Recalcular frete** | Aviso **O frete precisa ser atualizado**, que aparece ao gerar cobrança | Traz você para esta aba para refazer o frete. |
-| Quadro **Pedido reenviado** (só leitura) | Alto da aba, em pedido que voltou devolvido e foi reenviado pela Expedição | Uma linha por reenvio: "Reenvio N: transportadora R$ X, cobrança: modo R$ Y". Não tem botão. |
+| Destaque **Envio atual** (só leitura) | Alto da aba, em pedido que voltou devolvido e foi reenviado pela Expedição | "Envio atual: reenvio N, transportadora, R$ X; cobrança: modo R$ Y". Reenvios anteriores aparecem embaixo, em letra menor, começando por "Antes:". Não tem botão. |
+| Frase **O frete da venda está na nota fiscal e não muda.** | Acima dos cards, no lugar dos botões **Escolher**, em pedido com NF autorizada ou reenviado | Explica por que não há **Escolher**. Em pedido reenviado continua com "O envio atual é o do reenvio." |
 
 ## Passo a passo
 
@@ -257,7 +259,8 @@ Repetir **Aplicar** não duplica: a segunda tentativa devolve o mesmo frete comp
 - Na tela, os dois cadastros dos Correios aparecem como **Correios** nas listas **Transportadora**, **Transportadora definida *** e **Corrigir a transportadora (admin)**, e não como "SUPERINTENDENCIA ESTADUAL RS" ou "EMPRESA BRASILEIRA DE CORREIOS E TELEGRAFOS". Na nota fiscal fica o nome do cadastro. As outras transportadoras aparecem pela fantasia (ou pelo nome, sem fantasia).
 - Endereço com a rua gravada como "[object Object]" aparece como **Rua com erro no cadastro (corrija pelo lápis)**, e o lápis abre a edição com a rua em branco para ser digitada (11/11/2026).
 - Em pedido complementar, a modalidade e a transportadora vêm do pedido principal e ficam travadas. Não há cards nem **Atualizar fretes**.
-- **Reenvio não muda esta aba (18/11/2026).** O reenvio de pedido devolvido (janela **Reenviar** da Expedição) não troca o frete da proposta nem a nota: a aba continua travada para troca, com o frete do primeiro envio. O quadro **Pedido reenviado** mostra, por reenvio, o envio novo, o frete dele e como ele é cobrado (diferença, frete cheio ou sem cobrança). A cobrança do reenvio fica na aba **Pagamentos**.
+- **Reenvio não muda o frete da venda (18/11/2026; tela de 19/11/2026).** O reenvio de pedido devolvido (janela **Reenviar** da Expedição) não troca o frete da proposta, o total nem a nota: esse frete continua sendo o da venda. Na tela, o card dele perde o **Escolhido** e vira **Envio original** (com "(devolvido)" quando o motivo do reenvio fala em devolução); o envio do último reenvio aparece no destaque **Envio atual** no alto da aba e, se o card daquela opção está na lista, ele ganha o selo **Envio atual**. A cobrança do reenvio fica na aba **Pagamentos**.
+- **Sem Escolher com NF autorizada ou reenvio (19/11/2026).** Nesses pedidos os cards não têm o botão **Escolher**: no lugar, a frase "O frete da venda está na nota fiscal e não muda." (e, com reenvio, "O envio atual é o do reenvio."). Antes o botão aparecia e só dava "Troca de frete bloqueada". Pedido sem reenvio e sem NF fica como sempre.
 - Pedido complementar fora de CIF não cobra frete: a tela mostra "... herdado do pedido #... — sem frete a cobrar neste pedido."
 - O frete complementar é só a diferença entre a cotação do peso somado e o frete que o pedido principal já cobra. Se o somado sair mais barato, este pedido cobra R$ 0,00 e nada é creditado. O pedido principal não é alterado.
 - O frete complementar só pode ser aplicado com o pedido complementar em NOVO ou AGUARDANDO, com o pedido principal entre LIBERADO e EXPEDICAO e ainda sem despacho, e com os dois pedidos no mesmo endereço de entrega.
@@ -266,7 +269,8 @@ Repetir **Aplicar** não duplica: a segunda tentativa devolve o mesmo frete comp
 
 ## O que não confundir
 
-- **Frete da proposta** e **frete do reenvio**: o da proposta é o do primeiro envio e é o da nota; o do reenvio aparece só no quadro **Pedido reenviado** e é cobrado à parte, na aba **Pagamentos**.
+- **Frete da proposta** e **frete do reenvio**: o da proposta é o do primeiro envio e é o da nota; o do reenvio aparece no destaque **Envio atual** e é cobrado à parte, na aba **Pagamentos**.
+- **Escolhido** e **Envio atual**: **Escolhido** é o frete da proposta em pedido sem reenvio; em pedido reenviado esse mesmo card vira **Envio original**, e **Envio atual** é o do reenvio, que é o que sai de novo.
 - **Modalidade** e **transportadora**: a modalidade diz quem paga o transporte; a transportadora diz quem leva. SEDEX, por exemplo, pode levar tanto em CIF quanto em FOB.
 - **Retira no balcão** e **FOB — por conta do cliente**: nas duas a proposta sai sem frete, mas em retirada o cliente busca e não há transportadora; em FOB há uma transportadora (ou motoboy) do cliente, obrigatória.
 - Botão **Motoboy** (FOB) e card **ENTREGA MOTOBOY** (CIF): o botão só informa que um motoboy do cliente leva, sem valor; o card é uma opção cotada que a empresa contrata e cobra.
@@ -357,8 +361,11 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/features/orcamentos/lib/frete-cif-zero.ts`
 - `supabase/migrations/20261116_pagamentos_v2_frete_cif_zero.sql`
 - `src/features/orcamentos/components/ReenviosDoFreteCard.tsx`
+- `src/features/orcamentos/hooks/useReenviosDoPedido.ts`
 
-> **Mudança desta revisão:** 18/11/2026 — quadro **Pedido reenviado**, só leitura: em pedido devolvido e reenviado pela Expedição, uma linha por reenvio com a transportadora, o frete e a cobrança (modo e valor), para não parecer que o pedido segue no envio original. A aba continua com o frete do primeiro envio e travada para troca.
+> **Mudança desta revisão:** 19/11/2026 — pedido reenviado (caso #24552): o card do frete da venda deixa de dizer **Escolhido** e vira **Envio original** ("(devolvido)" quando o motivo diz), o envio do último reenvio aparece no destaque **Envio atual** no alto da aba (que substitui o quadro **Pedido reenviado**) e o card dessa opção ganha o selo **Envio atual**. Com NF autorizada ou reenvio, os cards não têm **Escolher**; a frase "O frete da venda está na nota fiscal e não muda." fica no lugar. O frete da proposta, o total e a nota não mudam.
+
+> **Revisão anterior:** 18/11/2026 — quadro **Pedido reenviado**, só leitura: em pedido devolvido e reenviado pela Expedição, uma linha por reenvio com a transportadora, o frete e a cobrança (modo e valor), para não parecer que o pedido segue no envio original. A aba continua com o frete do primeiro envio e travada para troca.
 
 > **Revisão anterior:** 16/11/2026 — frete CIF não pode ficar em R$ 0,00: o **Salvar alterações** e a primeira cobrança do pedido recusam, com as exceções da regra (retirada, FOB, avulsa, complementar, pedido sem produto e cliente com **Pode editar valor do frete**).
 

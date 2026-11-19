@@ -1,66 +1,49 @@
 "use client";
 
 /**
- * REENVIOS NA ABA FRETES (18/11/2026), so leitura.
+ * ENVIO ATUAL DO PEDIDO REENVIADO, no alto da aba Fretes (18/11 e 19/11/2026).
+ * So leitura.
  *
- * O reenvio de pedido devolvido NAO muda o frete da proposta nem a nota: a aba
- * Fretes continua travada para troca, com o frete do primeiro envio. Sem este
- * quadro o pedido pareceria seguir no envio original (ex.: SEDEX) depois de
- * reenviado por transportadora. Uma linha por ciclo: "Reenvio N:
- * <transportadora> R$ X, cobrança: <modo> R$ Y". A cobranca e o PIX ficam na
- * aba Pagamentos.
+ * O reenvio de pedido devolvido NAO muda o frete da proposta (o da venda, que
+ * esta no total e na NF): a aba continua com ele, agora marcado "Envio
+ * original". Este destaque diz qual e o envio de agora: "Envio atual: reenvio
+ * N, <transportadora>, R$ X; cobrança: <modo> R$ Y". Reenvios anteriores ficam
+ * numa linha menor cada. A cobranca e o PIX ficam na aba Pagamentos.
  *
- * Fica FORA do fieldset da aba (o bloqueio por cobranca nao se aplica a uma
- * leitura). Sem ciclo, nao aparece.
+ * Os dados vem da pagina (`useReenviosDoPedido`), que tambem marca os cards.
+ * Sem reenvio, nao aparece.
  */
-import { useEffect, useState } from "react";
 import { Truck } from "lucide-react";
 import { formatCurrency } from "@/lib/formatters/currency";
-import { ROTULO_MODO_COBRANCA, type SituacaoCicloReenvio } from "@/features/expedicao/lib/reenvio";
-import { lerSituacaoDosReenvios } from "@/features/expedicao/services/reenvio.client";
+import { ROTULO_MODO_COBRANCA } from "@/features/expedicao/lib/reenvio";
+import { envioDoReenvio, type ReenvioDaAbaFretes } from "../hooks/useReenviosDoPedido";
 
-const ROTULO_TIPO: Record<string, string> = {
-  CORREIOS: "Correios",
-  TRANSPORTADORA: "Transportadora",
-  MOTOBOY: "Motoboy"
-};
-
-/** "Transportadora São Miguel", ou o tipo de envio quando o ciclo nao cotou. */
-export function envioDoCiclo(c: Pick<SituacaoCicloReenvio, "transportadora" | "tipoFreteNovo">): string {
-  if (c.transportadora) return c.transportadora;
-  const tipo = String(c.tipoFreteNovo ?? "").toUpperCase();
-  return ROTULO_TIPO[tipo] ?? (tipo || "envio");
+function linhaDoReenvio(r: ReenvioDaAbaFretes): string {
+  const frete = r.freteNovo !== null ? `, ${formatCurrency(r.freteNovo)}` : "";
+  return `reenvio ${r.ciclo}, ${envioDoReenvio(r)}${frete}; cobrança: ${ROTULO_MODO_COBRANCA[r.modoCobranca]} ${formatCurrency(r.valorCobrar)}`;
 }
 
-export function ReenviosDoFreteCard({ idInt }: { idInt: number }) {
-  const [ciclos, setCiclos] = useState<SituacaoCicloReenvio[]>([]);
-
-  useEffect(() => {
-    let vivo = true;
-    void lerSituacaoDosReenvios(idInt).then((lista) => {
-      if (vivo) setCiclos(lista);
-    });
-    return () => {
-      vivo = false;
-    };
-  }, [idInt]);
-
-  if (ciclos.length === 0) return null;
+export function ReenviosDoFreteCard({ reenvios }: { reenvios: ReenvioDaAbaFretes[] }) {
+  if (reenvios.length === 0) return null;
+  const atual = reenvios[reenvios.length - 1];
+  const anteriores = reenvios.slice(0, -1);
 
   return (
-    <div className="mb-6 space-y-2 rounded-2xl border border-violet-200 bg-violet-50 px-4 py-3 text-sm text-violet-900 dark:border-violet-900 dark:bg-violet-950/40 dark:text-violet-100">
-      <p className="flex items-center gap-2 font-semibold">
-        <Truck className="h-4 w-4" /> Pedido reenviado
+    <div
+      data-testid="envio-atual-reenvio"
+      className="mb-6 space-y-2 rounded-2xl border border-violet-300 bg-violet-50 px-4 py-3 text-sm text-violet-900 shadow-sm dark:border-violet-800 dark:bg-violet-950/40 dark:text-violet-100"
+    >
+      <p className="flex items-start gap-2 text-base font-bold">
+        <Truck className="mt-0.5 h-5 w-5 shrink-0" />
+        <span>Envio atual: {linhaDoReenvio(atual)}</span>
       </p>
-      {ciclos.map((c) => (
-        <p key={c.chave}>
-          Reenvio {c.ciclo}: {envioDoCiclo(c)}
-          {c.freteNovo !== null ? ` ${formatCurrency(c.freteNovo)}` : ""}, cobrança: {ROTULO_MODO_COBRANCA[c.modoCobranca]}{" "}
-          {formatCurrency(c.valorCobrar)}
+      {anteriores.map((r) => (
+        <p key={r.ciclo} className="text-xs">
+          Antes: {linhaDoReenvio(r)}
         </p>
       ))}
       <p className="text-xs text-violet-800 dark:text-violet-200">
-        O frete desta aba e a nota continuam os do primeiro envio; o reenvio não os muda. A cobrança do frete do reenvio fica na aba Pagamentos.
+        A cobrança do frete do reenvio fica na aba Pagamentos.
       </p>
     </div>
   );

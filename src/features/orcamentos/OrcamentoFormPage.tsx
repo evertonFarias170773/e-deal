@@ -187,6 +187,7 @@ import { DiferencaFinanceiraModal } from "@/features/orcamentos/components/Difer
 import { FreteComplementarCard } from "@/features/orcamentos/components/FreteComplementarCard";
 import { AcompanharPedidoCard } from "@/features/orcamentos/components/AcompanharPedidoCard";
 import { ReenviosDoFreteCard } from "@/features/orcamentos/components/ReenviosDoFreteCard";
+import { cardEhDoReenvio, foiDevolvido, useReenviosDoPedido } from "@/features/orcamentos/hooks/useReenviosDoPedido";
 import { TarefasDoPedido } from "@/features/tarefas/components/TarefasDoPedido";
 import { SocioPagadorInline, type SocioConfirmado } from "@/features/orcamentos/components/SocioPagadorInline";
 import type { AcaoFinanceiraDiferenca } from "@/features/cobrancas/types";
@@ -1460,6 +1461,21 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     idIntDoValorNegociado !== null && nfVivaValorNegociado?.idInt === idIntDoValorNegociado
       ? nfVivaValorNegociado.mensagem
       : null;
+
+  /**
+   * ENVIO ATUAL DO PEDIDO REENVIADO (19/11/2026), so na aba Fretes. O frete da
+   * proposta e o da venda (total e NF) e o reenvio nao o muda; a tela passa a
+   * chamar o card dele de "Envio original", destaca o envio do ultimo reenvio e
+   * marca o card dessa opcao como "Envio atual". Com reenvio ou NF autorizada
+   * (a mesma leitura do valor negociado) nao ha "Escolher": a frase explica.
+   * Pedido sem reenvio e sem NF fica como antes.
+   */
+  const idIntDosReenvios = form.id_int !== "NOVO" && !form.isAvulso && Number(form.id_int) > 0 ? Number(form.id_int) : null;
+  const reenviosDoPedido = useReenviosDoPedido(idIntDosReenvios);
+  const reenvioAtual = reenviosDoPedido.length > 0 ? reenviosDoPedido[reenviosDoPedido.length - 1] : null;
+  const pedidoReenviado = reenvioAtual !== null;
+  const pedidoDevolvido = foiDevolvido(reenviosDoPedido);
+  const freteDaVendaFixo = pedidoReenviado || Boolean(bloqueioValorNegociadoPorNota);
 
   /**
    * FOB entregue por motoboy — a outra resposta possivel para "quem leva".
@@ -7676,9 +7692,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
         <>
         {/* REENVIO (18/11/2026): so leitura, fora do fieldset. A aba continua com o
             frete do primeiro envio; o quadro mostra o envio e a cobranca de cada reenvio. */}
-        {form.id_int !== "NOVO" && !form.isAvulso && Number(form.id_int) > 0 ? (
-          <ReenviosDoFreteCard idInt={Number(form.id_int)} />
-        ) : null}
+        <ReenviosDoFreteCard reenvios={reenviosDoPedido} />
         <fieldset disabled={isFormBloqueadoPorCobranca} className="group space-y-6">
           <FormSection 
             title="7. Fretes e Entrega" 
@@ -8223,6 +8237,13 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                   </div>
                 )}
 
+                {freteDaVendaFixo ? (
+                  <p data-testid="frete-da-venda-fixo" className="mb-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-medium text-slate-700 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-200">
+                    {pedidoReenviado
+                      ? "O frete da venda está na nota fiscal e não muda. O envio atual é o do reenvio."
+                      : "O frete da venda está na nota fiscal e não muda."}
+                  </p>
+                ) : null}
                 <div className="grid gap-3 md:grid-cols-2">
                   {/* Retirada não é card: existe só pelo botão "Retira no balcão".
                       O que vier dela (linha gravada, opção de cotação) fica fora
@@ -8233,8 +8254,13 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                       // Origem do card (lib/origem-frete): COTACAO trava transportadora e valor.
                       data-frete-card={frete.servico || frete.transportadora}
                       data-frete-origem={frete.origem ?? "vazia"}
+                      data-envio-atual={cardEhDoReenvio(frete, reenvioAtual) ? "sim" : undefined}
                       className={`rounded-3xl border p-4 flex flex-col justify-between transition-all duration-200 ${
-                        frete.id === form.freteEscolhidoId 
+                        cardEhDoReenvio(frete, reenvioAtual)
+                          ? "border-violet-300 bg-violet-50/70 ring-2 ring-violet-200/60 shadow-sm"
+                          : frete.id === form.freteEscolhidoId && pedidoReenviado
+                          ? "border-slate-300 bg-slate-100"
+                          : frete.id === form.freteEscolhidoId 
                           ? "border-teal-300 bg-teal-50/60 ring-2 ring-teal-200/50 shadow-sm" 
                           : "border-slate-200 bg-slate-50 hover:bg-white"
                       }`}
@@ -8265,11 +8291,20 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                           <p className="text-sm text-slate-500 font-medium">Prazo: {frete.prazo}</p>
                         </div>
                         <div className="flex flex-col items-end gap-2">
-                        {frete.id === form.freteEscolhidoId ? (
+                        {cardEhDoReenvio(frete, reenvioAtual) ? (
+                          <span className="rounded-full bg-violet-600 px-3 py-1 text-xs font-bold text-white shadow-sm">
+                            Envio atual
+                          </span>
+                        ) : null}
+                        {frete.id === form.freteEscolhidoId && pedidoReenviado ? (
+                          <span className="rounded-full bg-slate-500 px-3 py-1 text-xs font-bold text-white shadow-sm">
+                            {pedidoDevolvido ? "Envio original (devolvido)" : "Envio original"}
+                          </span>
+                        ) : frete.id === form.freteEscolhidoId ? (
                           <span className="rounded-full bg-teal-600 px-3 py-1 text-xs font-bold text-white shadow-sm">
                             Escolhido
                           </span>
-                        ) : (
+                        ) : freteDaVendaFixo ? null : (
                           <button
                             type="button"
                             onClick={() => selectFrete(frete.id)}
