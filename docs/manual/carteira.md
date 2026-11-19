@@ -1,6 +1,6 @@
 # Carteira (contas a receber)
 
-> **Última revisão:** 12/11/2026 (título vencido que ganha data nova volta a vencer na rotina da madrugada)
+> **Última revisão:** 19/11/2026 (título já cancelado no banco do C6 e ainda aberto no sistema sai pelo cancelamento: o sistema confere que não houve pagamento e cancela só aqui). 12/11/2026 (título vencido que ganha data nova volta a vencer na rotina da madrugada)
 > **Caminho no menu:** Financeiro → Carteira
 > **Endereço:** `/contas-a-receber`
 
@@ -266,7 +266,7 @@ O boleto é cancelado no banco e o título continua ativo, agora como **Depósit
 - Depósito em conta não vai ao banco. Para emitir boleto dele, use **Transformar em boleto**.
 - O registro em lote só vale para parcelas da mesma proposta. Se uma parcela falhar, o lote para naquele ponto; as anteriores continuam registradas.
 - Na baixa de boleto registrado, na prorrogação e no **Refazer boleto**, o cancelamento no banco acontece uma vez só. Se a etapa seguinte falhar, tente de novo: o banco não é acionado outra vez.
-- Quando o banco recusa o cancelamento porque o boleto já saiu de circulação (expirado ou baixado depois do vencimento) e confirma que não houve pagamento, o sistema cancela o título só aqui e libera a cobrança para o Registro de recebíveis. Isso vale para os boletos do C6 e não acontece no **Refazer boleto**, que só mostra a recusa.
+- Quando o banco recusa o cancelamento porque o boleto já saiu de circulação (expirado, baixado depois do vencimento ou já cancelado no banco) e confirma que não houve pagamento, o sistema cancela o título só aqui e libera a cobrança para o Registro de recebíveis. Isso vale para os boletos do C6 e não acontece no **Refazer boleto**, que só mostra a recusa.
 - O grupo **Pagos**, quando o filtro de status é **Pagos**, mostra todos os pagos do período, do pagamento mais recente para o mais antigo.
 - A tela carrega os 5.000 títulos mais recentes.
 

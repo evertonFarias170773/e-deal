@@ -216,6 +216,11 @@ const escritas = () => falso.chamadas.filter((c) => c.op !== "select");
   confere("recusa por titulo inativo: o texto que chega e reconhecido por titulo-inativo-no-banco", ehRecusaPorTituloInativo(String(r.corpo.message)) === true);
 }
 
+// C6 com o titulo ja CANCELADO no banco (19/11/2026): reconhecido; outro erro do C6 segue nao reconhecido
+confere("C6 'with status CANCELLED' e titulo inativo", ehRecusaPorTituloInativo("[BoletoClient]: Cannot update boleto:(number=01M7TRV86D7NZCA9EX3HKFWFS3) with status CANCELLED.") === true);
+confere("C6 'pendencia' NAO e titulo inativo", ehRecusaPorTituloInativo("[BoletoClient]: Título com pendência(s) ou em situação no qual não possibilita alterações.") === false);
+confere("C6 'with status CREATED' NAO e titulo inativo", ehRecusaPorTituloInativo("[BoletoClient]: Cannot update boleto:(number=X) with status CREATED.") === false);
+
 // titulo sem codigo do banco: comportamento de sempre
 {
   prepararBanco({ titulo: { ...TITULO, id_boleto_c6: null } });

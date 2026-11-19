@@ -43,6 +43,11 @@ const PADROES_TITULO_INATIVO: readonly string[] = [
   // C6
   "situacao que nao permite",
   "situação que não permite",
+  // C6, título JÁ CANCELADO no banco (observada em 19/11/2026, faturado da Birô 24075):
+  // "[BoletoClient]: Cannot update boleto:(number=...) with status CANCELLED." Acontece
+  // quando o banco cancelou mas o ERP não deu a baixa. A rota ainda confirma no C6 que
+  // não houve pagamento antes do cancelamento local.
+  "with status cancelled",
   // Inter
   "se encontra na situacao",
   "se encontra na situação"

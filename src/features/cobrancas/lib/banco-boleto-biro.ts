@@ -113,15 +113,15 @@ export function webhookConsultaBoletoC6(idEmpresa: number | string | null | unde
 }
 
 /**
- * O que a resposta do cancelamento do à vista da Birô no C6 diz (19/11/2026).
+ * O que a resposta do cancelamento do boleto à vista no C6 diz (Ideal, E3 e Birô no C6; 19/11/2026).
  *
- * O fluxo (del-boleto-av-biro-c6) confere o C6: só responde 200 com
+ * Os fluxos (del-boleto-av-vibe e del-boleto-av-biro-c6) conferem o C6: só respondem 200 com
  * `{ success: true, cancelado: true }` quando o banco cancelou; a recusa vem como
  * 409 `{ success: false, message: "O C6 recusou o cancelamento: <motivo>" }`.
  * Aqui a regra é a mesma do PIX do C6: só cancela no Vibe com a confirmação.
  * Sem confirmação (corpo estranho, 2xx sem `cancelado: true`), NÃO cancela.
  */
-export function lerCancelamentoBoletoAVistaBiroC6(resposta: { ok: boolean; status: number; texto: string }): { cancelou: boolean; mensagem: string } {
+export function lerCancelamentoBoletoAVistaC6(resposta: { ok: boolean; status: number; texto: string }): { cancelou: boolean; mensagem: string } {
   let corpo: Record<string, unknown> = {};
   try {
     const lido = JSON.parse(resposta.texto || "{}");

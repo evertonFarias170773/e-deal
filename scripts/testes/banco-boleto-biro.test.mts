@@ -182,8 +182,13 @@ console.log("== G. cancelamento do à vista da Birô no C6 confere o banco (rota
   confere("sucesso do C6 (cancelado: true): Vibe cancela", r2.cancelou && r2.status === 200, r2);
   const r3 = await cancelar(cobranca({}), { status: 200, corpo: { success: true } });
   confere("200 sem 'cancelado: true': Vibe NÃO cancela (sem confirmação)", !r3.cancelou && r3.status === 409, r3);
+  // Ideal e E3 (19/11/2026): a mesma regra — o del-boleto-av-vibe também confere o C6.
   const r4 = await cancelar(cobranca({ id_empresa: 1 }), { status: 200, corpo: {} });
-  confere("Ideal: igual a hoje (HTTP 200 cancela, no del-boleto-av-vibe)", r4.cancelou && r4.url === `${N8N}/del-boleto-av-vibe`, r4);
+  confere("Ideal: 200 sem 'cancelado: true' NÃO cancela mais (no del-boleto-av-vibe)", !r4.cancelou && r4.status === 409 && r4.url === `${N8N}/del-boleto-av-vibe`, r4);
+  const r4b = await cancelar(cobranca({ id_empresa: 1 }), { status: 200, corpo: { success: true, cancelado: true, cod_C6: COD_C6 } });
+  confere("Ideal: com a confirmação do C6, cancela", r4b.cancelou && r4b.status === 200, r4b);
+  const r4c = await cancelar(cobranca({ id_empresa: 3 }), recusa);
+  confere("E3: recusa do C6 vira recusa no Vibe, com a mensagem do banco", !r4c.cancelou && r4c.status === 409 && /Título com pendência/.test(String(r4c.corpo.message)) && r4c.url === `${N8N}/del-boleto-av-vibe`, r4c);
   const r5 = await cancelar(cobranca({ cod_solicitacao_inter: UUID_INTER }), { status: 200, corpo: {} });
   confere("Birô no Inter: igual a hoje (HTTP 200 cancela, no cancela-boleto-inter-biro)", r5.cancelou && r5.url === `${N8N}/cancela-boleto-inter-biro`, r5);
 }
