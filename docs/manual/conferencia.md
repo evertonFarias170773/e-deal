@@ -1,6 +1,6 @@
 # Conferência
 
-> **Última revisão:** 17/11/2026 (Chave Pix na troca de forma de pagamento, com e2eId e comprovante opcionais; antes, 13/11/2026: Registrar devolução e cancelar pedido)
+> **Última revisão:** 19/11/2026 (PIX novo da Ideal Birô no C6; PIX antigo da Birô segue no Banco Inter até o fim; antes, 17/11/2026: Chave Pix na troca de forma de pagamento, com e2eId e comprovante opcionais; 13/11/2026: Registrar devolução e cancelar pedido)
 > **Caminho no menu:** Conferência (primeiro item do menu lateral; é um link direto, sem subitens)
 > **Endereço:** `/cobrancas` (o detalhe de uma cobrança abre em `/cobrancas/<cobrança>`)
 
@@ -149,6 +149,7 @@ A cobrança perde a data e o nome de quem confirmou e volta para a **Fila de Con
 O que acontece:
 
 - Boleto, PIX e cartão são cancelados também no banco ou na operadora. Se o banco recusar, nada é alterado no sistema.
+- PIX da Ideal Birô: desde 19/11/2026 o PIX novo da Birô sai pelo C6, como o da Ideal Gráfica e da E3 Brindes, e só fica cancelado no sistema quando o C6 confirma. O PIX da Birô gerado antes dessa data continua no Banco Inter até ser pago ou cancelado; o cancelamento dele vai ao Inter, como antes. O sistema escolhe o banco sozinho, pelo código do PIX.
 - A cobrança passa a **Cancelado** e o saldo da proposta reabre, permitindo gerar uma cobrança nova.
 - Se não sobrar nenhuma cobrança ativa, a proposta volta para **NOVO** e o tipo de cobrança é limpo. Pedido que já avançou (liberado, em revisão, em produção, em expedição ou entregue) não regride.
 - O chat da proposta registra quem cancelou e o motivo.

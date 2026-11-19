@@ -1,6 +1,6 @@
 # Proposta: aba Pagamentos
 
-> **Última revisão:** 18/11/2026 (quadro do frete do reenvio diz o modo — **Diferença de frete do reenvio**, **Frete do reenvio (valor cheio)** ou **Reenvio sem cobrança** —, o PIX sai pelo valor a cobrar e o administrador troca o modo). 18/11/2026 (quadro **Diferença de frete do reenvio**: PIX da diferença ou abono). 17/11/2026 (Trocar forma de pagamento para Chave Pix; e2eId e comprovante opcionais). 16/11/2026 (número de fora do Brasil nunca vai no PIX nem no boleto à vista). 14/11/2026 (e-mail do boleto à vista pelo cadastro do pagador; telefone do PIX e do boleto pela conversa principal do ChatGuru, com o 9 no celular). 13/11/2026 (Registrar devolução e cancelar pedido)
+> **Última revisão:** 19/11/2026 (PIX novo da Ideal Birô sai pelo C6 e o código vem na hora; PIX da Birô gerado antes pelo Banco Inter segue no Inter até ser pago ou cancelado). 18/11/2026 (quadro do frete do reenvio diz o modo — **Diferença de frete do reenvio**, **Frete do reenvio (valor cheio)** ou **Reenvio sem cobrança** —, o PIX sai pelo valor a cobrar e o administrador troca o modo). 18/11/2026 (quadro **Diferença de frete do reenvio**: PIX da diferença ou abono). 17/11/2026 (Trocar forma de pagamento para Chave Pix; e2eId e comprovante opcionais). 16/11/2026 (número de fora do Brasil nunca vai no PIX nem no boleto à vista). 14/11/2026 (e-mail do boleto à vista pelo cadastro do pagador; telefone do PIX e do boleto pela conversa principal do ChatGuru, com o 9 no celular). 13/11/2026 (Registrar devolução e cancelar pedido)
 > **Caminho no menu:** Pedidos → abrir um pedido → aba Pagamentos
 > **Endereço:** `/orcamentos/<número>/editar?tab=pagamentos`
 
@@ -39,7 +39,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Demorando? Tentar novamente** | Enquanto as cobranças carregam | Lê de novo as cobranças da proposta. |
 | **Baixar boleto** (ou **Indisponível**) | Linha de cobrança de boleto | Baixa o PDF do boleto com o nome "<n° do pedido> - <cliente>.pdf" (no parcelado, "<cobrança> P<n> de <total> - <cliente>.pdf"), pronto para mandar ao cliente. Se o PDF ainda não existe, abre o link do boleto em outra aba, como antes. |
 | **Pix Copia e cola** | Linha de cobrança PIX | Copia o código PIX. |
-| Selo **PIX em preparação no banco** | Linha de cobrança PIX da Ideal Birô | Aparece no lugar de **Pix Copia e cola** enquanto o Banco Inter não termina de emitir a cobrança. O código PIX aparece sozinho quando o banco conclui (a tela confere a cada 15 segundos). O link da cobrança continua copiável. |
+| Selo **PIX em preparação no banco** | Linha de cobrança PIX da Ideal Birô gerada pelo Banco Inter (antes de 19/11/2026) | Aparece no lugar de **Pix Copia e cola** enquanto o Banco Inter não termina de emitir a cobrança. O PIX novo da Birô sai pelo C6 e não passa por esse estado. O código PIX aparece sozinho quando o banco conclui (a tela confere a cada 15 segundos). O link da cobrança continua copiável. |
 | **Abrir checkout** (no celular: **Abrir checkout cartão** ou **Escolher parcelas**) | Linha de cobrança de cartão | Abre a página de pagamento do cartão. |
 | **Copiar** | Linha de cobrança com link | Copia o link, o código PIX ou a linha digitável da cobrança. |
 | **Ver cobrança** (no celular: **Ver**) | Linha de cobrança | Abre o detalhe da cobrança dentro da aba. |
@@ -90,7 +90,7 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 6. Confira o **Valor da cobrança \***. Ele vem com o saldo restante; para cobrar só uma parte, digite um valor menor.
 7. Escolha a forma em **Forma de pagamento**: **PIX**, **Boleto**, **Cartão de crédito** ou **Cartão Asaas**. A forma padrão do cadastro de quem paga já vem marcada.
 8. Clique em **Gerar cobrança**.
-9. A cobrança aparece em **Cobranças já geradas**, com os botões para abrir ou copiar o link, o código PIX ou o boleto. No PIX da Ideal Birô, se o banco ainda estiver emitindo a cobrança, aparece o selo **PIX em preparação no banco** no lugar do código; ele vira o código sozinho quando o banco conclui.
+9. A cobrança aparece em **Cobranças já geradas**, com os botões para abrir ou copiar o link, o código PIX ou o boleto. Num PIX da Ideal Birô ainda do Banco Inter (gerado antes de 19/11/2026), se o banco ainda estiver emitindo a cobrança, aparece o selo **PIX em preparação no banco** no lugar do código; ele vira o código sozinho quando o banco conclui.
 
 No cartão, o cliente escolhe as parcelas na página de pagamento; depois disso a linha mostra a quantidade de parcelas abaixo do valor.
 
@@ -281,7 +281,9 @@ Se a janela for fechada sem escolher, a proposta fica com a faixa **Revisão fin
 - Boleto e cartão exigem telefone válido no cadastro de quem paga; o cartão exige celular. Sem isso abre a janela **Telefone do cliente impede a cobrança**, onde o telefone é corrigido na hora.
 - **Cartão de crédito** existe para a Ideal Gráfica e a E3 Brindes; a Ideal Birô não tem. **Cartão Asaas** é só da IDEAL GRÁFICA EXPRESSA EIRELI. PIX, boleto e a família do faturado valem para as três empresas.
 - No pagamento combinado, a Ideal Birô não aceita boleto nem cartão como forma secundária.
-- **PIX da Ideal Birô:** o código PIX só é entregue quando o Banco Inter termina de emitir a cobrança (situação "a receber"). Até lá a cobrança fica **em preparação**: o painel mostra o selo, o link de pagamento mostra "Seu PIX está sendo preparado pelo banco. Esta página atualiza sozinha." e a área do cliente mostra a mesma frase. Normalmente leva segundos; em dias de lentidão do banco, pode levar vários minutos (em 04/11/2026, de 12 a 24). Nunca se gera outra cobrança para o mesmo título: gerar de novo devolve o mesmo estado. O PIX da Ideal Gráfica e da E3 Brindes (C6) sai na hora, como antes.
+- **PIX da Ideal Birô:** desde 19/11/2026 o PIX novo da Ideal Birô sai pelo **C6**, como o da Ideal Gráfica e da E3 Brindes: o código PIX vem na hora e o pagamento baixa sozinho. O recebedor que aparece no aplicativo do banco é a IDEAL BIRO SERVICOS GRAFICOS.
+- **PIX da Ideal Birô gerado antes de 19/11/2026 (Banco Inter):** continua no Inter até ser pago ou cancelado; o pagamento dele baixa como antes. Enquanto o Inter não termina de emitir a cobrança (situação "a receber"), ela fica **em preparação**: o painel mostra o selo, o link de pagamento mostra "Seu PIX está sendo preparado pelo banco. Esta página atualiza sozinha." e a área do cliente mostra a mesma frase. Nunca se gera outra cobrança para o mesmo título: gerar de novo devolve o mesmo estado.
+- **Cancelar PIX da Ideal Birô:** o sistema cancela no banco em que o PIX foi gerado (C6 ou Inter). O PIX do C6 só fica cancelado no sistema quando o banco confirma, igual ao da Ideal Gráfica e da E3 Brindes.
 - PIX, boleto e cartão nascem com vencimento em 3 dias. No faturado, o primeiro vencimento segue a condição de pagamento escolhida.
 - **Faturado com entrada**: a entrada tem de ser maior que zero e menor que o total, e entrada + restante = total da proposta, ao centavo. Só vale para proposta sem cobrança ativa e não inclui débito antigo do cliente. Enquanto a entrada não for paga, o pedido não é liberado: a Conferência só confirma quando a soma paga cobre o total, como acontece quando as duas cobranças são criadas uma a uma.
 - A liberação automática do faturado só vale para **Faturado**, e só quando o limite cobre o valor somado aos faturamentos ainda pendentes do cliente, não há faturamento vencido e o cliente não tem restrição. Fora disso a cobrança espera o financeiro.
@@ -402,6 +404,9 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/features/orcamentos/components/DiferencaFinanceiraModal.tsx`
 - `src/features/orcamentos/services/frete-desatualizado.ts`
 - `src/features/cobrancas/PropostaCobrancaPanel.tsx`
+- `src/features/cobrancas/lib/banco-pix-biro.ts`
+- `src/features/cobrancas/services/banco-inter.service.ts`
+- `src/features/cobrancas/lib/pix-em-preparacao.ts`
 - `src/features/cobrancas/DiferencaFreteReenvioBox.tsx`
 - `src/features/cobrancas/CobrancaDetail.tsx`
 - `src/features/cobrancas/CobrancaActionsMenu.tsx`
