@@ -7,7 +7,7 @@ import { aplicarStatusRecomendadoProposta } from "@/features/orcamentos/services
 import { avaliarCancelamentoNoServidor } from "@/features/cobrancas/services/cancelamento-elegibilidade.server";
 import { cabecalhosWebhookN8n } from "@/lib/n8n/webhook-segredo";
 import { WEBHOOK_CANCELA_CARTAO_BIRO_C6, webhookCancelaCartaoC6 } from "@/features/cobrancas/lib/cartao-biro";
-import { bancoDoBoletoEmitido, webhookCancelaBoletoAVista, webhookDaBiroC6ComSegredo } from "@/features/cobrancas/lib/banco-boleto-biro";
+import { bancoDoBoletoEmitido, lerCancelamentoBoletoAVistaBiroC6, webhookCancelaBoletoAVista, webhookDaBiroC6ComSegredo } from "@/features/cobrancas/lib/banco-boleto-biro";
 import {
   chamarCancelamentoDePix,
   corpoDoCancelamentoPix,
@@ -471,6 +471,20 @@ export async function POST(request: Request) {
       const responseBody = await webhookResponse.text();
       console.log("[cancelar-externo][BOLETO] status n8n", responseStatus);
       console.log("[cancelar-externo][BOLETO] body n8n", responseBody);
+
+      // Birô no C6 (19/11/2026): só cancela no Vibe com a confirmação do banco;
+      // a recusa do C6 volta com a mensagem dele e o título fica como estava.
+      // Ideal, E3 e Birô no Inter: como antes (só o HTTP).
+      if (webhookDaBiroC6ComSegredo(webhookUrl)) {
+        const decisao = lerCancelamentoBoletoAVistaBiroC6({ ok: webhookResponse.ok, status: responseStatus, texto: responseBody });
+        if (!decisao.cancelou) {
+          console.error("[API][CancelarExterno] C6 (Biro) nao confirmou o cancelamento do boleto:", responseStatus, responseBody);
+          return NextResponse.json(
+            { success: false, code: "BOLETO_NAO_CANCELADO_NO_BANCO", message: decisao.mensagem },
+            { status: webhookResponse.ok ? 409 : responseStatus }
+          );
+        }
+      }
 
       if (!webhookResponse.ok) {
         console.error("[API][CancelarExterno] Erro HTTP no n8n:", responseStatus, responseBody);

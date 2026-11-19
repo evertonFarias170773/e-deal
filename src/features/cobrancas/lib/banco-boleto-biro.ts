@@ -112,6 +112,33 @@ export function webhookConsultaBoletoC6(idEmpresa: number | string | null | unde
   return tituloDaBiroNoC6(idEmpresa, codigo) ? WEBHOOK_CONSULTA_BIRO_C6 : WEBHOOK_CONSULTA_C6;
 }
 
+/**
+ * O que a resposta do cancelamento do à vista da Birô no C6 diz (19/11/2026).
+ *
+ * O fluxo (del-boleto-av-biro-c6) confere o C6: só responde 200 com
+ * `{ success: true, cancelado: true }` quando o banco cancelou; a recusa vem como
+ * 409 `{ success: false, message: "O C6 recusou o cancelamento: <motivo>" }`.
+ * Aqui a regra é a mesma do PIX do C6: só cancela no Vibe com a confirmação.
+ * Sem confirmação (corpo estranho, 2xx sem `cancelado: true`), NÃO cancela.
+ */
+export function lerCancelamentoBoletoAVistaBiroC6(resposta: { ok: boolean; status: number; texto: string }): { cancelou: boolean; mensagem: string } {
+  let corpo: Record<string, unknown> = {};
+  try {
+    const lido = JSON.parse(resposta.texto || "{}");
+    corpo = (Array.isArray(lido) ? lido[0] : lido) ?? {};
+  } catch {
+    corpo = {};
+  }
+  if (resposta.ok && corpo.cancelado === true) return { cancelou: true, mensagem: "" };
+  const doBanco = String(corpo.message ?? corpo.detalheErro ?? "").trim();
+  return {
+    cancelou: false,
+    mensagem: doBanco
+      ? `${doBanco} O boleto continua ativo: nada foi alterado no sistema.`
+      : "O banco não confirmou o cancelamento do boleto. O boleto continua ativo: nada foi alterado no sistema."
+  };
+}
+
 /** Os webhooks do fluxo novo da Birô chamados pelo servidor exigem o cabeçalho do segredo. */
 export function webhookDaBiroC6ComSegredo(url: string): boolean {
   return [WEBHOOK_BOLETO_AVISTA_BIRO_C6, WEBHOOK_CANCELA_AVISTA_BIRO_C6, WEBHOOK_FATURADO_BIRO_C6, WEBHOOK_CANCELA_FATURADO_BIRO_C6].includes(url);

@@ -152,5 +152,41 @@ confere("combinada: webhook do boleto pela empresa, segredo só no da Birô", /c
 const cr = readFileSync("src/features/contas-a-receber/ContasReceberPage.tsx", "utf8");
 confere("Contas a Receber: rótulo do banco pelo código do título", /const cancelNoInter = bancoDoBoletoEmitido\(/.test(cr) && /const cancelBanco = cancelNoInter \? "Banco Inter" : "C6 Bank";/.test(cr));
 
+console.log("== G. cancelamento do à vista da Birô no C6 confere o banco (rota cancelar-externo, dublê do n8n)");
+{
+  const { POST: cancelarExterno } = await import("../../src/app/api/cobrancas/cancelar-externo/route.ts");
+  const cobranca = (extra: Record<string, unknown>) => ({ id: "c0000000-0000-0000-0000-0000000000b1", id_int: 25282, id_cliente: 14, id_pagamento: "25282-X", descricao: "Boleto de teste",
+    status: "A_RECEBER", confirmado: false, paid_at: null, data_confirmacao: null, tipo_cobranca: "BOLETO", cod_solicitacao_inter: COD_C6, id_empresa: 2,
+    reserva_estado: null, id_pendencia: null, chave_reserva: null, valor: 10, ...extra });
+  async function cancelar(c: Record<string, unknown>, resposta: { status: number; corpo: unknown }) {
+    falso.zerar();
+    falso.responder("usuarios:select", { data: { id_perfil: 1, id_empresa: 1, is_super_adm: true, is_admin: true, nome_usuario: "Teste" }, error: null });
+    falso.responder("pagamentos_v2:select", { data: Object.assign([c], c), error: null });
+    falso.responder("pagamentos_v2:update", { data: null, error: null });
+    falso.responder("boletos:select", { data: [], error: null });
+    falso.responder("boletos:update", { data: null, error: null });
+    falso.responder("propostas:select", { data: { id_int: 25282, status_interno: "AGUARDANDO", is_prd_aprovado: false, is_avulso: true, valor_total: 100, empresa: "X", vendedor: "Y" }, error: null });
+    falso.responder("propostas_chat:insert", { data: null, error: null });
+    n8nResponde(resposta.corpo, resposta.status);
+    const res = await cancelarExterno(new Request("http://localhost/api/cobrancas/cancelar-externo", { method: "POST", headers: { "content-type": "application/json", authorization: "Bearer t" },
+      body: JSON.stringify({ id: c.id, id_int: c.id_int, tipo_cobranca: "BOLETO", acao_local: "CANCEL", cod_c6: c.cod_solicitacao_inter, id_empresa: c.id_empresa, motivo: "teste" }) }));
+    const corpo = (await res.json()) as Record<string, unknown>;
+    const cancelou = falso.chamadas.some((x) => x.tabela === "pagamentos_v2" && x.op === "update" && (x.payload as Record<string, unknown>)?.status === "CANCELADO");
+    return { status: res.status, corpo, cancelou, url: chamadas[0]?.url, segredo: chamadas[0]?.cabecalhos["x-vibe-webhook-secret"] };
+  }
+  const recusa = { status: 409, corpo: { success: false, message: "O C6 recusou o cancelamento: [BoletoClient]: Título com pendência(s) ou em situação no qual não possibilita alterações." } };
+  const r1 = await cancelar(cobranca({}), recusa);
+  confere("recusa do C6: Vibe NÃO cancela, responde 409 com a mensagem do banco", !r1.cancelou && r1.status === 409 && r1.corpo.code === "BOLETO_NAO_CANCELADO_NO_BANCO" && /Título com pendência/.test(String(r1.corpo.message)) && /continua ativo/.test(String(r1.corpo.message)), r1);
+  confere("recusa do C6: foi ao del-boleto-av-biro-c6 com o segredo", r1.url === b.WEBHOOK_CANCELA_AVISTA_BIRO_C6 && r1.segredo === "segredo-de-teste", r1);
+  const r2 = await cancelar(cobranca({}), { status: 200, corpo: { success: true, cancelado: true, cod_C6: COD_C6 } });
+  confere("sucesso do C6 (cancelado: true): Vibe cancela", r2.cancelou && r2.status === 200, r2);
+  const r3 = await cancelar(cobranca({}), { status: 200, corpo: { success: true } });
+  confere("200 sem 'cancelado: true': Vibe NÃO cancela (sem confirmação)", !r3.cancelou && r3.status === 409, r3);
+  const r4 = await cancelar(cobranca({ id_empresa: 1 }), { status: 200, corpo: {} });
+  confere("Ideal: igual a hoje (HTTP 200 cancela, no del-boleto-av-vibe)", r4.cancelou && r4.url === `${N8N}/del-boleto-av-vibe`, r4);
+  const r5 = await cancelar(cobranca({ cod_solicitacao_inter: UUID_INTER }), { status: 200, corpo: {} });
+  confere("Birô no Inter: igual a hoje (HTTP 200 cancela, no cancela-boleto-inter-biro)", r5.cancelou && r5.url === `${N8N}/cancela-boleto-inter-biro`, r5);
+}
+
 console.log(falhas ? `\n${falhas} FALHA(S)` : "\nTudo certo.");
 process.exit(falhas ? 1 : 0);
