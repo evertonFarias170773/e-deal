@@ -8,7 +8,18 @@
  * depois. Sem migration: o estado sai das colunas que já existem.
  *
  * Nunca se cria outra cobrança no Inter para um título nesse estado.
+ *
+ * Só vale para título do INTER (código UUID, 18/11/2026): o PIX da Birô no C6
+ * nasce com o QR na resposta, como o da Ideal, e código do C6 sem QR é o mesmo
+ * "emitido sem QR" das outras empresas.
  */
+import { bancoDoCodigoPix } from "@/features/cobrancas/lib/banco-pix-biro";
+
+/** Título da Birô no Inter: o único que pode ficar "em preparação". */
+export function pixDaBiroNoInter(idEmpresa: number | string | null | undefined, codigo: string | null | undefined): boolean {
+  return Number(idEmpresa) === 2 && bancoDoCodigoPix(codigo) === "INTER";
+}
+
 export const CODIGO_PIX_EM_PREPARACAO = "PIX_EM_PREPARACAO";
 export const MENSAGEM_PIX_EM_PREPARACAO = "Seu PIX está sendo preparado pelo banco. Esta página atualiza sozinha.";
 export const SELO_PIX_EM_PREPARACAO = "PIX em preparação no banco";
@@ -30,7 +41,7 @@ export function pixEmPreparacao(c: CobrancaComPix): boolean {
   return (
     String(c.tipo_cobranca ?? "").toUpperCase() === "PIX" &&
     Number(c.id_empresa) === EMPRESA_BIRO &&
-    preenchido(c.cod_solicitacao_inter) &&
+    bancoDoCodigoPix(c.cod_solicitacao_inter) === "INTER" &&
     !preenchido(c.pix_copia_cola) &&
     status !== "PAID" &&
     status !== "CANCELADO"

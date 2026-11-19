@@ -2,6 +2,7 @@ import crypto from "crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { gerarPixBancoInter } from "@/features/cobrancas/services/banco-inter.service";
+import { pixDaBiroNoInter } from "@/features/cobrancas/lib/pix-em-preparacao";
 import { calcularSituacaoQuitacaoProposta } from "@/features/cobrancas/services/conferencia-financeira.service";
 import {
   EMPRESAS_RECEBEDORAS_FIXAS,
@@ -666,7 +667,7 @@ export async function iniciarPagamentoAreaCliente(
         // Mesma regra de gerar-pix: emitida no banco sem QR — nunca reemitir.
         // Birô: é o PIX EM PREPARAÇÃO (04/11/2026). A página mostra a cobrança
         // sem QR e se atualiza sozinha quando o aviso A_RECEBER gravar o código.
-        if (idEmpresa === 2) return { ok: true, cobranca: paraPublica(linha), reaproveitada };
+        if (pixDaBiroNoInter(idEmpresa, linha.cod_solicitacao_inter)) return { ok: true, cobranca: paraPublica(linha), reaproveitada };
         return {
           ok: false,
           codigo: "PIX_EMITIDO_SEM_QR",

@@ -1,4 +1,6 @@
 import { SupabaseClient } from "@supabase/supabase-js";
+import { EMPRESA_BIRO, WEBHOOK_GERA_PIX_BIRO_C6, bancoDoPixNovoDaBiro } from "@/features/cobrancas/lib/banco-pix-biro";
+import { cabecalhosWebhookN8n } from "@/lib/n8n/webhook-segredo";
 
 export interface GerarPixParams {
   cobrancaId: string;
@@ -100,9 +102,18 @@ export async function gerarPixBancoInter(
     cep: cepDigits
   };
 
+  // Birô no C6 (chave BANCO_BIRO, 18/11/2026): fluxo próprio, com o cabeçalho
+  // do segredo, e resposta no formato do C6 (a mesma do ramo Ideal). Com a
+  // chave em INTER (padrão), nada muda.
+  const biroNoC6 = idEmpresa === EMPRESA_BIRO && bancoDoPixNovoDaBiro() === "C6";
+  /** A resposta vem no formato do Inter (só a Birô pelo Inter). */
+  const respostaDoInter = idEmpresa === EMPRESA_BIRO && !biroNoC6;
+
   let webhookUrl = "";
   if (idEmpresa === 1) {
     webhookUrl = "https://10074.hostoo.net.br/webhook/vibe-ideal";
+  } else if (biroNoC6) {
+    webhookUrl = WEBHOOK_GERA_PIX_BIRO_C6;
   } else if (idEmpresa === 2) {
     webhookUrl = "https://10074.hostoo.net.br/webhook/vibe-biro";
   } else if (idEmpresa === 3) {
@@ -123,7 +134,7 @@ export async function gerarPixBancoInter(
     try {
       webhookResponse = await fetch(webhookUrl, {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: biroNoC6 ? cabecalhosWebhookN8n() : { "content-type": "application/json" },
         body: JSON.stringify(webhookBody),
         ...(limite ? { signal: limite.signal } : {})
       });
@@ -180,7 +191,7 @@ export async function gerarPixBancoInter(
       return { success: false, error: "Resposta do Banco Inter vazia." };
     }
 
-    if (idEmpresa === 2) {
+    if (respostaDoInter) {
       const cobrancaObj = webhookResult.cobranca as Record<string, unknown> | undefined;
       const codSolicitacao = cobrancaObj?.codigoSolicitacao as string | undefined;
       const pixObj = webhookResult.pix as Record<string, unknown> | undefined;

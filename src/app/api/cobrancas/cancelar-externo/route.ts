@@ -583,7 +583,7 @@ export async function POST(request: Request) {
         corpo: corpoDoCancelamentoPix({ codigoDoBanco: codC6Final, idEmpresa: idEmpresaCobranca }),
         cabecalhos: cabecalhosWebhookN8n()
       });
-      const decisaoPix = decidirCancelamentoDePix(idEmpresaCobranca, respostaPix);
+      const decisaoPix = decidirCancelamentoDePix(idEmpresaCobranca, respostaPix, codC6Final);
 
       // Sem dado de cliente: empresa, regra e desfecho. O corpo da resposta vai
       // cortado, só para diagnóstico do formato.

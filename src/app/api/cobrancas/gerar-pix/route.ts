@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { gerarPixBancoInter } from "@/features/cobrancas/services/banco-inter.service";
 import { recusaPorPedidoEntreguePelaCobranca } from "@/features/orcamentos/services/pedido-entregue";
-import { CODIGO_PIX_EM_PREPARACAO, MENSAGEM_PIX_EM_PREPARACAO } from "@/features/cobrancas/lib/pix-em-preparacao";
+import { CODIGO_PIX_EM_PREPARACAO, MENSAGEM_PIX_EM_PREPARACAO, pixDaBiroNoInter } from "@/features/cobrancas/lib/pix-em-preparacao";
 
 /** PIX da Birô aceito pelo Inter e ainda sem QR: sucesso em preparação (04/11/2026). */
 function respostaEmPreparacao(id: string, codSolicitacao: string) {
@@ -161,7 +161,7 @@ export async function POST(request: Request) {
   if (cobranca.cod_solicitacao_inter) {
     // Birô: a cobrança está EM PREPARAÇÃO no Inter (o QR chega pelo aviso
     // A_RECEBER). Nunca se cria outra: responde o mesmo estado (04/11/2026).
-    if (Number(cobranca.id_empresa) === 2) {
+    if (pixDaBiroNoInter(cobranca.id_empresa, cobranca.cod_solicitacao_inter)) {
       return respostaEmPreparacao(cobranca.id, cobranca.cod_solicitacao_inter);
     }
     return NextResponse.json(

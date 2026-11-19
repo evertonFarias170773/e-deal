@@ -628,7 +628,7 @@ export async function POST(request: Request) {
       }),
       cabecalhos: cabecalhosWebhookN8n()
     });
-    const decisao = decidirCancelamentoDePix(Number(pagamento.id_empresa), resposta);
+    const decisao = decidirCancelamentoDePix(Number(pagamento.id_empresa), resposta, String(pagamento.cod_solicitacao_inter));
     console.log("[trocar-forma-pagamento][PIX] banco", {
       id_empresa: pagamento.id_empresa,
       desfecho: decisao.desfecho,

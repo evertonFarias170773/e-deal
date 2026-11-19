@@ -145,7 +145,7 @@ const area = readFileSync("src/app/p/[token]/area-cliente-view.tsx", "utf8");
 const areaServ = readFileSync("src/features/area-cliente/services/area-cliente.server.ts", "utf8");
 const publica = readFileSync("supabase/functions/pagamento-publico/index.ts", "utf8");
 confere("painel: selo nas duas listas e recarga de 15 s", (painel.match(/\{SELO_PIX_EM_PREPARACAO\}/g) ?? []).length === 2 && /setInterval\(\(\) => void refreshCobrancas\(\), 15_000\)/.test(painel));
-confere("área do cliente: devolve a cobrança em preparação e mostra a mensagem", /if \(idEmpresa === 2\) return \{ ok: true, cobranca: paraPublica\(linha\), reaproveitada \}/.test(areaServ) && /MENSAGEM_PIX_EM_PREPARACAO/.test(area));
+confere("área do cliente: devolve a cobrança em preparação e mostra a mensagem", /if \(pixDaBiroNoInter\(idEmpresa, linha\.cod_solicitacao_inter\)\) return \{ ok: true, cobranca: paraPublica\(linha\), reaproveitada \}/.test(areaServ) && /MENSAGEM_PIX_EM_PREPARACAO/.test(area));
 confere("pagamento-publico: mensagem sem QR, nunca QR com 'null'", /Seu PIX está sendo preparado pelo banco\. Esta página atualiza sozinha\./.test(publica) && /: !pagamento\.pix_copia_cola\s*\?/.test(publica));
 confere("pagamento-publico: recarrega quando o copia e cola aparecer", /tem_pix: Boolean\(pagamento\.pix_copia_cola\)/.test(publica) && /PIX_EM_PREPARACAO && data\.tem_pix/.test(publica));
 

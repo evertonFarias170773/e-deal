@@ -38,10 +38,25 @@
  *   Isto só passa a destravar a tela quando o n8n devolver o status no corpo —
  *   a correção do nó está descrita em scratch/cancelar-pix-no-banco.
  *
+ * BIRÔ NO C6 (18/11/2026)
+ *   O banco de um PIX da Birô sai do FORMATO do código gravado (UUID = Inter,
+ *   txid de 26 a 35 = C6), nunca da chave BANCO_BIRO: os títulos do Inter seguem
+ *   lá até o último. PIX da Birô no C6 cancela pelo fluxo próprio
+ *   (`del-pix-biro-c6`) e exige a mesma confirmação do banco que a Ideal e a E3.
+ *
  * Sem `next/server` e sem variável de ambiente: roda em teste.
  */
 
+import { WEBHOOK_CANCELA_PIX_BIRO_C6, EMPRESA_BIRO, bancoDoPixEmitido } from "@/features/cobrancas/lib/banco-pix-biro";
+
 export const WEBHOOK_CANCELA_PIX = "https://10074.hostoo.net.br/webhook/del-pix-vibe";
+
+/** Webhook que cancela este PIX: o da Birô no C6 só para título da Birô com código do C6. */
+export function webhookDoCancelamentoPix(idEmpresa: number | null | undefined, codigoDoBanco: string | null | undefined): string {
+  return Number(idEmpresa) === EMPRESA_BIRO && bancoDoPixEmitido(idEmpresa, codigoDoBanco) === "C6"
+    ? WEBHOOK_CANCELA_PIX_BIRO_C6
+    : WEBHOOK_CANCELA_PIX;
+}
 
 /** Teto da chamada ao n8n. Estouro deixa a cobrança ativa. */
 export const TEMPO_LIMITE_CANCELAMENTO_PIX_MS = 25_000;
@@ -67,14 +82,14 @@ export const STATUS_PIX_REMOVIDO = "REMOVIDA_PELO_USUARIO_RECEBEDOR";
 export const STATUS_PIX_PAGO = "CONCLUIDA";
 export const STATUS_PIX_ATIVO = "ATIVA";
 
-/** Empresa cujo PIX sai pelo Banco Inter. As outras (1 e 3) saem pelo C6. */
-const EMPRESA_INTER = 2;
-
 export type RegraDoCancelamentoPix = "CONFIRMACAO_DO_BANCO" | "HTTP";
 
-/** A regra que DECIDE, por empresa, neste passo. */
-export function regraDoCancelamentoPix(idEmpresa: number | null | undefined): RegraDoCancelamentoPix {
-  return Number(idEmpresa) === EMPRESA_INTER ? "HTTP" : "CONFIRMACAO_DO_BANCO";
+/**
+ * A regra que DECIDE: PIX do Inter (Birô com código UUID, ou sem código) pelo
+ * HTTP, como antes; PIX do C6 (Ideal, E3 e Birô com txid do C6) pela confirmação.
+ */
+export function regraDoCancelamentoPix(idEmpresa: number | null | undefined, codigoDoBanco?: string | null): RegraDoCancelamentoPix {
+  return bancoDoPixEmitido(idEmpresa, codigoDoBanco) === "INTER" ? "HTTP" : "CONFIRMACAO_DO_BANCO";
 }
 
 /** O corpo do webhook: os dois campos de sempre, na mesma forma, mais o motivo fixo. */
@@ -101,8 +116,10 @@ export async function chamarCancelamentoDePix(entrada: {
   const buscar = entrada.buscar ?? fetch;
   const controle = new AbortController();
   const relogio = setTimeout(() => controle.abort(), entrada.tempoLimiteMs ?? TEMPO_LIMITE_CANCELAMENTO_PIX_MS);
+  // O destino sai do próprio corpo (empresa e código), o mesmo que vai ao n8n.
+  const url = webhookDoCancelamentoPix(Number(entrada.corpo.id_empresa), String(entrada.corpo.cod_validador ?? ""));
   try {
-    const resposta = await buscar(WEBHOOK_CANCELA_PIX, {
+    const resposta = await buscar(url, {
       method: "POST",
       headers: entrada.cabecalhos,
       body: JSON.stringify(entrada.corpo),
@@ -171,8 +188,12 @@ export type DecisaoDoCancelamentoPix = {
     | "HTTP_OK_SEM_CONFERIR";
 };
 
-export function decidirCancelamentoDePix(idEmpresa: number | null | undefined, resposta: RespostaDoWebhookPix): DecisaoDoCancelamentoPix {
-  const regra = regraDoCancelamentoPix(idEmpresa);
+export function decidirCancelamentoDePix(
+  idEmpresa: number | null | undefined,
+  resposta: RespostaDoWebhookPix,
+  codigoDoBanco?: string | null
+): DecisaoDoCancelamentoPix {
+  const regra = regraDoCancelamentoPix(idEmpresa, codigoDoBanco);
 
   // Sem resposta: ninguém cancela, em regra nenhuma. O estado no banco é desconhecido.
   if (resposta.tipo === "INDISPONIVEL") {
