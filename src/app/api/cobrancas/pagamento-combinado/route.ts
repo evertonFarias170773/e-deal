@@ -8,6 +8,8 @@ import { mensagemPermissaoCombinado, permissoesDoPagamentoCombinado } from "@/fe
 import { calcularSituacaoQuitacaoProposta } from "@/features/cobrancas/services/conferencia-financeira.service";
 import { gerarPixBancoInter } from "@/features/cobrancas/services/banco-inter.service";
 import { empresaTemCartaoC6 } from "@/features/cobrancas/lib/cartao-biro";
+import { boletoBiroNoC6, webhookBoletoAVista, webhookDaBiroC6ComSegredo } from "@/features/cobrancas/lib/banco-boleto-biro";
+import { cabecalhosWebhookN8n } from "@/lib/n8n/webhook-segredo";
 import { recusaDoGatilhoNoErro, recusaDoTipoNoPedido } from "@/features/cobrancas/lib/tipo-x-retrabalho";
 import { lerContextoRetrabalhoDoPedido } from "@/features/cobrancas/services/tipo-x-retrabalho.service";
 import { CODIGO_PEDIDO_ENTREGUE, MENSAGEM_PEDIDO_ENTREGUE, statusEhEntregue } from "@/features/orcamentos/services/pedido-entregue";
@@ -232,8 +234,9 @@ export async function POST(request: NextRequest) {
     const isBoletoSecundario = tipoSecundario === "BOLETO";
     const isCartaoSecundario = tipoSecundario === "CARD_PARCELADO";
 
-    // Cartão da Birô: só com a chave CARTAO_BIRO (lib/cartao-biro). Boleto da Birô segue recusado.
-    if ((isBoletoSecundario || (isCartaoSecundario && !empresaTemCartaoC6(2))) && idEmpresaReal === 2) {
+    // Cartão da Birô: só com a chave CARTAO_BIRO (lib/cartao-biro). Boleto da Birô:
+    // só com a chave BOLETO_BIRO (lib/banco-boleto-biro), que leva ao C6.
+    if (((isBoletoSecundario && !boletoBiroNoC6()) || (isCartaoSecundario && !empresaTemCartaoC6(2))) && idEmpresaReal === 2) {
       return NextResponse.json(
         { success: false, error: `Geração de ${isBoletoSecundario ? "boleto" : "cartão de crédito"} real não disponível para a empresa Ideal Birô.` },
         { status: 400 }
@@ -662,9 +665,12 @@ export async function POST(request: NextRequest) {
         };
 
         try {
-          const boletoResponse = await fetch("https://10074.hostoo.net.br/webhook/boleto-avista-vibe", {
+          // Ideal e E3: boleto-avista-vibe, como antes. Birô (só chega aqui com a
+          // chave BOLETO_BIRO ligada): fluxo próprio no C6, com o segredo.
+          const webhookBoleto = webhookBoletoAVista(idEmpresaReal);
+          const boletoResponse = await fetch(webhookBoleto, {
             method: "POST",
-            headers: { "content-type": "application/json" },
+            headers: webhookDaBiroC6ComSegredo(webhookBoleto) ? cabecalhosWebhookN8n() : { "content-type": "application/json" },
             body: JSON.stringify(boletoWebhookPayload)
           });
 

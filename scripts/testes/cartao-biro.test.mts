@@ -95,7 +95,7 @@ confere("painel: disponibilidade e mensagem pela regra", (painel.match(/empresaT
 confere("painel: Birô sem a chave segue recusada no envio", /form\.tipoCobranca === "CARD_PARCELADO" && idEmpresaReal === 2 && !empresaTemCartaoC6\(2\)/.test(painel));
 confere("painel: Asaas segue só da empresa 1", /if \(opcaoId === "CARD_ASAS"\) return idEmpresa === EMPRESA_CARTAO_ASAAS;/.test(painel) && vibe.EMPRESA_CARTAO_ASAAS === 1);
 const comb = readFileSync("src/app/api/cobrancas/pagamento-combinado/route.ts", "utf8");
-confere("combinada: cartão da Birô pela regra; boleto da Birô segue recusado", /\(isBoletoSecundario \|\| \(isCartaoSecundario && !empresaTemCartaoC6\(2\)\)\) && idEmpresaReal === 2/.test(comb));
+confere("combinada: cartão da Birô pela regra (o boleto da Birô segue a chave BOLETO_BIRO)", /\(\(isBoletoSecundario && !boletoBiroNoC6\(\)\) \|\| \(isCartaoSecundario && !empresaTemCartaoC6\(2\)\)\) && idEmpresaReal === 2/.test(comb));
 const area = readFileSync("src/features/area-cliente/services/area-cliente.server.ts", "utf8");
 confere("área do cliente: cartão pela regra", /cartao: idEmpresa != null && empresaTemCartaoC6\(idEmpresa\)/.test(area) && !/EMPRESAS_COM_CARTAO\.has/.test(area));
 const canc = readFileSync("src/app/api/cobrancas/cancelar-externo/route.ts", "utf8");

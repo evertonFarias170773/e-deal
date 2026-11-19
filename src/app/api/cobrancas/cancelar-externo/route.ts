@@ -7,6 +7,7 @@ import { aplicarStatusRecomendadoProposta } from "@/features/orcamentos/services
 import { avaliarCancelamentoNoServidor } from "@/features/cobrancas/services/cancelamento-elegibilidade.server";
 import { cabecalhosWebhookN8n } from "@/lib/n8n/webhook-segredo";
 import { WEBHOOK_CANCELA_CARTAO_BIRO_C6, webhookCancelaCartaoC6 } from "@/features/cobrancas/lib/cartao-biro";
+import { bancoDoBoletoEmitido, webhookCancelaBoletoAVista, webhookDaBiroC6ComSegredo } from "@/features/cobrancas/lib/banco-boleto-biro";
 import {
   chamarCancelamentoDePix,
   corpoDoCancelamentoPix,
@@ -40,11 +41,13 @@ const MARCADOR_CARTAO_ASAAS = "Cartão Asas";
  * A empresa 2 (Ideal Birô) emite pelo Banco Inter e tem fluxo de cancelamento
  * próprio. As empresas 1 e 3 seguem no C6, com o mesmo endpoint e o mesmo
  * comportamento de antes — inclusive quando `id_empresa` vier nulo.
+ *
+ * Birô no C6 (19/11/2026): o banco do título sai do FORMATO do código gravado
+ * (UUID = Inter; 26 a 35 sem hífen = C6), nunca da chave BOLETO_BIRO. Título da
+ * Birô no C6 cancela pelo fluxo próprio (`del-boleto-av-biro-c6`, com segredo).
  */
-export function resolverWebhookCancelamentoBoleto(idEmpresa: number | null | undefined): string {
-  return Number(idEmpresa) === 2
-    ? "https://10074.hostoo.net.br/webhook/cancela-boleto-inter-biro"
-    : "https://10074.hostoo.net.br/webhook/del-boleto-av-vibe";
+export function resolverWebhookCancelamentoBoleto(idEmpresa: number | null | undefined, codigo?: string | null): string {
+  return webhookCancelaBoletoAVista(idEmpresa, codigo);
 }
 
 type PagamentoRow = {
@@ -450,17 +453,17 @@ export async function POST(request: Request) {
       // Mantê-lo duplicaria a regra nos dois lugares que esta spec existe para
       // unificar.
 
-      const webhookUrl = resolverWebhookCancelamentoBoleto(idEmpresaCobranca);
+      const webhookUrl = resolverWebhookCancelamentoBoleto(idEmpresaCobranca, codC6Final);
       console.log("[cancelar-externo][BOLETO] chamando n8n", {
         cod_C6: codC6Final,
         id_empresa: idEmpresaCobranca,
-        provedor: Number(idEmpresaCobranca) === 2 ? "Inter (Biro)" : "C6",
+        provedor: bancoDoBoletoEmitido(idEmpresaCobranca, codC6Final) === "INTER" ? "Inter (Biro)" : Number(idEmpresaCobranca) === 2 ? "C6 (Biro)" : "C6",
         webhookUrl
       });
 
       const webhookResponse = await fetch(webhookUrl, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: webhookDaBiroC6ComSegredo(webhookUrl) ? cabecalhosWebhookN8n() : { "Content-Type": "application/json" },
         body: JSON.stringify({ cod_C6: codC6Final, id_empresa: idEmpresaCobranca })
       });
 

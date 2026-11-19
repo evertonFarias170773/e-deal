@@ -15,12 +15,17 @@
  *
  * Spec: docs/superpowers/specs/2026-08-25-cancelamento-cobranca-refaturamento-design.md
  */
+import { bancoDoBoletoEmitido } from "@/features/cobrancas/lib/banco-boleto-biro";
 
 /** Provedor que emitiu a recusa, pela empresa recebedora. */
 export type ProvedorTitulo = "C6" | "INTER";
 
-export function provedorDaEmpresa(idEmpresa: number | null | undefined): ProvedorTitulo {
-  return Number(idEmpresa) === 2 ? "INTER" : "C6";
+/**
+ * Banco do título. Ideal e E3: C6. Birô: pelo FORMATO do código do título
+ * (19/11/2026, Birô no C6); sem código, Inter, como antes.
+ */
+export function provedorDaEmpresa(idEmpresa: number | null | undefined, codigo?: string | null): ProvedorTitulo {
+  return bancoDoBoletoEmitido(idEmpresa, codigo);
 }
 
 /**

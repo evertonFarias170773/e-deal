@@ -43,6 +43,7 @@
  * apaga a linha do título, e o desenho teria de ser outro.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { tituloDaBiroNoC6 } from "@/features/cobrancas/lib/banco-boleto-biro";
 
 export const EMPRESA_BIRO = 2;
 
@@ -103,7 +104,8 @@ const dia = (valor: unknown) => texto(valor).slice(0, 10);
  */
 export function motivoDeNaoRefazer(linha: Record<string, unknown>, hoje: string): string | null {
   if (linha.deposito_conta) return "Depósito em conta não tem boleto para refazer.";
-  if (Number(linha.id_empresa) === EMPRESA_BIRO) {
+  // Birô: só o título do Inter fica de fora; o da Birô no C6 (19/11/2026) refaz como a Ideal.
+  if (Number(linha.id_empresa) === EMPRESA_BIRO && !tituloDaBiroNoC6(EMPRESA_BIRO, texto(linha.id_boleto_c6))) {
     return "O Refazer boleto ainda não vale para a Ideal Birô (Banco Inter).";
   }
   const status = texto(linha.status).toUpperCase();

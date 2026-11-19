@@ -139,7 +139,7 @@ export async function POST(request: Request) {
 
   // 4. Só C6. Ver o cabeçalho: sem consulta de pagamento do Inter, aceitar a
   //    recusa da Birô seria adivinhação.
-  if (provedorDaEmpresa(boleto.id_empresa) !== "C6") {
+  if (provedorDaEmpresa(boleto.id_empresa, boleto.id_boleto_c6) !== "C6") {
     return erro(
       "PROVEDOR_SEM_CONSULTA",
       "Título do Banco Inter: não há consulta de pagamento disponível para confirmar que não houve " +

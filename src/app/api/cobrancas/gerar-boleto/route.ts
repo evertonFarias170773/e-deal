@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { recusaPorPedidoEntreguePelaCobranca } from "@/features/orcamentos/services/pedido-entregue";
+import { boletoBiroNoC6, webhookBoletoAVista, webhookDaBiroC6ComSegredo } from "@/features/cobrancas/lib/banco-boleto-biro";
+import { cabecalhosWebhookN8n } from "@/lib/n8n/webhook-segredo";
 
 const soDigitos = (valor: unknown): string => String(valor ?? "").replace(/\D/g, "");
 
@@ -32,14 +34,15 @@ export async function POST(request: Request) {
   // Roteamento por empresa recebedora. A empresa 2 (Ideal Birô) emite pelo
   // Banco Inter; as demais seguem no C6, com o webhook e o comportamento
   // exatamente como estavam.
+  // Birô no C6 (chave BOLETO_BIRO, 19/11/2026): fluxo próprio, com o cabeçalho
+  // do segredo e a mesma resposta do C6 da Ideal. Chave desligada = Inter, como antes.
   const empresaBoleto = String(webhookBody.empresa ?? "").trim();
-  const isBiroInter = empresaBoleto === "2";
+  const isBiroInter = empresaBoleto === "2" && !boletoBiroNoC6();
 
-  const webhookUrl = isBiroInter
-    ? "https://10074.hostoo.net.br/webhook/boleto-inter-biro"
-    : "https://10074.hostoo.net.br/webhook/boleto-avista-vibe";
+  const webhookUrl = webhookBoletoAVista(empresaBoleto);
+  const comSegredo = webhookDaBiroC6ComSegredo(webhookUrl);
 
-  const rotuloProvedor = isBiroInter ? "Inter (Biro)" : "C6";
+  const rotuloProvedor = isBiroInter ? "Inter (Biro)" : empresaBoleto === "2" ? "C6 (Biro)" : "C6";
 
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -156,9 +159,7 @@ export async function POST(request: Request) {
   try {
     const webhookResponse = await fetch(webhookUrl, {
       method: "POST",
-      headers: {
-        "content-type": "application/json"
-      },
+      headers: comSegredo ? cabecalhosWebhookN8n() : { "content-type": "application/json" },
       body: JSON.stringify(webhookBody)
     });
 

@@ -22,6 +22,7 @@
  * `{ success: false, message }`. A baixa no ERP continua sendo de quem chamou.
  */
 import { mensagemDoRetornoBancario } from "@/features/cobrancas/services/boleto-c6";
+import { webhookCancelaFaturadoC6 } from "@/features/cobrancas/lib/banco-boleto-biro";
 
 export const WEBHOOK_CANCELA_C6_FATURADO = "https://10074.hostoo.net.br/webhook/del-boleto-vibe";
 
@@ -115,8 +116,11 @@ export async function cancelarTituloNoC6(entrada: {
   const controle = new AbortController();
   const relogio = setTimeout(() => controle.abort(), entrada.tempoLimiteMs ?? TEMPO_LIMITE_CANCELAMENTO_C6_MS);
 
+  // O destino sai da empresa do próprio corpo: Birô (no C6) vai a del-boleto-biro-c6
+  // (19/11/2026); Ideal e E3 seguem no del-boleto-vibe.
+  const url = webhookCancelaFaturadoC6(Number(entrada.corpo.id_empresa));
   try {
-    const resposta = await buscar(WEBHOOK_CANCELA_C6_FATURADO, {
+    const resposta = await buscar(url, {
       method: "POST",
       headers: entrada.cabecalhos,
       body: JSON.stringify(entrada.corpo),

@@ -15,6 +15,7 @@ import {
   type ResultadoDoRegistro,
   type TituloLido
 } from "@/features/cobrancas/services/registro-inter";
+import { registroFaturadoNoC6, webhookFaturadoC6 } from "@/features/cobrancas/lib/banco-boleto-biro";
 
 /**
  * Registro bancário de um título faturado do Registro de Recebíveis.
@@ -37,8 +38,16 @@ import {
  */
 
 const WEBHOOK_BIRO_FATURADO = "https://10074.hostoo.net.br/webhook/biro-faturado-inter";
-/** C6, empresas 1 e 3. Exige o cabeçalho do segredo (`cabecalhosWebhookN8n`). */
-const WEBHOOK_C6_FATURADO = "https://10074.hostoo.net.br/webhook/boletos-vibe";
+
+/**
+ * Birô no C6 (19/11/2026): com a chave BOLETO_BIRO ligada, o título da Birô
+ * ainda sem código do Inter vai ao C6, pelo fluxo próprio (`boletos-biro-c6`),
+ * com o mesmo corpo e a mesma leitura da Ideal e da E3. Título que já tem código
+ * do Inter (UUID) segue no Inter, ligada ou não: nunca se emite o mesmo título
+ * nos dois bancos. Chave desligada = como antes. Regra em lib/banco-boleto-biro.
+ */
+const vaiAoC6 = (boleto: { id_empresa: number | null; id_boleto_c6: string | null }) =>
+  registroFaturadoNoC6(boleto.id_empresa, boleto.id_boleto_c6);
 
 /**
  * Consulta de uma cobrança JÁ criada no Inter, sem criar outra (04/11/2026).
@@ -158,7 +167,8 @@ export async function POST(request: Request) {
   const idEmpresa = Number(boleto.id_empresa);
 
   // Empresas 1 e 3: C6. O mesmo fluxo que o navegador fazia, agora daqui.
-  if (idEmpresa !== EMPRESA_BIRO) {
+  // Birô: C6 só com a chave ligada e título sem código do Inter (vaiAoC6).
+  if (vaiAoC6(boleto)) {
     // 1 a 3. Pagador: e-mail, endereço e documento, do cadastro. A pendência
     //        volta em palavras, como sempre voltou.
     let pagador: Awaited<ReturnType<typeof resolverPagadorDoBoletoC6>>;
@@ -174,7 +184,7 @@ export async function POST(request: Request) {
     // 4. O webhook do n8n, com o corpo de sempre e o cabeçalho do segredo.
     let resposta: Response;
     try {
-      resposta = await fetch(WEBHOOK_C6_FATURADO, {
+      resposta = await fetch(webhookFaturadoC6(idEmpresa), {
         method: "POST",
         headers: cabecalhosWebhookN8n(),
         body: JSON.stringify(montarPayloadBoletoC6(boleto, pagador))

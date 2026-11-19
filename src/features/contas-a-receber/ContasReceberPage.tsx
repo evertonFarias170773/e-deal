@@ -37,6 +37,7 @@ import { RevisarGeracaoBancariaModal } from "./components/RevisarGeracaoBancaria
 import { useCobrancas } from "@/features/cobrancas/CobrancasProvider";
 import { resolverCobrancaDoTitulo } from "@/features/cobrancas/services/cobranca-do-titulo";
 import { estadoDoRegistroBancario } from "@/features/cobrancas/lib/registro-bancario";
+import { bancoDoBoletoEmitido, tituloDaBiroNoC6 } from "@/features/cobrancas/lib/banco-boleto-biro";
 import {
   EMPRESA_BIRO,
   MARCA_SUBSTITUIDO,
@@ -78,7 +79,8 @@ function ofereceRefazer(item: BoletoDepositoMock) {
     item.status !== "PAID" &&
     item.status !== "CANCELADO" &&
     !item.paid_at &&
-    Number(item.id_empresa) !== EMPRESA_BIRO
+    // Birô: só o título do Inter fica de fora (o da Birô no C6 refaz, 19/11/2026).
+    (Number(item.id_empresa) !== EMPRESA_BIRO || tituloDaBiroNoC6(item.id_empresa, String(item.id_boleto_c6 ?? "")))
   );
 }
 
@@ -1251,18 +1253,20 @@ export function ContasReceberPage() {
   // A empresa 2 (Ideal Birô) emite e cancela pelo Banco Inter; as demais seguem
   // no C6. O texto dizia C6 para todas — nomear o banco errado numa confirmação
   // de operação bancária faz o operador duvidar se está cancelando a coisa certa.
-  const cancelBanco = Number(cancelTarget?.id_empresa) === 2 ? "Banco Inter" : "C6 Bank";
-  // O desfecho tambem difere: no fluxo da Birô o workflow exclui a linha do
-  // título, enquanto o legado a mantém marcada como CANCELADO.
+  // Birô no C6 (19/11/2026): o banco sai do código do título, não da empresa.
+  const cancelNoInter = bancoDoBoletoEmitido(cancelTarget?.id_empresa, cancelTarget?.id_boleto_c6 ? String(cancelTarget.id_boleto_c6) : null) === "INTER";
+  const cancelBanco = cancelNoInter ? "Banco Inter" : "C6 Bank";
+  // O desfecho tambem difere: no fluxo da Birô no Inter o workflow exclui a linha
+  // do título, enquanto o do C6 a mantém marcada como CANCELADO.
   const cancelDesfecho =
-    Number(cancelTarget?.id_empresa) === 2
+    cancelNoInter
       ? "o título sai da lista do Contas a Receber"
       : "o título será marcado como CANCELADO no Contas a Receber";
   // Faturado registrado no banco: o aviso diz o que de fato acontece — a parcela
   // sai, a cobrança continua ativa e volta ao Registro de recebíveis, onde os
   // títulos têm de ser lançados de novo. O texto antigo falava só em "marcado
   // como CANCELADO" e o Financeiro cancelava para corrigir um dado do boleto.
-  const cancelEhBiro = Number(cancelTarget?.id_empresa) === EMPRESA_BIRO;
+  const cancelEhBiro = cancelNoInter;
   const cancelAvisoFaturado =
     cancelRegistradoBanco && cancelTarget?.is_faturado
       ? `Esta parcela será cancelada no ${cancelEhBiro ? "Banco Inter" : "C6"} e sai do Contas a Receber` +

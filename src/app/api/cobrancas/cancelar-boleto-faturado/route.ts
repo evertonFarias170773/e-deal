@@ -10,6 +10,7 @@ import {
   corpoDoCancelamentoC6,
   respostaDaRotaParaOCancelamentoC6
 } from "@/features/cobrancas/services/cancelamento-c6";
+import { tituloDaBiroNoC6 } from "@/features/cobrancas/lib/banco-boleto-biro";
 
 /**
  * Cancelamento de UM título faturado do Registro de Recebíveis.
@@ -263,8 +264,10 @@ export async function POST(request: Request) {
   // 4. Empresas 1 e 3 seguem no fluxo legado — o cliente chama o C6. A
   //    delegação passou para DEPOIS das checagens: o que muda para elas nesta
   //    etapa é só isso, ganharem verificação antes de acionar o banco.
-  if (idEmpresa !== EMPRESA_BIRO) {
-    // C6 (empresas 1 e 3). A rota chama o banco; o navegador não chama mais.
+  // Birô no C6 (19/11/2026): pelo FORMATO do código do título, nunca pela chave
+  // BOLETO_BIRO. O webhook (del-boleto-biro-c6) sai de cancelarTituloNoC6.
+  if (idEmpresa !== EMPRESA_BIRO || tituloDaBiroNoC6(idEmpresa, boleto.id_boleto_c6)) {
+    // C6 (empresas 1 e 3, e a Birô no C6). A rota chama o banco; o navegador não chama mais.
     const resultadoC6 = await cancelarTituloNoC6({
       corpo: corpoDoCancelamentoC6(boleto),
       cabecalhos: cabecalhosWebhookN8n()

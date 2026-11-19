@@ -7,6 +7,7 @@ import { mapSupabasePagamentoV2RowToCobranca } from "@/features/cobrancas/mapper
 import { getDataReferenciaCobranca, getEmpresaRecebedoraFixaById, FAMILIA_FATURADO_TIPOS } from "@/features/cobrancas/cobrancas-utils";
 import { resolverUrlPdfBoleto } from "@/lib/boletos/pdf-url";
 import { COBRANCAS_POR_PAGINA, LIMITE_DE_COBRANCAS_NA_CARGA, leituraBateuNoLimite } from "@/features/cobrancas/lib/limite-da-carga";
+import { webhookConsultaBoletoC6 } from "@/features/cobrancas/lib/banco-boleto-biro";
 
 export const PAGAMENTOS_V2_SELECT_COLUMNS = [
   "id",
@@ -973,7 +974,9 @@ export async function listarCobrancasDaProposta(idInt: number): Promise<Cobranca
 }
 
 export async function consultarDetalhesBoletoC6(idBoletoC6: string, idEmpresa: number) {
-  const response = await fetch("https://10074.hostoo.net.br/webhook/consulta-paid-c6", {
+  // Título da Birô no C6 (código do C6) consulta pelo fluxo próprio (19/11/2026);
+  // os demais seguem no consulta-paid-c6, como antes.
+  const response = await fetch(webhookConsultaBoletoC6(idEmpresa, idBoletoC6), {
     method: "POST",
     headers: {
       "Content-Type": "application/json"
