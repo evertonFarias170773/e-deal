@@ -53,7 +53,7 @@ import { DespacharModal } from "./components/DespacharModal";
 import { RetiradaModal } from "./components/RetiradaModal";
 import { VoltarStatusModal } from "./components/VoltarStatusModal";
 import { ReenvioModal } from "./components/ReenvioModal";
-import { podeOferecerReenvio } from "./lib/reenvio";
+import { freteDoEnvioExibido, podeOferecerReenvio } from "./lib/reenvio";
 import { TransportadorasModal } from "./components/TransportadorasModal";
 import { RastreioModal } from "./components/RastreioModal";
 import { CorrigirFreteModal } from "./components/CorrigirFreteModal";
@@ -1370,8 +1370,8 @@ export function ExpedicaoPage() {
                   <span className="text-[11px] text-slate-500">
                     {formatarPeso(p)}
                     {p.volumes !== null ? ` · ${p.volumes} vol` : ""}
-                    {p.freteCobrado !== null && p.freteCobrado > 0
-                      ? ` · ${formatCurrency(p.freteCobrado)}`
+                    {(freteDoEnvioExibido(p) ?? 0) > 0
+                      ? ` · ${formatCurrency(freteDoEnvioExibido(p) ?? 0)}${p.reenvio?.ultimoFrete != null ? " (reenvio)" : ""}`
                       : ""}
                   </span>
                 </div>

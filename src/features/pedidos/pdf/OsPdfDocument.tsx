@@ -7,7 +7,7 @@ import { Document, Page, View, Text, Image, StyleSheet, Font } from "@react-pdf/
 import type { OsPdfViewModel, OsPdfProduto, OsPdfModelo } from "../services/os-viewmodel.service";
 import { textoDeEntrega } from "../lib/instrucoes-entrega";
 import { ordenarSetores } from "../setores";
-import { ROTULO_ESCANINHO, textoDaTarjaDoEscaninho } from "../lib/escaninho";
+import { ROTULO_ESCANINHO, SEM_ESCANINHO_LIVRE, textoDaTarjaDoEscaninho } from "../lib/escaninho";
 
 /**
  * Documento PDF da OS (Boletim de Produção) — layout "OS 2027".
@@ -510,10 +510,12 @@ const styles = StyleSheet.create({
   },
   resumoItemNome: { fontSize: 7, flex: 1, paddingRight: 5, color: "#3f4b58" },
   resumoItemQtd: { fontSize: 7.5, fontFamily: "Helvetica-Bold" },
-  // Tarja vermelha do escaninho de encontro (17/11/2026, lib/escaninho.ts): em
-  // cima do resumo dos demais setores, no mesmo bloco indivisivel.
+  // Tarja do escaninho de encontro (17/11/2026, lib/escaninho.ts): em cima do
+  // resumo dos demais setores, no mesmo bloco indivisivel. 19/11/2026: verde
+  // forte com o nome do escaninho; vermelha (escaninhoTarjaAlerta) so com
+  // SEM ESCANINHO LIVRE.
   escaninhoTarja: {
-    backgroundColor: "#dc2626",
+    backgroundColor: "#15803d",
     borderRadius: 4,
     paddingVertical: 5,
     paddingHorizontal: 8,
@@ -525,6 +527,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center"
   },
+  escaninhoTarjaAlerta: { backgroundColor: "#dc2626" },
   escaninhoRotulo: { fontSize: 9, fontFamily: "Helvetica", color: "#ffffff", paddingRight: 8 },
   escaninhoTexto: { fontSize: 13, fontFamily: "Helvetica-Bold", color: "#ffffff", letterSpacing: 0.5, textAlign: "right" },
   // ── Observações / envio ────────────────────────────────────────────────────
@@ -942,7 +945,13 @@ function ResumoDemaisSetores({
     <View style={styles.produtoCard}>
       <View wrap={false}>
         {escaninho ? (
-          <View style={styles.escaninhoTarja}>
+          <View
+            style={
+              escaninho === SEM_ESCANINHO_LIVRE
+                ? [styles.escaninhoTarja, styles.escaninhoTarjaAlerta]
+                : styles.escaninhoTarja
+            }
+          >
             <Text style={styles.escaninhoRotulo}>{ROTULO_ESCANINHO}</Text>
             <Text style={styles.escaninhoTexto}>{pdfSafe(escaninho).toUpperCase()}</Text>
           </View>

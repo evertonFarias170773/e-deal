@@ -1,6 +1,6 @@
 # Expedição: despachar e entregar
 
-> **Última revisão:** 18/11/2026 (reenvio: escolher como cobrar o frete do reenvio — **diferença**, **frete cheio** ou **sem cobrança**, só administrador; o valor a cobrar é o que trava o redespacho e vira o PIX; quadro **Pedido reenviado** na aba Fretes da proposta). 18/11/2026 (reenvio de pedido devolvido com diferença de frete: cotar o frete na janela **Reenviar**, PIX da diferença ou abono, nota nova quando o tipo de envio muda e trava do redespacho). 14/11/2026 (quadro **Contatos do pedido** no Despachar, com as conversas do ChatGuru escolhidas na aba Geral). 10/11/2026 (aviso de pedido pronto pelo WhatsApp sai no Confirmar despacho)
+> **Última revisão:** 19/11/2026 (reenvio aberto: o card e o **Despachar** mostram o envio do reenvio — tipo, transportadora, frete —, sem o rastreio do envio que voltou, sem **Recotar frete** nem trava de frete; prepostagem dos Correios recusada quando o reenvio sai por outro tipo). 18/11/2026 (reenvio: escolher como cobrar o frete do reenvio — **diferença**, **frete cheio** ou **sem cobrança**, só administrador; o valor a cobrar é o que trava o redespacho e vira o PIX; quadro **Pedido reenviado** na aba Fretes da proposta). 18/11/2026 (reenvio de pedido devolvido com diferença de frete: cotar o frete na janela **Reenviar**, PIX da diferença ou abono, nota nova quando o tipo de envio muda e trava do redespacho). 14/11/2026 (quadro **Contatos do pedido** no Despachar, com as conversas do ChatGuru escolhidas na aba Geral). 10/11/2026 (aviso de pedido pronto pelo WhatsApp sai no Confirmar despacho)
 > **Caminho no menu:** Expedição → card do pedido → **Despachar** (os outros passos saem do menu de ações do card)
 > **Endereço:** `/expedicao`
 
@@ -168,7 +168,7 @@ Use quando a transportadora ou os Correios devolveram um pedido que está Em Tr�
 7. O pedido volta para Na Expedição com o selo **Reenvio N**. Antes de despachar de novo:
    - com valor a cobrar, ele precisa estar pago (PIX confirmado) ou abonado; no modo **sem cobrança** não há o que pagar. Enquanto não houver PIX nem abono, um administrador pode trocar o modo na aba **Pagamentos** (**Trocar modo de cobrança**);
    - se o tipo de envio mudou (por exemplo, de Correios para Transportadora), o pedido precisa de uma **nota nova**, emitida depois do reenvio: NF-e de venda, de remessa ou NFS-e. A nota do primeiro envio não vale.
-8. Despache pelo botão **Despachar**, com o endereço e o tipo de envio do reenvio e o rastreio ou conhecimento novo. A faixa do reenvio no Despachar mostra o modo e o valor a cobrar e se a nota nova já foi emitida. Nos Correios, gere a prepostagem de novo (a janela pede confirmação).
+8. Despache pelo botão **Despachar**. Com o reenvio aberto, ele já abre com o tipo de envio, a transportadora e o endereço do reenvio, e com o rastreio vazio: informe o rastreio ou conhecimento NOVO. O aviso pelo WhatsApp usa o modelo da forma de envio do reenvio. Não há **Recotar frete** nem a trava de frete (o frete do reenvio foi tratado no reenvio). A faixa do reenvio mostra o modo e o valor a cobrar e se a nota nova já foi emitida. Só quando o reenvio é pelos Correios aparecem a prepostagem e a etiqueta dos Correios: gere a prepostagem de novo (a janela pede confirmação). Em reenvio por transportadora ou motoboy a etiqueta é a 10x15 e o servidor recusa prepostagem dos Correios.
 
 O primeiro envio (data, rastreio, endereço, transportadora) fica guardado no registro do reenvio. Não há limite de reenvios por pedido.
 
@@ -241,6 +241,7 @@ A tabela completa dos avisos da Expedição está em [Expedição](expedicao.md)
 | Você não tem a permissão de reenviar pedido (expedicao.reenvio). | O perfil não tem **Reenviar Pedido Devolvido** | Pedir a permissão a quem administra os perfis |
 | "Despacho bloqueado: falta receber R$ ... do frete do reenvio N." | O valor a cobrar do reenvio (diferença ou frete cheio) não foi pago nem abonado | Gerar o PIX na aba **Pagamentos** e despachar depois da confirmação, ou pedir ao administrador para abonar ou trocar o modo |
 | "O reenvio N trocou o tipo de envio (... para ...) e exige nota nova" | O tipo de envio mudou e o pedido não tem nota emitida depois do reenvio | Emitir a nota nova (venda, remessa ou serviço) e despachar em seguida |
+| "Prepostagem bloqueada" — "O reenvio N sai por ..., não pelos Correios." (ou, do servidor, "... Nenhuma prepostagem foi criada.") | Prepostagem dos Correios pedida com reenvio aberto por transportadora ou motoboy | Despache pelo envio do reenvio; nada sai para os Correios |
 | "O reenvio N cotou o frete para ... no CEP .... Despache com o tipo de envio e o endereço do reenvio." | O Despachar está com outro endereço ou tipo de envio | Usar o endereço e o tipo de envio do reenvio |
 | O pedido mudou de status em outra tela. A lista será recarregada. | Outra pessoa alterou o pedido antes | Conferir o pedido na lista recarregada |
 
@@ -274,3 +275,4 @@ A tabela completa dos avisos da Expedição está em [Expedição](expedicao.md)
 - `src/features/expedicao/services/expedicao.service.ts`
 - `supabase/migrations/20261022_exp_reenvio_fase1.sql`
 - `supabase/migrations/20261118c_exp_reenvio_modo_cobranca.sql`
+- `src/app/api/expedicao/correios/prepostagem/route.ts`

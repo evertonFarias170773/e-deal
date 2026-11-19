@@ -60,7 +60,7 @@ import { LABEL_MODALIDADE, MODALIDADES_OFERECIDAS, TRANSPORTES_POR_MODALIDADE } 
 import type { ModalidadeFrete, PedidoExpedicao, TipoFreteNormalizado } from "../types";
 import { AvisoInstrucaoEntrega } from "./AvisoInstrucaoEntrega";
 import { mensagemDoSaldo, type SaldoDoDespacho } from "../lib/saldo-despacho";
-import { avisosDoReenvio, tituloDoFreteDoReenvio, type VereditoRedespacho } from "../lib/reenvio";
+import { avisosDoReenvio, envioDoReenvioAberto, tipoDoCiclo, tituloDoFreteDoReenvio, type VereditoRedespacho } from "../lib/reenvio";
 import { avaliarRedespacho } from "../services/reenvio.client";
 import { conferirFreteSubsidiado, mensagemFreteSubsidiado } from "../lib/frete-subsidiado";
 import { barreiraNfAutorizada } from "../services/corrigir-frete-simulacao";
@@ -228,7 +228,22 @@ export function DespacharModal({
   const { showToast } = useAppToast();
   const exp = pedido.expedicao;
 
-  const tipoInicial: TipoFreteNormalizado = exp?.tipoFrete ?? pedido.tipoFrete;
+  /**
+   * REENVIO ABERTO (19/11/2026, caso #24552): o formulario nasce do CICLO.
+   * `expedicoes` guarda o envio que voltou e a proposta guarda o frete da venda;
+   * sem isto o Despachar abria em SEDEX, com o rastreio antigo e o modelo de
+   * aviso dos Correios, num pedido reenviado pela Transportadora Sao Miguel.
+   */
+  const envioReenvio = pedido.reenvio?.aberto
+    ? envioDoReenvioAberto(pedido.reenvio.aberto, {
+        modalidade: exp?.modalidadeFrete ?? pedido.modalidadeOrcamento,
+        transportadoraNome: exp?.transportadoraNome,
+        idTransportadoraCliente: exp?.idTransportadoraCliente,
+        categoriaFrete: exp?.categoriaFrete
+      })
+    : null;
+
+  const tipoInicial: TipoFreteNormalizado = envioReenvio?.tipoFrete ?? exp?.tipoFrete ?? pedido.tipoFrete;
 
   /**
    * Modalidade (quem paga) é a escolha do PASSO 1 e comanda o resto do modal.
@@ -283,11 +298,13 @@ export function DespacharModal({
     transporteInicial(pedido, tipoInicial, modalidadeInicial)
   );
   const [transportadoraNome, setTransportadoraNome] = useState(
-    exp?.transportadoraNome ?? (pedido.tipoFrete === "INDEFINIDO" ? "" : pedido.transportadoraNome)
+    envioReenvio
+      ? (envioReenvio.transportadoraNome ?? "")
+      : (exp?.transportadoraNome ?? (pedido.tipoFrete === "INDEFINIDO" ? "" : pedido.transportadoraNome))
   );
   /** Mesma precedência da modalidade: despacho > orçamento > nada. */
   const [idTransportadoraCliente, setIdTransportadoraCliente] = useState<number | null>(
-    exp?.idTransportadoraCliente ?? pedido.idTransportadoraOrcamento ?? null
+    envioReenvio ? envioReenvio.idTransportadoraCliente : (exp?.idTransportadoraCliente ?? pedido.idTransportadoraOrcamento ?? null)
   );
   /**
    * NASCE VAZIO quando ninguem aferiu ainda (21/08/2026).
@@ -442,7 +459,9 @@ export function DespacharModal({
    * momento em que o expedidor mais precisa do número. A rota revalida o gate
    * contra o banco de qualquer forma.
    */
-  const podeRecotar = pedido.statusInterno === "EXPEDICAO" && modalidade === "CIF";
+  // Reenvio aberto (19/11/2026): o frete ja foi decidido no ciclo; recotar e
+  // aplicar na proposta mexeriam no frete da venda, que o reenvio nao muda.
+  const podeRecotar = pedido.statusInterno === "EXPEDICAO" && modalidade === "CIF" && !pedido.reenvio?.aberto;
 
   /**
    * Desde 20/08/2026 o expedidor NAO recota por conta propria: um admin libera
@@ -783,8 +802,12 @@ export function DespacharModal({
    * So antes do despacho: em edicao, ou com o despacho ja confirmado, a trava ja
    * foi cumprida (e a trigger so age no momento do despacho).
    */
-  // Reenvio aberto: a trava e consultada de novo (o service `despachar` tambem consulta). Nao afrouxa nada.
-  const avaliaTrava = !modoEdicao && (!pedido.despachoConfirmado || Boolean(reenvioAberto));
+  // Reenvio aberto (19/11/2026): SEM trava de frete. O banco nao a aplica no
+  // redespacho (o gatilho so age no primeiro despacho) e o frete do reenvio foi
+  // decidido e cobrado no ciclo; comparar com o frete da venda so confundia
+  // ("Recotacao dentro do limite... -R$ 11,43" no #24552). Quem decide o
+  // redespacho e `exp_reenvio_redespacho`, abaixo.
+  const avaliaTrava = !modoEdicao && !pedido.despachoConfirmado;
   const [trava, setTrava] = useState<TravaFreteDespacho | null>(null);
   /** Incrementado depois de recotar, aplicar ou liberar: forca reler o veredito. */
   const [versaoTrava, setVersaoTrava] = useState(0);
@@ -1435,6 +1458,15 @@ export function DespacharModal({
     // Trava ANTES de qualquer await (21/10/2026): o botao ja aparece "Gerando..." e um segundo clique,
     // ou um segundo caminho, nao entra enquanto este nao terminar.
     if (geracaoEmCurso.current || gerandoPrepostagem || salvando) return;
+    // Reenvio aberto de outro tipo: nada sai para os Correios (a rota tambem recusa).
+    if (reenvioAberto && tipoDoCiclo(reenvioAberto.tipoFreteNovo) !== "CORREIOS") {
+      showToast({
+        type: "warning",
+        title: "Prepostagem bloqueada",
+        description: `O reenvio ${reenvioAberto.ciclo} sai por ${reenvioAberto.tipoFreteNovo ?? "outro tipo de envio"}, não pelos Correios.`
+      });
+      return;
+    }
     geracaoEmCurso.current = true;
     setGerandoPrepostagem(true);
     try {
@@ -1781,7 +1813,7 @@ export function DespacharModal({
             <ConferenciaDespacho
               // Retirada do ADM: a previa mostra o que o despacho vai gravar (lib/retirada-adm).
               vm={{ ...vmPrevia, ...(retiradaAdmMarcada ? { transportadora: "Retira balcão", envioPorTransportadoraDeclarada: false } : {}), destinatario: { ...vmPrevia.destinatario, telefone: avaliacaoTelefone.alterado && avaliacaoTelefone.valido ? formatPhoneBR(avaliacaoTelefone.normalizado) : vmPrevia.destinatario.telefone } }}
-              objetoCorreios={objetoCorreiosVigente}
+              objetoCorreios={reenvioAberto && tipoFrete !== "CORREIOS" ? null : objetoCorreiosVigente}
               campoTelefone={
                 <CampoTelefoneDestinatario
                   valor={telefoneExibido}

@@ -45,6 +45,11 @@ checar("rótulo da tarja", ROTULO_ESCANINHO, "Escaninho de encontro das OS.");
      /escaninhoTexto: \{[^}]*textAlign: "right"/.test(fonte),
      /escaninhoRotulo: \{ fontSize: 9, fontFamily: "Helvetica",/.test(fonte)],
     [true, true, true, true, true]);
+  checar("tarja: verde com o nome, vermelha só com SEM ESCANINHO LIVRE",
+    [/escaninhoTarja: \{\s*backgroundColor: "#15803d"/.test(fonte),
+     /escaninhoTarjaAlerta: \{ backgroundColor: "#dc2626" \}/.test(fonte),
+     /escaninho === SEM_ESCANINHO_LIVRE\s*\?\s*\[styles\.escaninhoTarja, styles\.escaninhoTarjaAlerta\]\s*:\s*styles\.escaninhoTarja\b/.test(r)],
+    [true, true, true]);
 }
 
 const pdf = readFileSync("src/features/pedidos/pdf/OsPdfDocument.tsx", "utf8");

@@ -605,9 +605,11 @@ export async function despachar(
   // Reenvio cujo ciclo cotou o frete (fase 2B): a diferença já foi decidida no
   // ciclo (paga ou abonada, conferido acima), e comparar com o frete da
   // proposta, que o reenvio não muda, travaria o redespacho por engano.
+  // Desde 19/11/2026 vale para QUALQUER reenvio aberto: o gatilho da trava de
+  // frete nao age no redespacho, e o frete do reenvio foi tratado no ciclo.
   const { data: trava } =
-    redespacho?.aberto && redespacho.freteDecidido
-      ? { data: { bloqueia: false, situacao: "REENVIO_FRETE_DECIDIDO" } as unknown }
+    redespacho?.aberto
+      ? { data: { bloqueia: false, situacao: "REENVIO_ABERTO" } as unknown }
       : await client.rpc("exp_trava_frete_despacho", {
           p_id_int: idInt,
           p_cep_destino: endereco?.cep ?? null,

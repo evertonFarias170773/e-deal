@@ -15,8 +15,10 @@
  *   a mesma que o registro copiou (`data_despacho_anterior`); o proximo
  *   Despachar grava data nova e o fecha. Sem coluna nem trigger novos.
  */
-import type { TipoFreteNormalizado } from "../types";
+import type { ModalidadeFrete, TipoFreteNormalizado } from "../types";
 import { normalizarTipoFrete } from "./tipo-frete";
+import { resolverTransportadoraParceira } from "@/features/orcamentos/lib/transportadoras-parceiras";
+import { categoriaDoServico, type CategoriaFrete } from "@/features/orcamentos/lib/categoria-frete";
 
 /** Uma linha de `expedicao_reenvios`, como a lista le. */
 export interface LinhaReenvio {
@@ -37,6 +39,10 @@ export interface LinhaReenvio {
   /** Modo de cobranca (18/11/2026). Ausentes antes da migration 20261118c: DIFERENCA. */
   modo_cobranca?: string | null;
   valor_cobrar?: number | string | null;
+  /** Envio do ciclo (19/11/2026): a opcao cotada, o endereco e o rastreio do envio que voltou. */
+  opcao_frete?: { id?: string | null; servico?: string | null; transportadora?: string | null } | null;
+  id_endereco_novo?: string | null;
+  rastreio_anterior?: string | null;
 }
 
 /** O que o pedido carrega sobre reenvio. */
@@ -60,6 +66,12 @@ export interface ReenvioDoPedido {
     /** Como o frete do reenvio e cobrado e quanto (o que entra na trava de saldo). */
     modoCobranca: ModoCobrancaReenvio;
     valorCobrar: number;
+    /** O envio do ciclo (19/11/2026): o que o redespacho tem de levar. */
+    opcao: { servico: string | null; transportadora: string | null } | null;
+    idEnderecoNovo: string | null;
+    freteNovo: number | null;
+    /** Rastreio do envio que voltou (copia em `envio_anterior`). */
+    rastreioAnterior: string | null;
   } | null;
   /** Frete gravado pelo ultimo ciclo que gravou frete (base do proximo). */
   ultimoFrete: number | null;
@@ -69,6 +81,10 @@ function numeroOuNulo(v: unknown): number | null {
   if (v === null || v === undefined || v === "") return null;
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
+}
+
+function textoOuNulo(v: unknown): string | null {
+  return typeof v === "string" && v.trim() ? v.trim() : null;
 }
 
 function mesmoInstante(a: string | null | undefined, b: string | null | undefined): boolean {
@@ -98,7 +114,16 @@ export function reenvioDoPedido(linhas: LinhaReenvio[], dataDespachoAtual: strin
         exigeNota: ultimo.exige_nota === true,
         freteDecidido: ultimo.frete_origem === "COTACAO" || ultimo.frete_origem === "DIGITADO_ADM",
         modoCobranca: normalizarModoCobranca(ultimo.modo_cobranca),
-        valorCobrar: numeroOuNulo(ultimo.valor_cobrar) ?? numeroOuNulo(ultimo.diferenca) ?? 0
+        valorCobrar: numeroOuNulo(ultimo.valor_cobrar) ?? numeroOuNulo(ultimo.diferenca) ?? 0,
+        opcao: ultimo.opcao_frete
+          ? {
+              servico: textoOuNulo(ultimo.opcao_frete.servico),
+              transportadora: textoOuNulo(ultimo.opcao_frete.transportadora)
+            }
+          : null,
+        idEnderecoNovo: textoOuNulo(ultimo.id_endereco_novo),
+        freteNovo: numeroOuNulo(ultimo.frete_novo),
+        rastreioAnterior: textoOuNulo(ultimo.rastreio_anterior)
       }
     : null;
   const comFrete = ordenadas.find((l) => numeroOuNulo(l.frete_novo) !== null);
@@ -282,6 +307,105 @@ export function lerSituacaoDoReenvio(raw: unknown): SituacaoCicloReenvio[] {
         : null
     };
   });
+}
+
+// -----------------------------------------------------------------------------
+// O ENVIO DO CICLO ABERTO (19/11/2026, caso #24552)
+// -----------------------------------------------------------------------------
+
+/**
+ * Com reenvio aberto, quem diz como o pedido sai e o CICLO, nao `expedicoes`
+ * (que guarda a data de despacho do envio que voltou) nem a proposta (que guarda
+ * o frete da venda). O #24552 mostrava SEDEX no card e no Despachar depois de
+ * reenviado pela Transportadora Sao Miguel.
+ *
+ * Tipo: o do ciclo. Transportadora: a da opcao cotada (sem opcao, a gravada).
+ * Vinculo e categoria: a mesma traducao do orcamento
+ * (`resolverTransportadoraParceira`, `categoriaDoServico`), sem regra nova; sem
+ * parceira reconhecida, o que esta gravado.
+ */
+export function envioDoReenvioAberto(
+  aberto: Pick<NonNullable<ReenvioDoPedido["aberto"]>, "tipoFreteNovo" | "opcao">,
+  gravado: {
+    modalidade: ModalidadeFrete | null | undefined;
+    transportadoraNome: string | null | undefined;
+    idTransportadoraCliente: number | null | undefined;
+    categoriaFrete: CategoriaFrete | null | undefined;
+  }
+): {
+  tipoFrete: TipoFreteNormalizado | null;
+  transportadoraNome: string | null;
+  idTransportadoraCliente: number | null;
+  categoriaFrete: CategoriaFrete | null;
+} {
+  const tipoFrete = tipoDoCiclo(aberto.tipoFreteNovo);
+  const opcao = aberto.opcao;
+  const nomeDaOpcao = opcao?.transportadora ?? opcao?.servico ?? null;
+  if (!nomeDaOpcao) {
+    return {
+      tipoFrete,
+      transportadoraNome: gravado.transportadoraNome?.trim() || null,
+      idTransportadoraCliente: gravado.idTransportadoraCliente ?? null,
+      categoriaFrete: gravado.categoriaFrete ?? null
+    };
+  }
+  const parceira = resolverTransportadoraParceira(opcao);
+  const modalidade = gravado.modalidade === "CIF" || gravado.modalidade === "FOB" || gravado.modalidade === "RETIRA" ? gravado.modalidade : null;
+  return {
+    tipoFrete,
+    transportadoraNome: nomeDaOpcao,
+    idTransportadoraCliente: parceira ?? gravado.idTransportadoraCliente ?? null,
+    categoriaFrete: categoriaDoServico(opcao?.transportadora, opcao?.servico, modalidade) ?? gravado.categoriaFrete ?? null
+  };
+}
+
+/**
+ * O tipo de envio gravado no ciclo (`tipo_frete_novo`), no vocabulario do
+ * Despachar. NAO passa por `normalizarTipoFrete`, que classifica texto de
+ * servico ("CORREIOS" puro la vira INDEFINIDO).
+ */
+export function tipoDoCiclo(v: string | null | undefined): "CORREIOS" | "MOTOBOY" | "TRANSPORTADORA" | null {
+  const s = String(v ?? "").trim().toUpperCase();
+  return s === "CORREIOS" || s === "MOTOBOY" || s === "TRANSPORTADORA" ? s : null;
+}
+
+/**
+ * Rastreio com reenvio aberto: o do envio que voltou NAO vale (nem o gravado,
+ * nem o espelho `propostas_os`). So um codigo diferente dele, informado depois
+ * do reenvio.
+ */
+export function rastreioDoReenvioAberto(codigoGravado: string | null | undefined, rastreioAnterior: string | null | undefined): string {
+  const codigo = String(codigoGravado ?? "").trim();
+  if (!codigo) return "";
+  return rastreioAnterior && codigo.toUpperCase() === rastreioAnterior.trim().toUpperCase() ? "" : codigo;
+}
+
+/**
+ * O frete que o card e a lista mostram: com reenvio, o do ultimo ciclo que
+ * gravou frete (o envio que sai ou saiu por ultimo); sem, o da proposta.
+ * So exibicao: o frete da venda (total e NF) continua em `freteCobrado`.
+ */
+export function freteDoEnvioExibido(p: { reenvio?: ReenvioDoPedido | null; freteCobrado: number | null }): number | null {
+  return p.reenvio?.ultimoFrete ?? p.freteCobrado;
+}
+
+/**
+ * A prepostagem dos Correios e recusada com reenvio ABERTO de outro tipo
+ * (19/11/2026). "Aberto" e a regra do banco (`exp_reenvio_redespacho`): data de
+ * despacho nula ou nao posterior ao registro do ciclo. Devolve a mensagem da
+ * recusa, ou null quando a prepostagem pode seguir.
+ */
+export function reenvioBloqueiaPrepostagem(
+  ultimo: { ciclo: number | string; tipo_frete_novo: string | null; criado_em: string } | null | undefined,
+  dataDespacho: string | null | undefined
+): string | null {
+  if (!ultimo) return null;
+  const criado = Date.parse(ultimo.criado_em);
+  const despacho = dataDespacho ? Date.parse(dataDespacho) : NaN;
+  const aberto = !dataDespacho || (Number.isFinite(despacho) && Number.isFinite(criado) && despacho <= criado);
+  if (!aberto) return null;
+  if (tipoDoCiclo(ultimo.tipo_frete_novo) === "CORREIOS") return null;
+  return `O reenvio ${ultimo.ciclo} deste pedido sai por ${ultimo.tipo_frete_novo ?? "outro tipo de envio"}, não pelos Correios. Nenhuma prepostagem foi criada.`;
 }
 
 /** Agrupa a consulta da lista por pedido. */

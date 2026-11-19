@@ -33,7 +33,13 @@ import { danfesDoPedido, COLUNAS_DANFE_DO_PEDIDO, type DanfeDoPedido } from "@/l
 import { resolverPesoExpedicao } from "../lib/peso";
 import { STATUS_FUNIL_EXPEDICAO, STATUS_PEDIDO_EM_ABERTO } from "../lib/pedido-em-aberto";
 import { promessaNoDia } from "../lib/promessa-do-card";
-import { agruparReenvios, reenvioDoPedido, type LinhaReenvio } from "../lib/reenvio";
+import {
+  agruparReenvios,
+  envioDoReenvioAberto,
+  rastreioDoReenvioAberto,
+  reenvioDoPedido,
+  type LinhaReenvio
+} from "../lib/reenvio";
 import type {
   ContatoDestinatario,
   EtapaExpedicao,
@@ -394,7 +400,7 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
       // Fase 2B (18/11/2026): diferenca, nota nova e frete do ciclo. Exige a
       // migration 20261118 aplicada antes deste codigo. Modo e valor a cobrar
       // (18/11/2026) exigem a 20261118c.
-      .select("id_int, ciclo, motivo, autor_nome, criado_em, tipo_frete_anterior, tipo_frete_novo, data_despacho_anterior, diferenca, exige_nota, frete_origem, frete_novo, abono_valor, modo_cobranca, valor_cobrar")
+      .select("id_int, ciclo, motivo, autor_nome, criado_em, tipo_frete_anterior, tipo_frete_novo, data_despacho_anterior, diferenca, exige_nota, frete_origem, frete_novo, abono_valor, modo_cobranca, valor_cobrar, opcao_frete, id_endereco_novo, rastreio_anterior:envio_anterior->>codigo_rastreamento")
       .in("id_int", lote))
   ]);
   if (reenviosRes.error) {
@@ -908,7 +914,25 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
     const colunaCorreiosNaoVale = cifComTransportadoraForaDosCorreios(entradaCif);
     const transportadoraComPrepostagemViva = cifTransportadoraBarradaPorPrepostagem(entradaCif);
 
-    const tipoFrete: TipoFreteNormalizado = porTransportadoraEmCif
+    /**
+     * REENVIO ABERTO (19/11/2026, caso #24552): o envio e o do CICLO. A data de
+     * despacho gravada e a do envio que voltou (por isso `expConfirmado` existe),
+     * e o tipo, a transportadora, a categoria e o rastreio de `expedicoes` ou da
+     * proposta sao os do primeiro envio. `envioDoReenvioAberto` (lib/reenvio).
+     */
+    const reenvio = reenvioDoPedido(reenviosPorPedido.get(idInt) ?? [], exp?.dataDespacho);
+    const envioReenvio = reenvio?.aberto
+      ? envioDoReenvioAberto(reenvio.aberto, {
+          modalidade: exp?.modalidadeFrete ?? modalidadeOrcamento,
+          transportadoraNome: exp?.transportadoraNome,
+          idTransportadoraCliente: exp?.idTransportadoraCliente,
+          categoriaFrete: exp?.categoriaFrete
+        })
+      : null;
+
+    const tipoFrete: TipoFreteNormalizado = envioReenvio?.tipoFrete
+      ? envioReenvio.tipoFrete
+      : porTransportadoraEmCif
       ? "TRANSPORTADORA"
       : (expConfirmado?.tipoFrete ?? normalizarTipoFrete(frete?.servico));
     /**
@@ -926,7 +950,6 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
      * REENVIO ABERTO (22/10/2026) nao aguarda coleta: a `data_despacho` e a do
      * envio que voltou, e o que falta e despachar de novo (`lib/reenvio.ts`).
      */
-    const reenvio = reenvioDoPedido(reenviosPorPedido.get(idInt) ?? [], exp?.dataDespacho);
     const aguardandoColeta =
       despachoConfirmado &&
       !exp?.coletadoEm &&
@@ -1088,7 +1111,7 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
       // gravada continua valendo.
       // Desde 12/11/2026 (24974) vale qualquer que seja o texto da cotação:
       // `cifComTransportadoraForaDosCorreios`, so para a coluna.
-      categoriaFrete: categoriaFreteVigente(
+      categoriaFrete: envioReenvio?.categoriaFrete ?? categoriaFreteVigente(
         ehCategoriaFrete(p.categoria_frete) && !(colunaCorreiosNaoVale && p.categoria_frete === "CORREIOS")
           ? p.categoria_frete
           : null,
@@ -1108,6 +1131,7 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
       // seguinte — antes caía direto no texto da cotação, que sob FOB diz
       // "SEDEX" num pedido que os Correios nunca vão tocar.
       transportadoraNome:
+        envioReenvio?.transportadoraNome ||
         expConfirmado?.transportadoraNome ||
         (porTransportadoraEmCif ? transportadoraOrcamento : null) ||
         nomeTransporteEfetivo(frete?.servico, modalidadeOrcamento, transportadoraOrcamento) ||
@@ -1191,14 +1215,25 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
       // O fallback de `propostas_os.codigo_rastreamento` tambem e ignorado aqui:
       // aquele espelho guarda o codigo do objeto morto e, sem isto, o traria de
       // volta pela porta dos fundos.
-      codigoRastreamento: exp?.prepostagemCanceladaEm
+      // Reenvio aberto: o rastreio do envio que voltou nao vale, nem pelo espelho
+      // `propostas_os` (19/11/2026).
+      codigoRastreamento: reenvio?.aberto
+        ? rastreioDoReenvioAberto(exp?.codigoRastreamento, reenvio.aberto.rastreioAnterior)
+        : exp?.prepostagemCanceladaEm
         ? ""
         : exp?.codigoRastreamento || os?.codigo_rastreamento || "",
       obsOs: os?.obs ?? "",
       // "Envio já preparado": prepostagem Correios OU 10x15 registrada OU rastreio (de qualquer origem).
-      etiquetaGerada: Boolean(
-        exp?.correiosIdPrepostagem || exp?.etiquetaImpressaEm || exp?.codigoRastreamento || os?.codigo_rastreamento
-      ),
+      // Reenvio aberto: so conta o que foi feito DEPOIS do reenvio (a prepostagem e
+      // o rastreio do envio que voltou nao preparam o envio novo).
+      etiquetaGerada: reenvio?.aberto
+        ? Boolean(
+            rastreioDoReenvioAberto(exp?.codigoRastreamento, reenvio.aberto.rastreioAnterior) ||
+              (exp?.etiquetaImpressaEm && Date.parse(exp.etiquetaImpressaEm) > Date.parse(reenvio.aberto.criadoEm))
+          )
+        : Boolean(
+            exp?.correiosIdPrepostagem || exp?.etiquetaImpressaEm || exp?.codigoRastreamento || os?.codigo_rastreamento
+          ),
       expedicao: exp,
       liberacaoRecotacao: liberacaoMap.get(idInt) ?? null,
       recotacaoVigente: recotacaoMap.get(idInt) ?? null,

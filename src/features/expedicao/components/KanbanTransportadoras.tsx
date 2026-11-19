@@ -19,6 +19,7 @@ import { bairroDoCard } from "../lib/bairro-do-card";
 import type { EtapaExpedicao, PedidoExpedicao } from "../types";
 import { ChipVinculados } from "./ChipVinculados";
 import { AvisoInstrucaoEntrega } from "./AvisoInstrucaoEntrega";
+import { freteDoEnvioExibido } from "../lib/reenvio";
 // Fase 5: vinculos do pedido (roxo = Complemento, rosa = Acompanhar).
 import {
   CLASSE_CHIP_ROSA,
@@ -802,10 +803,13 @@ export function KanbanTransportadoras({
                         `cotacao_frete` e não acompanha recotação. Os dois batem
                         em toda a base hoje; divergem depois de uma recotação. */}
                     <span className="shrink-0 text-[14px] font-semibold text-slate-600 dark:text-slate-400">
-                      {p.freteCobrado !== null && p.freteCobrado > 0 ? (
+                      {/* Reenvio (19/11/2026): o frete do ultimo ciclo, nao o da venda. */}
+                      {(freteDoEnvioExibido(p) ?? 0) > 0 ? (
                         <>
-                          <span className="text-[11px] font-medium text-slate-500 dark:text-slate-500">frete </span>
-                          {formatCurrency(p.freteCobrado)}
+                          <span className="text-[11px] font-medium text-slate-500 dark:text-slate-500">
+                            {p.reenvio?.ultimoFrete != null ? "frete do reenvio " : "frete "}
+                          </span>
+                          {formatCurrency(freteDoEnvioExibido(p) ?? 0)}
                         </>
                       ) : (
                         "—"

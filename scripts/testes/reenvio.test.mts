@@ -11,7 +11,11 @@ import {
   avisosDoReenvio,
   chaveDoReenvio,
   diferencaDoReenvio,
+  envioDoReenvioAberto,
   freteDoEnvioAnterior,
+  freteDoEnvioExibido,
+  rastreioDoReenvioAberto,
+  reenvioBloqueiaPrepostagem,
   lerSituacaoDoReenvio,
   lerVereditoRedespacho,
   normalizarModoCobranca,
@@ -226,6 +230,55 @@ checar(
     return [v?.modoCobranca, v?.valorCobrar];
   })(),
   ["SEM_COBRANCA", 0]
+);
+
+// --- O ENVIO DO CICLO ABERTO (19/11/2026, caso #24552) -------------------------
+const GRAVADO_24552 = { modalidade: "CIF" as const, transportadoraNome: "SEDEX", idTransportadoraCliente: null, categoriaFrete: "CORREIOS" as const };
+checar(
+  "envio do ciclo: Sao Miguel cotada vence o SEDEX gravado (vinculo 120026, RODOVIARIO)",
+  envioDoReenvioAberto({ tipoFreteNovo: "TRANSPORTADORA", opcao: { servico: "SÃO MIGUEL", transportadora: "Transportadora São Miguel" } }, GRAVADO_24552),
+  { tipoFrete: "TRANSPORTADORA", transportadoraNome: "Transportadora São Miguel", idTransportadoraCliente: 120026, categoriaFrete: "RODOVIARIO" }
+);
+checar(
+  "envio do ciclo sem opcao cotada: tipo do ciclo, resto o gravado",
+  envioDoReenvioAberto({ tipoFreteNovo: "MOTOBOY", opcao: null }, { ...GRAVADO_24552, transportadoraNome: "B M Express", idTransportadoraCliente: 997, categoriaFrete: "MOTOBOY" }),
+  { tipoFrete: "MOTOBOY", transportadoraNome: "B M Express", idTransportadoraCliente: 997, categoriaFrete: "MOTOBOY" }
+);
+checar(
+  "envio do ciclo: SEDEX cotado vira Correios",
+  envioDoReenvioAberto({ tipoFreteNovo: "CORREIOS", opcao: { servico: "SEDEX", transportadora: "Correios SEDEX" } }, { ...GRAVADO_24552, categoriaFrete: null }).categoriaFrete,
+  "CORREIOS"
+);
+checar("rastreio do envio que voltou nao vale", rastreioDoReenvioAberto("AE116583457BR", "AE116583457BR"), "");
+checar("rastreio novo vale", rastreioDoReenvioAberto("SM-998877", "AE116583457BR"), "SM-998877");
+checar("sem rastreio gravado", rastreioDoReenvioAberto(null, "AE116583457BR"), "");
+const ULTIMO = { ciclo: 1, tipo_frete_novo: "TRANSPORTADORA", criado_em: "2026-11-18T21:17:47.5733+00:00" };
+checar(
+  "prepostagem recusada: reenvio aberto por transportadora",
+  reenvioBloqueiaPrepostagem(ULTIMO, "2026-11-06T13:03:40.277+00:00")?.startsWith("O reenvio 1 deste pedido sai por TRANSPORTADORA"),
+  true
+);
+checar("prepostagem liberada: reenvio pelos Correios", reenvioBloqueiaPrepostagem({ ...ULTIMO, tipo_frete_novo: "CORREIOS" }, null), null);
+checar("prepostagem liberada: reenvio ja redespachado", reenvioBloqueiaPrepostagem(ULTIMO, "2026-11-20T10:00:00+00:00"), null);
+checar("prepostagem liberada: sem reenvio", reenvioBloqueiaPrepostagem(null, null), null);
+checar(
+  "frete exibido: o do ciclo com reenvio, o da proposta sem",
+  [
+    freteDoEnvioExibido({ reenvio: { ciclos: 1, aberto: null, ultimoFrete: 98 }, freteCobrado: 40.43 }),
+    freteDoEnvioExibido({ reenvio: null, freteCobrado: 40.43 })
+  ],
+  [98, 40.43]
+);
+checar(
+  "ciclo aberto carrega a opcao, o endereco e o rastreio anterior",
+  (() => {
+    const a = reenvioDoPedido(
+      [linha2b(1, { opcao_frete: { id: "frete_transp_sm", servico: "SÃO MIGUEL", transportadora: "Transportadora São Miguel" }, id_endereco_novo: "5de2", rastreio_anterior: "AE116583457BR", frete_novo: 98 })],
+      DESPACHO_1
+    )?.aberto;
+    return [a?.opcao?.transportadora, a?.idEnderecoNovo, a?.rastreioAnterior, a?.freteNovo];
+  })(),
+  ["Transportadora São Miguel", "5de2", "AE116583457BR", 98]
 );
 
 console.log(falhas === 0 ? "\nTUDO OK" : `\n${falhas} FALHA(S)`);

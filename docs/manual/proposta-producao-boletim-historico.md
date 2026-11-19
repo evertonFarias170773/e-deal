@@ -1,6 +1,6 @@
 # Proposta: abas Produção / Expedição / Notas, Boletim e Histórico
 
-> **Última revisão:** 17/11/2026 (escaninho de encontro do pedido composto no PDF da OS). 14/11/2026 (Liberar para Produção recusa pedido sem contato do ChatGuru). 11/11/2026 (a aba passou a se chamar **Produção / Expedição / Notas** e ganhou o quadro **Notas fiscais**, com a **Observação para a nota fiscal**). 10/11/2026 (Liberar e enviar manda o aviso para a conversa do cliente; fim do "em ajuste" e da homologação)
+> **Última revisão:** 19/11/2026 (tarja do escaninho verde com o nome, vermelha sem escaninho livre). 17/11/2026 (escaninho de encontro do pedido composto no PDF da OS). 14/11/2026 (Liberar para Produção recusa pedido sem contato do ChatGuru). 11/11/2026 (a aba passou a se chamar **Produção / Expedição / Notas** e ganhou o quadro **Notas fiscais**, com a **Observação para a nota fiscal**). 10/11/2026 (Liberar e enviar manda o aviso para a conversa do cliente; fim do "em ajuste" e da homologação)
 > **Caminho no menu:** Pedidos → abrir um pedido → Editar proposta → aba Produção / Expedição / Notas ou aba Histórico. Não existe aba Boletim na barra de abas: a OS (boletim) abre pelo menu Produção → clicar no pedido.
 > **Endereço:** `/orcamentos/[número]/editar?tab=producao` e `/orcamentos/[número]/editar?tab=historico`. A aba se chamava **Produção** até 09/10/2026 e **Produção / Expedição** até 11/11/2026; só o nome mudou, o endereço `?tab=producao` é o mesmo. A OS fica em `/pedidos/boletim?id_int=[número]&modo=edicao`.
 
@@ -139,12 +139,12 @@ Pedido só com produtos de prateleira pode ser liberado pelo próprio sistema, n
 A produção tem 28 escaninhos para juntar as partes de um **pedido composto**, que é o pedido com itens em dois ou mais setores. O setor que termina primeiro deixa a sua parte no escaninho, e a Expedição só recebe o pedido completo.
 
 1. Na primeira vez que o PDF da OS de um pedido composto é gerado, o sistema escolhe o **primeiro escaninho livre**, nesta ordem: ÁGUIA AMERICANA, ALCE, ANTA, ARRAIA, BALEIA AZUL, BISÃO, CAMELO, CROCODILO DO NILO, DRAGÃO DE KOMODO, ELEFANTE AFRICANO, GIRAFA, GORILA, HARPIA, HIPOPÓTAMO, LEÃO, LOBO, LONTRA, LULA COLOSSAL, MORSA, ONÇA PINTADA, ORCA, PANDA, RINOCERONTE BRANCO, SUCURI, TARTARUGA, TIGRE, URSO PARDO e URSO POLAR.
-2. O nome sai numa tarja vermelha logo depois do bloco CLIENTE / EVENTO / VENDEDOR e antes do primeiro produto. Embaixo dela vêm as caixas do que os outros setores produzem (**O restante do pedido - nao produzir aqui**). Na tarja:
+2. O nome sai numa tarja verde logo depois do bloco CLIENTE / EVENTO / VENDEDOR e antes do primeiro produto. Embaixo dela vêm as caixas do que os outros setores produzem (**O restante do pedido - nao produzir aqui**). Na tarja:
    - à esquerda, em letra menor, o texto fixo **Escaninho de encontro das OS.**;
    - à direita, em caixa alta e negrito, o nome do escaninho (por exemplo, **ÁGUIA AMERICANA**).
 3. Todos os boletins do pedido, um por setor, mostram o mesmo escaninho. Reimprimir não troca o escaninho.
 4. O escaninho é liberado quando o pedido é **despachado na Expedição** ou **cancelado**. Liberado, ele volta a ser o primeiro candidato pela ordem: o próximo pedido composto o recebe, sem esperar a lista chegar ao fim.
-5. Com os 28 ocupados, a tarja mostra **SEM ESCANINHO LIVRE** à direita, no lugar do nome, e nada é bloqueado. A próxima impressão do mesmo pedido tenta de novo.
+5. Com os 28 ocupados, a tarja fica **vermelha**, como alerta, e mostra **SEM ESCANINHO LIVRE** à direita, no lugar do nome, e nada é bloqueado. A próxima impressão do mesmo pedido tenta de novo.
 6. Pedido de um setor só não tem tarja.
 
 ### Tirar um pedido da produção
@@ -290,3 +290,5 @@ O que fazer:
 > **Mudança desta revisão:** 27/10/2026 — no BLOCO 2 da OS o campo aparece como **Instruções de fabricação · sai na OS impressa** e o texto digitado sai em vermelho, negrito e letra grande, na tela e nos dois PDFs da OS. Só exibição: a gravação, o campo da aba Produção / Expedição / Notas e as Instruções de entrega não mudaram.
 
 > **Mudança desta revisão:** 17/11/2026 — pedido composto (dois ou mais setores) ganha o **escaninho de encontro** no PDF da OS: o primeiro dos 28 escaninhos livre, na primeira impressão, liberado no despacho da Expedição ou no cancelamento. A tarja vermelha e as caixas dos outros setores subiram para logo depois do bloco CLIENTE / EVENTO / VENDEDOR. O resto do PDF não mudou. No mesmo dia, a tarja ganhou dois lados: o texto **Escaninho de encontro das OS.** em letra menor à esquerda e o nome (ou **SEM ESCANINHO LIVRE**) em caixa alta e negrito à direita; cor e altura iguais.
+
+> **Mudança desta revisão:** 19/11/2026 — a tarja do escaninho passou a ser **verde** quando mostra o nome do escaninho. Com **SEM ESCANINHO LIVRE** ela continua **vermelha**, como alerta. Texto, tamanhos e posição não mudaram.

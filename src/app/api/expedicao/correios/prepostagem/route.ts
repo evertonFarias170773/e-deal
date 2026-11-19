@@ -23,6 +23,7 @@ import {
 import { cifPorTransportadora, normalizarTipoFrete } from "@/features/expedicao/lib/tipo-frete";
 import { nomeTransportadoraCadastro } from "@/features/orcamentos/lib/modalidade-frete";
 import type { ModalidadeFrete } from "@/features/expedicao/types";
+import { reenvioBloqueiaPrepostagem } from "@/features/expedicao/lib/reenvio";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -69,6 +70,27 @@ export async function POST(request: Request) {
   const gateAcompanhar = await consultarGateAcompanhar(supabase, idInt, "a prepostagem");
   if (gateAcompanhar.bloqueado) {
     return NextResponse.json({ success: false, code: "ACOMPANHAR_PENDENTE", message: gateAcompanhar.mensagem }, { status: 409 });
+  }
+
+  // REENVIO ABERTO DE OUTRO TIPO (19/11/2026, caso #24552): nada sai para os
+  // Correios. Antes de qualquer chamada externa; mesma regra de "aberto" do
+  // banco (`exp_reenvio_redespacho`). Leitura falha nao bloqueia: o despacho
+  // continua recusado pelo gatilho do redespacho.
+  {
+    const [{ data: ultimoReenvio }, { data: despachoAtual }] = await Promise.all([
+      supabase
+        .from("expedicao_reenvios")
+        .select("ciclo, tipo_frete_novo, criado_em")
+        .eq("id_int", idInt)
+        .order("ciclo", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      supabase.from("expedicoes").select("data_despacho").eq("id_int", idInt).maybeSingle()
+    ]);
+    const recusaReenvio = reenvioBloqueiaPrepostagem(ultimoReenvio, despachoAtual?.data_despacho ?? null);
+    if (recusaReenvio) {
+      return NextResponse.json({ success: false, code: "REENVIO_OUTRO_TIPO", message: recusaReenvio }, { status: 409 });
+    }
   }
 
   // Dados do pedido: mesmas fontes da etiqueta interna.
