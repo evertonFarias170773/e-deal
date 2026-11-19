@@ -66,6 +66,7 @@ import {
   isTipoDisponivelParaEmpresa
 } from "@/lib/mocks/pagamentos.mock";
 import { SELO_PIX_EM_PREPARACAO, pixEmPreparacao } from "@/features/cobrancas/lib/pix-em-preparacao";
+import { EMPRESA_CARTAO_ASAAS as EMPRESA_CARTAO_ASAAS_LIB, empresaTemCartaoC6 } from "@/features/cobrancas/lib/cartao-biro";
 
 type PropostaCobrancaPanelProps = {
   proposta: Proposta;
@@ -110,8 +111,9 @@ function getRotuloModalidade(tipo: CobrancaTipo, fluxoCartao?: "PADRAO" | "ASAS"
 /**
  * Empresa recebedora habilitada para o Cartão Asaas: IDEAL GRÁFICA EXPRESSA
  * EIRELI. Comparação sempre por ID — nunca por nome da empresa.
+ * Cartão C6: Ideal e E3; a Birô só com a chave CARTAO_BIRO (lib/cartao-biro).
  */
-const EMPRESA_CARTAO_ASAAS = 1;
+const EMPRESA_CARTAO_ASAAS = EMPRESA_CARTAO_ASAAS_LIB;
 
 /**
  * Rótulo exibido na tela. Difere de `getRotuloModalidade` de propósito: aquele
@@ -208,7 +210,7 @@ function isFormaPagamentoDisponivel(
   if (opcaoId === "PIX") return idEmpresa === 1 || idEmpresa === 2 || idEmpresa === 3;
   if (opcaoId === "BOLETO") return idEmpresa === 1 || idEmpresa === 2 || idEmpresa === 3;
   if (opcaoId === "CARD_ASAS") return idEmpresa === EMPRESA_CARTAO_ASAAS;
-  if (opcaoId === "CARD_PARCELADO") return idEmpresa === 1 || idEmpresa === 3;
+  if (opcaoId === "CARD_PARCELADO") return empresaTemCartaoC6(idEmpresa);
   return true;
 }
 
@@ -833,7 +835,7 @@ export function PropostaCobrancaPanel({
         : form.tipoCobranca === "BOLETO"
           ? (idEmpresaReal === 1 || idEmpresaReal === 2 || idEmpresaReal === 3)
           : form.tipoCobranca === "CARD_PARCELADO"
-            ? (idEmpresaReal === 1 || idEmpresaReal === 3)
+            ? empresaTemCartaoC6(idEmpresaReal)
             : isFaturado
               ? true
               : false)
@@ -845,7 +847,7 @@ export function PropostaCobrancaPanel({
         : form.tipoCobranca === "BOLETO"
           ? (idEmpresaReal === 1 || idEmpresaReal === 2 || idEmpresaReal === 3 ? "" : "Boleto real não disponível para esta empresa.")
           : form.tipoCobranca === "CARD_PARCELADO"
-            ? (idEmpresaReal === 1 || idEmpresaReal === 3 ? "" : "Cartão de crédito real disponível apenas para as empresas Ideal Gráfica e E3 Brindes.")
+            ? (empresaTemCartaoC6(idEmpresaReal) ? "" : "Cartão de crédito real disponível apenas para as empresas Ideal Gráfica e E3 Brindes.")
             : isFaturado
               ? ""
               : "Esta forma de pagamento está em preparação para o ambiente real.")
@@ -1501,7 +1503,7 @@ export function PropostaCobrancaPanel({
       return;
     }
 
-    if (source === "supabase" && form.tipoCobranca === "CARD_PARCELADO" && idEmpresaReal === 2) {
+    if (source === "supabase" && form.tipoCobranca === "CARD_PARCELADO" && idEmpresaReal === 2 && !empresaTemCartaoC6(2)) {
       showToast({ type: "error", title: "Geração de cartão de crédito real não disponível para a empresa Ideal Birô." });
       return;
     }

@@ -7,6 +7,7 @@ import { verificarPermissaoServerSide } from "@/lib/auth/verificar-permissao";
 import { mensagemPermissaoCombinado, permissoesDoPagamentoCombinado } from "@/features/cobrancas/lib/permissoes-pagamento-combinado";
 import { calcularSituacaoQuitacaoProposta } from "@/features/cobrancas/services/conferencia-financeira.service";
 import { gerarPixBancoInter } from "@/features/cobrancas/services/banco-inter.service";
+import { empresaTemCartaoC6 } from "@/features/cobrancas/lib/cartao-biro";
 import { recusaDoGatilhoNoErro, recusaDoTipoNoPedido } from "@/features/cobrancas/lib/tipo-x-retrabalho";
 import { lerContextoRetrabalhoDoPedido } from "@/features/cobrancas/services/tipo-x-retrabalho.service";
 import { CODIGO_PEDIDO_ENTREGUE, MENSAGEM_PEDIDO_ENTREGUE, statusEhEntregue } from "@/features/orcamentos/services/pedido-entregue";
@@ -231,7 +232,8 @@ export async function POST(request: NextRequest) {
     const isBoletoSecundario = tipoSecundario === "BOLETO";
     const isCartaoSecundario = tipoSecundario === "CARD_PARCELADO";
 
-    if ((isBoletoSecundario || isCartaoSecundario) && idEmpresaReal === 2) {
+    // Cartão da Birô: só com a chave CARTAO_BIRO (lib/cartao-biro). Boleto da Birô segue recusado.
+    if ((isBoletoSecundario || (isCartaoSecundario && !empresaTemCartaoC6(2))) && idEmpresaReal === 2) {
       return NextResponse.json(
         { success: false, error: `Geração de ${isBoletoSecundario ? "boleto" : "cartão de crédito"} real não disponível para a empresa Ideal Birô.` },
         { status: 400 }

@@ -1,4 +1,5 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { webhookCartaoPorEmpresa } from "./webhook-cartao.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -206,12 +207,8 @@ const isCardParcelado = pagamento.tipo_cobranca === "CARD_PARCELADO";
 
 const idEmpresa = Number(pagamento.id_empresa || 0);
 
-const webhookPorEmpresa: Record<number, string> = {
-  1: "https://10074.hostoo.net.br/webhook/card-ideal-c6",
-  3: "https://10074.hostoo.net.br/webhook/card-e3-c6",
-};
-
-const n8nWebhookUrl = webhookPorEmpresa[idEmpresa] || "";
+// Ideal e E3 como sempre; Birô só com o segredo CARTAO_BIRO ligado (webhook-cartao.ts).
+const n8nWebhookUrl = webhookCartaoPorEmpresa(idEmpresa, Deno.env.get("CARTAO_BIRO"));
 
 if (isCardParcelado && !n8nWebhookUrl) {
   return new Response("Webhook da empresa não configurado.", { status: 400 });

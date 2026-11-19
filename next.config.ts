@@ -2,6 +2,12 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  // Chave do cartão C6 da Birô (src/features/cobrancas/lib/cartao-biro.ts). A tela
+  // (componente de navegador) precisa ler o mesmo valor do servidor: o Next
+  // inlina no build. Não é segredo; trocar exige novo deploy.
+  env: {
+    CARTAO_BIRO: process.env.CARTAO_BIRO ?? "",
+  },
   typescript: {
     ignoreBuildErrors: true,
   },

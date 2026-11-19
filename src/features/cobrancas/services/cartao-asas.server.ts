@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { EMPRESA_CARTAO_ASAAS } from "@/features/cobrancas/lib/cartao-biro";
 
 /**
  * Cartão Asas — núcleo da geração do checkout, fora da rota.
@@ -46,6 +47,7 @@ type CobrancaRow = {
   tipo_cobranca: string | null;
   url_cobranca: string | null;
   whats_contato: string | null;
+  id_empresa: number | null;
 };
 
 export type ResultadoCartaoAsas = {
@@ -106,7 +108,7 @@ export async function gerarCartaoAsasParaCobranca(
 ): Promise<ResultadoCartaoAsas> {
   const { data: cobranca, error: fetchErr } = await supabase
     .from("pagamentos_v2")
-    .select("id, id_pagamento, id_cliente, cliente, documento, valor, vencimento, descricao, status, tipo_cobranca, url_cobranca, whats_contato")
+    .select("id, id_pagamento, id_cliente, cliente, documento, valor, vencimento, descricao, status, tipo_cobranca, url_cobranca, whats_contato, id_empresa")
     .eq("id", cobrancaId)
     .maybeSingle<CobrancaRow>();
 
@@ -119,6 +121,17 @@ export async function gerarCartaoAsasParaCobranca(
 
   if (String(cobranca.tipo_cobranca ?? "").toUpperCase() !== "CARD_PARCELADO") {
     return { status: 400, body: { success: false, message: "Esta cobrança não é do tipo cartão." } };
+  }
+
+  // A conta Asaas é uma só, da Ideal Gráfica (empresa 1). A tela já escondia a
+  // opção para as outras empresas, mas a rota aceitava qualquer cobrança: uma
+  // chamada direta criava o checkout da Birô ou da E3 na conta da Ideal
+  // (brecha fechada em 19/11/2026). Vem do banco, nunca de quem chama.
+  if (Number(cobranca.id_empresa) !== EMPRESA_CARTAO_ASAAS) {
+    return {
+      status: 400,
+      body: { success: false, code: "ASAAS_SO_IDEAL", message: "O Cartão Asaas é só da Ideal Gráfica. Use o cartão de crédito do C6." }
+    };
   }
 
   if (STATUS_TERMINAIS.has(String(cobranca.status ?? "").toUpperCase())) {

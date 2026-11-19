@@ -6,6 +6,7 @@ import { isPropostaStatusProtegido } from "@/features/orcamentos/services/status
 import { aplicarStatusRecomendadoProposta } from "@/features/orcamentos/services/status-writer.service";
 import { avaliarCancelamentoNoServidor } from "@/features/cobrancas/services/cancelamento-elegibilidade.server";
 import { cabecalhosWebhookN8n } from "@/lib/n8n/webhook-segredo";
+import { WEBHOOK_CANCELA_CARTAO_BIRO_C6, webhookCancelaCartaoC6 } from "@/features/cobrancas/lib/cartao-biro";
 import {
   chamarCancelamentoDePix,
   corpoDoCancelamentoPix,
@@ -536,12 +537,14 @@ export async function POST(request: Request) {
           );
         }
 
-        const webhookUrl = "https://10074.hostoo.net.br/webhook/cancela-cartao-c6-vibe";
+        // Birô (19/11/2026): fluxo próprio, que exige o cabeçalho do segredo.
+        // Ideal e E3 seguem no cancela-cartao-c6-vibe, exatamente como antes.
+        const webhookUrl = webhookCancelaCartaoC6(idEmpresaCobranca);
         console.log("[cancelar-externo][CARD-PARCELADO] chamando n8n", { cod_C6: codC6Final, id_empresa: idEmpresaCobranca });
 
         const webhookResponse = await fetch(webhookUrl, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: webhookUrl === WEBHOOK_CANCELA_CARTAO_BIRO_C6 ? cabecalhosWebhookN8n() : { "Content-Type": "application/json" },
           body: JSON.stringify({ cod_C6: codC6Final, id_empresa: String(idEmpresaCobranca) })
         });
 

@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { gerarPixBancoInter } from "@/features/cobrancas/services/banco-inter.service";
 import { pixDaBiroNoInter } from "@/features/cobrancas/lib/pix-em-preparacao";
+import { empresaTemCartaoC6 } from "@/features/cobrancas/lib/cartao-biro";
 import { calcularSituacaoQuitacaoProposta } from "@/features/cobrancas/services/conferencia-financeira.service";
 import {
   EMPRESAS_RECEBEDORAS_FIXAS,
@@ -62,8 +63,8 @@ const TEMPO_LIMITE_PIX_MS = 20_000;
 
 /** Empresas com PIX no painel do vendedor (PropostaCobrancaPanel, opção PIX). */
 const EMPRESAS_COM_PIX = new Set([1, 2, 3]);
-/** "Cartão de crédito" (C6) no painel do vendedor: Ideal e E3; a Birô não tem. */
-const EMPRESAS_COM_CARTAO = new Set([1, 3]);
+/* "Cartão de crédito" (C6): a mesma regra do painel do vendedor, em lib/cartao-biro
+   (Ideal e E3; a Birô só com a chave CARTAO_BIRO). */
 
 /**
  * Família financeira do status-engine (`FAMILIA_FINANCEIRA`): só nela a
@@ -388,7 +389,7 @@ export async function montarSituacaoAreaCliente(
 
   const metodos = {
     pix: idEmpresa != null && EMPRESAS_COM_PIX.has(idEmpresa),
-    cartao: idEmpresa != null && EMPRESAS_COM_CARTAO.has(idEmpresa)
+    cartao: idEmpresa != null && empresaTemCartaoC6(idEmpresa)
   };
 
   let motivoBloqueio: string | null = null;
