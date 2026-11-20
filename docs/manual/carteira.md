@@ -1,6 +1,6 @@
 # Carteira (contas a receber)
 
-> **Última revisão:** 19/11/2026 (título já cancelado no banco do C6 e ainda aberto no sistema sai pelo cancelamento: o sistema confere que não houve pagamento e cancela só aqui). 12/11/2026 (título vencido que ganha data nova volta a vencer na rotina da madrugada)
+> **Última revisão:** 20/11/2026 (boleto novo da Ideal Birô, à vista e faturado, é registrado no C6: vale Refazer boleto, Consultar pagamento C6 e o título cancelado fica no histórico; título da Birô já registrado no Banco Inter segue no Inter até o fim). 19/11/2026 (título já cancelado no banco do C6 e ainda aberto no sistema sai pelo cancelamento: o sistema confere que não houve pagamento e cancela só aqui). 12/11/2026 (título vencido que ganha data nova volta a vencer na rotina da madrugada)
 > **Caminho no menu:** Financeiro → Carteira
 > **Endereço:** `/contas-a-receber`
 
@@ -132,7 +132,7 @@ A aba **Previsão de recebimento** mostra **Previsão por semana** (**Semana atu
 4. Se aparecer o quadro **E-mail de Cliente Ausente**, confira o **E-mail para envio:** e marque **Confirmo o uso deste e-mail para o registro bancário.**
 5. Ajuste, se precisar, **Valor**, **Vencimento**, **Descrição**, **Multa (%)** e **Juros/Dia (%)** da parcela.
 6. Clique em **Registrar boleto** na parcela e confirme em **Confirmar Registro Bancário**. Para registrar todas de uma vez, use **Registrar todos os boletos desta proposta**.
-7. Se o banco aceitar a cobrança e demorar a emitir o boleto (acontece no Inter, na Ideal Birô), aparece o aviso **Boleto em processamento no banco** e a parcela mostra **Em processamento no banco**. Não registre de novo: o boleto aparece quando o banco concluir.
+7. Se o banco aceitar a cobrança e demorar a emitir o boleto (acontece só no Banco Inter, em título da Ideal Birô que já estava no Inter), aparece o aviso **Boleto em processamento no banco** e a parcela mostra **Em processamento no banco**. Não registre de novo: o boleto aparece quando o banco concluir.
 8. A parcela passa a mostrar **Boleto Registrado**, com **Nosso Número**, **Linha Digitável** e os botões **Baixar PDF**, **Copiar Linha Digitável** e **Copiar Link**. O PDF é gerado logo depois do registro.
 
 Para só gravar os ajustes sem registrar no banco, clique em **Salvar Alterações**.
@@ -169,7 +169,7 @@ O que o Refazer boleto **não** faz:
 - Não cancela o título. A parcela continua na Carteira, na mesma linha.
 - Não mexe na cobrança e não a devolve ao Registro de recebíveis.
 - Não muda o valor nem o número da parcela. Multa e juros do título também são mantidos.
-- Não vale para título da Ideal Birô (Banco Inter), depósito em conta, boleto ainda não registrado, título pago ou cancelado. Nesses casos a opção não aparece no menu.
+- Não vale para título da Ideal Birô que ainda está no Banco Inter (registrado antes de 20/11/2026), depósito em conta, boleto ainda não registrado, título pago ou cancelado. Nesses casos a opção não aparece no menu.
 - Não vale para parcela vencida. A opção aparece, mas o clique mostra "Parcela vencida: fale com o Financeiro".
 
 ### Dar baixa em um título pago por fora do boleto
@@ -209,7 +209,7 @@ Existem dois cancelamentos diferentes. Escolha pelo resultado que você quer. Pa
 1. Na aba **Carteira**, abra o menu de ações e clique em **Cancelar recebível**. Para depósito, a mesma opção existe na aba **Depósitos**.
 2. Leia o aviso da janela e clique em **Confirmar cancelamento**.
 
-Se o boleto estiver registrado, ele é cancelado no banco primeiro; se o banco falhar, nada muda. Depois o título fica **Cancelado**. Nos títulos da Ideal Birô (Banco Inter), o título sai da lista em vez de ficar como cancelado. A cobrança que originou o título continua ativa.
+Se o boleto estiver registrado, ele é cancelado no banco primeiro; se o banco falhar, nada muda. Depois o título fica **Cancelado**. Nos títulos da Ideal Birô que ainda estão no Banco Inter (registrados antes de 20/11/2026), o título sai da lista em vez de ficar como cancelado; os da Birô no C6 ficam como cancelados, como os da Ideal Gráfica e da E3 Brindes. A cobrança que originou o título continua ativa.
 
 Em título faturado com boleto registrado, a janela avisa: "Esta parcela será cancelada no C6 e sai do Contas a Receber (fica no histórico). A cobrança continua ativa e volta para o Registro de recebíveis, onde os títulos precisam ser lançados de novo. Para só corrigir dados do boleto, use Refazer boleto." Antes de confirmar, leia "Cancelar só uma parcela não deixa relançar", em Regras e bloqueios.
 
@@ -254,6 +254,7 @@ O boleto é cancelado no banco e o título continua ativo, agora como **Depósit
 
 ### Demais regras
 
+- **Banco da Ideal Birô:** desde 20/11/2026 o boleto novo da Birô, à vista ou de título faturado, é registrado no **C6**, como o da Ideal Gráfica e da E3 Brindes: o pagamento baixa sozinho, e valem **Refazer boleto**, **Consultar pagamento C6** e o cancelamento no C6. O título da Birô registrado antes no Banco Inter continua no Inter até ser pago ou cancelado. O sistema escolhe o banco sozinho, pelo código do boleto.
 - Não dá para cancelar título pago. A janela mostra "Cancelamento não permitido".
 - Não dá para dar baixa em título já pago ou cancelado.
 - Não dá para dar baixa manual em boleto que o banco informa como pago. Use **Consultar pagamento C6** para baixar com a data do banco.

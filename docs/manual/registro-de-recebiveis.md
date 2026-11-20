@@ -1,6 +1,6 @@
 # Registro de recebíveis
 
-> **Última revisão:** 06/11/2026 (títulos contam por cobrança: a entrada em boleto não esconde a parte faturada)
+> **Última revisão:** 20/11/2026 (o boleto da Ideal Birô passa a ser emitido no C6; título antigo da Birô segue no Banco Inter até o fim). 06/11/2026 (títulos contam por cobrança: a entrada em boleto não esconde a parte faturada)
 > **Caminho no menu:** Financeiro → Registro de recebíveis
 > **Endereço:** `/contas-a-receber/registro`
 
@@ -129,6 +129,7 @@ Use só quando o parcelamento inteiro precisa ser refeito. Para trocar o boleto 
 - Gerar os títulos não registra o boleto no banco. O registro é o passo seguinte, na janela **Revisar para Geração Bancária** da Carteira. Registrar no banco exige a permissão **Administrar Contas a Receber**; quem só gera os títulos e não a tem recebe "Sem permissão para registrar boleto no banco (contas_receber.admin)."
 - Multa e juros nascem zerados em cada parcela. Preencha se for cobrar.
 - Só aparecem em **Empresa recebedora** as empresas que têm modelo de boleto configurado.
+- Banco que emite o boleto: o C6, nas três empresas. A Ideal Birô passou ao C6 em 20/11/2026; título da Birô registrado antes no Banco Inter continua no Inter até ser pago ou cancelado.
 - Ao mudar entre parcela única e parcelamento, as parcelas já geradas são descartadas. Clique em **Gerar Parcelas** de novo.
 
 ## O que não confundir
