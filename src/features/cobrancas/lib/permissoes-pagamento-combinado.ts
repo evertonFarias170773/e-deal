@@ -11,14 +11,19 @@
  *   - sempre `credito.usar` (a parte E-Crédito);
  *   - restante em PIX: nada a mais (o PIX avulso também não pede permissão de
  *     boleto: gerar-pix só exige sessão);
- *   - restante em Boleto, Cartão ou E-Faturado: `cobrancas.emitir_boleto`,
- *     como antes. Só o PIX foi liberado.
+ *   - restante em Cartão de crédito (`CARD_PARCELADO`): nada a mais, desde
+ *     23/11/2026 (caso 25648, vendedor com E-Crédito R$ 22,00 + cartão). O
+ *     combinado só grava a cobrança e o link público, como o cartão avulso do
+ *     vendedor (cobrancas.create, que a gravação já exige); o checkout do C6 é
+ *     criado pela área do cliente (/api/area-cliente/pagar), pelo token
+ *     público, sem permissão de funcionário;
+ *   - restante em Boleto ou E-Faturado: `cobrancas.emitir_boleto`, como antes.
  */
 
 export const PERMISSAO_CREDITO = "credito.usar";
 export const PERMISSAO_BOLETO = "cobrancas.emitir_boleto";
 
-const RESTANTE_SEM_PERMISSAO_EXTRA = new Set(["PIX", "E-PIX"]);
+const RESTANTE_SEM_PERMISSAO_EXTRA = new Set(["PIX", "E-PIX", "CARD_PARCELADO"]);
 
 export function permissoesDoPagamentoCombinado(tipoSecundario: string | null | undefined): string[] {
   const tipo = String(tipoSecundario ?? "").trim().toUpperCase();

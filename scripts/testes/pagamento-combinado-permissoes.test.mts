@@ -68,7 +68,8 @@ async function combinado(tipoSecundario: string) {
 console.log("== regra");
 confere("PIX: só credito.usar", JSON.stringify(regra.permissoesDoPagamentoCombinado("PIX")) === '["credito.usar"]');
 confere("E-PIX: só credito.usar", JSON.stringify(regra.permissoesDoPagamentoCombinado("E-PIX")) === '["credito.usar"]');
-for (const tipo of ["BOLETO", "CARD_PARCELADO", "E-FATURADO", "", "QUALQUER"]) {
+confere("CARD_PARCELADO: só credito.usar (23/11/2026)", JSON.stringify(regra.permissoesDoPagamentoCombinado("CARD_PARCELADO")) === '["credito.usar"]');
+for (const tipo of ["BOLETO", "E-FATURADO", "", "QUALQUER"]) {
   confere(`${tipo || "(vazio)"}: credito.usar e cobrancas.emitir_boleto, como antes`,
     JSON.stringify(regra.permissoesDoPagamentoCombinado(tipo)) === '["credito.usar","cobrancas.emitir_boleto"]');
 }
@@ -89,11 +90,45 @@ preparar(VENDEDOR);
   confere("nada lido da proposta nem gravado", !falso.chamadas.some((c) => c.tabela === "propostas") && r.escritas.length === 0);
 }
 
-console.log("== vendedor, E-Crédito + Cartão e + E-Faturado (sem mudança)");
-for (const tipo of ["CARD_PARCELADO", "E-FATURADO"]) {
+console.log("== vendedor, 25648, E-Crédito R$ 22 + Cartão (liberado em 23/11/2026)");
+preparar(VENDEDOR);
+{
+  const r = await combinado("CARD_PARCELADO");
+  confere("Cartão: passa da conferência de permissão (para em Proposta não encontrada)", r.status === 404 && r.json.error === "Proposta não encontrada.", r);
+  confere("nada gravado", r.escritas.length === 0, r.escritas);
+}
+
+console.log("== vendedor, E-Crédito + E-Faturado (sem mudança)");
+for (const tipo of ["E-FATURADO"]) {
   preparar(VENDEDOR);
   const r = await combinado(tipo);
   confere(`${tipo}: continua recusado (cobrancas.emitir_boleto)`, r.status === 403 && /cobrancas\.emitir_boleto/.test(r.json.error ?? ""), r.json);
+}
+
+console.log("== vendedor sem credito.usar, E-Crédito + Cartão");
+preparar(VENDEDOR.filter((p) => p !== "credito.usar"));
+{
+  const r = await combinado("CARD_PARCELADO");
+  confere("Cartão sem credito.usar: recusa pedindo só credito.usar", r.status === 403 && /\(credito\.usar\)/.test(r.json.error ?? ""), r.json);
+}
+
+console.log("== administradores, como antes (o is_admin so vale para quem nao tem perfil ativo)");
+for (const tipo of ["PIX", "CARD_PARCELADO", "BOLETO", "E-FATURADO"]) {
+  falso.zerar();
+  falso.responder("usuarios:select", { data: { id_perfil: 1, is_super_adm: true, is_admin: true }, error: null });
+  falso.responder("propostas:select", { data: null, error: null });
+  const r = await combinado(tipo);
+  confere(`Super Administrador, ${tipo}: passa da conferencia`, r.status === 404, r);
+}
+// Perfil Administrador (id 2) no banco em 23/11/2026: tem cobrancas.emitir_boleto, NAO tem credito.usar.
+// Ja era recusado em qualquer combinado antes desta mudanca; continua igual.
+for (const tipo of ["PIX", "CARD_PARCELADO", "BOLETO", "E-FATURADO"]) {
+  falso.zerar();
+  falso.responder("usuarios:select", { data: { id_perfil: 2, is_super_adm: false, is_admin: true }, error: null });
+  falso.responder("perfis:select", { data: { permissoes: ["cobrancas.create", "cobrancas.emitir_boleto"] }, error: null });
+  falso.responder("propostas:select", { data: null, error: null });
+  const r = await combinado(tipo);
+  confere(`Perfil Administrador, ${tipo}: recusa so por credito.usar, como antes`, r.status === 403 && /\(credito\.usar\)/.test(r.json.error ?? ""), r.json);
 }
 
 console.log("== perfil sem credito.usar");

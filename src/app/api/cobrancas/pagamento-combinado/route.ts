@@ -76,8 +76,9 @@ export async function POST(request: NextRequest) {
   }
 
   // Permissão da forma usada de fato no restante (12/11/2026, caso 25197):
-  // E-Crédito pede credito.usar; PIX não pede permissão de boleto; Boleto,
-  // Cartão e E-Faturado seguem pedindo cobrancas.emitir_boleto.
+  // E-Crédito pede credito.usar; PIX e, desde 23/11/2026 (caso 25648), Cartão
+  // não pedem permissão de boleto; Boleto e E-Faturado seguem pedindo
+  // cobrancas.emitir_boleto.
   const faltando: string[] = [];
   for (const permissao of permissoesDoPagamentoCombinado(tipoSecundario)) {
     if (!(await verificarPermissaoServerSide(supabaseUser, user.id, permissao))) faltando.push(permissao);
