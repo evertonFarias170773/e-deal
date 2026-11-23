@@ -276,6 +276,29 @@ export async function listarPedidosOperacionais(): Promise<PropostaOperacionalLi
     console.warn("[pedidos-producao.service] Erro ao buscar notas_fiscais");
   }
 
+  /**
+   * Escaninho de encontro ocupado agora (23/11/2026), o mesmo nome da tarja do
+   * boletim. Uma consulta so, com os ids da pagina; a ocupacao viva e a de
+   * `liberado_em` nulo (o banco garante uma por pedido). Falha aqui so deixa a
+   * coluna vazia.
+   */
+  const escaninhoPorPedido = new Map<number, string>();
+  try {
+    const { data: ocupacoes, error: escErr } = await client
+      .from("escaninhos_ocupacao")
+      .select("id_int, escaninhos(nome)")
+      .in("id_int", idInts)
+      .is("liberado_em", null);
+    if (escErr) throw escErr;
+    for (const linha of (ocupacoes ?? []) as { id_int: number | null; escaninhos: { nome: string | null } | { nome: string | null }[] | null }[]) {
+      const ref = Array.isArray(linha.escaninhos) ? linha.escaninhos[0] : linha.escaninhos;
+      const nome = String(ref?.nome ?? "").trim();
+      if (nome && Number.isFinite(Number(linha.id_int))) escaninhoPorPedido.set(Number(linha.id_int), nome);
+    }
+  } catch {
+    console.warn("[pedidos-producao.service] Erro ao buscar escaninhos_ocupacao");
+  }
+
   // 4. Construir a resposta agregada
   const retrabalhoLido = await retrabalhoEmCurso;
   if (retrabalhoLido.error) {
@@ -422,6 +445,7 @@ export async function listarPedidosOperacionais(): Promise<PropostaOperacionalLi
       isRetrabalho: marcaDeRetrabalho(p, idsComRetrabalho.has(Number(p.id_int))) !== null,
       retrabalhoOriginal: marcaDeRetrabalho(p, idsComRetrabalho.has(Number(p.id_int)))?.idIntOriginal ?? null,
       is_prd_aprovado: p.is_prd_aprovado === true,
+      escaninho: escaninhoPorPedido.get(idInt) ?? null,
       setores
     });
   }

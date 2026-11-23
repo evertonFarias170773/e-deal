@@ -273,6 +273,13 @@ export interface PropostaOperacionalListItem {
    */
   hasPedidoOs: boolean;
   /**
+   * Nome do escaninho de encontro que o pedido ocupa agora (o mesmo da tarja do
+   * boletim, 23/11/2026): `escaninhos_ocupacao` com `liberado_em` nulo. Nulo =
+   * sem escaninho (um setor só, ainda não impresso, já liberado ou falha na
+   * leitura). Lido em lote com a lista, nunca por linha.
+   */
+  escaninho?: string | null;
+  /**
    * A nota fiscal AUTORIZADA que representa o pedido, ou `null`.
    *
    * Quem escolhe e `escolherNotaAutorizadaDoPedido` (src/lib/fiscal/nota-do-pedido.ts),

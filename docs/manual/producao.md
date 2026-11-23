@@ -1,6 +1,6 @@
 # Produção (ordens de serviço)
 
-> **Última revisão:** 07/11/2026
+> **Última revisão:** 23/11/2026 (coluna **Escaninho** no painel geral). 07/11/2026
 > **Caminho no menu:** Produção (item direto do menu lateral, sem submenu). A OS de cada pedido abre a partir da lista. O Kanban e a Fila de impressão não estão no menu: chega-se a eles pelo endereço ou pelas abas **Fila Geral / Kanban Board / Fila de Impressão / Expedição** que aparecem no topo dessas duas telas.
 > **Endereço:** `/pedidos` (painel geral). OS: `/pedidos/boletim`. Kanban: `/pedidos/kanban` (e `/os-producao`). Fila de impressão: `/pedidos/impressao`.
 
@@ -133,8 +133,14 @@ Nomes exatamente como aparecem na tela.
 2. Use a busca (**Buscar por ID, cliente, vendedor ou OS...**) e os filtros **Todos Status**, **Todos Vendedores** e **Todas Empresas**. **Limpar filtros** volta tudo ao padrão. Os filtros ficam no endereço da página, então sobrevivem a atualizar a tela e podem ser enviados por link.
 3. Na coluna **Cliente**, a linha "Pagador: ..." aparece quando quem paga não é o cliente do pedido.
 4. A coluna **Status** mostra o status do pedido e, logo abaixo, quantos setores já terminaram ("1/2 setores prontos"). Também aparecem ali **Nota emitida · nº ...**, quando o pedido já tem nota autorizada, e o selo **Liberado para NF**.
-5. A coluna **Setores** traz um chip por setor do pedido, com a cor do setor e a fase em que ele está.
-6. Clicar em qualquer ponto da linha abre a OS do pedido.
+5. A coluna **Escaninho** mostra, num selo verde com letras brancas em caixa alta, o escaninho de encontro que o pedido ocupa agora. É o mesmo nome da tarja do boletim, como na etiqueta física (por exemplo, **LULA COLOSSAL**). A célula fica vazia quando o pedido não tem escaninho:
+   - pedido de um setor só;
+   - pedido composto que ainda não teve o PDF da OS gerado (o escaninho é escolhido na primeira impressão);
+   - pedido cujo escaninho já foi liberado, no despacho ou no cancelamento.
+
+   Veja [Escaninho de encontro](proposta-producao-boletim-historico.md#escaninho-de-encontro-pedido-composto).
+6. A coluna **Setores** traz um chip por setor do pedido, com a cor do setor e a fase em que ele está.
+7. Clicar em qualquer ponto da linha abre a OS do pedido.
 
 ### Revisar um pedido que acabou de chegar (linha amarela)
 
@@ -355,3 +361,5 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/features/orcamentos/services/orcamentos.service.ts`
 - `src/features/expedicao/services/expedicao-acoes.service.ts`
 - `src/features/dashboard/sections/ProducaoSection.tsx`
+
+> **Mudança desta revisão:** 23/11/2026 — nova coluna **Escaninho** no painel geral, entre **Status** e **Setores**: o nome do escaninho de encontro que o pedido ocupa agora, num selo verde (o mesmo verde da tarja do boletim) com letras brancas em caixa alta. Sem escaninho, a célula fica vazia. Nada mais mudou na lista.
