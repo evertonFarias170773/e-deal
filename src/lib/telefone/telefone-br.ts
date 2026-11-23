@@ -2,8 +2,10 @@
  * Validação estrutural de telefone brasileiro.
  *
  * ESPELHO da regra que roda no n8n (workflow `CARTAO C6 - IDEAL - E3`,
- * id `rxCDH6IwnG06guBD`, nós `Normaliza Ideal C6` e `Normaliza Ideal C`).
- * Mudou aqui, muda lá — e vice-versa.
+ * id `rxCDH6IwnG06guBD`, nós `Normaliza Ideal C6` e `Normaliza Ideal C`; e
+ * `CARTAO C6 - BIRO`, `aivdVtRTVUqdY8s2`, nó `Normaliza Biro C6`).
+ * Mudou aqui, muda lá — e vice-versa. `telefoneParaApi` tem cópia na Edge
+ * (`supabase/functions/pagamento-publico/telefone-conversa.ts`).
  *
  * Por que existe em dois lugares: o n8n é a última linha de defesa e revalida
  * tudo, porque o checkout também é aberto fora do ERP (link público reaberto
@@ -138,7 +140,23 @@ export function telefoneParaApi(valor: unknown): string {
   return "";
 }
 
+/**
+ * Texto que o CLIENTE lê quando o cartão não tem celular para mandar ao banco
+ * (23/11/2026): na página de pagamento (Edge pagamento-publico, mesma frase em
+ * `mensagem-checkout.ts`) e na área do cliente, antes de abrir as parcelas.
+ */
+export const MENSAGEM_CARTAO_SEM_CELULAR =
+  "Não encontramos um celular válido para o pagamento com cartão. Fale com o seu vendedor.";
+
 export type FontesTelefonePagador = {
+  /**
+   * Telefone da conversa PRINCIPAL do pedido no ChatGuru (`propostas_contatos_chatguru`),
+   * cru, como o Guru guarda. Passa por `telefoneParaApi` e vem ANTES de tudo
+   * (23/11/2026, regra de 17/11: o telefone mandado aos bancos sai da conversa
+   * principal; sem ela, o de sempre). No n8n é o campo `telefone_conversa` que a
+   * página de pagamento manda ao webhook do cartão.
+   */
+  telefoneConversa?: string | null;
   /** Contato gravado na própria cobrança (`pagamentos_v2.whats_contato`). */
   whatsContato?: string | null;
   whatsapp1?: string | null;
@@ -155,15 +173,18 @@ export type TelefonePagadorResolvido = {
 };
 
 /**
- * Mesma cadeia e mesma ordem do n8n: contato da cobrança → WhatsApp 1 →
- * WhatsApp 2 → telefone fixo, ficando com a PRIMEIRA fonte que resulta válida
- * (e não com a primeira preenchida).
+ * Mesma cadeia e mesma ordem do n8n: conversa principal do pedido → contato da
+ * cobrança → WhatsApp 1 → WhatsApp 2 → telefone fixo, ficando com a PRIMEIRA
+ * fonte que resulta válida (e não com a primeira preenchida). A conversa passa
+ * antes por `telefoneParaApi` (DDI fora, o 9 só no celular do Brasil, número
+ * estrangeiro ou DDD inexistente = vazio), como a Edge faz antes de mandar.
  */
 export function resolverTelefonePagador(
   fontes: FontesTelefonePagador,
   opcoes?: OpcoesTelefone
 ): TelefonePagadorResolvido {
   const candidatos: Array<{ origem: string; valor: string | null | undefined }> = [
+    { origem: "Conversa principal do pedido", valor: telefoneParaApi(fontes.telefoneConversa) },
     { origem: "Contato da cobrança", valor: fontes.whatsContato },
     { origem: "WhatsApp 1", valor: fontes.whatsapp1 },
     { origem: "WhatsApp 2", valor: fontes.whatsapp2 },

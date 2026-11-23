@@ -1,5 +1,7 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { webhookCartaoPorEmpresa } from "./webhook-cartao.ts";
+import { telefoneParaApi } from "./telefone-conversa.ts";
+import { mensagemDaFalhaDoCheckout } from "./mensagem-checkout.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -150,6 +152,7 @@ const { data: pagamento, error } = await supabase
   .from("pagamentos_v2")
   .select(`
     id_pagamento,
+    id_int,
     id_empresa,
     valor,
     cliente,
@@ -212,6 +215,23 @@ const n8nWebhookUrl = webhookCartaoPorEmpresa(idEmpresa, Deno.env.get("CARTAO_BI
 
 if (isCardParcelado && !n8nWebhookUrl) {
   return new Response("Webhook da empresa não configurado.", { status: 400 });
+}
+
+// Cartão (23/11/2026): o telefone da conversa PRINCIPAL do pedido no ChatGuru vai
+// ao webhook no campo telefone_conversa, já pela regra telefoneParaApi; o nó
+// "Normaliza" do n8n o usa antes do cadastro. Sem conversa (ou número que não
+// serve), vai vazio e o n8n segue com o cadastro, como antes. Falha de leitura
+// também vai vazio: não impede abrir a página.
+let telefoneConversa = "";
+if (isCardParcelado && !isPaid && pagamento.id_int) {
+  const { data: principal, error: erroConversa } = await supabase
+    .from("propostas_contatos_chatguru")
+    .select("telefone")
+    .eq("id_int", pagamento.id_int)
+    .eq("principal", true)
+    .maybeSingle();
+  if (erroConversa) console.error("Conversa principal não lida:", erroConversa.message);
+  telefoneConversa = telefoneParaApi(principal?.telefone);
 }
 
 
@@ -476,6 +496,8 @@ Telefone: (51) 3093-2840
 <script>
 
 const N8N_WEBHOOK_URL = ${JSON.stringify(n8nWebhookUrl)};
+const TELEFONE_CONVERSA = ${JSON.stringify(telefoneConversa)};
+const mensagemDaFalhaDoCheckout = ${mensagemDaFalhaDoCheckout.toString()};
 
 function copiar() {
   navigator.clipboard.writeText("${pagamento.pix_copia_cola || ""}");
@@ -573,7 +595,8 @@ async function continuarPagamento() {
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        token_publico: "${token}"
+        token_publico: "${token}",
+        telefone_conversa: TELEFONE_CONVERSA
       })
     });
 
@@ -591,7 +614,7 @@ async function continuarPagamento() {
 
     if (!response.ok) {
       liberarBotao();
-      alert(data.erro || data.message || "Erro ao criar checkout no C6. Status: " + response.status);
+      alert(mensagemDaFalhaDoCheckout(data, response.status));
       return;
     }
 

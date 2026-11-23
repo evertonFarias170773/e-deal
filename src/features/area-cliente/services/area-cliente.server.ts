@@ -13,6 +13,7 @@ import {
 import { gravarMarcaVibePelaAreaCliente } from "@/features/cobrancas/lib/sistema-antigo";
 import { calcularTotaisPelaRegraDaTela } from "@/features/orcamentos/services/totais-proposta.server";
 import { recusaDoGatilhoNoErro } from "@/features/cobrancas/lib/tipo-x-retrabalho";
+import { MENSAGEM_CARTAO_SEM_CELULAR, resolverTelefonePagador } from "@/lib/telefone/telefone-br";
 
 /**
  * Fronteira server-only da área do cliente (/p/<token>).
@@ -220,6 +221,7 @@ type ClienteRow = {
   nome: string | null;
   documento: string | null;
   whatsapp_1: string | null;
+  whatsapp_2?: string | null;
   telefone_fixo: string | null;
 };
 
@@ -252,7 +254,7 @@ async function resolverPagador(service: SupabaseClient, proposta: PropostaRow): 
 
   const { data, error } = await service
     .from("clientes")
-    .select("id_cliente, nome, documento, whatsapp_1, telefone_fixo")
+    .select("id_cliente, nome, documento, whatsapp_1, whatsapp_2, telefone_fixo")
     .eq("id_cliente", idPagador)
     .maybeSingle<ClienteRow>();
 
@@ -516,6 +518,39 @@ async function resolverEndereco(service: SupabaseClient, proposta: PropostaRow, 
   );
 }
 
+/**
+ * O cartão do C6 tem celular para mandar ao banco? (23/11/2026)
+ *
+ * Mesma cadeia do n8n (nós "Normaliza" dos fluxos de cartão): a conversa
+ * principal do pedido no ChatGuru primeiro, depois WhatsApp 1, WhatsApp 2 e
+ * fixo do cadastro do pagador, e só vale celular de 11 dígitos com o 9. Sem
+ * nenhum, o fluxo recusaria o checkout depois que o cliente escolhe as parcelas;
+ * aqui o aviso vem antes. Falha ao ler a conversa não bloqueia por si: segue
+ * com o cadastro, e o n8n continua sendo a última checagem.
+ */
+export async function pagadorTemCelularParaCartao(
+  service: Pick<SupabaseClient, "from">,
+  idInt: number,
+  pagador: Pick<ClienteRow, "whatsapp_1" | "whatsapp_2" | "telefone_fixo">
+): Promise<boolean> {
+  let telefoneConversa: string | null = null;
+  const { data, error } = await service
+    .from("propostas_contatos_chatguru")
+    .select("telefone")
+    .eq("id_int", idInt)
+    .eq("principal", true)
+    .maybeSingle();
+  if (error) {
+    console.warn(`[area-cliente] conversa principal do pedido ${idInt} nao lida:`, error.message);
+  } else {
+    telefoneConversa = (data as { telefone: string | null } | null)?.telefone ?? null;
+  }
+  return resolverTelefonePagador(
+    { telefoneConversa, whatsapp1: pagador.whatsapp_1, whatsapp2: pagador.whatsapp_2, telefoneFixo: pagador.telefone_fixo },
+    { somenteCelular: true }
+  ).valido;
+}
+
 export type ResultadoPagar =
   | { ok: true; cobranca: CobrancaAbertaPublica; reaproveitada: boolean }
   | { ok: false; codigo: "BLOQUEADO" | "PIX_EMITIDO_SEM_QR" | "PROVEDOR" | "DADOS" | "INTERNO"; mensagem: string };
@@ -570,6 +605,17 @@ export async function iniciarPagamentoAreaCliente(
 
   let linha = cobrancaAbertaReaproveitavel(cobrancas, metodo, aPagarCents);
   let reaproveitada = Boolean(linha);
+
+  // Cartão do C6 sem celular (23/11/2026): avisa ANTES de criar a cobrança e de
+  // abrir a escolha das parcelas. Linha reaproveitada que já aponta para um
+  // checkout de outro provedor (Cartão Asaas do vendedor) não passa por aqui.
+  if (metodo === "CARTAO") {
+    const urlDaLinha = String(linha?.url_cobranca ?? "");
+    const vaiAoC6 = !linha || !urlDaLinha || urlDaLinha.includes("pagamento-publico");
+    if (vaiAoC6 && !(await pagadorTemCelularParaCartao(service, idInt, pagador))) {
+      return { ok: false, codigo: "DADOS", mensagem: MENSAGEM_CARTAO_SEM_CELULAR };
+    }
+  }
 
   // 2. Criar — com os mesmos campos que o painel do vendedor grava.
   if (!linha) {
