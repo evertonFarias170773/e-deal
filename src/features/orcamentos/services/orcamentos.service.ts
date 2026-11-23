@@ -3119,6 +3119,13 @@ export async function saveProposta(
      * corrigida (só em pedido que ainda não saiu). Sem ele, não é corrigida.
      */
     statusDoBanco?: string | null;
+    /**
+     * Pedido ENTREGUE já conferido pelo `editar-paga` (23/11/2026): sem nota, sem
+     * título, sem valor recebido, com a permissão e o motivo
+     * (`lib/entregue-ajustavel.ts`). Só a rota passa; sem ele a trava do
+     * ENTREGUE continua valendo aqui.
+     */
+    pedidoEntregueConferido?: boolean;
   }
 ): Promise<{
   success: boolean;
@@ -3154,7 +3161,8 @@ export async function saveProposta(
   // Pedido entregue não pode ser alterado (02/11/2026), nem pelo editar-paga
   // (que chama este Salvar com force) nem pelo salvamento parcial. Status lido do
   // banco agora, nunca o do formulário. Roda no navegador no caminho normal.
-  if (isUpdate && id_int) {
+  // Exceção (23/11/2026): o editar-paga já conferiu o pedido entregue ajustável.
+  if (isUpdate && id_int && !options?.pedidoEntregueConferido) {
     const entregue = await recusaPorPedidoEntregue(client, id_int);
     if (entregue) return { success: false, errorMessage: entregue.message };
   }

@@ -89,6 +89,16 @@ const { saveProposta } = await import("@/features/orcamentos/services/orcamentos
 const sEnt = clienteFalso({ propostas: [prop(22414, "ENTREGUE")] });
 const rs = await saveProposta({ id_int: 22414 } as never, sEnt as never, "u", { force: true });
 checar("Salvar em ENTREGUE (mesmo com force, caminho do editar-paga): recusado sem gravar", [rs.success, rs.errorMessage, sEnt.chamadas], [false, MENSAGEM_PEDIDO_ENTREGUE, ["from:propostas"]]);
+{
+  // Exceção de 23/11/2026: só o editar-paga passa `pedidoEntregueConferido`, depois de conferir.
+  const c = clienteFalso({ propostas: [prop(22414, "ENTREGUE")] });
+  try {
+    await saveProposta({ id_int: 22414 } as never, c as never, "u", { force: true, pedidoEntregueConferido: true });
+  } catch {
+    // o resto do Salvar não cabe no cliente falso
+  }
+  checar("Salvar em ENTREGUE conferido pelo editar-paga: passa da trava", c.chamadas[0], "from:pagamentos_v2");
+}
 for (const st of ["EM TRANSITO", "NOVO"]) {
   const c = clienteFalso({ propostas: [prop(9, st)] });
   try {
@@ -118,11 +128,15 @@ for (const [rota, marco] of [["gerar-boleto", ".update(updatePayload)"], ["gerar
 const provider = ler("src/features/cobrancas/CobrancasProvider.tsx");
 checar("navegador (CobrancasProvider): confere o banco antes do insert da cobrança", antes(provider, "await recusaPorPedidoEntregue(client, Number(proposta.id_int))", ".insert([payloadInicial])"), true);
 const form = ler("src/features/orcamentos/OrcamentoFormPage.tsx");
+// Desde 23/11/2026 a tela trava pelo `pedidoEntregueTravado`: o entregue, menos o
+// ajustável (sem nota, título nem valor recebido; teste pedido-entregue-ajustavel).
 checar("tela do orçamento: produtos e frete travados, Salvar desabilitado e recusado com a mensagem", [
-  form.includes("bloqueioAvulsaPaga ||\n    pedidoEntregueNaTela;"),
-  form.includes("isQuotingVeppo || pedidoEntregueNaTela}"),
-  form.includes("description: MENSAGEM_PEDIDO_ENTREGUE")
-], [true, true, true]);
+  form.includes("bloqueioAvulsaPaga ||\n    pedidoEntregueTravado;"),
+  form.includes("isQuotingVeppo || pedidoEntregueTravado}"),
+  form.includes("description: entregueAjustavel?.mensagem ?? MENSAGEM_PEDIDO_ENTREGUE"),
+  form.includes("const pedidoEntregueTravado = pedidoEntregueNaTela && !pedidoEntregueLiberado;"),
+  form.includes("bloqueioNovaCobranca={pedidoEntregueNaTela ? MENSAGEM_PEDIDO_ENTREGUE : null}")
+], [true, true, true, true, true]);
 const painel = ler("src/features/cobrancas/PropostaCobrancaPanel.tsx");
 checar("aba Pagamentos: Gerar cobrança desabilitado pelo status da proposta, em toda tela que usa o painel", [
   painel.includes("statusEhEntregue(proposta.status_interno) ? MENSAGEM_PEDIDO_ENTREGUE : null"),

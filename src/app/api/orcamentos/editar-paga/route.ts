@@ -41,7 +41,14 @@ import {
 import { aplicarDiferencaFinanceira } from "@/features/cobrancas/services/diferenca-financeira-proposta";
 import { avaliarCoberturaFinanceira } from "@/features/cobrancas/services/cobertura-financeira-proposta";
 import { semCobrancaDeReenvio } from "@/features/cobrancas/lib/cobranca-reenvio";
-import { CODIGO_PEDIDO_ENTREGUE, MENSAGEM_PEDIDO_ENTREGUE, statusEhEntregue } from "@/features/orcamentos/services/pedido-entregue";
+import { CODIGO_PEDIDO_ENTREGUE, statusEhEntregue } from "@/features/orcamentos/services/pedido-entregue";
+import {
+  CODIGO_MOTIVO_ENTREGUE_AUSENTE,
+  MOTIVO_ENTREGUE_MINIMO,
+  motivoEntregueValido,
+  textoChatAjusteEntregue
+} from "@/features/orcamentos/lib/entregue-ajustavel";
+import { avaliarAjusteEntregueNoBanco } from "@/features/orcamentos/services/entregue-ajustavel.server";
 import {
   PERMISSAO_FATURADO,
   PERMISSAO_PROPOSTA_PAGA,
@@ -189,6 +196,8 @@ export async function POST(request: NextRequest) {
     chaveEvento?: string;
     /** `pagamentos_v2.id` do faturado que a tela espera ajustar — ver passo 5a1. */
     faturadoEsperadoId?: string;
+    /** Motivo da alteração de pedido ENTREGUE (obrigatório só nele) — ver passo 4a. */
+    motivoEntregue?: string;
   };
 
   try {
@@ -197,7 +206,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, error: "Payload inválido." }, { status: 400 });
   }
 
-  const { formState, idInt, idCliente, valorPagoConfirmado, novoTotal, userEmail, userName, motivoPendencia, chaveEvento, faturadoEsperadoId } = body;
+  const { formState, idInt, idCliente, valorPagoConfirmado, novoTotal, userEmail, userName, motivoPendencia, chaveEvento, faturadoEsperadoId, motivoEntregue } = body;
   const motivoFinal = motivoPendencia && MOTIVOS_VALIDOS.includes(motivoPendencia) ? motivoPendencia : "OUTRO";
 
   if (!formState || !idInt || !idCliente) {
@@ -228,13 +237,44 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Pedido entregue não pode ser alterado (02/11/2026), sem exceção de perfil.
-  // O status é o lido do banco logo acima, nunca o que a tela mandou.
+  // ── 4a. Pedido entregue ──────────────────────────────────────────────────
+  // Não pode ser alterado (02/11/2026), com UMA exceção desde 23/11/2026 (regra
+  // do Everton, caso 24830): sem nota fiscal, sem título ativo e sem valor
+  // recebido, quem tem Editar Proposta Paga ou Editar Faturado ajusta o valor,
+  // com motivo obrigatório (vai para o chat). A regra está em
+  // `lib/entregue-ajustavel.ts`. O status é o lido do banco logo acima, nunca o
+  // da tela. O destino da diferença é o de sempre, mais abaixo: o faturado a
+  // vencer absorve. Status e datas de envio não mudam (nada aqui escreve em
+  // `expedicoes` nem em `status_interno`).
+  let motivoAjusteEntregue: string | null = null;
   if (statusEhEntregue(propostaBanco.status_interno)) {
-    return NextResponse.json(
-      { success: false, code: CODIGO_PEDIDO_ENTREGUE, error: MENSAGEM_PEDIDO_ENTREGUE, message: MENSAGEM_PEDIDO_ENTREGUE },
-      { status: 409 }
-    );
+    const lida = await avaliarAjusteEntregueNoBanco(supabase, idInt);
+    if (!lida.ok) {
+      return NextResponse.json(
+        { success: false, code: "ENTREGUE_NAO_CONFERIDO", error: `Não foi possível conferir o pedido entregue (${lida.erro}). Nada foi alterado.` },
+        { status: 500 }
+      );
+    }
+    if (!lida.avaliacao.ajustavel) {
+      return NextResponse.json(
+        { success: false, code: CODIGO_PEDIDO_ENTREGUE, motivoEntregue: lida.avaliacao.motivo, error: lida.avaliacao.mensagem, message: lida.avaliacao.mensagem },
+        { status: 409 }
+      );
+    }
+    const permissaoEntregue = await verificarPermissaoEditarPaga(supabase, user.id, [PERMISSAO_PROPOSTA_PAGA, PERMISSAO_FATURADO]);
+    if (!permissaoEntregue.autorizado) {
+      return NextResponse.json(
+        { success: false, error: "Alterar pedido entregue exige a permissão Editar Proposta Paga ou Editar Faturado." },
+        { status: 403 }
+      );
+    }
+    motivoAjusteEntregue = motivoEntregueValido(motivoEntregue);
+    if (!motivoAjusteEntregue) {
+      return NextResponse.json(
+        { success: false, code: CODIGO_MOTIVO_ENTREGUE_AUSENTE, error: `Informe o motivo da alteração do pedido entregue (mínimo de ${MOTIVO_ENTREGUE_MINIMO} caracteres). Nada foi alterado.` },
+        { status: 400 }
+      );
+    }
   }
 
   // Validar se o cliente coincide
@@ -323,6 +363,21 @@ export async function POST(request: NextRequest) {
   }
 
   const { estavaIntegralmentePaga, titulos, avaliacaoPrevia, ehCaminhoFaturado } = cobertura;
+
+  // Pedido entregue ajustável (passo 4a) só segue quando a diferença NÃO vai
+  // para a Conta Corrente: confirmado sem ser o E-Faturado a vencer (E-Retrabalho,
+  // E-Permuta, E-Amostra) abriria crédito ou débito de dinheiro que não entrou.
+  if (motivoAjusteEntregue && ehPropostaPaga && !ehCaminhoFaturado) {
+    return NextResponse.json(
+      {
+        success: false,
+        code: CODIGO_PEDIDO_ENTREGUE,
+        error:
+          "Pedido entregue não pode ser alterado: a cobrança confirmada dele não é um E-Faturado a vencer, e a diferença iria para a Conta Corrente. Nada foi alterado."
+      },
+      { status: 409 }
+    );
+  }
 
   // ── 5a3. Acréscimo sobre cobrança autorizada sem ajuste (24/09/2026) ──────
   // E-Retrabalho, E-Permuta e E-Amostra: o valor autorizado não muda, e o total
@@ -528,7 +583,8 @@ export async function POST(request: NextRequest) {
       gravarLotesComCobranca,
       // Status lido acima, nesta mesma requisição: decide se o salvamento
       // parcial corrige o Nº final da linha intocada (só pedido que não saiu).
-      statusDoBanco: (propostaBanco.status_interno as string | null) ?? null
+      statusDoBanco: (propostaBanco.status_interno as string | null) ?? null,
+      pedidoEntregueConferido: motivoAjusteEntregue !== null
     }
   );
 
@@ -596,6 +652,36 @@ export async function POST(request: NextRequest) {
 
   const { diferenca, pendenciaCriada, faturadoAjustado } = resultadoFinanceiro;
 
+  // Pedido entregue: o motivo vai para o chat do pedido, com quem e os totais.
+  // Falha aqui não desfaz a gravação: volta como aviso.
+  let avisoChatEntregue: string | null = null;
+  if (motivoAjusteEntregue) {
+    const { data: usuarioChat } = await supabase.from("usuarios").select("nome_usuario").eq("user_id", user.id).maybeSingle();
+    const autor = String(usuarioChat?.nome_usuario ?? "").trim() || userName || user.email || "Usuário";
+    const { error: erroChat } = await supabase.from("propostas_chat").insert([
+      {
+        id_int: idInt,
+        id_cliente: idCliente,
+        tipo: "SISTEMA",
+        setor: "Financeiro",
+        visivel_externo: false,
+        autor_uid: user.id,
+        autor_nome: autor,
+        autor_email: user.email || null,
+        mensagem: textoChatAjusteEntregue({
+          autor,
+          motivo: motivoAjusteEntregue,
+          totalAntes: Number(propostaBanco.valor_total) || 0,
+          totalDepois: novoTotalRealArredondado
+        })
+      }
+    ]);
+    if (erroChat) {
+      console.error(`[editar-paga] Pedido entregue #${idInt} salvo, mas o motivo nao foi para o chat:`, erroChat.message);
+      avisoChatEntregue = `O pedido foi salvo, mas o motivo não foi registrado no chat (${erroChat.message}). Registre-o manualmente.`;
+    }
+  }
+
   // Saldo a cobrar com cobrança autorizada sem ajuste (E-Retrabalho, E-Permuta,
   // E-Amostra): a tela abre a aba Pagamentos para a segunda cobrança. Leitura
   // só; nada em pagamentos_v2 é escrito aqui.
@@ -617,6 +703,7 @@ export async function POST(request: NextRequest) {
     ehCaminhoFaturado,
     faturadoAjustado,
     saldoACobrar,
+    avisoChatEntregue,
     // Lotes novos com o id do banco: a tela que continua aberta (aba
     // Pagamentos) deixa de tratá-los como novos e não os insere de novo.
     modelosSincronizados: saveResult.modelosSincronizados ?? [],

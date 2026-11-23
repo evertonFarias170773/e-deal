@@ -133,6 +133,8 @@ import {
   consultarNotasVivasDoPedido,
   registrarSalvoComNotaDivergente
 } from "@/features/orcamentos/services/nota-do-pedido.client";
+import { consultarEntregueAjustavel, type ConsultaEntregueAjustavel } from "@/features/orcamentos/services/entregue-ajustavel.client";
+import { MotivoPedidoEntregueModal } from "@/features/orcamentos/components/MotivoPedidoEntregueModal";
 import { enviarPedidoParaFilaPeloServidor } from "@/features/orcamentos/services/enviar-fila-faturamento.service";
 import { podeVerRetirarDaProducao } from "@/features/orcamentos/lib/retirar-producao";
 import { useNotasQueImpedemDevolucao } from "@/features/orcamentos/hooks/useNotasQueImpedemDevolucao";
@@ -847,6 +849,25 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
       ativo = false;
     };
   }, [proposta?.id_int, mode]);
+
+  // Pedido ENTREGUE com valor ajustável (23/11/2026, lib/entregue-ajustavel):
+  // sem nota, sem título e sem valor recebido, quem tem Editar Proposta Paga ou
+  // Editar Faturado edita, com motivo. Lido do banco pelo servidor; `null` =
+  // não lido ou falhou, e a trava do entregue continua. O editar-paga reconfere.
+  const [entregueAjustavel, setEntregueAjustavel] = useState<ConsultaEntregueAjustavel | null>(null);
+  useEffect(() => {
+    if (mode !== "edit" || !proposta?.id_int || !statusEhEntregue(proposta?.status_interno)) return;
+    let ativo = true;
+    void consultarEntregueAjustavel(proposta.id_int).then((r) => {
+      if (ativo) setEntregueAjustavel(r);
+    });
+    return () => {
+      ativo = false;
+    };
+  }, [proposta?.id_int, proposta?.status_interno, mode]);
+  /** Motivo digitado para salvar o pedido entregue; vale para UMA ida ao editar-paga. */
+  const motivoEntregueRef = useRef<string | null>(null);
+  const [pedirMotivoEntregue, setPedirMotivoEntregue] = useState<{ opcoes: { faturadoConfirmado?: boolean; permanecerNaTela?: boolean; lotesJaGravados?: boolean } } | null>(null);
 
   // Dados do modal de confirmação da edição faturada; null = modal fechado.
   const [liberarFaturado, setLiberarFaturado] = useState<{
@@ -5261,8 +5282,9 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
   async function handleSave(opcoes?: { faturadoConfirmado?: boolean; permanecerNaTela?: boolean; lotesJaGravados?: boolean }) {
     // Pedido entregue não pode ser alterado (02/11/2026). A tela só evita a ida
     // ao banco: o Salvar e o editar-paga conferem o status lido do banco.
-    if (pedidoEntregueNaTela) {
-      showToast({ type: "error", title: "Pedido entregue", description: MENSAGEM_PEDIDO_ENTREGUE });
+    // Pedido entregue ajustável (23/11/2026) passa: o motivo é pedido mais abaixo.
+    if (pedidoEntregueTravado) {
+      showToast({ type: "error", title: "Pedido entregue", description: entregueAjustavel?.mensagem ?? MENSAGEM_PEDIDO_ENTREGUE });
       return;
     }
     // Bloqueio absoluto (vale para admin/superadmin): avulsa ou sem produtos
@@ -5372,6 +5394,13 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
       console.log("[DEV] handleSave — deletedProdutoPropostaIds enviados:", formToSave.deletedProdutoPropostaIds);
     }
 
+    // — Pedido entregue ajustável: motivo obrigatório antes de gravar (23/11/2026) —
+    // Depois das validações, para não pedir motivo de um salvar que não vai acontecer.
+    if (pedidoEntregueLiberado && !motivoEntregueRef.current) {
+      setPedirMotivoEntregue({ opcoes: opcoes ?? {} });
+      return;
+    }
+
     // — Edição de proposta faturada: confirmar antes de mexer no Contas a Receber —
     // Excluir título e cancelar boleto no banco não pode ser efeito colateral
     // silencioso de "Salvar alterações": o cancelamento bancário é definitivo.
@@ -5445,7 +5474,9 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
       // — Fluxo para proposta paga (usa API route server-side) —
       // O caminho do faturado usa a mesma rota: ela decide sozinha se ajusta a
       // cobrança ou se abre pendência de Conta Corrente.
-      if ((canEditarPropostaPaga || podeEditarPeloFaturado) && hasActiveCobranca) {
+      // Pedido entregue ajustável vai SEMPRE pela rota: é ela que confere a
+      // exceção, a permissão e grava o motivo no chat.
+      if (((canEditarPropostaPaga || podeEditarPeloFaturado) && hasActiveCobranca) || pedidoEntregueLiberado) {
         // Obter JWT da sessão atual
         const { getSupabaseClient } = await import("@/lib/supabase/client");
         const supabase = getSupabaseClient();
@@ -5477,10 +5508,13 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
             faturadoEsperadoId: podeEditarPeloFaturado && avaliacaoFaturado.elegivel
               ? avaliacaoFaturado.faturadoId
               : undefined,
+            motivoEntregue: pedidoEntregueLiberado ? motivoEntregueRef.current ?? undefined : undefined,
           }),
         });
 
         const apiResult = await apiResponse.json();
+        // O motivo valeu para esta ida; um novo Salvar pede de novo.
+        motivoEntregueRef.current = null;
 
         if (!apiResponse.ok || !apiResult.success) {
           // Bloqueios do faturado descrevem algo que o usuário precisa
@@ -5510,6 +5544,9 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
         }
 
         await registrarNotaDivergenteSeConfirmado(Number(formToSave.id_int));
+        if (apiResult.avisoChatEntregue) {
+          showToast({ type: "warning", title: "Motivo não registrado no chat", description: String(apiResult.avisoChatEntregue) });
+        }
 
         // — Pendência retornada? (diferença ≠ 0 → modal obrigatório) —
         const { diferenca, pendenciaAtiva } = apiResult;
@@ -6102,11 +6139,18 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
   // Desbloqueado quando usuário tem permissão E há cobrança ativa E não há pendência aberta
   /** Pedido entregue não pode ser alterado (02/11/2026): trava a tela inteira, sem exceção de perfil. */
   const pedidoEntregueNaTela = mode === "edit" && statusEhEntregue(proposta?.status_interno);
+  /**
+   * Exceção de 23/11/2026 (lib/entregue-ajustavel): sem nota, sem título e sem
+   * valor recebido, quem tem Editar Proposta Paga ou Editar Faturado edita. A
+   * cobrança nova continua travada (`bloqueioNovaCobranca` usa `pedidoEntregueNaTela`).
+   */
+  const pedidoEntregueLiberado = pedidoEntregueNaTela && entregueAjustavel?.ajustavel === true && canEditarFaturado;
+  const pedidoEntregueTravado = pedidoEntregueNaTela && !pedidoEntregueLiberado;
   const isFormBloqueadoPorCobranca =
     (hasActiveCobranca && !canEditarPropostaPaga && !podeEditarPeloFaturado) ||
     pendenciaRevisaoAberta !== null ||
     bloqueioAvulsaPaga ||
-    pedidoEntregueNaTela;
+    pedidoEntregueTravado;
 
   /**
    * Status exibido, em UM lugar so (10/09/2026).
@@ -8534,13 +8578,16 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <p className="text-sm font-semibold text-slate-700">Proposta #{form.id_int || "NOVA"} | Total {formatCurrency(resumo.valorTotal)}</p>
-              {pedidoEntregueNaTela && (
-                <p className="mt-1 text-xs font-semibold text-amber-700 dark:text-amber-300">{MENSAGEM_PEDIDO_ENTREGUE}</p>
+              {pedidoEntregueTravado && (
+                <p className="mt-1 text-xs font-semibold text-amber-700 dark:text-amber-300">{entregueAjustavel?.mensagem ?? MENSAGEM_PEDIDO_ENTREGUE}</p>
+              )}
+              {pedidoEntregueLiberado && (
+                <p className="mt-1 text-xs font-semibold text-amber-700 dark:text-amber-300">Pedido entregue sem nota, sem título e sem valor recebido: o valor pode ser ajustado, com motivo. O status e as datas de envio não mudam.</p>
               )}
             </div>
             <div className="flex flex-col gap-2 sm:flex-row">
               <button type="button" onClick={() => handleNavigateRef.current(mode === "edit" && proposta ? `/orcamentos/${proposta.id_int}` : "/orcamentos")} className="rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700">Cancelar</button>
-              <button type="button" onClick={() => void handleSave()} disabled={isSaving || isQuotingSedex || isQuotingAzul || isQuotingTransp || isQuotingVeppo || pedidoEntregueNaTela} title={pedidoEntregueNaTela ? MENSAGEM_PEDIDO_ENTREGUE : undefined} className="rounded-2xl bg-[#0b2f4a] px-5 py-3 text-sm font-semibold text-white disabled:opacity-60">{isSaving ? "Salvando..." : mode === "edit" ? "Salvar alterações" : "Salvar proposta"}</button>
+              <button type="button" onClick={() => void handleSave()} disabled={isSaving || isQuotingSedex || isQuotingAzul || isQuotingTransp || isQuotingVeppo || pedidoEntregueTravado} title={pedidoEntregueTravado ? (entregueAjustavel?.mensagem ?? MENSAGEM_PEDIDO_ENTREGUE) : undefined} className="rounded-2xl bg-[#0b2f4a] px-5 py-3 text-sm font-semibold text-white disabled:opacity-60">{isSaving ? "Salvando..." : mode === "edit" ? "Salvar alterações" : "Salvar proposta"}</button>
             </div>
           </div>
         </div>
@@ -8608,6 +8655,21 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
             totalNovo={avisoNotaDivergente.totalNovo}
             onSalvar={() => respostaAvisoNotaRef.current?.(true)}
             onVoltar={() => respostaAvisoNotaRef.current?.(false)}
+          />
+        )}
+
+        {pedirMotivoEntregue && (
+          <MotivoPedidoEntregueModal
+            onVoltar={() => {
+              motivoEntregueRef.current = null;
+              setPedirMotivoEntregue(null);
+            }}
+            onConfirmar={(motivo) => {
+              const { opcoes } = pedirMotivoEntregue;
+              motivoEntregueRef.current = motivo;
+              setPedirMotivoEntregue(null);
+              void handleSaveRef.current?.(opcoes);
+            }}
           />
         )}
 

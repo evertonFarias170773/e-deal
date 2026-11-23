@@ -1,6 +1,6 @@
 # Proposta: visão geral e abas
 
-> **Última revisão:** 15/11/2026 (proposta com desconto da gerência: quem não pode mexer no desconto salva tudo o que não afeta o valor). 11/11/2026 (aba **Produção / Expedição / Notas**, com a **Observação para a nota fiscal**, que também fica no bloco 4 da aba Geral). 06/11/2026 (total em centavos exatos na visualização e no texto do WhatsApp)
+> **Última revisão:** 23/11/2026 (pedido ENTREGUE sem nota, sem título e sem valor recebido pode ter o valor ajustado, com motivo, por quem edita pedido pago; ver [Pagamentos](proposta-pagamentos.md)). 15/11/2026 (proposta com desconto da gerência: quem não pode mexer no desconto salva tudo o que não afeta o valor). 11/11/2026 (aba **Produção / Expedição / Notas**, com a **Observação para a nota fiscal**, que também fica no bloco 4 da aba Geral). 06/11/2026 (total em centavos exatos na visualização e no texto do WhatsApp)
 > **Caminho no menu:** Pedidos → **+ Nova proposta** (proposta nova) ou Pedidos → abrir um pedido → **Editar proposta**
 > **Endereço:** `/orcamentos/novo` e `/orcamentos/<número>/editar`
 
@@ -324,7 +324,7 @@ Duas ações do mesmo menu têm o passo a passo em outra ficha: **Enviar para Fi
 
 ## Regras e bloqueios
 
-- **Pedido entregue não pode ser alterado**, nem por administrador nem por quem tem **Editar Proposta Paga**. Em status ENTREGUE ficam travados os produtos, o **Salvar alterações**, o **Gerar cobrança** e o valor negociado do frete, com a mensagem "Pedido entregue não pode ser alterado. Para alterar, volte o status na Expedição até a Revisão Atendente (só é possível antes da NF)." O sistema confere o status gravado, não o da tela. **Duplicar** e **Retrabalho** continuam liberados, porque criam pedido novo. O boleto de uma cobrança faturada que já existia continua sendo registrado normalmente.
+- **Pedido entregue não pode ser alterado**, nem por administrador nem por quem tem **Editar Proposta Paga**, com uma exceção desde 23/11/2026: sem nota fiscal (que não esteja cancelada), sem título ativo e sem valor recebido, quem tem **Editar Proposta Paga** ou **Editar Faturado** ajusta o valor, com motivo, sem mudar o status nem as datas de envio (regra completa na ficha [Pagamentos](proposta-pagamentos.md), em Regras e bloqueios). Fora disso: Em status ENTREGUE ficam travados os produtos, o **Salvar alterações**, o **Gerar cobrança** e o valor negociado do frete, com a mensagem "Pedido entregue não pode ser alterado. Para alterar, volte o status na Expedição até a Revisão Atendente (só é possível antes da NF)." O sistema confere o status gravado, não o da tela. **Duplicar** e **Retrabalho** continuam liberados, porque criam pedido novo. O boleto de uma cobrança faturada que já existia continua sendo registrado normalmente.
 - **Para alterar um pedido entregue:** na Expedição, use **Voltar status** passo a passo (Entregue → Em Trânsito ou A Retirar → Na Expedição → Em Acabamento). Depois, a produção devolve o pedido ao atendente com **Voltar para Revisão Atendente**, e só então a proposta pode ser editada. Com nota fiscal emitida, a devolução ao atendente é recusada: cancele a nota antes.
 - Não dá para salvar sem cliente, contato, endereço de entrega, vendedor, empresa, pelo menos um produto e frete definido. A tela diz qual deles falta.
 - Não dá para salvar com total zerado. O subtotal dos produtos e o total precisam ser maiores que R$ 0,00.
@@ -458,7 +458,9 @@ Duas ações do mesmo menu têm o passo a passo em outra ficha: **Enviar para Fi
 - `src/components/common/ActionsMenu.tsx`
 - `src/constants/navigation.ts`
 
-> **Mudança desta revisão:** 05/11/2026 — no **Cancelar só a cobrança**, a recusa por nota fiscal autorizada de um PIX da Ideal Gráfica ou da E3 Brindes oferece **Trocar forma de pagamento** (caso 24692).
+> **Mudança desta revisão:** 23/11/2026 — exceção à trava do pedido entregue: sem nota, sem título e sem valor recebido, o valor pode ser ajustado pela edição do pedido pago, com motivo (caso 24830).
+>
+> **Revisão anterior:** 05/11/2026 — no **Cancelar só a cobrança**, a recusa por nota fiscal autorizada de um PIX da Ideal Gráfica ou da E3 Brindes oferece **Trocar forma de pagamento** (caso 24692).
 >
 > **Revisão anterior:** 03/11/2026 — E-Amostra, E-Retrabalho e E-Permuta não impedem mais o cancelamento da proposta (caso 24533). O administrador cancela em qualquer status; os demais, em AGUARDANDO. Cobrança com dinheiro, nota fiscal autorizada, produção e expedição continuam impedindo.
 >
