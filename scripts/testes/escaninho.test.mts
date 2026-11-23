@@ -82,18 +82,18 @@ checar("migration: primeiro livre pela ordem, sob trava", [sql.includes("ORDER B
 {
   const servico = readFileSync("src/features/pedidos/services/pedidos-producao.service.ts", "utf8");
   const lista = readFileSync("src/features/pedidos/PedidosListPage.tsx", "utf8");
-  const iStatus = lista.indexOf('header: "Status"');
+  const iAcoes = lista.indexOf('header: "Ações"');
   const iEsc = lista.indexOf('header: "Escaninho"');
   const iSetores = lista.indexOf('header: "Setores"');
   checar("lista: escaninho em uma consulta com os ids da página, só ocupação viva",
     [/\.from\("escaninhos_ocupacao"\)\s*\.select\("id_int, escaninhos\(nome\)"\)\s*\.in\("id_int", idInts\)\s*\.is\("liberado_em", null\)/.test(servico),
      servico.includes("escaninho: escaninhoPorPedido.get(idInt) ?? null")],
     [true, true]);
-  checar("lista: coluna Escaninho entre Status e Setores", iStatus > 0 && iStatus < iEsc && iEsc < iSetores, true);
-  const celula = lista.slice(iEsc, iSetores);
-  checar("lista: selo no verde da tarja, branco, negrito, caixa alta; vazio sem escaninho",
-    [celula.includes("bg-[#15803d]"), celula.includes("text-white"), celula.includes("font-bold"), celula.includes("uppercase"), celula.includes(") : null")],
-    [true, true, true, true, true]);
+  checar("lista: coluna Escaninho depois de Setores e antes de Ações", iSetores > 0 && iSetores < iEsc && iEsc < iAcoes, true);
+  const celula = lista.slice(iEsc, iAcoes);
+  checar("lista: selo no verde da tarja, branco, negrito, caixa alta, 14 px; vazio sem escaninho",
+    [celula.includes("bg-[#15803d]"), celula.includes("text-white"), celula.includes("font-bold"), celula.includes("uppercase"), celula.includes("text-[14px]"), celula.includes("px-3 py-1.5"), celula.includes(") : null")],
+    [true, true, true, true, true, true, true]);
 }
 
 if (falhas > 0) {

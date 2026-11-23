@@ -824,25 +824,6 @@ export function PedidosListPage() {
             }
           },
           {
-            /**
-             * Escaninho de encontro do pedido composto (23/11/2026): o mesmo nome
-             * da tarja do boletim, no verde exato dela (#15803D; o green-700 do
-             * Tailwind 4 e outro tom), em caixa
-             * alta como a etiqueta fisica. Sem escaninho, celula vazia. Nome
-             * longo quebra em duas linhas para nao alargar a tabela.
-             */
-            header: "Escaninho",
-            cell: (proposta) =>
-              proposta.escaninho ? (
-                <span
-                  className="inline-block max-w-[104px] rounded bg-[#15803d] px-1.5 py-1 text-center text-[10px] font-bold uppercase leading-tight text-white"
-                  title={`Escaninho de encontro das OS: ${proposta.escaninho.toUpperCase()}`}
-                >
-                  {proposta.escaninho.toUpperCase()}
-                </span>
-              ) : null
-          },
-          {
             header: "Setores",
             cell: (proposta) => {
               const setores = proposta.setores ?? [];
@@ -864,6 +845,26 @@ export function PedidosListPage() {
                 </div>
               );
             }
+          },
+          {
+            /**
+             * Escaninho de encontro do pedido composto (23/11/2026): o mesmo nome
+             * da tarja do boletim, no verde exato dela (#15803D; o green-700 do
+             * Tailwind 4 e outro tom), em caixa alta como a etiqueta fisica. Sem
+             * escaninho, celula vazia. 23/11 (2a versao): depois de Setores e
+             * antes de Acoes, com fonte de 14 px e o tamanho dos chips de setor;
+             * nome longo quebra em duas linhas.
+             */
+            header: "Escaninho",
+            cell: (proposta) =>
+              proposta.escaninho ? (
+                <span
+                  className="inline-block max-w-[160px] rounded-lg bg-[#15803d] px-3 py-1.5 text-center text-[14px] font-bold uppercase leading-tight tracking-wide text-white"
+                  title={`Escaninho de encontro das OS: ${proposta.escaninho.toUpperCase()}`}
+                >
+                  {proposta.escaninho.toUpperCase()}
+                </span>
+              ) : null
           },
           {
             header: "Ações",
