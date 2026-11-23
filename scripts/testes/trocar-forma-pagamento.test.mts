@@ -702,5 +702,164 @@ contextoRetrabalho("RETRABALHO", false);
   confere("retrabalho: Chave Pix não aparece", !tipos(j).includes("CHAVE-PIX"), j.destinos);
 }
 
+// ── J. Boleto à vista do C6 como origem (23/11/2026, caso 25255) ─────────────
+console.log("== J. boleto à vista do C6 como origem (dublê do C6, sem banco)");
+const { WEBHOOK_CANCELA_AVISTA_C6, WEBHOOK_CANCELA_AVISTA_BIRO_C6 } = await import("../../src/features/cobrancas/lib/banco-boleto-biro.ts");
+const COD_C6 = "01M7SVGBW6KM8A0QAR3SR69RS7";
+const BOLETO = { tipo_cobranca: "BOLETO", id_empresa: 1, empresa: "IDEAL GRÁFICA EXPRESSA EIRELI", cod_solicitacao_inter: COD_C6, valor: "762.45" };
+const TITULO = { id_boleto_c6: COD_C6, id_pagamento: ANTIGA.id_pagamento, status: "A_RECEBER", paid_at: null, parcela: 1, total_parcelas: 1, deposito_conta: false };
+const C6_CONFIRMOU = { success: true, cancelado: true, cod_C6: COD_C6 };
+const C6_RECUSOU = { success: false, message: "O C6 recusou o cancelamento: boleto vencido em processamento." };
+
+function prepararBoleto(opcoes: { antiga?: Record<string, unknown>; titulos?: Record<string, unknown>[] } = {}) {
+  prepararChave();
+  const antiga = { ...ANTIGA, ...BOLETO, ...(opcoes.antiga ?? {}) };
+  // A antiga de origem é o boleto; a releitura da nova e a lista do pedido seguem as da Chave Pix.
+  const eq = (chamada: { filtros: unknown[][] }, campo: string) =>
+    (chamada.filtros.find((f) => f[0] === "eq" && (f[1] as unknown[])[0] === campo)?.[1] as unknown[] | undefined)?.[1];
+  const interceptadorAnterior = (_p: unknown, chamada: { filtros: unknown[][] }) => {
+    if (chamada.filtros.some((f) => f[0] === "ilike")) return { data: [], error: null };
+    if (eq(chamada, "id") === NOVA.id) return { data: { ...antiga, id: NOVA.id, id_pagamento: NOVA.id_pagamento, tipo_cobranca: "PIX", status: "PAID", paid_at: new Date().toISOString(), forma_pgto: "CHAVE PIX", motivo_troca: null, cod_solicitacao_inter: null }, error: null };
+    if (eq(chamada, "id_int") !== undefined && eq(chamada, "id") === undefined) {
+      return { data: [{ id: ANTIGA.id, id_int: 24692, valor: 762.45, status: "CANCELADO", confirmado: false, tipo_cobranca: "BOLETO" }, { id: NOVA.id, id_int: 24692, valor: 762.45, status: "PAID", confirmado: false, tipo_cobranca: "PIX" }], error: null };
+    }
+    return undefined;
+  };
+  falso.interceptar("pagamentos_v2:select", interceptadorAnterior as never);
+  falso.responder("pagamentos_v2:select", { data: Object.assign([antiga], antiga), error: null });
+  falso.responder("propostas:select", {
+    data: { id_int: 24692, status_interno: "AGUARDANDO", is_prd_aprovado: false, is_avulso: false, empresa: "Ideal Grafica", vendedor: "Y", motivo_copia: null, valor_total: 762.45 },
+    error: null
+  });
+  falso.responder("boletos:select", { data: opcoes.titulos ?? [TITULO], error: null });
+}
+const aoC6 = () => rede.filter((c) => c.url === WEBHOOK_CANCELA_AVISTA_C6 || c.url === WEBHOOK_CANCELA_AVISTA_BIRO_C6);
+const tituloCancelado = (r: { chamadas: { tabela: string; op: string; payload?: unknown; filtros: unknown[][] }[] }) =>
+  r.chamadas.find((c) => c.tabela === "boletos" && c.op === "update");
+
+// Regras puras.
+confere("regra: boleto A_RECEBER da Ideal com código do C6 aceita a troca", regras.cobrancaAceitaTroca({ tipo_cobranca: "BOLETO", id_empresa: 1, status: "A_RECEBER", cod_solicitacao_inter: COD_C6 }));
+confere("regra: boleto da E3 com código do C6 aceita", regras.cobrancaAceitaTroca({ tipo_cobranca: "BOLETO", id_empresa: 3, status: "A_RECEBER", cod_solicitacao_inter: COD_C6 }));
+confere("regra: boleto da Birô no C6 aceita (cancelamento confere o banco, c38c00a7)", regras.cobrancaAceitaTroca({ tipo_cobranca: "BOLETO", id_empresa: 2, status: "A_RECEBER", cod_solicitacao_inter: COD_C6 }));
+confere("regra: boleto da Birô no Inter (UUID) NÃO aceita", !regras.cobrancaAceitaTroca({ tipo_cobranca: "BOLETO", id_empresa: 2, status: "A_RECEBER", cod_solicitacao_inter: "0b9f6c2e-1d3a-4c5b-9e8f-7a6b5c4d3e2f" }));
+confere("regra: boleto sem código NÃO aceita", !regras.cobrancaAceitaTroca({ tipo_cobranca: "BOLETO", id_empresa: 1, status: "A_RECEBER" }));
+confere("regra: boleto pago NÃO aceita", !regras.cobrancaAceitaTroca({ tipo_cobranca: "BOLETO", id_empresa: 1, status: "PAID", paid_at: "2026-11-20", cod_solicitacao_inter: COD_C6 }));
+confere("regra: E-Faturado NÃO aceita", !regras.cobrancaAceitaTroca({ tipo_cobranca: "E-FATURADO", id_empresa: 1, status: "A_VENCER" }));
+confere("regra: título único passa", regras.recusaDoTituloDoBoleto([TITULO], { cod_solicitacao_inter: COD_C6, id_pagamento: ANTIGA.id_pagamento }) === null);
+confere("regra: dois títulos ativos recusa", regras.recusaDoTituloDoBoleto([TITULO, { ...TITULO, parcela: 2 }], { cod_solicitacao_inter: COD_C6, id_pagamento: ANTIGA.id_pagamento })?.code === "TITULO_NAO_UNICO");
+confere("regra: parcela 1 de 2 recusa", regras.recusaDoTituloDoBoleto([{ ...TITULO, total_parcelas: 2 }], { cod_solicitacao_inter: COD_C6, id_pagamento: ANTIGA.id_pagamento })?.code === "TITULO_NAO_UNICO");
+confere("regra: sem título ativo recusa", regras.recusaDoTituloDoBoleto([{ ...TITULO, status: "CANCELADO" }], { cod_solicitacao_inter: COD_C6, id_pagamento: ANTIGA.id_pagamento })?.code === "TITULO_NAO_UNICO");
+confere("regra: título com outro código recusa", regras.recusaDoTituloDoBoleto([{ ...TITULO, id_boleto_c6: "OUTRO" }], { cod_solicitacao_inter: COD_C6, id_pagamento: ANTIGA.id_pagamento })?.code === "BOLETO_CODIGO_DIVERGENTE");
+
+// GET: a janela.
+prepararBoleto();
+{
+  const j = await consultar();
+  confere("GET boleto da Ideal com NF-e: pode trocar, origem BOLETO, Chave Pix na lista", j.success === true && j.pode === true && j.origem === "BOLETO" && j.notaAutorizada === true && tipos(j).includes("CHAVE-PIX"), j);
+  confere("GET não grava nada", falso.chamadas.every((c) => c.op === "select"));
+}
+
+// Feliz: boleto -> Chave Pix, o C6 confirma.
+prepararBoleto();
+fetchFalso({ corpo: C6_CONFIRMOU });
+{
+  const r = await trocar(corpoChave);
+  const funcao = rpcs(r, "fin_troca_criar_chave_pix");
+  confere("boleto -> Chave Pix: troca concluída", r.status === 200 && r.json.success === true && r.json.origem === "BOLETO" && /\(Boleto\) cancelada/.test(String(r.json.message)), r.json);
+  confere("a nova nasce pela função do banco, com a origem do boleto", funcao.length === 1 && funcao[0]?.p_id_origem === ANTIGA.id, funcao);
+  const c6 = aoC6();
+  confere("o boleto foi pedido ao C6 uma vez, com o código e a empresa (fluxo da Ideal/E3)", c6.length === 1 && c6[0].url === WEBHOOK_CANCELA_AVISTA_C6 && JSON.parse(c6[0].body).cod_C6 === COD_C6 && JSON.parse(c6[0].body).id_empresa === 1, c6);
+  confere("nenhum pedido de cancelamento de PIX", r.aoBanco.length === 0, r.aoBanco);
+  const posFuncao = posicao(r, (c) => c.tabela === "rpc:fin_troca_criar_chave_pix");
+  confere("ORDEM: nova (função) -> boleto cai", posFuncao >= 0 && r.posCancelaAntiga > posFuncao, { posFuncao, antiga: r.posCancelaAntiga });
+  const t = tituloCancelado(r);
+  const ft = JSON.stringify(t?.filtros ?? []);
+  confere("o título na Carteira cai pelo código do C6 e pelo pedido", ((t?.payload ?? {}) as Record<string, unknown>).status === "CANCELADO" && ft.includes(COD_C6) && ft.includes('"id_int",24692'), t);
+  confere("Histórico: boleto cancelado e Chave Pix criada", r.historico.some((m) => m.includes("24692-A (Boleto) cancelada") && m.includes("Chave Pix")), r.historico);
+  confere("Chave Pix conferida na sequência", r.json.conferida === true && Boolean(conferenciaGravada(r)), r.json);
+  confere("NF-e intocada", !r.chamadas.some((c) => c.tabela === "notas_fiscais" && c.op !== "select"));
+}
+
+// Boleto -> Faturado, o C6 confirma.
+prepararBoleto();
+fetchFalso({ corpo: C6_CONFIRMOU });
+{
+  const r = await trocar({ tipo: "E-FATURADO" });
+  confere("boleto -> Faturado: concluída, nova inserida, boleto e título caem", r.status === 200 && Boolean(r.insertNova) && Boolean(r.cancelaAntiga) && Boolean(tituloCancelado(r)) && aoC6().length === 1, r.json);
+}
+
+// O C6 não confirma: a nova é desfeita e o boleto fica ativo.
+for (const [nome, resposta] of [
+  ["C6 recusou (409)", { status: 409, corpo: C6_RECUSOU }],
+  ["200 sem cancelado: true", { corpo: { success: true } }],
+  ["erro HTTP 500", { status: 500, corpo: { success: false } }],
+  ["rede", "REDE"]
+] as const) {
+  prepararBoleto();
+  fetchFalso(resposta as Parameters<typeof fetchFalso>[0]);
+  const r = await trocar(corpoChave);
+  const pn = (r.cancelaNova?.payload ?? {}) as Record<string, unknown>;
+  confere(`${nome}: não trocou (BOLETO_NAO_CANCELADO_NO_BANCO)`, r.json.success === false && r.json.code === "BOLETO_NAO_CANCELADO_NO_BANCO" && /não foi trocada/.test(String(r.json.message)), r.json);
+  confere(`${nome}: a nova é cancelada com o motivo do boleto`, /não confirmou o cancelamento do boleto 24692-A/.test(String(pn.motivo_cancela)) && /O boleto continua ativo/.test(String(pn.motivo_cancela)), pn);
+  confere(`${nome}: o boleto e o título ficam como estavam; marca solta`, !r.cancelaAntiga && !tituloCancelado(r) && r.soltouMarca, { antiga: r.cancelaAntiga, titulo: tituloCancelado(r) });
+  confere(`${nome}: a nova não é conferida`, !conferenciaGravada(r));
+  confere(`${nome}: Histórico registra a troca não concluída`, r.historico.some((m) => /não concluída/.test(m) && m.includes("boleto 24692-A")), r.historico);
+}
+{
+  prepararBoleto();
+  fetchFalso({ status: 409, corpo: C6_RECUSOU });
+  const r = await trocar(corpoChave);
+  confere("C6 recusou: a mensagem do banco chega à tela", /O C6 recusou o cancelamento: boleto vencido/.test(String(r.json.message)), r.json);
+}
+
+// Birô no C6: o fluxo próprio, com o segredo.
+prepararBoleto({ antiga: { id_empresa: 2, empresa: "IDEAL BIRO" } });
+fetchFalso({ corpo: C6_CONFIRMOU });
+{
+  const r = await trocar(corpoChave);
+  const c6 = aoC6();
+  confere("Birô no C6: vai ao fluxo da Birô no C6", r.json.success === true && c6.length === 1 && c6[0].url === WEBHOOK_CANCELA_AVISTA_BIRO_C6, { json: r.json, c6 });
+}
+
+// Recusas antes de gravar: boleto do Inter, faturado, título não único, já pago.
+async function recusaBoletoSemEscrita(nome: string, opcoes: Parameters<typeof prepararBoleto>[0], codigo: string) {
+  prepararBoleto(opcoes);
+  fetchFalso({ corpo: C6_CONFIRMOU });
+  const j = await consultar();
+  confere(`${nome}: GET diz que não pode (${codigo})`, j.success === true && j.pode === false && j.code === codigo, j);
+  prepararBoleto(opcoes);
+  fetchFalso({ corpo: C6_CONFIRMOU });
+  const r = await trocar(corpoChave);
+  confere(`${nome}: POST recusa (${codigo}) sem gravar nem ir ao banco`, r.json.success === false && r.json.code === codigo && r.escritas.length === 0 && rede.length === 0, { json: r.json, escritas: r.escritas.map((c) => `${c.op} ${c.tabela}`) });
+}
+await recusaBoletoSemEscrita("boleto da Birô no Inter", { antiga: { id_empresa: 2, cod_solicitacao_inter: "0b9f6c2e-1d3a-4c5b-9e8f-7a6b5c4d3e2f" } }, "BOLETO_FORA_DO_C6");
+// Faturado com título é barrado antes, pela elegibilidade (TITULO_EM_ABERTO); sem título, pela origem.
+await recusaBoletoSemEscrita("E-Faturado como origem", { antiga: { tipo_cobranca: "E-FATURADO", status: "A_VENCER", cod_solicitacao_inter: null }, titulos: [] }, "TIPO_NAO_ACEITO");
+await recusaBoletoSemEscrita("boleto parcelado (2 títulos)", { titulos: [TITULO, { ...TITULO, parcela: 2, total_parcelas: 2 }] }, "TITULO_NAO_UNICO");
+await recusaBoletoSemEscrita("boleto sem código do banco", { antiga: { cod_solicitacao_inter: null } }, "BOLETO_SEM_CODIGO");
+
+// A função do banco ainda sem a migration 20261123: recusa limpa, nada ao C6.
+prepararBoleto();
+falso.responder("rpc:fin_troca_criar_chave_pix", { data: null, error: { message: "CHAVE_ORIGEM: a cobrança 24692-A não é PIX" } });
+fetchFalso({ corpo: C6_CONFIRMOU });
+{
+  const r = await trocar(corpoChave);
+  confere("sem a migration: 409 CHAVE_ORIGEM, o boleto continua ativo, nada ao C6, marca solta", r.status === 409 && r.json.code === "CHAVE_ORIGEM" && /O boleto continua ativo/.test(String(r.json.message)) && aoC6().length === 0 && !r.cancelaAntiga && r.soltouMarca, r.json);
+}
+
+// Cancelar sem trocar: o boleto com nota continua barrado (cancelar-externo intocado).
+prepararBoleto();
+fetchFalso({ corpo: C6_CONFIRMOU });
+{
+  const req = new Request("http://localhost/api/cobrancas/cancelar-externo", {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: "Bearer token-de-teste" },
+    body: JSON.stringify({ id: ANTIGA.id, id_int: ANTIGA.id_int, tipo_cobranca: "BOLETO", acao_local: "CANCEL", motivo: "teste" })
+  });
+  const resposta = await cancelarExterno.POST(req);
+  const json = (await resposta.json()) as Record<string, unknown>;
+  confere("cancelar o boleto sem trocar: recusa NOTA_AUTORIZADA, nada ao C6 nem gravado", resposta.status === 409 && json.code === "NOTA_AUTORIZADA" && rede.length === 0 && falso.chamadas.every((c) => c.op === "select"), json);
+}
+
 console.log(falhas === 0 ? "\nTODOS OS TESTES PASSARAM" : `\n${falhas} FALHA(S)`);
 process.exitCode = falhas === 0 ? 0 : 1;

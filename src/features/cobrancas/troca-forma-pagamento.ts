@@ -11,6 +11,11 @@
  * - De: PIX não pago, das empresas que recebem pelo C6 (1 e 3). No C6 o Vibe
  *   só dá o PIX por cancelado quando o banco confirma; no Inter (Ideal Birô)
  *   essa confirmação ainda não existe, e por isso a troca não vale lá.
+ * - De (23/11/2026, caso 25255): boleto à vista não pago, de título único,
+ *   emitido no C6 — Ideal e E3 (d9c0e2b0) e Birô no C6 (c38c00a7), as três em
+ *   que o cancelamento do boleto à vista só vale com a confirmação do banco
+ *   (`cancelado: true` do fluxo). Boleto da Birô no Inter fica fora: lá o
+ *   cancelamento ainda é só pelo HTTP.
  * - Para: as formas internas da família faturado (Faturado, E-Permuta,
  *   E-Amostra, E-Retrabalho — ver DESTINOS_DA_TROCA). Nascem sem nada fora do
  *   Vibe (os boletos do faturado só existem depois, no Registro de
@@ -24,12 +29,42 @@ import { getLocalDateInSaoPaulo } from "@/features/cobrancas/cobrancas-utils";
 import { TODAS_AS_RECUSAS, type CodigoVeredito } from "@/features/cobrancas/cancelamento-elegibilidade";
 import { recusaDoTipoNoPedido, type ContextoRetrabalhoDoPedido } from "@/features/cobrancas/lib/tipo-x-retrabalho";
 import { e2eValido, normalizarE2e } from "@/features/cobrancas/lib/devolucao-pagamento";
+import { bancoDoBoletoEmitido } from "@/features/cobrancas/lib/banco-boleto-biro";
 
 /** Empresas cujo PIX sai pelo C6, com confirmação do banco no cancelamento. */
 export const EMPRESAS_DA_TROCA: readonly number[] = [1, 3];
 
-/** Forma de origem aceita. */
+/** Forma de origem aceita desde o começo. */
 export const TIPO_DE_ORIGEM_DA_TROCA = "PIX";
+
+/** Formas de origem: PIX (empresas 1 e 3) e, desde 23/11/2026, boleto à vista no C6. */
+export type OrigemDaTroca = "PIX" | "BOLETO";
+
+/** Empresas cujo boleto à vista pode estar no C6: Ideal (1), Birô (2, só título no C6) e E3 (3). */
+const EMPRESAS_DO_BOLETO_NO_C6: readonly number[] = [1, 2, 3];
+
+/** A forma de origem pelo tipo da cobrança; `null` = não é origem de troca. */
+export function origemDaTroca(tipoCobranca: unknown): OrigemDaTroca | null {
+  const tipo = normalizar(tipoCobranca);
+  return tipo === "PIX" || tipo === "BOLETO" ? tipo : null;
+}
+
+/** "PIX" ou "boleto", para o meio da frase ("o boleto 25255-A"). */
+export function nomeDaOrigem(origem: OrigemDaTroca): string {
+  return origem === "BOLETO" ? "boleto" : "PIX";
+}
+
+/** "PIX" ou "Boleto", para o rótulo entre parênteses. */
+export function rotuloDaOrigem(origem: OrigemDaTroca): string {
+  return origem === "BOLETO" ? "Boleto" : "PIX";
+}
+
+/** Boleto com código do C6 gravado, de empresa que emite no C6 (Birô: só título no C6). */
+export function boletoEstaNoC6(idEmpresa: unknown, codigo: unknown): boolean {
+  const cod = String(codigo ?? "").trim();
+  if (!cod || !EMPRESAS_DO_BOLETO_NO_C6.includes(Number(idEmpresa))) return false;
+  return bancoDoBoletoEmitido(Number(idEmpresa), cod) === "C6";
+}
 
 /** Forma de destino padrão (a única até 10/11/2026). */
 export const TIPO_DE_DESTINO_DA_TROCA = "E-FATURADO";
@@ -146,14 +181,17 @@ const CODIGOS_CHAVE_DE_CAMPO = ["CHAVE_PARAMS", "CHAVE_DATA", "CHAVE_E2E"];
  * Recusa da função `fin_troca_criar_chave_pix` (CHAVE_*, ou PERM/AUTH do
  * cc__assert_permissao), pronta para a resposta. `null` = falha que não é recusa.
  */
-export function recusaDaFuncaoChavePix(mensagem: string | null | undefined): { status: number; code: string; message: string } | null {
+export function recusaDaFuncaoChavePix(
+  mensagem: string | null | undefined,
+  origem: OrigemDaTroca = "PIX"
+): { status: number; code: string; message: string } | null {
   const achado = String(mensagem ?? "").match(/\b(CHAVE_[A-Z_]+|PERM|AUTH):\s*([\s\S]*)$/);
   if (!achado) return null;
   const permissao = achado[1] === "PERM" || achado[1] === "AUTH";
   const code = permissao ? "CHAVE_PERMISSAO" : achado[1];
   const corpo = permissao ? "sem permissão para confirmar pagamento (conferencia.confirm)" : achado[2].trim().replace(/\.$/, "");
   const status = permissao ? 403 : CODIGOS_CHAVE_DE_CAMPO.includes(code) ? 400 : 409;
-  return { status, code, message: `A forma de pagamento não foi trocada: ${corpo}. O PIX continua ativo.` };
+  return { status, code, message: `A forma de pagamento não foi trocada: ${corpo}. O ${nomeDaOrigem(origem)} continua ativo.` };
 }
 
 /** O destino pelo tipo pedido; vazio é Faturado (o corpo antigo da rota). */
@@ -199,15 +237,20 @@ export type CobrancaParaTroca = {
   id_empresa: number | string | null;
   status: string | null;
   paid_at?: string | null;
+  /** Código do banco: decide se o boleto está no C6. */
+  cod_solicitacao_inter?: string | null;
 };
 
 /**
- * A tela mostra a ação? Só para PIX não pago de empresa do C6. A permissão e
- * o resto das recusas quem decide é o servidor, ao abrir a janela.
+ * A tela mostra a ação? PIX não pago de empresa do C6, ou boleto não pago com
+ * código do C6 (23/11/2026). A permissão, o título único e o resto das recusas
+ * quem decide é o servidor, ao abrir a janela.
  */
 export function cobrancaAceitaTroca(cobranca: CobrancaParaTroca): boolean {
-  if (normalizar(cobranca.tipo_cobranca) !== TIPO_DE_ORIGEM_DA_TROCA) return false;
-  if (!EMPRESAS_DA_TROCA.includes(Number(cobranca.id_empresa))) return false;
+  const origem = origemDaTroca(cobranca.tipo_cobranca);
+  if (!origem) return false;
+  if (origem === "PIX" && !EMPRESAS_DA_TROCA.includes(Number(cobranca.id_empresa))) return false;
+  if (origem === "BOLETO" && !boletoEstaNoC6(cobranca.id_empresa, cobranca.cod_solicitacao_inter)) return false;
   if (cobranca.paid_at != null) return false;
   return normalizar(cobranca.status) === "A-RECEBER";
 }
@@ -232,10 +275,26 @@ export function recusaDaCobrancaParaTroca(pagamento: PagamentoDaTroca): RecusaDa
   if (pagamento.id_int == null) {
     return { code: "SEM_PROPOSTA", httpStatus: 409, message: "A troca só vale para cobrança vinculada a uma proposta." };
   }
-  if (normalizar(pagamento.tipo_cobranca) !== TIPO_DE_ORIGEM_DA_TROCA) {
-    return { code: "TIPO_NAO_ACEITO", httpStatus: 409, message: "A troca de forma de pagamento vale só para cobrança PIX." };
+  const origem = origemDaTroca(pagamento.tipo_cobranca);
+  if (!origem) {
+    return {
+      code: "TIPO_NAO_ACEITO",
+      httpStatus: 409,
+      message: "A troca de forma de pagamento vale só para cobrança PIX ou boleto à vista do C6, não paga."
+    };
   }
-  if (!EMPRESAS_DA_TROCA.includes(Number(pagamento.id_empresa))) {
+  if (origem === "BOLETO") {
+    if (!String(pagamento.cod_solicitacao_inter ?? "").trim()) {
+      return { code: "BOLETO_SEM_CODIGO", httpStatus: 409, message: "Este boleto ainda não tem o código do banco. Aguarde alguns instantes e tente de novo." };
+    }
+    if (!boletoEstaNoC6(pagamento.id_empresa, pagamento.cod_solicitacao_inter)) {
+      return {
+        code: "BOLETO_FORA_DO_C6",
+        httpStatus: 409,
+        message: "A troca vale só para boleto emitido no C6. Este boleto é do Banco Inter: use o cancelamento da cobrança."
+      };
+    }
+  } else if (!EMPRESAS_DA_TROCA.includes(Number(pagamento.id_empresa))) {
     return {
       code: "EMPRESA_NAO_ACEITA",
       httpStatus: 409,
@@ -245,7 +304,7 @@ export function recusaDaCobrancaParaTroca(pagamento: PagamentoDaTroca): RecusaDa
   if (pagamento.paid_at != null || normalizar(pagamento.status) !== "A-RECEBER") {
     return { code: "NAO_A_RECEBER", httpStatus: 409, message: "Só dá para trocar a forma de uma cobrança emitida e não paga." };
   }
-  if (!String(pagamento.cod_solicitacao_inter ?? "").trim()) {
+  if (origem === "PIX" && !String(pagamento.cod_solicitacao_inter ?? "").trim()) {
     return {
       code: "PIX_SEM_CODIGO",
       httpStatus: 409,
@@ -265,6 +324,55 @@ export function recusaDaCobrancaParaTroca(pagamento: PagamentoDaTroca): RecusaDa
       httpStatus: 409,
       message: "Já existe uma troca de forma de pagamento registrada nesta cobrança. Atualize a tela."
     };
+  }
+  return null;
+}
+
+export type TituloDoBoletoParaTroca = {
+  id_boleto_c6: string | null;
+  id_pagamento: string | null;
+  status: string | null;
+  paid_at?: string | null;
+  parcela?: number | null;
+  total_parcelas?: number | null;
+  deposito_conta?: boolean | null;
+};
+
+/**
+ * Boleto de origem (23/11/2026): só à vista, de título ÚNICO no Contas a
+ * Receber — um título ativo, parcela 1 de 1, boleto (não depósito), com o
+ * mesmo código do C6 da cobrança e não pago. `titulos` são os títulos do
+ * pedido; aqui se escolhem os da cobrança (pelo código ou pelo id_pagamento).
+ */
+export function recusaDoTituloDoBoleto(
+  titulos: readonly TituloDoBoletoParaTroca[],
+  pagamento: { cod_solicitacao_inter: string | null; id_pagamento: string | null }
+): RecusaDaTroca | null {
+  const cod = String(pagamento.cod_solicitacao_inter ?? "").trim();
+  const ref = String(pagamento.id_pagamento ?? "").trim();
+  const daCobranca = titulos.filter(
+    (t) => (cod && String(t.id_boleto_c6 ?? "").trim() === cod) || (ref && String(t.id_pagamento ?? "").trim() === ref)
+  );
+  const ativos = daCobranca.filter((t) => normalizar(t.status) !== "CANCELADO");
+  if (ativos.length !== 1) {
+    return {
+      code: "TITULO_NAO_UNICO",
+      httpStatus: 409,
+      message:
+        ativos.length === 0
+          ? "Este boleto não tem título ativo no Contas a Receber. Confira a Carteira antes de trocar."
+          : `Esta cobrança tem ${ativos.length} títulos ativos. A troca vale só para boleto à vista de título único.`
+    };
+  }
+  const titulo = ativos[0];
+  if (Number(titulo.total_parcelas ?? 1) !== 1 || titulo.deposito_conta === true) {
+    return { code: "TITULO_NAO_UNICO", httpStatus: 409, message: "A troca vale só para boleto à vista de título único (parcela 1 de 1)." };
+  }
+  if (String(titulo.id_boleto_c6 ?? "").trim() !== cod) {
+    return { code: "BOLETO_CODIGO_DIVERGENTE", httpStatus: 409, message: "O título do Contas a Receber tem outro código do banco. Confira a Carteira antes de trocar." };
+  }
+  if (titulo.paid_at || normalizar(titulo.status) === "PAID") {
+    return { code: "TITULO_LIQUIDADO", httpStatus: 409, message: "O título deste boleto já consta pago. A troca não vale." };
   }
   return null;
 }
@@ -416,11 +524,12 @@ export function motivoCancelaDaAntiga(novaIdPagamento: string, motivo: string, r
   return `Troca de forma de pagamento: substituída pela cobrança ${novaIdPagamento} (${rotulo}). Motivo: ${motivo}`;
 }
 
-/** `motivo_cancela` da nova, quando o banco não confirma o cancelamento do PIX. */
-export function motivoCancelaDaNovaDesfeita(antigaIdPagamento: string, desfecho: string, motivo: string): string {
+/** `motivo_cancela` da nova, quando o banco não confirma o cancelamento da antiga. */
+export function motivoCancelaDaNovaDesfeita(antigaIdPagamento: string, desfecho: string, motivo: string, origem: OrigemDaTroca = "PIX"): string {
+  const nome = nomeDaOrigem(origem);
   return (
-    `Troca de forma de pagamento não concluída: o banco não confirmou o cancelamento do PIX ${antigaIdPagamento} (${desfecho}). ` +
-    `O PIX continua ativo. Motivo da troca: ${motivo}`
+    `Troca de forma de pagamento não concluída: o banco não confirmou o cancelamento do ${nome} ${antigaIdPagamento} (${desfecho}). ` +
+    `O ${nome} continua ativo. Motivo da troca: ${motivo}`
   );
 }
 
@@ -434,11 +543,12 @@ export function mensagemHistoricoDaTroca(entrada: {
   valor: number;
   motivo: string;
   rotulo?: string;
+  origem?: OrigemDaTroca;
 }): string {
   const rotulo = entrada.rotulo ?? "Faturado";
   return (
     `Forma de pagamento trocada por ${entrada.autor} (${entrada.permissao}): ` +
-    `cobrança ${entrada.antigaIdPagamento} (PIX) cancelada e substituída pela ${entrada.novaIdPagamento} ` +
+    `cobrança ${entrada.antigaIdPagamento} (${rotuloDaOrigem(entrada.origem ?? "PIX")}) cancelada e substituída pela ${entrada.novaIdPagamento} ` +
     `(${entrada.condicao ? `${rotulo}, ${entrada.condicao}` : rotulo}), mesmo valor ${formatCurrency(entrada.valor)}. ` +
     `Nota fiscal mantida. Motivo: ${entrada.motivo}`
   );
@@ -451,9 +561,10 @@ export function mensagemHistoricoDaTrocaDesfeita(entrada: {
   autor: string;
   motivo: string;
   rotulo?: string;
+  origem?: OrigemDaTroca;
 }): string {
   return (
-    `Troca de forma de pagamento não concluída (tentada por ${entrada.autor}): o banco não confirmou o cancelamento do PIX ` +
+    `Troca de forma de pagamento não concluída (tentada por ${entrada.autor}): o banco não confirmou o cancelamento do ${nomeDaOrigem(entrada.origem ?? "PIX")} ` +
     `${entrada.antigaIdPagamento}, que continua ativo. A cobrança ${entrada.novaIdPagamento} (${entrada.rotulo ?? "Faturado"}) foi cancelada. ` +
     `Motivo da troca: ${entrada.motivo}`
   );

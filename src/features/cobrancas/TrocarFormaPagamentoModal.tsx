@@ -12,7 +12,8 @@ import { problemaNaChavePix, type DestinoDaTroca, type TipoDestinoDaTroca } from
 import { getLocalDateInSaoPaulo } from "@/features/cobrancas/cobrancas-utils";
 
 /**
- * Trocar forma de pagamento: PIX não pago -> forma interna (Faturado,
+ * Trocar forma de pagamento: PIX ou boleto à vista do C6 (23/11/2026), não
+ * pago -> forma interna (Faturado,
  * Chave Pix, E-Permuta, E-Amostra, E-Retrabalho, E-Crédito), mesma proposta,
  * mesmo valor e mesmo
  * pagador. Quem decide se pode, e para quais formas, é o servidor
@@ -35,15 +36,17 @@ type Avaliacao = {
   destinos?: DestinoDaTroca[];
   /** E-Crédito: saldo do cliente, ou por que ele não aparece na lista. */
   credito?: { disponivel: boolean; saldo: number | null; motivo: string | null } | null;
+  /** Forma da cobrança de origem: PIX ou boleto à vista do C6. */
+  origem?: "PIX" | "BOLETO";
 };
 
 /** O que muda no resumo "Ao confirmar" conforme a forma escolhida. */
-function depoisDaTroca(destino: DestinoDaTroca): string {
+function depoisDaTroca(destino: DestinoDaTroca, nomeOrigem: string): string {
   switch (destino.tipo) {
     case "E-FATURADO":
       return "O Faturado segue o caminho de sempre: análise de crédito, Conferência e títulos no Registro de recebíveis.";
     case "CHAVE-PIX":
-      return "Depois que o banco confirmar o cancelamento do PIX, a cobrança é conferida em seu nome, como um PIX pago: o pedido é liberado na hora e o valor entra no faturamento, nas vendas e na comissão.";
+      return `Depois que o banco confirmar o cancelamento do ${nomeOrigem}, a cobrança é conferida em seu nome, como um PIX pago: o pedido é liberado na hora e o valor entra no faturamento, nas vendas e na comissão.`;
     case "E-CREDITO":
       return "A E-Crédito nasce paga, com o crédito já descontado do saldo do cliente, e segue para a Conferência. Não gera títulos.";
     case "E-PERMUTA":
@@ -134,6 +137,8 @@ export function TrocarFormaPagamentoModal({ cobrancaId, onClose, onSuccess }: Pr
   }, []);
 
   const carregando = !avaliacao && !erroAvaliacao;
+  // "PIX" ou "boleto": a origem vem do servidor; antes de ler, o texto neutro.
+  const nomeOrigem = avaliacao?.origem === "BOLETO" ? "boleto" : avaliacao?.origem === "PIX" ? "PIX" : "PIX ou boleto";
   const destinos = avaliacao?.destinos ?? [];
   const destino = destinos.find((d) => d.tipo === tipo) ?? null;
   const problemaChave = destino?.recebidoNaChave ? problemaNaChavePix({ dataPagamento, e2eId, comprovante }, hoje) : null;
@@ -181,16 +186,16 @@ export function TrocarFormaPagamentoModal({ cobrancaId, onClose, onSuccess }: Pr
         type: "success",
         title: "Forma de pagamento trocada",
         description: liberado
-          ? "O PIX foi cancelado e o Faturado foi liberado automaticamente. Ele segue para a Conferência."
+          ? `O ${nomeOrigem} foi cancelado e o Faturado foi liberado automaticamente. Ele segue para a Conferência.`
           : ehFaturado
-            ? "O PIX foi cancelado e o Faturado foi enviado para análise financeira."
+            ? `O ${nomeOrigem} foi cancelado e o Faturado foi enviado para análise financeira.`
             : destino?.consomeCredito
-              ? "O PIX foi cancelado e a E-Crédito foi criada com o crédito do cliente. Ela segue para a Conferência."
+              ? `O ${nomeOrigem} foi cancelado e a E-Crédito foi criada com o crédito do cliente. Ela segue para a Conferência.`
               : destino?.recebidoNaChave
                 ? dados.conferida
-                  ? "O PIX do Vibe foi cancelado e o PIX recebido na chave foi registrado e conferido. O pedido foi liberado."
-                  : `O PIX do Vibe foi cancelado e o PIX recebido na chave foi registrado como pago, mas não foi conferido (${dados.motivoNaoConferida ?? "veja o Histórico"}). Ele segue na Conferência.`
-              : `O PIX foi cancelado e a ${rotulo} foi criada. Ela aguarda a liberação do financeiro.`
+                  ? `O ${nomeOrigem} do Vibe foi cancelado e o PIX recebido na chave foi registrado e conferido. O pedido foi liberado.`
+                  : `O ${nomeOrigem} do Vibe foi cancelado e o PIX recebido na chave foi registrado como pago, mas não foi conferido (${dados.motivoNaoConferida ?? "veja o Histórico"}). Ele segue na Conferência.`
+              : `O ${nomeOrigem} foi cancelado e a ${rotulo} foi criada. Ela aguarda a liberação do financeiro.`
       });
       await refreshCobrancas();
       onSuccess?.();
@@ -208,7 +213,7 @@ export function TrocarFormaPagamentoModal({ cobrancaId, onClose, onSuccess }: Pr
         <div className="flex items-start justify-between border-b border-slate-100 pb-4">
           <div>
             <h2 className="text-xl font-semibold text-slate-950">Trocar forma de pagamento</h2>
-            <p className="text-sm text-slate-500 mt-1">PIX para outra forma, mesmo valor e mesma proposta.</p>
+            <p className="text-sm text-slate-500 mt-1">{avaliacao?.origem === "BOLETO" ? "Boleto" : "PIX"} para outra forma, mesmo valor e mesma proposta.</p>
           </div>
           <button type="button" onClick={onClose} disabled={enviando} className="rounded-2xl bg-slate-100 p-2 text-slate-700 hover:bg-slate-200 transition disabled:opacity-50">
             <X className="h-5 w-5" />
@@ -281,14 +286,14 @@ export function TrocarFormaPagamentoModal({ cobrancaId, onClose, onSuccess }: Pr
                         : ""}
                     </li>
                     <li>
-                      Depois, o PIX {avaliacao?.idPagamento ?? ""} é cancelado no banco. Se o banco não confirmar, o PIX continua
+                      Depois, o {nomeOrigem} {avaliacao?.idPagamento ?? ""} é cancelado no banco{avaliacao?.origem === "BOLETO" ? " (C6), junto com o título na Carteira" : ""}. Se o banco não confirmar, o {nomeOrigem} continua
                       ativo e a {destino.rotulo} é cancelada
                       {destino.consomeCredito ? ", com o crédito devolvido ao saldo do cliente." : "."}
                     </li>
                     {avaliacao?.notaAutorizada ? (
                       <li>A nota fiscal autorizada continua como está. Se precisar, o financeiro faz a carta de correção.</li>
                     ) : null}
-                    <li>{depoisDaTroca(destino)}</li>
+                    <li>{depoisDaTroca(destino, nomeOrigem)}</li>
                   </ul>
                 </div>
               ) : null}

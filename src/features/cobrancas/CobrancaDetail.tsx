@@ -452,7 +452,7 @@ export function CobrancaDetail({ cobrancaId, onClose, onRefreshProposta }: Cobra
                 Cancelar cobrança
               </button>
 
-              {/* Trocar forma de pagamento: PIX não pago do C6 -> Faturado.
+              {/* Trocar forma de pagamento: PIX ou boleto à vista (23/11/2026) não pago do C6 -> forma interna.
                   Mesma permissão do cancelamento de cobrança não paga; o resto
                   (nota, produção, escopo) o servidor confere ao abrir. */}
               {cobrancaAceitaTroca(cobrancaAtual) &&

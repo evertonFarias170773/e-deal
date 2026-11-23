@@ -10,6 +10,7 @@ import {
   decidirCancelamentoDePix,
   mensagemDoDesfechoPix
 } from "@/features/cobrancas/services/cancelamento-pix";
+import { cancelarBoletoAVistaNoC6 } from "@/features/cobrancas/services/cancelamento-boleto-c6";
 import { recusaDoGatilhoNoErro } from "@/features/cobrancas/lib/tipo-x-retrabalho";
 import { statusEhEntregue, MENSAGEM_PEDIDO_ENTREGUE, CODIGO_PEDIDO_ENTREGUE } from "@/features/orcamentos/services/pedido-entregue";
 import { lerContextoRetrabalhoDoPedido } from "@/features/cobrancas/services/tipo-x-retrabalho.service";
@@ -37,6 +38,12 @@ import {
   mensagemHistoricoDaTrocaDesfeita,
   modeloValidoParaTroca,
   montarCobrancaDaTroca,
+  nomeDaOrigem,
+  origemDaTroca,
+  recusaDoTituloDoBoleto,
+  rotuloDaOrigem,
+  type OrigemDaTroca,
+  type TituloDoBoletoParaTroca,
   motivoCancelaDaAntiga,
   motivoCancelaDaNovaDesfeita,
   problemaNaChavePix,
@@ -87,6 +94,14 @@ import {
  *   4a. banco confirmou: grava CANCELADO na antiga e registra no Histórico;
  *   4b. banco não confirmou: cancela a nova com o motivo, solta a marca da
  *       antiga (que segue ativa) e registra no Histórico.
+ *
+ * Boleto à vista de origem (23/11/2026, caso 25255): boleto não pago, de
+ * título único, emitido no C6 (Ideal, E3 e Birô no C6). Mesma ordem: a nova
+ * nasce, o boleto é cancelado no C6 pelo mesmo pedido do cancelar-externo e só
+ * vale com `cancelado: true` (`services/cancelamento-boleto-c6`); sem a
+ * confirmação, a nova é desfeita e o boleto fica como estava. Confirmado, a
+ * cobrança e o título (`boletos`, pelo código do C6 e o pedido) caem.
+ * O cancelamento simples (cancelar-externo) não muda: a nota continua barrando.
  *
  * Status da proposta: esta rota não grava em `propostas`. Os gatilhos de
  * `pagamentos_v2` mantêm AGUARDANDO nos três momentos (PIX A_RECEBER e/ou
@@ -224,7 +239,7 @@ async function podeConfirmarPagamento(ctx: Contexto): Promise<boolean> {
 /** Veredito da troca: recusas de cancelamento (menos a nota) + regras da troca. */
 async function avaliarTroca(
   ctx: Contexto
-): Promise<{ pode: true; notaAutorizada: boolean; destinos: DestinoDaTroca[]; credito: CreditoDaTroca | null } | Falha> {
+): Promise<{ pode: true; notaAutorizada: boolean; destinos: DestinoDaTroca[]; credito: CreditoDaTroca | null; origem: OrigemDaTroca } | Falha> {
   const elegibilidade = await avaliarCancelamentoNoServidor(ctx.supabase, ctx.pagamento.id, RECUSAS_DA_TROCA);
   if (!elegibilidade.ok) {
     return falha(elegibilidade.erro === "NAO_ENCONTRADA" ? 404 : 503, elegibilidade.mensagem, elegibilidade.erro);
@@ -235,6 +250,17 @@ async function avaliarTroca(
 
   const recusa = recusaDaCobrancaParaTroca(ctx.pagamento);
   if (recusa) return falha(recusa.httpStatus, recusa.message, recusa.code);
+
+  // Boleto de origem: título único no Contas a Receber (23/11/2026).
+  if (origemDaTroca(ctx.pagamento.tipo_cobranca) === "BOLETO") {
+    const { data: titulos, error: erroTitulos } = await ctx.supabase
+      .from("boletos")
+      .select("id_boleto_c6, id_pagamento, status, paid_at, parcela, total_parcelas, deposito_conta")
+      .eq("id_int", ctx.pagamento.id_int);
+    if (erroTitulos) return falha(503, "Não foi possível ler os títulos do boleto no banco.");
+    const recusaTitulo = recusaDoTituloDoBoleto((titulos ?? []) as TituloDoBoletoParaTroca[], ctx.pagamento);
+    if (recusaTitulo) return falha(recusaTitulo.httpStatus, recusaTitulo.message, recusaTitulo.code);
+  }
 
   const { data: proposta, error: erroProposta } = await ctx.supabase
     .from("propostas")
@@ -265,7 +291,13 @@ async function avaliarTroca(
   }
   if (destinos.length === 0) return falha(409, "Nenhuma forma de pagamento interna vale para este pedido.", "SEM_DESTINO");
 
-  return { pode: true, notaAutorizada: veredito.recusas.some((r) => r.code === "NOTA_AUTORIZADA"), destinos, credito };
+  return {
+    pode: true,
+    notaAutorizada: veredito.recusas.some((r) => r.code === "NOTA_AUTORIZADA"),
+    destinos,
+    credito,
+    origem: origemDaTroca(ctx.pagamento.tipo_cobranca) ?? "PIX"
+  };
 }
 
 type CreditoDaTroca = { disponivel: boolean; saldo: number | null; motivo: string | null };
@@ -468,7 +500,8 @@ export async function GET(request: Request) {
       idPagamento: ctx.pagamento.id_pagamento,
       valor: Number(ctx.pagamento.valor),
       destinos: avaliacao.destinos,
-      credito: avaliacao.credito
+      credito: avaliacao.credito,
+      origem: avaliacao.origem
     });
   } catch (e) {
     console.error("[trocar-forma-pagamento][GET]", e);
@@ -513,6 +546,8 @@ export async function POST(request: Request) {
     const { pagamento, supabase } = ctx;
     const antigaRef = pagamento.id_pagamento || pagamento.id;
     const rotulo = destino.rotulo;
+    const origem = avaliacao.origem;
+    const nomeOrigem = nomeDaOrigem(origem);
 
     let modelo: ModeloDaTroca | null = null;
     if (destino.exigeCondicao) {
@@ -586,10 +621,10 @@ export async function POST(request: Request) {
     }
     if (erroNova || !nova) {
       await soltarMarca(ctx, marca);
-      const recusaChave = destino.recebidoNaChave ? recusaDaFuncaoChavePix(erroNova?.message) : null;
+      const recusaChave = destino.recebidoNaChave ? recusaDaFuncaoChavePix(erroNova?.message, origem) : null;
       if (recusaChave) return erro(recusaChave.status, recusaChave.message, recusaChave.code);
       const recusa = recusaDoGatilhoNoErro(erroNova?.message);
-      return erro(recusa ? 409 : 500, recusa || `Não foi possível criar a cobrança ${rotulo}. O PIX continua ativo e nada foi alterado.`);
+      return erro(recusa ? 409 : 500, recusa || `Não foi possível criar a cobrança ${rotulo}. O ${nomeOrigem} continua ativo e nada foi alterado.`);
     }
     const novaRef = nova.id_pagamento || nova.id;
 
@@ -600,36 +635,48 @@ export async function POST(request: Request) {
         ctx,
         nova.id,
         Number(linhaNova.valor),
-        `Crédito aplicado como pagamento da proposta #${pagamento.id_int} (troca do PIX ${antigaRef})`
+        `Crédito aplicado como pagamento da proposta #${pagamento.id_int} (troca do ${nomeOrigem} ${antigaRef})`
       );
       if (!consumo.ok) {
         const volta = await desfazerCredito(
           ctx,
           nova.id,
-          `Troca de forma de pagamento não concluída: falha ao consumir o crédito (${consumo.mensagem}). O PIX ${antigaRef} continua ativo. Motivo da troca: ${motivo}`
+          `Troca de forma de pagamento não concluída: falha ao consumir o crédito (${consumo.mensagem}). O ${nomeOrigem} ${antigaRef} continua ativo. Motivo da troca: ${motivo}`
         );
         await soltarMarca(ctx, marca);
         if (!volta.ok) {
           await registrarHistorico(
             ctx,
-            `ATENÇÃO: troca para E-Crédito não concluída e o crédito da cobrança ${novaRef} não foi devolvido. Conferência manual do Financeiro na Conta Corrente. PIX ${antigaRef} segue ativo.`
+            `ATENÇÃO: troca para E-Crédito não concluída e o crédito da cobrança ${novaRef} não foi devolvido. Conferência manual do Financeiro na Conta Corrente. ${rotuloDaOrigem(origem)} ${antigaRef} segue ativo.`
           );
-          return erro(500, `Falha ao usar o crédito e ao devolvê-lo. A cobrança ${novaRef} precisa de conferência manual. O PIX continua ativo.`, "DESFAZER_FALHOU");
+          return erro(500, `Falha ao usar o crédito e ao devolvê-lo. A cobrança ${novaRef} precisa de conferência manual. O ${nomeOrigem} continua ativo.`, "DESFAZER_FALHOU");
         }
-        return erro(409, `A forma de pagamento não foi trocada: ${consumo.mensagem}. O crédito não foi usado e o PIX continua ativo.`, "CREDITO_NAO_CONSUMIDO");
+        return erro(409, `A forma de pagamento não foi trocada: ${consumo.mensagem}. O crédito não foi usado e o ${nomeOrigem} continua ativo.`, "CREDITO_NAO_CONSUMIDO");
       }
     }
 
-    // 3. Cancela o PIX no banco — o mesmo cancelamento de cancelar-externo.
-    const resposta = await chamarCancelamentoDePix({
-      corpo: corpoDoCancelamentoPix({
-        codigoDoBanco: String(pagamento.cod_solicitacao_inter),
-        idEmpresa: Number(pagamento.id_empresa)
-      }),
-      cabecalhos: cabecalhosWebhookN8n()
-    });
-    const decisao = decidirCancelamentoDePix(Number(pagamento.id_empresa), resposta, String(pagamento.cod_solicitacao_inter));
-    console.log("[trocar-forma-pagamento][PIX] banco", {
+    // 3. Cancela a antiga no banco — o mesmo cancelamento de cancelar-externo
+    //    (PIX pelo cancelamento de PIX; boleto à vista pelo do C6, com confirmação).
+    let decisao: { cancelarNoVibe: boolean; desfecho: string; statusHttp: number; mensagem: string; codigo: string };
+    if (origem === "BOLETO") {
+      const boleto = await cancelarBoletoAVistaNoC6({
+        codigo: String(pagamento.cod_solicitacao_inter),
+        idEmpresa: Number(pagamento.id_empresa),
+        cabecalhosComSegredo: cabecalhosWebhookN8n()
+      });
+      decisao = { cancelarNoVibe: boleto.cancelou, desfecho: boleto.desfecho, statusHttp: boleto.statusHttp, mensagem: boleto.mensagem, codigo: "BOLETO_NAO_CANCELADO_NO_BANCO" };
+    } else {
+      const resposta = await chamarCancelamentoDePix({
+        corpo: corpoDoCancelamentoPix({
+          codigoDoBanco: String(pagamento.cod_solicitacao_inter),
+          idEmpresa: Number(pagamento.id_empresa)
+        }),
+        cabecalhos: cabecalhosWebhookN8n()
+      });
+      const pix = decidirCancelamentoDePix(Number(pagamento.id_empresa), resposta, String(pagamento.cod_solicitacao_inter));
+      decisao = { cancelarNoVibe: pix.cancelarNoVibe, desfecho: pix.desfecho, statusHttp: pix.statusHttp, mensagem: mensagemDoDesfechoPix(pix.desfecho), codigo: "PIX_NAO_CANCELADO_NO_BANCO" };
+    }
+    console.log(`[trocar-forma-pagamento][${origem}] banco`, {
       id_empresa: pagamento.id_empresa,
       desfecho: decisao.desfecho,
       cancelaNoVibe: decisao.cancelarNoVibe
@@ -637,7 +684,7 @@ export async function POST(request: Request) {
 
     // 4b. Banco não confirmou: desfaz a nova; a antiga segue ativa.
     if (!decisao.cancelarNoVibe) {
-      const motivoCancelaNova = motivoCancelaDaNovaDesfeita(antigaRef, decisao.desfecho, motivo);
+      const motivoCancelaNova = motivoCancelaDaNovaDesfeita(antigaRef, decisao.desfecho, motivo, origem);
       let erroDesfaz: unknown = null;
       if (destino.consomeCredito) {
         // Devolve o crédito e cancela a nova juntos. Precisa da marca: vem antes de soltá-la.
@@ -655,23 +702,23 @@ export async function POST(request: Request) {
         await registrarHistorico(
           ctx,
           destino.consomeCredito
-            ? `ATENÇÃO: troca de forma de pagamento não concluída e a cobrança ${novaRef} (E-Crédito) ficou ativa junto com o PIX ${antigaRef}, com o crédito consumido. Conferência manual do Financeiro.`
-            : `ATENÇÃO: troca de forma de pagamento não concluída e a cobrança ${novaRef} (${rotulo}) ficou ativa junto com o PIX ${antigaRef}. Cancele a ${novaRef}.`
+            ? `ATENÇÃO: troca de forma de pagamento não concluída e a cobrança ${novaRef} (E-Crédito) ficou ativa junto com o ${nomeOrigem} ${antigaRef}, com o crédito consumido. Conferência manual do Financeiro.`
+            : `ATENÇÃO: troca de forma de pagamento não concluída e a cobrança ${novaRef} (${rotulo}) ficou ativa junto com o ${nomeOrigem} ${antigaRef}. Cancele a ${novaRef}.`
         );
         return erro(
           500,
-          `O banco não confirmou o cancelamento do PIX e não foi possível desfazer a cobrança ${novaRef} (${rotulo}). Cancele a ${novaRef} antes de qualquer outra ação.`,
+          `O banco não confirmou o cancelamento do ${nomeOrigem} e não foi possível desfazer a cobrança ${novaRef} (${rotulo}). Cancele a ${novaRef} antes de qualquer outra ação.`,
           "DESFAZER_FALHOU"
         );
       }
       await registrarHistorico(
         ctx,
-        mensagemHistoricoDaTrocaDesfeita({ antigaIdPagamento: antigaRef, novaIdPagamento: novaRef, autor: ctx.autor, motivo, rotulo })
+        mensagemHistoricoDaTrocaDesfeita({ antigaIdPagamento: antigaRef, novaIdPagamento: novaRef, autor: ctx.autor, motivo, rotulo, origem })
       );
       return erro(
         decisao.statusHttp,
-        `A forma de pagamento não foi trocada. ${mensagemDoDesfechoPix(decisao.desfecho)}`,
-        "PIX_NAO_CANCELADO_NO_BANCO",
+        `A forma de pagamento não foi trocada. ${decisao.mensagem}`,
+        decisao.codigo,
         { desfecho: decisao.desfecho }
       );
     }
@@ -689,11 +736,11 @@ export async function POST(request: Request) {
     if (erroAntiga) {
       await registrarHistorico(
         ctx,
-        `ATENÇÃO: o PIX ${antigaRef} foi cancelado no banco, mas não no sistema. A cobrança ${novaRef} (${rotulo}) é a que vale. Motivo da troca: ${motivo}`
+        `ATENÇÃO: o ${nomeOrigem} ${antigaRef} foi cancelado no banco, mas não no sistema. A cobrança ${novaRef} (${rotulo}) é a que vale. Motivo da troca: ${motivo}`
       );
       return erro(
         500,
-        `O PIX foi cancelado no banco e a cobrança ${novaRef} (${rotulo}) foi criada, mas não foi possível marcar o PIX como cancelado no sistema. Não tente de novo antes de conferir.`,
+        `O ${nomeOrigem} foi cancelado no banco e a cobrança ${novaRef} (${rotulo}) foi criada, mas não foi possível marcar o ${nomeOrigem} como cancelado no sistema. Não tente de novo antes de conferir.`,
         "ANTIGA_NAO_GRAVADA"
       );
     }
@@ -708,9 +755,25 @@ export async function POST(request: Request) {
         condicao,
         valor: Number(linhaNova.valor),
         motivo,
-        rotulo
+        rotulo,
+        origem
       })
     );
+
+    // Boleto: o título do Contas a Receber cai junto, como no cancelar-externo
+    // (filtro composto: código do C6 e pedido, nunca o pedido sozinho).
+    let avisoTitulo: string | null = null;
+    if (origem === "BOLETO") {
+      const { error: erroTitulo } = await supabase
+        .from("boletos")
+        .update({ status: "CANCELADO" })
+        .eq("id_boleto_c6", String(pagamento.cod_solicitacao_inter))
+        .eq("id_int", pagamento.id_int);
+      if (erroTitulo) {
+        avisoTitulo = `O boleto foi cancelado no banco e a troca valeu, mas o título dele continua ativo na Carteira (${erroTitulo.message}). Cancele o título manualmente.`;
+        await registrarHistorico(ctx, `ATENÇÃO: ${avisoTitulo}`);
+      }
+    }
 
     // Chave Pix: o banco confirmou, a antiga caiu — agora a conferência, pelo
     // mesmo usuário, para liberar o pedido na hora.
@@ -727,7 +790,9 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       success: true,
-      message: `Forma de pagamento trocada: ${antigaRef} (PIX) cancelada e ${novaRef} (${rotulo}) criada.`,
+      message: `Forma de pagamento trocada: ${antigaRef} (${rotuloDaOrigem(origem)}) cancelada e ${novaRef} (${rotulo}) criada.${avisoTitulo ? ` ${avisoTitulo}` : ""}`,
+      origem,
+      ...(avisoTitulo ? { avisoTitulo } : {}),
       nova: { id: nova.id, id_pagamento: nova.id_pagamento, tipo: destino.tipo },
       ...(conferencia
         ? { conferida: conferencia.conferida, motivoNaoConferida: conferencia.conferida ? null : conferencia.motivo }
