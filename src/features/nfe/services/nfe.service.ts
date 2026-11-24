@@ -28,6 +28,12 @@ import {
   tipoContribuintePorDocumento
 } from "@/lib/fiscal/tipo-contribuinte";
 import { escolherEnderecoPrincipal } from "@/lib/fiscal/endereco-principal";
+import {
+  rotuloDaFormaFiscal,
+  sugestaoPeloFaturadoComEntrada,
+  type SugestaoEntradaBoleto
+} from "@/features/nfe/lib/pagamento-entrada-boleto";
+import type { LinhaDoPedido } from "@/features/cobrancas/lib/revisao-faturado-com-entrada";
 import { complementaresComObservacao } from "@/features/fiscal/lib/observacao-nota-fiscal";
 import { idDoPagadorDoPedido } from "@/lib/fiscal/pagador-do-pedido";
 
@@ -2384,6 +2390,55 @@ export async function gerarPagamentosNfe(
   });
   if (error) throw error;
   return data;
+}
+
+/**
+ * Entrada + boleto (24/11/2026, caso 25427): o gerador de parcelas preenchido
+ * pelas cobranças do "Faturado com entrada" do pedido. SÓ LEITURA, uma
+ * consulta por `id_int`. `null` sem par ativo ou se a leitura falhar.
+ */
+export async function lerSugestaoEntradaBoletoDoPedido(idInt: number): Promise<SugestaoEntradaBoleto | null> {
+  const client = getSupabaseClient();
+  if (!client || !Number.isFinite(idInt) || idInt <= 0) return null;
+  const { data, error } = await client
+    .from("pagamentos_v2")
+    .select("id, id_pagamento, tipo_cobranca, status, valor, paid_at, confirmado, vencimento, descricao, created_at, p_qtd_parcelas, p_valor_entrada, p_dias_pra_inicio, p_intervalo")
+    .eq("id_int", idInt);
+  if (error) {
+    console.warn("[NfeService] leitura das cobranças do pedido para a entrada falhou:", error.message);
+    return null;
+  }
+  return sugestaoPeloFaturadoComEntrada((data ?? []) as LinhaDoPedido[], hojeLocalIso());
+}
+
+/**
+ * Depois do gerador: a parcela ENTRADA ganha a forma e a data escolhidas. O
+ * gerador do banco grava todas as parcelas com a forma do boleto.
+ */
+export async function ajustarEntradaDasParcelas(
+  ref: string,
+  formaEntrada: string,
+  dataEntrada: string | null
+): Promise<{ ok: boolean; mensagem?: string }> {
+  const client = getSupabaseClient();
+  if (!client) return { ok: false, mensagem: "Supabase client not initialized" };
+  const alteracao: Record<string, unknown> = {
+    forma_pagamento: formaEntrada,
+    descricao_forma_pagamento: rotuloDaFormaFiscal(formaEntrada)
+  };
+  if (dataEntrada) alteracao.data_vencimento = dataEntrada;
+  const { data, error } = await client
+    .from("notas_fiscais_pagamentos")
+    .update(alteracao)
+    .eq("ref", ref)
+    .eq("ativo", true)
+    .eq("tipo_registro", "ENTRADA")
+    .select("id");
+  if (error) return { ok: false, mensagem: error.message };
+  if (!data || data.length !== 1) {
+    return { ok: false, mensagem: `Esperava 1 parcela de entrada, achei ${data?.length ?? 0}.` };
+  }
+  return { ok: true };
 }
 
 /** Título de contas a receber já lançado, usado como sugestão de vencimento. */

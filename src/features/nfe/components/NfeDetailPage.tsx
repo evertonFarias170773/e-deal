@@ -29,7 +29,7 @@ import {
 import { getSupabaseClient } from "@/lib/supabase/client";
 import { useAppToast } from "@/components/common/AppToast";
 import { formatCurrency } from "@/lib/formatters/currency";
-import { formatDateTime } from "@/lib/formatters/date";
+import { formatDateTime, formatDataCivil } from "@/lib/formatters/date";
 import { StatusBadge } from "@/components/common/StatusBadge";
 import { buscarEnderecoDestinatario, salvarRecebedorDoEndereco } from "@/features/nfe/services/remessa.service";
 import { lerAvisoDeRemessaDoPedido } from "@/features/fiscal/services/aviso-remessa.service";
@@ -53,6 +53,8 @@ import {
   updateNfeDraft,
   trocarEmpresaNfe,
   gerarPagamentosNfe,
+  lerSugestaoEntradaBoletoDoPedido,
+  ajustarEntradaDasParcelas,
   getTransportadoras,
   insertNfeItem,
   deleteNfeItem,
@@ -94,6 +96,14 @@ import {
   avisoDaPreviaTecnica
 } from "@/features/nfe/lib/ambiente-exibido";
 import { mapSupabaseNfeRowToReadModel } from "../mappers";
+import {
+  FORMA_BOLETO,
+  FORMA_PIX,
+  parcelasJaTemEntradaComFormaPropria,
+  rotuloDaFormaFiscal,
+  vencimentoBarraConclusao,
+  type SugestaoEntradaBoleto
+} from "@/features/nfe/lib/pagamento-entrada-boleto";
 import { EmissaoNfeModal } from "@/features/fiscal/components/EmissaoNfeModal";
 import {
   listarModelosCobranca,
@@ -519,6 +529,15 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
 
   // Installment generation states
   const [pgtoValorEntrada, setPgtoValorEntrada] = useState(0);
+  // Entrada + boleto (24/11/2026, caso 25427): a entrada tem forma e data
+  // próprias; o gerador do banco grava tudo com uma forma, e a tela ajusta a
+  // parcela ENTRADA logo depois de gerar.
+  const [pgtoFormaEntrada, setPgtoFormaEntrada] = useState(FORMA_PIX);
+  const [pgtoDataEntrada, setPgtoDataEntrada] = useState("");
+  const [sugestaoEntradaBoleto, setSugestaoEntradaBoleto] = useState<SugestaoEntradaBoleto | null>(null);
+  // Preenche o gerador pelas cobranças só na primeira carga: recargas (depois
+  // de salvar, gerar etc.) não podem apagar o que quem emite ajustou.
+  const isFirstLoadEntrada = useRef(true);
   const [pgtoQtdParcelas, setPgtoQtdParcelas] = useState(1);
   const [pgtoDiasPraInicio, setPgtoDiasPraInicio] = useState(30);
   const [pgtoIntervalo, setPgtoIntervalo] = useState(30);
@@ -827,6 +846,8 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
         const parcelas = dbPayments.filter(p => p.tipo_registro === "PARCELA");
         if (entrance) {
           setPgtoValorEntrada(Number(entrance.valor) || 0);
+          setPgtoFormaEntrada(String(entrance.forma_pagamento || FORMA_BOLETO));
+          setPgtoDataEntrada(entrance.data_vencimento ? String(entrance.data_vencimento).split("T")[0] : "");
           setPgtoQtdParcelas(parcelas.length || 1);
           if (parcelas.length > 0) {
             setPgtoDiasPraInicio(parcelas[0].dias_pra_inicio || 0);
@@ -896,6 +917,35 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
         setModelosCobranca([]);
         setPgtoModeloId("");
       }
+
+      // 4d. Entrada + boleto (24/11/2026, caso 25427): pedido com "Faturado com
+      // entrada" traz o gerador preenchido pelas cobranças (entrada: forma, valor
+      // e data; restante: boleto, parcelas e vencimento). Depois do 4c de
+      // propósito: a condição da cobrança não pode sobrescrever isto. Só
+      // preenche os campos, e só na primeira carga — as parcelas mudam quando
+      // quem emite clica em Gerar, e pode ajustar antes. Não preenche se as
+      // parcelas já têm a entrada com forma própria (já foi gerado). Falha aqui
+      // não derruba a tela.
+      try {
+        const jaGerado = parcelasJaTemEntradaComFormaPropria(dbPayments);
+        const sugestao = jaGerado ? null : await lerSugestaoEntradaBoletoDoPedido(Number(dbNote.id_int));
+        setSugestaoEntradaBoleto(sugestao);
+        if (sugestao && isFirstLoadEntrada.current) {
+          setPgtoFormaPagamento(FORMA_BOLETO);
+          setPgtoParcelaUnica(false);
+          setPgtoModeloId("");
+          setPgtoValorEntrada(sugestao.valorEntrada);
+          setPgtoFormaEntrada(sugestao.formaEntrada);
+          setPgtoDataEntrada(sugestao.dataEntrada);
+          setPgtoQtdParcelas(sugestao.qtdParcelas);
+          setPgtoDiasPraInicio(sugestao.diasPraInicio);
+          setPgtoIntervalo(sugestao.intervalo);
+        }
+      } catch (err) {
+        console.warn("[NfeDetail] Falha ao ler o faturado com entrada do pedido:", err);
+        setSugestaoEntradaBoleto(null);
+      }
+      isFirstLoadEntrada.current = false;
 
       // 5. Load transportadoras list
       const transportadorasData = await getTransportadoras();
@@ -1126,8 +1176,9 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
    * Forma de Pagamento NÃO mora aqui: ela é exigência fiscal, decide se há
    * gerador (só boleto parcela) e fica acima deste bloco nos dois ramos da aba.
    *
-   * Valor de entrada fica, até a RPC aceitar forma própria para a entrada — sem
-   * ele o operador não teria como lançar uma.
+   * Valor de entrada: desde 24/11/2026 a entrada tem forma e data próprias
+   * ("Entrada + boleto"). A RPC ainda grava tudo com a forma do boleto; a tela
+   * ajusta a parcela ENTRADA logo depois (`ajustarEntradaDasParcelas`).
    *
    * Os dois ramos da aba (sem parcelas / com parcelas) chamam esta função, para
    * não divergirem.
@@ -1158,6 +1209,22 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
 
     return (
       <div className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4">
+        {sugestaoEntradaBoleto ? (
+          <div data-sugestao-entrada-boleto className="rounded-xl border border-teal-200 bg-teal-50 p-3 text-xs text-teal-950">
+            <p className="font-bold">Preenchido pelo Faturado com entrada do pedido</p>
+            <p className="mt-1">
+              Entrada {rotuloDaFormaFiscal(sugestaoEntradaBoleto.formaEntrada) ?? sugestaoEntradaBoleto.formaEntrada}{" "}
+              {formatCurrency(sugestaoEntradaBoleto.valorEntrada)}
+              {sugestaoEntradaBoleto.idPagamentoEntrada ? ` (${sugestaoEntradaBoleto.idPagamentoEntrada})` : ""},{" "}
+              {sugestaoEntradaBoleto.entradaPaga ? "paga em" : "vence em"} {formatDataCivil(sugestaoEntradaBoleto.dataEntrada)} + restante em boleto{" "}
+              {formatCurrency(sugestaoEntradaBoleto.valorRestante)}
+              {sugestaoEntradaBoleto.idPagamentoRestante ? ` (${sugestaoEntradaBoleto.idPagamentoRestante})` : ""}, vencendo{" "}
+              {formatDataCivil(sugestaoEntradaBoleto.vencimentoRestante)}
+              {sugestaoEntradaBoleto.qtdParcelas > 1 ? ` em ${sugestaoEntradaBoleto.qtdParcelas} parcelas` : ""}.
+            </p>
+            <p className="mt-1 text-teal-800">Confira, ajuste se precisar e clique em Gerar. As parcelas da nota só mudam ao gerar.</p>
+          </div>
+        ) : null}
         {/* Condição de pagamento — topo do bloco, como no modal */}
         <div className="max-w-md">
           <label className="block text-xs font-semibold text-slate-500 mb-1 uppercase tracking-wider">Condição de pagamento</label>
@@ -1271,6 +1338,42 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
             />
           </div>
         </div>
+
+        {/* Entrada + boleto (24/11/2026): a entrada tem forma e data próprias */}
+        {!pgtoParcelaUnica && Number(pgtoValorEntrada) > 0 && (
+          <div data-entrada-mais-boleto className="grid grid-cols-1 gap-4 rounded-xl border border-teal-100 bg-teal-50/40 p-3 md:grid-cols-4">
+            <div className="md:col-span-4 text-xs font-semibold text-slate-700">
+              Entrada + boleto
+              <span className="block text-[10px] font-normal text-slate-500">
+                A entrada vai na nota com a forma abaixo, à vista e sem duplicata. As parcelas futuras saem em boleto, a prazo, com as datas editáveis na tabela depois de gerar.
+              </span>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 mb-1">Forma da entrada</label>
+              <select
+                value={pgtoFormaEntrada}
+                onChange={(e) => setPgtoFormaEntrada(e.target.value)}
+                className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm bg-white outline-none focus:border-[#0b2f4a] font-medium"
+              >
+                <option value="17">17 - PIX</option>
+                <option value="15">15 - Boleto Bancário</option>
+                <option value="01">01 - Dinheiro</option>
+                <option value="03">03 - Cartão de Crédito</option>
+                <option value="04">04 - Cartão de Débito</option>
+                <option value="99">99 - Outros</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 mb-1">Data da entrada</label>
+              <input
+                type="date"
+                value={pgtoDataEntrada}
+                onChange={(e) => setPgtoDataEntrada(e.target.value)}
+                className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm bg-white outline-none focus:border-[#0b2f4a] font-mono"
+              />
+            </div>
+          </div>
+        )}
 
         {/* Arredondamento */}
         <div className="flex items-center gap-2">
@@ -2200,6 +2303,17 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
         }
       );
       if (res && res.ok) {
+        // Entrada + boleto: o gerador grava a entrada com a forma do boleto; aqui
+        // ela recebe a forma e a data escolhidas (PIX por padrão).
+        if (Number(pgtoValorEntrada) > 0) {
+          const ajuste = await ajustarEntradaDasParcelas(note.ref, pgtoFormaEntrada, pgtoDataEntrada || null);
+          if (!ajuste.ok) {
+            showToast({
+              type: "error",
+              title: `Parcelas geradas, mas a entrada não recebeu a forma ${rotuloDaFormaFiscal(pgtoFormaEntrada) ?? pgtoFormaEntrada}: ${ajuste.mensagem ?? "erro desconhecido"}. Troque a forma da parcela 1 na tabela e salve.`
+            });
+          }
+        }
         showToast({ type: "success", title: "Parcelas fiscais geradas com sucesso!" });
         setPaymentsInvalidated(false);
         try {
@@ -2300,11 +2414,9 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
     }
 
     const emissionDateOnly = note.created_at ? note.created_at.split("T")[0] : new Date().toISOString().split("T")[0];
-    const hasInvalidVencimento = editedPagamentos.some(pg => {
-      if (!pg.data_vencimento) return false;
-      const vencDateOnly = pg.data_vencimento.split("T")[0];
-      return vencDateOnly < emissionDateOnly;
-    });
+    // Só boleto: é ele que vira duplicata. A entrada em PIX pode ter sido paga
+    // antes da nota (24/11/2026, entrada + boleto).
+    const hasInvalidVencimento = editedPagamentos.some(pg => vencimentoBarraConclusao(pg, emissionDateOnly));
 
     if (hasInvalidVencimento) {
       showToast({
@@ -4342,7 +4454,10 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
                     <tbody className="divide-y divide-slate-100">
                       {pagamentos.map((pag) => {
                         const edited = editedPagamentos.find(pg => pg.id === pag.id);
-                        const canEditForma = pag.numero_parcela === 1 && (pagamentos.length === 1 || pgtoValorEntrada > 0);
+                        // 24/11/2026: cada parcela tem a sua forma (entrada em PIX,
+                        // restante em boleto). Com uma parcela só, trocar a forma
+                        // continua refazendo como pagamento à vista (abaixo).
+                        const canEditForma = pagamentos.length > 1 || pag.numero_parcela === 1;
                         return (
                           <tr key={pag.id} className="hover:bg-slate-50/50">
                             <td className="px-4 py-3.5 font-mono text-xs">Parcela {pag.numero_parcela} / {pag.total_parcelas}</td>
@@ -4352,9 +4467,10 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
                                 disabled={!canEditForma || isReadOnly}
                                 onChange={async (e) => {
                                   const value = e.target.value;
-                                  const isEntradaEdicao = pag.numero_parcela === 1 && pagamentos.length > 1;
-                                  
-                                  if (!isEntradaEdicao && value !== "15" && pagamentos.length > 0) {
+                                  // Com várias parcelas, trocar a forma só muda esta linha.
+                                  const variasParcelas = pagamentos.length > 1;
+
+                                  if (!variasParcelas && value !== "15" && pagamentos.length > 0) {
                                     const temVariosVencimentos = pagamentos.length > 1 || pagamentos[0]?.forma_pagamento !== value;
                                     if (temVariosVencimentos) {
                                       setConfirmModal({
@@ -4372,7 +4488,11 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
                                   }
 
                                   setEditedPagamentos(prev =>
-                                    prev.map(pg => (pg.id === pag.id ? { ...pg, forma_pagamento: value } : pg))
+                                    prev.map(pg =>
+                                      pg.id === pag.id
+                                        ? { ...pg, forma_pagamento: value, descricao_forma_pagamento: rotuloDaFormaFiscal(value) }
+                                        : pg
+                                    )
                                   );
                                   if (pagamentos.length === 1) {
                                     setPgtoFormaPagamento(value);

@@ -1,6 +1,6 @@
 # Notas fiscais
 
-> **Última revisão:** 17/11/2026 (carta de correção: **Baixar carta de correção (PDF)** e **(XML)** no menu, uma linha por carta; o PDF é gerado pelo Vibe a partir do XML da carta; antes, os itens de carta não apareciam em nenhuma nota). 16/11/2026 (**Baixar comprovante de cancelamento (PDF)**, gerado pelo Vibe a partir do XML do evento; o ícone **Baixar DANFE** da linha passou a baixar a própria nota da linha, inclusive a cancelada, e não mais a nota que a substituiu. Antes, no mesmo dia: prazo para cancelar NF-e passou de 24 para 168 horas, o prazo do RS; antes, no mesmo dia: menu da nota ganhou **Copiar chave de acesso**, na NF-e e na NFS-e autorizada ou cancelada, e **Baixar comprovante de cancelamento** na NF-e cancelada). 15/11/2026 (o telefone do destinatário na NF-e passou a ser o da conversa principal do pedido no ChatGuru, com o 9; antes, no mesmo dia: a NF-e passou a levar o e-mail do destinatário no campo que a Focus lê). 11/11/2026 (com card de frete escolhido, o rascunho só nasce com os Correios se o card for dos Correios; a categoria de frete vale só sem card. Antes, no mesmo dia: **Observação para a nota fiscal** do pedido nas Informações Complementares da NF-e, com contagem até 5.000 e o botão **Incluir**; selos **Obs. para a NF** e **Obs. interna** na Fila e nas telas das notas). 09/11/2026 (transportadora dos Correios na nota é sempre o cadastro de Porto Alegre). 06/11/2026 (lançamento no contas a receber: a parcela conta por cobrança). 05/11/2026 (a condição de pagamento não vai mais escrita na NFS-e). 04/11/2026 (Histórico em duas abas, NF-e e NFS-e; NFS-e com busca própria, mais nova primeiro e começando em Produção; selo Boleto em processamento no banco)
+> **Última revisão:** 24/11/2026 (Pagamentos da NF-e: cada parcela tem a sua forma; **Entrada + boleto** com **Forma da entrada** e **Data da entrada**; pedido com Faturado com entrada traz o gerador preenchido pelas cobranças; vencimento passado só barra parcela de boleto). 17/11/2026 (carta de correção: **Baixar carta de correção (PDF)** e **(XML)** no menu, uma linha por carta; o PDF é gerado pelo Vibe a partir do XML da carta; antes, os itens de carta não apareciam em nenhuma nota). 16/11/2026 (**Baixar comprovante de cancelamento (PDF)**, gerado pelo Vibe a partir do XML do evento; o ícone **Baixar DANFE** da linha passou a baixar a própria nota da linha, inclusive a cancelada, e não mais a nota que a substituiu. Antes, no mesmo dia: prazo para cancelar NF-e passou de 24 para 168 horas, o prazo do RS; antes, no mesmo dia: menu da nota ganhou **Copiar chave de acesso**, na NF-e e na NFS-e autorizada ou cancelada, e **Baixar comprovante de cancelamento** na NF-e cancelada). 15/11/2026 (o telefone do destinatário na NF-e passou a ser o da conversa principal do pedido no ChatGuru, com o 9; antes, no mesmo dia: a NF-e passou a levar o e-mail do destinatário no campo que a Focus lê). 11/11/2026 (com card de frete escolhido, o rascunho só nasce com os Correios se o card for dos Correios; a categoria de frete vale só sem card. Antes, no mesmo dia: **Observação para a nota fiscal** do pedido nas Informações Complementares da NF-e, com contagem até 5.000 e o botão **Incluir**; selos **Obs. para a NF** e **Obs. interna** na Fila e nas telas das notas). 09/11/2026 (transportadora dos Correios na nota é sempre o cadastro de Porto Alegre). 06/11/2026 (lançamento no contas a receber: a parcela conta por cobrança). 05/11/2026 (a condição de pagamento não vai mais escrita na NFS-e). 04/11/2026 (Histórico em duas abas, NF-e e NFS-e; NFS-e com busca própria, mais nova primeiro e começando em Produção; selo Boleto em processamento no banco)
 > **Caminho no menu:** Financeiro → Notas fiscais (primeiro item da seção Financeiro do menu lateral)
 > **Endereço:** `/notas-fiscais` (a nota aberta fica em `/notas-fiscais/[id]`)
 
@@ -131,6 +131,8 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Parcela única com vencimento específico** | Bloco Pagamentos, caixa de marcar | Gera uma parcela só, no vencimento escolhido. |
 | **Arredondar valores das parcelas** | Bloco Pagamentos, caixa de marcar | Arredonda as parcelas e ajusta a diferença na última. |
 | **Gerar Parcelas Fiscais** | Bloco Pagamentos | Cria as parcelas da nota, substituindo as que existirem. |
+| **Forma da entrada** e **Data da entrada** | Bloco Pagamentos, quadro **Entrada + boleto** (aparece com **Valor de entrada** maior que zero) | Definem a forma (PIX por padrão) e a data da parcela de entrada. As parcelas futuras saem em boleto. |
+| **Forma de Pagamento** da linha | Tabela de parcelas, bloco Pagamentos | Com mais de uma parcela, troca a forma só daquela parcela. Com uma parcela só, trocar para outra forma refaz a parcela como pagamento à vista, depois de confirmar. |
 | **Usar datas e valores dos títulos** / **Descartar sugestão** | Bloco Pagamentos, aviso de títulos já lançados | Copia datas e valores dos títulos para as parcelas, ou volta ao que estava gravado. |
 | **Visualizar arquivo técnico da nota (JSON)** | Bloco Documentos/Preview | Mostra os dados técnicos que serão enviados. |
 | **Continuar e Invalidar** / **Cancelar** | Janela **Invalidação de Pagamentos** | Apaga as parcelas e segue com a alteração, ou desiste. |
@@ -248,8 +250,16 @@ A nota de serviço sai pelo botão **NFS-e** da aba **Fila Faturamento**, só em
 1. No bloco **Pagamentos**, escolha a **Forma de Pagamento**. Só **15 - Boleto Bancário** gera parcelas; as outras formas são tratadas como à vista, com um pagamento único no total da nota.
 2. Para boleto, use **Gerar Parcelas Automaticamente**: escolha a **Condição de pagamento** (ela preenche quantidade, dias e intervalo, que continuam editáveis) ou marque **Parcela única com vencimento específico**. Se quiser, informe **Valor de entrada** e marque **Arredondar valores das parcelas**.
 3. Clique em **Gerar Parcelas Fiscais**. A contagem de dias parte de hoje.
-4. Ajuste **Vencimento** e **Valor Parcela (R$)** direto na tabela, se precisar, e salve.
+4. Ajuste **Forma de Pagamento**, **Vencimento** e **Valor Parcela (R$)** direto na tabela, se precisar, e salve. Cada parcela pode ter a sua forma.
 5. Se a proposta já tem títulos no contas a receber, aparece o aviso com datas e valores e o botão **Usar datas e valores dos títulos**, que copia os dois para as parcelas de mesmo número. **Descartar sugestão** desfaz.
+
+#### Nota com entrada em PIX e restante em boleto
+
+1. No bloco **Pagamentos**, deixe a **Forma de Pagamento** em **15 - Boleto Bancário** e informe o **Valor de entrada**.
+2. No quadro **Entrada + boleto**, escolha a **Forma da entrada** (PIX vem marcado) e a **Data da entrada**.
+3. Informe as parcelas futuras do boleto (**Qtd de parcelas futuras**, **Dias para a primeira**, **Intervalo (dias)**) e clique em **Gerar Parcelas Fiscais**.
+4. Confira na tabela: a parcela 1 é a entrada, na forma escolhida; as outras são boleto. Ajuste as datas dos boletos, se precisar, e salve.
+5. Se o pedido tem **Faturado com entrada**, o gerador já abre preenchido pelas cobranças do pedido: a entrada (forma, valor e data) e o restante em boleto (vencimento e parcelas). O aviso **Preenchido pelo Faturado com entrada do pedido** mostra de onde veio. Confira e clique em **Gerar Parcelas Fiscais**; as parcelas da nota só mudam ao gerar.
 
 ### Usar endereço de entrega diferente e encurtar dados do destinatário
 
@@ -336,6 +346,9 @@ Ação temporária, da transição entre sistemas. Use só quando a nota do pedi
 2. O rascunho some junto com os itens e as parcelas. O pedido não é alterado e pode ser faturado de novo.
 
 ## Regras e bloqueios
+
+- Nota com entrada e boleto: a entrada vai à SEFAZ à vista e sem duplicata; o boleto vai a prazo, como duplicata. As duplicatas contam só os boletos (001, 002…), e a fatura é a soma dos boletos.
+- Vencimento antes da data de emissão só impede concluir a nota quando a parcela é de boleto. A entrada em PIX pode ter sido paga antes da nota.
 
 - Não dá para abrir a nota enquanto o pedido tiver pendência de origem: CPF ou CNPJ inválido de quem paga, tipo de contribuinte não definido, CNPJ contribuinte de ICMS sem Inscrição Estadual, endereço do pedido ausente ou incompleto, item sem NCM de 8 dígitos ou sem produto cadastrado, valor total zerado, pedido sem cobrança registrada ou empresa não habilitada para NF-e. A correção é feita na origem (cadastro, orçamento ou produto), não no fiscal. Exceção: o NCM conferido é o do item dentro do pedido, copiado na venda; corrigir o cadastro do produto não destrava pedido já fechado. Nesse caso, avise o Everton.
 - O botão **Emitir NF-e** fica desabilitado enquanto houver pendência que impede a emissão. Avisos não travam.
@@ -433,7 +446,8 @@ Ação temporária, da transição entre sistemas. Use só quando a nota do pedi
 | Esta nota JÁ PARECE AUTORIZADA na SEFAZ | O retorno guardado indica autorização, mas a nota ficou sem número na tela. | Não emita de novo. Confira na SEFAZ e avise o administrador. |
 | Ambiente da empresa não definido | A empresa emitente está sem ambiente de NF-e configurado. | Avise a equipe técnica: hoje o ambiente da empresa (homologação ou produção) é definido direto no banco de dados, e não existe tela para isso. |
 | Os pagamentos precisam ser regenerados! | Itens ou frete mudaram depois das parcelas. | No bloco Pagamentos, clique em **Gerar Parcelas Fiscais**. |
-| Existe parcela com vencimento anterior à data de emissão. | Há parcela com data no passado. | Corrija o vencimento no bloco Pagamentos. |
+| Existe parcela com vencimento anterior à data de emissão. | Há parcela de boleto com data no passado. | Corrija o vencimento no bloco Pagamentos. |
+| Parcelas geradas, mas a entrada não recebeu a forma… | As parcelas foram geradas, mas a troca da forma da entrada falhou. | Na tabela, troque a forma da parcela 1 e salve. |
 | Informe o vencimento do pagamento antes de salvar. | Parcela sem data. | Preencha o vencimento e salve. |
 | "O comprovante de cancelamento desta nota não está guardado no Vibe..." | A nota está Cancelada no Vibe, mas não há XML do evento de cancelamento confirmado pela SEFAZ. | Confira a nota na SEFAZ pela chave de acesso. Se ela seguir autorizada, avise o fiscal. |
 | Cancelamento não permitido: a nota está em "..." | Só nota Autorizada pode ser cancelada. | Confira o status da nota. |
@@ -490,6 +504,7 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/features/fiscal/components/SeloDaPrevisao.tsx`
 - `src/features/fiscal/hooks/usePrevisaoDaProducao.ts`
 - `src/features/fiscal/components/EmissaoNfeModal.tsx`
+- `src/features/nfe/lib/pagamento-entrada-boleto.ts`
 - `src/features/nfse/components/GerarNfseModal.tsx`
 - `src/features/nfse/lib/regras-emissao.ts`
 - `src/features/nfse/lib/janela-nfse.ts`
