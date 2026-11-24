@@ -11,6 +11,8 @@ import type { Cobranca, ModeloCobranca } from "@/features/cobrancas/types";
 import { ConferenciaFinanceiraAlertaModal } from "./ConferenciaFinanceiraAlertaModal";
 import { podeAutorizarEConferir } from "./lib/autorizar-e-conferir";
 import { executarConfirmacaoDaConferencia, type TravaDeEnvio } from "./lib/confirmar-conferencia";
+import type { QuadroPagamentoInteiro } from "./lib/revisao-faturado-com-entrada";
+import { carregarQuadroPagamentoInteiro } from "./services/revisao-faturado-com-entrada.client";
 
 interface AutorizarFaturamentoModalProps {
   isOpen: boolean;
@@ -62,6 +64,25 @@ export function AutorizarFaturamentoModal({ isOpen, onClose, cobranca, onSuccess
     };
     void fetchModelos();
   }, [isOpen]);
+
+  // "Faturado com entrada" (caso 25427): o pagamento inteiro do pedido — total,
+  // entrada e restante com as parcelas. Só leitura; sem o par, nada aparece.
+  const [quadroPagamento, setQuadroPagamento] = useState<QuadroPagamentoInteiro | null>(null);
+  useEffect(() => {
+    setQuadroPagamento(null);
+    if (!isOpen) return;
+    const client = getSupabaseClient();
+    if (!client) return;
+    let vivo = true;
+    void carregarQuadroPagamentoInteiro(client, { id: cobranca.id, id_int: cobranca.id_int, descricao: cobranca.descricao })
+      .then((quadro) => {
+        if (vivo) setQuadroPagamento(quadro);
+      })
+      .catch((erro) => console.warn("[AnaliseFaturamento] quadro do pagamento inteiro:", erro));
+    return () => {
+      vivo = false;
+    };
+  }, [isOpen, cobranca.id, cobranca.id_int, cobranca.descricao]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -268,7 +289,7 @@ export function AutorizarFaturamentoModal({ isOpen, onClose, cobranca, onSuccess
         situacao={bloqueioSituacao}
         cobrancaAlvoId={cobranca.id}
       />
-      <div className="w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl space-y-6 flex flex-col transform transition-all scale-100">
+      <div className="w-full max-w-lg max-h-[94vh] overflow-y-auto rounded-3xl bg-white p-6 shadow-2xl space-y-6 flex flex-col transform transition-all scale-100">
         
         {/* Header */}
         <div className="flex items-start justify-between border-b border-slate-100 pb-4">
@@ -336,6 +357,8 @@ export function AutorizarFaturamentoModal({ isOpen, onClose, cobranca, onSuccess
               <span className="text-slate-900 font-semibold text-right text-amber-700">{cobranca.forma_pgto || cobranca.forma_fatu || "Não informada"}</span>
             </div>
           </div>
+
+          {quadroPagamento && <PagamentoInteiroDoPedido quadro={quadroPagamento} />}
 
           {activeTab === "aprovar" && (
             <div className="rounded-2xl border border-amber-200 bg-amber-50/70 p-4 text-amber-900 flex gap-3 items-start">
@@ -441,5 +464,75 @@ export function AutorizarFaturamentoModal({ isOpen, onClose, cobranca, onSuccess
         </div>
       </div>
     </div>
+  );
+}
+
+const reais = (valor: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(valor);
+
+const COR_DA_SITUACAO: Record<string, string> = {
+  PAGA_CONFERIDA: "text-emerald-700",
+  PAGA: "text-emerald-700",
+  NAO_PAGA: "text-amber-700",
+  CANCELADA: "text-red-700"
+};
+
+/**
+ * O pagamento inteiro do pedido quando o faturado é o restante de um "Faturado
+ * com entrada": total, entrada (forma, valor, situação) e o restante com a
+ * previsão das parcelas. Só mostra; não muda regra nem valor.
+ */
+function PagamentoInteiroDoPedido({ quadro }: { quadro: QuadroPagamentoInteiro }) {
+  const { entrada, restante } = quadro;
+  return (
+    <section
+      aria-label="Pagamento do pedido"
+      className="rounded-2xl border border-sky-200 bg-sky-50/60 p-4 space-y-2 text-sm"
+    >
+      <p className="text-xs font-bold uppercase tracking-wide text-sky-800">Pagamento do pedido: faturado com entrada</p>
+      {quadro.totalDoPedido != null && (
+        <div className="flex justify-between">
+          <span className="text-slate-500 font-medium">Total do pedido:</span>
+          <span className="text-slate-900 font-bold">{reais(quadro.totalDoPedido)}</span>
+        </div>
+      )}
+      {entrada ? (
+        <div className="flex justify-between gap-3">
+          <span className="text-slate-500 font-medium shrink-0">Entrada ({entrada.forma}{entrada.id_pagamento ? `, ${entrada.id_pagamento}` : ""}):</span>
+          <span className="text-right">
+            <span className="block text-slate-900 font-semibold">{reais(entrada.valor)}</span>
+            <span className={`block text-xs font-semibold ${COR_DA_SITUACAO[entrada.situacao.codigo] ?? "text-slate-600"}`}>
+              {entrada.situacao.texto}
+            </span>
+          </span>
+        </div>
+      ) : (
+        <p className="text-xs text-amber-800">A entrada deste faturado não foi encontrada entre as cobranças do pedido.</p>
+      )}
+      <div className="flex justify-between gap-3">
+        <span className="text-slate-500 font-medium shrink-0">
+          Restante faturado{restante.id_pagamento ? ` (${restante.id_pagamento}, esta cobrança)` : " (esta cobrança)"}:
+        </span>
+        <span className="text-slate-900 font-semibold">{reais(restante.valor)}</span>
+      </div>
+      {restante.parcelas.length > 0 && (
+        <ul className="mt-1 space-y-0.5 border-t border-sky-200 pt-2 text-xs text-slate-700">
+          {restante.parcelas.map((parcela) => (
+            <li key={parcela.numero} className="flex justify-between">
+              <span>
+                {parcela.ehEntrada ? "Entrada da condição" : `Parcela ${parcela.numero}/${parcela.total}`} ·{" "}
+                {parcela.dias === 0 ? "na emissão" : `${parcela.dias} dias após a emissão`}
+              </span>
+              <span className="font-semibold">{reais(parcela.valor)}</span>
+            </li>
+          ))}
+          <li className="pt-1 text-[11px] text-slate-500">Previsão: as datas saem quando os boletos forem preparados.</li>
+        </ul>
+      )}
+      {quadro.somaDivergente != null && (
+        <p className="text-xs text-amber-800">
+          Entrada + restante somam {reais(quadro.somaDivergente)}, diferente do total do pedido de hoje.
+        </p>
+      )}
+    </section>
   );
 }

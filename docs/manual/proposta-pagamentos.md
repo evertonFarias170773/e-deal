@@ -177,7 +177,7 @@ Cobrança cancelada sai da lista.
 ### Analisar a condição de um faturado (financeiro)
 
 1. Clique em **Ver cobrança** na cobrança faturada pendente e abra o menu **Acoes**.
-2. Clique em **Analisar condição**. A janela **Análise de Faturamento** mostra cliente, proposta, valor e a **Condição Solicitada**.
+2. Clique em **Analisar condição**. A janela **Análise de Faturamento** mostra cliente, proposta, valor e a **Condição Solicitada**. No restante de um **Faturado com entrada**, mostra também o pagamento inteiro do pedido: total, entrada (forma, valor e se já foi paga) e o restante com a previsão das parcelas (desde 24/11/2026; detalhes na ficha da Conferência).
 3. Na aba **Aprovar**, clique em **Confirmar Autorização**. A autorização vale só para esta cobrança; não muda o limite de crédito do cliente. A cobrança segue para a Conferência.
 4. Na aba **Alterar**, escolha a **Nova Condição de Pagamento** e clique em **Alterar Condição**. A cobrança continua aguardando análise.
 5. Na aba **Reprovar**, preencha o motivo e clique em **Reprovar e cancelar cobrança**. A cobrança é cancelada, a proposta volta para NOVO e o vendedor é avisado no chat da proposta.

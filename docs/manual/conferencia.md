@@ -1,6 +1,6 @@
 # Conferência
 
-> **Última revisão:** 23/11/2026 (**Trocar forma de pagamento** aceita também boleto à vista não pago, de título único, emitido no C6). 20/11/2026 (boleto novo da Ideal Birô, à vista e faturado, no C6: baixa sozinho e cancelamento só com a confirmação do banco; boleto antigo da Birô segue no Banco Inter até o fim). 19/11/2026 (cartão de crédito C6 da Ideal Birô: baixa e cancelamento no C6; antes, no mesmo dia: PIX novo da Ideal Birô no C6; PIX antigo da Birô segue no Banco Inter até o fim; antes, 17/11/2026: Chave Pix na troca de forma de pagamento, com e2eId e comprovante opcionais; 13/11/2026: Registrar devolução e cancelar pedido)
+> **Última revisão:** 24/11/2026 (a janela **Análise de Faturamento** mostra o pagamento inteiro do pedido quando o faturado é o restante de um **Faturado com entrada**; caso 25427). 23/11/2026 (**Trocar forma de pagamento** aceita também boleto à vista não pago, de título único, emitido no C6). 20/11/2026 (boleto novo da Ideal Birô, à vista e faturado, no C6: baixa sozinho e cancelamento só com a confirmação do banco; boleto antigo da Birô segue no Banco Inter até o fim). 19/11/2026 (cartão de crédito C6 da Ideal Birô: baixa e cancelamento no C6; antes, no mesmo dia: PIX novo da Ideal Birô no C6; PIX antigo da Birô segue no Banco Inter até o fim; antes, 17/11/2026: Chave Pix na troca de forma de pagamento, com e2eId e comprovante opcionais; 13/11/2026: Registrar devolução e cancelar pedido)
 > **Caminho no menu:** Conferência (primeiro item do menu lateral; é um link direto, sem subitens)
 > **Endereço:** `/cobrancas` (o detalhe de uma cobrança abre em `/cobrancas/<cobrança>`)
 
@@ -119,6 +119,7 @@ A cobrança perde a data e o nome de quem confirmou e volta para a **Fila de Con
 
 1. Clique no card **Pendentes de aprovação** (ou escolha **Pendentes aprovação** no filtro de tipo).
 2. Abra o menu de ações da linha e clique em **Analisar condição**. Abre a janela **Análise de Faturamento**, com cliente, proposta, valor e a **Condição Solicitada** pelo vendedor.
+   - Se o faturado é o restante de um **Faturado com entrada** (o cliente paga uma parte em PIX ou boleto e o resto faturado), aparece também o quadro **Pagamento do pedido: faturado com entrada**, com o **Total do pedido**, a **Entrada** (forma, número da cobrança, valor e se já foi paga: "Ainda não paga (vence em ...)", "Paga em ..., aguardando conferência" ou "Paga em ... e conferida") e o **Restante faturado**, que é esta cobrança, com a previsão das parcelas (valor e quantos dias depois da emissão vence cada uma; as datas saem quando os boletos forem preparados). O quadro só mostra: não muda a condição, o valor nem o que os botões fazem. Se a entrada não for encontrada, ou se entrada + restante não baterem com o total do pedido de hoje, o quadro avisa.
 3. Escolha uma das três abas:
    - **Aprovar**: escreva uma observação, se quiser, e clique em **Confirmar Autorização**. A cobrança passa para **Faturamento autorizado / A liberar** e entra na Fila de Conferência. A aprovação vale só para esta cobrança; não altera o limite de crédito do cliente.
    - **Aprovar e já conferir**: na mesma aba, clique em **Autorizar e conferir** em vez de **Confirmar Autorização**. A cobrança é autorizada e conferida de uma vez: não passa pela Fila de Conferência e vai direto para **Cobranças Confirmadas**, com o seu nome como autor da autorização e da conferência. O chat da proposta recebe uma mensagem só, dizendo que o faturamento foi autorizado e conferido. O que acontece com o pedido é o mesmo de **Confirmar Conferência** (veja acima). A trava de valor também é a mesma: se a conferência seria recusada por a soma das cobranças ser menor que o total do pedido, aparece o alerta e nada é gravado.
@@ -329,7 +330,9 @@ Outros:
 | "Nenhuma cobrança encontrada" | Nada bate com os filtros, a aba e a busca. | Troque de aba, ajuste o período ou use **Limpar filtros**. |
 | "Lista incompleta: há mais cobranças do que o limite carregado. Avise o suporte." | A tela carrega no máximo 30.000 cobranças, das mais novas para as mais antigas, e o total passou disso. | Avise o suporte. Enquanto o aviso aparecer, a aba Pagamentos da proposta não mostra as cobranças nem deixa gerar cobrança nova, para não duplicar uma antiga que não foi carregada. |
 
-> **Mudança desta revisão:** 23/11/2026 — **Trocar forma de pagamento** aceita boleto à vista não pago, de título único, emitido no C6 (Ideal Gráfica, E3 Brindes e Birô no C6): o boleto só cai com a confirmação do C6; sem ela, a cobrança nova é desfeita. Na Chave Pix, a cobrança nova segue conferida na troca, como no PIX.
+> **Mudança desta revisão:** 24/11/2026 — a janela **Análise de Faturamento** passou a mostrar o pagamento inteiro do pedido quando o faturado é o restante de um **Faturado com entrada**: total do pedido, entrada (forma, valor e se já foi paga) e o restante com a previsão das parcelas. Antes aparecia só o faturado, sem nada que indicasse a entrada (caso 25427, Edina). Só tela: nenhuma regra nem valor mudou.
+>
+> **Revisão anterior:** 23/11/2026 — **Trocar forma de pagamento** aceita boleto à vista não pago, de título único, emitido no C6 (Ideal Gráfica, E3 Brindes e Birô no C6): o boleto só cai com a confirmação do C6; sem ela, a cobrança nova é desfeita. Na Chave Pix, a cobrança nova segue conferida na troca, como no PIX.
 >
 > **Revisão anterior:** 17/11/2026 — **Trocar forma de pagamento** ganhou **Chave Pix** (só para quem confirma pagamento): a cobrança PIX recebida na chave nasce paga (data obrigatória; e2eId e comprovante opcionais) e é conferida na própria troca, em nome de quem trocou. Se a conferência não passar, ela fica na fila com o motivo no Histórico.
 >
@@ -369,6 +372,8 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/features/cobrancas/services/cancelamento-pix.ts`
 - `src/features/cobrancas/ConferenciaFinanceiraAlertaModal.tsx`
 - `src/features/cobrancas/AutorizarFaturamentoModal.tsx`
+- `src/features/cobrancas/lib/revisao-faturado-com-entrada.ts`
+- `src/features/cobrancas/services/revisao-faturado-com-entrada.client.ts`
 - `src/features/cobrancas/AnaliseCreditoModal.tsx`
 - `src/features/cobrancas/CancelCobrancaModal.tsx`
 - `src/features/cobrancas/RegistrarDevolucaoModal.tsx`
