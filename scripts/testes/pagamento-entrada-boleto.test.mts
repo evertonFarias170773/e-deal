@@ -18,10 +18,15 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
+  FORMAS_DA_ENTRADA,
   descreverParcelas,
   diferencasDoFaturadoComEntrada,
+  entradaComecaLigada,
+  formaDaEntradaParaOGerador,
   formaDaNotaPelasParcelas,
   formaDoGeradorPelasParcelas,
+  geradorComecaFechado,
+  problemaDaEntrada,
   formaFiscalDaCobranca,
   parcelasJaTemEntradaComFormaPropria,
   resumoPagamentoDoPayload,
@@ -223,6 +228,46 @@ caso("M. a tela e o modal usam as regras", () => {
   const modal = readFileSync("src/features/fiscal/components/EmissaoNfeModal.tsx", "utf8");
   assert.match(modal, /resumoPagamentoDoPayload\(nota\.payload_envio\)/);
   assert.match(modal, /data-resumo-pagamento-emissao/);
+});
+
+caso("N. gerador simplificado: entrada nunca em boleto, fechado com parcelas", () => {
+  // Forma da entrada: a da cobrança de entrada do faturado; boleto nunca.
+  assert.equal(formaDaEntradaParaOGerador("17", "15"), "17");
+  assert.equal(formaDaEntradaParaOGerador("15", "15"), "17");
+  assert.equal(formaDaEntradaParaOGerador(null, "15"), "17");
+  assert.equal(formaDaEntradaParaOGerador(null, "03"), "03");
+  assert.equal(formaDaEntradaParaOGerador("01", "17"), "01");
+  assert.equal(formaDaEntradaParaOGerador(null, null), "17");
+  assert.ok(!(FORMAS_DA_ENTRADA as readonly string[]).includes("15"));
+  // Fechado com parcelas, aberto sem.
+  assert.equal(geradorComecaFechado(2), true);
+  assert.equal(geradorComecaFechado(0), false);
+  // Entrada ligada: pelo faturado, ou pela parcela ENTRADA gravada (NFE-25427-002).
+  const nfe002 = [
+    { numero_parcela: 1, tipo_registro: "ENTRADA", forma_pagamento: "17", valor: "10675.97", ativo: true },
+    { numero_parcela: 2, tipo_registro: "PARCELA", forma_pagamento: "15", valor: "10675.96", ativo: true }
+  ];
+  assert.equal(entradaComecaLigada(false, nfe002), true);
+  assert.equal(entradaComecaLigada(true, []), true);
+  assert.equal(entradaComecaLigada(false, [{ numero_parcela: 1, tipo_registro: "PARCELA", forma_pagamento: "15", valor: "200", ativo: true }]), false);
+  assert.equal(entradaComecaLigada(false, [{ ...nfe002[0], ativo: false }]), false);
+  // Validação da entrada.
+  assert.match(String(problemaDaEntrada({ forma: "15", valor: 80, totalDaNota: 200 })), /à vista/);
+  assert.match(String(problemaDaEntrada({ forma: "17", valor: 0, totalDaNota: 200 })), /valor da entrada/);
+  assert.match(String(problemaDaEntrada({ forma: "17", valor: 200, totalDaNota: 200 })), /menor que o total/);
+  assert.equal(problemaDaEntrada({ forma: "17", valor: 10675.97, totalDaNota: 21351.93 }), null);
+  // A tela: título da tabela, Refazer parcelas, a linha das datas, sem boleto na entrada.
+  const tela = readFileSync("src/features/nfe/components/NfeDetailPage.tsx", "utf8");
+  assert.match(tela, /Parcelas que vão na nota \(saem na DANFE\)/);
+  assert.match(tela, /Refazer parcelas/);
+  assert.match(tela, /Estas datas saem na nota\. Os boletos do Contas a Receber são gerados no Registro de recebíveis\./);
+  assert.match(tela, /FORMAS_DA_ENTRADA\.map/);
+  assert.match(tela, /const formaDoGerador = comEntrada \? FORMA_BOLETO : pgtoFormaPagamento;/);
+  assert.match(tela, /const valorEntradaDoGerador = comEntrada \? Number\(pgtoValorEntrada\) : 0;/);
+  assert.match(tela, /formaDaEntradaParaOGerador\(sugestao\.formaEntrada, entradaGravada\?\.forma_pagamento\)/);
+  // O select solto só sem entrada; a gravação continua pelas mesmas funções.
+  assert.match(tela, /\{!pgtoComEntrada && \(\s*<div className="max-w-xs">/);
+  assert.match(tela, /ajustarEntradaDasParcelas\(note\.ref, pgtoFormaEntrada/);
 });
 
 console.log(`\n${ok} casos passaram.`);

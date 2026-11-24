@@ -345,6 +345,63 @@ export function resumoPagamentoDoPayload(payload: unknown): ResumoPagamentoDoPay
   return { formas, duplicatas, fatura, total: Number.isFinite(total) ? total : null };
 }
 
+// ---------------------------------------------------------------------------
+// Gerador simplificado (24/11/2026, print do Everton na NFE-25427-002): uma
+// pergunta de forma por coisa. "Entrada" (liga/desliga) tem forma, valor e
+// data; "Restante" é sempre boleto. Entrada em boleto não existe: a entrada é
+// à vista.
+// ---------------------------------------------------------------------------
+
+/** Formas aceitas para a entrada (à vista). Boleto fica no Restante. */
+export const FORMAS_DA_ENTRADA = ["17", "01", "03", "04", "99"] as const;
+
+/**
+ * A forma que o campo "Forma da entrada" mostra: a da cobrança de entrada do
+ * Faturado com entrada do pedido; sem ela, a da parcela ENTRADA já gravada;
+ * sem nenhuma das duas (ou se ambas forem boleto), PIX. Nunca boleto.
+ */
+export function formaDaEntradaParaOGerador(
+  formaDoFaturado: string | null | undefined,
+  formaDaParcelaEntrada: string | null | undefined
+): string {
+  for (const candidata of [formaDoFaturado, formaDaParcelaEntrada]) {
+    const forma = String(candidata ?? "").trim();
+    if ((FORMAS_DA_ENTRADA as readonly string[]).includes(forma)) return forma;
+  }
+  return FORMA_PIX;
+}
+
+/** O gerador abre fechado quando a nota já tem parcelas (a tabela é o que vai na nota). */
+export function geradorComecaFechado(qtdParcelasAtivas: number): boolean {
+  return qtdParcelasAtivas > 0;
+}
+
+/** A entrada começa ligada quando o pedido tem Faturado com entrada ou a nota já tem parcela ENTRADA. */
+export function entradaComecaLigada(
+  temFaturadoComEntrada: boolean,
+  parcelas: readonly ParcelaFiscal[]
+): boolean {
+  if (temFaturadoComEntrada) return true;
+  return ativas(parcelas).some((p) => ehEntrada(p) && (Number(p.valor) || 0) > 0);
+}
+
+/** O que impede gerar com a Entrada ligada; `null` quando está tudo certo. */
+export function problemaDaEntrada(args: {
+  forma: string | null | undefined;
+  valor: number;
+  totalDaNota: number;
+}): string | null {
+  const forma = String(args.forma ?? "").trim();
+  if (!(FORMAS_DA_ENTRADA as readonly string[]).includes(forma)) {
+    return "A entrada é à vista: escolha PIX, dinheiro, cartão ou outros. O boleto fica no Restante.";
+  }
+  if (!(Number(args.valor) > 0)) return "Informe o valor da entrada, ou desligue a Entrada.";
+  if (centavos(args.valor) >= centavos(args.totalDaNota)) {
+    return "A entrada precisa ser menor que o total da nota: o restante sai em boleto.";
+  }
+  return null;
+}
+
 /**
  * As parcelas gravadas já refletem uma entrada com forma própria? Então o
  * gerador não é preenchido de novo pelas cobranças (o operador já gerou).

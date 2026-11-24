@@ -100,9 +100,14 @@ import { mapSupabaseNfeRowToReadModel } from "../mappers";
 import {
   FORMA_BOLETO,
   FORMA_PIX,
+  FORMAS_DA_ENTRADA,
   descreverParcelas,
   diferencasDoFaturadoComEntrada,
+  entradaComecaLigada,
+  formaDaEntradaParaOGerador,
   formaDoGeradorPelasParcelas,
+  geradorComecaFechado,
+  problemaDaEntrada,
   parcelasJaTemEntradaComFormaPropria,
   rotuloDaFormaFiscal,
   salvarMudouAsParcelas,
@@ -247,6 +252,10 @@ const CAMPOS_TRIBUTACAO = [
   { campo: "pis_situacao_tributaria", id: "pis-cst", rotulo: "CST PIS" },
   { campo: "cofins_situacao_tributaria", id: "cofins-cst", rotulo: "CST COFINS" }
 ] as const satisfies readonly { campo: keyof TributacaoDoItem; id: string; rotulo: string }[];
+
+/** Aba Pagamentos (24/11/2026): as datas do gerador são as da nota, não as dos boletos do banco. */
+const LINHA_DATAS_NA_NOTA =
+  "Estas datas saem na nota. Os boletos do Contas a Receber são gerados no Registro de recebíveis.";
 
 export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
   const router = useRouter();
@@ -544,6 +553,11 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
   // Preenche o gerador pelas cobranças só na primeira carga: recargas (depois
   // de salvar, gerar etc.) não podem apagar o que quem emite ajustou.
   const isFirstLoadEntrada = useRef(true);
+  // Gerador simplificado (24/11/2026): "Entrada" liga/desliga; o "Restante" é
+  // sempre boleto. Com parcelas na nota, o gerador fica fechado até "Refazer
+  // parcelas" — a tabela é o que vai na nota.
+  const [pgtoComEntrada, setPgtoComEntrada] = useState(false);
+  const [geradorAberto, setGeradorAberto] = useState(false);
   const [pgtoQtdParcelas, setPgtoQtdParcelas] = useState(1);
   const [pgtoDiasPraInicio, setPgtoDiasPraInicio] = useState(30);
   const [pgtoIntervalo, setPgtoIntervalo] = useState(30);
@@ -854,7 +868,9 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
         const parcelas = dbPayments.filter(p => p.tipo_registro === "PARCELA");
         if (entrance) {
           setPgtoValorEntrada(Number(entrance.valor) || 0);
-          setPgtoFormaEntrada(String(entrance.forma_pagamento || FORMA_BOLETO));
+          // Nunca boleto: a entrada é à vista (o Faturado com entrada, lido no
+          // 4d, tem a palavra final).
+          setPgtoFormaEntrada(formaDaEntradaParaOGerador(null, entrance.forma_pagamento));
           setPgtoDataEntrada(entrance.data_vencimento ? String(entrance.data_vencimento).split("T")[0] : "");
           setPgtoQtdParcelas(parcelas.length || 1);
           if (parcelas.length > 0) {
@@ -934,16 +950,25 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
       // quem emite clica em Gerar, e pode ajustar antes. Não preenche se as
       // parcelas já têm a entrada com forma própria (já foi gerado). Falha aqui
       // não derruba a tela.
+      //
+      // Desde o gerador simplificado (24/11/2026) o Faturado com entrada é lido
+      // sempre: mesmo com as parcelas já geradas, a "Forma da entrada" vem da
+      // cobrança de entrada (PIX no 25427), nunca de boleto. Os demais campos
+      // continuam só na primeira carga e só antes de gerar.
+      let sugestao: SugestaoEntradaBoleto | null = null;
       try {
         const jaGerado = parcelasJaTemEntradaComFormaPropria(dbPayments);
-        const sugestao = jaGerado ? null : await lerSugestaoEntradaBoletoDoPedido(Number(dbNote.id_int));
+        sugestao = await lerSugestaoEntradaBoletoDoPedido(Number(dbNote.id_int));
         setSugestaoEntradaBoleto(sugestao);
-        if (sugestao && isFirstLoadEntrada.current) {
+        if (sugestao) {
+          const entradaGravada = dbPayments.find((p) => p.tipo_registro === "ENTRADA");
+          setPgtoFormaEntrada(formaDaEntradaParaOGerador(sugestao.formaEntrada, entradaGravada?.forma_pagamento));
+        }
+        if (sugestao && !jaGerado && isFirstLoadEntrada.current) {
           setPgtoFormaPagamento(FORMA_BOLETO);
           setPgtoParcelaUnica(false);
           setPgtoModeloId("");
           setPgtoValorEntrada(sugestao.valorEntrada);
-          setPgtoFormaEntrada(sugestao.formaEntrada);
           setPgtoDataEntrada(sugestao.dataEntrada);
           setPgtoQtdParcelas(sugestao.qtdParcelas);
           setPgtoDiasPraInicio(sugestao.diasPraInicio);
@@ -952,6 +977,17 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
       } catch (err) {
         console.warn("[NfeDetail] Falha ao ler o faturado com entrada do pedido:", err);
         setSugestaoEntradaBoleto(null);
+      }
+      // Gerador: fechado com parcelas na nota, aberto sem elas. Recargas no
+      // meio do "Refazer parcelas" (trocar a forma, salvar item) não o fecham;
+      // quem fecha é o Gerar que deu certo. A Entrada começa ligada pelo
+      // faturado ou pela parcela ENTRADA gravada, só na primeira carga.
+      const qtdParcelasAtivas = dbPayments.filter((p) => p.ativo !== false).length;
+      if (isFirstLoadEntrada.current || qtdParcelasAtivas === 0) {
+        setGeradorAberto(!geradorComecaFechado(qtdParcelasAtivas));
+      }
+      if (isFirstLoadEntrada.current) {
+        setPgtoComEntrada(entradaComecaLigada(Boolean(sugestao), dbPayments));
       }
       isFirstLoadEntrada.current = false;
 
@@ -1215,11 +1251,18 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
       !correspondeAoModelo(combinacaoDosCampos, condicaoMarcada!) &&
       !modeloCorrespondente(combinacaoDosCampos, modelosCobranca);
 
+    // Uma pergunta de forma por coisa: a Entrada (liga/desliga) tem a sua; o
+    // Restante é sempre boleto. Sem entrada, volta o select solto da forma.
+    const restanteEmBoleto = pgtoComEntrada || pgtoFormaPagamento === FORMA_BOLETO;
     return (
-      <div className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4">
+      <div data-gerador-parcelas className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4">
+        {/* Com parcelas, a linha já está no título da tabela, logo acima. */}
+        {pagamentos.length === 0 && (
+          <p data-linha-datas-na-nota className="text-xs font-medium text-slate-600">{LINHA_DATAS_NA_NOTA}</p>
+        )}
         {sugestaoEntradaBoleto ? (
           <div data-sugestao-entrada-boleto className="rounded-xl border border-teal-200 bg-teal-50 p-3 text-xs text-teal-950">
-            <p className="font-bold">Preenchido pelo Faturado com entrada do pedido</p>
+            <p className="font-bold">Faturado com entrada do pedido</p>
             <p className="mt-1">
               Entrada {rotuloDaFormaFiscal(sugestaoEntradaBoleto.formaEntrada) ?? sugestaoEntradaBoleto.formaEntrada}{" "}
               {formatCurrency(sugestaoEntradaBoleto.valorEntrada)}
@@ -1233,6 +1276,100 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
             <p className="mt-1 text-teal-800">Confira, ajuste se precisar e clique em Gerar. As parcelas da nota só mudam ao gerar.</p>
           </div>
         ) : null}
+
+        {/* Entrada: liga/desliga, com forma (à vista, nunca boleto), valor e data */}
+        <div data-entrada-mais-boleto className="space-y-3 rounded-xl border border-teal-100 bg-teal-50/40 p-3">
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="pgto-com-entrada"
+              checked={pgtoComEntrada}
+              onChange={(e) => {
+                setPgtoComEntrada(e.target.checked);
+                if (e.target.checked) setPgtoParcelaUnica(false);
+              }}
+              className="rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+            />
+            <label htmlFor="pgto-com-entrada" className="text-sm font-bold text-slate-800 cursor-pointer select-none">
+              Entrada
+              <span className="block text-[10px] font-normal text-slate-500">
+                Paga à vista (PIX, dinheiro, cartão). Vai na nota sem duplicata. Entrada em boleto não existe: o boleto é o Restante.
+              </span>
+            </label>
+          </div>
+          {pgtoComEntrada && (
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 mb-1">Forma da entrada</label>
+                <select
+                  value={pgtoFormaEntrada}
+                  onChange={(e) => setPgtoFormaEntrada(e.target.value)}
+                  className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm bg-white outline-none focus:border-[#0b2f4a] font-medium"
+                >
+                  {FORMAS_DA_ENTRADA.map((codigo) => (
+                    <option key={codigo} value={codigo}>
+                      {codigo} - {rotuloDaFormaFiscal(codigo)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 mb-1">Valor da entrada</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={pgtoValorEntrada}
+                  onChange={(e) => setPgtoValorEntrada(Number(e.target.value))}
+                  className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm bg-white outline-none focus:border-[#0b2f4a]"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 mb-1">Data da entrada</label>
+                <input
+                  type="date"
+                  value={pgtoDataEntrada}
+                  onChange={(e) => setPgtoDataEntrada(e.target.value)}
+                  className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm bg-white outline-none focus:border-[#0b2f4a] font-mono"
+                />
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Sem entrada: o select solto da forma. Com entrada, o restante é boleto. */}
+        {!pgtoComEntrada && (
+          <div className="max-w-xs">
+            <label className="block text-xs font-semibold text-slate-500 mb-1">Forma de Pagamento</label>
+            <select
+              value={pgtoFormaPagamento}
+              disabled={isReadOnly}
+              onChange={(e) => handleFormaPagamentoChange(e.target.value)}
+              className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm bg-white outline-none focus:border-[#0b2f4a] font-medium"
+            >
+              <option value="01">01 - Dinheiro</option>
+              <option value="02">02 - Cheque</option>
+              <option value="03">03 - Cartão de Crédito</option>
+              <option value="04">04 - Cartão de Débito</option>
+              <option value="15">15 - Boleto Bancário</option>
+              <option value="17">17 - PIX</option>
+              <option value="90">90 - Sem Pagamento</option>
+              <option value="99">99 - Outros</option>
+            </select>
+          </div>
+        )}
+
+        {!restanteEmBoleto ? (
+          <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-xs text-slate-500">
+            Formas que não são boleto saem à vista, numa parcela só, ao escolher no select. Para entrada + boleto, ligue a Entrada.
+          </div>
+        ) : (
+        <div data-restante-boleto className="space-y-4 rounded-xl border border-slate-200 p-3">
+        <div className="text-sm font-bold text-slate-800">
+          {pgtoComEntrada ? "Restante" : "Boleto"}
+          <span className="block text-[10px] font-normal text-slate-500">
+            Sempre em boleto, a prazo: cada boleto vira uma duplicata da nota.
+          </span>
+        </div>
         {/* Condição de pagamento — topo do bloco, como no modal */}
         <div className="max-w-md">
           <label className="block text-xs font-semibold text-slate-500 mb-1 uppercase tracking-wider">Condição de pagamento</label>
@@ -1269,7 +1406,8 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
           )}
         </div>
 
-        {/* Parcela única com vencimento específico */}
+        {/* Parcela única com vencimento específico (sem entrada: a RPC não aceita as duas) */}
+        {!pgtoComEntrada && (
         <div className="flex flex-col gap-3 rounded-xl border border-slate-100 bg-slate-50 p-3 md:flex-row md:items-center md:justify-between">
           <div className="flex items-center gap-2">
             <input
@@ -1298,22 +1436,12 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
             </div>
           )}
         </div>
+        )}
 
-        {/* Entrada e parcelas futuras */}
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+        {/* Boletos: quantidade, dias e intervalo */}
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
           <div>
-            <label className="block text-xs font-semibold text-slate-500 mb-1">Valor de entrada</label>
-            <input
-              type="number"
-              step="0.01"
-              value={pgtoValorEntrada}
-              onChange={(e) => setPgtoValorEntrada(Number(e.target.value))}
-              disabled={pgtoParcelaUnica}
-              className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm bg-white outline-none focus:border-[#0b2f4a] disabled:bg-slate-100 disabled:text-slate-400"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-semibold text-slate-500 mb-1">Qtd de parcelas futuras</label>
+            <label className="block text-xs font-semibold text-slate-500 mb-1">Quantidade de boletos</label>
             <input
               type="number"
               min={1}
@@ -1324,7 +1452,7 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
             />
           </div>
           <div>
-            <label className="block text-xs font-semibold text-slate-500 mb-1">Dias para a primeira</label>
+            <label className="block text-xs font-semibold text-slate-500 mb-1">Dias até o 1º boleto</label>
             <input
               type="number"
               min={0}
@@ -1347,42 +1475,6 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
           </div>
         </div>
 
-        {/* Entrada + boleto (24/11/2026): a entrada tem forma e data próprias */}
-        {!pgtoParcelaUnica && Number(pgtoValorEntrada) > 0 && (
-          <div data-entrada-mais-boleto className="grid grid-cols-1 gap-4 rounded-xl border border-teal-100 bg-teal-50/40 p-3 md:grid-cols-4">
-            <div className="md:col-span-4 text-xs font-semibold text-slate-700">
-              Entrada + boleto
-              <span className="block text-[10px] font-normal text-slate-500">
-                A entrada vai na nota com a forma abaixo, à vista e sem duplicata. As parcelas futuras saem em boleto, a prazo, com as datas editáveis na tabela depois de gerar.
-              </span>
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-slate-500 mb-1">Forma da entrada</label>
-              <select
-                value={pgtoFormaEntrada}
-                onChange={(e) => setPgtoFormaEntrada(e.target.value)}
-                className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm bg-white outline-none focus:border-[#0b2f4a] font-medium"
-              >
-                <option value="17">17 - PIX</option>
-                <option value="15">15 - Boleto Bancário</option>
-                <option value="01">01 - Dinheiro</option>
-                <option value="03">03 - Cartão de Crédito</option>
-                <option value="04">04 - Cartão de Débito</option>
-                <option value="99">99 - Outros</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-slate-500 mb-1">Data da entrada</label>
-              <input
-                type="date"
-                value={pgtoDataEntrada}
-                onChange={(e) => setPgtoDataEntrada(e.target.value)}
-                className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm bg-white outline-none focus:border-[#0b2f4a] font-mono"
-              />
-            </div>
-          </div>
-        )}
-
         {/* Arredondamento */}
         <div className="flex items-center gap-2">
           <input
@@ -1401,17 +1493,24 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
           </label>
         </div>
 
-        <div className="flex flex-col gap-3 border-t border-slate-100 pt-3 md:flex-row md:items-center md:justify-between">
-          <p className="text-[10px] text-slate-400">A contagem de dias parte de hoje.</p>
-          <button
-            type="button"
-            onClick={handleGerarPagamentos}
-            disabled={isGeneratingPgto}
-            className="rounded-xl bg-[#0b2f4a] hover:bg-[#061d2e] px-6 py-2.5 text-sm font-semibold text-white transition disabled:opacity-50"
-          >
-            {isGeneratingPgto ? "Gerando..." : "Gerar Parcelas Fiscais"}
-          </button>
         </div>
+        )}
+
+        {restanteEmBoleto && (
+          <div className="flex flex-col gap-3 border-t border-slate-100 pt-3 md:flex-row md:items-center md:justify-between">
+            <p className="text-[10px] text-slate-400">
+              A contagem de dias parte de hoje.{pagamentos.length > 0 ? " Gerar substitui as parcelas da tabela." : ""}
+            </p>
+            <button
+              type="button"
+              onClick={handleGerarPagamentos}
+              disabled={isGeneratingPgto}
+              className="rounded-xl bg-[#0b2f4a] hover:bg-[#061d2e] px-6 py-2.5 text-sm font-semibold text-white transition disabled:opacity-50"
+            >
+              {isGeneratingPgto ? "Gerando..." : "Gerar Parcelas Fiscais"}
+            </button>
+          </div>
+        )}
       </div>
     );
   }
@@ -2291,7 +2390,20 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
       showToast({ type: "warning", title: "Valor total da NF-e está zerado. Adicione itens primeiro." });
       return;
     }
-    if (pgtoParcelaUnica && !pgtoVencimentoUnico) {
+    // Gerador simplificado (24/11/2026): com a Entrada ligada, o restante é
+    // sempre boleto e a entrada tem forma à vista; desligada, não há entrada.
+    const comEntrada = pgtoComEntrada;
+    const formaDoGerador = comEntrada ? FORMA_BOLETO : pgtoFormaPagamento;
+    const valorEntradaDoGerador = comEntrada ? Number(pgtoValorEntrada) : 0;
+    const usarParcelaUnica = pgtoParcelaUnica && !comEntrada;
+    if (comEntrada) {
+      const problema = problemaDaEntrada({ forma: pgtoFormaEntrada, valor: valorEntradaDoGerador, totalDaNota: computedValorTotalNf });
+      if (problema) {
+        showToast({ type: "warning", title: problema });
+        return;
+      }
+    }
+    if (usarParcelaUnica && !pgtoVencimentoUnico) {
       showToast({ type: "warning", title: "Selecione a data de vencimento da parcela única." });
       return;
     }
@@ -2303,20 +2415,21 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
       setSugestaoAplicada(false);
       const res = await gerarPagamentosNfe(
         note.ref,
-        Number(pgtoValorEntrada),
+        valorEntradaDoGerador,
         Number(pgtoQtdParcelas),
         Number(pgtoDiasPraInicio),
         Number(pgtoIntervalo),
-        pgtoFormaPagamento,
+        formaDoGerador,
         {
-          vencimentoUnico: pgtoParcelaUnica ? pgtoVencimentoUnico : null,
+          vencimentoUnico: usarParcelaUnica ? pgtoVencimentoUnico : null,
           arredondar: pgtoArredondar
         }
       );
       if (res && res.ok) {
+        setGeradorAberto(false);
         // Entrada + boleto: o gerador grava a entrada com a forma do boleto; aqui
         // ela recebe a forma e a data escolhidas (PIX por padrão).
-        if (Number(pgtoValorEntrada) > 0) {
+        if (valorEntradaDoGerador > 0) {
           const ajuste = await ajustarEntradaDasParcelas(note.ref, pgtoFormaEntrada, pgtoDataEntrada || null);
           if (!ajuste.ok) {
             showToast({
@@ -4485,29 +4598,13 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
                 {renderSugestaoTitulos()}
                 <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6 space-y-4">
                 <div className="text-sm font-medium text-slate-600">
-                  Selecione a forma de pagamento para configurar o faturamento fiscal da NF-e.
+                  A nota ainda não tem parcelas. Diga como o cliente paga: com entrada (à vista) e restante em boleto, ou numa forma só.
                 </div>
-                <div className="max-w-xs">
-                  <label className="block text-xs font-semibold text-slate-500 mb-1">Forma de Pagamento</label>
-                  <select
-                    value={pgtoFormaPagamento}
-                    disabled={isReadOnly}
-                    onChange={(e) => handleFormaPagamentoChange(e.target.value)}
-                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm bg-white outline-none focus:border-[#0b2f4a] font-medium"
-                  >
-                    <option value="01">01 - Dinheiro</option>
-                    <option value="02">02 - Cheque</option>
-                    <option value="03">03 - Cartão de Crédito</option>
-                    <option value="04">04 - Cartão de Débito</option>
-                    <option value="15">15 - Boleto Bancário</option>
-                    <option value="17">17 - PIX</option>
-                    <option value="90">90 - Sem Pagamento</option>
-                    <option value="99">99 - Outros</option>
-                  </select>
-                </div>
-                {!isReadOnly && pgtoFormaPagamento === "15" && (
-                  <div className="border-t border-slate-200 pt-4 space-y-4 animate-in fade-in slide-in-from-top-1 duration-200">
-                    <h3 className="text-sm font-bold text-slate-800">Gerar Parcelas Automaticamente</h3>
+                {isReadOnly ? (
+                  <p className="text-xs text-slate-500">Nota somente leitura: sem parcelas para mostrar.</p>
+                ) : (
+                  <div className="space-y-4 animate-in fade-in slide-in-from-top-1 duration-200">
+                    <h3 className="text-sm font-bold text-slate-800">Gerar parcelas</h3>
                     {renderBlocoGeracao()}
                   </div>
                 )}
@@ -4516,6 +4613,23 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
             ) : (
               <>
                 {renderSugestaoTitulos()}
+
+                <div data-parcelas-da-nota className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-800">Parcelas que vão na nota (saem na DANFE)</h3>
+                    <p className="text-[11px] text-slate-500">{LINHA_DATAS_NA_NOTA}</p>
+                  </div>
+                  {!isReadOnly && !(geradorAberto || paymentsInvalidated) && (
+                    <button
+                      type="button"
+                      data-refazer-parcelas
+                      onClick={() => setGeradorAberto(true)}
+                      className="self-start rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 md:self-auto"
+                    >
+                      Refazer parcelas
+                    </button>
+                  )}
+                </div>
 
                 <div className="overflow-x-auto rounded-2xl border border-[#d7e5e8] bg-white">
                   <table className="w-full text-left text-sm text-slate-700">
@@ -4623,34 +4737,20 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
                   </table>
                 </div>
 
-                {/* Form de Gerar Parcelas */}
-                {!isReadOnly && (
-                  <div className="border-t border-slate-100 pt-6 space-y-4">
-                    <h3 className="text-sm font-bold text-slate-800">Gerar Parcelas Automaticamente</h3>
-                    <div className="max-w-xs">
-                      <label className="block text-xs font-semibold text-slate-500 mb-1">Forma de Pagamento</label>
-                      <select
-                        value={pgtoFormaPagamento}
-                        onChange={(e) => handleFormaPagamentoChange(e.target.value)}
-                        className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm bg-white outline-none focus:border-[#0b2f4a] font-medium"
+                {/* Refazer parcelas: o gerador só abre a pedido (24/11/2026) */}
+                {!isReadOnly && (geradorAberto || paymentsInvalidated) && (
+                  <div data-refazer-aberto className="border-t border-slate-100 pt-6 space-y-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <h3 className="text-sm font-bold text-slate-800">Refazer parcelas</h3>
+                      <button
+                        type="button"
+                        onClick={() => setGeradorAberto(false)}
+                        className="rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
                       >
-                        <option value="01">01 - Dinheiro</option>
-                        <option value="02">02 - Cheque</option>
-                        <option value="03">03 - Cartão de Crédito</option>
-                        <option value="04">04 - Cartão de Débito</option>
-                        <option value="15">15 - Boleto Bancário</option>
-                        <option value="17">17 - PIX</option>
-                        <option value="90">90 - Sem Pagamento</option>
-                        <option value="99">99 - Outros</option>
-                      </select>
+                        Fechar sem refazer
+                      </button>
                     </div>
-                    {pgtoFormaPagamento === "15" ? (
-                      renderBlocoGeracao()
-                    ) : (
-                      <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-xs text-slate-500">
-                        ℹ️ Geração de parcelas permitida apenas para <strong>15 - Boleto Bancário</strong>. Outras formas de pagamento são tratadas como à vista.
-                      </div>
-                    )}
+                    {renderBlocoGeracao()}
                   </div>
                 )}
               </>
