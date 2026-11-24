@@ -29,6 +29,7 @@ import {
 } from "@/lib/fiscal/tipo-contribuinte";
 import { escolherEnderecoPrincipal } from "@/lib/fiscal/endereco-principal";
 import {
+  formaDaNotaPelasParcelas,
   rotuloDaFormaFiscal,
   sugestaoPeloFaturadoComEntrada,
   type SugestaoEntradaBoleto
@@ -2439,6 +2440,27 @@ export async function ajustarEntradaDasParcelas(
     return { ok: false, mensagem: `Esperava 1 parcela de entrada, achei ${data?.length ?? 0}.` };
   }
   return { ok: true };
+}
+
+/**
+ * O `forma_pgto` do cabeçalho acompanha as parcelas ativas (24/11/2026, NF
+ * 41686: a nota saiu em PIX com o cabeçalho dizendo boleto). Lê as parcelas e
+ * grava só se mudou. Sem parcela ativa, não mexe. Devolve a forma gravada.
+ */
+export async function sincronizarFormaDaNota(idNotaFiscal: string): Promise<{ ok: boolean; forma: string | null; mensagem?: string }> {
+  const client = getSupabaseClient();
+  if (!client) return { ok: false, forma: null, mensagem: "Supabase client not initialized" };
+  const parcelas = await getNfePagamentos(idNotaFiscal);
+  const forma = formaDaNotaPelasParcelas(parcelas);
+  if (!forma) return { ok: true, forma: null };
+  const { error } = await client
+    .from("notas_fiscais")
+    .update({ forma_pgto: forma })
+    .eq("id", idNotaFiscal)
+    // `neq` sozinho pularia a nota com forma vazia (NULL <> x não é verdadeiro).
+    .or(`forma_pgto.is.null,forma_pgto.neq.${forma}`);
+  if (error) return { ok: false, forma, mensagem: error.message };
+  return { ok: true, forma };
 }
 
 /** Título de contas a receber já lançado, usado como sugestão de vencimento. */

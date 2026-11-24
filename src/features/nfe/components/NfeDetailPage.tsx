@@ -55,6 +55,7 @@ import {
   gerarPagamentosNfe,
   lerSugestaoEntradaBoletoDoPedido,
   ajustarEntradaDasParcelas,
+  sincronizarFormaDaNota,
   getTransportadoras,
   insertNfeItem,
   deleteNfeItem,
@@ -99,8 +100,13 @@ import { mapSupabaseNfeRowToReadModel } from "../mappers";
 import {
   FORMA_BOLETO,
   FORMA_PIX,
+  descreverParcelas,
+  diferencasDoFaturadoComEntrada,
+  formaDoGeradorPelasParcelas,
   parcelasJaTemEntradaComFormaPropria,
   rotuloDaFormaFiscal,
+  salvarMudouAsParcelas,
+  salvarRecriaParcelaAVista,
   vencimentoBarraConclusao,
   type SugestaoEntradaBoleto
 } from "@/features/nfe/lib/pagamento-entrada-boleto";
@@ -620,8 +626,10 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
     hasSignificantChanges: boolean
   ): Promise<boolean> => {
     return new Promise((resolve) => {
-      // Se for forma de pagamento à vista, não precisa de confirmação nem de invalidação manual
-      if (pgtoFormaPagamento !== "15") {
+      // À vista com uma parcela só: ela é recriada com o total novo, sem
+      // confirmação. Com duas ou mais parcelas (boleto, ou entrada + boleto),
+      // mudar o total invalida as parcelas com aviso, como sempre foi no boleto.
+      if (salvarRecriaParcelaAVista(pagamentos.length, pgtoFormaPagamento)) {
         resolve(true);
         return;
       }
@@ -834,11 +842,11 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
         isFirstLoad.current = false;
       }
       
-      if (dbPayments.length > 0 && dbPayments[0].forma_pagamento) {
-        setPgtoFormaPagamento(dbPayments[0].forma_pagamento);
-      } else if (dbNote.forma_pgto) {
-        setPgtoFormaPagamento(dbNote.forma_pgto);
-      }
+      // O select do gerador NUNCA herda a forma da entrada (24/11/2026, NF
+      // 41686): vem da primeira parcela que não é ENTRADA; sem ela, da nota.
+      // Herdar o PIX da entrada fazia o Salvar recriar tudo como 1x à vista.
+      const formaDoGerador = formaDoGeradorPelasParcelas(dbPayments, dbNote.forma_pgto);
+      if (formaDoGerador) setPgtoFormaPagamento(formaDoGerador);
 
       // Initialize installment generation state from database payments
       if (dbPayments.length > 0) {
@@ -1818,13 +1826,16 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
       if (res.success) {
         showToast({ type: "success", title: "Rascunho salvo com sucesso!" });
 
-        // Se for à vista, lê o total da nota atualizado e recria o pagamento
-        if (pgtoFormaPagamento !== "15") {
+        // À vista com UMA parcela (ou nenhuma): lê o total atualizado e recria a
+        // parcela. Com duas ou mais, o que está na tela já foi gravado acima e o
+        // conjunto nunca é trocado aqui (24/11/2026, NF 41686).
+        if (salvarRecriaParcelaAVista(pagamentos.length, pgtoFormaPagamento)) {
           const dbNote = await getNfeById(note.id);
           if (dbNote) {
             await recreateSinglePayment(note.id, note.ref, note.id_int, dbNote.valor_total_nf, pgtoFormaPagamento);
           }
         }
+        await sincronizarFormaDaNota(note.id);
 
         // Reload updated values and run validation check
         await loadData(true);
@@ -2023,8 +2034,8 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
           showToast({ type: "success", title: "Item fiscal adicionado com sucesso!" });
           await recalcularTotaisNfe(note.ref);
 
-          // Se for à vista, lê o total da nota atualizado e recria o pagamento
-          if (pgtoFormaPagamento !== "15") {
+          // À vista com uma parcela só: recria. Com duas ou mais, não troca o conjunto.
+          if (salvarRecriaParcelaAVista(pagamentos.length, pgtoFormaPagamento)) {
             const dbNote = await getNfeById(note.id);
             if (dbNote) {
               await recreateSinglePayment(note.id, note.ref, note.id_int, dbNote.valor_total_nf, pgtoFormaPagamento);
@@ -2072,8 +2083,8 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
           showToast({ type: "success", title: "Item fiscal removido com sucesso!" });
           await recalcularTotaisNfe(note.ref);
 
-          // Se for à vista, lê o total da nota atualizado no banco e recria o pagamento
-          if (pgtoFormaPagamento !== "15") {
+          // À vista com uma parcela só: recria. Com duas ou mais, não troca o conjunto.
+          if (salvarRecriaParcelaAVista(pagamentos.length, pgtoFormaPagamento)) {
             const dbNote = await getNfeById(note.id);
             if (dbNote) {
               await recreateSinglePayment(note.id, note.ref, note.id_int, dbNote.valor_total_nf, pgtoFormaPagamento);
@@ -2090,7 +2101,7 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
       }
     };
 
-    if (pagamentos.length > 0 && pgtoFormaPagamento === "15") {
+    if (pagamentos.length > 0 && !salvarRecriaParcelaAVista(pagamentos.length, pgtoFormaPagamento)) {
       setConfirmModal({
         isOpen: true,
         title: "Remover Item e Invalidar Pagamentos",
@@ -2173,8 +2184,8 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
         if (res.success) {
           showToast({ type: "success", title: "Item salvo com sucesso!" });
 
-          // Se for à vista, lê o total da nota atualizado e recria o pagamento
-          if (pgtoFormaPagamento !== "15") {
+          // À vista com uma parcela só: recria. Com duas ou mais, não troca o conjunto.
+          if (salvarRecriaParcelaAVista(pagamentos.length, pgtoFormaPagamento)) {
             const dbNote = await getNfeById(note.id);
             if (dbNote) {
               await recreateSinglePayment(note.id, note.ref, note.id_int, dbNote.valor_total_nf, pgtoFormaPagamento);
@@ -2318,6 +2329,8 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
         setPaymentsInvalidated(false);
         try {
           await updateNfeDraft(note.id, { ref: note.ref, pgto_is_configurado: true }, [], []);
+          // O cabeçalho acompanha as parcelas: entrada PIX + boleto grava boleto.
+          await sincronizarFormaDaNota(note.id);
         } catch (err) {
           console.warn("Failed to update pgto_is_configurado:", err);
         }
@@ -2426,6 +2439,13 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
       return;
     }
     
+    // As parcelas como estão NA TELA (com a forma editada na tabela), para
+    // conferir depois do Salvar que ele não trocou o conjunto (NF 41686).
+    const parcelasNaTela = pagamentos.map((pg) => ({
+      ...pg,
+      forma_pagamento: editedPagamentos.find((e) => e.id === pg.id)?.forma_pagamento ?? pg.forma_pagamento
+    }));
+
     // 1. Salvar alterações da NF antes de validar
     showToast({ type: "info", title: "Salvando alterações antes de concluir..." });
     const saved = await handleSave();
@@ -2434,6 +2454,62 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
       return;
     }
 
+    // 2. Conferência das parcelas, antes de preparar o envio (24/11/2026).
+    //   a) o Salvar mudou o número de parcelas ou as formas: para, com aviso;
+    //   b) o pedido tem "Faturado com entrada" ativo e as parcelas não batem
+    //      (entrada na forma da cobrança + boleto(s) com o restante): mostra a
+    //      diferença e pede confirmação explícita.
+    const parcelasNoBanco = await getNfePagamentos(note.id);
+    if (salvarMudouAsParcelas(parcelasNaTela, parcelasNoBanco)) {
+      setConfirmModal({
+        isOpen: true,
+        title: "As parcelas mudaram ao salvar",
+        message:
+          "A nota NÃO foi concluída. Ao salvar, as parcelas fiscais mudaram:\n" +
+          `Antes: ${descreverParcelas(parcelasNaTela)}\n` +
+          `Agora: ${descreverParcelas(parcelasNoBanco)}\n` +
+          "Confira a aba Pagamentos (gere as parcelas de novo, se for o caso) e conclua outra vez.",
+        confirmText: "Ver Pagamentos",
+        showCancel: false,
+        onConfirm: () => {
+          irParaBloco("Pagamentos");
+        }
+      });
+      return;
+    }
+
+    const faturadoComEntrada = await lerSugestaoEntradaBoletoDoPedido(Number(note.id_int)).catch(() => null);
+    const diferencas = faturadoComEntrada
+      ? diferencasDoFaturadoComEntrada(parcelasNoBanco, faturadoComEntrada)
+      : [];
+    if (diferencas.length > 0) {
+      setConfirmModal({
+        isOpen: true,
+        title: "Parcelas diferentes do Faturado com entrada",
+        message:
+          "O pedido tem Faturado com entrada, e as parcelas da nota não batem com ele:\n" +
+          diferencas.map((d) => `• ${d}`).join("\n") +
+          `\nParcelas da nota: ${descreverParcelas(parcelasNoBanco)}\n` +
+          "Concluir assim mesmo?",
+        confirmText: "Concluir assim mesmo",
+        cancelText: "Voltar e corrigir",
+        showCancel: true,
+        onConfirm: async () => {
+          await validarEPrepararConclusao(emitirDepois);
+        },
+        onCancel: () => {
+          irParaBloco("Pagamentos");
+        }
+      });
+      return;
+    }
+
+    await validarEPrepararConclusao(emitirDepois);
+  }
+
+  /** Validação final e preparo (ou confirmação de conclusão), depois das conferências. */
+  async function validarEPrepararConclusao(emitirDepois: boolean) {
+    if (!note) return;
     setIsValidating(true);
     try {
       showToast({ type: "info", title: "Executando validação final de consistência..." });
@@ -4912,7 +4988,7 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
                 {confirmModal.title}
               </h3>
             </div>
-            <div className="px-6 pb-6 text-sm text-slate-600 leading-relaxed">
+            <div className="px-6 pb-6 text-sm text-slate-600 leading-relaxed whitespace-pre-line" data-confirm-mensagem>
               {confirmModal.message}
             </div>
             <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex justify-end items-center gap-3">

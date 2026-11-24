@@ -10,6 +10,11 @@ import { lerDesfechoDaFocus, type DesfechoFocus } from "@/features/fiscal/servic
 import { estourosDeLayoutNfe, type EstouroDeLayout } from "@/features/fiscal/lib/limites-layout-nfe";
 import { montarPayloadNfe } from "@/features/nfe/services/nfe.service";
 import type { NfeReadModel } from "@/features/nfe/types";
+import {
+  formatarReais,
+  resumoPagamentoDoPayload,
+  type ResumoPagamentoDoPayload
+} from "@/features/nfe/lib/pagamento-entrada-boleto";
 
 /**
  * Confirmação e acompanhamento da emissão de uma NF-e.
@@ -86,8 +91,32 @@ export function EmissaoNfeModal({
   // disparada e a lista fica na tela ate o operador corrigir e tentar de novo.
   const [estourosLayout, setEstourosLayout] = useState<EstouroDeLayout[]>([]);
   const [conferindoLayout, setConferindoLayout] = useState(false);
+  // O que vai sair no pagamento, lido do payload pronto (24/11/2026, NF 41686:
+  // a nota saiu em 1x PIX a vista e a confirmacao nao mostrava isso). Sem
+  // payload gravado, monta pela mesma funcao do banco que monta o envio.
+  const [resumoPagamento, setResumoPagamento] = useState<ResumoPagamentoDoPayload | null>(() =>
+    resumoPagamentoDoPayload(nota.payload_envio)
+  );
+  const [resumoFalhou, setResumoFalhou] = useState(false);
   const jaAbriuDanfe = useRef(false);
   const jaConsultouNaAbertura = useRef(false);
+
+  useEffect(() => {
+    if (passoInicial !== "IDLE" || resumoPagamento) return;
+    let ativo = true;
+    montarPayloadNfe(nota.ref)
+      .then((payload) => {
+        if (ativo) setResumoPagamento(resumoPagamentoDoPayload(payload));
+      })
+      .catch((err) => {
+        console.warn("[EmissaoNfeModal] Resumo do pagamento indisponivel:", err);
+        if (ativo) setResumoFalhou(true);
+      });
+    return () => {
+      ativo = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nota.ref, passoInicial]);
 
   // Abrir já consultando (ação "Consultar status" da lista). O passo inicial já
   // é QUERYING, então nada de estado é escrito aqui de forma síncrona.
@@ -430,6 +459,50 @@ export function EmissaoNfeModal({
               <strong className="text-slate-900 font-mono font-semibold">{notaAtual.ref}</strong> será
               transmitida para emissão definitiva. <strong>Esta ação não pode ser desfeita</strong> — uma
               nota autorizada só sai por cancelamento junto à SEFAZ. Deseja prosseguir?
+            </div>
+            <div
+              data-resumo-pagamento-emissao
+              className="mx-6 mb-5 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-xs text-slate-700 space-y-2"
+            >
+              <p className="font-bold text-slate-900 uppercase tracking-wider text-[10px]">Pagamento que vai na nota</p>
+              {resumoPagamento ? (
+                <>
+                  <ul className="space-y-1" data-resumo-formas>
+                    {resumoPagamento.formas.map((f, i) => (
+                      <li key={`${f.forma}-${i}`} className="flex justify-between gap-3">
+                        <span>
+                          <strong>{f.rotulo}</strong> · {f.prazo}
+                        </span>
+                        <span className="font-mono">{formatarReais(f.valor)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                  <p data-resumo-duplicatas>
+                    {resumoPagamento.duplicatas.length === 0
+                      ? "Sem duplicata."
+                      : `Duplicatas: ${resumoPagamento.duplicatas
+                          .map(
+                            (d) =>
+                              `${d.numero ?? "—"} em ${d.vencimento ? d.vencimento.split("-").reverse().join("/") : "—"} (${formatarReais(d.valor)})`
+                          )
+                          .join("; ")}.`}
+                  </p>
+                  <p data-resumo-fatura>
+                    {resumoPagamento.fatura
+                      ? `Fatura: original ${formatarReais(resumoPagamento.fatura.original)}, desconto ${formatarReais(resumoPagamento.fatura.desconto)}, líquido ${formatarReais(resumoPagamento.fatura.liquido)}.`
+                      : "Sem fatura destacada."}
+                  </p>
+                  {resumoPagamento.total != null ? (
+                    <p className="text-slate-500">Total da nota: {formatarReais(resumoPagamento.total)}</p>
+                  ) : null}
+                </>
+              ) : (
+                <p className="text-slate-500">
+                  {resumoFalhou
+                    ? "Não foi possível ler o pagamento da nota. Confira a aba Pagamentos antes de emitir."
+                    : "Carregando o pagamento da nota..."}
+                </p>
+              )}
             </div>
             {estourosLayout.length > 0 ? (
               <div

@@ -18,9 +18,16 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
+  descreverParcelas,
+  diferencasDoFaturadoComEntrada,
+  formaDaNotaPelasParcelas,
+  formaDoGeradorPelasParcelas,
   formaFiscalDaCobranca,
   parcelasJaTemEntradaComFormaPropria,
+  resumoPagamentoDoPayload,
   rotuloDaFormaFiscal,
+  salvarMudouAsParcelas,
+  salvarRecriaParcelaAVista,
   sugestaoPeloFaturadoComEntrada,
   vencimentoBarraConclusao
 } from "@/features/nfe/lib/pagamento-entrada-boleto";
@@ -108,6 +115,114 @@ caso("F. tela e serviço usam as regras", () => {
   const trecho = servico.slice(servico.indexOf("export async function ajustarEntradaDasParcelas"));
   assert.match(trecho.slice(0, 1500), /\.eq\("tipo_registro", "ENTRADA"\)/);
   assert.match(trecho.slice(0, 1500), /data\.length !== 1/);
+});
+
+// ---------------------------------------------------------------------------
+// Proteção das parcelas (NF 41686 / NFE-25427-001, 24/11/2026)
+// ---------------------------------------------------------------------------
+// As parcelas reais da 001 depois do Gerar (18:52) e o que o Salvar deixou (19:25).
+const MISTA = [
+  { numero_parcela: 1, tipo_registro: "ENTRADA", forma_pagamento: "17", valor: "10675.97", ativo: true },
+  { numero_parcela: 2, tipo_registro: "PARCELA", forma_pagamento: "15", valor: "10675.96", ativo: true }
+];
+const UM_PIX = [{ numero_parcela: 1, tipo_registro: "PARCELA", forma_pagamento: "17", valor: "21351.93", ativo: true }];
+const FATURADO_25427 = { formaEntrada: "17", valorEntrada: 10675.97, valorRestante: 10675.96 };
+
+caso("G. (a) select do gerador nunca herda a forma da entrada", () => {
+  assert.equal(formaDoGeradorPelasParcelas(MISTA, "15"), "15"); // era "17" (dbPayments[0])
+  assert.equal(formaDoGeradorPelasParcelas([MISTA[1], MISTA[0]], null), "15");
+  assert.equal(formaDoGeradorPelasParcelas(UM_PIX, "15"), "17"); // à vista comum: igual a antes
+  assert.equal(formaDoGeradorPelasParcelas([MISTA[0]], "15"), "15"); // só entrada: forma da nota
+  assert.equal(formaDoGeradorPelasParcelas([], "03"), "03");
+  assert.equal(formaDoGeradorPelasParcelas([{ ...MISTA[1], ativo: false }, MISTA[0]], "15"), "15");
+});
+
+caso("H. (b) Salvar só recria à vista com uma parcela (ou nenhuma)", () => {
+  // O cenário da 41686: select em PIX e duas parcelas → NÃO recria.
+  assert.equal(salvarRecriaParcelaAVista(2, "17"), false);
+  assert.equal(salvarRecriaParcelaAVista(3, "03"), false);
+  // À vista comum, igual a hoje.
+  assert.equal(salvarRecriaParcelaAVista(1, "17"), true);
+  assert.equal(salvarRecriaParcelaAVista(0, "17"), true);
+  // Boleto nunca.
+  assert.equal(salvarRecriaParcelaAVista(1, "15"), false);
+  assert.equal(salvarRecriaParcelaAVista(2, "15"), false);
+});
+
+caso("I. (c) Salvar mudou o conjunto: a 41686 pararia aqui", () => {
+  assert.equal(salvarMudouAsParcelas(MISTA, UM_PIX), true);
+  assert.equal(salvarMudouAsParcelas(MISTA, MISTA.map((p) => ({ ...p, valor: "1" }))), false); // valor não conta
+  assert.equal(salvarMudouAsParcelas(UM_PIX, [{ ...UM_PIX[0], valor: "999" }]), false); // à vista recriada com total novo
+  assert.equal(salvarMudouAsParcelas(MISTA, [MISTA[0], { ...MISTA[1], forma_pagamento: "17" }]), true);
+  assert.equal(salvarMudouAsParcelas(MISTA, []), true);
+  assert.match(descreverParcelas(MISTA), /1: PIX R\$\s?10\.675,97 · 2: Boleto bancário R\$\s?10\.675,96/);
+});
+
+caso("J. (c) conferência com o Faturado com entrada", () => {
+  assert.deepEqual(diferencasDoFaturadoComEntrada(MISTA, FATURADO_25427), []);
+  const da41686 = diferencasDoFaturadoComEntrada(UM_PIX, FATURADO_25427);
+  assert.ok(da41686.some((d) => /Falta a parcela de entrada/.test(d)));
+  assert.ok(da41686.some((d) => /parcela 1 está em PIX; o restante do pedido é em boleto/.test(d)));
+  assert.ok(da41686.some((d) => /restante soma R\$\s?21\.351,93/.test(d)));
+  const entradaBoleto = diferencasDoFaturadoComEntrada([{ ...MISTA[0], forma_pagamento: "15" }, MISTA[1]], FATURADO_25427);
+  assert.deepEqual(entradaBoleto, ["A entrada está em Boleto bancário; no pedido ela é PIX."]);
+  // Restante em dois boletos somando certo: bate.
+  assert.deepEqual(
+    diferencasDoFaturadoComEntrada(
+      [MISTA[0], { ...MISTA[1], valor: "5000.00" }, { ...MISTA[1], numero_parcela: 3, valor: "5675.96" }],
+      FATURADO_25427
+    ),
+    []
+  );
+  assert.ok(diferencasDoFaturadoComEntrada([MISTA[0]], FATURADO_25427).some((d) => /Falta o boleto do restante/.test(d)));
+});
+
+caso("K. (e) forma do cabeçalho acompanha as parcelas", () => {
+  assert.equal(formaDaNotaPelasParcelas(MISTA), "15");
+  assert.equal(formaDaNotaPelasParcelas(UM_PIX), "17"); // a 41686 dizia 15
+  assert.equal(formaDaNotaPelasParcelas([MISTA[1]]), "15");
+  assert.equal(formaDaNotaPelasParcelas([{ ...MISTA[0], forma_pagamento: "03" }, { ...MISTA[1], forma_pagamento: "17" }]), "17");
+  assert.equal(formaDaNotaPelasParcelas([]), null);
+});
+
+caso("L. (d) resumo do payload: mista, a 41686 e boleto comum", () => {
+  const mista = resumoPagamentoDoPayload({
+    valor_total: "21351.93",
+    formas_pagamento: [
+      { forma_pagamento: "15", valor_pagamento: "10675.96", indicador_pagamento: "1" },
+      { forma_pagamento: "17", valor_pagamento: "10675.97", indicador_pagamento: "0" }
+    ],
+    duplicatas: [{ numero: "001", data_vencimento: "2026-12-04", valor: "10675.96" }],
+    valor_original_fatura: "10675.96",
+    valor_desconto_fatura: "0.00",
+    valor_liquido_fatura: "10675.96"
+  });
+  assert.deepEqual(mista?.formas.map((f) => `${f.rotulo}|${f.prazo}|${f.valor}`), ["Boleto bancário|a prazo|10675.96", "PIX|à vista|10675.97"]);
+  assert.deepEqual(mista?.duplicatas, [{ numero: "001", vencimento: "2026-12-04", valor: 10675.96 }]);
+  assert.deepEqual(mista?.fatura, { original: 10675.96, desconto: 0, liquido: 10675.96 });
+  // O payload real da 41686.
+  const pix = resumoPagamentoDoPayload({ valor_total: "21351.93", formas_pagamento: [{ forma_pagamento: "17", valor_pagamento: "21351.93" }], duplicatas: [] });
+  assert.deepEqual(pix?.formas.map((f) => `${f.rotulo}|${f.prazo}`), ["PIX|à vista"]);
+  assert.equal(pix?.duplicatas.length, 0);
+  assert.equal(pix?.fatura, null);
+  // Boleto comum (sem indicador): a prazo.
+  const boleto = resumoPagamentoDoPayload({ formas_pagamento: [{ forma_pagamento: "15", valor_pagamento: "100" }], duplicatas: [{ numero: null, data_vencimento: "2026-12-10", valor: "100" }] });
+  assert.equal(boleto?.formas[0].prazo, "a prazo");
+  assert.equal(resumoPagamentoDoPayload(null), null);
+});
+
+caso("M. a tela e o modal usam as regras", () => {
+  const tela = readFileSync("src/features/nfe/components/NfeDetailPage.tsx", "utf8");
+  assert.match(tela, /formaDoGeradorPelasParcelas\(dbPayments, dbNote\.forma_pgto\)/);
+  assert.doesNotMatch(tela, /setPgtoFormaPagamento\(dbPayments\[0\]/);
+  assert.doesNotMatch(tela, /pgtoFormaPagamento !== "15"/);
+  assert.equal((tela.match(/salvarRecriaParcelaAVista\(pagamentos\.length, pgtoFormaPagamento\)/g) ?? []).length, 6);
+  assert.match(tela, /salvarMudouAsParcelas\(parcelasNaTela, parcelasNoBanco\)/);
+  assert.match(tela, /diferencasDoFaturadoComEntrada\(parcelasNoBanco, faturadoComEntrada\)/);
+  assert.ok((tela.match(/sincronizarFormaDaNota\(note\.id\)/g) ?? []).length >= 2);
+  const modal = readFileSync("src/features/fiscal/components/EmissaoNfeModal.tsx", "utf8");
+  assert.match(modal, /resumoPagamentoDoPayload\(nota\.payload_envio\)/);
+  assert.match(modal, /data-resumo-pagamento-emissao/);
 });
 
 console.log(`\n${ok} casos passaram.`);
