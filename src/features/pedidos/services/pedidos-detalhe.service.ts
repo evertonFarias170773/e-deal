@@ -233,7 +233,8 @@ export async function obterPedidoOperacionalPorIdOuIdInt(param: string | number,
       .from("pedidos_modelos")
       .select("*")
       .eq("id_int", row?.id_int)
-      .order("ordem", { ascending: true });
+      .order("ordem", { ascending: true })
+      .order("id", { ascending: true });
 
     if (modelosError) {
       console.warn("[pedidos-detalhe.service] Erro ao buscar modelos do pedido:", modelosError.message);

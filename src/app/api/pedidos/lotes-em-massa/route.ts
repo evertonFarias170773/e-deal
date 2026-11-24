@@ -419,7 +419,8 @@ export async function POST(request: Request) {
       "mapa_teatro_id, mapa_teatro_setor_id, mapa_teatro_nome:mapa_teatro_snapshot->mapa->>nome"
     )
     .eq("id_produto_proposta_origem", idProdutoProposta)
-    .order("ordem", { ascending: true });
+    .order("ordem", { ascending: true })
+    .order("id", { ascending: true });
 
   return NextResponse.json({
     success: true,

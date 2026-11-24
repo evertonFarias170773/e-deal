@@ -632,7 +632,8 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
           .select("*")
           .eq("id_int", proposta.id_int)
           .order("ordem", { ascending: true })
-          .order("created_at", { ascending: true });
+          .order("created_at", { ascending: true })
+          .order("id", { ascending: true });
         
         if (data) {
           const modelos: PedidoModeloState[] = data.map((m: any) => ({

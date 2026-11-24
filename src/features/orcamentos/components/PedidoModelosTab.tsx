@@ -1194,6 +1194,21 @@ export function PedidoModelosTab({
                           // no banco: cor, bloco ou numerador nao mexem nela.
                           if (qtdItem !== qtdAnterior) onLotesGravados?.(idNoBanco, qtdItem, freteMensagem);
                         }}
+                        // Arrastar para reordenar (24/11/2026): a mesma trava da
+                        // edição dos lotes — lista só para ver, sem alça.
+                        reordenavel={!lotesSomenteLeitura}
+                        onOrdemGravada={(idsNaOrdem) => {
+                          // Espelha a ordem gravada: os lotes deste produto
+                          // ocupam as posições que já eram deles, na ordem nova.
+                          onModelosChange((prev) => {
+                            const posicao = new Map(idsNaOrdem.map((id, i) => [id, i] as const));
+                            const doItem = prev
+                              .filter((m) => m.id && posicao.has(Number(m.id)))
+                              .sort((a, b) => (posicao.get(Number(a.id)) ?? 0) - (posicao.get(Number(b.id)) ?? 0));
+                            let i = 0;
+                            return prev.map((m) => (m.id && posicao.has(Number(m.id)) ? doItem[i++] : m));
+                          });
+                        }}
                         onAlteracoesNaoGravadas={(sim) => registrarNaoGravado(String(item.id), sim)}
                         onRegistrar={(api) => registrarGrade(String(item.id), api)}
                         onPendente={

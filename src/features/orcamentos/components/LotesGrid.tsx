@@ -87,7 +87,8 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Copy, Plus, Trash2 } from "lucide-react";
+import { Copy, GripVertical, Plus, Trash2 } from "lucide-react";
+import { moverNaLista } from "@/features/orcamentos/lib/ordem-dos-modelos";
 import { useAppToast } from "@/components/common/AppToast";
 import { StatusBadge } from "@/components/common/StatusBadge";
 import { fetchComSessao, SessaoExpiradaError } from "@/lib/supabase/sessao";
@@ -241,7 +242,9 @@ export function LotesGrid({
   onAmpliarArte,
   onPendente,
   onAlteracoesNaoGravadas,
-  onRegistrar
+  onRegistrar,
+  reordenavel = false,
+  onOrdemGravada
 }: {
   idInt: number;
   /**
@@ -303,6 +306,14 @@ export function LotesGrid({
   }) => void;
   /** A grade se apresenta ao Salvar da proposta (null ao desmontar). */
   onRegistrar?: (api: GradeDeLotesApi | null) => void;
+  /**
+   * Mostra a alça de arrastar (24/11/2026). A MESMA trava da edição dos lotes:
+   * lista só para ver = sem alça. A rota `/api/pedidos/modelos-ordem` confere
+   * de novo no servidor.
+   */
+  reordenavel?: boolean;
+  /** A ordem nova foi gravada: os ids do produto, na ordem nova (o pai espelha). */
+  onOrdemGravada?: (idsNaOrdem: number[]) => void;
 }) {
   const { showToast } = useAppToast();
 
@@ -930,6 +941,84 @@ export function LotesGrid({
    * modo de numeração em uso (`numerar`, derivado no envio e na tela); sem
    * modo marcado, a faixa é a do original, como o lote que ele copia.
    */
+  /**
+   * ARRASTAR PARA REORDENAR (24/11/2026). Só lote já gravado tem alça, e só com
+   * a grade sem nada por gravar: a ordem vai sozinha para o banco ao soltar
+   * (`/api/pedidos/modelos-ordem`), e misturar com edição pendente faria a
+   * linha nova gravar depois no fim, fora do lugar escolhido.
+   *
+   * Arrastar não renumera: com um modo de numeração marcado, os números que a
+   * tela mostra ficam nas linhas como estão e o modo é desmarcado; marcar de
+   * novo numera na ordem nova. Só a coluna `ordem` é gravada.
+   */
+  const [arrastando, setArrastando] = useState<number | null>(null);
+  const [alvoDoArraste, setAlvoDoArraste] = useState<number | null>(null);
+  const [gravandoOrdem, setGravandoOrdem] = useState(false);
+  /** A reordenação não é alteração a levar ao Salvar da proposta (`onPendente`). */
+  const pularRepasseRef = useRef(false);
+
+  async function soltar(de: number, para: number) {
+    setArrastando(null);
+    setAlvoDoArraste(null);
+    if (!reordenavel || de === para) return;
+    if (gravando || gravandoOrdem || salvandoRef.current || pendenteRef.current || timerRef.current || naoGravadoRef.current || temLinhaPresa) {
+      showToast({
+        type: "error",
+        title: "Grave antes de mudar a ordem",
+        description: `${item.nome}: há alteração não gravada nesta lista. Grave o lote e arraste de novo.`
+      });
+      return;
+    }
+    const antes = linhasRef.current;
+    const modoAntes = modoRef.current;
+    const base = modoAntes ? numerar(antes, modoAntes) : antes;
+    const depois = moverNaLista(base, de, para);
+    const idsAntes = antes.filter((l) => l.id).map((l) => Number(l.id));
+    const idsDepois = depois.filter((l) => l.id).map((l) => Number(l.id));
+    if (idsAntes.join(",") === idsDepois.join(",")) return;
+
+    const fixarBase = () => {
+      ultimaAssinaturaRef.current = null;
+      const envio = prepararEnvio();
+      ultimaAssinaturaRef.current = "segurar" in envio ? "" : assinaturaDe(envio);
+      retratoGravadoRef.current = retratoDaGrade();
+    };
+    pularRepasseRef.current = Boolean(onPendente);
+    mutar(() => depois);
+    if (modoAntes) {
+      modoRef.current = null;
+      modoAutomaticoRef.current = false;
+      setModoNumeracao(null);
+    }
+    fixarBase();
+
+    setGravandoOrdem(true);
+    let falha: string | null = null;
+    try {
+      const resposta = await fetchComSessao("/api/pedidos/modelos-ordem", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ idInt, idProdutoProposta: item.id_produto_proposta_origem, ids: idsDepois })
+      });
+      const dados = await resposta.json().catch(() => null);
+      if (!resposta.ok || !dados?.success) falha = dados?.message || "Não foi possível gravar a ordem.";
+    } catch (e) {
+      falha = e instanceof SessaoExpiradaError ? "Sua sessão expirou. Entre de novo e arraste outra vez." : "Não foi possível gravar a ordem.";
+    }
+    if (!montadoRef.current) return;
+    setGravandoOrdem(false);
+    if (falha) {
+      // Volta a tela para a ordem do banco; os números ficam como estavam.
+      pularRepasseRef.current = Boolean(onPendente);
+      mutar(() => (modoAntes ? base : antes));
+      fixarBase();
+      showToast({ type: "error", title: "Ordem não gravada", description: falha });
+      return;
+    }
+    onOrdemGravada?.(idsDepois);
+    setStatusSeMontado("saved");
+  }
+
   function duplicar(indice: number) {
     mutar((atual) => {
       const base = atual[indice];
@@ -1118,6 +1207,10 @@ export function LotesGrid({
   }
   useEffect(() => {
     if (!onPendente) return;
+    if (pularRepasseRef.current) {
+      pularRepasseRef.current = false;
+      return;
+    }
     if (!espelhouRef.current) {
       espelhouRef.current = true;
       return;
@@ -1287,6 +1380,7 @@ export function LotesGrid({
         {/* Um cabeçalho por produto: as mesmas colunas das células de cada lote,
             mais a coluna do status da arte e o espaço dos botões. */}
         <div className="flex items-end gap-2 px-3">
+          {reordenavel && <span className="w-5 shrink-0" />}
           <CabecalhoDaLista colunas={colunas} className="min-w-0 flex-1" />
           <span className="w-28 shrink-0 text-center text-[11px] font-bold uppercase tracking-wider text-slate-500">
             {itemPrateleira ? "" : "Arte"}
@@ -1297,11 +1391,56 @@ export function LotesGrid({
         {linhasNumeradas.map((linha, indice) => (
           <div
             key={linha.chave}
+            data-lote-id={linha.id ?? undefined}
+            onDragOver={(e) => {
+              if (arrastando === null) return;
+              e.preventDefault();
+              e.dataTransfer.dropEffect = "move";
+              if (alvoDoArraste !== indice) setAlvoDoArraste(indice);
+            }}
+            onDrop={(e) => {
+              if (arrastando === null) return;
+              e.preventDefault();
+              void soltar(arrastando, indice);
+            }}
             className={`rounded-xl border px-3 py-2 ${
-              linha.corNaoReconhecida ? "border-red-300 bg-red-50/40" : "border-slate-200 bg-white"
-            }`}
+              alvoDoArraste === indice && arrastando !== null && arrastando !== indice
+                ? "border-teal-500 ring-2 ring-teal-200"
+                : linha.corNaoReconhecida
+                  ? "border-red-300 bg-red-50/40"
+                  : "border-slate-200 bg-white"
+            } ${arrastando === indice ? "opacity-50" : ""}`}
           >
             <div className="flex items-center gap-2">
+              {reordenavel && (
+                linha.id ? (
+                  <span
+                    draggable={!gravandoOrdem}
+                    role="button"
+                    aria-label="Arrastar para mudar a ordem"
+                    title="Arraste para mudar a ordem dos modelos"
+                    data-alca-ordem={linha.id}
+                    onDragStart={(e) => {
+                      e.dataTransfer.effectAllowed = "move";
+                      e.dataTransfer.setData("text/plain", String(linha.id));
+                      const linhaEl = e.currentTarget.closest("[data-lote-id]");
+                      if (linhaEl instanceof HTMLElement) e.dataTransfer.setDragImage(linhaEl, 16, 16);
+                      setArrastando(indice);
+                    }}
+                    onDragEnd={() => {
+                      setArrastando(null);
+                      setAlvoDoArraste(null);
+                    }}
+                    className={`flex w-5 shrink-0 justify-center text-slate-400 hover:text-slate-700 ${
+                      gravandoOrdem ? "cursor-wait opacity-40" : "cursor-grab active:cursor-grabbing"
+                    }`}
+                  >
+                    <GripVertical className="h-4 w-4" />
+                  </span>
+                ) : (
+                  <span className="w-5 shrink-0" title="Grave o lote para poder mudar a ordem" />
+                )
+              )}
               <div className="grid min-w-0 flex-1 items-center gap-2" style={{ gridTemplateColumns: gridDaLista(colunas) }}>
                 <ModeloCampos
                   modelo={valoresDoCard(linha)}

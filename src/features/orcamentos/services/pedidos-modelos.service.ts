@@ -200,7 +200,8 @@ export async function listarItensComModelos(idInt: number): Promise<ServiceResul
       `)
       .eq("id_int", idInt)
       .order("ordem", { ascending: true })
-      .order("created_at", { ascending: true });
+      .order("created_at", { ascending: true })
+      .order("id", { ascending: true });
 
     if (modelosError) {
       return { success: false, errorMessage: `Erro ao buscar modelos: ${modelosError.message}` };

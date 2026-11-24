@@ -1,6 +1,6 @@
 # Proposta: aba Pedido (Boletim Técnico & Lotes)
 
-> **Última revisão:** 09/11/2026
+> **Última revisão:** 24/11/2026 (arrastar para mudar a ordem dos modelos). 09/11/2026
 > **Caminho no menu:** Pedidos → abrir um pedido → Editar proposta → aba Pedido
 > **Endereço:** `/orcamentos/[número]/editar?tab=pedido`
 
@@ -36,6 +36,7 @@ Nomes exatamente como aparecem na tela.
 | **Gravar lote** | Barra da lista, em pedido sem cobrança | Grava todos os modelos daquele produto e acerta a quantidade do produto pela soma. Enquanto grava, mostra "Gravando...". |
 | **Cada modelo começa do 1** | Faixa **Numeração** | Caixa de marcar. Todo modelo recebe Nº Inicial 1 (exemplo da tela: "1–300, 1–150, 1–80"). |
 | **Sequencial entre os modelos** | Faixa **Numeração** | Caixa de marcar. Cada modelo continua de onde o anterior parou ("1–300, 301–450, 451–530"). |
+| Alça de seis pontos (dica "Arraste para mudar a ordem dos modelos") | Início de cada linha já gravada | Arraste a linha para cima ou para baixo e solte: a ordem nova é gravada na hora. Não aparece quando a lista está só para ver. |
 | Ícone de copiar (dica "Duplicar modelo (com a quantidade)") | Fim de cada linha | Cria uma cópia da linha logo abaixo, com a mesma quantidade. |
 | Ícone de lixeira (dica "Remover lote") | Fim de cada linha | Tira a linha da lista. A exclusão vale depois de gravar. |
 | **X** (dica "Voltar para opções fixas") | Campo **Bloco**, depois de escolher **Outro** | Volta o campo Bloco para a lista de opções. |
@@ -101,6 +102,21 @@ Como a colagem é lida: a quantidade é o último número da linha e a cor é tu
 Ao gravar, o sistema primeiro remove os modelos, depois acerta a quantidade do produto e por fim grava os modelos alterados e os novos. Se a remoção for recusada, nada é gravado: a quantidade e o valor do pedido ficam como estavam.
 
 Modelo de ingresso com **QR de controle de acesso reservado** não pode ser removido por aqui. A mensagem diz qual é o modelo. Peça a liberação ao parceiro do controle de acesso e só depois remova e grave de novo.
+
+### Mudar a ordem dos modelos
+
+1. Grave antes o que estiver pendente na lista do produto. Com alteração não gravada, o sistema recusa e avisa "Grave antes de mudar a ordem".
+2. Segure a alça de seis pontos no começo da linha e arraste até a posição desejada. A linha de destino fica com a borda verde.
+3. Solte. A ordem nova é gravada na hora, sem **Gravar lote**, e vale para todos os usuários. Ela continua depois de recarregar a página.
+4. Arrastar não renumera: o Nº Inicial e o Nº Final de cada modelo ficam como estavam. Se **Cada modelo começa do 1** ou **Sequencial entre os modelos** estava marcado, a caixa é desmarcada ao soltar. Para renumerar na ordem nova, marque a caixa de novo e clique em **Gravar lote**.
+
+A ordem vale dentro de cada produto: um modelo não passa de um produto para outro. Linha ainda não gravada não tem alça. Ela entra no fim da lista ao ser gravada.
+
+A mesma ordem aparece:
+
+- no PDF da OS (boletim de produção);
+- na tela da OS;
+- nas telas do controle de acesso e no e-mail de artes do Imposition, que já liam essa ordem.
 
 ### Trocar a quantidade
 
@@ -176,7 +192,8 @@ O PDF é sempre o do mapa como está hoje no sistema de mapas. Quem publica o PD
 ## Regras e bloqueios
 
 - Nesta lista a soma dos modelos manda: ao gravar, a quantidade do produto no pedido passa a ser a soma das quantidades dos modelos. Não há limite de saldo no campo Qtd.
-- Nada é gravado sozinho. O que está na lista só vai para o sistema em **Gravar lote** ou em **Salvar alterações**. A exceção é o **Mapa Teatro**, que grava os modelos dos setores na hora.
+- Nada é gravado sozinho. O que está na lista só vai para o sistema em **Gravar lote** ou em **Salvar alterações**. As exceções são o **Mapa Teatro**, que grava os modelos dos setores na hora, e a mudança de ordem pela alça, que grava ao soltar.
+- Mudar a ordem tem a mesma trava da edição dos modelos. Onde a lista está só para ver, a alça não aparece e o sistema recusa a mudança. Isso acontece, por exemplo, em pedido com cobrança quando o perfil não tem **Editar Proposta Paga** nem **Editar Faturado**.
 - Um produto usa um Mapa de Teatro só. Com um mapa já escolhido, os outros aparecem apagados na janela, com o aviso "Este produto já usa outro mapa. Para este, use outro produto.".
 - Cada setor do mapa entra uma vez no produto.
 - O **Mapa Teatro** cria só os modelos e a ligação com o mapa. Não gera arte, PDF nem numeração: os modelos nascem com a arte pendente e sem Nº Inicial e Nº Final, e ficam fora dos modos **Cada modelo começa do 1** e **Sequencial entre os modelos**.
@@ -288,8 +305,12 @@ O PDF é sempre o do mapa como está hoje no sistema de mapas. Quem publica o PD
 - `src/features/orcamentos/lib/checklist-lote.ts`
 - `src/features/orcamentos/lib/divergencia-lotes.ts`
 - `src/app/api/pedidos/lotes-em-massa/route.ts`
+- `src/app/api/pedidos/modelos-ordem/route.ts`
+- `src/features/orcamentos/lib/ordem-dos-modelos.ts`
 - `src/features/orcamentos/services/gravar-lotes.server.ts`
 - `src/features/orcamentos/OrcamentoFormPage.tsx`
 - `src/features/usuarios-perfis/catalogo-permissoes.ts`
 
 > **Mudança desta revisão:** 02/11/2026 — a correção automática do Nº Final no Salvar passa a valer também em APROVADO e LIBERADO. Antes (29/10/2026): ao gravar, o Nº Final é conferido pela conta do cadastro do numerador e a gravação é recusada se divergir (só modelo novo ou com Qtd, Nº Inicial ou numerador alterados). Linha com numerador fora da lista fica sem Nº Final e não é gravada. O **Salvar alterações** passa a corrigir o Nº Final do modelo que difere do calculado, sem precisar mexer no modelo. A correção automática vale só para pedido que ainda não saiu (pelo status gravado).
+
+> **Mudança desta revisão:** 24/11/2026 — alça para arrastar e mudar a ordem dos modelos de cada produto. A ordem é gravada ao soltar, sem renumerar, e vale para o PDF da OS, a tela da OS e as telas do Imposition. Tem a mesma trava da edição dos modelos.

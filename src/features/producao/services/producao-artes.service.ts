@@ -77,7 +77,8 @@ export async function listarModelosPorPedido(idInt: number): Promise<PedidoModel
     .select("*")
     .eq("id_int", idInt)
     .order("ordem", { ascending: true })
-    .order("created_at", { ascending: true });
+    .order("created_at", { ascending: true })
+    .order("id", { ascending: true });
 
   if (error) {
     console.error("[producao-artes.service] Erro ao buscar modelos:", error);
