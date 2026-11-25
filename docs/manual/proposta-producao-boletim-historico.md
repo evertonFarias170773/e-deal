@@ -1,6 +1,6 @@
 # Proposta: abas Produção / Expedição / Notas, Boletim e Histórico
 
-> **Última revisão:** 19/11/2026 (tarja do escaninho verde com o nome, vermelha sem escaninho livre). 17/11/2026 (escaninho de encontro do pedido composto no PDF da OS). 14/11/2026 (Liberar para Produção recusa pedido sem contato do ChatGuru). 11/11/2026 (a aba passou a se chamar **Produção / Expedição / Notas** e ganhou o quadro **Notas fiscais**, com a **Observação para a nota fiscal**). 10/11/2026 (Liberar e enviar manda o aviso para a conversa do cliente; fim do "em ajuste" e da homologação)
+> **Última revisão:** 25/11/2026 (escaninho liberado quando o último setor fica pronto). 19/11/2026 (tarja do escaninho verde com o nome, vermelha sem escaninho livre). 17/11/2026 (escaninho de encontro do pedido composto no PDF da OS). 14/11/2026 (Liberar para Produção recusa pedido sem contato do ChatGuru). 11/11/2026 (a aba passou a se chamar **Produção / Expedição / Notas** e ganhou o quadro **Notas fiscais**, com a **Observação para a nota fiscal**). 10/11/2026 (Liberar e enviar manda o aviso para a conversa do cliente; fim do "em ajuste" e da homologação)
 > **Caminho no menu:** Pedidos → abrir um pedido → Editar proposta → aba Produção / Expedição / Notas ou aba Histórico. Não existe aba Boletim na barra de abas: a OS (boletim) abre pelo menu Produção → clicar no pedido.
 > **Endereço:** `/orcamentos/[número]/editar?tab=producao` e `/orcamentos/[número]/editar?tab=historico`. A aba se chamava **Produção** até 09/10/2026 e **Produção / Expedição** até 11/11/2026; só o nome mudou, o endereço `?tab=producao` é o mesmo. A OS fica em `/pedidos/boletim?id_int=[número]&modo=edicao`.
 
@@ -143,7 +143,7 @@ A produção tem 28 escaninhos para juntar as partes de um **pedido composto**, 
    - à esquerda, em letra menor, o texto fixo **Escaninho de encontro das OS.**;
    - à direita, em caixa alta e negrito, o nome do escaninho (por exemplo, **ÁGUIA AMERICANA**).
 3. Todos os boletins do pedido, um por setor, mostram o mesmo escaninho. Reimprimir não troca o escaninho.
-4. O escaninho é liberado quando o pedido é **despachado na Expedição** ou **cancelado**. Liberado, ele volta a ser o primeiro candidato pela ordem: o próximo pedido composto o recebe, sem esperar a lista chegar ao fim.
+4. O escaninho é liberado quando o **último setor** do pedido marca a fase **Pronto** (CONCLUIDO) no painel da produção: as partes já se juntaram e o escaninho pode ser esvaziado, sem esperar a Expedição. O **despacho na Expedição** e o **cancelamento** continuam liberando, como reserva (por exemplo, pedido despachado sem a fase marcada). Se um setor for reaberto depois, o pedido não volta para o escaninho sozinho; uma nova impressão da OS escolhe de novo o primeiro escaninho livre. Liberado, o escaninho volta a ser o primeiro candidato pela ordem: o próximo pedido composto o recebe, sem esperar a lista chegar ao fim.
 5. Com os 28 ocupados, a tarja fica **vermelha**, como alerta, e mostra **SEM ESCANINHO LIVRE** à direita, no lugar do nome, e nada é bloqueado. A próxima impressão do mesmo pedido tenta de novo.
 6. Pedido de um setor só não tem tarja.
 
@@ -187,7 +187,7 @@ As mensagens são internas: o cliente não vê.
 - Em OS que já existe, a data e a hora de entrega só mudam com a permissão **Editar Datas de Entrega**. Elas são a promessa feita ao cliente. A trava vale também fora da tela: o sistema recusa a alteração de quem não tem a permissão.
 - Na OS que já existe, cliente, quantidades e especificações dos modelos ficam travados. O que se altera lá é a orientação técnica, as observações e, para quem pode, a data e a hora.
 - **Imprimir OS** só aparece em pedido liberado para a produção.
-- O escaninho de encontro é escolhido e guardado pelo sistema, não pela tela. Dois boletins gerados ao mesmo tempo nunca recebem o mesmo escaninho. Pedido já despachado ou cancelado não recebe escaninho, e o PDF dele sai sem a tarja.
+- O escaninho de encontro é escolhido e guardado pelo sistema, não pela tela. Dois boletins gerados ao mesmo tempo nunca recebem o mesmo escaninho. Pedido já despachado, cancelado ou com todos os setores prontos não recebe escaninho, e o PDF dele sai sem a tarja. A liberação pela produção pronta é feita pelo banco, na hora em que o último setor é gravado como pronto; se ela falhar, a fase do setor é gravada do mesmo jeito.
 - Não dá para ver o histórico de pedido que ainda não foi salvo: a aba mostra "Salve a proposta para visualizar o histórico.".
 - O status do pedido que já está na produção não é mais alterado por pagamento ou por arte. De REVISAO ATENDENTE em diante, ele só anda pelas ações da produção e da expedição.
 
@@ -284,6 +284,7 @@ O que fazer:
 - `src/features/pedidos/pdf/OsPdfDocument.tsx`
 - `src/app/api/pedidos/imprimir-os/route.ts`
 - `supabase/migrations/20261117c_escaninhos_encontro.sql`
+- `supabase/migrations/20261125_escaninho_libera_producao_concluida.sql`
 
 > **Mudança desta revisão:** 09/10/2026 — nova seção sobre a página que mostra a mensagem This page could not load: é erro de carregamento, com a causa já vista (data inválida no pedido, tratada no commit `6693958`) e o que fazer.
 
@@ -292,3 +293,5 @@ O que fazer:
 > **Mudança desta revisão:** 17/11/2026 — pedido composto (dois ou mais setores) ganha o **escaninho de encontro** no PDF da OS: o primeiro dos 28 escaninhos livre, na primeira impressão, liberado no despacho da Expedição ou no cancelamento. A tarja vermelha e as caixas dos outros setores subiram para logo depois do bloco CLIENTE / EVENTO / VENDEDOR. O resto do PDF não mudou. No mesmo dia, a tarja ganhou dois lados: o texto **Escaninho de encontro das OS.** em letra menor à esquerda e o nome (ou **SEM ESCANINHO LIVRE**) em caixa alta e negrito à direita; cor e altura iguais.
 
 > **Mudança desta revisão:** 19/11/2026 — a tarja do escaninho passou a ser **verde** quando mostra o nome do escaninho. Com **SEM ESCANINHO LIVRE** ela continua **vermelha**, como alerta. Texto, tamanhos e posição não mudaram.
+
+> **Mudança desta revisão:** 25/11/2026 — o escaninho de encontro passa a ser liberado quando o **último setor** do pedido fica **Pronto** na produção, sem esperar o despacho (a Expedição atrasava e o escaninho ficava preso vazio). Despacho e cancelamento continuam liberando, como reserva. Na mudança, os pedidos que já estavam com todos os setores prontos soltaram o escaninho: GIRAFA (25243), ANTA (25313), DRAGÃO DE KOMODO (25484) e HARPIA (25609).

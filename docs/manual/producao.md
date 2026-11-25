@@ -1,6 +1,6 @@
 # Produção (ordens de serviço)
 
-> **Última revisão:** 23/11/2026 (coluna **Escaninho** no painel geral, depois de **Setores**, com selo maior). 07/11/2026
+> **Última revisão:** 25/11/2026 (o escaninho some da coluna quando o último setor fica **Pronto**). 23/11/2026 (coluna **Escaninho** no painel geral, depois de **Setores**, com selo maior). 07/11/2026
 > **Caminho no menu:** Produção (item direto do menu lateral, sem submenu). A OS de cada pedido abre a partir da lista. O Kanban e a Fila de impressão não estão no menu: chega-se a eles pelo endereço ou pelas abas **Fila Geral / Kanban Board / Fila de Impressão / Expedição** que aparecem no topo dessas duas telas.
 > **Endereço:** `/pedidos` (painel geral). OS: `/pedidos/boletim`. Kanban: `/pedidos/kanban` (e `/os-producao`). Fila de impressão: `/pedidos/impressao`.
 
@@ -137,7 +137,7 @@ Nomes exatamente como aparecem na tela.
 6. A coluna **Escaninho**, logo depois de **Setores** e antes de **Ações**, mostra num selo verde, do tamanho dos chips de setor, com letras brancas em negrito e caixa alta, o escaninho de encontro que o pedido ocupa agora. É o mesmo nome da tarja do boletim, como na etiqueta física (por exemplo, **LULA COLOSSAL**). A célula fica vazia quando o pedido não tem escaninho:
    - pedido de um setor só;
    - pedido composto que ainda não teve o PDF da OS gerado (o escaninho é escolhido na primeira impressão);
-   - pedido cujo escaninho já foi liberado, no despacho ou no cancelamento.
+   - pedido cujo escaninho já foi liberado: quando o último setor fica **Pronto**, no despacho ou no cancelamento.
 
    Nome longo pode ocupar duas linhas no selo. Veja [Escaninho de encontro](proposta-producao-boletim-historico.md#escaninho-de-encontro-pedido-composto).
 7. Clicar em qualquer ponto da linha abre a OS do pedido.
@@ -365,3 +365,5 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 > **Mudança desta revisão:** 23/11/2026 — nova coluna **Escaninho** no painel geral, entre **Status** e **Setores**: o nome do escaninho de encontro que o pedido ocupa agora, num selo verde (o mesmo verde da tarja do boletim) com letras brancas em caixa alta. Sem escaninho, a célula fica vazia. Nada mais mudou na lista.
 
 > **Mudança desta revisão:** 23/11/2026 (2ª) — a coluna **Escaninho** passou para depois de **Setores**, antes de **Ações**, e o selo cresceu para o tamanho dos chips de setor (letra de 14 px, em negrito), no mesmo verde, branco e em caixa alta. O resto da lista não mudou.
+
+> **Mudança desta revisão:** 25/11/2026 — o escaninho é liberado quando o último setor do pedido fica **Pronto**, e a coluna **Escaninho** fica vazia a partir daí, sem esperar o despacho. Despacho e cancelamento continuam liberando.

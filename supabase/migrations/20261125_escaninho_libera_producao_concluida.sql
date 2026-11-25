@@ -169,5 +169,23 @@ $function$;
 REVOKE ALL ON FUNCTION public.escaninho_do_boletim(bigint) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.escaninho_do_boletim(bigint) TO authenticated, service_role;
 
+-- 4. Varredura unica: solta agora as ocupacoes abertas cuja producao ja concluiu
+--    (ou que ja sairam e o gatilho nao pegou). Mesmo criterio da varredura do boletim.
+--    Em 25/11, antes de aplicar: 25243 (GIRAFA), 25313 (ANTA), 25484 (DRAGAO DE KOMODO)
+--    e 25609 (HARPIA), todos em EXPEDICAO com todos os setores CONCLUIDO e sem despacho.
+UPDATE public.escaninhos_ocupacao o
+   SET liberado_em = now(),
+       liberado_motivo = CASE
+         WHEN upper(btrim(coalesce(p.status_interno, ''))) IN ('CANCELADO', 'CANCELADA') THEN 'CANCELADO'
+         WHEN EXISTS (SELECT 1 FROM public.expedicoes x WHERE x.id_int = o.id_int AND x.data_despacho IS NOT NULL) THEN 'DESPACHO'
+         WHEN upper(btrim(coalesce(p.status_interno, ''))) = 'ENTREGUE' THEN 'ENTREGUE'
+         ELSE 'PRODUCAO_CONCLUIDA' END
+  FROM public.propostas p
+ WHERE p.id_int = o.id_int
+   AND o.liberado_em IS NULL
+   AND (upper(btrim(coalesce(p.status_interno, ''))) IN ('CANCELADO', 'CANCELADA', 'ENTREGUE')
+        OR EXISTS (SELECT 1 FROM public.expedicoes x WHERE x.id_int = o.id_int AND x.data_despacho IS NOT NULL)
+        OR public.escaninho__producao_concluida(o.id_int));
+
 COMMENT ON TABLE public.escaninhos_ocupacao IS
   'Quem ocupa cada escaninho (17/11/2026). Ocupado = liberado_em nulo. Escrita so por escaninho_do_boletim e pelos gatilhos de producao concluida (25/11), despacho e cancelamento.';
