@@ -31,7 +31,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const PERMISSAO = "fiscal.carta_correcao";
-const WEBHOOK_CARTA_CORRECAO = "https://10074.hostoo.net.br/webhook/carta-correcao";
+const WEBHOOK_CARTA_CORRECAO = "https://10074.hostoo.net.br/webhook/carta-correcao-v2";
 /** Carta de correção só existe para nota autorizada. */
 const STATUS_CORRIGIVEL = "AUTORIZADA";
 
