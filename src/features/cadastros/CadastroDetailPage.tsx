@@ -25,6 +25,9 @@ import { NovaTarefaModal } from "@/features/tarefas/components/NovaTarefaModal";
 import { useTarefas } from "@/features/tarefas/TarefasProvider";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { contatoEstaAtivo } from "@/features/cadastros/lib/contatos-ativos";
+import { GrupoEnderecosEntregaCard } from "@/features/cadastros/components/GrupoEnderecosEntregaCard";
+import { agruparEnderecosDeEntrega, pedidosDoGrupo } from "@/features/cadastros/lib/agrupar-enderecos-entrega";
+import { usePedidosDosEnderecos } from "@/features/cadastros/hooks/usePedidosDosEnderecos";
 
 const categoriaLabel: Record<CadastroCategoria, string> = {
   CLIENTE: "Cliente",
@@ -64,6 +67,13 @@ export function CadastroDetailPage({ cadastro, dataSource = "mock" }: CadastroDe
   const [propostasHasNextPage, setPropostasHasNextPage] = useState(false);
   const [propostasSource, setPropostasSource] = useState<"supabase" | "mock">("mock");
   const [propostasWarnings, setPropostasWarnings] = useState<string[]>([]);
+  // Enderecos de ENTREGA iguais viram um cartao so (25/11/2026).
+  const itensDosEnderecos = useMemo(() => agruparEnderecosDeEntrega(cadastro.enderecos), [cadastro.enderecos]);
+  const idsAgrupados = useMemo(
+    () => itensDosEnderecos.flatMap((item) => (item.tipo === "grupo" ? item.ids : [])),
+    [itensDosEnderecos]
+  );
+  const { pedidosPorEndereco, carregando: carregandoPedidosDosEnderecos } = usePedidosDosEnderecos(idsAgrupados);
 
   // Filtros da sub-lista de propostas na URL. O prefixo `prop-` mantém estes
   // parâmetros separados dos que a página do cadastro venha a usar, e dos da
@@ -538,28 +548,28 @@ export function CadastroDetailPage({ cadastro, dataSource = "mock" }: CadastroDe
           <DetailCard title="Enderecos">
             {cadastro.enderecos.length ? (
               <div className="space-y-3">
-                {cadastro.enderecos.map((endereco) => (
-                  <div key={endereco.id} className="flex gap-4 rounded-2xl bg-slate-50 p-4">
-                    <span className="mt-1 rounded-2xl bg-[#dff8f6] p-3 text-[#0b7774]">
-                      <MapPin className="h-5 w-5" />
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                        <p className="font-semibold text-slate-950">
-                          {endereco.endereco}, {endereco.numero}
-                        </p>
-                        <StatusBadge status={endereco.tipo.toUpperCase()} tone="neutral" />
-                      </div>
-                      <p className="mt-1 text-sm text-slate-500">
-                        {endereco.bairro} - {endereco.cidade}/{endereco.uf} - CEP {endereco.cep}
-                      </p>
-                      {endereco.complemento ? (
-                        <p className="mt-1 text-sm text-slate-500">Complemento: {endereco.complemento}</p>
-                      ) : null}
-                      {endereco.obs ? <p className="mt-1 text-sm text-slate-500">{endereco.obs}</p> : null}
-                    </div>
-                  </div>
-                ))}
+                {/* Enderecos de ENTREGA iguais viram um cartao so (25/11/2026);
+                    um clique abre as linhas, desenhadas como antes. */}
+                {itensDosEnderecos.map((item) => {
+                  if (item.tipo === "linha") {
+                    const endereco = cadastro.enderecos.find((e) => e.id === item.id);
+                    return endereco ? renderEnderecoDaFicha(endereco) : null;
+                  }
+                  const linhas = item.ids
+                    .map((id) => cadastro.enderecos.find((e) => e.id === id))
+                    .filter((e): e is Cadastro["enderecos"][number] => Boolean(e));
+                  return (
+                    <GrupoEnderecosEntregaCard
+                      key={`grupo-${item.ids[0]}`}
+                      endereco={linhas[0]}
+                      quantidadeDeLinhas={linhas.length}
+                      pedidos={pedidosDoGrupo(item.ids, pedidosPorEndereco)}
+                      carregandoPedidos={carregandoPedidosDosEnderecos}
+                    >
+                      {linhas.map(renderEnderecoDaFicha)}
+                    </GrupoEnderecosEntregaCard>
+                  );
+                })}
               </div>
             ) : (
               <p className="text-sm text-slate-500">Nenhum endereco cadastrado.</p>
@@ -664,6 +674,32 @@ export function CadastroDetailPage({ cadastro, dataSource = "mock" }: CadastroDe
           }}
         />
       )}
+    </div>
+  );
+}
+
+/** Uma linha de endereco na ficha, como sempre foi desenhada (sozinha ou dentro do grupo). */
+function renderEnderecoDaFicha(endereco: Cadastro["enderecos"][number]) {
+  return (
+    <div key={endereco.id} className="flex gap-4 rounded-2xl bg-slate-50 p-4">
+      <span className="mt-1 rounded-2xl bg-[#dff8f6] p-3 text-[#0b7774]">
+        <MapPin className="h-5 w-5" />
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+          <p className="font-semibold text-slate-950">
+            {endereco.endereco}, {endereco.numero}
+          </p>
+          <StatusBadge status={endereco.tipo.toUpperCase()} tone="neutral" />
+        </div>
+        <p className="mt-1 text-sm text-slate-500">
+          {endereco.bairro} - {endereco.cidade}/{endereco.uf} - CEP {endereco.cep}
+        </p>
+        {endereco.complemento ? (
+          <p className="mt-1 text-sm text-slate-500">Complemento: {endereco.complemento}</p>
+        ) : null}
+        {endereco.obs ? <p className="mt-1 text-sm text-slate-500">{endereco.obs}</p> : null}
+      </div>
     </div>
   );
 }

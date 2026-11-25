@@ -9,6 +9,9 @@ import { AlertTriangle, ArrowLeft, CheckCircle2, ChevronDown, ChevronRight, Plus
 import { contatoEstaAtivo } from "@/features/cadastros/lib/contatos-ativos";
 import { normalizarCargoContato } from "@/features/cadastros/lib/cargo-contato";
 import { CampoCargoContato } from "@/features/cadastros/components/CampoCargoContato";
+import { GrupoEnderecosEntregaCard } from "@/features/cadastros/components/GrupoEnderecosEntregaCard";
+import { agruparEnderecosDeEntrega, pedidosDoGrupo } from "@/features/cadastros/lib/agrupar-enderecos-entrega";
+import { usePedidosDosEnderecos } from "@/features/cadastros/hooks/usePedidosDosEnderecos";
 import {
   ROTULO_DO_CAMPO_DE_CORRECAO,
   lerCorrecaoDaUrl,
@@ -1915,6 +1918,17 @@ function CompleteForm({
   const [inativosAbertos, setInativosAbertos] = useState(false);
   /** Indice do endereco cuja consulta de CPF esta rodando. Trava so aquele botao. */
   const [validandoCpfIndex, setValidandoCpfIndex] = useState<number | null>(null);
+  // Enderecos de ENTREGA iguais viram um cartao so (25/11/2026). O grupo e
+  // refeito quando muda o conjunto de linhas (carregar, adicionar, excluir), e
+  // nao a cada tecla: editar uma linha do grupo nao a tira do lugar.
+  const idsDosEnderecos = form.enderecos.map((endereco) => endereco.id).join("|");
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const itensDosEnderecos = useMemo(() => agruparEnderecosDeEntrega(form.enderecos), [idsDosEnderecos]);
+  const idsAgrupados = useMemo(
+    () => itensDosEnderecos.flatMap((item) => (item.tipo === "grupo" ? item.ids : [])).filter((id) => !isTemporaryId(id)),
+    [itensDosEnderecos]
+  );
+  const { pedidosPorEndereco, carregando: carregandoPedidosDosEnderecos } = usePedidosDosEnderecos(idsAgrupados);
 
   function updateEndereco(index: number, field: keyof CadastroEndereco, value: string) {
     const enderecos = form.enderecos.map((endereco, currentIndex) =>
@@ -2009,6 +2023,105 @@ function CompleteForm({
     onUpdate("contatos", contatos);
   }
 
+
+  // Uma linha de endereco, editavel como sempre. Desde 25/11/2026 a lista
+  // abaixo agrupa os enderecos de ENTREGA iguais num cartao so
+  // (lib/agrupar-enderecos-entrega.ts); dentro do grupo, cada linha segue
+  // sendo desenhada e editada por aqui.
+  function renderLinhaDeEndereco(endereco: CadastroEndereco, index: number) {
+            const isPrincipalCnpj = form.tipoCliente === "CNPJ" && endereco.tipo === "principal";
+            const isAddressBlocked = !isEditAllowed || isPrincipalCnpj;
+            const addrInputClass = isAddressBlocked ? `${inputClass} bg-slate-100 text-slate-500 cursor-not-allowed` : inputClass;
+
+            return (
+              <div key={endereco.id} className="rounded-3xl border border-slate-200 bg-slate-50 p-4">
+                <div className="mb-4 flex items-center justify-between gap-3">
+                  <StatusBadge status={endereco.tipo.toUpperCase()} tone="neutral" />
+                  {endereco.tipo !== 'principal' && isEditAllowed && (
+                    <button type="button" onClick={async () => {
+                      if (isTemporaryId(endereco.id)) {
+                        onUpdate("enderecos", form.enderecos.filter((_, itemIndex) => itemIndex !== index));
+                        onToast({ type: "warning", title: "Endereco removido", description: "Remocao aplicada no formulário antes do salvamento." });
+                        return;
+                      }
+                      const refCheck = await checkEnderecoReferenciadoEmProposta(endereco.id);
+                      if (refCheck.referenciado) {
+                        onToast({ type: "error", title: "Exclusão bloqueada", description: refCheck.errorMessage || "Este endereço está vinculado a uma proposta e não pode ser excluído." });
+                        return;
+                      }
+                      const deleteResult = await deleteCadastroEndereco(endereco.id);
+                      if (!deleteResult.success) {
+                        onToast({ type: "error", title: "Erro ao excluir", description: deleteResult.errorMessage || "Não foi possível excluir o endereço." });
+                        return;
+                      }
+                      onUpdate("enderecos", form.enderecos.filter((_, itemIndex) => itemIndex !== index));
+                      onToast({ type: "success", title: "Endereço excluído", description: "Endereço removido." });
+                    }} className="rounded-xl p-2 text-red-600 hover:bg-red-50">
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
+
+                {isPrincipalCnpj && (
+                  <div className="mb-4 rounded-2xl border border-blue-200 bg-blue-50 p-3.5 text-xs text-blue-900 flex gap-2.5 items-start">
+                    <span className="text-base leading-none">ℹ️</span>
+                    <p className="leading-relaxed">
+                      Este é o endereço oficial do CNPJ. Para alterá-lo, reconsulte os dados do CNPJ no topo da página ou adicione um endereço do tipo <strong>Entrega</strong> ou <strong>Cobrança</strong> abaixo.
+                    </p>
+                  </div>
+                )}
+
+                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                  {/* O documento vem primeiro: e por ele que o resto se preenche. */}
+                  <DocumentoRecebedorFields
+                    documento={endereco.cpfRecebedor ?? ""}
+                    onDocumentoChange={(valor) => updateEndereco(index, "cpfRecebedor", valor)}
+                    ie={endereco.ieRecebedor ?? ""}
+                    onIeChange={(valor) => updateEndereco(index, "ieRecebedor", valor)}
+                    onValidado={(resultado) => aplicarValidacaoRecebedor(index, resultado)}
+                    inputClassName={addrInputClass}
+                    botaoClassName="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-[#d7e5e8] bg-white px-3 py-2.5 text-xs font-bold text-[#0b2f4a] transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                    bloqueado={isAddressBlocked}
+                    // Uma consulta por vez na tela inteira, como antes: cada
+                    // clique gasta cota, e o botao dos outros enderecos espera.
+                    ocupadoPorOutro={validandoCpfIndex !== null && validandoCpfIndex !== index}
+                    onOcupadoChange={(ocupado) => setValidandoCpfIndex(ocupado ? index : null)}
+                  />
+                  <Field label="Recebedor">
+                    <input value={endereco.recebedor ?? ""} readOnly={isAddressBlocked} onChange={(event) => updateEndereco(index, "recebedor", event.target.value)} className={addrInputClass} placeholder="Nome completo ou razão social" />
+                  </Field>
+                  <Field label="Tipo">
+                    <select value={endereco.tipo} disabled={isAddressBlocked} onChange={(event) => updateEndereco(index, "tipo", event.target.value as any)} className={addrInputClass}>
+                      {endereco.tipo === "principal" && <option value="principal">Principal</option>}
+                      <option value="entrega">Entrega</option>
+                      <option value="cobranca">Cobrança</option>
+                      <option value="fiscal">Fiscal</option>
+                    </select>
+                  </Field>
+                  <Field label="CEP">
+                    <div className="relative">
+                      <input value={endereco.cep} readOnly={isAddressBlocked} onChange={(event) => handleCepChange(index, event.target.value)} className={addrInputClass} />
+                      {cepLoadingIndex === index && (
+                        <div className="absolute right-3 top-3 h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-blue-600" />
+                      )}
+                    </div>
+                  </Field>
+                  <Field label="Logradouro"><input value={endereco.endereco} readOnly={isAddressBlocked} onChange={(event) => updateEndereco(index, "endereco", event.target.value)} className={addrInputClass} /></Field>
+                  <Field label="Número *"><input value={endereco.numero} readOnly={isAddressBlocked} onChange={(event) => updateEndereco(index, "numero", event.target.value)} className={isAddressBlocked ? `${inputClass} bg-slate-100 text-slate-500 cursor-not-allowed` : getInputClass(errorFields.includes("enderecos-numero") && !endereco.numero.trim())} /></Field>
+                  {/* 60 e o limite do complemento no layout da NF-e (xCpl): acima
+                      disso a Focus recusa a nota antes da SEFAZ, como aconteceu
+                      com a NFE-21518-001. `maxLength` so impede digitar alem — o
+                      que ja estiver gravado maior nao e cortado, e o contador fica
+                      vermelho para avisar. */}
+                  <Field label="Complemento"><input value={endereco.complemento ?? ""} readOnly={isAddressBlocked} onChange={(event) => updateEndereco(index, "complemento", event.target.value)} className={addrInputClass} maxLength={60} /><span className={`block text-right text-xs ${(endereco.complemento ?? "").length > 60 ? "font-semibold text-rose-600" : "text-slate-500"}`}>{(endereco.complemento ?? "").length}/60</span></Field>
+                  <Field label="Bairro"><input value={endereco.bairro} readOnly={isAddressBlocked} onChange={(event) => updateEndereco(index, "bairro", event.target.value)} className={addrInputClass} /></Field>
+                  <Field label="Cidade"><input value={endereco.cidade} readOnly={isAddressBlocked} onChange={(event) => updateEndereco(index, "cidade", event.target.value)} className={addrInputClass} /></Field>
+                  <Field label="UF"><input value={endereco.uf} readOnly={isAddressBlocked} onChange={(event) => updateEndereco(index, "uf", event.target.value.toUpperCase())} className={addrInputClass} maxLength={2} /></Field>
+                  <div className="md:col-span-2 xl:col-span-4"><Field label="Observacao"><input value={endereco.obs ?? ""} readOnly={isAddressBlocked} onChange={(event) => updateEndereco(index, "obs", event.target.value)} className={addrInputClass} /></Field></div>
+                </div>
+              </div>
+            );
+  }
 
   return (
     <div className="space-y-6">
@@ -2196,98 +2309,26 @@ function CompleteForm({
         ) : null}
       >
         <div className="space-y-4">
-          {form.enderecos.map((endereco, index) => {
-            const isPrincipalCnpj = form.tipoCliente === "CNPJ" && endereco.tipo === "principal";
-            const isAddressBlocked = !isEditAllowed || isPrincipalCnpj;
-            const addrInputClass = isAddressBlocked ? `${inputClass} bg-slate-100 text-slate-500 cursor-not-allowed` : inputClass;
-
+          {itensDosEnderecos.map((item) => {
+            if (item.tipo === "linha") {
+              const index = form.enderecos.findIndex((endereco) => endereco.id === item.id);
+              return index >= 0 ? renderLinhaDeEndereco(form.enderecos[index], index) : null;
+            }
+            const linhas = item.ids
+              .map((id) => form.enderecos.findIndex((endereco) => endereco.id === id))
+              .filter((index) => index >= 0);
+            if (linhas.length === 0) return null;
+            const pedidos = pedidosDoGrupo(item.ids, pedidosPorEndereco);
             return (
-              <div key={endereco.id} className="rounded-3xl border border-slate-200 bg-slate-50 p-4">
-                <div className="mb-4 flex items-center justify-between gap-3">
-                  <StatusBadge status={endereco.tipo.toUpperCase()} tone="neutral" />
-                  {endereco.tipo !== 'principal' && isEditAllowed && (
-                    <button type="button" onClick={async () => {
-                      if (isTemporaryId(endereco.id)) {
-                        onUpdate("enderecos", form.enderecos.filter((_, itemIndex) => itemIndex !== index));
-                        onToast({ type: "warning", title: "Endereco removido", description: "Remocao aplicada no formulário antes do salvamento." });
-                        return;
-                      }
-                      const refCheck = await checkEnderecoReferenciadoEmProposta(endereco.id);
-                      if (refCheck.referenciado) {
-                        onToast({ type: "error", title: "Exclusão bloqueada", description: refCheck.errorMessage || "Este endereço está vinculado a uma proposta e não pode ser excluído." });
-                        return;
-                      }
-                      const deleteResult = await deleteCadastroEndereco(endereco.id);
-                      if (!deleteResult.success) {
-                        onToast({ type: "error", title: "Erro ao excluir", description: deleteResult.errorMessage || "Não foi possível excluir o endereço." });
-                        return;
-                      }
-                      onUpdate("enderecos", form.enderecos.filter((_, itemIndex) => itemIndex !== index));
-                      onToast({ type: "success", title: "Endereço excluído", description: "Endereço removido." });
-                    }} className="rounded-xl p-2 text-red-600 hover:bg-red-50">
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  )}
-                </div>
-
-                {isPrincipalCnpj && (
-                  <div className="mb-4 rounded-2xl border border-blue-200 bg-blue-50 p-3.5 text-xs text-blue-900 flex gap-2.5 items-start">
-                    <span className="text-base leading-none">ℹ️</span>
-                    <p className="leading-relaxed">
-                      Este é o endereço oficial do CNPJ. Para alterá-lo, reconsulte os dados do CNPJ no topo da página ou adicione um endereço do tipo <strong>Entrega</strong> ou <strong>Cobrança</strong> abaixo.
-                    </p>
-                  </div>
-                )}
-
-                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                  {/* O documento vem primeiro: e por ele que o resto se preenche. */}
-                  <DocumentoRecebedorFields
-                    documento={endereco.cpfRecebedor ?? ""}
-                    onDocumentoChange={(valor) => updateEndereco(index, "cpfRecebedor", valor)}
-                    ie={endereco.ieRecebedor ?? ""}
-                    onIeChange={(valor) => updateEndereco(index, "ieRecebedor", valor)}
-                    onValidado={(resultado) => aplicarValidacaoRecebedor(index, resultado)}
-                    inputClassName={addrInputClass}
-                    botaoClassName="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-[#d7e5e8] bg-white px-3 py-2.5 text-xs font-bold text-[#0b2f4a] transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-                    bloqueado={isAddressBlocked}
-                    // Uma consulta por vez na tela inteira, como antes: cada
-                    // clique gasta cota, e o botao dos outros enderecos espera.
-                    ocupadoPorOutro={validandoCpfIndex !== null && validandoCpfIndex !== index}
-                    onOcupadoChange={(ocupado) => setValidandoCpfIndex(ocupado ? index : null)}
-                  />
-                  <Field label="Recebedor">
-                    <input value={endereco.recebedor ?? ""} readOnly={isAddressBlocked} onChange={(event) => updateEndereco(index, "recebedor", event.target.value)} className={addrInputClass} placeholder="Nome completo ou razão social" />
-                  </Field>
-                  <Field label="Tipo">
-                    <select value={endereco.tipo} disabled={isAddressBlocked} onChange={(event) => updateEndereco(index, "tipo", event.target.value as any)} className={addrInputClass}>
-                      {endereco.tipo === "principal" && <option value="principal">Principal</option>}
-                      <option value="entrega">Entrega</option>
-                      <option value="cobranca">Cobrança</option>
-                      <option value="fiscal">Fiscal</option>
-                    </select>
-                  </Field>
-                  <Field label="CEP">
-                    <div className="relative">
-                      <input value={endereco.cep} readOnly={isAddressBlocked} onChange={(event) => handleCepChange(index, event.target.value)} className={addrInputClass} />
-                      {cepLoadingIndex === index && (
-                        <div className="absolute right-3 top-3 h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-blue-600" />
-                      )}
-                    </div>
-                  </Field>
-                  <Field label="Logradouro"><input value={endereco.endereco} readOnly={isAddressBlocked} onChange={(event) => updateEndereco(index, "endereco", event.target.value)} className={addrInputClass} /></Field>
-                  <Field label="Número *"><input value={endereco.numero} readOnly={isAddressBlocked} onChange={(event) => updateEndereco(index, "numero", event.target.value)} className={isAddressBlocked ? `${inputClass} bg-slate-100 text-slate-500 cursor-not-allowed` : getInputClass(errorFields.includes("enderecos-numero") && !endereco.numero.trim())} /></Field>
-                  {/* 60 e o limite do complemento no layout da NF-e (xCpl): acima
-                      disso a Focus recusa a nota antes da SEFAZ, como aconteceu
-                      com a NFE-21518-001. `maxLength` so impede digitar alem — o
-                      que ja estiver gravado maior nao e cortado, e o contador fica
-                      vermelho para avisar. */}
-                  <Field label="Complemento"><input value={endereco.complemento ?? ""} readOnly={isAddressBlocked} onChange={(event) => updateEndereco(index, "complemento", event.target.value)} className={addrInputClass} maxLength={60} /><span className={`block text-right text-xs ${(endereco.complemento ?? "").length > 60 ? "font-semibold text-rose-600" : "text-slate-500"}`}>{(endereco.complemento ?? "").length}/60</span></Field>
-                  <Field label="Bairro"><input value={endereco.bairro} readOnly={isAddressBlocked} onChange={(event) => updateEndereco(index, "bairro", event.target.value)} className={addrInputClass} /></Field>
-                  <Field label="Cidade"><input value={endereco.cidade} readOnly={isAddressBlocked} onChange={(event) => updateEndereco(index, "cidade", event.target.value)} className={addrInputClass} /></Field>
-                  <Field label="UF"><input value={endereco.uf} readOnly={isAddressBlocked} onChange={(event) => updateEndereco(index, "uf", event.target.value.toUpperCase())} className={addrInputClass} maxLength={2} /></Field>
-                  <div className="md:col-span-2 xl:col-span-4"><Field label="Observacao"><input value={endereco.obs ?? ""} readOnly={isAddressBlocked} onChange={(event) => updateEndereco(index, "obs", event.target.value)} className={addrInputClass} /></Field></div>
-                </div>
-              </div>
+              <GrupoEnderecosEntregaCard
+                key={`grupo-${item.ids[0]}`}
+                endereco={form.enderecos[linhas[0]]}
+                quantidadeDeLinhas={linhas.length}
+                pedidos={pedidos}
+                carregandoPedidos={carregandoPedidosDosEnderecos}
+              >
+                {linhas.map((index) => renderLinhaDeEndereco(form.enderecos[index], index))}
+              </GrupoEnderecosEntregaCard>
             );
           })}
         </div>

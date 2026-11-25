@@ -1,6 +1,6 @@
 # Clientes: lista de cadastros
 
-> **Última revisão:** 06/11/2026
+> **Última revisão:** 25/11/2026
 > **Caminho no menu:** Clientes
 > **Endereço:** `/cadastros`
 
@@ -122,6 +122,13 @@ Clicar na linha do cliente (fora do menu) abre o cadastro direto para editar.
 4. Para trazer de volta, abra **Inativos**, clique em **Reativar** no contato e em **Salvar**.
 5. Contato que você acabou de adicionar e ainda não salvou continua com a lixeira: ele sai do formulário sem ser gravado.
 
+### Ver os endereços de entrega iguais agrupados
+
+1. Abra o cadastro (para ver ou em edição) e vá à seção **Enderecos**.
+2. Endereços de **Entrega** iguais aparecem num cartão só. O cartão mostra o endereço, o recebedor e **Usado em N pedidos**, com os números dos pedidos.
+3. Clique no cartão para ver as linhas iguais, uma por uma. Clique de novo para fechar.
+4. Para corrigir um endereço, abra o cartão e edite a linha, como sempre. A mudança vale só para aquela linha e para os pedidos que usam aquela linha.
+
 ## Regras e bloqueios
 
 - A lista abre só com cadastros ativos, os mais recentes primeiro, em páginas de 100.
@@ -133,6 +140,10 @@ Clicar na linha do cliente (fora do menu) abre o cadastro direto para editar.
 - Proposta, pedido e nota antigos continuam mostrando o contato que usaram, mesmo inativo. Na edição dessa proposta, ele continua selecionado.
 - Contato novo digitado na proposta com o mesmo nome de um contato inativo vira um contato novo e ativo no cadastro.
 - O card **Contatos** da ficha do cadastro conta só os ativos.
+- Na seção **Enderecos**, só endereços de **Entrega** se agrupam, e só quando tudo é igual: recebedor, documento do recebedor, CEP, logradouro, número, complemento, bairro, cidade e UF. Uma letra diferente (por exemplo "Centro" e "CENTRO") deixa os dois separados. A observação e a data não contam.
+- O agrupamento é só da tela: nenhum endereço é apagado nem juntado, e cada pedido continua com o endereço que escolheu.
+- Até 25/11/2026 o link do cliente gravava um endereço de entrega novo a cada pedido, mesmo igual a um que o cliente já tinha. Por isso há clientes com várias linhas iguais. Desde essa data, o link reaproveita o endereço igual.
+- O cartão agrupado não mostra a observação "portal-entrega-pedido:...", que é uma marca interna do link do cliente. Ela continua aparecendo nas linhas, quando o cartão está aberto.
 - O **Cargo** do contato é escolhido numa lista: **Comprador**, **Financeiro** ou **Sem cargo**. Não dá para digitar outro cargo, nem no cadastro nem nas janelas de contato da proposta. Os cargos digitados antes de 06/11/2026 foram convertidos: o que tinha "financeiro" virou **Financeiro**, o resto virou **Comprador**.
 
 ## O que não confundir
@@ -142,6 +153,7 @@ Clicar na linha do cliente (fora do menu) abre o cadastro direto para editar.
 - Esta lista e a busca do campo **1. Cliente** da Nova proposta seguem a mesma regra para telefone e WhatsApp, mas são telas diferentes.
 - **Total filtrado**, no rodapé, é o total da busca; **Cadastros ativos**, no topo, é o total de ativos, sem filtro.
 - **Inativar cadastro** inativa o cliente inteiro; **Inativar**, na seção **Contatos**, inativa só uma pessoa dentro dele.
+- O cartão de endereços iguais não é um endereço novo: são várias linhas iguais mostradas juntas. Editar uma delas não muda as outras.
 
 ## Erros comuns
 
@@ -168,6 +180,8 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/features/cadastros/lib/busca-cliente-por-digitos.ts`
 - `src/features/cadastros/lib/contatos-ativos.ts`
 - `src/features/cadastros/lib/cargo-contato.ts`
+- `src/features/cadastros/lib/agrupar-enderecos-entrega.ts`
+- `src/features/cadastros/components/GrupoEnderecosEntregaCard.tsx`
 - `src/features/cadastros/components/CampoCargoContato.tsx`
 - `src/features/cadastros/CadastroFormPage.tsx`
 - `src/features/cadastros/CadastroDetailPage.tsx`
