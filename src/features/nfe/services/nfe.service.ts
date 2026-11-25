@@ -2825,33 +2825,62 @@ export async function invalidateNfePayments(idNotaFiscal: string): Promise<boole
   }
 }
 
-export async function getNfeFinanceiroStatus(refs: string[]) {
+/**
+ * Parcelas fiscais ativas e títulos de cada nota, para a coluna Contas a
+ * Receber do Histórico.
+ *
+ * EM LOTES DE 200 REFS (25/11/2026). Desde cdfb3351 a leitura mandava todas as
+ * refs num filtro só; com a lista inteira (a2788fb3, 04/11) eram 2.079 refs,
+ * ~33 mil caracteres na URL, e o banco respondia "Bad Request" — toda nota
+ * aparecia "Sem vencimentos fiscais". Passam no máximo 956 refs (a 957ª nota é
+ * de 30/10). `lerPorIds` também pagina dentro do lote (teto de 1.000 linhas).
+ *
+ * `falhou`: qualquer das duas leituras incompleta. Aí os mapas voltam vazios e
+ * a tela mostra "Não foi possível carregar" — erro de leitura não pode parecer
+ * "sem vencimentos" nem "não lançado".
+ */
+export async function getNfeFinanceiroStatus(refs: string[]): Promise<{
+  paymentsCountMap: Record<string, number>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  boletosMap: Record<string, any[]>;
+  falhou: boolean;
+}> {
   const client = getSupabaseClient();
-  if (!client || refs.length === 0) {
-    return { paymentsCountMap: {}, boletosMap: {} };
-  }
+  if (!client) return { paymentsCountMap: {}, boletosMap: {}, falhou: true };
+  if (refs.length === 0) return { paymentsCountMap: {}, boletosMap: {}, falhou: false };
 
   try {
-    // Buscar contagem de vencimentos ativos por ref
-    const { data: paymentsData, error: paymentsError } = await client
-      .from("notas_fiscais_pagamentos")
-      .select("ref, id")
-      .in("ref", refs)
-      .eq("ativo", true);
+    const [leituraParcelas, leituraBoletos] = await Promise.all([
+      lerPorIds<{ ref: string | null; id: number }, string>(
+        refs,
+        (lote) =>
+          client
+            .from("notas_fiscais_pagamentos")
+            .select("ref, id")
+            .in("ref", lote)
+            .eq("ativo", true) as unknown as ConsultaPaginavel<{ ref: string | null; id: number }>,
+        { chave: "id" }
+      ),
+      // Todos os campos que a revisão dos boletos usa.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      lerPorIds<any, string>(
+        refs,
+        (lote) =>
+          client
+            .from("boletos")
+            .select("id, id_int, ext_reference, valor, parcela, total_parcelas, vencimento, status, deposito_conta, id_boleto_c6, nosso_numero, linha_digitavel, multa, juros_dia, descricao, nome_cliente, documento, id_cliente, id_empresa, n_nf, is_faturado")
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            .in("ext_reference", lote) as unknown as ConsultaPaginavel<any>,
+        { chave: "id" }
+      )
+    ]);
 
-    if (paymentsError) {
-      console.error("[NfeService] Error fetching payments count:", paymentsError);
+    if (leituraParcelas.error || !leituraParcelas.completo || leituraBoletos.error || !leituraBoletos.completo) {
+      console.error("[NfeService] Leitura do financeiro das notas falhou:", leituraParcelas.error ?? leituraBoletos.error);
+      return { paymentsCountMap: {}, boletosMap: {}, falhou: true };
     }
-
-    // Buscar boletos correspondentes com todos os campos necessários para a revisão
-    const { data: boletosData, error: boletosError } = await client
-      .from("boletos")
-      .select("id, id_int, ext_reference, valor, parcela, total_parcelas, vencimento, status, deposito_conta, id_boleto_c6, nosso_numero, linha_digitavel, multa, juros_dia, descricao, nome_cliente, documento, id_cliente, id_empresa, n_nf, is_faturado")
-      .in("ext_reference", refs);
-
-    if (boletosError) {
-      console.error("[NfeService] Error fetching boletos:", boletosError);
-    }
+    const paymentsData = leituraParcelas.data;
+    const boletosData = leituraBoletos.data;
 
     const paymentsCountMap: Record<string, number> = {};
     paymentsData?.forEach((p) => {
@@ -2872,10 +2901,10 @@ export async function getNfeFinanceiroStatus(refs: string[]) {
       }
     });
 
-    return { paymentsCountMap, boletosMap };
+    return { paymentsCountMap, boletosMap, falhou: false };
   } catch (err) {
     console.error("[NfeService] getNfeFinanceiroStatus failed:", err);
-    return { paymentsCountMap: {}, boletosMap: {} };
+    return { paymentsCountMap: {}, boletosMap: {}, falhou: true };
   }
 }
 

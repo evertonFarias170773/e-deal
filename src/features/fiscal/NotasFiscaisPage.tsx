@@ -98,7 +98,7 @@ import { chaveParaCopiar, MENSAGEM_CHAVE_COPIADA } from "@/lib/fiscal/chave-de-a
 import { nomeDoComprovanteDeCancelamento } from "@/lib/fiscal/comprovante-cancelamento";
 import { cartasDaNota, nomeDaCartaDeCorrecao, rotulosDaCarta } from "@/lib/fiscal/carta-correcao-arquivo";
 import { fetchComSessao } from "@/lib/supabase/sessao";
-import { estadoDoRegistroBancario } from "@/features/cobrancas/lib/registro-bancario";
+import { statusFinanceiroDaNfe } from "@/features/fiscal/lib/financeiro-status-nfe";
 
 
 type ActiveTab = "FILA_FATURAMENTO" | "HISTORICO_FISCAL";
@@ -472,13 +472,31 @@ export function NotasFiscaisPage() {
    */
   const [faturadoEmAbertoMap, setFaturadoEmAbertoMap] = useState<Record<number, FaturadoEmAberto>>({});
 
+  // Refs cuja leitura do financeiro falhou (25/11/2026): o selo mostra "Não foi
+  // possível carregar", nunca "Sem vencimentos fiscais".
+  const [financeiroFalhouMap, setFinanceiroFalhouMap] = useState<Record<string, boolean>>({});
+
+  /**
+   * Aplica uma leitura do financeiro às refs lidas. Leitura boa substitui a
+   * contagem e os títulos dessas refs (ref sem linha volta a zero, não fica com
+   * o valor velho); leitura que falhou só marca as refs.
+   */
+  const aplicarFinanceiro = (
+    refs: string[],
+    leitura: Awaited<ReturnType<typeof getNfeFinanceiroStatus>>
+  ) => {
+    setFinanceiroFalhouMap(prev => ({ ...prev, ...Object.fromEntries(refs.map(r => [r, leitura.falhou])) }));
+    if (leitura.falhou) return;
+    setNfePaymentsCountMap(prev => ({ ...prev, ...Object.fromEntries(refs.map(r => [r, leitura.paymentsCountMap[r] ?? 0])) }));
+    setBoletosMap(prev => ({ ...prev, ...Object.fromEntries(refs.map(r => [r, leitura.boletosMap[r] ?? []])) }));
+  };
+
   const refreshFinanceiroStatusForRef = async (ref: string) => {
     try {
-      const { paymentsCountMap, boletosMap: bMap } = await getNfeFinanceiroStatus([ref]);
-      setNfePaymentsCountMap(prev => ({ ...prev, ...paymentsCountMap }));
-      setBoletosMap(prev => ({ ...prev, ...bMap }));
+      aplicarFinanceiro([ref], await getNfeFinanceiroStatus([ref]));
     } catch (err) {
       console.error("[NotasFiscaisPage] refreshFinanceiroStatusForRef failed:", err);
+      setFinanceiroFalhouMap(prev => ({ ...prev, [ref]: true }));
     }
   };
 
@@ -488,13 +506,11 @@ export function NotasFiscaisPage() {
     if (refs.length > 0) {
       void (async () => {
         try {
-          const { paymentsCountMap, boletosMap: bMap } = await getNfeFinanceiroStatus(refs);
-          if (active) {
-            setNfePaymentsCountMap(prev => ({ ...prev, ...paymentsCountMap }));
-            setBoletosMap(prev => ({ ...prev, ...bMap }));
-          }
+          const leitura = await getNfeFinanceiroStatus(refs);
+          if (active) aplicarFinanceiro(refs, leitura);
         } catch (err) {
           console.error("[NotasFiscaisPage] loadFinanceiroStatus failed:", err);
+          if (active) setFinanceiroFalhouMap(prev => ({ ...prev, ...Object.fromEntries(refs.map(r => [r, true])) }));
         }
       })();
     }
@@ -1131,102 +1147,23 @@ export function NotasFiscaisPage() {
     return "neutral";
   }
 
+  /**
+   * Selo da coluna Contas a Receber. A regra mora em `statusFinanceiroDaNfe`
+   * (lib/financeiro-status-nfe, 25/11/2026); aqui só se junta o que a tela leu,
+   * inclusive se a leitura desta ref falhou.
+   */
   function getFinanceiroStatus(
     ref: string,
     valorTotalNf: number,
     nfePaymentsCount: number | undefined,
     boletos: SupabaseBoletoRow[] | undefined
   ) {
-    if (!nfePaymentsCount || nfePaymentsCount === 0) {
-      return {
-        status: "SEM_VENCIMENTOS",
-        label: "Sem vencimentos fiscais",
-        tone: "neutral" as const
-      };
-    }
-
-    if (!boletos || boletos.length === 0) {
-      return {
-        status: "NAO_LANCADO",
-        label: "Não lançado no contas a receber",
-        tone: "danger" as const
-      };
-    }
-
-    const totalValor = boletos.reduce((acc, b) => acc + Number(b.valor || 0), 0);
-    const diff = totalValor - valorTotalNf;
-
-    // Divergência: soma dos boletos maior que o total da NF em mais de 0.05
-    if (diff > 0.05) {
-      return {
-        status: "DIVERGENCIA",
-        label: "Divergência",
-        tone: "danger" as const
-      };
-    }
-
-    // Parcial: soma menor que o total em mais de 0.05
-    if (diff < -0.05) {
-      return {
-        status: "PARCIAL",
-        label: "Parcialmente lançado",
-        tone: "warning" as const
-      };
-    }
-
-    // A soma dos boletos é equivalente ao total da nota (+/- 0.05).
-    // Verificar se todos os boletos estão marcados como depósito em conta:
-    const allDeposito = boletos.every((b) => b.deposito_conta === true);
-    if (allDeposito) {
-      return {
-        status: "DEPOSITO_CONTA",
-        label: "Depósito em conta",
-        tone: "success" as const
-      };
-    }
-
-    // Para boletos que NÃO são depósito em conta, verificar se estão registrados
-    const nonDepositoBoletos = boletos.filter((b) => b.deposito_conta !== true);
-    const allRegistered =
-      nonDepositoBoletos.length > 0 &&
-      nonDepositoBoletos.every((b) => {
-        return (
-          b.id_boleto_c6 !== null &&
-          b.id_boleto_c6 !== undefined &&
-          b.id_boleto_c6 !== "" ||
-          b.nosso_numero !== null &&
-          b.nosso_numero !== undefined &&
-          b.nosso_numero !== "" ||
-          b.linha_digitavel !== null &&
-          b.linha_digitavel !== undefined &&
-          b.linha_digitavel !== ""
-        );
-      });
-
-    // Todos com registro, mas algum só com o código da cobrança (boleto ainda
-    // não emitido): em processamento no banco, não "registrado" (04/11/2026).
-    if (allRegistered && nonDepositoBoletos.some((b) => estadoDoRegistroBancario(b) === "EM_PROCESSAMENTO")) {
-      return {
-        status: "BOLETO_EM_PROCESSAMENTO",
-        label: "Boleto em processamento no banco",
-        tone: "info" as const
-      };
-    }
-
-    if (allRegistered) {
-      return {
-        status: "BOLETO_REGISTRADO",
-        label: "Boleto registrado",
-        tone: "success" as const
-      };
-    }
-
-    // Pelo menos um boleto não-depósito está pendente de registro
-    return {
-      status: "A_RECEBER_CRIADO",
-      label: "A receber criado — boleto não registrado",
-      tone: "warning" as const
-    };
+    return statusFinanceiroDaNfe({
+      valorTotalNf,
+      qtdParcelasAtivas: nfePaymentsCount,
+      boletos,
+      leituraFalhou: financeiroFalhouMap[ref] === true
+    });
   }
 
   /**
@@ -1453,7 +1390,9 @@ export function NotasFiscaisPage() {
         finStatus.status !== "BOLETO_EM_PROCESSAMENTO" &&
         finStatus.status !== "DEPOSITO_CONTA" &&
         finStatus.status !== "A_RECEBER_CRIADO" &&
-        finStatus.status !== "SEM_VENCIMENTOS"
+        finStatus.status !== "SEM_VENCIMENTOS" &&
+        // Leitura falhou: não se sabe se já foi lançado. Não oferece o lançamento.
+        finStatus.status !== "ERRO_LEITURA"
       ) {
         actions.push({
           label: "Lançar no Contas a Receber",
