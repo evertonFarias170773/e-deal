@@ -12,7 +12,8 @@ import {
   labelTipoFrete,
   modalidadeInicialDoDespacho,
   normalizarTipoFrete,
-  origemDaModalidadeInicial
+  origemDaModalidadeInicial,
+  rascunhoDoDespachoVale
 } from "../lib/tipo-frete";
 import { despachar, salvarDadosExpedicao, transportadoraDerivada } from "../services/expedicao-acoes.service";
 import type { AtorExpedicao, DespachoInput, ResultadoAcao } from "../services/expedicao-acoes.service";
@@ -243,7 +244,19 @@ export function DespacharModal({
       })
     : null;
 
-  const tipoInicial: TipoFreteNormalizado = envioReenvio?.tipoFrete ?? exp?.tipoFrete ?? pedido.tipoFrete;
+  /**
+   * O ENVIO DO RASCUNHO SÓ SEMEIA O MODAL NA MESMA MODALIDADE DO ORÇAMENTO
+   * (25/11/2026, pedido 25793). Rascunho gravado em RETIRA e proposta trocada
+   * para CIF depois: o `RETIRA_BALCAO` do rascunho abria o modal em "Retira no
+   * balcão" e a etiqueta saía de retirada. Regra em `lib/tipo-frete`
+   * (`rascunhoDoDespachoVale`). Os campos de envio leem `expEnvio`; o resto da
+   * linha (peso, volumes, prepostagem, NF) continua lendo `exp`.
+   */
+  const expEnvio = rascunhoDoDespachoVale(exp?.modalidadeFrete, pedido.modalidadeOrcamento, pedido.despachoConfirmado)
+    ? exp
+    : null;
+
+  const tipoInicial: TipoFreteNormalizado = envioReenvio?.tipoFrete ?? expEnvio?.tipoFrete ?? pedido.tipoFrete;
 
   /**
    * Modalidade (quem paga) é a escolha do PASSO 1 e comanda o resto do modal.
@@ -260,7 +273,7 @@ export function DespacharModal({
   // o transporte de abertura tem de ser uma das opções que ESTA modalidade
   // oferece, senão o select abre exibindo uma coisa e o estado guarda outra.
   const modalidadeInicial = modalidadeInicialDoDespacho(
-    exp?.modalidadeFrete,
+    expEnvio?.modalidadeFrete,
     pedido.modalidadeOrcamento,
     tipoInicial,
     pedido.despachoConfirmado
@@ -288,7 +301,7 @@ export function DespacharModal({
    */
   const modalidadeTravada = modalidadeInicial !== null;
   const origemModalidade = origemDaModalidadeInicial(
-    exp?.modalidadeFrete,
+    expEnvio?.modalidadeFrete,
     pedido.modalidadeOrcamento,
     tipoInicial,
     pedido.despachoConfirmado
@@ -300,11 +313,11 @@ export function DespacharModal({
   const [transportadoraNome, setTransportadoraNome] = useState(
     envioReenvio
       ? (envioReenvio.transportadoraNome ?? "")
-      : (exp?.transportadoraNome ?? (pedido.tipoFrete === "INDEFINIDO" ? "" : pedido.transportadoraNome))
+      : (expEnvio?.transportadoraNome ?? (pedido.tipoFrete === "INDEFINIDO" ? "" : pedido.transportadoraNome))
   );
   /** Mesma precedência da modalidade: despacho > orçamento > nada. */
   const [idTransportadoraCliente, setIdTransportadoraCliente] = useState<number | null>(
-    envioReenvio ? envioReenvio.idTransportadoraCliente : (exp?.idTransportadoraCliente ?? pedido.idTransportadoraOrcamento ?? null)
+    envioReenvio ? envioReenvio.idTransportadoraCliente : (expEnvio?.idTransportadoraCliente ?? pedido.idTransportadoraOrcamento ?? null)
   );
   /**
    * NASCE VAZIO quando ninguem aferiu ainda (21/08/2026).
@@ -958,7 +971,7 @@ export function DespacharModal({
    */
   const residuoSedexFob = correiosResiduoDeCotacaoFob(pedido);
   const correiosSoNoTextoDaCotacao =
-    residuoSedexFob && prepostagemCorreios === null && (exp?.tipoFrete ?? null) === null;
+    residuoSedexFob && prepostagemCorreios === null && (expEnvio?.tipoFrete ?? null) === null;
   const gravadoComoCorreios = tipoInicial === "CORREIOS" && !correiosSoNoTextoDaCotacao;
   /**
    * Geracao anterior, a que sera SOBRESCRITA na proxima. So existe uma vaga: e o
@@ -1061,7 +1074,7 @@ export function DespacharModal({
       // Transportadora veio pré-selecionada do orçamento e o despacho ainda não
       // tem nome próprio gravado: resolve o nome pelo cadastro, senão o campo
       // ficaria mostrando o texto da cotação, que pode dizer outra coisa.
-      if (!exp?.transportadoraNome && idTransportadoraCliente !== null) {
+      if (!expEnvio?.transportadoraNome && idTransportadoraCliente !== null) {
         const t = transps.find((x) => x.id_cliente === idTransportadoraCliente);
         if (t) setTransportadoraNome(nomeTransportadoraCadastro(t) ?? `#${t.id_cliente}`);
       }

@@ -134,6 +134,40 @@ export function modalidadeInicialDoDespacho(
   return doOrcamento ?? doDespacho ?? null;
 }
 
+/**
+ * O RASCUNHO DE `expedicoes` AINDA VALE PARA ABRIR O DESPACHO? (25/11/2026)
+ *
+ * A linha de `expedicoes` nasce antes do despacho (Marcar pronto, Gerar
+ * etiqueta) e guarda, em rascunho, modalidade, transporte e transportadora.
+ * Desde 04/09/2026 a MODALIDADE do rascunho já ficava atrás da do orçamento
+ * (`modalidadeInicialDoDespacho`), mas o TRANSPORTE do rascunho seguia
+ * semeando o modal. No pedido 25793 o rascunho foi gravado em RETIRA
+ * (`tipo_frete = RETIRA_BALCAO`); depois a proposta passou a CIF/SEDEX, e o
+ * modal continuava abrindo em "Retira no balcão": o `RETIRA_BALCAO` do rascunho
+ * caía no degrau da cotação de balcão, vencia o CIF e a etiqueta saía como
+ * retirada.
+ *
+ * REGRA: o rascunho só vale enquanto foi gravado na MESMA modalidade que o
+ * orçamento declara agora. Trocada a modalidade na proposta, o rascunho é de
+ * outra venda: o modal abre pelo orçamento e pela cotação, e o despacho grava
+ * o que o expedidor confirmar. Nada é apagado aqui; só não é lido.
+ *
+ * - Despacho confirmado: a linha deixou de ser rascunho e continua soberana.
+ * - Orçamento ou rascunho sem modalidade: não há troca para detectar, o
+ *   rascunho vale como antes.
+ * - Retirada de ADM em CIF (rascunho CIF com `RETIRA_BALCAO`, `lib/retirada-adm`)
+ *   continua valendo: a modalidade é a mesma do orçamento.
+ */
+export function rascunhoDoDespachoVale(
+  modalidadeDoRascunho: ModalidadeFrete | null | undefined,
+  modalidadeDoOrcamento: ModalidadeFrete | null | undefined,
+  despachoConfirmado: boolean
+): boolean {
+  if (despachoConfirmado) return true;
+  if (!modalidadeDoRascunho || !modalidadeDoOrcamento) return true;
+  return modalidadeDoRascunho === modalidadeDoOrcamento;
+}
+
 /** De onde saiu a modalidade que o modal exibe. */
 export type OrigemModalidade = "DESPACHO" | "COTACAO_BALCAO" | "ORCAMENTO";
 
