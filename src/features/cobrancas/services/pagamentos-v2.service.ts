@@ -50,7 +50,9 @@ export const PAGAMENTOS_V2_SELECT_COLUMNS = [
   // Reenvio fase 2B (18/11/2026): a coluna existe desde a 2A (22/10); com ela
   // na leitura, a cobrança da diferença de frete do reenvio sai do saldo da
   // proposta na tela (semCobrancaDeReenvio) como já sai no banco.
-  "chave_reenvio"
+  "chave_reenvio",
+  // Troca de transportadora cobrando a diferença (26/11/2026): mesma regra.
+  "id_troca_frete"
 ] as const;
 
 export const PAGAMENTOS_V2_SELECT = PAGAMENTOS_V2_SELECT_COLUMNS.join(", ");

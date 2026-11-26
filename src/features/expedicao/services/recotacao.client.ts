@@ -135,12 +135,25 @@ export interface AplicacaoAbono extends AplicacaoRecotacao {
   idTransportadoraCliente?: number | null;
   /** NF-e autorizadas do pedido: pedem CC-e com a transportadora nova. */
   notasAutorizadas?: string[];
+  /** Troca cobrando a diferenca a parte (26/11/2026). */
+  cobrando?: boolean;
+  /** Diferenca que virou cobranca nova do pedido (fora do total). */
+  cobrancaValor?: number;
+  /** A cobranca criada pelo banco, ja marcada (`id_troca_frete`). */
+  cobranca?: {
+    id: string;
+    id_pagamento: string | null;
+    valor: number;
+    id_empresa: number | null;
+    tipo_cobranca: "PIX" | "BOLETO" | "CARD_PARCELADO";
+  } | null;
 }
 
 /**
- * Troca a transportadora pela opcao que ENCARECE, abonando a diferenca: o frete
- * cobrado e o total nao mudam, a diferenca fica no historico da recotacao.
- * Exige `frete.trocar_abonando` (o servidor confere). Mesma rota do Aplicar.
+ * Troca a transportadora pela opcao que ENCARECE sem mudar o frete cobrado nem o
+ * total: abonando a diferenca (padrao) ou cobrando-a a parte (`modo: "COBRANDO"`,
+ * com a forma da cobranca). Exige `frete.trocar_abonando` (o servidor confere).
+ * Mesma rota do Aplicar.
  */
 export async function aplicarRecotacaoAbonando(input: {
   idInt: number;
@@ -149,7 +162,10 @@ export async function aplicarRecotacaoAbonando(input: {
   valorVisto: number;
   motivo: string;
   idEnderecoEntrega?: string | null;
+  modo?: "ABONO" | "COBRANDO";
+  tipoCobranca?: "PIX" | "BOLETO" | "CARD_PARCELADO";
 }): Promise<AplicacaoAbono> {
+  const cobrando = input.modo === "COBRANDO";
   const token = await tokenSessao();
   if (!token) return { success: false, errorMessage: "Sessão expirada. Faça login novamente." };
   try {
@@ -162,13 +178,16 @@ export async function aplicarRecotacaoAbonando(input: {
         opcao_id: input.opcaoId,
         valor_visto: input.valorVisto,
         id_endereco_entrega: input.idEnderecoEntrega ?? null,
-        abonar: true,
+        ...(cobrando ? { cobrar: true, tipo_cobranca: input.tipoCobranca ?? "PIX" } : { abonar: true }),
         motivo: input.motivo
       })
     });
     const data = (await res.json().catch(() => null)) as (AplicacaoAbono & { message?: string }) | null;
     if (res.ok && data?.success) return data;
-    return { success: false, errorMessage: data?.message || `Falha ao trocar abonando (HTTP ${res.status}).` };
+    return {
+      success: false,
+      errorMessage: data?.message || `Falha ao trocar ${cobrando ? "cobrando" : "abonando"} (HTTP ${res.status}).`
+    };
   } catch (e) {
     return { success: false, errorMessage: e instanceof Error ? e.message : "Erro de rede." };
   }

@@ -2,18 +2,24 @@
 
 import { useState } from "react";
 import { AlertTriangle, X } from "lucide-react";
-import { MOTIVO_ABONO_MINIMO } from "../lib/abono-frete";
+import { FORMAS_COBRANCA_TROCA, MOTIVO_ABONO_MINIMO, type FormaCobrancaTroca } from "../lib/abono-frete";
 
 const brl = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
+export type ModoDaTroca = "ABONO" | "COBRANDO";
+
 /**
- * Confirmação da troca de transportadora ABONANDO a diferença (26/11/2026).
+ * Confirmação da troca de transportadora que ENCARECE o frete (26/11/2026).
  *
- * Usada no Despachar (Expedição) e no quadro "Trocar abonando" da aba Fretes:
- * mesmo texto, mesmo motivo obrigatório, mesma rota. Diz com todas as letras
- * que o cliente NÃO paga a mais e quanto a empresa absorve.
+ * Dois modos, lado a lado no Despachar (Expedição) e na aba Fretes, com o mesmo
+ * motivo obrigatório e a mesma rota:
+ *   - ABONO: o cliente NÃO paga a mais; a empresa absorve a diferença.
+ *   - COBRANDO: o frete da proposta e o total não mudam; a diferença vira uma
+ *     cobrança nova do pedido, à parte (PIX, boleto ou cartão), sem nota
+ *     complementar, e o despacho espera o pagamento dela.
  */
 export function ConfirmarAbonoModal({
+  modo = "ABONO",
   transportadora,
   servico,
   valorOpcao,
@@ -23,6 +29,7 @@ export function ConfirmarAbonoModal({
   onConfirmar,
   onClose
 }: {
+  modo?: ModoDaTroca;
   transportadora: string;
   servico: string;
   valorOpcao: number;
@@ -30,12 +37,14 @@ export function ConfirmarAbonoModal({
   /** Mostra o aviso da CC-e já na confirmação. A rota devolve os números das notas. */
   temNotaAutorizada?: boolean;
   salvando: boolean;
-  onConfirmar: (motivo: string) => void;
+  onConfirmar: (motivo: string, tipoCobranca: FormaCobrancaTroca) => void;
   onClose: () => void;
 }) {
   const [motivo, setMotivo] = useState("");
-  const abono = Math.round((valorOpcao - freteAtual) * 100) / 100;
+  const [tipo, setTipo] = useState<FormaCobrancaTroca>("PIX");
+  const diferenca = Math.round((valorOpcao - freteAtual) * 100) / 100;
   const motivoOk = motivo.trim().length >= MOTIVO_ABONO_MINIMO;
+  const cobrando = modo === "COBRANDO";
 
   return (
     <div
@@ -48,7 +57,9 @@ export function ConfirmarAbonoModal({
     >
       <div className="w-full max-w-md rounded-3xl bg-white shadow-2xl dark:bg-slate-900" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between border-b border-slate-100 p-5 dark:border-slate-800">
-          <h2 className="text-lg font-semibold text-slate-950 dark:text-slate-100">Trocar abonando a diferença</h2>
+          <h2 className="text-lg font-semibold text-slate-950 dark:text-slate-100">
+            {cobrando ? "Trocar cobrando a diferença" : "Trocar abonando a diferença"}
+          </h2>
           <button
             type="button"
             onClick={onClose}
@@ -65,10 +76,37 @@ export function ConfirmarAbonoModal({
             A transportadora passa a ser <strong>{transportadora}</strong>
             {servico && servico !== transportadora ? ` (${servico})` : ""}, que custa <strong>{brl(valorOpcao)}</strong>.
           </p>
-          <p>
-            O cliente continua pagando <strong>{brl(freteAtual)}</strong> de frete e o total do pedido não muda. A empresa
-            abona <strong>{brl(abono)}</strong>, registrado no histórico da recotação com o seu nome.
-          </p>
+          {cobrando ? (
+            <>
+              <p>
+                O frete da proposta continua <strong>{brl(freteAtual)}</strong> e o total do pedido não muda. A diferença de{" "}
+                <strong>{brl(diferenca)}</strong> vira uma cobrança nova do pedido, à parte, sem nota complementar:
+                &ldquo;Diferença de frete — troca para {transportadora}&rdquo;. O despacho espera o pagamento dela.
+              </p>
+              <fieldset>
+                <legend className="text-xs font-bold text-slate-600 dark:text-slate-300">Forma da cobrança</legend>
+                <div className="mt-1 flex flex-wrap gap-3">
+                  {FORMAS_COBRANCA_TROCA.map((f) => (
+                    <label key={f.valor} className="flex cursor-pointer items-center gap-1.5 text-sm">
+                      <input
+                        type="radio"
+                        name="forma-cobranca-troca"
+                        checked={tipo === f.valor}
+                        disabled={salvando}
+                        onChange={() => setTipo(f.valor)}
+                      />
+                      {f.rotulo}
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+            </>
+          ) : (
+            <p>
+              O cliente continua pagando <strong>{brl(freteAtual)}</strong> de frete e o total do pedido não muda. A empresa
+              abona <strong>{brl(diferenca)}</strong>, registrado no histórico da recotação com o seu nome.
+            </p>
+          )}
           {temNotaAutorizada ? (
             <p className="flex items-start gap-2 rounded-2xl bg-amber-50 p-3 text-xs font-medium text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
@@ -77,13 +115,19 @@ export function ConfirmarAbonoModal({
             </p>
           ) : null}
           <label className="block">
-            <span className="text-xs font-bold text-slate-600 dark:text-slate-300">Motivo do abono (obrigatório)</span>
+            <span className="text-xs font-bold text-slate-600 dark:text-slate-300">
+              {cobrando ? "Motivo da troca (obrigatório)" : "Motivo do abono (obrigatório)"}
+            </span>
             <textarea
               value={motivo}
               onChange={(e) => setMotivo(e.target.value)}
               rows={3}
               disabled={salvando}
-              placeholder="Ex.: cliente precisa receber amanhã e o SEDEX não atende a cidade."
+              placeholder={
+                cobrando
+                  ? "Ex.: o cliente pediu a VEPPO para receber antes e aceitou pagar a diferença."
+                  : "Ex.: cliente precisa receber amanhã e o SEDEX não atende a cidade."
+              }
               className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-slate-500 dark:border-slate-700 dark:bg-slate-950"
             />
           </label>
@@ -100,11 +144,13 @@ export function ConfirmarAbonoModal({
           </button>
           <button
             type="button"
-            onClick={() => onConfirmar(motivo.trim())}
+            onClick={() => onConfirmar(motivo.trim(), tipo)}
             disabled={salvando || !motivoOk}
-            className="rounded-2xl bg-amber-600 px-5 py-2.5 text-sm font-bold text-white hover:bg-amber-700 disabled:opacity-50"
+            className={`rounded-2xl px-5 py-2.5 text-sm font-bold text-white disabled:opacity-50 ${
+              cobrando ? "bg-sky-700 hover:bg-sky-800" : "bg-amber-600 hover:bg-amber-700"
+            }`}
           >
-            {salvando ? "Trocando…" : `Trocar e abonar ${brl(abono)}`}
+            {salvando ? "Trocando…" : cobrando ? `Trocar e cobrar ${brl(diferenca)}` : `Trocar e abonar ${brl(diferenca)}`}
           </button>
         </div>
       </div>

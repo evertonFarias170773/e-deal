@@ -1,6 +1,6 @@
 # Proposta: aba Pagamentos
 
-> **Última revisão:** 23/11/2026 (**Trocar forma de pagamento** aceita também boleto à vista não pago, de título único, emitido no C6; caso 25255). 23/11/2026 (pedido ENTREGUE sem nota, sem título e sem valor recebido pode ter o valor ajustado pela edição do pedido pago, com motivo; caso 24830). 23/11/2026 (pagamento combinado com o restante em **Cartão de Crédito** só pede a permissão de usar crédito, como o PIX; caso 25648). 23/11/2026 (cartão C6 nas três empresas: o celular mandado ao banco é o da conversa principal do pedido, depois o do cadastro; sem celular, a página do cartão e a área do cliente avisam o cliente com uma frase simples). 20/11/2026 (boleto novo da Ideal Birô, à vista e faturado, sai pelo C6; o gerado antes no Banco Inter segue no Inter até o fim; a combinada da Birô aceita boleto). 19/11/2026 (boleto à vista do C6 da Ideal Gráfica e da E3 Brindes só é cancelado com a confirmação do banco, como já era na Ideal Birô; a recusa mostra o motivo do banco). 19/11/2026 (depois de pagar o cartão, o cliente volta para a página da própria cobrança nas três empresas). 19/11/2026 (cartão de crédito C6 para a Ideal Birô, com as parcelas da Ideal; Asaas só da Ideal Gráfica). 19/11/2026 (PIX novo da Ideal Birô sai pelo C6 e o código vem na hora; PIX da Birô gerado antes pelo Banco Inter segue no Inter até ser pago ou cancelado). 18/11/2026 (quadro do frete do reenvio diz o modo — **Diferença de frete do reenvio**, **Frete do reenvio (valor cheio)** ou **Reenvio sem cobrança** —, o PIX sai pelo valor a cobrar e o administrador troca o modo). 18/11/2026 (quadro **Diferença de frete do reenvio**: PIX da diferença ou abono). 17/11/2026 (Trocar forma de pagamento para Chave Pix; e2eId e comprovante opcionais). 16/11/2026 (número de fora do Brasil nunca vai no PIX nem no boleto à vista). 14/11/2026 (e-mail do boleto à vista pelo cadastro do pagador; telefone do PIX e do boleto pela conversa principal do ChatGuru, com o 9 no celular). 13/11/2026 (Registrar devolução e cancelar pedido)
+> **Última revisão:** 26/11/2026 (quadro **Diferença de frete da troca de transportadora**: a cobrança à parte da troca cobrando, com PIX, boleto ou cartão, cobrar de novo e abono; fora do saldo, do total e da venda; o **Trocar forma de pagamento** recusa essa cobrança e a do frete do reenvio). 23/11/2026 (**Trocar forma de pagamento** aceita também boleto à vista não pago, de título único, emitido no C6; caso 25255). 23/11/2026 (pedido ENTREGUE sem nota, sem título e sem valor recebido pode ter o valor ajustado pela edição do pedido pago, com motivo; caso 24830). 23/11/2026 (pagamento combinado com o restante em **Cartão de Crédito** só pede a permissão de usar crédito, como o PIX; caso 25648). 23/11/2026 (cartão C6 nas três empresas: o celular mandado ao banco é o da conversa principal do pedido, depois o do cadastro; sem celular, a página do cartão e a área do cliente avisam o cliente com uma frase simples). 20/11/2026 (boleto novo da Ideal Birô, à vista e faturado, sai pelo C6; o gerado antes no Banco Inter segue no Inter até o fim; a combinada da Birô aceita boleto). 19/11/2026 (boleto à vista do C6 da Ideal Gráfica e da E3 Brindes só é cancelado com a confirmação do banco, como já era na Ideal Birô; a recusa mostra o motivo do banco). 19/11/2026 (depois de pagar o cartão, o cliente volta para a página da própria cobrança nas três empresas). 19/11/2026 (cartão de crédito C6 para a Ideal Birô, com as parcelas da Ideal; Asaas só da Ideal Gráfica). 19/11/2026 (PIX novo da Ideal Birô sai pelo C6 e o código vem na hora; PIX da Birô gerado antes pelo Banco Inter segue no Inter até ser pago ou cancelado). 18/11/2026 (quadro do frete do reenvio diz o modo — **Diferença de frete do reenvio**, **Frete do reenvio (valor cheio)** ou **Reenvio sem cobrança** —, o PIX sai pelo valor a cobrar e o administrador troca o modo). 18/11/2026 (quadro **Diferença de frete do reenvio**: PIX da diferença ou abono). 17/11/2026 (Trocar forma de pagamento para Chave Pix; e2eId e comprovante opcionais). 16/11/2026 (número de fora do Brasil nunca vai no PIX nem no boleto à vista). 14/11/2026 (e-mail do boleto à vista pelo cadastro do pagador; telefone do PIX e do boleto pela conversa principal do ChatGuru, com o 9 no celular). 13/11/2026 (Registrar devolução e cancelar pedido)
 > **Caminho no menu:** Pedidos → abrir um pedido → aba Pagamentos
 > **Endereço:** `/orcamentos/<número>/editar?tab=pagamentos`
 
@@ -34,6 +34,9 @@ Nomes exatamente como aparecem na tela, inclusive maiúsculas, acentos e erros d
 | **Gerar PIX da diferença (R$ ...)** / **Gerar PIX do frete do reenvio (R$ ...)** | Quadro do frete do reenvio, no alto da aba, quando um reenvio de pedido devolvido tem valor a cobrar | Cria a cobrança PIX pelo valor a cobrar do reenvio (a diferença ou o frete cheio, conforme o modo) e gera o QR. Só para quem cria cobrança. |
 | **Abonar** / **Confirmar abono de R$ ...** | Mesmo quadro, só para administrador | Abona o valor a cobrar do reenvio, com motivo, que vai para o chat do pedido. |
 | **Trocar modo de cobrança** → **Trocar para ...** | Mesmo quadro, só para administrador, enquanto não há PIX do reenvio nem abono | Troca o modo (diferença, frete cheio ou sem cobrança), com motivo, que vai para o chat do pedido. |
+| **Gerar o QR do PIX** / **Gerar o boleto** / **Gerar o link do cartão** | Quadro **Diferença de frete da troca de transportadora**, no alto da aba, quando a transportadora foi trocada cobrando a diferença | Emite a cobrança da diferença, já criada na troca, pela forma escolhida. Só para quem cria cobrança. |
+| **Cobrar R$ ...** | Mesmo quadro, quando a cobrança da diferença foi cancelada | Cria a próxima cobrança da diferença pela forma escolhida (PIX, Boleto ou Cartão) e a emite. |
+| **Abonar** / **Confirmar abono de R$ ...** (troca) | Mesmo quadro, só para administrador, sem cobrança viva | Abona a diferença de frete da troca, com motivo, que vai para o chat do pedido, e libera o despacho. |
 | **Gerar o QR do PIX** | Mesmo quadro, quando o PIX da diferença foi criado sem o QR | Tenta gerar o QR de novo para a mesma cobrança. |
 | **Recarregar cobranças** | Aviso "Não foi possível carregar as cobranças desta proposta." | Lê de novo as cobranças da proposta. |
 | **Demorando? Tentar novamente** | Enquanto as cobranças carregam | Lê de novo as cobranças da proposta. |
@@ -257,6 +260,20 @@ O sistema recusa, sem gravar nada e dizendo o motivo, quando o pedido tem nota f
 3. Para mudar o modo, o administrador clica em **Trocar modo de cobrança**, escolhe o novo, escreve o motivo e confirma. Vale só para o último reenvio, antes de ele ser despachado de novo, sem PIX do reenvio vivo ou pago e sem abono.
 4. O pedido só é despachado de novo depois do PIX confirmado ou do abono (no modo sem cobrança, sem esperar nada).
 
+**Diferença de frete da troca de transportadora (desde 26/11/2026).** Quando o administrador troca a transportadora **cobrando a diferença** (no **Despachar** da Expedição ou na aba **Fretes**), o frete da proposta, o total e a nota fiscal não mudam. A diferença vira uma cobrança à parte do mesmo pedido, já criada, no nome do mesmo pagador das outras cobranças:
+
+- descrição "Diferença de frete — troca para …";
+- na lista, a etiqueta **Diferença de frete da troca** ao lado do tipo;
+- fica fora do **Saldo restante a cobrar**, do total do pedido e dos relatórios de venda, de comissão e dos painéis;
+- não tem nota complementar.
+
+Ela aparece no alto da aba, no quadro **Diferença de frete da troca de transportadora**, com a transportadora nova, o valor e o motivo.
+
+1. Clique em **Gerar o QR do PIX**, **Gerar o boleto** ou **Gerar o link do cartão**, conforme a forma escolhida na troca. O boleto pede o e-mail do pagador no cadastro, como o boleto de sempre.
+2. O pedido só é despachado depois do pagamento confirmado. Até lá, o **Despachar** mostra "Despacho bloqueado: falta receber R$ … da diferença de frete da troca para …".
+3. Para mudar a forma (por exemplo, de PIX para boleto), cancele a cobrança e, no quadro, escolha a forma e clique em **Cobrar R$ …**. O **Trocar forma de pagamento** não vale para esta cobrança.
+4. Se a empresa vai absorver, o administrador cancela a cobrança, clica em **Abonar** no quadro, escreve o motivo e clica em **Confirmar abono de R$ …**. O abono vai para o chat do pedido e libera o despacho.
+
 ### Resolver a diferença quando o cliente ficou com crédito
 
 1. Quando uma proposta já paga é alterada e o total cai abaixo do que foi pago, abre a janela **Diferença Financeira — Crédito ao Cliente**, com **Valor pago**, **Novo total** e **Diferença**.
@@ -432,6 +449,9 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/features/cobrancas/services/banco-inter.service.ts`
 - `src/features/cobrancas/lib/pix-em-preparacao.ts`
 - `src/features/cobrancas/DiferencaFreteReenvioBox.tsx`
+- `src/features/cobrancas/DiferencaFreteTrocaBox.tsx`
+- `src/features/expedicao/lib/troca-frete.ts`
+- `supabase/migrations/20261126b_frete_trocar_cobrando.sql`
 - `src/features/cobrancas/CobrancaDetail.tsx`
 - `src/features/cobrancas/CobrancaActionsMenu.tsx`
 - `src/features/cobrancas/CancelCobrancaModal.tsx`

@@ -1,6 +1,6 @@
 # Relatório: Frete cobrado por transportadora
 
-> **Última revisão:** 26/11/2026 (coluna e cartão **Abonado**: a diferença de frete absorvida quando a transportadora foi trocada abonando a diferença). 28/10/2026
+> **Última revisão:** 26/11/2026 (coluna e cartão **À parte** / **Cobrado à parte**: a diferença de frete cobrada à parte quando a transportadora foi trocada cobrando a diferença; a última coluna passa a se chamar **Custo do transporte**). 26/11/2026 (coluna e cartão **Abonado**: a diferença de frete absorvida quando a transportadora foi trocada abonando a diferença). 28/10/2026
 > **Caminho no menu:** Relatórios → Expedição → Frete cobrado por transportadora
 > **Endereço:** `/relatorios/expedicao/frete-por-transportadora`
 
@@ -8,7 +8,7 @@
 
 Mostra quanto de frete foi **cobrado dos clientes** nos pedidos despachados em um período, separado por transportadora e modalidade (CIF, FOB, Retira): quantos pedidos, quantos tiveram frete zero e o total cobrado.
 
-**Não é o custo pago à transportadora.** O ERP não registra quanto a empresa paga a cada transportadora; o relatório mostra o frete que a proposta cobrou do cliente. A exceção é o abono: quando a transportadora foi trocada abonando a diferença, a coluna **Abonado** mostra o que a empresa absorveu, e **Cobrado + abonado** é o custo real daquele transporte. O relatório só mostra números; não altera nada.
+**Não é o custo pago à transportadora.** O ERP não registra quanto a empresa paga a cada transportadora; o relatório mostra o frete que a proposta cobrou do cliente. A exceção é a troca de transportadora: quando ela foi feita abonando a diferença, a coluna **Abonado** mostra o que a empresa absorveu; quando foi feita cobrando a diferença à parte, a coluna **À parte** mostra a cobrança própria do pedido (fora do total e da venda). **Custo do transporte** é o frete cobrado mais o à parte mais o abonado. O relatório só mostra números; não altera nada.
 
 ## Quem acessa
 
@@ -37,7 +37,7 @@ Nomes exatamente como aparecem na tela.
 
 1. No menu, abra **Relatórios** e clique em **Expedição**.
 2. Clique em **Frete cobrado por transportadora**. A tela abre em **Mês atual**.
-3. Leia os cartões (**Pedidos despachados**, **Frete cobrado**, **Abonado**, **Com frete zero** e **Frete médio**) e a tabela, da transportadora que mais cobrou para a que menos cobrou.
+3. Leia os cartões (**Pedidos despachados**, **Frete cobrado**, **Abonado**, **Cobrado à parte**, **Com frete zero** e **Frete médio**) e a tabela, da transportadora que mais cobrou para a que menos cobrou.
 4. Confira o aviso de pedidos CIF com frete zero: parte deles pode ser frete subsidiado.
 
 ## Regras e bloqueios

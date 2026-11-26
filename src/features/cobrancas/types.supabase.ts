@@ -31,6 +31,7 @@ export type SupabasePagamentoV2Row = {
   erro_pagamento?: SupabaseValue;
   obs_v2?: SupabaseValue;
   chave_reenvio?: SupabaseValue;
+  id_troca_frete?: SupabaseValue;
   whats_contato?: SupabaseValue;
   id_fatura?: SupabaseValue;
   cod_solicitacao_inter?: SupabaseValue;

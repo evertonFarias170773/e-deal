@@ -135,6 +135,10 @@ export async function fetchUltimosPagamentos(
     .in("status", ["PAID", "A_VENCER"])
     .eq("confirmado", true)
     .not("data_confirmacao", "is", null)
+    // Frete do reenvio e diferença de frete da troca de transportadora não são
+    // venda (26/11/2026): a mesma exclusão dos painéis do banco.
+    .is("chave_reenvio", null)
+    .is("id_troca_frete", null)
     .order("data_confirmacao", { ascending: false })
     .limit(ULTIMOS_PAGAMENTOS_LIMIT);
 

@@ -79,7 +79,8 @@ checar("liberação exige contato do ChatGuru", [servico.includes("let contatoDo
 checar("liberação automática avisa no chat", nucleo.includes('liberacao.code === "SEM_CONTATO_CHATGURU"'), true);
 checar("aba Geral usa os contatos do Guru, sem a lista da tabela contatos", [pagina.includes("<ContatosDoPedido"), pagina.includes('rotuloOutros="Outros contatos"')], [true, false]);
 checar("cobrança não usa mais o e-mail nem o telefone do contato da tabela", [/proposta\.contato\?\.email/.test(provedor + painel), /telefone: proposta\.contato\?\.whatsapp/.test(provedor + painel), provedor.includes('.select("nome_contato, whats, e_mail")')], [false, false, false]);
-checar("cobrança lê e-mail e telefone pela função única", [(provedor.match(/lerContatoDaCobranca\(/g) ?? []).length, (painel.match(/lerContatoDaCobranca\(/g) ?? []).length], [2, 2]);
+// 26/11/2026: a emissão da cobrança criada pelo banco (diferença de frete da troca) é a 3ª no provedor.
+checar("cobrança lê e-mail e telefone pela função única", [(provedor.match(/lerContatoDaCobranca\(/g) ?? []).length, (painel.match(/lerContatoDaCobranca\(/g) ?? []).length], [3, 2]);
 checar("Maestro salva sem contato", maestro.includes("bloqueadoPorContato: true"), false);
 checar("Expedição mostra os contatos do pedido no despacho", despacho.includes("<ContatosDoPedidoNoDespacho idInt={pedido.idInt}"), true);
 // 16/11/2026: a conversa pré-marcada e não gravada conta como alteração no Salvar.

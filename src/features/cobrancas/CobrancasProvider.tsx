@@ -93,6 +93,8 @@ type CobrancasContextValue = {
    * pelas rotas normais e aciona a liberação automática da B.
    */
   createFaturadoComEntrada: (params: ParametrosFaturadoComEntrada, proposta: Proposta) => Promise<ResultadoFaturadoComEntrada>;
+  /** Link + PIX/boleto de uma cobrança que o banco criou (diferença de frete da troca, 26/11/2026). */
+  emitirCobrancaCriadaPeloBanco: (cobrancaId: string, proposta: Proposta) => Promise<{ success: boolean; errorMessage?: string }>;
   confirmPagamento: (id: string) => void;
   cancelCobranca: (
     id: string,
@@ -1402,6 +1404,113 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
     return { entrada, faturado, erroNaEmissaoDaEntrada, liberadoAutomaticamente };
   }, [source, loadData]);
 
+  /**
+   * EMITE UMA COBRANÇA QUE O BANCO CRIOU (26/11/2026): a diferença de frete da
+   * troca de transportadora (`exp_aplicar_recotacao_cobrando` /
+   * `exp_troca_frete_cobrar`) nasce em pagamentos_v2 marcada e sem link. Aqui o
+   * resto do caminho de sempre, o mesmo da criação normal: link público, e o
+   * PIX ou o boleto pela mesma rota; cartão é só o link do checkout (o checkout
+   * nasce quando o cliente abre, como no cartão de sempre).
+   */
+  const emitirCobrancaCriadaPeloBanco = useCallback(async (
+    cobrancaId: string,
+    proposta: Proposta
+  ): Promise<{ success: boolean; errorMessage?: string }> => {
+    const client = getSupabaseClient();
+    if (!client || source !== "supabase") return { success: false, errorMessage: "Banco não conectado." };
+    const { data: linha, error: erroLeitura } = await client
+      .from("pagamentos_v2")
+      .select("id, id_pagamento, valor, tipo_cobranca, id_empresa, token_publico, url_cobranca, pix_copia_cola, url_pdf")
+      .eq("id", cobrancaId)
+      .maybeSingle<{
+        id: string;
+        id_pagamento: string | null;
+        valor: number | string | null;
+        tipo_cobranca: string | null;
+        id_empresa: number | null;
+        token_publico: string | null;
+        url_cobranca: string | null;
+        pix_copia_cola: string | null;
+        url_pdf: string | null;
+      }>();
+    if (erroLeitura || !linha) return { success: false, errorMessage: "Cobrança não encontrada." };
+    const idEmpresa = Number(linha.id_empresa ?? 0);
+    if (!idEmpresa) return { success: false, errorMessage: "A cobrança está sem empresa recebedora." };
+    const tipo = String(linha.tipo_cobranca ?? "").trim().toUpperCase();
+    const valor = roundMoney(Number(linha.valor ?? 0));
+
+    if (!linha.url_cobranca) {
+      const tokenPublico = linha.token_publico || cobrancaId.split("-")[0];
+      const { error } = await client
+        .from("pagamentos_v2")
+        .update({ token_publico: tokenPublico, url_cobranca: montarUrlPublicaCobranca({ tipoCobranca: tipo, tokenPublico }) })
+        .eq("id", cobrancaId)
+        .is("url_cobranca", null);
+      if (error) return { success: false, errorMessage: error.message || "Não foi possível gravar o link público." };
+    }
+
+    if (tipo === "CARD_PARCELADO") {
+      await loadData();
+      return { success: true };
+    }
+    if ((tipo === "PIX" && linha.pix_copia_cola) || (tipo === "BOLETO" && linha.url_pdf)) {
+      return { success: true };
+    }
+
+    const contatoCobranca = await lerContatoDaCobranca(
+      client,
+      Number(proposta.id_int),
+      proposta.contato?.whatsapp || proposta.cliente.whatsapp || ""
+    );
+    if (tipo === "BOLETO" && !contatoCobranca.email) return { success: false, errorMessage: MENSAGEM_PAGADOR_SEM_EMAIL };
+
+    const sessao = await client.auth.getSession();
+    const token = sessao.data.session?.access_token || "";
+    const cabecalhos = { "content-type": "application/json", Authorization: `Bearer ${token}` };
+    try {
+      const resposta = tipo === "BOLETO"
+        ? await fetch("/api/cobrancas/gerar-boleto", {
+            method: "POST",
+            headers: cabecalhos,
+            body: JSON.stringify(montarPayloadBoletoAVista({
+              proposta,
+              valor,
+              idPagamento: linha.id_pagamento || String(proposta.id_int),
+              idEmpresa,
+              cobrancaId,
+              contatoCobranca
+            }))
+          })
+        : await fetch("/api/cobrancas/gerar-pix", {
+            method: "POST",
+            headers: cabecalhos,
+            body: JSON.stringify({
+              cobrancaId,
+              idEmpresa,
+              seuNumero: idEmpresa === 2 ? (linha.id_pagamento || String(proposta.id_int)) : String(proposta.id_int),
+              valorNominal: valor,
+              dataVencimento: getLocalDateInSaoPauloHoje(3),
+              telefone: contatoCobranca.telefone,
+              endereco: proposta.enderecoEntrega?.endereco || "",
+              cidade: proposta.enderecoEntrega?.cidade || "",
+              uf: proposta.enderecoEntrega?.uf || "",
+              cep: proposta.enderecoEntrega?.cep || ""
+            })
+          });
+      const retorno = await resposta.json().catch(() => null);
+      if (!resposta.ok || !retorno?.success) {
+        return {
+          success: false,
+          errorMessage: retorno?.message || `Não foi possível gerar o ${tipo === "BOLETO" ? "boleto" : "PIX"} agora (HTTP ${resposta.status}).`
+        };
+      }
+    } catch (erro) {
+      return { success: false, errorMessage: erro instanceof Error ? erro.message : String(erro) };
+    }
+    await loadData();
+    return { success: true };
+  }, [source, loadData]);
+
 
   const checkAndRevertPropostaStatus = useCallback(async (idInt: number) => {
     if (source !== "supabase") return;
@@ -2357,6 +2466,7 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
       source,
       createCobranca,
       createFaturadoComEntrada,
+      emitirCobrancaCriadaPeloBanco,
       confirmPagamento,
       cancelCobranca,
       cancelarExterno,
@@ -2398,6 +2508,7 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
       confirmPagamento,
       createCobranca,
       createFaturadoComEntrada,
+      emitirCobrancaCriadaPeloBanco,
       liberarParaPedido,
       refreshCobrancas,
       liberarCobrancaReal,

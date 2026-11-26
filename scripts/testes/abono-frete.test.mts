@@ -42,13 +42,14 @@ checar("quadro 'Corrigir a transportadora' some com o abono",
   [true, false]);
 
 const rota = readFileSync("src/app/api/expedicao/recotacao/aplicar/route.ts", "utf8");
+// 26/11/2026: abono e troca cobrando passam pelo mesmo caminho (`troca = abonar || cobrar`).
 checar("rota: abono exige a permissão própria, dispensa liberação e NF-e, e chama a RPC do abono",
   [
-    rota.includes("abonar ? PERMISSAO_TROCAR_ABONANDO : \"expedicao.processar\""),
-    rota.includes("if (nfViva && !abonar)"),
-    rota.includes("const { data: liberacao } = abonar"),
-    rota.includes("supabase.rpc(\"exp_aplicar_recotacao_abono\""),
-    rota.includes("if (diferenca > 0 && !abonar)")
+    rota.includes("troca ? PERMISSAO_TROCAR_ABONANDO : \"expedicao.processar\""),
+    rota.includes("if (nfViva && !troca)"),
+    rota.includes("const { data: liberacao } = troca"),
+    rota.includes("cobrando ? \"exp_aplicar_recotacao_cobrando\" : \"exp_aplicar_recotacao_abono\""),
+    rota.includes("if (diferenca > 0 && !troca)")
   ],
   [true, true, true, true, true]);
 

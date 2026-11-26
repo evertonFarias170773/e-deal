@@ -7,8 +7,8 @@ import {
   type OpcaoRecotacao,
   type RecotacaoResult
 } from "@/features/expedicao/services/recotacao.client";
-import { ConfirmarAbonoModal } from "@/features/expedicao/components/ConfirmarAbonoModal";
-import { avisoCceDoAbono } from "@/features/expedicao/lib/abono-frete";
+import { ConfirmarAbonoModal, type ModoDaTroca } from "@/features/expedicao/components/ConfirmarAbonoModal";
+import { avisoCceDoAbono, type FormaCobrancaTroca } from "@/features/expedicao/lib/abono-frete";
 
 const brl = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
@@ -24,6 +24,10 @@ const brl = (v: number) => v.toLocaleString("pt-BR", { style: "currency", curren
  * aplica a opção que ENCARECE sem mudar o frete cobrado nem o total
  * (`exp_aplicar_recotacao_abono`). Só aparece para quem tem
  * `frete.trocar_abonando` (PermissionGuard na página); o servidor confere de novo.
+ *
+ * TROCAR COBRANDO A DIFERENÇA (26/11/2026): ao lado do abono, a mesma troca com
+ * a diferença cobrada à parte (`exp_aplicar_recotacao_cobrando`): cobrança nova
+ * do pedido, fora do total, sem nota complementar; o despacho espera o pagamento.
  */
 export function TrocarAbonandoPanel({
   idInt,
@@ -43,6 +47,7 @@ export function TrocarAbonandoPanel({
   const [recotacao, setRecotacao] = useState<RecotacaoResult | null>(null);
   const [chaves, setChaves] = useState<Record<string, string>>({});
   const [escolhida, setEscolhida] = useState<OpcaoRecotacao | null>(null);
+  const [modo, setModo] = useState<ModoDaTroca>("ABONO");
   const [trocando, setTrocando] = useState(false);
   const [mensagem, setMensagem] = useState<string | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
@@ -53,7 +58,7 @@ export function TrocarAbonandoPanel({
   if (!emExpedicao || !ehCif) {
     return (
       <p className="text-[11px] text-slate-600 dark:text-slate-300">
-        Trocar abonando só vale com o pedido em EXPEDICAO, em CIF e antes do despacho
+        Trocar abonando ou cobrando a diferença só vale com o pedido em EXPEDICAO, em CIF e antes do despacho
         {statusInterno ? ` (agora: ${statusInterno}` : " (agora: sem status"}
         {modalidade ? `, ${modalidade}).` : ", sem modalidade)."}
       </p>
@@ -78,7 +83,7 @@ export function TrocarAbonandoPanel({
     setChaves(novas);
   }
 
-  async function confirmar(motivo: string) {
+  async function confirmar(motivo: string, tipoCobranca: FormaCobrancaTroca) {
     if (!escolhida) return;
     const chave = chaves[escolhida.id];
     if (!chave) {
@@ -87,10 +92,18 @@ export function TrocarAbonandoPanel({
     }
     setTrocando(true);
     setErro(null);
-    const res = await aplicarRecotacaoAbonando({ idInt, chave, opcaoId: escolhida.id, valorVisto: escolhida.valor, motivo });
+    const res = await aplicarRecotacaoAbonando({
+      idInt,
+      chave,
+      opcaoId: escolhida.id,
+      valorVisto: escolhida.valor,
+      motivo,
+      modo,
+      tipoCobranca
+    });
     setTrocando(false);
     if (!res.success) {
-      setErro(res.errorMessage || "Não foi possível trocar abonando.");
+      setErro(res.errorMessage || `Não foi possível trocar ${modo === "COBRANDO" ? "cobrando" : "abonando"}.`);
       return;
     }
     setEscolhida(null);
@@ -99,8 +112,12 @@ export function TrocarAbonandoPanel({
     setMensagem(
       res.idempotente
         ? "Essa troca já tinha sido feita — nada foi gravado de novo."
-        : `Transportadora trocada para ${res.transportadora}. Frete do cliente: ${brl(res.freteNovo ?? 0)} (não mudou). ` +
-          `Abonado: ${brl(res.abonoValor ?? 0)}. Total do pedido: ${brl(res.totalNovo ?? 0)} (não mudou).`
+        : res.cobrando
+          ? `Transportadora trocada para ${res.transportadora}. Frete da proposta: ${brl(res.freteNovo ?? 0)} (não mudou). ` +
+            `Cobrança nova ${res.cobranca?.id_pagamento ?? ""} de ${brl(res.cobrancaValor ?? 0)}, à parte: gere o PIX, o boleto ou o ` +
+            `link do cartão na aba Pagamentos. O despacho espera o pagamento. Total do pedido: ${brl(res.totalNovo ?? 0)} (não mudou).`
+          : `Transportadora trocada para ${res.transportadora}. Frete do cliente: ${brl(res.freteNovo ?? 0)} (não mudou). ` +
+            `Abonado: ${brl(res.abonoValor ?? 0)}. Total do pedido: ${brl(res.totalNovo ?? 0)} (não mudou).`
     );
     setAviso(avisoCceDoAbono(res.notasAutorizadas, res.transportadora ?? escolhida.transportadora));
     if (!res.idempotente) onTrocado?.();
@@ -114,7 +131,7 @@ export function TrocarAbonandoPanel({
         disabled={recotando}
         className="rounded-xl bg-[#0b2f4a] px-3 py-1.5 text-xs font-bold text-white hover:bg-[#0b2f4a]/90 disabled:opacity-50"
       >
-        {recotando ? "Cotando…" : "Recotar para trocar abonando"}
+        {recotando ? "Cotando…" : "Recotar para trocar a transportadora"}
       </button>
 
       {recotacao?.success && (
@@ -136,14 +153,30 @@ export function TrocarAbonandoPanel({
                 </span>
               </span>
               {o.diferenca > 0 ? (
-                <button
-                  type="button"
-                  onClick={() => setEscolhida(o)}
-                  disabled={trocando}
-                  className="rounded-lg bg-amber-600 px-2.5 py-1 text-[11px] font-bold text-white hover:bg-amber-700 disabled:opacity-40"
-                >
-                  Trocar abonando {brl(o.diferenca)}
-                </button>
+                <span className="flex flex-wrap gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setModo("ABONO");
+                      setEscolhida(o);
+                    }}
+                    disabled={trocando}
+                    className="rounded-lg bg-amber-600 px-2.5 py-1 text-[11px] font-bold text-white hover:bg-amber-700 disabled:opacity-40"
+                  >
+                    Trocar abonando {brl(o.diferenca)}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setModo("COBRANDO");
+                      setEscolhida(o);
+                    }}
+                    disabled={trocando}
+                    className="rounded-lg bg-sky-700 px-2.5 py-1 text-[11px] font-bold text-white hover:bg-sky-800 disabled:opacity-40"
+                  >
+                    Trocar cobrando {brl(o.diferenca)}
+                  </button>
+                </span>
               ) : (
                 <span className="text-[11px] text-slate-500" title="O que barateia ou empata se aplica no Despachar da Expedição, com liberação de ADM.">
                   Não encarece
@@ -171,13 +204,14 @@ export function TrocarAbonandoPanel({
       )}
       {escolhida ? (
         <ConfirmarAbonoModal
+          modo={modo}
           transportadora={escolhida.transportadora}
           servico={escolhida.servico}
           valorOpcao={escolhida.valor}
           freteAtual={recotacao?.freteAtual ?? 0}
           temNotaAutorizada={temNotaAutorizada}
           salvando={trocando}
-          onConfirmar={(motivo) => void confirmar(motivo)}
+          onConfirmar={(motivo, tipoCobranca) => void confirmar(motivo, tipoCobranca)}
           onClose={() => setEscolhida(null)}
         />
       ) : null}

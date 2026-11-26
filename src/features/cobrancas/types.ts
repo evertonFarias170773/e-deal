@@ -174,6 +174,8 @@ export type Cobranca = {
   obs_v2?: string;
   /** "REENVIO:<id_int>:<ciclo>": diferença de frete do reenvio, fora do pago da proposta (ver lib/cobranca-reenvio.ts). */
   chave_reenvio?: string | null;
+  /** `expedicao_recotacoes.id`: diferença de frete da troca de transportadora, fora do pago da proposta (26/11/2026). */
+  id_troca_frete?: number | null;
   id_modelo_cobranca?: string | null;
   motivo_cancela?: string;
   multaPercentual?: number;

@@ -114,7 +114,9 @@ export const maxDuration = 60;
 
 const SELECT_PAGAMENTO =
   "id, id_int, id_cliente, id_pagamento, cliente, documento, valor, status, paid_at, tipo_cobranca, " +
-  "cod_solicitacao_inter, id_empresa, empresa, os_ideal, atendente, obs_v2, reserva_estado, id_pendencia, motivo_troca";
+  "cod_solicitacao_inter, id_empresa, empresa, os_ideal, atendente, obs_v2, reserva_estado, id_pendencia, motivo_troca, " +
+  // Marcas de cobrança fora da proposta: a troca de forma as recusa (26/11/2026).
+  "chave_reenvio, id_troca_frete";
 
 type PagamentoRow = PagamentoDaTroca & {
   id_cliente: number | null;

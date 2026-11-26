@@ -1,6 +1,6 @@
 # Proposta: aba Fretes
 
-> **Última revisão:** 26/11/2026 (quadro **Trocar a transportadora abonando a diferença (admin)**: troca pela opção que encarece sem mudar o frete do cliente nem o total, com motivo; com NF-e autorizada, emitir CC-e). 19/11/2026 (pedido reenviado: o card do frete da venda vira **Envio original**, o do reenvio vira **Envio atual** e aparece em destaque no alto; com reenvio ou NF autorizada não há **Escolher**). 18/11/2026 (quadro **Pedido reenviado**: o envio e a cobrança de cada reenvio de pedido devolvido; a aba continua com o frete do primeiro envio). 16/11/2026 (frete CIF não pode ficar em R$ 0,00 no Salvar nem na primeira cobrança; SEDEX trocado por transportadora não deixa a categoria Correios gravada; cotação sem valor não vira card, aviso "Transportadora que não cotou"; Transportadora mostra a do frete escolhido; Corrigir a transportadora só com algo a corrigir; card padrão do SEDEX relido como Correios; rua com erro no cadastro)
+> **Última revisão:** 26/11/2026 (**Trocar cobrando**: ao lado do abono, a diferença do frete vira cobrança à parte do pedido, por PIX, boleto ou cartão, sem nota complementar, fora do total e da venda; o despacho espera o pagamento). 26/11/2026 (quadro **Trocar a transportadora abonando a diferença (admin)**: troca pela opção que encarece sem mudar o frete do cliente nem o total, com motivo; com NF-e autorizada, emitir CC-e). 19/11/2026 (pedido reenviado: o card do frete da venda vira **Envio original**, o do reenvio vira **Envio atual** e aparece em destaque no alto; com reenvio ou NF autorizada não há **Escolher**). 18/11/2026 (quadro **Pedido reenviado**: o envio e a cobrança de cada reenvio de pedido devolvido; a aba continua com o frete do primeiro envio). 16/11/2026 (frete CIF não pode ficar em R$ 0,00 no Salvar nem na primeira cobrança; SEDEX trocado por transportadora não deixa a categoria Correios gravada; cotação sem valor não vira card, aviso "Transportadora que não cotou"; Transportadora mostra a do frete escolhido; Corrigir a transportadora só com algo a corrigir; card padrão do SEDEX relido como Correios; rua com erro no cadastro)
 > **Caminho no menu:** Pedidos → abrir um pedido → aba Fretes
 > **Endereço:** `/orcamentos/<número>/editar?tab=fretes`
 
@@ -166,16 +166,24 @@ Depois da liberação o campo **Valor cobrado (R$)** fica só para leitura: o va
 4. Leia o aviso que aparece: ele mostra o total anterior e o novo, o saldo a cobrar na aba **Pagamentos** quando houver, e a mudança de status quando houver.
 5. **Cobrança faturada a vencer ainda sem boleto.** Quando a única cobrança da proposta é E-Faturado a vencer, sem pagamento e sem nenhum título no Contas a Receber, o campo também grava para quem tem a permissão **Editar Proposta Paga** ou **Editar Proposta com Faturado a Vencer**. A cobrança passa a valer o total novo e continua em **Registro de recebíveis**; o aviso mostra "Cobrança faturada: R$ … → R$ …", e o chat do pedido registra o valor anterior, o novo e o responsável. Gravar o mesmo valor de novo não muda nada. Se a cobrança não puder ser ajustada, o frete volta ao valor anterior e nada fica alterado. Um rascunho de nota fiscal que já existia não é refeito: confira-o antes de emitir.
 
-#### Trocar a transportadora abonando a diferença (administrador)
+#### Trocar a transportadora abonando ou cobrando a diferença (administrador)
 
-Trocar de card nesta aba muda o frete e o total, e é cobrado do cliente. Quando a transportadora nova sai mais cara e a empresa vai absorver a diferença, use este quadro. A liberação de recotação dada no **Despachar** da Expedição não aparece aqui: são dois caminhos, e este não precisa dela.
+Trocar de card nesta aba muda o frete e o total, e é cobrado do cliente. Quando a transportadora nova sai mais cara e o pedido já está pronto para sair, use este quadro: a transportadora muda, mas o frete da proposta e o total do pedido **não mudam**, e a nota fiscal fica como está. A diferença tem dois destinos, lado a lado:
+
+- **Trocar abonando**: a empresa absorve a diferença.
+- **Trocar cobrando** (desde 26/11/2026): a diferença vira uma **cobrança à parte** do pedido, "Diferença de frete — troca para …", por PIX, boleto ou cartão. Não há nota complementar. Essa cobrança não entra no total do pedido nem conta como venda, e o pedido só é despachado depois que ela for paga (ou abonada).
+
+A liberação de recotação dada no **Despachar** da Expedição não aparece aqui: são dois caminhos, e este não precisa dela.
 
 1. Em pedido Na Expedição, CIF e ainda não despachado, localize **Trocar a transportadora abonando a diferença (admin)** na caixa da modalidade. Só aparece para quem tem a permissão **Trocar Transportadora Abonando a Diferença**.
-2. Clique em **Recotar para trocar abonando**.
-3. Na opção que sai mais cara, clique em **Trocar abonando R$ …**.
-4. Escreva o **Motivo do abono** (obrigatório) e clique em **Trocar e abonar R$ …**.
-5. A tela recarrega com a transportadora nova. O frete do cliente e o total do pedido continuam os mesmos; o abono fica no histórico da recotação e na timeline.
-6. Com NF-e autorizada, a troca é permitida e a tela avisa: emita uma **Carta de Correção (CC-e)** com a transportadora nova.
+2. Clique em **Recotar para trocar a transportadora**.
+3. Na opção que sai mais cara, clique em **Trocar abonando R$ …** ou em **Trocar cobrando R$ …**.
+4. Na janela:
+   - para abonar, escreva o **Motivo do abono** e clique em **Trocar e abonar R$ …**;
+   - para cobrar, escolha a **Forma da cobrança** (PIX, Boleto ou Cartão), escreva o **Motivo da troca** e clique em **Trocar e cobrar R$ …**.
+5. A tela recarrega com a transportadora nova. O frete da proposta e o total continuam os mesmos. O abono ou a cobrança fica no histórico da recotação (valor, quem, quando, motivo e, na troca cobrando, a cobrança criada) e na timeline.
+6. Na troca cobrando, vá à aba **Pagamentos** e gere o PIX, o boleto ou o link do cartão no quadro **Diferença de frete da troca de transportadora** (veja [Pagamentos](proposta-pagamentos.md)).
+7. Com NF-e autorizada, as duas trocas são permitidas e a tela avisa: emita uma **Carta de Correção (CC-e)** com a transportadora nova.
 
 Depois da troca, o card escolhido continua sendo o frete vendido (por exemplo, SEDEX), e **Salvar alterações** não devolve a transportadora antiga.
 
@@ -378,6 +386,7 @@ Arquivos de código de onde esta ficha saiu. O `scripts/checar-manual.mjs` lê e
 - `src/features/orcamentos/components/TrocarAbonandoPanel.tsx`
 - `src/features/expedicao/lib/abono-frete.ts`
 - `supabase/migrations/20261126_frete_trocar_abonando.sql`
+- `supabase/migrations/20261126b_frete_trocar_cobrando.sql`
 
 > **Mudança desta revisão:** 19/11/2026 — pedido reenviado (caso #24552): o card do frete da venda deixa de dizer **Escolhido** e vira **Envio original** ("(devolvido)" quando o motivo diz), o envio do último reenvio aparece no destaque **Envio atual** no alto da aba (que substitui o quadro **Pedido reenviado**) e o card dessa opção ganha o selo **Envio atual**. Com NF autorizada ou reenvio, os cards não têm **Escolher**; a frase "O frete da venda está na nota fiscal e não muda." fica no lugar. O frete da proposta, o total e a nota não mudam.
 

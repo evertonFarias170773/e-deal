@@ -32,22 +32,53 @@ export function avisoCceDoAbono(notas: string[] | null | undefined, transportado
 }
 
 /**
- * A transportadora do ÚLTIMO abono do pedido, quando a última recotação aplicada
- * é um abono. O Salvar da proposta usa isto para não devolver o vínculo à
- * transportadora do card cotado (o card continua sendo o SEDEX vendido).
- * Falha de leitura devolve null: o Salvar segue a regra de sempre.
+ * TROCAR COBRANDO A DIFERENÇA (26/11/2026, decisão do Everton, consultado o
+ * fiscal): a mesma troca, mas a diferença vira uma cobrança nova do pedido, à
+ * parte, sem nota complementar. A NF-e fica como está (CC-e com a
+ * transportadora nova). A cobrança é marcada (`pagamentos_v2.id_troca_frete`),
+ * fica fora do pago da proposta e da venda, e a trava de saldo segura o despacho
+ * até ela ser paga ou abonada. Banco: `exp_aplicar_recotacao_cobrando`. Mesma
+ * permissão do abono.
+ */
+export type FormaCobrancaTroca = "PIX" | "BOLETO" | "CARD_PARCELADO";
+
+export const FORMAS_COBRANCA_TROCA: ReadonlyArray<{ valor: FormaCobrancaTroca; rotulo: string }> = [
+  { valor: "PIX", rotulo: "PIX" },
+  { valor: "BOLETO", rotulo: "Boleto" },
+  { valor: "CARD_PARCELADO", rotulo: "Cartão" }
+];
+
+export function ehFormaCobrancaTroca(valor: unknown): valor is FormaCobrancaTroca {
+  return valor === "PIX" || valor === "BOLETO" || valor === "CARD_PARCELADO";
+}
+
+/** Descrição da cobrança, igual à que o banco grava (`exp__cobranca_da_troca`). */
+export function descricaoDaCobrancaDaTroca(transportadora: string): string {
+  return `Diferença de frete — troca para ${transportadora.trim() || "outra transportadora"}`;
+}
+
+/**
+ * A transportadora da ÚLTIMA troca do pedido (abonando ou cobrando), quando a
+ * última recotação aplicada é uma delas. O Salvar da proposta usa isto para não
+ * devolver o vínculo à transportadora do card cotado (o card continua sendo o
+ * SEDEX vendido). Falha de leitura devolve null: o Salvar segue a regra de sempre.
  */
 export async function transportadoraDoUltimoAbono(client: SupabaseClient | null, idInt: number): Promise<number | null> {
   if (!client || !Number.isFinite(idInt) || idInt <= 0) return null;
   const { data, error } = await client
     .from("expedicao_recotacoes")
-    .select("abono_valor, id_transportadora_abono")
+    .select("abono_valor, cobranca_valor, id_transportadora_abono")
     .eq("id_int", idInt)
     .order("aplicado_em", { ascending: false })
     .limit(1)
     .maybeSingle();
   if (error || !data) return null;
-  const abono = Number((data as { abono_valor?: number | string | null }).abono_valor ?? 0);
-  const id = (data as { id_transportadora_abono?: number | string | null }).id_transportadora_abono;
-  return abono > 0 && id !== null && id !== undefined ? Number(id) : null;
+  const linha = data as {
+    abono_valor?: number | string | null;
+    cobranca_valor?: number | string | null;
+    id_transportadora_abono?: number | string | null;
+  };
+  const troca = Number(linha.abono_valor ?? 0) > 0 || Number(linha.cobranca_valor ?? 0) > 0;
+  const id = linha.id_transportadora_abono;
+  return troca && id !== null && id !== undefined ? Number(id) : null;
 }

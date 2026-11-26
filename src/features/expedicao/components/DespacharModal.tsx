@@ -23,8 +23,8 @@ import type { AtorExpedicao, DespachoInput, ResultadoAcao } from "../services/ex
 import type { EnderecoCliente } from "../services/enderecos.service";
 import { correiosStatus, gerarPrepostagem } from "../services/correios.client";
 import { etiquetaDoPedido } from "../lib/etiqueta-do-pedido";
-import { avisoCceDoAbono, podeAbonar } from "../lib/abono-frete";
-import { ConfirmarAbonoModal } from "./ConfirmarAbonoModal";
+import { avisoCceDoAbono, podeAbonar, type FormaCobrancaTroca } from "../lib/abono-frete";
+import { ConfirmarAbonoModal, type ModoDaTroca } from "./ConfirmarAbonoModal";
 import { carregarPreviaEtiqueta } from "../services/etiqueta.client";
 import type { EtiquetaViewModel } from "../services/etiqueta-viewmodel.service";
 import { ConferenciaDespacho } from "./ConferenciaDespacho";
@@ -657,9 +657,16 @@ export function DespacharModal({
    * valor da nota não muda; a resposta traz as notas para o aviso da CC-e).
    */
   const [abonoEscolhido, setAbonoEscolhido] = useState<OpcaoRecotacao | null>(null);
+  // TROCAR COBRANDO (26/11/2026): a mesma troca, com a diferença cobrada à parte.
+  const [modoTroca, setModoTroca] = useState<ModoDaTroca>("ABONO");
   const [avisoCce, setAvisoCce] = useState<string | null>(null);
 
-  async function gravarAbono(o: OpcaoRecotacao, motivo: string) {
+  function escolherTroca(o: OpcaoRecotacao, modo: ModoDaTroca) {
+    setModoTroca(modo);
+    setAbonoEscolhido(o);
+  }
+
+  async function gravarAbono(o: OpcaoRecotacao, motivo: string, tipoCobranca: FormaCobrancaTroca) {
     const chave = chavesPorOpcao[o.id];
     if (!chave) {
       setErroAplicacao("Recote antes de trocar.");
@@ -673,11 +680,13 @@ export function DespacharModal({
       opcaoId: o.id,
       valorVisto: o.valor,
       motivo,
-      idEnderecoEntrega
+      idEnderecoEntrega,
+      modo: modoTroca,
+      tipoCobranca
     });
     setAplicandoId(null);
     if (!res.success) {
-      setErroAplicacao(res.errorMessage || "Não foi possível trocar abonando.");
+      setErroAplicacao(res.errorMessage || `Não foi possível trocar ${modoTroca === "COBRANDO" ? "cobrando" : "abonando"}.`);
       return;
     }
     setAbonoEscolhido(null);
@@ -923,7 +932,8 @@ export function DespacharModal({
     return () => {
       vivo = false;
     };
-  }, [avaliaTrava, pedido.idInt]);
+    // versaoTrava: a troca cobrando cria a cobrança da diferença e o saldo passa a segurar.
+  }, [avaliaTrava, pedido.idInt, versaoTrava]);
   const saldoBloqueia = avaliaTrava && saldoDespacho?.bloqueia === true;
 
   /**
@@ -2077,15 +2087,26 @@ export function DespacharModal({
                                 {aplicandoId === o.id ? "Aplicando..." : "Aplicar"}
                               </button>
                             ) : podeAbonar(o.diferenca, podeTrocarAbonando) ? (
-                              <button
-                                type="button"
-                                onClick={() => setAbonoEscolhido(o)}
-                                disabled={Boolean(aplicandoId) || Boolean(aplicacao)}
-                                title="Troca a transportadora sem mudar o frete do cliente nem o total; a diferença fica registrada como abono."
-                                className="rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-900 transition hover:bg-amber-100 disabled:opacity-50"
-                              >
-                                {aplicandoId === o.id ? "Trocando..." : "Trocar abonando"}
-                              </button>
+                              <span className="flex flex-wrap gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => escolherTroca(o, "ABONO")}
+                                  disabled={Boolean(aplicandoId) || Boolean(aplicacao)}
+                                  title="Troca a transportadora sem mudar o frete do cliente nem o total; a diferença fica registrada como abono."
+                                  className="rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-900 transition hover:bg-amber-100 disabled:opacity-50"
+                                >
+                                  {aplicandoId === o.id && modoTroca === "ABONO" ? "Trocando..." : "Trocar abonando"}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => escolherTroca(o, "COBRANDO")}
+                                  disabled={Boolean(aplicandoId) || Boolean(aplicacao)}
+                                  title="Troca a transportadora sem mudar o frete da proposta nem o total; a diferença vira uma cobrança à parte e o despacho espera o pagamento."
+                                  className="rounded-lg border border-sky-300 bg-sky-50 px-2.5 py-1 text-xs font-semibold text-sky-900 transition hover:bg-sky-100 disabled:opacity-50"
+                                >
+                                  {aplicandoId === o.id && modoTroca === "COBRANDO" ? "Trocando..." : "Trocar cobrando a diferença"}
+                                </button>
+                              </span>
                             ) : (
                               <span
                                 title={motivoBloqueio(o)}
@@ -2108,7 +2129,24 @@ export function DespacharModal({
                         </p>
                       )}
 
-                      {aplicacao?.success && aplicacao.abono ? (
+                      {aplicacao?.success && aplicacao.cobrando ? (
+                        <div className="rounded-xl border border-sky-200 bg-sky-50 p-3 text-xs text-sky-900">
+                          <p className="font-semibold">Transportadora trocada cobrando a diferença à parte</p>
+                          <p className="mt-1">
+                            {aplicacao.transportadora}
+                            {aplicacao.servico ? ` · ${aplicacao.servico}` : ""} — custa{" "}
+                            <strong>{formatCurrency(aplicacao.valorOpcao ?? 0)}</strong>. Cobrança nova:{" "}
+                            <strong>{formatCurrency(aplicacao.cobrancaValor ?? 0)}</strong>
+                            {aplicacao.cobranca?.id_pagamento ? ` (${aplicacao.cobranca.id_pagamento})` : ""}.
+                          </p>
+                          <p>
+                            O frete da proposta continua {formatCurrency(aplicacao.freteNovo ?? 0)} e o total{" "}
+                            <strong>{formatCurrency(aplicacao.totalNovo ?? 0)}</strong> (não mudou). Gere o PIX, o boleto ou o link do
+                            cartão na aba Pagamentos da proposta; o despacho libera quando o pagamento for confirmado.
+                          </p>
+                          {avisoCce ? <p className="mt-2 font-semibold">{avisoCce}</p> : null}
+                        </div>
+                      ) : aplicacao?.success && aplicacao.abono ? (
                         <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
                           <p className="font-semibold">
                             Transportadora trocada abonando a diferença{aplicacao.idempotente ? " (já estava feito)" : ""}
@@ -2680,13 +2718,14 @@ export function DespacharModal({
     ) : null}
     {abonoEscolhido ? (
       <ConfirmarAbonoModal
+        modo={modoTroca}
         transportadora={abonoEscolhido.transportadora}
         servico={abonoEscolhido.servico}
         valorOpcao={abonoEscolhido.valor}
         freteAtual={recotacao?.freteAtual ?? pedido.freteValor ?? 0}
         temNotaAutorizada={pedido.nfStatus === "AUTORIZADA"}
         salvando={aplicandoId !== null}
-        onConfirmar={(motivo) => void gravarAbono(abonoEscolhido, motivo)}
+        onConfirmar={(motivo, tipoCobranca) => void gravarAbono(abonoEscolhido, motivo, tipoCobranca)}
         onClose={() => setAbonoEscolhido(null)}
       />
     ) : null}

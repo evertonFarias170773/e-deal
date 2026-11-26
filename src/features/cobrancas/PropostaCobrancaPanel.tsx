@@ -27,8 +27,9 @@ import { CorrigirTelefonePagadorModal } from "./CorrigirTelefonePagadorModal";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import { fetchComSessao, obterAccessToken, SessaoExpiradaError } from "@/lib/supabase/sessao";
 import { resolverTelefonePagador } from "@/lib/telefone/telefone-br";
-import { semCobrancaDeReenvio } from "@/features/cobrancas/lib/cobranca-reenvio";
+import { rotuloDaCobrancaForaDaProposta, semCobrancaDeReenvio } from "@/features/cobrancas/lib/cobranca-reenvio";
 import { DiferencaFreteReenvioBox } from "@/features/cobrancas/DiferencaFreteReenvioBox";
+import { DiferencaFreteTrocaBox } from "@/features/cobrancas/DiferencaFreteTrocaBox";
 import { lerContatoDaCobranca, MENSAGEM_PAGADOR_SEM_EMAIL } from "@/features/cobrancas/lib/contato-da-cobranca";
 import { baixarBoletoComNome, salvarArquivoNoNavegador } from "@/features/cobrancas/services/baixar-boleto";
 import {
@@ -232,7 +233,17 @@ export function PropostaCobrancaPanel({
   const bloqueioNovaCobranca =
     bloqueioNovaCobrancaProp ?? (statusEhEntregue(proposta.status_interno) ? MENSAGEM_PEDIDO_ENTREGUE : null);
   const { showToast } = useAppToast();
-  const { createCobranca, createFaturadoComEntrada, getCobrancasByProposta, source, cobrancas, refreshCobrancas, statusCarga, mensagemCarga } = useCobrancas();
+  const {
+    createCobranca,
+    createFaturadoComEntrada,
+    emitirCobrancaCriadaPeloBanco,
+    getCobrancasByProposta,
+    source,
+    cobrancas,
+    refreshCobrancas,
+    statusCarga,
+    mensagemCarga
+  } = useCobrancas();
   const { user } = useAuth();
   
   const router = useRouter();
@@ -336,8 +347,9 @@ export function PropostaCobrancaPanel({
   }, [temPixEmPreparacao, refreshCobrancas]);
   const cobrancasAtivas = cobrancasDaProposta.filter((item) => item.status !== "CANCELADO");
   const totalPropostaRounded = roundMoney(proposta.resumo.valorTotal);
-  // Saldo e pago da PROPOSTA: a cobrança da diferença de frete do reenvio fica
-  // fora (ela continua na lista de cobranças). Sem reenvio: igual às ativas.
+  // Saldo e pago da PROPOSTA: a cobrança da diferença de frete do reenvio e a
+  // da troca de transportadora ficam fora (continuam na lista de cobranças).
+  // Sem reenvio nem troca: igual às ativas.
   const cobrancasDoSaldo = semCobrancaDeReenvio(cobrancasAtivas);
   const totalCobradoReal = cobrancasDoSaldo.reduce((total, item) => total + getValorCobranca(item), 0);
   const totalCobradoRealRounded = roundMoney(totalCobradoReal);
@@ -2298,6 +2310,14 @@ export function PropostaCobrancaPanel({
           await refreshCobrancas();
         }}
       />
+      {/* Troca de transportadora cobrando (26/11/2026): diferença à parte, fora do total. */}
+      <DiferencaFreteTrocaBox
+        idInt={Number(proposta.id_int)}
+        emitir={(cobrancaId) => emitirCobrancaCriadaPeloBanco(cobrancaId, proposta)}
+        onMudou={async () => {
+          await refreshCobrancas();
+        }}
+      />
       <PanelCard
         title="Cobranças já geradas"
         description="A cobrança continua nascendo dentro da proposta. O modal de criação foi simplificado para um fluxo rápido e operacional."
@@ -3090,6 +3110,14 @@ function CobrancasDaPropostaList({ cobrancas, onSelectCobranca, onRefreshPropost
                 <span className="inline-flex items-center rounded-md bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-800">
                   {getCobrancaTipoLabel(cobranca.tipo_cobranca)}
                 </span>
+                {rotuloDaCobrancaForaDaProposta(cobranca) ? (
+                  <span
+                    className="ml-1 inline-flex items-center rounded-md bg-sky-100 px-2 py-0.5 text-[10px] font-semibold text-sky-800"
+                    title="Fora do total e do pago da proposta, e fora da venda."
+                  >
+                    {rotuloDaCobrancaForaDaProposta(cobranca)}
+                  </span>
+                ) : null}
                 <p className="mt-1 text-[11px] text-slate-500">
                   OS: <span className="font-semibold text-slate-700">{cobranca.os_ideal || "-"}</span>
                 </p>

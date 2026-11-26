@@ -315,6 +315,8 @@ export function mapSupabasePagamentoV2RowToCobranca(row: SupabasePagamentoV2Row)
     id_modelo_cobranca: toText(row.id_modelo_cobranca) || undefined,
     obs_v2: toText(row.obs_v2) || undefined,
     chave_reenvio: toText(row.chave_reenvio) || undefined,
+    id_troca_frete:
+      row.id_troca_frete !== undefined && row.id_troca_frete !== null ? toNumber(row.id_troca_frete, 0) || null : undefined,
     motivo_cancela: toText(row.motivo_cancela) || undefined,
     multaPercentual: undefined,
     jurosPercentual: undefined,

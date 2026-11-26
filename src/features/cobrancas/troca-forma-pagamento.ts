@@ -30,6 +30,7 @@ import { TODAS_AS_RECUSAS, type CodigoVeredito } from "@/features/cobrancas/canc
 import { recusaDoTipoNoPedido, type ContextoRetrabalhoDoPedido } from "@/features/cobrancas/lib/tipo-x-retrabalho";
 import { e2eValido, normalizarE2e } from "@/features/cobrancas/lib/devolucao-pagamento";
 import { bancoDoBoletoEmitido } from "@/features/cobrancas/lib/banco-boleto-biro";
+import { ehCobrancaForaDaProposta } from "@/features/cobrancas/lib/cobranca-reenvio";
 
 /** Empresas cujo PIX sai pelo C6, com confirmação do banco no cancelamento. */
 export const EMPRESAS_DA_TROCA: readonly number[] = [1, 3];
@@ -263,6 +264,9 @@ export type PagamentoDaTroca = CobrancaParaTroca & {
   reserva_estado: string | null;
   id_pendencia: number | null;
   motivo_troca: string | null;
+  /** Marcas de cobrança fora da proposta (lib/cobranca-reenvio). Opcionais: leitura antiga = sem marca. */
+  chave_reenvio?: string | null;
+  id_troca_frete?: number | string | null;
 };
 
 export type RecusaDaTroca = { code: string; message: string; httpStatus: number };
@@ -274,6 +278,18 @@ export type RecusaDaTroca = { code: string; message: string; httpStatus: number 
 export function recusaDaCobrancaParaTroca(pagamento: PagamentoDaTroca): RecusaDaTroca | null {
   if (pagamento.id_int == null) {
     return { code: "SEM_PROPOSTA", httpStatus: 409, message: "A troca só vale para cobrança vinculada a uma proposta." };
+  }
+  // A cobrança nova da troca nasce sem a marca (só o banco marca): a diferença
+  // de frete viraria pagamento da proposta e venda (26/11/2026). Para mudar a
+  // forma, cancele e use "Cobrar de novo" no quadro da diferença de frete.
+  if (ehCobrancaForaDaProposta(pagamento)) {
+    return {
+      code: "COBRANCA_FORA_DA_PROPOSTA",
+      httpStatus: 409,
+      message:
+        "Esta é a cobrança do frete do reenvio ou da diferença de frete da troca de transportadora: a forma não se troca aqui. " +
+        "Cancele a cobrança e gere outra no quadro da diferença de frete, na aba Pagamentos."
+    };
   }
   const origem = origemDaTroca(pagamento.tipo_cobranca);
   if (!origem) {

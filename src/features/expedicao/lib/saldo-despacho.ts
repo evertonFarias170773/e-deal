@@ -14,14 +14,25 @@
 
 export interface SaldoDoDespacho {
   bloqueia: boolean;
-  situacao: "SEM_PROPOSTA" | "SEM_SALDO" | "SALDO_A_RECEBER";
+  /**
+   * SALDO_REENVIO (18/11/2026): falta o frete do reenvio. SALDO_TROCA_FRETE
+   * (26/11/2026): falta a diferença de frete da troca de transportadora
+   * cobrando. As duas cobranças ficam fora do total e do pago da proposta.
+   */
+  situacao: "SEM_PROPOSTA" | "SEM_SALDO" | "SALDO_A_RECEBER" | "SALDO_REENVIO" | "SALDO_TROCA_FRETE";
   total?: number;
   pago?: number;
   saldo?: number;
   mensagem?: string;
 }
 
-const SITUACOES: readonly SaldoDoDespacho["situacao"][] = ["SEM_PROPOSTA", "SEM_SALDO", "SALDO_A_RECEBER"];
+const SITUACOES: readonly SaldoDoDespacho["situacao"][] = [
+  "SEM_PROPOSTA",
+  "SEM_SALDO",
+  "SALDO_A_RECEBER",
+  "SALDO_REENVIO",
+  "SALDO_TROCA_FRETE"
+];
 
 export const MENSAGEM_PADRAO_SALDO =
   "Despacho bloqueado: o pedido tem saldo a receber. Gere a cobrança da diferença na aba Pagamentos da proposta " +

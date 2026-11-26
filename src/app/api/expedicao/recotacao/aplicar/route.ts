@@ -8,7 +8,12 @@ import type { ModalidadeFrete } from "@/features/expedicao/types";
 import { barreiraNfAutorizada } from "@/features/expedicao/services/corrigir-frete-simulacao";
 import { resolverTransportadoraParceira } from "@/features/orcamentos/lib/transportadoras-parceiras";
 import { categoriaDoServico } from "@/features/orcamentos/lib/categoria-frete";
-import { PERMISSAO_TROCAR_ABONANDO, MOTIVO_ABONO_MINIMO } from "@/features/expedicao/lib/abono-frete";
+import {
+  PERMISSAO_TROCAR_ABONANDO,
+  MOTIVO_ABONO_MINIMO,
+  ehFormaCobrancaTroca,
+  type FormaCobrancaTroca
+} from "@/features/expedicao/lib/abono-frete";
 
 /**
  * Aplicar uma opção da recotação — Parte C, Etapa 2.
@@ -49,6 +54,14 @@ import { PERMISSAO_TROCAR_ABONANDO, MOTIVO_ABONO_MINIMO } from "@/features/exped
  *   `frete.trocar_abonando`; dispensa a liberação de recotação (a permissão é a
  *   alçada) e aceita NF-e autorizada (o valor da nota não muda; a tela avisa
  *   para emitir CC-e). Recotar, conferir o preço e os demais gates são os mesmos.
+ *
+ * MODO COBRANDO (26/11/2026, decisão do Everton, consultado o fiscal)
+ *   `cobrar: true` + `motivo` + `tipo_cobranca` (PIX, BOLETO, CARD_PARCELADO):
+ *   a mesma troca do abono, mas a diferença vira uma cobrança nova do pedido,
+ *   à parte e sem nota complementar (`exp_aplicar_recotacao_cobrando`). A
+ *   cobrança nasce marcada (`pagamentos_v2.id_troca_frete`): fora do pago da
+ *   proposta e da venda; a trava de saldo segura o despacho até ela ser paga ou
+ *   abonada. Mesma permissão, mesmos gates, NF-e aceita (CC-e).
  */
 
 export const runtime = "nodejs";
@@ -64,7 +77,11 @@ type Corpo = {
   id_endereco_entrega?: string | null;
   /** Troca abonando a diferença (frete.trocar_abonando). */
   abonar?: boolean;
-  /** Obrigatório com `abonar`. */
+  /** Troca cobrando a diferença à parte (frete.trocar_abonando). */
+  cobrar?: boolean;
+  /** Forma da cobrança da diferença, com `cobrar`. */
+  tipo_cobranca?: string;
+  /** Obrigatório com `abonar` ou `cobrar`. */
   motivo?: string;
 };
 
@@ -84,9 +101,17 @@ export async function POST(request: Request) {
   if (!opcaoId) return erro("opcao_id é obrigatório.", 400);
   if (!Number.isFinite(valorVisto) || valorVisto < 0) return erro("valor_visto inválido.", 400);
   const abonar = body?.abonar === true;
+  const cobrar = body?.cobrar === true;
+  // Troca sem mudar o frete cobrado: abonando, ou cobrando a diferença à parte.
+  const troca = abonar || cobrar;
   const motivo = (body?.motivo || "").trim();
-  if (abonar && motivo.length < MOTIVO_ABONO_MINIMO) {
-    return erro("Escreva o motivo do abono (pelo menos 5 letras).", 400);
+  if (abonar && cobrar) return erro("Escolha abonar OU cobrar a diferença, não os dois.", 400);
+  if (troca && motivo.length < MOTIVO_ABONO_MINIMO) {
+    return erro(abonar ? "Escreva o motivo do abono (pelo menos 5 letras)." : "Escreva o motivo da troca (pelo menos 5 letras).", 400);
+  }
+  const tipoCobranca = String(body?.tipo_cobranca ?? "PIX").trim().toUpperCase();
+  if (cobrar && !ehFormaCobrancaTroca(tipoCobranca)) {
+    return erro("Forma de cobrança inválida: PIX, boleto ou cartão.", 400);
   }
 
   const overrideEndereco = (body?.id_endereco_entrega || "").trim() || null;
@@ -105,12 +130,12 @@ export async function POST(request: Request) {
   const { data: authData, error: authError } = await supabase.auth.getUser();
   if (authError || !authData.user) return erro("Sessão expirada.", 401);
 
-  const permissaoExigida = abonar ? PERMISSAO_TROCAR_ABONANDO : "expedicao.processar";
+  const permissaoExigida = troca ? PERMISSAO_TROCAR_ABONANDO : "expedicao.processar";
   const temPermissao = await verificarPermissaoServerSide(supabase, authData.user.id, permissaoExigida);
   if (!temPermissao) {
     return erro(
-      abonar
-        ? `Sem permissão para trocar a transportadora abonando a diferença (${PERMISSAO_TROCAR_ABONANDO}).`
+      troca
+        ? `Sem permissão para trocar a transportadora ${abonar ? "abonando" : "cobrando"} a diferença (${PERMISSAO_TROCAR_ABONANDO}).`
         : "Sem permissão (expedicao.processar).",
       403
     );
@@ -184,8 +209,8 @@ export async function POST(request: Request) {
   if (exp?.data_despacho && emitido) {
     return erro(`Pedido já despachado com rastreio/prepostagem emitidos (${emitido}) — o frete já foi contratado.`, 409);
   }
-  if (abonar && exp?.data_despacho) {
-    return erro("Pedido já despachado: a troca abonando vale antes do despacho.", 409);
+  if (troca && exp?.data_despacho) {
+    return erro(`Pedido já despachado: a troca ${abonar ? "abonando" : "cobrando"} vale antes do despacho.`, 409);
   }
 
   // NF-e viva (02/11/2026): com nota autorizada o frete não muda, nem para baratear.
@@ -196,14 +221,14 @@ export async function POST(request: Request) {
   // ABONO: a nota não muda de valor, então ela não barra; a resposta leva os números
   // das notas para a tela pedir a CC-e com a transportadora nova.
   const nfViva = await barreiraNfAutorizada(supabase, idInt);
-  if (nfViva && !abonar) return erro(nfViva.mensagem ?? "Pedido com NF-e autorizada: cancele a nota antes de corrigir o frete.", nfViva.status, { code: nfViva.motivo });
+  if (nfViva && !troca) return erro(nfViva.mensagem ?? "Pedido com NF-e autorizada: cancele a nota antes de corrigir o frete.", nfViva.status, { code: nfViva.motivo });
 
   // Liberação: pré-checada aqui para responder 403 com mensagem que se lê, e
   // CONSUMIDA dentro da RPC, na mesma transação das escritas. A pré-checagem
   // não é a tranca — duas aplicações simultâneas passariam por ela; quem as
   // separa é o `UPDATE ... WHERE consumida_em IS NULL RETURNING` lá dentro.
   // ABONO: dispensada — a permissão `frete.trocar_abonando` é a alçada.
-  const { data: liberacao } = abonar
+  const { data: liberacao } = troca
     ? { data: { id: 0 } }
     : await supabase
         .from("expedicao_recotacao_liberacoes")
@@ -292,14 +317,14 @@ export async function POST(request: Request) {
   const totalAnterior = Number(proposta.valor_total ?? 0);
   const diferenca = Number((opcao.valor - freteAnterior).toFixed(2));
 
-  if (diferenca > 0 && !abonar) {
+  if (diferenca > 0 && !troca) {
     return erro(
       `Esta opção encarece o frete em R$ ${diferenca.toFixed(2)}. Nesta fase só é possível aplicar o que barateia ou empata.`,
       409
     );
   }
-  if (abonar && diferenca <= 0) {
-    return erro("Esta opção não encarece o frete: use Aplicar, sem abono.", 409);
+  if (troca && diferenca <= 0) {
+    return erro(`Esta opção não encarece o frete: use Aplicar, sem ${abonar ? "abono" : "cobrança à parte"}.`, 409);
   }
 
   // Autoria para o ledger e para a timeline.
@@ -311,8 +336,10 @@ export async function POST(request: Request) {
   const autorNome = usuarioRow?.nome_usuario || authData.user.email || "Expedição";
   const autorEmail = authData.user.email ?? null;
 
-  if (abonar) {
-    return aplicarAbonando({
+  if (troca) {
+    return aplicarTrocaSemMudarFrete({
+      modo: abonar ? "ABONO" : "COBRANDO",
+      tipoCobranca: tipoCobranca as FormaCobrancaTroca,
       supabase,
       uid: authData.user.id,
       idInt,
@@ -416,12 +443,23 @@ export async function POST(request: Request) {
 
 type OpcaoCotada = { transportadora: string; servico: string; valor: number; prazo: string };
 
+type CobrancaDaTroca = {
+  id: string;
+  id_pagamento: string | null;
+  valor: number;
+  id_empresa: number | null;
+  tipo_cobranca: FormaCobrancaTroca;
+};
+
 /**
- * MODO ABONO (26/11/2026). A opção que encarece troca a transportadora; o frete
- * cobrado e o total não mudam, e a diferença fica no histórico da recotação.
- * Tudo dentro de `exp_aplicar_recotacao_abono`, numa transação.
+ * MODOS ABONO E COBRANDO (26/11/2026). A opção que encarece troca a
+ * transportadora; o frete cobrado e o total não mudam. No ABONO a diferença
+ * fica no histórico da recotação; no COBRANDO ela vira também uma cobrança
+ * nova do pedido, marcada e à parte. Tudo dentro da RPC, numa transação.
  */
-async function aplicarAbonando(a: {
+async function aplicarTrocaSemMudarFrete(a: {
+  modo: "ABONO" | "COBRANDO";
+  tipoCobranca: FormaCobrancaTroca;
   supabase: SupabaseClient;
   uid: string;
   idInt: number;
@@ -442,16 +480,18 @@ async function aplicarAbonando(a: {
   autorEmail: string | null;
 }) {
   const { supabase, opcao } = a;
+  const cobrando = a.modo === "COBRANDO";
   const idTransportadora = resolverTransportadoraParceira({ transportadora: opcao.transportadora, servico: opcao.servico });
   if (idTransportadora === null) {
     return erro(
-      `A opção ${opcao.transportadora} não é de uma transportadora cadastrada: não dá para trocar abonando. Escolha outra opção.`,
+      `A opção ${opcao.transportadora} não é de uma transportadora cadastrada: não dá para trocar ${cobrando ? "cobrando" : "abonando"}. Escolha outra opção.`,
       409
     );
   }
   const categoria = categoriaDoServico(opcao.transportadora, opcao.servico, "CIF");
 
-  const { data: idLedger, error: rpcError } = await supabase.rpc("exp_aplicar_recotacao_abono", {
+  const { data: retornoRpc, error: rpcError } = await supabase.rpc(cobrando ? "exp_aplicar_recotacao_cobrando" : "exp_aplicar_recotacao_abono", {
+    ...(cobrando ? { p_tipo_cobranca: a.tipoCobranca } : {}),
     p_id_int: a.idInt,
     p_chave: a.chave,
     p_frete_atual: a.freteAtual,
@@ -475,11 +515,18 @@ async function aplicarAbonando(a: {
   });
 
   if (rpcError) {
-    const msg = rpcError.message || "Não foi possível trocar abonando.";
+    const msg = rpcError.message || `Não foi possível trocar ${cobrando ? "cobrando" : "abonando"}.`;
     if (/42501|permiss/i.test(msg) && !/EXP_RECOT_/.test(msg)) return erro(msg, 403);
     const limpo = msg.replace(/^.*?EXP_RECOT_[A-Z_]+:\s*/, "");
     return erro(limpo, /EXP_RECOT_/.test(msg) ? 409 : 500);
   }
+
+  // ABONO devolve o id do histórico; COBRANDO devolve { id_recotacao, cobranca }.
+  const retornoCobrando = cobrando
+    ? (retornoRpc as { id_recotacao: number; cobranca: CobrancaDaTroca | null } | null)
+    : null;
+  const idLedger = cobrando ? retornoCobrando?.id_recotacao ?? null : retornoRpc;
+  const cobranca = retornoCobrando?.cobranca ?? null;
 
   // Notas autorizadas: o valor não muda, mas o transportador da nota é o antigo.
   const { data: notas } = await supabase
@@ -500,30 +547,40 @@ async function aplicarAbonando(a: {
         autor_uid: a.uid,
         autor_nome: a.autorNome,
         autor_email: a.autorEmail,
-        mensagem:
-          `🚚 Transportadora trocada abonando a diferença: ${opcao.transportadora}${opcao.servico ? ` · ${opcao.servico}` : ""} ` +
-          `(R$ ${opcao.valor.toFixed(2)}). O cliente continua pagando R$ ${a.freteAtual.toFixed(2)} de frete; ` +
-          `R$ ${a.abono.toFixed(2)} abonados. Motivo: ${a.motivo}. O total do pedido não mudou.` +
-          (notasAutorizadas.length > 0
-            ? ` NF-e ${notasAutorizadas.join(", ")} autorizada: emitir CC-e com a transportadora nova.`
-            : "")
+        mensagem: cobrando
+          ? `🚚 Transportadora trocada cobrando a diferença à parte: ${opcao.transportadora}${opcao.servico ? ` · ${opcao.servico}` : ""} ` +
+            `(R$ ${opcao.valor.toFixed(2)}). O frete da proposta continua R$ ${a.freteAtual.toFixed(2)}; ` +
+            `a diferença de R$ ${a.abono.toFixed(2)} virou a cobrança ${cobranca?.id_pagamento ?? ""} (${a.tipoCobranca}), fora do total do pedido. ` +
+            `Motivo: ${a.motivo}. O despacho espera o pagamento dela.` +
+            (notasAutorizadas.length > 0
+              ? ` NF-e ${notasAutorizadas.join(", ")} autorizada: emitir CC-e com a transportadora nova.`
+              : "")
+          : `🚚 Transportadora trocada abonando a diferença: ${opcao.transportadora}${opcao.servico ? ` · ${opcao.servico}` : ""} ` +
+            `(R$ ${opcao.valor.toFixed(2)}). O cliente continua pagando R$ ${a.freteAtual.toFixed(2)} de frete; ` +
+            `R$ ${a.abono.toFixed(2)} abonados. Motivo: ${a.motivo}. O total do pedido não mudou.` +
+            (notasAutorizadas.length > 0
+              ? ` NF-e ${notasAutorizadas.join(", ")} autorizada: emitir CC-e com a transportadora nova.`
+              : "")
       }
     ]);
-    if (chatError) console.warn("[recotacao/aplicar] Erro ao gravar o abono na timeline:", chatError);
+    if (chatError) console.warn("[recotacao/aplicar] Erro ao gravar a troca na timeline:", chatError);
   } catch (e) {
-    console.warn("[recotacao/aplicar] Exceção ao gravar o abono na timeline:", e);
+    console.warn("[recotacao/aplicar] Exceção ao gravar a troca na timeline:", e);
   }
 
   return NextResponse.json({
     success: true,
     idempotente: false,
-    abono: true,
+    abono: !cobrando,
+    cobrando,
+    cobranca,
     idLedger,
     freteAnterior: a.freteAtual,
     freteNovo: a.freteAtual,
     diferenca: 0,
     valorOpcao: opcao.valor,
-    abonoValor: a.abono,
+    abonoValor: cobrando ? 0 : a.abono,
+    cobrancaValor: cobrando ? a.abono : 0,
     totalAnterior: a.totalAtual,
     totalNovo: a.totalAtual,
     transportadora: opcao.transportadora,
