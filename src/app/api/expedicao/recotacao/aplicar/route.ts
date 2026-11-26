@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server";
-import { createClient as createSupabaseClient } from "@supabase/supabase-js";
+import { createClient as createSupabaseClient, type SupabaseClient } from "@supabase/supabase-js";
 import { createClient as createServerSupabaseClient } from "@/lib/supabase/server";
 import { verificarPermissaoServerSide } from "@/lib/auth/verificar-permissao";
 import { resolverPesoExpedicao } from "@/features/expedicao/lib/peso";
 import { cotarOpcoesFretePorEndereco } from "@/features/maestro/core/agent/maestro-agent-frete.server";
 import type { ModalidadeFrete } from "@/features/expedicao/types";
 import { barreiraNfAutorizada } from "@/features/expedicao/services/corrigir-frete-simulacao";
+import { resolverTransportadoraParceira } from "@/features/orcamentos/lib/transportadoras-parceiras";
+import { categoriaDoServico } from "@/features/orcamentos/lib/categoria-frete";
+import { PERMISSAO_TROCAR_ABONANDO, MOTIVO_ABONO_MINIMO } from "@/features/expedicao/lib/abono-frete";
 
 /**
  * Aplicar uma opção da recotação — Parte C, Etapa 2.
@@ -39,6 +42,13 @@ import { barreiraNfAutorizada } from "@/features/expedicao/services/corrigir-fre
  *   chega — nunca no clique. Quem decide é o banco: `unique(chave)` no ledger,
  *   verificado no começo da RPC. Repetir a mesma chave devolve o registro
  *   anterior sem gravar nada.
+ *
+ * MODO ABONO (26/11/2026, decisão do Everton)
+ *   `abonar: true` + `motivo`: a opção que ENCARECE troca a transportadora sem
+ *   mudar o frete cobrado nem o total (`exp_aplicar_recotacao_abono`). Exige
+ *   `frete.trocar_abonando`; dispensa a liberação de recotação (a permissão é a
+ *   alçada) e aceita NF-e autorizada (o valor da nota não muda; a tela avisa
+ *   para emitir CC-e). Recotar, conferir o preço e os demais gates são os mesmos.
  */
 
 export const runtime = "nodejs";
@@ -52,6 +62,10 @@ type Corpo = {
   opcao_id?: string;
   valor_visto?: number;
   id_endereco_entrega?: string | null;
+  /** Troca abonando a diferença (frete.trocar_abonando). */
+  abonar?: boolean;
+  /** Obrigatório com `abonar`. */
+  motivo?: string;
 };
 
 function erro(message: string, status: number, extra: Record<string, unknown> = {}) {
@@ -69,6 +83,11 @@ export async function POST(request: Request) {
   if (!UUID_RE.test(chave)) return erro("chave de idempotência inválida.", 400);
   if (!opcaoId) return erro("opcao_id é obrigatório.", 400);
   if (!Number.isFinite(valorVisto) || valorVisto < 0) return erro("valor_visto inválido.", 400);
+  const abonar = body?.abonar === true;
+  const motivo = (body?.motivo || "").trim();
+  if (abonar && motivo.length < MOTIVO_ABONO_MINIMO) {
+    return erro("Escreva o motivo do abono (pelo menos 5 letras).", 400);
+  }
 
   const overrideEndereco = (body?.id_endereco_entrega || "").trim() || null;
 
@@ -86,8 +105,16 @@ export async function POST(request: Request) {
   const { data: authData, error: authError } = await supabase.auth.getUser();
   if (authError || !authData.user) return erro("Sessão expirada.", 401);
 
-  const temPermissao = await verificarPermissaoServerSide(supabase, authData.user.id, "expedicao.processar");
-  if (!temPermissao) return erro("Sem permissão (expedicao.processar).", 403);
+  const permissaoExigida = abonar ? PERMISSAO_TROCAR_ABONANDO : "expedicao.processar";
+  const temPermissao = await verificarPermissaoServerSide(supabase, authData.user.id, permissaoExigida);
+  if (!temPermissao) {
+    return erro(
+      abonar
+        ? `Sem permissão para trocar a transportadora abonando a diferença (${PERMISSAO_TROCAR_ABONANDO}).`
+        : "Sem permissão (expedicao.processar).",
+      403
+    );
+  }
 
   // ── Idempotência antes de qualquer gate de negócio ────────────────────────
   // Mesma ordem de `usar-credito`: a operação já aconteceu, e o estado atual
@@ -157,26 +184,34 @@ export async function POST(request: Request) {
   if (exp?.data_despacho && emitido) {
     return erro(`Pedido já despachado com rastreio/prepostagem emitidos (${emitido}) — o frete já foi contratado.`, 409);
   }
+  if (abonar && exp?.data_despacho) {
+    return erro("Pedido já despachado: a troca abonando vale antes do despacho.", 409);
+  }
 
   // NF-e viva (02/11/2026): com nota autorizada o frete não muda, nem para baratear.
   // MESMA barreira do Corrigir frete e da aba Fretes, lida do banco aqui no servidor
   // (antes daqui a nota so impedia empatar, e a recotação barata deixava a nota com o
   // frete antigo: 22269 e 24343). A função do banco ainda aceita baratear; esta rota
   // é a única que a chama.
+  // ABONO: a nota não muda de valor, então ela não barra; a resposta leva os números
+  // das notas para a tela pedir a CC-e com a transportadora nova.
   const nfViva = await barreiraNfAutorizada(supabase, idInt);
-  if (nfViva) return erro(nfViva.mensagem ?? "Pedido com NF-e autorizada: cancele a nota antes de corrigir o frete.", nfViva.status, { code: nfViva.motivo });
+  if (nfViva && !abonar) return erro(nfViva.mensagem ?? "Pedido com NF-e autorizada: cancele a nota antes de corrigir o frete.", nfViva.status, { code: nfViva.motivo });
 
   // Liberação: pré-checada aqui para responder 403 com mensagem que se lê, e
   // CONSUMIDA dentro da RPC, na mesma transação das escritas. A pré-checagem
   // não é a tranca — duas aplicações simultâneas passariam por ela; quem as
   // separa é o `UPDATE ... WHERE consumida_em IS NULL RETURNING` lá dentro.
-  const { data: liberacao } = await supabase
-    .from("expedicao_recotacao_liberacoes")
-    .select("id")
-    .eq("id_int", idInt)
-    .is("consumida_em", null)
-    .is("revogada_em", null)
-    .maybeSingle();
+  // ABONO: dispensada — a permissão `frete.trocar_abonando` é a alçada.
+  const { data: liberacao } = abonar
+    ? { data: { id: 0 } }
+    : await supabase
+        .from("expedicao_recotacao_liberacoes")
+        .select("id")
+        .eq("id_int", idInt)
+        .is("consumida_em", null)
+        .is("revogada_em", null)
+        .maybeSingle();
   if (!liberacao) {
     return erro(
       "Recotação bloqueada: peça a um administrador para liberar este pedido no menu Ações da Expedição.",
@@ -257,11 +292,14 @@ export async function POST(request: Request) {
   const totalAnterior = Number(proposta.valor_total ?? 0);
   const diferenca = Number((opcao.valor - freteAnterior).toFixed(2));
 
-  if (diferenca > 0) {
+  if (diferenca > 0 && !abonar) {
     return erro(
       `Esta opção encarece o frete em R$ ${diferenca.toFixed(2)}. Nesta fase só é possível aplicar o que barateia ou empata.`,
       409
     );
+  }
+  if (abonar && diferenca <= 0) {
+    return erro("Esta opção não encarece o frete: use Aplicar, sem abono.", 409);
   }
 
   // Autoria para o ledger e para a timeline.
@@ -272,6 +310,29 @@ export async function POST(request: Request) {
     .maybeSingle();
   const autorNome = usuarioRow?.nome_usuario || authData.user.email || "Expedição";
   const autorEmail = authData.user.email ?? null;
+
+  if (abonar) {
+    return aplicarAbonando({
+      supabase,
+      uid: authData.user.id,
+      idInt,
+      idCliente,
+      chave,
+      opcao,
+      freteAtual: freteAnterior,
+      totalAtual: totalAnterior,
+      abono: diferenca,
+      motivo,
+      pesoGramas,
+      pesoOrigem,
+      subtotalItens,
+      endereco: { id: String(endereco.id ?? "") || null, cep: String(endereco.cep) },
+      modalidade: modalidadeEfetiva,
+      opcoesCotadas: cotacao.opcoes,
+      autorNome,
+      autorEmail
+    });
+  }
 
   const { data: idLedger, error: rpcError } = await supabase.rpc("exp_aplicar_recotacao", {
     p_id_int: idInt,
@@ -350,5 +411,127 @@ export async function POST(request: Request) {
     // divergência nunca limparia.
     pesoGramas,
     cep: String(endereco.cep)
+  });
+}
+
+type OpcaoCotada = { transportadora: string; servico: string; valor: number; prazo: string };
+
+/**
+ * MODO ABONO (26/11/2026). A opção que encarece troca a transportadora; o frete
+ * cobrado e o total não mudam, e a diferença fica no histórico da recotação.
+ * Tudo dentro de `exp_aplicar_recotacao_abono`, numa transação.
+ */
+async function aplicarAbonando(a: {
+  supabase: SupabaseClient;
+  uid: string;
+  idInt: number;
+  idCliente: number | null;
+  chave: string;
+  opcao: OpcaoCotada;
+  freteAtual: number;
+  totalAtual: number;
+  abono: number;
+  motivo: string;
+  pesoGramas: number;
+  pesoOrigem: string | null;
+  subtotalItens: number;
+  endereco: { id: string | null; cep: string };
+  modalidade: ModalidadeFrete;
+  opcoesCotadas: unknown;
+  autorNome: string;
+  autorEmail: string | null;
+}) {
+  const { supabase, opcao } = a;
+  const idTransportadora = resolverTransportadoraParceira({ transportadora: opcao.transportadora, servico: opcao.servico });
+  if (idTransportadora === null) {
+    return erro(
+      `A opção ${opcao.transportadora} não é de uma transportadora cadastrada: não dá para trocar abonando. Escolha outra opção.`,
+      409
+    );
+  }
+  const categoria = categoriaDoServico(opcao.transportadora, opcao.servico, "CIF");
+
+  const { data: idLedger, error: rpcError } = await supabase.rpc("exp_aplicar_recotacao_abono", {
+    p_id_int: a.idInt,
+    p_chave: a.chave,
+    p_frete_atual: a.freteAtual,
+    p_valor_opcao: opcao.valor,
+    p_total_atual: a.totalAtual,
+    p_transportadora: opcao.transportadora,
+    p_servico: opcao.servico,
+    p_prazo: opcao.prazo,
+    p_id_transportadora: idTransportadora,
+    p_categoria_frete: categoria,
+    p_peso_gramas: a.pesoGramas,
+    p_peso_origem: a.pesoOrigem,
+    p_subtotal_itens: a.subtotalItens,
+    p_id_endereco_entrega: a.endereco.id,
+    p_cep: a.endereco.cep,
+    p_modalidade: a.modalidade,
+    p_opcoes_cotadas: a.opcoesCotadas,
+    p_autor_nome: a.autorNome,
+    p_autor_email: a.autorEmail,
+    p_motivo: a.motivo
+  });
+
+  if (rpcError) {
+    const msg = rpcError.message || "Não foi possível trocar abonando.";
+    if (/42501|permiss/i.test(msg) && !/EXP_RECOT_/.test(msg)) return erro(msg, 403);
+    const limpo = msg.replace(/^.*?EXP_RECOT_[A-Z_]+:\s*/, "");
+    return erro(limpo, /EXP_RECOT_/.test(msg) ? 409 : 500);
+  }
+
+  // Notas autorizadas: o valor não muda, mas o transportador da nota é o antigo.
+  const { data: notas } = await supabase
+    .from("notas_fiscais")
+    .select("numero_nf, status")
+    .eq("id_int", a.idInt);
+  const notasAutorizadas = (notas ?? [])
+    .filter((n) => String(n.status ?? "").trim().toUpperCase() === "AUTORIZADA" && String(n.numero_nf ?? "").trim() !== "")
+    .map((n) => String(n.numero_nf).trim());
+
+  try {
+    const { error: chatError } = await supabase.from("propostas_chat").insert([
+      {
+        id_int: a.idInt,
+        id_cliente: a.idCliente,
+        tipo: "SISTEMA",
+        setor: "EXPEDICAO",
+        autor_uid: a.uid,
+        autor_nome: a.autorNome,
+        autor_email: a.autorEmail,
+        mensagem:
+          `🚚 Transportadora trocada abonando a diferença: ${opcao.transportadora}${opcao.servico ? ` · ${opcao.servico}` : ""} ` +
+          `(R$ ${opcao.valor.toFixed(2)}). O cliente continua pagando R$ ${a.freteAtual.toFixed(2)} de frete; ` +
+          `R$ ${a.abono.toFixed(2)} abonados. Motivo: ${a.motivo}. O total do pedido não mudou.` +
+          (notasAutorizadas.length > 0
+            ? ` NF-e ${notasAutorizadas.join(", ")} autorizada: emitir CC-e com a transportadora nova.`
+            : "")
+      }
+    ]);
+    if (chatError) console.warn("[recotacao/aplicar] Erro ao gravar o abono na timeline:", chatError);
+  } catch (e) {
+    console.warn("[recotacao/aplicar] Exceção ao gravar o abono na timeline:", e);
+  }
+
+  return NextResponse.json({
+    success: true,
+    idempotente: false,
+    abono: true,
+    idLedger,
+    freteAnterior: a.freteAtual,
+    freteNovo: a.freteAtual,
+    diferenca: 0,
+    valorOpcao: opcao.valor,
+    abonoValor: a.abono,
+    totalAnterior: a.totalAtual,
+    totalNovo: a.totalAtual,
+    transportadora: opcao.transportadora,
+    servico: opcao.servico,
+    prazo: opcao.prazo,
+    idTransportadoraCliente: idTransportadora,
+    notasAutorizadas,
+    pesoGramas: a.pesoGramas,
+    cep: a.endereco.cep
   });
 }

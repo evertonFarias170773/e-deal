@@ -54,6 +54,7 @@ import {
 // As MESMAS barreiras da correção de frete da Expedição — ver `barreirasDaTrocaDeFrete`.
 import { barreirasDaTrocaDeFrete } from "@/features/expedicao/services/corrigir-frete-simulacao";
 import { vinculoPeloCardEscolhido } from "@/features/orcamentos/lib/transportadoras-parceiras";
+import { transportadoraDoUltimoAbono } from "@/features/expedicao/lib/abono-frete";
 import {
   freteValorDigitadoParaGravar,
   origemParaGravar,
@@ -3551,6 +3552,9 @@ export async function saveProposta(
         declaracaoMudou: formState.freteDeclaracaoAlterada === true
       });
     const modalidadeFrete: ModalidadeFrete | null = formState.modalidadeFrete ?? null;
+    // Troca abonando (26/11/2026, lib/abono-frete): o vínculo foi trocado sem mudar
+    // o card cotado. Sem isto, o Salvar devolveria a transportadora ao SEDEX vendido.
+    const vinculoAbonado = isUpdate && id_int ? await transportadoraDoUltimoAbono(client, Number(id_int)) : null;
     // O card escolhido grava o vínculo mesmo sem clique (09/11/2026): cotação
     // automática, "Atualizar fretes" e o Maestro deixavam o pedido dos Correios
     // sem transportadora, e a NF-e saía sem transportador. Regra única em
@@ -3561,7 +3565,8 @@ export async function saveProposta(
         : vinculoPeloCardEscolhido({
             modalidade: modalidadeFrete,
             card: chosenFrete ?? null,
-            idDaTela: formState.idTransportadoraCliente ?? null
+            idDaTela: formState.idTransportadoraCliente ?? null,
+            vinculoAbonado
           });
 
     /**

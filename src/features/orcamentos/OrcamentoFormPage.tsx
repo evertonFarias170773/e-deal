@@ -107,6 +107,8 @@ import {
   vinculoPeloCardEscolhido
 } from "@/features/orcamentos/lib/transportadoras-parceiras";
 import { PermissionGuard } from "@/components/common/PermissionGuard";
+import { TrocarAbonandoPanel } from "./components/TrocarAbonandoPanel";
+import { PERMISSAO_TROCAR_ABONANDO, transportadoraDoUltimoAbono } from "@/features/expedicao/lib/abono-frete";
 import {
   aplicarModalidadeNosFretes,
   exigeCotacaoEscolhida,
@@ -1373,12 +1375,31 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
    * Salvar grava (`vinculoPeloCardEscolhido`). Frete manual com os Correios que
    * sobraram de um SEDEX anterior mostra vazio, nunca os Correios.
    */
+  /**
+   * Transportadora do último abono (26/11/2026, lib/abono-frete). A troca
+   * abonando muda o vínculo sem mudar o card cotado: sem isto a tela mostraria
+   * "Corrigir a transportadora" e o Salvar devolveria o vínculo ao card.
+   */
+  const [vinculoAbonado, setVinculoAbonado] = useState<{ idInt: number; id: number | null } | null>(null);
+  const idIntDoAbono = proposta?.id_int ? Number(proposta.id_int) : null;
+  useEffect(() => {
+    if (idIntDoAbono === null) return;
+    let ativo = true;
+    void transportadoraDoUltimoAbono(getSupabaseClient(), idIntDoAbono).then((id) => {
+      if (ativo) setVinculoAbonado({ idInt: idIntDoAbono, id });
+    });
+    return () => { ativo = false; };
+    // `proposta` muda a cada recarga: depois de um abono a leitura acompanha.
+  }, [idIntDoAbono, proposta]);
+  const vinculoAbonadoAtual = vinculoAbonado && vinculoAbonado.idInt === idIntDoAbono ? vinculoAbonado.id : null;
+
   const transportadoraDoFreteEscolhido =
     form.modalidadeFrete === "CIF"
       ? vinculoPeloCardEscolhido({
           modalidade: form.modalidadeFrete,
           card: freteEscolhido ?? null,
-          idDaTela: form.idTransportadoraCliente ?? null
+          idDaTela: form.idTransportadoraCliente ?? null,
+          vinculoAbonado: vinculoAbonadoAtual
         })
       : form.idTransportadoraCliente ?? null;
   /** Card calculado escolhido (origem COTACAO): transportadora e "Valor cobrado" so leitura (lib/origem-frete). */
@@ -8045,7 +8066,8 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                       modalidade: form.modalidadeFrete,
                       card: freteEscolhido ?? null,
                       idVinculo: form.idTransportadoraCliente ?? null,
-                      motoboyFob: fobPorMotoboy
+                      motoboyFob: fobPorMotoboy,
+                      vinculoAbonado: vinculoAbonadoAtual
                     }) || salvandoTransportadoraAdmin) && (
                     <div className="space-y-2 border-t border-amber-200 pt-3 dark:border-amber-900">
                       <label className="block text-xs font-bold text-amber-900 dark:text-amber-200">
@@ -8122,6 +8144,34 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                         que tem os botoes proprios e nao usa este bloco.
                       */}
                     </div>
+                  </PermissionGuard>
+                  {/* Trocar a transportadora ABONANDO a diferença (26/11/2026): a opção
+                      que encarece, sem mudar o frete cobrado nem o total. Mesma rota do
+                      Despachar; o servidor confere a permissão de novo. */}
+                  <PermissionGuard permission={PERMISSAO_TROCAR_ABONANDO} fallback={null}>
+                    {proposta?.id_int ? (
+                      <div className="space-y-2 border-t border-slate-200 pt-3 dark:border-slate-700">
+                        <label className="block text-xs font-bold text-slate-600 dark:text-slate-300">
+                          Trocar a transportadora abonando a diferença (admin)
+                        </label>
+                        <p className="text-[11px] text-slate-600 dark:text-slate-300">
+                          Para a opção que sai mais cara que o frete vendido: a transportadora muda, o cliente continua pagando o mesmo frete e o total não muda. A diferença fica registrada como abono, com o motivo.
+                        </p>
+                        <TrocarAbonandoPanel
+                          idInt={Number(proposta.id_int)}
+                          statusInterno={form.status}
+                          modalidade={form.modalidadeFrete}
+                          temNotaAutorizada={bloqueioValorNegociadoPorNota !== null}
+                          onTrocado={() =>
+                            concluirSalvamentoERecarregar({
+                              type: "success",
+                              title: "Transportadora trocada abonando a diferença",
+                              description: "O frete do cliente e o total do pedido não mudaram."
+                            })
+                          }
+                        />
+                      </div>
+                    ) : null}
                   </PermissionGuard>
                 </div>
               )}

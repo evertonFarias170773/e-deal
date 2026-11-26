@@ -29,6 +29,7 @@ import { ActionsMenu, type ActionMenuItem } from "@/components/common/ActionsMen
 import { useAppToast } from "@/components/common/AppToast";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { hasPermissao } from "@/features/auth/usuarios.service";
+import { PERMISSAO_TROCAR_ABONANDO } from "./lib/abono-frete";
 import { formatCurrency } from "@/lib/formatters/currency";
 import { codecs } from "@/lib/url-state";
 import { useUrlFilters } from "@/hooks/useUrlFilters";
@@ -632,6 +633,8 @@ export function ExpedicaoPage() {
    * existe para poder delegar a liberacao sem dar admin geral do ERP.
    */
   const canAdminExpedicao = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "expedicao.admin");
+  /** Troca abonando (26/11/2026, lib/abono-frete): a rota decide pelo perfil (verificarPermissaoServerSide), sem o atalho is_admin. */
+  const podeTrocarAbonando = Boolean(user?.isSuperAdmin || hasPermissao(user, PERMISSAO_TROCAR_ABONANDO));
 
   /**
    * Encerrar pedido de teste. Chave `propostas.encerrar_teste` (14/09/2026), que
@@ -1585,6 +1588,7 @@ export function ExpedicaoPage() {
           modoEdicao={pedidoDespacho.modo === "EDICAO"}
           ator={atorAtual()}
           podeLiberarDespacho={canAdminExpedicao}
+          podeTrocarAbonando={podeTrocarAbonando}
           podeEditarTelefone={podeEditarCadastro}
           ehAdmNoCadastro={user?.isAdmNoCadastro === true}
           podeAvisarCliente={Boolean(canOperar)}

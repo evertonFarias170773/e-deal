@@ -124,6 +124,56 @@ export async function aplicarRecotacao(input: {
   }
 }
 
+/** Resultado da troca abonando (26/11/2026, lib/abono-frete). */
+export interface AplicacaoAbono extends AplicacaoRecotacao {
+  abono?: boolean;
+  /** Valor cotado da opcao: o custo real do transporte. */
+  valorOpcao?: number;
+  /** Diferenca que a empresa absorve. */
+  abonoValor?: number;
+  /** Cadastro da transportadora nova (propostas.id_transportadora_cliente). */
+  idTransportadoraCliente?: number | null;
+  /** NF-e autorizadas do pedido: pedem CC-e com a transportadora nova. */
+  notasAutorizadas?: string[];
+}
+
+/**
+ * Troca a transportadora pela opcao que ENCARECE, abonando a diferenca: o frete
+ * cobrado e o total nao mudam, a diferenca fica no historico da recotacao.
+ * Exige `frete.trocar_abonando` (o servidor confere). Mesma rota do Aplicar.
+ */
+export async function aplicarRecotacaoAbonando(input: {
+  idInt: number;
+  chave: string;
+  opcaoId: string;
+  valorVisto: number;
+  motivo: string;
+  idEnderecoEntrega?: string | null;
+}): Promise<AplicacaoAbono> {
+  const token = await tokenSessao();
+  if (!token) return { success: false, errorMessage: "Sessão expirada. Faça login novamente." };
+  try {
+    const res = await fetch("/api/expedicao/recotacao/aplicar", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({
+        id_int: input.idInt,
+        chave: input.chave,
+        opcao_id: input.opcaoId,
+        valor_visto: input.valorVisto,
+        id_endereco_entrega: input.idEnderecoEntrega ?? null,
+        abonar: true,
+        motivo: input.motivo
+      })
+    });
+    const data = (await res.json().catch(() => null)) as (AplicacaoAbono & { message?: string }) | null;
+    if (res.ok && data?.success) return data;
+    return { success: false, errorMessage: data?.message || `Falha ao trocar abonando (HTTP ${res.status}).` };
+  } catch (e) {
+    return { success: false, errorMessage: e instanceof Error ? e.message : "Erro de rede." };
+  }
+}
+
 /** Resultado de liberar ou cancelar a liberacao de recotacao (admin). */
 export interface LiberacaoResult {
   success: boolean;

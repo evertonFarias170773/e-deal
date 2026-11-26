@@ -1,6 +1,6 @@
 # Expedição: despachar e entregar
 
-> **Última revisão:** 25/11/2026 (a troca de modalidade na proposta chega ao **Despachar** e à etiqueta enquanto o pedido não foi despachado; antes, o que tinha sido gravado na modalidade antiga seguia valendo). 19/11/2026 (reenvio aberto: o card e o **Despachar** mostram o envio do reenvio — tipo, transportadora, frete —, sem o rastreio do envio que voltou, sem **Recotar frete** nem trava de frete; prepostagem dos Correios recusada quando o reenvio sai por outro tipo). 18/11/2026 (reenvio: escolher como cobrar o frete do reenvio — **diferença**, **frete cheio** ou **sem cobrança**, só administrador; o valor a cobrar é o que trava o redespacho e vira o PIX; quadro **Pedido reenviado** na aba Fretes da proposta). 18/11/2026 (reenvio de pedido devolvido com diferença de frete: cotar o frete na janela **Reenviar**, PIX da diferença ou abono, nota nova quando o tipo de envio muda e trava do redespacho). 14/11/2026 (quadro **Contatos do pedido** no Despachar, com as conversas do ChatGuru escolhidas na aba Geral). 10/11/2026 (aviso de pedido pronto pelo WhatsApp sai no Confirmar despacho)
+> **Última revisão:** 26/11/2026 (**Trocar abonando**: o administrador troca a transportadora pela opção que encarece sem mudar o frete do cliente nem o total; motivo obrigatório; com NF-e autorizada, emitir CC-e). 25/11/2026 (a troca de modalidade na proposta chega ao **Despachar** e à etiqueta enquanto o pedido não foi despachado; antes, o que tinha sido gravado na modalidade antiga seguia valendo). 19/11/2026 (reenvio aberto: o card e o **Despachar** mostram o envio do reenvio — tipo, transportadora, frete —, sem o rastreio do envio que voltou, sem **Recotar frete** nem trava de frete; prepostagem dos Correios recusada quando o reenvio sai por outro tipo). 18/11/2026 (reenvio: escolher como cobrar o frete do reenvio — **diferença**, **frete cheio** ou **sem cobrança**, só administrador; o valor a cobrar é o que trava o redespacho e vira o PIX; quadro **Pedido reenviado** na aba Fretes da proposta). 18/11/2026 (reenvio de pedido devolvido com diferença de frete: cotar o frete na janela **Reenviar**, PIX da diferença ou abono, nota nova quando o tipo de envio muda e trava do redespacho). 14/11/2026 (quadro **Contatos do pedido** no Despachar, com as conversas do ChatGuru escolhidas na aba Geral). 10/11/2026 (aviso de pedido pronto pelo WhatsApp sai no Confirmar despacho)
 > **Caminho no menu:** Expedição → card do pedido → **Despachar** (os outros passos saem do menu de ações do card)
 > **Endereço:** `/expedicao`
 
@@ -89,6 +89,20 @@ O bloco **Recotar frete** aparece em **Despachar** quando o pedido é CIF e est�
 5. Para gravar o frete novo na proposta, o administrador usa antes **Liberar aplicação da recotação** no menu do pedido. Depois o expedidor recota e clica em **Aplicar** na opção desejada. A liberação vale para uma aplicação e pode ser desfeita em **Cancelar liberação**, no menu.
 6. Ao aplicar, o frete e o total do pedido mudam pelo mesmo valor e o fato fica registrado na timeline do pedido. A diferença não é lançada na conta do cliente.
 7. Se o cliente do pedido tem **Pode editar valor do frete** ligado no cadastro, antes de gravar aparece a janela **Frete subsidiado**: "Este cliente tem frete subsidiado (valor atual: R$ X). Confirma que quer regravar para R$ Y?". **Regravar frete** grava; **Cancelar** não grava nada. O valor atual é o que está gravado no pedido agora.
+
+#### Trocar a transportadora abonando a diferença (administrador)
+
+Serve para mandar o pedido por uma transportadora que sai mais cara que o frete vendido, sem cobrar a diferença do cliente. Só quem tem a permissão **Trocar Transportadora Abonando a Diferença** (perfil Administrador; o Super Administrador também) vê o botão.
+
+1. Em **Despachar**, clique em **Recotar frete**.
+2. Na opção que sai mais cara (diferença com "+"), clique em **Trocar abonando**. Não precisa da liberação de recotação.
+3. Leia a janela **Trocar abonando a diferença**: ela mostra a transportadora nova e quanto ela custa, o frete que o cliente continua pagando e o valor que a empresa abona.
+4. Escreva o **Motivo do abono** (obrigatório) e clique em **Trocar e abonar R$ …**.
+5. O quadro amarelo confirma: a transportadora mudou, o frete do cliente e o total do pedido não mudaram, e o abono ficou registrado com o seu nome, a data e o motivo. O mesmo fica na timeline do pedido.
+6. Despache normalmente pela transportadora nova. A trava de frete não bloqueia, porque a troca abonada passa a ser a referência do frete.
+7. **Pedido com NF-e autorizada:** a troca é permitida, porque o valor da nota não muda. Mas a nota continua com a transportadora antiga: emita uma **Carta de Correção (CC-e)** com a transportadora nova. A janela e o quadro avisam com o número da nota.
+
+A mesma troca existe na aba **Fretes** da proposta (veja [Fretes](proposta-fretes.md)).
 
 ### Despachar como retirada um pedido CIF (ADM)
 
@@ -208,6 +222,7 @@ As regras da tela inteira estão em [Expedição](expedicao.md). Estas são as q
 - **Trava do redespacho (desde 18/11/2026).** O pedido reenviado só sai de novo quando: o valor a cobrar do reenvio (pelo modo: diferença, frete cheio ou nada) está pago ou abonado; o envio é o do reenvio (endereço e tipo), quando o reenvio cotou o frete; e, se o tipo de envio mudou, há nota de produção emitida depois do reenvio. Com o frete cotado no reenvio, a trava de frete da recotação não se aplica ao redespacho: a diferença já foi decidida no reenvio.
 - A trava de frete só vale em CIF: até R$ 4,00 acima do frete da proposta só avisa; acima disso, ou sem recotação para o CEP atual, o despacho e a prepostagem ficam bloqueados até a liberação de um administrador da Expedição.
 - **A prepostagem leva a NF-e do pedido (desde 03/11/2026).** Desde 01/11/2026 os Correios exigem NF-e para postar. Com NF-e de venda autorizada, a prepostagem envia aos Correios a chave de acesso e o número da nota, junto com os itens da declaração de conteúdo. Sem nota autorizada (pendente, cancelada, só de serviço ou faturada no sistema antigo), a prepostagem sai como antes, só com a declaração, sem bloqueio novo. Se os Correios recusarem, a janela mostra **Correios recusaram a prepostagem** com a mensagem deles. A recusa não fica registrada no pedido: anote ou tente de novo.
+- **Trocar abonando (desde 26/11/2026).** A opção que encarece só entra como abono, por quem tem **Trocar Transportadora Abonando a Diferença**: a transportadora muda, o frete cobrado e o total não mudam, e o motivo é obrigatório. Vale com o pedido Na Expedição, em CIF, pago e ainda não despachado; vale também com NF-e autorizada (emita CC-e). Sem a permissão, a opção que encarece continua recusada.
 - Recotar é livre para o expedidor. **Aplicar** depende de liberação do administrador e só aceita opção que barateia ou empata o frete. Com NF-e autorizada não se aplica nenhuma opção, nem a que barateia: a tela recusa antes de pedir confirmação, com a mesma mensagem do **Corrigir frete** (cancele a nota antes). Nota cancelada ou denegada não impede.
 - **VEPPO com 20% a mais (desde 03/11/2026).** A opção VEPPO da recotação vem com os 20% sobre o valor da VEPPO, como na proposta. Exceção: o pedido criado antes das 09:38 de 03/11/2026 que tem a VEPPO como frete escolhido recota sem os 20%, como antes. Assim a recotação dele não fica 20% acima do frete gravado e não pede **Liberar despacho (ADM)** só por causa do acréscimo. A mesma regra vale no **Aplicar** e no frete do complemento.
 - **A troca de modalidade na proposta vale para o despacho e a etiqueta (desde 25/11/2026).** Enquanto o pedido não foi despachado, o **Despachar** abre com a modalidade e o envio que a proposta declara agora. O que ficou gravado antes (ao gerar a etiqueta ou salvar sem despachar) só é aproveitado se foi gravado na mesma modalidade. Exemplo: pedido trocado de **Retira** para **CIF / SEDEX** abre em CIF com os Correios, sem o aviso **Diferente do que o orçamento declarou**, e a etiqueta sai como envio, não como retirada. Depois do despacho confirmado vale o que foi despachado.
@@ -278,3 +293,7 @@ A tabela completa dos avisos da Expedição está em [Expedição](expedicao.md)
 - `supabase/migrations/20261022_exp_reenvio_fase1.sql`
 - `supabase/migrations/20261118c_exp_reenvio_modo_cobranca.sql`
 - `src/app/api/expedicao/correios/prepostagem/route.ts`
+- `src/features/expedicao/components/ConfirmarAbonoModal.tsx`
+- `src/features/expedicao/lib/abono-frete.ts`
+- `src/app/api/expedicao/recotacao/aplicar/route.ts`
+- `supabase/migrations/20261126_frete_trocar_abonando.sql`

@@ -182,7 +182,8 @@ export const CATALOGO_PERMISSOES: Record<string, PermissionDefinition[]> = {
     { key: "expedicao.processar", label: "Processar Envio / Retirada", desc: "Permite registrar envios e confirmar retiradas na expedição.",                      critica: false },
     // 22/10/2026: conferida no banco por exp_reenviar_pedido. Nenhum perfil nasce com ela.
     { key: "expedicao.reenvio",   label: "Reenviar Pedido Devolvido",  desc: "Permite voltar para a Expedição um pedido EM TRANSITO devolvido pela transportadora, com endereço ou tipo de envio novo, quando o frete não muda.", critica: true },
-    { key: "expedicao.admin",     label: "Configurar Expedição",       desc: "Permite configurar metodos de envio, integracoes logisticas e liberar a recotacao de frete de um pedido no despacho.", critica: true  }
+    { key: "expedicao.admin",     label: "Configurar Expedição",       desc: "Permite configurar metodos de envio, integracoes logisticas e liberar a recotacao de frete de um pedido no despacho.", critica: true  },
+    { key: "frete.trocar_abonando", label: "Trocar Transportadora Abonando a Diferença", desc: "Permite trocar a transportadora pela opção da recotação que sai mais cara, sem mudar o frete cobrado nem o total do pedido. A diferença fica registrada como abono, com o motivo.", critica: true }
   ],
 
   // ── Relatórios ────────────────────────────────────────────────────────────

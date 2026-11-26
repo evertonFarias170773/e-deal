@@ -23,6 +23,8 @@ import type { AtorExpedicao, DespachoInput, ResultadoAcao } from "../services/ex
 import type { EnderecoCliente } from "../services/enderecos.service";
 import { correiosStatus, gerarPrepostagem } from "../services/correios.client";
 import { etiquetaDoPedido } from "../lib/etiqueta-do-pedido";
+import { avisoCceDoAbono, podeAbonar } from "../lib/abono-frete";
+import { ConfirmarAbonoModal } from "./ConfirmarAbonoModal";
 import { carregarPreviaEtiqueta } from "../services/etiqueta.client";
 import type { EtiquetaViewModel } from "../services/etiqueta-viewmodel.service";
 import { ConferenciaDespacho } from "./ConferenciaDespacho";
@@ -44,6 +46,7 @@ import { formatPhoneBR } from "@/lib/formatters/phone";
 import {
   recotarFrete,
   aplicarRecotacao,
+  aplicarRecotacaoAbonando,
   buscarLiberacaoAtiva,
   avaliarSaldoDoDespacho,
   avaliarTravaFreteDespacho,
@@ -54,7 +57,7 @@ import {
 import type {
   RecotacaoResult,
   OpcaoRecotacao,
-  AplicacaoRecotacao,
+  AplicacaoAbono,
   TravaFreteDespacho
 } from "../services/recotacao.client";
 import { LABEL_MODALIDADE, MODALIDADES_OFERECIDAS, TRANSPORTES_POR_MODALIDADE } from "../types";
@@ -188,6 +191,7 @@ export function DespacharModal({
   onClose,
   onDone,
   podeLiberarDespacho = false,
+  podeTrocarAbonando = false,
   podeEditarTelefone = false,
   ehAdmNoCadastro = false,
   instrucaoEntrega,
@@ -210,6 +214,11 @@ export function DespacharModal({
    * frete recusa. So apresentacao — quem confere a permissao e a funcao do banco.
    */
   podeLiberarDespacho?: boolean;
+  /**
+   * `frete.trocar_abonando` (26/11/2026): oferece "Trocar abonando" na opção da
+   * recotação que encarece. Só apresentação — a rota e o banco conferem.
+   */
+  podeTrocarAbonando?: boolean;
   /**
    * `cadastros.edit` (ou admin): libera editar o telefone do destinatario, que ao confirmar e gravado
    * no CADASTRO dele. Sem a permissao o campo so mostra o numero. So apresentacao: o despacho nao
@@ -460,7 +469,7 @@ export function DespacharModal({
   const [aplicandoId, setAplicandoId] = useState<string | null>(null);
   /** Cliente com frete subsidiado: a opcao espera a confirmacao (lib/frete-subsidiado). */
   const [confirmarSubsidio, setConfirmarSubsidio] = useState<{ opcao: OpcaoRecotacao; valorAtual: number } | null>(null);
-  const [aplicacao, setAplicacao] = useState<AplicacaoRecotacao | null>(null);
+  const [aplicacao, setAplicacao] = useState<AplicacaoAbono | null>(null);
   const [erroAplicacao, setErroAplicacao] = useState<string | null>(null);
   const [chavesPorOpcao, setChavesPorOpcao] = useState<Record<string, string>>({});
 
@@ -640,6 +649,53 @@ export function DespacharModal({
       }
     }
     else setErroAplicacao(res.errorMessage || "Não foi possível aplicar agora.");
+  }
+
+  /**
+   * TROCAR ABONANDO (26/11/2026, lib/abono-frete): a opção que ENCARECE, para quem
+   * tem `frete.trocar_abonando`. Não depende da liberação nem barra por NF-e (o
+   * valor da nota não muda; a resposta traz as notas para o aviso da CC-e).
+   */
+  const [abonoEscolhido, setAbonoEscolhido] = useState<OpcaoRecotacao | null>(null);
+  const [avisoCce, setAvisoCce] = useState<string | null>(null);
+
+  async function gravarAbono(o: OpcaoRecotacao, motivo: string) {
+    const chave = chavesPorOpcao[o.id];
+    if (!chave) {
+      setErroAplicacao("Recote antes de trocar.");
+      return;
+    }
+    setAplicandoId(o.id);
+    setErroAplicacao(null);
+    const res = await aplicarRecotacaoAbonando({
+      idInt: pedido.idInt,
+      chave,
+      opcaoId: o.id,
+      valorVisto: o.valor,
+      motivo,
+      idEnderecoEntrega
+    });
+    setAplicandoId(null);
+    if (!res.success) {
+      setErroAplicacao(res.errorMessage || "Não foi possível trocar abonando.");
+      return;
+    }
+    setAbonoEscolhido(null);
+    setAplicacao(res);
+    setAvisoCce(avisoCceDoAbono(res.notasAutorizadas, res.transportadora ?? o.transportadora));
+    setVersaoTrava((v) => v + 1);
+    // O transporte do abono passa a ser o do formulário, com o cadastro que o
+    // banco gravou na proposta (o despacho grava o mesmo vínculo).
+    if (res.transportadora) setTransportadoraNome(res.transportadora);
+    setIdTransportadoraCliente(res.idTransportadoraCliente ?? null);
+    const recotado = normalizarTipoFrete(o.servico || o.transportadora);
+    const oferecidos = TRANSPORTES_POR_MODALIDADE[modalidade === "FOB" ? "FOB" : "CIF"];
+    if (oferecidos.includes(recotado)) {
+      setTipoFrete(recotado);
+      setTransporteRecotadoForaDaModalidade(null);
+    } else {
+      setTransporteRecotadoForaDaModalidade(labelTipoFrete(recotado));
+    }
   }
 
   /**
@@ -2020,6 +2076,16 @@ export function DespacharModal({
                               >
                                 {aplicandoId === o.id ? "Aplicando..." : "Aplicar"}
                               </button>
+                            ) : podeAbonar(o.diferenca, podeTrocarAbonando) ? (
+                              <button
+                                type="button"
+                                onClick={() => setAbonoEscolhido(o)}
+                                disabled={Boolean(aplicandoId) || Boolean(aplicacao)}
+                                title="Troca a transportadora sem mudar o frete do cliente nem o total; a diferença fica registrada como abono."
+                                className="rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-900 transition hover:bg-amber-100 disabled:opacity-50"
+                              >
+                                {aplicandoId === o.id ? "Trocando..." : "Trocar abonando"}
+                              </button>
                             ) : (
                               <span
                                 title={motivoBloqueio(o)}
@@ -2042,7 +2108,24 @@ export function DespacharModal({
                         </p>
                       )}
 
-                      {aplicacao?.success ? (
+                      {aplicacao?.success && aplicacao.abono ? (
+                        <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+                          <p className="font-semibold">
+                            Transportadora trocada abonando a diferença{aplicacao.idempotente ? " (já estava feito)" : ""}
+                          </p>
+                          <p className="mt-1">
+                            {aplicacao.transportadora}
+                            {aplicacao.servico ? ` · ${aplicacao.servico}` : ""} — custa{" "}
+                            <strong>{formatCurrency(aplicacao.valorOpcao ?? 0)}</strong>. Abonado:{" "}
+                            <strong>{formatCurrency(aplicacao.abonoValor ?? 0)}</strong>.
+                          </p>
+                          <p>
+                            O cliente continua pagando {formatCurrency(aplicacao.freteNovo ?? 0)} de frete. Total do pedido:{" "}
+                            <strong>{formatCurrency(aplicacao.totalNovo ?? 0)}</strong> (não mudou).
+                          </p>
+                          {avisoCce ? <p className="mt-2 font-semibold">{avisoCce}</p> : null}
+                        </div>
+                      ) : aplicacao?.success ? (
                         <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-900">
                           <p className="font-semibold">
                             Frete atualizado{aplicacao.idempotente ? " (já estava aplicado)" : ""}
@@ -2593,6 +2676,18 @@ export function DespacharModal({
           void gravarAplicacao(opcao, chave);
         }}
         onClose={() => setConfirmarSubsidio(null)}
+      />
+    ) : null}
+    {abonoEscolhido ? (
+      <ConfirmarAbonoModal
+        transportadora={abonoEscolhido.transportadora}
+        servico={abonoEscolhido.servico}
+        valorOpcao={abonoEscolhido.valor}
+        freteAtual={recotacao?.freteAtual ?? pedido.freteValor ?? 0}
+        temNotaAutorizada={pedido.nfStatus === "AUTORIZADA"}
+        salvando={aplicandoId !== null}
+        onConfirmar={(motivo) => void gravarAbono(abonoEscolhido, motivo)}
+        onClose={() => setAbonoEscolhido(null)}
       />
     ) : null}
     </>

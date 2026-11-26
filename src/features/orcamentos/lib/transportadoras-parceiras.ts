@@ -234,10 +234,19 @@ export function vinculoPeloCardEscolhido(args: {
   modalidade: string | null | undefined;
   card: { transportadora?: string | null; servico?: string | null } | null | undefined;
   idDaTela: number | null | undefined;
+  /**
+   * Transportadora do último abono do pedido (26/11/2026, `lib/abono-frete`).
+   * A troca abonando muda o vínculo sem mudar o card cotado; sem isto o Salvar
+   * devolveria o vínculo ao SEDEX vendido.
+   */
+  vinculoAbonado?: number | null;
 }): number | null {
   const idDaTela = args.idDaTela === undefined || args.idDaTela === null ? null : Number(args.idDaTela);
   const modalidade = normalizar(args.modalidade);
   if (modalidade === "FOB" || modalidade === "RETIRA") return idDaTela;
+  if (args.vinculoAbonado != null && idDaTela !== null && canonizarTransportadora(idDaTela) === Number(args.vinculoAbonado)) {
+    return idDaTela;
+  }
   const doCard = resolverTransportadoraParceira(args.card);
   if (doCard !== null) return doCard;
   if (cardTemServico(args.card) && ehCadastroCorreios(idDaTela)) return null;
@@ -266,11 +275,14 @@ export function transportadoraPrecisaCorrecao(args: {
   card: { transportadora?: string | null; servico?: string | null } | null | undefined;
   idVinculo: number | null | undefined;
   motoboyFob?: boolean;
+  /** Transportadora do último abono (26/11/2026): o vínculo dela não é erro. */
+  vinculoAbonado?: number | null;
 }): boolean {
   const id = args.idVinculo === undefined || args.idVinculo === null ? null : Number(args.idVinculo);
   const modalidade = normalizar(args.modalidade);
   if (modalidade === "RETIRA") return id !== null;
   if (modalidade === "FOB") return id === null && !args.motoboyFob;
+  if (args.vinculoAbonado != null && id !== null && canonizarTransportadora(id) === Number(args.vinculoAbonado)) return false;
   if (!cardTemServico(args.card)) return false;
   const doCard = resolverTransportadoraParceira(args.card);
   if (doCard === TRANSPORTADORAS_PARCEIRAS.CORREIOS) return !ehCadastroCorreios(id);

@@ -78,7 +78,12 @@ type Despacho = {
   data_despacho: string;
 };
 
-type Dados = { despachos: Despacho[]; fretes: Record<string, number | null> };
+/**
+ * Abono por pedido (26/11/2026): a troca de transportadora abonando a diferenca deixa o frete
+ * cobrado igual e registra o abono em `expedicao_recotacoes` (ultima recotacao do pedido).
+ * Custo real do transporte = frete cobrado + abonado.
+ */
+type Dados = { despachos: Despacho[]; fretes: Record<string, number | null>; abonos?: Record<string, number> };
 
 const ROTULO_MODALIDADE: Record<string, string> = { CIF: "CIF", FOB: "FOB", RETIRA: "Retira" };
 const rotuloModalidade = (m: string | null) => (m ? ROTULO_MODALIDADE[m] ?? m : "Sem modalidade");
@@ -130,7 +135,26 @@ async function consultar(
     }
   }
 
-  return { data: { despachos, fretes } satisfies Dados, error: null };
+  // Abono da troca de transportadora (26/11/2026): vale o da ULTIMA recotacao do pedido.
+  const abonos: Record<string, number> = {};
+  const vistos = new Set<string>();
+  for (let i = 0; i < ids.length; i += 200) {
+    const { data, error } = await supabase
+      .from("expedicao_recotacoes")
+      .select("id_int,aplicado_em,abono_valor")
+      .in("id_int", ids.slice(i, i + 200))
+      .order("aplicado_em", { ascending: false });
+    if (error) return { data: null, error };
+    for (const r of (data ?? []) as Array<{ id_int: number; abono_valor: number | string | null }>) {
+      const chave = String(r.id_int);
+      if (vistos.has(chave)) continue;
+      vistos.add(chave);
+      const abono = Number(r.abono_valor ?? 0);
+      if (abono > 0) abonos[chave] = abono;
+    }
+  }
+
+  return { data: { despachos, fretes, abonos } satisfies Dados, error: null };
 }
 
 type Grupo = {
@@ -139,16 +163,19 @@ type Grupo = {
   pedidos: number;
   frete_zero: number;
   frete: number;
+  abonado: number;
 };
 
 function normalizar(resposta: unknown): ResultadoRelatorio {
-  const { despachos = [], fretes = {} } = (resposta ?? {}) as Partial<Dados>;
+  const { despachos = [], fretes = {}, abonos = {} } = (resposta ?? {}) as Partial<Dados>;
 
   const grupos = new Map<string, Grupo>();
   const cifZero: number[] = [];
   const retiraFobComFrete: string[] = [];
   let totalFrete = 0;
   let totalZero = 0;
+  let totalAbonado = 0;
+  const comAbono: string[] = [];
 
   // Nomes gravados que cada grupo juntou, com a contagem, para o aviso de conferência.
   const nomesPorGrupo = new Map<string, Map<string, number>>();
@@ -166,9 +193,16 @@ function normalizar(resposta: unknown): ResultadoRelatorio {
     const chave = `${nome.toUpperCase()}|${modalidade}`;
     const frete = Number(fretes[String(d.id_int)] ?? 0);
 
-    const g = grupos.get(chave) ?? { transportadora: nome, modalidade, pedidos: 0, frete_zero: 0, frete: 0 };
+    const abonado = Number(abonos[String(d.id_int)] ?? 0);
+
+    const g = grupos.get(chave) ?? { transportadora: nome, modalidade, pedidos: 0, frete_zero: 0, frete: 0, abonado: 0 };
     g.pedidos += 1;
     g.frete += frete;
+    g.abonado += abonado;
+    if (abonado > 0) {
+      totalAbonado += abonado;
+      comAbono.push(`${d.id_int} (${nome}, ${formatCurrency(abonado)})`);
+    }
     if (frete <= 0) {
       g.frete_zero += 1;
       totalZero += 1;
@@ -181,6 +215,7 @@ function normalizar(resposta: unknown): ResultadoRelatorio {
   }
 
   totalFrete = arred(totalFrete);
+  totalAbonado = arred(totalAbonado);
   const linhas: LinhaRelatorio[] = [...grupos.values()]
     .map((g) => ({
       transportadora: g.transportadora,
@@ -188,11 +223,16 @@ function normalizar(resposta: unknown): ResultadoRelatorio {
       pedidos: g.pedidos,
       frete_zero: g.frete_zero,
       frete: arred(g.frete),
+      abonado: arred(g.abonado),
+      custo: arred(g.frete + g.abonado),
       pct: totalFrete > 0 ? arred((g.frete / totalFrete) * 100) : 0
     }))
     .sort((a, b) => Number(b.frete) - Number(a.frete) || Number(b.pedidos) - Number(a.pedidos));
 
   const avisos: string[] = [];
+  if (comAbono.length > 0) {
+    avisos.push(`Transportadora trocada abonando a diferença (custo real = frete cobrado + abonado): ${comAbono.join("; ")}.`);
+  }
   if (cifZero.length > 0) {
     avisos.push(
       `Pedidos CIF com frete zero (parte pode ser frete subsidiado): ${cifZero.length} — ${cifZero.slice(0, 40).join(", ")}${cifZero.length > 40 ? "…" : ""}.`
@@ -219,6 +259,8 @@ function normalizar(resposta: unknown): ResultadoRelatorio {
       pedidos,
       frete_zero: totalZero,
       frete: totalFrete,
+      abonado: totalAbonado,
+      custo: arred(totalFrete + totalAbonado),
       pct: totalFrete > 0 ? 100 : 0
     },
     avisos,
@@ -235,6 +277,12 @@ function normalizar(resposta: unknown): ResultadoRelatorio {
         valor: formatCurrency(totalFrete),
         descricao: "Soma do frete das propostas despachadas.",
         tom: "success"
+      },
+      {
+        titulo: "Abonado",
+        valor: formatCurrency(totalAbonado),
+        descricao: `Diferença de frete absorvida em ${plural(comAbono.length, "troca", "trocas")} de transportadora.`,
+        tom: "warning"
       },
       {
         titulo: "Com frete zero",
@@ -258,6 +306,7 @@ const COLUNAS_PDF: ColunaPdf[] = [
   { titulo: "Pedidos", largura: 10, alinhamento: "right" },
   { titulo: "Frete zero", largura: 11, alinhamento: "right" },
   { titulo: "Frete cobrado", largura: 15, alinhamento: "right" },
+  { titulo: "Abonado", largura: 12, alinhamento: "right" },
   { titulo: "% do total", largura: 12, alinhamento: "right" }
 ];
 
@@ -276,7 +325,7 @@ function montarPdf(
     periodo: `Despacho de ${formatDataCivil(inicio)} a ${formatDataCivil(fim)}`,
     filtros: contexto.filtros,
     criterio:
-      "Frete COBRADO do cliente (o valor de frete gravado na proposta, sem recalcular), não o custo pago à transportadora, que o ERP não registra. Período pela data de despacho; transportadora e modalidade são as do despacho. Retira e FOB entram com o frete que a proposta tiver (normalmente zero). Nomes da mesma transportadora (Correios, Motoboy, VEPPO) são somados numa linha; os nomes juntados estão nas notas.",
+      "Frete COBRADO do cliente (o valor de frete gravado na proposta, sem recalcular), não o custo pago à transportadora, que o ERP não registra, exceto o abono: quando a transportadora foi trocada abonando a diferença, a coluna Abonado traz o que a empresa absorveu, e o custo real é o frete cobrado mais o abonado. Período pela data de despacho; transportadora e modalidade são as do despacho. Retira e FOB entram com o frete que a proposta tiver (normalmente zero). Nomes da mesma transportadora (Correios, Motoboy, VEPPO) são somados numa linha; os nomes juntados estão nas notas.",
     secoes: [
       {
         titulo: `Por transportadora e modalidade — ${plural(resultado.linhas.length, "linha", "linhas")}`,
@@ -287,6 +336,7 @@ function montarPdf(
           String(l.pedidos),
           String(l.frete_zero),
           formatCurrency(Number(l.frete)),
+          formatCurrency(Number(l.abonado ?? 0)),
           pct(l.pct)
         ]),
         linhaTotal: [
@@ -295,6 +345,7 @@ function montarPdf(
           String(t.pedidos),
           String(t.frete_zero),
           formatCurrency(Number(t.frete)),
+          formatCurrency(Number(t.abonado ?? 0)),
           pct(t.pct)
         ]
       }
@@ -317,7 +368,7 @@ export const fretePorTransportadora: RelatorioDef = {
   dataReferencia: {
     rotulo: "Data de despacho",
     criterio:
-      "Conta o dia em que o pedido foi despachado (dia de São Paulo). Transportadora e modalidade são as do despacho, não as do orçamento. O valor é o frete gravado na proposta (o que foi cobrado do cliente), sem recalcular — não é o custo pago à transportadora, que o ERP não registra. Retira e FOB entram com o frete da proposta, normalmente zero, e cada combinação de transportadora e modalidade aparece em linha própria. Nomes diferentes da mesma transportadora (Correios, Motoboy, VEPPO) são somados numa linha, e o aviso lista os nomes juntados."
+      "Conta o dia em que o pedido foi despachado (dia de São Paulo). Transportadora e modalidade são as do despacho, não as do orçamento. O valor é o frete gravado na proposta (o que foi cobrado do cliente), sem recalcular — não é o custo pago à transportadora, que o ERP não registra, exceto o abono: quando a transportadora foi trocada abonando a diferença, a coluna Abonado traz o que a empresa absorveu, e o custo real é o frete cobrado mais o abonado. Retira e FOB entram com o frete da proposta, normalmente zero, e cada combinação de transportadora e modalidade aparece em linha própria. Nomes diferentes da mesma transportadora (Correios, Motoboy, VEPPO) são somados numa linha, e o aviso lista os nomes juntados."
   },
 
   periodo: { presets: ["mes", "mes_anterior", "custom"], padrao: "mes", maxDias: 366 },
@@ -342,6 +393,8 @@ export const fretePorTransportadora: RelatorioDef = {
     { id: "pedidos", titulo: "Pedidos", tipo: "inteiro" },
     { id: "frete_zero", titulo: "Com frete zero", tipo: "inteiro" },
     { id: "frete", titulo: "Frete cobrado", tipo: "moeda" },
+    { id: "abonado", titulo: "Abonado", tipo: "moeda" },
+    { id: "custo", titulo: "Cobrado + abonado", tipo: "moeda" },
     { id: "pct", titulo: "% do total", tipo: "percentual" }
   ],
   ordenacaoPadrao: { coluna: "frete", direcao: "desc" },
