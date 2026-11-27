@@ -85,8 +85,8 @@ x-api-key: <sua-chave-de-criacao>
 | `chave_idempotencia` | sim | Texto de 8 a 100 caracteres, **único por pedido** no seu sistema (por exemplo, o número do pedido de vocês). Veja "Repetir a chamada". |
 | `cliente.documento` | sim | CPF (11 dígitos) ou CNPJ (14 dígitos), com ou sem pontuação. Precisa ser válido. |
 | `cliente.nome` | sim | Nome ou razão social do cliente final. É o nome que sai na etiqueta (quando ele ainda não tem cadastro no Vibe). |
-| `cliente.email` | não | Usado só quando o cadastro é criado agora. |
-| `cliente.telefone` | não | Usado só quando o cadastro é criado agora. É o telefone que sai na etiqueta; sem ele, sai o da Lisiton. |
+| `cliente.email` | não | Grava no cadastro novo. No cadastro que já existe, só entra se ele estiver sem e-mail. |
+| `cliente.telefone` | não | Grava no cadastro novo. No cadastro que já existe, só entra se ele estiver sem nenhum telefone. É o telefone que sai na etiqueta; sem telefone no cadastro, sai o da Lisiton. |
 | `endereco.cep` | sim | 8 dígitos. |
 | `endereco.logradouro`, `numero`, `bairro`, `cidade` | sim | Texto. |
 | `endereco.complemento` | não | Texto. |
@@ -99,7 +99,7 @@ x-api-key: <sua-chave-de-criacao>
 | `itens[].cores[].quantidade` | sim | Inteiro maior que zero, na unidade de venda do produto (a mesma do orçamento do Vibe). |
 | `observacao` | não | Texto livre, até 1.000 caracteres. Fica registrado no pedido. |
 
-O cliente final já cadastrado no Vibe **não é alterado** pela API: valem os dados que já estão lá.
+Quando o cliente final já tem cadastro no Vibe, a API só **completa o que está vazio**: o telefone, se o cadastro não tiver nenhum, e o e-mail, se não tiver e-mail. Um telefone ou e-mail já preenchido nunca é trocado. O nome, o documento, os endereços já cadastrados e os demais dados ficam como estão.
 
 ### Transportadora: um campo só
 

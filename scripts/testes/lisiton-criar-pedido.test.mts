@@ -133,6 +133,19 @@ const corpo3 = mig3.slice(mig3.indexOf("CREATE OR REPLACE FUNCTION"));
 checar("migration c: sem vínculo comercial, nenhum DELETE, resto igual",
   [corpo3.includes("clientes_socios"), /DELETE\s+FROM/i.test(corpo3), corpo3.includes("c_lisiton, c_lisiton, v_id_end"), corpo3.includes("GRANT EXECUTE ON FUNCTION public.lisiton_criar_pedido(jsonb) TO service_role;")],
   [false, false, true, true]);
+const mig4 = readFileSync("supabase/migrations/20261127d_lisiton_completa_contato_cliente_final.sql", "utf8");
+const corpo4 = mig4.slice(mig4.indexOf("CREATE OR REPLACE FUNCTION"));
+const updCliente = corpo4.slice(corpo4.indexOf("UPDATE public.clientes c"), corpo4.indexOf("END IF;", corpo4.indexOf("UPDATE public.clientes c")));
+checar("migration d: cadastro existente só completa telefone e e-mail vazios",
+  [
+    corpo4.includes("IF NOT v_criou_cf THEN"),
+    /SET whatsapp_1 = CASE[\s\S]*email = CASE/.test(updCliente),
+    /\b(nome|documento|fantasia|cidade_uf|categoria|telefone_fixo)\s*=/.test(updCliente.replace(/c\.\w+/g, "")),
+    updCliente.includes("nullif(btrim(coalesce(c.telefone_fixo, '')), '') IS NULL"),
+    corpo4.includes("clientes_socios"),
+    corpo4.includes("GRANT EXECUTE ON FUNCTION public.lisiton_criar_pedido(jsonb) TO service_role;")
+  ],
+  [true, true, false, true, false, true]);
 checar("link: chave da Lisiton só vê 8469", link.includes("if (soDaLisiton && Number(proposta.id_cliente) !== ID_CLIENTE_LISITON) return naoEncontrado();"), true);
 const rota = readFileSync("src/app/api/v1/lisiton/pedidos/route.ts", "utf8");
 checar("rota: chave própria e PIX pela função da /p",
