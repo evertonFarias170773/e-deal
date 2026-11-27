@@ -28,6 +28,12 @@ for (const cor of ["Azul", "Azul Celeste", "Roxo", "Verde Agua"]) {
   checar(`recusa ${cor} com mensagem clara`, !r.ok && r.mensagem.includes("não existe no Vibe") && r.mensagem.includes("Cores aceitas"), true);
 }
 checar("hospitalar recusa Vermelha", resolverCor(produtoLisiton(202)!, "Vermelha").ok, false);
+checar("Jet Band só Branca", produtoLisiton(9002)?.cores, ["Branca"]);
+checar("Jet Band aceita branca", resolverCor(produtoLisiton(9002)!, "branca"), { ok: true, cor: "Branca" });
+{
+  const r = resolverCor(produtoLisiton(9002)!, "Azul Médio");
+  checar("Jet Band recusa Azul Médio dizendo que é só Branca", !r.ok && r.mensagem.includes("Jet Band) é só Branca"), true);
+}
 
 // Corpo
 const base = {
@@ -42,7 +48,14 @@ checar("corpo válido: quantidade do item = soma das cores", ok.ok ? ok.itens[0]
 checar("produto fora da lista", (validarCorpo({ ...base, itens: [{ produto: 9001, cores: [{ cor: "Branca", quantidade: 1 }] }] }) as { erro?: string }).erro, "produto_nao_aceito");
 checar("cor fora da lista", (validarCorpo({ ...base, itens: [{ produto: 9000, cores: [{ cor: "Roxo", quantidade: 1 }] }] }) as { erro?: string }).erro, "cor_nao_aceita");
 checar("CPF inválido", validarCorpo({ ...base, cliente: { documento: "111.111.111-11", nome: "X" } }).ok, false);
-checar("sem transportadora", validarCorpo({ ...base, transportadora: undefined }).ok, false);
+checar("sem transportadora", (validarCorpo({ ...base, transportadora: undefined }) as { erro?: string }).erro, "dados_invalidos");
+checar("MELHOR_ENVIO no lugar do CNPJ", validarCorpo({ ...base, transportadora: { codigo: "MELHOR_ENVIO" } }).ok, true);
+checar("CNPJ e código juntos",
+  (validarCorpo({ ...base, transportadora: { cnpj: "15.165.312/0001-22", codigo: "MELHOR_ENVIO" } }) as { erro?: string; status?: number }),
+  { ok: false, status: 422, erro: "dados_invalidos", mensagem: 'Informe a transportadora que vai retirar com transportadora.cnpj (14 dígitos) OU transportadora.codigo = "MELHOR_ENVIO", nunca os dois.' });
+checar("transportadora vazia", (validarCorpo({ ...base, transportadora: {} }) as { erro?: string }).erro, "dados_invalidos");
+checar("outro código", (validarCorpo({ ...base, transportadora: { codigo: "CORREIOS" } }) as { erro?: string }).erro, "dados_invalidos");
+checar("Jet Band Azul Médio no corpo", (validarCorpo({ ...base, itens: [{ produto: 9002, cores: [{ cor: "Azul Médio", quantidade: 1 }] }] }) as { erro?: string }).erro, "cor_nao_aceita");
 checar("cor repetida", validarCorpo({ ...base, itens: [{ produto: 9000, cores: [{ cor: "Branca", quantidade: 1 }, { cor: "branca", quantidade: 1 }] }] }).ok, false);
 checar("quantidade quebrada", validarCorpo({ ...base, itens: [{ produto: 9000, cores: [{ cor: "Branca", quantidade: 1.5 }] }] }).ok, false);
 checar("hash ignora a chave", hashDoPedido(base) === hashDoPedido({ ...base, chave_idempotencia: "outra-chave-1" }), true);

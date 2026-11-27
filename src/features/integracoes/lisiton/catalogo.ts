@@ -3,8 +3,8 @@
  *
  * Só os 6 produtos de prateleira da Lisiton, cada um com a lista FECHADA de cores
  * como está no Vibe (`producao_cores` do formato de produção do produto):
- *   - 9000, 9002, 9003 e 9004: as 20 cores do formato Triband;
- *   - 201 e 202: só Branca.
+ *   - 9000, 9003 e 9004: as 20 cores do formato Triband;
+ *   - 9002 (Jet Band), 201 e 202: só Branca (o 9002 desde 27/11, só na API).
  * Cor fora da lista é recusada com mensagem clara; as quatro que já apareceram
  * digitadas à mão em pedidos antigos (Azul, Azul Celeste, Roxo, Verde Agua) têm
  * recusa própria, dizendo por quê.
@@ -42,7 +42,8 @@ export type ProdutoLisiton = { id: number; nome: string; cores: readonly string[
 
 export const PRODUTOS_LISITON: readonly ProdutoLisiton[] = [
   { id: 9000, nome: "Dseg - Triband", cores: CORES_TRIBAND },
-  { id: 9002, nome: "Dseg - Jet Band", cores: CORES_TRIBAND },
+  // 27/11/2026: pela API o Jet Band é só Branca (o cadastro do produto não muda).
+  { id: 9002, nome: "Dseg - Jet Band", cores: ["Branca"] },
   { id: 9003, nome: "Dseg - Bracelete", cores: CORES_TRIBAND },
   { id: 9004, nome: "Dseg - Pino", cores: CORES_TRIBAND },
   { id: 201, nome: "Pulseira Hospitalar Infantil", cores: ["Branca"] },
@@ -75,6 +76,12 @@ export function resolverCor(produto: ProdutoLisiton, cor: unknown): CorResolvida
   const achada = produto.cores.find((c) => normalizarCor(c) === alvo);
   if (achada) return { ok: true, cor: achada };
   const lista = produto.cores.join(", ");
+  if (produto.cores.length === 1) {
+    return {
+      ok: false,
+      mensagem: `O produto ${produto.id} (${produto.nome}) é só ${produto.cores[0]}: a cor "${String(cor).trim()}" não é aceita.`
+    };
+  }
   if (CORES_RECUSADAS.some((c) => normalizarCor(c) === alvo)) {
     return {
       ok: false,

@@ -83,7 +83,14 @@ x-api-key: <sua-chave-de-criacao>
 | `endereco.logradouro`, `numero`, `bairro`, `cidade` | sim | Texto. |
 | `endereco.complemento` | não | Texto. |
 | `endereco.uf` | sim | 2 letras. |
-| `transportadora.cnpj` | sim | CNPJ da transportadora que vai retirar (o frete é FOB). Ela precisa estar cadastrada no Vibe. |
+| `transportadora.cnpj` | um dos dois | CNPJ da transportadora que vai retirar (o frete é FOB). Ela precisa estar cadastrada no Vibe. |
+| `transportadora.codigo` | um dos dois | Só para o Melhor Envio: envie `"MELHOR_ENVIO"` **no lugar** do CNPJ. Nenhum outro código é aceito. |
+
+Envie **exatamente um** dos dois campos da transportadora. Os dois juntos, ou nenhum deles, é recusado com `422 dados_invalidos`.
+
+```json
+"transportadora": { "codigo": "MELHOR_ENVIO" }
+```
 | `itens` | sim | Pelo menos um. Cada produto aparece **uma vez**, com todas as cores dele dentro. |
 | `itens[].produto` | sim | Um dos 6 códigos da tabela abaixo. |
 | `itens[].cores[].cor` | sim | Uma cor da lista do produto (abaixo). Maiúscula, minúscula e acento não importam. |
@@ -97,7 +104,7 @@ O cliente final já cadastrado no Vibe **não é alterado** pela API: valem os d
 | Código | Produto | Cores aceitas |
 |---|---|---|
 | 9000 | Dseg - Triband | as 20 cores Triband |
-| 9002 | Dseg - Jet Band | as 20 cores Triband |
+| 9002 | Dseg - Jet Band | **só Branca** |
 | 9003 | Dseg - Bracelete | as 20 cores Triband |
 | 9004 | Dseg - Pino | as 20 cores Triband |
 | 201 | Pulseira Hospitalar Infantil | Branca |
@@ -106,6 +113,8 @@ O cliente final já cadastrado no Vibe **não é alterado** pela API: valem os d
 As 20 cores Triband, com os nomes exatos do Vibe: Amarela Canario, Amarelo Fluor, Azul Claro, Azul Médio, Branca, Creme, Dourada, Laranja Fluor, Lilás, Pink Fluor, Prata, Púrple, Rosa Bebê, Azul Escuro, Verde Flúor, Vermelho Fluor, Verde Claro, Preta - Tarja, Verde Bandeira, Marron.
 
 "Azul", "Azul Celeste", "Roxo" e "Verde Agua" **não existem** no Vibe e são recusados.
+
+O Jet Band (9002), a 201 e a 202 só aceitam Branca: qualquer outra cor é recusada com `422 cor_nao_aceita` e a mensagem "O produto 9002 (Dseg - Jet Band) é só Branca...".
 
 O preço, o frete (FOB, sem valor) e a empresa que fatura são definidos pelo Vibe. Você não envia valores.
 

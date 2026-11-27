@@ -46,7 +46,8 @@ export type CorpoPedidoLisiton = {
     cidade?: unknown;
     uf?: unknown;
   };
-  transportadora?: { cnpj?: unknown };
+  /** CNPJ da transportadora, OU codigo "MELHOR_ENVIO" (a Lisiton não tem o CNPJ dele). Nunca os dois. */
+  transportadora?: { cnpj?: unknown; codigo?: unknown };
   itens?: Array<{ produto?: unknown; cores?: Array<{ cor?: unknown; quantidade?: unknown }> }>;
   observacao?: unknown;
 };
@@ -57,6 +58,11 @@ export type PedidoMontado = { ok: true; chave: string; payload: Record<string, u
 const txt = (v: unknown, max = 200): string => String(v ?? "").replace(/\s+/g, " ").trim().slice(0, max);
 const digitos = (v: unknown): string => String(v ?? "").replace(/\D/g, "");
 const recusa = (mensagem: string, erro = "dados_invalidos", status = 422): Recusa => ({ ok: false, status, erro, mensagem });
+
+/** 27/11/2026: a Lisiton não tem o CNPJ do Melhor Envio; manda este código e o Vibe usa a 70010. */
+export const CODIGO_MELHOR_ENVIO = "MELHOR_ENVIO";
+export const ID_TRANSPORTADORA_MELHOR_ENVIO = 70010;
+const temCodigoMelhorEnvio = (corpo: CorpoPedidoLisiton): boolean => txt(corpo.transportadora?.codigo) === CODIGO_MELHOR_ENVIO;
 
 /** Hash do conteúdo, sem a chave: a mesma chave com outro conteúdo é recusada pelo banco. */
 export function hashDoPedido(corpo: CorpoPedidoLisiton): string {
@@ -91,7 +97,17 @@ export function validarCorpo(corpo: CorpoPedidoLisiton): { ok: true; itens: Item
     if (!txt(valor)) return recusa(`endereco.${campo} é obrigatório.`);
   }
   if (!/^[A-Za-z]{2}$/.test(txt(e.uf))) return recusa("endereco.uf precisa ter 2 letras.");
-  if (digitos(corpo.transportadora?.cnpj).length !== 14) return recusa("transportadora.cnpj é obrigatório (14 dígitos): em FOB o Vibe exige a transportadora que vai retirar.");
+  const temCnpj = txt(corpo.transportadora?.cnpj) !== "";
+  const temCodigo = txt(corpo.transportadora?.codigo) !== "";
+  if (temCnpj === temCodigo) {
+    return recusa(
+      'Informe a transportadora que vai retirar com transportadora.cnpj (14 dígitos) OU transportadora.codigo = "MELHOR_ENVIO", nunca os dois.'
+    );
+  }
+  if (temCnpj && digitos(corpo.transportadora?.cnpj).length !== 14) return recusa("transportadora.cnpj precisa ter 14 dígitos.");
+  if (temCodigo && txt(corpo.transportadora?.codigo) !== CODIGO_MELHOR_ENVIO) {
+    return recusa('transportadora.codigo só aceita "MELHOR_ENVIO"; para as outras transportadoras, envie transportadora.cnpj.');
+  }
 
   if (!Array.isArray(corpo.itens) || corpo.itens.length === 0) return recusa("itens precisa ter pelo menos um produto.");
   const vistos = new Set<number>();
@@ -130,11 +146,13 @@ export async function montarPedidoLisiton(service: SupabaseClient, corpo: CorpoP
     service.from("usuarios").select("user_id, nome_usuario, meu_vendedor, id_vendedor").eq("user_id", UID_VENDEDORA_LISITON).maybeSingle(),
     service.from("produtos").select("*").in("id_produto", ids),
     service.from("produto_boletim_campos").select("id_produto, campo").in("id_produto", ids),
-    service
-      .from("vw_cadastros_lista_completa")
-      .select("id_cliente")
-      .eq("documento_numeros", digitos(corpo.transportadora?.cnpj))
-      .order("id_cliente", { ascending: true }),
+    txt(corpo.transportadora?.codigo) === CODIGO_MELHOR_ENVIO
+      ? Promise.resolve({ data: [{ id_cliente: ID_TRANSPORTADORA_MELHOR_ENVIO }], error: null })
+      : service
+          .from("vw_cadastros_lista_completa")
+          .select("id_cliente")
+          .eq("documento_numeros", digitos(corpo.transportadora?.cnpj))
+          .order("id_cliente", { ascending: true }),
     service.from("contatos").select("id, nome_contato, whats, ativo").eq("id_cliente", ID_CLIENTE_LISITON)
   ]);
   for (const r of [cfgRes, lisitonRes, vendedoraRes, produtosRes, camposRes, transpRes, contatosRes]) {
@@ -147,7 +165,7 @@ export async function montarPedidoLisiton(service: SupabaseClient, corpo: CorpoP
   if (!vendedora) return recusa("Vendedora da integração não encontrada.", "erro_interno", 500);
   const nomeVendedora = txt(vendedora.meu_vendedor) || txt(vendedora.nome_usuario);
 
-  // Transportadora: cadastro de transportadora ativo com o CNPJ enviado.
+  // Transportadora: cadastro de transportadora ativo com o CNPJ enviado (ou a 70010, pelo código MELHOR_ENVIO).
   const idsTransp = ((transpRes.data ?? []) as Array<{ id_cliente: number }>).map((t) => Number(t.id_cliente));
   const { data: transportadoras, error: errT } = idsTransp.length
     ? await service.from("clientes").select("id_cliente, nome, fantasia, categoria, ativo").in("id_cliente", idsTransp)
@@ -157,7 +175,12 @@ export async function montarPedidoLisiton(service: SupabaseClient, corpo: CorpoP
     .filter((t) => String(t.categoria ?? "").toUpperCase() === "TRANSPORTADORA" && t.ativo === true)
     .sort((a, b) => a.id_cliente - b.id_cliente)[0];
   if (!transportadora) {
-    return recusa("transportadora.cnpj não corresponde a uma transportadora cadastrada e ativa no Vibe.", "transportadora_nao_cadastrada");
+    return recusa(
+      temCodigoMelhorEnvio(corpo)
+        ? "O Melhor Envio (70010) não está cadastrado e ativo como transportadora no Vibe."
+        : "transportadora.cnpj não corresponde a uma transportadora cadastrada e ativa no Vibe.",
+      "transportadora_nao_cadastrada"
+    );
   }
 
   // Itens pelas funções da tela.
