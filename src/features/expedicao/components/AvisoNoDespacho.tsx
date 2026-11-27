@@ -15,6 +15,8 @@ import {
   type DespachoParaAviso,
   type RecusaPorNumero
 } from "../services/aviso-pronto.client";
+import { avisoVaiParaTodasAsConversas, selecaoDoAvisoPronto } from "../lib/aviso-pronto-lisiton";
+import { getSupabaseClient } from "@/lib/supabase/client";
 
 /**
  * Aviso "pedido pronto" no "Confirmar despacho" (10/11/2026, v23 da função).
@@ -51,11 +53,14 @@ export type ResultadoAvisoDespacho = { ok: boolean; titulo: string; texto: strin
 
 export function useAvisoNoDespacho({
   idInt,
+  idCliente,
   despacho,
   ativo,
   onAviso
 }: {
   idInt: number;
+  /** Lisiton (8469): o aviso vai para todas as conversas gravadas no pedido (lib/aviso-pronto-lisiton). */
+  idCliente?: number | null;
   despacho: DespachoParaAviso;
   /** Só no despacho (não na edição) e só para quem opera a Expedição. */
   ativo: boolean;
@@ -67,8 +72,25 @@ export function useAvisoNoDespacho({
   // null = o usuário não mexeu: vale o padrão do preparo.
   const [escolhaDoUsuario, setEscolhaDoUsuario] = useState<boolean | null>(null);
   const [selecionadas, setSelecionadas] = useState<string[]>([]);
+  // Lisiton: as conversas gravadas no pedido (todas recebem o aviso).
+  const [conversasDoPedido, setConversasDoPedido] = useState<{ chat_id: string; nome: string | null }[]>([]);
   const geracao = useRef(0);
   const chave = JSON.stringify(despacho);
+
+  useEffect(() => {
+    if (!ativo || !avisoVaiParaTodasAsConversas(idCliente)) return;
+    let vivo = true;
+    void (async () => {
+      const client = getSupabaseClient();
+      if (!client) return;
+      const { data } = await client.from("propostas_contatos_chatguru").select("chat_id, nome").eq("id_int", idInt);
+      if (vivo) setConversasDoPedido(((data ?? []) as { chat_id: string; nome: string | null }[]).filter((c) => c.chat_id));
+    })();
+    return () => {
+      vivo = false;
+    };
+  }, [ativo, idCliente, idInt]);
+  const todasAsConversas = avisoVaiParaTodasAsConversas(idCliente) && conversasDoPedido.length > 0;
 
   useEffect(() => {
     if (!ativo) return;
@@ -105,7 +127,7 @@ export function useAvisoNoDespacho({
   const podeEnviar = Boolean(preparo?.ok && preparo.dialogo && !preparo.bloqueio && !emAndamento && !travado && !incerto);
   const padrao = podeEnviar && !jaRecebeu;
   const marcado = podeEnviar && (escolhaDoUsuario ?? padrao);
-  const precisaEscolher = Boolean(marcado && preparo?.escolha);
+  const precisaEscolher = Boolean(marcado && preparo?.escolha && !todasAsConversas);
 
   /** Por que o Confirmar despacho não pode seguir com a caixa marcada (null = pode). */
   function pendenciaAntesDeConfirmar(): string | null {
@@ -118,7 +140,12 @@ export function useAvisoNoDespacho({
   /** Depois do despacho gravado. null = a caixa estava desmarcada (nada enviado). */
   async function enviarDepoisDoDespacho(): Promise<ResultadoAvisoDespacho | null> {
     if (!ativo || !marcado || !preparo) return null;
-    const selecao = preparo.escolha ? { chatIds: selecionadas } : undefined;
+    const selecao = selecaoDoAvisoPronto({
+      idCliente,
+      conversasDoPedido: conversasDoPedido.map((c) => c.chat_id),
+      edgePediuEscolha: Boolean(preparo.escolha),
+      selecionadasNaTela: selecionadas
+    });
     const res = anterior ? await reenviarAvisoPronto(idInt, anterior.seq, selecao) : await enviarAvisoPronto(idInt, selecao);
     if (res.ok && !res.escolha) onAviso?.(idInt, res.aviso, res.modo_teste, res.ja_existia ? undefined : (res.recusa_numero ?? null));
     const naoSaiu = "O despacho continua confirmado. O reenvio fica no menu ⋯ do card, em Avisar cliente.";
@@ -178,6 +205,8 @@ export function useAvisoNoDespacho({
     marcar: (v: boolean) => setEscolhaDoUsuario(v),
     selecionadas,
     setSelecionadas,
+    /** Lisiton: o aviso vai para estas conversas (todas as do pedido). Vazio = regra de sempre. */
+    conversasDoPedido: todasAsConversas ? conversasDoPedido : [],
     pendenciaAntesDeConfirmar,
     enviarDepoisDoDespacho
   };
@@ -207,7 +236,12 @@ export function CaixaAvisoNoDespacho({ aviso, ocupado }: { aviso: ReturnType<typ
           </p>
         ) : (
           <>
-            {p.dialogo && (
+            {p.dialogo && aviso.conversasDoPedido.length > 0 ? (
+              <p>
+                Modelo: <strong>{p.dialogo}</strong> · vai para as {aviso.conversasDoPedido.length} conversas do pedido:{" "}
+                <strong>{aviso.conversasDoPedido.map((c) => c.nome || c.chat_id).join(", ")}</strong>
+              </p>
+            ) : p.dialogo && (
               <p>
                 Modelo: <strong>{p.dialogo}</strong>
                 {p.conversa && (
@@ -233,7 +267,7 @@ export function CaixaAvisoNoDespacho({ aviso, ocupado }: { aviso: ReturnType<typ
                 {aviso.emAndamento && " Há um envio em andamento."}
               </p>
             )}
-            {p.escolha && aviso.podeEnviar && (
+            {p.escolha && aviso.podeEnviar && aviso.conversasDoPedido.length === 0 && (
               <div className="space-y-1.5 pt-1">
                 <p>{MOTIVO_ESCOLHA[p.escolha.motivo]}</p>
                 <ListaConversas

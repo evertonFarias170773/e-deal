@@ -75,6 +75,7 @@ Cada ficha cobre uma tela ou um fluxo e segue sempre o mesmo formato ([_MODELO.m
 ### Administração
 
 - [Saúde da infraestrutura](saude-da-infraestrutura.md) (só administradores)
+- [Integração Lisiton](configuracoes-integracao-lisiton.md) (empresa dos pedidos que a Lisiton cria pela API)
 
 ## Como manter
 

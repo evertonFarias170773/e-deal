@@ -34,6 +34,10 @@ Cuidados com a chave:
 
 ---
 
+### Chave da Lisiton (27/11/2026)
+
+A Lisiton também pode chamar esta API com as chaves dela (a de consulta e a de criação de pedidos). Com essas chaves, só os pedidos da Lisiton (cliente 8469) devolvem link: qualquer outro pedido recebe o mesmo **404** de pedido inexistente.
+
 ## Exemplo de chamada
 
 ```bash

@@ -1276,6 +1276,7 @@ export function DespacharModal({
   );
   const avisoCliente = useAvisoNoDespacho({
     idInt: pedido.idInt,
+    idCliente: pedido.idCliente,
     despacho: despachoParaAviso,
     ativo: !modoEdicao && podeAvisarCliente,
     onAviso

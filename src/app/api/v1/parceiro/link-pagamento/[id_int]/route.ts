@@ -3,6 +3,7 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import { rateLimitCheck } from "@/lib/security/rate-limit-memory";
 import { criarClientServiceRole } from "@/features/cadastros/services/cadastro-online.server";
 import { areaClienteFlagAtiva, derivarTokenAreaCliente } from "@/features/area-cliente/services/area-cliente.server";
+import { ID_CLIENTE_LISITON } from "@/features/integracoes/lisiton/catalogo";
 
 /**
  * Link de pagamento externo para o PARCEIRO — o mesmo link do "Link pgto.
@@ -80,13 +81,20 @@ export async function GET(request: Request, contexto: { params: Promise<{ id_int
   }
 
   // 2. Chave. Sem chave configurada no servidor, ninguém entra.
+  //    27/11/2026: as chaves da Lisiton (LISITON_API_KEY e LISITON_PEDIDOS_KEY)
+  //    também entram, mas só enxergam pedido do cliente 8469 (Lisiton): pedido
+  //    de outro cliente recebe o mesmo 404 de pedido inexistente.
   const esperada = process.env.PARCEIRO_LINK_PGTO_KEY ?? "";
   const recebida = request.headers.get("x-api-key") ?? "";
-  if (!esperada) {
+  const chavesLisiton = [process.env.LISITON_API_KEY ?? "", process.env.LISITON_PEDIDOS_KEY ?? ""].filter((k) => k !== "");
+  const ehChaveDoParceiro = Boolean(esperada && recebida && chaveConfere(recebida, esperada));
+  const ehChaveDaLisiton = Boolean(recebida && chavesLisiton.some((k) => chaveConfere(recebida, k)));
+  if (!esperada && chavesLisiton.length === 0) {
     console.error("[API][Parceiro][link-pagamento] PARCEIRO_LINK_PGTO_KEY nao configurada no servidor.");
     return naoAutorizado();
   }
-  if (!recebida || !chaveConfere(recebida, esperada)) return naoAutorizado();
+  if (!ehChaveDoParceiro && !ehChaveDaLisiton) return naoAutorizado();
+  const soDaLisiton = ehChaveDaLisiton && !ehChaveDoParceiro;
 
   // 3. O número do pedido. Número inválido é "não encontrado", como qualquer outro.
   const { id_int: bruto } = await contexto.params;
@@ -103,17 +111,18 @@ export async function GET(request: Request, contexto: { params: Promise<{ id_int
     return erroInterno();
   }
 
-  // 5. O pedido: existe e não é avulso. Só essas duas colunas são lidas.
+  // 5. O pedido: existe e não é avulso. Com a chave da Lisiton, só da Lisiton.
   const { data: proposta, error } = await banco
     .from("propostas")
-    .select("id_int, is_avulso")
+    .select("id_int, is_avulso, id_cliente")
     .eq("id_int", idInt)
-    .maybeSingle<{ id_int: number; is_avulso: boolean | null }>();
+    .maybeSingle<{ id_int: number; is_avulso: boolean | null; id_cliente: number | null }>();
   if (error) {
     console.error(`[API][Parceiro][link-pagamento] Falha ao ler o pedido ${idInt}: ${error.message}`);
     return erroInterno();
   }
   if (!proposta || proposta.is_avulso === true) return naoEncontrado();
+  if (soDaLisiton && Number(proposta.id_cliente) !== ID_CLIENTE_LISITON) return naoEncontrado();
 
   // 6. O token: a mesma função do botão da tela.
   const token = derivarTokenAreaCliente(idInt);

@@ -108,8 +108,10 @@ export default function ConfiguracoesHubPage() {
     hasPermissao(user, "admin.usuarios.view");
   // Percentual do Simples da NFS-e (05/11/2026): quem emite NFS-e mantém o número.
   const podeEmpresas = user.isSuperAdmin || user.isAdmin || hasPermissao(user, "fiscal.emit_nfse");
+  // Integração Lisiton (27/11/2026): empresa dos pedidos criados pela API.
+  const podeIntegracaoLisiton = user.isSuperAdmin || user.isAdmin || hasPermissao(user, "config.integracoes");
 
-  if (!isAuthorized && !podeEmpresas) {
+  if (!isAuthorized && !podeEmpresas && !podeIntegracaoLisiton) {
     return (
       <div className="max-w-7xl mx-auto py-6 px-4">
         <AcessoNegado />
@@ -168,6 +170,14 @@ export default function ConfiguracoesHubPage() {
             description="Percentual do Simples Nacional de cada empresa, por mês, que sai na NFS-e (Lei 12.741), com o histórico dos meses anteriores."
             href="/configuracoes/empresas"
             icon={Building2}
+          />
+        ) : null}
+        {podeIntegracaoLisiton ? (
+          <ConfigHubCard
+            title="Integração Lisiton"
+            description="Empresa em que nascem os pedidos que o sistema da Lisiton cria pela API (Ideal Gráfica, Ideal Birô ou E3 Brindes)."
+            href="/configuracoes/integracao-lisiton"
+            icon={Cpu}
           />
         ) : null}
         <ConfigHubCard
