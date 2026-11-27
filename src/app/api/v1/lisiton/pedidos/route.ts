@@ -23,7 +23,7 @@ import { montarPedidoLisiton, type CorpoPedidoLisiton } from "@/features/integra
  *      só lendo do banco.
  *   2. Grava tudo numa transação, pela função do banco `lisiton_criar_pedido`:
  *      cliente final (acha pelo documento ou cria) com o vínculo à Lisiton,
- *      endereço, proposta, itens, um lote por cor, cotação FOB, as conversas do
+ *      endereço, proposta, itens, um lote por cor, cotação (FOB ou RETIRA), pagador = a 8469, as conversas do
  *      ChatGuru (Lisiane principal) e a origem "Integração Lisiton".
  *   3. Gera a cobrança PIX pela MESMA função da página /p
  *      (`iniciarPagamentoAreaCliente`) e devolve id_int e a url do /p.

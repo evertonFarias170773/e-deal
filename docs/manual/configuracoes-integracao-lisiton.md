@@ -34,12 +34,16 @@ O sistema da Lisiton (cliente 8469) cria pedidos direto no Vibe, pela API, e man
 
 - A troca vale para os pedidos criados **depois** dela. Os pedidos já criados continuam na empresa em que nasceram.
 - O pedido criado pela API é sempre:
-  - do cliente Lisiton, com o cliente final como pagador (vinculado à Lisiton);
+  - do cliente Lisiton, que também é a pagadora: a cobrança PIX sai para ela;
+  - sem nota fiscal: o despacho sai sem nota;
+  - com o cliente final (vinculado à Lisiton) só para a entrega: o endereço é dele e a etiqueta sai com o nome dele;
   - da vendedora Lisiane Colbeich;
-  - FOB com frete zero, preço do cadastro de cada produto e cobrança PIX;
+  - FOB ou retirada no balcão, com frete zero e preço do cadastro de cada produto;
   - com as conversas da Lisiton no ChatGuru, a da Lisiane como principal.
 - Os produtos aceitos são só os de prateleira da Lisiton (9000, 9002, 9003, 9004, 201 e 202). Por isso, depois do PIX pago e conferido, o pedido vai sozinho para REVISAO PRODUCAO, sem passar pela revisão do atendente.
 - Na proposta, o pedido criado pela API aparece com "Pedido criado pela Integração Lisiton" na observação e no chat.
+
+- A API não cancela pedidos. Para cancelar um pedido da Lisiton, cancele pelo Vibe, como qualquer pedido.
 
 ## O que não confundir
 

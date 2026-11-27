@@ -23,9 +23,15 @@ import { ID_CLIENTE_LISITON, produtoLisiton, resolverCor, type ProdutoLisiton } 
  *   item  = createItemFromProduto(produto do cadastro) -> montarDadosItemProposta
  *           (preço `valorUnt` e fixo `valorFixo` do produto, sem bônus: a 8469 não tem)
  *   lote  = montarInsertDeLoteDaProposta, com o checklist do produto (um por cor)
- *   frete = FOB, zero; nome e categorias por nomeTransporteEfetivo,
+ *   frete = FOB (ou RETIRA), zero; nome e categorias por nomeTransporteEfetivo,
  *           nomeTransportadoraCadastro, categoriaDoServico/categoriaPorNomeConhecido
- *           e categoriaDerivadaDaEscolha, como o Salvar
+ *           e categoriaDerivadaDaEscolha, como o Salvar. RETIRA grava o que a aba
+ *           Fretes grava: "RETIRADA", categorias RETIRA, sem transportadora, prazo
+ *           "Imediato" na cotação
+ *   pagador = a própria Lisiton (8469), desde 27/11/2026: ela paga o PIX e não há
+ *           documento fiscal. O cliente final é achado ou criado só para o
+ *           endereço de entrega, que leva o nome dele em `recebedor` (é de lá
+ *           que a etiqueta tira o nome)
  *   texto = buildPropostaInformalText, total = calculateResumo
  *   contatos = todas as conversas da 8469 no Guru; principal = a da configuração
  *           (Lisiane); id_contato pela mesma ponte do telefone (mesmoTelefone)
@@ -46,7 +52,7 @@ export type CorpoPedidoLisiton = {
     cidade?: unknown;
     uf?: unknown;
   };
-  /** CNPJ da transportadora, OU codigo "MELHOR_ENVIO" (a Lisiton não tem o CNPJ dele). Nunca os dois. */
+  /** CNPJ da transportadora, OU codigo "MELHOR_ENVIO" (a 70010) ou "RETIRA" (retirada no balcão). Nunca os dois. */
   transportadora?: { cnpj?: unknown; codigo?: unknown };
   itens?: Array<{ produto?: unknown; cores?: Array<{ cor?: unknown; quantidade?: unknown }> }>;
   observacao?: unknown;
@@ -63,6 +69,9 @@ const recusa = (mensagem: string, erro = "dados_invalidos", status = 422): Recus
 export const CODIGO_MELHOR_ENVIO = "MELHOR_ENVIO";
 export const ID_TRANSPORTADORA_MELHOR_ENVIO = 70010;
 const temCodigoMelhorEnvio = (corpo: CorpoPedidoLisiton): boolean => txt(corpo.transportadora?.codigo) === CODIGO_MELHOR_ENVIO;
+/** 27/11/2026: retirada no balcão, o mesmo que a opção RETIRA da aba Fretes. */
+export const CODIGO_RETIRA = "RETIRA";
+const ehRetira = (corpo: CorpoPedidoLisiton): boolean => txt(corpo.transportadora?.codigo) === CODIGO_RETIRA;
 
 /** Hash do conteúdo, sem a chave: a mesma chave com outro conteúdo é recusada pelo banco. */
 export function hashDoPedido(corpo: CorpoPedidoLisiton): string {
@@ -101,12 +110,12 @@ export function validarCorpo(corpo: CorpoPedidoLisiton): { ok: true; itens: Item
   const temCodigo = txt(corpo.transportadora?.codigo) !== "";
   if (temCnpj === temCodigo) {
     return recusa(
-      'Informe a transportadora que vai retirar com transportadora.cnpj (14 dígitos) OU transportadora.codigo = "MELHOR_ENVIO", nunca os dois.'
+      'Informe a transportadora com transportadora.cnpj (14 dígitos) OU transportadora.codigo ("MELHOR_ENVIO" ou "RETIRA"), nunca os dois.'
     );
   }
   if (temCnpj && digitos(corpo.transportadora?.cnpj).length !== 14) return recusa("transportadora.cnpj precisa ter 14 dígitos.");
-  if (temCodigo && txt(corpo.transportadora?.codigo) !== CODIGO_MELHOR_ENVIO) {
-    return recusa('transportadora.codigo só aceita "MELHOR_ENVIO"; para as outras transportadoras, envie transportadora.cnpj.');
+  if (temCodigo && txt(corpo.transportadora?.codigo) !== CODIGO_MELHOR_ENVIO && txt(corpo.transportadora?.codigo) !== CODIGO_RETIRA) {
+    return recusa('transportadora.codigo só aceita "MELHOR_ENVIO" ou "RETIRA"; para as outras transportadoras, envie transportadora.cnpj.');
   }
 
   if (!Array.isArray(corpo.itens) || corpo.itens.length === 0) return recusa("itens precisa ter pelo menos um produto.");
@@ -146,7 +155,9 @@ export async function montarPedidoLisiton(service: SupabaseClient, corpo: CorpoP
     service.from("usuarios").select("user_id, nome_usuario, meu_vendedor, id_vendedor").eq("user_id", UID_VENDEDORA_LISITON).maybeSingle(),
     service.from("produtos").select("*").in("id_produto", ids),
     service.from("produto_boletim_campos").select("id_produto, campo").in("id_produto", ids),
-    txt(corpo.transportadora?.codigo) === CODIGO_MELHOR_ENVIO
+    ehRetira(corpo)
+      ? Promise.resolve({ data: [] as Array<{ id_cliente: number }>, error: null })
+      : temCodigoMelhorEnvio(corpo)
       ? Promise.resolve({ data: [{ id_cliente: ID_TRANSPORTADORA_MELHOR_ENVIO }], error: null })
       : service
           .from("vw_cadastros_lista_completa")
@@ -174,7 +185,9 @@ export async function montarPedidoLisiton(service: SupabaseClient, corpo: CorpoP
   const transportadora = ((transportadoras ?? []) as Array<{ id_cliente: number; nome: string | null; fantasia: string | null; categoria: string | null; ativo: boolean | null }>)
     .filter((t) => String(t.categoria ?? "").toUpperCase() === "TRANSPORTADORA" && t.ativo === true)
     .sort((a, b) => a.id_cliente - b.id_cliente)[0];
-  if (!transportadora) {
+  const retira = ehRetira(corpo);
+  const modalidade = retira ? "RETIRA" : "FOB";
+  if (!transportadora && !retira) {
     return recusa(
       temCodigoMelhorEnvio(corpo)
         ? "O Melhor Envio (70010) não está cadastrado e ativo como transportadora no Vibe."
@@ -223,11 +236,11 @@ export async function montarPedidoLisiton(service: SupabaseClient, corpo: CorpoP
     itensPayload.push({ linha, lotes });
   }
 
-  // Frete FOB: as mesmas regras do Salvar.
-  const nomeTransp = nomeTransportadoraCadastro(transportadora);
-  const freteNome = nomeTransporteEfetivo(null, "FOB", nomeTransp);
-  const categoriaFrete = categoriaDoServico(freteNome, null, "FOB") ?? categoriaPorNomeConhecido(freteNome, null);
-  const transporteCategoria = categoriaDerivadaDaEscolha("FOB", null, false);
+  // Frete FOB ou RETIRA: as mesmas regras do Salvar.
+  const nomeTransp = transportadora ? nomeTransportadoraCadastro(transportadora) : null;
+  const freteNome = nomeTransporteEfetivo(null, modalidade, nomeTransp);
+  const categoriaFrete = categoriaDoServico(freteNome, null, modalidade) ?? categoriaPorNomeConhecido(freteNome, null);
+  const transporteCategoria = categoriaDerivadaDaEscolha(modalidade, null, false);
   const resumo = calculateResumo(itensTela, [], 0, "VALOR");
 
   // Conversas do Guru: todas as da Lisiton; principal = a da configuração.
@@ -252,7 +265,7 @@ export async function montarPedidoLisiton(service: SupabaseClient, corpo: CorpoP
     contatoNome,
     cidade: txt(e.cidade),
     uf: txt(e.uf).toUpperCase(),
-    modalidade: "FOB"
+    modalidade
   });
 
   return {
@@ -262,7 +275,8 @@ export async function montarPedidoLisiton(service: SupabaseClient, corpo: CorpoP
       chave: validado.chave,
       hash: hashDoPedido(corpo),
       vendedora: { uid: vendedora.user_id, nome: nomeVendedora, id_vendedor: vendedora.id_vendedor || vendedora.user_id },
-      pagador: {
+      // Cliente final: só para o endereço de entrega (o pagador é a 8469).
+      cliente_final: {
         documento: digitos(corpo.cliente?.documento),
         nome: txt(corpo.cliente?.nome),
         email: txt(corpo.cliente?.email) || null,
@@ -280,7 +294,8 @@ export async function montarPedidoLisiton(service: SupabaseClient, corpo: CorpoP
       proposta: {
         cliente: lisitonNome,
         empresa: empresa.labelCurta,
-        id_transportadora_cliente: transportadora.id_cliente,
+        modalidade_frete: modalidade,
+        id_transportadora_cliente: transportadora ? transportadora.id_cliente : null,
         frete_escolhido: freteNome,
         categoria_frete: categoriaFrete,
         transporte_categoria: transporteCategoria,
@@ -294,7 +309,8 @@ export async function montarPedidoLisiton(service: SupabaseClient, corpo: CorpoP
         id_contato: contatoDaPrincipal ? String(contatoDaPrincipal.id) : null
       },
       itens: itensPayload,
-      cotacao: { servico: freteNome, prazo: "A combinar", peso: resumo.pesoTotal || null },
+      // Prazo como o Salvar: "Imediato" no balcão, "A combinar" em FOB sem card.
+      cotacao: { servico: freteNome, prazo: retira ? "Imediato" : "A combinar", peso: resumo.pesoTotal || null },
       conversas: conversas.map((c) => ({ chat_id: c.chat_id, nome: c.nome, telefone: c.numero, principal: c.chat_id === principal.chat_id }))
     }
   };

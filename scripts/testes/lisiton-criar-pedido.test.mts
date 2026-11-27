@@ -7,6 +7,7 @@ import { readFileSync } from "node:fs";
 import { CORES_TRIBAND, PRODUTOS_LISITON, resolverCor, produtoLisiton } from "../../src/features/integracoes/lisiton/catalogo.ts";
 import { hashDoPedido, validarCorpo } from "../../src/features/integracoes/lisiton/montar-pedido.server.ts";
 import { selecaoDoAvisoPronto } from "../../src/features/expedicao/lib/aviso-pronto-lisiton.ts";
+import { idDestinatarioEtiquetaVigente, nomeDestinatarioVigente } from "../../src/features/expedicao/lib/destinatario-etiqueta.ts";
 
 let falhas = 0;
 function checar(nome: string, real: unknown, esperado: unknown) {
@@ -52,9 +53,21 @@ checar("sem transportadora", (validarCorpo({ ...base, transportadora: undefined 
 checar("MELHOR_ENVIO no lugar do CNPJ", validarCorpo({ ...base, transportadora: { codigo: "MELHOR_ENVIO" } }).ok, true);
 checar("CNPJ e código juntos",
   (validarCorpo({ ...base, transportadora: { cnpj: "15.165.312/0001-22", codigo: "MELHOR_ENVIO" } }) as { erro?: string; status?: number }),
-  { ok: false, status: 422, erro: "dados_invalidos", mensagem: 'Informe a transportadora que vai retirar com transportadora.cnpj (14 dígitos) OU transportadora.codigo = "MELHOR_ENVIO", nunca os dois.' });
+  { ok: false, status: 422, erro: "dados_invalidos", mensagem: 'Informe a transportadora com transportadora.cnpj (14 dígitos) OU transportadora.codigo ("MELHOR_ENVIO" ou "RETIRA"), nunca os dois.' });
 checar("transportadora vazia", (validarCorpo({ ...base, transportadora: {} }) as { erro?: string }).erro, "dados_invalidos");
 checar("outro código", (validarCorpo({ ...base, transportadora: { codigo: "CORREIOS" } }) as { erro?: string }).erro, "dados_invalidos");
+checar("RETIRA no lugar do CNPJ", validarCorpo({ ...base, transportadora: { codigo: "RETIRA" } }).ok, true);
+checar("RETIRA com CNPJ junto", (validarCorpo({ ...base, transportadora: { cnpj: "15.165.312/0001-22", codigo: "RETIRA" } }) as { erro?: string }).erro, "dados_invalidos");
+
+// Etiqueta: pagador = cliente = 8469, sem escolha gravada no despacho -> o nome
+// sai do recebedor do endereço de entrega, que a API grava com o cliente final.
+{
+  const idDest = idDestinatarioEtiquetaVigente({ despachoConfirmado: false, idClienteProposta: 8469, idFaturado: 8469, idGravadoNoDespacho: null });
+  checar("etiqueta: cadastro lido é a 8469", idDest, 8469);
+  checar("etiqueta: nome do cliente final pelo recebedor",
+    nomeDestinatarioVigente({ idGravadoNoDespacho: null, idDestinatarioResolvido: idDest, recebedorDoEndereco: "Cliente Prova Lisiton", nomeDoCadastro: "8469 - LISITON DOCUMENTOS SEGUROS LTDA" }),
+    "Cliente Prova Lisiton");
+}
 checar("Jet Band Azul Médio no corpo", (validarCorpo({ ...base, itens: [{ produto: 9002, cores: [{ cor: "Azul Médio", quantidade: 1 }] }] }) as { erro?: string }).erro, "cor_nao_aceita");
 checar("cor repetida", validarCorpo({ ...base, itens: [{ produto: 9000, cores: [{ cor: "Branca", quantidade: 1 }, { cor: "branca", quantidade: 1 }] }] }).ok, false);
 checar("quantidade quebrada", validarCorpo({ ...base, itens: [{ produto: 9000, cores: [{ cor: "Branca", quantidade: 1.5 }] }] }).ok, false);
@@ -80,6 +93,15 @@ checar("migration: só service_role cria pedido; config por função com permiss
   ],
   [true, true, true, true]);
 const link = readFileSync("src/app/api/v1/parceiro/link-pagamento/[id_int]/route.ts", "utf8");
+const mig2 = readFileSync("supabase/migrations/20261127b_lisiton_pagador_lisiton_retira.sql", "utf8");
+checar("migration b: pagador 8469, recebedor = cliente final, RETIRA sem transportadora",
+  [
+    mig2.includes("c_lisiton, c_lisiton, v_id_end"),
+    mig2.includes("'Integração Lisiton', v_nome_final)"),
+    mig2.includes("v_modal NOT IN ('FOB', 'RETIRA')"),
+    mig2.includes("retirada no balcao nao leva transportadora")
+  ],
+  [true, true, true, true]);
 checar("link: chave da Lisiton só vê 8469", link.includes("if (soDaLisiton && Number(proposta.id_cliente) !== ID_CLIENTE_LISITON) return naoEncontrado();"), true);
 const rota = readFileSync("src/app/api/v1/lisiton/pedidos/route.ts", "utf8");
 checar("rota: chave própria e PIX pela função da /p",
