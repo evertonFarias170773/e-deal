@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { resolverEmpresaRemetente } from "@/lib/correios/empresa-remetente";
 import { resolverPesoExpedicao } from "../lib/peso";
 import { idDestinatarioEtiquetaVigente, nomeDestinatarioVigente } from "../lib/destinatario-etiqueta";
+import { idClienteFinalDaIntegracao } from "../lib/cliente-final-integracao.server";
 import { idEnderecoEntregaVigente } from "../lib/endereco-entrega";
 import { pedidosNoVolume } from "./etiqueta-viewmodel.service";
 
@@ -160,6 +161,8 @@ export async function montarDeclaracaoViewModel(
    * pelo id resolvido, mais dois campos acrescentados a `SELECT`s existentes.
    * O REMETENTE nao e tocado — continua saindo de `resolverEmpresaRemetente`.
    */
+  // Pedido da Integração Lisiton (27/11/2026): o cliente final é o destinatário.
+  const idClienteFinal = await idClienteFinalDaIntegracao(idInt);
   const idDestinatario = idDestinatarioEtiquetaVigente({
     despachoConfirmado: Boolean(exp?.data_despacho),
     idClienteProposta: idCliente,
@@ -167,7 +170,8 @@ export async function montarDeclaracaoViewModel(
       proposta.id_faturado !== null && proposta.id_faturado !== undefined
         ? Number(proposta.id_faturado)
         : null,
-    idGravadoNoDespacho: exp?.id_cliente_destinatario_etiqueta as number | null | undefined
+    idGravadoNoDespacho: exp?.id_cliente_destinatario_etiqueta as number | null | undefined,
+    idClienteFinalIntegracao: idClienteFinal
   });
 
   const { data: cliente } = idDestinatario !== null
@@ -230,7 +234,8 @@ export async function montarDeclaracaoViewModel(
           idDestinatario === idCliente
             ? proposta.cliente || cliente?.nome || cliente?.fantasia || `Pedido #${idInt}`
             : cliente?.nome || cliente?.fantasia || `Cadastro ${idDestinatario}`
-        )
+        ),
+        clienteFinalIntegracao: idClienteFinal !== null
       }),
       // O DOCUMENTO SEGUE O CADASTRO, nao o nome: a Declaracao declara um CPF/CNPJ,
       // e o recebedor do endereco nao tem documento proprio aqui.

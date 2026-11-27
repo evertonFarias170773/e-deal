@@ -7,7 +7,7 @@ import { readFileSync } from "node:fs";
 import { CORES_TRIBAND, PRODUTOS_LISITON, resolverCor, produtoLisiton } from "../../src/features/integracoes/lisiton/catalogo.ts";
 import { hashDoPedido, validarCorpo } from "../../src/features/integracoes/lisiton/montar-pedido.server.ts";
 import { selecaoDoAvisoPronto } from "../../src/features/expedicao/lib/aviso-pronto-lisiton.ts";
-import { idDestinatarioEtiquetaVigente, nomeDestinatarioVigente } from "../../src/features/expedicao/lib/destinatario-etiqueta.ts";
+import { idDestinatarioEtiquetaVigente, nomeDestinatarioVigente, telefoneComReserva } from "../../src/features/expedicao/lib/destinatario-etiqueta.ts";
 
 let falhas = 0;
 function checar(nome: string, real: unknown, esperado: unknown) {
@@ -68,6 +68,32 @@ checar("RETIRA com CNPJ junto", (validarCorpo({ ...base, transportadora: { cnpj:
     nomeDestinatarioVigente({ idGravadoNoDespacho: null, idDestinatarioResolvido: idDest, recebedorDoEndereco: "Cliente Prova Lisiton", nomeDoCadastro: "8469 - LISITON DOCUMENTOS SEGUROS LTDA" }),
     "Cliente Prova Lisiton");
 }
+
+// Etiqueta do pedido da integração (27/11): o cliente final vence tudo; sem ele, nada muda.
+{
+  const base8469 = { despachoConfirmado: true, idClienteProposta: 8469, idFaturado: 8469, idGravadoNoDespacho: null };
+  checar("integração: cadastro lido é o cliente final", idDestinatarioEtiquetaVigente({ ...base8469, idClienteFinalIntegracao: 70034 }), 70034);
+  checar("integração: vence até o pagador trocado", idDestinatarioEtiquetaVigente({ ...base8469, idFaturado: 555, idClienteFinalIntegracao: 70034 }), 70034);
+  checar("fora da integração: regra de sempre (pagador)", idDestinatarioEtiquetaVigente({ ...base8469, idFaturado: 555, idClienteFinalIntegracao: null }), 555);
+  checar("fora da integração: sem o parâmetro, igual", idDestinatarioEtiquetaVigente({ ...base8469, idFaturado: 555 }), 555);
+  checar("integração: nome do cadastro, não o recebedor",
+    nomeDestinatarioVigente({ idGravadoNoDespacho: null, idDestinatarioResolvido: 70034, recebedorDoEndereco: "Fulano", nomeDoCadastro: "GRAFICA SEM NOME LTDA", clienteFinalIntegracao: true }),
+    "GRAFICA SEM NOME LTDA");
+  checar("fora da integração: recebedor como sempre",
+    nomeDestinatarioVigente({ idGravadoNoDespacho: null, idDestinatarioResolvido: 14, recebedorDoEndereco: "Fulano", nomeDoCadastro: "Cadastro" }),
+    "Fulano");
+  checar("telefone: o do cliente final", telefoneComReserva("(62) 8529-2128", "(51) 99110-8552"), "(62) 8529-2128");
+  checar("telefone: sem o do cliente final, o da 8469", telefoneComReserva("", "(51) 99110-8552"), "(51) 99110-8552");
+  checar("telefone: fora da integração não há reserva", telefoneComReserva("", ""), "");
+  const consumidores = [
+    "src/features/expedicao/services/etiqueta-viewmodel.service.ts",
+    "src/features/expedicao/services/declaracao-viewmodel.service.ts",
+    "src/app/api/expedicao/correios/prepostagem/route.ts"
+  ].map((f) => readFileSync(f, "utf8"));
+  checar("etiqueta, Declaração e prepostagem leem o cliente final",
+    consumidores.map((t) => t.includes("idClienteFinalIntegracao: idClienteFinal") && t.includes("clienteFinalIntegracao: idClienteFinal !== null")),
+    [true, true, true]);
+}
 checar("Jet Band Azul Médio no corpo", (validarCorpo({ ...base, itens: [{ produto: 9002, cores: [{ cor: "Azul Médio", quantidade: 1 }] }] }) as { erro?: string }).erro, "cor_nao_aceita");
 checar("cor repetida", validarCorpo({ ...base, itens: [{ produto: 9000, cores: [{ cor: "Branca", quantidade: 1 }, { cor: "branca", quantidade: 1 }] }] }).ok, false);
 checar("quantidade quebrada", validarCorpo({ ...base, itens: [{ produto: 9000, cores: [{ cor: "Branca", quantidade: 1.5 }] }] }).ok, false);
@@ -102,6 +128,11 @@ checar("migration b: pagador 8469, recebedor = cliente final, RETIRA sem transpo
     mig2.includes("retirada no balcao nao leva transportadora")
   ],
   [true, true, true, true]);
+const mig3 = readFileSync("supabase/migrations/20261127c_lisiton_sem_vinculo_cliente_final.sql", "utf8");
+const corpo3 = mig3.slice(mig3.indexOf("CREATE OR REPLACE FUNCTION"));
+checar("migration c: sem vínculo comercial, nenhum DELETE, resto igual",
+  [corpo3.includes("clientes_socios"), /DELETE\s+FROM/i.test(corpo3), corpo3.includes("c_lisiton, c_lisiton, v_id_end"), corpo3.includes("GRANT EXECUTE ON FUNCTION public.lisiton_criar_pedido(jsonb) TO service_role;")],
+  [false, false, true, true]);
 checar("link: chave da Lisiton só vê 8469", link.includes("if (soDaLisiton && Number(proposta.id_cliente) !== ID_CLIENTE_LISITON) return naoEncontrado();"), true);
 const rota = readFileSync("src/app/api/v1/lisiton/pedidos/route.ts", "utf8");
 checar("rota: chave própria e PIX pela função da /p",

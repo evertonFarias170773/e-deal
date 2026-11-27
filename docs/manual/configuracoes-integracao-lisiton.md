@@ -36,7 +36,8 @@ O sistema da Lisiton (cliente 8469) cria pedidos direto no Vibe, pela API, e man
 - O pedido criado pela API é sempre:
   - do cliente Lisiton, que também é a pagadora: a cobrança PIX sai para ela;
   - sem nota fiscal: o despacho sai sem nota;
-  - com o cliente final (vinculado à Lisiton) só para a entrega: o endereço é dele e a etiqueta sai com o nome dele;
+  - com o cliente final só para a entrega: o endereço é dele, e a etiqueta, a Declaração de Conteúdo e a pré-postagem dos Correios saem com o nome, o documento e o telefone dele (sem telefone, vai o da Lisiton);
+  - sem vínculo comercial do cliente final com a Lisiton: ele não aparece como opção de pagador. Os vínculos criados antes de 27/11/2026 continuam;
   - da vendedora Lisiane Colbeich;
   - FOB ou retirada no balcão, com frete zero e preço do cadastro de cada produto;
   - com as conversas da Lisiton no ChatGuru, a da Lisiane como principal.
@@ -68,3 +69,5 @@ O sistema da Lisiton (cliente 8469) cria pedidos direto no Vibe, pela API, e man
 - `src/features/integracoes/lisiton/`
 - `src/app/api/v1/lisiton/pedidos/route.ts`
 - `supabase/migrations/20261127_lisiton_api_criar_pedido.sql`
+- `supabase/migrations/20261127c_lisiton_sem_vinculo_cliente_final.sql`
+- `src/features/expedicao/lib/cliente-final-integracao.server.ts`

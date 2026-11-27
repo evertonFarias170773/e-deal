@@ -78,7 +78,17 @@ export function idDestinatarioEtiquetaVigente(entrada: {
   idFaturado: number | null;
   /** `expedicoes.id_cliente_destinatario_etiqueta`. */
   idGravadoNoDespacho: number | null | undefined;
+  /**
+   * PEDIDO DA INTEGRAÇÃO LISITON (27/11/2026, decisão do dono): o
+   * `integracao_lisiton_pedidos.id_cliente_final` do pedido, lido por
+   * `idClienteFinalDaIntegracao`. Preenchido, VENCE TUDO: a caixa vai para o
+   * cliente final, e nome, documento e telefone saem do cadastro dele. Os
+   * outros pedidos não passam nada e a regra acima segue idêntica.
+   */
+  idClienteFinalIntegracao?: number | null;
 }): number | null {
+  const final = Number(entrada.idClienteFinalIntegracao);
+  if (Number.isFinite(final) && final > 0) return final;
   const escolhido = Number(entrada.idGravadoNoDespacho);
   if (Number.isFinite(escolhido) && escolhido > 0) {
     return resolverIdDestinatarioEtiqueta(entrada.idClienteProposta, entrada.idFaturado, escolhido);
@@ -125,7 +135,13 @@ export function nomeDestinatarioVigente(entrada: {
   recebedorDoEndereco: string | null | undefined;
   /** O nome que o documento imprimiria sem esta regra. Nunca vazio. */
   nomeDoCadastro: string;
+  /**
+   * Pedido da Integração Lisiton (27/11/2026): o nome é o do CADASTRO do
+   * cliente final, como o documento e o telefone — não o recebedor.
+   */
+  clienteFinalIntegracao?: boolean;
 }): string {
+  if (entrada.clienteFinalIntegracao) return entrada.nomeDoCadastro;
   const escolhido = Number(entrada.idGravadoNoDespacho);
   const escolhaValeu =
     Number.isFinite(escolhido) && escolhido > 0 && escolhido === entrada.idDestinatarioResolvido;
@@ -133,6 +149,15 @@ export function nomeDestinatarioVigente(entrada: {
 
   const recebedor = String(entrada.recebedorDoEndereco ?? "").trim();
   return recebedor || entrada.nomeDoCadastro;
+}
+
+/**
+ * Telefone do destinatário no pedido da Integração Lisiton (27/11/2026): o do
+ * cliente final; sem nenhum, o da 8469 (cliente do pedido). Os outros pedidos
+ * não têm reserva e passam `reserva` vazio.
+ */
+export function telefoneComReserva(doDestinatario: string, reserva: string): string {
+  return String(doDestinatario ?? "").trim() || String(reserva ?? "").trim();
 }
 
 /** Há pagador distinto do cliente? É a condição para a escolha existir. */

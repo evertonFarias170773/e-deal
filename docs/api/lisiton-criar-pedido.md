@@ -4,7 +4,7 @@ Esta API cria **um pedido da Lisiton no Vibe** a partir do seu sistema e devolve
 
 Num só chamado ela:
 
-1. acha o cliente final pelo CPF ou CNPJ, ou cria o cadastro dele, vinculado à Lisiton. Ele serve **só para a entrega**: o endereço e o nome que saem na etiqueta;
+1. acha o cliente final pelo CPF ou CNPJ, ou cria o cadastro dele. Ele serve **só para a entrega**: o nome, o documento, o telefone e o endereço que saem na etiqueta;
 2. usa o endereço de entrega informado (reaproveita o do cadastro quando é o mesmo CEP e número);
 3. cria o pedido em nome da Lisiton, com um item por produto e uma linha por cor;
 4. gera a cobrança PIX **para a Lisiton** e devolve o número do pedido e o link da página de pagamento.
@@ -15,7 +15,8 @@ Depois que o PIX é pago, o pedido segue sozinho para a produção. Você não p
 
 - **Quem paga é a Lisiton.** A cobrança PIX sai em nome dela (cadastro 8469). O preço é o do cadastro de cada produto no Vibe, que já é o preço para a Lisiton.
 - **Não há documento fiscal** nesta operação: o Vibe não emite nota para estes pedidos, e o despacho sai sem nota.
-- **O cliente final só recebe.** A etiqueta de envio sai com o **nome e o endereço dele**.
+- **O cliente final só recebe.** A etiqueta de envio, a Declaração de Conteúdo e a pré-postagem dos Correios saem com o **nome, o documento, o telefone e o endereço dele**. Se ele não tiver telefone no cadastro, vai o telefone da Lisiton.
+- O cliente final **não fica vinculado à Lisiton** no Vibe: ele não paga e não aparece como opção de pagador.
 - Na retirada no balcão (`"codigo": "RETIRA"`), não há envio: a etiqueta do balcão identifica o pedido pela Lisiton.
 
 ---
@@ -85,7 +86,7 @@ x-api-key: <sua-chave-de-criacao>
 | `cliente.documento` | sim | CPF (11 dígitos) ou CNPJ (14 dígitos), com ou sem pontuação. Precisa ser válido. |
 | `cliente.nome` | sim | Nome ou razão social do cliente final. É o nome que sai na etiqueta (quando ele ainda não tem cadastro no Vibe). |
 | `cliente.email` | não | Usado só quando o cadastro é criado agora. |
-| `cliente.telefone` | não | Usado só quando o cadastro é criado agora. |
+| `cliente.telefone` | não | Usado só quando o cadastro é criado agora. É o telefone que sai na etiqueta; sem ele, sai o da Lisiton. |
 | `endereco.cep` | sim | 8 dígitos. |
 | `endereco.logradouro`, `numero`, `bairro`, `cidade` | sim | Texto. |
 | `endereco.complemento` | não | Texto. |

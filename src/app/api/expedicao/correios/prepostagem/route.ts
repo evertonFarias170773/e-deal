@@ -5,8 +5,10 @@ import { verificarPermissaoServerSide } from "@/lib/auth/verificar-permissao";
 import { consultarGateAcompanhar } from "@/features/expedicao/lib/gate-acompanhar";
 import {
   idDestinatarioEtiquetaVigente,
-  nomeDestinatarioVigente
+  nomeDestinatarioVigente,
+  telefoneComReserva
 } from "@/features/expedicao/lib/destinatario-etiqueta";
+import { idClienteFinalDaIntegracao } from "@/features/expedicao/lib/cliente-final-integracao.server";
 import { idEnderecoEntregaVigente } from "@/features/expedicao/lib/endereco-entrega";
 import { criarPrepostagem, correiosConfigurado } from "@/lib/correios/cws";
 import { resolverEmpresaRemetente } from "@/lib/correios/empresa-remetente";
@@ -276,6 +278,8 @@ export async function POST(request: Request) {
    * SO VALE ANTES DA PREPOSTAGEM. Depois que o objeto e criado, o nome congela do
    * lado dos Correios — trocar a escolha aqui nao altera objeto ja emitido.
    */
+  // Pedido da Integração Lisiton (27/11/2026): o cliente final é o destinatário.
+  const idClienteFinal = await idClienteFinalDaIntegracao(idInt);
   const idDestinatario = idDestinatarioEtiquetaVigente({
     despachoConfirmado: Boolean(exp?.data_despacho),
     idClienteProposta: idCliente,
@@ -283,7 +287,8 @@ export async function POST(request: Request) {
       proposta.id_faturado !== null && proposta.id_faturado !== undefined
         ? Number(proposta.id_faturado)
         : null,
-    idGravadoNoDespacho: exp?.id_cliente_destinatario_etiqueta as number | null | undefined
+    idGravadoNoDespacho: exp?.id_cliente_destinatario_etiqueta as number | null | undefined,
+    idClienteFinalIntegracao: idClienteFinal
   });
 
   // O cadastro lido e o do DESTINATARIO — nome e telefone tem de sair do mesmo
@@ -295,6 +300,17 @@ export async function POST(request: Request) {
         .eq("id_cliente", idDestinatario)
         .maybeSingle()
     : { data: null };
+
+  // Cliente final sem telefone: vale o da 8469 (só na Integração Lisiton).
+  let telefoneReserva = "";
+  if (idClienteFinal !== null && !telefoneDestinatario(cliente?.whatsapp_1, cliente?.telefone_fixo) && idCliente !== null) {
+    const { data: doPedido } = await supabase
+      .from("clientes")
+      .select("whatsapp_1, telefone_fixo")
+      .eq("id_cliente", idCliente)
+      .maybeSingle();
+    telefoneReserva = telefoneDestinatario(doPedido?.whatsapp_1, doPedido?.telefone_fixo);
+  }
 
   // Remetente: empresa do pedido em public.empresas (fallback: primeira linha).
   const nomeEmpresa = String(proposta.empresa ?? "").trim();
@@ -389,7 +405,8 @@ export async function POST(request: Request) {
             idDestinatario === idCliente
               ? proposta.cliente || cliente?.nome || cliente?.fantasia || `Pedido ${idInt}`
               : cliente?.nome || cliente?.fantasia || `Pedido ${idInt}`
-          )
+          ),
+          clienteFinalIntegracao: idClienteFinal !== null
         }),
         cep: String(endereco.cep),
         logradouro: String(endereco.endereco ?? ""),
@@ -408,7 +425,7 @@ export async function POST(request: Request) {
         // O telefone CONGELA nos Correios junto com o nome: o rotulo oficial e
         // gerado por eles a partir da prepostagem, e `baixarRotuloPdf` so manda
         // o id. Esta regra vale para prepostagem gerada daqui em diante.
-        telefone: telefoneDestinatario(cliente?.whatsapp_1, cliente?.telefone_fixo)
+        telefone: telefoneComReserva(telefoneDestinatario(cliente?.whatsapp_1, cliente?.telefone_fixo), telefoneReserva)
       },
       itensDeclaracao,
       notaFiscal

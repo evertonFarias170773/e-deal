@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { resolverPesoExpedicao } from "../lib/peso";
-import { idDestinatarioEtiquetaVigente, nomeDestinatarioVigente } from "../lib/destinatario-etiqueta";
+import { idDestinatarioEtiquetaVigente, nomeDestinatarioVigente, telefoneComReserva } from "../lib/destinatario-etiqueta";
+import { idClienteFinalDaIntegracao } from "../lib/cliente-final-integracao.server";
 import { idEnderecoEntregaVigente } from "../lib/endereco-entrega";
 import { telefoneDestinatario } from "../lib/telefone-destinatario";
 import { cifPorTransportadora, normalizarTipoFrete } from "../lib/tipo-frete";
@@ -396,6 +397,8 @@ export async function montarEtiquetaViewModel(
    * a caixa pode ir para um endereco do pagador em nome do cliente, e vice-versa.
    * Por isso o destinatario e um campo proprio, e nao deduzido do endereco.
    */
+  // Pedido da Integração Lisiton (27/11/2026): o cliente final é o destinatário.
+  const idClienteFinal = await idClienteFinalDaIntegracao(idInt);
   const idDestinatario = idDestinatarioEtiquetaVigente({
     despachoConfirmado: Boolean(expConfirmado),
     idClienteProposta: idCliente,
@@ -403,7 +406,8 @@ export async function montarEtiquetaViewModel(
       proposta.id_faturado !== null && proposta.id_faturado !== undefined
         ? Number(proposta.id_faturado)
         : null,
-    idGravadoNoDespacho: exp?.id_cliente_destinatario_etiqueta as number | null | undefined
+    idGravadoNoDespacho: exp?.id_cliente_destinatario_etiqueta as number | null | undefined,
+    idClienteFinalIntegracao: idClienteFinal
   });
 
   const { data: cliente } = idDestinatario !== null
@@ -413,6 +417,17 @@ export async function montarEtiquetaViewModel(
         .eq("id_cliente", idDestinatario)
         .maybeSingle()
     : { data: null };
+
+  // Cliente final sem telefone: vale o da 8469 (só na Integração Lisiton).
+  let telefoneReserva = "";
+  if (idClienteFinal !== null && !telefoneDestinatario(cliente?.whatsapp_1, cliente?.telefone_fixo) && idCliente !== null) {
+    const { data: doPedido } = await supabase
+      .from("clientes")
+      .select("whatsapp_1, telefone_fixo")
+      .eq("id_cliente", idCliente)
+      .maybeSingle();
+    telefoneReserva = telefoneDestinatario(doPedido?.whatsapp_1, doPedido?.telefone_fixo);
+  }
 
   /**
    * REMETENTE, do cadastro (02/09/2026).
@@ -551,7 +566,8 @@ export async function montarEtiquetaViewModel(
         nomeDoCadastro:
           idDestinatario === idCliente
             ? proposta.cliente || cliente?.nome || cliente?.fantasia || `Pedido #${idInt}`
-            : cliente?.nome || cliente?.fantasia || `Cadastro ${idDestinatario}`
+            : cliente?.nome || cliente?.fantasia || `Cadastro ${idDestinatario}`,
+        clienteFinalIntegracao: idClienteFinal !== null
       }),
       idCliente: idDestinatario,
       telefones: {
@@ -574,7 +590,7 @@ export async function montarEtiquetaViewModel(
       // a etiqueta do 21000 saiu com "Fone: FELIPE FAUTH PROBST". Regra unica
       // em `lib/telefone-destinatario.ts`, a mesma do contato exibido no modal.
       //
-      telefone: telefoneDestinatario(cliente?.whatsapp_1, cliente?.telefone_fixo)
+      telefone: telefoneComReserva(telefoneDestinatario(cliente?.whatsapp_1, cliente?.telefone_fixo), telefoneReserva)
     }
   };
 }
